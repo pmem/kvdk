@@ -29,7 +29,7 @@ DEFINE_uint64(value_size, 120, "Value size of KV");
 
 DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
 
-DEFINE_double(read_ratio, 1, "Read threads = threads * read_ratio");
+DEFINE_double(read_ratio, 0, "Read threads = threads * read_ratio");
 
 DEFINE_double(
     existing_keys_ratio, 1,
@@ -56,7 +56,7 @@ DEFINE_uint64(
 
 // Engine configs
 DEFINE_bool(
-    populate, true,
+    populate, false,
     "Populate pmem space while creating a new instance. This can improve write "
     "performance in runtime, but will take long time to init the instance");
 
