@@ -2,3 +2,4 @@ build/
 .idea/
 cmake-build-*
 .vscode/
+/.vs
