@@ -1,4 +1,51 @@
-build/
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Judge
+judge/data
+judge/performance.log
+judge/judge
+
+# Vscode
+.vscode
+tests/judge
+results/
 .idea/
+tests/test
+tests/bench
+
+bin/
+build/
 cmake-build-*
-.vscode/
+.cache/

@@ -1,19 +1,19 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2021 Intel Corporation
  */
+#include <array>
 
 #include "logger.hpp"
 
-#include <array>
-#include <memory>
+namespace KVDK_NAMESPACE {
 
 void Logger::Log(const char *format, ...) {
+#ifdef DO_LOG
   if (log_file_ != nullptr) {
     std::lock_guard<std::mutex> lg(mut_);
     auto now = std::chrono::system_clock::now();
     auto duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - start_ts_);
-    auto t = time(0);
     fprintf(log_file_, "[LOG] time %ld ms: ", duration.count());
     va_list args;
     va_start(args, format);
@@ -22,6 +22,7 @@ void Logger::Log(const char *format, ...) {
     fflush(log_file_);
     fsync(fileno(log_file_));
   }
+#endif
 }
 
 void Logger::Error(const char *format, ...) {
@@ -45,6 +46,6 @@ void Logger::Init(FILE *fp) {
   start_ts_ = std::chrono::system_clock::now();
 }
 
-#ifdef DO_LOG
 Logger GlobalLogger;
-#endif
+
+} // namespace KVDK_NAMESPACE
