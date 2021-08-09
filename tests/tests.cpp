@@ -32,13 +32,13 @@ protected:
     db_path = "/mnt/pmem0/data";
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", db_path.c_str());
-    system(cmd);
+    int res __attribute__((unused)) = system(cmd);
   }
 
   virtual void TearDown() {
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", db_path.c_str());
-    system(cmd);
+    int res __attribute__((unused)) = system(cmd);
     // delete db_path
   }
 
