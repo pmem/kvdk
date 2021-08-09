@@ -5,6 +5,8 @@ KVDK(Key-Value Development Kit) is a Key-Value store for Persistent memory(PMEM)
 
 KVDK supports both sorted and unsorted KV-Pairs.
 
+Code snippets in this user documents are from `./examples/tutorial.cpp`, which is built as `./build/dbtutorials`.
+
 ## Open a KVDK instance
 
 A KVDK instance corresponds to a PMEM directory mounted under linux system. Keys and values
@@ -25,6 +27,8 @@ or how to reopen an existing KVDK instance at the path supplied.
 #include <random>
 #include <algorithm>
 
+#define DEBUG   // For assert
+
 int main()
 {
     kvdk::Status status;
@@ -36,17 +40,19 @@ int main()
         // Configure for a tiny KVDK instance. Approximately 10MB /mnt/pmem0/ space is needed.
         // Please refer to "Configuration" section in user documentation for details.
         db_configs.pmem_file_size = (1ull << 20);
-        db_configs.pmem_segment_blocks = (1ull << 10);
+        db_configs.pmem_segment_blocks = (1ull << 8);
         db_configs.num_hash_buckets = (1ull << 10);
     }
     // The KVDK instance is mounted as DB under /mnt/pmem0/
     // Modify this path if necessary.
     std::string db_path{ "/mnt/pmem0/tutorial_kvdk_example" };
 
+    // Purge old KVDK instance
+    int sink = system(std::string{ "rm -rf " + db_path + "\n" }.c_str());
+
     status = kvdk::Engine::Open(db_path, &db, db_configs, stdout);
     assert(status == kvdk::Status::Ok);
     printf("Successfully opened a KVDK instance.\n");
-
 
     ... Do something with KVDK instance ...
 
@@ -65,24 +71,12 @@ such as `kvdk::Status::MemoryOverflow`.
 
 To close a KVDK instance, just delete the instance.
 
-```c++
-int main()
-{
-    ... Open a KVDK instance as described in "Open a KVDK instance" ...
-    ... Do something with KVDK instance ...
-
-    // Close KVDK instance.
-    delete db;
-
-    ... exit ...
-}
-```
-
 When a KVDK instance is closed, Key-Value pairs are still persisted on PMEM.
 KV-Pair indexing stored on DRAM are purged.
 Follow "Opening a Database" to reopen the database will reconstruct indexing on DRAM with information persisted on PMEM.
 
 To purge contents on PMEM, just delete it from PMEM mounted as a file.
+
 ```c++
 int main()
 {
@@ -260,12 +254,8 @@ int main()
         std::shuffle(kv_pairs.begin(), kv_pairs.end(), std::mt19937{ 42 });
         // Print out kv_pairs to check if they are really shuffled.
         printf("The shuffled kv-pairs are:\n");
-        std::for_each
-        (
-            kv_pairs.cbegin(), 
-            kv_pairs.cend(), 
-            [](const auto& kv) { printf("%s%s%s%s", kv.first.c_str(), "\t", kv.second.c_str(), "\n"); }
-        );
+        for(const auto& kv : kv_pairs)
+            printf("%s\t%s\n", kv.first.c_str(), kv.second.c_str());
 
         // Populate collection "my_sorted_collection" with keys and values.
         // kv_pairs are not necessarily sorted, but kv-pairs in collection "my_sorted_collection" are sorted.
@@ -275,6 +265,8 @@ int main()
             status = db->SSet(sorted_collection, kv_pairs[i].first, kv_pairs[i].second);
             assert(status == kvdk::Status::Ok);
         }
+        // Sort kv_pairs for checking the order of "my_sorted_collection".
+        std::sort(kv_pairs.begin(), kv_pairs.end());
 
         // Iterate through collection "my_sorted_collection"
         auto iter = db->NewSortedIterator(sorted_collection);
@@ -295,6 +287,7 @@ int main()
         std::string end{ "key8" };
         {
             int i = 1;
+            iter->Seek(beg);
             for (iter->Seek(beg); iter->Valid() && iter->Key() < end; iter->Next())
             {
                 assert(iter->Key() == kv_pairs[i].first);
