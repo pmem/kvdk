@@ -11,6 +11,8 @@
 #include <random>
 #include <algorithm>
 
+#define DEBUG   // For assert
+
 int main()
 {
     kvdk::Status status;
@@ -139,12 +141,8 @@ int main()
         std::shuffle(kv_pairs.begin(), kv_pairs.end(), std::mt19937{ 42 });
         // Print out kv_pairs to check if they are really shuffled.
         printf("The shuffled kv-pairs are:\n");
-        std::for_each
-        (
-            kv_pairs.cbegin(), 
-            kv_pairs.cend(), 
-            [](const auto& kv) { printf("%s%s%s%s", kv.first.c_str(), "\t", kv.second.c_str(), "\n"); }
-        );
+        for(const auto& kv : kv_pairs)
+            printf("%s\t%s\n", kv.first.c_str(), kv.second.c_str());
 
         // Populate collection "my_sorted_collection" with keys and values.
         // kv_pairs are not necessarily sorted, but kv-pairs in collection "my_sorted_collection" are sorted.
@@ -171,7 +169,6 @@ int main()
             }
         }
 
-printf("\n\n");
         // Iterate through range ["key1", "key8").
         std::string beg{ "key1" };
         std::string end{ "key8" };
@@ -180,10 +177,8 @@ printf("\n\n");
             iter->Seek(beg);
             for (iter->Seek(beg); iter->Valid() && iter->Key() < end; iter->Next())
             {
-                printf("%s\t%s\n", iter->Key().c_str(), iter->Value().c_str());                
-                printf("%s\t%s\n\n", kv_pairs[i].first.c_str(), kv_pairs[i].second.c_str());              
-                // assert(iter->Key() == kv_pairs[i].first);
-                // assert(iter->Value() == kv_pairs[i].second);
+                assert(iter->Key() == kv_pairs[i].first);
+                assert(iter->Value() == kv_pairs[i].second);
                 ++i;
             }
         }
@@ -195,8 +190,6 @@ printf("\n\n");
             int i = 8;
             for (iter->Seek(beg); iter->Valid() && iter->Key() > end; iter->Prev())
             {
-                printf("%s\t%s\n", iter->Key().c_str(), iter->Value().c_str());                
-                printf("%s\t%s\n\n", kv_pairs[i].first.c_str(), kv_pairs[i].second.c_str());              
                 assert(iter->Key() == kv_pairs[i].first);
                 assert(iter->Value() == kv_pairs[i].second);
                 --i;
