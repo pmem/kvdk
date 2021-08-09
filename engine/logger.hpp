@@ -4,19 +4,22 @@
 
 #pragma once
 
-#include <unistd.h>
-
-#include "utils.hpp"
 #include <chrono>
 #include <cstdarg>
 #include <mutex>
+#include <unistd.h>
+
+#include "kvdk/namespace.hpp"
+
+#define DO_LOG 1
+
+namespace KVDK_NAMESPACE {
 
 class Logger {
 public:
   void Log(const char *format, ...);
   void Error(const char *format, ...);
   void Init(FILE *fp);
-  void Exec(std::string cmd);
 
 private:
   FILE *log_file_ = NULL;
@@ -25,6 +28,6 @@ private:
   std::chrono::time_point<std::chrono::system_clock> start_ts_;
 };
 
-#ifdef DO_LOG
 extern Logger GlobalLogger;
-#endif
+
+} // namespace KVDK_NAMESPACE

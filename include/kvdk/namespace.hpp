@@ -4,6 +4,6 @@
 
 #pragma once
 
-#ifndef PMEMDB_NAMESPACE
-#define PMEMDB_NAMESPACE pmemdb
+#ifndef KVDK_NAMESPACE
+#define KVDK_NAMESPACE kvdk
 #endif
