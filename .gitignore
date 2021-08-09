@@ -5,3 +5,4 @@ cmake-build-*
 /.vs
 /doc/impl_doc_cn.md
 /doc/impl_doc.md
+/doc/images
