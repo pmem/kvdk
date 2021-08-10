@@ -1,7 +1,7 @@
 KVDK
 =======
 
-KVDK(Key-Value Development Kit) is a Key-Value store for Persistent memory(PMEM). 
+KVDK(Key-Value Development Kit) is a Key-Value store for Persistent memory(PMem). 
 
 KVDK supports both sorted and unsorted KV-Pairs.
 
@@ -9,51 +9,53 @@ Code snippets in this user documents are from `./examples/tutorial.cpp`, which i
 
 ## Open a KVDK instance
 
-A KVDK instance corresponds to a PMEM directory mounted under linux system. Keys and values
-are stored in PMEM under this path and are indexed by HashTable which is stored in DRAM.
-HashTable is not persisted on PMEM and is reconstructed with information on PMEM.
+A KVDK instance is associated with a PMem directory mounted under linux system. Keys and values
+are stored in PMem under this path and are indexed by HashTable which is stored in DRAM.
+HashTable is not persisted on PMem and is reconstructed with information on PMem.
 
 The following code shows how to create a KVDK instance if none exist
 or how to reopen an existing KVDK instance at the path supplied.
-(In the following example, PMEM is mounted as /mnt/pmem0/ and KVDK is named tutorial_kvdk_example.)
+(In the following example, PMem is mounted as /mnt/pmem0/ and the KVDK instance is named tutorial_kvdk_example.)
 
 ```c++
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
+#include <algorithm>
+#include <cassert>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
-#include <cassert>
-#include <random>
-#include <algorithm>
 
-#define DEBUG   // For assert
+#define DEBUG // For assert
 
 int main()
 {
   kvdk::Status status;
+  kvdk::Engine *engine = nullptr;
 
   // Initialize a KVDK instance.
-  kvdk::Engine *db = nullptr;
-  kvdk::Configs db_configs;
   {
-    // Configure for a tiny KVDK instance. Approximately 10MB /mnt/pmem0/ space
-    // is needed. Please refer to "Configuration" section in user documentation
-    // for details.
-    db_configs.pmem_file_size = (1ull << 20);
-    db_configs.pmem_segment_blocks = (1ull << 8);
-    db_configs.num_hash_buckets = (1ull << 10);
+    kvdk::Configs engine_configs;
+    {
+      // Configure for a tiny KVDK instance. Approximately 10MB /mnt/pmem0/
+      // space is needed. Please refer to "Configuration" section in user
+      // documentation for details.
+      engine_configs.pmem_file_size = (1ull << 20);
+      engine_configs.pmem_segment_blocks = (1ull << 8);
+      engine_configs.num_hash_buckets = (1ull << 10);
+    }
+    // The KVDK instance is mounted as a directory
+    // /mnt/pmem0/tutorial_kvdk_example Modify this path if necessary.
+    std::string engine_path{"/mnt/pmem0/tutorial_kvdk_example"};
+
+    // Purge old KVDK instance
+    int sink = system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
+
+    status = kvdk::Engine::Open(engine_path, &engine, engine_configs, stdout);
+    assert(status == kvdk::Status::Ok);
+    printf("Successfully opened a KVDK instance.\n");
   }
-  // The KVDK instance is mounted as DB under /mnt/pmem0/
-  // Modify this path if necessary.
-  std::string db_path{"/mnt/pmem0/tutorial_kvdk_example"};
-
-  // Purge old KVDK instance
-  int sink = system(std::string{"rm -rf " + db_path + "\n"}.c_str());
-
-  status = kvdk::Engine::Open(db_path, &db, db_configs, stdout);
-  assert(status == kvdk::Status::Ok);
-  printf("Successfully opened a KVDK instance.\n");
 
     ... Do something with KVDK instance ...
 
@@ -72,11 +74,11 @@ such as `kvdk::Status::MemoryOverflow`.
 
 To close a KVDK instance, just delete the instance.
 
-When a KVDK instance is closed, Key-Value pairs are still persisted on PMEM.
+When a KVDK instance is closed, Key-Value pairs are still persisted on PMem.
 KV-Pair indexing stored on DRAM are purged.
-Follow "Opening a Database" to reopen the database will reconstruct indexing on DRAM with information persisted on PMEM.
+Follow "Open a KVDK instance" to reopen the KVDK instance will reconstruct indexing on DRAM with information persisted on PMem.
 
-To purge contents on PMEM, just delete it from PMEM mounted as a file.
+To purge contents on PMem, just delete its directory under mounted PMem.
 
 ```c++
 int main()
@@ -85,10 +87,10 @@ int main()
   ... Do something with KVDK instance ...
 
   // Close KVDK instance.
-  delete db;
+  delete engine;
 
   // Remove persisted contents on PMem
-  return system(std::string{ "rm -rf " + db_path + "\n" }.c_str());
+  return system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
 }
 ```
 
@@ -110,9 +112,9 @@ Users can also create named collections.
 
 KVDK currently supports sorted named collections. Users can iterate forward or backward starting from an arbitrary point(at a key or between two keys) by an iterator. Elements can also be directly accessed via SGet, SSet, SDelete operations.
 
-## Reads and Writes on Anonymous Global Collection
+## Reads and Writes in Anonymous Global Collection
 
-A KVDK instance provides Get, Set, Delete methods to query/modify/delete entries in the database. 
+A KVDK instance provides Get, Set, Delete methods to query/modify/delete entries. 
 
 The following code performs a series of Get, Set and Delete operations.
 
@@ -130,33 +132,33 @@ int main()
     std::string v;
 
     // Insert key1-value1
-    status = db->Set(key1, value1);
+    status = engine->Set(key1, value1);
     assert(status == kvdk::Status::Ok);
 
     // Get value1 by key1
-    status = db->Get(key1, &v);
+    status = engine->Get(key1, &v);
     assert(status == kvdk::Status::Ok);
     assert(v == value1);
 
     // Update key1-value1 to key1-value2
-    status = db->Set(key1, value2);
+    status = engine->Set(key1, value2);
     assert(status == kvdk::Status::Ok);
 
     // Get value2 by key1
-    status = db->Get(key1, &v);
+    status = engine->Get(key1, &v);
     assert(status == kvdk::Status::Ok);
     assert(v == value2);
 
     // Insert key2-value2
-    status = db->Set(key2, value2);
+    status = engine->Set(key2, value2);
     assert(status == kvdk::Status::Ok);
 
     // Delete key1-value2
-    status = db->Delete(key1);
+    status = engine->Delete(key1);
     assert(status == kvdk::Status::Ok);
 
     // Delete key2-value2
-    status = db->Delete(key2);
+    status = engine->Delete(key2);
     assert(status == kvdk::Status::Ok);
 
     printf("Successfully performed Get, Set, Delete operations on anonymous "
@@ -169,9 +171,9 @@ int main()
 }
 ```
 
-## Reads and Writes on a Named Collection
+## Reads and Writes in a Named Collection
 
-A KVDK instance provides SGet, SSet, SDelete methods to query/modify/delete sorted entries in the database. 
+A KVDK instance provides SGet, SSet, SDelete methods to query/modify/delete sorted entries. 
 
 The following code performs a series of SGet, SSet and SDelete operations, which also initialize a named collection implicitly.
 
@@ -193,43 +195,43 @@ int main()
     // Insert key1-value1 into "my_collection_1".
     // Implicitly create a collection named "my_collection_1" in which
     // key1-value1 is stored.
-    status = db->SSet(collection1, key1, value1);
+    status = engine->SSet(collection1, key1, value1);
     assert(status == kvdk::Status::Ok);
 
     // Get value1 by key1 in collection "my_collection_1"
-    status = db->SGet(collection1, key1, &v);
+    status = engine->SGet(collection1, key1, &v);
     assert(status == kvdk::Status::Ok);
     assert(v == value1);
 
     // Insert key1-value2 into "my_collection_2".
     // Implicitly create a collection named "my_collection_2" in which
     // key1-value2 is stored.
-    status = db->SSet(collection2, key1, value2);
+    status = engine->SSet(collection2, key1, value2);
     assert(status == kvdk::Status::Ok);
 
     // Get value2 by key1 in collection "my_collection_2"
-    status = db->SGet(collection2, key1, &v);
+    status = engine->SGet(collection2, key1, &v);
     assert(status == kvdk::Status::Ok);
     assert(v == value2);
 
     // Get value1 by key1 in collection "my_collection_1"
     // key1-value2 is stored in "my_collection_2"
     // Thus key1-value1 stored in "my_collection_1" is unaffected by operation
-    // db->SSet(collection2, key1, value2).
-    status = db->SGet(collection1, key1, &v);
+    // engine->SSet(collection2, key1, value2).
+    status = engine->SGet(collection1, key1, &v);
     assert(status == kvdk::Status::Ok);
     assert(v == value1);
 
     // Insert key2-value2 into collection "my_collection_2"
     // Collection "my_collection_2" already exists and no implicit collection
     // creation occurs.
-    status = db->SSet(collection2, key2, value2);
+    status = engine->SSet(collection2, key2, value2);
     assert(status == kvdk::Status::Ok);
 
     // Delete key1-value1 in collection "my_collection_1"
     // Although "my_collection_1" has no elements now, the collection itself is
     // not deleted though.
-    status = db->SDelete(collection1, key1);
+    status = engine->SDelete(collection1, key1);
     assert(status == kvdk::Status::Ok);
 
     printf("Successfully performed SGet, SSet, SDelete operations on named "
@@ -271,15 +273,15 @@ int main()
     for (int i = 0; i < 10; ++i) {
       // Collection "my_sorted_collection" is implicitly created in first
       // iteration
-      status =
-          db->SSet(sorted_collection, kv_pairs[i].first, kv_pairs[i].second);
+      status = engine->SSet(sorted_collection, kv_pairs[i].first,
+                            kv_pairs[i].second);
       assert(status == kvdk::Status::Ok);
     }
     // Sort kv_pairs for checking the order of "my_sorted_collection".
     std::sort(kv_pairs.begin(), kv_pairs.end());
 
     // Iterate through collection "my_sorted_collection"
-    auto iter = db->NewSortedIterator(sorted_collection);
+    auto iter = engine->NewSortedIterator(sorted_collection);
     iter->SeekToFirst();
     {
       int i = 0;
@@ -349,16 +351,16 @@ int main()
 
     // If the batch is successfully written, there should be only key1-value2 in
     // anonymous global collection.
-    status = db->BatchWrite(batch);
+    status = engine->BatchWrite(batch);
     assert(status == kvdk::Status::Ok);
 
     // Get value2 by key1
-    status = db->Get(key1, &v);
+    status = engine->Get(key1, &v);
     assert(status == kvdk::Status::Ok);
     assert(v == value2);
 
     // Get value2 by key1
-    status = db->Get(key2, &v);
+    status = engine->Get(key2, &v);
     assert(status == kvdk::Status::NotFound);
     // v is unchanged, but it is invalid. Always Check kvdk::Status before
     // perform further operations!
@@ -384,11 +386,11 @@ Users can configure KVDK to adapt to their system environment by setting up a `k
 ### Max Write Threads
 Maximum number of write threads is specified by `kvdk::Configs::max_write_threads`. Defaulted to 48. It's recommended to set this number to the number of threads provided by CPU. 
 
-### PMEM File Size
+### PMem File Size
 `kvdk::Configs::pmem_file_size` specifies the space allocated to a KVDK instance. Defaulted to 2^38Bytes = 256GB.
 
-### Populate PMEM Space
-Specified by `kvdk::Configs::populate_pmem_space`. When set to true to populate pmem space while creating a new db, KVDK will take extra time to set up. This will improve runtime performance.
+### Populate PMem Space
+Specified by `kvdk::Configs::populate_pmem_space`. When set to true to populate pmem space while creating a new instance, KVDK will take extra time to set up. This will improve runtime performance.
 
 ### Block Size
 Specified by `kvdk::Configs::pmem_block_size`. Defaulted to 64(Bytes) to align with cache-line. 
