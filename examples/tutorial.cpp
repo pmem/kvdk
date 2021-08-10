@@ -17,6 +17,11 @@ int main() {
   kvdk::Status status;
   kvdk::Engine *engine = nullptr;
 
+  // The KVDK instance is mounted as a directory
+  // /mnt/pmem0/tutorial_kvdk_example.
+  // Modify this path if necessary.
+  std::string engine_path{"/mnt/pmem0/tutorial_kvdk_example"};
+
   // Initialize a KVDK instance.
   {
     kvdk::Configs engine_configs;
@@ -29,10 +34,6 @@ int main() {
       engine_configs.pmem_segment_blocks = (1ull << 8);
       engine_configs.num_hash_buckets = (1ull << 10);
     }
-    // The KVDK instance is mounted as a directory
-    // /mnt/pmem0/tutorial_kvdk_example.
-    // Modify this path if necessary.
-    std::string engine_path{"/mnt/pmem0/tutorial_kvdk_example"};
 
     // Purge old KVDK instance
     int sink = system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
