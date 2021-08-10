@@ -90,7 +90,6 @@ void Skiplist::Seek(const Slice &key, Splice *splice) {
     }
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_data_entry_offset);
-    // TODO: make this thread safe
     int cmp = Slice::compare(key, UserKey(next_data_entry->Key()));
     if (cmp > 0) {
       prev_data_entry = next_data_entry;
@@ -121,7 +120,8 @@ bool Skiplist::FindAndLockWritePos(Splice *splice, const Slice &insert_key,
       Seek(insert_key, splice);
       prev = splice->prev_data_entry;
       next = splice->next_data_entry;
-      assert(prev == header_->data_entry || Slice::compare(UserKey(prev->Key()), insert_key) < 0);
+      assert(prev == header_->data_entry ||
+             Slice::compare(UserKey(prev->Key()), insert_key) < 0);
     }
 
     uint64_t prev_offset = pmem_allocator_->addr2offset(prev);

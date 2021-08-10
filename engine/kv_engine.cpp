@@ -143,6 +143,10 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       pmem_allocator_->Free(SizedSpaceEntry(
           pmem_allocator_->addr2offset(pmem_data_entry),
           recovering_data_entry->header.b_size, nullptr, nullptr));
+      if (recovering_data_entry->header.checksum != checksum) {
+        pmem_data_entry->type = PADDING;
+        pmem_persist(&pmem_data_entry->type, sizeof(DATA_ENTRY_TYPE));
+      }
 
       segment_space.size -= recovering_data_entry->header.b_size;
       segment_space.space_entry.offset += recovering_data_entry->header.b_size;

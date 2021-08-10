@@ -23,7 +23,8 @@ struct SpaceEntry {
     if (hash_entry_reference != nullptr) {
       assert(hash_entry_mutex != nullptr);
       std::lock_guard<SpinMutex> lg(*hash_entry_mutex);
-      hash_entry_reference->header.reference = hash_entry_reference->header.reference - 1;
+      hash_entry_reference->header.reference =
+          hash_entry_reference->header.reference - 1;
     }
   }
 };
