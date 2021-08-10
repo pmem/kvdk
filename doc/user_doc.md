@@ -1,7 +1,7 @@
 KVDK
 =======
 
-KVDK(Key-Value Development Kit) is a Key-Value store for Persistent memory(PMem). 
+KVDK(Key-Value Development Kit) is a Key-Value store for Persistent memory(PMem).
 
 KVDK supports both sorted and unsorted KV-Pairs.
 
