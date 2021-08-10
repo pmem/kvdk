@@ -34,6 +34,6 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build .
 
 ### User Guide
 
-Please reference to [User guide] for API introductions of KVDK.
+Please reference to [User guide](./doc/user_doc.md) for API introductions of KVDK.
 
 ### Architecture
