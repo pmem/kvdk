@@ -28,10 +28,12 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build .
 ```
 
 ## Benchmarks
-[Here](./docs/benchmark.md) are the examples on how to benchmark the performance of KVDK on your own systems.
+[Here](./doc/benchmark.md) are the examples on how to benchmark the performance of KVDK on your own systems.
 
 ## Documentations
 
 ### User Guide
+
+Please reference to [User guide] for API introductions of KVDK.
 
 ### Architecture
