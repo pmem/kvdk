@@ -101,7 +101,6 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
           } else {
             auto space = dram_allocator_->Allocate(hash_bucket_size_);
             if (space.size == 0) {
-              // TODO: handle this
               GlobalLogger.Error("Memory overflow!\n");
               return Status::MemoryOverflow;
             }
