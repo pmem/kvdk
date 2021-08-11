@@ -15,7 +15,6 @@ Thread::~Thread() {
 }
 
 Status ThreadManager::MaybeInitThread(Thread &t) {
-  Status s;
   if (t.id < 0) {
     if (!usable_id_.empty()) {
       std::lock_guard<SpinMutex> lg(spin_);
@@ -33,7 +32,7 @@ Status ThreadManager::MaybeInitThread(Thread &t) {
     }
     t.thread_manager = shared_from_this();
   }
-  return s;
+  return Status::Ok;
 }
 
 void ThreadManager::Release(const Thread &t) {
