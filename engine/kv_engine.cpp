@@ -496,6 +496,12 @@ Status KVEngine::Get(const std::string &key, std::string *value) {
 }
 
 Status KVEngine::Delete(const std::string &key) {
+  Status s = MaybeInitWriteThread();
+
+  if (s != Status::Ok) {
+    return s;
+  }
+
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
@@ -636,7 +642,11 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const std::string &user_key,
 
 Status KVEngine::SSet(const std::string &collection,
                       const std::string &user_key, const std::string &value) {
-  MaybeInitWriteThread();
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
   Skiplist *skiplist = nullptr;
   Status s = SearchOrInitSkiplist(collection, &skiplist, true);
   if (s != Status::Ok) {
@@ -696,7 +706,11 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
 
 Status KVEngine::SDelete(const std::string &collection,
                          const std::string &user_key) {
-  MaybeInitWriteThread();
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
   Skiplist *skiplist = nullptr;
   Status s = SearchOrInitSkiplist(collection, &skiplist, false);
   if (s != Status::Ok) {
@@ -729,7 +743,11 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return Status::BatchOverflow;
   }
 
-  MaybeInitWriteThread();
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
   Status s = MaybeInitPendingBatchFile();
   if (s != Status::Ok) {
     return s;
@@ -790,8 +808,6 @@ Status KVEngine::SGet(const std::string &collection,
 
 Status KVEngine::HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
                              BatchWriteHint *batch_hint) {
-  MaybeInitWriteThread();
-
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
@@ -865,6 +881,11 @@ Status KVEngine::HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
 }
 
 Status KVEngine::Set(const std::string &key, const std::string &value) {
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
