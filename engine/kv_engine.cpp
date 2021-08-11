@@ -648,7 +648,7 @@ Status KVEngine::SSet(const std::string &collection,
   }
 
   Skiplist *skiplist = nullptr;
-  Status s = SearchOrInitSkiplist(collection, &skiplist, true);
+  s = SearchOrInitSkiplist(collection, &skiplist, true);
   if (s != Status::Ok) {
     return s;
   }
@@ -712,7 +712,7 @@ Status KVEngine::SDelete(const std::string &collection,
   }
 
   Skiplist *skiplist = nullptr;
-  Status s = SearchOrInitSkiplist(collection, &skiplist, false);
+  s = SearchOrInitSkiplist(collection, &skiplist, false);
   if (s != Status::Ok) {
     return s == Status::NotFound ? Status::Ok : s;
   }
@@ -748,7 +748,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return s;
   }
 
-  Status s = MaybeInitPendingBatchFile();
+  s = MaybeInitPendingBatchFile();
   if (s != Status::Ok) {
     return s;
   }
