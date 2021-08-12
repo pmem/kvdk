@@ -64,22 +64,22 @@ add_custom_target(cppformat)
 
 find_program(CLANG_FORMAT NAMES clang-format-9 clang-format-9.0 clang-format)
 set(CLANG_FORMAT_REQUIRED "9.0")
-if(CLANG_FORMAT)
+if (CLANG_FORMAT)
     get_program_version_major_minor(${CLANG_FORMAT} CLANG_FORMAT_VERSION)
     message(STATUS "Found clang-format: ${CLANG_FORMAT} (version: ${CLANG_FORMAT_VERSION})")
-endif()
+endif ()
 
-if(CHECK_CPP_STYLE)
-    if(CLANG_FORMAT)
-        if(NOT (CLANG_FORMAT_VERSION VERSION_EQUAL CLANG_FORMAT_REQUIRED))
-            message(FATAL_ERROR "required clang-format version is ${CLANG_FORMAT_REQUIRED}")
-        endif()
-    else()
+if (CHECK_CPP_STYLE)
+    if (CLANG_FORMAT)
+        if (NOT (CLANG_FORMAT_VERSION VERSION_GREATER_EQUAL CLANG_FORMAT_REQUIRED))
+            message(FATAL_ERROR "required minimum clang-format version is ${CLANG_FORMAT_REQUIRED}")
+        endif ()
+    else ()
         message(FATAL_ERROR "CHECK_CPP_STYLE=ON, but clang-format not found (required version: ${CLANG_FORMAT_REQUIRED})")
-    endif()
+    endif ()
 
     add_dependencies(checkers cppstyle)
-endif()
+endif ()
 
 add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h*
