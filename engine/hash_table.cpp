@@ -48,7 +48,7 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
                          uint16_t type_mask, HashEntry *hash_entry,
                          DataEntry *data_entry, HashEntry **entry_base,
                          SearchPurpose purpose) {
-  assert(purpose == SearchPurpose::READ || local_thread.id >= 0);
+  assert(purpose == SearchPurpose::READ || write_thread.id >= 0);
   assert(entry_base);
   assert((*entry_base) == nullptr);
   HashEntry *reusable_entry = nullptr;
@@ -123,7 +123,7 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
 
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
                        uint16_t type, uint64_t offset, bool is_update) {
-  assert(local_thread.id >= 0);
+  assert(write_thread.id >= 0);
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset);
   bool reused_entry = false;

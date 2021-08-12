@@ -237,7 +237,7 @@ void FreeList::Push(const SizedSpaceEntry &entry) {
 }
 
 void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
-  thread_cache_[local_thread.id].freelist.Push(entry);
+  thread_cache_[write_thread.id].freelist.Push(entry);
 }
 
 void PMEMAllocator::PopulateSpace() {
@@ -290,9 +290,9 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t map_size,
 bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
   if (segment_space_entry->size == num_segment_blocks_) {
-    thread_cache_[local_thread.id].segment_offset =
+    thread_cache_[write_thread.id].segment_offset =
         segment_space_entry->space_entry.offset;
-    thread_cache_[local_thread.id].segment_usable_blocks =
+    thread_cache_[write_thread.id].segment_usable_blocks =
         segment_space_entry->size;
     return false;
   }
@@ -318,7 +318,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
   if (b_size > num_segment_blocks_) {
     return space_entry;
   }
-  auto &thread_cache = thread_cache_[local_thread.id];
+  auto &thread_cache = thread_cache_[write_thread.id];
   bool full_segment = thread_cache.segment_usable_blocks < b_size;
   while (full_segment) {
     while (1) {

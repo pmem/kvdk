@@ -42,6 +42,7 @@ Status Skiplist::Rebuild() {
                                    HashTable::SearchPurpose::READ);
     // these nodes should be already created during data restoring
     if (s != Status::Ok) {
+      GlobalLogger.Error("Rebuild skiplist error\n");
       return s;
     }
     SkiplistNode *node = (SkiplistNode *)hash_entry.offset;
