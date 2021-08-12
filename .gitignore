@@ -39,3 +39,6 @@ cmake-build-*
 
 build/
 .cache/
+/doc/images
+/doc/impl_doc_cn.md
+/doc/impl_doc.md
