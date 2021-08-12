@@ -57,7 +57,7 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
-  local_thread.id = 0;
+  write_thread.id = 0;
   int res = create_dir_if_missing(name);
   if (res != 0) {
     GlobalLogger.Error("Create engine dir %s error\n", name.c_str());
@@ -82,7 +82,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
                                   pmem_allocator_, configs_.max_write_threads));
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
-  local_thread.id = -1;
+  write_thread.id = -1;
   return s;
 }
 
@@ -97,11 +97,11 @@ KVEngine::NewSortedIterator(const std::string &collection) {
 }
 
 Status KVEngine::MaybeInitWriteThread() {
-  return thread_manager_->MaybeInitThread(local_thread);
+  return thread_manager_->MaybeInitThread(write_thread);
 }
 
 Status KVEngine::RestoreData(uint64_t thread_id) {
-  local_thread.id = thread_id;
+  write_thread.id = thread_id;
   char existing_data_entry_buffer[sizeof(DLDataEntry)];
   char recovering_data_entry_buffer[sizeof(DLDataEntry)];
   DataEntry *existing_data_entry = (DataEntry *)existing_data_entry_buffer;
@@ -256,7 +256,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     segment_space.size -= recovering_data_entry->header.b_size;
     segment_space.space_entry.offset += recovering_data_entry->header.b_size;
   }
-  local_thread.id = -1;
+  write_thread.id = -1;
   restored_.fetch_add(cnt);
   return Status::Ok;
 }
@@ -712,14 +712,14 @@ Status KVEngine::SDelete(const std::string &collection,
 }
 
 Status KVEngine::MaybeInitPendingBatchFile() {
-  if (thread_res_[local_thread.id].persisted_pending_batch == nullptr) {
+  if (thread_res_[write_thread.id].persisted_pending_batch == nullptr) {
     int is_pmem;
     size_t mapped_len;
     uint64_t persisted_pending_file_size =
         MAX_WRITE_BATCH_SIZE * 8 + sizeof(PendingBatch);
-    if ((thread_res_[local_thread.id].persisted_pending_batch =
+    if ((thread_res_[write_thread.id].persisted_pending_batch =
              (PendingBatch *)pmem_map_file(
-                 persisted_pending_block_file(local_thread.id).c_str(),
+                 persisted_pending_block_file(write_thread.id).c_str(),
                  persisted_pending_file_size, PMEM_FILE_CREATE, 0666,
                  &mapped_len, &is_pmem)) == nullptr ||
         !is_pmem || mapped_len != persisted_pending_file_size) {
@@ -767,7 +767,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   PendingBatch pending_batch(PendingBatch::Stage::Processing,
                              write_batch.Size(), ts);
   pending_batch.PersistProcessing(
-      thread_res_[local_thread.id].persisted_pending_batch,
+      thread_res_[write_thread.id].persisted_pending_batch,
       space_entry_offsets);
 
   for (size_t i = 0; i < write_batch.Size(); i++) {
