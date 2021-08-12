@@ -47,8 +47,8 @@ bool HashTable::MatchHashEntry(const Slice &key, uint32_t hash_k_prefix,
 Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
                          uint16_t type_mask, HashEntry *hash_entry,
                          DataEntry *data_entry, HashEntry **entry_base,
-                         bool search_for_write) {
-  assert(!search_for_write || local_thread.id >= 0);
+                         SearchPurpose purpose) {
+  assert(purpose == SearchPurpose::READ || local_thread.id >= 0);
   assert(entry_base);
   assert((*entry_base) == nullptr);
   HashEntry *reusable_entry = nullptr;
@@ -81,9 +81,9 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
       return Status::Ok;
     }
 
-    if (search_for_write &&
+    if (purpose == SearchPurpose::WRITE &&
         (*entry_base)->header.type == STRING_DELETE_RECORD &&
-        (*entry_base)->header.reference == 0 &&
+        (*entry_base)->header.reusable == 1 &&
         (*entry_base)->header.key_prefix != key_hash_prefix) {
       reusable_entry = *entry_base;
     }
@@ -94,7 +94,7 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
     if (i % num_entries_per_bucket_ == 0) {
       char *next_off;
       if (i == entries) {
-        if (search_for_write) {
+        if (purpose > SearchPurpose::READ) {
           if (reusable_entry != nullptr) {
             *entry_base = reusable_entry;
             break;
@@ -125,19 +125,13 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
                        uint16_t type, uint64_t offset, bool is_update) {
   assert(local_thread.id >= 0);
 
-  uint32_t new_existing_pmem_records =
-      (type & DeleteDataEntryType)
-          ? (is_update ? entry_base->header.reference : 0)
-          : (is_update ? (entry_base->header.reference + 1) : 1);
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, new_existing_pmem_records,
-                           type, offset);
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset);
   bool reused_entry = false;
   if (!is_update && entry_base->header.type == STRING_DELETE_RECORD) {
     DataEntry *reused_data_entry =
         (DataEntry *)(pmem_allocator_->offset2addr(entry_base->offset));
-    pmem_allocator_->Free(SizedSpaceEntry(entry_base->offset,
-                                          reused_data_entry->header.b_size,
-                                          nullptr, nullptr));
+    pmem_allocator_->Free(
+        SizedSpaceEntry(entry_base->offset, reused_data_entry->header.b_size));
     reused_entry = true;
   }
 

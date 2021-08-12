@@ -297,8 +297,6 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
     return false;
   }
 
-  segment_space_entry->space_entry.hash_entry_mutex = nullptr;
-  segment_space_entry->space_entry.hash_entry_reference = nullptr;
   if (segment_space_entry->size > 0) {
     Free(*segment_space_entry);
   }
@@ -342,10 +340,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
         space_entry.size = b_size;
         thread_cache.free_entry.size -= b_size;
         thread_cache.free_entry.space_entry.offset += b_size;
-        if (thread_cache.free_entry.size > 0) {
-          thread_cache.free_entry.space_entry.hash_entry_reference = nullptr;
-          thread_cache.free_entry.space_entry.hash_entry_mutex = nullptr;
-        }
         return space_entry;
       }
       if (thread_cache.free_entry.size > 0) {
@@ -364,8 +358,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
     // to the free list
     if (thread_cache.segment_usable_blocks > 0) {
       Free(SizedSpaceEntry(thread_cache.segment_offset,
-                           thread_cache.segment_usable_blocks, nullptr,
-                           nullptr));
+                           thread_cache.segment_usable_blocks));
     }
 
     thread_cache.segment_offset =
@@ -384,8 +377,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
   }
   space_entry.size = b_size;
   space_entry.space_entry.offset = thread_cache.segment_offset;
-  space_entry.space_entry.hash_entry_mutex = nullptr;
-  space_entry.space_entry.hash_entry_reference = nullptr;
   thread_cache.segment_offset += space_entry.size;
   thread_cache.segment_usable_blocks -= space_entry.size;
   return space_entry;

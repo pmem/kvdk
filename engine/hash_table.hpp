@@ -15,6 +15,36 @@
 
 namespace KVDK_NAMESPACE {
 
+struct HashHeader {
+  uint32_t key_prefix;
+  uint16_t type;
+  uint8_t reusable;
+  uint8_t padding; // for future usage
+};
+
+struct HashEntry {
+  HashEntry() = default;
+  HashEntry(uint32_t kp, uint16_t t, uint64_t bo)
+      : header({kp, t, 0, 0}), offset(bo) {}
+
+  HashHeader header;
+  uint64_t offset;
+
+  static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
+  static void CopyOffset(HashEntry *dst, HashEntry *src) {
+    dst->offset = src->offset;
+  }
+};
+
+struct HashCache {
+  HashEntry *entry_base = nullptr;
+};
+
+struct Slot {
+  HashCache hash_cache;
+  SpinMutex spin;
+};
+
 class HashTable {
 public:
   struct KeyHashHint {
@@ -22,6 +52,15 @@ public:
     uint32_t bucket;
     uint32_t slot;
     SpinMutex *spin;
+  };
+
+  enum class SearchPurpose : uint8_t {
+    READ = 0,
+    // More read only purpose here
+
+    WRITE,
+    RECOVER,
+    // More write purpose here
   };
 
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
@@ -53,7 +92,7 @@ public:
 
   Status Search(const KeyHashHint &hint, const Slice &key, uint16_t type_mask,
                 HashEntry *hash_entry, DataEntry *data_entry,
-                HashEntry **entry_base, bool search_for_write);
+                HashEntry **entry_base, SearchPurpose purpose);
 
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
               uint64_t offset, bool is_update);
