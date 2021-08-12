@@ -26,7 +26,7 @@ protected:
     random_str(&str_pool[0], str_pool_length);
     configs.pmem_file_size = (16ULL << 30);
     configs.populate_pmem_space = false;
-    configs.num_hash_buckets = (1 << 5);
+    configs.hash_bucket_num = (1 << 5);
     configs.hash_bucket_size = 64;
     configs.pmem_segment_blocks = 8 * 1024;
     db_path = "/mnt/pmem0/data";
