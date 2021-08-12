@@ -345,6 +345,9 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
       0666, &mapped_len, &is_pmem);
   if (configs == nullptr || !is_pmem ||
       mapped_len != sizeof(ImmutableConfigs)) {
+    GlobalLogger.Error("Open immutable configs file error %s\n",
+                       !is_pmem ? (dir_ + "is not a valid pmem path").c_str()
+                                : "");
     return Status::IOError;
   }
   if (configs->Valid()) {
