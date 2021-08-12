@@ -24,7 +24,12 @@ git clone --recurse-submodules https://github.com/pmem/kvdk.git
 ## Building
 ```bash
 mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build .
+cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
+```
+
+Before each commit, please check its coding style with below instructions
+```bash
+cmake .. -DCHECK_CPP_STYLE=ON && make -j
 ```
 
 ## Benchmarks
