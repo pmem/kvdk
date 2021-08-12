@@ -58,6 +58,13 @@ if (BUILD_TUTORIAL)
     target_link_libraries(dbtutorial PUBLIC engine)
 endif ()
 
+option(BUILD_ALLOC_BENCH "Build the benchmark for allocators" ON)
+if (BUILD_ALLOC_BENCH)
+    set(ALLOC_BENCH_SOURCES benchmark/alloc_bench.cpp)
+    add_executable(dballocbench ${ALLOC_BENCH_SOURCES})
+    target_link_libraries(dballocbench PUBLIC engine)
+endif ()
+
 add_custom_target(checkers ALL)
 add_custom_target(cppstyle)
 add_custom_target(cppformat)
