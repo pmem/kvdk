@@ -52,6 +52,7 @@ int main()
 	}
 
 	const char* pmem_path = "/mnt/pmem0/bench_allocator";
+	kvdk::Status status;
 	kvdk::Configs engine_configs;
 	{
 		engine_configs.pmem_file_size = sz_alloc;
