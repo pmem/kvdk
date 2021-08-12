@@ -13,35 +13,6 @@
 
 namespace KVDK_NAMESPACE {
 
-struct HashHeader {
-  uint32_t key_prefix;
-  uint16_t reference;
-  uint16_t type;
-};
-
-struct HashEntry {
-  HashEntry() = default;
-  HashEntry(uint32_t kp, uint16_t r, uint16_t t, uint64_t bo)
-      : header({kp, r, t}), offset(bo) {}
-
-  HashHeader header;
-  uint64_t offset;
-
-  static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
-  static void CopyOffset(HashEntry *dst, HashEntry *src) {
-    dst->offset = src->offset;
-  }
-};
-
-struct HashCache {
-  HashEntry *entry_base = nullptr;
-};
-
-struct Slot {
-  HashCache hash_cache;
-  SpinMutex spin;
-};
-
 struct PendingBatch {
   enum Stage {
     Done = 0,
