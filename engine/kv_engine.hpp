@@ -158,7 +158,7 @@ private:
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;
 
-  public:
+public:
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   Configs configs_;
 };
