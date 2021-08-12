@@ -51,7 +51,7 @@ int main()
 			std::cout << sz << std::endl;
 	}
 
-	const char* pmem_path = "/mnt/pmem0/bench_allocator";
+	kvdk::Engine* engine;
 	kvdk::Status status;
 	kvdk::Configs engine_configs;
 	{
@@ -61,14 +61,17 @@ int main()
 		engine_configs.max_write_threads = 48;
 	}
 
-	kvdk::PMEMAllocator pmem_alloc
-	{
-		pmem_path,
-		engine_configs.pmem_file_size,
-		engine_configs.pmem_segment_blocks,
-		engine_configs.pmem_block_size,
-		engine_configs.max_write_threads
-	};
+	std::string engine_path{ "/mnt/pmem0/bench_allocator" };
+	int sink = system(std::string{ "rm -rf " + engine_path + "\n" }.c_str());
+
+	status = kvdk::Engine::Open(engine_path, &engine, engine_configs, stdout);
+	assert(status == kvdk::Status::Ok);
+	if (status == kvdk::Status::Ok)
+		printf("Successfully opened a KVDK instance.\n");
+	else
+		return -1;
+
+	std::shared_ptr<kvdk::PMEMAllocator> pmem_alloc = engine->pmem_allocator_;
 
 	std::vector<kvdk::SizedSpaceEntry> vec_entries;
 	std::chrono::high_resolution_clock clock;
