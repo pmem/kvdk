@@ -56,10 +56,11 @@ public:
 
   enum class SearchPurpose : uint8_t {
     READ = 0,
+    // More read only purpose here
 
-    // All write purpose shoud larger than read
     WRITE,
     RECOVER,
+    // More write purpose here
   };
 
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,

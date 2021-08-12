@@ -22,7 +22,7 @@ endfunction()
 # instead.
 # ${name} must be unique.
 function(add_cppstyle name)
-	if(NOT CLANG_FORMAT OR NOT (CLANG_FORMAT_VERSION VERSION_GREATER_EQUAL CLANG_FORMAT_REQUIRED))
+	if(NOT CLANG_FORMAT OR NOT (CLANG_FORMAT_VERSION VERSION_GREATER_EQUAL CLANG_FORMAT_MINIMUM_REQUIRED))
 		return()
 	endif()
 
