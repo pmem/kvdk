@@ -1,11 +1,9 @@
-build/
+# IDE related
 .idea/
 cmake-build-*
 .vscode/
-/.vs
-/doc/impl_doc_cn.md
-/doc/impl_doc.md
-/doc/images
+.vs/
+
 # Prerequisites
 *.d
 
@@ -29,7 +27,6 @@ cmake-build-*
 *.smod
 
 # Compiled Static libraries
-
 *.lai
 *.la
 *.a
@@ -40,20 +37,5 @@ cmake-build-*
 *.out
 *.app
 
-# Judge
-judge/data
-judge/performance.log
-judge/judge
-
-# Vscode
-.vscode
-tests/judge
-results/
-.idea/
-tests/test
-tests/bench
-
-bin/
 build/
-cmake-build-*
 .cache/

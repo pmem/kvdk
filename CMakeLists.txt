@@ -4,6 +4,9 @@ project(KVDK VERSION 1.0
         DESCRIPTION "A fast persistent KV engine for Persistent Memory"
         LANGUAGES CXX)
 
+set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
+
 set_property(GLOBAL PROPERTY CXX_STANDARD 14)
 set(OPT "-msse4 -mavx -mavx2 -O2 -fno-omit-frame-pointer -momit-leaf-frame-pointer")
 
@@ -54,3 +57,34 @@ if (BUILD_TUTORIAL)
     add_executable(dbtutorial ${TUTORIAL_SOURCES})
     target_link_libraries(dbtutorial PUBLIC engine)
 endif ()
+
+add_custom_target(checkers ALL)
+add_custom_target(cppstyle)
+add_custom_target(cppformat)
+
+find_program(CLANG_FORMAT NAMES clang-format-9 clang-format-9.0 clang-format)
+set(CLANG_FORMAT_REQUIRED "9.0")
+if(CLANG_FORMAT)
+    get_program_version_major_minor(${CLANG_FORMAT} CLANG_FORMAT_VERSION)
+    message(STATUS "Found clang-format: ${CLANG_FORMAT} (version: ${CLANG_FORMAT_VERSION})")
+endif()
+
+if(CHECK_CPP_STYLE)
+    if(CLANG_FORMAT)
+        if(NOT (CLANG_FORMAT_VERSION VERSION_EQUAL CLANG_FORMAT_REQUIRED))
+            message(FATAL_ERROR "required clang-format version is ${CLANG_FORMAT_REQUIRED}")
+        endif()
+    else()
+        message(FATAL_ERROR "CHECK_CPP_STYLE=ON, but clang-format not found (required version: ${CLANG_FORMAT_REQUIRED})")
+    endif()
+
+    add_dependencies(checkers cppstyle)
+endif()
+
+add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h*
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*)

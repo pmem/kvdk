@@ -24,14 +24,21 @@ git clone --recurse-submodules https://github.com/pmem/kvdk.git
 ## Building
 ```bash
 mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build .
+cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
+```
+
+Before each commit, please check its coding style with below instructions
+```bash
+cmake .. -DCHECK_CPP_STYLE=ON && make -j
 ```
 
 ## Benchmarks
-[Here](./docs/benchmark.md) are the examples on how to benchmark the performance of KVDK on your own systems.
+[Here](./doc/benchmark.md) are the examples on how to benchmark the performance of KVDK on your own systems.
 
 ## Documentations
 
 ### User Guide
+
+Please reference to [User guide](./doc/user_doc.md) for API introductions of KVDK.
 
 ### Architecture
