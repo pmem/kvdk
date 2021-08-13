@@ -12,11 +12,7 @@ namespace KVDK_NAMESPACE {
 int get_usable_pu(void) {
   hwloc_topology_t topology;
   hwloc_bitmap_t set;
-  hwloc_const_bitmap_t cset_available, cset_all;
-  hwloc_obj_t obj;
-  char *buffer;
-  char type[64];
-  unsigned i;
+  hwloc_const_bitmap_t cset_available;
   int err;
 
   /* create a topology */

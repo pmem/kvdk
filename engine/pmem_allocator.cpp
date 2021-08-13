@@ -8,6 +8,7 @@
 #include "libpmem.h"
 #include "pmem_allocator.hpp"
 #include "thread_manager.hpp"
+#include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -247,9 +248,22 @@ void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
 void PMEMAllocator::PopulateSpace() {
   GlobalLogger.Log("Populating PMEM space ...\n");
   std::vector<std::thread> ths;
-  for (int i = 0; i < 16; i++) {
+
+  int pu = get_usable_pu();
+  if (pu <= 0) {
+    pu = 1;
+  } else if (pu > 16) {
+    // 16 is a moderate concurrent number for writing PMEM.
+    pu = 16;
+  }
+  for (int i = 0; i < pu; i++) {
     ths.emplace_back([=]() {
-      pmem_memset(pmem_space_ + mapped_size_ * i / 16, 0, mapped_size_ / 16,
+      uint64_t len = mapped_size_ / pu;
+      // Re-calculate the length of last chunk to cover the
+      // case that mapped_size_ is not divisible by pu.
+      if (i == pu - 1)
+        len = mapped_size_ - (pu - 1) * len;
+      pmem_memset(pmem_space_ + mapped_size_ * i / pu, 0, len,
                   PMEM_F_MEM_NONTEMPORAL);
     });
   }
