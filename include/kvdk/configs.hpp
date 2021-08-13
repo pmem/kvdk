@@ -54,10 +54,10 @@ struct Configs {
   //
   // It should be 2^n and should smaller than 2^32.
   // The original hash table size would be (hash_bucket_size *
-  // num_hash_buckets)
+  // hash_bucket_num)
   // More buckets means less write contention, faster hash
   // search, but more internal memory fragmentation.
-  uint64_t num_hash_buckets = (1 << 27);
+  uint64_t hash_bucket_num = (1 << 27);
 
   // The number of buckets per hash slot.
   //

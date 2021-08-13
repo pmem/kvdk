@@ -64,10 +64,11 @@ public:
   };
 
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
-            uint32_t slot_grain,
+            uint32_t num_buckets_per_slot,
             const std::shared_ptr<PMEMAllocator> &pmem_allocator,
             uint32_t write_threads)
-      : num_hash_buckets_(hash_bucket_num), slot_grain_(slot_grain),
+      : hash_bucket_num_(hash_bucket_num),
+        num_buckets_per_slot_(num_buckets_per_slot),
         hash_bucket_size_(hash_bucket_size),
         dram_allocator_(new DRAMAllocator(write_threads)),
         pmem_allocator_(pmem_allocator),
@@ -77,7 +78,7 @@ public:
         (dram_allocator_->Allocate(hash_bucket_size * hash_bucket_num)
              .space_entry.offset));
     //    memset(main_buckets_, 0, hash_bucket_size * hash_bucket_num);
-    slots_.resize(hash_bucket_num / slot_grain);
+    slots_.resize(hash_bucket_num / num_buckets_per_slot);
     hash_bucket_entries_.resize(hash_bucket_num, 0);
   }
 
@@ -99,18 +100,20 @@ public:
 
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
-    return key_hash_value & (num_hash_buckets_ - 1);
+    return key_hash_value & (hash_bucket_num_ - 1);
   }
 
-  inline uint32_t get_slot_num(uint32_t bucket) { return bucket / slot_grain_; }
+  inline uint32_t get_slot_num(uint32_t bucket) {
+    return bucket / num_buckets_per_slot_;
+  }
 
   bool MatchHashEntry(const Slice &key, uint32_t hash_k_prefix,
                       uint16_t target_type, const HashEntry *hash_entry,
                       void *data_entry);
 
   std::vector<uint64_t> hash_bucket_entries_;
-  const uint64_t num_hash_buckets_;
-  const uint32_t slot_grain_;
+  const uint64_t hash_bucket_num_;
+  const uint32_t num_buckets_per_slot_;
   const uint32_t hash_bucket_size_;
   const uint64_t num_entries_per_bucket_;
   std::vector<Slot> slots_;

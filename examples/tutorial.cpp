@@ -233,7 +233,7 @@ int main() {
     // details.
     engine_configs.pmem_file_size = (1ull << 20);
     engine_configs.pmem_segment_blocks = (1ull << 8);
-    engine_configs.num_hash_buckets = (1ull << 10);
+    engine_configs.hash_bucket_num = (1ull << 10);
   }
   std::string engine_path{pmem_path};
 

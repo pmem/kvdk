@@ -44,7 +44,7 @@ int main()
       // details.
       engine_configs.pmem_file_size = (1ull << 20);
       engine_configs.pmem_segment_blocks = (1ull << 8);
-      engine_configs.num_hash_buckets = (1ull << 10);
+      engine_configs.hash_bucket_num = (1ull << 10);
     }
     // The KVDK instance is mounted as a directory
     // /mnt/pmem0/tutorial_kvdk_example.
@@ -413,7 +413,7 @@ Specified by `kvdk::Configs::hash_bucket_size`. Defaulted to 128(Bytes).
 Larger HashBucket Size will slightly improve performance but will occupy larger space. Please read Architecture Documentation for details before tuning this parameter.
 
 ### Number of HashBucket Chains
-Specified by `kvdk::Configs::num_hash_buckets`. Greater number will improve performance by reducing hash conflicts at the cost of greater DRAM space. Please read Architecture Documentation for details before tuning this parameter.
+Specified by `kvdk::Configs::hash_bucket_num`. Greater number will improve performance by reducing hash conflicts at the cost of greater DRAM space. Please read Architecture Documentation for details before tuning this parameter.
 
 ### Buckets per Slot
 Specified by `kvdk::Configs::num_buckets_per_slot`. Smaller number will improve performance by reducing lock contentions and improving caching at the cost of greater DRAM space. Please read Architecture Documentation for details before tuning this parameter.
