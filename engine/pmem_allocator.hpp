@@ -15,77 +15,6 @@
 
 namespace KVDK_NAMESPACE {
 
-class SpaceMap {
-public:
-  SpaceMap(uint64_t size) : map_(size, {false, 0}), spins_(size / 64 + 1) {}
-
-  uint64_t TestAndUnset(uint64_t offset, uint64_t length);
-
-  uint64_t FindAndUnset(uint64_t &start_offset, uint64_t max_length,
-                        uint64_t target_length);
-
-  uint64_t MergeAndUnset(uint64_t offset, uint64_t max_length,
-                         uint64_t target_length);
-
-  void Set(uint64_t offset, uint64_t length);
-
-  uint64_t Size() { return map_.size(); }
-
-private:
-  struct MapToken {
-  public:
-    MapToken(bool is_start, uint8_t size)
-        : token(size | (is_start ? (1 << 7) : 0)) {}
-    uint8_t Size() { return token & (INT8_MAX); }
-    void Clear() { token = 0; }
-    bool Empty() { return token == 0; }
-    bool IsStart() { return token & (1 << 7); }
-
-  private:
-    uint8_t token;
-  };
-
-  std::vector<MapToken> map_;
-  std::vector<SpinMutex> spins_;
-};
-
-class FreeList {
-public:
-  FreeList(uint32_t max_b_size, std::shared_ptr<SpaceMap> s)
-      : offsets_(max_b_size), space_map_(s) {}
-
-  FreeList(std::shared_ptr<SpaceMap> s)
-      : offsets_(FREE_LIST_MAX_BLOCK), space_map_(s) {}
-
-  void Push(const SizedSpaceEntry &entry);
-
-  bool Get(uint32_t b_size, SizedSpaceEntry *space_entry);
-
-  bool MergeGet(uint32_t b_size, uint64_t segment_blocks,
-                SizedSpaceEntry *space_entry);
-
-private:
-  uint64_t MergeSpace(const SpaceEntry &space_entry, uint64_t max_size,
-                      uint64_t target_size) {
-    if (target_size > max_size) {
-      return false;
-    }
-    uint64_t size =
-        space_map_->MergeAndUnset(space_entry.offset, max_size, target_size);
-    return size;
-  }
-  class SpaceCmp {
-  public:
-    bool operator()(const SizedSpaceEntry &s1, const SizedSpaceEntry &s2) {
-      return s1.size > s2.size;
-    }
-  };
-
-  std::vector<std::vector<SpaceEntry>> offsets_;
-  std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
-  std::shared_ptr<SpaceMap> space_map_;
-};
-
 class PMEMAllocator : public Allocator {
 public:
   PMEMAllocator(const std::string &pmem_file, uint64_t map_size,
@@ -120,6 +49,80 @@ public:
   bool FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry);
 
 private:
+  class SpaceMap {
+  public:
+    SpaceMap(uint64_t size, uint32_t block_size)
+        : block_size_(block_size), map_(size, {false, 0}),
+          spins_(size / block_size + 1) {}
+
+    uint64_t TestAndUnset(uint64_t offset, uint64_t length);
+
+    uint64_t FindAndUnset(uint64_t &start_offset, uint64_t max_length,
+                          uint64_t target_length);
+
+    uint64_t MergeAndUnset(uint64_t offset, uint64_t max_length,
+                           uint64_t target_length);
+
+    void Set(uint64_t offset, uint64_t length);
+
+    uint64_t Size() { return map_.size(); }
+
+  private:
+    struct MapToken {
+    public:
+      MapToken(bool is_start, uint8_t size)
+          : token(size | (is_start ? (1 << 7) : 0)) {}
+      uint8_t Size() { return token & (INT8_MAX); }
+      void Clear() { token = 0; }
+      bool Empty() { return token == 0; }
+      bool IsStart() { return token & (1 << 7); }
+
+    private:
+      uint8_t token;
+    };
+
+    const uint32_t block_size_;
+    std::vector<MapToken> map_;
+    std::vector<SpinMutex> spins_;
+  };
+
+  class FreeList {
+  public:
+    FreeList(uint32_t max_b_size, std::shared_ptr<SpaceMap> s)
+        : offsets_(max_b_size), space_map_(s) {}
+
+    FreeList(std::shared_ptr<SpaceMap> s)
+        : offsets_(FREE_LIST_MAX_BLOCK), space_map_(s) {}
+
+    void Push(const SizedSpaceEntry &entry);
+
+    bool Get(uint32_t b_size, SizedSpaceEntry *space_entry);
+
+    bool MergeGet(uint32_t b_size, uint64_t segment_blocks,
+                  SizedSpaceEntry *space_entry);
+
+  private:
+    uint64_t MergeSpace(const SpaceEntry &space_entry, uint64_t max_size,
+                        uint64_t target_size) {
+      if (target_size > max_size) {
+        return false;
+      }
+      uint64_t size =
+          space_map_->MergeAndUnset(space_entry.offset, max_size, target_size);
+      return size;
+    }
+    class SpaceCmp {
+    public:
+      bool operator()(const SizedSpaceEntry &s1, const SizedSpaceEntry &s2) {
+        return s1.size > s2.size;
+      }
+    };
+
+    std::vector<std::vector<SpaceEntry>> offsets_;
+    std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
+    std::shared_ptr<SpaceMap> space_map_;
+  };
+
   struct ThreadCache {
     ThreadCache(std::shared_ptr<SpaceMap> space_map) : freelist(space_map) {}
 
