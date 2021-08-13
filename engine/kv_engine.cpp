@@ -76,7 +76,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
 
   thread_res_.resize(configs_.max_write_threads);
   thread_manager_.reset(new ThreadManager(configs_.max_write_threads));
-  hash_table_.reset(new HashTable(configs_.num_hash_buckets,
+  hash_table_.reset(new HashTable(configs_.hash_bucket_num,
                                   configs_.hash_bucket_size,
                                   configs_.num_buckets_per_slot,
                                   pmem_allocator_, configs_.max_write_threads));
@@ -660,6 +660,13 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
     return Status::InvalidConfiguration;
   }
 
+  if (configs.pmem_file_size % configs.pmem_block_size != 0) {
+    GlobalLogger.Error(
+        "pmem file size should align to pmem block size (%d bytes)\n",
+        configs.pmem_block_size);
+    return Status::InvalidConfiguration;
+  }
+
   if (configs.pmem_segment_blocks * configs.pmem_block_size *
           configs.max_write_threads >
       configs.pmem_file_size) {
@@ -674,21 +681,21 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
     return Status::InvalidConfiguration;
   }
 
-  if (!is_2pown(configs.num_hash_buckets) ||
+  if (!is_2pown(configs.hash_bucket_num) ||
       !is_2pown(configs.num_buckets_per_slot)) {
     GlobalLogger.Error(
-        "num_hash_buckets and num_buckets_per_slot should be 2^n\n");
+        "hash_bucket_num and num_buckets_per_slot should be 2^n\n");
     return Status::InvalidConfiguration;
   }
 
-  if (configs.num_hash_buckets >= ((uint64_t)1 << 32)) {
+  if (configs.hash_bucket_num >= ((uint64_t)1 << 32)) {
     GlobalLogger.Error("too many hash buckets\n");
     return Status::InvalidConfiguration;
   }
 
-  if (configs.num_buckets_per_slot > configs.num_hash_buckets) {
+  if (configs.num_buckets_per_slot > configs.hash_bucket_num) {
     GlobalLogger.Error(
-        "num_buckets_per_slot should less than num_hash_buckets\n");
+        "num_buckets_per_slot should less than hash_bucket_num\n");
     return Status::InvalidConfiguration;
   }
 
