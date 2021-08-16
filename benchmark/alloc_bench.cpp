@@ -23,7 +23,7 @@ uint64_t size_allocated(const std::deque<kvdk::SizedSpaceEntry>& entries)
 constexpr uint64_t KB = 1<<10;
 constexpr uint64_t MB = 1<<20;
 constexpr uint64_t GB = 1<<30;
-constexpr double load_factor = 0.78;
+constexpr double load_factor = 0.8;
 
 int main()
 {
@@ -34,7 +34,8 @@ int main()
 	uint64_t n_alloc = 16*MB;
 	uint64_t sz_avg_alloc = 1024;
 	double alpha = 2;
-	std::gamma_distribution<> dist{ alpha,static_cast<double>(sz_avg_alloc)/alpha };
+	// std::gamma_distribution<> dist{ alpha,static_cast<double>(sz_avg_alloc)/alpha };
+	std::uniform_real_distribution<> dist{ 64,4096 };
 	uint64_t sz_max = n_alloc * sz_avg_alloc;	// Allocate approximately 16GB
 	
 	kvdk::Engine* engine;
@@ -71,8 +72,8 @@ int main()
 		// Don't allocate spaces too large or too small
 		// Too small will cause many inner fragmentation
 		// Too large will fail the allocation
-		while (sz > (sz_segment/2) || sz < engine_configs.pmem_block_size)
-			sz = static_cast<uint64_t>(dist(re));
+		// while (sz > (sz_segment/2) || sz < engine_configs.pmem_block_size)
+		// 	sz = static_cast<uint64_t>(dist(re));
 		deq_sz.push_back(sz);
 	}
 
@@ -92,6 +93,10 @@ int main()
 		start = clock.now();
 		while (true)
 		{
+			if(ind_last==9954591)
+			{
+				std::cout<<"Break point for debugging!"<<std::endl;
+			}
 			auto sz = deq_sz[ind_last % deq_sz.size()];
 			auto entry = pmem_alloc->Allocate(sz);
 			if (entry.size==0)
