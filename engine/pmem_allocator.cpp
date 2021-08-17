@@ -381,6 +381,11 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
 
     thread_cache.segment_offset =
         offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
+    thread_cache.segment_usable_blocks =
+        thread_cache.segment_offset >= max_offset_
+            ? 0
+            : std::min(num_segment_blocks_,
+                       max_offset_ - thread_cache.segment_offset);
     if (thread_cache.segment_offset >= max_offset_ - b_size) {
       if (thread_cache.freelist.MergeGet(b_size, num_segment_blocks_,
                                          &thread_cache.free_entry)) {
@@ -389,8 +394,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
       GlobalLogger.Error("PMEM OVERFLOW!\n");
       return space_entry;
     }
-    thread_cache.segment_usable_blocks = std::min(
-        num_segment_blocks_, max_offset_ - thread_cache.segment_offset);
     full_segment = false;
   }
   space_entry.size = b_size;
