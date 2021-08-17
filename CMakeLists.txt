@@ -29,13 +29,14 @@ set(SOURCES
         engine/hash_list.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator.cpp
-        engine/thread_manager.cpp)
+        engine/thread_manager.cpp
+        engine/utils.cpp)
 
 
 # .a library
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
-target_link_libraries(engine PUBLIC pthread pmem gflags)
+target_link_libraries(engine PUBLIC pthread pmem gflags hwloc)
 
 # executables
 add_executable(bench benchmark/bench.cpp)

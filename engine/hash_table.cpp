@@ -105,6 +105,7 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
               return Status::MemoryOverflow;
             }
             next_off = dram_allocator_->offset2addr(space.space_entry.offset);
+            memset(next_off, 0, space.size);
             memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
           }
         } else {

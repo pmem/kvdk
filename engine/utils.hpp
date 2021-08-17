@@ -190,4 +190,8 @@ public:
 
   SpinMutex() : locked(ATOMIC_FLAG_INIT) {}
 };
+
+// Return the number of process unit (PU) that are bound to the kvdk instance
+int get_usable_pu(void);
+
 } // namespace KVDK_NAMESPACE
