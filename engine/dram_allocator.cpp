@@ -23,19 +23,19 @@ SizedSpaceEntry DRAMAllocator::Allocate(uint64_t size) {
     return entry;
   }
 
-  if (thread_cache_[local_thread.id].usable_bytes < size) {
-    thread_cache_[local_thread.id].chunk_addr = (char *)malloc(chunk_size_);
-    if (thread_cache_[local_thread.id].chunk_addr == nullptr) {
+  if (thread_cache_[write_thread.id].usable_bytes < size) {
+    thread_cache_[write_thread.id].chunk_addr = (char *)malloc(chunk_size_);
+    if (thread_cache_[write_thread.id].chunk_addr == nullptr) {
       return entry;
     }
-    thread_cache_[local_thread.id].usable_bytes = chunk_size_;
+    thread_cache_[write_thread.id].usable_bytes = chunk_size_;
   }
 
   entry.size = size;
   entry.space_entry.offset =
-      addr2offset(thread_cache_[local_thread.id].chunk_addr);
-  thread_cache_[local_thread.id].chunk_addr += size;
-  thread_cache_[local_thread.id].usable_bytes -= size;
+      addr2offset(thread_cache_[write_thread.id].chunk_addr);
+  thread_cache_[write_thread.id].chunk_addr += size;
+  thread_cache_[write_thread.id].usable_bytes -= size;
   return entry;
 }
 } // namespace KVDK_NAMESPACE

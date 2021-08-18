@@ -36,6 +36,6 @@ private:
   SpinMutex spin_;
 };
 
-extern thread_local Thread local_thread;
+extern thread_local Thread write_thread;
 
 } // namespace KVDK_NAMESPACE

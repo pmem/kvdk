@@ -29,13 +29,14 @@ set(SOURCES
         engine/hash_list.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator.cpp
-        engine/thread_manager.cpp)
+        engine/thread_manager.cpp
+        engine/utils.cpp)
 
 
 # .a library
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
-target_link_libraries(engine PUBLIC pthread pmem gflags)
+target_link_libraries(engine PUBLIC pthread pmem gflags hwloc)
 
 # executables
 add_executable(bench benchmark/bench.cpp)
@@ -70,23 +71,23 @@ add_custom_target(cppstyle)
 add_custom_target(cppformat)
 
 find_program(CLANG_FORMAT NAMES clang-format-9 clang-format-9.0 clang-format)
-set(CLANG_FORMAT_REQUIRED "9.0")
-if(CLANG_FORMAT)
+set(CLANG_FORMAT_MINIMUM_REQUIRED "9.0")
+if (CLANG_FORMAT)
     get_program_version_major_minor(${CLANG_FORMAT} CLANG_FORMAT_VERSION)
     message(STATUS "Found clang-format: ${CLANG_FORMAT} (version: ${CLANG_FORMAT_VERSION})")
-endif()
+endif ()
 
-if(CHECK_CPP_STYLE)
-    if(CLANG_FORMAT)
-        if(NOT (CLANG_FORMAT_VERSION VERSION_EQUAL CLANG_FORMAT_REQUIRED))
-            message(FATAL_ERROR "required clang-format version is ${CLANG_FORMAT_REQUIRED}")
-        endif()
-    else()
-        message(FATAL_ERROR "CHECK_CPP_STYLE=ON, but clang-format not found (required version: ${CLANG_FORMAT_REQUIRED})")
-    endif()
+if (CHECK_CPP_STYLE)
+    if (CLANG_FORMAT)
+        if (NOT (CLANG_FORMAT_VERSION VERSION_GREATER_EQUAL CLANG_FORMAT_MINIMUM_REQUIRED))
+            message(FATAL_ERROR "minimum required clang-format version is ${CCLANG_FORMAT_MINIMUM_REQUIRED}")
+        endif ()
+    else ()
+        message(FATAL_ERROR "CHECK_CPP_STYLE=ON, but clang-format not found (required version: ${CLANG_FORMAT_MINIMUM_REQUIRED})")
+    endif ()
 
     add_dependencies(checkers cppstyle)
-endif()
+endif ()
 
 add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h*
