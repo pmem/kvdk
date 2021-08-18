@@ -338,13 +338,19 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
   }
   auto &thread_cache = thread_cache_[write_thread.id];
   bool full_segment = thread_cache.segment_usable_blocks < b_size;
+  int k=0;
   while (full_segment) {
     while (1) {
+      ++k;
+        assert(thread_cache.segment_offset < (1ull << 28));
+
       // allocate from free list space
       if (thread_cache.free_entry.size >= b_size) {
         // Padding remaining space
         auto extra_space = thread_cache.free_entry.size - b_size;
         // TODO optimize, do not write PMEM
+          assert(thread_cache.segment_offset < (1ull << 28));
+
         if (extra_space >= FREE_SPACE_PADDING_BLOCK) {
           DataHeader header(0, extra_space);
           pmem_memcpy_persist(
@@ -353,6 +359,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
         } else {
           b_size = thread_cache.free_entry.size;
         }
+  assert(thread_cache.segment_offset < (1ull << 28));
 
         space_entry = thread_cache.free_entry;
         space_entry.size = b_size;
@@ -392,6 +399,8 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
         continue;
       }
       GlobalLogger.Error("PMEM OVERFLOW!\n");
+        assert(thread_cache.segment_offset < (1ull << 28));
+
       return space_entry;
     }
     full_segment = false;
@@ -400,6 +409,8 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
   space_entry.space_entry.offset = thread_cache.segment_offset;
   thread_cache.segment_offset += space_entry.size;
   thread_cache.segment_usable_blocks -= space_entry.size;
+    assert(thread_cache.segment_offset < (1ull << 28));
+
   return space_entry;
 }
 
