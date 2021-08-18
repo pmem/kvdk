@@ -166,7 +166,7 @@ public:
     while (locked.test_and_set(std::memory_order_acquire)) {
       asm volatile("pause");
     }
-    //    owner = local_thread.id;
+    //    owner = write_thread.id;
   }
 
   void unlock() {
@@ -178,11 +178,11 @@ public:
     if (locked.test_and_set(std::memory_order_acquire)) {
       return false;
     }
-    //    owner = local_thread.id;
+    //    owner = write_thread.id;
     return true;
   }
 
-  //  bool hold() { return owner == local_thread.id; }
+  //  bool hold() { return owner == write_thread.id; }
 
   SpinMutex(const SpinMutex &s) : locked(ATOMIC_FLAG_INIT) {}
 
@@ -190,4 +190,8 @@ public:
 
   SpinMutex() : locked(ATOMIC_FLAG_INIT) {}
 };
+
+// Return the number of process unit (PU) that are bound to the kvdk instance
+int get_usable_pu(void);
+
 } // namespace KVDK_NAMESPACE

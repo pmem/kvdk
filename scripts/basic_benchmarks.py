@@ -8,6 +8,7 @@ instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 benchmark_threads = 48
 kvdk_max_write_threads = 48
 duration = 10
+populate = 1
 
 numanode = 0
 bin = "../build/bench"
@@ -25,7 +26,8 @@ if __name__ == "__main__":
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
         num = data_size // (vs + 8)
-        para = "-value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={}".format(
+        para = "-populate={} -value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={}".format(
+            populate,
             vs,
             benchmark_threads,
             duration,

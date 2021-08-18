@@ -8,14 +8,16 @@
 #include "libpmem.h"
 #include "pmem_allocator.hpp"
 #include "thread_manager.hpp"
+#include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
 
-uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
+uint64_t PMEMAllocator::SpaceMap::TestAndUnset(uint64_t offset,
+                                               uint64_t length) {
   uint64_t res = 0;
   uint64_t cur = offset;
-  std::lock_guard<SpinMutex> start_lg(spins_[cur / 64]);
-  SpinMutex *last_lock = &spins_[cur / 64];
+  std::lock_guard<SpinMutex> start_lg(spins_[cur / block_size_]);
+  SpinMutex *last_lock = &spins_[cur / block_size_];
   std::unique_ptr<std::lock_guard<SpinMutex>> lg(nullptr);
   while (map_[offset].IsStart()) {
     if (cur >= map_.size() || map_[cur].Empty()) {
@@ -26,7 +28,7 @@ uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
       cur = offset + res;
     }
     if (res < length) {
-      SpinMutex *next_lock = &spins_[cur / 64];
+      SpinMutex *next_lock = &spins_[cur / block_size_];
       if (next_lock != last_lock) {
         last_lock = next_lock;
         lg.reset(new std::lock_guard<SpinMutex>(*next_lock));
@@ -38,11 +40,12 @@ uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
   return res;
 }
 
-uint64_t SpaceMap::MergeAndUnset(uint64_t offset, uint64_t max_length,
-                                 uint64_t target_length) {
+uint64_t PMEMAllocator::SpaceMap::MergeAndUnset(uint64_t offset,
+                                                uint64_t max_length,
+                                                uint64_t target_length) {
   uint64_t cur = offset;
   uint64_t end_offset = offset + max_length;
-  SpinMutex *last_lock = &spins_[cur / 64];
+  SpinMutex *last_lock = &spins_[cur / block_size_];
   uint64_t res = 0;
   std::lock_guard<SpinMutex> lg(*last_lock);
   std::vector<SpinMutex *> locked;
@@ -56,7 +59,7 @@ uint64_t SpaceMap::MergeAndUnset(uint64_t offset, uint64_t max_length,
       cur = offset + res;
     }
 
-    SpinMutex *next_lock = &spins_[cur / 64];
+    SpinMutex *next_lock = &spins_[cur / block_size_];
     if (next_lock != last_lock) {
       last_lock = next_lock;
       next_lock->lock();
@@ -76,16 +79,17 @@ uint64_t SpaceMap::MergeAndUnset(uint64_t offset, uint64_t max_length,
   return res;
 }
 
-uint64_t SpaceMap::FindAndUnset(uint64_t &start_offset, uint64_t max_length,
-                                uint64_t target_length) {
+uint64_t PMEMAllocator::SpaceMap::FindAndUnset(uint64_t &start_offset,
+                                               uint64_t max_length,
+                                               uint64_t target_length) {
   uint64_t cur = start_offset;
   uint64_t end_offset = start_offset + max_length;
   SpinMutex *start_lock = &spins_[cur];
   std::unique_ptr<std::lock_guard<SpinMutex>> lg(
       new std::lock_guard<SpinMutex>(*start_lock));
   while (cur < map_.size()) {
-    if (&spins_[cur / 64] != start_lock) {
-      start_lock = &spins_[cur / 64];
+    if (&spins_[cur / block_size_] != start_lock) {
+      start_lock = &spins_[cur / block_size_];
       lg.reset(new std::lock_guard<SpinMutex>(*start_lock));
     }
     SpinMutex *last_lock = start_lock;
@@ -112,7 +116,7 @@ uint64_t SpaceMap::FindAndUnset(uint64_t &start_offset, uint64_t max_length,
       merged_offset.push_back(cur);
       cur = start_offset + length;
 
-      SpinMutex *next_lock = &spins_[cur / 64];
+      SpinMutex *next_lock = &spins_[cur / block_size_];
       if (next_lock != last_lock) {
         next_lock->lock();
         locked.push_back(next_lock);
@@ -128,9 +132,9 @@ uint64_t SpaceMap::FindAndUnset(uint64_t &start_offset, uint64_t max_length,
   return 0;
 }
 
-void SpaceMap::Set(uint64_t offset, uint64_t length) {
+void PMEMAllocator::SpaceMap::Set(uint64_t offset, uint64_t length) {
   auto cur = offset;
-  SpinMutex *last_lock = &spins_[cur / 64];
+  SpinMutex *last_lock = &spins_[cur / block_size_];
   std::lock_guard<SpinMutex> lg(*last_lock);
   auto to_set = length > INT8_MAX ? INT8_MAX : length;
   map_[cur] = MapToken(true, to_set);
@@ -142,7 +146,7 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
       assert(cur < map_.size());
       to_set = length > INT8_MAX ? INT8_MAX : length;
       length -= to_set;
-      SpinMutex *next_lock = &spins_[cur / 64];
+      SpinMutex *next_lock = &spins_[cur / block_size_];
       if (next_lock != last_lock) {
         lg.reset(new std::lock_guard<SpinMutex>(*next_lock));
         last_lock = next_lock;
@@ -152,7 +156,8 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
   }
 }
 
-bool FreeList::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
+bool PMEMAllocator::FreeList::Get(uint32_t b_size,
+                                  SizedSpaceEntry *space_entry) {
   for (uint32_t i = b_size; i < FREE_LIST_MAX_BLOCK; i++) {
     if (offsets_[i].size() != 0) {
       space_entry->space_entry = offsets_[i].back();
@@ -180,8 +185,8 @@ bool FreeList::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
   return false;
 }
 
-bool FreeList::MergeGet(uint32_t b_size, uint64_t segment_blocks,
-                        SizedSpaceEntry *space_entry) {
+bool PMEMAllocator::FreeList::MergeGet(uint32_t b_size, uint64_t segment_blocks,
+                                       SizedSpaceEntry *space_entry) {
   for (uint32_t i = 1; i < FREE_LIST_MAX_BLOCK; i++) {
     auto iter = offsets_[i].begin();
     while (iter != offsets_[i].end()) {
@@ -227,7 +232,7 @@ bool FreeList::MergeGet(uint32_t b_size, uint64_t segment_blocks,
   */
 }
 
-void FreeList::Push(const SizedSpaceEntry &entry) {
+void PMEMAllocator::FreeList::Push(const SizedSpaceEntry &entry) {
   space_map_->Set(entry.space_entry.offset, entry.size);
   if (entry.size >= FREE_LIST_MAX_BLOCK) {
     large_entries_.insert(entry);
@@ -237,15 +242,28 @@ void FreeList::Push(const SizedSpaceEntry &entry) {
 }
 
 void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
-  thread_cache_[local_thread.id].freelist.Push(entry);
+  thread_cache_[write_thread.id].freelist.Push(entry);
 }
 
 void PMEMAllocator::PopulateSpace() {
   GlobalLogger.Log("Populating PMEM space ...\n");
   std::vector<std::thread> ths;
-  for (int i = 0; i < 16; i++) {
+
+  int pu = get_usable_pu();
+  if (pu <= 0) {
+    pu = 1;
+  } else if (pu > 16) {
+    // 16 is a moderate concurrent number for writing PMEM.
+    pu = 16;
+  }
+  for (int i = 0; i < pu; i++) {
     ths.emplace_back([=]() {
-      pmem_memset(pmem_space_ + mapped_size_ * i / 16, 0, mapped_size_ / 16,
+      uint64_t len = mapped_size_ / pu;
+      // Re-calculate the length of last chunk to cover the
+      // case that mapped_size_ is not divisible by pu.
+      if (i == pu - 1)
+        len = mapped_size_ - (pu - 1) * len;
+      pmem_memset(pmem_space_ + mapped_size_ * i / pu, 0, len,
                   PMEM_F_MEM_NONTEMPORAL);
     });
   }
@@ -281,7 +299,7 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t map_size,
                        pmem_file.c_str(), mapped_size_, map_size);
   }
   max_offset_ = mapped_size_ / block_size_;
-  space_map_ = std::make_shared<SpaceMap>(max_offset_);
+  space_map_ = std::make_shared<SpaceMap>(max_offset_, block_size_);
   GlobalLogger.Log("Map pmem space done\n");
   thread_cache_.resize(num_write_threads, space_map_);
   init_data_size_2_b_size();
@@ -290,15 +308,13 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t map_size,
 bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
   if (segment_space_entry->size == num_segment_blocks_) {
-    thread_cache_[local_thread.id].segment_offset =
+    thread_cache_[write_thread.id].segment_offset =
         segment_space_entry->space_entry.offset;
-    thread_cache_[local_thread.id].segment_usable_blocks =
+    thread_cache_[write_thread.id].segment_usable_blocks =
         segment_space_entry->size;
     return false;
   }
 
-  segment_space_entry->space_entry.hash_entry_mutex = nullptr;
-  segment_space_entry->space_entry.hash_entry_reference = nullptr;
   if (segment_space_entry->size > 0) {
     Free(*segment_space_entry);
   }
@@ -320,7 +336,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
   if (b_size > num_segment_blocks_) {
     return space_entry;
   }
-  auto &thread_cache = thread_cache_[local_thread.id];
+  auto &thread_cache = thread_cache_[write_thread.id];
   bool full_segment = thread_cache.segment_usable_blocks < b_size;
   while (full_segment) {
     while (1) {
@@ -342,10 +358,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
         space_entry.size = b_size;
         thread_cache.free_entry.size -= b_size;
         thread_cache.free_entry.space_entry.offset += b_size;
-        if (thread_cache.free_entry.size > 0) {
-          thread_cache.free_entry.space_entry.hash_entry_reference = nullptr;
-          thread_cache.free_entry.space_entry.hash_entry_mutex = nullptr;
-        }
         return space_entry;
       }
       if (thread_cache.free_entry.size > 0) {
@@ -364,12 +376,16 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
     // to the free list
     if (thread_cache.segment_usable_blocks > 0) {
       Free(SizedSpaceEntry(thread_cache.segment_offset,
-                           thread_cache.segment_usable_blocks, nullptr,
-                           nullptr));
+                           thread_cache.segment_usable_blocks));
     }
 
     thread_cache.segment_offset =
         offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
+    thread_cache.segment_usable_blocks =
+        thread_cache.segment_offset >= max_offset_
+            ? 0
+            : std::min(num_segment_blocks_,
+                       max_offset_ - thread_cache.segment_offset);
     if (thread_cache.segment_offset >= max_offset_ - b_size) {
       if (thread_cache.freelist.MergeGet(b_size, num_segment_blocks_,
                                          &thread_cache.free_entry)) {
@@ -378,14 +394,10 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
       GlobalLogger.Error("PMEM OVERFLOW!\n");
       return space_entry;
     }
-    thread_cache.segment_usable_blocks = std::min(
-        num_segment_blocks_, max_offset_ - thread_cache.segment_offset);
     full_segment = false;
   }
   space_entry.size = b_size;
   space_entry.space_entry.offset = thread_cache.segment_offset;
-  space_entry.space_entry.hash_entry_mutex = nullptr;
-  space_entry.space_entry.hash_entry_reference = nullptr;
   thread_cache.segment_offset += space_entry.size;
   thread_cache.segment_usable_blocks -= space_entry.size;
   return space_entry;

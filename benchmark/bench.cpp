@@ -14,7 +14,7 @@
 using namespace google;
 using namespace KVDK_NAMESPACE;
 
-#define MAX_LAT 10000000
+#define MAX_LAT (10000000)
 
 // Benchmark configs
 DEFINE_string(path, "/mnt/pmem0/kvdk", "Instance path");
@@ -211,7 +211,11 @@ void DBWrite(int id) {
 
     if (stat_latencies) {
       lat = timer.End();
-      write_latencies[id][lat / 10]++;
+      if (lat / 100 >= MAX_LAT) {
+        fprintf(stderr, "Write latency overflow: %ld us\n", lat / 100);
+        exit(-1);
+      }
+      write_latencies[id][lat / 100]++;
     }
 
     if (s != Status::Ok) {
@@ -283,7 +287,11 @@ void DBRead(int id) {
     }
     if (stat_latencies) {
       lat = timer.End();
-      read_latencies[id][lat / 10]++;
+      if (lat / 100 >= MAX_LAT) {
+        fprintf(stderr, "Read latency overflow: %ld us\n", lat / 100);
+        exit(-1);
+      }
+      read_latencies[id][lat / 100]++;
     }
 
     if (s != Status::Ok) {
@@ -448,19 +456,19 @@ int main(int argc, char **argv) {
           cur += read_latencies[j][i];
           total += read_latencies[j][i] * i;
           if (l50 == 0 && (double)cur / ro > 0.5) {
-            l50 = (double)i / 100;
+            l50 = (double)i / 10;
           } else if (l99 == 0 && (double)cur / ro > 0.99) {
-            l99 = (double)i / 100;
+            l99 = (double)i / 10;
           } else if (l995 == 0 && (double)cur / ro > 0.995) {
-            l995 = (double)i / 100;
+            l995 = (double)i / 10;
           } else if (l999 == 0 && (double)cur / ro > 0.999) {
-            l999 = (double)i / 100;
+            l999 = (double)i / 10;
           } else if (l9999 == 0 && (double)cur / ro > 0.9999) {
-            l9999 = (double)i / 100;
+            l9999 = (double)i / 10;
           }
         }
       }
-      avg = total / ro / 100;
+      avg = total / ro / 10;
 
       printf("read lantencies (us): Avg: %.2f, P50: %.2f, P99: %.2f, P99.5: "
              "%.2f, "
@@ -483,19 +491,19 @@ int main(int argc, char **argv) {
           cur += write_latencies[j][i];
           total += write_latencies[j][i] * i;
           if (l50 == 0 && (double)cur / wo > 0.5) {
-            l50 = (double)i / 100;
+            l50 = (double)i / 10;
           } else if (l99 == 0 && (double)cur / wo > 0.99) {
-            l99 = (double)i / 100;
+            l99 = (double)i / 10;
           } else if (l995 == 0 && (double)cur / wo > 0.995) {
-            l995 = (double)i / 100;
+            l995 = (double)i / 10;
           } else if (l999 == 0 && (double)cur / wo > 0.999) {
-            l999 = (double)i / 100;
+            l999 = (double)i / 10;
           } else if (l9999 == 0 && (double)cur / wo > 0.9999) {
-            l9999 = (double)i / 100;
+            l9999 = (double)i / 10;
           }
         }
       }
-      avg = total / ro / 100;
+      avg = total / wo / 10;
 
       printf("write lantencies (us): Avg: %.2f, P50: %.2f, P99: %.2f, P99.5: "
              "%.2f, "
