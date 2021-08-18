@@ -344,6 +344,14 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       ASSERT_EQ(engine->Get(k1, &got_v1), Status::Ok);
       ASSERT_EQ(got_v1, v1);
     }
+
+    std::string key{""};
+    std::string value{"Empty key but with value"};
+    std::string sink{};
+    ASSERT_EQ(engine->Set(key, value), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
+    ASSERT_EQ(value, sink);
+
   };
   std::vector<std::thread> ts;
   for (int i = 0; i < num_threads; i++) {
