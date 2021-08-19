@@ -67,6 +67,8 @@ public:
   bool MergeGet(uint32_t b_size, uint64_t segment_blocks,
                 SizedSpaceEntry *space_entry);
 
+  void MoveBackupLists();
+
 private:
   // Each write threads cache some freed space entries in active_entries to
   // avoid contention. To balance free space entries among threads, if too many

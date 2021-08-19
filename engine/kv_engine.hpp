@@ -8,6 +8,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -116,6 +117,8 @@ private:
 
   Status PersistOrRecoverImmutableConfigs();
 
+  void BackgroundWork();
+
   void PersistDataEntry(char *block_base, DataEntry *data_entry,
                         const Slice &key, const Slice &value, uint16_t type);
 
@@ -159,6 +162,8 @@ private:
   std::shared_ptr<ThreadManager> thread_manager_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   Configs configs_;
+  bool closing_{false};
+  std::vector<std::thread> bg_threads_;
 };
 
 } // namespace KVDK_NAMESPACE

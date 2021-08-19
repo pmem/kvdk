@@ -8,6 +8,7 @@
 namespace KVDK_NAMESPACE {
 
 const uint32_t kMaxCacheEntries = 16;
+const uint32_t kMinMovableEntries = 8;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
   auto cur = offset;
@@ -160,12 +161,6 @@ void FreeList::Push(const SizedSpaceEntry &entry) {
     if (thread_cache.active_entries[entry.size].size() >= kMaxCacheEntries) {
       std::lock_guard<SpinMutex> lg(thread_cache.spins[entry.size]);
       thread_cache.backup_entries[entry.size].emplace_back(entry.space_entry);
-      if (thread_cache.backup_entries[entry.size].size() >= kMaxCacheEntries) {
-        std::lock_guard<SpinMutex> lg(spins_[entry.size]);
-        space_entry_pool_[entry.size].emplace_back();
-        space_entry_pool_[entry.size].back().swap(
-            thread_cache.backup_entries[entry.size]);
-      }
     } else {
       thread_cache.active_entries[entry.size].emplace_back(entry.space_entry);
     }
@@ -215,6 +210,19 @@ bool FreeList::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
     }
   }
   return false;
+}
+
+void FreeList::MoveBackupLists() {
+  for (auto &tc : thread_cache_) {
+    for (size_t i = 1; i < tc.backup_entries.size(); i++) {
+      std::lock_guard<SpinMutex> lg(tc.spins[i]);
+      if (tc.backup_entries[i].size() >= kMinMovableEntries) {
+        std::lock_guard<SpinMutex> lg(spins_[i]);
+        space_entry_pool_[i].emplace_back();
+        tc.backup_entries[i].swap(space_entry_pool_[i].back());
+      }
+    }
+  }
 }
 
 bool FreeList::MergeGet(uint32_t b_size, uint64_t segment_blocks,

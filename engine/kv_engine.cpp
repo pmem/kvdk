@@ -44,7 +44,15 @@ void PendingBatch::PersistStage(Stage s) {
 
 KVEngine::KVEngine() {}
 
-KVEngine::~KVEngine() { GlobalLogger.Log("instance closed\n"); }
+KVEngine::~KVEngine() {
+  closing_ = true;
+  GlobalLogger.Log("Closing instance ... \n");
+  GlobalLogger.Log("Waiting bg threads exit ... \n");
+  for (auto &t : bg_threads_) {
+    t.join();
+  }
+  GlobalLogger.Log("Instance closed\n");
+}
 
 Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
                       const Configs &configs) {
@@ -54,6 +62,13 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
     *engine_ptr = engine;
   }
   return s;
+}
+
+void KVEngine::BackgroundWork() {
+  while (!closing_) {
+    sleep(configs_.background_work_interval);
+    pmem_allocator_->DoBGWork();
+  }
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
@@ -83,6 +98,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
+  bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
   return s;
 }
 
