@@ -330,10 +330,6 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
 
 SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
   SizedSpaceEntry space_entry;
-  if(offset_head_.load() > 256)
-  {
-    int temp =100;
-  }
   auto b_size = size_2_b_size(size);
   // Now the requested block size should smaller than segment size
   // TODO: handle this
@@ -386,10 +382,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
     thread_cache.segment_offset =
         offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
 
-  if(offset_head_.load() > 256)
-  {
-    int temp =100;
-  }
     thread_cache.segment_usable_blocks =
         thread_cache.segment_offset >= max_offset_
             ? 0
