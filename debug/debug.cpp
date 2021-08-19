@@ -22,6 +22,54 @@ const char *pmem_path = "/mnt/pmem0/tutorial_kvdk_example";
 
 kvdk::Engine *engine = nullptr;
 
+static void test_anon_coll();
+static void test_named_coll();
+static void test_iterator();
+static void test_batch_write();
+
+int main() {
+  kvdk::Status status;
+
+  // Initialize a KVDK instance.
+  kvdk::Configs engine_configs;
+  {
+    // Configure for a tiny KVDK instance.
+    // Approximately 10MB /mnt/pmem0/ space is needed.
+    engine_configs.pmem_file_size = (1ull << 20);
+    engine_configs.pmem_segment_blocks = (1ull << 8);
+    engine_configs.hash_bucket_num = (1ull << 10);
+    engine_configs.max_write_threads = 1;
+  }
+  std::string engine_path{pmem_path};
+
+  // Purge old KVDK instance
+  int sink = system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
+
+  status = kvdk::Engine::Open(engine_path, &engine, engine_configs, stdout);
+  assert(status == kvdk::Status::Ok);
+  printf("Successfully opened a KVDK instance!\n");
+
+  // Reads and Writes on Anonymous Global Collection
+  test_anon_coll();
+
+  // Reads and Writes on Named Collection
+  test_named_coll();
+
+  // Iterating a Sorted Named Collection
+  test_iterator();
+
+  // BatchWrite on Anonymous Global Collection
+  test_batch_write();
+
+  // Close KVDK instance.
+  delete engine;
+  printf("Successfully closed the KVDK instance!\n");
+
+  // Remove persisted contents on PMem
+  return system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
+}
+
+
 static void test_anon_coll() {
   kvdk::Engine* engine = ::engine;
   kvdk::Status status;
@@ -32,46 +80,16 @@ static void test_anon_coll() {
   std::string value2{"value2"};
   std::string v;
 
+  // Test empty string as key
   std::string key_e{""};
   std::string value_e{"Empty key but with value"};
   status = engine->Get(key_e, &v);
-  assert(status == kvdk::Status::Ok);
-  assert(v == value_e);
+  assert(status == kvdk::Status::NotFound);
   status = engine->Set(key_e, value_e);
   assert(status == kvdk::Status::Ok);
   status = engine->Get(key_e, &v);
   assert(status == kvdk::Status::Ok);
   assert(v == value_e);
-
-  {
-    using namespace kvdk;
-    std::string k1, k2;
-    int cnt = 1000;
-    while (cnt--) {
-      k1 = std::string{"k"} + std::to_string(cnt);
-      k2 = std::string{"kk"} + std::to_string(cnt);
-      if (cnt==929|| cnt==206)
-      {
-        cnt+=1;
-        cnt-=1;
-      }
-      
-      status = engine->Set(k1, value1);
-      assert(status == kvdk::Status::Ok);
-
-      status = engine->Set(k2, value2);
-      assert(status == kvdk::Status::Ok);
-
-    }
-
-    std::string key{""};
-    std::string value{"Empty key but with value"};
-    std::string sink{};
-    ASSERT_EQ(engine->Set(key, value), Status::Ok);
-    ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
-    ASSERT_EQ(value, sink);
-
-  }
 
   // Insert key1-value1
   status = engine->Set(key1, value1);
@@ -186,9 +204,9 @@ static void test_iterator() {
   }
   std::shuffle(kv_pairs.begin(), kv_pairs.end(), std::mt19937{42});
   // Print out kv_pairs to check if they are really shuffled.
-  printf("The shuffled kv-pairs are:\n");
-  for (const auto &kv : kv_pairs)
-    printf("%s\t%s\n", kv.first.c_str(), kv.second.c_str());
+  // printf("The shuffled kv-pairs are:\n");
+  // for (const auto &kv : kv_pairs)
+  //   printf("%s\t%s\n", kv.first.c_str(), kv.second.c_str());
 
   // Populate collection "my_sorted_collection" with keys and values.
   // kv_pairs are not necessarily sorted, but kv-pairs in collection
@@ -281,47 +299,3 @@ static void test_batch_write() {
   return;
 }
 
-int main() {
-  kvdk::Status status;
-
-  // Initialize a KVDK instance.
-  kvdk::Configs engine_configs;
-  {
-    // Configure for a tiny KVDK instance.
-    // Approximately 10MB /mnt/pmem0/ space is needed.
-    engine_configs.pmem_file_size = (1ull << 20);
-    engine_configs.pmem_segment_blocks = (1ull << 8);
-    engine_configs.hash_bucket_num = (1ull << 10);
-    engine_configs.max_write_threads = 1;
-  }
-  std::string engine_path{pmem_path};
-
-  // Purge old KVDK instance
-  int sink = system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
-
-  status = kvdk::Engine::Open(engine_path, &engine, engine_configs, stdout);
-  assert(status == kvdk::Status::Ok);
-  printf("Successfully opened a KVDK instance.\n");
-
-  std::string key_e{""};
-  std::string value_e{"Empty key but with value"};
-  status = engine->Set(key_e, value_e);
-
-  // Reads and Writes on Anonymous Global Collection
-  test_anon_coll();
-
-  // Reads and Writes on Named Collection
-  test_named_coll();
-
-  // Iterating a Sorted Named Collection
-  test_iterator();
-
-  // BatchWrite on Anonymous Global Collection
-  test_batch_write();
-
-  // Close KVDK instance.
-  delete engine;
-
-  // Remove persisted contents on PMem
-  return system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
-}
