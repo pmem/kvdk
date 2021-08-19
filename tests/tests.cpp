@@ -214,35 +214,35 @@ TEST_F(EngineBasicTest, TestRestore) {
 }
 
 TEST_F(EngineBasicTest, TestBasicSortedOperations) {
-  const std::string overall_skiplist = "skiplist";
-  const std::string thread_skiplist = "t_skiplist";
+  const std::string global_skiplist = "skiplist";
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
+
   auto ops = [&](int id) {
-    std::string t_skiplist(thread_skiplist + std::to_string(id));
+    std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
 
-    if (id == 0) {
-      std::string key{""};
-      std::string value{"Empty key but with value"};
-      std::string sink{};
-      ASSERT_EQ(engine->SSet(overall_skiplist, key, value), Status::Ok);
-      ASSERT_EQ(engine->SGet(overall_skiplist, key, &sink), Status::Ok);
-      ASSERT_EQ(value, sink);
-      ASSERT_EQ(engine->SDelete(overall_skiplist, key), Status::Ok);
-    }
+    AssignData(v1, 10);
 
     if (id == 0) {
-      std::string key{""};
-      std::string value{"Empty key but with value"};
-      std::string sink{};
-      ASSERT_EQ(engine->SSet(thread_skiplist, key, value), Status::Ok);
-      ASSERT_EQ(engine->SGet(thread_skiplist, key, &sink), Status::Ok);
-      ASSERT_EQ(value, sink);
-      ASSERT_EQ(engine->SDelete(thread_skiplist, key), Status::Ok);
+      std::string k0{""};
+      ASSERT_EQ(engine->SSet(global_skiplist, k0, v1), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, k0, &got_v1), Status::Ok);
+      ASSERT_EQ(v1, got_v1);
+      ASSERT_EQ(engine->SDelete(global_skiplist, k0), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, k0, &got_v1), Status::NotFound);
+    }
+
+    {
+      std::string k0{""};
+      ASSERT_EQ(engine->SSet(thread_local_skiplist, k0, v1), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k0, &got_v1), Status::Ok);
+      ASSERT_EQ(v1, got_v1);
+      ASSERT_EQ(engine->SDelete(thread_local_skiplist, k0), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k0, &got_v1), Status::NotFound);
     }
 
     int cnt = 100;
@@ -255,53 +255,53 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
       // insert
       AssignData(v1, v1_len);
       AssignData(v2, v2_len);
-      ASSERT_EQ(engine->SSet(overall_skiplist, k1, v1), Status::Ok);
-      ASSERT_EQ(engine->SSet(overall_skiplist, k2, v2), Status::Ok);
-      ASSERT_EQ(engine->SGet(overall_skiplist, k1, &got_v1), Status::Ok);
-      ASSERT_EQ(engine->SGet(overall_skiplist, k2, &got_v2), Status::Ok);
+      ASSERT_EQ(engine->SSet(global_skiplist, k1, v1), Status::Ok);
+      ASSERT_EQ(engine->SSet(global_skiplist, k2, v2), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, k1, &got_v1), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, k2, &got_v2), Status::Ok);
       ASSERT_EQ(v1, got_v1);
       ASSERT_EQ(v2, got_v2);
 
       // delete
-      ASSERT_EQ(engine->SDelete(overall_skiplist, k1), Status::Ok);
-      ASSERT_EQ(engine->SGet(overall_skiplist, k1, &got_v1), Status::NotFound);
+      ASSERT_EQ(engine->SDelete(global_skiplist, k1), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, k1, &got_v1), Status::NotFound);
 
       // update
       AssignData(v1, v1_len);
-      ASSERT_EQ(engine->SSet(overall_skiplist, k1, v1), Status::Ok);
-      ASSERT_EQ(engine->SGet(overall_skiplist, k1, &got_v1), Status::Ok);
+      ASSERT_EQ(engine->SSet(global_skiplist, k1, v1), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, k1, &got_v1), Status::Ok);
       ASSERT_EQ(got_v1, v1);
       AssignData(v2, v2_len);
-      ASSERT_EQ(engine->SSet(overall_skiplist, k2, v2), Status::Ok);
-      ASSERT_EQ(engine->SGet(overall_skiplist, k2, &got_v2), Status::Ok);
+      ASSERT_EQ(engine->SSet(global_skiplist, k2, v2), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, k2, &got_v2), Status::Ok);
       ASSERT_EQ(got_v2, v2);
 
       // insert
       v1.append(std::to_string(id));
       v2.append(std::to_string(id));
-      ASSERT_EQ(engine->SSet(t_skiplist, k1, v1), Status::Ok);
-      ASSERT_EQ(engine->SSet(t_skiplist, k2, v2), Status::Ok);
-      ASSERT_EQ(engine->SGet(t_skiplist, k1, &got_v1), Status::Ok);
-      ASSERT_EQ(engine->SGet(t_skiplist, k2, &got_v2), Status::Ok);
+      ASSERT_EQ(engine->SSet(thread_local_skiplist, k1, v1), Status::Ok);
+      ASSERT_EQ(engine->SSet(thread_local_skiplist, k2, v2), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k1, &got_v1), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k2, &got_v2), Status::Ok);
       ASSERT_EQ(v1, got_v1);
       ASSERT_EQ(v2, got_v2);
 
       // delete
-      ASSERT_EQ(engine->SDelete(t_skiplist, k1), Status::Ok);
-      ASSERT_EQ(engine->SGet(t_skiplist, k1, &got_v1), Status::NotFound);
+      ASSERT_EQ(engine->SDelete(thread_local_skiplist, k1), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k1, &got_v1), Status::NotFound);
 
       // update
       AssignData(v1, v1_len);
-      ASSERT_EQ(engine->SSet(t_skiplist, k1, v1), Status::Ok);
-      ASSERT_EQ(engine->SGet(t_skiplist, k1, &got_v1), Status::Ok);
+      ASSERT_EQ(engine->SSet(thread_local_skiplist, k1, v1), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k1, &got_v1), Status::Ok);
       ASSERT_EQ(got_v1, v1);
       AssignData(v2, v2_len);
-      ASSERT_EQ(engine->SSet(t_skiplist, k2, v2), Status::Ok);
-      ASSERT_EQ(engine->SGet(t_skiplist, k2, &got_v2), Status::Ok);
+      ASSERT_EQ(engine->SSet(thread_local_skiplist, k2, v2), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k2, &got_v2), Status::Ok);
       ASSERT_EQ(got_v2, v2);
     }
 
-    auto iter = engine->NewSortedIterator(overall_skiplist);
+    auto iter = engine->NewSortedIterator(global_skiplist);
     iter->SeekToFirst();
     if (iter->Valid()) {
       std::string prev = iter->Key();
@@ -314,7 +314,7 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
       }
     }
 
-    auto t_iter = engine->NewSortedIterator(t_skiplist);
+    auto t_iter = engine->NewSortedIterator(thread_local_skiplist);
     t_iter->SeekToFirst();
     if (t_iter->Valid()) {
       std::string prev = t_iter->Key();
@@ -354,13 +354,12 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       AssignData(v2, v2_len);
 
       if (id == 0) {
-        std::string key{""};
-        std::string value{"Empty key but with value"};
-        std::string sink{};
-        ASSERT_EQ(engine->Set(key, value), Status::Ok);
-        ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
-        ASSERT_EQ(value, sink);
-        ASSERT_EQ(engine->Delete(key), Status::Ok);
+        std::string k0{""};
+        ASSERT_EQ(engine->Set(k0, v1), Status::Ok);
+        ASSERT_EQ(engine->Get(k0, &got_v1), Status::Ok);
+        ASSERT_EQ(v1, got_v1);
+        ASSERT_EQ(engine->Delete(k0), Status::Ok);
+        ASSERT_EQ(engine->Get(k0, &got_v1), Status::NotFound);
       }
 
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
