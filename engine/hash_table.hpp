@@ -10,7 +10,7 @@
 #include "data_entry.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
-#include "pmem_allocator.hpp"
+#include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
