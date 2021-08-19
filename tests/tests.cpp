@@ -214,14 +214,14 @@ TEST_F(EngineBasicTest, TestRestore) {
 }
 
 TEST_F(EngineBasicTest, TestBasicSortedOperations) {
-  const std::string global_skiplist = "skiplist";
+  const std::string global_skiplist = "global_collection";
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
   auto ops = [&](int id) {
-    std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
+    std::string thread_local_skiplist("local_collection_" + std::to_string(id));
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
 
@@ -402,21 +402,20 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
   int count = 100;
-  std::string overall_skiplist = "skiplist";
-  std::string thread_skiplist = "t_skiplist";
+  std::string global_skiplist = "global_collection";
   auto ops = [&](int id) {
     std::string a(id, 'a');
     std::string v;
-    std::string t_skiplist(thread_skiplist + std::to_string(id));
+    std::string thread_local_skiplist("local_collection_" + std::to_string(id));
     for (int i = 1; i <= count; i++) {
       auto key = a + std::to_string(id * i);
       auto value = std::to_string(id * i);
-      ASSERT_EQ(engine->SSet(overall_skiplist, key, value), Status::Ok);
-      ASSERT_EQ(engine->SSet(t_skiplist, key, value + std::to_string(id)),
+      ASSERT_EQ(engine->SSet(global_skiplist, key, value), Status::Ok);
+      ASSERT_EQ(engine->SSet(thread_local_skiplist, key, value + std::to_string(id)),
                 Status::Ok);
-      ASSERT_EQ(engine->SGet(overall_skiplist, key, &v), Status::Ok);
+      ASSERT_EQ(engine->SGet(global_skiplist, key, &v), Status::Ok);
       ASSERT_EQ(v, value);
-      ASSERT_EQ(engine->SGet(t_skiplist, key, &v), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, key, &v), Status::Ok);
       ASSERT_EQ(v, value + std::to_string(id));
     }
   };
@@ -432,20 +431,20 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   for (int i = 1; i <= num_threads; i++) {
-    std::string t_skiplist(thread_skiplist + std::to_string(i));
+    std::string thread_local_skiplist("local_collection_" + std::to_string(i));
     std::string a(i, 'a');
     std::string v;
     for (int j = 1; j <= count; j++) {
       auto key = a + std::to_string(i * j), value = std::to_string(i * j);
-      Status s = engine->SGet(overall_skiplist, key, &v);
+      Status s = engine->SGet(global_skiplist, key, &v);
       ASSERT_EQ(s, Status::Ok);
       ASSERT_EQ(v, value);
-      s = engine->SGet(t_skiplist, key, &v);
+      s = engine->SGet(thread_local_skiplist, key, &v);
       ASSERT_EQ(s, Status::Ok);
       ASSERT_EQ(v, value + std::to_string(i));
     }
 
-    auto iter = engine->NewSortedIterator(t_skiplist);
+    auto iter = engine->NewSortedIterator(thread_local_skiplist);
     iter->SeekToFirst();
     std::string prev = "";
     int cnt = 0;
@@ -459,7 +458,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     ASSERT_EQ(cnt, count);
   }
 
-  auto iter = engine->NewSortedIterator(overall_skiplist);
+  auto iter = engine->NewSortedIterator(global_skiplist);
   iter->SeekToFirst();
   std::string prev = "";
   int i = 0;
