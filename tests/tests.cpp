@@ -242,7 +242,8 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
       ASSERT_EQ(engine->SGet(thread_local_skiplist, k0, &got_v1), Status::Ok);
       ASSERT_EQ(v1, got_v1);
       ASSERT_EQ(engine->SDelete(thread_local_skiplist, k0), Status::Ok);
-      ASSERT_EQ(engine->SGet(thread_local_skiplist, k0, &got_v1), Status::NotFound);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k0, &got_v1),
+                Status::NotFound);
     }
 
     int cnt = 100;
@@ -288,7 +289,8 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
 
       // delete
       ASSERT_EQ(engine->SDelete(thread_local_skiplist, k1), Status::Ok);
-      ASSERT_EQ(engine->SGet(thread_local_skiplist, k1, &got_v1), Status::NotFound);
+      ASSERT_EQ(engine->SGet(thread_local_skiplist, k1, &got_v1),
+                Status::NotFound);
 
       // update
       AssignData(v1, v1_len);
