@@ -100,6 +100,32 @@ private:
   }
 
   std::shared_ptr<SpaceMap> space_map_;
+  // space_entry_pool_ consists of three level vectors, the first level
+  // indicates different block size, each block size consists of several free
+  // space entry lists (the second level), and each list consists of several
+  // free space entries (the third level).
+  //
+  // For a specific block size, a write thread will move a entry list from the
+  // pool to its thread cache while no usable free space in the cache, or move a
+  // entry list to the pool while too many entries cached.
+  //
+  // Organization of the three level vectors:
+  //
+  // block size (1st level)   entry list (2nd level)   entries (3th level)
+  //     1   -----------------   list1    ------------   entry1
+  //                    |                         |---   entry2
+  //                    |-----   list2    ------------   entry1
+  //                                              |---   entry2
+  //                                              |---   entry3
+  //                              ...
+  //     2   -----------------   list1    ------------   entry1
+  //                    |                         |---   entry2
+  //                    |                         |---   entry3
+  //                    |-----   list2
+  //                              ...
+  //    ...
+  // max_block_size   --------   list1
+  //                    |-----   list2
   std::vector<std::vector<std::vector<SpaceEntry>>> space_entry_pool_;
   std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
   std::vector<ThreadCache> thread_cache_;
