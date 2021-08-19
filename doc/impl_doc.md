@@ -190,6 +190,7 @@ Calling `Get` will not acquire or be affected by `SpinMutex` in `Slot`, thus avo
 
 ### 1.2.4 Set
 
+
 - 当不存在该Key对应的旧的Record时，PMEMDB中的Set操作在PMEM中插入一条新的Record，并在HashTable中插入对应该Key的HashEntry，其offset指向新的Record。如果插入新HashEntry时复用了被Delete的Key的HashEntry的空间，则释放被复用HashEntry对应的Record所占据的PMEM空间。
 - 当存在该Key对应的旧的Record时，PMEMDB中的Set操作在PMEM中插入一条新的Record，并更新HashTable中对应该Key的HashEntry，使其offset指向新的Record，同时Free原有的Record所占据的PMEM空间。
 
