@@ -224,6 +224,27 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
     std::string t_skiplist(thread_skiplist + std::to_string(id));
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
+
+    if (id == 0) {
+      std::string key{""};
+      std::string value{"Empty key but with value"};
+      std::string sink{};
+      ASSERT_EQ(engine->SSet(overall_skiplist, key, value), Status::Ok);
+      ASSERT_EQ(engine->SGet(overall_skiplist, key, &sink), Status::Ok);
+      ASSERT_EQ(value, sink);
+      ASSERT_EQ(engine->SDelete(overall_skiplist, key), Status::Ok);
+    }
+
+    if (id == 0) {
+      std::string key{""};
+      std::string value{"Empty key but with value"};
+      std::string sink{};
+      ASSERT_EQ(engine->SSet(thread_skiplist, key, value), Status::Ok);
+      ASSERT_EQ(engine->SGet(thread_skiplist, key, &sink), Status::Ok);
+      ASSERT_EQ(value, sink);
+      ASSERT_EQ(engine->SDelete(thread_skiplist, key), Status::Ok);
+    }
+
     int cnt = 100;
     while (cnt--) {
       int v1_len = rand() % 1024;
@@ -281,23 +302,29 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
     }
 
     auto iter = engine->NewSortedIterator(overall_skiplist);
-    auto t_iter = engine->NewSortedIterator(t_skiplist);
     iter->SeekToFirst();
-    t_iter->SeekToFirst();
-    std::string prev = "";
-    while (iter->Valid()) {
-      std::string k = iter->Key();
+    if (iter->Valid()) {
+      std::string prev = iter->Key();
       iter->Next();
-      ASSERT_EQ(true, k.compare(prev) > 0);
-      prev = k;
+      while (iter->Valid()) {
+        std::string k = iter->Key();
+        iter->Next();
+        ASSERT_EQ(true, k.compare(prev) > 0);
+        prev = k;
+      }
     }
 
-    prev = "";
-    while (t_iter->Valid()) {
-      std::string k = t_iter->Key();
+    auto t_iter = engine->NewSortedIterator(t_skiplist);
+    t_iter->SeekToFirst();
+    if (t_iter->Valid()) {
+      std::string prev = t_iter->Key();
       t_iter->Next();
-      ASSERT_TRUE(k.compare(prev) > 0);
-      prev = k;
+      while (t_iter->Valid()) {
+        std::string k = t_iter->Key();
+        t_iter->Next();
+        ASSERT_EQ(true, k.compare(prev) > 0);
+        prev = k;
+      }
     }
   };
   std::vector<std::thread> ts;
@@ -326,14 +353,14 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       AssignData(v1, v1_len);
       AssignData(v2, v2_len);
 
-      if (id == 0){
+      if (id == 0) {
         std::string key{""};
         std::string value{"Empty key but with value"};
         std::string sink{};
-        ASSERT_EQ(engine->Set("", value), Status::Ok);
-        ASSERT_EQ(engine->Get("", &sink), Status::Ok);
+        ASSERT_EQ(engine->Set(key, value), Status::Ok);
+        ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
         ASSERT_EQ(value, sink);
-        ASSERT_EQ(engine->Delete(""), Status::Ok);
+        ASSERT_EQ(engine->Delete(key), Status::Ok);
       }
 
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
