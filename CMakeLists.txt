@@ -59,6 +59,13 @@ if (BUILD_TUTORIAL)
     target_link_libraries(dbtutorial PUBLIC engine)
 endif ()
 
+option(BUILD_DEBUG "Build the tutorial" ON)
+if (BUILD_DEBUG)
+    set(DEBUG_SOURCES tests/debug.cpp)
+    add_executable(dbdebug ${DEBUG_SOURCES})
+    target_link_libraries(dbdebug PUBLIC engine)
+endif ()
+
 add_custom_target(checkers ALL)
 add_custom_target(cppstyle)
 add_custom_target(cppformat)

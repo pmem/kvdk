@@ -326,6 +326,17 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       AssignData(v1, v1_len);
       AssignData(v2, v2_len);
 
+      if (id == 0) 
+      {
+          std::string key{""};
+          std::string value{"Empty key but with value"};
+          std::string sink{};
+          ASSERT_EQ(engine->Set("", value), Status::Ok);
+          ASSERT_EQ(engine->Get("", &sink), Status::Ok);
+          ASSERT_EQ(value, sink);
+          ASSERT_EQ(engine->Delete(""), Status::Ok);
+      }
+
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
 
       ASSERT_EQ(engine->Set(k2, v2), Status::Ok);
@@ -344,15 +355,8 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       ASSERT_EQ(engine->Get(k1, &got_v1), Status::Ok);
       ASSERT_EQ(got_v1, v1);
     }
-
-    std::string key{""};
-    std::string value{"Empty key but with value"};
-    std::string sink{};
-    ASSERT_EQ(engine->Set(key, value), Status::Ok);
-    ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
-    ASSERT_EQ(value, sink);
-
   };
+
   std::vector<std::thread> ts;
   for (int i = 0; i < num_threads; i++) {
     ts.emplace_back(std::thread(ops, i));
