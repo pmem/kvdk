@@ -381,7 +381,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
 
     thread_cache.segment_offset =
         offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
-
     thread_cache.segment_usable_blocks =
         thread_cache.segment_offset >= max_offset_
             ? 0
