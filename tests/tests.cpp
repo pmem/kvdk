@@ -326,15 +326,14 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       AssignData(v1, v1_len);
       AssignData(v2, v2_len);
 
-      if (id == 0) 
-      {
-          std::string key{""};
-          std::string value{"Empty key but with value"};
-          std::string sink{};
-          ASSERT_EQ(engine->Set("", value), Status::Ok);
-          ASSERT_EQ(engine->Get("", &sink), Status::Ok);
-          ASSERT_EQ(value, sink);
-          ASSERT_EQ(engine->Delete(""), Status::Ok);
+      if (id == 0){
+        std::string key{""};
+        std::string value{"Empty key but with value"};
+        std::string sink{};
+        ASSERT_EQ(engine->Set("", value), Status::Ok);
+        ASSERT_EQ(engine->Get("", &sink), Status::Ok);
+        ASSERT_EQ(value, sink);
+        ASSERT_EQ(engine->Delete(""), Status::Ok);
       }
 
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
