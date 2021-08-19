@@ -20,7 +20,7 @@
 #include "kvdk/engine.hpp"
 #include "list"
 #include "logger.hpp"
-#include "pmem_allocator.hpp"
+#include "pmem_allocator/pmem_allocator.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
