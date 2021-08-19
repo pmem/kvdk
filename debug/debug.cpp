@@ -20,7 +20,6 @@
 // Modify this path if necessary.
 const char *pmem_path = "/mnt/pmem0/tutorial_kvdk_example";
 
-kvdk::Status status;
 kvdk::Engine *engine = nullptr;
 
 static void test_anon_coll() {
@@ -57,13 +56,11 @@ static void test_anon_coll() {
         cnt-=1;
       }
       
-
       status = engine->Set(k1, value1);
       assert(status == kvdk::Status::Ok);
 
       status = engine->Set(k2, value2);
       assert(status == kvdk::Status::Ok);
-
 
     }
 
@@ -112,6 +109,8 @@ static void test_anon_coll() {
 }
 
 static void test_named_coll() {
+  kvdk::Status status;
+
   std::string collection1{"my_collection_1"};
   std::string collection2{"my_collection_2"};
   std::string key1{"key1"};
@@ -176,6 +175,8 @@ static void test_named_coll() {
 }
 
 static void test_iterator() {
+  kvdk::Status status;
+
   std::string sorted_collection{"my_sorted_collection"};
   // Create toy keys and values.
   std::vector<std::pair<std::string, std::string>> kv_pairs;
@@ -245,6 +246,8 @@ static void test_iterator() {
 }
 
 static void test_batch_write() {
+  kvdk::Status status;
+
   std::string key1{"key1"};
   std::string key2{"key2"};
   std::string value1{"value1"};
@@ -279,14 +282,13 @@ static void test_batch_write() {
 }
 
 int main() {
+  kvdk::Status status;
 
   // Initialize a KVDK instance.
   kvdk::Configs engine_configs;
   {
     // Configure for a tiny KVDK instance.
     // Approximately 10MB /mnt/pmem0/ space is needed.
-    // Please refer to "Configuration" section in user documentation for
-    // details.
     engine_configs.pmem_file_size = (1ull << 20);
     engine_configs.pmem_segment_blocks = (1ull << 8);
     engine_configs.hash_bucket_num = (1ull << 10);
@@ -304,7 +306,6 @@ int main() {
   std::string key_e{""};
   std::string value_e{"Empty key but with value"};
   status = engine->Set(key_e, value_e);
-
 
   // Reads and Writes on Anonymous Global Collection
   test_anon_coll();
