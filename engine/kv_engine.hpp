@@ -65,7 +65,7 @@ private:
   };
 
   bool CheckKeySize(const std::string &key) {
-    return key.size() > 0 && key.size() <= UINT16_MAX;
+    return key.size() <= UINT16_MAX;
   }
 
   bool CheckValueSize(const std::string &value) {
