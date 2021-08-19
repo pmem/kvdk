@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-# define ASSERT_EQ(a, b) assert(a==b)
+#define ASSERT_EQ(a, b) assert(a == b)
 
 #define DEBUG // For assert
 
@@ -69,9 +69,8 @@ int main() {
   return system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
 }
 
-
 static void test_anon_coll() {
-  kvdk::Engine* engine = ::engine;
+  kvdk::Engine *engine = ::engine;
   kvdk::Status status;
 
   std::string key1{"key1"};
@@ -298,4 +297,3 @@ static void test_batch_write() {
   printf("Successfully performed BatchWrite on anonymous global collection.\n");
   return;
 }
-
