@@ -39,9 +39,3 @@ cmake-build-*
 
 build/
 .cache/
-
-allocator/
-debug/
-doc/images
-doc/impl_doc_cn.md
-doc/impl_doc.md
