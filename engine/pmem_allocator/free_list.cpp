@@ -12,7 +12,7 @@ const uint32_t kMinMovableEntries = 8;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
   auto cur = offset;
-  SpinMutex *last_lock = &spins_[cur / block_size_];
+  SpinMutex *last_lock = &spins_[cur / lock_granularity_];
   std::lock_guard<SpinMutex> lg(*last_lock);
   auto to_set = length > INT8_MAX ? INT8_MAX : length;
   map_[cur] = MapToken(true, to_set);
@@ -24,7 +24,7 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
       assert(cur < map_.size());
       to_set = length > INT8_MAX ? INT8_MAX : length;
       length -= to_set;
-      SpinMutex *next_lock = &spins_[cur / block_size_];
+      SpinMutex *next_lock = &spins_[cur / lock_granularity_];
       if (next_lock != last_lock) {
         lg.reset(new std::lock_guard<SpinMutex>(*next_lock));
         last_lock = next_lock;
@@ -37,8 +37,8 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
 uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
   uint64_t res = 0;
   uint64_t cur = offset;
-  std::lock_guard<SpinMutex> start_lg(spins_[cur / block_size_]);
-  SpinMutex *last_lock = &spins_[cur / block_size_];
+  std::lock_guard<SpinMutex> start_lg(spins_[cur / lock_granularity_]);
+  SpinMutex *last_lock = &spins_[cur / lock_granularity_];
   std::unique_ptr<std::lock_guard<SpinMutex>> lg(nullptr);
   while (map_[offset].IsStart()) {
     if (cur >= map_.size() || map_[cur].Empty()) {
@@ -49,7 +49,7 @@ uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
       cur = offset + res;
     }
     if (res < length) {
-      SpinMutex *next_lock = &spins_[cur / block_size_];
+      SpinMutex *next_lock = &spins_[cur / lock_granularity_];
       if (next_lock != last_lock) {
         last_lock = next_lock;
         lg.reset(new std::lock_guard<SpinMutex>(*next_lock));
@@ -65,12 +65,12 @@ uint64_t SpaceMap::FindAndUnset(uint64_t &start_offset, uint64_t max_length,
                                 uint64_t target_length) {
   uint64_t cur = start_offset;
   uint64_t end_offset = start_offset + max_length;
-  SpinMutex *start_lock = &spins_[cur];
+  SpinMutex *start_lock = &spins_[cur / lock_granularity_];
   std::unique_ptr<std::lock_guard<SpinMutex>> lg(
       new std::lock_guard<SpinMutex>(*start_lock));
   while (cur < map_.size()) {
-    if (&spins_[cur / block_size_] != start_lock) {
-      start_lock = &spins_[cur / block_size_];
+    if (&spins_[cur / lock_granularity_] != start_lock) {
+      start_lock = &spins_[cur / lock_granularity_];
       lg.reset(new std::lock_guard<SpinMutex>(*start_lock));
     }
     SpinMutex *last_lock = start_lock;
@@ -97,7 +97,7 @@ uint64_t SpaceMap::FindAndUnset(uint64_t &start_offset, uint64_t max_length,
       merged_offset.push_back(cur);
       cur = start_offset + length;
 
-      SpinMutex *next_lock = &spins_[cur / block_size_];
+      SpinMutex *next_lock = &spins_[cur / lock_granularity_];
       if (next_lock != last_lock) {
         next_lock->lock();
         locked.push_back(next_lock);
@@ -117,7 +117,7 @@ uint64_t SpaceMap::MergeAndUnset(uint64_t offset, uint64_t max_length,
                                  uint64_t target_length) {
   uint64_t cur = offset;
   uint64_t end_offset = offset + max_length;
-  SpinMutex *last_lock = &spins_[cur / block_size_];
+  SpinMutex *last_lock = &spins_[cur / lock_granularity_];
   uint64_t res = 0;
   std::lock_guard<SpinMutex> lg(*last_lock);
   std::vector<SpinMutex *> locked;
@@ -131,7 +131,7 @@ uint64_t SpaceMap::MergeAndUnset(uint64_t offset, uint64_t max_length,
       cur = offset + res;
     }
 
-    SpinMutex *next_lock = &spins_[cur / block_size_];
+    SpinMutex *next_lock = &spins_[cur / lock_granularity_];
     if (next_lock != last_lock) {
       last_lock = next_lock;
       next_lock->lock();

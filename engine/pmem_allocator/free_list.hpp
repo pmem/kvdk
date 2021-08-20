@@ -15,8 +15,8 @@ namespace KVDK_NAMESPACE {
 
 class SpaceMap {
 public:
-  SpaceMap(uint64_t size, uint32_t block_size)
-      : block_size_(block_size), map_(size, {false, 0}), lock_granularity_(64),
+  SpaceMap(uint64_t size)
+      : map_(size, {false, 0}), lock_granularity_(64),
         spins_(size / lock_granularity_ + 1) {}
 
   uint64_t TestAndUnset(uint64_t offset, uint64_t length);
@@ -47,7 +47,6 @@ private:
     uint8_t token;
   };
 
-  const uint32_t block_size_;
   std::vector<MapToken> map_;
   // how many blocks share a lock
   const uint32_t lock_granularity_;

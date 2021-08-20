@@ -70,7 +70,7 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t map_size,
   }
   max_offset_ = mapped_size_ / block_size_;
   free_list_ = std::make_shared<FreeList>(
-      std::make_shared<SpaceMap>(max_offset_, block_size_), num_write_threads);
+      std::make_shared<SpaceMap>(max_offset_), num_write_threads);
   GlobalLogger.Log("Map pmem space done\n");
   thread_cache_.resize(num_write_threads);
   init_data_size_2_b_size();
