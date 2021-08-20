@@ -48,8 +48,8 @@ public:
   // Free space_entry and fetch a new segment in space_entry
   bool FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry);
 
-  // Regularly execute by back ground thread of KVDK
-  void DoBGWork() { free_list_->MoveBackupLists(); }
+  // Regularly execute by background thread of KVDK
+  void BackgroundWork() { free_list_->MoveCachedListToPool(); }
 
 private:
   struct ThreadCache {

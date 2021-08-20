@@ -71,7 +71,7 @@ public:
   bool MergeGet(uint32_t b_size, uint64_t segment_blocks,
                 SizedSpaceEntry *space_entry);
 
-  void MoveBackupLists();
+  void MoveCachedListToPool();
 
 private:
   // Each write threads cache some freed space entries in active_entries to

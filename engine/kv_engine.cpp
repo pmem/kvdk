@@ -67,7 +67,7 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
 void KVEngine::BackgroundWork() {
   while (!closing_) {
     sleep(configs_.background_work_interval);
-    pmem_allocator_->DoBGWork();
+    pmem_allocator_->BackgroundWork();
   }
 }
 

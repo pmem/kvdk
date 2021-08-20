@@ -115,6 +115,7 @@ private:
 
   Status PersistOrRecoverImmutableConfigs();
 
+  // Regularly works excecuted by background thread
   void BackgroundWork();
 
   void PersistDataEntry(char *block_base, DataEntry *data_entry,

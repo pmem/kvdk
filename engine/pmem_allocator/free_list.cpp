@@ -212,7 +212,7 @@ bool FreeList::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
   return false;
 }
 
-void FreeList::MoveBackupLists() {
+void FreeList::MoveCachedListToPool() {
   for (auto &tc : thread_cache_) {
     for (size_t i = 1; i < tc.backup_entries.size(); i++) {
       std::lock_guard<SpinMutex> lg(tc.spins[i]);
