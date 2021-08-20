@@ -65,9 +65,7 @@ private:
     PendingBatch *persisted_pending_batch = nullptr;
   };
 
-  bool CheckKeySize(const std::string &key) {
-    return key.size() <= UINT16_MAX;
-  }
+  bool CheckKeySize(const std::string &key) { return key.size() <= UINT16_MAX; }
 
   bool CheckValueSize(const std::string &value) {
     return value.size() <= UINT32_MAX;

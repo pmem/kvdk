@@ -16,8 +16,8 @@ namespace KVDK_NAMESPACE {
 class SpaceMap {
 public:
   SpaceMap(uint64_t size, uint32_t block_size)
-      : block_size_(block_size), map_(size, {false, 0}),
-        spins_(size / block_size + 1) {}
+      : block_size_(block_size), map_(size, {false, 0}), lock_granularity_(64),
+        spins_(size / lock_granularity_ + 1) {}
 
   uint64_t TestAndUnset(uint64_t offset, uint64_t length);
 
@@ -32,11 +32,13 @@ public:
   uint64_t Size() { return map_.size(); }
 
 private:
+  // The highest 1 bit indicates if this is the start of a space entry, the
+  // lower 7 bits indicates how many free blocks followed
   struct MapToken {
   public:
     MapToken(bool is_start, uint8_t size)
         : token(size | (is_start ? (1 << 7) : 0)) {}
-    uint8_t Size() { return token & (INT8_MAX); }
+    uint8_t Size() { return token & ((1 << 7) - 1); }
     void Clear() { token = 0; }
     bool Empty() { return token == 0; }
     bool IsStart() { return token & (1 << 7); }
@@ -47,6 +49,8 @@ private:
 
   const uint32_t block_size_;
   std::vector<MapToken> map_;
+  // how many blocks share a lock
+  const uint32_t lock_granularity_;
   std::vector<SpinMutex> spins_;
 };
 
