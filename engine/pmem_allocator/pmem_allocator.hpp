@@ -48,6 +48,9 @@ public:
   // Free space_entry and fetch a new segment in space_entry
   bool FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry);
 
+  // Regularly execute by background thread of KVDK
+  void BackgroundWork() { free_list_->MoveCachedListToPool(); }
+
 private:
   struct ThreadCache {
     alignas(64) uint64_t segment_offset = 0;

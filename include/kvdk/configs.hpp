@@ -63,6 +63,13 @@ struct Configs {
   //
   // The hash slot is the minimum unit of write lock and hot-spot cache.
   uint32_t num_buckets_per_slot = 1 << 4;
+
+  // Time interval to do background work in seconds
+  //
+  // In KVDK, a background thread will regularly organize PMEM free space,
+  // frequent execution will lead to better space utilization, but more
+  // influence to foreground performance
+  uint64_t background_work_interval = 5;
 };
 
 } // namespace KVDK_NAMESPACE
