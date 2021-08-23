@@ -221,8 +221,9 @@ void FreeList::MoveCachedListToPool() {
 
 bool FreeList::MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry) {
   auto &cache_list = thread_cache_[write_thread.id].active_entries;
-  for (uint32_t i = 1; i < FREE_LIST_MAX_BLOCK; i++) {
-    for (size_t j = 0; j < cache_list[i].size(); j++) {
+  for (uint32_t i = 1; i < max_classified_b_size_; i++) {
+    size_t j = 0;
+    while (j < cache_list[i].size()) {
       uint64_t size = MergeSpace(cache_list[i][j],
                                  num_segment_blocks_ - cache_list[i][j].offset %
                                                            num_segment_blocks_,
@@ -236,6 +237,8 @@ bool FreeList::MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry) {
             size) {
           return true;
         }
+      } else {
+        j++;
       }
     }
   }
