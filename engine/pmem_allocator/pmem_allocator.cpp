@@ -69,8 +69,9 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t map_size,
                        pmem_file.c_str(), mapped_size_, map_size);
   }
   max_offset_ = mapped_size_ / block_size_;
-  free_list_ = std::make_shared<FreeList>(
-      std::make_shared<SpaceMap>(max_offset_), num_write_threads);
+  free_list_ =
+      std::make_shared<FreeList>(num_segment_blocks, num_write_threads,
+                                 std::make_shared<SpaceMap>(max_offset_));
   GlobalLogger.Log("Map pmem space done\n");
   thread_cache_.resize(num_write_threads);
   init_data_size_2_b_size();
@@ -158,8 +159,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
             : std::min(num_segment_blocks_,
                        max_offset_ - thread_cache.segment_offset);
     if (thread_cache.segment_offset >= max_offset_ - b_size) {
-      if (free_list_->MergeGet(b_size, num_segment_blocks_,
-                               &thread_cache.free_entry)) {
+      if (free_list_->MergeGet(b_size, &thread_cache.free_entry)) {
         continue;
       }
       GlobalLogger.Error("PMEM OVERFLOW!\n");
