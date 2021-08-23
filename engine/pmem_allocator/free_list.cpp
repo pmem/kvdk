@@ -222,24 +222,21 @@ void FreeList::MoveCachedListToPool() {
 bool FreeList::MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry) {
   auto &cache_list = thread_cache_[write_thread.id].active_entries;
   for (uint32_t i = 1; i < FREE_LIST_MAX_BLOCK; i++) {
-    auto iter = cache_list[i].begin();
-    while (iter != cache_list[i].end()) {
-      uint64_t size = MergeSpace(
-          *iter, num_segment_blocks_ - iter->offset % num_segment_blocks_,
-          b_size);
+    for (size_t j = 0; j < cache_list[i].size(); j++) {
+      uint64_t size = MergeSpace(cache_list[i][j],
+                                 num_segment_blocks_ - cache_list[i][j].offset %
+                                                           num_segment_blocks_,
+                                 b_size);
       if (size >= b_size) {
-        if (space_map_->TestAndUnset(iter->offset, size)) {
-          space_entry->space_entry = *iter;
-          space_entry->size = size;
-          std::swap(*iter, cache_list[i].back());
-          cache_list[i].pop_back();
+        space_entry->space_entry = cache_list[i][j];
+        space_entry->size = size;
+        std::swap(cache_list[i][j], cache_list[i].back());
+        cache_list[i].pop_back();
+        if (space_map_->TestAndUnset(space_entry->space_entry.offset, size) ==
+            size) {
           return true;
-        } else {
-          std::swap(*iter, cache_list[i].back());
-          cache_list[i].pop_back();
         }
       }
-      iter++;
     }
   }
   return false;
