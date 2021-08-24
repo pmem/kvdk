@@ -49,7 +49,10 @@ public:
   bool FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry);
 
   // Regularly execute by background thread of KVDK
-  void BackgroundWork() { free_list_->MoveCachedListToPool(); }
+  void BackgroundWork() {
+    free_list_->MoveCachedListToPool();
+    free_list_->MergeFreeSpace();
+  }
 
 private:
   struct ThreadCache {
