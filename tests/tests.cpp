@@ -306,6 +306,7 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
     }
 
     auto iter = engine->NewSortedIterator(global_skiplist);
+    ASSERT_TRUE(iter != nullptr);
     iter->SeekToFirst();
     if (iter->Valid()) {
       std::string prev = iter->Key();
@@ -319,6 +320,7 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
     }
 
     auto t_iter = engine->NewSortedIterator(thread_local_skiplist);
+    ASSERT_TRUE(t_iter != nullptr);
     t_iter->SeekToFirst();
     if (t_iter->Valid()) {
       std::string prev = t_iter->Key();
@@ -448,6 +450,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     }
 
     auto iter = engine->NewSortedIterator(t_skiplist);
+    ASSERT_TRUE(iter != nullptr);
     iter->SeekToFirst();
     std::string prev = "";
     int cnt = 0;
@@ -462,6 +465,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   }
 
   auto iter = engine->NewSortedIterator(overall_skiplist);
+  ASSERT_TRUE(iter != nullptr);
   iter->SeekToFirst();
   std::string prev = "";
   int i = 0;
