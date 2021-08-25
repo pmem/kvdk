@@ -63,7 +63,7 @@ DEFINE_bool(
 DEFINE_int32(max_write_threads, 32, "Max write threads of the instance");
 
 DEFINE_uint64(space, (uint64_t)256 << 30,
-              "Max usable PMEM space of the instance");
+              "Max usable PMem space of the instance");
 
 class Timer {
 public:

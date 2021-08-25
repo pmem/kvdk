@@ -28,7 +28,7 @@ Status Skiplist::Rebuild() {
   while (1) {
     HashEntry *entry_base = nullptr;
     uint64_t next_offset = splice.prev_data_entry->next;
-    if (next_offset == NULL_PMEM_OFFSET) {
+    if (next_offset == kNullPmemOffset) {
       break;
     }
     // TODO: check failure
@@ -84,7 +84,7 @@ void Skiplist::Seek(const Slice &key, Splice *splice) {
   DLDataEntry *prev_data_entry = prev->data_entry;
   while (1) {
     uint64_t next_data_entry_offset = prev_data_entry->next;
-    if (next_data_entry_offset == NULL_PMEM_OFFSET) {
+    if (next_data_entry_offset == kNullPmemOffset) {
       splice->prev_data_entry = prev_data_entry;
       splice->next_data_entry = nullptr;
       break;

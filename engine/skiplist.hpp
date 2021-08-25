@@ -14,7 +14,7 @@
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
-static const int kMaxHeight = MAX_SKIPLIST_LEVEL;
+static const int kMaxHeight = 32;
 static const uint16_t kCacheLevel = 3;
 
 /* Format:

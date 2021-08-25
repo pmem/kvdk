@@ -12,10 +12,10 @@ const uint32_t kMinMovableEntries = 8;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
   auto cur = offset;
-  SpinMutex *last_lock = &spins_[cur / lock_granularity_];
+  SpinMutex *last_lock = &map_spins_[cur / lock_granularity_];
   std::lock_guard<SpinMutex> lg(*last_lock);
   auto to_set = length > INT8_MAX ? INT8_MAX : length;
-  map_[cur] = MapToken(true, to_set);
+  map_[cur] = Token(true, to_set);
   length -= to_set;
   if (length > 0) {
     std::unique_ptr<std::lock_guard<SpinMutex>> lg(nullptr);
@@ -24,12 +24,12 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
       assert(cur < map_.size());
       to_set = length > INT8_MAX ? INT8_MAX : length;
       length -= to_set;
-      SpinMutex *next_lock = &spins_[cur / lock_granularity_];
+      SpinMutex *next_lock = &map_spins_[cur / lock_granularity_];
       if (next_lock != last_lock) {
         lg.reset(new std::lock_guard<SpinMutex>(*next_lock));
         last_lock = next_lock;
       }
-      map_[cur] = MapToken(false, to_set);
+      map_[cur] = Token(false, to_set);
     }
   }
 }
@@ -37,8 +37,8 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
 uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
   uint64_t res = 0;
   uint64_t cur = offset;
-  std::lock_guard<SpinMutex> start_lg(spins_[cur / lock_granularity_]);
-  SpinMutex *last_lock = &spins_[cur / lock_granularity_];
+  std::lock_guard<SpinMutex> start_lg(map_spins_[cur / lock_granularity_]);
+  SpinMutex *last_lock = &map_spins_[cur / lock_granularity_];
   std::unique_ptr<std::lock_guard<SpinMutex>> lg(nullptr);
   if (map_[offset].IsStart()) {
     while (1) {
@@ -50,7 +50,7 @@ uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
         cur = offset + res;
       }
       if (res < length) {
-        SpinMutex *next_lock = &spins_[cur / lock_granularity_];
+        SpinMutex *next_lock = &map_spins_[cur / lock_granularity_];
         if (next_lock != last_lock) {
           last_lock = next_lock;
           lg.reset(new std::lock_guard<SpinMutex>(*next_lock));
@@ -67,7 +67,7 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
                             uint64_t target_merge_length) {
   uint64_t cur = offset;
   uint64_t end_offset = offset + max_merge_length;
-  SpinMutex *last_lock = &spins_[cur / lock_granularity_];
+  SpinMutex *last_lock = &map_spins_[cur / lock_granularity_];
   uint64_t merged = 0;
   std::lock_guard<SpinMutex> lg(*last_lock);
   if (map_[cur].Empty() || !map_[cur].IsStart()) {
@@ -86,7 +86,7 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
       cur = offset + merged;
     }
 
-    SpinMutex *next_lock = &spins_[cur / lock_granularity_];
+    SpinMutex *next_lock = &map_spins_[cur / lock_granularity_];
     if (next_lock != last_lock) {
       last_lock = next_lock;
       next_lock->lock();
@@ -106,7 +106,7 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
   return merged;
 }
 
-void FreeList::MergeFreeSpace() {
+void Freelist::MergeFreeSpaceInPool() {
   std::vector<SpaceEntry> merging_list;
   std::vector<std::vector<SpaceEntry>> merged_entry_list(
       max_classified_b_size_);
@@ -145,7 +145,7 @@ void FreeList::MergeFreeSpace() {
   }
 }
 
-void FreeList::Push(const SizedSpaceEntry &entry) {
+void Freelist::Push(const SizedSpaceEntry &entry) {
   space_map_->Set(entry.space_entry.offset, entry.size);
   auto &thread_cache = thread_cache_[write_thread.id];
   if (entry.size >= thread_cache.active_entries.size()) {
@@ -161,7 +161,7 @@ void FreeList::Push(const SizedSpaceEntry &entry) {
   }
 }
 
-bool FreeList::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
+bool Freelist::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
   auto &thread_cache = thread_cache_[write_thread.id];
   for (uint32_t i = b_size; i < thread_cache.active_entries.size(); i++) {
     if (thread_cache.active_entries[i].size() == 0) {
@@ -208,7 +208,7 @@ bool FreeList::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
   return false;
 }
 
-void FreeList::MoveCachedListToPool() {
+void Freelist::MoveCachedListToPool() {
   for (auto &tc : thread_cache_) {
     for (size_t i = 1; i < tc.backup_entries.size(); i++) {
       std::lock_guard<SpinMutex> lg(tc.spins[i]);
@@ -219,7 +219,7 @@ void FreeList::MoveCachedListToPool() {
   }
 }
 
-bool FreeList::MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry) {
+bool Freelist::MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry) {
   auto &cache_list = thread_cache_[write_thread.id].active_entries;
   for (uint32_t i = 1; i < max_classified_b_size_; i++) {
     size_t j = 0;

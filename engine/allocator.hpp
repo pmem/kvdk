@@ -26,7 +26,6 @@ struct SizedSpaceEntry {
 
 class Allocator {
 public:
-  // TODO: do not use space entry
   virtual SizedSpaceEntry Allocate(uint64_t size) = 0;
   virtual void Free(const SizedSpaceEntry &entry) = 0;
 };

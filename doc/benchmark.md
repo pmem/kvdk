@@ -18,7 +18,7 @@ Explanation of arguments:
 
     -threads: Number of threads of benchmark.
 
-    -space: PMEM space that allocate to the KVDK instance.
+    -space: PMem space that allocate to the KVDK instance.
 
     -max_write_threads: Max concurrent write threads of the KVDK instance, set it to the number of the hyper-threads for performance consideration.
 
@@ -46,7 +46,7 @@ Benchmark tool will print performance stats to stdout, include throughput in eac
 
     $numactl --cpunodebind=0 --membind=0 ./bench -fill=0 -time=10 -value_size=120 -threads=64 -read_ratio=1 -existing_keys_ratio=1 -path=/mnt/pmem0/kvdk -space=274877906944 -num=838860800 -max_write_threads=64 -type=string
     
-    [LOG] time 0 ms: Initializing PMEM size 274877906944 in file /mnt/pmem0/kvdk/data
+    [LOG] time 0 ms: Initializing PMem size 274877906944 in file /mnt/pmem0/kvdk/data
     [LOG] time 1864 ms: Map pmem space done
     [LOG] time 9033 ms: In restoring: iterated 840882543 records
     init 0 write threads
@@ -80,7 +80,7 @@ This command will insert new key-value pairs to the KVDK instance in 10 seconds.
 
     $numactl --cpunodebind=0 --membind=0 ./bench -fill=0 -time=10 -value_size=120 -threads=64 -read_ratio=0     -existing_keys_ratio=0 -path=/mnt/pmem0/kvdk -space=274877906944 -num=838860800 -max_write_threads=64 -type=string
 
-    [LOG] time 0 ms: Initializing PMEM size 274877906944 in file /mnt/pmem0/kvdk/data
+    [LOG] time 0 ms: Initializing PMem size 274877906944 in file /mnt/pmem0/kvdk/data
     [LOG] time 1865 ms: Map pmem space done
     [LOG] time 9015 ms: In restoring: iterated 840882543 records
     init 64 write threads
@@ -109,7 +109,7 @@ We can also stat latency information by add "-latency=1" to the benchmark comman
 
     $ numactl --cpunodebind=0 --membind=0 ./bench -fill=0 -time=10 -value_size=120 -threads=64 -read_ratio=0.5 -existing_keys_ratio=1 -path=/mnt/pmem0/kvdk -space=274877906944 -num=838860800 -max_write_threads=64 -type=string -latency=1
 
-    [LOG] time 0 ms: Initializing PMEM size 274877906944 in file /mnt/pmem0/kvdk/data
+    [LOG] time 0 ms: Initializing PMem size 274877906944 in file /mnt/pmem0/kvdk/data
     [LOG] time 1869 ms: Map pmem space done
     [LOG] time 14963 ms: In restoring: iterated 1323729106 records
     calculate latencies

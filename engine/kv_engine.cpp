@@ -27,6 +27,7 @@ namespace KVDK_NAMESPACE {
 // use buffer to acc nt-write
 thread_local std::string write_buffer;
 static const int buffer_size = 1024 * 1024;
+constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
 
 void PendingBatch::PersistProcessing(
     void *target, const std::vector<uint64_t> &entry_offsets) {
@@ -309,7 +310,7 @@ Status KVEngine::SearchOrInitPersistentList(const std::string &collection,
             pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
         DLDataEntry data_entry(0, sized_space_entry.size, get_timestamp(),
                                header_type, collection.size(), 8,
-                               NULL_PMEM_OFFSET, NULL_PMEM_OFFSET);
+                               kNullPmemOffset, kNullPmemOffset);
         uint64_t id = list_id_.fetch_add(1);
         PersistDataEntry(block_base, &data_entry, collection,
                          Slice((char *)&id, 8), header_type);
@@ -375,7 +376,7 @@ Status KVEngine::RestorePendingBatch() {
   int is_pmem;
   PendingBatch *pending_batch = nullptr;
   uint64_t persisted_pending_file_size =
-      MAX_WRITE_BATCH_SIZE * 8 + sizeof(PendingBatch);
+      kMaxWriteBatchSize * 8 + sizeof(PendingBatch);
   while ((pending_batch = (PendingBatch *)pmem_map_file(
               persisted_pending_block_file(id).c_str(),
               persisted_pending_file_size, PMEM_FILE_EXCL, 0666, &mapped_len,
@@ -739,7 +740,7 @@ Status KVEngine::MaybeInitPendingBatchFile() {
     int is_pmem;
     size_t mapped_len;
     uint64_t persisted_pending_file_size =
-        MAX_WRITE_BATCH_SIZE * 8 + sizeof(PendingBatch);
+        kMaxWriteBatchSize * 8 + sizeof(PendingBatch);
     if ((thread_res_[write_thread.id].persisted_pending_batch =
              (PendingBatch *)pmem_map_file(
                  persisted_pending_block_file(write_thread.id).c_str(),
@@ -753,7 +754,7 @@ Status KVEngine::MaybeInitPendingBatchFile() {
 }
 
 Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
-  if (write_batch.Size() > MAX_WRITE_BATCH_SIZE) {
+  if (write_batch.Size() > kMaxWriteBatchSize) {
     return Status::BatchOverflow;
   }
 
