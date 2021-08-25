@@ -2,7 +2,7 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
-#include "../engine/utils.hpp"
+#include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "test_util.h"
@@ -116,7 +116,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
 
 TEST_F(EngineBasicTest, TestFreeList) {
   // TODO: Add more cases
-  configs.pmem_segment_blocks = 4 * FREE_SPACE_PADDING_BLOCK;
+  configs.pmem_segment_blocks = 4 * kMinPaddingBlockSize;
   configs.max_write_threads = 1;
   configs.pmem_block_size = 64;
   configs.pmem_file_size =
@@ -127,9 +127,9 @@ TEST_F(EngineBasicTest, TestFreeList) {
   std::string key2("a2");
   std::string key3("a3");
   std::string key4("a4");
-  std::string small_value(64 * (FREE_SPACE_PADDING_BLOCK - 1) + 1, 'a');
-  std::string large_value(64 * (FREE_SPACE_PADDING_BLOCK * 2 - 1) + 1, 'a');
-  // We have 4 FREE_SPACE_PADDING_BLOCK size chunk of blocks, this will take up
+  std::string small_value(64 * (kMinPaddingBlockSize - 1) + 1, 'a');
+  std::string large_value(64 * (kMinPaddingBlockSize * 2 - 1) + 1, 'a');
+  // We have 4 kMinimalPaddingBlockSize size chunk of blocks, this will take up
   // 2 of them
 
   ASSERT_EQ(engine->Set(key1, large_value), Status::Ok);

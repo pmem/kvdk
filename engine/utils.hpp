@@ -22,12 +22,6 @@
 
 namespace KVDK_NAMESPACE {
 
-#define NULL_PMEM_OFFSET UINT64_MAX
-#define MAX_WRITE_BATCH_SIZE (1 << 20)
-#define MAX_SKIPLIST_LEVEL 32
-#define FREE_LIST_MAX_BLOCK 255
-#define FREE_SPACE_PADDING_BLOCK 8
-
 inline uint64_t hash_str(const char *str, uint64_t size) {
   return XXH3_64bits(str, size);
 }

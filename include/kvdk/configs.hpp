@@ -17,7 +17,7 @@ struct Configs {
   // only if the thread exited.
   uint64_t max_write_threads = 48;
 
-  // Size of PMEM space to store KV data, this is not scalable in current
+  // Size of PMem space to store KV data, this is not scalable in current
   // edition.
   //
   // Notice that it should be larger than (max_write_threads *
@@ -25,20 +25,20 @@ struct Configs {
   // TODO: sacle out
   uint64_t pmem_file_size = (256ULL << 30);
 
-  // Populate PMEM space while creating a new instance.
+  // Populate PMem space while creating a new instance.
   //
   // This can improve write performance in runtime, but will take long time to
   // init the newly created instance.
   bool populate_pmem_space = true;
 
-  // The minimum allocation unit of PMEM space
+  // The minimum allocation unit of PMem space
   //
   // It should align to 8 bytes.
   uint32_t pmem_block_size = 64;
 
-  // The number of blocks in a PMEM segment
+  // The number of blocks in a PMem segment
   //
-  // A PMEM segment is a piece of private space of a write thread, so each
+  // A PMem segment is a piece of private space of a write thread, so each
   // thread can allocate space without contention. It also decides the max size
   // of (key + value), which is slightly smaller than
   // (pmem_block_size * pmem_segment_blocks)
@@ -66,7 +66,7 @@ struct Configs {
 
   // Time interval to do background work in seconds
   //
-  // In KVDK, a background thread will regularly organize PMEM free space,
+  // In KVDK, a background thread will regularly organize PMem free space,
   // frequent execution will lead to better space utilization, but more
   // influence to foreground performance
   uint64_t background_work_interval = 5;

@@ -14,10 +14,10 @@ struct ImmutableConfigs {
   // To indicate if this persisted configs valid
   uint64_t validation_flag;
 
-  // The minimum allocation unit of PMEM space
+  // The minimum allocation unit of PMem space
   uint32_t pmem_block_size;
 
-  // The number of blocks in a PMEM segment
+  // The number of blocks in a PMem segment
   uint64_t pmem_segment_blocks;
 
   void AssignImmutableConfigs(Configs &configs) {
@@ -25,6 +25,8 @@ struct ImmutableConfigs {
     configs.pmem_segment_blocks = pmem_segment_blocks;
   }
 
+  // Get persistent configs from "configs" and persist them to PMem
+  // Notice: "this" should allocated on PMem
   void PersistImmutableConfigs(const Configs &configs) {
     pmem_block_size = configs.pmem_block_size;
     pmem_segment_blocks = configs.pmem_segment_blocks;
