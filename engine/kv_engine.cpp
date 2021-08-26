@@ -426,6 +426,7 @@ Status KVEngine::RestorePendingBatch() {
                 pmem_persist(&data_entry->type, 8);
               }
             }
+            pending_batch->PersistStage(PendingBatch::Stage::Done);
           }
 
           if (id < configs_.max_write_threads) {
