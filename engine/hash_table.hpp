@@ -14,18 +14,31 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
+enum class HashEntryStatus : uint16_t {
+  Normal = 1,
+  // A deletion type entry of a key which has no older data entry existing, so
+  // it can be safely used by a new key
+  Clean,
+  // New created hash entry for inserting a new key
+  Initializing,
+  // A entry being updated by the same key, or a CLEAN entry being used by a new
+  // key
+  Updating,
+  // A NORMAL deletion type entry that is reusing by a new key
+  // TODO: handle recycle of delete record of reused hash entries in runtime
+  BeingReused,
+};
 
 struct HashHeader {
   uint32_t key_prefix;
   uint16_t type;
-  uint8_t reusable;
-  uint8_t padding; // for future usage
+  HashEntryStatus status;
 };
 
 struct HashEntry {
   HashEntry() = default;
   HashEntry(uint32_t kp, uint16_t t, uint64_t bo)
-      : header({kp, t, 0, 0}), offset(bo) {}
+      : header({kp, t, HashEntryStatus::Normal}), offset(bo) {}
 
   HashHeader header;
   uint64_t offset;
@@ -55,11 +68,11 @@ public:
   };
 
   enum class SearchPurpose : uint8_t {
-    READ = 0,
+    Read = 0,
     // More read only purpose here
 
-    WRITE,
-    RECOVER,
+    Write,
+    Recover,
     // More write purpose here
   };
 
@@ -96,7 +109,7 @@ public:
                 HashEntry **entry_base, SearchPurpose purpose);
 
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
-              uint64_t offset, bool is_update);
+              uint64_t offset);
 
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
