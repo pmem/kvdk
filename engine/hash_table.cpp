@@ -85,9 +85,9 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
         break;
       }
 
-      if (purpose == SearchPurpose::Write &&
-          (*entry_base)->header.type == STRING_DELETE_RECORD &&
-          (*entry_base)->header.status == HashEntryStatus::Clean &&
+      if (purpose == SearchPurpose::Write /* we don't reused hash entry in
+                                             recovering */
+          && (*entry_base)->header.type == STRING_DELETE_RECORD &&
           (*entry_base)->header.key_prefix != key_hash_prefix) {
         reusable_entry = *entry_base;
       }
