@@ -30,7 +30,6 @@
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
-
 class KVEngine : public Engine {
 public:
   KVEngine();

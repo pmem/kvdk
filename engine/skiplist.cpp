@@ -39,7 +39,7 @@ Status Skiplist::Rebuild() {
     Status s = hash_table_->Search(hash_table_->GetHint(key), key,
                                    SORTED_DATA_RECORD | SORTED_DELETE_RECORD,
                                    &hash_entry, &data_entry, &entry_base,
-                                   HashTable::SearchPurpose::READ);
+                                   HashTable::SearchPurpose::Read);
     // these nodes should be already created during data restoring
     if (s != Status::Ok) {
       GlobalLogger.Error("Rebuild skiplist error\n");
