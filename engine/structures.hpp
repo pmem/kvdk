@@ -14,7 +14,7 @@
 namespace KVDK_NAMESPACE {
 
 struct PendingBatch {
-  enum Stage {
+  enum class Stage {
     Done = 0,
     Processing = 1,
   };
@@ -29,7 +29,7 @@ struct PendingBatch {
 
   void PersistStage(Stage s);
 
-  bool Unfinished() { return stage == Processing; }
+  bool Unfinished() { return stage == Stage::Processing; }
 
   Stage stage;
   uint32_t num_kv;

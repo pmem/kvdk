@@ -136,7 +136,7 @@ private:
   inline std::string db_file_name() { return dir_ + "data"; }
 
   inline std::string persisted_pending_block_file(int thread_id) {
-    return dir_ + "pending_block" + std::to_string(thread_id);
+    return pending_batch_dir_ + std::to_string(thread_id);
   }
 
   inline std::string config_file_name() { return dir_ + "configs"; }
@@ -156,6 +156,7 @@ private:
   std::mutex list_mu_;
 
   std::string dir_;
+  std::string pending_batch_dir_;
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;

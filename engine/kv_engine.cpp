@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <dirent.h>
 #include <future>
 #include <libpmem.h>
 #include <limits>
@@ -73,12 +74,21 @@ void KVEngine::BackgroundWork() {
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
   write_thread.id = 0;
-  int res = create_dir_if_missing(name);
+  dir_ = format_dir_path(name);
+  pending_batch_dir_ = dir_ + "pending_batch_files/";
+  int res = create_dir_if_missing(dir_);
   if (res != 0) {
-    GlobalLogger.Error("Create engine dir %s error\n", name.c_str());
+    GlobalLogger.Error("Create engine dir %s error\n", dir_.c_str());
     return Status::IOError;
   }
-  dir_ = format_dir_path(name);
+
+  res = create_dir_if_missing(pending_batch_dir_);
+  if (res != 0) {
+    GlobalLogger.Error("Create pending batch files dir %s error\n",
+                       pending_batch_dir_.c_str());
+    return Status::IOError;
+  }
+
   db_file_ = db_file_name();
   configs_ = configs;
   Status s = PersistOrRecoverImmutableConfigs();
@@ -380,36 +390,59 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
 }
 
 Status KVEngine::RestorePendingBatch() {
-  // TODO: iterate all pending batch files
-  uint64_t id = 0;
+  DIR *dir;
+  dirent *ent;
+  uint64_t persisted_pending_file_size =
+      kMaxWriteBatchSize * 8 /* offsets */ + sizeof(PendingBatch);
   size_t mapped_len;
   int is_pmem;
-  PendingBatch *pending_batch = nullptr;
-  uint64_t persisted_pending_file_size =
-      kMaxWriteBatchSize * 8 + sizeof(PendingBatch);
-  while ((pending_batch = (PendingBatch *)pmem_map_file(
-              persisted_pending_block_file(id).c_str(),
-              persisted_pending_file_size, PMEM_FILE_EXCL, 0666, &mapped_len,
-              &is_pmem)) != nullptr) {
-    assert(is_pmem);
-    assert(mapped_len = persisted_pending_file_size);
-    if (id < configs_.max_write_threads) {
-      thread_res_[id].persisted_pending_batch = pending_batch;
-    }
 
-    if (pending_batch->Unfinished()) {
-      uint64_t *invalid_offsets = (uint64_t *)(pending_batch + 1);
-      for (uint32_t i = 0; i < pending_batch->num_kv; i++) {
-        DataEntry *data_entry =
-            (DataEntry *)pmem_allocator_->offset2addr(invalid_offsets[i]);
-        if (data_entry->timestamp == pending_batch->timestamp) {
-          data_entry->type = PADDING;
-          pmem_persist(&data_entry->type, 8);
+  // Iterate all pending batch files and rollback unfinished batch writes
+  if ((dir = opendir(pending_batch_dir_.c_str())) != nullptr) {
+    while ((ent = readdir(dir)) != nullptr) {
+      std::string file_name = std::string(ent->d_name);
+      if (file_name != "." && file_name != "..") {
+        uint64_t id = std::stoul(file_name);
+        std::string pending_batch_file = persisted_pending_block_file(id);
+
+        PendingBatch *pending_batch = (PendingBatch *)pmem_map_file(
+            pending_batch_file.c_str(), persisted_pending_file_size,
+            PMEM_FILE_EXCL, 0666, &mapped_len, &is_pmem);
+
+        if (pending_batch != nullptr) {
+          if (!is_pmem || mapped_len != persisted_pending_file_size) {
+            GlobalLogger.Error("Map persisted pending batch file %s failed\n",
+                               pending_batch_file.c_str());
+            return Status::IOError;
+          }
+
+          if (pending_batch->Unfinished()) {
+            uint64_t *invalid_offsets = (uint64_t *)(pending_batch + 1);
+            for (uint32_t i = 0; i < pending_batch->num_kv; i++) {
+              DataEntry *data_entry =
+                  (DataEntry *)pmem_allocator_->offset2addr(invalid_offsets[i]);
+              if (data_entry->timestamp == pending_batch->timestamp) {
+                data_entry->type = PADDING;
+                pmem_persist(&data_entry->type, 8);
+              }
+            }
+            pending_batch->PersistStage(PendingBatch::Stage::Done);
+          }
+
+          if (id < configs_.max_write_threads) {
+            thread_res_[id].persisted_pending_batch = pending_batch;
+          } else {
+            remove(pending_batch_file.c_str());
+          }
         }
       }
     }
-    id++;
+  } else {
+    GlobalLogger.Error("Open persisted pending batch dir %s failed\n",
+                       pending_batch_dir_.c_str());
+    return Status::IOError;
   }
+
   return Status::Ok;
 }
 
