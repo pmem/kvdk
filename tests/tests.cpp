@@ -49,6 +49,24 @@ protected:
   }
 };
 
+TEST_F(EngineBasicTest, TestSeekToFirst) {
+
+  const std::string collection = "col";
+  std::string val;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  ASSERT_EQ(engine->SSet(collection, "foo", "bar"), Status::Ok);
+  ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::Ok);
+  ASSERT_EQ(engine->SDelete(collection, "foo"), Status::Ok);
+  ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::NotFound);
+  ASSERT_EQ(engine->SSet(collection, "foo2", "bar2"), Status::Ok);
+  auto iter = engine->NewSortedIterator(collection);
+  ASSERT_NE(iter, nullptr);
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(iter->Value(), "bar2");
+}
+
 TEST_F(EngineBasicTest, TestBatchWrite) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;

@@ -201,6 +201,9 @@ public:
   virtual void SeekToFirst() override {
     uint64_t first = skiplist_->header()->data_entry->next;
     current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
+    while (current && current->type == SORTED_DELETE_RECORD) {
+      current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
+    }
   }
 
   virtual bool Valid() override { return current != nullptr; }
