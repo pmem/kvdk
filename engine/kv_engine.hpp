@@ -8,6 +8,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -20,7 +21,7 @@
 #include "kvdk/engine.hpp"
 #include "list"
 #include "logger.hpp"
-#include "pmem_allocator.hpp"
+#include "pmem_allocator/pmem_allocator.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
@@ -29,7 +30,6 @@
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
-
 class KVEngine : public Engine {
 public:
   KVEngine();
@@ -64,9 +64,7 @@ private:
     PendingBatch *persisted_pending_batch = nullptr;
   };
 
-  bool CheckKeySize(const std::string &key) {
-    return key.size() > 0 && key.size() <= UINT16_MAX;
-  }
+  bool CheckKeySize(const std::string &key) { return key.size() <= UINT16_MAX; }
 
   bool CheckValueSize(const std::string &value) {
     return value.size() <= UINT32_MAX;
@@ -116,6 +114,9 @@ private:
 
   Status PersistOrRecoverImmutableConfigs();
 
+  // Regularly works excecuted by background thread
+  void BackgroundWork();
+
   void PersistDataEntry(char *block_base, DataEntry *data_entry,
                         const Slice &key, const Slice &value, uint16_t type);
 
@@ -135,7 +136,7 @@ private:
   inline std::string db_file_name() { return dir_ + "data"; }
 
   inline std::string persisted_pending_block_file(int thread_id) {
-    return dir_ + "pending_block" + std::to_string(thread_id);
+    return pending_batch_dir_ + std::to_string(thread_id);
   }
 
   inline std::string config_file_name() { return dir_ + "configs"; }
@@ -155,10 +156,13 @@ private:
   std::mutex list_mu_;
 
   std::string dir_;
+  std::string pending_batch_dir_;
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   Configs configs_;
+  bool closing_{false};
+  std::vector<std::thread> bg_threads_;
 };
 
 } // namespace KVDK_NAMESPACE

@@ -28,7 +28,7 @@ Status Skiplist::Rebuild() {
   while (1) {
     HashEntry *entry_base = nullptr;
     uint64_t next_offset = splice.prev_data_entry->next;
-    if (next_offset == NULL_PMEM_OFFSET) {
+    if (next_offset == kNullPmemOffset) {
       break;
     }
     // TODO: check failure
@@ -39,7 +39,7 @@ Status Skiplist::Rebuild() {
     Status s = hash_table_->Search(hash_table_->GetHint(key), key,
                                    SORTED_DATA_RECORD | SORTED_DELETE_RECORD,
                                    &hash_entry, &data_entry, &entry_base,
-                                   HashTable::SearchPurpose::READ);
+                                   HashTable::SearchPurpose::Read);
     // these nodes should be already created during data restoring
     if (s != Status::Ok) {
       GlobalLogger.Error("Rebuild skiplist error\n");
@@ -84,7 +84,7 @@ void Skiplist::Seek(const Slice &key, Splice *splice) {
   DLDataEntry *prev_data_entry = prev->data_entry;
   while (1) {
     uint64_t next_data_entry_offset = prev_data_entry->next;
-    if (next_data_entry_offset == NULL_PMEM_OFFSET) {
+    if (next_data_entry_offset == kNullPmemOffset) {
       splice->prev_data_entry = prev_data_entry;
       splice->next_data_entry = nullptr;
       break;

@@ -10,7 +10,6 @@
 #include "kvdk/engine.h"
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
-#include "kvdk/status.hpp"
 #include "kvdk/write_batch.hpp"
 
 using kvdk::Configs;
@@ -60,17 +59,23 @@ static void StatusAssert(Status s) {
   }
 }
 
-KVDKConfigs *KVDKCreateConfigs() { new KVDKConfigs; }
+static char *CopyStringToChar(const std::string &str) {
+  char *result = reinterpret_cast<char *>(malloc(sizeof(char) * str.size()));
+  memcpy(result, str.data(), sizeof(char) * str.size());
+  return result;
+}
+
+KVDKConfigs *KVDKCreateConfigs() { return new KVDKConfigs; }
 
 void KVDKUserConfigs(KVDKConfigs *kv_config,
                      uint64_t max_write_threads /*= 48*/,
-                     uint64_t pmem_file_size = /*256ULL << 30*/,
-                     unsigned char populate_pmem_space = /*true*/,
-                     uint32_t pmem_block_size = /*64,*/
-                     uint64_t pmem_segment_blocks = /*2 * 1024 * 1024*/,
-                     uint32_t hash_bucket_size = /*128*/,
-                     uint64_t hash_bucket_num = /*(1 << 27)*/,
-                     uint32_t num_buckets_per_slot = /*(1 << 4)*/) {
+                     uint64_t pmem_file_size /*= 256ULL << 30*/,
+                     unsigned char populate_pmem_space /*= true*/,
+                     uint32_t pmem_block_size /*=64*/,
+                     uint64_t pmem_segment_blocks /*= 2 * 1024 * 1024*/,
+                     uint32_t hash_bucket_size /* = 128*/,
+                     uint64_t hash_bucket_num /*= (1 << 27)*/,
+                     uint32_t num_buckets_per_slot /*= (1 << 4)*/) {
   kv_config->rep.max_write_threads = max_write_threads;
   kv_config->rep.hash_bucket_num = hash_bucket_num;
   kv_config->rep.hash_bucket_size = hash_bucket_size;
@@ -84,7 +89,7 @@ void KVDKUserConfigs(KVDKConfigs *kv_config,
 void KVDKConigsDestory(KVDKConfigs *kv_config) { delete kv_config; }
 
 KVDKEngine *KVDKOpen(const char *name, const KVDKConfigs *config,
-                     FILE *log_file = stdout) {
+                     FILE *log_file) {
   Engine *engine;
   StatusAssert(Engine::Open(std::string(name), &engine, config->rep, log_file));
   KVDKEngine *result = new KVDKEngine;
@@ -98,10 +103,8 @@ void KVDKCloseEngine(KVDKEngine *engine) {
 }
 
 void KVDKRemovePMemContents(const char *name) {
-  char *res = "rm -rf";
-  std::strcat(res, name);
-  std::strcat(res, "\n");
-  system(res);
+  std::string res = "rm -rf " + std::string(name) + "\n";
+  system(res.c_str());
 }
 
 KVDKWriteBatch *KVDKWriteBatchCreate(void) { return new KVDKWriteBatch; }
@@ -119,10 +122,13 @@ void KVDKWrite(KVDKEngine *engine, const KVDKWriteBatch *batch) {
 }
 
 void KVDKWriteBatchDestory(KVDKWriteBatch *wb) { delete wb; }
-void KVDKGet(KVDKEngine *engine, const char *key, char *val) {
+
+char *KVDKGet(KVDKEngine *engine, const char *key) {
+  char *res = nullptr;
   std::string val_str;
   StatusAssert(engine->rep->Get(std::string(key), &val_str));
-  val = const_cast<char *>(val_str.c_str());
+  res = CopyStringToChar(val_str);
+  return res;
 }
 
 void KVDKSet(KVDKEngine *engine, const char *key, const char *val) {
@@ -139,12 +145,14 @@ void KVDKSortedSet(KVDKEngine *engine, const char *collection, const char *key,
                                  std::string(val)));
 }
 
-void KVDKSortedGet(KVDKEngine *engine, const char *collection, const char *key,
-                   char *val) {
+char *KVDKSortedGet(KVDKEngine *engine, const char *collection,
+                    const char *key) {
+  char *res = nullptr;
   std::string val_str;
   StatusAssert(
       engine->rep->SGet(std::string(collection), std::string(key), &val_str));
-  val = const_cast<char *>(val_str.c_str());
+  res = CopyStringToChar(val_str);
+  return res;
 }
 
 void KVDKSortedDelete(KVDKEngine *engine, const char *collection,
@@ -156,6 +164,7 @@ KVDKIterator *KVDKCreateIterator(KVDKEngine *engine, const char *collection) {
   KVDKIterator *result = new KVDKIterator;
   result->rep = (engine->rep->NewSortedIterator(std::string(collection))).get();
   assert(result->rep != nullptr && "Create Sorted Iterator Failed!");
+  return result;
 }
 
 void KVDKIterSeekToFirst(KVDKIterator *iter) { iter->rep->SeekToFirst(); }
@@ -176,8 +185,5 @@ const char *KVDKIterValue(KVDKIterator *iter) {
   return iter->rep->Value().data();
 }
 
-void KVDKIterDestory(KVDKIterator *iter) {
-  delete iter->rep;
-  delete iter;
-}
+void KVDKIterDestory(KVDKIterator *iter) { delete iter; }
 }

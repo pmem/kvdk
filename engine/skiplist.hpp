@@ -14,7 +14,7 @@
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
-static const int kMaxHeight = MAX_SKIPLIST_LEVEL;
+static const int kMaxHeight = 32;
 static const uint16_t kCacheLevel = 3;
 
 /* Format:
@@ -201,6 +201,9 @@ public:
   virtual void SeekToFirst() override {
     uint64_t first = skiplist_->header()->data_entry->next;
     current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
+    while (current && current->type == SORTED_DELETE_RECORD) {
+      current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
+    }
   }
 
   virtual bool Valid() override { return current != nullptr; }

@@ -3,6 +3,7 @@
  */
 
 #include "kvdk/engine.h"
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 
@@ -14,26 +15,30 @@ const char *pmem_path = "/mnt/pmem0/tutorial_kvdk_example";
 int main() {
   // Initialize a KVDK instance.
   KVDKConfigs *kvdk_configs = KVDKCreateConfigs();
-  KVDKUserConfigs(kvdk_configs, pmem_file_size = 1ull << 20);
+  KVDKUserConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 128u,
+                  1ull << 10);
 
-  const char engine_path = "/mnt/pmem0/tutorial_kvdk_example";
+  const char *engine_path = "/mnt/pmem0/tutorial_kvdk_example";
   // Purge old KVDK instance
   KVDKRemovePMemContents(engine_path);
   // open engine
-  KVDKEnigne *kvdk_engine = KVDKOpen(engine_path, kvdk_configs, stdout);
+  KVDKEngine *kvdk_engine = KVDKOpen(engine_path, kvdk_configs, stdout);
   // Reads and Writes on Anonymous Global Collection
   {
-    const char *key1 = "key1", key2 = "key2";
-    const char *value1 = "value1", value2 = "value2";
-    char *read_v1, read_v2;
+    const char *key1 = "key1";
+    const char *key2 = "key2";
+    const char *value1 = "value1";
+    const char *value2 = "value2";
+    char *read_v1;
+    char *read_v2;
     KVDKSet(kvdk_engine, key1, value1);
     KVDKSet(kvdk_engine, key2, value2);
-    KVDKGet(kvdk_engine, key1, read_v1);
+    read_v1 = KVDKGet(kvdk_engine, key1);
     assert(strcmp(read_v1, value1) == 0);
     KVDKSet(kvdk_engine, key1, value2);
-    KVDKGet(kvdk_engine, key1, read_v1);
+    read_v1 = KVDKGet(kvdk_engine, key1);
     assert(strcmp(read_v1, value2) == 0);
-    KVDKGet(kvdk_engine, key2, read_v2);
+    read_v2 = KVDKGet(kvdk_engine, key2);
     assert(strcmp(read_v2, value2) == 0);
     KVDKDelete(kvdk_engine, key1);
     KVDKDelete(kvdk_engine, key2);
@@ -42,18 +47,22 @@ int main() {
   }
   // Reads and Writes on Named Collection
   {
-    const char *collection1 = "collection1", collection2 = "collection2";
-    const char *key1 = "key1", key2 = "key2";
-    const char *value1 = "value1", value2 = "value2";
-    char *read_v1, read_v2;
+    const char *collection1 = "collection1";
+    const char *collection2 = "collection2";
+    const char *key1 = "key1";
+    const char *key2 = "key2";
+    const char *value1 = "value1";
+    const char *value2 = "value2";
+    char *read_v1;
+    char *read_v2;
     KVDKSortedSet(kvdk_engine, collection1, key1, value1);
     KVDKSortedSet(kvdk_engine, collection2, key2, value2);
-    KVDKSortedGet(kvdk_engine, collection1, key1, read_v1);
+    read_v1 = KVDKSortedGet(kvdk_engine, collection1, key1);
     assert(strcmp(read_v1, value1) == 0);
     KVDKSortedSet(kvdk_engine, collection1, key1, value2);
-    KVDKSortedGet(kvdk_engine, collection1, key1, read_v1);
+    read_v1 = KVDKSortedGet(kvdk_engine, collection1, key1);
     assert(strcmp(read_v1, value2) == 0);
-    KVDKSortedGet(kvdk_engine, collection2, key2, read_v2);
+    read_v2 = KVDKSortedGet(kvdk_engine, collection2, key2);
     assert(strcmp(read_v2, value2) == 0);
     KVDKSortedDelete(kvdk_engine, collection1, key1);
     KVDKSortedDelete(kvdk_engine, collection2, key2);
@@ -63,12 +72,15 @@ int main() {
   }
   // Iterating a Sorted Named Collection
   {
-    char nums = {"4", "5", "0", "2", "9", "1", "3", "8", "6", "7"};
+    const char *nums[10] = {"4", "5", "0", "2", "9", "1", "3", "8", "6", "7"};
+    const char *sorted_nums[10] = {"0", "1", "2", "3", "4",
+                                   "5", "6", "7", "8", "9"};
     const char *sorted_collection = "sorted_collection";
     for (int i = 0; i < 10; ++i) {
-      char *key = std::strcat("key", nums[i]);
-      char *value = std::strcat("value", nums[i]);
-      KVDKSortedSet(kvdk_engine, collection1, key, value);
+      char key[10] = "key", value[10] = "value";
+      strcat(key, nums[i]);
+      strcat(value, nums[i]);
+      KVDKSortedSet(kvdk_engine, sorted_collection, key, value);
     }
     // create sorted iterator
     KVDKIterator *kvdk_iter =
@@ -81,25 +93,30 @@ int main() {
     int i = 1;
     KVDKIterSeek(kvdk_iter, beg);
     for (KVDKIterSeek(kvdk_iter, beg);
-         KVDKIterValid(kvdk_iter) && KVDKIterKey(kvdk_iter) < end;
+         KVDKIterValid(kvdk_iter) && (strcmp(KVDKIterKey(kvdk_iter), end) <= 0);
          KVDKIterNext(kvdk_iter)) {
-      assert(strcmp(KVDKIterKey(kvdk_iter), strcat("key", itoa(i))) == 0);
-      assert(strcmp(KVDKIterValue(kvdk_iter), strcat("key", itoa(i)) == 0);
+      char key[10] = "key", value[10] = "value";
+      strcat(key, sorted_nums[i]);
+      strcat(value, sorted_nums[i]);
+      assert(strcmp(KVDKIterKey(kvdk_iter), key) == 0);
+      assert(strcmp(KVDKIterValue(kvdk_iter), value) == 0);
       ++i;
     }
-    assert(i == 8);
+    assert(i == 9);
 
     // Iterate through range ["key8", "key1").
-    const char *beg = "key8";
-    const char *end = "key1";
+    beg = "key8";
+    end = "key1";
 
-    int i = 8;
-    KVDKIterSeek(kvdk_iter, beg);
+    i = 8;
     for (KVDKIterSeek(kvdk_iter, beg);
-         KVDKIterValid(kvdk_iter) && KVDKIterKey(kvdk_iter) > end;
+         KVDKIterValid(kvdk_iter) && (strcmp(KVDKIterKey(kvdk_iter), end) >= 0);
          KVDKIterPre(kvdk_iter)) {
-      assert(strcmp(KVDKIterKey(kvdk_iter), strcat("key", itoa(i))) == 0);
-      assert(strcmp(KVDKIterValue(kvdk_iter), strcat("key", itoa(i)) == 0);
+      char key[10] = "key", value[10] = "value";
+      strcat(key, sorted_nums[i]);
+      strcat(value, sorted_nums[i]);
+      assert(strcmp(KVDKIterKey(kvdk_iter), key) == 0);
+      assert(strcmp(KVDKIterValue(kvdk_iter), value) == 0);
       --i;
     }
     assert(i == 0);
@@ -108,15 +125,18 @@ int main() {
   }
   // BatchWrite on Anonymous Global Collection
   {
-    const char *key1 = "key1", key2 = "key2";
-    const char *value1 = "value1", value2 = "value2";
-    char *read_v1, read_v2;
+    const char *key1 = "key1";
+    const char *key2 = "key2";
+    const char *value1 = "value1";
+    const char *value2 = "value2";
+    char *read_v1;
+    char *read_v2;
     KVDKWriteBatch *kvdk_wb = KVDKWriteBatchCreate();
     KVDKWriteBatchPut(kvdk_wb, key1, value1);
     KVDKWriteBatchPut(kvdk_wb, key2, value2);
     KVDKWriteBatchDelete(kvdk_wb, key1);
     KVDKWrite(kvdk_engine, kvdk_wb);
-    KVDKGet(kvdk_engine, key2, read_v2);
+    read_v2 = KVDKGet(kvdk_engine, key2);
     assert(strcmp(read_v2, value2) == 0);
     printf(
         "Successfully performed BatchWrite on anonymous global collection.\n");

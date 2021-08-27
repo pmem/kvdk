@@ -8,7 +8,6 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-
 // Notice: this is on development
 class HashList : public PersistentList {
 public:

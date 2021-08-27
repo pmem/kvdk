@@ -21,10 +21,10 @@
 extern "C" {
 #endif
 
-#include <memory>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
@@ -56,8 +56,7 @@ extern KVDK_LIBRARY_API void KVDKWrite(KVDKEngine *engine,
                                        const KVDKWriteBatch *batch);
 
 // For Anonymous Global Collection
-extern KVDK_LIBRARY_API void KVDKGet(KVDKEngine *engine, const char *key,
-                                     char *val);
+extern KVDK_LIBRARY_API char *KVDKGet(KVDKEngine *engine, const char *key);
 extern KVDK_LIBRARY_API void KVDKSet(KVDKEngine *engine, const char *key,
                                      const char *val);
 extern KVDK_LIBRARY_API void KVDKDelete(KVDKEngine *engine, const char *key);
@@ -68,9 +67,8 @@ extern KVDK_LIBRARY_API void KVDKSortedSet(KVDKEngine *engine,
                                            const char *key, const char *val);
 extern KVDK_LIBRARY_API void
 KVDKSortedDelete(KVDKEngine *engine, const char *collection, const char *key);
-extern KVDK_LIBRARY_API void KVDKSortedGet(KVDKEngine *engine,
-                                           const char *collection,
-                                           const char *key, char *val);
+extern KVDK_LIBRARY_API char *
+KVDKSortedGet(KVDKEngine *engine, const char *collection, const char *key);
 
 extern KVDK_LIBRARY_API KVDKIterator *
 KVDKCreateIterator(KVDKEngine *engine, const char *collection);
@@ -82,6 +80,7 @@ extern KVDK_LIBRARY_API void KVDKIterPre(KVDKIterator *iter);
 extern KVDK_LIBRARY_API unsigned char KVDKIterValid(KVDKIterator *iter);
 extern KVDK_LIBRARY_API const char *KVDKIterKey(KVDKIterator *iter);
 extern KVDK_LIBRARY_API const char *KVDKIterValue(KVDKIterator *iter);
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

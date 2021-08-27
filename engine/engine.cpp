@@ -6,7 +6,6 @@
 #include "kv_engine.hpp"
 
 namespace KVDK_NAMESPACE {
-
 Status Engine::Open(const std::string &name, Engine **engine_ptr,
                     const Configs &configs, FILE *log_file) {
   GlobalLogger.Init(log_file);
