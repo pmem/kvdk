@@ -32,7 +32,7 @@ set(SOURCES
         engine/thread_manager.cpp
         engine/utils.cpp
         engine/pmem_allocator/free_list.cpp
-        engine/c_engine.cpp)
+        engine/c.cc)
 
 
 # .a library
