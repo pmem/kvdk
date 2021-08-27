@@ -90,7 +90,6 @@ public:
     main_buckets_ = dram_allocator_->offset2addr(
         (dram_allocator_->Allocate(hash_bucket_size * hash_bucket_num)
              .space_entry.offset));
-    //    memset(main_buckets_, 0, hash_bucket_size * hash_bucket_num);
     slots_.resize(hash_bucket_num / num_buckets_per_slot);
     hash_bucket_entries_.resize(hash_bucket_num, 0);
   }
