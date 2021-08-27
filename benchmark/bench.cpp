@@ -63,7 +63,7 @@ DEFINE_bool(
 DEFINE_int32(max_write_threads, 32, "Max write threads of the instance");
 
 DEFINE_uint64(space, (uint64_t)256 << 30,
-              "Max usable PMEM space of the instance");
+              "Max usable PMem space of the instance");
 
 class Timer {
 public:
@@ -244,14 +244,19 @@ void DBScan(int id) {
     num = generate_key(existing_keys_ratio);
     memcpy(&k[0], &num, 8);
     auto iter = engine->NewSortedIterator(collections[num % num_collections]);
-    iter->Seek(k);
-    int cnt = scan_length;
-    while (cnt > 0 && iter->Valid()) {
-      cnt--;
-      ++ops;
-      k = iter->Key();
-      v = iter->Value();
-      iter->Next();
+    if (iter) {
+      iter->Seek(k);
+      int cnt = scan_length;
+      while (cnt > 0 && iter->Valid()) {
+        cnt--;
+        ++ops;
+        k = iter->Key();
+        v = iter->Value();
+        iter->Next();
+      }
+    } else {
+      fprintf(stderr, "Seek error\n");
+      exit(-1);
     }
 
     if (ops % 100 == 0) {

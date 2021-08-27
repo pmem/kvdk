@@ -1,0 +1,252 @@
+From 7b0a7ea243dfa8b0a6ccf2604d9be7d429be4ac4 Mon Sep 17 00:00:00 2001
+From: "peifeng.si" <peifeng.si@intel.com>
+Date: Thu, 26 Aug 2021 01:46:18 -0400
+Subject: [PATCH] use KVDK for set/get operations
+
+---
+ kvrocks.conf        |  6 ++++++
+ src/Makefile        |  5 ++++-
+ src/config.cc       |  2 ++
+ src/config.h        |  4 ++++
+ src/redis_string.cc | 49 +++++++++++++++++++++++++++------------------
+ src/redis_string.h  |  4 +++-
+ src/server.cc       | 29 ++++++++++++++++++++++++++-
+ src/server.h        |  1 +
+ 8 files changed, 78 insertions(+), 22 deletions(-)
+
+diff --git a/kvrocks.conf b/kvrocks.conf
+index 69b3e65..2eff971 100644
+--- a/kvrocks.conf
++++ b/kvrocks.conf
+@@ -482,5 +482,11 @@ rocksdb.stats_dump_period_sec 0
+ #
+ # Default: no
+ rocksdb.disable_auto_compactions no
++
++################################ KVDK #####################################
++kvdk.pmem_file_size 107374182400
++
++kvdk.pmem_file_path /mnt/pmem0/kvdk
++
+ ################################ NAMESPACE #####################################
+ # namespace.test change.me
+diff --git a/src/Makefile b/src/Makefile
+index 5a868df..3a62f11 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -23,13 +23,16 @@ JEMALLOC_PATH= $(EXTERNAL_LIBRARY_PATH)/jemalloc
+ JEMALLOC= $(JEMALLOC_PATH)/lib/libjemalloc.a
+ ROCKSDB_PATH= $(EXTERNAL_LIBRARY_PATH)/rocksdb
+ ROCKSDB= $(ROCKSDB_PATH)/librocksdb.a
++KVDK_PATH= $(EXTERNAL_LIBRARY_PATH)/kvdk
++KVDK= $(KVDK_PATH)/libengine.so
+ # Include paths to dependencies
+ FINAL_CXXFLAGS+= -I$(JEMALLOC_PATH)/include \
+ 				  -I$(ROCKSDB_PATH)/include \
+ 				  -I$(LIBEVENT_PATH)/include \
+ 				  -I$(GLOG_PATH)/src \
++				  -I$(KVDK_PATH)/include \
+ 				  -I.
+-FINAL_LIBS+= $(GLOG) $(LIBEVENT) $(LIBEVENT_PTHREADS) $(JEMALLOC) $(ROCKSDB)
++FINAL_LIBS+= $(GLOG) $(LIBEVENT) $(LIBEVENT_PTHREADS) $(JEMALLOC) $(ROCKSDB) $(KVDK)
+ 
+ SHARED_OBJS= cluster.o compact_filter.o config.o cron.o encoding.o event_listener.o lock_manager.o \
+ 			   log_collector.o redis_bitmap.o redis_bitmap_string.o redis_cmd.o redis_connection.o redis_db.o \
+diff --git a/src/config.cc b/src/config.cc
+index 50f3035..435364b 100644
+--- a/src/config.cc
++++ b/src/config.cc
+@@ -127,6 +127,8 @@ Config::Config() {
+        false, new IntField(&RocksDB.level0_slowdown_writes_trigger, 20, 1, 1024)},
+       {"rocksdb.level0_stop_writes_trigger",
+        false, new IntField(&RocksDB.level0_stop_writes_trigger, 40, 1, 1024)},
++      {"kvdk.pmem_file_size", true, new Int64Field(&KVDK.pmem_file_size, 0, 0, INT64_MAX)},
++      {"kvdk.pmem_file_path", true, new StringField(&KVDK.pmem_file_path, "/mnt/pmem0/kvdk")},
+   };
+   for (const auto &wrapper : fields) {
+     auto field = wrapper.field;
+diff --git a/src/config.h b/src/config.h
+index a5db761..aeb726c 100644
+--- a/src/config.h
++++ b/src/config.h
+@@ -95,6 +95,10 @@ struct Config{
+   std::set<std::string> profiling_sample_commands;
+   bool profiling_sample_all_commands = false;
+ 
++  struct {
++    int64_t pmem_file_size;
++    std::string pmem_file_path;
++  } KVDK;
+   struct {
+     int block_size;
+     bool cache_index_and_filter_blocks;
+diff --git a/src/redis_string.cc b/src/redis_string.cc
+index 8bcbf4b..7b0eda5 100644
+--- a/src/redis_string.cc
++++ b/src/redis_string.cc
+@@ -65,13 +65,19 @@ rocksdb::Status String::Append(const std::string &user_key, const std::string &v
+ std::vector<rocksdb::Status> String::MGet(const std::vector<Slice> &keys, std::vector<std::string> *values) {
+   std::string ns_key;
+   std::string value;
+-  std::vector<rocksdb::Status> statuses;
+-  for (size_t i = 0; i < keys.size(); i++) {
+-    AppendNamespacePrefix(keys[i], &ns_key);
+-    statuses.emplace_back(getValue(ns_key, &value));
+-    values->emplace_back(value);
++  if (engine) {
++      engine->Get(keys[0].ToString(), &value);
++      values->emplace_back(value);
++      return std::vector<rocksdb::Status>{rocksdb::Status::OK()};
++  } else {
++      std::vector<rocksdb::Status> statuses;
++      for (size_t i = 0; i < keys.size(); i++) {
++          AppendNamespacePrefix(keys[i], &ns_key);
++          statuses.emplace_back(getValue(ns_key, &value));
++          values->emplace_back(value);
++      }
++      return statuses;
+   }
+-  return statuses;
+ }
+ 
+ rocksdb::Status String::Get(const std::string &user_key, std::string *value) {
+@@ -259,6 +265,7 @@ rocksdb::Status String::IncrByFloat(const std::string &user_key, double incremen
+ 
+ rocksdb::Status String::MSet(const std::vector<StringPair> &pairs, int ttl) {
+   uint32_t expire = 0;
++
+   if (ttl > 0) {
+     int64_t now;
+     rocksdb::Env::Default()->GetCurrentTime(&now);
+@@ -269,19 +276,23 @@ rocksdb::Status String::MSet(const std::vector<StringPair> &pairs, int ttl) {
+   // to improve the set performance
+   std::string ns_key;
+   for (const auto &pair : pairs) {
+-    std::string bytes;
+-    Metadata metadata(kRedisString, false);
+-    metadata.expire = expire;
+-    metadata.Encode(&bytes);
+-    bytes.append(pair.value.ToString());
+-    rocksdb::WriteBatch batch;
+-    WriteBatchLogData log_data(kRedisString);
+-    batch.PutLogData(log_data.Encode());
+-    AppendNamespacePrefix(pair.key, &ns_key);
+-    batch.Put(metadata_cf_handle_, ns_key, bytes);
+-    LockGuard guard(storage_->GetLockManager(), ns_key);
+-    auto s = storage_->Write(rocksdb::WriteOptions(), &batch);
+-    if (!s.ok()) return s;
++    if (engine) {
++        engine->Set(pair.key.ToString(), pair.value.ToString());
++    } else {
++        std::string bytes;
++        Metadata metadata(kRedisString, false);
++        metadata.expire = expire;
++        metadata.Encode(&bytes);
++        bytes.append(pair.value.ToString());
++        rocksdb::WriteBatch batch;
++        WriteBatchLogData log_data(kRedisString);
++        batch.PutLogData(log_data.Encode());
++        AppendNamespacePrefix(pair.key, &ns_key);
++        batch.Put(metadata_cf_handle_, ns_key, bytes);
++        LockGuard guard(storage_->GetLockManager(), ns_key);
++        auto s = storage_->Write(rocksdb::WriteOptions(), &batch);
++        if (!s.ok()) return s;
++    }
+   }
+   return rocksdb::Status::OK();
+ }
+diff --git a/src/redis_string.h b/src/redis_string.h
+index 50c08a8..76c4481 100644
+--- a/src/redis_string.h
++++ b/src/redis_string.h
+@@ -5,6 +5,8 @@
+ 
+ #include "redis_db.h"
+ #include "redis_metadata.h"
++#include "engine.hpp"
++#include "namespace.hpp"
+ 
+ typedef struct {
+   Slice key;
+@@ -12,7 +14,7 @@ typedef struct {
+ } StringPair;
+ 
+ namespace Redis {
+-
++extern KVDK_NAMESPACE::Engine *engine;
+ const int STRING_HDR_SIZE = 5;
+ 
+ class String : public Database {
+diff --git a/src/server.cc b/src/server.cc
+index 8669f72..e3ad5c3 100644
+--- a/src/server.cc
++++ b/src/server.cc
+@@ -17,6 +17,8 @@
+ #include "redis_connection.h"
+ #include "compaction_checker.h"
+ #include "config.h"
++#include "engine.hpp"
++#include "namespace.hpp"
+ 
+ std::atomic<int>Server::unix_time_ = {0};
+ 
+@@ -53,6 +55,25 @@ Server::~Server() {
+   }
+ }
+ 
++namespace Redis {
++    KVDK_NAMESPACE::Engine *engine = nullptr;
++}
++
++Status Server::OpenKVDK() {
++
++    KVDK_NAMESPACE::Configs configs;
++    configs.populate_pmem_space = 0;
++    configs.max_write_threads = config_->workers;
++    configs.pmem_file_size = static_cast<uint64_t>(config_->KVDK.pmem_file_size);
++    fprintf(stderr, "pmem_file size %lu", configs.pmem_file_size);
++    KVDK_NAMESPACE::Status s = KVDK_NAMESPACE::Engine::Open(
++            config_->KVDK.pmem_file_path, &(Redis::engine), configs, stdout);
++    if (s == KVDK_NAMESPACE::Status::Ok)
++        return Status(Status::cOK);
++    else
++        return Status(Status::DBOpenErr);
++}
++
+ // Kvrocks threads list:
+ // - Work-thread: process client's connections and requests
+ // - Task-runner: one thread pool, handle some jobs that may freeze server if run directly
+@@ -65,11 +86,17 @@ Server::~Server() {
+ //   threads when full sync, TODO(@shooterit) we should manage this threads uniformly.
+ //     - feed-replica-data-info: generate checkpoint and send files list when full sync
+ //     - feed-replica-file: send SST files when slaves ask for full sync
++
+ Status Server::Start() {
++  Status s;
+   if (!config_->master_host.empty()) {
+-    Status s = AddMaster(config_->master_host, static_cast<uint32_t>(config_->master_port));
++    s = AddMaster(config_->master_host, static_cast<uint32_t>(config_->master_port));
+     if (!s.IsOK()) return s;
+   }
++
++  s = OpenKVDK();
++  if (!s.IsOK()) return s;
++
+   for (const auto worker : worker_threads_) {
+     worker->Start();
+   }
+diff --git a/src/server.h b/src/server.h
+index 2addaa0..1311910 100644
+--- a/src/server.h
++++ b/src/server.h
+@@ -46,6 +46,7 @@ class Server {
+   explicit Server(Engine::Storage *storage, Config *config);
+   ~Server();
+ 
++  Status OpenKVDK();
+   Status Start();
+   void Stop();
+   void Join();
+-- 
+2.17.1
+
