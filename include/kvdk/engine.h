@@ -32,17 +32,20 @@ typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
 
 extern KVDK_LIBRARY_API KVDKConfigs *KVDKCreateConfigs(void);
-extern KVDK_LIBRARY_API void KVDKUserConfigs(
-    KVDKConfigs *kv_config, uint64_t max_write_threads = 48,
-    uint64_t pmem_file_size = (256ULL << 30),
-    unsigned char populate_pmem_space = true, uint32_t pmem_block_size = 64,
-    uint64_t pmem_segment_blocks = 2 * 1024 * 1024,
-    uint32_t hash_bucket_size = 128, uint64_t hash_bucket_num = (1 << 27),
-    uint32_t num_buckets_per_slot = (1 << 4));
+extern KVDK_LIBRARY_API void
+KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_write_threads,
+                uint64_t pmem_file_size, unsigned char populate_pmem_space,
+                uint32_t pmem_block_size, uint64_t pmem_segment_blocks,
+                uint32_t hash_bucket_size, uint64_t hash_bucket_num,
+                uint32_t num_buckets_per_slot);
+extern KVDK_LIBRARY_API void
+KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_write_threads,
+                uint64_t pmem_file_size, uint32_t pmem_block_size,
+                uint64_t pmem_segment_blocks, uint64_t hash_bucket_num);
 extern KVDK_LIBRARY_API void KVDKConigsDestory(KVDKConfigs *kv_config);
 
 extern KVDK_LIBRARY_API KVDKEngine *
-KVDKOpen(const char *name, const KVDKConfigs *config, FILE *log_file = stdout);
+KVDKOpen(const char *name, const KVDKConfigs *config, FILE *log_file);
 extern KVDK_LIBRARY_API void KVDKCloseEngine(KVDKEngine *engine);
 extern KVDK_LIBRARY_API void KVDKRemovePMemContents(const char *name);
 // For BatchWrite

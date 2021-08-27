@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1)
 
 project(KVDK VERSION 1.0
         DESCRIPTION "A fast persistent KV engine for Persistent Memory"
-        LANGUAGES CXX)
+        LANGUAGES CXX C)
 
 set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
@@ -16,6 +16,7 @@ else ()
     set(FLAGS "-g ")
 endif ()
 
+set(CMAKE_C_FLAGS "${FLAGS}")
 set(CMAKE_CXX_FLAGS "${FLAGS}")
 
 # source files

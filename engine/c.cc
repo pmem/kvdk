@@ -67,15 +67,11 @@ static char *CopyStringToChar(const std::string &str) {
 
 KVDKConfigs *KVDKCreateConfigs() { return new KVDKConfigs; }
 
-void KVDKUserConfigs(KVDKConfigs *kv_config,
-                     uint64_t max_write_threads /*= 48*/,
-                     uint64_t pmem_file_size /*= 256ULL << 30*/,
-                     unsigned char populate_pmem_space /*= true*/,
-                     uint32_t pmem_block_size /*=64*/,
-                     uint64_t pmem_segment_blocks /*= 2 * 1024 * 1024*/,
-                     uint32_t hash_bucket_size /* = 128*/,
-                     uint64_t hash_bucket_num /*= (1 << 27)*/,
-                     uint32_t num_buckets_per_slot /*= (1 << 4)*/) {
+void KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_write_threads,
+                     uint64_t pmem_file_size, unsigned char populate_pmem_space,
+                     uint32_t pmem_block_size, uint64_t pmem_segment_blocks,
+                     uint32_t hash_bucket_size, uint64_t hash_bucket_num,
+                     uint32_t num_buckets_per_slot) {
   kv_config->rep.max_write_threads = max_write_threads;
   kv_config->rep.hash_bucket_num = hash_bucket_num;
   kv_config->rep.hash_bucket_size = hash_bucket_size;
@@ -84,6 +80,16 @@ void KVDKUserConfigs(KVDKConfigs *kv_config,
   kv_config->rep.pmem_file_size = pmem_file_size;
   kv_config->rep.pmem_segment_blocks = pmem_segment_blocks;
   kv_config->rep.populate_pmem_space = populate_pmem_space;
+}
+
+void KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_write_threads,
+                     uint64_t pmem_file_size, uint32_t pmem_block_size,
+                     uint64_t pmem_segment_blocks, uint64_t hash_bucket_num) {
+  kv_config->rep.max_write_threads = max_write_threads;
+  kv_config->rep.hash_bucket_num = hash_bucket_num;
+  kv_config->rep.pmem_block_size = pmem_block_size;
+  kv_config->rep.pmem_file_size = pmem_file_size;
+  kv_config->rep.pmem_segment_blocks = pmem_segment_blocks;
 }
 
 void KVDKConigsDestory(KVDKConfigs *kv_config) { delete kv_config; }
