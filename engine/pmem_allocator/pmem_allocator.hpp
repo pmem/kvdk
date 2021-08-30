@@ -35,6 +35,8 @@ public:
 
   void Free(const SizedSpaceEntry &entry) override;
 
+  void DelayFree(const SizedSpaceEntry &entry);
+
   // transfer block_offset of allocated space to address
   inline char *offset2addr(uint64_t block_offset) {
     if (block_offset == kNullPmemOffset) {

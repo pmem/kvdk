@@ -15,6 +15,10 @@ void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
   free_list_->Push(entry);
 }
 
+void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
+  free_list_->DelayPush(entry);
+}
+
 void PMEMAllocator::PopulateSpace() {
   GlobalLogger.Log("Populating PMem space ...\n");
   std::vector<std::thread> ths;
