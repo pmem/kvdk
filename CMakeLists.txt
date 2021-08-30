@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1)
 
 project(KVDK VERSION 1.0
         DESCRIPTION "A fast persistent KV engine for Persistent Memory"
-        LANGUAGES CXX)
+        LANGUAGES CXX C)
 
 set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
@@ -16,6 +16,7 @@ else ()
     set(FLAGS "-g ")
 endif ()
 
+set(CMAKE_C_FLAGS "${FLAGS}")
 set(CMAKE_CXX_FLAGS "${FLAGS}")
 
 # source files
@@ -31,7 +32,8 @@ set(SOURCES
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
         engine/utils.cpp
-        engine/pmem_allocator/free_list.cpp)
+        engine/pmem_allocator/free_list.cpp
+        engine/c.cc)
 
 
 # .a library
@@ -54,11 +56,8 @@ if (BUILD_TESTING)
 endif ()
 
 option(BUILD_TUTORIAL "Build the tutorial" ON)
-if (BUILD_TUTORIAL)
-    set(TUTORIAL_SOURCES examples/tutorial.cpp)
-    add_executable(dbtutorial ${TUTORIAL_SOURCES})
-    target_link_libraries(dbtutorial PUBLIC engine)
-endif ()
+
+add_subdirectory(examples/tutorial)
 
 add_custom_target(checkers ALL)
 add_custom_target(cppstyle)
