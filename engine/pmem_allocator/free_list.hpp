@@ -16,6 +16,8 @@ namespace KVDK_NAMESPACE {
 constexpr uint32_t kFreelistMaxClassifiedBlockSize = 255;
 constexpr uint32_t kSpaceMapLockGranularity = 64;
 
+class PMEMAllocator;
+
 // A byte map to record free blocks of PMem space, used for merging adjacent
 // free space entries in the free list
 class SpaceMap {
@@ -28,7 +30,7 @@ public:
   uint64_t TestAndUnset(uint64_t offset, uint64_t length);
 
   uint64_t TryMerge(uint64_t offset, uint64_t max_merge_length,
-                    uint64_t target_merge_length);
+                    uint64_t min_merge_length);
 
   void Set(uint64_t offset, uint64_t length);
 
@@ -118,17 +120,19 @@ private:
 class Freelist {
 public:
   Freelist(uint32_t max_classified_b_size, uint64_t num_segment_blocks,
-           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map)
+           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map,
+           PMEMAllocator *allocator)
       : num_segment_blocks_(num_segment_blocks),
         max_classified_b_size_(max_classified_b_size),
-        active_pool_(max_classified_b_size),
+        pmem_allocator_(allocator), active_pool_(max_classified_b_size),
         merged_pool_(max_classified_b_size), space_map_(space_map),
-        thread_cache_(num_threads, max_classified_b_size) {}
+        thread_cache_(num_threads, max_classified_b_size),
+        min_timestamp_of_entries_(UINT64_MAX) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t num_threads,
-           std::shared_ptr<SpaceMap> space_map)
+           std::shared_ptr<SpaceMap> space_map, PMEMAllocator *allocator)
       : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
-                 num_threads, space_map) {}
+                 num_threads, space_map, allocator) {}
 
   void Push(const SizedSpaceEntry &entry);
 
@@ -146,7 +150,7 @@ public:
   //
   // Iterate every backup entry lists of thread caches, and move the list to
   // active_pool_ if more than kMinMovableEntries in it
-  void MoveCachedListToPool();
+  void MoveCachedListsToPool();
 
   // Merge adjacent free spaces stored in the entry pool into larger one
   //
@@ -156,6 +160,10 @@ public:
   // active_pool_ for next run
   // TODO: set a condition to decide if we need to do merging
   void MergeFreeSpaceInPool();
+
+  void OrganizeFreeSpace();
+
+  void HandleDelayedFreeEntries();
 
 private:
   // Each write threads cache some freed space entries in active_entries to
@@ -167,13 +175,13 @@ private:
         : active_entries(max_classified_b_size),
           backup_entries(max_classified_b_size),
           spins(max_classified_b_size +
-                1 /* the last lock is for delay free entries */) {}
+                1 /* the last lock is for delayed free entries */) {}
 
     std::vector<std::vector<SpaceEntry>> active_entries;
     std::vector<std::vector<SpaceEntry>> backup_entries;
     // These entries can be add to free list only if no entries with smaller
     // timestamp exist
-    std::vector<SizedSpaceEntry> delay_free_entries;
+    std::vector<SizedSpaceEntry> delayed_free_entries;
     std::vector<SpinMutex> spins;
   };
 
@@ -185,24 +193,27 @@ private:
   };
 
   uint64_t MergeSpace(const SpaceEntry &space_entry, uint64_t max_size,
-                      uint64_t target_size) {
-    if (target_size > max_size) {
-      return false;
+                      uint64_t min_merge_size) {
+    if (min_merge_size > max_size) {
+      return 0;
     }
     uint64_t size =
-        space_map_->TryMerge(space_entry.offset, max_size, target_size);
+        space_map_->TryMerge(space_entry.offset, max_size, min_merge_size);
     return size;
   }
 
   const uint64_t num_segment_blocks_;
   const uint32_t max_classified_b_size_;
+  PMEMAllocator *pmem_allocator_;
   std::shared_ptr<SpaceMap> space_map_;
   std::vector<ThreadCache> thread_cache_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;
   // Store all large free space entries that larger than max_classified_b_size_
   std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
+  std::vector<std::vector<SizedSpaceEntry>> delayed_free_entries_;
   SpinMutex large_entries_spin_;
+  uint64_t min_timestamp_of_entries_;
 };
 
 } // namespace KVDK_NAMESPACE
