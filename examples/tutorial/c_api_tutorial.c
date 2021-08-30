@@ -171,9 +171,13 @@ int main() {
     KVDKWriteBatchPut(kvdk_wb, key1, strlen(key1), value1, strlen(value1));
     KVDKWriteBatchPut(kvdk_wb, key2, strlen(key2), value2, strlen(value2));
     KVDKWriteBatchDelete(kvdk_wb, key1, strlen(key1));
+    KVDKWriteBatchPut(kvdk_wb, key1, strlen(key1), value2, strlen(value1));
     KVDKWrite(kvdk_engine, kvdk_wb, &error);
     assert(!error);
-    read_v1 = KVDKGet(kvdk_engine, key2, strlen(key2), &read_v1_len, &error);
+    read_v1 = KVDKGet(kvdk_engine, key1, strlen(key1), &read_v1_len, &error);
+    assert(!error);
+    assert(strcmp(read_v1, value2) == 0);
+    read_v2 = KVDKGet(kvdk_engine, key2, strlen(key2), &read_v2_len, &error);
     assert(!error);
     assert(strcmp(read_v2, value2) == 0);
     printf(

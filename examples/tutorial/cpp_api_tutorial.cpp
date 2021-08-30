@@ -199,6 +199,7 @@ static void test_batch_write() {
   batch.Put(key1, value1);
   batch.Put(key1, value2);
   batch.Put(key2, value2);
+  assert(status == kvdk::Status::Ok);
   batch.Delete(key2);
 
   // If the batch is successfully written, there should be only key1-value2 in
