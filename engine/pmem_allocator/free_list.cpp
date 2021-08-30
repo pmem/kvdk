@@ -146,6 +146,12 @@ void Freelist::MergeFreeSpaceInPool() {
   }
 }
 
+void Freelist::DelayPush(const SizedSpaceEntry &entry) {
+  auto &thread_cache = thread_cache_[write_thread.id];
+  std::lock_guard<SpinMutex> lg(thread_cache.spins.back());
+  thread_cache.delay_free_entries.emplace_back(entry);
+}
+
 void Freelist::Push(const SizedSpaceEntry &entry) {
   space_map_->Set(entry.space_entry.offset, entry.size);
   auto &thread_cache = thread_cache_[write_thread.id];

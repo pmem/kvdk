@@ -352,11 +352,14 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view collection,
             return Status::NotSupported;
           }
         }
-        bool free_space =
-            entry_base->header.status == HashEntryStatus::Updating;
+        auto entry_base_status = entry_base->header.status;
         hash_table_->Insert(hint, entry_base, header_type, (uint64_t)(*list));
-        if (free_space) {
+        if (entry_base_status == HashEntryStatus::Updating) {
           pmem_allocator_->Free(SizedSpaceEntry(
+              hash_entry.offset, existing_data_entry.header.b_size,
+              existing_data_entry.timestamp));
+        } else if (entry_base_status == HashEntryStatus::BeingReused) {
+          pmem_allocator_->DelayFree(SizedSpaceEntry(
               hash_entry.offset, existing_data_entry.header.b_size,
               existing_data_entry.timestamp));
         }
@@ -684,10 +687,13 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
         &splice, (DLDataEntry *)block_base, user_key, node);
 
     if (!found) {
-      bool free_space = entry_base->header.status == HashEntryStatus::Updating;
+      auto entry_base_status = entry_base->header.status;
       hash_table_->Insert(hint, entry_base, dt, (uint64_t)node);
-      if (free_space) {
+      if (entry_base_status == HashEntryStatus::Updating) {
         pmem_allocator_->Free(SizedSpaceEntry(
+            hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
+      } else if (entry_base_status == HashEntryStatus::BeingReused) {
+        pmem_allocator_->DelayFree(SizedSpaceEntry(
             hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
       }
     } else {
@@ -937,11 +943,14 @@ Status KVEngine::HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
                           v_size);
     PersistDataEntry(block_base, &write_entry, key, value, dt);
 
-    bool free_space = entry_base->header.status == HashEntryStatus::Updating;
+    auto entry_base_status = entry_base->header.status;
     hash_table_->Insert(hint, entry_base, dt,
                         sized_space_entry.space_entry.offset);
-    if (free_space) {
+    if (entry_base_status == HashEntryStatus::Updating) {
       pmem_allocator_->Free(SizedSpaceEntry(
+          hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
+    } else if (entry_base_status == HashEntryStatus::BeingReused) {
+      pmem_allocator_->DelayFree(SizedSpaceEntry(
           hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
     }
   }

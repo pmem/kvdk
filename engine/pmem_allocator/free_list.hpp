@@ -132,6 +132,8 @@ public:
 
   void Push(const SizedSpaceEntry &entry);
 
+  void DelayPush(const SizedSpaceEntry &entry);
+
   // Request a at least b_size free space entry
   bool Get(uint32_t b_size, SizedSpaceEntry *space_entry);
 
@@ -160,13 +162,18 @@ private:
   // avoid contention. To balance free space entries among threads, if too many
   // entries cached by a thread, newly freed entries will be stored to
   // backup_entries and move to entry pool which shared by all threads.
-  struct ThreadCache {
+  struct alignas(64) ThreadCache {
     ThreadCache(uint32_t max_classified_b_size)
         : active_entries(max_classified_b_size),
-          backup_entries(max_classified_b_size), spins(max_classified_b_size) {}
+          backup_entries(max_classified_b_size),
+          spins(max_classified_b_size +
+                1 /* the last lock is for delay free entries */) {}
 
     std::vector<std::vector<SpaceEntry>> active_entries;
     std::vector<std::vector<SpaceEntry>> backup_entries;
+    // These entries can be add to free list only if no entries with smaller
+    // timestamp exist
+    std::vector<SizedSpaceEntry> delay_free_entries;
     std::vector<SpinMutex> spins;
   };
 
