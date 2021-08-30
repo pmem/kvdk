@@ -155,11 +155,21 @@ void Freelist::MergeFreeSpaceInPool() {
 
   for (uint32_t b_size = 1; b_size < max_classified_b_size_; b_size++) {
     if (active_pool_.TryFetchEntryList(merging_list, b_size)) {
-      for (const SpaceEntry &se : merging_list) {
+      for (SpaceEntry &se : merging_list) {
         uint64_t merged_size = MergeSpace(
             se, num_segment_blocks_ - se.offset % num_segment_blocks_, b_size);
 
         if (merged_size > 0) {
+          // Persist merged free entry on PMem
+          if (merged_size > b_size) {
+            DataHeader header(0, merged_size);
+            pmem_memcpy_persist(pmem_allocator_->offset2addr(se.offset),
+                                &header, sizeof(DataHeader));
+            // As we marked new size on PMem, it contains no valid data so we
+            // can set it's ts to 0
+            se.info = 0;
+          }
+
           if (se.info > 0 && min_timestamp > se.info) {
             min_timestamp = se.info;
           }
