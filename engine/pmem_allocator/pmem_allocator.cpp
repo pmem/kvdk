@@ -33,8 +33,7 @@ void PMEMAllocator::PopulateSpace() {
       // case that mapped_size_ is not divisible by pu.
       if (i == pu - 1)
         len = pmem_size_ - (pu - 1) * len;
-      pmem_memset(pmem_ + pmem_size_ * i / pu, 0, len,
-                  PMEM_F_MEM_NONTEMPORAL);
+      pmem_memset(pmem_ + pmem_size_ * i / pu, 0, len, PMEM_F_MEM_NONTEMPORAL);
     });
   }
   for (auto &t : ths) {
@@ -48,14 +47,14 @@ PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
 PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t num_write_threads)
-    : num_segment_blocks_(num_segment_blocks), block_size_(block_size),
-      offset_head_(0) {
+    : thread_cache_(num_write_threads), num_segment_blocks_(num_segment_blocks),
+      block_size_(block_size), offset_head_(0) {
   int is_pmem;
   GlobalLogger.Log("Initializing PMem size %lu in file %s\n", pmem_space,
                    pmem_file.c_str());
-  if ((pmem_ =
-           (char *)pmem_map_file(pmem_file.c_str(), pmem_space, PMEM_FILE_CREATE,
-                                 0666, &pmem_size_, &is_pmem)) == nullptr) {
+  if ((pmem_ = (char *)pmem_map_file(pmem_file.c_str(), pmem_space,
+                                     PMEM_FILE_CREATE, 0666, &pmem_size_,
+                                     &is_pmem)) == nullptr) {
     GlobalLogger.Error("Pmem map file %s failed: %s\n", pmem_file.c_str(),
                        strerror(errno));
     exit(1);
@@ -73,17 +72,13 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
       std::make_shared<Freelist>(num_segment_blocks, num_write_threads,
                                  std::make_shared<SpaceMap>(max_block_offset_));
   GlobalLogger.Log("Map pmem space done\n");
-  thread_cache_.resize(num_write_threads);
   init_data_size_2_block_size();
 }
 
 bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
   if (segment_space_entry->size == num_segment_blocks_) {
-    thread_cache_[write_thread.id].segment_offset =
-        segment_space_entry->space_entry.offset;
-    thread_cache_[write_thread.id].segment_usable_blocks =
-        segment_space_entry->size;
+    thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
     return false;
   }
 
@@ -100,6 +95,25 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
   return true;
 }
 
+void PMEMAllocator::FetchSegmentSpace(SizedSpaceEntry *segment_entry) {
+  uint64_t offset;
+  while (1) {
+    offset = offset_head_.load(std::memory_order_relaxed);
+    if (offset < max_block_offset_) {
+      if (offset_head_.compare_exchange_strong(offset,
+                                               offset + num_segment_blocks_)) {
+        Free(*segment_entry);
+        *segment_entry = SizedSpaceEntry(
+            offset, std::min(num_segment_blocks_, max_block_offset_ - offset),
+            0);
+        break;
+      }
+      continue;
+    }
+    break;
+  }
+}
+
 SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
   SizedSpaceEntry space_entry;
   auto b_size = size_2_block_size(size);
@@ -109,7 +123,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
     return space_entry;
   }
   auto &thread_cache = thread_cache_[write_thread.id];
-  bool full_segment = thread_cache.segment_usable_blocks < b_size;
+  bool full_segment = thread_cache.segment_entry.size < b_size;
   while (full_segment) {
     while (1) {
       // allocate from free list space
@@ -146,19 +160,9 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
 
     // allocate a new segment, add remainning space of the old one
     // to the free list
-    if (thread_cache.segment_usable_blocks > 0) {
-      Free(SizedSpaceEntry(thread_cache.segment_offset,
-                           thread_cache.segment_usable_blocks));
-    }
+    FetchSegmentSpace(&thread_cache.segment_entry);
 
-    thread_cache.segment_offset =
-        offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
-    thread_cache.segment_usable_blocks =
-        thread_cache.segment_offset >= max_block_offset_
-            ? 0
-            : std::min(num_segment_blocks_,
-                       max_block_offset_ - thread_cache.segment_offset);
-    if (thread_cache.segment_offset >= max_block_offset_ - b_size) {
+    if (thread_cache.segment_entry.size < b_size) {
       if (free_list_->MergeGet(b_size, &thread_cache.free_entry)) {
         continue;
       }
@@ -167,10 +171,10 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
     }
     full_segment = false;
   }
+  space_entry = thread_cache.segment_entry;
   space_entry.size = b_size;
-  space_entry.space_entry.offset = thread_cache.segment_offset;
-  thread_cache.segment_offset += space_entry.size;
-  thread_cache.segment_usable_blocks -= space_entry.size;
+  thread_cache.segment_entry.space_entry.offset += space_entry.size;
+  thread_cache.segment_entry.size -= space_entry.size;
   return space_entry;
 }
 
