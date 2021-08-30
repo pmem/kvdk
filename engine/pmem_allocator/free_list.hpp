@@ -120,18 +120,19 @@ private:
 class Freelist {
 public:
   Freelist(uint32_t max_classified_b_size, uint64_t num_segment_blocks,
-           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map)
+           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map,
+           PMEMAllocator *allocator)
       : num_segment_blocks_(num_segment_blocks),
         max_classified_b_size_(max_classified_b_size),
         active_pool_(max_classified_b_size),
         merged_pool_(max_classified_b_size), space_map_(space_map),
         thread_cache_(num_threads, max_classified_b_size),
-        min_timestamp_of_entries_(0) {}
+        min_timestamp_of_entries_(0), pmem_allocator_(allocator) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t num_threads,
-           std::shared_ptr<SpaceMap> space_map)
+           std::shared_ptr<SpaceMap> space_map, PMEMAllocator *allocator)
       : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
-                 num_threads, space_map) {}
+                 num_threads, space_map, allocator) {}
 
   void Push(const SizedSpaceEntry &entry);
 
@@ -212,6 +213,7 @@ private:
   std::vector<std::vector<SizedSpaceEntry>> delayed_free_entries_;
   SpinMutex large_entries_spin_;
   uint64_t min_timestamp_of_entries_;
+  PMEMAllocator *pmem_allocator_;
 };
 
 } // namespace KVDK_NAMESPACE
