@@ -110,15 +110,33 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
 
 void Freelist::HandleDelayedFreeEntries() {
   std::vector<SizedSpaceEntry> unfreed_entries;
+  std::vector<std::vector<SpaceEntry>> merged_entry_list(
+      max_classified_b_size_);
   for (auto &list : delayed_free_entries_) {
     for (auto &&entry : list) {
       if (entry.space_entry.info < min_timestamp_of_entries_) {
-        Push(entry);
+        if (entry.size < max_classified_b_size_) {
+          merged_entry_list[entry.size].emplace_back(entry.space_entry);
+          if (merged_entry_list[entry.size].size() >= kMinMovableEntries) {
+            merged_pool_.MoveEntryList(merged_entry_list[entry.size],
+                                       entry.size);
+          }
+        } else {
+          std::lock_guard<SpinMutex> lg(large_entries_spin_);
+          large_entries_.insert(entry);
+        }
       } else {
         unfreed_entries.emplace_back(entry);
       }
     }
   }
+
+  for (uint32_t b_size = 1; b_size < max_classified_b_size_; b_size++) {
+    if (merged_entry_list[b_size].size() > 0) {
+      active_pool_.MoveEntryList(merged_entry_list[b_size], b_size);
+    }
+  }
+
   delayed_free_entries_.clear();
   delayed_free_entries_.emplace_back(std::move(unfreed_entries));
 }
