@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../allocator.hpp"
+#include "../data_entry.hpp"
 #include "../structures.hpp"
 #include "free_list.hpp"
 #include "kvdk/namespace.hpp"
@@ -64,10 +65,7 @@ public:
   bool FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry);
 
   // Regularly execute by background thread of KVDK
-  void BackgroundWork() {
-    free_list_->MoveCachedListToPool();
-    free_list_->MergeFreeSpaceInPool();
-  }
+  void BackgroundWork() { free_list_->OrganizeFreeSpace(); }
 
 private:
   // Write threads cache a dedicated PMem segment and a free space to

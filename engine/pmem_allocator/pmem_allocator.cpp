@@ -4,7 +4,6 @@
 
 #include <thread>
 
-#include "../data_entry.hpp"
 #include "../thread_manager.hpp"
 #include "libpmem.h"
 #include "pmem_allocator.hpp"
@@ -72,9 +71,9 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
                        pmem_file.c_str(), pmem_size_, pmem_space);
   }
   max_block_offset_ = pmem_size_ / block_size_;
-  free_list_ =
-      std::make_shared<Freelist>(num_segment_blocks, num_write_threads,
-                                 std::make_shared<SpaceMap>(max_block_offset_));
+  free_list_ = std::make_shared<Freelist>(
+      num_segment_blocks, num_write_threads,
+      std::make_shared<SpaceMap>(max_block_offset_), this);
   GlobalLogger.Log("Map pmem space done\n");
   init_data_size_2_block_size();
 }
