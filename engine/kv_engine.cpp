@@ -113,7 +113,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
 }
 
 std::shared_ptr<Iterator>
-KVEngine::NewSortedIterator(const std::string &collection) {
+KVEngine::NewSortedIterator(const pmem::obj::string_view collection) {
   Skiplist *skiplist;
   Status s = SearchOrInitSkiplist(collection, &skiplist, false);
 
@@ -292,9 +292,10 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
   return Status::Ok;
 }
 
-Status KVEngine::SearchOrInitPersistentList(const std::string &collection,
-                                            PersistentList **list, bool init,
-                                            uint16_t header_type) {
+Status
+KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view collection,
+                                     PersistentList **list, bool init,
+                                     uint16_t header_type) {
   auto hint = hash_table_->GetHint(collection);
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
@@ -334,8 +335,9 @@ Status KVEngine::SearchOrInitPersistentList(const std::string &collection,
           switch (header_type) {
           case SORTED_HEADER_RECORD:
             skiplists_.push_back(std::make_shared<Skiplist>(
-                (DLDataEntry *)block_base, collection, id, pmem_allocator_,
-                hash_table_));
+                (DLDataEntry *)block_base,
+                std::string(collection.data(), collection.size()), id,
+                pmem_allocator_, hash_table_));
             *list = skiplists_.back().get();
             break;
           case HASH_LIST_HEADER_RECORD:
@@ -543,14 +545,14 @@ Status KVEngine::HashGetImpl(const Slice &key, std::string *value,
   return Status::Ok;
 }
 
-Status KVEngine::Get(const std::string &key, std::string *value) {
+Status KVEngine::Get(const pmem::obj::string_view key, std::string *value) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
   return HashGetImpl(key, value, StringDataEntryType);
 }
 
-Status KVEngine::Delete(const std::string &key) {
+Status KVEngine::Delete(const pmem::obj::string_view key) {
   Status s = MaybeInitWriteThread();
 
   if (s != Status::Ok) {
@@ -596,8 +598,9 @@ inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
   pmem_drain();
 }
 
-Status KVEngine::SSetImpl(Skiplist *skiplist, const std::string &user_key,
-                          const std::string &value, uint16_t dt) {
+Status KVEngine::SSetImpl(Skiplist *skiplist,
+                          const pmem::obj::string_view user_key,
+                          const pmem::obj::string_view value, uint16_t dt) {
   uint64_t id = skiplist->id();
   std::string collection_key(PersistentList::ListKey(user_key, id));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
@@ -696,8 +699,9 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const std::string &user_key,
   return Status::Ok;
 }
 
-Status KVEngine::SSet(const std::string &collection,
-                      const std::string &user_key, const std::string &value) {
+Status KVEngine::SSet(const pmem::obj::string_view collection,
+                      const pmem::obj::string_view user_key,
+                      const pmem::obj::string_view value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -767,8 +771,8 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
   return Status::Ok;
 }
 
-Status KVEngine::SDelete(const std::string &collection,
-                         const std::string &user_key) {
+Status KVEngine::SDelete(const pmem::obj::string_view collection,
+                         const pmem::obj::string_view user_key) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -855,8 +859,9 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   return s;
 }
 
-Status KVEngine::SGet(const std::string &collection,
-                      const std::string &user_key, std::string *value) {
+Status KVEngine::SGet(const pmem::obj::string_view collection,
+                      const pmem::obj::string_view user_key,
+                      std::string *value) {
   Skiplist *skiplist = nullptr;
   Status s = SearchOrInitSkiplist(collection, &skiplist, false);
   if (s != Status::Ok) {
@@ -939,7 +944,8 @@ Status KVEngine::HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
   return Status::Ok;
 }
 
-Status KVEngine::Set(const std::string &key, const std::string &value) {
+Status KVEngine::Set(const pmem::obj::string_view key,
+                     const pmem::obj::string_view value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "kvdk/namespace.hpp"
+#include "libpmemobj++/string_view.hpp"
 #include "xxhash.h"
 
 namespace KVDK_NAMESPACE {
@@ -102,6 +103,7 @@ public:
   Slice(const char *data, uint64_t size) : _data(data), _size(size) {}
 
   Slice(const std::string &str) : _data(str.data()), _size(str.size()) {}
+  Slice(pmem::obj::string_view sv) : _data(sv.data()), _size(sv.size()) {}
 
   const char *data() const { return _data; }
 
