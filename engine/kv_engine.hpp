@@ -37,19 +37,22 @@ public:
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
-  Status Get(const std::string &key, std::string *value) override;
-  Status Set(const std::string &key, const std::string &value) override;
-  Status Delete(const std::string &key) override;
-  Status SGet(const std::string &collection, const std::string &user_key,
+  Status Get(const pmem::obj::string_view key, std::string *value) override;
+  Status Set(const pmem::obj::string_view key,
+             const pmem::obj::string_view value) override;
+  Status Delete(const pmem::obj::string_view key) override;
+  Status SGet(const pmem::obj::string_view collection,
+              const pmem::obj::string_view user_key,
               std::string *value) override;
-  Status SSet(const std::string &collection, const std::string &user_key,
-              const std::string &value) override;
+  Status SSet(const pmem::obj::string_view collection,
+              const pmem::obj::string_view user_key,
+              const pmem::obj::string_view value) override;
   // TODO: Release delete record and deleted nodes
-  Status SDelete(const std::string &collection,
-                 const std::string &user_key) override;
+  Status SDelete(const pmem::obj::string_view collection,
+                 const pmem::obj::string_view user_key) override;
   Status BatchWrite(const WriteBatch &write_batch) override;
   std::shared_ptr<Iterator>
-  NewSortedIterator(const std::string &collection) override;
+  NewSortedIterator(const pmem::obj::string_view collection) override;
 
 private:
   struct BatchWriteHint {
@@ -64,9 +67,11 @@ private:
     PendingBatch *persisted_pending_batch = nullptr;
   };
 
-  bool CheckKeySize(const std::string &key) { return key.size() <= UINT16_MAX; }
+  bool CheckKeySize(const pmem::obj::string_view key) {
+    return key.size() <= UINT16_MAX;
+  }
 
-  bool CheckValueSize(const std::string &value) {
+  bool CheckValueSize(const pmem::obj::string_view value) {
     return value.size() <= UINT32_MAX;
   }
 
@@ -76,7 +81,7 @@ private:
 
   inline Status MaybeInitWriteThread();
 
-  Status SearchOrInitPersistentList(const std::string &collection,
+  Status SearchOrInitPersistentList(const pmem::obj::string_view collection,
                                     PersistentList **list, bool init,
                                     uint16_t header_type);
 
@@ -89,7 +94,7 @@ private:
                                       init, HASH_LIST_HEADER_RECORD);
   };
 
-  Status SearchOrInitSkiplist(const std::string &collection,
+  Status SearchOrInitSkiplist(const pmem::obj::string_view collection,
                               Skiplist **skiplist, bool init) {
     if (!CheckKeySize(collection)) {
       return Status::InvalidDataSize;
@@ -103,8 +108,8 @@ private:
   Status HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
                      BatchWriteHint *batch_hint = nullptr);
 
-  Status SSetImpl(Skiplist *skiplist, const std::string &user_key,
-                  const std::string &value, uint16_t dt);
+  Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view user_key,
+                  const pmem::obj::string_view value, uint16_t dt);
 
   Status Recovery();
 

@@ -11,6 +11,7 @@
 
 #include "configs.hpp"
 #include "iterator.hpp"
+#include "libpmemobj++/string_view.hpp"
 #include "namespace.hpp"
 #include "status.hpp"
 #include "write_batch.hpp"
@@ -33,41 +34,43 @@ public:
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
   // successful persistence, return non-Ok on any error.
-  virtual Status Set(const std::string &key, const std::string &value) = 0;
+  virtual Status Set(const pmem::obj::string_view key,
+                     const pmem::obj::string_view value) = 0;
 
   virtual Status BatchWrite(const WriteBatch &write_batch) = 0;
 
   // Search the STRING-type KV of "key" and store the corresponding value to
   // *value on success. If the "key" does not exist, return NotFound.
-  virtual Status Get(const std::string &key, std::string *value) = 0;
+  virtual Status Get(const pmem::obj::string_view key, std::string *value) = 0;
 
   // Remove STRING-type KV of "key".
   // Return Ok on success or the "key" did not exist, return non-Ok on any
   // error.
-  virtual Status Delete(const std::string &key) = 0;
+  virtual Status Delete(const pmem::obj::string_view key) = 0;
 
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return Ok
   // on successful persistence, return non-Ok on any error.
-  virtual Status SSet(const std::string &collection, const std::string &key,
-                      const std::string &value) = 0;
+  virtual Status SSet(const pmem::obj::string_view collection,
+                      const pmem::obj::string_view key,
+                      const pmem::obj::string_view value) = 0;
 
   // Search the SORTED-type KV of "key" in sorted collection "collection"
   // and store the corresponding value to *value on success. If the
   // "collection"/"key" did not exist, return NotFound.
-  virtual Status SGet(const std::string &collection, const std::string &key,
-                      std::string *value) = 0;
+  virtual Status SGet(const pmem::obj::string_view collection,
+                      const pmem::obj::string_view key, std::string *value) = 0;
 
   // Remove SORTED-type KV of "key" in the sorted collection "collection".
   // Return Ok on success or the "collection"/"key" did not exist, return non-Ok
   // on any error.
-  virtual Status SDelete(const std::string &collection,
-                         const std::string &key) = 0;
+  virtual Status SDelete(const pmem::obj::string_view collection,
+                         const pmem::obj::string_view key) = 0;
 
   // Create a KV iterator on sorted collection "collection", which is able to
   // sequentially iterate all KVs in the "collection".
   virtual std::shared_ptr<Iterator>
-  NewSortedIterator(const std::string &collection) = 0;
+  NewSortedIterator(const pmem::obj::string_view collection) = 0;
 
   // Close the instance on exit.
   virtual ~Engine() = 0;
