@@ -120,7 +120,8 @@ void Freelist::MergeFreeSpaceInPool() {
         // large space entries
         if (merged_size >= merged_entry_list.size()) {
           std::lock_guard<SpinMutex> lg(large_entries_spin_);
-          large_entries_.insert(SizedSpaceEntry(se.offset, merged_size));
+          large_entries_.insert(
+              SizedSpaceEntry(se.offset, merged_size, se.info));
           // move merged entries to merging pool to avoid redundant merging
         } else if (merged_size > 0) {
           merged_entry_list[merged_size].emplace_back(std::move(se));

@@ -71,10 +71,14 @@ private:
   // Write threads cache a dedicated PMem segment and a free space to
   // avoid contention
   struct ThreadCache {
-    alignas(64) uint64_t segment_offset = 0;
-    uint64_t segment_usable_blocks = 0;
+    // Space got from free list
     SizedSpaceEntry free_entry;
+    // Space fetched from head of PMem segments
+    SizedSpaceEntry segment_entry;
+    char padding[64 - sizeof(SizedSpaceEntry) * 2];
   };
+
+  void FetchSegmentSpace(SizedSpaceEntry *segment_entry);
 
   void init_data_size_2_block_size() {
     data_size_2_block_size_.resize(4096);
@@ -91,10 +95,10 @@ private:
     return data_size / block_size_ + (data_size % block_size_ == 0 ? 0 : 1);
   }
 
+  std::vector<ThreadCache> thread_cache_;
   const uint64_t num_segment_blocks_;
   const uint32_t block_size_;
   std::atomic<uint64_t> offset_head_;
-  std::vector<ThreadCache> thread_cache_;
   char *pmem_;
   uint64_t pmem_size_;
   uint64_t max_block_offset_;
