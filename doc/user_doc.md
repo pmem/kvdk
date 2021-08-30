@@ -5,7 +5,7 @@ KVDK(Key-Value Development Kit) is a Key-Value store for Persistent memory(PMem)
 
 KVDK supports both sorted and unsorted KV-Pairs.
 
-Code snippets in this user documents are from `./examples/tutorial.cpp`, which is built as `./build/dbtutorials`.
+Code snippets in this user documents are from `./examples/tutorial/cpp_api_tutorial.cpp`, which is built as `./build/examples/tutorial/cpp_api_tutorial`.
 
 ## Open a KVDK instance
 

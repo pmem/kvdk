@@ -148,6 +148,10 @@ static void test_iterator() {
 
   // Iterate through collection "my_sorted_collection"
   auto iter = engine->NewSortedIterator(sorted_collection);
+  if (!iter) {
+    fprintf(stderr, "Seek error\n");
+    return;
+  }
   iter->SeekToFirst();
   {
     int i = 0;
