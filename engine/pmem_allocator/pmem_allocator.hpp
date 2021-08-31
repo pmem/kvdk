@@ -36,6 +36,9 @@ public:
 
   void Free(const SizedSpaceEntry &entry) override;
 
+  // These entries hold a delete record of some key, it can be safely freed only
+  // if no free space entry of smaller timestamp existing in the free list, so
+  // just record these entries
   void DelayFree(const SizedSpaceEntry &entry);
 
   // transfer block_offset of allocated space to address

@@ -12,6 +12,8 @@ namespace KVDK_NAMESPACE {
 struct SpaceEntry {
   uint64_t offset = 0;
   // Allocator specific information
+  // For example, in PMEMAllocator, it indicates timestamp of the data stored in
+  // the space
   uint64_t info = 0;
 
   SpaceEntry() = default;

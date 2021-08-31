@@ -136,8 +136,11 @@ public:
       : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
                  num_threads, space_map, allocator) {}
 
+  // Add a space entry
   void Push(const SizedSpaceEntry &entry);
 
+  // These entries can be safely freed only if no free space entry of smaller
+  // timestamp existing in the free list, so just record these entries
   void DelayPush(const SizedSpaceEntry &entry);
 
   // Request a at least b_size free space entry
@@ -147,25 +150,34 @@ public:
   // entry
   bool MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry);
 
-  // Move cached free space list to space entry pool to balance usable space
-  // of write threads
-  //
-  // Iterate every backup entry lists of thread caches, and move the list to
-  // active_pool_ if more than kMinMovableEntries in it
-  void MoveCachedListsToPool();
-
   // Merge adjacent free spaces stored in the entry pool into larger one
   //
   // Fetch every free space entry lists from active_pool_, for each entry in the
   // list, try to merge followed free space with it. Then insert merged entries
   // into merged_pool_. After merging, move all entry lists from merged_pool_ to
-  // active_pool_ for next run
+  // active_pool_ for next run. Calculate the minimal timestamp of free entries
+  // in the pool meantime
   // TODO: set a condition to decide if we need to do merging
   void MergeFreeSpaceInPool();
 
-  void OrganizeFreeSpace();
+  // Move cached free space list to space entry pool to balance usable space
+  // of write threads
+  //
+  // Iterate every active entry lists of thread caches, move the list to
+  // active_pool_, and update minimal timestamp of free entries meantime
+  void MoveCachedListsToPool();
 
+  // Add delayed free entries to the list
+  //
+  // As delayed free entry holds a delete record of some key, if timestamp of a
+  // delayed free entry is smaller than minimal timestamp of free entries in the
+  // list, it means no older data of the same key existing, so the delayed free
+  // entry can be safely added to the list
   void HandleDelayedFreeEntries();
+
+  // Origanize free space entries, including merging adjacent space and add
+  // delayed free entries to the list
+  void OrganizeFreeSpace();
 
 private:
   // Each write threads cache some freed space entries in active_entries to
