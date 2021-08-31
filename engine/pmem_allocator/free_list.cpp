@@ -9,7 +9,6 @@
 
 namespace KVDK_NAMESPACE {
 
-const uint32_t kMaxCacheEntries = 16;
 const uint32_t kMinMovableEntries = 8;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {

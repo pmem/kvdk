@@ -42,12 +42,14 @@ private:
   struct Token {
   public:
     Token(bool is_start, uint8_t size)
-        : token_(size | (is_start ? (1 << 7) : 0)) {}
-    uint8_t Size() { return token_ & ((1 << 7) - 1); }
+        : token_(size | (is_start ? (1 << 7) : 0)) {
+      assert(size <= INT8_MAX);
+    }
+    uint8_t Size() { return token_ & INT8_MAX; }
     void Clear() { token_ = 0; }
     bool Empty() { return token_ == 0; }
     bool IsStart() { return token_ & (1 << 7); }
-    void UnStart() { token_ &= ((1 << 7) - 1); }
+    void UnStart() { token_ &= INT8_MAX; }
 
   private:
     uint8_t token_;
