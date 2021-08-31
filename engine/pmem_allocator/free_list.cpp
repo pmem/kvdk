@@ -142,8 +142,10 @@ void Freelist::HandleDelayedFreeEntries() {
 }
 
 void Freelist::OrganizeFreeSpace() {
-  MoveCachedListsToPool();
+  // Notice: we should move cached list to pool after merge entries in the pool,
+  // otherwise we may miss some entries during minimal timestamp checking
   MergeFreeSpaceInPool();
+  MoveCachedListsToPool();
   HandleDelayedFreeEntries();
 }
 
@@ -219,38 +221,38 @@ void Freelist::Push(const SizedSpaceEntry &entry) {
     std::lock_guard<SpinMutex> lg(large_entries_spin_);
     large_entries_.insert(entry);
   } else {
-    if (thread_cache.active_entries[entry.size].size() >= kMaxCacheEntries) {
-      std::lock_guard<SpinMutex> lg(thread_cache.spins[entry.size]);
-      thread_cache.backup_entries[entry.size].emplace_back(entry.space_entry);
-    } else {
-      thread_cache.active_entries[entry.size].emplace_back(entry.space_entry);
-    }
+    std::lock_guard<SpinMutex> lg(thread_cache.spins[entry.size]);
+    thread_cache.active_entries[entry.size].emplace_back(entry.space_entry);
   }
 }
 
 bool Freelist::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
   auto &thread_cache = thread_cache_[write_thread.id];
   for (uint32_t i = b_size; i < thread_cache.active_entries.size(); i++) {
-    if (thread_cache.active_entries[i].size() == 0) {
-      if (thread_cache.backup_entries[i].size() != 0) {
-        std::lock_guard<SpinMutex> lg(thread_cache.spins[i]);
-        thread_cache.active_entries[i].swap(thread_cache.backup_entries[i]);
-      } else if (!active_pool_.TryFetchEntryList(thread_cache.active_entries[i],
-                                                 i) &&
-                 !merged_pool_.TryFetchEntryList(thread_cache.active_entries[i],
-                                                 i)) {
-        // no usable b_size free space entry
-        continue;
+    bool found = false;
+    {
+      std::lock_guard<SpinMutex> lg(thread_cache.spins[i]);
+      if (thread_cache.active_entries[i].size() == 0) {
+        if (!active_pool_.TryFetchEntryList(thread_cache.active_entries[i],
+                                            i) &&
+            !merged_pool_.TryFetchEntryList(thread_cache.active_entries[i],
+                                            i)) {
+          // no usable b_size free space entry
+          continue;
+        }
+      }
+
+      if (thread_cache.active_entries[i].size() != 0) {
+        space_entry->space_entry = thread_cache.active_entries[i].back();
+        thread_cache.active_entries[i].pop_back();
+        found = true;
       }
     }
 
-    if (thread_cache.active_entries[i].size() != 0) {
-      space_entry->space_entry = thread_cache.active_entries[i].back();
-      thread_cache.active_entries[i].pop_back();
-      if (space_map_->TestAndUnset(space_entry->space_entry.offset, i) == i) {
-        space_entry->size = i;
-        return true;
-      }
+    if (found &&
+        space_map_->TestAndUnset(space_entry->space_entry.offset, i) == i) {
+      space_entry->size = i;
+      return true;
     }
   }
 
@@ -276,11 +278,26 @@ bool Freelist::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
 }
 
 void Freelist::MoveCachedListsToPool() {
+  std::vector<SpaceEntry> moving_list;
+  uint64_t min_ts = min_timestamp_of_entries_;
   for (auto &tc : thread_cache_) {
-    for (size_t i = 1; i < tc.backup_entries.size(); i++) {
-      std::lock_guard<SpinMutex> lg(tc.spins[i]);
-      if (tc.backup_entries[i].size() >= kMinMovableEntries) {
-        active_pool_.MoveEntryList(tc.backup_entries[i], i);
+    for (size_t i = 1; i < tc.active_entries.size(); i++) {
+      moving_list.clear();
+      {
+        std::lock_guard<SpinMutex> lg(tc.spins[i]);
+        if (tc.active_entries[i].size() > 0) {
+          moving_list.swap(tc.active_entries[i]);
+        }
+      }
+
+      if (moving_list.size() > 0) {
+        for (auto &se : moving_list) {
+          if (se.info < min_ts) {
+            min_ts = se.info;
+          }
+        }
+
+        active_pool_.MoveEntryList(moving_list, i);
       }
     }
 
@@ -289,6 +306,7 @@ void Freelist::MoveCachedListsToPool() {
     delayed_free_entries_.emplace_back(std::move(tc.delayed_free_entries));
     tc.delayed_free_entries.clear();
   }
+  min_timestamp_of_entries_ = min_ts;
 }
 
 bool Freelist::MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry) {
