@@ -173,12 +173,10 @@ private:
   struct alignas(64) ThreadCache {
     ThreadCache(uint32_t max_classified_b_size)
         : active_entries(max_classified_b_size),
-          backup_entries(max_classified_b_size),
           spins(max_classified_b_size +
                 1 /* the last lock is for delayed free entries */) {}
 
     std::vector<std::vector<SpaceEntry>> active_entries;
-    std::vector<std::vector<SpaceEntry>> backup_entries;
     // These entries can be add to free list only if no entries with smaller
     // timestamp exist
     std::vector<SizedSpaceEntry> delayed_free_entries;
