@@ -114,7 +114,7 @@ void KVDKCloseEngine(KVDKEngine *engine) {
 
 void KVDKRemovePMemContents(const char *name) {
   std::string res = "rm -rf " + std::string(name) + "\n";
-  system(res.c_str());
+  int ret __attribute__((unused)) = system(res.c_str());
 }
 
 KVDKWriteBatch *KVDKWriteBatchCreate(void) { return new KVDKWriteBatch; }

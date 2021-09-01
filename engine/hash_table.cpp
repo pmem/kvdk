@@ -131,13 +131,19 @@ Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
   }
 
   if (purpose >= SearchPurpose::Write) {
-    (*entry_base)->header.status =
-        found ? HashEntryStatus::Updating
-              : (*entry_base) == reusable_entry
-                    ? ((*entry_base)->header.status == HashEntryStatus::Clean
-                           ? HashEntryStatus::Updating
-                           : HashEntryStatus::BeingReused)
-                    : HashEntryStatus::Initializing;
+    if (found) {
+      (*entry_base)->header.status = HashEntryStatus::Updating;
+    } else {
+      if ((*entry_base) == reusable_entry) {
+        if ((*entry_base)->header.status == HashEntryStatus::Clean) {
+          (*entry_base)->header.status = HashEntryStatus::Updating;
+        } else {
+          (*entry_base)->header.status = HashEntryStatus::BeingReused;
+        }
+      } else {
+        (*entry_base)->header.status = HashEntryStatus::Initializing;
+      }
+    }
   }
 
   return found ? Status::Ok : Status::NotFound;
