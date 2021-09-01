@@ -158,7 +158,7 @@ public:
   // active_pool_ for next run. Calculate the minimal timestamp of free entries
   // in the pool meantime
   // TODO: set a condition to decide if we need to do merging
-  void MergeFreeSpaceInPool();
+  void MergeAndCheckTSInPool();
 
   // Move cached free space list to space entry pool to balance usable space
   // of write threads
@@ -167,16 +167,16 @@ public:
   // active_pool_, and update minimal timestamp of free entries meantime
   void MoveCachedListsToPool();
 
-  // Add delayed free entries to the list
+  // Add delay freed entries to the list
   //
-  // As delayed free entry holds a delete record of some key, if timestamp of a
-  // delayed free entry is smaller than minimal timestamp of free entries in the
-  // list, it means no older data of the same key existing, so the delayed free
+  // As delay freed entry holds a delete record of some key, if timestamp of a
+  // delay freed entry is smaller than minimal timestamp of free entries in the
+  // list, it means no older data of the same key existing, so the delay freed
   // entry can be safely added to the list
-  void HandleDelayedFreeEntries();
+  void HandleDelayFreedEntries();
 
   // Origanize free space entries, including merging adjacent space and add
-  // delayed free entries to the list
+  // delay freed entries to the list
   void OrganizeFreeSpace();
 
 private:
@@ -188,13 +188,16 @@ private:
     ThreadCache(uint32_t max_classified_b_size)
         : active_entries(max_classified_b_size),
           spins(max_classified_b_size +
-                1 /* the last lock is for delayed free entries */) {}
+                1 /* the last lock is for delay freed entries */),
+          last_used_entry_ts(0) {}
 
     std::vector<std::vector<SpaceEntry>> active_entries;
     // These entries can be add to free list only if no entries with smaller
     // timestamp exist
-    std::vector<SizedSpaceEntry> delayed_free_entries;
+    std::vector<SizedSpaceEntry> delay_freed_entries;
     std::vector<SpinMutex> spins;
+    // timestamp of entry that recently fetched from active_entries
+    uint64_t last_used_entry_ts;
   };
 
   class SpaceCmp {
@@ -222,7 +225,7 @@ private:
   SpaceEntryPool merged_pool_;
   // Store all large free space entries that larger than max_classified_b_size_
   std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
-  std::vector<std::vector<SizedSpaceEntry>> delayed_free_entries_;
+  std::vector<std::vector<SizedSpaceEntry>> delay_freed_entries_;
   SpinMutex large_entries_spin_;
   uint64_t min_timestamp_of_entries_;
   PMEMAllocator *pmem_allocator_;

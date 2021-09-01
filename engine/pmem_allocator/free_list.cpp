@@ -107,13 +107,14 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
   return merged;
 }
 
-void Freelist::HandleDelayedFreeEntries() {
+void Freelist::HandleDelayFreedEntries() {
   std::vector<SizedSpaceEntry> unfreed_entries;
   std::vector<std::vector<SpaceEntry>> merged_entry_list(
       max_classified_b_size_);
-  for (auto &list : delayed_free_entries_) {
+  for (auto &list : delay_freed_entries_) {
     for (auto &&entry : list) {
-      if (entry.space_entry.info < min_timestamp_of_entries_) {
+      if (entry.space_entry.info < min_timestamp_of_entries_ ||
+          min_timestamp_of_entries_ == 0) {
         if (entry.size < max_classified_b_size_) {
           merged_entry_list[entry.size].emplace_back(entry.space_entry);
           if (merged_entry_list[entry.size].size() >= kMinMovableEntries) {
@@ -136,19 +137,19 @@ void Freelist::HandleDelayedFreeEntries() {
     }
   }
 
-  delayed_free_entries_.clear();
-  delayed_free_entries_.emplace_back(std::move(unfreed_entries));
+  delay_freed_entries_.clear();
+  delay_freed_entries_.emplace_back(std::move(unfreed_entries));
 }
 
 void Freelist::OrganizeFreeSpace() {
   // Notice: we should move cached list to pool after merge entries in the pool,
   // otherwise we may miss some entries during minimal timestamp checking
-  MergeFreeSpaceInPool();
+  MergeAndCheckTSInPool();
   MoveCachedListsToPool();
-  HandleDelayedFreeEntries();
+  HandleDelayFreedEntries();
 }
 
-void Freelist::MergeFreeSpaceInPool() {
+void Freelist::MergeAndCheckTSInPool() {
   uint64_t min_timestamp = UINT64_MAX;
   std::vector<SpaceEntry> merging_list;
   std::vector<std::vector<SpaceEntry>> merged_entry_list(
@@ -193,6 +194,16 @@ void Freelist::MergeFreeSpaceInPool() {
     }
   }
 
+  {
+    // TODO wujy: Fine grained large entries lock, and merge large entries
+    std::lock_guard<SpinMutex> lg(large_entries_spin_);
+    for (const auto &se : large_entries_) {
+      if (se.space_entry.info > 0 && se.space_entry.info < min_timestamp) {
+        min_timestamp = se.space_entry.info;
+      }
+    }
+  }
+
   std::vector<SpaceEntry> merged_list;
   for (uint32_t b_size = 1; b_size < max_classified_b_size_; b_size++) {
     while (merged_pool_.TryFetchEntryList(merged_list, b_size)) {
@@ -210,7 +221,7 @@ void Freelist::MergeFreeSpaceInPool() {
 void Freelist::DelayPush(const SizedSpaceEntry &entry) {
   auto &thread_cache = thread_cache_[write_thread.id];
   std::lock_guard<SpinMutex> lg(thread_cache.spins.back());
-  thread_cache.delayed_free_entries.emplace_back(entry);
+  thread_cache.delay_freed_entries.emplace_back(entry);
 }
 
 void Freelist::Push(const SizedSpaceEntry &entry) {
@@ -229,29 +240,31 @@ bool Freelist::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
   auto &thread_cache = thread_cache_[write_thread.id];
   for (uint32_t i = b_size; i < thread_cache.active_entries.size(); i++) {
     bool found = false;
-    {
-      std::lock_guard<SpinMutex> lg(thread_cache.spins[i]);
-      if (thread_cache.active_entries[i].size() == 0) {
-        if (!active_pool_.TryFetchEntryList(thread_cache.active_entries[i],
-                                            i) &&
-            !merged_pool_.TryFetchEntryList(thread_cache.active_entries[i],
-                                            i)) {
-          // no usable b_size free space entry
-          continue;
-        }
-      }
-
-      if (thread_cache.active_entries[i].size() != 0) {
-        space_entry->space_entry = thread_cache.active_entries[i].back();
-        thread_cache.active_entries[i].pop_back();
-        found = true;
+  search_entry : {
+    std::lock_guard<SpinMutex> lg(thread_cache.spins[i]);
+    if (thread_cache.active_entries[i].size() == 0) {
+      if (!active_pool_.TryFetchEntryList(thread_cache.active_entries[i], i) &&
+          !merged_pool_.TryFetchEntryList(thread_cache.active_entries[i], i)) {
+        // no usable b_size free space entry
+        continue;
       }
     }
 
-    if (found &&
-        space_map_->TestAndUnset(space_entry->space_entry.offset, i) == i) {
-      space_entry->size = i;
-      return true;
+    if (thread_cache.active_entries[i].size() != 0) {
+      space_entry->space_entry = thread_cache.active_entries[i].back();
+      thread_cache.active_entries[i].pop_back();
+      found = true;
+    }
+    // this should be set while holding lock
+    thread_cache.last_used_entry_ts = space_entry->space_entry.info;
+  }
+
+    if (found) {
+      if (space_map_->TestAndUnset(space_entry->space_entry.offset, i) == i) {
+        space_entry->size = i;
+        return true;
+      }
+      goto search_entry;
     }
   }
 
@@ -265,6 +278,7 @@ bool Freelist::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
         large_entries_.erase(space);
         if (space_map_->TestAndUnset(space_entry->space_entry.offset, size) ==
             size) {
+          thread_cache.last_used_entry_ts = space_entry->space_entry.info;
           space_entry->size = size;
           return true;
         }
@@ -280,6 +294,13 @@ void Freelist::MoveCachedListsToPool() {
   std::vector<SpaceEntry> moving_list;
   uint64_t min_ts = min_timestamp_of_entries_;
   for (auto &tc : thread_cache_) {
+    {
+      std::lock_guard<SpinMutex> lg(
+          tc.spins.back() /* delay freed entries lock*/);
+      delay_freed_entries_.emplace_back(std::move(tc.delay_freed_entries));
+      tc.delay_freed_entries.clear();
+    }
+
     for (size_t i = 1; i < tc.active_entries.size(); i++) {
       moving_list.clear();
       {
@@ -291,7 +312,7 @@ void Freelist::MoveCachedListsToPool() {
 
       if (moving_list.size() > 0) {
         for (auto &se : moving_list) {
-          if (se.info < min_ts) {
+          if (se.info > 0 && se.info < min_ts) {
             min_ts = se.info;
           }
         }
@@ -300,10 +321,9 @@ void Freelist::MoveCachedListsToPool() {
       }
     }
 
-    std::lock_guard<SpinMutex> lg(
-        tc.spins.back() /* delayed free entries lock*/);
-    delayed_free_entries_.emplace_back(std::move(tc.delayed_free_entries));
-    tc.delayed_free_entries.clear();
+    if (tc.last_used_entry_ts > 0 && tc.last_used_entry_ts < min_ts) {
+      min_ts = tc.last_used_entry_ts;
+    }
   }
   min_timestamp_of_entries_ = min_ts;
 }
