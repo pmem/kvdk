@@ -16,16 +16,16 @@
 namespace KVDK_NAMESPACE {
 enum class HashEntryStatus : uint16_t {
   Normal = 1,
-  // A deletion type entry of a key which has no older data entry existing, so
-  // it can be safely used by a new key
+  // A hash entry of a delete record which has no older version data of the same
+  // key exsiting on PMem, so the delete record can be safely freed after the
+  // hash entry updated by a new key
   Clean,
   // New created hash entry for inserting a new key
   Initializing,
-  // A entry being updated by the same key, or a CLEAN entry being used by a new
-  // key
+  // A entry being updated by the same key, or a CLEAN hash entry being updated
+  // by a new key
   Updating,
-  // A NORMAL deletion type entry that is reusing by a new key
-  // TODO: handle recycle of delete record of reused hash entries in runtime
+  // A Normal hash entry of a delete record that is reusing by a new key
   BeingReused,
 };
 

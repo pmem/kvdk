@@ -67,7 +67,7 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
 
 void KVEngine::BackgroundWork() {
   while (!closing_) {
-    sleep(configs_.background_work_interval);
+    usleep(configs_.background_work_interval * 1000000);
     pmem_allocator_->BackgroundWork();
   }
 }
@@ -168,7 +168,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
         recovering_data_entry->type == PADDING) {
       pmem_allocator_->Free(
           SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
-                          recovering_data_entry->header.b_size));
+                          recovering_data_entry->header.b_size,
+                          recovering_data_entry->timestamp));
       if (recovering_data_entry->header.checksum != checksum) {
         pmem_data_entry->type = PADDING;
         pmem_persist(&pmem_data_entry->type, sizeof(DATA_ENTRY_TYPE));
@@ -258,7 +259,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
             offset = pmem_allocator_->addr2offset(node->data_entry);
             node->data_entry = (DLDataEntry *)pmem_data_entry;
             pmem_allocator_->Free(
-                SizedSpaceEntry(offset, existing_data_entry->header.b_size));
+                SizedSpaceEntry(offset, existing_data_entry->header.b_size,
+                                existing_data_entry->timestamp));
             entry_base->header.type = recovering_data_entry->type;
           }
         } else {
@@ -269,7 +271,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
                               offset);
           if (free_space) {
             pmem_allocator_->Free(SizedSpaceEntry(
-                hash_entry.offset, existing_data_entry->header.b_size));
+                hash_entry.offset, existing_data_entry->header.b_size,
+                existing_data_entry->timestamp));
           }
         }
         // If a delete record is the only existing data entry of a key, then we
@@ -281,7 +284,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       } else {
         pmem_allocator_->Free(
             SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
-                            recovering_data_entry->header.b_size));
+                            recovering_data_entry->header.b_size,
+                            recovering_data_entry->timestamp));
       }
     }
     segment_space.size -= recovering_data_entry->header.b_size;
@@ -348,12 +352,16 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view collection,
             return Status::NotSupported;
           }
         }
-        bool free_space =
-            entry_base->header.status == HashEntryStatus::Updating;
+        auto entry_base_status = entry_base->header.status;
         hash_table_->Insert(hint, entry_base, header_type, (uint64_t)(*list));
-        if (free_space) {
+        if (entry_base_status == HashEntryStatus::Updating) {
           pmem_allocator_->Free(SizedSpaceEntry(
-              hash_entry.offset, existing_data_entry.header.b_size));
+              hash_entry.offset, existing_data_entry.header.b_size,
+              existing_data_entry.timestamp));
+        } else if (entry_base_status == HashEntryStatus::BeingReused) {
+          pmem_allocator_->DelayFree(SizedSpaceEntry(
+              hash_entry.offset, existing_data_entry.header.b_size,
+              existing_data_entry.timestamp));
         }
         return Status::Ok;
       }
@@ -679,16 +687,19 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
         &splice, (DLDataEntry *)block_base, user_key, node);
 
     if (!found) {
-      bool free_space = entry_base->header.status == HashEntryStatus::Updating;
+      auto entry_base_status = entry_base->header.status;
       hash_table_->Insert(hint, entry_base, dt, (uint64_t)node);
-      if (free_space) {
-        pmem_allocator_->Free(
-            SizedSpaceEntry(hash_entry.offset, data_entry.header.b_size));
+      if (entry_base_status == HashEntryStatus::Updating) {
+        pmem_allocator_->Free(SizedSpaceEntry(
+            hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
+      } else if (entry_base_status == HashEntryStatus::BeingReused) {
+        pmem_allocator_->DelayFree(SizedSpaceEntry(
+            hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
       }
     } else {
       entry_base->header.type = dt;
-      pmem_allocator_->Free(
-          SizedSpaceEntry(old_entry_offset, data_entry.header.b_size));
+      pmem_allocator_->Free(SizedSpaceEntry(
+          old_entry_offset, data_entry.header.b_size, data_entry.timestamp));
     }
 
     for (auto &m : spins) {
@@ -932,12 +943,15 @@ Status KVEngine::HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
                           v_size);
     PersistDataEntry(block_base, &write_entry, key, value, dt);
 
-    bool free_space = entry_base->header.status == HashEntryStatus::Updating;
+    auto entry_base_status = entry_base->header.status;
     hash_table_->Insert(hint, entry_base, dt,
                         sized_space_entry.space_entry.offset);
-    if (free_space) {
-      pmem_allocator_->Free(
-          SizedSpaceEntry(hash_entry.offset, data_entry.header.b_size));
+    if (entry_base_status == HashEntryStatus::Updating) {
+      pmem_allocator_->Free(SizedSpaceEntry(
+          hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
+    } else if (entry_base_status == HashEntryStatus::BeingReused) {
+      pmem_allocator_->DelayFree(SizedSpaceEntry(
+          hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
     }
   }
 
