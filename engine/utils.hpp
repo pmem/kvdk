@@ -100,8 +100,8 @@ static int compare_string_view(const pmem::obj::string_view &src,
                                const pmem::obj::string_view &target) {
   auto size = std::min(src.size(), target.size());
   for (uint32_t i = 0; i < size; i++) {
-    if (src.data()[i] != target.data()[i]) {
-      return src.data()[i] - target.data()[i];
+    if (src[i] != target[i]) {
+      return src[i] - target[i];
     }
   }
   return src.size() - target.size();
