@@ -42,7 +42,8 @@ public:
 
   inline static std::string ListKey(const pmem::obj::string_view user_key,
                                     uint64_t list_id) {
-    return std::string((char *)&list_id, 8).append(user_key.data());
+    return std::string((char *)&list_id, 8)
+        .append(user_key.data(), user_key.size());
   }
 };
 } // namespace KVDK_NAMESPACE
