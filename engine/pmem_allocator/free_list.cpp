@@ -115,6 +115,8 @@ void Freelist::HandleDelayFreedEntries() {
     for (auto &&entry : list) {
       if (entry.space_entry.info < min_timestamp_of_entries_ ||
           min_timestamp_of_entries_ == 0) {
+        // A freed delete record is same as a padding entry so we don't need ts
+        entry.space_entry.info = 0;
         if (entry.size < max_classified_b_size_) {
           merged_entry_list[entry.size].emplace_back(entry.space_entry);
           if (merged_entry_list[entry.size].size() >= kMinMovableEntries) {
