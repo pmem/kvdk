@@ -38,7 +38,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
              data_entry_size(hash_entry->header.type));
     }
 
-    if (key.compare(data_entry_key) == 0) {
+    if (compare_string_view(key, data_entry_key) == 0) {
       return true;
     }
   }

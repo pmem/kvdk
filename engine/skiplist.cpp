@@ -69,7 +69,7 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
         splice->prevs[i] = prev;
         break;
       }
-      int cmp = key.compare(tmp->UserKey());
+      int cmp = compare_string_view(key, tmp->UserKey());
 
       if (cmp > 0) {
         prev = tmp;
@@ -91,7 +91,7 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
     }
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_data_entry_offset);
-    int cmp = key.compare(UserKey(next_data_entry->Key()));
+    int cmp = compare_string_view(key, UserKey(next_data_entry->Key()));
     if (cmp > 0) {
       prev_data_entry = next_data_entry;
     } else {
@@ -123,7 +123,7 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
       prev = splice->prev_data_entry;
       next = splice->next_data_entry;
       assert(prev == header_->data_entry ||
-             UserKey(prev->Key()).compare(insert_key) < 0);
+             compare_string_view(prev->Key(), insert_key) < 0);
     }
 
     uint64_t prev_offset = pmem_allocator_->addr2offset(prev);

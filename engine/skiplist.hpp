@@ -151,7 +151,7 @@ public:
           break;
         }
 
-        int cmp = key.compare(tmp->UserKey());
+        int cmp = compare_string_view(key, tmp->UserKey());
 
         if (cmp > 0) {
           prevs[l] = tmp;
