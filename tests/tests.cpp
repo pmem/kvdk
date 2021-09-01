@@ -337,7 +337,6 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
       ASSERT_EQ(engine->SGet(thread_local_skiplist, k1, &got_v1),
                 Status::NotFound);
     }
-
   };
   auto ops2 = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
@@ -382,14 +381,14 @@ TEST_F(EngineBasicTest, TestBasicSortedOperations) {
     auto t_iter2 = engine->NewSortedIterator(thread_local_skiplist);
     ASSERT_TRUE(t_iter2 != nullptr);
     // First deleted key
-    t_iter2->Seek(std::to_string(id)+"k1");
+    t_iter2->Seek(std::to_string(id) + "k1");
     ASSERT_TRUE(t_iter2->Valid());
     // First valid key
-    t_iter2->Seek(std::to_string(id)+"k2");
+    t_iter2->Seek(std::to_string(id) + "k2");
     ASSERT_TRUE(t_iter2->Valid());
-    ASSERT_EQ(t_iter2->Key(), std::to_string(id)+"k2");
+    ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
   };
-  
+
   {
     std::vector<std::thread> ts;
     for (int i = 0; i < num_threads; i++) {

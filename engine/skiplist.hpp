@@ -209,8 +209,8 @@ public:
     }
   }
 
-  virtual bool Valid() override { 
-    return (current != nullptr) && (current->type != SORTED_DELETE_RECORD); 
+  virtual bool Valid() override {
+    return (current != nullptr) && (current->type != SORTED_DELETE_RECORD);
   }
 
   virtual bool Next() override {
