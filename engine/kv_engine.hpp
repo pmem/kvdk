@@ -77,7 +77,8 @@ private:
 
   Status Init(const std::string &name, const Configs &configs);
 
-  Status HashGetImpl(const Slice &key, std::string *value, uint16_t type_mask);
+  Status HashGetImpl(const pmem::obj::string_view &key, std::string *value,
+                     uint16_t type_mask);
 
   inline Status MaybeInitWriteThread();
 
@@ -105,7 +106,8 @@ private:
 
   Status MaybeInitPendingBatchFile();
 
-  Status HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
+  Status HashSetImpl(const pmem::obj::string_view &key,
+                     const pmem::obj::string_view &value, uint16_t dt,
                      BatchWriteHint *batch_hint = nullptr);
 
   Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
@@ -123,7 +125,8 @@ private:
   void BackgroundWork();
 
   void PersistDataEntry(char *block_base, DataEntry *data_entry,
-                        const Slice &key, const Slice &value, uint16_t type);
+                        const pmem::obj::string_view &key,
+                        const pmem::obj::string_view &value, uint16_t type);
 
   Status CheckConfigs(const Configs &configs);
 

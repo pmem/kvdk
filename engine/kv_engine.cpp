@@ -188,8 +188,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
           recovering_data_entry->timestamp;
     }
 
-    Slice pmem_key = dl_entry ? ((DLDataEntry *)pmem_data_entry)->Key()
-                              : pmem_data_entry->Key();
+    pmem::obj::string_view pmem_key =
+        dl_entry ? ((DLDataEntry *)pmem_data_entry)->Key()
+                 : pmem_data_entry->Key();
     std::string key(pmem_key.data(), pmem_key.size());
 
     if (recovering_data_entry->type == SORTED_HEADER_RECORD) {
@@ -333,7 +334,7 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
                                kNullPmemOffset, kNullPmemOffset);
         uint64_t id = list_id_.fetch_add(1);
         PersistDataEntry(block_base, &data_entry, collection,
-                         Slice((char *)&id, 8), header_type);
+                         pmem::obj::string_view((char *)&id, 8), header_type);
         {
           std::lock_guard<std::mutex> lg(list_mu_);
           switch (header_type) {
@@ -503,8 +504,8 @@ Status KVEngine::Recovery() {
   return Status::Ok;
 }
 
-Status KVEngine::HashGetImpl(const Slice &key, std::string *value,
-                             uint16_t type_mask) {
+Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
+                             std::string *value, uint16_t type_mask) {
   std::unique_ptr<DataEntry> data_entry(
       type_mask & DLDataEntryType ? new DLDataEntry : new DataEntry);
   HashEntry hash_entry;
@@ -574,7 +575,8 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
 }
 
 inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
-                                       const Slice &key, const Slice &value,
+                                       const pmem::obj::string_view &key,
+                                       const pmem::obj::string_view &value,
                                        uint16_t type) {
   char *data_cpy_target;
   auto entry_size = data_entry_size(type);
@@ -885,7 +887,8 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
                      SORTED_DATA_RECORD | SORTED_DELETE_RECORD);
 }
 
-Status KVEngine::HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
+Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
+                             const pmem::obj::string_view &value, uint16_t dt,
                              BatchWriteHint *batch_hint) {
   DataEntry data_entry;
   HashEntry hash_entry;

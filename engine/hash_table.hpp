@@ -94,7 +94,7 @@ public:
     hash_bucket_entries_.resize(hash_bucket_num, 0);
   }
 
-  KeyHashHint GetHint(const Slice &key) {
+  KeyHashHint GetHint(const pmem::obj::string_view &key) {
     KeyHashHint hint;
     hint.key_hash_value = hash_str(key.data(), key.size());
     hint.bucket = get_bucket_num(hint.key_hash_value);
@@ -103,9 +103,10 @@ public:
     return hint;
   }
 
-  Status Search(const KeyHashHint &hint, const Slice &key, uint16_t type_mask,
-                HashEntry *hash_entry, DataEntry *data_entry,
-                HashEntry **entry_base, SearchPurpose purpose);
+  Status Search(const KeyHashHint &hint, const pmem::obj::string_view &key,
+                uint16_t type_mask, HashEntry *hash_entry,
+                DataEntry *data_entry, HashEntry **entry_base,
+                SearchPurpose purpose);
 
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
               uint64_t offset);
@@ -119,7 +120,7 @@ private:
     return bucket / num_buckets_per_slot_;
   }
 
-  bool MatchHashEntry(const Slice &key, uint32_t hash_k_prefix,
+  bool MatchHashEntry(const pmem::obj::string_view &key, uint32_t hash_k_prefix,
                       uint16_t target_type, const HashEntry *hash_entry,
                       void *data_entry);
 

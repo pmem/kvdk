@@ -7,14 +7,14 @@
 #include "thread_manager.hpp"
 
 namespace KVDK_NAMESPACE {
-bool HashTable::MatchHashEntry(const Slice &key, uint32_t hash_k_prefix,
-                               uint16_t target_type,
+bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
+                               uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry, void *data_entry) {
   if ((target_type & hash_entry->header.type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
     void *data_entry_pmem;
-    Slice data_entry_key;
+    pmem::obj::string_view data_entry_key;
 
     if (hash_entry->header.type & StringDataEntryType) {
       data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
@@ -37,17 +37,18 @@ bool HashTable::MatchHashEntry(const Slice &key, uint32_t hash_k_prefix,
       memcpy(data_entry, data_entry_pmem,
              data_entry_size(hash_entry->header.type));
     }
-    if (Slice::compare(key, data_entry_key) == 0) {
+
+    if (key.compare(data_entry_key) == 0) {
       return true;
     }
   }
   return false;
 }
 
-Status HashTable::Search(const KeyHashHint &hint, const Slice &key,
-                         uint16_t type_mask, HashEntry *hash_entry,
-                         DataEntry *data_entry, HashEntry **entry_base,
-                         SearchPurpose purpose) {
+Status HashTable::Search(const KeyHashHint &hint,
+                         const pmem::obj::string_view &key, uint16_t type_mask,
+                         HashEntry *hash_entry, DataEntry *data_entry,
+                         HashEntry **entry_base, SearchPurpose purpose) {
   assert(purpose == SearchPurpose::Read || write_thread.id >= 0);
   assert(entry_base);
   assert((*entry_base) == nullptr);
