@@ -40,9 +40,9 @@ Status Skiplist::Rebuild()
         }
         // TODO: check failure
 
-        DLDataEntry *next_data_entry = (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+        DLDataEntry *next_data_entry = (DLDataEntry *)_sp_pmem_allocator_->offset2addr(next_offset);
         Slice key = next_data_entry->Key();
-        Status s = hash_table_->Search(hash_table_->GetHint(key), key, SORTED_DATA_RECORD | SORTED_DELETE_RECORD,
+        Status s = _sp_hash_table_->Search(_sp_hash_table_->GetHint(key), key, SORTED_DATA_RECORD | SORTED_DELETE_RECORD,
                                        &hash_entry, &data_entry, &entry_base, HashTable::SearchPurpose::Read);
         // these nodes should be already created during data restoring
         if (s != Status::Ok)
@@ -104,7 +104,7 @@ void Skiplist::Seek(const Slice &key, Splice *splice)
             splice->next_data_entry = nullptr;
             break;
         }
-        DLDataEntry *next_data_entry = (DLDataEntry *)pmem_allocator_->offset2addr(next_data_entry_offset);
+        DLDataEntry *next_data_entry = (DLDataEntry *)_sp_pmem_allocator_->offset2addr(next_data_entry_offset);
         int cmp = Slice::compare(key, UserKey(next_data_entry->Key()));
         if (cmp > 0)
         {
@@ -128,8 +128,8 @@ bool Skiplist::FindAndLockWritePos(Splice *splice, const Slice &insert_key, cons
         DLDataEntry *next;
         if (updated_data_entry != nullptr)
         {
-            prev = (DLDataEntry *)(pmem_allocator_->offset2addr(updated_data_entry->prev));
-            next = (DLDataEntry *)(pmem_allocator_->offset2addr(updated_data_entry->next));
+            prev = (DLDataEntry *)(_sp_pmem_allocator_->offset2addr(updated_data_entry->prev));
+            next = (DLDataEntry *)(_sp_pmem_allocator_->offset2addr(updated_data_entry->next));
             splice->prev_data_entry = prev;
             splice->next_data_entry = next;
         }
@@ -141,19 +141,19 @@ bool Skiplist::FindAndLockWritePos(Splice *splice, const Slice &insert_key, cons
             assert(prev == header_->data_entry || Slice::compare(UserKey(prev->Key()), insert_key) < 0);
         }
 
-        uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
-        uint64_t next_offset = pmem_allocator_->addr2offset(next);
+        uint64_t prev_offset = _sp_pmem_allocator_->addr2offset(prev);
+        uint64_t next_offset = _sp_pmem_allocator_->addr2offset(next);
 
         // sequentially lock to prevent deadlock
         auto cmp = [](const SpinMutex *s1, const SpinMutex *s2) { return (uint64_t)s1 < (uint64_t)s2; };
-        auto prev_hint = hash_table_->GetHint(prev->Key());
+        auto prev_hint = _sp_hash_table_->GetHint(prev->Key());
         if (prev_hint.spin != hint.spin)
         {
             spins.push_back(prev_hint.spin);
         }
         if (next != nullptr)
         {
-            auto next_hint = hash_table_->GetHint(next->Key());
+            auto next_hint = _sp_hash_table_->GetHint(next->Key());
             if (next_hint.spin != hint.spin && next_hint.spin != prev_hint.spin)
             {
                 spins.push_back(next_hint.spin);
@@ -194,11 +194,11 @@ bool Skiplist::FindAndLockWritePos(Splice *splice, const Slice &insert_key, cons
 
 void Skiplist::DeleteDataEntry(Splice *delete_splice, const Slice &deleting_key, SkiplistNode *node)
 {
-    delete_splice->prev_data_entry->next = pmem_allocator_->addr2offset(delete_splice->next_data_entry);
+    delete_splice->prev_data_entry->next = _sp_pmem_allocator_->addr2offset(delete_splice->next_data_entry);
     pmem_persist(&delete_splice->prev_data_entry->next, 8);
     if (delete_splice->next_data_entry)
     {
-        delete_splice->next_data_entry->prev = pmem_allocator_->addr2offset(delete_splice->prev_data_entry);
+        delete_splice->next_data_entry->prev = _sp_pmem_allocator_->addr2offset(delete_splice->prev_data_entry);
         pmem_persist(&delete_splice->next_data_entry->prev, 8);
     }
 
@@ -219,7 +219,7 @@ void Skiplist::DeleteDataEntry(Splice *delete_splice, const Slice &deleting_key,
 void *Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry, const Slice &inserting_key,
                                 SkiplistNode *node)
 {
-    uint64_t entry_offset = pmem_allocator_->addr2offset(inserting_entry);
+    uint64_t entry_offset = _sp_pmem_allocator_->addr2offset(inserting_entry);
     insert_splice->prev_data_entry->next = entry_offset;
     pmem_persist(&insert_splice->prev_data_entry->next, 8);
     if (__glibc_likely(insert_splice->next_data_entry != nullptr))
