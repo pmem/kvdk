@@ -33,8 +33,7 @@ void PMEMAllocator::PopulateSpace() {
       // case that mapped_size_ is not divisible by pu.
       if (i == pu - 1)
         len = pmem_size_ - (pu - 1) * len;
-      pmem_memset(pmem_ + pmem_size_ * i / pu, 0, len,
-                  PMEM_F_MEM_NONTEMPORAL);
+      pmem_memset(pmem_ + pmem_size_ * i / pu, 0, len, PMEM_F_MEM_NONTEMPORAL);
     });
   }
   for (auto &t : ths) {
@@ -53,9 +52,9 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
   int is_pmem;
   GlobalLogger.Log("Initializing PMem size %lu in file %s\n", pmem_space,
                    pmem_file.c_str());
-  if ((pmem_ =
-           (char *)pmem_map_file(pmem_file.c_str(), pmem_space, PMEM_FILE_CREATE,
-                                 0666, &pmem_size_, &is_pmem)) == nullptr) {
+  if ((pmem_ = (char *)pmem_map_file(pmem_file.c_str(), pmem_space,
+                                     PMEM_FILE_CREATE, 0666, &pmem_size_,
+                                     &is_pmem)) == nullptr) {
     GlobalLogger.Error("Pmem map file %s failed: %s\n", pmem_file.c_str(),
                        strerror(errno));
     exit(1);
