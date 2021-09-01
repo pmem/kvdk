@@ -6,6 +6,7 @@ project(KVDK VERSION 1.0
 
 set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
+include(GNUInstallDirs)
 
 set_property(GLOBAL PROPERTY CXX_STANDARD 14)
 set(OPT "-msse4 -mavx -mavx2 -O2 -fno-omit-frame-pointer -momit-leaf-frame-pointer")
@@ -40,6 +41,17 @@ set(SOURCES
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
 target_link_libraries(engine PUBLIC pthread pmem gflags hwloc)
+
+configure_file(kvdk.pc.in kvdk.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
+	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+set_target_properties(engine PROPERTIES PUBLIC_HEADER "include/kvdk/engine.hpp;include/kvdk/namespace.hpp;include/kvdk/configs.hpp;include/kvdk/iterator.hpp;include/kvdk/status.hpp;include/kvdk/write_batch.hpp")
+
+install(TARGETS engine
+		PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
+		LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+		RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # executables
 add_executable(bench benchmark/bench.cpp)
