@@ -67,25 +67,26 @@ private:
     PendingBatch *persisted_pending_batch = nullptr;
   };
 
-  bool CheckKeySize(const pmem::obj::string_view key) {
+  bool CheckKeySize(const pmem::obj::string_view &key) {
     return key.size() <= UINT16_MAX;
   }
 
-  bool CheckValueSize(const pmem::obj::string_view value) {
+  bool CheckValueSize(const pmem::obj::string_view &value) {
     return value.size() <= UINT32_MAX;
   }
 
   Status Init(const std::string &name, const Configs &configs);
 
-  Status HashGetImpl(const Slice &key, std::string *value, uint16_t type_mask);
+  Status HashGetImpl(const pmem::obj::string_view &key, std::string *value,
+                     uint16_t type_mask);
 
   inline Status MaybeInitWriteThread();
 
-  Status SearchOrInitPersistentList(const pmem::obj::string_view collection,
+  Status SearchOrInitPersistentList(const pmem::obj::string_view &collection,
                                     PersistentList **list, bool init,
                                     uint16_t header_type);
 
-  Status SearchOrInitHashlist(const std::string &collection,
+  Status SearchOrInitHashlist(const pmem::obj::string_view &collection,
                               HashList **hashlist, bool init) {
     if (!CheckKeySize(collection)) {
       return Status::InvalidDataSize;
@@ -94,7 +95,7 @@ private:
                                       init, HASH_LIST_HEADER_RECORD);
   };
 
-  Status SearchOrInitSkiplist(const pmem::obj::string_view collection,
+  Status SearchOrInitSkiplist(const pmem::obj::string_view &collection,
                               Skiplist **skiplist, bool init) {
     if (!CheckKeySize(collection)) {
       return Status::InvalidDataSize;
@@ -105,11 +106,12 @@ private:
 
   Status MaybeInitPendingBatchFile();
 
-  Status HashSetImpl(const Slice &key, const Slice &value, uint16_t dt,
+  Status HashSetImpl(const pmem::obj::string_view &key,
+                     const pmem::obj::string_view &value, uint16_t dt,
                      BatchWriteHint *batch_hint = nullptr);
 
-  Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view user_key,
-                  const pmem::obj::string_view value, uint16_t dt);
+  Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
+                  const pmem::obj::string_view &value, uint16_t dt);
 
   Status Recovery();
 
@@ -123,7 +125,8 @@ private:
   void BackgroundWork();
 
   void PersistDataEntry(char *block_base, DataEntry *data_entry,
-                        const Slice &key, const Slice &value, uint16_t type);
+                        const pmem::obj::string_view &key,
+                        const pmem::obj::string_view &value, uint16_t type);
 
   Status CheckConfigs(const Configs &configs);
 

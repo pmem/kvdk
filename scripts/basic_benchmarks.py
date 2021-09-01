@@ -5,10 +5,11 @@ report_path = "./results/"
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
-benchmark_threads = 48
-kvdk_max_write_threads = 48
+benchmark_threads = 64
+kvdk_max_write_threads = 64
 duration = 10
 populate = 1
+collections = 16
 
 numanode = 0
 bin = "../build/bench"
@@ -26,14 +27,15 @@ if __name__ == "__main__":
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
         num = data_size // (vs + 8)
-        para = "-populate={} -value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={}".format(
+        para = "-populate={} -value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={} -collections={}".format(
             populate,
             vs,
             benchmark_threads,
             duration,
             path, num,
             instance_space,
-            kvdk_max_write_threads)
+            kvdk_max_write_threads,
+            collections)
         # Benchmark string-type data
         # fill uniform distributed kv
         os.system("rm -rf {0}".format(path))

@@ -33,8 +33,8 @@ public:
 
   static void DeleteNode(SkiplistNode *node) { free(node->heap_space_start()); }
 
-  static SkiplistNode *NewNode(const Slice &key, DLDataEntry *entry_on_pmem,
-                               uint16_t l) {
+  static SkiplistNode *NewNode(const pmem::obj::string_view &key,
+                               DLDataEntry *entry_on_pmem, uint16_t l) {
     size_t size;
     if (l >= kCacheLevel && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * l + key.size() - 4;
@@ -53,7 +53,7 @@ public:
 
   uint16_t Height() { return height; }
 
-  Slice Key();
+  pmem::obj::string_view UserKey();
 
   SkiplistNode *Next(int l) { return next[-l].load(std::memory_order_acquire); }
 
@@ -80,7 +80,7 @@ public:
 private:
   SkiplistNode() {}
 
-  void MaybeCacheKey(const Slice &key) {
+  void MaybeCacheKey(const pmem::obj::string_view &key) {
     if (height >= kCacheLevel || key.size() <= 4) {
       cached_key_size = key.size();
       memcpy(cached_key, key.data(), key.size());
@@ -131,8 +131,10 @@ public:
     return height;
   }
 
-  inline static Slice UserKey(const Slice &skiplist_key) {
-    return Slice(skiplist_key.data() + 8, skiplist_key.size() - 8);
+  inline static pmem::obj::string_view
+  UserKey(const pmem::obj::string_view &skiplist_key) {
+    return pmem::obj::string_view(skiplist_key.data() + 8,
+                                  skiplist_key.size() - 8);
   }
 
   struct Splice {
@@ -141,7 +143,7 @@ public:
     DLDataEntry *prev_data_entry;
     DLDataEntry *next_data_entry;
 
-    void Recompute(const Slice &key, int l) {
+    void Recompute(const pmem::obj::string_view &key, int l) {
       while (1) {
         SkiplistNode *tmp = prevs[l]->Next(l);
         if (tmp == nullptr) {
@@ -149,7 +151,7 @@ public:
           break;
         }
 
-        int cmp = Slice::compare(key, tmp->Key());
+        int cmp = compare_string_view(key, tmp->UserKey());
 
         if (cmp > 0) {
           prevs[l] = tmp;
@@ -161,19 +163,22 @@ public:
     }
   };
 
-  void Seek(const Slice &key, Splice *splice);
+  void Seek(const pmem::obj::string_view &key, Splice *splice);
 
   Status Rebuild();
 
-  bool FindAndLockWritePos(Splice *splice, const Slice &insert_key,
+  bool FindAndLockWritePos(Splice *splice,
+                           const pmem::obj::string_view &insert_key,
                            const HashTable::KeyHashHint &hint,
                            std::vector<SpinMutex *> &spins,
                            DLDataEntry *updated_data_entry);
 
   void *InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
-                        const Slice &inserting_key, SkiplistNode *node);
+                        const pmem::obj::string_view &inserting_key,
+                        SkiplistNode *node);
 
-  void DeleteDataEntry(Splice *delete_splice, const Slice &deleting_key,
+  void DeleteDataEntry(Splice *delete_splice,
+                       const pmem::obj::string_view &deleting_key,
                        SkiplistNode *node);
 
 private:
@@ -243,13 +248,15 @@ public:
   virtual std::string Key() override {
     if (!Valid())
       return "";
-    return Skiplist::UserKey(current->Key()).to_string();
+    pmem::obj::string_view key = Skiplist::UserKey(current->Key());
+    return std::string(key.data(), key.size());
   }
 
   virtual std::string Value() override {
     if (!Valid())
       return "";
-    return current->Value().to_string();
+    pmem::obj::string_view value = current->Value();
+    return std::string(value.data(), value.size());
   }
 
 private:
