@@ -16,6 +16,8 @@ namespace KVDK_NAMESPACE {
 constexpr uint32_t kFreelistMaxClassifiedBlockSize = 255;
 constexpr uint32_t kSpaceMapLockGranularity = 64;
 
+class PMEMAllocator;
+
 // A byte map to record free blocks of PMem space, used for merging adjacent
 // free space entries in the free list
 class SpaceMap {
@@ -28,7 +30,7 @@ public:
   uint64_t TestAndUnset(uint64_t offset, uint64_t length);
 
   uint64_t TryMerge(uint64_t offset, uint64_t max_merge_length,
-                    uint64_t target_merge_length);
+                    uint64_t min_merge_length);
 
   void Set(uint64_t offset, uint64_t length);
 
@@ -40,12 +42,14 @@ private:
   struct Token {
   public:
     Token(bool is_start, uint8_t size)
-        : token_(size | (is_start ? (1 << 7) : 0)) {}
-    uint8_t Size() { return token_ & ((1 << 7) - 1); }
+        : token_(size | (is_start ? (1 << 7) : 0)) {
+      assert(size <= INT8_MAX);
+    }
+    uint8_t Size() { return token_ & INT8_MAX; }
     void Clear() { token_ = 0; }
     bool Empty() { return token_ == 0; }
     bool IsStart() { return token_ & (1 << 7); }
-    void UnStart() { token_ &= ((1 << 7) - 1); }
+    void UnStart() { token_ &= INT8_MAX; }
 
   private:
     uint8_t token_;
@@ -118,19 +122,26 @@ private:
 class Freelist {
 public:
   Freelist(uint32_t max_classified_b_size, uint64_t num_segment_blocks,
-           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map)
+           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map,
+           PMEMAllocator *allocator)
       : num_segment_blocks_(num_segment_blocks),
         max_classified_b_size_(max_classified_b_size),
         active_pool_(max_classified_b_size),
         merged_pool_(max_classified_b_size), space_map_(space_map),
-        thread_cache_(num_threads, max_classified_b_size) {}
+        thread_cache_(num_threads, max_classified_b_size),
+        min_timestamp_of_entries_(0), pmem_allocator_(allocator) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t num_threads,
-           std::shared_ptr<SpaceMap> space_map)
+           std::shared_ptr<SpaceMap> space_map, PMEMAllocator *allocator)
       : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
-                 num_threads, space_map) {}
+                 num_threads, space_map, allocator) {}
 
+  // Add a space entry
   void Push(const SizedSpaceEntry &entry);
+
+  // These entries can be safely freed only if no free space entry of smaller
+  // timestamp existing in the free list, so just record these entries
+  void DelayPush(const SizedSpaceEntry &entry);
 
   // Request a at least b_size free space entry
   bool Get(uint32_t b_size, SizedSpaceEntry *space_entry);
@@ -139,35 +150,54 @@ public:
   // entry
   bool MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry);
 
-  // Move cached free space list to space entry pool to balance usable space
-  // of write threads
-  //
-  // Iterate every backup entry lists of thread caches, and move the list to
-  // active_pool_ if more than kMinMovableEntries in it
-  void MoveCachedListToPool();
-
   // Merge adjacent free spaces stored in the entry pool into larger one
   //
   // Fetch every free space entry lists from active_pool_, for each entry in the
   // list, try to merge followed free space with it. Then insert merged entries
   // into merged_pool_. After merging, move all entry lists from merged_pool_ to
-  // active_pool_ for next run
+  // active_pool_ for next run. Calculate the minimal timestamp of free entries
+  // in the pool meantime
   // TODO: set a condition to decide if we need to do merging
-  void MergeFreeSpaceInPool();
+  void MergeAndCheckTSInPool();
+
+  // Move cached free space list to space entry pool to balance usable space
+  // of write threads
+  //
+  // Iterate every active entry lists of thread caches, move the list to
+  // active_pool_, and update minimal timestamp of free entries meantime
+  void MoveCachedListsToPool();
+
+  // Add delay freed entries to the list
+  //
+  // As delay freed entry holds a delete record of some key, if timestamp of a
+  // delay freed entry is smaller than minimal timestamp of free entries in the
+  // list, it means no older data of the same key existing, so the delay freed
+  // entry can be safely added to the list
+  void HandleDelayFreedEntries();
+
+  // Origanize free space entries, including merging adjacent space and add
+  // delay freed entries to the list
+  void OrganizeFreeSpace();
 
 private:
   // Each write threads cache some freed space entries in active_entries to
   // avoid contention. To balance free space entries among threads, if too many
   // entries cached by a thread, newly freed entries will be stored to
   // backup_entries and move to entry pool which shared by all threads.
-  struct ThreadCache {
+  struct alignas(64) ThreadCache {
     ThreadCache(uint32_t max_classified_b_size)
         : active_entries(max_classified_b_size),
-          backup_entries(max_classified_b_size), spins(max_classified_b_size) {}
+          spins(max_classified_b_size +
+                1 /* the last lock is for delay freed entries */),
+          last_used_entry_ts(0) {}
 
     std::vector<std::vector<SpaceEntry>> active_entries;
-    std::vector<std::vector<SpaceEntry>> backup_entries;
+    // These entries can be add to free list only if no entries with smaller
+    // timestamp exist
+    std::vector<SizedSpaceEntry> delay_freed_entries;
     std::vector<SpinMutex> spins;
+    // timestamp of entry that recently fetched from active_entries
+    uint64_t last_used_entry_ts;
   };
 
   class SpaceCmp {
@@ -178,12 +208,12 @@ private:
   };
 
   uint64_t MergeSpace(const SpaceEntry &space_entry, uint64_t max_size,
-                      uint64_t target_size) {
-    if (target_size > max_size) {
-      return false;
+                      uint64_t min_merge_size) {
+    if (min_merge_size > max_size) {
+      return 0;
     }
     uint64_t size =
-        space_map_->TryMerge(space_entry.offset, max_size, target_size);
+        space_map_->TryMerge(space_entry.offset, max_size, min_merge_size);
     return size;
   }
 
@@ -195,7 +225,10 @@ private:
   SpaceEntryPool merged_pool_;
   // Store all large free space entries that larger than max_classified_b_size_
   std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
+  std::vector<std::vector<SizedSpaceEntry>> delay_freed_entries_;
   SpinMutex large_entries_spin_;
+  uint64_t min_timestamp_of_entries_;
+  PMEMAllocator *pmem_allocator_;
 };
 
 } // namespace KVDK_NAMESPACE
