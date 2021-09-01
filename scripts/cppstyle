@@ -13,7 +13,7 @@ sub check {
 	my $original;
 	my $formatted;
 
-	$formatted = `$clangfmt -style=LLVM "$file"`;
+	$formatted = `$clangfmt -style=file "$file"`;
 
 	if ($mode eq 'check') {
 		local $/=undef;
