@@ -297,7 +297,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
 }
 
 Status
-KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view collection,
+KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
                                      PersistentList **list, bool init,
                                      uint16_t header_type) {
   auto hint = hash_table_->GetHint(collection);
@@ -607,8 +607,8 @@ inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
 }
 
 Status KVEngine::SSetImpl(Skiplist *skiplist,
-                          const pmem::obj::string_view user_key,
-                          const pmem::obj::string_view value, uint16_t dt) {
+                          const pmem::obj::string_view &user_key,
+                          const pmem::obj::string_view &value, uint16_t dt) {
   uint64_t id = skiplist->id();
   std::string collection_key(PersistentList::ListKey(user_key, id));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
