@@ -69,7 +69,7 @@ struct Configs {
   // In KVDK, a background thread will regularly organize PMem free space,
   // frequent execution will lead to better space utilization, but more
   // influence to foreground performance
-  uint64_t background_work_interval = 5;
+  double background_work_interval = 5;
 };
 
 } // namespace KVDK_NAMESPACE

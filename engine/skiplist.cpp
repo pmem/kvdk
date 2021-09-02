@@ -10,9 +10,9 @@
 
 namespace KVDK_NAMESPACE {
 
-Slice SkiplistNode::Key() {
+pmem::obj::string_view SkiplistNode::UserKey() {
   if (cached_key_size > 0) {
-    return Slice(cached_key, cached_key_size);
+    return pmem::obj::string_view(cached_key, cached_key_size);
   }
   return Skiplist::UserKey(data_entry->Key());
 }
@@ -35,11 +35,11 @@ Status Skiplist::Rebuild() {
 
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
-    Slice key = next_data_entry->Key();
+    pmem::obj::string_view key = next_data_entry->Key();
     Status s = hash_table_->Search(hash_table_->GetHint(key), key,
                                    SORTED_DATA_RECORD | SORTED_DELETE_RECORD,
                                    &hash_entry, &data_entry, &entry_base,
-                                   HashTable::SearchPurpose::READ);
+                                   HashTable::SearchPurpose::Read);
     // these nodes should be already created during data restoring
     if (s != Status::Ok) {
       GlobalLogger.Error("Rebuild skiplist error\n");
@@ -57,7 +57,7 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
-void Skiplist::Seek(const Slice &key, Splice *splice) {
+void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
   SkiplistNode *prev = header_;
   SkiplistNode *tmp;
   // TODO: do not search from max height every time
@@ -69,7 +69,7 @@ void Skiplist::Seek(const Slice &key, Splice *splice) {
         splice->prevs[i] = prev;
         break;
       }
-      int cmp = Slice::compare(key, tmp->Key());
+      int cmp = compare_string_view(key, tmp->UserKey());
 
       if (cmp > 0) {
         prev = tmp;
@@ -91,7 +91,7 @@ void Skiplist::Seek(const Slice &key, Splice *splice) {
     }
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_data_entry_offset);
-    int cmp = Slice::compare(key, UserKey(next_data_entry->Key()));
+    int cmp = compare_string_view(key, UserKey(next_data_entry->Key()));
     if (cmp > 0) {
       prev_data_entry = next_data_entry;
     } else {
@@ -102,7 +102,8 @@ void Skiplist::Seek(const Slice &key, Splice *splice) {
   }
 }
 
-bool Skiplist::FindAndLockWritePos(Splice *splice, const Slice &insert_key,
+bool Skiplist::FindAndLockWritePos(Splice *splice,
+                                   const pmem::obj::string_view &insert_key,
                                    const HashTable::KeyHashHint &hint,
                                    std::vector<SpinMutex *> &spins,
                                    DLDataEntry *updated_data_entry) {
@@ -122,7 +123,7 @@ bool Skiplist::FindAndLockWritePos(Splice *splice, const Slice &insert_key,
       prev = splice->prev_data_entry;
       next = splice->next_data_entry;
       assert(prev == header_->data_entry ||
-             Slice::compare(UserKey(prev->Key()), insert_key) < 0);
+             compare_string_view(prev->Key(), insert_key) < 0);
     }
 
     uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
@@ -169,7 +170,8 @@ bool Skiplist::FindAndLockWritePos(Splice *splice, const Slice &insert_key,
   }
 }
 
-void Skiplist::DeleteDataEntry(Splice *delete_splice, const Slice &deleting_key,
+void Skiplist::DeleteDataEntry(Splice *delete_splice,
+                               const pmem::obj::string_view &deleting_key,
                                SkiplistNode *node) {
   delete_splice->prev_data_entry->next =
       pmem_allocator_->addr2offset(delete_splice->next_data_entry);
@@ -193,7 +195,7 @@ void Skiplist::DeleteDataEntry(Splice *delete_splice, const Slice &deleting_key,
 
 void *Skiplist::InsertDataEntry(Splice *insert_splice,
                                 DLDataEntry *inserting_entry,
-                                const Slice &inserting_key,
+                                const pmem::obj::string_view &inserting_key,
                                 SkiplistNode *node) {
   uint64_t entry_offset = pmem_allocator_->addr2offset(inserting_entry);
   insert_splice->prev_data_entry->next = entry_offset;

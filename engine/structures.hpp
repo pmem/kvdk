@@ -14,7 +14,7 @@
 namespace KVDK_NAMESPACE {
 
 struct PendingBatch {
-  enum Stage {
+  enum class Stage {
     Done = 0,
     Processing = 1,
   };
@@ -29,7 +29,7 @@ struct PendingBatch {
 
   void PersistStage(Stage s);
 
-  bool Unfinished() { return stage == Processing; }
+  bool Unfinished() { return stage == Stage::Processing; }
 
   Stage stage;
   uint32_t num_kv;
@@ -40,9 +40,10 @@ class PersistentList {
 public:
   virtual uint64_t id() = 0;
 
-  inline static std::string ListKey(const std::string &user_key,
+  inline static std::string ListKey(const pmem::obj::string_view &user_key,
                                     uint64_t list_id) {
-    return std::string((char *)&list_id, 8).append(user_key);
+    return std::string((char *)&list_id, 8)
+        .append(user_key.data(), user_key.size());
   }
 };
 } // namespace KVDK_NAMESPACE

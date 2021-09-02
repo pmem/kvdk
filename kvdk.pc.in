@@ -1,0 +1,12 @@
+version=@VERSION@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_LIBDIR@
+includedir=@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: kvdk
+Description: kvdk - key-value store for Persistent Memory
+Version: ${version}
+URL: https://github.com/pmem/kvdk
+Requires.private: @PKG_CONFIG_REQUIRES@
+Libs: -L${libdir} -lengine
+Cflags: -I${includedir}

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "kvdk/namespace.hpp"
+#include "libpmemobj++/string_view.hpp"
 #include "xxhash.h"
 
 namespace KVDK_NAMESPACE {
@@ -95,6 +96,17 @@ inline int create_dir_if_missing(const std::string &name) {
   return res;
 }
 
+static int compare_string_view(const pmem::obj::string_view &src,
+                               const pmem::obj::string_view &target) {
+  auto size = std::min(src.size(), target.size());
+  for (uint32_t i = 0; i < size; i++) {
+    if (src[i] != target[i]) {
+      return src[i] - target[i];
+    }
+  }
+  return src.size() - target.size();
+}
+
 class Slice {
 public:
   Slice() : _data(nullptr), _size(0) {}
@@ -102,6 +114,8 @@ public:
   Slice(const char *data, uint64_t size) : _data(data), _size(size) {}
 
   Slice(const std::string &str) : _data(str.data()), _size(str.size()) {}
+  Slice(const pmem::obj::string_view &sv)
+      : _data(sv.data()), _size(sv.size()) {}
 
   const char *data() const { return _data; }
 

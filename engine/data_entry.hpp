@@ -65,10 +65,12 @@ struct DataEntry {
   }
 
   // make sure there is data followed in data[0]
-  Slice Key() { return Slice(data, k_size); }
+  pmem::obj::string_view Key() { return pmem::obj::string_view(data, k_size); }
 
   // make sure there is data followed in data[0]
-  Slice Value() { return Slice(data + k_size, v_size); }
+  pmem::obj::string_view Value() {
+    return pmem::obj::string_view(data + k_size, v_size);
+  }
 };
 
 // Doublely linked
@@ -90,10 +92,12 @@ struct DLDataEntry : public DataEntry {
   }
 
   // make sure there is data followed in data[0]
-  Slice Key() { return Slice(data, k_size); }
+  pmem::obj::string_view Key() { return pmem::obj::string_view(data, k_size); }
 
   // make sure there is data followed in data[0]
-  Slice Value() { return Slice(data + k_size, v_size); }
+  pmem::obj::string_view Value() {
+    return pmem::obj::string_view(data + k_size, v_size);
+  }
 };
 
 // Singly linked
@@ -107,9 +111,11 @@ struct SLDataEntry : public DataEntry {
            get_checksum(data, v_size + k_size);
   }
 
-  Slice Key() { return Slice(data, k_size); }
+  pmem::obj::string_view Key() { return pmem::obj::string_view(data, k_size); }
 
-  Slice Value() { return Slice(data + k_size, v_size); }
+  pmem::obj::string_view Value() {
+    return pmem::obj::string_view(data + k_size, v_size);
+  }
 };
 
 static uint64_t data_entry_size(uint16_t type) {

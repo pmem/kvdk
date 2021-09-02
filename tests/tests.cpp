@@ -49,18 +49,31 @@ protected:
   }
 };
 
-TEST_F(EngineBasicTest, TestSeekToFirst) {
-
-  const std::string collection = "col";
+TEST_F(EngineBasicTest, TestSeek) {
   std::string val;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
+
+  // Test Seek
+  std::string collection = "col1";
+  uint64_t z = 0;
+  auto zero_filled_str = uint64_to_string(z);
+  ASSERT_EQ(engine->SSet(collection, zero_filled_str, zero_filled_str),
+            Status::Ok);
+  ASSERT_EQ(engine->SGet(collection, zero_filled_str, &val), Status::Ok);
+  auto iter = engine->NewSortedIterator(collection);
+  ASSERT_NE(iter, nullptr);
+  iter->Seek(zero_filled_str);
+  ASSERT_TRUE(iter->Valid());
+
+  // Test SeekToFirst
+  collection.assign("col2");
   ASSERT_EQ(engine->SSet(collection, "foo", "bar"), Status::Ok);
   ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::Ok);
   ASSERT_EQ(engine->SDelete(collection, "foo"), Status::Ok);
   ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::NotFound);
   ASSERT_EQ(engine->SSet(collection, "foo2", "bar2"), Status::Ok);
-  auto iter = engine->NewSortedIterator(collection);
+  iter = engine->NewSortedIterator(collection);
   ASSERT_NE(iter, nullptr);
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());

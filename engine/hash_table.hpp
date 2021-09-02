@@ -14,18 +14,31 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
+enum class HashEntryStatus : uint16_t {
+  Normal = 1,
+  // A hash entry of a delete record which has no older version data of the same
+  // key exsiting on PMem, so the delete record can be safely freed after the
+  // hash entry updated by a new key
+  Clean,
+  // New created hash entry for inserting a new key
+  Initializing,
+  // A entry being updated by the same key, or a CLEAN hash entry being updated
+  // by a new key
+  Updating,
+  // A Normal hash entry of a delete record that is reusing by a new key
+  BeingReused,
+};
 
 struct HashHeader {
   uint32_t key_prefix;
   uint16_t type;
-  uint8_t reusable;
-  uint8_t padding; // for future usage
+  HashEntryStatus status;
 };
 
 struct HashEntry {
   HashEntry() = default;
   HashEntry(uint32_t kp, uint16_t t, uint64_t bo)
-      : header({kp, t, 0, 0}), offset(bo) {}
+      : header({kp, t, HashEntryStatus::Normal}), offset(bo) {}
 
   HashHeader header;
   uint64_t offset;
@@ -55,11 +68,11 @@ public:
   };
 
   enum class SearchPurpose : uint8_t {
-    READ = 0,
+    Read = 0,
     // More read only purpose here
 
-    WRITE,
-    RECOVER,
+    Write,
+    Recover,
     // More write purpose here
   };
 
@@ -77,12 +90,11 @@ public:
     main_buckets_ = dram_allocator_->offset2addr(
         (dram_allocator_->Allocate(hash_bucket_size * hash_bucket_num)
              .space_entry.offset));
-    //    memset(main_buckets_, 0, hash_bucket_size * hash_bucket_num);
     slots_.resize(hash_bucket_num / num_buckets_per_slot);
     hash_bucket_entries_.resize(hash_bucket_num, 0);
   }
 
-  KeyHashHint GetHint(const Slice &key) {
+  KeyHashHint GetHint(const pmem::obj::string_view &key) {
     KeyHashHint hint;
     hint.key_hash_value = hash_str(key.data(), key.size());
     hint.bucket = get_bucket_num(hint.key_hash_value);
@@ -91,12 +103,13 @@ public:
     return hint;
   }
 
-  Status Search(const KeyHashHint &hint, const Slice &key, uint16_t type_mask,
-                HashEntry *hash_entry, DataEntry *data_entry,
-                HashEntry **entry_base, SearchPurpose purpose);
+  Status Search(const KeyHashHint &hint, const pmem::obj::string_view &key,
+                uint16_t type_mask, HashEntry *hash_entry,
+                DataEntry *data_entry, HashEntry **entry_base,
+                SearchPurpose purpose);
 
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
-              uint64_t offset, bool is_update);
+              uint64_t offset);
 
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
@@ -107,7 +120,7 @@ private:
     return bucket / num_buckets_per_slot_;
   }
 
-  bool MatchHashEntry(const Slice &key, uint32_t hash_k_prefix,
+  bool MatchHashEntry(const pmem::obj::string_view &key, uint32_t hash_k_prefix,
                       uint16_t target_type, const HashEntry *hash_entry,
                       void *data_entry);
 
