@@ -22,14 +22,15 @@ Status ThreadManager::MaybeInitThread(Thread &t) {
         auto it = usable_id_.begin();
         t.id = *it;
         usable_id_.erase(it);
+        t.thread_manager = shared_from_this();
+        return Status::Ok;
       }
-    } else {
-      int id = ids_.fetch_add(1, std::memory_order_relaxed);
-      if (id >= max_threads_) {
-        return Status::TooManyWriteThreads;
-      }
-      t.id = id;
     }
+    int id = ids_.fetch_add(1, std::memory_order_relaxed);
+    if (id >= max_threads_) {
+      return Status::TooManyWriteThreads;
+    }
+    t.id = id;
     t.thread_manager = shared_from_this();
   }
   return Status::Ok;
