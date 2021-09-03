@@ -201,6 +201,9 @@ public:
     Skiplist::Splice splice;
     skiplist_->Seek(key, &splice);
     current = splice.next_data_entry;
+    while (current->type == SORTED_DELETE_RECORD) {
+      current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->next));
+    }
   }
 
   virtual void SeekToFirst() override {
@@ -211,7 +214,9 @@ public:
     }
   }
 
-  virtual bool Valid() override { return current != nullptr; }
+  virtual bool Valid() override {
+    return (current != nullptr) && (current->type != SORTED_DELETE_RECORD);
+  }
 
   virtual bool Next() override {
     if (!Valid()) {
