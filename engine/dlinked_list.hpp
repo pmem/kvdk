@@ -5,8 +5,14 @@
 #pragma once
 
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#include <libpmemobj++/string_view.hpp>
+#include <libpmem.h>
+
 
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -57,7 +63,13 @@ namespace KVDK_NAMESPACE
 
         /// Emplace right before iter.
         /// p_new_record points to data on DRAM prepared for writing to PMem
-        Iterator Emplace(Iterator iter, DLDataEntry const& p_new_record, Slice key, Slice value)
+        Iterator Emplace
+        (
+            Iterator iter, 
+            DLDataEntry const& p_new_record, 
+            pmem::obj::string_view const key, 
+            pmem::obj::string_view const value
+        )
         {
             assert(iter.valid() && "Invalid iterator in dlinked_list!");
 
@@ -87,40 +99,18 @@ namespace KVDK_NAMESPACE
         (
             void* pmp, 
             DLDataEntry const& entry,
-            Slice key, 
-            Slice value,
-        ) 
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value
+        )
         {
-            char* data_cpy_target;
-            auto entry_size = data_entry_size(type);
-            bool with_buffer = entry_size + key.size() + value.size() <= buffer_size;
-            if (with_buffer) {
-                if (write_buffer.empty()) {
-                    write_buffer.resize(buffer_size);
-                }
-                data_cpy_target = &write_buffer[0];
-            }
-            else {
-                data_cpy_target = block_base;
-            }
-            memcpy(data_cpy_target, data_entry, entry_size);
-            memcpy(data_cpy_target + entry_size, key.data(), key.size());
-            memcpy(data_cpy_target + entry_size + key.size(), value.data(), value.size());
-            if (type & DLDataEntryType) {
-                DLDataEntry* entry_with_data = ((DLDataEntry*)data_cpy_target);
-                entry_with_data->header.checksum = entry_with_data->Checksum();
-            }
-            else {
-                DataEntry* entry_with_data = ((DataEntry*)data_cpy_target);
-                entry_with_data->header.checksum = entry_with_data->Checksum();
-            }
-            if (with_buffer) {
-                pmem_memcpy(block_base, data_cpy_target,
-                    entry_size + key.size() + value.size(), PMEM_F_MEM_NONTEMPORAL);
-            }
-            else {
-                pmem_flush(block_base, entry_size + key.size() + value.size());
-            }
+            char* pmp_dest = pmp;
+            auto entry_size = sizeof(DLDataEntry);
+            memcpy(pmp_dest, data_entry, entry_size);
+            memcpy(pmp_dest + entry_size, key.data(), key.size());
+            memcpy(pmp_dest + entry_size + key.size(), value.data(), value.size());
+            DLDataEntry* entry_with_data = ((DLDataEntry*)data_cpy_target);
+            entry_with_data->header.checksum = entry_with_data->Checksum();
+            pmem_flush(block_base, entry_size + key.size() + value.size());
             pmem_drain();
         }
 
