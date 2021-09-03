@@ -64,7 +64,7 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
   // TODO: do not search from max height every time
   for (int i = kMaxHeight; i >= 1; i--) {
     while (1) {
-      tmp = prev->Next(i);
+      tmp = prev->Next(i).Pointer();
       if (tmp == nullptr) {
         splice->nexts[i] = nullptr;
         splice->prevs[i] = prev;

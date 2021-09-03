@@ -13,6 +13,35 @@
 
 namespace KVDK_NAMESPACE {
 
+// A pointer with additional information on high 16 bits
+template <typename T> struct ExtendedPointer {
+  uint64_t encoded_pointer;
+  static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
+
+  ExtendedPointer(T *pointer) : encoded_pointer((uint64_t)pointer) {}
+
+  explicit ExtendedPointer(T *pointer, uint16_t code)
+      : encoded_pointer((uint64_t)pointer & ((uint64_t)code << 48)) {}
+
+  ExtendedPointer() : encoded_pointer(0) {}
+
+  T *Pointer() { return (T *)(encoded_pointer & kPointerMask); }
+
+  bool Null() { return Pointer() == nullptr; }
+
+  T &operator*() { return *(Pointer()); }
+
+  T *operator->() { return Pointer(); }
+
+  T *operator->() const { return Pointer(); }
+
+  uint16_t Code() { return encoded_pointer >> 48; }
+
+  void Clear() { encoded_pointer &= kPointerMask; }
+
+  void Encode(uint16_t info) { encoded_pointer &= ((uint64_t)info << 48); }
+};
+
 struct PendingBatch {
   enum class Stage {
     Done = 0,
