@@ -39,8 +39,7 @@ void PendingBatch::PersistProcessing(
 }
 
 void PendingBatch::PersistStage(Stage s) {
-  stage = s;
-  pmem_persist(&stage, sizeof(Stage));
+  pmem_memcpy_persist(&stage, &s, sizeof(Stage));
 }
 
 KVEngine::KVEngine() {}
