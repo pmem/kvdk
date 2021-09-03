@@ -24,12 +24,13 @@ static const uint16_t kCacheLevel = 3;
  * */
 struct SkiplistNode {
 public:
-  std::atomic<SkiplistNode *> next[0];
+  std::atomic<ExtendedPointer<SkiplistNode>> next[0];
   DLDataEntry *data_entry; // data entry on pmem
   // TODO: save memory
   uint16_t height;
   uint16_t cached_key_size;
-  char cached_key[0];
+  // 4 bytes for alignment, the actually allocated size may > 4
+  char cached_key[4];
 
   static void DeleteNode(SkiplistNode *node) { free(node->heap_space_start()); }
 
@@ -55,24 +56,27 @@ public:
 
   pmem::obj::string_view UserKey();
 
-  SkiplistNode *Next(int l) { return next[-l].load(std::memory_order_acquire); }
+  ExtendedPointer<SkiplistNode> Next(int l) {
+    return next[-l].load(std::memory_order_acquire);
+  }
 
-  bool CASNext(int l, SkiplistNode *expected, SkiplistNode *x) {
+  bool CASNext(int l, ExtendedPointer<SkiplistNode> expected,
+               ExtendedPointer<SkiplistNode> x) {
     assert(l > 0);
     return (next[-l].compare_exchange_strong(expected, x));
   }
 
-  SkiplistNode *RelaxedNext(int l) {
+  ExtendedPointer<SkiplistNode> RelaxedNext(int l) {
     assert(l > 0);
     return next[-l].load(std::memory_order_relaxed);
   }
 
-  void SetNext(int l, SkiplistNode *x) {
+  void SetNext(int l, ExtendedPointer<SkiplistNode> x) {
     assert(l > 0);
     next[-l].store(x, std::memory_order_release);
   }
 
-  void RelaxedSetNext(int l, SkiplistNode *x) {
+  void RelaxedSetNext(int l, ExtendedPointer<SkiplistNode> x) {
     assert(l > 0);
     next[-l].store(x, std::memory_order_relaxed);
   }
@@ -109,7 +113,7 @@ public:
     if (header_) {
       SkiplistNode *to_delete = header_;
       while (to_delete) {
-        SkiplistNode *next = to_delete->Next(1);
+        SkiplistNode *next = to_delete->Next(1).Pointer();
         SkiplistNode::DeleteNode(to_delete);
         to_delete = next;
       }
@@ -145,7 +149,7 @@ public:
 
     void Recompute(const pmem::obj::string_view &key, int l) {
       while (1) {
-        SkiplistNode *tmp = prevs[l]->Next(l);
+        SkiplistNode *tmp = prevs[l]->Next(l).Pointer();
         if (tmp == nullptr) {
           nexts[l] = nullptr;
           break;
