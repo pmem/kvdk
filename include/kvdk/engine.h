@@ -45,6 +45,7 @@ extern KVDK_LIBRARY_API void KVDKConigsDestory(KVDKConfigs *kv_config);
 extern KVDK_LIBRARY_API KVDKEngine *KVDKOpen(const char *name,
                                              const KVDKConfigs *config,
                                              FILE *log_file, char **error);
+extern KVDK_LIBRARY_API void KVDKReleaseWriteThread(KVDKEngine *engine);
 extern KVDK_LIBRARY_API void KVDKCloseEngine(KVDKEngine *engine);
 extern KVDK_LIBRARY_API void KVDKRemovePMemContents(const char *name);
 // For BatchWrite

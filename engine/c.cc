@@ -107,6 +107,10 @@ KVDKEngine *KVDKOpen(const char *name, const KVDKConfigs *config,
   return kv_engine;
 }
 
+void KVDKReleaseWriteThread(KVDKEngine *engine) {
+  engine->rep->ReleaseWriteThread();
+}
+
 void KVDKCloseEngine(KVDKEngine *engine) {
   delete engine->rep;
   delete engine;
