@@ -9,6 +9,7 @@
 namespace KVDK_NAMESPACE {
 
 void Thread::Release() {
+  assert(id == -1 || thread_manager != nullptr);
   if (thread_manager) {
     thread_manager->Release(*this);
     thread_manager = nullptr;
