@@ -62,11 +62,11 @@ namespace KVDK_NAMESPACE
         }
 
         /// Emplace right before iter.
-        /// p_new_record points to data on DRAM prepared for writing to PMem
+        /// When fail to Emplace, return iterator at head
         Iterator Emplace
         (
             Iterator iter, 
-            DLDataEntry p_new_record,           // Contains header and meta, but not prev and next pointers
+            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
             pmem::obj::string_view const key, 
             pmem::obj::string_view const value
         )
@@ -77,21 +77,100 @@ namespace KVDK_NAMESPACE
             Iterator iter_next = iter;
             Iterator& iter_prev = --iter;
 
-            
+            auto space = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() + value.size());
+            if (space.size == 0)
+            {
+                // When fail to Emplace, return iterator at head
+                return Iterator{ _sp_pmem_allocator_ };
+            }
+            std::uint64_t offset = space.space_entry.offset;
+            void* pmp = _sp_pmem_allocator_->offset2addr(offset);
 
+            DLDataEntry entry;  // Set up entry with meta
+            {
+                entry.timestamp = timestamp;
+                entry.type = DATA_ENTRY_TYPE::DLIST_DATA_RECORD;
+                entry.k_size = key.size();
+                entry.v_size = value.size();
+
+                // checksum can only be calculated with complete meta
+                entry.header.b_size = space.size;
+                entry.header.checksum = _check_sum_(entry, key, value);
+
+                entry.prev = iter_prev._get_offset_();
+                entry.next = iter_next._get_offset_();
+                // entry is now complete
+            }
+
+            _persist_record_(pmp, entry, key, value);
+            pmem_memcpy(&iter_prev->next, &offset, sizeof(offset), PMEM_F_MEM_NODRAIN | PMEM_F_MEM_NONTEMPORAL);
+            pmem_memcpy(&iter_next->prev, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
+
+            Iterator ret{ _sp_pmem_allocator_ };
+            ret._pmp_curr_ = pmp;
+            return ret;
+        }
+
+        /// In-place swap out an old record for new one(if timestamp fails behind nothing happens)
+        /// Old record remains on PMem
+        Iterator SwapEmplace
+        (
+            Iterator iter,
+            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value
+        )
+        {
+            assert(iter.valid() && "Invalid iterator in dlinked_list!");
+
+            if (timestamp <= iter->timestamp)
+            {
+                // timestamp not new enough, return
+                return Iterator{ _sp_pmem_allocator_ };
+            }
+
+            // Swap happens between iter_prev and iter_next
+            Iterator iter_prev{ iter++ }; --iter_prev;
+            Iterator& iter_next = iter;
+
+            auto space = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() + value.size());
+            if (space.size == 0)
+            {
+                // When fail to Emplace, return iterator at head
+                return Iterator{ _sp_pmem_allocator_ };
+            }
+            std::uint64_t offset = space.space_entry.offset;
+            void* pmp = _sp_pmem_allocator_->offset2addr(offset);
+
+            DLDataEntry entry;  // Set up entry with meta
+            {
+                entry.timestamp = timestamp;
+                entry.type = DATA_ENTRY_TYPE::DLIST_DATA_RECORD;
+                entry.k_size = key.size();
+                entry.v_size = value.size();
+
+                // checksum can only be calculated with complete meta
+                entry.header.b_size = space.size;
+                entry.header.checksum = _check_sum_(entry, key, value);
+
+                entry.prev = iter_prev._get_offset_();
+                entry.next = iter_next._get_offset_();
+                // entry is now complete
+            }
+
+            _persist_record_(pmp, entry, key, value);
+            pmem_memcpy(&iter_prev->next, &offset, sizeof(offset), PMEM_F_MEM_NODRAIN | PMEM_F_MEM_NONTEMPORAL);
+            pmem_memcpy(&iter_next->prev, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
+
+            Iterator ret{ _sp_pmem_allocator_ };
+            ret._pmp_curr_ = pmp;
+            return ret;
         }
 
         /// Deallocate the Record by pmem_allocator
         Iterator Erase(Iterator iter)
         {
-
-        }
-
-        /// In-place swap out an old record for new one
-        /// Old record remains on PMem
-        Iterator Swap(Iterator iter, DLDataEntry const& p_new_record)
-        {
-
+            
         }
 
     private:
@@ -103,29 +182,23 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const value
         )
         {
+            // Persist key and value
             size_t sz_entry = sizeof(DLDataEntry);
             char* pmp_dest = pmp;
-            pmem_memcpy(pmp_dest, &entry, sz_entry, PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
             pmp_dest += sz_entry;
             pmem_memcpy(pmp_dest, key.data(), key.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
             pmp_dest += key.size();
             pmem_memcpy(pmp_dest, value.data(), value.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
             pmem_flush();
             pmem_drain();
-            std::uint32_t checksum = static_cast<DLDataEntry*>(pmp)->Checksum();
-
-            //memcpy(pmp_dest, data_entry, sz_entry);
-            //memcpy(pmp_dest + sz_entry, key.data(), key.size());
-            //memcpy(pmp_dest + sz_entry + key.size(), value.data(), value.size());
-            //DLDataEntry* entry_with_data = ((DLDataEntry*)data_cpy_target);
-            //entry_with_data->header.checksum = entry_with_data->Checksum();
-            //pmem_flush(block_base, entry_size + key.size() + value.size());
-            //pmem_drain();
+            
+            // Persist DLDataEntry last
+            pmem_memcpy(pmp, &entry, sz_entry, PMEM_F_MEM_NONTEMPORAL);
         }
 
         inline static std::uint32_t _check_sum_
         (
-            DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller
+            DLDataEntry const& entry,           // Incomplete DLDataEntry, only meta is valid
             pmem::obj::string_view const key,
             pmem::obj::string_view const value
         )
@@ -135,17 +208,17 @@ namespace KVDK_NAMESPACE
                 reinterpret_cast<char*>(&entry) + sizeof(decltype(entry.header)),
                 sizeof(DataEntry) - sizeof(decltype(entry.header))
             );
-            std::uint32_t cs2 = get_checksum
-            (
-                
-            );
-            return get_checksum((char*)this + sizeof(DataHeader), sizeof(DataEntry) - sizeof(DataHeader)) +
-                get_checksum(data, v_size + k_size);
+            std::uint32_t cs2 = get_checksum(key.data(), key.size());
+            std::uint32_t cs3 = get_checksum(value.data(), value.size());
+            return cs1 + cs2 + cs3;
         }
 
     public:
         class Iterator
         {
+        private:
+            friend class DLinkedList;
+
         private:
             /// shared pointer to pin the dlinked_list
             /// as well as share the pmem_allocator to transform offset to PMem pointer
@@ -218,6 +291,16 @@ namespace KVDK_NAMESPACE
             DLDataEntry& operator*()
             {
                 return *_pmp_curr_;
+            }
+
+            DLDataEntry& operator*()
+            {
+                return *_pmp_curr_;
+            }
+
+            DLDataEntry* operator->()
+            {
+                return _pmp_curr_;
             }
 
         private:
