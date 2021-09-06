@@ -46,12 +46,12 @@ KVEngine::KVEngine() {}
 
 KVEngine::~KVEngine() {
   closing_ = true;
-  GlobalLogger.Log("Closing instance ... \n");
-  GlobalLogger.Log("Waiting bg threads exit ... \n");
+  GlobalLogger.Info("Closing instance ... \n");
+  GlobalLogger.Info("Waiting bg threads exit ... \n");
   for (auto &t : bg_threads_) {
     t.join();
   }
-  GlobalLogger.Log("Instance closed\n");
+  GlobalLogger.Info("Instance closed\n");
 }
 
 Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
@@ -486,7 +486,7 @@ Status KVEngine::Recovery() {
     }
   }
 
-  GlobalLogger.Log("In restoring: iterated %lu records\n", restored_.load());
+  GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
 
   if (restored_.load() == 0) {
     if (configs_.populate_pmem_space) {
