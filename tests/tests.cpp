@@ -7,22 +7,22 @@
 #include "kvdk/namespace.hpp"
 #include "test_util.h"
 #include "gtest/gtest.h"
+#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
-#include <functional>
 
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
 
-static void LaunchNThreads(int n_thread, std::function<void(int tid)> func, int id_start=0)
-{
-    std::vector<std::thread> ts;
-    for (int i = id_start; i < id_start + n_thread; i++) {
-      ts.emplace_back(std::thread(func, i));
-    }
-    for (auto &t : ts)
-      t.join();
+static void LaunchNThreads(int n_thread, std::function<void(int tid)> func,
+                           int id_start = 0) {
+  std::vector<std::thread> ts;
+  for (int i = id_start; i < id_start + n_thread; i++) {
+    ts.emplace_back(std::thread(func, i));
+  }
+  for (auto &t : ts)
+    t.join();
 }
 
 class EngineBasicTest : public testing::Test {
@@ -283,7 +283,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
                 Status::NotFound);
     }
   };
-  
+
   auto IteratingThrough = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
     std::vector<int> n_entries(num_threads, 0);
@@ -377,7 +377,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
       ASSERT_EQ(engine->SGet(global_skiplist, k1, &got_v1), Status::NotFound);
     }
   };
-  
+
   auto IteratingThrough = [&](int id) {
     std::vector<int> n_entries(num_threads, 0);
 
@@ -401,15 +401,15 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   };
 
   auto SeekToDeleted = [&](int id) {
-      auto t_iter2 = engine->NewSortedIterator(global_skiplist);
-      ASSERT_TRUE(t_iter2 != nullptr);
-      // First deleted key
-      t_iter2->Seek(std::to_string(id) + "k1");
-      ASSERT_TRUE(t_iter2->Valid());
-      // First valid key
-      t_iter2->Seek(std::to_string(id) + "k2");
-      ASSERT_TRUE(t_iter2->Valid());
-      ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
+    auto t_iter2 = engine->NewSortedIterator(global_skiplist);
+    ASSERT_TRUE(t_iter2 != nullptr);
+    // First deleted key
+    t_iter2->Seek(std::to_string(id) + "k1");
+    ASSERT_TRUE(t_iter2->Valid());
+    // First valid key
+    t_iter2->Seek(std::to_string(id) + "k2");
+    ASSERT_TRUE(t_iter2->Valid());
+    ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
   };
 
   LaunchNThreads(num_threads, SSetSGetSDelete);
