@@ -79,7 +79,17 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  auto ops = [&](int id) {
+
+  // Test empty key
+  std::string key{""}, val{"val"}, got_val;
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+  ASSERT_EQ(val, got_val);
+  ASSERT_EQ(engine->Delete(key), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+  engine->ReleaseWriteThread();
+
+  auto SetGetDelete = [&](int id) {
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
     int cnt = 1000;
@@ -90,15 +100,6 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       k2 = std::to_string(id) + "kk" + k2;
       AssignData(v1, v1_len);
       AssignData(v2, v2_len);
-
-      if (id == 0) {
-        std::string k0{""};
-        ASSERT_EQ(engine->Set(k0, v1), Status::Ok);
-        ASSERT_EQ(engine->Get(k0, &got_v1), Status::Ok);
-        ASSERT_EQ(v1, got_v1);
-        ASSERT_EQ(engine->Delete(k0), Status::Ok);
-        ASSERT_EQ(engine->Get(k0, &got_v1), Status::NotFound);
-      }
 
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
 
@@ -122,7 +123,7 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
 
   std::vector<std::thread> ts;
   for (int i = 0; i < num_threads; i++) {
-    ts.emplace_back(std::thread(ops, i));
+    ts.emplace_back(std::thread(SetGetDelete, i));
   }
   for (auto &t : ts)
     t.join();
@@ -136,7 +137,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
             Status::Ok);
   int batch_num = 10;
   int count = 500;
-  auto ops = [&](int id) {
+  auto BatchSetDelete = [&](int id) {
     std::string v;
     WriteBatch batch;
     int cnt = count;
@@ -166,7 +167,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
 
   std::vector<std::thread> ts;
   for (int i = 1; i <= num_threads; i++) {
-    ts.emplace_back(std::thread(ops, i));
+    ts.emplace_back(std::thread(BatchSetDelete, i));
   }
   for (auto &t : ts)
     t.join();
@@ -354,23 +355,22 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
             Status::Ok);
   std::atomic<int> n_global_entries{0};
 
+  // Test empty key
+  std::string key{""}, val{"val"}, got_val;
+  ASSERT_EQ(engine->SSet(global_skiplist, key, val), Status::Ok);
+  ++n_global_entries;
+  ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::Ok);
+  ASSERT_EQ(val, got_val);
+  ASSERT_EQ(engine->SDelete(global_skiplist, key), Status::Ok);
+  --n_global_entries;
+  ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::NotFound);
+  engine->ReleaseWriteThread();
+
   auto SetGetDelete = [&](int id) {
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
 
     AssignData(v1, 10);
-
-    // Test Empty Key
-    if (id == 0) {
-      std::string k0{""};
-      ASSERT_EQ(engine->SSet(global_skiplist, k0, v1), Status::Ok);
-      ++n_global_entries;
-      ASSERT_EQ(engine->SGet(global_skiplist, k0, &got_v1), Status::Ok);
-      ASSERT_EQ(v1, got_v1);
-      ASSERT_EQ(engine->SDelete(global_skiplist, k0), Status::Ok);
-      --n_global_entries;
-      ASSERT_EQ(engine->SGet(global_skiplist, k0, &got_v1), Status::NotFound);
-    }
 
     k1 = std::to_string(id);
     k2 = std::to_string(id);
@@ -433,15 +433,15 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   };
 
   auto SeekToDeleted = [&](int id) {
-      auto t_iter2 = engine->NewSortedIterator(global_skiplist);
-      ASSERT_TRUE(t_iter2 != nullptr);
-      // First deleted key
-      t_iter2->Seek(std::to_string(id) + "k1");
-      ASSERT_TRUE(t_iter2->Valid());
-      // First valid key
-      t_iter2->Seek(std::to_string(id) + "k2");
-      ASSERT_TRUE(t_iter2->Valid());
-      ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
+    auto t_iter2 = engine->NewSortedIterator(global_skiplist);
+    ASSERT_TRUE(t_iter2 != nullptr);
+    // First deleted key
+    t_iter2->Seek(std::to_string(id) + "k1");
+    ASSERT_TRUE(t_iter2->Valid());
+    // First valid key
+    t_iter2->Seek(std::to_string(id) + "k2");
+    ASSERT_TRUE(t_iter2->Valid());
+    ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
   };
 
   {
@@ -463,12 +463,12 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   }
 
   {
-      std::vector<std::thread> ts;
-      for (int i = 0; i < num_threads; i++) {
-          ts.emplace_back(std::thread(SeekToDeleted, i));
-      }
-      for (auto& t : ts)
-          t.join();
+    std::vector<std::thread> ts;
+    for (int i = 0; i < num_threads; i++) {
+      ts.emplace_back(std::thread(SeekToDeleted, i));
+    }
+    for (auto &t : ts)
+      t.join();
   }
 
   delete engine;
@@ -512,7 +512,7 @@ TEST_F(EngineBasicTest, TestRestore) {
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
   int count = 1000;
-  auto ops = [&](int id) {
+  auto SetGetDelete = [&](int id) {
     std::string a(id, 'a');
     std::string v;
     for (int i = 1; i <= count; i++) {
@@ -536,7 +536,7 @@ TEST_F(EngineBasicTest, TestRestore) {
   };
   std::vector<std::thread> ts;
   for (int i = 1; i <= num_threads; i++) {
-    ts.emplace_back(std::thread(ops, i));
+    ts.emplace_back(std::thread(SetGetDelete, i));
   }
   for (auto &t : ts)
     t.join();
@@ -573,7 +573,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   int count = 100;
   std::string overall_skiplist = "skiplist";
   std::string thread_skiplist = "t_skiplist";
-  auto ops = [&](int id) {
+  auto SetGet = [&](int id) {
     std::string a(id, 'a');
     std::string v;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
@@ -591,7 +591,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   };
   std::vector<std::thread> ts;
   for (int i = 1; i <= num_threads; i++) {
-    ts.emplace_back(std::thread(ops, i));
+    ts.emplace_back(std::thread(SetGet, i));
   }
   for (auto &t : ts)
     t.join();
