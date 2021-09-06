@@ -2,15 +2,16 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <future>
+#include <string>
+#include <thread>
+#include <vector>
+
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "test_util.h"
 #include "gtest/gtest.h"
-#include <functional>
-#include <string>
-#include <thread>
-#include <vector>
 
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
@@ -60,12 +61,45 @@ protected:
   }
 };
 
+TEST_F(EngineBasicTest, TestThreadManager) {
+  int max_write_threads = 1;
+  configs.max_write_threads = max_write_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string key("k");
+  std::string val("value");
+
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+
+  // Reach max write threads
+  auto s = std::async(&Engine::Set, engine, key, val);
+  ASSERT_EQ(s.get(), Status::TooManyWriteThreads);
+  // Manually release write thread
+  engine->ReleaseWriteThread();
+  s = std::async(&Engine::Set, engine, key, val);
+  ASSERT_EQ(s.get(), Status::Ok);
+  // Release write thread on thread exits
+  s = std::async(&Engine::Set, engine, key, val);
+  ASSERT_EQ(s.get(), Status::Ok);
+  delete engine;
+}
+
 TEST_F(EngineBasicTest, TestBasicHashOperations) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  auto GetSetDelete = [&](int id) {
+
+  // Test empty key
+  std::string key{""}, val{"val"}, got_val;
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+  ASSERT_EQ(val, got_val);
+  ASSERT_EQ(engine->Delete(key), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+  engine->ReleaseWriteThread();
+
+  auto SetGetDelete = [&](int id) {
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
     int cnt = 1000;
@@ -77,17 +111,6 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       AssignData(v1, v1_len);
       AssignData(v2, v2_len);
 
-      // Test Empty key
-      if (id == 0) {
-        std::string k0{""};
-        ASSERT_EQ(engine->Set(k0, v1), Status::Ok);
-        ASSERT_EQ(engine->Get(k0, &got_v1), Status::Ok);
-        ASSERT_EQ(v1, got_v1);
-        ASSERT_EQ(engine->Delete(k0), Status::Ok);
-        ASSERT_EQ(engine->Get(k0, &got_v1), Status::NotFound);
-      }
-
-      // Set
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
       ASSERT_EQ(engine->Set(k2, v2), Status::Ok);
 
@@ -120,11 +143,10 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
             Status::Ok);
   int batch_num = 10;
   int count = 500;
-
-  auto BatchWrite = [&](int id) {
+  auto BatchSetDelete = [&](int id) {
     std::string v;
     WriteBatch batch;
-    int cnt = 500;
+    int cnt = count;
     while (cnt--) {
       for (size_t i = 0; i < batch_num; i++) {
         auto key =
@@ -321,23 +343,22 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
             Status::Ok);
   std::atomic<int> n_global_entries{0};
 
-  auto SSetSGetSDelete = [&](int id) {
+  // Test empty key
+  std::string key{""}, val{"val"}, got_val;
+  ASSERT_EQ(engine->SSet(global_skiplist, key, val), Status::Ok);
+  ++n_global_entries;
+  ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::Ok);
+  ASSERT_EQ(val, got_val);
+  ASSERT_EQ(engine->SDelete(global_skiplist, key), Status::Ok);
+  --n_global_entries;
+  ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::NotFound);
+  engine->ReleaseWriteThread();
+
+  auto SetGetDelete = [&](int id) {
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
 
     AssignData(v1, 10);
-
-    // Test Empty Key
-    if (id == 0) {
-      std::string k0{""};
-      ASSERT_EQ(engine->SSet(global_skiplist, k0, v1), Status::Ok);
-      ++n_global_entries;
-      ASSERT_EQ(engine->SGet(global_skiplist, k0, &got_v1), Status::Ok);
-      ASSERT_EQ(v1, got_v1);
-      ASSERT_EQ(engine->SDelete(global_skiplist, k0), Status::Ok);
-      --n_global_entries;
-      ASSERT_EQ(engine->SGet(global_skiplist, k0, &got_v1), Status::NotFound);
-    }
 
     k1 = std::to_string(id);
     k2 = std::to_string(id);
@@ -515,7 +536,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   int count = 100;
   std::string overall_skiplist = "skiplist";
   std::string thread_skiplist = "t_skiplist";
-  auto ops = [&](int id) {
+  auto SetGet = [&](int id) {
     std::string a(id, 'a');
     std::string v;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
