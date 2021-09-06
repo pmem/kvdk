@@ -11,7 +11,7 @@
 #include <cstdlib>
 
 #include <libpmemobj++/string_view.hpp>
-#include <libpmem.h>
+#include <libpmem/libpmem.h>
 
 
 #include "hash_table.hpp"
@@ -66,7 +66,7 @@ namespace KVDK_NAMESPACE
         Iterator Emplace
         (
             Iterator iter, 
-            DLDataEntry const& p_new_record, 
+            DLDataEntry p_new_record,           // Contains header and meta, but not prev and next pointers
             pmem::obj::string_view const key, 
             pmem::obj::string_view const value
         )
@@ -95,23 +95,52 @@ namespace KVDK_NAMESPACE
         }
 
     private:
-        inline void KVEngine::PersistDataEntry
+        inline void _persist_record_
         (
             void* pmp, 
-            DLDataEntry const& entry,
+            DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller
             pmem::obj::string_view const key,
             pmem::obj::string_view const value
         )
         {
+            size_t sz_entry = sizeof(DLDataEntry);
             char* pmp_dest = pmp;
-            auto entry_size = sizeof(DLDataEntry);
-            memcpy(pmp_dest, data_entry, entry_size);
-            memcpy(pmp_dest + entry_size, key.data(), key.size());
-            memcpy(pmp_dest + entry_size + key.size(), value.data(), value.size());
-            DLDataEntry* entry_with_data = ((DLDataEntry*)data_cpy_target);
-            entry_with_data->header.checksum = entry_with_data->Checksum();
-            pmem_flush(block_base, entry_size + key.size() + value.size());
+            pmem_memcpy(pmp_dest, &entry, sz_entry, PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
+            pmp_dest += sz_entry;
+            pmem_memcpy(pmp_dest, key.data(), key.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
+            pmp_dest += key.size();
+            pmem_memcpy(pmp_dest, value.data(), value.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
+            pmem_flush();
             pmem_drain();
+            std::uint32_t checksum = static_cast<DLDataEntry*>(pmp)->Checksum();
+
+            //memcpy(pmp_dest, data_entry, sz_entry);
+            //memcpy(pmp_dest + sz_entry, key.data(), key.size());
+            //memcpy(pmp_dest + sz_entry + key.size(), value.data(), value.size());
+            //DLDataEntry* entry_with_data = ((DLDataEntry*)data_cpy_target);
+            //entry_with_data->header.checksum = entry_with_data->Checksum();
+            //pmem_flush(block_base, entry_size + key.size() + value.size());
+            //pmem_drain();
+        }
+
+        inline static std::uint32_t _check_sum_
+        (
+            DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value
+        )
+        {
+            std::uint32_t cs1 = get_checksum
+            (
+                reinterpret_cast<char*>(&entry) + sizeof(decltype(entry.header)),
+                sizeof(DataEntry) - sizeof(decltype(entry.header))
+            );
+            std::uint32_t cs2 = get_checksum
+            (
+                
+            );
+            return get_checksum((char*)this + sizeof(DataHeader), sizeof(DataEntry) - sizeof(DataHeader)) +
+                get_checksum(data, v_size + k_size);
         }
 
     public:
@@ -161,7 +190,7 @@ namespace KVDK_NAMESPACE
         /// Increment and Decrement operators
             Iterator& operator++()
             {
-                _pmp_curr_ = _get_pmp_next_(_pmp_curr_);
+                _pmp_curr_ = _get_pmp_next_();
                 return *this;
             }
 
@@ -174,7 +203,7 @@ namespace KVDK_NAMESPACE
 
             Iterator& operator--()
             {
-                _pmp_curr_ = _get_pmp_prev_(_pmp_curr_);
+                _pmp_curr_ = _get_pmp_prev_();
                 return *this;
             }
 
@@ -192,14 +221,19 @@ namespace KVDK_NAMESPACE
             }
 
         private:
-            inline static DLDataEntry* _get_pmp_next_(DLDataEntry* pmp_curr) const
+            inline DLDataEntry* _get_pmp_next_() const
             {
-                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(pmp_curr->next));
+                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->next));
             }
 
-            inline static DLDataEntry* _get_pmp_prev_(DLDataEntry* pmp_curr) const
+            inline DLDataEntry* _get_pmp_prev_() const
             {
-                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(pmp_curr->prev));
+                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->prev));
+            }
+
+            inline std::uint64_t _get_offset_() const
+            {
+                return _sp_dlinked_list_->_sp_pmem_allocator_->addr2offset(_pmp_curr_);
             }
         };
     };

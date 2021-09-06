@@ -8,6 +8,9 @@ set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
 include(GNUInstallDirs)
 
+find_path(SYSTEM_INCLUDE_DIR libpmem.h)
+include_directories(${SYSTEM_INCLUDE_DIR})
+
 set_property(GLOBAL PROPERTY CXX_STANDARD 14)
 set(OPT "-msse4 -mavx -mavx2 -O2 -fno-omit-frame-pointer -momit-leaf-frame-pointer")
 

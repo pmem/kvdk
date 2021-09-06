@@ -39,3 +39,5 @@ cmake-build-*
 
 build/
 .cache/
+/CMakeSettings.json
+/extern/libpmem
