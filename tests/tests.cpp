@@ -218,7 +218,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
             Status::Ok);
   std::vector<int> n_local_entries(num_threads, 0);
 
-  auto ops = [&](int id) {
+  auto SetGetDelete = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
@@ -277,7 +277,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
                 Status::NotFound);
     }
   };
-  auto ops2 = [&](int id) {
+  auto IteratingThrough = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
     std::vector<int> n_entries(num_threads, 0);
 
@@ -303,7 +303,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
   {
     std::vector<std::thread> ts;
     for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(ops, i));
+      ts.emplace_back(std::thread(SetGetDelete, i));
     }
     for (auto &t : ts)
       t.join();
@@ -312,7 +312,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
   {
     std::vector<std::thread> ts;
     for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(ops2, i));
+      ts.emplace_back(std::thread(IteratingThrough, i));
     }
     for (auto &t : ts)
       t.join();
@@ -329,12 +329,13 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
             Status::Ok);
   std::atomic<int> n_global_entries{0};
 
-  auto ops = [&](int id) {
+  auto SetGetDelete = [&](int id) {
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
 
     AssignData(v1, 10);
 
+    // Test Empty Key
     if (id == 0) {
       std::string k0{""};
       ASSERT_EQ(engine->SSet(global_skiplist, k0, v1), Status::Ok);
@@ -384,7 +385,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
       ASSERT_EQ(engine->SGet(global_skiplist, k1, &got_v1), Status::NotFound);
     }
   };
-  auto ops2 = [&](int id) {
+  auto IteratingThrough = [&](int id) {
     std::vector<int> n_entries(num_threads, 0);
 
     auto iter = engine->NewSortedIterator(global_skiplist);
@@ -406,7 +407,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     n_entries[id] = 0;
   };
 
-  auto ops3 = [&](int id) {
+  auto SeekToDeleted = [&](int id) {
       auto t_iter2 = engine->NewSortedIterator(global_skiplist);
       ASSERT_TRUE(t_iter2 != nullptr);
       // First deleted key
@@ -421,7 +422,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   {
     std::vector<std::thread> ts;
     for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(ops, i));
+      ts.emplace_back(std::thread(SetGetDelete, i));
     }
     for (auto &t : ts)
       t.join();
@@ -430,7 +431,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   {
     std::vector<std::thread> ts;
     for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(ops2, i));
+      ts.emplace_back(std::thread(IteratingThrough, i));
     }
     for (auto &t : ts)
       t.join();
@@ -439,7 +440,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   {
       std::vector<std::thread> ts;
       for (int i = 0; i < num_threads; i++) {
-          ts.emplace_back(std::thread(ops2, i));
+          ts.emplace_back(std::thread(SeekToDeleted, i));
       }
       for (auto& t : ts)
           t.join();
