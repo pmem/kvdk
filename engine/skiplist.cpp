@@ -64,7 +64,7 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
   // TODO: do not search from max height every time
   for (int i = kMaxHeight; i >= 1; i--) {
     while (1) {
-      tmp = prev->Next(i).Pointer();
+      tmp = prev->Next(i).RawPointer();
       if (tmp == nullptr) {
         splice->nexts[i] = nullptr;
         splice->prevs[i] = prev;
@@ -212,15 +212,22 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
   if (!is_update) {
     assert(data_node == nullptr);
     auto height = Skiplist::RandomHeight();
-    if (height > 0) {
-      data_node = SkiplistNode::NewNode(inserting_key, inserting_entry, height);
-      for (int i = 1; i <= height; i++) {
-        while (1) {
+    data_node = SkiplistNode::NewNode(inserting_key, inserting_entry, height);
+    for (int i = 1; i <= height; i++) {
+      while (1) {
+        auto now_next = insert_splice->prevs[i]->Next(i);
+        if (now_next.RawPointer() == insert_splice->nexts[i]) {
+          // Some thread is doing deletion, wait
+          if (now_next.Tag() != 0) {
+            continue;
+          }
           data_node->RelaxedSetNext(i, insert_splice->nexts[i]);
           if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
                                                data_node)) {
             break;
           }
+        } else {
+          // Next of prev node changed
           insert_splice->Recompute(inserting_key, i);
         }
       }

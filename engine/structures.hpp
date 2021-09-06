@@ -14,32 +14,38 @@
 namespace KVDK_NAMESPACE {
 
 // A pointer with additional information on high 16 bits
-template <typename T> struct ExtendedPointer {
-  uint64_t encoded_pointer;
+template <typename T> struct TaggedPointer {
+  uint64_t tagged_pointer;
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
-  ExtendedPointer(T *pointer) : encoded_pointer((uint64_t)pointer) {}
+  TaggedPointer(T *pointer) : tagged_pointer((uint64_t)pointer) {}
 
-  explicit ExtendedPointer(T *pointer, uint16_t code)
-      : encoded_pointer((uint64_t)pointer & ((uint64_t)code << 48)) {}
+  explicit TaggedPointer(T *pointer, uint16_t code)
+      : tagged_pointer((uint64_t)pointer & ((uint64_t)code << 48)) {}
 
-  ExtendedPointer() : encoded_pointer(0) {}
+  TaggedPointer() : tagged_pointer(0) {}
 
-  T *Pointer() { return (T *)(encoded_pointer & kPointerMask); }
+  T *RawPointer() { return (T *)(tagged_pointer & kPointerMask); }
 
-  bool Null() { return Pointer() == nullptr; }
+  bool Null() { return RawPointer() == nullptr; }
 
-  T &operator*() { return *(Pointer()); }
+  uint16_t Tag() { return tagged_pointer >> 48; }
 
-  T *operator->() { return Pointer(); }
+  void ClearTag() { tagged_pointer &= kPointerMask; }
 
-  T *operator->() const { return Pointer(); }
+  void SetTag(uint16_t info) { tagged_pointer &= ((uint64_t)info << 48); }
 
-  uint16_t Code() { return encoded_pointer >> 48; }
+  T &operator*() { return *(RawPointer()); }
 
-  void Clear() { encoded_pointer &= kPointerMask; }
+  T *operator->() { return RawPointer(); }
 
-  void Encode(uint16_t info) { encoded_pointer &= ((uint64_t)info << 48); }
+  T *operator->() const { return RawPointer(); }
+
+  bool operator==(const T *raw_pointer) { return RawPointer() == raw_pointer; }
+
+  bool operator==(const T *raw_pointer) const {
+    return RawPointer() == raw_pointer;
+  }
 };
 
 struct PendingBatch {

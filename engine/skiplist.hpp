@@ -24,7 +24,7 @@ static const uint16_t kCacheLevel = 3;
  * */
 struct SkiplistNode {
 public:
-  std::atomic<ExtendedPointer<SkiplistNode>> next[0];
+  std::atomic<TaggedPointer<SkiplistNode>> next[0];
   DLDataEntry *data_entry; // data entry on pmem
   // TODO: save memory
   uint16_t height;
@@ -56,27 +56,27 @@ public:
 
   pmem::obj::string_view UserKey();
 
-  ExtendedPointer<SkiplistNode> Next(int l) {
+  TaggedPointer<SkiplistNode> Next(int l) {
     return next[-l].load(std::memory_order_acquire);
   }
 
-  bool CASNext(int l, ExtendedPointer<SkiplistNode> expected,
-               ExtendedPointer<SkiplistNode> x) {
+  bool CASNext(int l, TaggedPointer<SkiplistNode> expected,
+               TaggedPointer<SkiplistNode> x) {
     assert(l > 0);
     return (next[-l].compare_exchange_strong(expected, x));
   }
 
-  ExtendedPointer<SkiplistNode> RelaxedNext(int l) {
+  TaggedPointer<SkiplistNode> RelaxedNext(int l) {
     assert(l > 0);
     return next[-l].load(std::memory_order_relaxed);
   }
 
-  void SetNext(int l, ExtendedPointer<SkiplistNode> x) {
+  void SetNext(int l, TaggedPointer<SkiplistNode> x) {
     assert(l > 0);
     next[-l].store(x, std::memory_order_release);
   }
 
-  void RelaxedSetNext(int l, ExtendedPointer<SkiplistNode> x) {
+  void RelaxedSetNext(int l, TaggedPointer<SkiplistNode> x) {
     assert(l > 0);
     next[-l].store(x, std::memory_order_relaxed);
   }
@@ -113,7 +113,7 @@ public:
     if (header_) {
       SkiplistNode *to_delete = header_;
       while (to_delete) {
-        SkiplistNode *next = to_delete->Next(1).Pointer();
+        SkiplistNode *next = to_delete->Next(1).RawPointer();
         SkiplistNode::DeleteNode(to_delete);
         to_delete = next;
       }
@@ -149,7 +149,7 @@ public:
 
     void Recompute(const pmem::obj::string_view &key, int l) {
       while (1) {
-        SkiplistNode *tmp = prevs[l]->Next(l).Pointer();
+        SkiplistNode *tmp = prevs[l]->Next(l).RawPointer();
         if (tmp == nullptr) {
           nexts[l] = nullptr;
           break;
