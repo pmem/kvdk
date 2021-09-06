@@ -18,6 +18,7 @@ struct Thread {
 public:
   Thread() : id(-1), thread_manager(nullptr) {}
   ~Thread();
+  void Release();
   int id;
   std::shared_ptr<ThreadManager> thread_manager;
 };

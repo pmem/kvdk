@@ -8,11 +8,15 @@
 
 namespace KVDK_NAMESPACE {
 
-Thread::~Thread() {
+void Thread::Release() {
   if (thread_manager) {
-    (thread_manager)->Release(*this);
+    thread_manager->Release(*this);
+    thread_manager = nullptr;
   }
+  id = -1;
 }
+
+Thread::~Thread() { Release(); }
 
 Status ThreadManager::MaybeInitThread(Thread &t) {
   if (t.id < 0) {

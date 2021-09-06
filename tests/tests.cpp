@@ -2,14 +2,16 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <future>
+#include <string>
+#include <thread>
+#include <vector>
+
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "test_util.h"
 #include "gtest/gtest.h"
-#include <string>
-#include <thread>
-#include <vector>
 
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
@@ -48,6 +50,29 @@ protected:
     data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
   }
 };
+
+TEST_F(EngineBasicTest, TestThreadManager) {
+  int max_write_threads = 1;
+  configs.max_write_threads = max_write_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string key("k");
+  std::string val("value");
+
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+
+  // Reach max write threads
+  auto s = std::async(&Engine::Set, engine, key, val);
+  ASSERT_EQ(s.get(), Status::TooManyWriteThreads);
+  // Manually release write thread
+  engine->ReleaseWriteThread();
+  s = std::async(&Engine::Set, engine, key, val);
+  ASSERT_EQ(s.get(), Status::Ok);
+  // Release write thread on thread exits
+  s = std::async(&Engine::Set, engine, key, val);
+  ASSERT_EQ(s.get(), Status::Ok);
+  delete engine;
+}
 
 TEST_F(EngineBasicTest, TestBasicHashOperations) {
   int num_threads = 16;
