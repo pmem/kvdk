@@ -132,7 +132,7 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
     }
   };
 
-  LaunchNThreads(num_threads, GetSetDelete);
+  LaunchNThreads(num_threads, SetGetDelete);
   delete engine;
 }
 
@@ -171,7 +171,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     }
   };
 
-  LaunchNThreads(num_threads, BatchWrite);
+  LaunchNThreads(num_threads, BatchSetDelete);
 
   delete engine;
 
@@ -354,7 +354,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::NotFound);
   engine->ReleaseWriteThread();
 
-  auto SetGetDelete = [&](int id) {
+  auto SSetSGetSDelete = [&](int id) {
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
 
@@ -536,7 +536,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   int count = 100;
   std::string overall_skiplist = "skiplist";
   std::string thread_skiplist = "t_skiplist";
-  auto SetGet = [&](int id) {
+  auto SetupEngine = [&](int id) {
     std::string a(id, 'a');
     std::string v;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
@@ -553,7 +553,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     }
   };
 
-  LaunchNThreads(num_threads, ops, 1);
+  LaunchNThreads(num_threads, SetupEngine, 1);
 
   delete engine;
 
