@@ -406,6 +406,18 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     n_entries[id] = 0;
   };
 
+  auto ops3 = [&](int id) {
+      auto t_iter2 = engine->NewSortedIterator(global_skiplist);
+      ASSERT_TRUE(t_iter2 != nullptr);
+      // First deleted key
+      t_iter2->Seek(std::to_string(id) + "k1");
+      ASSERT_TRUE(t_iter2->Valid());
+      // First valid key
+      t_iter2->Seek(std::to_string(id) + "k2");
+      ASSERT_TRUE(t_iter2->Valid());
+      ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
+  };
+
   {
     std::vector<std::thread> ts;
     for (int i = 0; i < num_threads; i++) {
@@ -422,6 +434,15 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     }
     for (auto &t : ts)
       t.join();
+  }
+
+  {
+      std::vector<std::thread> ts;
+      for (int i = 0; i < num_threads; i++) {
+          ts.emplace_back(std::thread(ops2, i));
+      }
+      for (auto& t : ts)
+          t.join();
   }
 
   delete engine;
@@ -456,79 +477,6 @@ TEST_F(EngineBasicTest, TestSeek) {
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(iter->Value(), "bar2");
-}
-
-TEST_F(EngineBasicTest, TestSeek2) {
-  const std::string global_skiplist = "skiplist";
-  int num_threads = 16;
-  configs.max_write_threads = num_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  auto ops = [&](int id) {
-    std::string k1, k2, v1, v2;
-    std::string got_v1, got_v2;
-
-    AssignData(v1, 10);
-
-    k1 = std::to_string(id);
-    k2 = std::to_string(id);
-
-    int cnt = 100;
-    while (cnt--) {
-      int v1_len = rand() % 1024;
-      int v2_len = rand() % 1024;
-      k1.append("k1");
-      k2.append("k2");
-
-      // insert
-      AssignData(v1, v1_len);
-      AssignData(v2, v2_len);
-      ASSERT_EQ(engine->SSet(global_skiplist, k1, v1), Status::Ok);
-      ASSERT_EQ(engine->SSet(global_skiplist, k2, v2), Status::Ok);
-
-      // update
-      AssignData(v1, v1_len);
-      ASSERT_EQ(engine->SSet(global_skiplist, k1, v1), Status::Ok);
-      AssignData(v2, v2_len);
-      ASSERT_EQ(engine->SSet(global_skiplist, k2, v2), Status::Ok);
-
-      // delete
-      ASSERT_EQ(engine->SDelete(global_skiplist, k1), Status::Ok);
-      ASSERT_EQ(engine->SGet(global_skiplist, k1, &got_v1), Status::NotFound);
-    }
-  };
-  auto ops2 = [&](int id) {
-    auto t_iter2 = engine->NewSortedIterator(global_skiplist);
-    ASSERT_TRUE(t_iter2 != nullptr);
-    // First deleted key
-    t_iter2->Seek(std::to_string(id) + "k1");
-    ASSERT_TRUE(t_iter2->Valid());
-    // First valid key
-    t_iter2->Seek(std::to_string(id) + "k2");
-    ASSERT_TRUE(t_iter2->Valid());
-    ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
-  };
-
-  {
-    std::vector<std::thread> ts;
-    for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(ops, i));
-    }
-    for (auto &t : ts)
-      t.join();
-  }
-
-  {
-    std::vector<std::thread> ts;
-    for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(ops2, i));
-    }
-    for (auto &t : ts)
-      t.join();
-  }
-
-  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestRestore) {
