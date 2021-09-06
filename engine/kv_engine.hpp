@@ -53,6 +53,7 @@ public:
   Status BatchWrite(const WriteBatch &write_batch) override;
   std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) override;
+  void ReleaseWriteThread() override { write_thread.Release(); }
 
 private:
   struct BatchWriteHint {
