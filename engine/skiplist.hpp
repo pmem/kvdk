@@ -167,7 +167,9 @@ public:
     }
   };
 
-  void Seek(const pmem::obj::string_view &key, Splice *splice);
+  void SeekKey(const pmem::obj::string_view &key, Splice *splice);
+
+  bool SeekNode(const SkiplistNode *node, Splice *splice);
 
   Status Rebuild();
 
@@ -205,7 +207,7 @@ public:
   virtual void Seek(const std::string &key) override {
     assert(skiplist_);
     Skiplist::Splice splice;
-    skiplist_->Seek(key, &splice);
+    skiplist_->SeekKey(key, &splice);
     current = splice.next_data_entry;
     while (current->type == SortedDeleteRecord) {
       current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->next));

@@ -58,7 +58,36 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
-void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
+bool Skiplist::SeekNode(const SkiplistNode *node, Splice *splice) {
+  if (node == nullptr) {
+    return false;
+  }
+  SkiplistNode *prev = header_;
+  SkiplistNode *tmp;
+
+  for (int i = node->height; i >= 1; i--) {
+    while (1) {
+      tmp = prev->Next(i).RawPointer();
+      // Not exist
+      if (tmp == nullptr) {
+        return false;
+      }
+
+      if (tmp == node) {
+        splice->nexts[i] = tmp;
+        splice->prevs[i] = prev;
+        break;
+      }
+    }
+  }
+
+  splice->next_data_entry = node->data_entry;
+  splice->prev_data_entry =
+      (DLDataEntry *)pmem_allocator_->offset2addr(node->data_entry->prev);
+  return true;
+}
+
+void Skiplist::SeekKey(const pmem::obj::string_view &key, Splice *splice) {
   SkiplistNode *prev = header_;
   SkiplistNode *tmp;
   // TODO: do not search from max height every time
@@ -120,7 +149,7 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
       splice->prev_data_entry = prev;
       splice->next_data_entry = next;
     } else {
-      Seek(insert_key, splice);
+      SeekKey(insert_key, splice);
       prev = splice->prev_data_entry;
       next = splice->next_data_entry;
       assert(prev == header_->data_entry ||
