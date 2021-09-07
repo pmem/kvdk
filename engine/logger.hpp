@@ -9,6 +9,7 @@
 #include <mutex>
 #include <unistd.h>
 
+#include "kvdk/configs.hpp"
 #include "kvdk/namespace.hpp"
 
 #define DO_LOG 1
@@ -17,12 +18,15 @@ namespace KVDK_NAMESPACE {
 
 class Logger {
 public:
-  void Log(const char *format, ...);
+  void Info(const char *format, ...);
   void Error(const char *format, ...);
-  void Init(FILE *fp);
+  void Init(FILE *fp, LogLevel level);
 
 private:
+  void Log(const char *log_type, const char *format, va_list &args);
+
   FILE *log_file_ = NULL;
+  LogLevel level_;
   std::mutex mut_;
 
   std::chrono::time_point<std::chrono::system_clock> start_ts_;

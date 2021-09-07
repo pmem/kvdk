@@ -7,42 +7,40 @@
 
 namespace KVDK_NAMESPACE {
 
-void Logger::Log(const char *format, ...) {
-#ifdef DO_LOG
-  if (log_file_ != nullptr) {
-    std::lock_guard<std::mutex> lg(mut_);
-    auto now = std::chrono::system_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - start_ts_);
-    fprintf(log_file_, "[LOG] time %ld ms: ", duration.count());
+void Logger::Info(const char *format, ...) {
+  if (level_ <= LogLevel::INFO) {
     va_list args;
     va_start(args, format);
-    vfprintf(log_file_, format, args);
+    Log("[LOG]", format, args);
     va_end(args);
-    fflush(log_file_);
-    fsync(fileno(log_file_));
   }
-#endif
 }
 
 void Logger::Error(const char *format, ...) {
+  if (level_ <= LogLevel::ERROR) {
+    va_list args;
+    va_start(args, format);
+    Log("[ERROR]", format, args);
+    va_end(args);
+  }
+}
+
+void Logger::Log(const char *log_type, const char *format, va_list &args) {
   if (log_file_ != nullptr) {
     std::lock_guard<std::mutex> lg(mut_);
     auto now = std::chrono::system_clock::now();
     auto duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - start_ts_);
-    fprintf(log_file_, "[ERROR] time %ld ms: ", duration.count());
-    va_list args;
-    va_start(args, format);
+    fprintf(log_file_, "%s time %ld ms: ", log_type, duration.count());
     vfprintf(log_file_, format, args);
-    va_end(args);
     fflush(log_file_);
     fsync(fileno(log_file_));
   }
 }
 
-void Logger::Init(FILE *fp) {
+void Logger::Init(FILE *fp, LogLevel level) {
   log_file_ = fp;
+  level_ = level;
   start_ts_ = std::chrono::system_clock::now();
 }
 
