@@ -10,6 +10,13 @@
 
 namespace KVDK_NAMESPACE {
 
+enum class LogLevel : uint8_t {
+  ALL = 0,
+  DEBUG,
+  INFO,
+  ERROR,
+};
+
 struct Configs {
   // Max number of write threads.
   //
@@ -70,6 +77,9 @@ struct Configs {
   // frequent execution will lead to better space utilization, but more
   // influence to foreground performance
   double background_work_interval = 5;
+
+  // Log information to show
+  LogLevel log_level = LogLevel::INFO;
 };
 
 } // namespace KVDK_NAMESPACE

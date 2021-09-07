@@ -19,7 +19,7 @@ void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
 }
 
 void PMEMAllocator::PopulateSpace() {
-  GlobalLogger.Log("Populating PMem space ...\n");
+  GlobalLogger.Info("Populating PMem space ...\n");
   std::vector<std::thread> ths;
 
   int pu = get_usable_pu();
@@ -42,7 +42,7 @@ void PMEMAllocator::PopulateSpace() {
   for (auto &t : ths) {
     t.join();
   }
-  GlobalLogger.Log("Populating done\n");
+  GlobalLogger.Info("Populating done\n");
 }
 
 PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
@@ -53,8 +53,8 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
     : thread_cache_(num_write_threads), num_segment_blocks_(num_segment_blocks),
       block_size_(block_size), offset_head_(0) {
   int is_pmem;
-  GlobalLogger.Log("Initializing PMem size %lu in file %s\n", pmem_space,
-                   pmem_file.c_str());
+  GlobalLogger.Info("Initializing PMem size %lu in file %s\n", pmem_space,
+                    pmem_file.c_str());
   if ((pmem_ = (char *)pmem_map_file(pmem_file.c_str(), pmem_space,
                                      PMEM_FILE_CREATE, 0666, &pmem_size_,
                                      &is_pmem)) == nullptr) {
@@ -74,7 +74,7 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
   free_list_ = std::make_shared<Freelist>(
       num_segment_blocks, num_write_threads,
       std::make_shared<SpaceMap>(max_block_offset_), this);
-  GlobalLogger.Log("Map pmem space done\n");
+  GlobalLogger.Info("Map pmem space done\n");
   init_data_size_2_block_size();
 }
 
