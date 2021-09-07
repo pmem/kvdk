@@ -31,12 +31,10 @@ void PMEMAllocator::PopulateSpace() {
   }
   for (int i = 0; i < pu; i++) {
     ths.emplace_back([=]() {
-      uint64_t len = pmem_size_ / pu;
-      // Re-calculate the length of last chunk to cover the
-      // case that mapped_size_ is not divisible by pu.
-      if (i == pu - 1)
-        len = pmem_size_ - (pu - 1) * len;
-      pmem_memset(pmem_ + pmem_size_ * i / pu, 0, len, PMEM_F_MEM_NONTEMPORAL);
+      uint64_t offset = pmem_size_ * i / pu;
+      // To cover the case that mapped_size_ is not divisible by pu.
+      uint64_t len = std::min(pmem_size_ / pu, pmem_size_ - offset);
+      pmem_memset(pmem_ + offset, 0, len, PMEM_F_MEM_NONTEMPORAL);
     });
   }
   for (auto &t : ths) {
