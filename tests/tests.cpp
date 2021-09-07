@@ -541,8 +541,8 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     std::string v;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
     for (int i = 1; i <= count; i++) {
-      auto key = a + std::to_string(id * i);
-      auto value = std::to_string(id * i);
+      auto key = a + std::to_string(i);
+      auto value = std::to_string(i);
       ASSERT_EQ(engine->SSet(overall_skiplist, key, value), Status::Ok);
       ASSERT_EQ(engine->SSet(t_skiplist, key, value + std::to_string(id)),
                 Status::Ok);
@@ -553,19 +553,20 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     }
   };
 
-  LaunchNThreads(num_threads, SetupEngine, 1);
+  LaunchNThreads(num_threads, SetupEngine);
 
   delete engine;
 
   // reopen and restore engine and try gets
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  for (int i = 1; i <= num_threads; i++) {
+  for (int i = 0; i < num_threads; i++) {
     std::string t_skiplist(thread_skiplist + std::to_string(i));
     std::string a(i, 'a');
     std::string v;
     for (int j = 1; j <= count; j++) {
-      auto key = a + std::to_string(i * j), value = std::to_string(i * j);
+      auto key = a + std::to_string(j);
+      auto value = std::to_string(j);
       Status s = engine->SGet(overall_skiplist, key, &v);
       ASSERT_EQ(s, Status::Ok);
       ASSERT_EQ(v, value);
