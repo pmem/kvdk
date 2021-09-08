@@ -10,32 +10,45 @@ namespace KVDK_NAMESPACE {
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
                                uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry, void *data_entry) {
-  if ((target_type & hash_entry->header.type) &&
+  if ((target_type & hash_entry->header.data_type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
     void *data_entry_pmem;
     pmem::obj::string_view data_entry_key;
 
-    if (hash_entry->header.type & StringDataEntryType) {
+    switch (hash_entry->header.offset_type) {
+    case HashOffsetType::DataEntry: {
       data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
       data_entry_key = ((DataEntry *)data_entry_pmem)->Key();
-    } else if (hash_entry->header.type &
-               (SORTED_DATA_RECORD | SORTED_DELETE_RECORD)) {
+      break;
+    }
+    case HashOffsetType::DLDataEntry: {
+      data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
+      data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
+      break;
+    }
+    case HashOffsetType::SkiplistNode: {
       SkiplistNode *node = (SkiplistNode *)hash_entry->offset;
       data_entry_pmem = node->data_entry;
       data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
-    } else if (hash_entry->header.type & SORTED_HEADER_RECORD) {
+      break;
+    }
+    case HashOffsetType::Skiplist: {
       Skiplist *skiplist = (Skiplist *)hash_entry->offset;
       data_entry_pmem = skiplist->header()->data_entry;
       data_entry_key = skiplist->name();
-    } else {
-      // not supported yet
+      break;
+    }
+    default: {
+      GlobalLogger.Error("Not supported hash offset type: %u\n",
+                         hash_entry->header.offset_type);
       return false;
+    }
     }
 
     if (__glibc_likely(data_entry != nullptr)) {
       memcpy(data_entry, data_entry_pmem,
-             data_entry_size(hash_entry->header.type));
+             data_entry_size(hash_entry->header.data_type));
     }
 
     if (compare_string_view(key, data_entry_key) == 0) {
@@ -88,7 +101,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->header.type == STRING_DELETE_RECORD &&
+          && (*entry_base)->header.data_type == STRING_DELETE_RECORD &&
           (*entry_base)->header.key_prefix != key_hash_prefix) {
         reusable_entry = *entry_base;
       }
@@ -151,10 +164,12 @@ Status HashTable::Search(const KeyHashHint &hint,
 }
 
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
-                       uint16_t type, uint64_t offset) {
+                       uint16_t type, uint64_t offset,
+                       HashOffsetType offset_type) {
   assert(write_thread.id >= 0);
 
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset);
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset,
+                           offset_type);
 
   if (entry_base->header.status == HashEntryStatus::Updating) {
     HashEntry::CopyOffset(entry_base, &new_hash_entry);

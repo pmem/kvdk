@@ -173,9 +173,10 @@ public:
                            std::vector<SpinMutex *> &spins,
                            DLDataEntry *updated_data_entry);
 
+  // Return nullptr if inserted a new height 0 node
   void *InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
                         const pmem::obj::string_view &inserting_key,
-                        SkiplistNode *node);
+                        SkiplistNode *data_node, bool is_update);
 
   void DeleteDataEntry(Splice *delete_splice,
                        const pmem::obj::string_view &deleting_key,

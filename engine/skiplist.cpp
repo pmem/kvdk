@@ -45,12 +45,14 @@ Status Skiplist::Rebuild() {
       GlobalLogger.Error("Rebuild skiplist error\n");
       return s;
     }
-    SkiplistNode *node = (SkiplistNode *)hash_entry.offset;
-    int height = node->Height();
-    for (int i = 1; i <= height; i++) {
-      splice.prevs[i]->RelaxedSetNext(i, node);
-      node->RelaxedSetNext(i, nullptr);
-      splice.prevs[i] = node;
+    if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+      SkiplistNode *node = (SkiplistNode *)hash_entry.offset;
+      int height = node->Height();
+      for (int i = 1; i <= height; i++) {
+        splice.prevs[i]->RelaxedSetNext(i, node);
+        node->RelaxedSetNext(i, nullptr);
+        splice.prevs[i] = node;
+      }
     }
     splice.prev_data_entry = next_data_entry;
   }
@@ -196,7 +198,7 @@ void Skiplist::DeleteDataEntry(Splice *delete_splice,
 void *Skiplist::InsertDataEntry(Splice *insert_splice,
                                 DLDataEntry *inserting_entry,
                                 const pmem::obj::string_view &inserting_key,
-                                SkiplistNode *node) {
+                                SkiplistNode *data_node, bool is_update) {
   uint64_t entry_offset = pmem_allocator_->addr2offset(inserting_entry);
   insert_splice->prev_data_entry->next = entry_offset;
   pmem_persist(&insert_splice->prev_data_entry->next, 8);
@@ -206,22 +208,27 @@ void *Skiplist::InsertDataEntry(Splice *insert_splice,
   }
 
   // new node
-  if (node == nullptr) {
+  if (!is_update) {
+    assert(data_node == nullptr);
     auto height = Skiplist::RandomHeight();
-    node = SkiplistNode::NewNode(inserting_key, inserting_entry, height);
-    for (int i = 1; i <= height; i++) {
-      while (1) {
-        node->RelaxedSetNext(i, insert_splice->nexts[i]);
-        if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
-                                             node)) {
-          break;
+    if (height > 0) {
+      data_node = SkiplistNode::NewNode(inserting_key, inserting_entry, height);
+      for (int i = 1; i <= height; i++) {
+        while (1) {
+          data_node->RelaxedSetNext(i, insert_splice->nexts[i]);
+          if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
+                                               data_node)) {
+            break;
+          }
+          insert_splice->Recompute(inserting_key, i);
         }
-        insert_splice->Recompute(inserting_key, i);
       }
     }
   } else {
-    node->data_entry = inserting_entry;
+    if (data_node != nullptr) {
+      data_node->data_entry = inserting_entry;
+    }
   }
-  return node;
+  return data_node;
 }
 } // namespace KVDK_NAMESPACE
