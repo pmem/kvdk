@@ -28,8 +28,8 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       break;
     }
     case HashOffsetType::SkiplistNode: {
-      SkiplistNode *node = (SkiplistNode *)hash_entry->offset;
-      data_entry_pmem = node->data_entry;
+      SkiplistNode *dram_node = (SkiplistNode *)hash_entry->offset;
+      data_entry_pmem = dram_node->data_entry;
       data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
       break;
     }

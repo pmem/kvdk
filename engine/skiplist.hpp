@@ -181,7 +181,7 @@ public:
 
   void DeleteDataEntry(Splice *delete_splice,
                        const pmem::obj::string_view &deleting_key,
-                       SkiplistNode *node);
+                       SkiplistNode *dram_node);
 
 private:
   SkiplistNode *header_;

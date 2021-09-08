@@ -34,9 +34,9 @@ enum class HashOffsetType : uint8_t {
   DataEntry = 1,
   // Offset is PMem offset of a double linked data entry
   DLDataEntry = 2,
-  // Offset is pointer to a skiplist node
+  // Offset is pointer to a dram skiplist node
   SkiplistNode = 3,
-  // Offset is pointer to a skiplist struct
+  // Offset is pointer to a dram skiplist struct
   Skiplist = 4,
 };
 
