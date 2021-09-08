@@ -16,6 +16,16 @@
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
 
+static void LaunchNThreads(int n_thread, std::function<void(int tid)> func,
+                           int id_start = 0) {
+  std::vector<std::thread> ts;
+  for (int i = id_start; i < id_start + n_thread; i++) {
+    ts.emplace_back(std::thread(func, i));
+  }
+  for (auto &t : ts)
+    t.join();
+}
+
 class EngineBasicTest : public testing::Test {
 protected:
   Engine *engine = nullptr;
@@ -102,31 +112,27 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       AssignData(v2, v2_len);
 
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
-
       ASSERT_EQ(engine->Set(k2, v2), Status::Ok);
-      ASSERT_EQ(engine->Get(k1, &got_v1), Status::Ok);
 
-      ASSERT_EQ(engine->Get(k2, &got_v2), Status::Ok);
+      // Get
+      ASSERT_EQ(engine->Get(k1, &got_v1), Status::Ok);
       ASSERT_EQ(v1, got_v1);
+      ASSERT_EQ(engine->Get(k2, &got_v2), Status::Ok);
       ASSERT_EQ(v2, got_v2);
 
+      // Delete
       ASSERT_EQ(engine->Delete(k1), Status::Ok);
-
       ASSERT_EQ(engine->Get(k1, &got_v1), Status::NotFound);
+
+      // Update
       AssignData(v1, v1_len);
       ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
-
       ASSERT_EQ(engine->Get(k1, &got_v1), Status::Ok);
       ASSERT_EQ(got_v1, v1);
     }
   };
 
-  std::vector<std::thread> ts;
-  for (int i = 0; i < num_threads; i++) {
-    ts.emplace_back(std::thread(SetGetDelete, i));
-  }
-  for (auto &t : ts)
-    t.join();
+  LaunchNThreads(num_threads, SetGetDelete);
   delete engine;
 }
 
@@ -165,17 +171,13 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     }
   };
 
-  std::vector<std::thread> ts;
-  for (int i = 1; i <= num_threads; i++) {
-    ts.emplace_back(std::thread(BatchSetDelete, i));
-  }
-  for (auto &t : ts)
-    t.join();
+  LaunchNThreads(num_threads, BatchSetDelete);
+
   delete engine;
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  for (int id = 1; id <= num_threads; id++) {
+  for (int id = 0; id < num_threads; id++) {
     std::string v;
     int cnt = count;
     while (cnt--) {
@@ -244,7 +246,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
             Status::Ok);
   std::vector<int> n_local_entries(num_threads, 0);
 
-  auto SetGetDelete = [&](int id) {
+  auto SSetSGetSDelete = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
@@ -303,6 +305,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
                 Status::NotFound);
     }
   };
+
   auto IteratingThrough = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
     std::vector<int> n_entries(num_threads, 0);
@@ -326,23 +329,8 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
     n_entries[id] = 0;
   };
 
-  {
-    std::vector<std::thread> ts;
-    for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(SetGetDelete, i));
-    }
-    for (auto &t : ts)
-      t.join();
-  }
-
-  {
-    std::vector<std::thread> ts;
-    for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(IteratingThrough, i));
-    }
-    for (auto &t : ts)
-      t.join();
-  }
+  LaunchNThreads(num_threads, SSetSGetSDelete);
+  LaunchNThreads(num_threads, IteratingThrough);
 
   delete engine;
 }
@@ -366,7 +354,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::NotFound);
   engine->ReleaseWriteThread();
 
-  auto SetGetDelete = [&](int id) {
+  auto SSetSGetSDelete = [&](int id) {
     std::string k1, k2, v1, v2;
     std::string got_v1, got_v2;
 
@@ -410,6 +398,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
       ASSERT_EQ(engine->SGet(global_skiplist, k1, &got_v1), Status::NotFound);
     }
   };
+
   auto IteratingThrough = [&](int id) {
     std::vector<int> n_entries(num_threads, 0);
 
@@ -444,32 +433,9 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
   };
 
-  {
-    std::vector<std::thread> ts;
-    for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(SetGetDelete, i));
-    }
-    for (auto &t : ts)
-      t.join();
-  }
-
-  {
-    std::vector<std::thread> ts;
-    for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(IteratingThrough, i));
-    }
-    for (auto &t : ts)
-      t.join();
-  }
-
-  {
-    std::vector<std::thread> ts;
-    for (int i = 0; i < num_threads; i++) {
-      ts.emplace_back(std::thread(SeekToDeleted, i));
-    }
-    for (auto &t : ts)
-      t.join();
-  }
+  LaunchNThreads(num_threads, SSetSGetSDelete);
+  LaunchNThreads(num_threads, IteratingThrough);
+  LaunchNThreads(num_threads, SeekToDeleted);
 
   delete engine;
 }
@@ -512,7 +478,7 @@ TEST_F(EngineBasicTest, TestRestore) {
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
   int count = 1000;
-  auto SetGetDelete = [&](int id) {
+  auto SetupEngine = [&](int id) {
     std::string a(id, 'a');
     std::string v;
     for (int i = 1; i <= count; i++) {
@@ -534,18 +500,15 @@ TEST_F(EngineBasicTest, TestRestore) {
       }
     }
   };
-  std::vector<std::thread> ts;
-  for (int i = 1; i <= num_threads; i++) {
-    ts.emplace_back(std::thread(SetGetDelete, i));
-  }
-  for (auto &t : ts)
-    t.join();
+
+  LaunchNThreads(num_threads, SetupEngine);
+
   delete engine;
 
   // reopen and restore engine and try gets
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  for (int i = 1; i <= num_threads; i++) {
+  for (int i = 0; i < num_threads; i++) {
     std::string a(i, 'a');
     std::string v;
     for (int j = 1; j <= count; j++) {
@@ -573,13 +536,13 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   int count = 100;
   std::string overall_skiplist = "skiplist";
   std::string thread_skiplist = "t_skiplist";
-  auto SetGet = [&](int id) {
+  auto SetupEngine = [&](int id) {
     std::string a(id, 'a');
     std::string v;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
     for (int i = 1; i <= count; i++) {
-      auto key = a + std::to_string(id * i);
-      auto value = std::to_string(id * i);
+      auto key = a + std::to_string(i);
+      auto value = std::to_string(i);
       ASSERT_EQ(engine->SSet(overall_skiplist, key, value), Status::Ok);
       ASSERT_EQ(engine->SSet(t_skiplist, key, value + std::to_string(id)),
                 Status::Ok);
@@ -589,23 +552,21 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       ASSERT_EQ(v, value + std::to_string(id));
     }
   };
-  std::vector<std::thread> ts;
-  for (int i = 1; i <= num_threads; i++) {
-    ts.emplace_back(std::thread(SetGet, i));
-  }
-  for (auto &t : ts)
-    t.join();
+
+  LaunchNThreads(num_threads, SetupEngine);
+
   delete engine;
 
   // reopen and restore engine and try gets
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  for (int i = 1; i <= num_threads; i++) {
+  for (int i = 0; i < num_threads; i++) {
     std::string t_skiplist(thread_skiplist + std::to_string(i));
     std::string a(i, 'a');
     std::string v;
     for (int j = 1; j <= count; j++) {
-      auto key = a + std::to_string(i * j), value = std::to_string(i * j);
+      auto key = a + std::to_string(j);
+      auto value = std::to_string(j);
       Status s = engine->SGet(overall_skiplist, key, &v);
       ASSERT_EQ(s, Status::Ok);
       ASSERT_EQ(v, value);
