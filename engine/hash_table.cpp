@@ -109,13 +109,20 @@ Status HashTable::Search(const KeyHashHint &hint,
               *entry_base = reusable_entry;
               break;
             } else {
-              auto space = dram_allocator_->Allocate(hash_bucket_size_);
-              if (space.size == 0) {
+              // auto space = dram_allocator_->Allocate(hash_bucket_size_);
+              // if (space.size == 0) {
+              //   GlobalLogger.Error("Memory overflow!\n");
+              //   return Status::MemoryOverflow;
+              // }
+              // next_off = dram_allocator_->offset2addr(space.space_entry.offset);
+              // memset(next_off, 0, space.size);
+              next_off = static_cast<char*>(malloc(hash_bucket_size_));
+              if(!next_off)
+              {
                 GlobalLogger.Error("Memory overflow!\n");
                 return Status::MemoryOverflow;
               }
-              next_off = dram_allocator_->offset2addr(space.space_entry.offset);
-              memset(next_off, 0, space.size);
+              memset(next_off, 0, hash_bucket_size_);
               memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
             }
           } else {
