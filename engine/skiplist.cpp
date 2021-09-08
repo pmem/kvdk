@@ -196,10 +196,10 @@ void Skiplist::DeleteDataEntry(Splice *delete_splice,
   }
 }
 
-void *Skiplist::InsertDataEntry(Splice *insert_splice,
-                                DLDataEntry *inserting_entry,
-                                const pmem::obj::string_view &inserting_key,
-                                SkiplistNode *data_node, bool is_update) {
+SkiplistNode *
+Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
+                          const pmem::obj::string_view &inserting_key,
+                          SkiplistNode *data_node, bool is_update) {
   uint64_t entry_offset = pmem_allocator_->addr2offset(inserting_entry);
   insert_splice->prev_data_entry->next = entry_offset;
   pmem_persist(&insert_splice->prev_data_entry->next, 8);
