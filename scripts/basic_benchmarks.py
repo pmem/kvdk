@@ -5,8 +5,8 @@ report_path = "./results/"
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
-benchmark_threads = 64
-kvdk_max_write_threads = 64
+benchmark_threads = 48
+kvdk_max_write_threads = 48
 duration = 10
 populate = 1
 collections = 16
@@ -14,6 +14,8 @@ collections = 16
 numanode = 0
 bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
+# exec = "LD_PRELOAD=/usr/local/lib/libmimalloc.so numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
+# exec = "LD_PRELOAD=/usr/local/lib/libjemalloc.so numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 
 def Confirm(dir):
