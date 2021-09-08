@@ -25,6 +25,7 @@ enum DATA_ENTRY_TYPE : uint16_t {
   DLIST_DELETE_RECORD = 1 << 9,
   DLIST_HEAD_RECORD = 1 << 10,
   DLIST_TAIL_RECORD = 1 << 11,
+  DLIST_RECORD = 1 << 12,
 
   PADDING = 1 << 15,
 };

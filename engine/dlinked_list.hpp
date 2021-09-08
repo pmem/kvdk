@@ -27,8 +27,8 @@ namespace KVDK_NAMESPACE
     /// Caller is responsible for locking since caller may use lock elsewhere
     /// DLinkedList guarantees that forward links are always valid
     /// Backward links are restored on recovery
-    /// Invalid Records, aka, Records only linked backwardly(system fail when updating)
-    /// and Records not linked(system fail when inserting) are deallocated by caller of constructor
+    /// DLinkedList does not deallocate records. Deallocation is done by caller
+    /// Locking is done by caller at HashTable
     class DLinkedList 
     {
     private:
@@ -36,8 +36,6 @@ namespace KVDK_NAMESPACE
         DLDataEntry* _pmp_head_;
         /// PMem pointer(pmp) to tail node on PMem
         DLDataEntry* _pmp_tail_;
-        /// Provides locking facility
-        std::shared_ptr<HashTable> _sp_hash_table_;
         /// Allocator for allocating space for new nodes, 
         /// as well as for deallocating space to delete nodes
         std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
@@ -50,20 +48,22 @@ namespace KVDK_NAMESPACE
         DLinkedList
         (
             const std::shared_ptr<PMEMAllocator>& sp_pmem_allocator,
-            std::shared_ptr<HashTable> sp_hash_table,
             std::uint64_t timestamp
         ) :
             _sp_pmem_allocator_{ sp_pmem_allocator },
-            _sp_hash_table_{ sp_hash_table },
             _pmp_head_{ nullptr },
             _pmp_tail_{ nullptr }
         {
             // head and tail only holds DLDataEntry. No id or collection name needed.
             auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
-            auto space_tail = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
-            if (space_head.size == 0 || space_tail.size() == 0)
+            if (space_head.size == 0)
             {
-                // Fail to allocate space
+                return;
+            }
+            auto space_tail = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
+            if (space_tail.size() == 0)
+            {
+                _sp_pmem_allocator_->Free(space_head);
                 return;
             }
             std::uint64_t offset_head = space_head.space_entry.offset;
@@ -84,7 +84,6 @@ namespace KVDK_NAMESPACE
 
                 entry_head.prev = _null_offset_;
                 entry_head.next = offset_tail;
-                // entry is now complete
             }
 
             DLDataEntry entry_tail;  // Set up entry with meta
@@ -100,11 +99,10 @@ namespace KVDK_NAMESPACE
 
                 entry_tail.prev = offset_head;
                 entry_tail.next = _null_offset_;
-                // entry is now complete
             }
 
             // Persist tail first then head
-            // If only tail is persisted then it can be deallocated
+            // If only tail is persisted then it can be deallocated by caller at recovery
             _persist_record_(pmp_tail, entry_tail, "", "");
             _persist_record_(pmp_head, entry_head, "", "");
             _pmp_head_ = pmp_head;
@@ -115,12 +113,10 @@ namespace KVDK_NAMESPACE
         DLinkedList
         (
             DLDataEntry* pmp_head,
-            const std::shared_ptr<PMEMAllocator>& sp_pmem_allocator,
-            std::shared_ptr<HashTable> sp_hash_table
+            const std::shared_ptr<PMEMAllocator>& sp_pmem_allocator
         ) :
             _pmp_head_{ pmp_head },
             _sp_pmem_allocator_{ sp_pmem_allocator },
-            _sp_hash_table_{ sp_hash_table }
         {
             Iterator curr{ std::make_shared(*this), pmp_head };         
             do
@@ -163,7 +159,7 @@ namespace KVDK_NAMESPACE
         }        
         
         /// Emplace right after iter.
-        /// When fail to Emplace, return iterator at head
+        /// When fail to Emplace, return invalid iterator.
         Iterator EmplaceAfter
         (
             Iterator iter,
@@ -181,8 +177,9 @@ namespace KVDK_NAMESPACE
             return _emplace_between_(iter_prev, iter_next, timestamp, key, value);
         }
 
-        /// In-place swap out an old record for new one(if timestamp fails behind nothing happens)
-        /// Old record freed by PMemAllocator
+        /// In-place swap out an old record for new one
+        /// Old record should be freed by caller after calling this function
+        /// Timestamp should be checked by caller
         Iterator SwapEmplace
         (
             Iterator iter,
@@ -193,20 +190,11 @@ namespace KVDK_NAMESPACE
         {
             assert(iter.valid() && "Invalid iterator in dlinked_list!");
 
-            if (timestamp <= iter->timestamp)
-            {
-                // timestamp not new enough, return
-                return Iterator{};
-            }
-
             // Swap happens between iter_prev and iter_next
             Iterator iter_prev{ iter }; --iter_prev;
             Iterator iter_next{ iter }; ++iter_prev;
 
-            Iterator ret = _emplace_between_(iter_prev, iter_next, timestamp, key, value);
-            _deallocate_record_(iter);
-
-            return ret;
+            return _emplace_between_(iter_prev, iter_next, timestamp, key, value);
         }
 
     private:
@@ -230,11 +218,6 @@ namespace KVDK_NAMESPACE
             
             // Persist DLDataEntry last
             pmem_memcpy(pmp, &entry, sz_entry, PMEM_F_MEM_NONTEMPORAL);
-        }
-
-        inline void _deallocate_record_(Iterator iter)
-        {
-            _sp_pmem_allocator_->Free(SizedSpaceEntry{ iter._get_offset_(), iter->header.b_size, iter->timestamp });
         }
 
         inline static std::uint32_t _check_sum_
