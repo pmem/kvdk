@@ -125,7 +125,8 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
       prev = splice->prev_data_entry;
       next = splice->next_data_entry;
       assert(prev == header_->data_entry ||
-             compare_string_view(prev->Key(), insert_key) < 0);
+             compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) <
+                 0);
     }
 
     uint64_t prev_offset = pmem_allocator_->addr2offset(prev);

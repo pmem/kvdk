@@ -263,13 +263,19 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
                                 height > 0 ? HashOffsetType::SkiplistNode
                                            : HashOffsetType::DLDataEntry);
           } else {
-            node = (SkiplistNode *)hash_entry.offset;
-            offset = pmem_allocator_->addr2offset(node->data_entry);
-            node->data_entry = (DLDataEntry *)pmem_data_entry;
+            if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+              node = (SkiplistNode *)hash_entry.offset;
+              offset = pmem_allocator_->addr2offset(node->data_entry);
+              node->data_entry = (DLDataEntry *)pmem_data_entry;
+              entry_base->header.data_type = recovering_data_entry->type;
+            } else {
+              offset = pmem_allocator_->addr2offset(pmem_data_entry);
+              hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
+                                  offset, HashOffsetType::DLDataEntry);
+            }
             pmem_allocator_->Free(
                 SizedSpaceEntry(offset, existing_data_entry->header.b_size,
                                 existing_data_entry->timestamp));
-            entry_base->header.data_type = recovering_data_entry->type;
           }
         } else {
           offset = pmem_allocator_->addr2offset(pmem_data_entry);
