@@ -29,7 +29,7 @@ namespace KVDK_NAMESPACE
     /// Backward links are restored on recovery
     /// DLinkedList does not deallocate records. Deallocation is done by caller
     /// Locking is done by caller at HashTable
-    class DLinkedList 
+    class DLinkedList
     {
     private:
         /// PMem pointer(pmp) to head node on PMem
@@ -40,20 +40,24 @@ namespace KVDK_NAMESPACE
         /// as well as for deallocating space to delete nodes
         std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
 
-        class Iterator;
+        friend class Iterator;
+        friend class UnorderedCollection;
+        friend class UnorderedIterator;
+
         static constexpr std::uint64_t _null_offset_ = kNullPmemOffset;
 
     public:
-        /// Create DLinkedList and construct head and tail node on PMem
+        /// Create DLinkedList and construct head and tail node on PMem.
         DLinkedList
         (
-            const std::shared_ptr<PMEMAllocator>& sp_pmem_allocator,
-            std::uint64_t timestamp
+            std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
+            std::uint64_t timestamp = 0ULL
         ) :
-            _sp_pmem_allocator_{ sp_pmem_allocator },
             _pmp_head_{ nullptr },
-            _pmp_tail_{ nullptr }
+            _pmp_tail_{ nullptr },
+            _sp_pmem_allocator_{ sp_pmem_allocator }
         {
+            static constexpr std::string str_empty{""};
             // head and tail only holds DLDataEntry. No id or collection name needed.
             auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
             if (space_head.size == 0)
@@ -66,6 +70,7 @@ namespace KVDK_NAMESPACE
                 _sp_pmem_allocator_->Free(space_head);
                 return;
             }
+
             std::uint64_t offset_head = space_head.space_entry.offset;
             std::uint64_t offset_tail = space_tail.space_entry.offset;
             void* pmp_head = _sp_pmem_allocator_->offset2addr(offset_head);
@@ -80,7 +85,7 @@ namespace KVDK_NAMESPACE
 
                 // checksum can only be calculated with complete meta
                 entry_head.header.b_size = space_head.size;
-                entry_head.header.checksum = _check_sum_(entry_head, "", "");
+                entry_head.header.checksum = _check_sum_(entry_head, str_empty, str_empty);
 
                 entry_head.prev = _null_offset_;
                 entry_head.next = offset_tail;
@@ -95,7 +100,7 @@ namespace KVDK_NAMESPACE
 
                 // checksum can only be calculated with complete meta
                 entry_tail.header.b_size = space_head.size;
-                entry_tail.header.checksum = _check_sum_(entry_tail, "", "");
+                entry_tail.header.checksum = _check_sum_(entry_tail, str_empty, str_empty);
 
                 entry_tail.prev = offset_head;
                 entry_tail.next = _null_offset_;
@@ -103,22 +108,24 @@ namespace KVDK_NAMESPACE
 
             // Persist tail first then head
             // If only tail is persisted then it can be deallocated by caller at recovery
-            _persist_record_(pmp_tail, entry_tail, "", "");
-            _persist_record_(pmp_head, entry_head, "", "");
+            _persist_record_(pmp_tail, entry_tail, str_empty, str_empty);
+            _persist_record_(pmp_head, entry_head, str_empty, str_empty);
             _pmp_head_ = pmp_head;
             _pmp_tail_ = pmp_tail;
         }
 
-        /// Create DLinkedList from existing head node. Used for recovery.
+        /// Create DLinkedList from existing head and tail node. Used for recovery.
         DLinkedList
         (
             DLDataEntry* pmp_head,
-            const std::shared_ptr<PMEMAllocator>& sp_pmem_allocator
+            DLDataEntry* pmp_tail,
+            std::shared_ptr<PMEMAllocator> sp_pmem_allocator
         ) :
             _pmp_head_{ pmp_head },
-            _sp_pmem_allocator_{ sp_pmem_allocator },
+            _pmp_tail_{ pmp_tail },
+            _sp_pmem_allocator_{ sp_pmem_allocator }
         {
-            Iterator curr{ std::make_shared(*this), pmp_head };         
+            Iterator curr{ std::make_shared(*this), pmp_head };
             do
             {
                 Iterator next{ curr }; ++next;
@@ -130,10 +137,10 @@ namespace KVDK_NAMESPACE
                 }
                 curr = next;
             } while (curr->type != DATA_ENTRY_TYPE::DLIST_TAIL_RECORD);
-            _pmp_tail_ = curr._pmp_curr_;
+            assert(_pmp_tail_ == curr._pmp_curr_);
         }
 
-        ~DLinkedList() 
+        ~DLinkedList()
         {
             // _pmp_head_ and _pmp_tail_ points to persisted Record of Head and Tail on PMem
             // No need to delete anything
@@ -156,8 +163,8 @@ namespace KVDK_NAMESPACE
             Iterator iter_next{ iter };
 
             return _emplace_between_(iter_prev, iter_next, timestamp, key, value);
-        }        
-        
+        }
+
         /// Emplace right after iter.
         /// When fail to Emplace, return invalid iterator.
         Iterator EmplaceAfter
@@ -197,10 +204,45 @@ namespace KVDK_NAMESPACE
             return _emplace_between_(iter_prev, iter_next, timestamp, key, value);
         }
 
+        Iterator First()
+        {
+            Iterator ret{ std::make_shared(*this), _pmp_head_ };
+            assert(ret.valid());
+            ++ret;
+            return ret;
+        }
+
+        Iterator Last()
+        {
+            Iterator ret{ std::make_shared(*this), _pmp_tail_ };
+            assert(ret.valid());
+            --ret;
+            return ret;
+        }
+
+        Iterator Head() const
+        {
+            return Iterator{ std::make_shared(*this), _pmp_head_ };
+        }
+
+        Iterator Tail() const
+        {
+            return Iterator{ std::make_shared(*this), _pmp_tail_ };
+        }
+
+        /// Helper function to deallocate Record, called only by caller
+        inline static void Deallocate(Iterator iter)
+        {
+            iter._sp_dlinked_list_->_sp_pmem_allocator_->Free
+            (
+                SizedSpaceEntry{ iter._get_offset_(), iter->header.b_size, iter->timestamp }
+            );
+        }
+
     private:
         inline void _persist_record_
         (
-            void* pmp, 
+            void* pmp,
             DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller
             pmem::obj::string_view const key,
             pmem::obj::string_view const value
@@ -215,7 +257,7 @@ namespace KVDK_NAMESPACE
             pmem_memcpy(pmp_dest, value.data(), value.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
             pmem_flush();
             pmem_drain();
-            
+
             // Persist DLDataEntry last
             pmem_memcpy(pmp, &entry, sz_entry, PMEM_F_MEM_NONTEMPORAL);
         }
@@ -287,7 +329,7 @@ namespace KVDK_NAMESPACE
             pmem_memcpy(&iter_prev->next, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
             pmem_memcpy(&iter_next->prev, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
 
-            return Iterator{ _sp_pmem_allocator_, pmp };
+            return Iterator{ std::make_shared(*this), pmp };
         }
 
     public:
@@ -295,6 +337,7 @@ namespace KVDK_NAMESPACE
         {
         private:
             friend class DLinkedList;
+            friend class UnorderedCollection;
 
         private:
             /// shared pointer to pin the dlinked_list
@@ -306,9 +349,9 @@ namespace KVDK_NAMESPACE
             DLDataEntry* _pmp_curr_;
 
         public:
-        /// Constructors and Destructors
-            /// Invalid iterator indicating error
-            explicit Iterator() = default;   
+            /// Constructors and Destructors
+                /// Invalid iterator indicating error
+            explicit Iterator() = default;
 
             explicit Iterator(std::shared_ptr<DLinkedList> sp_list) :
                 _sp_dlinked_list_{ sp_list },
@@ -328,7 +371,7 @@ namespace KVDK_NAMESPACE
             {
             }
 
-        /// Conversion to bool
+            /// Conversion to bool
             /// Double check for the validity of dlinked_list object on PMem
             inline bool valid()
             {
@@ -336,14 +379,15 @@ namespace KVDK_NAMESPACE
                 {
                     return false;
                 }
-                bool ok = 
-                (
-                    _pmp_curr_->type & 
-                    (DATA_ENTRY_TYPE::DLIST_DATA_RECORD |
-                    DATA_ENTRY_TYPE::DLIST_DELETE_RECORD |
-                    DATA_ENTRY_TYPE::DLIST_HEAD_RECORD |
-                    DATA_ENTRY_TYPE::DLIST_TAIL_RECORD)
-                );
+                bool ok =
+                    (
+                        _pmp_curr_->type &
+                        (
+                            DATA_ENTRY_TYPE::DLIST_DATA_RECORD |
+                            DATA_ENTRY_TYPE::DLIST_DELETE_RECORD |
+                            DATA_ENTRY_TYPE::DLIST_HEAD_RECORD |
+                            DATA_ENTRY_TYPE::DLIST_TAIL_RECORD)
+                        );
                 return ok;
             }
 
@@ -352,7 +396,7 @@ namespace KVDK_NAMESPACE
                 return valid();
             }
 
-        /// Increment and Decrement operators
+            /// Increment and Decrement operators
             Iterator& operator++()
             {
                 _pmp_curr_ = _get_pmp_next_();
@@ -379,7 +423,7 @@ namespace KVDK_NAMESPACE
                 return old;
             }
 
-        /// Dereference and direct PMem pointer access
+            /// Dereference and direct PMem pointer access
             DLDataEntry& operator*()
             {
                 return *_pmp_curr_;
