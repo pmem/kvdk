@@ -31,24 +31,28 @@ public:
   uint16_t cached_key_size;
   char cached_key[0];
 
-  static void DeleteNode(SkiplistNode *node) { free(node->heap_space_start()); }
+  static void DeleteNode(SkiplistNode *node) {
+    delete static_cast<char *>(node->heap_space_start());
+  }
 
   static SkiplistNode *NewNode(const pmem::obj::string_view &key,
-                               DLDataEntry *entry_on_pmem, uint16_t l) {
+                               DLDataEntry *entry_on_pmem, uint16_t l) try {
     size_t size;
     if (l >= kCacheLevel && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * l + key.size() - 4;
     } else {
       size = sizeof(SkiplistNode) + 8 * l;
     }
-    void *space = malloc(size);
-    SkiplistNode *node = (SkiplistNode *)((char *)space + 8 * l);
+    char *space = new char[size]{};
+    SkiplistNode *node = (SkiplistNode *)(space + 8 * l);
     if (node != nullptr) {
       node->data_entry = entry_on_pmem;
       node->height = l;
       node->MaybeCacheKey(key);
     }
     return node;
+  } catch (const std::bad_alloc &e) {
+    GlobalLogger.Error("Memory overflow!");
   }
 
   uint16_t Height() { return height; }
