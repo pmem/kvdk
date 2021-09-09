@@ -29,7 +29,6 @@ set(SOURCES
         engine/skiplist.cpp
         engine/write_batch.cpp
         engine/hash_list.cpp
-        engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
         engine/utils.cpp

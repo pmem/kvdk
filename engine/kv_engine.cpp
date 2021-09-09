@@ -16,7 +16,6 @@
 #include <thread>
 
 #include "configs.hpp"
-#include "dram_allocator.hpp"
 #include "hash_list.hpp"
 #include "kvdk/engine.hpp"
 #include "skiplist.hpp"

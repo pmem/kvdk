@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "data_entry.hpp"
-#include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
@@ -82,15 +81,20 @@ public:
             uint32_t write_threads)
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
-        hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(new DRAMAllocator(write_threads)),
-        pmem_allocator_(pmem_allocator),
+        hash_bucket_size_(hash_bucket_size), pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)) {
     // main_buckets_ = dram_allocator_->offset2addr(
     //     (dram_allocator_->Allocate(hash_bucket_size * hash_bucket_num)
     //          .space_entry.offset));
-    main_buckets_ = static_cast<char*>(malloc(hash_bucket_size * hash_bucket_num));
+    try {
+      // Zero initialized
+      main_buckets_ = new char[hash_bucket_size * hash_bucket_num]{};
+    } catch (const std::bad_alloc &e) {
+      GlobalLogger.Error("Memory overflow!\n");
+      // return Status::MemoryOverflow;
+    }
+
     slots_.resize(hash_bucket_num / num_buckets_per_slot);
     hash_bucket_entries_.resize(hash_bucket_num, 0);
   }
@@ -132,7 +136,6 @@ private:
   const uint64_t num_entries_per_bucket_;
   std::vector<Slot> slots_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  std::unique_ptr<DRAMAllocator> dram_allocator_;
   char *main_buckets_;
 };
 } // namespace KVDK_NAMESPACE

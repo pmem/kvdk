@@ -15,7 +15,6 @@
 #include "atomic"
 #include "cassert"
 #include "data_entry.hpp"
-#include "dram_allocator.hpp"
 #include "hash_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"

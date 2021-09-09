@@ -48,7 +48,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
 Status HashTable::Search(const KeyHashHint &hint,
                          const pmem::obj::string_view &key, uint16_t type_mask,
                          HashEntry *hash_entry, DataEntry *data_entry,
-                         HashEntry **entry_base, SearchPurpose purpose) {
+                         HashEntry **entry_base, SearchPurpose purpose) try {
   assert(purpose == SearchPurpose::Read || write_thread.id >= 0);
   assert(entry_base);
   assert((*entry_base) == nullptr);
@@ -109,20 +109,7 @@ Status HashTable::Search(const KeyHashHint &hint,
               *entry_base = reusable_entry;
               break;
             } else {
-              // auto space = dram_allocator_->Allocate(hash_bucket_size_);
-              // if (space.size == 0) {
-              //   GlobalLogger.Error("Memory overflow!\n");
-              //   return Status::MemoryOverflow;
-              // }
-              // next_off = dram_allocator_->offset2addr(space.space_entry.offset);
-              // memset(next_off, 0, space.size);
-              next_off = static_cast<char*>(malloc(hash_bucket_size_));
-              if(!next_off)
-              {
-                GlobalLogger.Error("Memory overflow!\n");
-                return Status::MemoryOverflow;
-              }
-              memset(next_off, 0, hash_bucket_size_);
+              next_off = new char[hash_bucket_size_]{};
               memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
             }
           } else {
@@ -155,6 +142,9 @@ Status HashTable::Search(const KeyHashHint &hint,
   }
 
   return found ? Status::Ok : Status::NotFound;
+} catch (const std::bad_alloc &e) {
+  GlobalLogger.Error("Memory overflow!\n");
+  return Status::MemoryOverflow;
 }
 
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
