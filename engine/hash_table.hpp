@@ -13,7 +13,7 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class HashEntryStatus : uint16_t {
+enum class HashEntryStatus : uint8_t {
   Normal = 1,
   // A hash entry of a delete record which has no older version data of the same
   // key exsiting on PMem, so the delete record can be safely freed after the
@@ -28,16 +28,29 @@ enum class HashEntryStatus : uint16_t {
   BeingReused,
 };
 
+enum class HashOffsetType : uint8_t {
+  // Offset is PMem offset of a data entry
+  DataEntry = 1,
+  // Offset is PMem offset of a double linked data entry
+  DLDataEntry = 2,
+  // Offset is pointer to a dram skiplist node
+  SkiplistNode = 3,
+  // Offset is pointer to a dram skiplist struct
+  Skiplist = 4,
+};
+
 struct HashHeader {
   uint32_t key_prefix;
-  uint16_t type;
+  uint16_t data_type;
+  HashOffsetType offset_type;
   HashEntryStatus status;
 };
 
 struct HashEntry {
   HashEntry() = default;
-  HashEntry(uint32_t kp, uint16_t t, uint64_t bo)
-      : header({kp, t, HashEntryStatus::Normal}), offset(bo) {}
+  HashEntry(uint32_t kp, uint16_t t, uint64_t offset,
+            HashOffsetType offset_type)
+      : header({kp, t, offset_type, HashEntryStatus::Normal}), offset(offset) {}
 
   HashHeader header;
   uint64_t offset;
@@ -114,7 +127,7 @@ public:
                 SearchPurpose purpose);
 
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
-              uint64_t offset);
+              uint64_t offset, HashOffsetType offset_type);
 
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {

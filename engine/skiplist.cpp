@@ -45,12 +45,14 @@ Status Skiplist::Rebuild() {
       GlobalLogger.Error("Rebuild skiplist error\n");
       return s;
     }
-    SkiplistNode *node = (SkiplistNode *)hash_entry.offset;
-    int height = node->Height();
-    for (int i = 1; i <= height; i++) {
-      splice.prevs[i]->RelaxedSetNext(i, node);
-      node->RelaxedSetNext(i, nullptr);
-      splice.prevs[i] = node;
+    if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+      SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
+      int height = dram_node->Height();
+      for (int i = 1; i <= height; i++) {
+        splice.prevs[i]->RelaxedSetNext(i, dram_node);
+        dram_node->RelaxedSetNext(i, nullptr);
+        splice.prevs[i] = dram_node;
+      }
     }
     splice.prev_data_entry = next_data_entry;
   }
@@ -123,7 +125,8 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
       prev = splice->prev_data_entry;
       next = splice->next_data_entry;
       assert(prev == header_->data_entry ||
-             compare_string_view(prev->Key(), insert_key) < 0);
+             compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) <
+                 0);
     }
 
     uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
@@ -172,7 +175,7 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
 
 void Skiplist::DeleteDataEntry(Splice *delete_splice,
                                const pmem::obj::string_view &deleting_key,
-                               SkiplistNode *node) {
+                               SkiplistNode *dram_node) {
   delete_splice->prev_data_entry->next =
       pmem_allocator_->addr2offset(delete_splice->next_data_entry);
   pmem_persist(&delete_splice->prev_data_entry->next, 8);
@@ -182,10 +185,11 @@ void Skiplist::DeleteDataEntry(Splice *delete_splice,
     pmem_persist(&delete_splice->next_data_entry->prev, 8);
   }
 
-  assert(node);
-  for (int i = 1; i <= node->height; i++) {
+  assert(dram_node);
+  for (int i = 1; i <= dram_node->height; i++) {
     while (1) {
-      if (delete_splice->prevs[i]->CASNext(i, node, delete_splice->nexts[i])) {
+      if (delete_splice->prevs[i]->CASNext(i, dram_node,
+                                           delete_splice->nexts[i])) {
         break;
       }
       delete_splice->Recompute(deleting_key, i);
@@ -193,10 +197,10 @@ void Skiplist::DeleteDataEntry(Splice *delete_splice,
   }
 }
 
-void *Skiplist::InsertDataEntry(Splice *insert_splice,
-                                DLDataEntry *inserting_entry,
-                                const pmem::obj::string_view &inserting_key,
-                                SkiplistNode *node) {
+SkiplistNode *
+Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
+                          const pmem::obj::string_view &inserting_key,
+                          SkiplistNode *data_node, bool is_update) {
   uint64_t entry_offset = pmem_allocator_->addr2offset(inserting_entry);
   insert_splice->prev_data_entry->next = entry_offset;
   pmem_persist(&insert_splice->prev_data_entry->next, 8);
@@ -205,23 +209,28 @@ void *Skiplist::InsertDataEntry(Splice *insert_splice,
     pmem_persist(&insert_splice->next_data_entry->prev, 8);
   }
 
-  // new node
-  if (node == nullptr) {
+  // new dram node
+  if (!is_update) {
+    assert(data_node == nullptr);
     auto height = Skiplist::RandomHeight();
-    node = SkiplistNode::NewNode(inserting_key, inserting_entry, height);
-    for (int i = 1; i <= height; i++) {
-      while (1) {
-        node->RelaxedSetNext(i, insert_splice->nexts[i]);
-        if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
-                                             node)) {
-          break;
+    if (height > 0) {
+      data_node = SkiplistNode::NewNode(inserting_key, inserting_entry, height);
+      for (int i = 1; i <= height; i++) {
+        while (1) {
+          data_node->RelaxedSetNext(i, insert_splice->nexts[i]);
+          if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
+                                               data_node)) {
+            break;
+          }
+          insert_splice->Recompute(inserting_key, i);
         }
-        insert_splice->Recompute(inserting_key, i);
       }
     }
   } else {
-    node->data_entry = inserting_entry;
+    if (data_node != nullptr) {
+      data_node->data_entry = inserting_entry;
+    }
   }
-  return node;
+  return data_node;
 }
 } // namespace KVDK_NAMESPACE
