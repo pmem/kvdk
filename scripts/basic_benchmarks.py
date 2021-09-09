@@ -6,8 +6,8 @@ report_path = "./results/"
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
-benchmark_threads = 48
-kvdk_max_write_threads = 48
+benchmark_threads = 64
+kvdk_max_write_threads = 64
 duration = 10
 populate = 1
 collections = 16
@@ -126,7 +126,7 @@ if __name__ == "__main__":
         print("Scan sorted-type kv")
         os.system("{0} {1} > {2}".format(exec, new_para, report))
         report_time()
-        
+
         # read + update
         new_para = para + " -fill=0 -type=sorted -read_ratio=0.9 -existing_keys_ratio=0"
         report = report_path + "sorted_vs{}_ru91_thread{}".format(vs, benchmark_threads)
