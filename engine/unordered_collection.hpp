@@ -16,152 +16,321 @@
 
 namespace KVDK_NAMESPACE 
 {
-    /// UnorderedCollection is stored on DRAM, indexed by HashTable
+    // Triplet of unique_kock. Owns all or none of three locks.
+    template<typename Lock>
+    class UniqueLockTriplet
+    {
+    private:
+        std::unique_lock<Lock> _first_;
+        std::unique_lock<Lock> _second_;
+        std::unique_lock<Lock> _third_;
+
+    public:
+        bool try_lock_three(Lock first, Lock second, Lock third)
+        {
+            bool s1 = _first_.try_lock(first);
+            bool s2 = _second_.try_lock(second);
+            bool s3 = _third_.try_lock(third);
+            if (s1 && s2 && s3)
+            {
+                return true;
+            }
+            else
+            {
+                if (s1) _first_.unlock();
+                if (s2) _second_.unlock();
+                if (s3) _third_.unlock();
+                return false;
+            }
+        }
+
+        void lock_three(Lock first, Lock second, Lock third)
+        {
+            _first_.lock(first);
+            _second_.lock(second);
+            _third_.lock(third);
+        }
+
+        void unlock()
+        {
+            assert(_first_.owns_lock() && "Trying to unlock a lock not acquired!");
+            assert(_second_.owns_lock() && "Trying to unlock a lock not acquired!");
+            assert(_third_.owns_lock() && "Trying to unlock a lock not acquired!");
+
+            _first_.unlock();
+            _second_.unlock();
+            _third_.unlock();
+        }
+
+        bool owns_lock()
+        {
+            bool owns_first = _first_.owns_lock();
+            bool owns_second = _second_.owns_lock();
+            bool owns_third = _third_.owns_lock();
+            bool owns_all = owns_first && owns_second && owns_third;
+            bool owns_none = !owns_first && !owns_second && !owns_third;
+            assert((owns_all || owns_none) && "UniqueLockTriplet invalid state!");
+            return owns_all;
+        }
+    };
+
+    /// UnorderedCollection is stored in DRAM, indexed by HashTable
+    /// A Record DLIST_RECORD is stored in PMem,
+    /// whose key is the name of the UnorderedCollection
+    /// and value holds the id of the Collection 
+    /// prev and next pointer holds the head and tail of DLinkedList for recovery
     class UnorderedCollection : public PersistentList 
     {
     private:
+        /// For allocation and mapping
         std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
+        /// For locking, locking only
         std::shared_ptr<HashTable> _sp_hash_table_;
-        kvdk::DLinkedList _dlinked_list_;
 
-        inline void _deallocate_record_(kvdk::DLinkedList::Iterator iter)
-        {
-            _sp_pmem_allocator_->Free(SizedSpaceEntry{ iter._get_offset_(), iter->header.b_size, iter->timestamp });
-        }
+        DLinkedList _dlinked_list_;
+        std::string _name_;
+        std::uint64_t _id_;
 
+        friend class UnorderedIterator;
 
     public:
+        /// Create UnorderedCollection
         UnorderedCollection
         (
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
-            std::shared_ptr<HashTable> sp_hash_table
-        ):
-            _sp_pmem_allocator_{sp_pmem_allocator},
-            _sp_hash_table_{ sp_hash_table }
+            std::shared_ptr<HashTable> sp_hash_table,
+            std::string const& name,
+            std::uint64_t id,
+            std::uint64_t timestamp = 0ULL
+        )
+        try :
+            _sp_pmem_allocator_{ sp_pmem_allocator },
+            _sp_hash_table_{ sp_hash_table },
+            _dlinked_list_{ sp_pmem_allocator, timestamp },
+            _name_{ name },
+            _id_{ id }
+        {
+            auto space_list_record = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
+            if (space_list_record.size == 0)
+            {
+                throw std::bad_alloc{ "Fail to allocate space for UnorderedCollection" };
+            }
+            std::uint64_t offset_list_record = space_list_record.space_entry.offset;
+            void* pmp_list_record = _sp_pmem_allocator_->offset2addr(offset_list_record);
+            DLDataEntry entry_list_record;  // Set up entry with meta
+            {
+                entry_list_record.timestamp = timestamp;
+                entry_list_record.type = DATA_ENTRY_TYPE::DLIST_RECORD;
+                entry_list_record.k_size = _name_.size();
+                entry_list_record.v_size = sizeof(decltype(_id_));
+
+                // checksum can only be calculated with complete meta
+                entry_list_record.header.b_size = space_list_record.size;
+                entry_list_record.header.checksum = DLinkedList::_check_sum_(entry_list_record, _name_, _id_view_(_id_));
+
+                entry_list_record.prev = _dlinked_list_.Head()._get_offset_();
+                entry_list_record.next = _dlinked_list_.Tail()._get_offset_();
+            }
+            DLinkedList::_persist_record_(pmp_list_record, entry_list_record, _name_, _id_view_(_id_));
+        }
+        catch (std::bad_alloc const& ex)
+        {
+            DLinkedList::Deallocate(_dlinked_list_.Head());
+            DLinkedList::Deallocate(_dlinked_list_.Tail());
+            _dlinked_list_._pmp_head_ = nullptr;
+            _dlinked_list_._pmp_tail_ = nullptr;
+            return;
+        }
+
+        /// Recover UnorderedCollection from DLIST_RECORD
+        UnorderedCollection
+        (
+            std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
+            std::shared_ptr<HashTable> sp_hash_table,
+            DLDataEntry* pmp_dlist_record
+        ) : 
+            _sp_pmem_allocator_{ sp_pmem_allocator },
+            _sp_hash_table_{ sp_hash_table },
+            _dlinked_list_
+            {
+                _sp_pmem_allocator_->offset2addr(pmp_dlist_record->prev),
+                _sp_pmem_allocator_->offset2addr(pmp_dlist_record->next),
+                _sp_pmem_allocator_
+            },
+            _name_{ pmp_dlist_record->Key() },
+            _id_{ pmp_dlist_record->Value() }
         {
         }
 
+        uint64_t id() override { return _id_; }
 
-
-        uint64_t id() override { return id_; }
-
-        const std::string& name() { return name_; }
-
-        SkiplistNode* header() { return header_; }
-
-        static int RandomHeight() {
-            int height = 0;
-            while (height < kMaxHeight && fast_random() & 1) {
-                height++;
-            }
-
-            return height;
-        }
-
-        inline static pmem::obj::string_view
-            UserKey(const pmem::obj::string_view& skiplist_key) {
-            return pmem::obj::string_view(skiplist_key.data() + 8,
-                skiplist_key.size() - 8);
-        }
-
-        void Seek(const pmem::obj::string_view& key, Splice* splice);
-
-        Status Rebuild();
-
-        bool FindAndLockWritePos(Splice* splice,
-            const pmem::obj::string_view& insert_key,
-            const HashTable::KeyHashHint& hint,
-            std::vector<SpinMutex*>& spins,
-            DLDataEntry* updated_data_entry);
-
-        void* InsertDataEntry(Splice* insert_splice, DLDataEntry* inserting_entry,
-            const pmem::obj::string_view& inserting_key,
-            SkiplistNode* node);
-
-        void DeleteDataEntry(Splice* delete_splice,
-            const pmem::obj::string_view& deleting_key,
-            SkiplistNode* node);
+        std::string const& name() { return _name_; }
 
     private:
-        std::string name_;
-        uint64_t id_;
-        std::shared_ptr<HashTable> hash_table_;
-        std::shared_ptr<PMEMAllocator> pmem_allocator_;
+        inline static pmem::obj::string_view _key_(pmem::obj::string_view internal_key) 
+        {
+            constexpr size_t sz_id = sizeof(decltype(_id_));
+            return pmem::obj::string_view(internal_key.data() + sz_id, internal_key.size() + sz_id);
+        }
+
+        inline static std::string _internal_key_(pmem::obj::string_view key, std::uint64_t id)
+        {
+            return _id_to_string_(id) + key;
+        }
+
+        inline static pmem::obj::string_view _id_view_(std::uint64_t id)
+        {
+            return pmem::obj::string_view{ &id, sizeof(decltype(id)) };
+        }
+
+        inline static std::uint64_t _view_to_id_(pmem::obj::string_view id_view)
+        {
+            std::uint64_t id;
+            assert(sizeof(decltype(id)) == id_view.size() && "id_view does not match the size of an id!");
+            memcpy(&id, id_view.data(), sizeof(decltype(id)));
+            return id;
+        }
+
+        /// Try lock three adjacent nodes.
+        /// Check UniqueLockTriplet<SpinMutex>::owns_lock() for success or not.
+        UniqueLockTriplet<SpinMutex> _try_lock_three_(DLinkedList::Iterator iter_mid)
+        {
+            DLinkedList::Iterator iter_prev{ iter_mid }; --iter_prev;
+            DLinkedList::Iterator iter_next{ iter_mid }; ++iter_next;
+
+            auto str_key_prev = iter_prev->Key();
+            auto str_key_mid = iter_mid->Key();
+            auto str_key_next = iter_next->Key();
+
+            UniqueLockTriplet<SpinMutex> unique_lock_triplet;
+
+            unique_lock_triplet.try_lock_three
+            (
+                *_sp_hash_table_->GetHint(str_key_prev).spin,
+                *_sp_hash_table_->GetHint(str_key_mid).spin,
+                *_sp_hash_table_->GetHint(str_key_next).spin,
+            );
+            return unique_lock_triplet;
+        }
     };
 
-    class SortedIterator : public Iterator {
+    class UnorderedIterator : public Iterator 
+    {
+    private:
+        /// shared pointer to pin the UnorderedCollection
+        std::shared_ptr<UnorderedCollection> _sp_coll_;
+        DLinkedList::Iterator _iterator_internal_;
+        bool _valid_;
+
     public:
-        SortedIterator(Skiplist* skiplist,
-            const std::shared_ptr<PMEMAllocator>& pmem_allocator)
-            : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current(nullptr) {
+        UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll) :
+            _sp_coll_{ sp_coll },
+            _iterator_internal_{ _sp_coll_->_dlinked_list_.First() },
+            _valid_{ false }
+        {
+            SeekToFirst();
         }
 
-        virtual void Seek(const std::string& key) override {
-            assert(skiplist_);
-            Skiplist::Splice splice;
-            skiplist_->Seek(key, &splice);
-            current = splice.next_data_entry;
-            while (current->type == SORTED_DELETE_RECORD) {
-                current = (DLDataEntry*)(pmem_allocator_->offset2addr(current->next));
-            }
+        virtual void SeekToFirst() override
+        {
+            _iterator_internal_ = _sp_coll_->_dlinked_list_.Head();
+            _next_();
         }
 
-        virtual void SeekToFirst() override {
-            uint64_t first = skiplist_->header()->data_entry->next;
-            current = (DLDataEntry*)pmem_allocator_->offset2addr(first);
-            while (current && current->type == SORTED_DELETE_RECORD) {
-                current = (DLDataEntry*)pmem_allocator_->offset2addr(current->next);
-            }
+        virtual void SeekToLast() override
+        {
+            _iterator_internal_ = _sp_coll_->_dlinked_list_.Tail();
+            _prev_();
         }
 
-        virtual bool Valid() override {
-            return (current != nullptr) && (current->type != SORTED_DELETE_RECORD);
+        virtual bool Valid() override
+        {
+            return _valid_;
         }
 
-        virtual bool Next() override {
-            if (!Valid()) {
-                return false;
-            }
-            do {
-                current = (DLDataEntry*)pmem_allocator_->offset2addr(current->next);
-            } while (current && current->type == SORTED_DELETE_RECORD);
-            return current != nullptr;
+        virtual bool Next() override 
+        {
+            return _next_();
         }
 
-        virtual bool Prev() override {
-            if (!Valid()) {
-                return false;
-            }
-
-            do {
-                current = (DLDataEntry*)(pmem_allocator_->offset2addr(current->prev));
-            } while (current->type == SORTED_DELETE_RECORD);
-
-            if (current == skiplist_->header()->data_entry) {
-                current = nullptr;
-                return false;
-            }
-
-            return true;
+        virtual bool Prev() override
+        {
+            return _prev_();
         }
 
-        virtual std::string Key() override {
+        virtual std::string Key() override 
+        {
             if (!Valid())
+            {
                 return "";
-            pmem::obj::string_view key = Skiplist::UserKey(current->Key());
-            return std::string(key.data(), key.size());
+            }
+            auto view_key = UnorderedCollection::_key_(_iterator_internal_->Key());
+            return std::string(view_key.data(), view_key.size());
         }
 
-        virtual std::string Value() override {
+        virtual std::string Value() override 
+        {
             if (!Valid())
+            {
                 return "";
-            pmem::obj::string_view value = current->Value();
-            return std::string(value.data(), value.size());
+            }
+            auto view_value = _iterator_internal_->Value();
+            return std::string(view_value.data(), view_value.size());
         }
 
     private:
-        Skiplist* skiplist_;
-        std::shared_ptr<PMEMAllocator> pmem_allocator_;
-        DLDataEntry* current;
+        // Precede to next DLIST_DATA_RECORD, can start from head
+        void _next_()
+        {
+            assert(_iterator_internal_.valid());
+            assert(_iterator_internal_->type != DATA_ENTRY_TYPE::DLIST_TAIL_RECORD);
+            ++_iterator_internal_;
+            while (_iterator_internal_.valid())
+            {
+                _valid_ = false;
+                switch (_iterator_internal_->type)
+                {
+                case DATA_ENTRY_TYPE::DLIST_DATA_RECORD:
+                    _valid_ = true;
+                    return;
+                case DATA_ENTRY_TYPE::DLIST_DELETE_RECORD:
+                    ++_iterator_internal_;
+                    continue;
+                case DATA_ENTRY_TYPE::DLIST_TAIL_RECORD:
+                    return;
+                default:
+                    break;
+                }
+                break;
+            }
+            throw std::runtime_error{ "UnorderedCollection::Iterator::SeekToFirst fails!" };
+        }
+
+        void _prev_()
+        {
+            assert(_iterator_internal_.valid());
+            assert(_iterator_internal_->type != DATA_ENTRY_TYPE::DLIST_HEAD_RECORD);
+            --_iterator_internal_;
+            while (_iterator_internal_.valid())
+            {
+                _valid_ = false;
+                switch (_iterator_internal_->type)
+                {
+                case DATA_ENTRY_TYPE::DLIST_DATA_RECORD:
+                    _valid_ = true;
+                    return;
+                case DATA_ENTRY_TYPE::DLIST_DELETE_RECORD:
+                    --_iterator_internal_;
+                    continue;
+                case DATA_ENTRY_TYPE::DLIST_HEAD_RECORD:
+                    return;
+                default:
+                    break;
+                }
+                break;
+            }
+            throw std::runtime_error{ "UnorderedCollection::Iterator::SeekToFirst fails!" };
+        }
+
     };
 } // namespace KVDK_NAMESPACE
