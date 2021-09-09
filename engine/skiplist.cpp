@@ -17,6 +17,33 @@ pmem::obj::string_view SkiplistNode::UserKey() {
   return Skiplist::UserKey(data_entry->Key());
 }
 
+void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
+                           uint16_t start_height, uint16_t end_height,
+                           Splice *result_splice) {
+  assert(height >= start_height && end_height >= 1);
+  SkiplistNode *prev = this;
+  SkiplistNode *tmp;
+  for (int i = start_height; i >= end_height; i--) {
+    while (1) {
+      tmp = prev->Next(i).RawPointer();
+      if (tmp == nullptr) {
+        result_splice->nexts[i] = nullptr;
+        result_splice->prevs[i] = prev;
+        break;
+      }
+      int cmp = compare_string_view(key, tmp->UserKey());
+
+      if (cmp > 0) {
+        prev = tmp;
+      } else {
+        result_splice->nexts[i] = tmp;
+        result_splice->prevs[i] = prev;
+        break;
+      }
+    }
+  }
+}
+
 Status Skiplist::Rebuild() {
   Splice splice;
   HashEntry hash_entry;
@@ -88,30 +115,9 @@ bool Skiplist::SeekNode(const SkiplistNode *node, Splice *splice) {
 }
 
 void Skiplist::SeekKey(const pmem::obj::string_view &key, Splice *splice) {
-  SkiplistNode *prev = header_;
-  SkiplistNode *tmp;
-  // TODO: do not search from max height every time
-  for (int i = kMaxHeight; i >= 1; i--) {
-    while (1) {
-      tmp = prev->Next(i).RawPointer();
-      if (tmp == nullptr) {
-        splice->nexts[i] = nullptr;
-        splice->prevs[i] = prev;
-        break;
-      }
-      int cmp = compare_string_view(key, tmp->UserKey());
-
-      if (cmp > 0) {
-        prev = tmp;
-      } else {
-        splice->nexts[i] = tmp;
-        splice->prevs[i] = prev;
-        break;
-      }
-    }
-  }
-
-  DLDataEntry *prev_data_entry = prev->data_entry;
+  header_->SeekKey(key, header_->Height(), 1, splice);
+  assert(splice->prevs[1] != nullptr);
+  DLDataEntry *prev_data_entry = splice->prevs[1]->data_entry;
   while (1) {
     uint64_t next_data_entry_offset = prev_data_entry->next;
     if (next_data_entry_offset == kNullPmemOffset) {
@@ -137,68 +143,65 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
                                    const HashTable::KeyHashHint &hint,
                                    std::vector<SpinMutex *> &spins,
                                    DLDataEntry *updated_data_entry) {
-  {
-    spins.clear();
-    DLDataEntry *prev;
-    DLDataEntry *next;
-    if (updated_data_entry != nullptr) {
-      prev = (DLDataEntry *)(pmem_allocator_->offset2addr(
-          updated_data_entry->prev));
-      next = (DLDataEntry *)(pmem_allocator_->offset2addr(
-          updated_data_entry->next));
-      splice->prev_data_entry = prev;
-      splice->next_data_entry = next;
+  spins.clear();
+  DLDataEntry *prev;
+  DLDataEntry *next;
+  if (updated_data_entry != nullptr) {
+    prev =
+        (DLDataEntry *)(pmem_allocator_->offset2addr(updated_data_entry->prev));
+    next =
+        (DLDataEntry *)(pmem_allocator_->offset2addr(updated_data_entry->next));
+    splice->prev_data_entry = prev;
+    splice->next_data_entry = next;
+  } else {
+    SeekKey(insert_key, splice);
+    prev = splice->prev_data_entry;
+    next = splice->next_data_entry;
+    assert(prev == header_->data_entry ||
+           compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) < 0);
+  }
+
+  uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
+  uint64_t next_offset = pmem_allocator_->addr2offset(next);
+
+  // sequentially lock to prevent deadlock
+  auto cmp = [](const SpinMutex *s1, const SpinMutex *s2) {
+    return (uint64_t)s1 < (uint64_t)s2;
+  };
+  auto prev_hint = hash_table_->GetHint(prev->Key());
+  if (prev_hint.spin != hint.spin) {
+    spins.push_back(prev_hint.spin);
+  }
+  if (next != nullptr) {
+    auto next_hint = hash_table_->GetHint(next->Key());
+    if (next_hint.spin != hint.spin && next_hint.spin != prev_hint.spin) {
+      spins.push_back(next_hint.spin);
+    }
+  }
+  std::sort(spins.begin(), spins.end(), cmp);
+  for (int i = 0; i < spins.size(); i++) {
+    if (spins[i]->try_lock()) {
     } else {
-      SeekKey(insert_key, splice);
-      prev = splice->prev_data_entry;
-      next = splice->next_data_entry;
-      assert(prev == header_->data_entry ||
-             compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) <
-                 0);
-    }
-
-    uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
-    uint64_t next_offset = pmem_allocator_->addr2offset(next);
-
-    // sequentially lock to prevent deadlock
-    auto cmp = [](const SpinMutex *s1, const SpinMutex *s2) {
-      return (uint64_t)s1 < (uint64_t)s2;
-    };
-    auto prev_hint = hash_table_->GetHint(prev->Key());
-    if (prev_hint.spin != hint.spin) {
-      spins.push_back(prev_hint.spin);
-    }
-    if (next != nullptr) {
-      auto next_hint = hash_table_->GetHint(next->Key());
-      if (next_hint.spin != hint.spin && next_hint.spin != prev_hint.spin) {
-        spins.push_back(next_hint.spin);
-      }
-    }
-    std::sort(spins.begin(), spins.end(), cmp);
-    for (int i = 0; i < spins.size(); i++) {
-      if (spins[i]->try_lock()) {
-      } else {
-        for (int j = 0; j < i; j++) {
-          spins[j]->unlock();
-        }
-        spins.clear();
-        return false;
-      }
-    }
-
-    // Check the list has changed before we successfully locked
-    // For update, we do not need to check because the key is already locked
-    if (!updated_data_entry &&
-        (prev->next != next_offset || (next && next->prev != prev_offset))) {
-      for (auto &m : spins) {
-        m->unlock();
+      for (int j = 0; j < i; j++) {
+        spins[j]->unlock();
       }
       spins.clear();
       return false;
     }
-
-    return true;
   }
+
+  // Check the list has changed before we successfully locked
+  // For update, we do not need to check because the key is already locked
+  if (!updated_data_entry &&
+      (prev->next != next_offset || (next && next->prev != prev_offset))) {
+    for (auto &m : spins) {
+      m->unlock();
+    }
+    spins.clear();
+    return false;
+  }
+
+  return true;
 }
 
 void Skiplist::DeleteDataEntry(Splice *delete_splice,
@@ -267,5 +270,64 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
     }
   }
   return data_node;
+}
+
+void SortedIterator::Seek(const std::string &key) {
+  assert(skiplist_);
+  Splice splice;
+  skiplist_->SeekKey(key, &splice);
+  current = splice.next_data_entry;
+  while (current->type == SortedDeleteRecord) {
+    current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->next));
+  }
+}
+
+void SortedIterator::SeekToFirst() {
+  uint64_t first = skiplist_->header()->data_entry->next;
+  current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
+  while (current && current->type == SortedDeleteRecord) {
+    current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
+  }
+}
+
+bool SortedIterator::Next() {
+  if (!Valid()) {
+    return false;
+  }
+  do {
+    current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
+  } while (current && current->type == SortedDeleteRecord);
+  return current != nullptr;
+}
+
+bool SortedIterator::Prev() {
+  if (!Valid()) {
+    return false;
+  }
+
+  do {
+    current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
+  } while (current->type == SortedDeleteRecord);
+
+  if (current == skiplist_->header()->data_entry) {
+    current = nullptr;
+    return false;
+  }
+
+  return true;
+}
+
+std::string SortedIterator::Key() {
+  if (!Valid())
+    return "";
+  pmem::obj::string_view key = Skiplist::UserKey(current->Key());
+  return std::string(key.data(), key.size());
+}
+
+std::string SortedIterator::Value() {
+  if (!Valid())
+    return "";
+  pmem::obj::string_view value = current->Value();
+  return std::string(value.data(), value.size());
 }
 } // namespace KVDK_NAMESPACE
