@@ -782,7 +782,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     }
 
     std::vector<SpinMutex *> spins;
-    thread_local Skiplist::Splice splice;
+    thread_local Splice splice;
     if (!skiplist->FindAndLockWritePos(&splice, user_key, hint, spins,
                                        found ? &data_entry : nullptr)) {
       continue;

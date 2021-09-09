@@ -17,6 +17,8 @@ namespace KVDK_NAMESPACE {
 static const int kMaxHeight = 32;
 static const uint16_t kCacheLevel = 3;
 
+struct Splice;
+
 /* Format:
  * next pointers | DataEntry on pmem | level | cached key size | cached key
  * We only cache key if level > kCache level or there are enough space in
@@ -24,8 +26,10 @@ static const uint16_t kCacheLevel = 3;
  * */
 struct SkiplistNode {
 public:
+  // Tagged pointers means this node has been logically removed from the list
   std::atomic<TaggedPointer<SkiplistNode>> next[0];
-  DLDataEntry *data_entry; // data entry on pmem
+  // Doubly linked data entry on PMem
+  DLDataEntry *data_entry;
   // TODO: save memory
   uint16_t height;
   uint16_t cached_key_size;
@@ -51,6 +55,9 @@ public:
     }
     return node;
   }
+
+  void SeekKey(const pmem::obj::string_view &key, uint16_t start_height,
+               uint16_t end_height, Splice *result_splice);
 
   uint16_t Height() { return height; }
 
@@ -141,32 +148,6 @@ public:
                                   skiplist_key.size() - 8);
   }
 
-  struct Splice {
-    SkiplistNode *nexts[kMaxHeight + 1];
-    SkiplistNode *prevs[kMaxHeight + 1];
-    DLDataEntry *prev_data_entry;
-    DLDataEntry *next_data_entry;
-
-    void Recompute(const pmem::obj::string_view &key, int l) {
-      while (1) {
-        SkiplistNode *tmp = prevs[l]->Next(l).RawPointer();
-        if (tmp == nullptr) {
-          nexts[l] = nullptr;
-          break;
-        }
-
-        int cmp = compare_string_view(key, tmp->UserKey());
-
-        if (cmp > 0) {
-          prevs[l] = tmp;
-        } else {
-          nexts[l] = tmp;
-          break;
-        }
-      }
-    }
-  };
-
   void SeekKey(const pmem::obj::string_view &key, Splice *splice);
 
   bool SeekNode(const SkiplistNode *node, Splice *splice);
@@ -204,72 +185,51 @@ public:
       : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current(nullptr) {
   }
 
-  virtual void Seek(const std::string &key) override {
-    assert(skiplist_);
-    Skiplist::Splice splice;
-    skiplist_->SeekKey(key, &splice);
-    current = splice.next_data_entry;
-    while (current->type == SortedDeleteRecord) {
-      current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->next));
-    }
-  }
+  virtual void Seek(const std::string &key) override;
 
-  virtual void SeekToFirst() override {
-    uint64_t first = skiplist_->header()->data_entry->next;
-    current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
-    while (current && current->type == SortedDeleteRecord) {
-      current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
-    }
-  }
+  virtual void SeekToFirst() override;
 
   virtual bool Valid() override {
     return (current != nullptr) && (current->type != SortedDeleteRecord);
   }
 
-  virtual bool Next() override {
-    if (!Valid()) {
-      return false;
-    }
-    do {
-      current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
-    } while (current && current->type == SortedDeleteRecord);
-    return current != nullptr;
-  }
+  virtual bool Next() override;
 
-  virtual bool Prev() override {
-    if (!Valid()) {
-      return false;
-    }
+  virtual bool Prev() override;
 
-    do {
-      current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
-    } while (current->type == SortedDeleteRecord);
+  virtual std::string Key() override;
 
-    if (current == skiplist_->header()->data_entry) {
-      current = nullptr;
-      return false;
-    }
-
-    return true;
-  }
-
-  virtual std::string Key() override {
-    if (!Valid())
-      return "";
-    pmem::obj::string_view key = Skiplist::UserKey(current->Key());
-    return std::string(key.data(), key.size());
-  }
-
-  virtual std::string Value() override {
-    if (!Valid())
-      return "";
-    pmem::obj::string_view value = current->Value();
-    return std::string(value.data(), value.size());
-  }
+  virtual std::string Value() override;
 
 private:
   Skiplist *skiplist_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   DLDataEntry *current;
+};
+
+struct Splice {
+  SkiplistNode *nexts[kMaxHeight + 1];
+  SkiplistNode *prevs[kMaxHeight + 1];
+  DLDataEntry *prev_data_entry;
+  DLDataEntry *next_data_entry;
+
+  void Recompute(const pmem::obj::string_view &key, int l) {
+    while (1) {
+      SkiplistNode *tmp = prevs[l]->Next(l).RawPointer();
+      if (tmp == nullptr) {
+        nexts[l] = nullptr;
+        break;
+      }
+
+      int cmp = compare_string_view(key, tmp->UserKey());
+
+      if (cmp > 0) {
+        prevs[l] = tmp;
+      } else {
+        nexts[l] = tmp;
+        break;
+      }
+    }
+  }
 };
 } // namespace KVDK_NAMESPACE
