@@ -98,7 +98,7 @@ if __name__ == "__main__":
         print("Scan sorted-type kv")
         os.system("{0} {1} > {2}".format(exec, new_para, report))
         # read + update
-        new_para = para + " -fill=0 -type=sorted -read_ratio=0.9 -existing_keys_ratio=0"
+        new_para = para + " -fill=0 -type=sorted -read_ratio=0.9"
         report = report_path + "sorted_vs{}_ru91_thread{}".format(vs, benchmark_threads)
         print("Mixed read/update sorted-type kv")
         os.system("{0} {1} > {2}".format(exec, new_para, report))
