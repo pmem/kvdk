@@ -91,25 +91,20 @@ public:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
             uint32_t num_buckets_per_slot,
             const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-            uint32_t write_threads)
+            uint32_t write_threads) try
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
-        hash_bucket_size_(hash_bucket_size), pmem_allocator_(pmem_allocator),
+        hash_bucket_size_(hash_bucket_size),
+        pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)) {
-    // main_buckets_ = dram_allocator_->offset2addr(
-    //     (dram_allocator_->Allocate(hash_bucket_size * hash_bucket_num)
-    //          .space_entry.offset));
-    try {
-      // Zero initialized
-      main_buckets_ = new char[hash_bucket_size * hash_bucket_num]{};
-    } catch (const std::bad_alloc &e) {
-      GlobalLogger.Error("Memory overflow!\n");
-      // return Status::MemoryOverflow;
-    }
+    main_buckets_ = new char[hash_bucket_size * hash_bucket_num]{};
 
     slots_.resize(hash_bucket_num / num_buckets_per_slot);
     hash_bucket_entries_.resize(hash_bucket_num, 0);
+  } catch (const std::bad_alloc &e) {
+    GlobalLogger.Error("Memory overflow when allocating HashTable!\n");
+    throw; // If we cannot build the HashTable, the program should crash
   }
 
   KeyHashHint GetHint(const pmem::obj::string_view &key) {
