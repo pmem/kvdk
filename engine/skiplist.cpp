@@ -115,6 +115,7 @@ bool Skiplist::SeekNode(const SkiplistNode *node, Splice *splice) {
 }
 
 void Skiplist::SeekKey(const pmem::obj::string_view &key, Splice *splice) {
+  splice->header = header_;
   header_->SeekKey(key, header_->Height(), 1, splice);
   assert(splice->prevs[1] != nullptr);
   DLDataEntry *prev_data_entry = splice->prevs[1]->data_entry;
