@@ -238,7 +238,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       }
 
       if (should_insert) {
-        uint64_t offset;
+        uint64_t new_hash_offset;
+        uint64_t old_data_offset;
         if (dl_entry) {
           SkiplistNode *dram_node;
           if (!found) {
@@ -251,40 +252,43 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
                 GlobalLogger.Error("Memory overflow in recovery\n");
                 return Status::MemoryOverflow;
               }
-              offset = (uint64_t)dram_node;
+              new_hash_offset = (uint64_t)dram_node;
             } else {
-              offset = pmem_allocator_->addr2offset(pmem_data_entry);
+              new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
             }
             // Hash entry won't be reused during data recovering so we don't
             // neet to check status here
             hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
-                                offset,
+                                new_hash_offset,
                                 height > 0 ? HashOffsetType::SkiplistNode
                                            : HashOffsetType::DLDataEntry);
           } else {
             if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
               dram_node = (SkiplistNode *)hash_entry.offset;
-              offset = pmem_allocator_->addr2offset(dram_node->data_entry);
+              old_data_offset =
+                  pmem_allocator_->addr2offset(dram_node->data_entry);
               dram_node->data_entry = (DLDataEntry *)pmem_data_entry;
               entry_base->header.data_type = recovering_data_entry->type;
             } else {
-              offset = pmem_allocator_->addr2offset(pmem_data_entry);
+              old_data_offset = hash_entry.offset;
               hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
-                                  offset, HashOffsetType::DLDataEntry);
+                                  pmem_allocator_->addr2offset(pmem_data_entry),
+                                  HashOffsetType::DLDataEntry);
             }
-            pmem_allocator_->Free(
-                SizedSpaceEntry(offset, existing_data_entry->header.b_size,
-                                existing_data_entry->timestamp));
+            pmem_allocator_->Free(SizedSpaceEntry(
+                old_data_offset, existing_data_entry->header.b_size,
+                existing_data_entry->timestamp));
           }
         } else {
-          offset = pmem_allocator_->addr2offset(pmem_data_entry);
+          new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
           bool free_space =
               entry_base->header.status == HashEntryStatus::Updating;
           hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
-                              offset, HashOffsetType::DataEntry);
+                              new_hash_offset, HashOffsetType::DataEntry);
           if (free_space) {
+            old_data_offset = hash_entry.offset;
             pmem_allocator_->Free(SizedSpaceEntry(
-                hash_entry.offset, existing_data_entry->header.b_size,
+                old_data_offset, existing_data_entry->header.b_size,
                 existing_data_entry->timestamp));
           }
         }
@@ -719,7 +723,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
       auto entry_base_status = entry_base->header.status;
       hash_table_->Insert(hint, entry_base, dt, offset,
                           dram_node ? HashOffsetType::SkiplistNode
-                               : HashOffsetType::DLDataEntry);
+                                    : HashOffsetType::DLDataEntry);
       if (entry_base_status == HashEntryStatus::Updating) {
         pmem_allocator_->Free(SizedSpaceEntry(
             hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
