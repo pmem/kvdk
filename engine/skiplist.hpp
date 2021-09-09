@@ -208,28 +208,29 @@ private:
 };
 
 struct Splice {
+  SkiplistNode *header;
   SkiplistNode *nexts[kMaxHeight + 1];
   SkiplistNode *prevs[kMaxHeight + 1];
   DLDataEntry *prev_data_entry;
   DLDataEntry *next_data_entry;
 
   void Recompute(const pmem::obj::string_view &key, int l) {
+    SkiplistNode *start_node;
+    uint16_t start_height = l;
     while (1) {
-      SkiplistNode *tmp = prevs[l]->Next(l).RawPointer();
-      if (tmp == nullptr) {
-        nexts[l] = nullptr;
-        break;
-      }
-
-      int cmp = compare_string_view(key, tmp->UserKey());
-
-      if (cmp > 0) {
-        prevs[l] = tmp;
+      if (prevs[start_height]->Next(start_height).Tag() != 0) {
+        start_height++;
+        if (start_height > kMaxHeight) {
+          start_node = header;
+          break;
+        }
       } else {
-        nexts[l] = tmp;
+        start_node = prevs[start_height];
         break;
       }
     }
+
+    start_node->SeekKey(key, start_height, l, this);
   }
 };
 } // namespace KVDK_NAMESPACE
