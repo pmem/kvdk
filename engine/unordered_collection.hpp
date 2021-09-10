@@ -87,14 +87,15 @@ namespace KVDK_NAMESPACE
         /// For locking, locking only
         std::shared_ptr<HashTable> _sp_hash_table_;
 
-        DLinkedList _dlinked_list_;
+        DLDataEntry* _pmp_dlist_record_;
+        std::shared_ptr<DLinkedList> _sp_dlinked_list_;
         std::string _name_;
         std::uint64_t _id_;
 
         friend class UnorderedIterator;
 
     public:
-        /// Create UnorderedCollection
+        /// Create UnorderedCollection and persist it on PMem
         UnorderedCollection
         (
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
@@ -106,13 +107,18 @@ namespace KVDK_NAMESPACE
         try :
             _sp_pmem_allocator_{ sp_pmem_allocator },
             _sp_hash_table_{ sp_hash_table },
-            _dlinked_list_{ sp_pmem_allocator, timestamp },
+            _pmp_dlist_record_{ nullptr },
+            _sp_dlinked_list_{ std::make_shared(sp_pmem_allocator, timestamp) },
             _name_{ name },
             _id_{ id }
         {
             auto space_list_record = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
             if (space_list_record.size == 0)
             {
+                DLinkedList::Deallocate(_sp_dlinked_list_->Head());
+                DLinkedList::Deallocate(_sp_dlinked_list_->Tail());
+                _sp_dlinked_list_->_pmp_head_ = nullptr;
+                _sp_dlinked_list_->_pmp_tail_ = nullptr;
                 throw std::bad_alloc{ "Fail to allocate space for UnorderedCollection" };
             }
             std::uint64_t offset_list_record = space_list_record.space_entry.offset;
@@ -126,20 +132,18 @@ namespace KVDK_NAMESPACE
 
                 // checksum can only be calculated with complete meta
                 entry_list_record.header.b_size = space_list_record.size;
-                entry_list_record.header.checksum = DLinkedList::_check_sum_(entry_list_record, _name_, _id_view_(_id_));
+                entry_list_record.header.checksum = DLinkedList::_check_sum_(entry_list_record, _name_, _id_to_view_(_id_));
 
-                entry_list_record.prev = _dlinked_list_.Head()._get_offset_();
-                entry_list_record.next = _dlinked_list_.Tail()._get_offset_();
+                entry_list_record.prev = _sp_dlinked_list_->Head()._get_offset_();
+                entry_list_record.next = _sp_dlinked_list_->Tail()._get_offset_();
             }
-            DLinkedList::_persist_record_(pmp_list_record, entry_list_record, _name_, _id_view_(_id_));
+            DLinkedList::_persist_record_(pmp_list_record, entry_list_record, _name_, _id_to_view_(_id_));
         }
         catch (std::bad_alloc const& ex)
         {
-            DLinkedList::Deallocate(_dlinked_list_.Head());
-            DLinkedList::Deallocate(_dlinked_list_.Tail());
-            _dlinked_list_._pmp_head_ = nullptr;
-            _dlinked_list_._pmp_tail_ = nullptr;
-            return;
+            std::cerr << ex.what() << std::endl;
+            std::cerr << "Fail to create UnorderedCollection object!" << std::endl;
+            throw;
         }
 
         /// Recover UnorderedCollection from DLIST_RECORD
@@ -151,48 +155,64 @@ namespace KVDK_NAMESPACE
         ) : 
             _sp_pmem_allocator_{ sp_pmem_allocator },
             _sp_hash_table_{ sp_hash_table },
-            _dlinked_list_
-            {
-                _sp_pmem_allocator_->offset2addr(pmp_dlist_record->prev),
-                _sp_pmem_allocator_->offset2addr(pmp_dlist_record->next),
-                _sp_pmem_allocator_
+            _sp_dlinked_list_
+            { 
+                std::make_shared
+                (
+                    _sp_pmem_allocator_->offset2addr(pmp_dlist_record->prev),
+                    _sp_pmem_allocator_->offset2addr(pmp_dlist_record->next),
+                    _sp_pmem_allocator_
+                )
             },
             _name_{ pmp_dlist_record->Key() },
             _id_{ pmp_dlist_record->Value() }
         {
         }
 
+
+
         uint64_t id() override { return _id_; }
 
         std::string const& name() { return _name_; }
 
     private:
-        inline static pmem::obj::string_view _key_(pmem::obj::string_view internal_key) 
+        inline static pmem::obj::string_view _extract_key_(pmem::obj::string_view internal_key)
         {
             constexpr size_t sz_id = sizeof(decltype(_id_));
+            assert(sz_id < internal_key.size() && "internal_key does not has space for key");
             return pmem::obj::string_view(internal_key.data() + sz_id, internal_key.size() + sz_id);
         }
 
-        inline static std::string _internal_key_(pmem::obj::string_view key, std::uint64_t id)
+        inline static std::uint64_t _extract_id_(pmem::obj::string_view internal_key)
+        {
+            std::uint64_t id;
+            assert(sizeof(decltype(id)) <= internal_key.size() && "internal_key is smaller than the size of an id!");
+            memcpy(&id, internal_key.data(), sizeof(decltype(id)));
+            return id;
+        }
+
+        inline static std::string _make_internal_key_(std::uint64_t id, pmem::obj::string_view key)
         {
             return _id_to_string_(id) + key;
         }
 
-        inline static pmem::obj::string_view _id_view_(std::uint64_t id)
+        /// reference to const id to prevent local variable destruction, which will invalidify string_view
+        inline static pmem::obj::string_view _id_to_view_(std::uint64_t const& id)
         {
             return pmem::obj::string_view{ &id, sizeof(decltype(id)) };
         }
 
-        inline static std::uint64_t _view_to_id_(pmem::obj::string_view id_view)
+        inline static std::uint64_t _view_to_id_(pmem::obj::string_view view)
         {
             std::uint64_t id;
-            assert(sizeof(decltype(id)) == id_view.size() && "id_view does not match the size of an id!");
-            memcpy(&id, id_view.data(), sizeof(decltype(id)));
+            assert(sizeof(decltype(id)) == view.size() && "id_view does not match the size of an id!");
+            memcpy(&id, view.data(), sizeof(decltype(id)));
             return id;
         }
 
         /// Try lock three adjacent nodes.
         /// Check UniqueLockTriplet<SpinMutex>::owns_lock() for success or not.
+        /// Also accepts UnorderedIterator by implicit casting
         UniqueLockTriplet<SpinMutex> _try_lock_three_(DLinkedList::Iterator iter_mid)
         {
             DLinkedList::Iterator iter_prev{ iter_mid }; --iter_prev;
@@ -212,6 +232,7 @@ namespace KVDK_NAMESPACE
             );
             return unique_lock_triplet;
         }
+    
     };
 
     class UnorderedIterator : public Iterator 
@@ -223,23 +244,32 @@ namespace KVDK_NAMESPACE
         bool _valid_;
 
     public:
+        /// Construct UnorderedIterator and SeekToFirst().
         UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll) :
             _sp_coll_{ sp_coll },
-            _iterator_internal_{ _sp_coll_->_dlinked_list_.First() },
+            _iterator_internal_{ nullptr },
             _valid_{ false }
         {
             SeekToFirst();
         }
 
+        UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry* pmp) :
+            _sp_coll_{ sp_coll },
+            _iterator_internal_{ _sp_coll_->_sp_dlinked_list_, pmp },
+            _valid_{ false }
+        {
+            _valid_ = UnorderedCollection::_extract_id_(pmp->Key())
+        }
+
         virtual void SeekToFirst() override
         {
-            _iterator_internal_ = _sp_coll_->_dlinked_list_.Head();
+            _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Head();
             _next_();
         }
 
         virtual void SeekToLast() override
         {
-            _iterator_internal_ = _sp_coll_->_dlinked_list_.Tail();
+            _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Tail();
             _prev_();
         }
 
@@ -264,7 +294,7 @@ namespace KVDK_NAMESPACE
             {
                 return "";
             }
-            auto view_key = UnorderedCollection::_key_(_iterator_internal_->Key());
+            auto view_key = UnorderedCollection::_extract_key_(_iterator_internal_->Key());
             return std::string(view_key.data(), view_key.size());
         }
 
@@ -276,6 +306,11 @@ namespace KVDK_NAMESPACE
             }
             auto view_value = _iterator_internal_->Value();
             return std::string(view_value.data(), view_value.size());
+        }
+
+        operator DLinkedList::Iterator() const
+        {
+            return _iterator_internal_;
         }
 
     private:
@@ -303,7 +338,7 @@ namespace KVDK_NAMESPACE
                 }
                 break;
             }
-            throw std::runtime_error{ "UnorderedCollection::Iterator::SeekToFirst fails!" };
+            throw std::runtime_error{ "UnorderedCollection::Iterator::_next_() fails!" };
         }
 
         void _prev_()
@@ -329,7 +364,7 @@ namespace KVDK_NAMESPACE
                 }
                 break;
             }
-            throw std::runtime_error{ "UnorderedCollection::Iterator::SeekToFirst fails!" };
+            throw std::runtime_error{ "UnorderedCollection::Iterator::_prev_() fails!" };
         }
 
     };

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 
 #include <libpmemobj++/string_view.hpp>
 #include <libpmem/libpmem.h>
@@ -52,7 +53,8 @@ namespace KVDK_NAMESPACE
         (
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
             std::uint64_t timestamp = 0ULL
-        ) :
+        ) 
+        try:
             _pmp_head_{ nullptr },
             _pmp_tail_{ nullptr },
             _sp_pmem_allocator_{ sp_pmem_allocator }
@@ -62,13 +64,13 @@ namespace KVDK_NAMESPACE
             auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
             if (space_head.size == 0)
             {
-                return;
+                throw std::bad_alloc{ "Fail to allocate space for head of DLinkedList" };
             }
             auto space_tail = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
             if (space_tail.size() == 0)
             {
                 _sp_pmem_allocator_->Free(space_head);
-                return;
+                throw std::bad_alloc{ "Fail to allocate space for tail of DLinkedList" };
             }
 
             std::uint64_t offset_head = space_head.space_entry.offset;
@@ -112,6 +114,12 @@ namespace KVDK_NAMESPACE
             _persist_record_(pmp_head, entry_head, str_empty, str_empty);
             _pmp_head_ = pmp_head;
             _pmp_tail_ = pmp_tail;
+        }
+        catch (std::bad_alloc const& ex)
+        {
+            std::cerr << ex.what() << std::endl;
+            std::cerr << "Fail to create DLinkedList object!" << std::endl;
+            throw;
         }
 
         /// Create DLinkedList from existing head and tail node. Used for recovery.
@@ -280,7 +288,7 @@ namespace KVDK_NAMESPACE
         }
 
         /// Emplace between iter_prev and iter_next
-        /// When fail to Emplace, return invalid iterator
+        /// When fail to Emplace, throw bad_alloc
         /// If system fails, it is guaranteed the dlinked_list is in one of the following state:
         ///     1) Nothing emplaced
         ///     2) entry emplaced but not linked
@@ -296,6 +304,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const value,
             DATA_ENTRY_TYPE type = DATA_ENTRY_TYPE::DLIST_DATA_RECORD
         )
+        try
         {
             assert(iter_prev.valid() && "Invalid iterator in dlinked_list!");
             assert(iter_next.valid() && "Invalid iterator in dlinked_list!");
@@ -303,8 +312,7 @@ namespace KVDK_NAMESPACE
             auto space = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() + value.size());
             if (space.size == 0)
             {
-                // When fail to Emplace, return invalid iterator
-                return Iterator{};
+                throw std::bad_alloc{ "Fail to allocate space for emplace of DLinkedList" };
             }
             std::uint64_t offset = space.space_entry.offset;
             void* pmp = _sp_pmem_allocator_->offset2addr(offset);
@@ -331,6 +339,12 @@ namespace KVDK_NAMESPACE
 
             return Iterator{ std::make_shared(*this), pmp };
         }
+        catch (std::bad_alloc const& ex)
+        {
+            std::cerr << ex.what() << std::endl;
+            std::cerr << "Fail to create DLinkedList object!" << std::endl;
+            throw;
+        }
 
     public:
         class Iterator
@@ -350,8 +364,7 @@ namespace KVDK_NAMESPACE
 
         public:
             /// Constructors and Destructors
-                /// Invalid iterator indicating error
-            explicit Iterator() = default;
+            explicit Iterator() = delete;
 
             explicit Iterator(std::shared_ptr<DLinkedList> sp_list) :
                 _sp_dlinked_list_{ sp_list },
