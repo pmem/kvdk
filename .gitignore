@@ -41,3 +41,5 @@ build/
 .cache/
 /CMakeSettings.json
 /extern/libpmem
+
+/scripts/results*
