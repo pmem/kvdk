@@ -26,11 +26,25 @@ namespace KVDK_NAMESPACE
         std::unique_lock<Lock> _third_;
 
     public:
-        bool try_lock_three(Lock first, Lock second, Lock third)
+        UniqueLockTriplet(Lock& first, Lock& second, Lock& third, std::defer_lock_t) :
+            _first_ { first, std::defer_lock },
+            _second_ { second, std::defer_lock },
+            _third_ { third, std::defer_lock },
         {
-            bool s1 = _first_.try_lock(first);
-            bool s2 = _second_.try_lock(second);
-            bool s3 = _third_.try_lock(third);
+        }
+
+        UniqueLockTriplet(UniqueLockTriplet&& other) :
+            _first_{ std::move(other._first_) },
+            _second_{ std::move(other._second_) },
+            _third_{ std::move(other._third_) }
+        {
+        }
+
+        bool try_lock_three()
+        {
+            bool s1 = _first_.try_lock();
+            bool s2 = _second_.try_lock();
+            bool s3 = _third_.try_lock();
             if (s1 && s2 && s3)
             {
                 return true;
@@ -44,11 +58,11 @@ namespace KVDK_NAMESPACE
             }
         }
 
-        void lock_three(Lock first, Lock second, Lock third)
+        void lock_three()
         {
-            _first_.lock(first);
-            _second_.lock(second);
-            _third_.lock(third);
+            _first_.lock();
+            _second_.lock();
+            _third_.lock();
         }
 
         void unlock()
@@ -169,8 +183,6 @@ namespace KVDK_NAMESPACE
         {
         }
 
-
-
         uint64_t id() override { return _id_; }
 
         std::string const& name() { return _name_; }
@@ -210,26 +222,24 @@ namespace KVDK_NAMESPACE
             return id;
         }
 
-        /// Try lock three adjacent nodes.
-        /// Check UniqueLockTriplet<SpinMutex>::owns_lock() for success or not.
+        /// Make UniqueLockTriplet<SpinMutex> to lock adjacent three nodes, not locked yet.
         /// Also accepts UnorderedIterator by implicit casting
-        UniqueLockTriplet<SpinMutex> _try_lock_three_(DLinkedList::Iterator iter_mid)
+        UniqueLockTriplet<SpinMutex> _make_unique_lock_triplet_(DLinkedList::Iterator iter_mid, SpinMutex* spin_mid = nullptr)
         {
             DLinkedList::Iterator iter_prev{ iter_mid }; --iter_prev;
             DLinkedList::Iterator iter_next{ iter_mid }; ++iter_next;
 
-            auto str_key_prev = iter_prev->Key();
-            auto str_key_mid = iter_mid->Key();
-            auto str_key_next = iter_next->Key();
+            SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
+            SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
+            SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
 
-            UniqueLockTriplet<SpinMutex> unique_lock_triplet;
-
-            unique_lock_triplet.try_lock_three
-            (
-                *_sp_hash_table_->GetHint(str_key_prev).spin,
-                *_sp_hash_table_->GetHint(str_key_mid).spin,
-                *_sp_hash_table_->GetHint(str_key_next).spin,
-            );
+            UniqueLockTriplet<SpinMutex> unique_lock_triplet
+            {
+                *p_spin_1,
+                *p_spin_2,
+                *p_spin_3,
+                std::defer_lock
+            };
             return unique_lock_triplet;
         }
     
