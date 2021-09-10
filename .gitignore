@@ -40,6 +40,4 @@ cmake-build-*
 build/
 .cache/
 
-scripts/
-!scripts/basic_benchmark.py
-!scripts/cppstyle
+scripts/results*
