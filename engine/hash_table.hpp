@@ -96,7 +96,7 @@ public:
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
         hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(new DRAMAllocator(write_threads)),
+        dram_allocator_(new ChunkBasedAllocator(write_threads)),
         pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)) {
@@ -144,7 +144,7 @@ private:
   const uint64_t num_entries_per_bucket_;
   std::vector<Slot> slots_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  std::unique_ptr<DRAMAllocator> dram_allocator_;
+  std::unique_ptr<ChunkBasedAllocator> dram_allocator_;
   char *main_buckets_;
 };
 } // namespace KVDK_NAMESPACE
