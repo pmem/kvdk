@@ -17,18 +17,26 @@ namespace KVDK_NAMESPACE {
 
 // Chunk based simple implementation
 // TODO: optimize, implement free
-class DRAMAllocator : Allocator {
+class ChunkBasedAllocator : Allocator {
 public:
   SizedSpaceEntry Allocate(uint64_t size) override;
   void Free(const SizedSpaceEntry &entry) override;
   inline char *offset2addr(uint64_t offset) { return (char *)offset; }
   inline uint64_t addr2offset(void *addr) { return (uint64_t)addr; }
-  DRAMAllocator(uint32_t write_threads) : thread_cache_(write_threads) {}
+  ChunkBasedAllocator(uint32_t write_threads) : thread_cache_(write_threads) {}
+  ~ChunkBasedAllocator() {
+    for (auto &tc : thread_cache_) {
+      for (void *chunk : tc.allocated_chunks) {
+        free(chunk);
+      }
+    }
+  }
 
 private:
   struct ThreadCache {
     alignas(64) char *chunk_addr = nullptr;
     uint64_t usable_bytes = 0;
+    std::vector<void *> allocated_chunks;
   };
 
   const uint32_t chunk_size_ = (1 << 20);
