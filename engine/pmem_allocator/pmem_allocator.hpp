@@ -46,7 +46,9 @@ public:
     if (block_offset == kNullPmemOffset) {
       return nullptr;
     } else {
-      assert(block_offset < max_block_offset_ && "Trying to access invalid offset");
+      assert(block_offset < max_block_offset_ / num_segment_blocks_ *
+                                num_segment_blocks_ &&
+             "Trying to access invalid offset");
       return pmem_ + block_offset * block_size_;
     }
   }

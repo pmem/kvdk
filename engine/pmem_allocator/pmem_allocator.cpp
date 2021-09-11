@@ -90,7 +90,8 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
   segment_space_entry->space_entry.offset =
       offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
   // Don't fetch block that may excess PMem file boundary
-  if (segment_space_entry->space_entry.offset > max_block_offset_ - num_segment_blocks_) {
+  if (segment_space_entry->space_entry.offset >
+      max_block_offset_ - num_segment_blocks_) {
     return false;
   }
   segment_space_entry->size = num_segment_blocks_;
@@ -105,9 +106,8 @@ void PMEMAllocator::FetchSegmentSpace(SizedSpaceEntry *segment_entry) {
       if (offset_head_.compare_exchange_strong(offset,
                                                offset + num_segment_blocks_)) {
         Free(*segment_entry);
-        *segment_entry = SizedSpaceEntry(
-            offset, std::min(num_segment_blocks_, max_block_offset_ - offset),
-            0);
+        *segment_entry = SizedSpaceEntry{offset, num_segment_blocks_, 0};
+        assert(offset <= max_block_offset_ - num_segment_blocks_);
         break;
       }
       continue;
