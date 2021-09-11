@@ -13,6 +13,8 @@ set(OPT "-msse4 -mavx -mavx2 -O2 -fno-omit-frame-pointer -momit-leaf-frame-point
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     set(FLAGS "-g -DNDEBUG ${OPT}")
+elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(FLAGS "-g -O0")
 else ()
     set(FLAGS "-g ${OPT}")
 endif ()
