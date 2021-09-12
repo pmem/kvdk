@@ -73,7 +73,7 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
   size_t sz_wasted = pmem_size_ % (block_size_ * num_segment_blocks_);
   if (sz_wasted != 0)
     GlobalLogger.Error(
-        "Pmem file size not aligned with segment size, %llu space is wasted",
+        "Pmem file size not aligned with segment size, %llu space is wasted.\n",
         sz_wasted);
   free_list_ = std::make_shared<Freelist>(
       num_segment_blocks, num_write_threads,
