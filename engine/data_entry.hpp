@@ -40,8 +40,7 @@ const uint16_t DLDataEntryType =
 const uint16_t DeleteDataEntryType =
     (SortedDeleteRecord | HashListDeleteRecord | StringDeleteRecord);
 
-const uint16_t StringDataEntryType =
-    (StringDataRecord | StringDeleteRecord);
+const uint16_t StringDataEntryType = (StringDataRecord | StringDeleteRecord);
 
 struct DataHeader {
   DataHeader() = default;
