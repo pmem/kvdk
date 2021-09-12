@@ -39,7 +39,12 @@ cmake-build-*
 
 build/
 .cache/
+<<<<<<< HEAD
 /CMakeSettings.json
 /extern/libpmem
 
 /scripts/results*
+=======
+
+/scripts/result*
+>>>>>>> b729f95 (update)
