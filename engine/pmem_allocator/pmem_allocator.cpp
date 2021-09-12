@@ -70,6 +70,9 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
   }
   max_block_offset_ =
       pmem_size_ / block_size_ / num_segment_blocks_ * num_segment_blocks_;
+  // num_segment_blocks and block_size are persisted and never changes.
+  // No need to worry user modify those parameters so that records may be
+  // skipped.
   size_t sz_wasted = pmem_size_ % (block_size_ * num_segment_blocks_);
   if (sz_wasted != 0)
     GlobalLogger.Error(
