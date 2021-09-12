@@ -128,9 +128,6 @@ Status KVEngine::MaybeInitWriteThread() {
 Status KVEngine::RestoreData(uint64_t thread_id) {
   write_thread.id = thread_id;
 
-  // Only DataEntry part is loaded from PMem for recovering
-  DataEntry data_entry_recovering;
-
   SizedSpaceEntry segment_recovering;
   bool fetch = false;
   uint64_t cnt = 0;
@@ -145,8 +142,12 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       fetch = false;
     }
 
+    // Only DataEntry part is loaded from PMem for recovering
+    DataEntry data_entry_recovering;
+
     void *pmp_record_recovering =
         pmem_allocator_->offset2addr(segment_recovering.space_entry.offset);
+        
     memcpy(&data_entry_recovering, pmp_record_recovering, sizeof(DataEntry));
 
     // reach the of of this segment
