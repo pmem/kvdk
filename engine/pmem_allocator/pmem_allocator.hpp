@@ -56,6 +56,9 @@ public:
   // transfer address of allocated space to block_offset
   inline uint64_t addr2offset(void *addr) {
     if (addr) {
+      assert((static_cast<char*>(addr)-pmem_)/block_size_ 
+      < max_block_offset_/num_segment_blocks_*num_segment_blocks_
+      && "Trying to create invalid offset");
       return ((char *)addr - pmem_) / block_size_;
     } else {
       return kNullPmemOffset;
