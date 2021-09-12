@@ -37,7 +37,7 @@ Status Skiplist::Rebuild() {
         (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
     pmem::obj::string_view key = next_data_entry->Key();
     Status s = hash_table_->Search(hash_table_->GetHint(key), key,
-                                   SORTED_DATA_RECORD | SORTED_DELETE_RECORD,
+                                   SortedDataRecord | SortedDeleteRecord,
                                    &hash_entry, &data_entry, &entry_base,
                                    HashTable::SearchPurpose::Read);
     // these nodes should be already created during data restoring
