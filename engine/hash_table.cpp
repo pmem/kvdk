@@ -101,7 +101,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->header.data_type == STRING_DELETE_RECORD &&
+          && (*entry_base)->header.data_type == StringDeleteRecord &&
           (*entry_base)->header.key_prefix != key_hash_prefix) {
         reusable_entry = *entry_base;
       }

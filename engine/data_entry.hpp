@@ -9,39 +9,47 @@
 
 namespace KVDK_NAMESPACE {
 
-enum DATA_ENTRY_TYPE : uint16_t {
-  STRING_DATA_RECORD = 1,
-  STRING_DELETE_RECORD = 1 << 1,
+enum DataEntryType : uint16_t {
+  StringDataRecord = 1,
+  StringDeleteRecord = 1 << 1,
 
-  SORTED_DATA_RECORD = 1 << 2,
-  SORTED_DELETE_RECORD = 1 << 3,
-  SORTED_HEADER_RECORD = 1 << 4,
+  SortedDataRecord = 1 << 2,
+  SortedDeleteRecord = 1 << 3,
+  SortedHeaderRecord = 1 << 4,
 
-  HASH_LIST_DATA_RECORD = 1 << 5,
-  HASH_LIST_DELETE_RECORD = 1 << 6,
-  HASH_LIST_HEADER_RECORD = 1 << 7,
+  HashListDataRecord = 1 << 5,
+  HashListDeleteRecord = 1 << 6,
+  HashListHeaderRecord = 1 << 7,
 
+<<<<<<< HEAD
   DLIST_DATA_RECORD = 1 << 8,
   DLIST_DELETE_RECORD = (1 << 8) * 2,
   DLIST_HEAD_RECORD = (1 << 8) * 3,
   DLIST_TAIL_RECORD = (1 << 8) * 4,
   DLIST_RECORD = (1 << 8) *5,
+=======
+  DlistDataRecord = 1 << 8,
+  DlistDeleteRecord = 1 << 9,
+  DlistHeadRecord = 1 << 10,
+  DlistTailRecord = 1 << 11,
+  DlistRecord = 1 << 12,
+>>>>>>> 6b93780 (refactor RestoreData and rename DATA_ENTRY_TYPE)
 
-  PADDING = 1 << 15,
+  Padding = 1 << 15,
 };
 
 const uint16_t SortedDataEntryType =
-    (SORTED_DATA_RECORD | SORTED_DELETE_RECORD | SORTED_HEADER_RECORD);
+    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);
 
 const uint16_t DLDataEntryType =
-    (SORTED_DATA_RECORD | SORTED_DELETE_RECORD | SORTED_HEADER_RECORD |
-     HASH_LIST_DATA_RECORD | HASH_LIST_DELETE_RECORD | HASH_LIST_HEADER_RECORD);
+    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
+     HashListDataRecord | HashListDeleteRecord | HashListHeaderRecord);
 
 const uint16_t DeleteDataEntryType =
-    (SORTED_DELETE_RECORD | HASH_LIST_DELETE_RECORD | STRING_DELETE_RECORD);
+    (SortedDeleteRecord | HashListDeleteRecord | StringDeleteRecord);
 
 const uint16_t StringDataEntryType =
-    (STRING_DATA_RECORD | STRING_DELETE_RECORD);
+    (StringDataRecord | StringDeleteRecord);
 
 struct DataHeader {
   DataHeader() = default;
