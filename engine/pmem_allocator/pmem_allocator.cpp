@@ -25,9 +25,9 @@ void PMEMAllocator::PopulateSpace() {
   int pu = get_usable_pu();
   if (pu <= 0) {
     pu = 1;
-  } else if (pu > 32) {
-    // 32 is a moderate concurrent number for writing PMem.
-    pu = 32;
+  } else if (pu > 16) {
+    // 16 is a moderate concurrent number for writing PMem.
+    pu = 16;
   }
   for (int i = 0; i < pu; i++) {
     ths.emplace_back([=]() {
