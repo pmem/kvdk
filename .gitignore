@@ -41,6 +41,7 @@ build/
 .cache/
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 /CMakeSettings.json
 /extern/libpmem
 
@@ -53,3 +54,7 @@ build/
 
 scripts/result*
 >>>>>>> e13db52 (Seg fault (#62))
+=======
+
+scripts/result*
+>>>>>>> df99734 (path with time)

@@ -1,4 +1,6 @@
 import os
+import time
+import datetime
 
 n_thread = 48
 bench_string = False
@@ -29,6 +31,7 @@ def Confirm(dir):
 
 if __name__ == "__main__":
     Confirm(path)
+    report_path = report_path + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
         num = data_size // (vs + 8)
