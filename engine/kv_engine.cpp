@@ -173,6 +173,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       break;
     }
     default:
+      GlobalLogger.Error("Invalid record: %d", static_cast<int>(data_entry_recovering.type));
       throw std::runtime_error{"Invalid Record type when recovering"};
     }
 
@@ -211,6 +212,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       break;
     }
     default:
+      GlobalLogger.Error("Invalid record: %d", static_cast<int>(data_entry_recovering.type));
       throw std::runtime_error{"Invalid Record type when recovering"};
     }
   }
