@@ -118,11 +118,11 @@ private:
 
   Status RestoreData(uint64_t thread_id);
 
-  Status _RestoreSkiplistOrHashRecord_(DataEntry *recovering_data_entry,
+  Status RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
                                        DataEntry *pmem_data_entry);
 
   uint32_t
-  _GetChecksumForSkiplistOrHashRecord_(DataEntry *recovering_data_entry,
+  GetChecksumForSkiplistOrHashRecord(DataEntry *recovering_data_entry,
                                        DataEntry *pmem_data_entry);
 
   Status RestorePendingBatch();

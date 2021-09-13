@@ -167,7 +167,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
     case DataEntryType::StringDeleteRecord: {
-      checksum = _GetChecksumForSkiplistOrHashRecord_(
+      checksum = GetChecksumForSkiplistOrHashRecord(
           &data_entry_recovering,
           static_cast<DataEntry *>(pmp_record_recovering));
       break;
@@ -216,7 +216,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
     case DataEntryType::StringDeleteRecord: {
-      Status s = _RestoreSkiplistOrHashRecord_(
+      Status s = RestoreSkiplistOrHashRecord(
           &data_entry_recovering,
           static_cast<DataEntry *>(pmp_record_recovering));
       if (s != Status::Ok)
@@ -242,7 +242,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 }
 
 uint32_t
-KVEngine::_GetChecksumForSkiplistOrHashRecord_(DataEntry *recovering_data_entry,
+KVEngine::GetChecksumForSkiplistOrHashRecord(DataEntry *recovering_data_entry,
                                                DataEntry *pmem_data_entry) {
   bool dl_entry = recovering_data_entry->type & (DLDataEntryType);
   uint32_t checksum = dl_entry ? ((DLDataEntry *)pmem_data_entry)->Checksum()
@@ -250,7 +250,7 @@ KVEngine::_GetChecksumForSkiplistOrHashRecord_(DataEntry *recovering_data_entry,
   return checksum;
 }
 
-Status KVEngine::_RestoreSkiplistOrHashRecord_(DataEntry *recovering_data_entry,
+Status KVEngine::RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
                                                DataEntry *pmem_data_entry) {
   char existing_data_entry_buffer[sizeof(DLDataEntry)];
   DataEntry *existing_data_entry = (DataEntry *)existing_data_entry_buffer;
