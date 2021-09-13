@@ -174,6 +174,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     }
     case DataEntryType::Padding:
     case DataEntryType::Empty: {
+      data_entry_recovering.type = DataEntryType::Padding;
       checksum = 0;
       break;
     }
@@ -183,7 +184,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
       msg.append("Record type: ");
       msg.append(std::to_string(data_entry_recovering.type));
       msg.append("\n");
-      throw std::runtime_error{msg};
+      GlobalLogger.Error(msg.data());
+      // Report Corrupted Record, but still release it and continues
+      data_entry_recovering.type = DataEntryType::Padding;
     }
     }
 
