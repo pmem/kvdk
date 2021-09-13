@@ -790,6 +790,14 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
     return Status::InvalidConfiguration;
   }
 
+  auto sz_segment = configs.pmem_block_size * configs.pmem_segment_blocks;
+  if (configs.pmem_file_size % sz_segment != 0) {
+    GlobalLogger.Error("pmem file size should align to segment "
+                       "size(pmem_segment_blocks*pmem_block_size) (%d bytes)\n",
+                       configs.pmem_block_size);
+    return Status::InvalidConfiguration;
+  }
+
   if (configs.pmem_segment_blocks * configs.pmem_block_size *
           configs.max_write_threads >
       configs.pmem_file_size) {
