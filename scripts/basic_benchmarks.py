@@ -42,10 +42,11 @@ if __name__ == "__main__":
             instance_space,
             kvdk_max_write_threads,
             collections)
-        os.system("rm -rf {0}".format(path))
         print("{0} {1} > {2}".format(exec, para, report_path))
 
         if (bench_string):
+            os.system("rm -rf {0}".format(path))
+            
             # Benchmark string-type data
             # fill uniform distributed kv
             new_para = para + " -fill=1 -type=string"
@@ -76,6 +77,7 @@ if __name__ == "__main__":
             report = report_path + "string_vs{}_update_thread{}".format(vs, benchmark_threads)
             print("Update string-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
+
             # read + update
             new_para = para + " -fill=0 -type=string -read_ratio=0.9"
             report = report_path + "string_vs{}_ru91_thread{}".format(vs, benchmark_threads)
