@@ -10,6 +10,7 @@
 namespace KVDK_NAMESPACE {
 
 enum DataEntryType : uint16_t {
+  Empty = 0,
   StringDataRecord = 1,
   StringDeleteRecord = 1 << 1,
 

@@ -176,13 +176,14 @@ try
       break;
     }
     case DataEntryType::Padding:
+    case DataEntryType::Empty:
     {
       checksum = 0;
       break;
     }
     default:
     {
-      std::string msg{"Invalid Record type when recovering. Trying checksum. "};
+      std::string msg{"Corrupted Record met when recovering. It has invalid type."};
       msg.append("Record type: ");
       msg.append(std::to_string(data_entry_recovering.type));
       msg.append("\n");
