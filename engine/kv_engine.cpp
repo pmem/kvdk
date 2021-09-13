@@ -1085,6 +1085,7 @@ Status KVEngine::Set(const pmem::obj::string_view key,
     return Status::InvalidDataSize;
   }
   return HashSetImpl(key, value, StringDataRecord);
+<<<<<<< HEAD
 }
 
 Status SearchUnorderedCollection(pmem::obj::string_view const collection_name)
@@ -1111,6 +1112,8 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
                          pmem::obj::string_view const value)
 {
   throw std::runtime_error{"Unimplemented yet!"};
+=======
+>>>>>>> 3660c05 (Refactor data restoring (#64))
 }
 
 std::shared_ptr<Iterator>
