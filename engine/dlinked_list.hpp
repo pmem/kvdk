@@ -177,7 +177,7 @@ namespace KVDK_NAMESPACE
             Iterator iter_prev{ iter }; --iter_prev;
             Iterator iter_next{ iter };
 
-            return _emplace_between_(iter_prev, iter_next, timestamp, key, value);
+            return _emplace_between_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
         }
 
         /// Emplace right after iter.
@@ -196,7 +196,7 @@ namespace KVDK_NAMESPACE
             Iterator iter_prev{ iter };
             Iterator iter_next{ iter }; ++iter_prev;
 
-            return _emplace_between_(iter_prev, iter_next, timestamp, key, value);
+            return _emplace_between_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
         }
 
         /// In-place swap out an old record for new one
@@ -207,16 +207,18 @@ namespace KVDK_NAMESPACE
             Iterator iter,
             std::uint64_t timestamp,    // Timestamp can only be supplied by caller
             pmem::obj::string_view const key,
-            pmem::obj::string_view const value
+            pmem::obj::string_view const value,
+            DataEntryType type
         )
         {
             assert(iter.valid() && "Invalid iterator in dlinked_list!");
+            assert(type == DataEntryType::DlistDataRecord || type == DataEntryType::DlistDeleteRecord);
 
             // Swap happens between iter_prev and iter_next
             Iterator iter_prev{ iter }; --iter_prev;
             Iterator iter_next{ iter }; ++iter_prev;
 
-            return _emplace_between_(iter_prev, iter_next, timestamp, key, value);
+            return _emplace_between_(iter_prev, iter_next, timestamp, key, value, type);
         }
 
         Iterator First()
@@ -255,7 +257,7 @@ namespace KVDK_NAMESPACE
         }
 
     private:
-        inline void _persist_record_
+        inline static void _persist_record_
         (
             void* pmp,
             DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller

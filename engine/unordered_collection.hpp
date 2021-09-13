@@ -89,7 +89,7 @@ namespace KVDK_NAMESPACE
     };
 
     /// UnorderedCollection is stored in DRAM, indexed by HashTable
-    /// A Record DLIST_RECORD is stored in PMem,
+    /// A Record DlistRecord is stored in PMem,
     /// whose key is the name of the UnorderedCollection
     /// and value holds the id of the Collection 
     /// prev and next pointer holds the head and tail of DLinkedList for recovery
@@ -122,7 +122,7 @@ namespace KVDK_NAMESPACE
             _sp_pmem_allocator_{ sp_pmem_allocator },
             _sp_hash_table_{ sp_hash_table },
             _pmp_dlist_record_{ nullptr },
-            _sp_dlinked_list_{ std::make_shared(sp_pmem_allocator, timestamp) },
+            _sp_dlinked_list_{ std::make_shared<DLinkedList>(sp_pmem_allocator, timestamp) },
             _name_{ name },
             _id_{ id }
         {
@@ -133,14 +133,14 @@ namespace KVDK_NAMESPACE
                 DLinkedList::Deallocate(_sp_dlinked_list_->Tail());
                 _sp_dlinked_list_->_pmp_head_ = nullptr;
                 _sp_dlinked_list_->_pmp_tail_ = nullptr;
-                throw std::bad_alloc{ "Fail to allocate space for UnorderedCollection" };
+                throw std::bad_alloc{};
             }
             std::uint64_t offset_list_record = space_list_record.space_entry.offset;
             void* pmp_list_record = _sp_pmem_allocator_->offset2addr(offset_list_record);
             DLDataEntry entry_list_record;  // Set up entry with meta
             {
                 entry_list_record.timestamp = timestamp;
-                entry_list_record.type = DATA_ENTRY_TYPE::DLIST_RECORD;
+                entry_list_record.type = DataEntryType::DlistRecord;
                 entry_list_record.k_size = _name_.size();
                 entry_list_record.v_size = sizeof(decltype(_id_));
 
@@ -171,7 +171,7 @@ namespace KVDK_NAMESPACE
             _sp_hash_table_{ sp_hash_table },
             _sp_dlinked_list_
             { 
-                std::make_shared
+                std::make_shared<DLinkedList>
                 (
                     _sp_pmem_allocator_->offset2addr(pmp_dlist_record->prev),
                     _sp_pmem_allocator_->offset2addr(pmp_dlist_record->next),
@@ -179,7 +179,7 @@ namespace KVDK_NAMESPACE
                 )
             },
             _name_{ pmp_dlist_record->Key() },
-            _id_{ pmp_dlist_record->Value() }
+            _id_{ _view_to_id_(pmp_dlist_record->Value()) }
         {
         }
 
@@ -205,13 +205,13 @@ namespace KVDK_NAMESPACE
 
         inline static std::string _make_internal_key_(std::uint64_t id, pmem::obj::string_view key)
         {
-            return _id_to_string_(id) + key;
+            return std::string{_id_to_view_(id)} + std::string{ key };
         }
 
         /// reference to const id to prevent local variable destruction, which will invalidify string_view
-        inline static pmem::obj::string_view _id_to_view_(std::uint64_t const& id)
+        inline static pmem::obj::string_view _id_to_view_(std::uint64_t id)
         {
-            return pmem::obj::string_view{ &id, sizeof(decltype(id)) };
+            return pmem::obj::string_view{ reinterpret_cast<char*>(&id), sizeof(decltype(id)) };
         }
 
         inline static std::uint64_t _view_to_id_(pmem::obj::string_view view)
@@ -268,7 +268,8 @@ namespace KVDK_NAMESPACE
             _iterator_internal_{ _sp_coll_->_sp_dlinked_list_, pmp },
             _valid_{ false }
         {
-            _valid_ = UnorderedCollection::_extract_id_(pmp->Key())
+            _valid_ = false;
+            throw;
         }
 
         virtual void SeekToFirst() override
@@ -290,12 +291,14 @@ namespace KVDK_NAMESPACE
 
         virtual bool Next() override 
         {
-            return _next_();
+            _next_();
+            return _valid_;
         }
 
         virtual bool Prev() override
         {
-            return _prev_();
+            _prev_();
+            return _valid_;
         }
 
         virtual std::string Key() override 
@@ -328,53 +331,51 @@ namespace KVDK_NAMESPACE
         void _next_()
         {
             assert(_iterator_internal_.valid());
-            assert(_iterator_internal_->type != DATA_ENTRY_TYPE::DLIST_TAIL_RECORD);
+            assert(_iterator_internal_->type != DataEntryType::DlistTailRecord);
             ++_iterator_internal_;
             while (_iterator_internal_.valid())
             {
                 _valid_ = false;
                 switch (_iterator_internal_->type)
                 {
-                case DATA_ENTRY_TYPE::DLIST_DATA_RECORD:
+                case DataEntryType::DlistDataRecord:
                     _valid_ = true;
                     return;
-                case DATA_ENTRY_TYPE::DLIST_DELETE_RECORD:
+                case DataEntryType::DlistDeleteRecord:
                     ++_iterator_internal_;
                     continue;
-                case DATA_ENTRY_TYPE::DLIST_TAIL_RECORD:
+                case DataEntryType::DlistTailRecord:
                     return;
                 default:
                     break;
                 }
-                break;
+                throw std::runtime_error{ "UnorderedCollection::Iterator::_next_() fails!" };
             }
-            throw std::runtime_error{ "UnorderedCollection::Iterator::_next_() fails!" };
         }
 
         void _prev_()
         {
             assert(_iterator_internal_.valid());
-            assert(_iterator_internal_->type != DATA_ENTRY_TYPE::DLIST_HEAD_RECORD);
+            assert(_iterator_internal_->type != DataEntryType::DlistHeadRecord);
             --_iterator_internal_;
             while (_iterator_internal_.valid())
             {
                 _valid_ = false;
                 switch (_iterator_internal_->type)
                 {
-                case DATA_ENTRY_TYPE::DLIST_DATA_RECORD:
+                case DataEntryType::DlistDataRecord:
                     _valid_ = true;
                     return;
-                case DATA_ENTRY_TYPE::DLIST_DELETE_RECORD:
+                case DataEntryType::DlistDeleteRecord:
                     --_iterator_internal_;
                     continue;
-                case DATA_ENTRY_TYPE::DLIST_HEAD_RECORD:
+                case DataEntryType::DlistHeadRecord:
                     return;
                 default:
                     break;
                 }
-                break;
+                throw std::runtime_error{ "UnorderedCollection::Iterator::_prev_() fails!" };
             }
-            throw std::runtime_error{ "UnorderedCollection::Iterator::_prev_() fails!" };
         }
 
     };
