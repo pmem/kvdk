@@ -173,8 +173,13 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       break;
     }
     default:
+    {
       GlobalLogger.Error("Invalid record: %d", static_cast<int>(data_entry_recovering.type));
-      throw std::runtime_error{"Invalid Record type when recovering"};
+      std::string msg{"Invalid Record type when recovering."};
+      msg.append("Record type: ");
+      msg.append(std::to_string(data_entry_recovering.type));
+      throw std::runtime_error{msg};
+    }
     }
 
     if (data_entry_recovering.header.checksum != checksum) {
@@ -212,8 +217,13 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       break;
     }
     default:
+    {
       GlobalLogger.Error("Invalid record: %d", static_cast<int>(data_entry_recovering.type));
-      throw std::runtime_error{"Invalid Record type when recovering"};
+      std::string msg{"Invalid Record type when recovering."};
+      msg.append("Record type: ");
+      msg.append(std::to_string(data_entry_recovering.type));
+      throw std::runtime_error{msg};
+    }
     }
   }
   write_thread.id = -1;
