@@ -166,10 +166,15 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     case DataEntryType::SortedDeleteRecord:
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
-    case DataEntryType::StringDeleteRecord: {
+    case DataEntryType::StringDeleteRecord: 
+    {
       checksum = _GetChecksumForSkiplistOrHashRecord_(
           &data_entry_recovering,
           static_cast<DataEntry *>(pmp_record_recovering));
+      break;
+    }
+    case DataEntryType::Padding:
+    {
       break;
     }
     default:
