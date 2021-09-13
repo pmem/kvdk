@@ -12,7 +12,7 @@
 #include <iostream>
 
 #include <libpmemobj++/string_view.hpp>
-#include <libpmem/libpmem.h>
+#include <libpmem.h>
 
 
 #include "hash_table.hpp"
@@ -81,7 +81,7 @@ namespace KVDK_NAMESPACE
             DLDataEntry entry_head;  // Set up entry with meta
             {
                 entry_head.timestamp = timestamp;
-                entry_head.type = DATA_ENTRY_TYPE::DLIST_HEAD_RECORD;
+                entry_head.type = DataEntryType::DlistHeadRecord;
                 entry_head.k_size = 0;
                 entry_head.v_size = 0;
 
@@ -96,7 +96,7 @@ namespace KVDK_NAMESPACE
             DLDataEntry entry_tail;  // Set up entry with meta
             {
                 entry_tail.timestamp = timestamp;
-                entry_tail.type = DATA_ENTRY_TYPE::DLIST_TAIL_RECORD;
+                entry_tail.type = DataEntryType::DlistTailRecord;
                 entry_tail.k_size = 0;
                 entry_tail.v_size = 0;
 
@@ -134,6 +134,7 @@ namespace KVDK_NAMESPACE
             _sp_pmem_allocator_{ sp_pmem_allocator }
         {
             Iterator curr{ std::make_shared(*this), pmp_head };
+            assert(pmp_head->type == DataEntryType::DlistHeadRecord);
             do
             {
                 Iterator next{ curr }; ++next;
@@ -144,7 +145,7 @@ namespace KVDK_NAMESPACE
                     pmem_memcpy(&next->prev, &curr._get_offset_(), sizeof(decltype(next->prev)), PMEM_F_MEM_NONTEMPORAL);
                 }
                 curr = next;
-            } while (curr->type != DATA_ENTRY_TYPE::DLIST_TAIL_RECORD);
+            } while (curr->type != DataEntryType::DlistTailRecord);
             assert(_pmp_tail_ == curr._pmp_curr_);
         }
 
@@ -392,15 +393,14 @@ namespace KVDK_NAMESPACE
                 {
                     return false;
                 }
+                DataEntryType type_curr = _pmp_curr_->type;
                 bool ok =
                     (
-                        _pmp_curr_->type &
-                        (
-                            DATA_ENTRY_TYPE::DLIST_DATA_RECORD |
-                            DATA_ENTRY_TYPE::DLIST_DELETE_RECORD |
-                            DATA_ENTRY_TYPE::DLIST_HEAD_RECORD |
-                            DATA_ENTRY_TYPE::DLIST_TAIL_RECORD)
-                        );
+                        type_curr == DataEntryType::DlistHeadRecord ||
+                        type_curr == DataEntryType::DlistTailRecord ||
+                        type_curr == DataEntryType::DlistDataRecord ||
+                        type_curr == DataEntryType::DlistDeleteRecord
+                    );
                 return ok;
             }
 
