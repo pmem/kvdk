@@ -68,7 +68,16 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
     GlobalLogger.Error("Pmem map file %s size %lu less than expected %lu\n",
                        pmem_file.c_str(), pmem_size_, pmem_space);
   }
-  max_block_offset_ = pmem_size_ / block_size_;
+  max_block_offset_ =
+      pmem_size_ / block_size_ / num_segment_blocks_ * num_segment_blocks_;
+  // num_segment_blocks and block_size are persisted and never changes.
+  // No need to worry user modify those parameters so that records may be
+  // skipped.
+  size_t sz_wasted = pmem_size_ % (block_size_ * num_segment_blocks_);
+  if (sz_wasted != 0)
+    GlobalLogger.Error(
+        "Pmem file size not aligned with segment size, %llu space is wasted.\n",
+        sz_wasted);
   free_list_ = std::make_shared<Freelist>(
       num_segment_blocks, num_write_threads,
       std::make_shared<SpaceMap>(max_block_offset_), this);
@@ -89,9 +98,10 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
 
   segment_space_entry->space_entry.offset =
       offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
-  if (segment_space_entry->space_entry.offset >= max_block_offset_) {
+  // Don't fetch block that may excess PMem file boundary
+  if (segment_space_entry->space_entry.offset >
+      max_block_offset_ - num_segment_blocks_)
     return false;
-  }
   segment_space_entry->size = num_segment_blocks_;
   return true;
 }
@@ -104,9 +114,10 @@ void PMEMAllocator::FetchSegmentSpace(SizedSpaceEntry *segment_entry) {
       if (offset_head_.compare_exchange_strong(offset,
                                                offset + num_segment_blocks_)) {
         Free(*segment_entry);
-        *segment_entry = SizedSpaceEntry(
-            offset, std::min(num_segment_blocks_, max_block_offset_ - offset),
-            0);
+        *segment_entry = SizedSpaceEntry{offset, num_segment_blocks_, 0};
+        assert(segment_entry->space_entry.offset <=
+                   max_block_offset_ - num_segment_blocks_ &&
+               "Block may excess PMem file boundary");
         break;
       }
       continue;
