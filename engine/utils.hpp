@@ -85,8 +85,13 @@ inline int create_dir_if_missing(const std::string &name) {
   return res;
 }
 
-static int compare_string_view(const pmem::obj::string_view &src,
-                               const pmem::obj::string_view &target) {
+static inline std::string
+string_view_2_string(const pmem::obj::string_view &src) {
+  return std::string(src.data(), src.size());
+}
+
+static inline int compare_string_view(const pmem::obj::string_view &src,
+                                      const pmem::obj::string_view &target) {
   auto size = std::min(src.size(), target.size());
   for (uint32_t i = 0; i < size; i++) {
     if (src[i] != target[i]) {
