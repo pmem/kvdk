@@ -160,7 +160,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     segment_recovering.space_entry.offset +=
         data_entry_recovering.header.b_size;
 
-    uint32_t checksum;
+    uint32_t checksum{0};
     switch (data_entry_recovering.type) {
     case DataEntryType::SortedDataRecord:
     case DataEntryType::SortedDeleteRecord:
@@ -175,7 +175,6 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     case DataEntryType::Padding:
     case DataEntryType::Empty: {
       data_entry_recovering.type = DataEntryType::Padding;
-      checksum = 0;
       break;
     }
     default: {
