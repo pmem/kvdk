@@ -125,9 +125,7 @@ Status KVEngine::MaybeInitWriteThread() {
   return thread_manager_->MaybeInitThread(write_thread);
 }
 
-Status KVEngine::RestoreData(uint64_t thread_id)
-try
-{
+Status KVEngine::RestoreData(uint64_t thread_id) try {
   write_thread.id = thread_id;
 
   SizedSpaceEntry segment_recovering;
@@ -149,7 +147,7 @@ try
 
     void *pmp_record_recovering =
         pmem_allocator_->offset2addr(segment_recovering.space_entry.offset);
-        
+
     memcpy(&data_entry_recovering, pmp_record_recovering, sizeof(DataEntry));
 
     // reach the of of this segment
@@ -168,22 +166,20 @@ try
     case DataEntryType::SortedDeleteRecord:
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
-    case DataEntryType::StringDeleteRecord: 
-    {
+    case DataEntryType::StringDeleteRecord: {
       checksum = _GetChecksumForSkiplistOrHashRecord_(
           &data_entry_recovering,
           static_cast<DataEntry *>(pmp_record_recovering));
       break;
     }
     case DataEntryType::Padding:
-    case DataEntryType::Empty:
-    {
+    case DataEntryType::Empty: {
       checksum = 0;
       break;
     }
-    default:
-    {
-      std::string msg{"Corrupted Record met when recovering. It has invalid type."};
+    default: {
+      std::string msg{
+          "Corrupted Record met when recovering. It has invalid type."};
       msg.append("Record type: ");
       msg.append(std::to_string(data_entry_recovering.type));
       msg.append("\n");
@@ -217,8 +213,7 @@ try
     case DataEntryType::SortedDeleteRecord:
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
-    case DataEntryType::StringDeleteRecord: 
-    {
+    case DataEntryType::StringDeleteRecord: {
       Status s = _RestoreSkiplistOrHashRecord_(
           &data_entry_recovering,
           static_cast<DataEntry *>(pmp_record_recovering));
@@ -226,9 +221,9 @@ try
         return s;
       break;
     }
-    default:
-    {
-      std::string msg{"Invalid Record type when recovering. Trying restoring record. "};
+    default: {
+      std::string msg{
+          "Invalid Record type when recovering. Trying restoring record. "};
       msg.append("Record type: ");
       msg.append(std::to_string(data_entry_recovering.type));
       msg.append("\n");
@@ -239,13 +234,10 @@ try
   write_thread.id = -1;
   restored_.fetch_add(cnt);
   return Status::Ok;
-}
-catch(const std::runtime_error& e)
-{
+} catch (const std::runtime_error &e) {
   GlobalLogger.Error(e.what());
   return Status::NotSupported;
 }
-
 
 uint32_t
 KVEngine::_GetChecksumForSkiplistOrHashRecord_(DataEntry *recovering_data_entry,
