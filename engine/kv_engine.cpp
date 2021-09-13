@@ -125,7 +125,9 @@ Status KVEngine::MaybeInitWriteThread() {
   return thread_manager_->MaybeInitThread(write_thread);
 }
 
-Status KVEngine::RestoreData(uint64_t thread_id) {
+Status KVEngine::RestoreData(uint64_t thread_id)
+try
+{
   write_thread.id = thread_id;
 
   SizedSpaceEntry segment_recovering;
@@ -175,14 +177,15 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     }
     case DataEntryType::Padding:
     {
+      checksum = 0;
       break;
     }
     default:
     {
-      GlobalLogger.Error("Invalid record: %d", static_cast<int>(data_entry_recovering.type));
-      std::string msg{"Invalid Record type when recovering."};
+      std::string msg{"Invalid Record type when recovering. Trying checksum. "};
       msg.append("Record type: ");
       msg.append(std::to_string(data_entry_recovering.type));
+      msg.append("\n");
       throw std::runtime_error{msg};
     }
     }
@@ -213,7 +216,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     case DataEntryType::SortedDeleteRecord:
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
-    case DataEntryType::StringDeleteRecord: {
+    case DataEntryType::StringDeleteRecord: 
+    {
       Status s = _RestoreSkiplistOrHashRecord_(
           &data_entry_recovering,
           static_cast<DataEntry *>(pmp_record_recovering));
@@ -223,10 +227,10 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     }
     default:
     {
-      GlobalLogger.Error("Invalid record: %d", static_cast<int>(data_entry_recovering.type));
-      std::string msg{"Invalid Record type when recovering."};
+      std::string msg{"Invalid Record type when recovering. Trying restoring record. "};
       msg.append("Record type: ");
       msg.append(std::to_string(data_entry_recovering.type));
+      msg.append("\n");
       throw std::runtime_error{msg};
     }
     }
@@ -235,6 +239,12 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
   restored_.fetch_add(cnt);
   return Status::Ok;
 }
+catch(const std::runtime_error& e)
+{
+  GlobalLogger.Error(e.what());
+  return Status::NotSupported;
+}
+
 
 uint32_t
 KVEngine::_GetChecksumForSkiplistOrHashRecord_(DataEntry *recovering_data_entry,
