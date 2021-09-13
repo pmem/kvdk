@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <exception>
 
 #include <libpmemobj++/string_view.hpp>
 #include <libpmem.h>
@@ -59,7 +60,7 @@ namespace KVDK_NAMESPACE
             _pmp_tail_{ nullptr },
             _sp_pmem_allocator_{ sp_pmem_allocator }
         {
-            static constexpr std::string str_empty{""};
+            static std::string const str_empty{""};
             // head and tail only holds DLDataEntry. No id or collection name needed.
             auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
             if (space_head.size == 0)
