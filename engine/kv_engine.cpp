@@ -243,7 +243,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 
 uint32_t
 KVEngine::GetChecksumForSkiplistOrHashRecord(DataEntry *recovering_data_entry,
-                                               DataEntry *pmem_data_entry) {
+                                             DataEntry *pmem_data_entry) {
   bool dl_entry = recovering_data_entry->type & (DLDataEntryType);
   uint32_t checksum = dl_entry ? ((DLDataEntry *)pmem_data_entry)->Checksum()
                                : pmem_data_entry->Checksum();
@@ -251,7 +251,7 @@ KVEngine::GetChecksumForSkiplistOrHashRecord(DataEntry *recovering_data_entry,
 }
 
 Status KVEngine::RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
-                                               DataEntry *pmem_data_entry) {
+                                             DataEntry *pmem_data_entry) {
   char existing_data_entry_buffer[sizeof(DLDataEntry)];
   DataEntry *existing_data_entry = (DataEntry *)existing_data_entry_buffer;
   HashEntry hash_entry;
