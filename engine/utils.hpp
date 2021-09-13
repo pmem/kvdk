@@ -45,17 +45,6 @@ inline uint64_t fast_random() {
   return x * 0x2545F4914F6CDD1D;
 }
 
-inline int memcmp_16(const void *a, const void *b) {
-  register __m128i xmm0, xmm1;
-  xmm0 = _mm_loadu_si128((__m128i *)(a));
-  xmm1 = _mm_loadu_si128((__m128i *)(b));
-  __m128i diff = _mm_xor_si128(xmm0, xmm1);
-  if (_mm_testz_si128(diff, diff))
-    return 0; // equal
-  else
-    return 1; // non-equal
-}
-
 inline void memcpy_16(void *dst, const void *src) {
   __m128i m0 = _mm_loadu_si128(((const __m128i *)src) + 0);
   _mm_storeu_si128(((__m128i *)dst) + 0, m0);

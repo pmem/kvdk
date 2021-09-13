@@ -200,7 +200,8 @@ private:
 
   class SpaceCmp {
   public:
-    bool operator()(const SizedSpaceEntry &s1, const SizedSpaceEntry &s2) {
+    bool operator()(const SizedSpaceEntry &s1,
+                    const SizedSpaceEntry &s2) const {
       return s1.size > s2.size;
     }
   };
