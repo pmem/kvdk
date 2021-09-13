@@ -1,13 +1,12 @@
 import os
-import time
 import datetime
 
-n_thread = 48
-bench_string = False
+n_thread = 64
+bench_string = True
 bench_sorted = True
 
 path = "/mnt/pmem0/kvdk"
-report_path = "./results/"
+report_path = "./results-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
@@ -31,7 +30,6 @@ def Confirm(dir):
 
 if __name__ == "__main__":
     Confirm(path)
-    report_path = report_path + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
         num = data_size // (vs + 8)
