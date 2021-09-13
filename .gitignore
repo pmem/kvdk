@@ -40,4 +40,8 @@ cmake-build-*
 build/
 .cache/
 
+<<<<<<< HEAD
 /scripts/result*
+=======
+scripts/result*
+>>>>>>> main
