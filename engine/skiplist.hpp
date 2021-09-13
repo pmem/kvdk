@@ -203,7 +203,7 @@ public:
     Skiplist::Splice splice;
     skiplist_->Seek(key, &splice);
     current = splice.next_data_entry;
-    while (current->type == SORTED_DELETE_RECORD) {
+    while (current->type == SortedDeleteRecord) {
       current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->next));
     }
   }
@@ -211,13 +211,13 @@ public:
   virtual void SeekToFirst() override {
     uint64_t first = skiplist_->header()->data_entry->next;
     current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
-    while (current && current->type == SORTED_DELETE_RECORD) {
+    while (current && current->type == SortedDeleteRecord) {
       current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
     }
   }
 
   virtual bool Valid() override {
-    return (current != nullptr) && (current->type != SORTED_DELETE_RECORD);
+    return (current != nullptr) && (current->type != SortedDeleteRecord);
   }
 
   virtual bool Next() override {
@@ -226,7 +226,7 @@ public:
     }
     do {
       current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
-    } while (current && current->type == SORTED_DELETE_RECORD);
+    } while (current && current->type == SortedDeleteRecord);
     return current != nullptr;
   }
 
@@ -237,7 +237,7 @@ public:
 
     do {
       current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
-    } while (current->type == SORTED_DELETE_RECORD);
+    } while (current->type == SortedDeleteRecord);
 
     if (current == skiplist_->header()->data_entry) {
       current = nullptr;

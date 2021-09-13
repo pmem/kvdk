@@ -125,192 +125,256 @@ Status KVEngine::MaybeInitWriteThread() {
   return thread_manager_->MaybeInitThread(write_thread);
 }
 
-Status KVEngine::RestoreData(uint64_t thread_id) {
+Status KVEngine::RestoreData(uint64_t thread_id) try {
   write_thread.id = thread_id;
-  char existing_data_entry_buffer[sizeof(DLDataEntry)];
-  char recovering_data_entry_buffer[sizeof(DLDataEntry)];
-  DataEntry *existing_data_entry = (DataEntry *)existing_data_entry_buffer;
-  DataEntry *recovering_data_entry = (DataEntry *)recovering_data_entry_buffer;
-  HashEntry hash_entry;
 
-  SizedSpaceEntry segment_space;
+  SizedSpaceEntry segment_recovering;
   bool fetch = false;
   uint64_t cnt = 0;
   while (true) {
-    if (segment_space.size == 0) {
+    if (segment_recovering.size == 0) {
       fetch = true;
     }
     if (fetch) {
-      if (!pmem_allocator_->FreeAndFetchSegment(&segment_space)) {
+      if (!pmem_allocator_->FreeAndFetchSegment(&segment_recovering)) {
         break;
       }
       fetch = false;
     }
 
-    HashEntry *entry_base = nullptr;
+    // Only DataEntry part is loaded from PMem for recovering
+    DataEntry data_entry_recovering;
 
-    DataEntry *pmem_data_entry = (DataEntry *)pmem_allocator_->offset2addr(
-        segment_space.space_entry.offset);
-    memcpy(recovering_data_entry, pmem_data_entry,
-           data_entry_size(pmem_data_entry->type));
+    void *pmp_record_recovering =
+        pmem_allocator_->offset2addr(segment_recovering.space_entry.offset);
+
+    memcpy(&data_entry_recovering, pmp_record_recovering, sizeof(DataEntry));
 
     // reach the of of this segment
-    if (recovering_data_entry->header.b_size == 0) {
+    if (data_entry_recovering.header.b_size == 0) {
       fetch = true;
       continue;
     }
 
-    bool dl_entry = recovering_data_entry->type & (DLDataEntryType);
-    uint32_t checksum = dl_entry ? ((DLDataEntry *)pmem_data_entry)->Checksum()
-                                 : pmem_data_entry->Checksum();
-    if (recovering_data_entry->header.checksum != checksum ||
-        recovering_data_entry->type == PADDING) {
-      pmem_allocator_->Free(
-          SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
-                          recovering_data_entry->header.b_size,
-                          recovering_data_entry->timestamp));
-      if (recovering_data_entry->header.checksum != checksum) {
-        pmem_data_entry->type = PADDING;
-        pmem_persist(&pmem_data_entry->type, sizeof(DATA_ENTRY_TYPE));
-      }
+    segment_recovering.size -= data_entry_recovering.header.b_size;
+    segment_recovering.space_entry.offset +=
+        data_entry_recovering.header.b_size;
 
-      segment_space.size -= recovering_data_entry->header.b_size;
-      segment_space.space_entry.offset += recovering_data_entry->header.b_size;
+    uint32_t checksum{0};
+    switch (data_entry_recovering.type) {
+    case DataEntryType::SortedDataRecord:
+    case DataEntryType::SortedDeleteRecord:
+    case DataEntryType::SortedHeaderRecord:
+    case DataEntryType::StringDataRecord:
+    case DataEntryType::StringDeleteRecord: {
+      checksum = GetChecksumForSkiplistOrHashRecord(
+          &data_entry_recovering,
+          static_cast<DataEntry *>(pmp_record_recovering));
+      break;
+    }
+    case DataEntryType::Padding:
+    case DataEntryType::Empty: {
+      data_entry_recovering.type = DataEntryType::Padding;
+      break;
+    }
+    default: {
+      std::string msg{
+          "Corrupted Record met when recovering. It has invalid type."};
+      msg.append("Record type: ");
+      msg.append(std::to_string(data_entry_recovering.type));
+      msg.append("\n");
+      GlobalLogger.Error(msg.data());
+      // Report Corrupted Record, but still release it and continues
+      data_entry_recovering.type = DataEntryType::Padding;
+    }
+    }
+
+    if (data_entry_recovering.header.checksum != checksum) {
+      DataEntryType type_padding = DataEntryType::Padding;
+      pmem_memcpy(&static_cast<DataEntry *>(pmp_record_recovering)->type,
+                  &type_padding, sizeof(DataEntryType), PMEM_F_MEM_NONTEMPORAL);
+      data_entry_recovering.type = DataEntryType::Padding;
+    }
+    if (data_entry_recovering.type == DataEntryType::Padding) {
+      pmem_allocator_->Free(
+          SizedSpaceEntry(pmem_allocator_->addr2offset(pmp_record_recovering),
+                          data_entry_recovering.header.b_size,
+                          data_entry_recovering.timestamp));
       continue;
     }
 
     cnt++;
 
-    if (recovering_data_entry->timestamp >
-        thread_res_[thread_id].newest_restored_ts) {
-      thread_res_[thread_id].newest_restored_ts =
-          recovering_data_entry->timestamp;
+    auto ts_recovering = data_entry_recovering.timestamp;
+    if (ts_recovering > thread_res_[thread_id].newest_restored_ts) {
+      thread_res_[thread_id].newest_restored_ts = ts_recovering;
     }
 
-    pmem::obj::string_view pmem_key =
-        dl_entry ? ((DLDataEntry *)pmem_data_entry)->Key()
-                 : pmem_data_entry->Key();
-    std::string key(pmem_key.data(), pmem_key.size());
-
-    if (recovering_data_entry->type == SORTED_HEADER_RECORD) {
-      uint64_t id;
-      memcpy_8(&id, ((DLDataEntry *)pmem_data_entry)->Value().data());
-      Skiplist *skiplist;
-      {
-        std::lock_guard<std::mutex> lg(list_mu_);
-        skiplists_.push_back(
-            std::make_shared<Skiplist>((DLDataEntry *)pmem_data_entry, key, id,
-                                       pmem_allocator_, hash_table_));
-        skiplist = skiplists_.back().get();
-      }
-      compare_excange_if_larger(list_id_, id + 1);
-
-      // Here key is the collection name
-      auto hint = hash_table_->GetHint(key);
-      std::lock_guard<SpinMutex> lg(*hint.spin);
-      Status s = hash_table_->Search(
-          hint, key, SORTED_HEADER_RECORD, &hash_entry, existing_data_entry,
-          &entry_base, HashTable::SearchPurpose::Recover);
-      if (s == Status::MemoryOverflow) {
+    switch (data_entry_recovering.type) {
+    case DataEntryType::SortedDataRecord:
+    case DataEntryType::SortedDeleteRecord:
+    case DataEntryType::SortedHeaderRecord:
+    case DataEntryType::StringDataRecord:
+    case DataEntryType::StringDeleteRecord: {
+      Status s = RestoreSkiplistOrHashRecord(
+          &data_entry_recovering,
+          static_cast<DataEntry *>(pmp_record_recovering));
+      if (s != Status::Ok)
         return s;
-      }
-      assert(s == Status::NotFound);
-      hash_table_->Insert(hint, entry_base, SORTED_HEADER_RECORD,
-                          (uint64_t)skiplist, HashOffsetType::Skiplist);
-    } else {
-      auto hint = hash_table_->GetHint(key);
-      std::lock_guard<SpinMutex> lg(*hint.spin);
-      Status s = hash_table_->Search(
-          hint, key,
-          dl_entry ? (SORTED_DATA_RECORD | SORTED_DELETE_RECORD)
-                   : (STRING_DELETE_RECORD | STRING_DATA_RECORD),
-          &hash_entry, existing_data_entry, &entry_base,
-          HashTable::SearchPurpose::Recover);
-      if (s == Status::MemoryOverflow) {
-        return s;
-      }
-      bool found = s == Status::Ok;
-      bool should_insert = true;
-      if (found) {
-        if (existing_data_entry->timestamp >=
-            recovering_data_entry->timestamp) {
-          should_insert = false;
-        }
-      }
-
-      if (should_insert) {
-        uint64_t new_hash_offset;
-        uint64_t old_data_offset;
-        if (dl_entry) {
-          SkiplistNode *dram_node;
-          if (!found) {
-            auto height = Skiplist::RandomHeight();
-            if (height > 0) {
-              dram_node =
-                  SkiplistNode::NewNode(Skiplist::UserKey(key),
-                                        (DLDataEntry *)pmem_data_entry, height);
-              if (dram_node == nullptr) {
-                GlobalLogger.Error("Memory overflow in recovery\n");
-                return Status::MemoryOverflow;
-              }
-              new_hash_offset = (uint64_t)dram_node;
-            } else {
-              new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
-            }
-            // Hash entry won't be reused during data recovering so we don't
-            // neet to check status here
-            hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
-                                new_hash_offset,
-                                height > 0 ? HashOffsetType::SkiplistNode
-                                           : HashOffsetType::DLDataEntry);
-          } else {
-            if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-              dram_node = (SkiplistNode *)hash_entry.offset;
-              old_data_offset =
-                  pmem_allocator_->addr2offset(dram_node->data_entry);
-              dram_node->data_entry = (DLDataEntry *)pmem_data_entry;
-              entry_base->header.data_type = recovering_data_entry->type;
-            } else {
-              old_data_offset = hash_entry.offset;
-              hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
-                                  pmem_allocator_->addr2offset(pmem_data_entry),
-                                  HashOffsetType::DLDataEntry);
-            }
-            pmem_allocator_->Free(SizedSpaceEntry(
-                old_data_offset, existing_data_entry->header.b_size,
-                existing_data_entry->timestamp));
-          }
-        } else {
-          new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
-          bool free_space =
-              entry_base->header.status == HashEntryStatus::Updating;
-          hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
-                              new_hash_offset, HashOffsetType::DataEntry);
-          if (free_space) {
-            old_data_offset = hash_entry.offset;
-            pmem_allocator_->Free(SizedSpaceEntry(
-                old_data_offset, existing_data_entry->header.b_size,
-                existing_data_entry->timestamp));
-          }
-        }
-        // If a delete record is the only existing data entry of a key, then we
-        // can reuse the hash entry and free the data entry
-        entry_base->header.status =
-            (!found && (recovering_data_entry->type & DeleteDataEntryType)
-                 ? HashEntryStatus::Clean
-                 : HashEntryStatus::Normal);
-      } else {
-        pmem_allocator_->Free(
-            SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
-                            recovering_data_entry->header.b_size,
-                            recovering_data_entry->timestamp));
-      }
+      break;
     }
-    segment_space.size -= recovering_data_entry->header.b_size;
-    segment_space.space_entry.offset += recovering_data_entry->header.b_size;
+    default: {
+      std::string msg{
+          "Invalid Record type when recovering. Trying restoring record. "};
+      msg.append("Record type: ");
+      msg.append(std::to_string(data_entry_recovering.type));
+      msg.append("\n");
+      throw std::runtime_error{msg};
+    }
+    }
   }
   write_thread.id = -1;
   restored_.fetch_add(cnt);
+  return Status::Ok;
+} catch (const std::runtime_error &e) {
+  GlobalLogger.Error(e.what());
+  return Status::NotSupported;
+}
+
+uint32_t
+KVEngine::GetChecksumForSkiplistOrHashRecord(DataEntry *recovering_data_entry,
+                                               DataEntry *pmem_data_entry) {
+  bool dl_entry = recovering_data_entry->type & (DLDataEntryType);
+  uint32_t checksum = dl_entry ? ((DLDataEntry *)pmem_data_entry)->Checksum()
+                               : pmem_data_entry->Checksum();
+  return checksum;
+}
+
+Status KVEngine::RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
+                                               DataEntry *pmem_data_entry) {
+  char existing_data_entry_buffer[sizeof(DLDataEntry)];
+  DataEntry *existing_data_entry = (DataEntry *)existing_data_entry_buffer;
+  HashEntry hash_entry;
+  HashEntry *entry_base = nullptr;
+  bool dl_entry = recovering_data_entry->type & (DLDataEntryType);
+
+  pmem::obj::string_view pmem_key =
+      dl_entry ? ((DLDataEntry *)pmem_data_entry)->Key()
+               : pmem_data_entry->Key();
+  std::string key(pmem_key.data(), pmem_key.size());
+
+  if (recovering_data_entry->type == SortedHeaderRecord) {
+    uint64_t id;
+    memcpy_8(&id, ((DLDataEntry *)pmem_data_entry)->Value().data());
+    Skiplist *skiplist;
+    {
+      std::lock_guard<std::mutex> lg(list_mu_);
+      skiplists_.push_back(
+          std::make_shared<Skiplist>((DLDataEntry *)pmem_data_entry, key, id,
+                                     pmem_allocator_, hash_table_));
+      skiplist = skiplists_.back().get();
+    }
+    compare_excange_if_larger(list_id_, id + 1);
+
+    // Here key is the collection name
+    auto hint = hash_table_->GetHint(key);
+    std::lock_guard<SpinMutex> lg(*hint.spin);
+    Status s = hash_table_->Search(hint, key, SortedHeaderRecord, &hash_entry,
+                                   existing_data_entry, &entry_base,
+                                   HashTable::SearchPurpose::Recover);
+    if (s == Status::MemoryOverflow) {
+      return s;
+    }
+    assert(s == Status::NotFound);
+    hash_table_->Insert(hint, entry_base, SortedHeaderRecord,
+                        (uint64_t)skiplist, HashOffsetType::Skiplist);
+  } else {
+    auto hint = hash_table_->GetHint(key);
+    std::lock_guard<SpinMutex> lg(*hint.spin);
+    Status s =
+        hash_table_->Search(hint, key,
+                            dl_entry ? (SortedDataRecord | SortedDeleteRecord)
+                                     : (StringDeleteRecord | StringDataRecord),
+                            &hash_entry, existing_data_entry, &entry_base,
+                            HashTable::SearchPurpose::Recover);
+    if (s == Status::MemoryOverflow) {
+      return s;
+    }
+    bool found = s == Status::Ok;
+    bool should_insert = true;
+    if (found) {
+      if (existing_data_entry->timestamp >= recovering_data_entry->timestamp) {
+        should_insert = false;
+      }
+    }
+
+    if (should_insert) {
+      uint64_t new_hash_offset;
+      uint64_t old_data_offset;
+      if (dl_entry) {
+        SkiplistNode *dram_node;
+        if (!found) {
+          auto height = Skiplist::RandomHeight();
+          if (height > 0) {
+            dram_node = SkiplistNode::NewNode(
+                Skiplist::UserKey(key), (DLDataEntry *)pmem_data_entry, height);
+            if (dram_node == nullptr) {
+              GlobalLogger.Error("Memory overflow in recovery\n");
+              return Status::MemoryOverflow;
+            }
+            new_hash_offset = (uint64_t)dram_node;
+          } else {
+            new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
+          }
+          // Hash entry won't be reused during data recovering so we don't
+          // neet to check status here
+          hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
+                              new_hash_offset,
+                              height > 0 ? HashOffsetType::SkiplistNode
+                                         : HashOffsetType::DLDataEntry);
+        } else {
+          if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+            dram_node = (SkiplistNode *)hash_entry.offset;
+            old_data_offset =
+                pmem_allocator_->addr2offset(dram_node->data_entry);
+            dram_node->data_entry = (DLDataEntry *)pmem_data_entry;
+            entry_base->header.data_type = recovering_data_entry->type;
+          } else {
+            old_data_offset = hash_entry.offset;
+            hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
+                                pmem_allocator_->addr2offset(pmem_data_entry),
+                                HashOffsetType::DLDataEntry);
+          }
+          pmem_allocator_->Free(SizedSpaceEntry(
+              old_data_offset, existing_data_entry->header.b_size,
+              existing_data_entry->timestamp));
+        }
+      } else {
+        new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
+        bool free_space =
+            entry_base->header.status == HashEntryStatus::Updating;
+        hash_table_->Insert(hint, entry_base, recovering_data_entry->type,
+                            new_hash_offset, HashOffsetType::DataEntry);
+        if (free_space) {
+          old_data_offset = hash_entry.offset;
+          pmem_allocator_->Free(SizedSpaceEntry(
+              old_data_offset, existing_data_entry->header.b_size,
+              existing_data_entry->timestamp));
+        }
+      }
+      // If a delete record is the only existing data entry of a key, then we
+      // can reuse the hash entry and free the data entry
+      entry_base->header.status =
+          (!found && (recovering_data_entry->type & DeleteDataEntryType)
+               ? HashEntryStatus::Clean
+               : HashEntryStatus::Normal);
+    } else {
+      pmem_allocator_->Free(
+          SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
+                          recovering_data_entry->header.b_size,
+                          recovering_data_entry->timestamp));
+    }
+  }
   return Status::Ok;
 }
 
@@ -355,14 +419,14 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
         {
           std::lock_guard<std::mutex> lg(list_mu_);
           switch (header_type) {
-          case SORTED_HEADER_RECORD:
+          case SortedHeaderRecord:
             skiplists_.push_back(std::make_shared<Skiplist>(
                 (DLDataEntry *)block_base,
                 std::string(collection.data(), collection.size()), id,
                 pmem_allocator_, hash_table_));
             *list = skiplists_.back().get();
             break;
-          case HASH_LIST_HEADER_RECORD:
+          case HashListHeaderRecord:
             hashlists_.push_back(std::make_shared<HashList>());
             *list = hashlists_.back().get();
             break;
@@ -451,7 +515,7 @@ Status KVEngine::RestorePendingBatch() {
               DataEntry *data_entry =
                   (DataEntry *)pmem_allocator_->offset2addr(invalid_offsets[i]);
               if (data_entry->timestamp == pending_batch->timestamp) {
-                data_entry->type = PADDING;
+                data_entry->type = Padding;
                 pmem_persist(&data_entry->type, 8);
               }
             }
@@ -537,10 +601,9 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
   }
 
   char *block_base = nullptr;
-  if (hash_entry.header.data_type &
-      (STRING_DATA_RECORD | HASH_LIST_DATA_RECORD)) {
+  if (hash_entry.header.data_type & (StringDataRecord | HashListDataRecord)) {
     block_base = pmem_allocator_->offset2addr(hash_entry.offset);
-  } else if (hash_entry.header.data_type == SORTED_DATA_RECORD) {
+  } else if (hash_entry.header.data_type == SortedDataRecord) {
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
       SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
       block_base = (char *)dram_node->data_entry;
@@ -595,7 +658,7 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, "", STRING_DELETE_RECORD);
+  return HashSetImpl(key, "", StringDeleteRecord);
 }
 
 inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
@@ -661,7 +724,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s = hash_table_->Search(
-        hint, collection_key, SORTED_DATA_RECORD | SORTED_DELETE_RECORD,
+        hint, collection_key, SortedDataRecord | SortedDeleteRecord,
         &hash_entry, &data_entry, &entry_base, HashTable::SearchPurpose::Write);
     if (s == Status ::MemoryOverflow) {
       return s;
@@ -767,7 +830,7 @@ Status KVEngine::SSet(const pmem::obj::string_view collection,
     return s;
   }
 
-  return SSetImpl(skiplist, user_key, value, SORTED_DATA_RECORD);
+  return SSetImpl(skiplist, user_key, value, SortedDataRecord);
 }
 
 Status KVEngine::CheckConfigs(const Configs &configs) {
@@ -846,7 +909,7 @@ Status KVEngine::SDelete(const pmem::obj::string_view collection,
     return s == Status::NotFound ? Status::Ok : s;
   }
 
-  return SSetImpl(skiplist, user_key, "", SORTED_DELETE_RECORD);
+  return SSetImpl(skiplist, user_key, "", SortedDeleteRecord);
 }
 
 Status KVEngine::MaybeInitPendingBatchFile() {
@@ -933,7 +996,7 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
   uint64_t id = skiplist->id();
   std::string skiplist_key(PersistentList::ListKey(user_key, id));
   return HashGetImpl(skiplist_key, value,
-                     SORTED_DATA_RECORD | SORTED_DELETE_RECORD);
+                     SortedDataRecord | SortedDeleteRecord);
 }
 
 Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
@@ -949,7 +1012,7 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
   SizedSpaceEntry sized_space_entry;
 
   if (batch_hint == nullptr) {
-    if (dt != STRING_DELETE_RECORD) {
+    if (dt != StringDeleteRecord) {
       sized_space_entry = pmem_allocator_->Allocate(requested_size);
       if (sized_space_entry.size == 0) {
         return Status::PmemOverflow;
@@ -963,14 +1026,14 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s = hash_table_->Search(
-        hint, key, STRING_DELETE_RECORD | STRING_DATA_RECORD, &hash_entry,
+        hint, key, StringDeleteRecord | StringDataRecord, &hash_entry,
         &data_entry, &entry_base, HashTable::SearchPurpose::Write);
     if (s == Status::MemoryOverflow) {
       return s;
     }
     bool found = s == Status::Ok;
-    if (dt == STRING_DELETE_RECORD && batch_hint == nullptr) {
-      if (found && entry_base->header.data_type != STRING_DELETE_RECORD) {
+    if (dt == StringDeleteRecord && batch_hint == nullptr) {
+      if (found && entry_base->header.data_type != StringDeleteRecord) {
         sized_space_entry = pmem_allocator_->Allocate(requested_size);
         if (sized_space_entry.size == 0) {
           return Status::PmemOverflow;
@@ -1021,6 +1084,6 @@ Status KVEngine::Set(const pmem::obj::string_view key,
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, value, STRING_DATA_RECORD);
+  return HashSetImpl(key, value, StringDataRecord);
 }
 } // namespace KVDK_NAMESPACE

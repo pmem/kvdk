@@ -11,11 +11,11 @@ void WriteBatch::Put(const std::string &key, const std::string &value) {
   kvs.push_back({
       key,
       value,
-      STRING_DATA_RECORD,
+      StringDataRecord,
   });
 }
 
 void WriteBatch::Delete(const std::string &key) {
-  kvs.push_back({key, "", STRING_DELETE_RECORD});
+  kvs.push_back({key, "", StringDeleteRecord});
 }
 } // namespace KVDK_NAMESPACE

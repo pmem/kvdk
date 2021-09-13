@@ -93,7 +93,7 @@ private:
       return Status::InvalidDataSize;
     }
     return SearchOrInitPersistentList(collection, (PersistentList **)hashlist,
-                                      init, HASH_LIST_HEADER_RECORD);
+                                      init, HashListHeaderRecord);
   };
 
   Status SearchOrInitSkiplist(const pmem::obj::string_view &collection,
@@ -102,7 +102,7 @@ private:
       return Status::InvalidDataSize;
     }
     return SearchOrInitPersistentList(collection, (PersistentList **)skiplist,
-                                      init, SORTED_HEADER_RECORD);
+                                      init, SortedHeaderRecord);
   }
 
   Status MaybeInitPendingBatchFile();
@@ -117,6 +117,13 @@ private:
   Status Recovery();
 
   Status RestoreData(uint64_t thread_id);
+
+  Status RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
+                                       DataEntry *pmem_data_entry);
+
+  uint32_t
+  GetChecksumForSkiplistOrHashRecord(DataEntry *recovering_data_entry,
+                                       DataEntry *pmem_data_entry);
 
   Status RestorePendingBatch();
 
