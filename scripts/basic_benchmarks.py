@@ -1,19 +1,20 @@
 import os
 
+n_thread = 48
+bench_string = False
+bench_sorted = True
+
 path = "/mnt/pmem0/kvdk"
 report_path = "./results/"
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
-n_thread = 48
 benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
 populate = 1
 collections = 16
 
-bench_string = False
-bench_sorted = True
 
 numanode = 0
 bin = "../build/bench"
