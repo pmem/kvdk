@@ -193,7 +193,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
       DataEntryType type_padding = DataEntryType::Padding;
       pmem_memcpy(&static_cast<DataEntry *>(pmp_record_recovering)->type,
                   &type_padding, sizeof(DataEntryType), PMEM_F_MEM_NONTEMPORAL);
-      data_entry_recovering.type = type_padding;
+      data_entry_recovering.type = DataEntryType::Padding;
     }
     if (data_entry_recovering.type == DataEntryType::Padding) {
       pmem_allocator_->Free(
