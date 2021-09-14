@@ -224,19 +224,18 @@ public:
     return (current != nullptr) && (current->type != SortedDeleteRecord);
   }
 
-  virtual bool Next() override {
+  virtual void Next() override {
     if (!Valid()) {
-      return false;
+      return;
     }
     do {
       current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
     } while (current && current->type == SortedDeleteRecord);
-    return current != nullptr;
   }
 
-  virtual bool Prev() override {
+  virtual void Prev() override {
     if (!Valid()) {
-      return false;
+      return;
     }
 
     do {
@@ -245,10 +244,9 @@ public:
 
     if (current == skiplist_->header()->data_entry) {
       current = nullptr;
-      return false;
+      return;
     }
-
-    return true;
+    return;
   }
 
   virtual std::string Key() override {
