@@ -277,6 +277,7 @@ namespace KVDK_NAMESPACE
                 entry_list_record.next = _sp_dlinked_list_->Tail()._GetOffset_();
             }
             DLinkedList::_PersistRecord_(pmp_list_record, entry_list_record, _name_, _ID2View_(_id_));
+            _pmp_dlist_record_ = static_cast<DLDataEntry*>(pmp_list_record);
         }
         catch (std::bad_alloc const& ex)
         {
@@ -294,13 +295,14 @@ namespace KVDK_NAMESPACE
         ) : 
             _sp_pmem_allocator_{ sp_pmem_allocator },
             _sp_hash_table_{ sp_hash_table },
+            _pmp_dlist_record_{ pmp_dlist_record },
             _sp_dlinked_list_
             { 
                 std::make_shared<DLinkedList>
                 (
-                    _sp_pmem_allocator_->offset2addr(pmp_dlist_record->prev),
-                    _sp_pmem_allocator_->offset2addr(pmp_dlist_record->next),
-                    _sp_pmem_allocator_
+                    _sp_pmem_allocator_,
+                    _GetPmpPrev_(pmp_dlist_record),
+                    _GetPmpNext_(pmp_dlist_record)
                 )
             },
             _name_{ pmp_dlist_record->Key() },
@@ -380,7 +382,17 @@ namespace KVDK_NAMESPACE
 
         std::string const& name() { return _name_; }
 
+        inline std::string GetInternalKey(pmem::obj::string_view key)
+        {
+            return _MakeInternalKey_(_id_, key);
+        }
+
     private:
+        inline static std::string _MakeInternalKey_(std::uint64_t id, pmem::obj::string_view key)
+        {
+            return std::string{_ID2View_(id)} + std::string{ key };
+        }
+
         inline static pmem::obj::string_view _ExtractKey_(pmem::obj::string_view internal_key)
         {
             constexpr size_t sz_id = sizeof(decltype(_id_));
@@ -394,11 +406,6 @@ namespace KVDK_NAMESPACE
             assert(sizeof(decltype(id)) <= internal_key.size() && "internal_key is smaller than the size of an id!");
             memcpy(&id, internal_key.data(), sizeof(decltype(id)));
             return id;
-        }
-
-        inline static std::string _MakeInternalKey_(std::uint64_t id, pmem::obj::string_view key)
-        {
-            return std::string{_ID2View_(id)} + std::string{ key };
         }
 
         inline static pmem::obj::string_view _ID2View_(std::uint64_t id)
@@ -455,6 +462,16 @@ namespace KVDK_NAMESPACE
                 std::defer_lock
             };
             return unique_lock_triplet;
+        }
+
+        DLDataEntry* _GetPmpPrev_(DLDataEntry* pmp)
+        {
+            return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(pmp->prev));
+        }
+    
+        DLDataEntry* _GetPmpNext_(DLDataEntry* pmp)
+        {
+            return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(pmp->next));
         }
     
     };
