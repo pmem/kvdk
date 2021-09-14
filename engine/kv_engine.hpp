@@ -4,29 +4,29 @@
 
 #pragma once
 
+#include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <deque>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include "atomic"
-#include "cassert"
 #include "data_entry.hpp"
 #include "dram_allocator.hpp"
 #include "hash_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
-#include "list"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "time.h"
-#include "unordered_map"
+#include "unordered_collection.hpp"
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -123,6 +123,9 @@ private:
                                       init, SortedHeaderRecord);
   }
 
+  std::shared_ptr<UnorderedCollection> CreateUnorderedCollection(pmem::obj::string_view const collection_name);
+  std::shared_ptr<UnorderedCollection> SearchUnorderedCollection(pmem::obj::string_view const collection_name);
+  
   Status MaybeInitPendingBatchFile();
 
   Status HashSetImpl(const pmem::obj::string_view &key,
