@@ -58,6 +58,7 @@ private:
   // When the resource is marked as dirty,
   // the highest bit of _counter_ is set is 1 and _counter_ becomes negative
   std::atomic_int16_t _counter_;
+  constexpr static int16_t int16_min = std::numeric_limits<std::int16_t>::min();
 
 public:
   RWMonitor() : _counter_{0}
@@ -86,16 +87,40 @@ public:
   inline void MarkDirty()
   {
     if(_counter_.load() >= 0)
-      _counter_.fetch_add(std::numeric_limits<std::int16_t>::min());
+      _counter_.fetch_add(int16_min);
   }
 
   bool RegisterWriter()
   {
     std::int16_t old = _counter_.load();
-    if (std::numeric_limits<std::int16_t>::min() == _counter_.load())
+    if (old < 0)
     {
+      // Already marked dirty, no more Readers can enter
+      if (old == int16_min)
+      {
+        old = _counter_.fetch_add(1);
+        if (old == int16_min)
+        {
+          // Successfully registered as writer
+          return true;
+        }
+        else
+        {
+          // Resource acquired by other Writer
+          return false;
+        }
+      } 
+      else
+      {
+        // Resource not released by readers or already acquired by other writer
+        return false;
+      }     
     }
-    
+    else
+    {
+      // Resource not marked dirty first, no writer should register
+      return false;
+    }
   }
 };
 static_assert(sizeof(RWMonitor) == sizeof(std::int16_t));
