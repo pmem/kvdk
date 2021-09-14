@@ -68,8 +68,10 @@ struct Configs {
 
   // The number of buckets per hash slot.
   //
-  // The hash slot is the minimum unit of write lock and hot-spot cache.
-  uint32_t num_buckets_per_slot = 1 << 4;
+  // The hash slot is the minimum unit of write lock and hot-spot cache, less
+  // buckets in a slot means better hot spot read performance, less write
+  // contentions and more memory consumption
+  uint32_t num_buckets_per_slot = 1;
 
   // Time interval to do background work in seconds
   //

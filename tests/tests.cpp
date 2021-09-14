@@ -105,8 +105,8 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
     while (cnt--) {
       std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
       std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
-      AssignData(val1, fast_random() % 1024);
-      AssignData(val2, fast_random() % 1024);
+      AssignData(val1, fast_random_64() % 1024);
+      AssignData(val2, fast_random_64() % 1024);
 
       ASSERT_EQ(engine->Set(key1, val1), Status::Ok);
       ASSERT_EQ(engine->Set(key2, val2), Status::Ok);
@@ -122,7 +122,7 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
       ASSERT_EQ(engine->Get(key1, &got_val1), Status::NotFound);
 
       // Update
-      AssignData(val1, fast_random() % 1024);
+      AssignData(val1, fast_random_64() % 1024);
       ASSERT_EQ(engine->Set(key1, val1), Status::Ok);
       ASSERT_EQ(engine->Get(key1, &got_val1), Status::Ok);
       ASSERT_EQ(got_val1, val1);
@@ -271,8 +271,8 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
       key2.append("k2");
 
       // insert
-      AssignData(val1, fast_random() % 1024);
-      AssignData(val2, fast_random() % 1024);
+      AssignData(val1, fast_random_64() % 1024);
+      AssignData(val2, fast_random_64() % 1024);
       ASSERT_EQ(engine->SSet(thread_local_skiplist, key1, val1), Status::Ok);
       ++n_local_entries[id];
       ASSERT_EQ(engine->SSet(thread_local_skiplist, key2, val2), Status::Ok);
@@ -285,12 +285,12 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
       ASSERT_EQ(val2, got_val2);
 
       // update
-      AssignData(val1, fast_random() % 1024);
+      AssignData(val1, fast_random_64() % 1024);
       ASSERT_EQ(engine->SSet(thread_local_skiplist, key1, val1), Status::Ok);
       ASSERT_EQ(engine->SGet(thread_local_skiplist, key1, &got_val1),
                 Status::Ok);
       ASSERT_EQ(got_val1, val1);
-      AssignData(val2, fast_random() % 1024);
+      AssignData(val2, fast_random_64() % 1024);
       ASSERT_EQ(engine->SSet(thread_local_skiplist, key2, val2), Status::Ok);
       ASSERT_EQ(engine->SGet(thread_local_skiplist, key2, &got_val2),
                 Status::Ok);

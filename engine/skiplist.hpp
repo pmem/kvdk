@@ -124,7 +124,7 @@ public:
 
   static int RandomHeight() {
     int height = 0;
-    while (height < kMaxHeight && fast_random() & 1) {
+    while (height < kMaxHeight && fast_random_64() & 1) {
       height++;
     }
 
