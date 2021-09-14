@@ -222,6 +222,9 @@ namespace KVDK_NAMESPACE
     /// whose key is the name of the UnorderedCollection
     /// and value holds the id of the Collection 
     /// prev and next pointer holds the head and tail of DLinkedList for recovery
+    /// At runtime, an object of UnorderedCollection is recovered from
+    /// the DlistRecord and then stored in HashTable.
+    /// The DlistRecord is for recovery only and never visited again
     class UnorderedCollection : public PersistentList, public std::enable_shared_from_this<UnorderedCollection>
     {
     private:
@@ -239,56 +242,14 @@ namespace KVDK_NAMESPACE
 
     public:
         /// Create UnorderedCollection and persist it on PMem
-        UnorderedCollection 
+        UnorderedCollection
         (
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
             std::shared_ptr<HashTable> sp_hash_table,
             std::string const& name,
             std::uint64_t id,
             std::uint64_t timestamp = 0ULL
-        )
-        try :
-            _sp_pmem_allocator_{ sp_pmem_allocator },
-            _sp_hash_table_{ sp_hash_table },
-            _pmp_dlist_record_{ nullptr },
-            _sp_dlinked_list_{ std::make_shared<DLinkedList>(sp_pmem_allocator, timestamp, name, _ID2View_(id)) },
-            _name_{ name },
-            _id_{ id }
-        {
-            auto space_list_record = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
-            if (space_list_record.size == 0)
-            {
-                DLinkedList::Deallocate(_sp_dlinked_list_->Head());
-                DLinkedList::Deallocate(_sp_dlinked_list_->Tail());
-                _sp_dlinked_list_->_pmp_head_ = nullptr;
-                _sp_dlinked_list_->_pmp_tail_ = nullptr;
-                throw std::bad_alloc{};
-            }
-            std::uint64_t offset_list_record = space_list_record.space_entry.offset;
-            void* pmp_list_record = _sp_pmem_allocator_->offset2addr(offset_list_record);
-            DLDataEntry entry_list_record;  // Set up entry with meta
-            {
-                entry_list_record.timestamp = timestamp;
-                entry_list_record.type = DataEntryType::DlistRecord;
-                entry_list_record.k_size = _name_.size();
-                entry_list_record.v_size = sizeof(decltype(_id_));
-
-                // checksum can only be calculated with complete meta
-                entry_list_record.header.b_size = space_list_record.size;
-                entry_list_record.header.checksum = DLinkedList::_CheckSum_(entry_list_record, _name_, _ID2View_(_id_));
-
-                entry_list_record.prev = _sp_dlinked_list_->Head()._GetOffset_();
-                entry_list_record.next = _sp_dlinked_list_->Tail()._GetOffset_();
-            }
-            DLinkedList::_PersistRecord_(pmp_list_record, entry_list_record, _name_, _ID2View_(_id_));
-            _pmp_dlist_record_ = static_cast<DLDataEntry*>(pmp_list_record);
-        }
-        catch (std::bad_alloc const& ex)
-        {
-            std::cerr << ex.what() << std::endl;
-            std::cerr << "Fail to create UnorderedCollection object!" << std::endl;
-            throw;
-        }
+        );
 
         /// Recover UnorderedCollection from DLIST_RECORD
         UnorderedCollection
@@ -296,28 +257,16 @@ namespace KVDK_NAMESPACE
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
             std::shared_ptr<HashTable> sp_hash_table,
             DLDataEntry* pmp_dlist_record
-        ) : 
-            _sp_pmem_allocator_{ sp_pmem_allocator },
-            _sp_hash_table_{ sp_hash_table },
-            _pmp_dlist_record_{ pmp_dlist_record },
-            _sp_dlinked_list_
-            { 
-                std::make_shared<DLinkedList>
-                (
-                    _sp_pmem_allocator_,
-                    _GetPmpPrev_(pmp_dlist_record),
-                    _GetPmpNext_(pmp_dlist_record)
-                )
-            },
-            _name_{ pmp_dlist_record->Key() },
-            _id_{ _View2ID_(pmp_dlist_record->Value()) }
-        {
-        }
+        );
 
+        /// Create UnorderedIterator and SeekToFirst()
         UnorderedIterator First();
 
+        /// Create UnorderedIterator and SeekToLast()
         UnorderedIterator Last();
 
+        /// EmplaceBefore a DlistRecord before pmp
+        /// Runtime checking is done
         UnorderedIterator EmplaceBefore
         (
             DLDataEntry* pmp,
@@ -325,7 +274,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            SpinMutex* spin             // spin in Slot containing HashEntry to pmp
+            SpinMutex* spin             // spin in Slot containing HashEntry to new node
         );
 
         UnorderedIterator EmplaceAfter
@@ -335,7 +284,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            SpinMutex* spin             // spin in Slot containing HashEntry to pmp
+            SpinMutex* spin             // spin in Slot containing HashEntry to new node
         );
 
         UnorderedIterator SwapEmplace
@@ -345,12 +294,12 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            SpinMutex* spin = nullptr   // spin in Slot containing HashEntry to pmp
+            SpinMutex* spin = nullptr   // spin in Slot containing HashEntry to pmp(same Slot as new node)
         );
 
-        uint64_t id() override { return _id_; }
+        inline uint64_t id() override { return _id_; }
 
-        std::string const& name() { return _name_; }
+        inline std::string const& name() { return _name_; }
 
         inline std::string GetInternalKey(pmem::obj::string_view key)
         {
@@ -395,58 +344,25 @@ namespace KVDK_NAMESPACE
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent three nodes, not locked yet.
         /// Also accepts UnorderedIterator by implicit casting
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DLinkedList::DlistIterator iter_mid, SpinMutex* spin_mid = nullptr)
-        {
-            DLinkedList::DlistIterator iter_prev{ iter_mid }; --iter_prev;
-            DLinkedList::DlistIterator iter_next{ iter_mid }; ++iter_next;
-
-            SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
-            SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
-            SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
-
-            UniqueLockTriplet<SpinMutex> unique_lock_triplet
-            {
-                *p_spin_1,
-                *p_spin_2,
-                *p_spin_3,
-                std::defer_lock
-            };
-            return unique_lock_triplet;
-        }
+        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DLinkedList::DlistIterator iter_mid, SpinMutex* spin_mid = nullptr);
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent two nodes between which the new node is to be emplaced
         /// Also locks the slot for new node
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DLinkedList::DlistIterator iter_prev, SpinMutex* spin_new)
-        {
-            DLinkedList::DlistIterator iter_next{ iter_prev }; ++iter_next;
+        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DLinkedList::DlistIterator iter_prev, SpinMutex* spin_new);
 
-            SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
-            SpinMutex* p_spin_2 = spin_new;
-            SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
-
-            UniqueLockTriplet<SpinMutex> unique_lock_triplet
-            {
-                *p_spin_1,
-                *p_spin_2,
-                *p_spin_3,
-                std::defer_lock
-            };
-            return unique_lock_triplet;
-        }
-
-        DLDataEntry* _GetPmpPrev_(DLDataEntry* pmp)
+        inline DLDataEntry* _GetPmpPrev_(DLDataEntry* pmp)
         {
             return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(pmp->prev));
         }
     
-        DLDataEntry* _GetPmpNext_(DLDataEntry* pmp)
+        inline DLDataEntry* _GetPmpNext_(DLDataEntry* pmp)
         {
             return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(pmp->next));
         }
     
     };
 
-    class UnorderedIterator : public Iterator 
+    class UnorderedIterator final : public Iterator 
     {
     private:
         /// shared pointer to pin the UnorderedCollection
@@ -457,67 +373,79 @@ namespace KVDK_NAMESPACE
         friend class UnorderedCollection;
 
     public:
-        /// Construct UnorderedIterator and SeekToFirst().
-        UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll) :
-            _sp_coll_{ sp_coll },
-            _iterator_internal_{ nullptr },
-            _valid_{ false }
-        {
-        }
+        /// Construct UnorderedIterator of a certain UnorderedCollection
+        /// The Iterator is invalid now.
+        /// Must SeekToFirst() or SeekToLast() before use.
+        UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
-        UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry* pmp) :
-            _sp_coll_{ sp_coll },
-            _iterator_internal_{ _sp_coll_->_sp_dlinked_list_, pmp },
-            _valid_{ false }
-        {
-            bool valid_pmp = false;
-            DataEntryType type_pmp = static_cast<DataEntryType>(pmp->type);
-            valid_pmp = valid_pmp || (type_pmp == DataEntryType::DlistHeadRecord);
-            valid_pmp = valid_pmp || (type_pmp == DataEntryType::DlistTailRecord);
-            valid_pmp = valid_pmp || ((type_pmp == DataEntryType::DlistDataRecord || type_pmp == DataEntryType::DlistDeleteRecord) && UnorderedCollection::_ExtractID_(pmp->Key()) == sp_coll->id());
-            if(valid_pmp)
-            {
-                _valid_ = (pmp->type == DataEntryType::DlistDataRecord);
-                return;
-            }
-            throw std::runtime_error{ "PMem pointer does not point to a valid Record belonging to the UnorderedCollection" };
-        }
+        /// Construct UnorderedIterator of a certain UnorderedCollection
+        /// pointing to a DLDataEntry belonging to this collection
+        /// Runtime checking the type of this UnorderedIterator,
+        /// which can be DlistDataRecord, DlistDeleteRecord, DlistHeadRecord and DlistTailRecord
+        /// ID is also checked. Checking failure results in throwing runtime_error
+        /// Valid() is true only if the iterator points to DlistDataRecord
+        UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry* pmp);
 
-        virtual void Seek(std::string const& key)
+        /// UnorderedIterator currently does not support Seek to a key
+        inline virtual void Seek(std::string const& key) final override
         {
             throw std::runtime_error{ "Seek() not implemented for UnorderedIterator!" };
         }
 
-        virtual void SeekToFirst() override
+        /// Seek to First DlistDataRecord if exists,
+        /// otherwise Valid() will return false.
+        inline virtual void SeekToFirst() final override
         {
             _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Head();
             _Next_();
         }
 
-        virtual void SeekToLast() override
+        /// Seek to Last DlistDataRecord if exists,
+        /// otherwise Valid() will return false.
+        inline virtual void SeekToLast() final override
         {
             _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Tail();
             _Prev_();
         }
 
-        virtual bool Valid() override
+        /// Valid() is true only if the UnorderedIterator points to a DlistDataRecord.
+        /// DlistHeadRecord, DlistTailRecord and DlistDeleteRecord is considered invalid.
+        inline virtual bool Valid() final override
         {
             return _valid_;
         }
 
-        virtual bool Next() override 
+        /// Try proceeding to next DlistDataRecord
+        /// User should check Valid() before accessing data
+        inline virtual void Next() final override 
         {
-            _Next_();
-            return _valid_;
+            if (!Valid())
+            {
+                return Valid();
+            }
+            else
+            {
+                _Next_();
+                return Valid();
+            }            
         }
 
-        virtual bool Prev() override
+        /// Try proceeding to previous DlistDataRecord
+        /// User should check Valid() before accessing data
+        inline virtual void Prev() final override
         {
-            _Prev_();
-            return _valid_;
+            if (!Valid())
+            {
+                return Valid();
+            }
+            else
+            {
+                _Prev_();
+                return Valid();
+            }            
         }
 
-        virtual std::string Key() override 
+        inline virtual std::string Key() override 
         {
             if (!Valid())
             {
@@ -527,7 +455,7 @@ namespace KVDK_NAMESPACE
             return std::string(view_key.data(), view_key.size());
         }
 
-        virtual std::string Value() override 
+        inline virtual std::string Value() override 
         {
             if (!Valid())
             {
@@ -539,56 +467,15 @@ namespace KVDK_NAMESPACE
 
 
     private:
-        // Precede to next DLIST_DATA_RECORD, can start from head
-        void _Next_()
-        {
-            assert(_iterator_internal_.valid());
-            assert(_iterator_internal_->type != DataEntryType::DlistTailRecord);
-            ++_iterator_internal_;
-            while (_iterator_internal_.valid())
-            {
-                _valid_ = false;
-                switch (_iterator_internal_->type)
-                {
-                case DataEntryType::DlistDataRecord:
-                    _valid_ = true;
-                    return;
-                case DataEntryType::DlistDeleteRecord:
-                    ++_iterator_internal_;
-                    continue;
-                case DataEntryType::DlistTailRecord:
-                    return;
-                default:
-                    break;
-                }
-                throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Next_() fails!" };
-            }
-        }
+        // Proceed to next DlistDataRecord, can start from 
+        // DlistHeadRecord, DlistDataRecord or DlistDeleteRecord
+        // If reached DlistTailRecord, _valid_ is set to false and returns
+        void _Next_();
 
-        void _Prev_()
-        {
-            assert(_iterator_internal_.valid());
-            assert(_iterator_internal_->type != DataEntryType::DlistHeadRecord);
-            --_iterator_internal_;
-            while (_iterator_internal_.valid())
-            {
-                _valid_ = false;
-                switch (_iterator_internal_->type)
-                {
-                case DataEntryType::DlistDataRecord:
-                    _valid_ = true;
-                    return;
-                case DataEntryType::DlistDeleteRecord:
-                    --_iterator_internal_;
-                    continue;
-                case DataEntryType::DlistHeadRecord:
-                    return;
-                default:
-                    break;
-                }
-                throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Prev_() fails!" };
-            }
-        }
+        // Proceed to prev DlistDataRecord, can start from
+        // DlistTailRecord, DlistDataRecord or DlistDeleteRecord
+        // If reached DlistHeadRecord, _valid_ is set to false and returns
+        void _Prev_();
 
     };
     
