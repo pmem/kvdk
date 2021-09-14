@@ -37,10 +37,15 @@ public:
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
+
+  // Global Anonymous Collection
   Status Get(const pmem::obj::string_view key, std::string *value) override;
   Status Set(const pmem::obj::string_view key,
              const pmem::obj::string_view value) override;
   Status Delete(const pmem::obj::string_view key) override;
+  Status BatchWrite(const WriteBatch &write_batch) override;
+
+  // Sorted Collection
   Status SGet(const pmem::obj::string_view collection,
               const pmem::obj::string_view user_key,
               std::string *value) override;
@@ -50,9 +55,22 @@ public:
   // TODO: Release delete record and deleted nodes
   Status SDelete(const pmem::obj::string_view collection,
                  const pmem::obj::string_view user_key) override;
-  Status BatchWrite(const WriteBatch &write_batch) override;
   std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) override;
+
+  // Unordered Collection
+  Status HGet(pmem::obj::string_view const collection_name,
+              pmem::obj::string_view const key,
+              std::string* value);
+  Status HSet(pmem::obj::string_view const collection_name,
+              pmem::obj::string_view const key,
+              pmem::obj::string_view const value);
+  Status HDelete(pmem::obj::string_view const collection_name,
+                 pmem::obj::string_view const key,
+                 pmem::obj::string_view const value);
+  std::shared_ptr<Iterator>
+  NewUnorderedIterator(pmem::obj::string_view const collection_name);
+
   void ReleaseWriteThread() override { write_thread.Release(); }
 
 private:

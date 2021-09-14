@@ -1086,4 +1086,38 @@ Status KVEngine::Set(const pmem::obj::string_view key,
   }
   return HashSetImpl(key, value, StringDataRecord);
 }
+
+Status SearchUnorderedCollection(pmem::obj::string_view const collection_name)
+{
+  
+}
+
+Status KVEngine::HGet(pmem::obj::string_view const collection_name,
+                      pmem::obj::string_view const key,
+                      std::string* value)
+{
+  throw std::runtime_error{"Unimplemented yet!"};
+}
+                    
+Status KVEngine::HSet(pmem::obj::string_view const collection_name,
+                      pmem::obj::string_view const key,
+                      pmem::obj::string_view const value)
+{
+  throw std::runtime_error{"Unimplemented yet!"};
+}
+
+Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
+                         pmem::obj::string_view const key,
+                         pmem::obj::string_view const value)
+{
+  throw std::runtime_error{"Unimplemented yet!"};
+}
+
+std::shared_ptr<Iterator>
+NewUnorderedIterator(pmem::obj::string_view const collection_name)
+{
+  throw std::runtime_error{"Unimplemented yet!"};
+}
+
+
 } // namespace KVDK_NAMESPACE
