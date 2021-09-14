@@ -151,6 +151,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
            sizeof(DataEntry));
 
     // reach the of of this segment
+    // or the segment is empty
     if (cached_recovering_data_entry.header.b_size == 0) {
       fetch = true;
       continue;
@@ -592,6 +593,8 @@ Status KVEngine::Recovery() {
     }
   }
 
+  GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
+
   fs.clear();
   for (auto s : skiplists_) {
     fs.push_back(std::async(&Skiplist::Rebuild, s));
@@ -604,7 +607,7 @@ Status KVEngine::Recovery() {
     }
   }
 
-  GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
+  GlobalLogger.Info("In recovering skiplist\n");
 
   if (restored_.load() == 0) {
     if (configs_.populate_pmem_space) {
@@ -1151,11 +1154,86 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
 >>>>>>> 3660c05 (Refactor data restoring (#64))
 }
 
+std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(pmem::obj::string_view const collection_name)
+{
+  std::uint64_t ts = get_timestamp();
+  uint64_t id = list_id_.fetch_add(1);
+  return std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, collection_name, id, ts);
+}
+
+std::shared_ptr<UnorderedCollection> KVEngine::SearchUnorderedCollection(pmem::obj::string_view const collection_name)
+{
+  auto hint = hash_table_->GetHint(collection_name);
+  HashEntry hash_entry;
+  HashEntry *entry_base = nullptr;
+  constexpr std::uint16_t mask_all = static_cast<std::uint16_t>(std::int16_t{-1});
+  Status s = hash_table_->Search(hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
+                                 &entry_base, HashTable::SearchPurpose::Read);
+  switch (s)
+  {
+  case Status::NotFound:
+  {
+    return std::shared_ptr<UnorderedCollection>{ nullptr };
+  }
+  case Status::Ok:
+  {
+    return std::shared_ptr<UnorderedCollection>{ hash_entry.p_uncoll->shared_from_this() };
+  }
+  default:
+  {
+    throw std::runtime_error{"Invalid state in SearchUnorderedCollection()!"};
+  }
+  }
+}
+
+Status KVEngine::HGet(pmem::obj::string_view const collection_name,
+                      pmem::obj::string_view const key,
+                      std::string* value)
+{
+  std::shared_ptr<UnorderedCollection> sp_uncoll = SearchUnorderedCollection(collection_name);
+  std::string internal_key = sp_uncoll->GetInternalKey(key);
+
+  auto hint = hash_table_->GetHint(internal_key);
+  HashEntry hash_entry;
+  HashEntry *entry_base = nullptr;
+  constexpr std::uint16_t mask_all = static_cast<std::uint16_t>(std::int16_t{-1});
+  Status s = hash_table_->Search(hint, collection_name, mask_all, &hash_entry, nullptr,
+                                 &entry_base, HashTable::SearchPurpose::Read);
+  switch (s)
+  {
+  case Status::NotFound:
+  {
+  }
+  case Status::Ok:
+  {
+  }
+  default:
+  {
+    throw std::runtime_error{"Invalid state in SearchUnorderedCollection()!"};
+  }
+  }  
+}
+                    
+Status KVEngine::HSet(pmem::obj::string_view const collection_name,
+                      pmem::obj::string_view const key,
+                      pmem::obj::string_view const value)
+{
+  throw std::runtime_error{"Unimplemented yet!"};
+}
+
+Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
+                         pmem::obj::string_view const key,
+                         pmem::obj::string_view const value)
+{
+  throw std::runtime_error{"Unimplemented yet!"};
+}
+
 std::shared_ptr<Iterator>
 NewUnorderedIterator(pmem::obj::string_view const collection_name)
 {
   throw std::runtime_error{"Unimplemented yet!"};
 }
+
 
 
 } // namespace KVDK_NAMESPACE
