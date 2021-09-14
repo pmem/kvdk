@@ -136,11 +136,18 @@ private:
 
   Status RestoreData(uint64_t thread_id);
 
+  Status RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *cached_meta);
+
+  Status RestoreSortedRecord(DLDataEntry *pmem_data_entry,
+                             DataEntry *cached_meta);
+
   Status RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
                                      DataEntry *pmem_data_entry);
 
-  uint32_t GetChecksumForSkiplistOrHashRecord(DataEntry *recovering_data_entry,
-                                              DataEntry *pmem_data_entry);
+  Status RestoreStringRecord(DataEntry *pmem_data_entry,
+                             DataEntry *cached_meta);
+
+  uint32_t CalculateChecksum(DataEntry *data_entry);
 
   Status RestorePendingBatch();
 
