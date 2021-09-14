@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <random>
 
-inline uint64_t fast_random() {
+inline uint64_t fast_random_64() {
   static std::mt19937_64 generator;
   thread_local uint64_t seed = 0;
   if (seed == 0) {
@@ -18,7 +18,7 @@ inline uint64_t fast_random() {
   return x * 0x2545F4914F6CDD1D;
 }
 
-inline double random_double() { return (double)fast_random() / UINT64_MAX; }
+inline double fast_random_double() { return (double)fast_random_64() / UINT64_MAX; }
 
 class Generator {
 public:
@@ -52,7 +52,7 @@ class RandomGenerator : public Generator {
 public:
   RandomGenerator(uint64_t max) : max_(max) {}
 
-  uint64_t Next() override { return fast_random() % max_; }
+  uint64_t Next() override { return fast_random_64() % max_; }
 
 private:
   uint64_t max_;
@@ -72,7 +72,7 @@ public:
       eta_ = Eta();
     }
 
-    double u = random_double();
+    double u = fast_random_double();
     double uz = u * zeta_n_;
 
     if (uz < 1.0) {

@@ -53,7 +53,9 @@ DEFINE_uint64(
     "Size of write batch. If batch>0, write string type kv with atomic batch "
     "write, this is valid only if we benchmark string engine");
 
-DEFINE_string(key_distribution, "random", "Distribution of benchmark keys");
+DEFINE_string(key_distribution, "random",
+              "Distribution of benchmark keys, if fill is true, this para will "
+              "be ignored and only uniform distribution will be used");
 
 // Engine configs
 DEFINE_bool(

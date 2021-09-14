@@ -31,7 +31,7 @@ inline uint64_t get_checksum(const void *data, uint64_t size) {
   return XXH3_64bits(data, size);
 }
 
-inline uint64_t fast_random() {
+inline uint64_t fast_random_64() {
   static std::mt19937_64 generator;
   thread_local uint64_t seed = 0;
   if (seed == 0) {

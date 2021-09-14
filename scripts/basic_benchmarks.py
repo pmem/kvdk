@@ -1,7 +1,7 @@
 import os
 import datetime
 
-n_thread = 48
+n_thread = 64
 bench_string = True
 bench_sorted = True
 
@@ -108,13 +108,13 @@ if __name__ == "__main__":
             # random read
             new_para = para + " -fill=0 -type=sorted -read_ratio=1 -key_distribution=random"
             report = report_path + "sorted_vs{}_random_read_thread{}".format(vs, benchmark_threads)
-            print("Read sorted-type kv")
+            print("Random read sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
             # zipf read
             new_para = para + " -fill=0 -type=sorted -read_ratio=1 -key_distribution=zipf"
             report = report_path + "sorted_vs{}_zipf_read_thread{}".format(vs, benchmark_threads)
-            print("Read sorted-type kv")
+            print("Zipf read sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
             # insert new kvs
@@ -126,13 +126,13 @@ if __name__ == "__main__":
             # random update
             new_para = para + " -fill=0 -type=sorted -read_ratio=0 -key_distribution=random"
             report = report_path + "sorted_vs{}_random_update_thread{}".format(vs, benchmark_threads)
-            print("Update sorted-type kv")
+            print("Random update sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
             # zipf update
             new_para = para + " -fill=0 -type=sorted -read_ratio=0 -key_distribution=zipf"
             report = report_path + "sorted_vs{}_zipf_update_thread{}".format(vs, benchmark_threads)
-            print("Update sorted-type kv")
+            print("Zipf update sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
             # range scan
