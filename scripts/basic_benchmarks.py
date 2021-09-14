@@ -1,7 +1,7 @@
 import os
 import datetime
 
-n_thread = 64
+n_thread = 48
 bench_string = True
 bench_sorted = True
 
@@ -9,15 +9,14 @@ path = "/mnt/pmem0/kvdk"
 report_path = "./results-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
-instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
+instance_space = 256 * 1024 * 1024 * 1024  # we need enough space to test insert
 benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
 populate = 1
 collections = 16
 
-
-numanode = 0
+numanode = 1
 bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
@@ -46,7 +45,7 @@ if __name__ == "__main__":
 
         if (bench_string):
             os.system("rm -rf {0}".format(path))
-            
+
             # Benchmark string-type data
             # fill uniform distributed kv
             new_para = para + " -fill=1 -type=string"
@@ -54,10 +53,16 @@ if __name__ == "__main__":
             print("Fill string-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-            # read
-            new_para = para + " -fill=0 -type=string -read_ratio=1"
-            report = report_path + "string_vs{}_read_thread{}".format(vs, benchmark_threads)
-            print("Read string-type kv")
+            # random read
+            new_para = para + " -fill=0 -type=string -read_ratio=1 key_distribution=random"
+            report = report_path + "string_vs{}_ramdom_read_thread{}".format(vs, benchmark_threads)
+            print("Random read string-type kv")
+            os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+            # zipf read
+            new_para = para + " -fill=0 -type=string -read_ratio=1 key_distribution=zipf"
+            report = report_path + "string_vs{}_zipf_read_thread{}".format(vs, benchmark_threads)
+            print("Zipf read string-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
             # insert new kv
@@ -72,10 +77,16 @@ if __name__ == "__main__":
             print("Batch write string-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-            # update
-            new_para = para + " -fill=0 -type=string -read_ratio=0"
-            report = report_path + "string_vs{}_update_thread{}".format(vs, benchmark_threads)
-            print("Update string-type kv")
+            # random update
+            new_para = para + " -fill=0 -type=string -read_ratio=0 -key_distribution=random"
+            report = report_path + "string_vs{}_random_update_thread{}".format(vs, benchmark_threads)
+            print("Random update string-type kv")
+            os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+            # zipf update
+            new_para = para + " -fill=0 -type=string -read_ratio=0 -key_distribution=zipf"
+            report = report_path + "string_vs{}_zipf_update_thread{}".format(vs, benchmark_threads)
+            print("Zipf update string-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
             # read + update
@@ -94,9 +105,15 @@ if __name__ == "__main__":
             print("Fill sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-            # read
-            new_para = para + " -fill=0 -type=sorted -read_ratio=1"
-            report = report_path + "sorted_vs{}_read_thread{}".format(vs, benchmark_threads)
+            # random read
+            new_para = para + " -fill=0 -type=sorted -read_ratio=1 -key_distribution=random"
+            report = report_path + "sorted_vs{}_random_read_thread{}".format(vs, benchmark_threads)
+            print("Read sorted-type kv")
+            os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+            # zipf read
+            new_para = para + " -fill=0 -type=sorted -read_ratio=1 -key_distribution=zipf"
+            report = report_path + "sorted_vs{}_zipf_read_thread{}".format(vs, benchmark_threads)
             print("Read sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
@@ -106,9 +123,15 @@ if __name__ == "__main__":
             print("Insert new sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-            # update
-            new_para = para + " -fill=0 -type=sorted -read_ratio=0"
-            report = report_path + "sorted_vs{}_update_thread{}".format(vs, benchmark_threads)
+            # random update
+            new_para = para + " -fill=0 -type=sorted -read_ratio=0 -key_distribution=random"
+            report = report_path + "sorted_vs{}_random_update_thread{}".format(vs, benchmark_threads)
+            print("Update sorted-type kv")
+            os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+            # zipf update
+            new_para = para + " -fill=0 -type=sorted -read_ratio=0 -key_distribution=zipf"
+            report = report_path + "sorted_vs{}_zipf_update_thread{}".format(vs, benchmark_threads)
             print("Update sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
 
@@ -117,7 +140,7 @@ if __name__ == "__main__":
             report = report_path + "sorted_vs{}_scan_thread{}".format(vs, benchmark_threads)
             print("Scan sorted-type kv")
             os.system("{0} {1} > {2}".format(exec, new_para, report))
-            
+
             # read + update
             new_para = para + " -fill=0 -type=sorted -read_ratio=0.9"
             report = report_path + "sorted_vs{}_ru91_thread{}".format(vs, benchmark_threads)

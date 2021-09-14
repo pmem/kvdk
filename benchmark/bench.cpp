@@ -1,12 +1,11 @@
 #include "algorithm"
+#include "generator.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "sys/time.h"
 #include <atomic>
-#include <cassert>
 #include <gflags/gflags.h>
 #include <iostream>
-#include <random>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -54,6 +53,8 @@ DEFINE_uint64(
     "Size of write batch. If batch>0, write string type kv with atomic batch "
     "write, this is valid only if we benchmark string engine");
 
+DEFINE_string(key_distribution, "random", "Distribution of benchmark keys");
+
 // Engine configs
 DEFINE_bool(
     populate, false,
@@ -80,29 +81,6 @@ private:
   struct timespec start;
 };
 
-class UniformGenerator {
-public:
-  UniformGenerator(uint64_t max_num, int scale = 64)
-      : base_(max_num / scale), scale_(scale), gen_cnt_(0) {
-    for (uint64_t i = 0; i < base_.size(); i++) {
-      base_[i] = i + 1;
-    }
-    std::shuffle(base_.begin(), base_.end(), std::mt19937_64());
-  }
-
-  uint64_t Next() {
-    auto next = gen_cnt_.fetch_add(1, std::memory_order_relaxed);
-    auto index = next % base_.size();
-    auto cur_scale = (next / base_.size()) % scale_;
-    return base_[index] + base_.size() * cur_scale;
-  }
-
-private:
-  std::vector<uint64_t> base_;
-  uint64_t scale_;
-  std::atomic<uint64_t> gen_cnt_;
-};
-
 bool done{false};
 std::atomic<uint64_t> read_ops{0};
 std::atomic<uint64_t> write_ops{0};
@@ -123,6 +101,7 @@ bool stat_latencies;
 double existing_keys_ratio;
 bool sorted;
 uint64_t num_collections;
+std::shared_ptr<Generator> key_generator;
 
 char *random_str(unsigned int size) {
   char *str = (char *)malloc(size + 1);
@@ -146,31 +125,7 @@ char *random_str(unsigned int size) {
   return str;
 }
 
-inline uint64_t fast_random() {
-  static std::mt19937_64 generator;
-  thread_local uint64_t seed = 0;
-  if (seed == 0) {
-    seed = generator();
-  }
-  uint64_t x = seed; /* The state must be seeded with a nonzero value. */
-  x ^= x >> 12;      // a
-  x ^= x << 25;      // b
-  x ^= x >> 27;      // c
-  seed = x;
-  return x * 0x2545F4914F6CDD1D;
-}
-
-uint64_t generate_key(double hit_ratio = 1) {
-  if (fill) {
-    return generator->Next();
-  }
-
-  if (hit_ratio == 0) {
-    return fast_random();
-  } else {
-    return fast_random() % (uint64_t)(num_keys / hit_ratio);
-  }
-}
+uint64_t generate_key() { return key_generator->Next(); }
 
 void DBWrite(int id) {
   std::string k;
@@ -189,7 +144,7 @@ void DBWrite(int id) {
       return;
 
     // generate key
-    num = generate_key(existing_keys_ratio);
+    num = generate_key();
 
     memcpy(&k[0], &num, 8);
     std::vector<std::string> sv;
@@ -241,7 +196,7 @@ void DBScan(int id) {
       return;
     }
 
-    num = generate_key(existing_keys_ratio);
+    num = generate_key();
     memcpy(&k[0], &num, 8);
     auto iter = engine->NewSortedIterator(collections[num % num_collections]);
     if (iter) {
@@ -280,7 +235,7 @@ void DBRead(int id) {
     if (done) {
       return;
     }
-    num = generate_key(existing_keys_ratio);
+    num = generate_key();
     memcpy(&k[0], &num, 8);
     if (stat_latencies)
       timer.Start();
@@ -346,9 +301,19 @@ bool ProcessBenchmarkConfigs() {
   num_keys = FLAGS_num;
   num_collections = FLAGS_collections;
 
-  if (fill) {
-    printf("to fill %lu uniform keys\n", num_keys);
-    generator.reset(new UniformGenerator(num_keys));
+  uint64_t max_key = FLAGS_existing_keys_ratio == 0
+                         ? UINT64_MAX
+                         : num_keys / FLAGS_existing_keys_ratio;
+  if (fill || FLAGS_key_distribution == "uniform") {
+    key_generator.reset(new UniformGenerator(num_keys));
+  } else if (FLAGS_key_distribution == "zipf") {
+    key_generator.reset(new ZipfianGenerator(max_key));
+  } else if (FLAGS_key_distribution == "random") {
+    key_generator.reset(new RandomGenerator(max_key));
+  } else {
+    printf("key distribution %s is not supported\n",
+           FLAGS_key_distribution.c_str());
+    return false;
   }
 
   return true;
