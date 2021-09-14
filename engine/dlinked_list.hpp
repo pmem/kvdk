@@ -34,15 +34,13 @@ namespace KVDK_NAMESPACE
     class DLinkedList : public std::enable_shared_from_this<DLinkedList>
     {
     private:
+        /// Allocator for allocating space for new nodes, 
+        /// as well as for deallocating space to delete nodes
+        std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
         /// PMem pointer(pmp) to head node on PMem
         DLDataEntry* _pmp_head_;
         /// PMem pointer(pmp) to tail node on PMem
         DLDataEntry* _pmp_tail_;
-        /// Allocator for allocating space for new nodes, 
-        /// as well as for deallocating space to delete nodes
-        std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
-        /// Shared pointer to pin
-        std::shared_ptr<DLinkedList> _sp_dlinked_list_;
 
         class Iterator;
 
@@ -132,13 +130,13 @@ namespace KVDK_NAMESPACE
         /// Create DLinkedList from existing head and tail node. Used for recovery.
         DLinkedList
         (
+            std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
             DLDataEntry* pmp_head,
-            DLDataEntry* pmp_tail,
-            std::shared_ptr<PMEMAllocator> sp_pmem_allocator
+            DLDataEntry* pmp_tail
         ) :
+            _sp_pmem_allocator_{ sp_pmem_allocator },
             _pmp_head_{ pmp_head },
-            _pmp_tail_{ pmp_tail },
-            _sp_pmem_allocator_{ sp_pmem_allocator }
+            _pmp_tail_{ pmp_tail }
         {
             Iterator curr{ shared_from_this(), pmp_head };
             assert(pmp_head->type == DataEntryType::DlistHeadRecord);
