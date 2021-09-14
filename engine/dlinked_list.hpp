@@ -54,17 +54,19 @@ namespace KVDK_NAMESPACE
 
     public:
         /// Create DLinkedList and construct head and tail node on PMem.
+        /// key and value are stored in head and tail nodes
         DLinkedList
         (
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
-            std::uint64_t timestamp = 0ULL
+            std::uint64_t timestamp,
+            pmem::obj::string_view const key,   
+            pmem::obj::string_view const value
         ) 
         try:
             _pmp_head_{ nullptr },
             _pmp_tail_{ nullptr },
             _sp_pmem_allocator_{ sp_pmem_allocator }
         {
-            static std::string const str_empty{""};
             // head and tail only holds DLDataEntry. No id or collection name needed.
             auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
             if (space_head.size == 0)
@@ -92,7 +94,7 @@ namespace KVDK_NAMESPACE
 
                 // checksum can only be calculated with complete meta
                 entry_head.header.b_size = space_head.size;
-                entry_head.header.checksum = _check_sum_(entry_head, str_empty, str_empty);
+                entry_head.header.checksum = _CheckSum_(entry_head, key, value);
 
                 entry_head.prev = _null_offset_;
                 entry_head.next = offset_tail;
@@ -107,7 +109,7 @@ namespace KVDK_NAMESPACE
 
                 // checksum can only be calculated with complete meta
                 entry_tail.header.b_size = space_head.size;
-                entry_tail.header.checksum = _check_sum_(entry_tail, str_empty, str_empty);
+                entry_tail.header.checksum = _CheckSum_(entry_tail, key, value);
 
                 entry_tail.prev = offset_head;
                 entry_tail.next = _null_offset_;
@@ -115,8 +117,8 @@ namespace KVDK_NAMESPACE
 
             // Persist tail first then head
             // If only tail is persisted then it can be deallocated by caller at recovery
-            _persist_record_(pmp_tail, entry_tail, str_empty, str_empty);
-            _persist_record_(pmp_head, entry_head, str_empty, str_empty);
+            _PersistRecord_(pmp_tail, entry_tail, key, value);
+            _PersistRecord_(pmp_head, entry_head, key, value);
             _pmp_head_ = static_cast<DLDataEntry*>(pmp_head);
             _pmp_tail_ = static_cast<DLDataEntry*>(pmp_tail);
         }
@@ -145,9 +147,9 @@ namespace KVDK_NAMESPACE
                 Iterator next{ curr }; ++next;
                 // Check for backward link
                 // Forward link is guaranteed to be valid
-                if (next->prev != curr._get_offset_())
+                if (next->prev != curr._GetOffset_())
                 {
-                    auto offset = curr._get_offset_();
+                    auto offset = curr._GetOffset_();
                     pmem_memcpy(&next->prev, &offset, sizeof(decltype(next->prev)), PMEM_F_MEM_NONTEMPORAL);
                 }
                 curr = next;
@@ -177,7 +179,7 @@ namespace KVDK_NAMESPACE
             Iterator iter_prev{ iter }; --iter_prev;
             Iterator iter_next{ iter };
 
-            return _emplace_between_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
+            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
         }
 
         /// Emplace right after iter.
@@ -194,9 +196,9 @@ namespace KVDK_NAMESPACE
 
             // Insert happens between iter_prev and iter_next
             Iterator iter_prev{ iter };
-            Iterator iter_next{ iter }; ++iter_prev;
+            Iterator iter_next{ iter }; ++iter_next;
 
-            return _emplace_between_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
+            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
         }
 
         /// In-place swap out an old record for new one
@@ -218,7 +220,7 @@ namespace KVDK_NAMESPACE
             Iterator iter_prev{ iter }; --iter_prev;
             Iterator iter_next{ iter }; ++iter_prev;
 
-            return _emplace_between_(iter_prev, iter_next, timestamp, key, value, type);
+            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
         }
 
         Iterator First()
@@ -252,12 +254,12 @@ namespace KVDK_NAMESPACE
         {
             iter._sp_dlinked_list_->_sp_pmem_allocator_->Free
             (
-                SizedSpaceEntry{ iter._get_offset_(), iter->header.b_size, iter->timestamp }
+                SizedSpaceEntry{ iter._GetOffset_(), iter->header.b_size, iter->timestamp }
             );
         }
 
     private:
-        inline static void _persist_record_
+        inline static void _PersistRecord_
         (
             void* pmp,
             DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller
@@ -279,7 +281,7 @@ namespace KVDK_NAMESPACE
             pmem_memcpy(pmp, &entry, sz_entry, PMEM_F_MEM_NONTEMPORAL);
         }
 
-        inline static std::uint32_t _check_sum_
+        inline static std::uint32_t _CheckSum_
         (
             DLDataEntry const& entry,           // Incomplete DLDataEntry, only meta is valid
             pmem::obj::string_view const key,
@@ -304,7 +306,7 @@ namespace KVDK_NAMESPACE
         ///     3) entry emplaced and linked in the forward direction
         ///     4) entry emplaced and linked in both directions
         /// When recovering, just recover head and tail, then iterating through to repair
-        inline Iterator _emplace_between_
+        inline Iterator _EmplaceBetween_
         (
             Iterator iter_prev,
             Iterator iter_next,
@@ -335,14 +337,14 @@ namespace KVDK_NAMESPACE
 
                 // checksum can only be calculated with complete meta
                 entry.header.b_size = space.size;
-                entry.header.checksum = _check_sum_(entry, key, value);
+                entry.header.checksum = _CheckSum_(entry, key, value);
 
-                entry.prev = iter_prev._get_offset_();
-                entry.next = iter_next._get_offset_();
+                entry.prev = iter_prev._GetOffset_();
+                entry.next = iter_next._GetOffset_();
                 // entry is now complete
             }
 
-            _persist_record_(pmp, entry, key, value);
+            _PersistRecord_(pmp, entry, key, value);
             pmem_memcpy(&iter_prev->next, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
             pmem_memcpy(&iter_next->prev, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
 
@@ -420,7 +422,7 @@ namespace KVDK_NAMESPACE
             /// Increment and Decrement operators
             Iterator& operator++()
             {
-                _pmp_curr_ = _get_pmp_next_();
+                _pmp_curr_ = _GetPmpNext_();
                 return *this;
             }
 
@@ -433,7 +435,7 @@ namespace KVDK_NAMESPACE
 
             Iterator& operator--()
             {
-                _pmp_curr_ = _get_pmp_prev_();
+                _pmp_curr_ = _GetPmpPrev_();
                 return *this;
             }
 
@@ -456,17 +458,17 @@ namespace KVDK_NAMESPACE
             }
 
         private:
-            inline DLDataEntry* _get_pmp_next_() const
+            inline DLDataEntry* _GetPmpNext_() const
             {
                 return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->next));
             }
 
-            inline DLDataEntry* _get_pmp_prev_() const
+            inline DLDataEntry* _GetPmpPrev_() const
             {
                 return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->prev));
             }
 
-            inline std::uint64_t _get_offset_() const
+            inline std::uint64_t _GetOffset_() const
             {
                 return _sp_dlinked_list_->_sp_pmem_allocator_->addr2offset(_pmp_curr_);
             }
