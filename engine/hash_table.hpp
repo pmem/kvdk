@@ -94,6 +94,8 @@ public:
 
   // Register a writer only if all readers have left
   // and no writer have registered yet.
+  // After first writer having registered,
+  // Other writers are blocked out.
   inline bool RegisterWriter()
   {
     std::int16_t old = _counter_.load();
