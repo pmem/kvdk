@@ -4,8 +4,10 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdio>
 #include <vector>
+#include <limits>
 
 #include "data_entry.hpp"
 #include "dram_allocator.hpp"
@@ -44,6 +46,60 @@ enum class HashOffsetType : uint8_t {
   UnorderedCollection = 5
 };
 
+// Monitor to keep track of readers of a resource
+// Multiple readers may hold the same resource
+// When a writer comes, it may mark the resource as dirty
+// This will preventing any future reader from acquiring the resource
+// 
+class RWMonitor
+{
+private:
+  // _counter_ registers the number of readers
+  // When the resource is marked as dirty,
+  // the highest bit of _counter_ is set is 1 and _counter_ becomes negative
+  std::atomic_int16_t _counter_;
+
+public:
+  RWMonitor() : _counter_{0}
+  {
+  }
+
+  inline bool RegisterReader()
+  {
+    std::int16_t old = _counter_.fetch_add(1);
+    if (old < 0)
+    {
+      UnregisterReader();
+      return false;
+    }
+    else
+    {
+      return true;
+    }
+  }
+
+  inline void UnregisterReader()
+  {
+    _counter_.fetch_sub(1);
+  }
+
+  inline void MarkDirty()
+  {
+    if(_counter_.load() >= 0)
+      _counter_.fetch_add(std::numeric_limits<std::int16_t>::min());
+  }
+
+  bool RegisterWriter()
+  {
+    std::int16_t old = _counter_.load();
+    if (std::numeric_limits<std::int16_t>::min() == _counter_.load())
+    {
+    }
+    
+  }
+};
+static_assert(sizeof(RWMonitor) == sizeof(std::int16_t));
+
 struct HashHeader {
   uint32_t key_prefix;
   uint16_t data_type;
@@ -53,7 +109,7 @@ struct HashHeader {
 
 struct HashEntry {
 private: 
-  class UnorderedCollection;
+  class KVDK_NAMESPACE::UnorderedCollection;
 
 public:
   HashEntry() = default;
