@@ -1167,7 +1167,6 @@ std::shared_ptr<UnorderedCollection> KVEngine::SearchUnorderedCollection(pmem::o
   auto hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
-  constexpr std::uint16_t mask_all = static_cast<std::uint16_t>(std::int16_t{-1});
   Status s = hash_table_->Search(hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
                                  &entry_base, HashTable::SearchPurpose::Read);
   switch (s)
@@ -1196,14 +1195,15 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
 
   auto hint = hash_table_->GetHint(internal_key);
   HashEntry hash_entry;
-  HashEntry *entry_base = nullptr;
+  HashEntry *p_hash_entry_in_table = nullptr;
   constexpr std::uint16_t mask_all = static_cast<std::uint16_t>(std::int16_t{-1});
   Status s = hash_table_->Search(hint, collection_name, mask_all, &hash_entry, nullptr,
-                                 &entry_base, HashTable::SearchPurpose::Read);
+                                 &p_hash_entry_in_table, HashTable::SearchPurpose::Read);
   switch (s)
   {
   case Status::NotFound:
   {
+    return s;
   }
   case Status::Ok:
   {
@@ -1230,9 +1230,12 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
 }
 
 std::shared_ptr<Iterator>
-NewUnorderedIterator(pmem::obj::string_view const collection_name)
+KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name)
 {
-  throw std::runtime_error{"Unimplemented yet!"};
+  std::shared_ptr<UnorderedCollection> sp_coll = SearchUnorderedCollection(collection_name);
+  assert(sp_coll && "Trying to initialize an Iterator for a UnorderedCollection not created yet");
+  return sp_coll ? std::make_shared<UnorderedIterator>(sp_coll)
+                 : nullptr;
 }
 
 
