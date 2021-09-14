@@ -13,6 +13,7 @@
 #include "structures.hpp"
 #include "utils.hpp"
 #include "dlinked_list.hpp"
+#include "kvdk/iterator.hpp"
 
 namespace KVDK_NAMESPACE 
 {
@@ -59,7 +60,7 @@ namespace KVDK_NAMESPACE
             }
             if (&third != &first && &third != &second)
             {
-                _third_ = std::unique_lock<Lock>{ _dummy_third_, std::defer_lock };
+                _third_ = std::unique_lock<Lock>{ third, std::defer_lock };
             }
             else
             {
@@ -87,7 +88,7 @@ namespace KVDK_NAMESPACE
             }            
         }
 
-        Swap(UniqueLockTriplet& other)
+        UniqueLockTriplet& Swap(UniqueLockTriplet& other)
         {
             std::swap(_acquired_first_, other._acquired_first_);
             std::swap(_acquired_second_, other._acquired_second_);
@@ -97,6 +98,7 @@ namespace KVDK_NAMESPACE
             _first_.swap(other._first_);
             _second_.swap(other._second_);
             _third_.swap(other._third_);
+            return *this;
         }
 
         bool TryLockAll()
@@ -213,6 +215,8 @@ namespace KVDK_NAMESPACE
 
     };
 
+    class UnorderedIterator;
+
     /// UnorderedCollection is stored in DRAM, indexed by HashTable
     /// A Record DlistRecord is stored in PMem,
     /// whose key is the name of the UnorderedCollection
@@ -310,19 +314,9 @@ namespace KVDK_NAMESPACE
         {
         }
 
-        UnorderedIterator First()
-        {
-            UnorderedIterator iter{ shared_from_this() };
-            iter.SeekToFirst();
-            return iter;
-        }
+        UnorderedIterator First();
 
-        UnorderedIterator Last()
-        {
-            UnorderedIterator iter{ shared_from_this() };
-            iter.SeekToLast();
-            return iter;
-        }
+        UnorderedIterator Last();
 
         UnorderedIterator EmplaceBefore
         (
@@ -332,16 +326,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const value,
             DataEntryType type,
             SpinMutex* spin             // spin in Slot containing HashEntry to pmp
-        )
-        {
-            assert(spin);
-            // Validifying PMem address by constructing UnorderedIterator
-            UnorderedIterator iter{ shared_from_this(), pmp };
-            DLinkedList::Iterator iter_prev{ iter._iterator_internal_ }; --iter_prev;
-            UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter_prev, spin) };
-            locks.LockAll();
-            _sp_dlinked_list_->EmplaceBefore(iter._iterator_internal_, timestamp, key, value);
-        }
+        );
 
         UnorderedIterator EmplaceAfter
         (
@@ -351,15 +336,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const value,
             DataEntryType type,
             SpinMutex* spin             // spin in Slot containing HashEntry to pmp
-        )
-        {
-            assert(spin);
-            // Validifying PMem address by constructing UnorderedIterator
-            UnorderedIterator iter{ shared_from_this(), pmp };
-            UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter._iterator_internal_, spin) };
-            locks.LockAll();
-            _sp_dlinked_list_->EmplaceAfter(iter._iterator_internal_, timestamp, key, value);
-        }
+        );
 
         UnorderedIterator SwapEmplace
         (
@@ -369,14 +346,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const value,
             DataEntryType type,
             SpinMutex* spin = nullptr   // spin in Slot containing HashEntry to pmp
-        )
-        {
-            // Validifying PMem address by constructing UnorderedIterator
-            UnorderedIterator iter{ shared_from_this(), pmp };
-            UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet3Nodes_(iter._iterator_internal_, spin) };
-            locks.LockAll();
-            _sp_dlinked_list_->SwapEmplace(iter._iterator_internal_, timestamp, key, value, type);            
-        }
+        );
 
         uint64_t id() override { return _id_; }
 
@@ -425,10 +395,10 @@ namespace KVDK_NAMESPACE
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent three nodes, not locked yet.
         /// Also accepts UnorderedIterator by implicit casting
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DLinkedList::Iterator iter_mid, SpinMutex* spin_mid = nullptr)
+        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DLinkedList::DlistIterator iter_mid, SpinMutex* spin_mid = nullptr)
         {
-            DLinkedList::Iterator iter_prev{ iter_mid }; --iter_prev;
-            DLinkedList::Iterator iter_next{ iter_mid }; ++iter_next;
+            DLinkedList::DlistIterator iter_prev{ iter_mid }; --iter_prev;
+            DLinkedList::DlistIterator iter_next{ iter_mid }; ++iter_next;
 
             SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
             SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
@@ -446,9 +416,9 @@ namespace KVDK_NAMESPACE
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent two nodes between which the new node is to be emplaced
         /// Also locks the slot for new node
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DLinkedList::Iterator iter_prev, SpinMutex* spin_new)
+        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DLinkedList::DlistIterator iter_prev, SpinMutex* spin_new)
         {
-            DLinkedList::Iterator iter_next{ iter_prev }; ++iter_next;
+            DLinkedList::DlistIterator iter_next{ iter_prev }; ++iter_next;
 
             SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
             SpinMutex* p_spin_2 = spin_new;
@@ -481,7 +451,7 @@ namespace KVDK_NAMESPACE
     private:
         /// shared pointer to pin the UnorderedCollection
         std::shared_ptr<UnorderedCollection> _sp_coll_;
-        DLinkedList::Iterator _iterator_internal_;
+        DLinkedList::DlistIterator _iterator_internal_;
         bool _valid_;
 
         friend class UnorderedCollection;
@@ -591,7 +561,7 @@ namespace KVDK_NAMESPACE
                 default:
                     break;
                 }
-                throw std::runtime_error{ "UnorderedCollection::Iterator::_Next_() fails!" };
+                throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Next_() fails!" };
             }
         }
 
@@ -616,9 +586,81 @@ namespace KVDK_NAMESPACE
                 default:
                     break;
                 }
-                throw std::runtime_error{ "UnorderedCollection::Iterator::_Prev_() fails!" };
+                throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Prev_() fails!" };
             }
         }
 
     };
+    
 } // namespace KVDK_NAMESPACE
+
+namespace KVDK_NAMESPACE 
+{
+    UnorderedIterator UnorderedCollection::First()
+    {
+        UnorderedIterator iter{ shared_from_this() };
+        iter.SeekToFirst();
+        return iter;
+    }
+
+    UnorderedIterator UnorderedCollection::Last()
+    {
+        UnorderedIterator iter{ shared_from_this() };
+        iter.SeekToLast();
+        return iter;
+    }
+
+    UnorderedIterator UnorderedCollection::EmplaceBefore
+    (
+        DLDataEntry* pmp,
+        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        SpinMutex* spin             // spin in Slot containing HashEntry to pmp
+    )
+    {
+        assert(spin);
+        // Validifying PMem address by constructing UnorderedIterator
+        UnorderedIterator iter{ shared_from_this(), pmp };
+        DLinkedList::DlistIterator iter_prev{ iter._iterator_internal_ }; --iter_prev;
+        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter_prev, spin) };
+        locks.LockAll();
+        _sp_dlinked_list_->EmplaceBefore(iter._iterator_internal_, timestamp, key, value);
+    }
+
+    UnorderedIterator UnorderedCollection::EmplaceAfter
+    (
+        DLDataEntry* pmp,
+        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        SpinMutex* spin             // spin in Slot containing HashEntry to pmp
+    )
+    {
+        assert(spin);
+        // Validifying PMem address by constructing UnorderedIterator
+        UnorderedIterator iter{ shared_from_this(), pmp };
+        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter._iterator_internal_, spin) };
+        locks.LockAll();
+        _sp_dlinked_list_->EmplaceAfter(iter._iterator_internal_, timestamp, key, value);
+    }
+
+    UnorderedIterator UnorderedCollection::SwapEmplace
+    (
+        DLDataEntry* pmp,
+        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        SpinMutex* spin             // spin in Slot containing HashEntry to pmp
+    )
+    {
+        // Validifying PMem address by constructing UnorderedIterator
+        UnorderedIterator iter{ shared_from_this(), pmp };
+        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet3Nodes_(iter._iterator_internal_, spin) };
+        locks.LockAll();
+        _sp_dlinked_list_->SwapEmplace(iter._iterator_internal_, timestamp, key, value, type);            
+    }
+}

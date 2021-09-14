@@ -216,6 +216,10 @@ public:
     }
   }
 
+  virtual void SeekToLast() override {
+    throw std::runtime_error{"Unimplemented!"};
+  }
+
   virtual bool Valid() override {
     return (current != nullptr) && (current->type != SortedDeleteRecord);
   }

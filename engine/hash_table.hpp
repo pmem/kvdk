@@ -55,8 +55,6 @@ class RWMonitor
 {
 private:
   // _counter_ registers the number of readers
-  // When the resource is marked as dirty,
-  // the highest bit of _counter_ is set is 1 and _counter_ becomes negative
   std::atomic_int16_t _counter_;
   constexpr static int16_t int16_min = std::numeric_limits<std::int16_t>::min();
 
@@ -65,6 +63,8 @@ public:
   {
   }
 
+  // Add a reader to resource. 
+  // If resource marked dirty, fail and return false.
   inline bool RegisterReader()
   {
     std::int16_t old = _counter_.fetch_add(1);
@@ -79,18 +79,22 @@ public:
     }
   }
 
+  // Remove a reader from resource.
   inline void UnregisterReader()
   {
     _counter_.fetch_sub(1);
   }
 
+  // Mark the resource dirty, prevent further reader from entering.
   inline void MarkDirty()
   {
     if(_counter_.load() >= 0)
       _counter_.fetch_add(int16_min);
   }
 
-  bool RegisterWriter()
+  // Register a writer only if all readers have left
+  // and no writer have registered yet.
+  inline bool RegisterWriter()
   {
     std::int16_t old = _counter_.load();
     if (old < 0)
@@ -132,9 +136,10 @@ struct HashHeader {
   HashEntryStatus status;
 };
 
+class UnorderedCollection;
+
 struct HashEntry {
 private: 
-  class KVDK_NAMESPACE::UnorderedCollection;
 
 public:
   HashEntry() = default;

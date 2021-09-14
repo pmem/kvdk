@@ -1158,7 +1158,8 @@ std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(pmem::o
 {
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
-  return std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, collection_name, id, ts);
+  std::string name(collection_name.data(), collection_name.size());
+  return std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, name, id, ts);
 }
 
 std::shared_ptr<UnorderedCollection> KVEngine::SearchUnorderedCollection(pmem::obj::string_view const collection_name)

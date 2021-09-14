@@ -42,15 +42,131 @@ namespace KVDK_NAMESPACE
         /// PMem pointer(pmp) to tail node on PMem
         DLDataEntry* _pmp_tail_;
 
-        class Iterator;
-
-        friend class Iterator;
+        friend class DlistIterator;
         friend class UnorderedCollection;
         friend class UnorderedIterator;
 
         static constexpr std::uint64_t _null_offset_ = kNullPmemOffset;
 
     public:
+
+    public:
+        class DlistIterator
+        {
+        private:
+            friend class DLinkedList;
+            friend class UnorderedCollection;
+
+        private:
+            /// shared pointer to pin the dlinked_list
+            /// as well as share the pmem_allocator to transform offset to PMem pointer
+            /// shared pointer instead of normal pointer is used to pin the pmem_allocator
+            std::shared_ptr<DLinkedList> _sp_dlinked_list_;
+
+            /// PMem pointer to current Record
+            DLDataEntry* _pmp_curr_;
+
+        public:
+            /// Constructors and Destructors
+            explicit DlistIterator() = delete;
+
+            explicit DlistIterator(std::shared_ptr<DLinkedList> sp_list) :
+                _sp_dlinked_list_{ sp_list },
+                _pmp_curr_{ _sp_dlinked_list_->_pmp_head_ }
+            {
+            }
+
+            explicit DlistIterator(std::shared_ptr<DLinkedList> sp_list, DLDataEntry* curr) :
+                _sp_dlinked_list_{ sp_list },
+                _pmp_curr_{ curr }
+            {
+            }
+
+            DlistIterator(DlistIterator const& other) :
+                _sp_dlinked_list_(other._sp_dlinked_list_),
+                _pmp_curr_(other._pmp_curr_)
+            {
+            }
+
+            /// Conversion to bool
+            /// Double check for the validity of dlinked_list object on PMem
+            inline bool valid()
+            {
+                if (!_sp_dlinked_list_ || !_pmp_curr_)
+                {
+                    return false;
+                }
+                DataEntryType type_curr = static_cast<DataEntryType>(_pmp_curr_->type);
+                bool ok =
+                    (
+                        type_curr == DataEntryType::DlistHeadRecord ||
+                        type_curr == DataEntryType::DlistTailRecord ||
+                        type_curr == DataEntryType::DlistDataRecord ||
+                        type_curr == DataEntryType::DlistDeleteRecord
+                    );
+                return ok;
+            }
+
+            inline operator bool()
+            {
+                return valid();
+            }
+
+            /// Increment and Decrement operators
+            DlistIterator& operator++()
+            {
+                _pmp_curr_ = _GetPmpNext_();
+                return *this;
+            }
+
+            DlistIterator operator++(int)
+            {
+                DlistIterator old{ *this };
+                this->operator++();
+                return old;
+            }
+
+            DlistIterator& operator--()
+            {
+                _pmp_curr_ = _GetPmpPrev_();
+                return *this;
+            }
+
+            DlistIterator operator--(int)
+            {
+                DlistIterator old{ *this };
+                this->operator--();
+                return old;
+            }
+
+            /// Dereference and direct PMem pointer access
+            DLDataEntry& operator*()
+            {
+                return *_pmp_curr_;
+            }
+
+            DLDataEntry* operator->()
+            {
+                return _pmp_curr_;
+            }
+
+        private:
+            inline DLDataEntry* _GetPmpNext_() const
+            {
+                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->next));
+            }
+
+            inline DLDataEntry* _GetPmpPrev_() const
+            {
+                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->prev));
+            }
+
+            inline std::uint64_t _GetOffset_() const
+            {
+                return _sp_dlinked_list_->_sp_pmem_allocator_->addr2offset(_pmp_curr_);
+            }
+        };
+        
         /// Create DLinkedList and construct head and tail node on PMem.
         /// key and value are stored in head and tail nodes
         DLinkedList
@@ -138,11 +254,11 @@ namespace KVDK_NAMESPACE
             _pmp_head_{ pmp_head },
             _pmp_tail_{ pmp_tail }
         {
-            Iterator curr{ shared_from_this(), pmp_head };
+            DlistIterator curr{ shared_from_this(), pmp_head };
             assert(pmp_head->type == DataEntryType::DlistHeadRecord);
             do
             {
-                Iterator next{ curr }; ++next;
+                DlistIterator next{ curr }; ++next;
                 // Check for backward link
                 // Forward link is guaranteed to be valid
                 if (next->prev != curr._GetOffset_())
@@ -163,9 +279,9 @@ namespace KVDK_NAMESPACE
 
         /// Emplace right before iter.
         /// When fail to Emplace, return iterator at head
-        Iterator EmplaceBefore
+        DlistIterator EmplaceBefore
         (
-            Iterator iter,
+            DlistIterator iter,
             std::uint64_t timestamp,    // Timestamp can only be supplied by caller
             pmem::obj::string_view const key,
             pmem::obj::string_view const value
@@ -174,17 +290,17 @@ namespace KVDK_NAMESPACE
             assert(iter.valid() && "Invalid iterator in dlinked_list!");
 
             // Insert happens between iter_prev and iter_next
-            Iterator iter_prev{ iter }; --iter_prev;
-            Iterator iter_next{ iter };
+            DlistIterator iter_prev{ iter }; --iter_prev;
+            DlistIterator iter_next{ iter };
 
             return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
         }
 
         /// Emplace right after iter.
         /// When fail to Emplace, return invalid iterator.
-        Iterator EmplaceAfter
+        DlistIterator EmplaceAfter
         (
-            Iterator iter,
+            DlistIterator iter,
             std::uint64_t timestamp,    // Timestamp can only be supplied by caller
             pmem::obj::string_view const key,
             pmem::obj::string_view const value
@@ -193,8 +309,8 @@ namespace KVDK_NAMESPACE
             assert(iter.valid() && "Invalid iterator in dlinked_list!");
 
             // Insert happens between iter_prev and iter_next
-            Iterator iter_prev{ iter };
-            Iterator iter_next{ iter }; ++iter_next;
+            DlistIterator iter_prev{ iter };
+            DlistIterator iter_next{ iter }; ++iter_next;
 
             return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, DataEntryType::DlistDataRecord);
         }
@@ -202,9 +318,9 @@ namespace KVDK_NAMESPACE
         /// In-place swap out an old record for new one
         /// Old record should be freed by caller after calling this function
         /// Timestamp should be checked by caller
-        Iterator SwapEmplace
+        DlistIterator SwapEmplace
         (
-            Iterator iter,
+            DlistIterator iter,
             std::uint64_t timestamp,    // Timestamp can only be supplied by caller
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
@@ -215,40 +331,40 @@ namespace KVDK_NAMESPACE
             assert(type == DataEntryType::DlistDataRecord || type == DataEntryType::DlistDeleteRecord);
 
             // Swap happens between iter_prev and iter_next
-            Iterator iter_prev{ iter }; --iter_prev;
-            Iterator iter_next{ iter }; ++iter_prev;
+            DlistIterator iter_prev{ iter }; --iter_prev;
+            DlistIterator iter_next{ iter }; ++iter_prev;
 
             return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
         }
 
-        Iterator First()
+        DlistIterator First()
         {
-            Iterator ret{ shared_from_this(), _pmp_head_ };
+            DlistIterator ret{ shared_from_this(), _pmp_head_ };
             assert(ret.valid());
             ++ret;
             return ret;
         }
 
-        Iterator Last()
+        DlistIterator Last()
         {
-            Iterator ret{ shared_from_this(), _pmp_tail_ };
+            DlistIterator ret{ shared_from_this(), _pmp_tail_ };
             assert(ret.valid());
             --ret;
             return ret;
         }
 
-        Iterator Head()
+        DlistIterator Head()
         {
-            return Iterator{ shared_from_this(), _pmp_head_ };
+            return DlistIterator{ shared_from_this(), _pmp_head_ };
         }
 
-        Iterator Tail()
+        DlistIterator Tail()
         {
-            return Iterator{ shared_from_this(), _pmp_tail_ };
+            return DlistIterator{ shared_from_this(), _pmp_tail_ };
         }
 
         /// Helper function to deallocate Record, called only by caller
-        inline static void Deallocate(Iterator iter)
+        inline static void Deallocate(DlistIterator iter)
         {
             iter._sp_dlinked_list_->_sp_pmem_allocator_->Free
             (
@@ -304,10 +420,10 @@ namespace KVDK_NAMESPACE
         ///     3) entry emplaced and linked in the forward direction
         ///     4) entry emplaced and linked in both directions
         /// When recovering, just recover head and tail, then iterating through to repair
-        inline Iterator _EmplaceBetween_
+        inline DlistIterator _EmplaceBetween_
         (
-            Iterator iter_prev,
-            Iterator iter_next,
+            DlistIterator iter_prev,
+            DlistIterator iter_next,
             std::uint64_t timestamp,    // Timestamp can only be supplied by caller
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
@@ -346,7 +462,7 @@ namespace KVDK_NAMESPACE
             pmem_memcpy(&iter_prev->next, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
             pmem_memcpy(&iter_next->prev, &offset, sizeof(offset), PMEM_F_MEM_NONTEMPORAL);
 
-            return Iterator{ shared_from_this(), static_cast<DLDataEntry*>(pmp) };
+            return DlistIterator{ shared_from_this(), static_cast<DLDataEntry*>(pmp) };
         }
         catch (std::bad_alloc const& ex)
         {
@@ -354,123 +470,6 @@ namespace KVDK_NAMESPACE
             std::cerr << "Fail to create DLinkedList object!" << std::endl;
             throw;
         }
-
-    public:
-        class Iterator
-        {
-        private:
-            friend class DLinkedList;
-            friend class UnorderedCollection;
-
-        private:
-            /// shared pointer to pin the dlinked_list
-            /// as well as share the pmem_allocator to transform offset to PMem pointer
-            /// shared pointer instead of normal pointer is used to pin the pmem_allocator
-            std::shared_ptr<DLinkedList> _sp_dlinked_list_;
-
-            /// PMem pointer to current Record
-            DLDataEntry* _pmp_curr_;
-
-        public:
-            /// Constructors and Destructors
-            explicit Iterator() = delete;
-
-            explicit Iterator(std::shared_ptr<DLinkedList> sp_list) :
-                _sp_dlinked_list_{ sp_list },
-                _pmp_curr_{ _sp_dlinked_list_->_pmp_head_ }
-            {
-            }
-
-            explicit Iterator(std::shared_ptr<DLinkedList> sp_list, DLDataEntry* curr) :
-                _sp_dlinked_list_{ sp_list },
-                _pmp_curr_{ curr }
-            {
-            }
-
-            Iterator(Iterator const& other) :
-                _sp_dlinked_list_(other._sp_dlinked_list_),
-                _pmp_curr_(other._pmp_curr_)
-            {
-            }
-
-            /// Conversion to bool
-            /// Double check for the validity of dlinked_list object on PMem
-            inline bool valid()
-            {
-                if (!_sp_dlinked_list_ || !_pmp_curr_)
-                {
-                    return false;
-                }
-                DataEntryType type_curr = static_cast<DataEntryType>(_pmp_curr_->type);
-                bool ok =
-                    (
-                        type_curr == DataEntryType::DlistHeadRecord ||
-                        type_curr == DataEntryType::DlistTailRecord ||
-                        type_curr == DataEntryType::DlistDataRecord ||
-                        type_curr == DataEntryType::DlistDeleteRecord
-                    );
-                return ok;
-            }
-
-            inline operator bool()
-            {
-                return valid();
-            }
-
-            /// Increment and Decrement operators
-            Iterator& operator++()
-            {
-                _pmp_curr_ = _GetPmpNext_();
-                return *this;
-            }
-
-            Iterator operator++(int)
-            {
-                Iterator old{ *this };
-                this->operator++();
-                return old;
-            }
-
-            Iterator& operator--()
-            {
-                _pmp_curr_ = _GetPmpPrev_();
-                return *this;
-            }
-
-            Iterator operator--(int)
-            {
-                Iterator old{ *this };
-                this->operator--();
-                return old;
-            }
-
-            /// Dereference and direct PMem pointer access
-            DLDataEntry& operator*()
-            {
-                return *_pmp_curr_;
-            }
-
-            DLDataEntry* operator->()
-            {
-                return _pmp_curr_;
-            }
-
-        private:
-            inline DLDataEntry* _GetPmpNext_() const
-            {
-                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->next));
-            }
-
-            inline DLDataEntry* _GetPmpPrev_() const
-            {
-                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->prev));
-            }
-
-            inline std::uint64_t _GetOffset_() const
-            {
-                return _sp_dlinked_list_->_sp_pmem_allocator_->addr2offset(_pmp_curr_);
-            }
-        };
     };
 
 } // namespace KVDK_NAMESPACE
