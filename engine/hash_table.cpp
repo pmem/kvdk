@@ -49,10 +49,18 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       {
         data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
         data_entry_key = static_cast<DLDataEntry*>(data_entry_pmem)->Key();
+        break;
+      }
+      case DataEntryType::DlistHeadRecord:
+      case DataEntryType::DlistTailRecord:
+      {
+        GlobalLogger.Error("DlistHeadRecord and DlistTailRecord should not be directly indexed by HashTable!\n");
+        assert(false && "DlistHeadRecord and DlistTailRecord should not be directly indexed by HashTable!\n");
+        return false;
       }
       default:
       {
-        GlobalLogger.Error("invalid record in UnorderedCollection!\n");
+        GlobalLogger.Error("Invalid record in UnorderedCollection!\n");
         return false;
       }
       }
