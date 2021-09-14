@@ -175,9 +175,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
         pmem_memcpy(&static_cast<DataEntry *>(recovering_pmem_data_entry)->type,
                     &type_padding, sizeof(DataEntryType),
                     PMEM_F_MEM_NONTEMPORAL);
-        // through down to padding
         cached_recovering_data_entry.type = DataEntryType::Padding;
       }
+      // through down to padding
     }
     case DataEntryType::Padding:
     case DataEntryType::Empty: {
@@ -237,20 +237,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
       throw std::runtime_error{msg};
     }
     }
-    switch (s) {
-    case Status::OutdatedData: {
-      pmem_allocator_->Free(SizedSpaceEntry(
-          pmem_allocator_->addr2offset(recovering_pmem_data_entry),
-          cached_recovering_data_entry.header.b_size,
-          cached_recovering_data_entry.timestamp));
-    }
-    case Status::Ok: {
-      continue;
-    }
-    default: {
+    if (s != Status::Ok) {
       write_thread.id = -1;
       return s;
-    }
     }
   }
   write_thread.id = -1;
@@ -324,7 +313,10 @@ Status KVEngine::RestoreStringRecord(DataEntry *pmem_data_entry,
 
   bool found = s == Status::Ok;
   if (found && existing_data_entry.timestamp >= cached_meta->timestamp) {
-    return Status::OutdatedData;
+    pmem_allocator_->Free(
+        SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
+                        cached_meta->header.b_size, cached_meta->timestamp));
+    return Status::Ok;
   }
 
   uint64_t new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
@@ -368,7 +360,10 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
 
   bool found = s == Status::Ok;
   if (found && existing_data_entry.timestamp >= cached_meta->timestamp) {
-    return Status::OutdatedData;
+    pmem_allocator_->Free(
+        SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
+                        cached_meta->header.b_size, cached_meta->timestamp));
+    return Status::Ok;
   }
 
   uint64_t new_hash_offset;
