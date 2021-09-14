@@ -54,8 +54,14 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     if (compare_string_view(key, data_entry_key) == 0) {
       return true;
     }
+    else {
+      return false;
+    }
   }
-  return false;
+  else
+  {
+    return false;
+  }
 }
 
 Status HashTable::Search(const KeyHashHint &hint,

@@ -48,13 +48,23 @@ struct HashHeader {
 };
 
 struct HashEntry {
+private: 
+  class UnorderedCollection;
+
+public:
   HashEntry() = default;
   HashEntry(uint32_t kp, uint16_t t, uint64_t offset,
             HashOffsetType offset_type)
       : header({kp, t, offset_type, HashEntryStatus::Normal}), offset(offset) {}
 
   HashHeader header;
-  uint64_t offset;
+  union
+  {
+    uint64_t offset;
+    UnorderedCollection* p_uncoll;
+  };
+
+  
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
   static void CopyOffset(HashEntry *dst, HashEntry *src) {
