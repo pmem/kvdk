@@ -30,6 +30,8 @@ enum class HashEntryStatus : uint8_t {
 };
 
 enum class HashOffsetType : uint8_t {
+  // Value initialized considered as Invalid
+  Invalid = 0,
   // Offset is PMem offset of a data entry
   DataEntry = 1,
   // Offset is PMem offset of a double linked data entry
@@ -38,6 +40,8 @@ enum class HashOffsetType : uint8_t {
   SkiplistNode = 3,
   // Offset is pointer to a dram skiplist struct
   Skiplist = 4,
+  // Offset is PMem offset
+  UnorderedCollection = 5
 };
 
 struct HashHeader {

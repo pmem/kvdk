@@ -39,6 +39,29 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       data_entry_key = skiplist->name();
       break;
     }
+    case HashOffsetType::UnorderedCollection:
+    {
+      switch (hash_entry->header.data_type)
+      {
+      case DataEntryType::DlistDataRecord:
+      case DataEntryType::DlistDeleteRecord:
+      case DataEntryType::DlistRecord:
+      {
+        data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
+        data_entry_key = static_cast<DLDataEntry*>(data_entry_pmem)->Key();
+      }
+      default:
+      {
+        GlobalLogger.Error("invalid record in UnorderedCollection!\n");
+        return false;
+      }
+      }
+    }
+    case HashOffsetType::Invalid:
+    {
+      GlobalLogger.Error("HashEntry not initialized with valid offset type\n");
+      return false;
+    }
     default: {
       GlobalLogger.Error("Not supported hash offset type: %u\n",
                          hash_entry->header.offset_type);
