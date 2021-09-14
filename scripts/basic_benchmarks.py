@@ -9,14 +9,14 @@ path = "/mnt/pmem0/kvdk"
 report_path = "./results-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
-instance_space = 256 * 1024 * 1024 * 1024  # we need enough space to test insert
+instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
 populate = 1
 collections = 16
 
-numanode = 1
+numanode = 0
 bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
