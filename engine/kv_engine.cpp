@@ -655,8 +655,7 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
     auto pmem_data_entry_size =
         data_entry_meta->header.b_size * configs_.pmem_block_size;
     char data_buffer[pmem_data_entry_size];
-    memcpy(data_buffer, pmem_data_entry,
-           data_entry_meta->header.b_size * configs_.pmem_block_size);
+    memcpy(data_buffer, pmem_data_entry, pmem_data_entry_size);
     // If checksum mismatch, the pmem data entry is corrupted or been reused by
     // another key, redo search
     auto checksum = CalculateChecksum((DataEntry *)data_buffer);
