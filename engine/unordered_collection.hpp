@@ -220,7 +220,7 @@ namespace KVDK_NAMESPACE
     /// UnorderedCollection is stored in DRAM, indexed by HashTable
     /// A Record DlistRecord is stored in PMem,
     /// whose key is the name of the UnorderedCollection
-    /// and value holds the id of the Collection 
+    /// and value holds the ID of the Collection 
     /// prev and next pointer holds the head and tail of DLinkedList for recovery
     /// At runtime, an object of UnorderedCollection is recovered from
     /// the DlistRecord and then stored in HashTable.
@@ -242,6 +242,10 @@ namespace KVDK_NAMESPACE
 
     public:
         /// Create UnorderedCollection and persist it on PMem
+        /// DlistHeadRecord and DlistTailRecord holds ID as key
+        /// and empty string as value
+        /// DlistRecord holds collection name as key
+        /// and ID as value
         UnorderedCollection
         (
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
@@ -367,7 +371,9 @@ namespace KVDK_NAMESPACE
     private:
         /// shared pointer to pin the UnorderedCollection
         std::shared_ptr<UnorderedCollection> _sp_coll_;
+        /// DlistIterator does not ignore DlistDeleteRecord
         DLinkedList::DlistIterator _iterator_internal_;
+        /// Whether the UnorderedIterator is at a DlistDataRecord
         bool _valid_;
 
         friend class UnorderedCollection;
@@ -387,14 +393,15 @@ namespace KVDK_NAMESPACE
         UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry* pmp);
 
         /// UnorderedIterator currently does not support Seek to a key
-        inline virtual void Seek(std::string const& key) final override
+        /// throw runtime_error directly
+        virtual void Seek(std::string const& key) final override
         {
             throw std::runtime_error{ "Seek() not implemented for UnorderedIterator!" };
         }
 
         /// Seek to First DlistDataRecord if exists,
         /// otherwise Valid() will return false.
-        inline virtual void SeekToFirst() final override
+        virtual void SeekToFirst() final override
         {
             _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Head();
             _Next_();
@@ -402,7 +409,7 @@ namespace KVDK_NAMESPACE
 
         /// Seek to Last DlistDataRecord if exists,
         /// otherwise Valid() will return false.
-        inline virtual void SeekToLast() final override
+        virtual void SeekToLast() final override
         {
             _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Tail();
             _Prev_();
@@ -410,56 +417,59 @@ namespace KVDK_NAMESPACE
 
         /// Valid() is true only if the UnorderedIterator points to a DlistDataRecord.
         /// DlistHeadRecord, DlistTailRecord and DlistDeleteRecord is considered invalid.
+        /// User should always check Valid() before
+        /// accessing data with Key() and Value()
+        /// Iterating with Next() and Prev()
         inline virtual bool Valid() final override
         {
             return _valid_;
         }
 
-        /// Try proceeding to next DlistDataRecord
-        /// User should check Valid() before accessing data
-        inline virtual void Next() final override 
+        /// Try proceeding to next DlistDataRecord.
+        /// User should check Valid() before accessing data.
+        /// Calling Next() on invalid UnorderedIterator will do nothing.
+        /// This prevents any further mistakes
+        virtual void Next() final override 
         {
-            if (!Valid())
-            {
-                return Valid();
-            }
-            else
+            if (Valid())
             {
                 _Next_();
-                return Valid();
-            }            
+            }
+            return;
         }
 
         /// Try proceeding to previous DlistDataRecord
         /// User should check Valid() before accessing data
-        inline virtual void Prev() final override
+        /// Calling Prev() on invalid UnorderedIterator will do nothing.
+        /// This prevents any further mistakes
+        virtual void Prev() final override
         {
-            if (!Valid())
-            {
-                return Valid();
-            }
-            else
+            if (Valid())
             {
                 _Prev_();
-                return Valid();
-            }            
+            }
+            return;
         }
 
+        /// return key in DlistDataRecord
+        /// throw runtime_error if !Valid()
         inline virtual std::string Key() override 
         {
             if (!Valid())
             {
-                return "";
+                throw std::runtime_error{"Accessing data with invalid UnorderedIterator!"};
             }
             auto view_key = UnorderedCollection::_ExtractKey_(_iterator_internal_->Key());
             return std::string(view_key.data(), view_key.size());
         }
 
+        /// return value in DlistDataRecord
+        /// throw runtime_error if !Valid()
         inline virtual std::string Value() override 
         {
             if (!Valid())
             {
-                return "";
+                throw std::runtime_error{"Accessing data with invalid UnorderedIterator!"};
             }
             auto view_value = _iterator_internal_->Value();
             return std::string(view_value.data(), view_value.size());
@@ -476,6 +486,14 @@ namespace KVDK_NAMESPACE
         // DlistTailRecord, DlistDataRecord or DlistDeleteRecord
         // If reached DlistHeadRecord, _valid_ is set to false and returns
         void _Prev_();
+
+        /// Treat pmp as PMem pointer to a
+        /// DlistHeadRecord, DlistTailRecord, DlistDataRecord, DlistDeleteRecord
+        /// Access ID and check whether pmp belongs to current UnorderedCollection
+        inline bool _CheckID_(DLDataEntry* pmp)
+        {
+            return (UnorderedCollection::_ExtractID_(pmp->Key()) == _sp_coll_->id());
+        }
 
     };
     

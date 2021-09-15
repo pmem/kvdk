@@ -14,7 +14,7 @@ namespace KVDK_NAMESPACE
         _sp_pmem_allocator_{ sp_pmem_allocator },
         _sp_hash_table_{ sp_hash_table },
         _pmp_dlist_record_{ nullptr },
-        _sp_dlinked_list_{ std::make_shared<DLinkedList>(sp_pmem_allocator, timestamp, name, _ID2View_(id)) },
+        _sp_dlinked_list_{ std::make_shared<DLinkedList>(sp_pmem_allocator, timestamp, _ID2View_(id), pmem::obj::string_view{""}) },
         _name_{ name },
         _id_{ id }
     {
@@ -205,6 +205,10 @@ namespace KVDK_NAMESPACE
         _iterator_internal_{ _sp_coll_->_sp_dlinked_list_, pmp },
         _valid_{ false }
     {
+        if (!pmp)
+        {
+            goto UNORDEREDITERATOR_CONSTRUCTION_WITH_PMP_FAILURE;
+        }       
         bool is_pmp_valid;
         switch (static_cast<DataEntryType>(pmp->type))
         {
@@ -219,17 +223,17 @@ namespace KVDK_NAMESPACE
         case DataEntryType::DlistRecord:
         default:
         {
-            is_pmp_valid = false;
-            break;
+            goto UNORDEREDITERATOR_CONSTRUCTION_WITH_PMP_FAILURE;
         }
         }
-        is_pmp_valid = is_pmp_valid && UnorderedCollection::_ExtractID_(pmp->Key()) == sp_coll->id();
+        is_pmp_valid = is_pmp_valid && _CheckID_(pmp);
 
         if(is_pmp_valid)
         {
             _valid_ = (pmp->type == DataEntryType::DlistDataRecord);
             return;
         }
+    UNORDEREDITERATOR_CONSTRUCTION_WITH_PMP_FAILURE:
         throw std::runtime_error{ "PMem pointer does not point to a valid Record belonging to the UnorderedCollection" };
     }
 
@@ -237,7 +241,7 @@ namespace KVDK_NAMESPACE
     {
         if(!_iterator_internal_.valid())
         {
-            goto FAILURE;
+            goto UNORDERED_ITERATOR_NEXT_FAILRURE;
         }
         switch (static_cast<DataEntryType>(_iterator_internal_->type))
         {
@@ -251,7 +255,7 @@ namespace KVDK_NAMESPACE
         case DataEntryType::DlistTailRecord:        
         default:
         {
-            goto FAILURE;
+            goto UNORDERED_ITERATOR_NEXT_FAILRURE;
         }
         }
 
@@ -281,11 +285,11 @@ namespace KVDK_NAMESPACE
             case DataEntryType::DlistRecord:
             default:
             {
-                goto FAILURE;
+                goto UNORDERED_ITERATOR_NEXT_FAILRURE;
             }
             }          
         }
-    FAILURE:
+    UNORDERED_ITERATOR_NEXT_FAILRURE:
         throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Next_() fails!" };
     }
 
@@ -293,7 +297,7 @@ namespace KVDK_NAMESPACE
     {
         if(!_iterator_internal_.valid())
         {
-            goto FAILURE;
+            goto UNOERDERED_ITERATOR_PREV_FAILURE;
         }
         switch (static_cast<DataEntryType>(_iterator_internal_->type))
         {
@@ -307,7 +311,7 @@ namespace KVDK_NAMESPACE
         case DataEntryType::DlistRecord:
         default:
         {
-            goto FAILURE;
+            goto UNOERDERED_ITERATOR_PREV_FAILURE;
         }
         }
 
@@ -337,11 +341,11 @@ namespace KVDK_NAMESPACE
             case DataEntryType::DlistRecord:
             default:
             {
-                goto FAILURE;
+                goto UNOERDERED_ITERATOR_PREV_FAILURE;
             }
             }          
         }
-    FAILURE:
+    UNOERDERED_ITERATOR_PREV_FAILURE:
         throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Prev_() fails!" };
     }
 
