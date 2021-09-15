@@ -11,24 +11,24 @@ namespace KVDK_NAMESPACE
         std::uint64_t timestamp
     )
     try :
-        _sp_pmem_allocator_{ sp_pmem_allocator },
         _sp_hash_table_{ sp_hash_table },
         _pmp_dlist_record_{ nullptr },
-        _sp_dlinked_list_{ std::make_shared<DLinkedList>(sp_pmem_allocator, timestamp, _ID2View_(id), pmem::obj::string_view{""}) },
+        _dlinked_list_{ sp_pmem_allocator, timestamp, _ID2View_(id), pmem::obj::string_view{""} },
         _name_{ name },
         _id_{ id }
     {
-        auto space_list_record = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
+    {
+        auto space_list_record = _dlinked_list_._sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
         if (space_list_record.size == 0)
         {
-            DLinkedList::Deallocate(_sp_dlinked_list_->Head());
-            DLinkedList::Deallocate(_sp_dlinked_list_->Tail());
-            _sp_dlinked_list_->_pmp_head_ = nullptr;
-            _sp_dlinked_list_->_pmp_tail_ = nullptr;
+            DLinkedList::Deallocate(_dlinked_list_.Head());
+            DLinkedList::Deallocate(_dlinked_list_.Tail());
+            _dlinked_list_._pmp_head_ = nullptr;
+            _dlinked_list_._pmp_tail_ = nullptr;
             throw std::bad_alloc{};
         }
         std::uint64_t offset_list_record = space_list_record.space_entry.offset;
-        void* pmp_list_record = _sp_pmem_allocator_->offset2addr(offset_list_record);
+        void* pmp_list_record = _dlinked_list_._sp_pmem_allocator_->offset2addr(offset_list_record);
         DLDataEntry entry_list_record;  // Set up entry with meta
         {
             entry_list_record.timestamp = timestamp;
@@ -40,11 +40,12 @@ namespace KVDK_NAMESPACE
             entry_list_record.header.b_size = space_list_record.size;
             entry_list_record.header.checksum = DLinkedList::_CheckSum_(entry_list_record, _name_, _ID2View_(_id_));
 
-            entry_list_record.prev = _sp_dlinked_list_->Head()._GetOffset_();
-            entry_list_record.next = _sp_dlinked_list_->Tail()._GetOffset_();
+            entry_list_record.prev = _dlinked_list_.Head()._GetOffset_();
+            entry_list_record.next = _dlinked_list_.Tail()._GetOffset_();
         }
         DLinkedList::_PersistRecord_(pmp_list_record, entry_list_record, _name_, _ID2View_(_id_));
         _pmp_dlist_record_ = static_cast<DLDataEntry*>(pmp_list_record);
+    }
     }
     catch (std::bad_alloc const& ex)
     {
@@ -59,17 +60,13 @@ namespace KVDK_NAMESPACE
         std::shared_ptr<HashTable> sp_hash_table,
         DLDataEntry* pmp_dlist_record
     ) : 
-        _sp_pmem_allocator_{ sp_pmem_allocator },
         _sp_hash_table_{ sp_hash_table },
         _pmp_dlist_record_{ pmp_dlist_record },
-        _sp_dlinked_list_
+        _dlinked_list_
         { 
-            std::make_shared<DLinkedList>
-            (
-                _sp_pmem_allocator_,
-                _GetPmpPrev_(pmp_dlist_record),
-                _GetPmpNext_(pmp_dlist_record)
-            )
+            sp_pmem_allocator,
+            _GetPmpPrev_(pmp_dlist_record),
+            _GetPmpNext_(pmp_dlist_record)
         },
         _name_{ pmp_dlist_record->Key() },
         _id_{ _View2ID_(pmp_dlist_record->Value()) }
@@ -110,7 +107,7 @@ namespace KVDK_NAMESPACE
         DlistIterator iter_prev{ iter._iterator_internal_ }; --iter_prev;
         UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter_prev, spin) };
         locks.LockAll();
-        _sp_dlinked_list_->EmplaceBefore(iter._iterator_internal_, timestamp, key, value, type);
+        _dlinked_list_.EmplaceBefore(iter._iterator_internal_, timestamp, key, value, type);
     }
 
     UnorderedIterator UnorderedCollection::EmplaceAfter
@@ -132,7 +129,7 @@ namespace KVDK_NAMESPACE
         UnorderedIterator iter{ shared_from_this(), pmp };
         UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter._iterator_internal_, spin) };
         locks.LockAll();
-        _sp_dlinked_list_->EmplaceAfter(iter._iterator_internal_, timestamp, key, value, type);
+        _dlinked_list_.EmplaceAfter(iter._iterator_internal_, timestamp, key, value, type);
     }
 
     UnorderedIterator UnorderedCollection::SwapEmplace
@@ -149,7 +146,7 @@ namespace KVDK_NAMESPACE
         UnorderedIterator iter{ shared_from_this(), pmp };
         UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet3Nodes_(iter._iterator_internal_, spin) };
         locks.LockAll();
-        _sp_dlinked_list_->SwapEmplace(iter._iterator_internal_, timestamp, key, value, type);            
+        _dlinked_list_.SwapEmplace(iter._iterator_internal_, timestamp, key, value, type);            
     }
 
     UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid)
@@ -195,14 +192,14 @@ namespace KVDK_NAMESPACE
 {
     UnorderedIterator::UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll) :
         _sp_coll_{ sp_coll },
-        _iterator_internal_{ _sp },
+        _iterator_internal_{ sp_coll->_dlinked_list_.Head() },
         _valid_{ false }
     {
     }
 
     UnorderedIterator::UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry* pmp) :
         _sp_coll_{ sp_coll },
-        _iterator_internal_{ _sp_coll_->_sp_dlinked_list_, pmp },
+        _iterator_internal_{ _sp_coll_->_dlinked_list_._sp_pmem_allocator_, pmp },
         _valid_{ false }
     {
         if (!pmp)

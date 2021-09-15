@@ -228,14 +228,13 @@ namespace KVDK_NAMESPACE
     class UnorderedCollection : public PersistentList, public std::enable_shared_from_this<UnorderedCollection>
     {
     private:
-        /// For allocation and mapping
-        std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
         /// For locking, locking only
         std::shared_ptr<HashTable> _sp_hash_table_;
 
         /// DlistRecord for recovering
         DLDataEntry* _pmp_dlist_record_;
-        std::shared_ptr<DLinkedList> _sp_dlinked_list_;
+        /// DLinkedList manages data on PMem, also hold a PMemAllocator
+        DLinkedList _dlinked_list_;
 
         std::string _name_;
         std::uint64_t _id_;
@@ -358,12 +357,12 @@ namespace KVDK_NAMESPACE
 
         inline DLDataEntry* _GetPmpPrev_(DLDataEntry* pmp)
         {
-            return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(pmp->prev));
+            return reinterpret_cast<DLDataEntry*>(_dlinked_list_._sp_pmem_allocator_->offset2addr(pmp->prev));
         }
     
         inline DLDataEntry* _GetPmpNext_(DLDataEntry* pmp)
         {
-            return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(pmp->next));
+            return reinterpret_cast<DLDataEntry*>(_dlinked_list_._sp_pmem_allocator_->offset2addr(pmp->next));
         }
     
     };
@@ -405,7 +404,7 @@ namespace KVDK_NAMESPACE
         /// otherwise Valid() will return false.
         virtual void SeekToFirst() final override
         {
-            _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Head();
+            _iterator_internal_ = _sp_coll_->_dlinked_list_.Head();
             _Next_();
         }
 
@@ -413,7 +412,7 @@ namespace KVDK_NAMESPACE
         /// otherwise Valid() will return false.
         virtual void SeekToLast() final override
         {
-            _iterator_internal_ = _sp_coll_->_sp_dlinked_list_->Tail();
+            _iterator_internal_ = _sp_coll_->_dlinked_list_.Tail();
             _Prev_();
         }
 
