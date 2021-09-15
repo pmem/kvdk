@@ -133,6 +133,57 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestBasicHashHotspot) {
+  int n_thread_reading = 16;
+  int n_thread_writing = 16;
+  configs.max_write_threads = n_thread_writing;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::string key{"SuperHotspot"};
+  std::string val1(1024, 'a');
+  std::string val2(1023, 'b');
+
+  ASSERT_EQ(engine->Set(key, val1), Status::Ok);
+  engine->ReleaseWriteThread();
+
+  auto EvenWriteOddRead = [&](uint32_t id) {
+    for (size_t i = 0; i < 1000000; i++) {
+      if (id % 2 == 0) {
+        // Even Write
+        if (id % 4 == 0) {
+          ASSERT_EQ(engine->Set(key, val1), Status::Ok);
+        } else {
+          ASSERT_EQ(engine->Set(key, val2), Status::Ok);
+        }
+      } else {
+        // Odd Read
+        std::string got_val;
+        ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+        bool match = false;
+        match = match || (got_val == val1);
+        match = match || (got_val == val2);
+        if (!match) {
+          std::string msg;
+          msg.append("Wrong value!\n");
+          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
+          msg.append("Actual result is:\n");
+          msg.append(got_val);
+          msg.append("\n");
+          msg.append("Length: ");
+          msg.append(std::to_string(got_val.size()));
+          msg.append("\n");
+          GlobalLogger.Error(msg.data());
+        }
+        ASSERT_TRUE(match);
+      }
+    }
+  };
+
+  LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
+  delete engine;
+}
+
 TEST_F(EngineBasicTest, TestBatchWrite) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
