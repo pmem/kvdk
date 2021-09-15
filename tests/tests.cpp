@@ -38,7 +38,7 @@ protected:
     random_str(&str_pool[0], str_pool_length);
     configs.pmem_file_size = (16ULL << 30);
     configs.populate_pmem_space = false;
-    configs.hash_bucket_num = (1 << 5);
+    configs.hash_bucket_num = (1 << 10);
     configs.hash_bucket_size = 64;
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
@@ -84,55 +84,7 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBasicHashHotspot) {
-  int n_thread_reading = 16;
-  int n_thread_writing = 16;
-  configs.max_write_threads = n_thread_writing;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  std::string key{"SuperHotspot"};
-  std::string val1(1024, 'a');
-  std::string val2(1024, 'b');
-
-  ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-  engine->ReleaseWriteThread();
-
-  auto EvenWriteOddRead = [&](uint32_t id) {
-    for (size_t i = 0; i < 1000000; i++) {
-      if (id % 2 == 0) {
-        // Even Write
-        if (id % 4 == 0) {
-          ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-        } else {
-          ASSERT_EQ(engine->Set(key, val2), Status::Ok);
-        }
-      } else {
-        // Odd Read
-        std::string got_val;
-        ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-        bool match = false;
-        match = match || (got_val == val1);
-        match = match || (got_val == val2);
-        if (!match) {
-          std::string msg;
-          msg.append("Wrong value!\n");
-          msg.append("The value should be 1024 of a or 1024 of b.\n");
-          msg.append("Actual result is:\n");
-          msg.append(got_val);
-          msg.append("\n");
-          GlobalLogger.Error(msg.data());
-        }
-        ASSERT_TRUE(match);
-      }
-    }
-  };
-
-  LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
-  delete engine;
-}
-
-TEST_F(EngineBasicTest, TestBasicHashOperations) {
+TEST_F(EngineBasicTest, TestBasicStringOperations) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -178,57 +130,6 @@ TEST_F(EngineBasicTest, TestBasicHashOperations) {
   };
 
   LaunchNThreads(num_threads, SetGetDelete);
-  delete engine;
-}
-
-TEST_F(EngineBasicTest, TestBasicHashHotspot) {
-  int n_thread_reading = 16;
-  int n_thread_writing = 16;
-  configs.max_write_threads = n_thread_writing;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  std::string key{"SuperHotspot"};
-  std::string val1(1024, 'a');
-  std::string val2(1023, 'b');
-
-  ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-  engine->ReleaseWriteThread();
-
-  auto EvenWriteOddRead = [&](uint32_t id) {
-    for (size_t i = 0; i < 1000000; i++) {
-      if (id % 2 == 0) {
-        // Even Write
-        if (id % 4 == 0) {
-          ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-        } else {
-          ASSERT_EQ(engine->Set(key, val2), Status::Ok);
-        }
-      } else {
-        // Odd Read
-        std::string got_val;
-        ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-        bool match = false;
-        match = match || (got_val == val1);
-        match = match || (got_val == val2);
-        if (!match) {
-          std::string msg;
-          msg.append("Wrong value!\n");
-          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
-          msg.append("Actual result is:\n");
-          msg.append(got_val);
-          msg.append("\n");
-          msg.append("Length: ");
-          msg.append(std::to_string(got_val.size()));
-          msg.append("\n");
-          GlobalLogger.Error(msg.data());
-        }
-        ASSERT_TRUE(match);
-      }
-    }
-  };
-
-  LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
   delete engine;
 }
 
@@ -307,8 +208,8 @@ TEST_F(EngineBasicTest, TestFreeList) {
   std::string key4("a4");
   std::string small_value(64 * (kMinPaddingBlockSize - 1) + 1, 'a');
   std::string large_value(64 * (kMinPaddingBlockSize * 2 - 1) + 1, 'a');
-  // We have 4 kMinimalPaddingBlockSize size chunk of blocks, this will take up
-  // 2 of them
+  // We have 4 kMinimalPaddingBlockSize size chunk of blocks, this will take
+  // up 2 of them
 
   ASSERT_EQ(engine->Set(key1, large_value), Status::Ok);
 
@@ -568,7 +469,7 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(iter->Value(), "bar2");
 }
 
-TEST_F(EngineBasicTest, TestRestore) {
+TEST_F(EngineBasicTest, TestStringRestore) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -722,6 +623,114 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   }
   ASSERT_EQ(cnt, (count / 2) * num_threads);
 
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestStringHotspot) {
+  int n_thread_reading = 16;
+  int n_thread_writing = 16;
+  configs.max_write_threads = n_thread_writing;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  int count = 100000;
+  std::string key{"SuperHotspot"};
+  std::string val1(1024, 'a');
+  std::string val2(1023, 'b');
+
+  ASSERT_EQ(engine->Set(key, val1), Status::Ok);
+  engine->ReleaseWriteThread();
+
+  auto EvenWriteOddRead = [&](uint32_t id) {
+    for (size_t i = 0; i < count; i++) {
+      if (id % 2 == 0) {
+        // Even Write
+        if (id % 4 == 0) {
+          ASSERT_EQ(engine->Set(key, val1), Status::Ok);
+        } else {
+          ASSERT_EQ(engine->Set(key, val2), Status::Ok);
+        }
+      } else {
+        // Odd Read
+        std::string got_val;
+        ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+        bool match = false;
+        match = match || (got_val == val1);
+        match = match || (got_val == val2);
+        if (!match) {
+          std::string msg;
+          msg.append("Wrong value!\n");
+          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
+          msg.append("Actual result is:\n");
+          msg.append(got_val);
+          msg.append("\n");
+          msg.append("Length: ");
+          msg.append(std::to_string(got_val.size()));
+          msg.append("\n");
+          GlobalLogger.Error(msg.data());
+        }
+        ASSERT_TRUE(match);
+      }
+    }
+  };
+
+  LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestSortedHotspot) {
+  int n_thread_reading = 16;
+  int n_thread_writing = 16;
+  configs.max_write_threads = n_thread_writing;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  int count = 100000;
+  std::string collection{"collection"};
+  std::vector<std::string> keys{"SuperHotSpot0", "SuperHotSpot2",
+                                "SuperHotSpot1"};
+  std::string val1(1024, 'a');
+  std::string val2(1024, 'b');
+
+  for (const std::string &key : keys) {
+    ASSERT_EQ(engine->SSet(collection, key, val1), Status::Ok);
+    engine->ReleaseWriteThread();
+
+    auto EvenWriteOddRead = [&](uint32_t id) {
+      for (size_t i = 0; i < count; i++) {
+        if (id % 2 == 0) {
+          // Even Write
+          if (id % 4 == 0) {
+            ASSERT_EQ(engine->SSet(collection, key, val1), Status::Ok);
+          } else {
+            ASSERT_EQ(engine->SSet(collection, key, val2), Status::Ok);
+          }
+        } else {
+          // Odd Read
+          std::string got_val;
+          ASSERT_EQ(engine->SGet(collection, key, &got_val), Status::Ok);
+          bool match = false;
+          match = match || (got_val == val1);
+          match = match || (got_val == val2);
+          if (!match) {
+            std::string msg;
+            msg.append("Wrong value!\n");
+            msg.append("The value should be 1024 of a's or 1023 of b's.\n");
+            msg.append("Actual result is:\n");
+            msg.append(got_val);
+            msg.append("\n");
+            msg.append("Length: ");
+            msg.append(std::to_string(got_val.size()));
+            msg.append("\n");
+            GlobalLogger.Error(msg.data());
+          }
+          ASSERT_TRUE(match);
+        }
+      }
+    };
+
+    LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
+  }
   delete engine;
 }
 

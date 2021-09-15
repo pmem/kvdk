@@ -651,29 +651,17 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
       return Status::NotSupported;
     }
 
-    // Copy PMem data entry to dram buffer, for small entry, use thread local
-    // buffer to avoid space allocation
-    char *data;
-    std::string large_data_buffer;
+    // Copy PMem data entry to dram buffer
     auto pmem_data_entry_size =
         data_entry_meta->header.b_size * configs_.pmem_block_size;
-    if (pmem_data_entry_size > kDataBufferSize) {
-      if (thread_data_buffer.empty()) {
-        thread_data_buffer.resize(kDataBufferSize);
-      }
-      data = &thread_data_buffer[0];
-    } else {
-      large_data_buffer.resize(pmem_data_entry_size);
-      data = &large_data_buffer[0];
-    }
-    memcpy(data, pmem_data_entry,
+    char data_buffer[pmem_data_entry_size];
+    memcpy(data_buffer, pmem_data_entry,
            data_entry_meta->header.b_size * configs_.pmem_block_size);
-
     // If checksum mismatch, the pmem data entry is corrupted or been reused by
     // another key, redo search
-    auto checksum = CalculateChecksum((DataEntry *)data);
+    auto checksum = CalculateChecksum((DataEntry *)data_buffer);
     if (checksum == data_entry_meta->header.checksum) {
-      value->assign(data + key.size() +
+      value->assign(data_buffer + key.size() +
                         data_entry_size(hash_entry.header.data_type),
                     data_entry_meta->v_size);
       break;
