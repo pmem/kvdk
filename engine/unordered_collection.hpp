@@ -236,7 +236,7 @@ namespace KVDK_NAMESPACE
         /// DlistRecord for recovering
         DLDataEntry* _pmp_dlist_record_;
         std::shared_ptr<DLinkedList> _sp_dlinked_list_;
-        
+
         std::string _name_;
         std::uint64_t _id_;
 
@@ -350,11 +350,11 @@ namespace KVDK_NAMESPACE
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent three nodes, not locked yet.
         /// Also accepts UnorderedIterator by implicit casting
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DLinkedList::DlistIterator iter_mid, SpinMutex* spin_mid = nullptr);
+        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid = nullptr);
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent two nodes between which the new node is to be emplaced
         /// Also locks the slot for new node
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DLinkedList::DlistIterator iter_prev, SpinMutex* spin_new);
+        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new);
 
         inline DLDataEntry* _GetPmpPrev_(DLDataEntry* pmp)
         {
@@ -374,7 +374,7 @@ namespace KVDK_NAMESPACE
         /// shared pointer to pin the UnorderedCollection
         std::shared_ptr<UnorderedCollection> _sp_coll_;
         /// DlistIterator does not ignore DlistDeleteRecord
-        DLinkedList::DlistIterator _iterator_internal_;
+        DlistIterator _iterator_internal_;
         /// Whether the UnorderedIterator is at a DlistDataRecord
         bool _valid_;
 

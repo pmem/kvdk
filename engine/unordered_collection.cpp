@@ -107,10 +107,10 @@ namespace KVDK_NAMESPACE
         
         // Validifying PMem address by constructing UnorderedIterator
         UnorderedIterator iter{ shared_from_this(), pmp };
-        DLinkedList::DlistIterator iter_prev{ iter._iterator_internal_ }; --iter_prev;
+        DlistIterator iter_prev{ iter._iterator_internal_ }; --iter_prev;
         UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter_prev, spin) };
         locks.LockAll();
-        _sp_dlinked_list_->EmplaceBefore(iter._iterator_internal_, timestamp, key, value);
+        _sp_dlinked_list_->EmplaceBefore(iter._iterator_internal_, timestamp, key, value, type);
     }
 
     UnorderedIterator UnorderedCollection::EmplaceAfter
@@ -132,7 +132,7 @@ namespace KVDK_NAMESPACE
         UnorderedIterator iter{ shared_from_this(), pmp };
         UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter._iterator_internal_, spin) };
         locks.LockAll();
-        _sp_dlinked_list_->EmplaceAfter(iter._iterator_internal_, timestamp, key, value);
+        _sp_dlinked_list_->EmplaceAfter(iter._iterator_internal_, timestamp, key, value, type);
     }
 
     UnorderedIterator UnorderedCollection::SwapEmplace
@@ -152,10 +152,10 @@ namespace KVDK_NAMESPACE
         _sp_dlinked_list_->SwapEmplace(iter._iterator_internal_, timestamp, key, value, type);            
     }
 
-    UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DLinkedList::DlistIterator iter_mid, SpinMutex* spin_mid)
+    UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid)
     {
-        DLinkedList::DlistIterator iter_prev{ iter_mid }; --iter_prev;
-        DLinkedList::DlistIterator iter_next{ iter_mid }; ++iter_next;
+        DlistIterator iter_prev{ iter_mid }; --iter_prev;
+        DlistIterator iter_next{ iter_mid }; ++iter_next;
 
         SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
         SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
@@ -171,9 +171,9 @@ namespace KVDK_NAMESPACE
         return unique_lock_triplet;
     }
 
-    UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet2Nodes_(DLinkedList::DlistIterator iter_prev, SpinMutex* spin_new)
+    UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new)
     {
-        DLinkedList::DlistIterator iter_next{ iter_prev }; ++iter_next;
+        DlistIterator iter_next{ iter_prev }; ++iter_next;
 
         SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
         SpinMutex* p_spin_2 = spin_new;
@@ -195,7 +195,7 @@ namespace KVDK_NAMESPACE
 {
     UnorderedIterator::UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll) :
         _sp_coll_{ sp_coll },
-        _iterator_internal_{ nullptr },
+        _iterator_internal_{ _sp },
         _valid_{ false }
     {
     }
@@ -290,7 +290,7 @@ namespace KVDK_NAMESPACE
             }          
         }
     UNORDERED_ITERATOR_NEXT_FAILRURE:
-        throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Next_() fails!" };
+        throw std::runtime_error{ "UnorderedIterator::_Next_() fails!" };
     }
 
     void UnorderedIterator::_Prev_()
