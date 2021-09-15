@@ -25,8 +25,8 @@
 
 namespace KVDK_NAMESPACE {
 // use buffer to acc nt-write
-thread_local std::string write_buffer;
-static const int buffer_size = 1024 * 1024;
+thread_local std::string thread_data_buffer;
+static const int kDataBufferSize = 1024 * 1024;
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
 
 void PendingBatch::PersistProcessing(
@@ -623,56 +623,63 @@ Status KVEngine::Recovery() {
 
 Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
                              std::string *value, uint16_t type_mask) {
-  std::unique_ptr<DataEntry> data_entry(
+  std::unique_ptr<DataEntry> data_entry_meta(
       type_mask & DLDataEntryType ? new DLDataEntry : new DataEntry);
-  HashEntry hash_entry;
-  HashEntry *entry_base = nullptr;
-  bool is_found =
-      hash_table_->Search(hash_table_->GetHint(key), key, type_mask,
-                          &hash_entry, data_entry.get(), &entry_base,
-                          HashTable::SearchPurpose::Read) == Status::Ok;
-  if (!is_found || (hash_entry.header.data_type & DeleteDataEntryType)) {
-    return Status::NotFound;
-  }
-
-  char *block_base = nullptr;
-  if (hash_entry.header.data_type & (StringDataRecord | HashListDataRecord)) {
-    block_base = pmem_allocator_->offset2addr(hash_entry.offset);
-  } else if (hash_entry.header.data_type == SortedDataRecord) {
-    if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
-      block_base = (char *)dram_node->data_entry;
-    } else {
-      assert(hash_entry.header.offset_type == HashOffsetType::DLDataEntry);
-      block_base = pmem_allocator_->offset2addr(hash_entry.offset);
-    }
-  } else {
-    return Status::NotSupported;
-  }
-
   while (1) {
-    value->assign(block_base + key.size() +
-                      data_entry_size(hash_entry.header.data_type),
-                  data_entry->v_size);
-
-    std::atomic_thread_fence(std::memory_order_acquire);
-    // Double check for lock free read
-    // TODO double check for skiplist get
-    if (__glibc_likely(
-            (hash_entry.header.data_type & DLDataEntryType) ||
-            (hash_entry.offset == entry_base->offset &&
-             hash_entry.header.key_prefix == entry_base->header.key_prefix)))
-      break;
-    if (entry_base->header.key_prefix != hash_entry.header.key_prefix ||
-        entry_base->header.data_type == DeleteDataEntryType) {
-      value->clear();
+    HashEntry hash_entry;
+    HashEntry *entry_base = nullptr;
+    bool is_found =
+        hash_table_->Search(hash_table_->GetHint(key), key, type_mask,
+                            &hash_entry, data_entry_meta.get(), &entry_base,
+                            HashTable::SearchPurpose::Read) == Status::Ok;
+    if (!is_found || (hash_entry.header.data_type & DeleteDataEntryType)) {
       return Status::NotFound;
     }
-    HashEntry::CopyOffset(&hash_entry, entry_base);
-    block_base = pmem_allocator_->offset2addr(hash_entry.offset);
 
-    memcpy(data_entry.get(), block_base, sizeof(DataEntry));
+    char *pmem_data_entry = nullptr;
+    if (hash_entry.header.data_type & (StringDataRecord | HashListDataRecord)) {
+      pmem_data_entry = pmem_allocator_->offset2addr(hash_entry.offset);
+    } else if (hash_entry.header.data_type == SortedDataRecord) {
+      if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+        SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
+        pmem_data_entry = (char *)dram_node->data_entry;
+      } else {
+        assert(hash_entry.header.offset_type == HashOffsetType::DLDataEntry);
+        pmem_data_entry = pmem_allocator_->offset2addr(hash_entry.offset);
+      }
+    } else {
+      return Status::NotSupported;
+    }
+
+    // Copy PMem data entry to dram buffer, for small entry, use thread local
+    // buffer to avoid space allocation
+    char *data;
+    std::string large_data_buffer;
+    auto pmem_data_entry_size =
+        data_entry_meta->header.b_size * configs_.pmem_block_size;
+    if (pmem_data_entry_size > kDataBufferSize) {
+      if (thread_data_buffer.empty()) {
+        thread_data_buffer.resize(kDataBufferSize);
+      }
+      data = &thread_data_buffer[0];
+    } else {
+      large_data_buffer.resize(pmem_data_entry_size);
+      data = &large_data_buffer[0];
+    }
+    memcpy(data, pmem_data_entry,
+           data_entry_meta->header.b_size * configs_.pmem_block_size);
+
+    // If checksum mismatch, the pmem data entry is corrupted or been reused by
+    // another key, redo search
+    auto checksum = CalculateChecksum((DataEntry *)data);
+    if (checksum == data_entry_meta->header.checksum) {
+      value->assign(data + key.size() +
+                        data_entry_size(hash_entry.header.data_type),
+                    data_entry_meta->v_size);
+      break;
+    }
   }
+
   return Status::Ok;
 }
 
@@ -702,12 +709,12 @@ inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
                                        uint16_t type) {
   char *data_cpy_target;
   auto entry_size = data_entry_size(type);
-  bool with_buffer = entry_size + key.size() + value.size() <= buffer_size;
+  bool with_buffer = entry_size + key.size() + value.size() <= kDataBufferSize;
   if (with_buffer) {
-    if (write_buffer.empty()) {
-      write_buffer.resize(buffer_size);
+    if (thread_data_buffer.empty()) {
+      thread_data_buffer.resize(kDataBufferSize);
     }
-    data_cpy_target = &write_buffer[0];
+    data_cpy_target = &thread_data_buffer[0];
   } else {
     data_cpy_target = block_base;
   }
