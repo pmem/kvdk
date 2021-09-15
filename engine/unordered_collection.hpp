@@ -233,8 +233,10 @@ namespace KVDK_NAMESPACE
         /// For locking, locking only
         std::shared_ptr<HashTable> _sp_hash_table_;
 
+        /// DlistRecord for recovering
         DLDataEntry* _pmp_dlist_record_;
         std::shared_ptr<DLinkedList> _sp_dlinked_list_;
+        
         std::string _name_;
         std::uint64_t _id_;
 

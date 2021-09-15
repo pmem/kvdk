@@ -25,13 +25,133 @@
 
 namespace KVDK_NAMESPACE
 {
-    /// Data Structure that resides on DRAM for accessing PMem data
-    /// Caller is responsible for locking since caller may use lock elsewhere
+    /// DlistIterator does not pin DlinkedList
+    /// It's up to caller to ensure that any
+    /// DlistIterator constructed belongs to the
+    /// right DlinkedList and to ensure that
+    /// DlinkedList is valid when DlistIterator
+    /// accesses data on it.
+    class DlistIterator
+    {
+    private:
+        friend class DLinkedList;
+        friend class UnorderedCollection;
+
+    private:
+
+        /// PMem pointer to current Record
+        std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
+        DLDataEntry* _pmp_curr_;
+
+    public:
+        /// It's up to caller to provide correct PMem pointer 
+        /// and PMemAllocator to construct a DlistIterator
+        explicit DlistIterator(std::shared_ptr<PMEMAllocator> sp_pmem_allocator, DLDataEntry* curr) :
+            _sp_pmem_allocator_{ sp_pmem_allocator },
+            _pmp_curr_{ curr }
+        {
+        }
+
+        DlistIterator(DlistIterator const& other) :
+            _sp_pmem_allocator_{ other._sp_pmem_allocator_ },
+            _pmp_curr_(other._pmp_curr_)
+        {
+        }
+
+        /// Conversion to bool
+        /// Returns true if the iterator is on some DlinkedList
+        inline bool valid() const
+        {
+            if (!_pmp_curr_)
+            {
+                return false;
+            }
+            switch (static_cast<DataEntryType>(_pmp_curr_->type))
+            {
+                case DataEntryType::DlistDataRecord:
+                case DataEntryType::DlistDeleteRecord:
+                case DataEntryType::DlistHeadRecord:
+                case DataEntryType::DlistTailRecord:
+                {
+                    return true;
+                }
+                case DataEntryType::DlistRecord:
+                default:
+                {
+                    return false;
+                }
+            }
+        }
+
+        inline operator bool() const
+        {
+            return valid();
+        }
+
+        /// Increment and Decrement operators
+        DlistIterator& operator++()
+        {
+            _pmp_curr_ = _GetPmpNext_();
+            return *this;
+        }
+
+        DlistIterator operator++(int)
+        {
+            DlistIterator old{ *this };
+            this->operator++();
+            return old;
+        }
+
+        DlistIterator& operator--()
+        {
+            _pmp_curr_ = _GetPmpPrev_();
+            return *this;
+        }
+
+        DlistIterator operator--(int)
+        {
+            DlistIterator old{ *this };
+            this->operator--();
+            return old;
+        }
+
+        DLDataEntry& operator*()
+        {
+            return *_pmp_curr_;
+        }
+
+        DLDataEntry* operator->()
+        {
+            return _pmp_curr_;
+        }
+
+    private:
+        inline DLDataEntry* _GetPmpNext_() const
+        {
+            return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(_pmp_curr_->next));
+        }
+
+        inline DLDataEntry* _GetPmpPrev_() const
+        {
+            return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(_pmp_curr_->prev));
+        }
+
+        inline std::uint64_t _GetOffset_() const
+        {
+            return _sp_pmem_allocator_->addr2offset(_pmp_curr_);
+        }
+    
+    };
+}
+
+namespace KVDK_NAMESPACE
+{
+    /// DLinkedList is a helper class to access PMem
     /// DLinkedList guarantees that forward links are always valid
     /// Backward links are restored on recovery
     /// DLinkedList does not deallocate records. Deallocation is done by caller
     /// Locking is done by caller at HashTable
-    class DLinkedList : public std::enable_shared_from_this<DLinkedList>
+    class DLinkedList
     {
     private:
         /// Allocator for allocating space for new nodes, 
@@ -48,125 +168,7 @@ namespace KVDK_NAMESPACE
 
         static constexpr std::uint64_t _null_offset_ = kNullPmemOffset;
 
-    public:
-
-    public:
-        class DlistIterator
-        {
-        private:
-            friend class DLinkedList;
-            friend class UnorderedCollection;
-
-        private:
-            /// shared pointer to pin the dlinked_list
-            /// as well as share the pmem_allocator to transform offset to PMem pointer
-            /// shared pointer instead of normal pointer is used to pin the pmem_allocator
-            std::shared_ptr<DLinkedList> _sp_dlinked_list_;
-
-            /// PMem pointer to current Record
-            DLDataEntry* _pmp_curr_;
-
-        public:
-            /// Constructors and Destructors
-            explicit DlistIterator() = delete;
-
-            explicit DlistIterator(std::shared_ptr<DLinkedList> sp_list) :
-                _sp_dlinked_list_{ sp_list },
-                _pmp_curr_{ _sp_dlinked_list_->_pmp_head_ }
-            {
-            }
-
-            explicit DlistIterator(std::shared_ptr<DLinkedList> sp_list, DLDataEntry* curr) :
-                _sp_dlinked_list_{ sp_list },
-                _pmp_curr_{ curr }
-            {
-            }
-
-            DlistIterator(DlistIterator const& other) :
-                _sp_dlinked_list_(other._sp_dlinked_list_),
-                _pmp_curr_(other._pmp_curr_)
-            {
-            }
-
-            /// Conversion to bool
-            /// Double check for the validity of dlinked_list object on PMem
-            inline bool valid()
-            {
-                if (!_sp_dlinked_list_ || !_pmp_curr_)
-                {
-                    return false;
-                }
-                DataEntryType type_curr = static_cast<DataEntryType>(_pmp_curr_->type);
-                bool ok =
-                    (
-                        type_curr == DataEntryType::DlistHeadRecord ||
-                        type_curr == DataEntryType::DlistTailRecord ||
-                        type_curr == DataEntryType::DlistDataRecord ||
-                        type_curr == DataEntryType::DlistDeleteRecord
-                    );
-                return ok;
-            }
-
-            inline operator bool()
-            {
-                return valid();
-            }
-
-            /// Increment and Decrement operators
-            DlistIterator& operator++()
-            {
-                _pmp_curr_ = _GetPmpNext_();
-                return *this;
-            }
-
-            DlistIterator operator++(int)
-            {
-                DlistIterator old{ *this };
-                this->operator++();
-                return old;
-            }
-
-            DlistIterator& operator--()
-            {
-                _pmp_curr_ = _GetPmpPrev_();
-                return *this;
-            }
-
-            DlistIterator operator--(int)
-            {
-                DlistIterator old{ *this };
-                this->operator--();
-                return old;
-            }
-
-            /// Dereference and direct PMem pointer access
-            DLDataEntry& operator*()
-            {
-                return *_pmp_curr_;
-            }
-
-            DLDataEntry* operator->()
-            {
-                return _pmp_curr_;
-            }
-
-        private:
-            inline DLDataEntry* _GetPmpNext_() const
-            {
-                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->next));
-            }
-
-            inline DLDataEntry* _GetPmpPrev_() const
-            {
-                return reinterpret_cast<DLDataEntry*>(_sp_dlinked_list_->_sp_pmem_allocator_->offset2addr(_pmp_curr_->prev));
-            }
-
-            inline std::uint64_t _GetOffset_() const
-            {
-                return _sp_dlinked_list_->_sp_pmem_allocator_->addr2offset(_pmp_curr_);
-            }
-        };
-        
+    public:        
         /// Create DLinkedList and construct head and tail node on PMem.
         /// key and value are stored in head and tail nodes
         DLinkedList
@@ -177,9 +179,9 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const value
         ) 
         try:
+            _sp_pmem_allocator_{ sp_pmem_allocator },
             _pmp_head_{ nullptr },
-            _pmp_tail_{ nullptr },
-            _sp_pmem_allocator_{ sp_pmem_allocator }
+            _pmp_tail_{ nullptr }
         {
             // head and tail only holds DLDataEntry. No id or collection name needed.
             auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
@@ -254,8 +256,33 @@ namespace KVDK_NAMESPACE
             _pmp_head_{ pmp_head },
             _pmp_tail_{ pmp_tail }
         {
-            DlistIterator curr{ shared_from_this(), pmp_head };
-            assert(pmp_head->type == DataEntryType::DlistHeadRecord);
+            DlistIterator curr{ _sp_pmem_allocator_,  pmp_head };
+            if (pmp_head->type != DataEntryType::DlistHeadRecord)
+            {
+                throw std::runtime_error{ "Cannot rebuild a DlinkedList from given PMem pointer not pointing to a DlistHeadRecord!" };
+            }
+            while (true)
+            {
+                switch (static_cast<DataEntryType>(pmp_head->type))
+                {
+                case DataEntryType::DlistDataRecord:
+                case DataEntryType::DlistDeleteRecord:
+                {
+                    continue;
+                }
+                case DataEntryType::DlistTailRecord:
+                {
+                    return;
+                }
+                case DataEntryType::D
+                default:
+                {
+
+                    break;
+                }
+                }
+            }
+            
             do
             {
                 DlistIterator next{ curr }; ++next;
@@ -473,3 +500,4 @@ namespace KVDK_NAMESPACE
     };
 
 } // namespace KVDK_NAMESPACE
+
