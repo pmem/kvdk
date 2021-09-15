@@ -227,7 +227,7 @@ TEST_F(EngineBasicTest, TestBasicHashHotspot) {
   engine->ReleaseWriteThread();
 
   auto EvenWriteOddRead = [&](uint32_t id) {
-    for (size_t i = 0; i < 1000000; i++) {
+    for (size_t i = 0; i < 100000; i++) {
       if (id % 2 == 0) {
         // Even Write
         if (id % 4 == 0) {
