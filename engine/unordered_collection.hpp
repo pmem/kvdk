@@ -15,7 +15,7 @@
 #include "dlinked_list.hpp"
 #include "kvdk/iterator.hpp"
 
-namespace KVDK_NAMESPACE 
+namespace KVDK_NAMESPACE
 {
     // Triplet of unique_kock. Owns all or none of three locks.
     // The locks may duplicate. Duplicate locks are ignored.
@@ -215,6 +215,10 @@ namespace KVDK_NAMESPACE
 
     };
 
+}
+
+namespace KVDK_NAMESPACE 
+{
     class UnorderedIterator;
 
     /// UnorderedCollection is stored in DRAM, indexed by HashTable
@@ -225,7 +229,7 @@ namespace KVDK_NAMESPACE
     /// At runtime, an object of UnorderedCollection is recovered from
     /// the DlistRecord and then stored in HashTable.
     /// The DlistRecord is for recovery only and never visited again
-    class UnorderedCollection : public PersistentList, public std::enable_shared_from_this<UnorderedCollection>
+    class UnorderedCollection final : public std::enable_shared_from_this<UnorderedCollection>
     {
     private:
         /// For locking, locking only
@@ -242,6 +246,15 @@ namespace KVDK_NAMESPACE
         friend class UnorderedIterator;
 
     public:
+        // Thread local storage for fast inserting
+        // User is responsible for maintaining id and pmp
+        // to ensure the pmp belongs to the UnorderedCollection with id.
+        static thread_local struct InsertPositionCache
+        {
+            DLDataEntry* pmp;
+            std::uint64_t id;
+        } insert_cache;
+
         /// Create UnorderedCollection and persist it on PMem
         /// DlistHeadRecord and DlistTailRecord holds ID as key
         /// and empty string as value
@@ -271,7 +284,7 @@ namespace KVDK_NAMESPACE
         UnorderedIterator Last();
 
         /// EmplaceBefore a DlistRecord before pmp
-        /// Runtime checking is done
+        /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
         UnorderedIterator EmplaceBefore
         (
             DLDataEntry* pmp,
@@ -282,6 +295,8 @@ namespace KVDK_NAMESPACE
             SpinMutex* spin             // spin in Slot containing HashEntry to new node
         );
 
+        /// EmplaceAfter a DlistRecord after pmp
+        /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
         UnorderedIterator EmplaceAfter
         (
             DLDataEntry* pmp,
@@ -292,6 +307,26 @@ namespace KVDK_NAMESPACE
             SpinMutex* spin             // spin in Slot containing HashEntry to new node
         );
 
+        UnorderedIterator EmplaceFront
+        (
+            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value,
+            DataEntryType type,
+            SpinMutex* spin             // spin in Slot containing HashEntry to new node
+        );
+
+        UnorderedIterator EmplaceBack
+        (
+            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value,
+            DataEntryType type,
+            SpinMutex* spin             // spin in Slot containing HashEntry to new node
+        );
+
+        /// Emplace a DlistRecord to swap out pmp
+        /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
         UnorderedIterator SwapEmplace
         (
             DLDataEntry* pmp,
@@ -302,9 +337,9 @@ namespace KVDK_NAMESPACE
             SpinMutex* spin = nullptr   // spin in Slot containing HashEntry to pmp(same Slot as new node)
         );
 
-        inline uint64_t id() override { return _id_; }
+        inline uint64_t ID() { return _id_; }
 
-        inline std::string const& name() { return _name_; }
+        inline std::string const& Name() const { return _name_; }
 
         inline std::string GetInternalKey(pmem::obj::string_view key)
         {
@@ -493,7 +528,7 @@ namespace KVDK_NAMESPACE
         /// Access ID and check whether pmp belongs to current UnorderedCollection
         inline bool _CheckID_(DLDataEntry* pmp)
         {
-            return (UnorderedCollection::_ExtractID_(pmp->Key()) == _sp_coll_->id());
+            return (UnorderedCollection::_ExtractID_(pmp->Key()) == _sp_coll_->ID());
         }
 
     };

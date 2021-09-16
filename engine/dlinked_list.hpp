@@ -352,6 +352,38 @@ namespace KVDK_NAMESPACE
             return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
         }
 
+        /// Emplace right after Head().
+        DlistIterator EmplaceFront
+        (
+            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value,
+            DataEntryType type
+        )
+        {
+            // Insert happens between iter_prev and iter_next
+            DlistIterator iter_prev{ Head() };
+            DlistIterator iter_next{ Head() }; ++iter_next;
+
+            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
+        }
+
+        /// Emplace right before Tail().
+        DlistIterator EmplaceBack
+        (
+            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value,
+            DataEntryType type
+        )
+        {
+            // Insert happens between iter_prev and iter_next
+            DlistIterator iter_prev{ Tail() }; --iter_prev;
+            DlistIterator iter_next{ Tail() };
+
+            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
+        }
+
         /// In-place swap out an old record for new one
         /// Old record should be freed by caller after calling this function
         /// Timestamp should be checked by caller

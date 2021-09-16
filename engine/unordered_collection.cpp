@@ -132,6 +132,46 @@ namespace KVDK_NAMESPACE
         _dlinked_list_.EmplaceAfter(iter._iterator_internal_, timestamp, key, value, type);
     }
 
+    UnorderedIterator UnorderedCollection::EmplaceFront
+    (
+        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        SpinMutex* spin             // spin in Slot containing HashEntry to new node
+    )
+    {
+        if (spin == nullptr)
+        {
+            throw std::runtime_error{"Must provide a spin to lock new node in UnorderedCollection::EmplaceFront()"};
+        }
+
+        DlistIterator iter = _dlinked_list_.Head();
+        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter, spin) };
+        locks.LockAll();
+        _dlinked_list_.EmplaceFront(timestamp, key, value, type);
+    }
+
+    UnorderedIterator UnorderedCollection::EmplaceBack
+    (
+        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        SpinMutex* spin             // spin in Slot containing HashEntry to new node
+    )
+    {
+        if (spin == nullptr)
+        {
+            throw std::runtime_error{"Must provide a spin to lock new node in UnorderedCollection::EmplaceBack()"};
+        }
+
+        DlistIterator iter = _dlinked_list_.Tail();
+        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter, spin) };
+        locks.LockAll();
+        _dlinked_list_.EmplaceBack(timestamp, key, value, type);
+    }
+
     UnorderedIterator UnorderedCollection::SwapEmplace
     (
         DLDataEntry* pmp,
