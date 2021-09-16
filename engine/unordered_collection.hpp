@@ -15,8 +15,12 @@
 #include "dlinked_list.hpp"
 #include "kvdk/iterator.hpp"
 
+/// TODO: pass unique_lock<SpinMutex> instead of SpinMutex* when Emplace new records
+/// TODO: Also return unique_lock<SpinMutex> to caller after Emplace new records
+
 namespace KVDK_NAMESPACE
 {
+    /// [Obsolete?]
     // Triplet of unique_kock. Owns all or none of three locks.
     // The locks may duplicate. Duplicate locks are ignored.
     // e.g. if third and first lock are same, third lock is ignored.
@@ -215,6 +219,33 @@ namespace KVDK_NAMESPACE
 
     };
 
+    template<typename Lock>
+    struct EmplaceReturn
+    {
+        // Offset of newly emplaced Record
+        std::uint64_t offset;
+        // Transfer the ownership of lock
+        std::unique_lock<Lock> lock;
+        bool success;
+
+        explicit EmplaceReturn(std::uint64_t offset_record, std::unique_lock<Lock> lock_record, bool emplace_result) :
+            offset{offset_record},
+            lock{std::move(lock_record)},
+            success{emplace_result}
+        {
+        }
+
+        EmplaceReturn(EmplaceReturn<Lock>&& other) :
+            offset{other.offset},
+            lock{std::move(other.lock)},
+            success{other.success}
+        {
+        }
+
+        static constexpr std::uint64_t FailOffset = kNullPmemOffset;
+
+    };
+
 }
 
 namespace KVDK_NAMESPACE 
@@ -237,11 +268,13 @@ namespace KVDK_NAMESPACE
 
         /// DlistRecord for recovering
         DLDataEntry* _pmp_dlist_record_;
+
         /// DLinkedList manages data on PMem, also hold a PMemAllocator
         DLinkedList _dlinked_list_;
 
         std::string _name_;
         std::uint64_t _id_;
+        std::uint64_t _time_stamp_;
 
         friend class UnorderedIterator;
 
@@ -266,7 +299,7 @@ namespace KVDK_NAMESPACE
             std::shared_ptr<HashTable> sp_hash_table,
             std::string const& name,
             std::uint64_t id,
-            std::uint64_t timestamp = 0ULL
+            std::uint64_t timestamp
         );
 
         /// Recover UnorderedCollection from DLIST_RECORD
@@ -283,70 +316,109 @@ namespace KVDK_NAMESPACE
         /// Create UnorderedIterator and SeekToLast()
         UnorderedIterator Last();
 
-        /// EmplaceBefore a DlistRecord before pmp
+        /// Emplace before pmp
         /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
-        UnorderedIterator EmplaceBefore
+        /// lock must been acquired before passed in
+        EmplaceReturn<SpinMutex> EmplaceBefore
         (
             DLDataEntry* pmp,
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            std::uint64_t timestamp,  
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            SpinMutex* spin             // spin in Slot containing HashEntry to new node
+            std::unique_lock<SpinMutex> lock
         );
 
-        /// EmplaceAfter a DlistRecord after pmp
+        /// Emplace after pmp
         /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
-        UnorderedIterator EmplaceAfter
+        /// lock must been acquired before passed in
+        EmplaceReturn<SpinMutex> EmplaceAfter
         (
             DLDataEntry* pmp,
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            std::uint64_t timestamp,   
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            SpinMutex* spin             // spin in Slot containing HashEntry to new node
+            std::unique_lock<SpinMutex> lock
         );
 
-        UnorderedIterator EmplaceFront
-        (
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value,
-            DataEntryType type,
-            SpinMutex* spin             // spin in Slot containing HashEntry to new node
-        );
-
-        UnorderedIterator EmplaceBack
-        (
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value,
-            DataEntryType type,
-            SpinMutex* spin             // spin in Slot containing HashEntry to new node
-        );
-
-        /// Emplace a DlistRecord to swap out pmp
+        /// Emplace after Head()
         /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
-        UnorderedIterator SwapEmplace
+        /// lock must been acquired before passed in
+        EmplaceReturn<SpinMutex> EmplaceFront
+        (
+            std::uint64_t timestamp, 
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value,
+            DataEntryType type,
+            std::unique_lock<SpinMutex> lock
+        );
+
+        /// Emplace before Tail()
+        /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
+        /// lock must been acquired before passed in
+        EmplaceReturn<SpinMutex> EmplaceBack
+        (
+            std::uint64_t timestamp, 
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value,
+            DataEntryType type,
+            std::unique_lock<SpinMutex> lock
+        );
+
+        /// key is also checked to match old key
+        EmplaceReturn<SpinMutex> SwapEmplace
         (
             DLDataEntry* pmp,
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+            std::uint64_t timestamp, 
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            SpinMutex* spin = nullptr   // spin in Slot containing HashEntry to pmp(same Slot as new node)
+            std::unique_lock<SpinMutex> lock
         );
 
-        inline uint64_t ID() { return _id_; }
+        inline std::uint64_t ID() const { return _id_; }
 
-        inline std::string const& Name() const { return _name_; }
+        inline std::string Name() const { return _name_; }
+
+        inline std::uint64_t Timestamp() const { return _time_stamp_; };
 
         inline std::string GetInternalKey(pmem::obj::string_view key)
         {
             return _MakeInternalKey_(_id_, key);
         }
 
-    private:
+    private:    
+        EmplaceReturn<SpinMutex> _EmplaceBetween_
+        (
+            DLDataEntry* pmp_prev,
+            DLDataEntry* pmp_next,
+            std::uint64_t timestamp, 
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value,
+            DataEntryType type,
+            std::unique_lock<SpinMutex> lock    // lock to prev or next or newly inserted, passed in and out.
+        );
+
+        // Check the type of Record to be emplaced.
+        inline static void _CheckEmplaceType_(DataEntryType type)
+        {
+            if (type != DataEntryType::DlistDataRecord && type != DataEntryType::DlistDeleteRecord)
+            {
+                throw std::runtime_error{"Trying to Emplace a Record with invalid type in UnorderedCollection!"};
+            }
+        }
+
+        // Check the spin of Record to be emplaced.
+        // Whether the spin is associated with the Record to be inserted should be checked by user.
+        inline static void _CheckLock_(std::unique_lock<SpinMutex> const& lock)
+        {
+            if (!lock.owns_lock())
+            {
+                throw std::runtime_error{"User supplied lock not acquired!"};
+            }
+        }
+
         inline static std::string _MakeInternalKey_(std::uint64_t id, pmem::obj::string_view key)
         {
             return std::string{_ID2View_(id)} + std::string{ key };
@@ -384,11 +456,13 @@ namespace KVDK_NAMESPACE
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent three nodes, not locked yet.
         /// Also accepts UnorderedIterator by implicit casting
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid = nullptr);
+        /// [deprecated]
+        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid = nullptr);
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent two nodes between which the new node is to be emplaced
         /// Also locks the slot for new node
-        UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new);
+        /// [deprecated]
+        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new);
 
         inline DLDataEntry* _GetPmpPrev_(DLDataEntry* pmp)
         {
@@ -399,9 +473,67 @@ namespace KVDK_NAMESPACE
         {
             return reinterpret_cast<DLDataEntry*>(_dlinked_list_._sp_pmem_allocator_->offset2addr(pmp->next));
         }
+
+        inline SpinMutex* _GetMutex_(pmem::obj::string_view internal_key)
+        {
+            return _sp_hash_table_->GetHint(internal_key).spin;
+        }
+
+        /// When User Call Emplace functions with parameter pmp
+        /// pmp supplied maybe invalid
+        /// User should only supply pmp to DlistDataRecord or DlistDeleteRecord
+        inline void _CheckUserSuppliedPmp_(DLDataEntry* pmp)
+        {
+            bool is_pmp_valid;
+            switch (static_cast<DataEntryType>(pmp->type))
+            {
+                case DataEntryType::DlistDataRecord:
+                case DataEntryType::DlistDeleteRecord:
+                {
+                    is_pmp_valid = true;
+                    break;
+                }
+                case DataEntryType::DlistHeadRecord:
+                case DataEntryType::DlistTailRecord:
+                case DataEntryType::DlistRecord:
+                default:
+                {
+                    is_pmp_valid = false;
+                    break;
+                }
+            }
+            if (is_pmp_valid)
+            {
+                _CheckID_(pmp);
+                return;
+            }
+            else
+            {
+                throw std::runtime_error{"User supplied pmp for UnorderedCollection Emplace functions is invalid!"};
+            }
+        }
+
+        /// Treat pmp as PMem pointer to a
+        /// DlistHeadRecord, DlistTailRecord, DlistDataRecord, DlistDeleteRecord
+        /// Access ID and check whether pmp belongs to current UnorderedCollection
+        inline void _CheckID_(DLDataEntry* pmp)
+        {
+            if (UnorderedCollection::_ExtractID_(pmp->Key()) == ID())
+            {
+                return;
+            }
+            else
+            {
+                throw std::runtime_error{"User supplied pmp has different ID with the UnorderedCollection!"};
+            }
+        }
     
     };
 
+} // namespace KVDK_NAMESPACE
+
+namespace KVDK_NAMESPACE
+{
     class UnorderedIterator final : public Iterator 
     {
     private:
@@ -522,16 +654,6 @@ namespace KVDK_NAMESPACE
         // DlistTailRecord, DlistDataRecord or DlistDeleteRecord
         // If reached DlistHeadRecord, _valid_ is set to false and returns
         void _Prev_();
-
-        /// Treat pmp as PMem pointer to a
-        /// DlistHeadRecord, DlistTailRecord, DlistDataRecord, DlistDeleteRecord
-        /// Access ID and check whether pmp belongs to current UnorderedCollection
-        inline bool _CheckID_(DLDataEntry* pmp)
-        {
-            return (UnorderedCollection::_ExtractID_(pmp->Key()) == _sp_coll_->ID());
-        }
-
     };
     
 } // namespace KVDK_NAMESPACE
-

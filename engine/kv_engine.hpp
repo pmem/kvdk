@@ -59,15 +59,14 @@ public:
   NewSortedIterator(const pmem::obj::string_view collection) override;
 
   // Unordered Collection
-  Status HGet(pmem::obj::string_view const collection_name,
+  virtual Status HGet(pmem::obj::string_view const collection_name,
               pmem::obj::string_view const key,
-              std::string* value);
-  Status HSet(pmem::obj::string_view const collection_name,
+              std::string* value) override;
+  virtual Status HSet(pmem::obj::string_view const collection_name,
               pmem::obj::string_view const key,
-              pmem::obj::string_view const value);
-  Status HDelete(pmem::obj::string_view const collection_name,
-                 pmem::obj::string_view const key,
-                 pmem::obj::string_view const value);
+              pmem::obj::string_view const value) override;
+  virtual Status HDelete(pmem::obj::string_view const collection_name,
+                 pmem::obj::string_view const key) override;
   std::shared_ptr<Iterator>
   NewUnorderedIterator(pmem::obj::string_view const collection_name);
 
@@ -124,7 +123,7 @@ private:
   }
 
   std::shared_ptr<UnorderedCollection> CreateUnorderedCollection(pmem::obj::string_view const collection_name);
-  std::shared_ptr<UnorderedCollection> SearchUnorderedCollection(pmem::obj::string_view const collection_name);
+  std::shared_ptr<UnorderedCollection> FindUnorderedCollection(pmem::obj::string_view const collection_name);
   
   Status MaybeInitPendingBatchFile();
 
@@ -196,6 +195,7 @@ private:
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<HashList>> hashlists_;
+  std::vector<std::shared_ptr<UnorderedCollection>> _vec_sp_uncolls_;
   std::mutex list_mu_;
 
   std::string dir_;

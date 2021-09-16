@@ -485,7 +485,7 @@ namespace KVDK_NAMESPACE
             return cs1 + cs2 + cs3;
         }
 
-        /// Emplace between iter_prev and iter_next
+        /// Emplace between iter_prev and iter_next, linkage not checked
         /// When fail to Emplace, throw bad_alloc
         /// If system fails, it is guaranteed the dlinked_list is in one of the following state:
         ///     1) Nothing emplaced
@@ -508,9 +508,11 @@ namespace KVDK_NAMESPACE
             {
                 throw std::runtime_error{"Trying to emplace invalid Record!"};
             }
-            assert(iter_prev.valid() && "Invalid iterator in dlinked_list!");
-            assert(iter_next.valid() && "Invalid iterator in dlinked_list!");
-
+            if (!iter_prev || !iter_next)
+            {
+                throw std::runtime_error{"Invalid iterator in dlinked_list!"};
+            }
+            
             auto space = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() + value.size());
             if (space.size == 0)
             {

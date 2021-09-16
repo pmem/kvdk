@@ -1162,9 +1162,9 @@ std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(pmem::o
   return std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, name, id, ts);
 }
 
-std::shared_ptr<UnorderedCollection> KVEngine::SearchUnorderedCollection(pmem::obj::string_view const collection_name)
+std::shared_ptr<UnorderedCollection> KVEngine::FindUnorderedCollection(pmem::obj::string_view const collection_name)
 {
-  auto hint = hash_table_->GetHint(collection_name);
+  HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
   Status s = hash_table_->Search(hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
@@ -1181,7 +1181,7 @@ std::shared_ptr<UnorderedCollection> KVEngine::SearchUnorderedCollection(pmem::o
   }
   default:
   {
-    throw std::runtime_error{"Invalid state in SearchUnorderedCollection()!"};
+    throw std::runtime_error{"Invalid state in FindUnorderedCollection()!"};
   }
   }
 }
@@ -1190,7 +1190,7 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key,
                       std::string* value)
 {
-  std::shared_ptr<UnorderedCollection> sp_uncoll = SearchUnorderedCollection(collection_name);
+  std::shared_ptr<UnorderedCollection> sp_uncoll = FindUnorderedCollection(collection_name);
   if (!sp_uncoll)
   {
     return Status::NotFound;
@@ -1198,45 +1198,46 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
 
   std::string internal_key = sp_uncoll->GetInternalKey(key);
 
-  HashTable::KeyHashHint hint;
-  HashEntry hash_entry_found;
-  HashEntry hash_entry_found2;
-  HashEntry *p_hash_entry_found_in_table = nullptr;
-  Status s;
-  DataEntry data_entry_found;
-
-HGET_RETRY:
-  hint = hash_table_->GetHint(internal_key);
-  s = hash_table_->Search(hint, collection_name, DataEntryType::DlistDataRecord, &hash_entry_found, nullptr,
-                                 &p_hash_entry_found_in_table, HashTable::SearchPurpose::Read);
-  switch (s)
+  while (true)
   {
-    case Status::NotFound:
+    HashEntry hash_entry_found;
+    HashEntry hash_entry_found2;
+    HashEntry *p_hash_entry_found_in_table = nullptr;
+    DataEntry data_entry_found;
+  
+    HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
+    Status search_result = hash_table_->Search(hint, collection_name, DataEntryType::DlistDataRecord, &hash_entry_found, nullptr,
+                                  &p_hash_entry_found_in_table, HashTable::SearchPurpose::Read);
+    switch (search_result)
     {
-      return s;
-    }
-    case Status::Ok:
-    {
-      void* pmp = pmem_allocator_->offset2addr(hash_entry_found.offset);
-      auto val = static_cast<DLDataEntry*>(pmp)->Value();
-      value->assign(val.data(), val.size());
-      memcpy(&hash_entry_found2, p_hash_entry_found_in_table, sizeof(HashEntry));
-      bool modified = false;
-      modified = modified || (hash_entry_found.offset != hash_entry_found2.offset);
-      modified = modified || (hash_entry_found.header.data_type != hash_entry_found2.header.data_type);
-      modified = modified || (hash_entry_found.header.key_prefix != hash_entry_found2.header.key_prefix);
-      if (!modified)
+      case Status::NotFound:
       {
-        return Status::Ok;
+        return Status::NotFound;
       }
-      else
+      case Status::Ok:
       {
-        goto HGET_RETRY;
+        void* pmp = pmem_allocator_->offset2addr(hash_entry_found.offset);
+        auto val = static_cast<DLDataEntry*>(pmp)->Value();
+        value->assign(val.data(), val.size());
+        memcpy(&hash_entry_found2, p_hash_entry_found_in_table, sizeof(HashEntry));
+        bool modified = false;
+        modified = modified || (hash_entry_found.offset != hash_entry_found2.offset);
+        modified = modified || (hash_entry_found.header.data_type != hash_entry_found2.header.data_type);
+        modified = modified || (hash_entry_found.header.key_prefix != hash_entry_found2.header.key_prefix);
+        if (!modified)
+        {
+          return Status::Ok;
+        }
+        else
+        {
+          // data modified, search again.
+          continue;
+        }
       }
-    }
-    default:
-    {
-      throw std::runtime_error{"Invalid state in SearchUnorderedCollection()!"};
+      default:
+      {
+        throw std::runtime_error{"Invalid state in SearchUnorderedCollection()!"};
+      }
     }
   }
 }
@@ -1245,33 +1246,150 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key,
                       pmem::obj::string_view const value)
 {
-  std::shared_ptr<UnorderedCollection> sp_uncoll = SearchUnorderedCollection(collection_name);
-  if (!sp_uncoll)
+  std::shared_ptr<UnorderedCollection> sp_uncoll = FindUnorderedCollection(collection_name);
+  if (sp_uncoll)
   {
-    auto hint = hash_table_->GetHint(collection_name);
-    std::lock_guard<SpinMutex> lg{*hint.spin};
     std::uint64_t ts = get_timestamp();
-    sp_uncoll = CreateUnorderedCollection(collection_name);
-    // SpinMutex* spin = ;
-    // Register sp_uncoll in HashTable!
-    // sp_uncoll->EmplaceFront())
-  }
+    auto internal_key = sp_uncoll->GetInternalKey(key);
+    HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
 
-  
-  throw std::runtime_error{"Unimplemented yet!"};
+    std::unique_lock<SpinMutex> lock{*hint.spin};
+
+    HashEntry hash_entry;
+    HashEntry *entry_base = nullptr;
+    Status search_status = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord || DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
+                                  &entry_base, HashTable::SearchPurpose::Write);
+
+    switch (search_status)
+    {
+      case Status::NotFound:
+      {
+        auto emplace_result = sp_uncoll->EmplaceFront(ts, internal_key, value, DataEntryType::DlistDataRecord, std::move(lock));
+        std::uint64_t offset_new_record = emplace_result.offset;
+        // spin now hold by emplace_result
+
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        return Status::Ok;
+      }
+      case Status::Ok:
+      {
+        auto emplace_result = sp_uncoll->SwapEmplace
+        (
+          reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset)), 
+          ts, internal_key, value, DataEntryType::DlistDataRecord, std::move(lock)
+        );
+        std::uint64_t offset_new_record = emplace_result.offset;
+
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        return Status::Ok;
+      }
+      default:
+      {
+        throw std::runtime_error{"Invalid search result when trying to insert a new DlistDataRecord!"};
+      }
+    }
+  }
+  else
+  {
+    // UnorderedCollection not found, create one and insert Entry
+    {
+      std::lock_guard<std::mutex> lg{list_mu_};
+      sp_uncoll = CreateUnorderedCollection(collection_name);
+      _vec_sp_uncolls_.push_back(sp_uncoll);
+      void* psp_uncoll = sp_uncoll.get();
+
+      HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
+      HashEntry hash_entry;
+      HashEntry *entry_base = nullptr;
+      Status s = hash_table_->Search(hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
+                                    &entry_base, HashTable::SearchPurpose::Read);
+      if (s != Status::NotFound)
+      {
+        throw std::runtime_error{"Fail to found a UnorderedCollection but error when creating a new one!"};
+      } 
+      hash_table_->Insert(hint, entry_base, DataEntryType::DlistRecord, reinterpret_cast<uint64_t>(psp_uncoll), HashOffsetType::UnorderedCollection);
+    }
+    // Emplace the new DlistDataRecord
+    {
+      std::uint64_t ts = get_timestamp();
+      auto internal_key = sp_uncoll->GetInternalKey(key);
+
+      HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
+      std::unique_lock<SpinMutex> lock{*hint.spin};
+
+      auto emplace_result = sp_uncoll->EmplaceFront(ts, internal_key, value, DataEntryType::DlistDataRecord, std::move(lock));
+      std::uint64_t offset_new_record = emplace_result.offset;
+
+      HashEntry hash_entry;
+      HashEntry *entry_base = nullptr;
+      Status s = hash_table_->Search(hint, internal_key, DataEntryType::DlistRecord, &hash_entry, nullptr,
+                                    &entry_base, HashTable::SearchPurpose::Read);
+      if (s != Status::NotFound)
+      {
+        throw std::runtime_error{"Inserting a new key into a new UnorderedCollection but met an old one!"};
+      } 
+      hash_table_->Insert(hint, entry_base, DataEntryType::DlistRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+      return Status::Ok;
+    }
+  }
 }
 
 Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
-                         pmem::obj::string_view const key,
-                         pmem::obj::string_view const value)
+                         pmem::obj::string_view const key)
 {
-  throw std::runtime_error{"Unimplemented yet!"};
+  std::shared_ptr<UnorderedCollection> sp_uncoll = FindUnorderedCollection(collection_name);
+  if (sp_uncoll)
+  {
+    std::uint64_t ts = get_timestamp();
+    auto internal_key = sp_uncoll->GetInternalKey(key);
+    HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
+
+    std::unique_lock<SpinMutex> lock{*hint.spin};
+
+    HashEntry hash_entry;
+    HashEntry *entry_base = nullptr;
+    Status search_status = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord || DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
+                                  &entry_base, HashTable::SearchPurpose::Write);
+
+    switch (search_status)
+    {
+      case Status::NotFound:
+      {
+        auto emplace_result = sp_uncoll->EmplaceFront(ts, internal_key, "", DataEntryType::DlistDataRecord, std::move(lock));
+        std::uint64_t offset_new_record = emplace_result.offset;
+        // spin now hold by emplace_result
+
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        return Status::Ok;
+      }
+      case Status::Ok:
+      {
+        auto emplace_result = sp_uncoll->SwapEmplace
+        (
+          reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset)), 
+          ts, internal_key, "", DataEntryType::DlistDataRecord, std::move(lock)
+        );
+        std::uint64_t offset_new_record = emplace_result.offset;
+
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        return Status::Ok;
+      }
+      default:
+      {
+        throw std::runtime_error{"Invalid search result when trying to insert a new DlistDataRecord!"};
+      }
+    }
+  }
+  else
+  {
+    throw std::runtime_error{ "Trying to delete from non-existing UnorderedCollection!" };
+  }
 }
 
 std::shared_ptr<Iterator>
 KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name)
 {
-  std::shared_ptr<UnorderedCollection> sp_coll = SearchUnorderedCollection(collection_name);
+  std::shared_ptr<UnorderedCollection> sp_coll = FindUnorderedCollection(collection_name);
   assert(sp_coll && "Trying to initialize an Iterator for a UnorderedCollection not created yet");
   return sp_coll ? std::make_shared<UnorderedIterator>(sp_coll)
                  : nullptr;

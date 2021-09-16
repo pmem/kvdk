@@ -15,7 +15,8 @@ namespace KVDK_NAMESPACE
         _pmp_dlist_record_{ nullptr },
         _dlinked_list_{ sp_pmem_allocator, timestamp, _ID2View_(id), pmem::obj::string_view{""} },
         _name_{ name },
-        _id_{ id }
+        _id_{ id },
+        _time_stamp_{ timestamp }
     {
     {
         auto space_list_record = _dlinked_list_._sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
@@ -51,7 +52,7 @@ namespace KVDK_NAMESPACE
     {
         std::cerr << ex.what() << std::endl;
         std::cerr << "Fail to create UnorderedCollection object!" << std::endl;
-        throw;
+        throw ex;
     }
 
     UnorderedCollection::UnorderedCollection
@@ -69,7 +70,8 @@ namespace KVDK_NAMESPACE
             _GetPmpNext_(pmp_dlist_record)
         },
         _name_{ pmp_dlist_record->Key() },
-        _id_{ _View2ID_(pmp_dlist_record->Value()) }
+        _id_{ _View2ID_(pmp_dlist_record->Value()) },
+        _time_stamp_{ pmp_dlist_record->timestamp }
     {
     }
     
@@ -87,144 +89,175 @@ namespace KVDK_NAMESPACE
         return iter;
     }
 
-    UnorderedIterator UnorderedCollection::EmplaceBefore
+    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceBefore
     (
         DLDataEntry* pmp,
-        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
+        std::uint64_t timestamp,  
         pmem::obj::string_view const key,
         pmem::obj::string_view const value,
         DataEntryType type,
-        SpinMutex* spin             // spin in Slot containing HashEntry to new node
+        std::unique_lock<SpinMutex> lock
     )
     {
-        if (spin == nullptr)
-        {
-            throw std::runtime_error{"Must provide a spin to lock new node in UnorderedCollection::EmplaceBefore()"};
-        }
+        _CheckUserSuppliedPmp_(pmp);
+        DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp}; --iter_prev;
+        DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp};
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
+    }
+
+    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceAfter
+    (
+        DLDataEntry* pmp,
+        std::uint64_t timestamp,   
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        std::unique_lock<SpinMutex> lock
+    )
+    {
+        _CheckUserSuppliedPmp_(pmp);
+        DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp};
+        DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp}; ++iter_next;
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
+    }
+
+    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceFront
+    (
+        std::uint64_t timestamp, 
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        std::unique_lock<SpinMutex> lock
+    )
+    {
+        DlistIterator iter_prev{_dlinked_list_.Head()};
+        DlistIterator iter_next{_dlinked_list_.Head()}; ++iter_next;
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
+    }
+
+    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceBack
+    (
+        std::uint64_t timestamp, 
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        std::unique_lock<SpinMutex> lock
+    )
+    {
+        DlistIterator iter_prev{_dlinked_list_.Tail()}; --iter_prev;
+        DlistIterator iter_next{_dlinked_list_.Tail()}; 
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
+    }
+
+    /// key is also checked to match old key
+    EmplaceReturn<SpinMutex> UnorderedCollection::SwapEmplace
+    (
+        DLDataEntry* pmp,
+        std::uint64_t timestamp, 
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        std::unique_lock<SpinMutex> lock
+    )
+    {
+        _CheckUserSuppliedPmp_(pmp);
+        DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp}; --iter_prev;
+        DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp}; ++iter_next;
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
+    }
+
+    EmplaceReturn<SpinMutex> UnorderedCollection::_EmplaceBetween_
+    (
+        DLDataEntry* pmp_prev,
+        DLDataEntry* pmp_next,
+        std::uint64_t timestamp, 
+        pmem::obj::string_view const key,
+        pmem::obj::string_view const value,
+        DataEntryType type,
+        std::unique_lock<SpinMutex> lock    // lock to prev or next or newly inserted, passed in and out.
+    )
+    {
+        _CheckLock_(lock);
+        _CheckEmplaceType_(type);
         
-        // Validifying PMem address by constructing UnorderedIterator
-        UnorderedIterator iter{ shared_from_this(), pmp };
-        DlistIterator iter_prev{ iter._iterator_internal_ }; --iter_prev;
-        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter_prev, spin) };
-        locks.LockAll();
-        _dlinked_list_.EmplaceBefore(iter._iterator_internal_, timestamp, key, value, type);
-    }
+        DlistIterator iter_prev{ _dlinked_list_._sp_pmem_allocator_, pmp_prev };
+        DlistIterator iter_next{ _dlinked_list_._sp_pmem_allocator_, pmp_next };
 
-    UnorderedIterator UnorderedCollection::EmplaceAfter
-    (
-        DLDataEntry* pmp,
-        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-        pmem::obj::string_view const key,
-        pmem::obj::string_view const value,
-        DataEntryType type,
-        SpinMutex* spin             // spin in Slot containing HashEntry to new node
-    )
-    {
-        if (spin == nullptr)
+        std::string internal_key = GetInternalKey(key);
+        SpinMutex* spin = lock.mutex();
+        SpinMutex* spin1 = _GetMutex_(iter_prev->Key());
+        SpinMutex* spin2 = _GetMutex_(internal_key);
+        SpinMutex* spin3 = _GetMutex_(iter_next->Key());
+
+        std::unique_lock<SpinMutex> lock1;
+        std::unique_lock<SpinMutex> lock2;
+        std::unique_lock<SpinMutex> lock3;
+
+        if (spin1 != spin)
         {
-            throw std::runtime_error{"Must provide a spin to lock new node in UnorderedCollection::EmplaceBefore()"};
+            lock1 = std::unique_lock<SpinMutex>{*spin1, std::try_to_lock};
+            if (!lock1.owns_lock())
+            {
+                return EmplaceReturn<SpinMutex>{EmplaceReturn<SpinMutex>::FailOffset, std::move(lock), false};
+            }    
+        }
+        if (spin2 != spin && spin2 != spin1)
+        {
+            lock2 = std::unique_lock<SpinMutex>{*spin2, std::try_to_lock};
+            if (!lock2.owns_lock())
+            {
+                return EmplaceReturn<SpinMutex>{EmplaceReturn<SpinMutex>::FailOffset, std::move(lock), false};
+            }    
+        }
+        if (spin3 != spin && spin3 != spin1 && spin3 != spin2)
+        {
+            lock3 = std::unique_lock<SpinMutex>{*spin3, std::try_to_lock};
+            if (!lock3.owns_lock())
+            {
+                return EmplaceReturn<SpinMutex>{EmplaceReturn<SpinMutex>::FailOffset, std::move(lock), false};
+            }    
         }
 
-        // Validifying PMem address by constructing UnorderedIterator
-        UnorderedIterator iter{ shared_from_this(), pmp };
-        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter._iterator_internal_, spin) };
-        locks.LockAll();
-        _dlinked_list_.EmplaceAfter(iter._iterator_internal_, timestamp, key, value, type);
+        DlistIterator iter = _dlinked_list_._EmplaceBetween_(iter_prev, iter_next, timestamp, internal_key, value, type);
+        return EmplaceReturn<SpinMutex>{iter._GetOffset_(), std::move(lock), true};
     }
 
-    UnorderedIterator UnorderedCollection::EmplaceFront
-    (
-        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-        pmem::obj::string_view const key,
-        pmem::obj::string_view const value,
-        DataEntryType type,
-        SpinMutex* spin             // spin in Slot containing HashEntry to new node
-    )
-    {
-        if (spin == nullptr)
-        {
-            throw std::runtime_error{"Must provide a spin to lock new node in UnorderedCollection::EmplaceFront()"};
-        }
+    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid)
+    // {
+    //     DlistIterator iter_prev{ iter_mid }; --iter_prev;
+    //     DlistIterator iter_next{ iter_mid }; ++iter_next;
 
-        DlistIterator iter = _dlinked_list_.Head();
-        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter, spin) };
-        locks.LockAll();
-        _dlinked_list_.EmplaceFront(timestamp, key, value, type);
-    }
+    //     SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
+    //     SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
+    //     SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
 
-    UnorderedIterator UnorderedCollection::EmplaceBack
-    (
-        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-        pmem::obj::string_view const key,
-        pmem::obj::string_view const value,
-        DataEntryType type,
-        SpinMutex* spin             // spin in Slot containing HashEntry to new node
-    )
-    {
-        if (spin == nullptr)
-        {
-            throw std::runtime_error{"Must provide a spin to lock new node in UnorderedCollection::EmplaceBack()"};
-        }
+    //     UniqueLockTriplet<SpinMutex> unique_lock_triplet
+    //     {
+    //         *p_spin_1,
+    //         *p_spin_2,
+    //         *p_spin_3,
+    //         std::defer_lock
+    //     };
+    //     return unique_lock_triplet;
+    // }
 
-        DlistIterator iter = _dlinked_list_.Tail();
-        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet2Nodes_(iter, spin) };
-        locks.LockAll();
-        _dlinked_list_.EmplaceBack(timestamp, key, value, type);
-    }
+    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new)
+    // {
+    //     DlistIterator iter_next{ iter_prev }; ++iter_next;
 
-    UnorderedIterator UnorderedCollection::SwapEmplace
-    (
-        DLDataEntry* pmp,
-        std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-        pmem::obj::string_view const key,
-        pmem::obj::string_view const value,
-        DataEntryType type,
-        SpinMutex* spin             // spin in Slot containing HashEntry to pmp(same Slot as new node)
-    )
-    {
-        // Validifying PMem address by constructing UnorderedIterator
-        UnorderedIterator iter{ shared_from_this(), pmp };
-        UniqueLockTriplet<SpinMutex> locks{ _MakeUniqueLockTriplet3Nodes_(iter._iterator_internal_, spin) };
-        locks.LockAll();
-        _dlinked_list_.SwapEmplace(iter._iterator_internal_, timestamp, key, value, type);            
-    }
+    //     SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
+    //     SpinMutex* p_spin_2 = spin_new;
+    //     SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
 
-    UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid)
-    {
-        DlistIterator iter_prev{ iter_mid }; --iter_prev;
-        DlistIterator iter_next{ iter_mid }; ++iter_next;
-
-        SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
-        SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
-        SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
-
-        UniqueLockTriplet<SpinMutex> unique_lock_triplet
-        {
-            *p_spin_1,
-            *p_spin_2,
-            *p_spin_3,
-            std::defer_lock
-        };
-        return unique_lock_triplet;
-    }
-
-    UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new)
-    {
-        DlistIterator iter_next{ iter_prev }; ++iter_next;
-
-        SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
-        SpinMutex* p_spin_2 = spin_new;
-        SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
-
-        UniqueLockTriplet<SpinMutex> unique_lock_triplet
-        {
-            *p_spin_1,
-            *p_spin_2,
-            *p_spin_3,
-            std::defer_lock
-        };
-        return unique_lock_triplet;
-    }
+    //     UniqueLockTriplet<SpinMutex> unique_lock_triplet
+    //     {
+    //         *p_spin_1,
+    //         *p_spin_2,
+    //         *p_spin_3,
+    //         std::defer_lock
+    //     };
+    //     return unique_lock_triplet;
+    // }
 
 }
 
@@ -244,41 +277,18 @@ namespace KVDK_NAMESPACE
     {
         if (!pmp)
         {
-            goto UNORDEREDITERATOR_CONSTRUCTION_WITH_PMP_FAILURE;
-        }       
-        bool is_pmp_valid;
-        switch (static_cast<DataEntryType>(pmp->type))
-        {
-        case DataEntryType::DlistHeadRecord:
-        case DataEntryType::DlistTailRecord:
-        case DataEntryType::DlistDataRecord:
-        case DataEntryType::DlistDeleteRecord:
-        {
-            is_pmp_valid = true;
-            break;
+            throw std::runtime_error{"Explicit Constructor of UnorderedIterator does not accept nullptr!"};
         }
-        case DataEntryType::DlistRecord:
-        default:
-        {
-            goto UNORDEREDITERATOR_CONSTRUCTION_WITH_PMP_FAILURE;
-        }
-        }
-        is_pmp_valid = is_pmp_valid && _CheckID_(pmp);
-
-        if(is_pmp_valid)
-        {
-            _valid_ = (pmp->type == DataEntryType::DlistDataRecord);
-            return;
-        }
-    UNORDEREDITERATOR_CONSTRUCTION_WITH_PMP_FAILURE:
-        throw std::runtime_error{ "PMem pointer does not point to a valid Record belonging to the UnorderedCollection" };
+        _sp_coll_->_CheckUserSuppliedPmp_(pmp);
+        _valid_ = (pmp->type == DataEntryType::DlistDataRecord);
+        return;
     }
 
     void UnorderedIterator::_Next_()
     {
         if(!_iterator_internal_.valid())
         {
-            goto UNORDERED_ITERATOR_NEXT_FAILRURE;
+            goto FATAL_FAILURE;
         }
         switch (static_cast<DataEntryType>(_iterator_internal_->type))
         {
@@ -292,7 +302,7 @@ namespace KVDK_NAMESPACE
         case DataEntryType::DlistTailRecord:        
         default:
         {
-            goto UNORDERED_ITERATOR_NEXT_FAILRURE;
+            goto FATAL_FAILURE;
         }
         }
 
@@ -322,11 +332,11 @@ namespace KVDK_NAMESPACE
             case DataEntryType::DlistRecord:
             default:
             {
-                goto UNORDERED_ITERATOR_NEXT_FAILRURE;
+                goto FATAL_FAILURE;
             }
             }          
         }
-    UNORDERED_ITERATOR_NEXT_FAILRURE:
+    FATAL_FAILURE:
         throw std::runtime_error{ "UnorderedIterator::_Next_() fails!" };
     }
 
@@ -334,7 +344,7 @@ namespace KVDK_NAMESPACE
     {
         if(!_iterator_internal_.valid())
         {
-            goto UNOERDERED_ITERATOR_PREV_FAILURE;
+            goto FATAL_FAILURE;
         }
         switch (static_cast<DataEntryType>(_iterator_internal_->type))
         {
@@ -348,7 +358,7 @@ namespace KVDK_NAMESPACE
         case DataEntryType::DlistRecord:
         default:
         {
-            goto UNOERDERED_ITERATOR_PREV_FAILURE;
+            goto FATAL_FAILURE;
         }
         }
 
@@ -378,11 +388,11 @@ namespace KVDK_NAMESPACE
             case DataEntryType::DlistRecord:
             default:
             {
-                goto UNOERDERED_ITERATOR_PREV_FAILURE;
+                goto FATAL_FAILURE;
             }
             }          
         }
-    UNOERDERED_ITERATOR_PREV_FAILURE:
+    FATAL_FAILURE:
         throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Prev_() fails!" };
     }
 
