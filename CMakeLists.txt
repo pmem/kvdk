@@ -79,8 +79,11 @@ if (BUILD_TESTING)
 endif ()
 
 option(BUILD_TUTORIAL "Build the tutorial" ON)
-
 add_subdirectory(examples/tutorial)
+
+option(BUILD_DEBUG "Build the debug" ON)
+add_subdirectory(debug)
+
 
 add_custom_target(checkers ALL)
 add_custom_target(cppstyle)

@@ -42,12 +42,18 @@ build/
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+
+scripts/result*
+debug/
+
+>>>>>>> 9cffd7b (debug)
 /CMakeSettings.json
 /extern/libpmem
 
-/scripts/results*
-=======
 
+<<<<<<< HEAD
 /scripts/result*
 >>>>>>> b729f95 (update)
 =======
@@ -58,3 +64,5 @@ scripts/result*
 
 scripts/result*
 >>>>>>> df99734 (path with time)
+=======
+>>>>>>> 9cffd7b (debug)
