@@ -709,7 +709,7 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, "", StringDeleteRecord);
+  return StringDeleteImpl(key, nullptr);
 }
 
 inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
@@ -1067,7 +1067,12 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
 
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto &kv = write_batch.kvs[i];
-    s = HashSetImpl(kv.key, kv.value, kv.type, &batch_hints[i]);
+    if (kv.type == StringDataRecord) {
+      s = StringSetImpl(kv.key, kv.value, &batch_hints[i]);
+    } else {
+      assert(kv.type == StringDeleteRecord);
+      s = StringDeleteImpl(kv.key, &batch_hints[i]);
+    }
 
     if (s != Status::Ok) {
       return s;
@@ -1092,9 +1097,71 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
   return HashGetImpl(skiplist_key, value, SortedDataRecord);
 }
 
-Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
-                             const pmem::obj::string_view &value, uint16_t dt,
-                             BatchWriteHint *batch_hint) {
+Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key,
+                                  BatchWriteHint *batch_hint) {
+  DataEntry data_entry;
+  HashEntry hash_entry;
+  HashEntry *entry_base = nullptr;
+
+  uint32_t requested_size = key.size() + sizeof(DataEntry);
+  char *block_base = nullptr;
+  SizedSpaceEntry sized_space_entry;
+
+  {
+    auto hint = hash_table_->GetHint(key);
+    std::lock_guard<SpinMutex> lg(*hint.spin);
+    Status s = hash_table_->Search(
+        hint, key, StringDeleteRecord | StringDataRecord, &hash_entry,
+        &data_entry, &entry_base, HashTable::SearchPurpose::Write);
+
+    switch (s) {
+    case Status::Ok:
+      break;
+    case Status::NotFound:
+      return Status::Ok;
+    default:
+      return s;
+    }
+
+    if (batch_hint == nullptr) {
+      // Deleted key may not existed, so we allocate space for delete record
+      // until we found the key
+      sized_space_entry = pmem_allocator_->Allocate(requested_size);
+      if (sized_space_entry.size == 0) {
+        return Status::PmemOverflow;
+      }
+    } else {
+      sized_space_entry = batch_hint->sized_space_entry;
+    }
+
+    uint64_t new_ts = batch_hint ? batch_hint->ts : get_timestamp();
+    if (new_ts < data_entry.timestamp) {
+      if (sized_space_entry.size > 0) {
+        pmem_allocator_->Free(sized_space_entry);
+      }
+      return Status::Ok;
+    }
+
+    block_base =
+        pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
+
+    DataEntry write_entry(0, sized_space_entry.size, new_ts, StringDeleteRecord,
+                          key.size(), 0);
+    PersistDataEntry(block_base, &write_entry, key, "", StringDeleteRecord);
+
+    assert(entry_base->header.status == HashEntryStatus::Updating);
+    hash_table_->Insert(hint, entry_base, StringDeleteRecord,
+                        sized_space_entry.space_entry.offset,
+                        HashOffsetType::DataEntry);
+    pmem_allocator_->Free(SizedSpaceEntry(
+        hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
+                               const pmem::obj::string_view &value,
+                               BatchWriteHint *batch_hint) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
@@ -1106,13 +1173,9 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
 
   // Space is already allocated for batch writes
   if (batch_hint == nullptr) {
-    // Deleted key may not existed, so we allocate space for delete record until
-    // we found the key
-    if (dt != StringDeleteRecord) {
-      sized_space_entry = pmem_allocator_->Allocate(requested_size);
-      if (sized_space_entry.size == 0) {
-        return Status::PmemOverflow;
-      }
+    sized_space_entry = pmem_allocator_->Allocate(requested_size);
+    if (sized_space_entry.size == 0) {
+      return Status::PmemOverflow;
     }
   } else {
     sized_space_entry = batch_hint->sized_space_entry;
@@ -1128,16 +1191,6 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
       return s;
     }
     bool found = s == Status::Ok;
-    if (dt == StringDeleteRecord && batch_hint == nullptr) {
-      if (found && entry_base->header.data_type != StringDeleteRecord) {
-        sized_space_entry = pmem_allocator_->Allocate(requested_size);
-        if (sized_space_entry.size == 0) {
-          return Status::PmemOverflow;
-        }
-      } else {
-        return Status::Ok;
-      }
-    }
 
     block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
@@ -1150,12 +1203,12 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
       return Status::Ok;
     }
 
-    DataEntry write_entry(0, sized_space_entry.size, new_ts, dt, key.size(),
-                          v_size);
-    PersistDataEntry(block_base, &write_entry, key, value, dt);
+    DataEntry write_entry(0, sized_space_entry.size, new_ts, StringDataRecord,
+                          key.size(), v_size);
+    PersistDataEntry(block_base, &write_entry, key, value, StringDataRecord);
 
     auto entry_base_status = entry_base->header.status;
-    hash_table_->Insert(hint, entry_base, dt,
+    hash_table_->Insert(hint, entry_base, StringDataRecord,
                         sized_space_entry.space_entry.offset,
                         HashOffsetType::DataEntry);
     if (entry_base_status == HashEntryStatus::Updating) {
@@ -1180,6 +1233,6 @@ Status KVEngine::Set(const pmem::obj::string_view key,
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, value, StringDataRecord);
+  return StringSetImpl(key, value, nullptr);
 }
 } // namespace KVDK_NAMESPACE

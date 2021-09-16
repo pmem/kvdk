@@ -107,9 +107,12 @@ private:
 
   Status MaybeInitPendingBatchFile();
 
-  Status HashSetImpl(const pmem::obj::string_view &key,
-                     const pmem::obj::string_view &value, uint16_t dt,
-                     BatchWriteHint *batch_hint = nullptr);
+  Status StringSetImpl(const pmem::obj::string_view &key,
+                       const pmem::obj::string_view &value,
+                       BatchWriteHint *batch_hint);
+
+  Status StringDeleteImpl(const pmem::obj::string_view &key,
+                          BatchWriteHint *batch_hint = nullptr);
 
   Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
                   const pmem::obj::string_view &value);
