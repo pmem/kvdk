@@ -14,16 +14,16 @@
 namespace KVDK_NAMESPACE {
 
 // A pointer with additional information on high 16 bits
-template <typename T> struct TaggedPointer {
+template <typename T> struct PointerWithTag {
   uint64_t tagged_pointer;
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
-  TaggedPointer(T *pointer) : tagged_pointer((uint64_t)pointer) {}
+  PointerWithTag(T *pointer) : tagged_pointer((uint64_t)pointer) {}
 
-  explicit TaggedPointer(T *pointer, uint16_t code)
+  explicit PointerWithTag(T *pointer, uint16_t code)
       : tagged_pointer((uint64_t)pointer | ((uint64_t)code << 48)) {}
 
-  TaggedPointer() : tagged_pointer(0) {}
+  PointerWithTag() : tagged_pointer(0) {}
 
   T *RawPointer() { return (T *)(tagged_pointer & kPointerMask); }
 
@@ -33,7 +33,7 @@ template <typename T> struct TaggedPointer {
 
   bool Null() { return RawPointer() == nullptr; }
 
-  uint16_t Tag() { return tagged_pointer >> 48; }
+  uint16_t GetTag() { return tagged_pointer >> 48; }
 
   void ClearTag() { tagged_pointer &= kPointerMask; }
 

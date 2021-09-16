@@ -331,7 +331,7 @@ Status KVEngine::RestoreStringRecord(DataEntry *pmem_data_entry,
   // can reuse the hash entry and free the data entry
   entry_base->header.status =
       (!found && (cached_meta->type & DeleteDataEntryType)
-           ? HashEntryStatus::Clean
+           ? HashEntryStatus::CleanReusing
            : HashEntryStatus::Normal);
 
   return Status::Ok;
@@ -429,7 +429,7 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
   // can reuse the hash entry and free the data entry
   entry_base->header.status =
       (!found && (cached_meta->type & DeleteDataEntryType)
-           ? HashEntryStatus::Clean
+           ? HashEntryStatus::CleanReusing
            : HashEntryStatus::Normal);
 
   return Status::Ok;
@@ -498,7 +498,7 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
           pmem_allocator_->Free(SizedSpaceEntry(
               hash_entry.offset, existing_data_entry.header.b_size,
               existing_data_entry.timestamp));
-        } else if (entry_base_status == HashEntryStatus::BeingReused) {
+        } else if (entry_base_status == HashEntryStatus::DirtyReusing) {
           pmem_allocator_->DelayFree(SizedSpaceEntry(
               hash_entry.offset, existing_data_entry.header.b_size,
               existing_data_entry.timestamp));
@@ -790,7 +790,9 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
       old_entry_offset = hash_entry.offset;
     }
 
-    skiplist->DeleteDataEntry(&splice, dram_node);
+    skiplist->DeleteDataEntry(
+        (DLDataEntry *)pmem_allocator_->offset2addr(old_entry_offset), &splice,
+        dram_node);
 
     entry_base->header.data_type = Empty;
     pmem_allocator_->Free(SizedSpaceEntry(
@@ -885,7 +887,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
       if (entry_base_status == HashEntryStatus::Updating) {
         pmem_allocator_->Free(SizedSpaceEntry(
             hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
-      } else if (entry_base_status == HashEntryStatus::BeingReused) {
+      } else if (entry_base_status == HashEntryStatus::DirtyReusing) {
         pmem_allocator_->DelayFree(SizedSpaceEntry(
             hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
       }
@@ -1159,7 +1161,7 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
     if (entry_base_status == HashEntryStatus::Updating) {
       pmem_allocator_->Free(SizedSpaceEntry(
           hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
-    } else if (entry_base_status == HashEntryStatus::BeingReused) {
+    } else if (entry_base_status == HashEntryStatus::DirtyReusing) {
       pmem_allocator_->DelayFree(SizedSpaceEntry(
           hash_entry.offset, data_entry.header.b_size, data_entry.timestamp));
     }
