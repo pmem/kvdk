@@ -21,11 +21,15 @@ template <typename T> struct TaggedPointer {
   TaggedPointer(T *pointer) : tagged_pointer((uint64_t)pointer) {}
 
   explicit TaggedPointer(T *pointer, uint16_t code)
-      : tagged_pointer((uint64_t)pointer & ((uint64_t)code << 48)) {}
+      : tagged_pointer((uint64_t)pointer | ((uint64_t)code << 48)) {}
 
   TaggedPointer() : tagged_pointer(0) {}
 
   T *RawPointer() { return (T *)(tagged_pointer & kPointerMask); }
+
+  const T *RawPointer() const {
+    return (const T *)(tagged_pointer & kPointerMask);
+  }
 
   bool Null() { return RawPointer() == nullptr; }
 
@@ -33,13 +37,15 @@ template <typename T> struct TaggedPointer {
 
   void ClearTag() { tagged_pointer &= kPointerMask; }
 
-  void SetTag(uint16_t info) { tagged_pointer &= ((uint64_t)info << 48); }
+  void SetTag(uint16_t info) { tagged_pointer |= ((uint64_t)info << 48); }
+
+  const T &operator*() const { return *RawPointer(); }
 
   T &operator*() { return *(RawPointer()); }
 
-  T *operator->() { return RawPointer(); }
+  const T *operator->() const { return RawPointer(); }
 
-  T *operator->() const { return RawPointer(); }
+  T *operator->() { return RawPointer(); }
 
   bool operator==(const T *raw_pointer) { return RawPointer() == raw_pointer; }
 
