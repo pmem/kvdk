@@ -45,6 +45,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       return false;
     }
     default: {
+      throw std::runtime_error{"Wrong offset type!"};
       GlobalLogger.Error("Not supported hash offset type: %u\n",
                          hash_entry->header.offset_type);
       return false;
@@ -177,7 +178,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
                        uint16_t type, uint64_t offset,
                        HashOffsetType offset_type) {
-  assert(write_thread.id >= 0);
+  assert(write_thread.id >= 0 && "Must Initialize write thread before writing HashTable!");
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset,
                            offset_type);

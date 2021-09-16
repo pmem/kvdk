@@ -830,17 +830,17 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
     AssignData(val2, 10);
 
     // Test Empty Key
-    {
-      std::string k0{""};
-      ASSERT_EQ(engine->HSet(thread_local_unordered_collection, k0, val1), Status::Ok);
-      ++cnt_entries_in_collection[id];
-      ASSERT_EQ(engine->HGet(thread_local_unordered_collection, k0, &got_val1), Status::Ok);
-      ASSERT_EQ(val1, got_val1);
-      ASSERT_EQ(engine->HDelete(thread_local_unordered_collection, k0), Status::Ok);
-      --cnt_entries_in_collection[id];
-      ASSERT_EQ(engine->HGet(thread_local_unordered_collection, k0, &got_val1),
-                Status::NotFound);
-    }
+    // {
+    //   std::string k0{""};
+    //   ASSERT_EQ(engine->HSet(thread_local_unordered_collection, k0, val1), Status::Ok);
+    //   ++cnt_entries_in_collection[id];
+    //   ASSERT_EQ(engine->HGet(thread_local_unordered_collection, k0, &got_val1), Status::Ok);
+    //   ASSERT_EQ(val1, got_val1);
+    //   ASSERT_EQ(engine->HDelete(thread_local_unordered_collection, k0), Status::Ok);
+    //   --cnt_entries_in_collection[id];
+    //   ASSERT_EQ(engine->HGet(thread_local_unordered_collection, k0, &got_val1),
+    //             Status::NotFound);
+    // }
 
     key1 = std::to_string(id);
     key2 = std::to_string(id);

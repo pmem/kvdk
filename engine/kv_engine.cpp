@@ -1246,6 +1246,11 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key,
                       pmem::obj::string_view const value)
 {
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+  
   std::shared_ptr<UnorderedCollection> sp_uncoll = FindUnorderedCollection(collection_name);
   if (sp_uncoll)
   {
@@ -1337,6 +1342,11 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
 Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
                          pmem::obj::string_view const key)
 {
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+  
   std::shared_ptr<UnorderedCollection> sp_uncoll = FindUnorderedCollection(collection_name);
   if (sp_uncoll)
   {
