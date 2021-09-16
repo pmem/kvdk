@@ -129,6 +129,8 @@ private:
   Status RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
                                      DataEntry *pmem_data_entry);
 
+  // Check if a sorted data entry has been successfully inserted, and try repair
+  // un-finished prev pointer
   bool CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry);
 
   Status RestoreStringRecord(DataEntry *pmem_data_entry,

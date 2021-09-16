@@ -27,7 +27,7 @@ struct Splice;
 struct SkiplistNode {
 public:
   // Tagged pointers means this node has been logically removed from the list
-  std::atomic<TaggedPointer<SkiplistNode>> next[0];
+  std::atomic<PointerWithTag<SkiplistNode>> next[0];
   // Doubly linked data entry on PMem
   DLDataEntry *data_entry;
   // TODO: save memory
@@ -63,28 +63,28 @@ public:
 
   pmem::obj::string_view UserKey();
 
-  TaggedPointer<SkiplistNode> Next(int l) {
+  PointerWithTag<SkiplistNode> Next(int l) {
     assert(l > 0);
     return next[-l].load(std::memory_order_acquire);
   }
 
-  bool CASNext(int l, TaggedPointer<SkiplistNode> expected,
-               TaggedPointer<SkiplistNode> x) {
+  bool CASNext(int l, PointerWithTag<SkiplistNode> expected,
+               PointerWithTag<SkiplistNode> x) {
     assert(l > 0);
     return (next[-l].compare_exchange_strong(expected, x));
   }
 
-  TaggedPointer<SkiplistNode> RelaxedNext(int l) {
+  PointerWithTag<SkiplistNode> RelaxedNext(int l) {
     assert(l > 0);
     return next[-l].load(std::memory_order_relaxed);
   }
 
-  void SetNext(int l, TaggedPointer<SkiplistNode> x) {
+  void SetNext(int l, PointerWithTag<SkiplistNode> x) {
     assert(l > 0);
     next[-l].store(x, std::memory_order_release);
   }
 
-  void RelaxedSetNext(int l, TaggedPointer<SkiplistNode> x) {
+  void RelaxedSetNext(int l, PointerWithTag<SkiplistNode> x) {
     assert(l > 0);
     next[-l].store(x, std::memory_order_relaxed);
   }
@@ -93,7 +93,7 @@ public:
     for (int l = 1; l <= height; l++) {
       while (1) {
         auto next = RelaxedNext(l);
-        auto tagged = TaggedPointer<SkiplistNode>(next.RawPointer(), 1);
+        auto tagged = PointerWithTag<SkiplistNode>(next.RawPointer(), 1);
         if (CASNext(l, next, tagged)) {
           // GlobalLogger.Error("node %lu tag after remove %u\n",
           // (uint64_t)this,
@@ -164,7 +164,7 @@ public:
                                   skiplist_key.size() - 8);
   }
 
-  void SeekKey(const pmem::obj::string_view &key, Splice *splice);
+  void SeekKey(const pmem::obj::string_view &key, Splice *result_splice);
 
   bool SeekNode(const SkiplistNode *node, Splice *splice);
 
@@ -182,7 +182,8 @@ public:
                                 const pmem::obj::string_view &inserting_key,
                                 SkiplistNode *data_node, bool is_update);
 
-  void DeleteDataEntry(Splice *delete_splice, SkiplistNode *dram_node);
+  void DeleteDataEntry(DLDataEntry *deleting_entry, Splice *delete_splice,
+                       SkiplistNode *dram_node);
 
 private:
   SkiplistNode *header_;
@@ -236,7 +237,7 @@ struct Splice {
         break;
       }
 
-      if (prevs[start_height]->Next(start_height).Tag() != 0) {
+      if (prevs[start_height]->Next(start_height).GetTag() != 0) {
         start_height++;
         if (start_height > kMaxHeight) {
           assert(header != nullptr);

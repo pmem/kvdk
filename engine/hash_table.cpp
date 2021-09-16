@@ -101,7 +101,8 @@ Status HashTable::Search(const KeyHashHint &hint,
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->header.data_type == StringDeleteRecord) {
+          && ((*entry_base)->header.data_type == StringDeleteRecord ||
+              (*entry_base)->header.data_type == Empty)) {
         reusable_entry = *entry_base;
       }
 
@@ -148,10 +149,10 @@ Status HashTable::Search(const KeyHashHint &hint,
       (*entry_base)->header.status = HashEntryStatus::Updating;
     } else {
       if ((*entry_base) == reusable_entry) {
-        if ((*entry_base)->header.status == HashEntryStatus::Clean) {
+        if ((*entry_base)->header.status == HashEntryStatus::CleanReusing) {
           (*entry_base)->header.status = HashEntryStatus::Updating;
         } else {
-          (*entry_base)->header.status = HashEntryStatus::BeingReused;
+          (*entry_base)->header.status = HashEntryStatus::DirtyReusing;
         }
       } else {
         (*entry_base)->header.status = HashEntryStatus::Initializing;
