@@ -5,6 +5,7 @@
 #include "hash_table.hpp"
 #include "skiplist.hpp"
 #include "thread_manager.hpp"
+#include "unordered_collection.hpp"
 
 namespace KVDK_NAMESPACE {
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
@@ -22,9 +23,17 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       data_entry_key = ((DataEntry *)data_entry_pmem)->Key();
       break;
     }
-    case HashOffsetType::DLDataEntry: {
+    case HashOffsetType::DLDataEntry: 
+    case HashOffsetType::UnorderedCollectionElement:
+    {
       data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
       data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
+      break;
+    }
+    case HashOffsetType::UnorderedCollection:
+    {
+      auto p_uncoll = hash_entry->p_uncoll;
+      data_entry_key = p_uncoll->Name();
       break;
     }
     case HashOffsetType::SkiplistNode: {

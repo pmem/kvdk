@@ -42,8 +42,10 @@ enum class HashOffsetType : uint8_t {
   SkiplistNode = 3,
   // Offset is pointer to a dram skiplist struct
   Skiplist = 4,
-  // Offset is PMem offset
-  UnorderedCollection = 5
+  // Offset field contains pointer to UnorderedCollection object on DRAM
+  UnorderedCollection = 5,
+  // Offset field contains PMem pointer to element of UnorderedCollection
+  UnorderedCollectionElement = 6
 };
 
 // Monitor to keep track of readers of a resource

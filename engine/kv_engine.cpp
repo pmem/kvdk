@@ -1206,7 +1206,7 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
     DataEntry data_entry_found;
   
     HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
-    Status search_result = hash_table_->Search(hint, collection_name, DataEntryType::DlistDataRecord, &hash_entry_found, nullptr,
+    Status search_result = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord, &hash_entry_found, nullptr,
                                   &p_hash_entry_found_in_table, HashTable::SearchPurpose::Read);
     switch (search_result)
     {
@@ -1262,18 +1262,18 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
 
     HashEntry hash_entry;
     HashEntry *entry_base = nullptr;
-    Status search_status = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord || DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
+    Status search_status = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
                                   &entry_base, HashTable::SearchPurpose::Write);
 
     switch (search_status)
     {
       case Status::NotFound:
       {
-        auto emplace_result = sp_uncoll->EmplaceFront(ts, internal_key, value, DataEntryType::DlistDataRecord, std::move(lock));
+        auto emplace_result = sp_uncoll->EmplaceFront(ts, key, value, DataEntryType::DlistDataRecord, std::move(lock));
         std::uint64_t offset_new_record = emplace_result.offset;
         // spin now hold by emplace_result
 
-        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollectionElement);
         return Status::Ok;
       }
       case Status::Ok:
@@ -1281,11 +1281,11 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
         auto emplace_result = sp_uncoll->SwapEmplace
         (
           reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset)), 
-          ts, internal_key, value, DataEntryType::DlistDataRecord, std::move(lock)
+          ts, key, value, DataEntryType::DlistDataRecord, std::move(lock)
         );
         std::uint64_t offset_new_record = emplace_result.offset;
 
-        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollectionElement);
         return Status::Ok;
       }
       default:
@@ -1307,7 +1307,7 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
       HashEntry hash_entry;
       HashEntry *entry_base = nullptr;
       Status s = hash_table_->Search(hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
-                                    &entry_base, HashTable::SearchPurpose::Read);
+                                    &entry_base, HashTable::SearchPurpose::Write);
       if (s != Status::NotFound)
       {
         throw std::runtime_error{"Fail to found a UnorderedCollection but error when creating a new one!"};
@@ -1322,18 +1322,18 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
       HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
       std::unique_lock<SpinMutex> lock{*hint.spin};
 
-      auto emplace_result = sp_uncoll->EmplaceFront(ts, internal_key, value, DataEntryType::DlistDataRecord, std::move(lock));
+      auto emplace_result = sp_uncoll->EmplaceFront(ts, key, value, DataEntryType::DlistDataRecord, std::move(lock));
       std::uint64_t offset_new_record = emplace_result.offset;
 
       HashEntry hash_entry;
       HashEntry *entry_base = nullptr;
-      Status s = hash_table_->Search(hint, internal_key, DataEntryType::DlistRecord, &hash_entry, nullptr,
-                                    &entry_base, HashTable::SearchPurpose::Read);
+      Status s = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord, &hash_entry, nullptr,
+                                    &entry_base, HashTable::SearchPurpose::Write);
       if (s != Status::NotFound)
       {
         throw std::runtime_error{"Inserting a new key into a new UnorderedCollection but met an old one!"};
       } 
-      hash_table_->Insert(hint, entry_base, DataEntryType::DlistRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+      hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollectionElement);
       return Status::Ok;
     }
   }
@@ -1358,18 +1358,18 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
 
     HashEntry hash_entry;
     HashEntry *entry_base = nullptr;
-    Status search_status = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord || DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
+    Status search_status = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
                                   &entry_base, HashTable::SearchPurpose::Write);
 
     switch (search_status)
     {
       case Status::NotFound:
       {
-        auto emplace_result = sp_uncoll->EmplaceFront(ts, internal_key, "", DataEntryType::DlistDataRecord, std::move(lock));
+        auto emplace_result = sp_uncoll->EmplaceFront(ts, key, "", DataEntryType::DlistDataRecord, std::move(lock));
         std::uint64_t offset_new_record = emplace_result.offset;
         // spin now hold by emplace_result
 
-        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDeleteRecord, offset_new_record, HashOffsetType::UnorderedCollectionElement);
         return Status::Ok;
       }
       case Status::Ok:
@@ -1377,11 +1377,11 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
         auto emplace_result = sp_uncoll->SwapEmplace
         (
           reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset)), 
-          ts, internal_key, "", DataEntryType::DlistDataRecord, std::move(lock)
+          ts, key, "", DataEntryType::DlistDataRecord, std::move(lock)
         );
         std::uint64_t offset_new_record = emplace_result.offset;
 
-        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDataRecord, offset_new_record, HashOffsetType::UnorderedCollection);
+        hash_table_->Insert(hint, entry_base, DataEntryType::DlistDeleteRecord, offset_new_record, HashOffsetType::UnorderedCollectionElement);
         return Status::Ok;
       }
       default:

@@ -442,7 +442,8 @@ namespace KVDK_NAMESPACE
         inline static pmem::obj::string_view _ID2View_(std::uint64_t id)
         {
             // Thread local copy to prevent variable destruction
-            thread_local uint64_t id_copy = id;
+            thread_local uint64_t id_copy;
+            id_copy = id;
             return pmem::obj::string_view{ reinterpret_cast<char*>(&id_copy), sizeof(decltype(id_copy)) };
         }
 
