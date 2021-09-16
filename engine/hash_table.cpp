@@ -27,7 +27,8 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     case HashOffsetType::UnorderedCollectionElement:
     {
       data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
-      data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
+      DLDataEntry* pmp_entry = static_cast<DLDataEntry*>(data_entry_pmem);
+      data_entry_key = pmp_entry->Key();
       break;
     }
     case HashOffsetType::UnorderedCollection:
@@ -95,7 +96,8 @@ Status HashTable::Search(const KeyHashHint &hint,
   bool found = false;
 
   // search cache
-  *entry_base = slots_[hint.slot].hash_cache.entry_base;
+  // *entry_base = slots_[hint.slot].hash_cache.entry_base;
+  *entry_base = nullptr;
   if (*entry_base != nullptr) {
     memcpy_16(hash_entry, *entry_base);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry,
