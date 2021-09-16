@@ -64,6 +64,7 @@ public:
   pmem::obj::string_view UserKey();
 
   TaggedPointer<SkiplistNode> Next(int l) {
+    assert(l > 0);
     return next[-l].load(std::memory_order_acquire);
   }
 
@@ -86,6 +87,21 @@ public:
   void RelaxedSetNext(int l, TaggedPointer<SkiplistNode> x) {
     assert(l > 0);
     next[-l].store(x, std::memory_order_relaxed);
+  }
+
+  void MarkAsRemoved() {
+    for (int l = 1; l <= height; l++) {
+      while (1) {
+        auto next = RelaxedNext(l);
+        auto tagged = TaggedPointer<SkiplistNode>(next.RawPointer(), 1);
+        if (CASNext(l, next, tagged)) {
+          // GlobalLogger.Error("node %lu tag after remove %u\n",
+          // (uint64_t)this,
+          //  Next(l).Tag());
+          break;
+        }
+      }
+    }
   }
 
 private:
@@ -166,9 +182,7 @@ public:
                                 const pmem::obj::string_view &inserting_key,
                                 SkiplistNode *data_node, bool is_update);
 
-  void DeleteDataEntry(Splice *delete_splice,
-                       const pmem::obj::string_view &deleting_key,
-                       SkiplistNode *dram_node);
+  void DeleteDataEntry(Splice *delete_splice, SkiplistNode *dram_node);
 
 private:
   SkiplistNode *header_;
@@ -189,9 +203,7 @@ public:
 
   virtual void SeekToFirst() override;
 
-  virtual bool Valid() override {
-    return (current != nullptr) && (current->type != SortedDeleteRecord);
-  }
+  virtual bool Valid() override { return (current != nullptr); }
 
   virtual bool Next() override;
 
@@ -218,9 +230,16 @@ struct Splice {
     SkiplistNode *start_node;
     uint16_t start_height = l;
     while (1) {
+      if (prevs[start_height] == nullptr) {
+        assert(header != nullptr);
+        start_node = header;
+        break;
+      }
+
       if (prevs[start_height]->Next(start_height).Tag() != 0) {
         start_height++;
         if (start_height > kMaxHeight) {
+          assert(header != nullptr);
           start_node = header;
           break;
         }

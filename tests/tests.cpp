@@ -260,7 +260,6 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
     std::string got_val1, got_val2;
 
     AssignData(val1, 10);
-
     // Test Empty Key
     {
       std::string k0{""};
