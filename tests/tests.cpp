@@ -823,7 +823,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 
 <<<<<<< HEAD
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
-  int num_threads = 16;
+  int num_threads = 2;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -885,7 +885,7 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
 }
 
 TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
-  int num_threads = 1;
+  int num_threads = 2;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -902,7 +902,7 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
     key1 = std::to_string(id);
     key2 = std::to_string(id);
 
-    int cnt = 100;
+    int cnt = 10;
     while (cnt--) {
       key1.append("k1");
       key2.append("k2");

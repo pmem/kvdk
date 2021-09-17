@@ -23,9 +23,16 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       data_entry_key = ((DataEntry *)data_entry_pmem)->Key();
       break;
     }
+    case HashOffsetType::UnorderedCollectionElement:
     case HashOffsetType::DLDataEntry: {
       data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
       data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
+      break;
+    }
+    case HashOffsetType::UnorderedCollection:
+    {
+      UnorderedCollection* p_uncoll = hash_entry->p_uncoll;
+      data_entry_key = p_uncoll->Name();
       break;
     }
     case HashOffsetType::SkiplistNode: {
@@ -43,6 +50,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     default: {
       GlobalLogger.Error("Not supported hash offset type: %u\n",
                          hash_entry->header.offset_type);
+      assert(false && "Trying to use invalid HashOffsetType!");
       return false;
     }
     }

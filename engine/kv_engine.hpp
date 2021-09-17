@@ -155,6 +155,12 @@ private:
 
   Status PersistOrRecoverImmutableConfigs();
 
+  // DataEntryType DlistDataRecord for HSet
+  // and DlistDeleteRecord for HDelete
+  Status HSetOrHDelete(pmem::obj::string_view const collection_name,
+              pmem::obj::string_view const key,
+              pmem::obj::string_view const value, DataEntryType type);
+
   // Regularly works excecuted by background thread
   void BackgroundWork();
 

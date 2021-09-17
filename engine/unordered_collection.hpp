@@ -219,7 +219,7 @@ namespace KVDK_NAMESPACE
 
     };
 
-    template<typename Lock>
+    template<typename Lock=SpinMutex>
     struct EmplaceReturn
     {
         // Offset of newly emplaced Record
@@ -240,6 +240,19 @@ namespace KVDK_NAMESPACE
             lock{std::move(other.lock)},
             success{other.success}
         {
+        }
+
+        EmplaceReturn& operator=(EmplaceReturn<Lock>&& other) 
+        {
+            return Swap(other);
+        }
+
+        EmplaceReturn& Swap(EmplaceReturn<Lock>&& other) 
+        {
+            offset = other.offset;
+            success = other.success;
+            lock.swap(other.lock);
+            return *this;
         }
 
         static constexpr std::uint64_t FailOffset = kNullPmemOffset;
