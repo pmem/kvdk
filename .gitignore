@@ -46,6 +46,7 @@ build/
 =======
 
 scripts/result*
+<<<<<<< HEAD
 debug/
 
 >>>>>>> 9cffd7b (debug)
@@ -66,3 +67,6 @@ scripts/result*
 >>>>>>> df99734 (path with time)
 =======
 >>>>>>> 9cffd7b (debug)
+=======
+debug/
+>>>>>>> 74ef604 (gitignore)
