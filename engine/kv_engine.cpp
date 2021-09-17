@@ -791,8 +791,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
       continue;
     }
 
-    uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_data_entry);
-    uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_data_entry);
+    uint64_t prev_offset = pmem_allocator_->addr2offset_nocheck(splice.prev_data_entry);
+    uint64_t next_offset = pmem_allocator_->addr2offset_nocheck(splice.next_data_entry);
 
     DLDataEntry write_entry(0, sized_space_entry.size, new_ts, dt,
                             collection_key.size(), value.size(), prev_offset,
@@ -814,7 +814,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
 
     if (!found) {
       uint64_t offset = (dram_node == nullptr)
-                            ? pmem_allocator_->addr2offset(block_base)
+                            ? pmem_allocator_->addr2offset_nocheck(block_base)
                             : (uint64_t)dram_node;
       auto entry_base_status = entry_base->header.status;
       hash_table_->Insert(hint, entry_base, dt, offset,
@@ -831,7 +831,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
       // update a height 0 dram node
       if (dram_node == nullptr) {
         hash_table_->Insert(hint, entry_base, dt,
-                            pmem_allocator_->addr2offset(block_base),
+                            pmem_allocator_->addr2offset_nocheck(block_base),
                             HashOffsetType::DLDataEntry);
       } else {
         entry_base->header.data_type = dt;
