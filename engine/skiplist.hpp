@@ -204,15 +204,15 @@ public:
     skiplist_->Seek(key, &splice);
     current = splice.next_data_entry;
     while (current->type == SortedDeleteRecord) {
-      current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->next));
+      current = (DLDataEntry *)(pmem_allocator_->offset2addr_nocheck(current->next));
     }
   }
 
   virtual void SeekToFirst() override {
     uint64_t first = skiplist_->header()->data_entry->next;
-    current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
+    current = (DLDataEntry *)pmem_allocator_->offset2addr_nocheck(first);
     while (current && current->type == SortedDeleteRecord) {
-      current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
+      current = (DLDataEntry *)pmem_allocator_->offset2addr_nocheck(current->next);
     }
   }
 
@@ -225,7 +225,7 @@ public:
       return false;
     }
     do {
-      current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
+      current = (DLDataEntry *)pmem_allocator_->offset2addr_nocheck(current->next);
     } while (current && current->type == SortedDeleteRecord);
     return current != nullptr;
   }
@@ -236,7 +236,7 @@ public:
     }
 
     do {
-      current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
+      current = (DLDataEntry *)(pmem_allocator_->offset2addr_nocheck(current->prev));
     } while (current->type == SortedDeleteRecord);
 
     if (current == skiplist_->header()->data_entry) {

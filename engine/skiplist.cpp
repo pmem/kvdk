@@ -34,7 +34,7 @@ Status Skiplist::Rebuild() {
     // TODO: check failure
 
     DLDataEntry *next_data_entry =
-        (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+        (DLDataEntry *)pmem_allocator_->offset2addr_nocheck(next_offset);
     pmem::obj::string_view key = next_data_entry->Key();
     Status s = hash_table_->Search(
         hash_table_->GetHint(key), key, SortedDataRecord | SortedDeleteRecord,
@@ -91,7 +91,7 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
       break;
     }
     DLDataEntry *next_data_entry =
-        (DLDataEntry *)pmem_allocator_->offset2addr(next_data_entry_offset);
+        (DLDataEntry *)pmem_allocator_->offset2addr_nocheck(next_data_entry_offset);
     int cmp = compare_string_view(key, UserKey(next_data_entry->Key()));
     if (cmp > 0) {
       prev_data_entry = next_data_entry;
@@ -113,9 +113,9 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
     DLDataEntry *prev;
     DLDataEntry *next;
     if (updated_data_entry != nullptr) {
-      prev = (DLDataEntry *)(pmem_allocator_->offset2addr(
+      prev = (DLDataEntry *)(pmem_allocator_->offset2addr_nocheck(
           updated_data_entry->prev));
-      next = (DLDataEntry *)(pmem_allocator_->offset2addr(
+      next = (DLDataEntry *)(pmem_allocator_->offset2addr_nocheck(
           updated_data_entry->next));
       splice->prev_data_entry = prev;
       splice->next_data_entry = next;
@@ -128,8 +128,8 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
                  0);
     }
 
-    uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
-    uint64_t next_offset = pmem_allocator_->addr2offset(next);
+    uint64_t prev_offset = pmem_allocator_->addr2offset_nocheck(prev);
+    uint64_t next_offset = pmem_allocator_->addr2offset_nocheck(next);
 
     // sequentially lock to prevent deadlock
     auto cmp = [](const SpinMutex *s1, const SpinMutex *s2) {
@@ -176,11 +176,11 @@ void Skiplist::DeleteDataEntry(Splice *delete_splice,
                                const pmem::obj::string_view &deleting_key,
                                SkiplistNode *dram_node) {
   delete_splice->prev_data_entry->next =
-      pmem_allocator_->addr2offset(delete_splice->next_data_entry);
+      pmem_allocator_->addr2offset_nocheck(delete_splice->next_data_entry);
   pmem_persist(&delete_splice->prev_data_entry->next, 8);
   if (delete_splice->next_data_entry) {
     delete_splice->next_data_entry->prev =
-        pmem_allocator_->addr2offset(delete_splice->prev_data_entry);
+        pmem_allocator_->addr2offset_nocheck(delete_splice->prev_data_entry);
     pmem_persist(&delete_splice->next_data_entry->prev, 8);
   }
 
@@ -200,7 +200,7 @@ SkiplistNode *
 Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
                           const pmem::obj::string_view &inserting_key,
                           SkiplistNode *data_node, bool is_update) {
-  uint64_t entry_offset = pmem_allocator_->addr2offset(inserting_entry);
+  uint64_t entry_offset = pmem_allocator_->addr2offset_nocheck(inserting_entry);
   insert_splice->prev_data_entry->next = entry_offset;
   pmem_persist(&insert_splice->prev_data_entry->next, 8);
   if (__glibc_likely(insert_splice->next_data_entry != nullptr)) {
