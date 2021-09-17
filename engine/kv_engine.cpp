@@ -794,8 +794,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
         (DLDataEntry *)pmem_allocator_->offset2addr(old_entry_offset), &splice,
         dram_node);
 
-    entry_base->header.data_type = Empty;
-    entry_base->header.status = HashEntryStatus::Clean;
+    entry_base->header.status = HashEntryStatus::Empty;
     pmem_allocator_->Free(SizedSpaceEntry(
         old_entry_offset, data_entry.header.b_size, data_entry.timestamp));
     for (auto &m : spins) {

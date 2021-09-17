@@ -10,7 +10,7 @@ namespace KVDK_NAMESPACE {
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
                                uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry, void *data_entry) {
-  if (hash_entry->header.status == HashEntryStatus::Clean) {
+  if (hash_entry->header.status == HashEntryStatus::Empty) {
     return false;
   }
   if ((target_type & hash_entry->header.data_type) &&
@@ -117,7 +117,7 @@ Status HashTable::Search(const KeyHashHint &hint,
           if (purpose >= SearchPurpose::Write) {
             if (reusable_entry != nullptr) {
               if (data_entry &&
-                  reusable_entry->header.status != HashEntryStatus::Clean) {
+                  reusable_entry->header.status != HashEntryStatus::Empty) {
                 memcpy(data_entry,
                        pmem_allocator_->offset2addr(reusable_entry->offset),
                        sizeof(DataEntry));

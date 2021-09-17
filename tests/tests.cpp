@@ -42,7 +42,7 @@ protected:
     configs.hash_bucket_size = 64;
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
-    configs.background_work_interval = 0;
+    configs.background_work_interval = 0.1;
     db_path = "/mnt/pmem0/data";
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", db_path.c_str());
@@ -542,7 +542,7 @@ TEST_F(EngineBasicTest, TestStringRestore) {
 }
 
 TEST_F(EngineBasicTest, TestSortedRestore) {
-  int num_threads = 16;
+  int num_threads = 48;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -555,6 +555,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     std::string got_val;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
     for (int i = 1; i <= count; i++) {
+      // GlobalLogger.Info("thread %d round %d\n", id, i);
       auto key = key_prefix + std::to_string(i);
       auto overall_val = std::to_string(i);
       auto t_val = std::to_string(i * 2);
@@ -575,7 +576,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   };
 
   LaunchNThreads(num_threads, SetupEngine);
-
+  GlobalLogger.Info("Close\n");
   delete engine;
 
   // reopen and restore engine and try gets
