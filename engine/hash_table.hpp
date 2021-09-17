@@ -17,6 +17,7 @@
 
 namespace KVDK_NAMESPACE {
 enum class HashEntryStatus : uint8_t {
+  Empty = 0,
   Normal = 1,
   // A hash entry of a delete record which has no older version data of the same
   // key exsiting on PMem, so the delete record can be safely freed after the
@@ -147,9 +148,9 @@ private:
 
 public:
   HashEntry() = default;
-  HashEntry(uint32_t kp, uint16_t t, uint64_t offset,
+  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, uint64_t offset,
             HashOffsetType offset_type)
-      : header({kp, t, offset_type, HashEntryStatus::Normal}), offset(offset) {}
+      : header({key_hash_prefix, data_entry_type, offset_type, HashEntryStatus::Normal}), offset(offset) {}
 
   HashHeader header;
   union
@@ -227,6 +228,13 @@ public:
 
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
               uint64_t offset, HashOffsetType offset_type);
+
+  bool MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry, bool (*type_matcher)(DataEntryType));
+
+  HashEntry* SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, bool (*type_matcher)(DataEntryType));
+
+  void InsertImpl2(HashEntry* const where, HashEntry new_hash_entry);
+
 
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {

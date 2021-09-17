@@ -1200,12 +1200,12 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
 
   while (true)
   {
+    HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
+
     HashEntry hash_entry_found;
     HashEntry hash_entry_found2;
     HashEntry *p_hash_entry_found_in_table = nullptr;
     DataEntry data_entry_found;
-  
-    HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
     Status search_result = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord, &hash_entry_found, nullptr,
                                   &p_hash_entry_found_in_table, HashTable::SearchPurpose::Read);
     switch (search_result)

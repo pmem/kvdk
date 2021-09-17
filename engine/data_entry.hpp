@@ -45,6 +45,63 @@ enum DataEntryType : uint16_t {
   Padding = 1 << 15,
 };
 
+inline bool isStringDataEntry(DataEntryType type)
+{
+  bool ret = false;
+  ret = ret || (type == DataEntryType::StringDataRecord);
+  ret = ret || (type == DataEntryType::StringDeleteRecord);
+  return ret;
+}
+
+inline bool isSortedDataEntry(DataEntryType type)
+{
+  bool ret = false;
+  ret = ret || (type == DataEntryType::SortedDataRecord);
+  ret = ret || (type == DataEntryType::SortedDeleteRecord);
+  ret = ret || (type == DataEntryType::SortedHeaderRecord);
+  return ret;
+}
+
+inline bool isDLDataEntry(DataEntryType type)
+{
+  bool ret = false;
+  ret = ret || (type == DataEntryType::SortedDataRecord);
+  ret = ret || (type == DataEntryType::SortedDeleteRecord);
+  ret = ret || (type == DataEntryType::SortedHeaderRecord);
+  return ret;
+}
+
+inline bool isDeletedDataEntry(DataEntryType type)
+{
+  bool ret = false;
+  ret = ret || (type == DataEntryType::SortedDeleteRecord);
+  ret = ret || (type == DataEntryType::DlistDeleteRecord);
+  return ret;
+}
+
+inline bool isDlistRecord(DataEntryType type)
+{
+  return type == DataEntryType::DlistRecord;
+}
+
+inline bool isDlistDataRecord(DataEntryType type)
+{
+  return type == DataEntryType::DlistDataRecord;
+}
+
+inline bool isDlistDeleteRecord(DataEntryType type)
+{
+  return type == DataEntryType::DlistDeleteRecord;
+}
+
+inline bool isDlistDataDeleteRecord(DataEntryType type)
+{
+  bool ret = false;
+  ret = ret || (type == DataEntryType::DlistDeleteRecord);
+  ret = ret || (type == DataEntryType::DlistDataRecord);
+  return ret;
+}
+
 const uint16_t SortedDataEntryType =
     (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);
 

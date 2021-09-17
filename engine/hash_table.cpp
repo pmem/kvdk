@@ -9,9 +9,9 @@
 
 namespace KVDK_NAMESPACE {
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
-                               uint32_t hash_k_prefix, uint16_t type_mask,
+                               uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry, void *data_entry) {
-  if ((type_mask & hash_entry->header.data_type) &&
+  if ((target_type & hash_entry->header.data_type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
     void *data_entry_pmem;
@@ -23,18 +23,9 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       data_entry_key = ((DataEntry *)data_entry_pmem)->Key();
       break;
     }
-    case HashOffsetType::DLDataEntry: 
-    case HashOffsetType::UnorderedCollectionElement:
-    {
+    case HashOffsetType::DLDataEntry: {
       data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
-      DLDataEntry* pmp_entry = static_cast<DLDataEntry*>(data_entry_pmem);
-      data_entry_key = pmp_entry->Key();
-      break;
-    }
-    case HashOffsetType::UnorderedCollection:
-    {
-      auto p_uncoll = hash_entry->p_uncoll;
-      data_entry_key = p_uncoll->Name();
+      data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
       break;
     }
     case HashOffsetType::SkiplistNode: {
@@ -49,13 +40,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       data_entry_key = skiplist->name();
       break;
     }
-    case HashOffsetType::Invalid:
-    {
-      GlobalLogger.Error("HashEntry not initialized with valid offset type\n");
-      return false;
-    }
     default: {
-      throw std::runtime_error{"Wrong offset type!"};
       GlobalLogger.Error("Not supported hash offset type: %u\n",
                          hash_entry->header.offset_type);
       return false;
@@ -70,14 +55,8 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     if (compare_string_view(key, data_entry_key) == 0) {
       return true;
     }
-    else {
-      return false;
-    }
   }
-  else
-  {
-    return false;
-  }
+  return false;
 }
 
 Status HashTable::Search(const KeyHashHint &hint,
@@ -96,8 +75,7 @@ Status HashTable::Search(const KeyHashHint &hint,
   bool found = false;
 
   // search cache
-  // *entry_base = slots_[hint.slot].hash_cache.entry_base;
-  *entry_base = nullptr;
+  *entry_base = slots_[hint.slot].hash_cache.entry_base;
   if (*entry_base != nullptr) {
     memcpy_16(hash_entry, *entry_base);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry,
@@ -124,8 +102,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->header.data_type == StringDeleteRecord &&
-          (*entry_base)->header.key_prefix != key_hash_prefix) {
+          && (*entry_base)->header.data_type == StringDeleteRecord) {
         reusable_entry = *entry_base;
       }
 
@@ -189,7 +166,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
                        uint16_t type, uint64_t offset,
                        HashOffsetType offset_type) {
-  assert(write_thread.id >= 0 && "Must Initialize write thread before writing HashTable!");
+  assert(write_thread.id >= 0);
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset,
                            offset_type);
@@ -205,4 +182,132 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
     }
   }
 }
+
+bool HashTable::MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry, bool (*type_matcher)(DataEntryType))
+{
+  if (!type_matcher((DataEntryType)(matching_entry.header.data_type)))
+  {
+    return false;
+  }
+  
+  pmem::obj::string_view record_key;
+  switch (matching_entry.header.offset_type) {
+  case HashOffsetType::DataEntry: {
+    DataEntry* pmp_record = reinterpret_cast<DataEntry*>(pmem_allocator_->offset2addr(matching_entry.offset));
+    record_key = pmp_record->Key();
+    break;
+  }
+  case HashOffsetType::UnorderedCollectionElement:
+  case HashOffsetType::DLDataEntry: {
+    DLDataEntry* pmp_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(matching_entry.offset));
+    record_key = pmp_record->Key();
+    break;
+  }
+  case HashOffsetType::UnorderedCollection:
+  {
+    std::shared_ptr<UnorderedCollection> un_coll = matching_entry.p_uncoll->shared_from_this();
+  }
+  case HashOffsetType::SkiplistNode: {
+    SkiplistNode *dram_node = (SkiplistNode *)matching_entry.offset;
+    record_key = ((DLDataEntry *)dram_node->data_entry)->Key();
+    break;
+  }
+  case HashOffsetType::Skiplist: {
+    Skiplist *skiplist = (Skiplist *)matching_entry.offset;
+    record_key = skiplist->name();
+    break;
+  }
+  case HashOffsetType::Invalid:
+  default: {
+    GlobalLogger.Error("Not supported hash offset type: %u\n",
+                        matching_entry.header.offset_type);
+    assert(false && "Invalid HashOffsetType!");
+    return false;
+  }
+  }
+
+  return (compare_string_view(key, record_key) == 0);
+}
+
+// Returns position suitable to position a HashEntry matching key and DataEntryType
+// If existing HashEntry indexing a key is found, its address is returned
+// Else a empty HashEntry is returned.
+// User should Check the content of this address himself or herself.
+HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, bool (*type_matcher)(DataEntryType))
+{
+  HashEntry *scanning_bucket_chain = reinterpret_cast<HashEntry*>(main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_);
+  _mm_prefetch(scanning_bucket_chain, _MM_HINT_T0);
+
+  uint32_t key_hash_prefix = hint.key_hash_value >> 32;
+
+  // Match cache
+  HashEntry *p_scanning_entry = slots_[hint.slot].hash_cache.entry_base;
+  if (p_scanning_entry != nullptr) 
+    if (p_scanning_entry->header.key_prefix == key_hash_prefix)
+      if (MatchImpl2(key, *p_scanning_entry, type_matcher)) 
+        return p_scanning_entry;
+
+  // Match cache failed, scanning whole bucket
+  size_t n_entries_in_bucket = hash_bucket_entries_[hint.bucket];
+  p_scanning_entry = scanning_bucket_chain;
+  for (size_t i = 0; i < n_entries_in_bucket; ++i)
+  {
+    // First num_entries_per_bucket_-1 buckets contain HashEntry
+    if(i % num_entries_per_bucket_ != num_entries_per_bucket_-1)
+    {
+      if (p_scanning_entry->header.key_prefix == key_hash_prefix)
+        if (MatchImpl2(key, *p_scanning_entry, type_matcher)) 
+          return p_scanning_entry;
+      // Not matching, scan remaining bucket
+      ++p_scanning_entry;
+      continue;
+    }
+    // Reach last entry of bucket, may jump to next bucket or initialize new bucket
+    else
+    {
+      HashEntry* next_bucket = nullptr;
+      memcpy(&next_bucket, p_scanning_entry, sizeof(HashEntry*));
+      // Bucket end is pointer to next bucket
+      if (i < n_entries_in_bucket)
+      {
+        // reach end of current bucket, jump to next bucket
+        p_scanning_entry = next_bucket;
+        continue;
+      }
+      else
+      {
+        // reach end of current bucket and also end of bucket chain
+        // If the last HashEntry, treated as HashEntry*, is nullptr
+        // Then we need to allocates new bucket
+        if (next_bucket == nullptr)
+        {
+          auto space = dram_allocator_->Allocate(hash_bucket_size_);
+          if (space.size == 0) {
+            GlobalLogger.Error("Memory overflow!\n");
+            throw std::bad_alloc{};
+          }
+          next_bucket = reinterpret_cast<HashEntry*>(dram_allocator_->offset2addr(space.space_entry.offset));
+
+          p_scanning_entry = next_bucket;
+          memset(next_bucket, 0, hash_bucket_size_);
+
+          return p_scanning_entry;
+        }
+        // New bucket allocated but no HashEntry has been put in
+        else
+        {
+          p_scanning_entry = next_bucket;
+          return p_scanning_entry;
+        }        
+      }        
+    }     
+  }
+}
+
+void HashTable::InsertImpl2(HashEntry* const where, HashEntry new_hash_entry)
+{
+  *where = new_hash_entry;
+}
+
+
 } // namespace KVDK_NAMESPACE
