@@ -30,7 +30,7 @@ enum class HashEntryStatus : uint8_t {
   // hash entry updated by a new key
   CleanReusable = 1 << 4,
   // A empty hash entry which points to nothing
-  Clean = 1 << 5,
+  Empty = 1 << 5,
 };
 
 enum class HashOffsetType : uint8_t {
@@ -68,7 +68,7 @@ struct HashEntry {
   bool Reusable() {
     return (uint8_t)header.status & ((uint8_t)HashEntryStatus::CleanReusable |
                                      (uint8_t)HashEntryStatus::DirtyReusable |
-                                     (uint8_t)HashEntryStatus::Clean);
+                                     (uint8_t)HashEntryStatus::Empty);
   }
 };
 

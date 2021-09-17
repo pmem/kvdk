@@ -24,7 +24,11 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
   SkiplistNode *prev = this;
   PointerWithTag<SkiplistNode> next;
   for (int i = start_height; i >= end_height; i--) {
+    uint64_t round = 0;
     while (1) {
+      if (++round > 100000) {
+        GlobalLogger.Error("round %lu\n", round);
+      }
       next = prev->Next(i);
       if (next.Null()) {
         result_splice->nexts[i] = nullptr;
@@ -171,10 +175,24 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
     }
   }
 
+  if (updated_data_entry) {
+    assert(updated_data_entry->prev == pmem_allocator_->addr2offset(prev));
+    assert(updated_data_entry->next == pmem_allocator_->addr2offset(next));
+  }
+
   // Check the list has changed before we successfully locked
   // For update, we do not need to check because the key is already locked
   if (!updated_data_entry &&
       (prev->next != next_offset || (next && next->prev != prev_offset))) {
+    thread_local uint64_t cnt = 0;
+    if (++cnt > 1000000) {
+      GlobalLogger.Error("too many fail\n");
+      if (prev->next != next_offset) {
+        GlobalLogger.Error("fail reson 1\n");
+      } else {
+        GlobalLogger.Error("fail reson 2\n");
+      }
+    }
     for (auto &m : spins) {
       m->unlock();
     }
@@ -187,17 +205,17 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
 
 void Skiplist::DeleteDataEntry(DLDataEntry *deleting_entry,
                                Splice *delete_splice, SkiplistNode *dram_node) {
-  assert(delete_splice->prev_data_entry->next ==
-         pmem_allocator_->addr2offset(deleting_entry));
-  delete_splice->prev_data_entry->next =
-      pmem_allocator_->addr2offset(delete_splice->next_data_entry);
-  pmem_persist(&delete_splice->prev_data_entry->next, 8);
-  if (delete_splice->next_data_entry) {
-    assert(delete_splice->next_data_entry->prev ==
-           pmem_allocator_->addr2offset(deleting_entry));
-    delete_splice->next_data_entry->prev =
-        pmem_allocator_->addr2offset(delete_splice->prev_data_entry);
-    pmem_persist(&delete_splice->next_data_entry->prev, 8);
+  DLDataEntry *prev = delete_splice->prev_data_entry;
+  DLDataEntry *next = delete_splice->next_data_entry;
+  assert(prev->next == pmem_allocator_->addr2offset(deleting_entry));
+  // For repair in recovery due to crashes during pointers changing, we should
+  // first unlink deleting entry from prev's next
+  prev->next = pmem_allocator_->addr2offset(next);
+  pmem_persist(&prev->next, 8);
+  if (next) {
+    assert(next->prev == pmem_allocator_->addr2offset(deleting_entry));
+    next->prev = pmem_allocator_->addr2offset(prev);
+    pmem_persist(&next->prev, 8);
   }
 
   if (dram_node) {
@@ -209,12 +227,18 @@ SkiplistNode *
 Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
                           const pmem::obj::string_view &inserting_key,
                           SkiplistNode *data_node, bool is_update) {
-  uint64_t entry_offset = pmem_allocator_->addr2offset(inserting_entry);
-  insert_splice->prev_data_entry->next = entry_offset;
-  pmem_persist(&insert_splice->prev_data_entry->next, 8);
-  if (__glibc_likely(insert_splice->next_data_entry != nullptr)) {
-    insert_splice->next_data_entry->prev = entry_offset;
-    pmem_persist(&insert_splice->next_data_entry->prev, 8);
+  uint64_t inserting_entry_offset =
+      pmem_allocator_->addr2offset(inserting_entry);
+  DLDataEntry *prev = insert_splice->prev_data_entry;
+  DLDataEntry *next = insert_splice->next_data_entry;
+  assert(is_update || prev->next == pmem_allocator_->addr2offset(next));
+  // For repair in recovery due to crashes during pointers changing, we should
+  // first link inserting entry to prev's next
+  pmem_memcpy_persist(&insert_splice->prev_data_entry->next,
+                      &inserting_entry_offset, 8);
+  if (next != nullptr) {
+    assert(is_update || next->prev == pmem_allocator_->addr2offset(prev));
+    pmem_memcpy_persist(&next->prev, &inserting_entry_offset, 8);
   }
 
   // new dram node

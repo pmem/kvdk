@@ -15,13 +15,13 @@
 
 namespace KVDK_NAMESPACE {
 static const int kMaxHeight = 32;
-static const uint16_t kCacheLevel = 3;
+static const uint16_t kCacheHeight = 3;
 
 struct Splice;
 
 /* Format:
- * next pointers | DataEntry on pmem | level | cached key size | cached key
- * We only cache key if level > kCache level or there are enough space in
+ * next pointers | DataEntry on pmem | height | cached key size | cached key
+ * We only cache key if height > kCache height or there are enough space in
  * the end of malloced space to cache the key (4B here).
  * */
 struct SkiplistNode {
@@ -41,7 +41,7 @@ public:
   static SkiplistNode *NewNode(const pmem::obj::string_view &key,
                                DLDataEntry *entry_on_pmem, uint16_t l) {
     size_t size;
-    if (l >= kCacheLevel && key.size() > 4) {
+    if (l >= kCacheHeight && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * l + key.size() - 4;
     } else {
       size = sizeof(SkiplistNode) + 8 * l;
@@ -56,6 +56,10 @@ public:
     return node;
   }
 
+  // Start seek from this node, find dram position of "key" in the skiplist
+  // between height "start_height" and "end"_height", and store position in
+  // "result_splice", if "key" existing, the next pointers in splice point to
+  // node of "key"
   void SeekKey(const pmem::obj::string_view &key, uint16_t start_height,
                uint16_t end_height, Splice *result_splice);
 
@@ -93,11 +97,12 @@ public:
     for (int l = 1; l <= height; l++) {
       while (1) {
         auto next = RelaxedNext(l);
+        // This node alread tagged by another thread
+        if (next.GetTag()) {
+          continue;
+        }
         auto tagged = PointerWithTag<SkiplistNode>(next.RawPointer(), 1);
         if (CASNext(l, next, tagged)) {
-          // GlobalLogger.Error("node %lu tag after remove %u\n",
-          // (uint64_t)this,
-          //  Next(l).Tag());
           break;
         }
       }
@@ -108,7 +113,7 @@ private:
   SkiplistNode() {}
 
   void MaybeCacheKey(const pmem::obj::string_view &key) {
-    if (height >= kCacheLevel || key.size() <= 4) {
+    if (height >= kCacheHeight || key.size() <= 4) {
       cached_key_size = key.size();
       memcpy(cached_key, key.data(), key.size());
     } else {
@@ -164,9 +169,10 @@ public:
                                   skiplist_key.size() - 8);
   }
 
+  // Start position of "key" on both dram and PMem node in the skiplist, and
+  // store position in "result_splice". If "key" existing, the next pointers in
+  // splice point to node of "key"
   void SeekKey(const pmem::obj::string_view &key, Splice *result_splice);
-
-  bool SeekNode(const SkiplistNode *node, Splice *splice);
 
   Status Rebuild();
 
