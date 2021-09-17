@@ -44,11 +44,11 @@ public:
   // translate block_offset of allocated space to address
   inline char *offset2addr(uint64_t block_offset) {
     if (block_offset == kNullPmemOffset) {
-<<<<<<< HEAD
-      assert(false && "Trying to access kNullPmemOffset!");
-=======
       assert(false && "Trying to access kNullPmemOffset");
+<<<<<<< HEAD
 >>>>>>> 6cd0d43 (assert non nullptr)
+=======
+>>>>>>> ae104f0 (update)
       return nullptr;
     } else {
       assert(block_offset < max_block_offset_ / num_segment_blocks_ *
@@ -75,9 +75,6 @@ public:
              "Trying to create invalid offset");
       return ((char *)addr - pmem_) / block_size_;
     } else {
-<<<<<<< HEAD
-      assert(false && "Trying to access nullptr!");
-=======
       assert(false && "Trying to access nullptr");
 <<<<<<< HEAD
 >>>>>>> 6cd0d43 (assert non nullptr)
@@ -90,7 +87,10 @@ public:
     if (addr) {
       return ((char *)addr - pmem_) / block_size_;
     } else {
+<<<<<<< HEAD
 >>>>>>> b77940b (update)
+=======
+>>>>>>> ae104f0 (update)
       return kNullPmemOffset;
     }
   }
