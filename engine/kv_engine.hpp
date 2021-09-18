@@ -68,7 +68,7 @@ public:
   virtual Status HDelete(pmem::obj::string_view const collection_name,
                  pmem::obj::string_view const key) override;
   std::shared_ptr<Iterator>
-  NewUnorderedIterator(pmem::obj::string_view const collection_name);
+  NewUnorderedIterator(pmem::obj::string_view const collection_name) override;
 
   void ReleaseWriteThread() override { write_thread.Release(); }
 

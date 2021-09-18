@@ -829,7 +829,7 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
             Status::Ok);
   std::vector<int> cnt_entries_in_collection(num_threads, 0);
 
-  auto SSetSGetSDelete = [&](uint32_t id) {
+  auto HSetHGetHDelete = [&](uint32_t id) {
     std::string thread_local_unordered_collection("Uncoll" + std::to_string(id));
     std::string key1, key2, val1, val2;
     std::string got_val1, got_val2;
@@ -879,7 +879,22 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
     }
   };
 
-  LaunchNThreads(num_threads, SSetSGetSDelete);
+  auto IteratingThrough = [&](uint32_t id) {
+    std::string thread_local_unordered_collection("Uncoll" + std::to_string(id));
+    std::vector<int> n_entries(num_threads, 0);
+
+    auto t_iter = engine->NewUnorderedIterator(thread_local_unordered_collection);
+    ASSERT_TRUE(t_iter != nullptr);
+    for (t_iter->SeekToFirst(); t_iter->Valid(); t_iter->Next())
+    {
+      ++n_entries[id];
+    }
+    ASSERT_EQ(cnt_entries_in_collection[id], n_entries[id]);
+  };
+
+
+  LaunchNThreads(num_threads, HSetHGetHDelete);
+  LaunchNThreads(num_threads, IteratingThrough);
 
   delete engine;
 }
@@ -892,7 +907,7 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   std::atomic_int cnt_entries_in_collection = 0;
   std::string global_unordered_collection("Uncoll");
 
-  auto SSetSGetSDelete = [&](uint32_t id) {
+  auto HSetHGetHDelete = [&](uint32_t id) {
     std::string key1, key2, val1, val2;
     std::string got_val1, got_val2;
 
@@ -941,7 +956,20 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
     }
   };
 
-  LaunchNThreads(num_threads, SSetSGetSDelete);
+  auto IteratingThrough = [&](uint32_t id) {
+    int n_entries = 0;
+
+    auto t_iter = engine->NewUnorderedIterator(global_unordered_collection);
+    ASSERT_TRUE(t_iter != nullptr);
+    for (t_iter->SeekToFirst(); t_iter->Valid(); t_iter->Next())
+    {
+      ++n_entries;
+    }
+    ASSERT_EQ(cnt_entries_in_collection, n_entries);
+  };
+
+  LaunchNThreads(num_threads, HSetHGetHDelete);
+  LaunchNThreads(num_threads, IteratingThrough);
 
   delete engine;
 }

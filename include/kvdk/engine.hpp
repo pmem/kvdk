@@ -82,6 +82,9 @@ public:
   virtual std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) = 0;
 
+  virtual std::shared_ptr<Iterator>
+  NewUnorderedIterator(pmem::obj::string_view const collection_name) = 0;
+
   // Release resources occupied by this write thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.
   virtual void ReleaseWriteThread() = 0;
