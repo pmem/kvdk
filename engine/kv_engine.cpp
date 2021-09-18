@@ -169,25 +169,21 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     case DataEntryType::StringDeleteRecord: {
       uint32_t checksum = CalculateChecksum(
           static_cast<DataEntry *>(recovering_pmem_data_entry));
-      if (cached_recovering_data_entry.header.checksum == checksum) {
-        break;
-      } else {
+      if (cached_recovering_data_entry.header.checksum != checksum) {
+        // Checksum dismatch, mark PMem SizedSpaceEntry as padding to Free
+        // Otherwise the Restore will continue normally
         DataEntryType type_padding = DataEntryType::Padding;
         pmem_memcpy(&static_cast<DataEntry *>(recovering_pmem_data_entry)->type,
                     &type_padding, sizeof(DataEntryType),
                     PMEM_F_MEM_NONTEMPORAL);
         cached_recovering_data_entry.type = DataEntryType::Padding;
       }
-      // through down to padding
+      break;
     }
     case DataEntryType::Padding:
     case DataEntryType::Empty: {
       cached_recovering_data_entry.type = DataEntryType::Padding;
-      pmem_allocator_->Free(SizedSpaceEntry(
-          pmem_allocator_->addr2offset(recovering_pmem_data_entry),
-          cached_recovering_data_entry.header.b_size,
-          cached_recovering_data_entry.timestamp));
-      continue;
+      break;
     }
     default: {
       std::string msg{
@@ -198,8 +194,23 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
       GlobalLogger.Error(msg.data());
       // Report Corrupted Record, but still release it and continues
       cached_recovering_data_entry.type = DataEntryType::Padding;
+      break;
     }
     }
+    // When met records with invalid checksum 
+    // or the space is padding, empty or with corrupted DataEntry
+    // Free the space and fetch another
+    if (cached_recovering_data_entry.type == DataEntryType::Padding)
+    {
+      pmem_allocator_->Free(SizedSpaceEntry(
+          pmem_allocator_->addr2offset(recovering_pmem_data_entry),
+          cached_recovering_data_entry.header.b_size,
+          cached_recovering_data_entry.timestamp));
+      continue;
+    }
+    
+    // DataEntry has valid type and Checksum is correct
+    // Continue to restore the Record
     cnt++;
 
     auto ts_recovering = cached_recovering_data_entry.timestamp;
@@ -229,6 +240,15 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
           &cached_recovering_data_entry);
       break;
     }
+    case DataEntryType::DlistRecord:
+    case DataEntryType::DlistHeadRecord:
+    case DataEntryType::DlistTailRecord:
+    case DataEntryType::DlistDataRecord:
+    case DataEntryType::DlistDeleteRecord:
+    {
+      s = RestoreDlistRecords(recovering_pmem_data_entry, cached_recovering_data_entry);
+      break;
+    }
     default: {
       std::string msg{
           "Invalid Record type when recovering. Trying restoring record. "};
@@ -253,9 +273,37 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 }
 
 uint32_t KVEngine::CalculateChecksum(DataEntry *data_entry) {
-  bool dl_entry = data_entry->type & (DLDataEntryType);
-  uint32_t checksum = dl_entry ? ((DLDataEntry *)data_entry)->Checksum()
-                               : data_entry->Checksum();
+  uint32_t checksum;
+  switch (data_entry->type)
+  {
+  case DataEntryType::StringDataRecord:
+  case DataEntryType::StringDeleteRecord:
+  {
+    checksum = data_entry->Checksum();
+    break;
+  }
+  case DataEntryType::SortedDataRecord:
+  case DataEntryType::SortedDeleteRecord:
+  case DataEntryType::SortedHeaderRecord:
+  {
+    checksum = static_cast<DLDataEntry*>(data_entry)->Checksum();
+    break;
+  }
+  case DataEntryType::DlistDataRecord:
+  case DataEntryType::DlistDeleteRecord:
+  case DataEntryType::DlistRecord:
+  case DataEntryType::DlistHeadRecord:
+  case DataEntryType::DlistTailRecord:
+  {
+    checksum = UnorderedCollection::CheckSum(static_cast<DLDataEntry*>(data_entry));
+    break;
+  }
+  default:
+  {
+    assert(false && "Unsupported type in CalculateChecksum()!");
+    break;
+  }
+  }
   return checksum;
 }
 
@@ -1266,7 +1314,6 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         _vec_sp_uncolls_.push_back(sp_uncoll);
         void* p_uncoll = sp_uncoll.get();
 
-
         HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
         HashEntry hash_entry;
         HashEntry *entry_base = nullptr;
@@ -1367,6 +1414,97 @@ KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name)
                  : nullptr;
 }
 
+Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cached)
+{
+  switch (data_entry_cached.type)
+  {
+    case DataEntryType::DlistRecord:
+    {
+      std::lock_guard<std::mutex> lg{list_mu_};
+      std::shared_ptr<UnorderedCollection> sp_uncoll = 
+        std::make_shared<UnorderedCollection>(pmem_allocator_,hash_table_, static_cast<DLDataEntry*>(pmp_record));
+      _vec_sp_uncolls_.push_back(sp_uncoll);
+      void* p_uncoll = sp_uncoll.get();
 
+      std::string collection_name = sp_uncoll->Name();
+      HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
+      HashEntry hash_entry;
+      HashEntry *entry_base = nullptr;
+      Status s = hash_table_->Search(hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
+                                    &entry_base, HashTable::SearchPurpose::Write);
+      if (s != Status::NotFound)
+      {
+        throw std::runtime_error{"Fail to found a UnorderedCollection but error when creating a new one!"};
+      } 
+      hash_table_->Insert(hint, entry_base, DataEntryType::DlistRecord, 
+                          reinterpret_cast<uint64_t>(p_uncoll), HashOffsetType::UnorderedCollection);
+      return Status::Ok;
+    }
+    case DataEntryType::DlistHeadRecord:
+    {
+      DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
+      assert(pmp_data_entry->prev == kNullPmemOffset);
+      return Status::Ok;
+    }
+    case DataEntryType::DlistTailRecord:
+    {
+      DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
+      assert(pmp_data_entry->next == kNullPmemOffset);
+      return Status::Ok;
+    }
+    case DataEntryType::DlistDataRecord:
+    case DataEntryType::DlistDeleteRecord:
+    {
+      std::uint64_t offset_record = pmem_allocator_->addr2offset(pmp_record);
+      DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
+      auto internal_key = pmp_data_entry->Key();
+      HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
+
+      int n_try = 0;
+      while (true)
+      {     
+        ++n_try;
+        std::unique_lock<SpinMutex>{*hint.spin};
+
+        HashEntry hash_entry;
+        HashEntry *entry_base = nullptr;
+        Status search_status = hash_table_->Search(hint, internal_key, 
+                                      DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
+                                      &entry_base, HashTable::SearchPurpose::Write);
+        switch (search_status)
+        {
+          case Status::NotFound:
+          {
+            hash_table_->Insert(hint, entry_base, data_entry_cached.type, offset_record, 
+                                HashOffsetType::UnorderedCollectionElement);
+            if (n_try > 100)
+              GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
+            return Status::Ok;
+          }
+          case Status::Ok:
+          {
+            DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset));
+            if (pmp_old_record->timestamp < data_entry_cached.timestamp)
+            {
+              hash_table_->Insert(hint, entry_base, data_entry_cached.type, offset_record, HashOffsetType::UnorderedCollectionElement);
+            }
+            if (n_try > 1)
+              GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
+            return Status::Ok;
+          }
+          default:
+          {
+            throw std::runtime_error{"Invalid search result when trying to insert a new DlistDataRecord!"};
+          }
+        }
+      }
+    }
+    default:
+    {
+      assert(false && "Wrong type in RestoreDlistRecords!");
+      throw std::runtime_error{"Wrong type in RestoreDlistRecords!"};
+    }
+  }
+}
 
 } // namespace KVDK_NAMESPACE

@@ -161,6 +161,8 @@ private:
               pmem::obj::string_view const key,
               pmem::obj::string_view const value, DataEntryType type);
 
+  Status RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cached);
+
   // Regularly works excecuted by background thread
   void BackgroundWork();
 

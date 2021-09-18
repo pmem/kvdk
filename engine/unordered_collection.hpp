@@ -401,6 +401,13 @@ namespace KVDK_NAMESPACE
             return _MakeInternalKey_(_id_, key);
         }
 
+        inline static std::uint32_t CheckSum(DLDataEntry* record)
+        {
+            pmem::obj::string_view internal_key = record->Key();
+            pmem::obj::string_view value = record->Value();
+            return DLinkedList::_CheckSum_(*record, internal_key, value);
+        }
+
     private:    
         EmplaceReturn<SpinMutex> _EmplaceBetween_
         (
