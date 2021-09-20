@@ -22,25 +22,11 @@ enum DataEntryType : uint16_t {
   HashListDeleteRecord = 1 << 6,
   HashListHeaderRecord = 1 << 7,
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-  DLIST_DATA_RECORD = 1 << 8,
-  DLIST_DELETE_RECORD = (1 << 8) * 2,
-  DLIST_HEAD_RECORD = (1 << 8) * 3,
-  DLIST_TAIL_RECORD = (1 << 8) * 4,
-  DLIST_RECORD = (1 << 8) *5,
-=======
-=======
->>>>>>> 3660c05 (Refactor data restoring (#64))
   DlistDataRecord = 1 << 8,
   DlistDeleteRecord = 1 << 9,
   DlistHeadRecord = 1 << 10,
   DlistTailRecord = 1 << 11,
   DlistRecord = 1 << 12,
-<<<<<<< HEAD
->>>>>>> 6b93780 (refactor RestoreData and rename DATA_ENTRY_TYPE)
-=======
->>>>>>> 3660c05 (Refactor data restoring (#64))
 
   Padding = 1 << 15,
 };

@@ -45,10 +45,6 @@ public:
   inline char *offset2addr(uint64_t block_offset) {
     if (block_offset == kNullPmemOffset) {
       assert(false && "Trying to access kNullPmemOffset");
-<<<<<<< HEAD
->>>>>>> 6cd0d43 (assert non nullptr)
-=======
->>>>>>> ae104f0 (update)
       return nullptr;
     } else {
       assert(block_offset < max_block_offset_ / num_segment_blocks_ *
@@ -76,9 +72,6 @@ public:
       return ((char *)addr - pmem_) / block_size_;
     } else {
       assert(false && "Trying to access nullptr");
-<<<<<<< HEAD
->>>>>>> 6cd0d43 (assert non nullptr)
-=======
       throw;
     }
   }
@@ -87,10 +80,6 @@ public:
     if (addr) {
       return ((char *)addr - pmem_) / block_size_;
     } else {
-<<<<<<< HEAD
->>>>>>> b77940b (update)
-=======
->>>>>>> ae104f0 (update)
       return kNullPmemOffset;
     }
   }
