@@ -15,8 +15,7 @@
 #include "dlinked_list.hpp"
 #include "kvdk/iterator.hpp"
 
-/// TODO: pass unique_lock<SpinMutex> instead of SpinMutex* when Emplace new records
-/// TODO: Also return unique_lock<SpinMutex> to caller after Emplace new records
+/// TODO: Use DLinkedList to manipulate emplacements instead of _EmplaceBetween_
 
 namespace KVDK_NAMESPACE
 {
@@ -222,24 +221,29 @@ namespace KVDK_NAMESPACE
     struct EmplaceReturn
     {
         // Offset of newly emplaced Record
-        std::uint64_t offset;
+        std::uint64_t offset_new;
+        // Offset of old Record for SwapEmplace. Otherwise set as FailOffset
+        std::uint64_t offset_old;
         bool success;
 
         explicit EmplaceReturn() :
-            offset{FailOffset},
+            offset_new{FailOffset},
+            offset_old{FailOffset},
             success{false}
         {           
         }
 
-        explicit EmplaceReturn(std::uint64_t offset_record, bool emplace_result) :
-            offset{offset_record},
+        explicit EmplaceReturn(std::uint64_t offset_new_, std::uint64_t offset_old_, bool emplace_result) :
+            offset_new{offset_new_},
+            offset_old{offset_old_},
             success{emplace_result}
         {
         }
 
         EmplaceReturn& operator=(EmplaceReturn const& other)
         {
-            offset = other.offset;
+            offset_new = other.offset_new;
+            offset_old = other.offset_old;
             success = other.success;
         }
 
@@ -280,15 +284,6 @@ namespace KVDK_NAMESPACE
         friend class UnorderedIterator;
 
     public:
-        // Thread local storage for fast inserting
-        // User is responsible for maintaining id and pmp
-        // to ensure the pmp belongs to the UnorderedCollection with id.
-        static thread_local struct InsertPositionCache
-        {
-            DLDataEntry* pmp;
-            std::uint64_t id;
-        } insert_cache;
-
         /// Create UnorderedCollection and persist it on PMem
         /// DlistHeadRecord and DlistTailRecord holds ID as key
         /// and empty string as value
@@ -421,7 +416,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const value,
             DataEntryType type,
             std::unique_lock<SpinMutex> const& lock,    // lock to prev or next or newly inserted, passed in and out.
-            bool is_prev_next_adjacent = true           // True if insertion, false if swap(separated by one node)
+            bool is_swap_emplace = false                // True if SwapEmplace, false if other
         );
 
         // Check the type of Record to be emplaced.

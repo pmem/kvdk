@@ -1297,7 +1297,8 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
   
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   std::shared_ptr<UnorderedCollection> sp_uncoll;
-  // For Creating UnorederedCollection if not found;
+
+  // Creating UnorederedCollection if not found;
   {
     std::unique_lock<SpinMutex> lock_coll{*hint.spin};  
     sp_uncoll = FindUnorderedCollection(collection_name);
@@ -1344,6 +1345,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
       // }
       
       ++n_try;
+
       EmplaceReturn emplace_result{};
       std::unique_lock<SpinMutex> lock{*hint.spin};
 
@@ -1352,28 +1354,53 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
       Status search_status = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
                                     &entry_base, HashTable::SearchPurpose::Write);
 
+      // pmp_last_emplacement maybe invalidified by SwapEmplace!
+      thread_local std::uint64_t offset_last_emplacement = 0;
+      thread_local DLDataEntry* pmp_last_emplacement = nullptr;
+      thread_local std::uint64_t id_last = 0;
+
       switch (search_status)
       {
         case Status::NotFound:
         {
-
-          emplace_result = sp_uncoll->EmplaceBack(ts, key, value, type, lock);
+          // Cached position for emplacement not available.
+          if (!pmp_last_emplacement || id_last != sp_uncoll->ID())
+          {
+            // Emplace Front or Back according to hash to reduce lock contention
+            if (hint.key_hash_value % 2 == 0)
+            {
+              emplace_result = sp_uncoll->EmplaceFront(ts, key, value, type, lock);
+            }
+            else
+            {
+              emplace_result = sp_uncoll->EmplaceBack(ts, key, value, type, lock);
+            }
+          }
+          else
+          {
+            emplace_result = sp_uncoll->EmplaceBefore(pmp_last_emplacement, ts, key, value, type, lock);
+            // emplace_result = sp_uncoll->EmplaceFront(ts, key, value, type, lock);
+          }
+          
           if (!emplace_result.success)
           {
             // Fail to acquire other locks, retry
             continue;
           }
+          // Update emplace position cache
+          offset_last_emplacement = emplace_result.offset_new;
+          pmp_last_emplacement = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(offset_last_emplacement));
+          id_last = sp_uncoll->ID();
           
-          hash_table_->Insert(hint, entry_base, type, emplace_result.offset, HashOffsetType::UnorderedCollectionElement);
-          // if (n_try > 100)
+          hash_table_->Insert(hint, entry_base, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
+
+          // if (n_try > 1)
           //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
 
           return Status::Ok;
         }
         case Status::Ok:
         {
-          throw;
-
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset));
 
           emplace_result = sp_uncoll->SwapEmplace(pmp_old_record ,ts, key, value, type, lock);
@@ -1383,9 +1410,17 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
             continue;
           }
           
-          hash_table_->Insert(hint, entry_base, type, emplace_result.offset, HashOffsetType::UnorderedCollectionElement);
+          // Update emplace position cache
+          // SwapEmplace may invalidify pmp_last_emplacement thus this updating is necessary.
+          offset_last_emplacement = emplace_result.offset_new;
+          pmp_last_emplacement = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(offset_last_emplacement));
+          id_last = sp_uncoll->ID();
+
+          hash_table_->Insert(hint, entry_base, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
+
           // if (n_try > 1)
           //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
+
           return Status::Ok;
         }
         default:
