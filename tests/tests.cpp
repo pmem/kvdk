@@ -61,13 +61,6 @@ protected:
   }
 };
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> main
 TEST_F(EngineBasicTest, TestThreadManager) {
   int max_write_threads = 1;
   configs.max_write_threads = max_write_threads;
@@ -90,186 +83,6 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   ASSERT_EQ(s.get(), Status::Ok);
   delete engine;
 }
-<<<<<<< HEAD
-
-<<<<<<< HEAD
->>>>>>> 8e18c45 (Call to release write thread (#47))
-TEST_F(EngineBasicTest, TestBasicHashOperations) {
-=======
-TEST_F(EngineBasicTest, TestBasicStringOperations) {
->>>>>>> ddd6dd2 (Fix ABA problem of lock-free read by re-calculate checksum (#71))
-  int num_threads = 16;
-  configs.max_write_threads = num_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  // Test empty key
-  std::string key{""}, val{"val"}, got_val;
-  ASSERT_EQ(engine->Set(key, val), Status::Ok);
-  ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-  ASSERT_EQ(val, got_val);
-  ASSERT_EQ(engine->Delete(key), Status::Ok);
-  ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
-  engine->ReleaseWriteThread();
-
-  auto SetGetDelete = [&](uint32_t id) {
-    std::string val1, val2, got_val1, got_val2;
-    int cnt = 100;
-    while (cnt--) {
-      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
-      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
-      AssignData(val1, fast_random_64() % 1024);
-      AssignData(val2, fast_random_64() % 1024);
-
-      ASSERT_EQ(engine->Set(key1, val1), Status::Ok);
-      ASSERT_EQ(engine->Set(key2, val2), Status::Ok);
-
-      // Get
-      ASSERT_EQ(engine->Get(key1, &got_val1), Status::Ok);
-      ASSERT_EQ(val1, got_val1);
-      ASSERT_EQ(engine->Get(key2, &got_val2), Status::Ok);
-      ASSERT_EQ(val2, got_val2);
-
-      // Delete
-      ASSERT_EQ(engine->Delete(key1), Status::Ok);
-      ASSERT_EQ(engine->Get(key1, &got_val1), Status::NotFound);
-
-      // Update
-      AssignData(val1, fast_random_64() % 1024);
-      ASSERT_EQ(engine->Set(key1, val1), Status::Ok);
-      ASSERT_EQ(engine->Get(key1, &got_val1), Status::Ok);
-      ASSERT_EQ(got_val1, val1);
-    }
-  };
-
-  LaunchNThreads(num_threads, SetGetDelete);
-  delete engine;
-=======
-TEST_F(EngineBasicTest, TestSeek) {
-  std::string val;
-=======
-TEST_F(EngineBasicTest, TestBasicHashOperations) {
-  int num_threads = 16;
-  configs.max_write_threads = num_threads;
->>>>>>> a0d8edc (Fix Seek() to SORTED_DELETE_RECORD, and reorganize tests (#42))
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  auto ops = [&](int id) {
-    std::string k1, k2, v1, v2;
-    std::string got_v1, got_v2;
-    int cnt = 1000;
-    while (cnt--) {
-      int v1_len = rand() % 1024;
-      int v2_len = rand() % 1024;
-      k1 = std::to_string(id) + "k" + k1;
-      k2 = std::to_string(id) + "kk" + k2;
-      AssignData(v1, v1_len);
-      AssignData(v2, v2_len);
-
-      if (id == 0) {
-        std::string k0{""};
-        ASSERT_EQ(engine->Set(k0, v1), Status::Ok);
-        ASSERT_EQ(engine->Get(k0, &got_v1), Status::Ok);
-        ASSERT_EQ(v1, got_v1);
-        ASSERT_EQ(engine->Delete(k0), Status::Ok);
-        ASSERT_EQ(engine->Get(k0, &got_v1), Status::NotFound);
-      }
-
-<<<<<<< HEAD
-  // Test SeekToFirst
-  collection.assign("col2");
-  ASSERT_EQ(engine->SSet(collection, "foo", "bar"), Status::Ok);
-  ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::Ok);
-  ASSERT_EQ(engine->SDelete(collection, "foo"), Status::Ok);
-  ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::NotFound);
-  ASSERT_EQ(engine->SSet(collection, "foo2", "bar2"), Status::Ok);
-  iter = engine->NewSortedIterator(collection);
-  ASSERT_NE(iter, nullptr);
-  iter->SeekToFirst();
-  ASSERT_TRUE(iter->Valid());
-  ASSERT_EQ(iter->Value(), "bar2");
->>>>>>> 26fc58e (string_view bug fix (#41))
-=======
-      ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
-
-      ASSERT_EQ(engine->Set(k2, v2), Status::Ok);
-      ASSERT_EQ(engine->Get(k1, &got_v1), Status::Ok);
-
-      ASSERT_EQ(engine->Get(k2, &got_v2), Status::Ok);
-      ASSERT_EQ(v1, got_v1);
-      ASSERT_EQ(v2, got_v2);
-
-      ASSERT_EQ(engine->Delete(k1), Status::Ok);
-
-      ASSERT_EQ(engine->Get(k1, &got_v1), Status::NotFound);
-      AssignData(v1, v1_len);
-      ASSERT_EQ(engine->Set(k1, v1), Status::Ok);
-
-      ASSERT_EQ(engine->Get(k1, &got_v1), Status::Ok);
-      ASSERT_EQ(got_v1, v1);
-    }
-  };
-
-  std::vector<std::thread> ts;
-  for (int i = 0; i < num_threads; i++) {
-    ts.emplace_back(std::thread(ops, i));
-  }
-  for (auto &t : ts)
-    t.join();
-  delete engine;
->>>>>>> a0d8edc (Fix Seek() to SORTED_DELETE_RECORD, and reorganize tests (#42))
-}
-
-<<<<<<< HEAD
-TEST_F(EngineBasicTest, TestBasicHashHotspot) {
-  int n_thread_reading = 16;
-  int n_thread_writing = 16;
-  configs.max_write_threads = n_thread_writing;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  std::string key{"SuperHotspot"};
-  std::string val1(1024, 'a');
-  std::string val2(1023, 'b');
-
-  ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-  engine->ReleaseWriteThread();
-
-  auto EvenWriteOddRead = [&](uint32_t id) {
-    for (size_t i = 0; i < 100000; i++) {
-      if (id % 2 == 0) {
-        // Even Write
-        if (id % 4 == 0) {
-          ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-        } else {
-          ASSERT_EQ(engine->Set(key, val2), Status::Ok);
-        }
-      } else {
-        // Odd Read
-        std::string got_val;
-        ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-        bool match = false;
-        match = match || (got_val == val1);
-        match = match || (got_val == val2);
-        if (!match) {
-          std::string msg;
-          msg.append("Wrong value!\n");
-          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
-          msg.append("Actual result is:\n");
-          msg.append(got_val);
-          msg.append("\n");
-          msg.append("Length: ");
-          msg.append(std::to_string(got_val.size()));
-          msg.append("\n");
-          GlobalLogger.Error(msg.data());
-        }
-        ASSERT_TRUE(match);
-      }
-    }
-  };
-
-  LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
-=======
 
 TEST_F(EngineBasicTest, TestBasicStringOperations) {
   int num_threads = 16;
@@ -317,12 +130,9 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
   };
 
   LaunchNThreads(num_threads, SetGetDelete);
->>>>>>> main
   delete engine;
 }
 
-=======
->>>>>>> ddd6dd2 (Fix ABA problem of lock-free read by re-calculate checksum (#71))
 TEST_F(EngineBasicTest, TestBatchWrite) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
@@ -610,6 +420,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   };
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
   auto ops2 = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
 <<<<<<< HEAD
@@ -637,6 +448,8 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
 =======
 =======
 >>>>>>> 8debb0d (Reorganize sorted collection tests (#46))
+=======
+>>>>>>> d078c5e00827796ca75de9d177e7f1edfad594e3
 
 =======
 
@@ -653,6 +466,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
   };
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
   {
@@ -692,6 +506,11 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   LaunchNThreads(num_threads, IteratingThrough);
   LaunchNThreads(num_threads, SeekToDeleted);
 >>>>>>> main
+=======
+  LaunchNThreads(num_threads, SSetSGetSDelete);
+  LaunchNThreads(num_threads, IteratingThrough);
+  LaunchNThreads(num_threads, SeekToDeleted);
+>>>>>>> d078c5e00827796ca75de9d177e7f1edfad594e3
 
   delete engine;
 }
@@ -884,8 +703,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   delete engine;
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
   int num_threads = 16;
   int count = 100;
@@ -1014,11 +831,6 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   delete engine;
 }
 
-<<<<<<< HEAD
-
-
-=======
-=======
 TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
@@ -1074,7 +886,6 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   delete engine;
 }
 
->>>>>>> 0f72851 (debug)
 TEST_F(EngineBasicTest, TestStringHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
@@ -1127,60 +938,6 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   delete engine;
 }
 
-=======
-TEST_F(EngineBasicTest, TestStringHotspot) {
-  int n_thread_reading = 16;
-  int n_thread_writing = 16;
-  configs.max_write_threads = n_thread_writing;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  int count = 100000;
-  std::string key{"SuperHotspot"};
-  std::string val1(1024, 'a');
-  std::string val2(1023, 'b');
-
-  ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-  engine->ReleaseWriteThread();
-
-  auto EvenWriteOddRead = [&](uint32_t id) {
-    for (size_t i = 0; i < count; i++) {
-      if (id % 2 == 0) {
-        // Even Write
-        if (id % 4 == 0) {
-          ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-        } else {
-          ASSERT_EQ(engine->Set(key, val2), Status::Ok);
-        }
-      } else {
-        // Odd Read
-        std::string got_val;
-        ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-        bool match = false;
-        match = match || (got_val == val1);
-        match = match || (got_val == val2);
-        if (!match) {
-          std::string msg;
-          msg.append("Wrong value!\n");
-          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
-          msg.append("Actual result is:\n");
-          msg.append(got_val);
-          msg.append("\n");
-          msg.append("Length: ");
-          msg.append(std::to_string(got_val.size()));
-          msg.append("\n");
-          GlobalLogger.Error(msg.data());
-        }
-        ASSERT_TRUE(match);
-      }
-    }
-  };
-
-  LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
-  delete engine;
-}
-
->>>>>>> main
 TEST_F(EngineBasicTest, TestSortedHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
@@ -1237,7 +994,6 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
   delete engine;
 }
 
->>>>>>> ddd6dd2 (Fix ABA problem of lock-free read by re-calculate checksum (#71))
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
