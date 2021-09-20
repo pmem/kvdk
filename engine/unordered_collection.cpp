@@ -99,11 +99,10 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> const& lock
     )
     {
-        std::unique_lock<SpinMutex> coll_lock{_coll_mutex_};
         _CheckUserSuppliedPmp_(pmp);
         DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp}; --iter_prev;
         DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp};
-        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, std::move(coll_lock));
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
     }
 
     EmplaceReturn UnorderedCollection::EmplaceAfter
@@ -116,11 +115,10 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> const& lock
     )
     {
-        std::unique_lock<SpinMutex> coll_lock{_coll_mutex_};
         _CheckUserSuppliedPmp_(pmp);
         DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp};
         DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp}; ++iter_next;
-        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, std::move(coll_lock));
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
     }
 
     EmplaceReturn UnorderedCollection::EmplaceFront
@@ -132,10 +130,9 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> const& lock
     )
     {
-        std::unique_lock<SpinMutex> coll_lock{_coll_mutex_};
         DlistIterator iter_prev{_dlinked_list_.Head()};
         DlistIterator iter_next{_dlinked_list_.Head()}; ++iter_next;
-        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, std::move(coll_lock));
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
     }
 
     EmplaceReturn UnorderedCollection::EmplaceBack
@@ -147,10 +144,10 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> const& lock
     )
     {
-        std::unique_lock<SpinMutex> coll_lock{_coll_mutex_};
         DlistIterator iter_prev{_dlinked_list_.Tail()}; --iter_prev;
         DlistIterator iter_next{_dlinked_list_.Tail()}; 
-        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, std::move(coll_lock));
+
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
     }
 
     /// key is also checked to match old key
@@ -164,11 +161,10 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> const& lock
     )
     {
-        std::unique_lock<SpinMutex> coll_lock{_coll_mutex_};
         _CheckUserSuppliedPmp_(pmp);
         DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp}; --iter_prev;
         DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp}; ++iter_next;
-        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, std::move(coll_lock), false);
+        return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, false);
     }
 
     EmplaceReturn UnorderedCollection::_EmplaceBetween_
@@ -180,16 +176,14 @@ namespace KVDK_NAMESPACE
         pmem::obj::string_view const value,
         DataEntryType type,
         std::unique_lock<SpinMutex> const& lock,    // lock to prev or next or newly inserted, passed in and out.
-        std::unique_lock<SpinMutex> && coll_lock,   // Release collection mutex whether success or not.
         bool is_prev_next_adjacent                  // True if insertion, false if swap
     )
     {
-        std::unique_lock<SpinMutex> list_lock{std::move(coll_lock)};
         _CheckLock_(lock);
         _CheckEmplaceType_(type);
         
         DlistIterator iter_prev{ _dlinked_list_._sp_pmem_allocator_, pmp_prev };
-        DlistIterator iter_next{ _dlinked_list_._sp_pmem_allocator_, pmp_next };
+        DlistIterator iter_next{ _dlinked_list_._sp_pmem_allocator_, pmp_next };        
 
         // This locks may be invalidified after other threads insert another node!
         std::string internal_key = GetInternalKey(key);
@@ -197,16 +191,12 @@ namespace KVDK_NAMESPACE
         SpinMutex* spin1 = _GetMutex_(iter_prev->Key());
         SpinMutex* spin2 = _GetMutex_(internal_key);
         SpinMutex* spin3 = _GetMutex_(iter_next->Key());
-
+        
         std::unique_lock<SpinMutex> lock1;
         std::unique_lock<SpinMutex> lock2;
         std::unique_lock<SpinMutex> lock3;
 
-        // assert(spin2 == spin);
-        // assert(spin1 != spin);
-        // assert(spin2 != spin1);
-        // assert(spin3 != spin2);
-
+        int cnt = 0;
 
         if (spin1 != spin)
         {
@@ -214,7 +204,8 @@ namespace KVDK_NAMESPACE
             if (!lock1.owns_lock())
             {
                 return EmplaceReturn{EmplaceReturn::FailOffset, false};
-            }    
+            }   
+            ++cnt; 
         }
         if (spin2 != spin && spin2 != spin1)
         {
@@ -222,7 +213,8 @@ namespace KVDK_NAMESPACE
             if (!lock2.owns_lock())
             {
                 return EmplaceReturn{EmplaceReturn::FailOffset, false};
-            }    
+            }   
+            ++cnt; 
         }
         if (spin3 != spin && spin3 != spin1 && spin3 != spin2)
         {
@@ -231,12 +223,34 @@ namespace KVDK_NAMESPACE
             {
                 return EmplaceReturn{EmplaceReturn::FailOffset, false};
             }    
+            ++cnt; 
         }
 
-        list_lock.unlock();
+        if (is_prev_next_adjacent)
+        {
+            bool has_other_thread_modified = false;
+            DlistIterator iter_prev_copy{iter_prev};
+            DlistIterator iter_next_copy(iter_next);
+            has_other_thread_modified = has_other_thread_modified || (++iter_prev_copy != iter_next);
+            has_other_thread_modified = has_other_thread_modified || (--iter_next_copy != iter_prev);
+            if (has_other_thread_modified)
+            {
+                return EmplaceReturn{EmplaceReturn::FailOffset, false};
+            }            
+        }
+        else
+        {
+            bool has_other_thread_modified = false;
+            DlistIterator iter_prev_copy{iter_prev};
+            DlistIterator iter_next_copy(iter_next);
+            has_other_thread_modified = has_other_thread_modified || (++++iter_prev_copy != iter_next);
+            has_other_thread_modified = has_other_thread_modified || (----iter_next_copy != iter_prev);
+            if (has_other_thread_modified)
+            {
+                return EmplaceReturn{EmplaceReturn::FailOffset, false};
+            }            
+        }
         DlistIterator iter = _dlinked_list_._EmplaceBetween_(iter_prev, iter_next, timestamp, internal_key, value, type);
-        // std::cout << "Current state: " << std::endl;
-        // std::cout << _dlinked_list_ << std::endl;
 
         return EmplaceReturn{iter._GetOffset_(), true};
     }
