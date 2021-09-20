@@ -430,7 +430,6 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     ASSERT_TRUE(t_iter2->Valid());
     ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
   };
-
   LaunchNThreads(num_threads, SSetSGetSDelete);
   LaunchNThreads(num_threads, IteratingThrough);
   LaunchNThreads(num_threads, SeekToDeleted);
