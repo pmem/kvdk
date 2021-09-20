@@ -277,6 +277,9 @@ namespace KVDK_NAMESPACE
         std::uint64_t _id_;
         std::uint64_t _time_stamp_;
 
+        /// Provides critical section to acquire locks when emplace a node
+        SpinMutex _coll_mutex_;
+
         friend class UnorderedIterator;
 
     public:
@@ -420,7 +423,9 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            std::unique_lock<SpinMutex> const& lock // lock to prev or next or newly inserted, passed in and out.
+            std::unique_lock<SpinMutex> const& lock,    // lock to prev or next or newly inserted, passed in and out.
+            std::unique_lock<SpinMutex> && coll_lock,   // Release collection mutex whether success or not.
+            bool is_prev_next_adjacent = true           // True if insertion, false if swap
         );
 
         // Check the type of Record to be emplaced.

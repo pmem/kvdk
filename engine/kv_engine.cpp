@@ -1358,27 +1358,21 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         {
 
           emplace_result = sp_uncoll->EmplaceBack(ts, key, value, type, lock);
-          std::unique_lock<std::mutex> lock_all{list_mu_};
           if (!emplace_result.success)
           {
             // Fail to acquire other locks, retry
             continue;
           }
-          // lock_all.unlock();
           
           hash_table_->Insert(hint, entry_base, type, emplace_result.offset, HashOffsetType::UnorderedCollectionElement);
           // if (n_try > 100)
           //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
-
-          std::cout << "Current state:" << std::endl;
-          std::cout << *sp_uncoll << std::endl;
 
           return Status::Ok;
         }
         case Status::Ok:
         {
           throw;
-          // std::unique_lock<std::mutex> lock_all{list_mu_};
 
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset));
 
@@ -1388,7 +1382,6 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
             // Fail to acquire other locks, retry
             continue;
           }
-          // lock_all.unlock();
           
           hash_table_->Insert(hint, entry_base, type, emplace_result.offset, HashOffsetType::UnorderedCollectionElement);
           // if (n_try > 1)
