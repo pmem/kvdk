@@ -11,6 +11,9 @@
 #include <cstdlib>
 #include <iostream>
 #include <exception>
+#include <iostream>
+#include <iomanip>
+#include <bitset>
 
 #include <libpmemobj++/string_view.hpp>
 #include <libpmem.h>
@@ -22,6 +25,8 @@
 #include "utils.hpp"
 
 #include <list>
+
+#define hex_print(x) std::hex << std::setfill ('0') << std::setw(sizeof(decltype(x))*2) << x
 
 namespace KVDK_NAMESPACE
 {
@@ -125,6 +130,17 @@ namespace KVDK_NAMESPACE
             return _pmp_curr_;
         }
 
+        friend bool operator==(DlistIterator lhs, DlistIterator rhs)
+        {
+            assert(lhs._sp_pmem_allocator_ == rhs._sp_pmem_allocator_);
+            return lhs._pmp_curr_ == rhs._pmp_curr_;
+        }
+
+        friend bool operator!=(DlistIterator lhs, DlistIterator rhs)
+        {
+            return !(lhs == rhs);
+        }
+
     private:
         inline DLDataEntry* _GetPmpNext_() const
         {
@@ -136,11 +152,12 @@ namespace KVDK_NAMESPACE
             return reinterpret_cast<DLDataEntry*>(_sp_pmem_allocator_->offset2addr(_pmp_curr_->prev));
         }
 
+    public:
         inline std::uint64_t _GetOffset_() const
         {
             return _sp_pmem_allocator_->addr2offset(_pmp_curr_);
         }
-    
+
     };
 }
 
@@ -185,12 +202,12 @@ namespace KVDK_NAMESPACE
         {
         {
             // head and tail only holds DLDataEntry. No id or collection name needed.
-            auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
+            auto space_head = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry)+key.size()+value.size());
             if (space_head.size == 0)
             {
                 throw std::bad_alloc{};
             }
-            auto space_tail = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry));
+            auto space_tail = _sp_pmem_allocator_->Allocate(sizeof(DLDataEntry)+key.size()+value.size());
             if (space_tail.size == 0)
             {
                 _sp_pmem_allocator_->Free(space_head);
@@ -206,8 +223,8 @@ namespace KVDK_NAMESPACE
             {
                 entry_head.timestamp = timestamp;
                 entry_head.type = DataEntryType::DlistHeadRecord;
-                entry_head.k_size = 0;
-                entry_head.v_size = 0;
+                entry_head.k_size = key.size();
+                entry_head.v_size = value.size();
 
                 // checksum can only be calculated with complete meta
                 entry_head.header.b_size = space_head.size;
@@ -221,8 +238,8 @@ namespace KVDK_NAMESPACE
             {
                 entry_tail.timestamp = timestamp;
                 entry_tail.type = DataEntryType::DlistTailRecord;
-                entry_tail.k_size = 0;
-                entry_tail.v_size = 0;
+                entry_tail.k_size = key.size();
+                entry_tail.v_size = value.size();
 
                 // checksum can only be calculated with complete meta
                 entry_tail.header.b_size = space_head.size;
@@ -548,6 +565,46 @@ namespace KVDK_NAMESPACE
             std::cerr << ex.what() << std::endl;
             std::cerr << "Fail to create DLinkedList object!" << std::endl;
             throw;
+        }
+
+        inline static pmem::obj::string_view _ExtractKey_(pmem::obj::string_view internal_key)
+        {
+            constexpr size_t sz_id = 8;
+            assert(sz_id <= internal_key.size() && "internal_key does not has space for key");
+            return pmem::obj::string_view(internal_key.data() + sz_id, internal_key.size() - sz_id);
+        }
+
+        inline static std::uint64_t _ExtractID_(pmem::obj::string_view internal_key)
+        {
+            std::uint64_t id;
+            assert(sizeof(decltype(id)) <= internal_key.size() && "internal_key is smaller than the size of an id!");
+            memcpy(&id, internal_key.data(), sizeof(decltype(id)));
+            return id;
+        }
+
+        friend std::ostream& operator<<(std::ostream& out, DLinkedList const& dlist)
+        {
+            out << "Contents of DlinkedList:\n";
+            DlistIterator iter = DlistIterator{dlist._sp_pmem_allocator_, dlist._pmp_head_};
+            while (iter != DlistIterator{dlist._sp_pmem_allocator_, dlist._pmp_tail_})
+            {
+                auto internal_key = iter->Key();
+                out << "Type: " << hex_print(iter->type)    <<"\t"
+                    << "Offset: " << hex_print(iter._GetOffset_())  << "\t"
+                    << "Prev: " << hex_print(iter->prev)    <<"\t"
+                    << "Next: " << hex_print(iter->next)    <<"\t"
+                    << "Key: "  << hex_print(_ExtractID_(internal_key))<<_ExtractKey_(internal_key)<<"\t"
+                    << "Value: "<< iter->Value()<<"\n";
+                ++iter;
+            }
+            auto internal_key = iter->Key();
+            out << "Type: " << hex_print(iter->type)    <<"\t"
+                << "Offset: " << hex_print(iter._GetOffset_())  << "\t"
+                << "Prev: " << hex_print(iter->prev)    <<"\t"
+                << "Next: " << hex_print(iter->next)    <<"\t"
+                << "Key: "  << hex_print(_ExtractID_(internal_key))<<_ExtractKey_(internal_key)<<"\t"
+                << "Value: "<< iter->Value()<<"\n";
+            return out;
         }
     };
 

@@ -5,6 +5,8 @@
 #include <atomic>
 #include <iostream>
 #include <vector>
+#include <random>
+#include <string>
 
 /* Create a string that contains 8 bytes from uint64_t. */
 static inline std::string uint64_to_string(uint64_t &key) {
@@ -28,4 +30,17 @@ inline void random_str(char *str, unsigned int size) {
     }
   }
   str[size] = 0;
+}
+
+std::string GetRandomString(size_t max_len)
+{
+  static std::default_random_engine re;
+  size_t len = re() % max_len;
+  std::string str;
+  str.reserve(len);
+  for (size_t i = 0; i < len; i++)
+  {
+    str.push_back('a'+re()%26);
+  }
+  return str;
 }

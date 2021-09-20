@@ -1201,7 +1201,8 @@ std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(pmem::o
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
-  return std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, name, id, ts);
+  std::shared_ptr<UnorderedCollection> sp_uncoll = std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, name, id, ts);
+  return sp_uncoll;
 }
 
 std::shared_ptr<UnorderedCollection> KVEngine::FindUnorderedCollection(pmem::obj::string_view const collection_name)
@@ -1337,14 +1338,14 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
     int n_try = 0;
     while (true)
     {
-      for (size_t i = 0; i < hint.key_hash_value % 256; i++)
-      {
-        _mm_pause();
-      }
+      // for (size_t i = 0; i < hint.key_hash_value % 256; i++)
+      // {
+      //   _mm_pause();
+      // }
       
       ++n_try;
-      // emplace_result holds the spin to internal_key
-      EmplaceReturn<> emplace_result{EmplaceReturn<>::FailOffset, std::unique_lock<SpinMutex>{*hint.spin}, false};
+      EmplaceReturn emplace_result{};
+      std::unique_lock<SpinMutex> lock{*hint.spin};
 
       HashEntry hash_entry;
       HashEntry *entry_base = nullptr;
@@ -1355,32 +1356,43 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
       {
         case Status::NotFound:
         {
-          // Lock transfered to EmplaceFront and then back by Swap
-          emplace_result.Swap(sp_uncoll->EmplaceFront(ts, key, value, type, std::move(emplace_result.lock)));
+
+          emplace_result = sp_uncoll->EmplaceBack(ts, key, value, type, lock);
+          std::unique_lock<std::mutex> lock_all{list_mu_};
           if (!emplace_result.success)
           {
-            // Fail to acquire all three locks, retry
+            // Fail to acquire other locks, retry
             continue;
           }
+          // lock_all.unlock();
           
           hash_table_->Insert(hint, entry_base, type, emplace_result.offset, HashOffsetType::UnorderedCollectionElement);
-          if (n_try > 100)
-            GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
+          // if (n_try > 100)
+          //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
+
+          std::cout << "Current state:" << std::endl;
+          std::cout << *sp_uncoll << std::endl;
+
           return Status::Ok;
         }
         case Status::Ok:
         {
+          throw;
+          // std::unique_lock<std::mutex> lock_all{list_mu_};
+
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset));
-          // Lock transfered to EmplaceFront and then back by Swap
-          emplace_result.Swap(sp_uncoll->SwapEmplace(pmp_old_record ,ts, key, value, type, std::move(emplace_result.lock)));
+
+          emplace_result = sp_uncoll->SwapEmplace(pmp_old_record ,ts, key, value, type, lock);
           if (!emplace_result.success)
           {
-            // Fail to acquire all three locks, retry
+            // Fail to acquire other locks, retry
             continue;
           }
+          // lock_all.unlock();
+          
           hash_table_->Insert(hint, entry_base, type, emplace_result.offset, HashOffsetType::UnorderedCollectionElement);
-          if (n_try > 1)
-            GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
+          // if (n_try > 1)
+          //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
           return Status::Ok;
         }
         default:

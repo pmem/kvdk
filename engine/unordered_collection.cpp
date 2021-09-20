@@ -89,14 +89,14 @@ namespace KVDK_NAMESPACE
         return iter;
     }
 
-    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceBefore
+    EmplaceReturn UnorderedCollection::EmplaceBefore
     (
         DLDataEntry* pmp,
         std::uint64_t timestamp,  
         pmem::obj::string_view const key,
         pmem::obj::string_view const value,
         DataEntryType type,
-        std::unique_lock<SpinMutex> lock
+        std::unique_lock<SpinMutex> const& lock
     )
     {
         _CheckUserSuppliedPmp_(pmp);
@@ -105,14 +105,14 @@ namespace KVDK_NAMESPACE
         return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
     }
 
-    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceAfter
+    EmplaceReturn UnorderedCollection::EmplaceAfter
     (
         DLDataEntry* pmp,
         std::uint64_t timestamp,   
         pmem::obj::string_view const key,
         pmem::obj::string_view const value,
         DataEntryType type,
-        std::unique_lock<SpinMutex> lock
+        std::unique_lock<SpinMutex> const& lock
     )
     {
         _CheckUserSuppliedPmp_(pmp);
@@ -121,13 +121,13 @@ namespace KVDK_NAMESPACE
         return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
     }
 
-    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceFront
+    EmplaceReturn UnorderedCollection::EmplaceFront
     (
         std::uint64_t timestamp, 
         pmem::obj::string_view const key,
         pmem::obj::string_view const value,
         DataEntryType type,
-        std::unique_lock<SpinMutex> lock
+        std::unique_lock<SpinMutex> const& lock
     )
     {
         DlistIterator iter_prev{_dlinked_list_.Head()};
@@ -135,13 +135,13 @@ namespace KVDK_NAMESPACE
         return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
     }
 
-    EmplaceReturn<SpinMutex> UnorderedCollection::EmplaceBack
+    EmplaceReturn UnorderedCollection::EmplaceBack
     (
         std::uint64_t timestamp, 
         pmem::obj::string_view const key,
         pmem::obj::string_view const value,
         DataEntryType type,
-        std::unique_lock<SpinMutex> lock
+        std::unique_lock<SpinMutex> const& lock
     )
     {
         DlistIterator iter_prev{_dlinked_list_.Tail()}; --iter_prev;
@@ -150,14 +150,14 @@ namespace KVDK_NAMESPACE
     }
 
     /// key is also checked to match old key
-    EmplaceReturn<SpinMutex> UnorderedCollection::SwapEmplace
+    EmplaceReturn UnorderedCollection::SwapEmplace
     (
         DLDataEntry* pmp,
         std::uint64_t timestamp, 
         pmem::obj::string_view const key,
         pmem::obj::string_view const value,
         DataEntryType type,
-        std::unique_lock<SpinMutex> lock
+        std::unique_lock<SpinMutex> const& lock
     )
     {
         _CheckUserSuppliedPmp_(pmp);
@@ -166,7 +166,7 @@ namespace KVDK_NAMESPACE
         return _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, std::move(lock));
     }
 
-    EmplaceReturn<SpinMutex> UnorderedCollection::_EmplaceBetween_
+    EmplaceReturn UnorderedCollection::_EmplaceBetween_
     (
         DLDataEntry* pmp_prev,
         DLDataEntry* pmp_next,
@@ -174,7 +174,7 @@ namespace KVDK_NAMESPACE
         pmem::obj::string_view const key,
         pmem::obj::string_view const value,
         DataEntryType type,
-        std::unique_lock<SpinMutex> lock    // lock to prev or next or newly inserted, passed in and out.
+        std::unique_lock<SpinMutex> const& lock    // lock to prev or next or newly inserted, passed in and out.
     )
     {
         _CheckLock_(lock);
@@ -183,6 +183,7 @@ namespace KVDK_NAMESPACE
         DlistIterator iter_prev{ _dlinked_list_._sp_pmem_allocator_, pmp_prev };
         DlistIterator iter_next{ _dlinked_list_._sp_pmem_allocator_, pmp_next };
 
+        // This locks may be invalidified after other threads insert another node!
         std::string internal_key = GetInternalKey(key);
         SpinMutex* spin = lock.mutex();
         SpinMutex* spin1 = _GetMutex_(iter_prev->Key());
@@ -193,12 +194,18 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> lock2;
         std::unique_lock<SpinMutex> lock3;
 
+        assert(spin2 == spin);
+        assert(spin1 != spin);
+        assert(spin2 != spin1);
+        assert(spin3 != spin2);
+
+
         if (spin1 != spin)
         {
             lock1 = std::unique_lock<SpinMutex>{*spin1, std::try_to_lock};
             if (!lock1.owns_lock())
             {
-                return EmplaceReturn<SpinMutex>{EmplaceReturn<SpinMutex>::FailOffset, std::move(lock), false};
+                return EmplaceReturn{EmplaceReturn::FailOffset, false};
             }    
         }
         if (spin2 != spin && spin2 != spin1)
@@ -206,7 +213,7 @@ namespace KVDK_NAMESPACE
             lock2 = std::unique_lock<SpinMutex>{*spin2, std::try_to_lock};
             if (!lock2.owns_lock())
             {
-                return EmplaceReturn<SpinMutex>{EmplaceReturn<SpinMutex>::FailOffset, std::move(lock), false};
+                return EmplaceReturn{EmplaceReturn::FailOffset, false};
             }    
         }
         if (spin3 != spin && spin3 != spin1 && spin3 != spin2)
@@ -214,12 +221,14 @@ namespace KVDK_NAMESPACE
             lock3 = std::unique_lock<SpinMutex>{*spin3, std::try_to_lock};
             if (!lock3.owns_lock())
             {
-                return EmplaceReturn<SpinMutex>{EmplaceReturn<SpinMutex>::FailOffset, std::move(lock), false};
+                return EmplaceReturn{EmplaceReturn::FailOffset, false};
             }    
         }
 
         DlistIterator iter = _dlinked_list_._EmplaceBetween_(iter_prev, iter_next, timestamp, internal_key, value, type);
-        return EmplaceReturn<SpinMutex>{iter._GetOffset_(), std::move(lock), true};
+        // std::cout << "Current state: " << std::endl;
+        // std::cout << _dlinked_list_ << std::endl;
+        return EmplaceReturn{iter._GetOffset_(), true};
     }
 
     // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid)

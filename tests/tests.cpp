@@ -823,75 +823,60 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 
 <<<<<<< HEAD
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
-  int num_threads = 2;
+  int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  std::vector<int> cnt_entries_in_collection(num_threads, 0);
+  // insert and delete some keys, then re-insert some deleted keys
 
-  auto HSetHGetHDelete = [&](uint32_t id) {
-    std::string thread_local_unordered_collection("Uncoll" + std::to_string(id));
-    std::string key1, key2, val1, val2;
-    std::string got_val1, got_val2;
+  int count = 100;
+  std::vector<std::vector<std::string>> local_keys(num_threads);
+  std::vector<std::vector<std::string>> local_values(num_threads);
+  std::vector<std::string> local_collection_names(num_threads);
+  for (size_t i = 0; i < num_threads; i++)
+  {
+    local_collection_names[i] ="local_uncoll_t" +std::to_string(i);
+    for (size_t j = 0; j < count*2; j++)
+    {
+      local_keys[i].push_back(std::string{"local_key_"}+std::to_string(j));
+      local_values[i].push_back(GetRandomString(1024));
+    }  
+  }
 
-    AssignData(val1, 10);
-    AssignData(val2, 10);
-
-    key1 = std::to_string(id);
-    key2 = std::to_string(id);
-
-    int cnt = 100;
-    while (cnt--) {
-      key1.append("k1");
-      key2.append("k2");
-
+  auto HSetHGetHDelete = [&](uint32_t tid) {
+    std::string value_got;
+    for (size_t j = 0; j < count; j++)
+    {
       // insert
-      AssignData(val1, fast_random_64() % 1024);
-      AssignData(val2, fast_random_64() % 1024);
-      ASSERT_EQ(engine->HSet(thread_local_unordered_collection, key1, val1), Status::Ok);
-      ++cnt_entries_in_collection[id];
-      ASSERT_EQ(engine->HSet(thread_local_unordered_collection, key2, val2), Status::Ok);
-      ++cnt_entries_in_collection[id];
-      ASSERT_EQ(engine->HGet(thread_local_unordered_collection, key1, &got_val1),
-                Status::Ok);
-      ASSERT_EQ(engine->HGet(thread_local_unordered_collection, key2, &got_val2),
-                Status::Ok);
-      ASSERT_EQ(val1, got_val1);
-      ASSERT_EQ(val2, got_val2);
+      ASSERT_EQ(engine->HSet(local_collection_names[tid], local_keys[tid][j], local_values[tid][j]), Status::Ok);
+      ASSERT_EQ(engine->HGet(local_collection_names[tid], local_keys[tid][j], &value_got), Status::Ok);
+      ASSERT_EQ(local_values[tid][j], value_got);
+      ASSERT_EQ(engine->HSet(local_collection_names[tid], local_keys[tid][j+count], local_values[tid][j+count]), Status::Ok);
+      ASSERT_EQ(engine->HGet(local_collection_names[tid], local_keys[tid][j+count], &value_got), Status::Ok);
+      ASSERT_EQ(local_values[tid][j+count], value_got);
 
       // update
-      AssignData(val1, fast_random_64() % 1024);
-      ASSERT_EQ(engine->HSet(thread_local_unordered_collection, key1, val1), Status::Ok);
-      ASSERT_EQ(engine->HGet(thread_local_unordered_collection, key1, &got_val1),
-                Status::Ok);
-      ASSERT_EQ(got_val1, val1);
-      AssignData(val2, fast_random_64() % 1024);
-      ASSERT_EQ(engine->HSet(thread_local_unordered_collection, key2, val2), Status::Ok);
-      ASSERT_EQ(engine->HGet(thread_local_unordered_collection, key2, &got_val2),
-                Status::Ok);
-      ASSERT_EQ(got_val2, val2);
+      ASSERT_EQ(engine->HSet(local_collection_names[tid], local_keys[tid][j], local_values[tid][j] + "_new"), Status::Ok);
+      ASSERT_EQ(engine->HGet(local_collection_names[tid], local_keys[tid][j], &value_got), Status::Ok);
+      ASSERT_EQ(local_values[tid][j]+ "_new", value_got);
 
       // delete
-      ASSERT_EQ(engine->HDelete(thread_local_unordered_collection, key1), Status::Ok);
-      --cnt_entries_in_collection[id];
-      ASSERT_EQ(engine->HGet(thread_local_unordered_collection, key1, &got_val1),
-                Status::NotFound);
+      ASSERT_EQ(engine->HDelete(local_collection_names[tid], local_keys[tid][j]), Status::Ok);
+      ASSERT_EQ(engine->HGet(local_collection_names[tid], local_keys[tid][j], &value_got), Status::NotFound);
     }
   };
 
-  auto IteratingThrough = [&](uint32_t id) {
-    std::string thread_local_unordered_collection("Uncoll" + std::to_string(id));
+  auto IteratingThrough = [&](uint32_t tid) {
     std::vector<int> n_entries(num_threads, 0);
 
-    auto t_iter = engine->NewUnorderedIterator(thread_local_unordered_collection);
+    auto t_iter = engine->NewUnorderedIterator(local_collection_names[tid]);
     ASSERT_TRUE(t_iter != nullptr);
     for (t_iter->SeekToFirst(); t_iter->Valid(); t_iter->Next())
     {
-      ++n_entries[id];
+      ++n_entries[tid];
     }
-    ASSERT_EQ(cnt_entries_in_collection[id], n_entries[id]);
+    ASSERT_EQ(count, n_entries[tid]);
   };
-
 
   LaunchNThreads(num_threads, HSetHGetHDelete);
   LaunchNThreads(num_threads, IteratingThrough);
@@ -917,42 +902,43 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
     key1 = std::to_string(id);
     key2 = std::to_string(id);
 
-    int cnt = 10;
+    int cnt = 100;
     while (cnt--) {
       key1.append("k1");
       key2.append("k2");
 
       // insert
       AssignData(val1, fast_random_64() % 1024);
-      AssignData(val2, fast_random_64() % 1024);
       ASSERT_EQ(engine->HSet(global_unordered_collection, key1, val1), Status::Ok);
-      ++cnt_entries_in_collection;
-      ASSERT_EQ(engine->HSet(global_unordered_collection, key2, val2), Status::Ok);
-      ++cnt_entries_in_collection;
       ASSERT_EQ(engine->HGet(global_unordered_collection, key1, &got_val1),
-                Status::Ok);
-      ASSERT_EQ(engine->HGet(global_unordered_collection, key2, &got_val2),
                 Status::Ok);
       ASSERT_EQ(val1, got_val1);
-      ASSERT_EQ(val2, got_val2);
+      ++cnt_entries_in_collection;
+
+      // AssignData(val2, fast_random_64() % 1024);
+      // ASSERT_EQ(engine->HSet(global_unordered_collection, key2, val2), Status::Ok);
+      // ASSERT_EQ(engine->HGet(global_unordered_collection, key2, &got_val2),
+      //           Status::Ok);
+      // ASSERT_EQ(val2, got_val2);
+      // ++cnt_entries_in_collection;
 
       // update
-      AssignData(val1, fast_random_64() % 1024);
-      ASSERT_EQ(engine->HSet(global_unordered_collection, key1, val1), Status::Ok);
-      ASSERT_EQ(engine->HGet(global_unordered_collection, key1, &got_val1),
-                Status::Ok);
-      ASSERT_EQ(got_val1, val1);
-      AssignData(val2, fast_random_64() % 1024);
-      ASSERT_EQ(engine->HSet(global_unordered_collection, key2, val2), Status::Ok);
-      ASSERT_EQ(engine->HGet(global_unordered_collection, key2, &got_val2),
-                Status::Ok);
-      ASSERT_EQ(got_val2, val2);
+      // AssignData(val1, fast_random_64() % 1024);
+      // ASSERT_EQ(engine->HSet(global_unordered_collection, key1, val1), Status::Ok);
+      // ASSERT_EQ(engine->HGet(global_unordered_collection, key1, &got_val1),
+      //           Status::Ok);
+      // ASSERT_EQ(got_val1, val1);
+      // AssignData(val2, fast_random_64() % 1024);
+      // ASSERT_EQ(engine->HSet(global_unordered_collection, key2, val2), Status::Ok);
+      // ASSERT_EQ(engine->HGet(global_unordered_collection, key2, &got_val2),
+      //           Status::Ok);
+      // ASSERT_EQ(got_val2, val2);
 
-      // delete
-      ASSERT_EQ(engine->HDelete(global_unordered_collection, key1), Status::Ok);
-      --cnt_entries_in_collection;
-      ASSERT_EQ(engine->HGet(global_unordered_collection, key1, &got_val1),
-                Status::NotFound);
+      // // delete
+      // ASSERT_EQ(engine->HDelete(global_unordered_collection, key1), Status::Ok);
+      // --cnt_entries_in_collection;
+      // ASSERT_EQ(engine->HGet(global_unordered_collection, key1, &got_val1),
+      //           Status::NotFound);
     }
   };
 
@@ -974,9 +960,67 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   delete engine;
 }
 
+<<<<<<< HEAD
 
 
 =======
+=======
+TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
+  int num_threads = 16;
+  configs.max_write_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // insert and delete some keys, then re-insert some deleted keys
+  int count = 100;
+  std::vector<std::vector<std::string>> global_keys(num_threads);
+  std::vector<std::vector<std::string>> global_values(num_threads);
+  std::vector<std::vector<std::string>> local_keys(num_threads);
+  std::vector<std::vector<std::string>> local_values(num_threads);
+  std::string global_collection_name = "global_uncoll";
+  std::vector<std::string> local_collection_names(num_threads);
+  for (size_t i = 0; i < num_threads; i++)
+  {
+    local_collection_names[i] ="local_uncoll_t" +std::to_string(i);
+    for (size_t j = 0; j < count; j++)
+    {
+      global_keys[i].push_back(std::string{"global_key_t"}+std::to_string(i)+"_key_"+std::to_string(j));
+      global_values[i].push_back(GetRandomString(1024));
+
+      local_keys[i].push_back(std::string{"local_key_"}+std::to_string(j));
+      local_values[i].push_back(GetRandomString(1024));
+    }  
+  }
+  auto SetupEngine = [&](uint32_t tid) {
+    std::string value_got;
+    for (int j = 0; j < count; j++) {
+      ASSERT_EQ(engine->HSet(global_collection_name, global_keys[tid][j], global_values[tid][j]), Status::Ok);
+      ASSERT_EQ(engine->HGet(global_collection_name, global_keys[tid][j], &value_got), Status::Ok);
+      ASSERT_EQ(value_got, global_values[tid][j]);
+      ASSERT_EQ(engine->HSet(local_collection_names[tid], local_keys[tid][j], local_values[tid][j]), Status::Ok);
+      ASSERT_EQ(engine->HGet(local_collection_names[tid], local_keys[tid][j], &value_got), Status::Ok);
+      ASSERT_EQ(value_got, local_values[tid][j]);
+      if (j % 2 == 1) {
+        ASSERT_EQ(engine->HDelete(global_collection_name, global_keys[tid][j]), Status::Ok);
+        ASSERT_EQ(engine->HGet(global_collection_name, global_keys[tid][j], &value_got), Status::NotFound);
+
+        ASSERT_EQ(engine->HDelete(local_collection_names[tid], local_keys[tid][j]), Status::Ok);
+        ASSERT_EQ(engine->HGet(local_collection_names[tid], local_keys[tid][j], &value_got), Status::NotFound);
+      }
+    }
+  };
+
+  LaunchNThreads(num_threads, SetupEngine);
+
+  delete engine;
+
+  // reopen and restore engine and try gets
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  delete engine;
+}
+
+>>>>>>> 0f72851 (debug)
 TEST_F(EngineBasicTest, TestStringHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;

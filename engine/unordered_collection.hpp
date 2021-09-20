@@ -219,40 +219,28 @@ namespace KVDK_NAMESPACE
 
     };
 
-    template<typename Lock=SpinMutex>
     struct EmplaceReturn
     {
         // Offset of newly emplaced Record
         std::uint64_t offset;
-        // Transfer the ownership of lock
-        std::unique_lock<Lock> lock;
         bool success;
 
-        explicit EmplaceReturn(std::uint64_t offset_record, std::unique_lock<Lock> lock_record, bool emplace_result) :
+        explicit EmplaceReturn() :
+            offset{FailOffset},
+            success{false}
+        {           
+        }
+
+        explicit EmplaceReturn(std::uint64_t offset_record, bool emplace_result) :
             offset{offset_record},
-            lock{std::move(lock_record)},
             success{emplace_result}
         {
         }
 
-        EmplaceReturn(EmplaceReturn<Lock>&& other) :
-            offset{other.offset},
-            lock{std::move(other.lock)},
-            success{other.success}
-        {
-        }
-
-        EmplaceReturn& operator=(EmplaceReturn<Lock>&& other) 
-        {
-            return Swap(other);
-        }
-
-        EmplaceReturn& Swap(EmplaceReturn<Lock>&& other) 
+        EmplaceReturn& operator=(EmplaceReturn const& other)
         {
             offset = other.offset;
             success = other.success;
-            lock.swap(other.lock);
-            return *this;
         }
 
         static constexpr std::uint64_t FailOffset = kNullPmemOffset;
@@ -332,67 +320,67 @@ namespace KVDK_NAMESPACE
         /// Emplace before pmp
         /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
         /// lock must been acquired before passed in
-        EmplaceReturn<SpinMutex> EmplaceBefore
+        EmplaceReturn EmplaceBefore
         (
             DLDataEntry* pmp,
             std::uint64_t timestamp,  
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            std::unique_lock<SpinMutex> lock
+            std::unique_lock<SpinMutex> const& lock
         );
 
         /// Emplace after pmp
         /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
         /// lock must been acquired before passed in
-        EmplaceReturn<SpinMutex> EmplaceAfter
+        EmplaceReturn EmplaceAfter
         (
             DLDataEntry* pmp,
             std::uint64_t timestamp,   
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            std::unique_lock<SpinMutex> lock
+            std::unique_lock<SpinMutex> const& lock
         );
 
         /// Emplace after Head()
         /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
         /// lock must been acquired before passed in
-        EmplaceReturn<SpinMutex> EmplaceFront
+        EmplaceReturn EmplaceFront
         (
             std::uint64_t timestamp, 
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            std::unique_lock<SpinMutex> lock
+            std::unique_lock<SpinMutex> const& lock
         );
 
         /// Emplace before Tail()
         /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
         /// lock must been acquired before passed in
-        EmplaceReturn<SpinMutex> EmplaceBack
+        EmplaceReturn EmplaceBack
         (
             std::uint64_t timestamp, 
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            std::unique_lock<SpinMutex> lock
+            std::unique_lock<SpinMutex> const& lock
         );
 
         /// key is also checked to match old key
-        EmplaceReturn<SpinMutex> SwapEmplace
+        EmplaceReturn SwapEmplace
         (
             DLDataEntry* pmp,
             std::uint64_t timestamp, 
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            std::unique_lock<SpinMutex> lock
+            std::unique_lock<SpinMutex> const& lock
         );
 
         inline std::uint64_t ID() const { return _id_; }
 
-        inline std::string Name() const { return _name_; }
+        inline std::string const& Name() const { return _name_; }
 
         inline std::uint64_t Timestamp() const { return _time_stamp_; };
 
@@ -408,8 +396,23 @@ namespace KVDK_NAMESPACE
             return DLinkedList::_CheckSum_(*record, internal_key, value);
         }
 
+        friend std::ostream& operator<<(std::ostream& out, UnorderedCollection const& col)
+        {
+            auto iter = col._pmp_dlist_record_;
+            auto internal_key = iter->Key();
+            out << "Name: "<<col.Name()<<"\t"
+                << "ID: " << hex_print(col.ID())<<"\n";
+            out << "Type: " << hex_print(iter->type)    <<"\t"
+                << "Prev: " << hex_print(iter->prev)    <<"\t"
+                << "Next: " << hex_print(iter->next)    <<"\t"
+                << "Key: "  << iter->Key()<<"\t"
+                << "Value: "<< iter->Value()<<"\n";
+            out << col._dlinked_list_;
+            return out;
+        }
+
     private:    
-        EmplaceReturn<SpinMutex> _EmplaceBetween_
+        EmplaceReturn _EmplaceBetween_
         (
             DLDataEntry* pmp_prev,
             DLDataEntry* pmp_next,
@@ -417,7 +420,7 @@ namespace KVDK_NAMESPACE
             pmem::obj::string_view const key,
             pmem::obj::string_view const value,
             DataEntryType type,
-            std::unique_lock<SpinMutex> lock    // lock to prev or next or newly inserted, passed in and out.
+            std::unique_lock<SpinMutex> const& lock // lock to prev or next or newly inserted, passed in and out.
         );
 
         // Check the type of Record to be emplaced.
@@ -441,14 +444,16 @@ namespace KVDK_NAMESPACE
 
         inline static std::string _MakeInternalKey_(std::uint64_t id, pmem::obj::string_view key)
         {
-            return std::string{_ID2View_(id)} + std::string{ key };
+            std::string internal_key{_ID2View_(id)};
+            internal_key += key;
+            return internal_key;
         }
 
         inline static pmem::obj::string_view _ExtractKey_(pmem::obj::string_view internal_key)
         {
             constexpr size_t sz_id = sizeof(decltype(_id_));
             assert(sz_id < internal_key.size() && "internal_key does not has space for key");
-            return pmem::obj::string_view(internal_key.data() + sz_id, internal_key.size() + sz_id);
+            return pmem::obj::string_view(internal_key.data() + sz_id, internal_key.size() - sz_id);
         }
 
         inline static std::uint64_t _ExtractID_(pmem::obj::string_view internal_key)

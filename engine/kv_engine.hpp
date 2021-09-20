@@ -14,6 +14,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <iostream>
 
 #include "data_entry.hpp"
 #include "dram_allocator.hpp"
@@ -123,7 +124,9 @@ private:
   }
 
   std::shared_ptr<UnorderedCollection> CreateUnorderedCollection(pmem::obj::string_view const collection_name);
+  public:
   std::shared_ptr<UnorderedCollection> FindUnorderedCollection(pmem::obj::string_view const collection_name);
+  private:
   
   Status MaybeInitPendingBatchFile();
 
