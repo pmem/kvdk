@@ -73,6 +73,7 @@ public:
                  max_block_offset_ / num_segment_blocks_ *
                      num_segment_blocks_ &&
              "Trying to create invalid offset");
+<<<<<<< HEAD
       return ((char *)addr - pmem_) / block_size_;
     } else {
       assert(false && "Trying to access nullptr");
@@ -85,6 +86,8 @@ public:
 
   inline uint64_t addr2offset_nocheck(void *addr) {
     if (addr) {
+=======
+>>>>>>> main
       return ((char *)addr - pmem_) / block_size_;
     } else {
 <<<<<<< HEAD

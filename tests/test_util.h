@@ -13,6 +13,11 @@ static inline std::string uint64_to_string(uint64_t &key) {
   return std::string(reinterpret_cast<const char *>(&key), 8);
 }
 
+/* Create a string that contains 8 bytes from uint64_t. */
+static inline std::string uint64_to_string(uint64_t &key) {
+  return std::string(reinterpret_cast<const char *>(&key), 8);
+}
+
 inline void random_str(char *str, unsigned int size) {
   for (unsigned int i = 0; i < size; i++) {
     switch (rand() % 3) {

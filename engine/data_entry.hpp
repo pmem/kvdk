@@ -24,6 +24,7 @@ enum DataEntryType : uint16_t {
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
   DLIST_DATA_RECORD = 1 << 8,
   DLIST_DELETE_RECORD = (1 << 8) * 2,
   DLIST_HEAD_RECORD = (1 << 8) * 3,
@@ -32,11 +33,14 @@ enum DataEntryType : uint16_t {
 =======
 =======
 >>>>>>> 3660c05 (Refactor data restoring (#64))
+=======
+>>>>>>> main
   DlistDataRecord = 1 << 8,
   DlistDeleteRecord = 1 << 9,
   DlistHeadRecord = 1 << 10,
   DlistTailRecord = 1 << 11,
   DlistRecord = 1 << 12,
+<<<<<<< HEAD
 <<<<<<< HEAD
 >>>>>>> 6b93780 (refactor RestoreData and rename DATA_ENTRY_TYPE)
 =======
@@ -101,6 +105,14 @@ inline bool isDlistDataDeleteRecord(DataEntryType type)
   ret = ret || (type == DataEntryType::DlistDataRecord);
   return ret;
 }
+
+const uint16_t SortedDataEntryType =
+    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);
+=======
+
+  Padding = 1 << 15,
+};
+>>>>>>> main
 
 const uint16_t SortedDataEntryType =
     (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);

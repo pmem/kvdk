@@ -64,7 +64,10 @@ protected:
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> main
 TEST_F(EngineBasicTest, TestThreadManager) {
   int max_write_threads = 1;
   configs.max_write_threads = max_write_threads;
@@ -87,6 +90,7 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   ASSERT_EQ(s.get(), Status::Ok);
   delete engine;
 }
+<<<<<<< HEAD
 
 <<<<<<< HEAD
 >>>>>>> 8e18c45 (Call to release write thread (#47))
@@ -265,6 +269,55 @@ TEST_F(EngineBasicTest, TestBasicHashHotspot) {
   };
 
   LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
+=======
+
+TEST_F(EngineBasicTest, TestBasicStringOperations) {
+  int num_threads = 16;
+  configs.max_write_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  // Test empty key
+  std::string key{""}, val{"val"}, got_val;
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+  ASSERT_EQ(val, got_val);
+  ASSERT_EQ(engine->Delete(key), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+  engine->ReleaseWriteThread();
+
+  auto SetGetDelete = [&](uint32_t id) {
+    std::string val1, val2, got_val1, got_val2;
+    int cnt = 100;
+    while (cnt--) {
+      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
+      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
+      AssignData(val1, fast_random_64() % 1024);
+      AssignData(val2, fast_random_64() % 1024);
+
+      ASSERT_EQ(engine->Set(key1, val1), Status::Ok);
+      ASSERT_EQ(engine->Set(key2, val2), Status::Ok);
+
+      // Get
+      ASSERT_EQ(engine->Get(key1, &got_val1), Status::Ok);
+      ASSERT_EQ(val1, got_val1);
+      ASSERT_EQ(engine->Get(key2, &got_val2), Status::Ok);
+      ASSERT_EQ(val2, got_val2);
+
+      // Delete
+      ASSERT_EQ(engine->Delete(key1), Status::Ok);
+      ASSERT_EQ(engine->Get(key1, &got_val1), Status::NotFound);
+
+      // Update
+      AssignData(val1, fast_random_64() % 1024);
+      ASSERT_EQ(engine->Set(key1, val1), Status::Ok);
+      ASSERT_EQ(engine->Get(key1, &got_val1), Status::Ok);
+      ASSERT_EQ(got_val1, val1);
+    }
+  };
+
+  LaunchNThreads(num_threads, SetGetDelete);
+>>>>>>> main
   delete engine;
 }
 
@@ -556,6 +609,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     n_entries[id] = 0;
   };
 <<<<<<< HEAD
+<<<<<<< HEAD
   auto ops2 = [&](int id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
 <<<<<<< HEAD
@@ -584,6 +638,9 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
 =======
 >>>>>>> 8debb0d (Reorganize sorted collection tests (#46))
 
+=======
+
+>>>>>>> main
   auto SeekToDeleted = [&](uint32_t id) {
     auto t_iter2 = engine->NewSortedIterator(global_skiplist);
     ASSERT_TRUE(t_iter2 != nullptr);
@@ -596,6 +653,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
   };
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   {
     std::vector<std::thread> ts;
@@ -629,6 +687,11 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   LaunchNThreads(num_threads, IteratingThrough);
   LaunchNThreads(num_threads, SeekToDeleted);
 >>>>>>> 7d36117 (reorganize test.cpp (#48))
+=======
+  LaunchNThreads(num_threads, SSetSGetSDelete);
+  LaunchNThreads(num_threads, IteratingThrough);
+  LaunchNThreads(num_threads, SeekToDeleted);
+>>>>>>> main
 
   delete engine;
 }
@@ -821,6 +884,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   delete engine;
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
   int num_threads = 16;
@@ -1063,6 +1127,60 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   delete engine;
 }
 
+=======
+TEST_F(EngineBasicTest, TestStringHotspot) {
+  int n_thread_reading = 16;
+  int n_thread_writing = 16;
+  configs.max_write_threads = n_thread_writing;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  int count = 100000;
+  std::string key{"SuperHotspot"};
+  std::string val1(1024, 'a');
+  std::string val2(1023, 'b');
+
+  ASSERT_EQ(engine->Set(key, val1), Status::Ok);
+  engine->ReleaseWriteThread();
+
+  auto EvenWriteOddRead = [&](uint32_t id) {
+    for (size_t i = 0; i < count; i++) {
+      if (id % 2 == 0) {
+        // Even Write
+        if (id % 4 == 0) {
+          ASSERT_EQ(engine->Set(key, val1), Status::Ok);
+        } else {
+          ASSERT_EQ(engine->Set(key, val2), Status::Ok);
+        }
+      } else {
+        // Odd Read
+        std::string got_val;
+        ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+        bool match = false;
+        match = match || (got_val == val1);
+        match = match || (got_val == val2);
+        if (!match) {
+          std::string msg;
+          msg.append("Wrong value!\n");
+          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
+          msg.append("Actual result is:\n");
+          msg.append(got_val);
+          msg.append("\n");
+          msg.append("Length: ");
+          msg.append(std::to_string(got_val.size()));
+          msg.append("\n");
+          GlobalLogger.Error(msg.data());
+        }
+        ASSERT_TRUE(match);
+      }
+    }
+  };
+
+  LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
+  delete engine;
+}
+
+>>>>>>> main
 TEST_F(EngineBasicTest, TestSortedHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;

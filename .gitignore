@@ -43,6 +43,7 @@ build/
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
 scripts/result*
@@ -70,3 +71,7 @@ scripts/result*
 =======
 debug/
 >>>>>>> 74ef604 (gitignore)
+=======
+
+scripts/result*
+>>>>>>> main

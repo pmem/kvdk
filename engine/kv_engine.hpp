@@ -58,6 +58,7 @@ public:
                  const pmem::obj::string_view user_key) override;
   std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) override;
+  void ReleaseWriteThread() override { write_thread.Release(); }
 
   // Unordered Collection
   virtual Status HGet(pmem::obj::string_view const collection_name,
