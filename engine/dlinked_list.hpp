@@ -279,26 +279,27 @@ namespace KVDK_NAMESPACE
         {
             if (pmp_head->type != DataEntryType::DlistHeadRecord)
             {
+                assert(false && "Cannot rebuild a DlinkedList from given PMem pointer not pointing to a DlistHeadRecord!");
                 throw std::runtime_error{ "Cannot rebuild a DlinkedList from given PMem pointer not pointing to a DlistHeadRecord!" };
             }
-            DlistIterator curr{ _sp_pmem_allocator_,  pmp_head };
-            DlistIterator next{ curr }; ++next;
+            DlistIterator curr{ _sp_pmem_allocator_,  pmp_head }; 
+            ++curr;
+
             while (true)
             {
                 switch (static_cast<DataEntryType>(curr->type))
                 {
-                case DataEntryType::DlistHeadRecord:
                 case DataEntryType::DlistDataRecord:
                 case DataEntryType::DlistDeleteRecord:
                 {
+                    DlistIterator next{curr}; ++next;
                     std::uint64_t offset_curr = curr._GetOffset_();
                     if (next->prev != offset_curr)
                     {
                         throw std::runtime_error{"Found broken linkage when rebuilding DLinkedList!"};
                         // pmem_memcpy(&next->prev, &offset_curr, sizeof(decltype(offset_curr)), PMEM_F_MEM_NONTEMPORAL);
-                        curr = next;
-                        ++next;
                     }
+                    ++curr;
                     continue;
                 }
                 case DataEntryType::DlistTailRecord:
@@ -312,6 +313,7 @@ namespace KVDK_NAMESPACE
                         throw std::runtime_error{"Unmatched head and tail when rebuilding a DlinkedList!"};
                     }
                 }
+                case DataEntryType::DlistHeadRecord:
                 case DataEntryType::DlistRecord:
                 default:
                 {

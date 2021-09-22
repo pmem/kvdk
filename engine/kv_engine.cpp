@@ -1433,10 +1433,10 @@ KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name)
 
 Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cached)
 {
-  static std::atomic_uint64_t n_recovered = 0;
-  GlobalLogger.Info("Recovered UnorderedCollection Records: %llu\n", n_recovered.load());
-  GlobalLogger.Info("Recovering: %d\n", data_entry_cached.type);
-  ++n_recovered;
+  // static std::atomic_uint64_t n_recovered = 0;
+  // GlobalLogger.Info("Recovered UnorderedCollection Records: %llu\n", n_recovered.load());
+  // GlobalLogger.Info("Recovering: %d\n", data_entry_cached.type);
+  // ++n_recovered;
 
   switch (data_entry_cached.type)
   {
