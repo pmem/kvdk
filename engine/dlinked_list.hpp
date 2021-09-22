@@ -287,6 +287,7 @@ namespace KVDK_NAMESPACE
             {
                 switch (static_cast<DataEntryType>(curr->type))
                 {
+                case DataEntryType::DlistHeadRecord:
                 case DataEntryType::DlistDataRecord:
                 case DataEntryType::DlistDeleteRecord:
                 {
@@ -311,10 +312,10 @@ namespace KVDK_NAMESPACE
                         throw std::runtime_error{"Unmatched head and tail when rebuilding a DlinkedList!"};
                     }
                 }
-                case DataEntryType::DlistHeadRecord:
                 case DataEntryType::DlistRecord:
                 default:
                 {
+                    assert(false);
                     throw std::runtime_error{"Invalid Record met when rebuilding a DlinkedList!"};
                 }
                 }
