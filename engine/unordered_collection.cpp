@@ -66,8 +66,8 @@ namespace KVDK_NAMESPACE
         _dlinked_list_
         { 
             sp_pmem_allocator,
-            _GetPmpPrev_(pmp_dlist_record),
-            _GetPmpNext_(pmp_dlist_record)
+            reinterpret_cast<DLDataEntry*>(sp_pmem_allocator->offset2addr(pmp_dlist_record->prev)),
+            reinterpret_cast<DLDataEntry*>(sp_pmem_allocator->offset2addr(pmp_dlist_record->next)),
         },
         _name_{ pmp_dlist_record->Key() },
         _id_{ _View2ID_(pmp_dlist_record->Value()) },

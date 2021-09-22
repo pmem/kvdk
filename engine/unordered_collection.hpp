@@ -486,16 +486,6 @@ namespace KVDK_NAMESPACE
         /// [deprecated]
         // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new);
 
-        inline DLDataEntry* _GetPmpPrev_(DLDataEntry* pmp)
-        {
-            return reinterpret_cast<DLDataEntry*>(_dlinked_list_._sp_pmem_allocator_->offset2addr(pmp->prev));
-        }
-    
-        inline DLDataEntry* _GetPmpNext_(DLDataEntry* pmp)
-        {
-            return reinterpret_cast<DLDataEntry*>(_dlinked_list_._sp_pmem_allocator_->offset2addr(pmp->next));
-        }
-
         inline SpinMutex* _GetMutex_(pmem::obj::string_view internal_key)
         {
             return _sp_hash_table_->GetHint(internal_key).spin;

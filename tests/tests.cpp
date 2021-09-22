@@ -765,7 +765,8 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   // Remaining kvs in kv engine are also stored in global/tlocal_kvs_remaining
   std::vector<std::vector<std::pair<std::string, std::string>>> global_kvs_inserting(num_threads);
   std::vector<std::vector<std::pair<std::string, std::string>>> tlocal_kvs_inserting(num_threads);
-  std::map<std::string, std::string> global_kvs_remaining;
+  std::mutex lock_global_kvs_remaining;
+  std::vector<std::map<std::string, std::string>> global_kvs_remaining(num_threads);
   std::vector<std::map<std::string, std::string>> tlocal_kvs_remaining(num_threads);
 
   std::string global_collection_name = "global_uncoll";
@@ -798,7 +799,11 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
       ASSERT_EQ(engine->HSet(global_collection_name, global_kvs_inserting[tid][j].first, global_kvs_inserting[tid][j].second), Status::Ok);
       ASSERT_EQ(engine->HGet(global_collection_name, global_kvs_inserting[tid][j].first, &value_got), Status::Ok);
       ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
-      global_kvs_remaining.emplace(global_kvs_inserting[tid][j].first, global_kvs_inserting[tid][j].second);
+      for (auto& kvs_ramaining : global_kvs_remaining)
+      {
+        std::lock_guard<std::mutex> lg{lock_global_kvs_remaining};
+        kvs_ramaining.emplace(global_kvs_inserting[tid][j].first, global_kvs_inserting[tid][j].second);
+      }
       
       // Insert second kv-pair in global collection
       ASSERT_EQ(engine->HSet(global_collection_name, global_kvs_inserting[tid][j+count].first, global_kvs_inserting[tid][j+count].second), Status::Ok);
@@ -849,18 +854,39 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
       ++n_entry;
       auto key = iter_global_collection->Key();
       auto value = iter_global_collection->Value();
-      auto iter_found = global_kvs_remaining.find(key);
-      // ASSERT_NE(iter_found, global_kvs_remaining.end());
+      auto iter_found = global_kvs_remaining[tid].find(key);
+      ASSERT_NE(iter_found, global_kvs_remaining[tid].end());
       ASSERT_EQ(value, iter_found->second);
-      global_kvs_remaining.erase(iter_found);
+      global_kvs_remaining[tid].erase(key);
     }
-    ASSERT_TRUE(global_kvs_remaining.empty());
     ASSERT_EQ(n_entry, num_threads*count);
+    ASSERT_TRUE(global_kvs_remaining[tid].empty());
+  };
+
+  auto IteratingThroughThreadLocal = [&](uint32_t tid) 
+  {
+    int n_entry = 0;
+
+    auto iter_tlocal_collection = engine->NewUnorderedIterator(tlocal_collection_names[tid]);
+    ASSERT_TRUE(iter_tlocal_collection != nullptr);
+    for (iter_tlocal_collection->SeekToFirst(); iter_tlocal_collection->Valid(); iter_tlocal_collection->Next())
+    {
+      ++n_entry;
+      auto key = iter_tlocal_collection->Key();
+      auto value = iter_tlocal_collection->Value();
+      auto iter_found = tlocal_kvs_remaining[tid].find(key);
+      ASSERT_NE(iter_found, tlocal_kvs_remaining[tid].end());
+      ASSERT_EQ(value, iter_found->second);
+      tlocal_kvs_remaining[tid].erase(key);
+    }
+    ASSERT_EQ(n_entry, count);
+    ASSERT_TRUE(tlocal_kvs_remaining[tid].empty());
   };
 
   LaunchNThreads(num_threads, HSetHGetHDeleteGlobal);
   LaunchNThreads(num_threads, HSetHGetHDeleteThreadLocal);
-  LaunchNThreads(1, IteratingThroughGlobal);
+  LaunchNThreads(num_threads, IteratingThroughGlobal);
+  LaunchNThreads(num_threads, IteratingThroughThreadLocal);
 
   delete engine;
 
@@ -868,7 +894,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
-  delete engine;
+  // delete engine;
 }
 
 TEST_F(EngineBasicTest, TestStringHotspot) {

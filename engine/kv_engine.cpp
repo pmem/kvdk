@@ -166,7 +166,13 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     case DataEntryType::SortedDeleteRecord:
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
-    case DataEntryType::StringDeleteRecord: {
+    case DataEntryType::StringDeleteRecord: 
+    case DataEntryType::DlistRecord:
+    case DataEntryType::DlistHeadRecord:
+    case DataEntryType::DlistTailRecord:
+    case DataEntryType::DlistDataRecord:
+    case DataEntryType::DlistDeleteRecord:
+    {
       uint32_t checksum = CalculateChecksum(
           static_cast<DataEntry *>(recovering_pmem_data_entry));
       if (cached_recovering_data_entry.header.checksum != checksum) {
