@@ -3,7 +3,7 @@ import datetime
 
 n_thread = 64
 
-path = "/mnt/pmem0/kvdk"
+path = "/mnt/pmem0/kvdk_string"
 report_path = "./results-string-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
@@ -12,7 +12,6 @@ benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
 populate = 1
-collections = 16
 
 numanode = 0
 bin = "../build/bench"
@@ -29,15 +28,14 @@ if __name__ == "__main__":
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
         num = data_size // (vs + 8)
-        para = "-type=string -populate={} -value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={} -collections={}".format(
+        para = "-type=string -populate={} -value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={}".format(
             populate,
             vs,
             benchmark_threads,
             duration,
             path, num,
             instance_space,
-            kvdk_max_write_threads,
-            collections)
+            kvdk_max_write_threads)
         print("{0} {1} > {2}".format(exec, para, report_path))
 
         os.system("rm -rf {0}".format(path))
@@ -90,4 +88,6 @@ if __name__ == "__main__":
         report = report_path + "string_vs{}_ru91_thread{}".format(vs, benchmark_threads)
         print("Mixed read/update string-type kv")
         os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+        os.system("rm -rf {0}".format(path))
 

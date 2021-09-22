@@ -3,7 +3,7 @@ import datetime
 
 n_thread = 64
 
-path = "/mnt/pmem0/kvdk"
+path = "/mnt/pmem0/kvdk_hashes"
 report_path = "./results-hashes-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
@@ -91,3 +91,5 @@ if __name__ == "__main__":
         report = report_path + "sorted_vs{}_ru91_thread{}".format(vs, benchmark_threads)
         print("Mixed read/update sorted-type kv")
         os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+        os.system("rm -rf {0}".format(path))
