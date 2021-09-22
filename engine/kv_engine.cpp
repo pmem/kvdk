@@ -1433,6 +1433,11 @@ KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name)
 
 Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cached)
 {
+  static std::atomic_uint64_t n_recovered = 0;
+  GlobalLogger.Info("Recovered UnorderedCollection Records: %llu\n", n_recovered.load());
+  GlobalLogger.Info("Recovering: %d\n", data_entry_cached.type);
+  ++n_recovered;
+
   switch (data_entry_cached.type)
   {
     case DataEntryType::DlistRecord:
@@ -1454,7 +1459,7 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
         throw std::runtime_error{"Fail to found a UnorderedCollection but error when creating a new one!"};
       } 
       hash_table_->Insert(hint, entry_base, DataEntryType::DlistRecord, 
-                          reinterpret_cast<uint64_t>(p_uncoll), HashOffsetType::UnorderedCollection);
+                          reinterpret_cast<uint64_t>(p_uncoll), HashOffsetType::UnorderedCollection); 
       return Status::Ok;
     }
     case DataEntryType::DlistHeadRecord:

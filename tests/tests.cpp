@@ -890,7 +890,8 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
 
   delete engine;
 
-  // reopen and restore engine and try gets
+  // reopen and restore engine 
+  configs.max_write_threads
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
