@@ -1488,8 +1488,6 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
           {
             hash_table_->Insert(hint, entry_base, data_entry_cached.type, offset_record, 
                                 HashOffsetType::UnorderedCollectionElement);
-            if (n_try > 100)
-              GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
             return Status::Ok;
           }
           case Status::Ok:
@@ -1499,8 +1497,6 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
             {
               hash_table_->Insert(hint, entry_base, data_entry_cached.type, offset_record, HashOffsetType::UnorderedCollectionElement);
             }
-            if (n_try > 1)
-              GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
             return Status::Ok;
           }
           default:

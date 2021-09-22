@@ -293,7 +293,8 @@ namespace KVDK_NAMESPACE
                     std::uint64_t offset_curr = curr._GetOffset_();
                     if (next->prev != offset_curr)
                     {
-                        pmem_memcpy(&next->prev, &offset_curr, sizeof(decltype(offset_curr)), PMEM_F_MEM_NONTEMPORAL);
+                        throw std::runtime_error{"Found broken linkage when rebuilding DLinkedList!"};
+                        // pmem_memcpy(&next->prev, &offset_curr, sizeof(decltype(offset_curr)), PMEM_F_MEM_NONTEMPORAL);
                         curr = next;
                         ++next;
                     }
