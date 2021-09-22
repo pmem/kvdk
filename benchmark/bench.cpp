@@ -39,11 +39,11 @@ DEFINE_double(
 DEFINE_bool(latency, false, "Stat operation latencies");
 
 DEFINE_string(type, "string",
-              "Storage engine to benchmark, can be string or sorted");
+              "Storage engine to benchmark, can be string, sorted or hashes");
 
 DEFINE_bool(scan, false,
             "If set true, read threads will do scan operations, this is valid "
-            "only if we benchmark sorted engine");
+            "only if we benchmark sorted or hashes engine");
 
 DEFINE_uint64(collections, 1,
               "Number of collections in the instance to benchmark");
@@ -101,7 +101,10 @@ int batch_num;
 bool fill;
 bool stat_latencies;
 double existing_keys_ratio;
-bool sorted;
+// Only one of following three can be true
+bool bench_string;
+bool bench_sorted;
+bool bench_hashes;
 uint64_t num_collections;
 std::shared_ptr<Generator> key_generator;
 
@@ -152,7 +155,7 @@ void DBWrite(int id) {
     std::vector<std::string> sv;
     if (stat_latencies)
       timer.Start();
-    if (!sorted) {
+    if (bench_string) {
       if (batch_num == 0) {
         s = engine->Set(k, v);
       } else {
@@ -162,8 +165,10 @@ void DBWrite(int id) {
           batch.Clear();
         }
       }
-    } else {
+    } else if (bench_sorted){
       s = engine->SSet(collections[num % num_collections], k, v);
+    } else if (bench_hashes){
+      s = engine->HSet(collections[num % num_collections], k, v);
     }
 
     if (stat_latencies) {
@@ -197,25 +202,44 @@ void DBScan(int id) {
     if (done) {
       return;
     }
-
     num = generate_key();
     memcpy(&k[0], &num, 8);
-    auto iter = engine->NewSortedIterator(collections[num % num_collections]);
-    if (iter) {
-      iter->Seek(k);
-      int cnt = scan_length;
-      while (cnt > 0 && iter->Valid()) {
-        cnt--;
-        ++ops;
-        k = iter->Key();
-        v = iter->Value();
-        iter->Next();
+    if (bench_sorted)
+    {
+      auto iter = engine->NewSortedIterator(collections[num % num_collections]);
+      if (iter) {
+        iter->Seek(k);
+        int cnt = scan_length;
+        while (cnt > 0 && iter->Valid()) {
+          cnt--;
+          ++ops;
+          k = iter->Key();
+          v = iter->Value();
+          iter->Next();
+        }
+      } else {
+        fprintf(stderr, "Seek error\n");
+        exit(-1);
       }
-    } else {
-      fprintf(stderr, "Seek error\n");
-      exit(-1);
     }
-
+    else if (bench_hashes)
+    {
+      auto iter = engine->NewUnorderedIterator(collections[num % num_collections]);
+      if (iter)
+      {
+        iter->SeekToFirst();
+        for (size_t i = 0; i < scan_length && iter->Valid(); i++)
+        {
+          ++ops;
+          k = iter->Key();
+          v = iter->Value();
+          iter->Next();
+        }
+      } else {
+        fprintf(stderr, "Error creating UnorderedIterator\n");
+        exit(-1);
+      }     
+    }
     if (ops % 100 == 0) {
       read_ops += 100;
     }
@@ -231,7 +255,6 @@ void DBRead(int id) {
   uint64_t not_found = 0;
   Timer timer;
   uint64_t lat = 0;
-  bool sorted = FLAGS_type == "sorted";
 
   while (true) {
     if (done) {
@@ -242,10 +265,12 @@ void DBRead(int id) {
     if (stat_latencies)
       timer.Start();
     Status s;
-    if (sorted) {
+    if (bench_sorted) {
       s = engine->SGet(collections[num % num_collections], k, &value);
-    } else {
+    } else if (bench_string) {
       s = engine->Get(k, &value);
+    } else if (bench_hashes) {
+      s = engine->HGet(collections[num % num_collections], k, &value);
     }
     if (stat_latencies) {
       lat = timer.End();
@@ -275,7 +300,9 @@ void DBRead(int id) {
 
 bool ProcessBenchmarkConfigs() {
   if (FLAGS_type == "sorted") {
-    sorted = true;
+    bench_sorted = true;
+    bench_string = false;
+    bench_hashes = false;
     if (FLAGS_batch > 0) {
       printf("Batch is not supported for \"sorted\" type data\n");
       return false;
@@ -285,15 +312,26 @@ bool ProcessBenchmarkConfigs() {
       collections[i] = "skiplist" + std::to_string(i);
     }
   } else if (FLAGS_type == "string") {
-    sorted = false;
+    bench_string = true;
+    bench_sorted = false;
+    bench_hashes = false;
     batch_num = FLAGS_batch;
     if (FLAGS_scan) {
       printf("scan is not supported for \"string\" type data\n");
       return false;
     }
-  } else {
-    printf("Only support \"string\" or \"sorted\" type data");
-    return false;
+  } else if (FLAGS_type == "hashes") {
+    bench_hashes = true;
+    bench_string = false;
+    bench_sorted = false;
+    if (FLAGS_batch > 0) {
+      printf("Batch is not supported for \"hashes\" type data\n");
+      return false;
+    }
+    collections.resize(FLAGS_collections);
+    for (uint64_t i = 0; i < FLAGS_collections; i++) {
+      collections[i] = "Hashes_" + std::to_string(i);
+    }
   }
 
   fill = FLAGS_fill;
