@@ -27,10 +27,18 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
     uint64_t round = 0;
     while (1) {
       next = prev->Next(i);
-      // prev is logically deleted, redo seek. Make sure "this" won't be deleted
+      // prev is logically deleted, roll back to prev height.
       if (next.GetTag()) {
-        assert(prev != this);
-        prev = this;
+        if (i < start_height) {
+          i++;
+          prev = result_splice->prevs[i];
+        } else if (prev == this) {
+          // this node has been deleted, so seek from header
+          prev = result_splice->header;
+          i = kMaxHeight;
+        } else {
+          prev = this;
+        }
         continue;
       }
 
@@ -43,6 +51,8 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
       // Phisically remove deleted nodes from skiplist
       auto next_next = next->Next(i);
       if (next_next.GetTag()) {
+        // if prev is marked deleted before cas, cas will be faied, and prev
+        // will be roll back in next round
         prev->CASNext(i, next, next_next.RawPointer());
         continue;
       }
@@ -60,7 +70,7 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
 }
 
 Status Skiplist::Rebuild() {
-  Splice splice;
+  Splice splice(header());
   HashEntry hash_entry;
   DLDataEntry data_entry;
   for (int i = 1; i <= kMaxHeight; i++) {
@@ -276,7 +286,7 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
 
 void SortedIterator::Seek(const std::string &key) {
   assert(skiplist_);
-  Splice splice;
+  Splice splice(skiplist_->header());
   skiplist_->SeekKey(key, &splice);
   current = splice.next_data_entry;
 }

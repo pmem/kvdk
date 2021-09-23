@@ -232,38 +232,33 @@ private:
 };
 
 struct Splice {
+  // header node of seeking list
   SkiplistNode *header;
-  SkiplistNode *nexts[kMaxHeight + 1];
-  SkiplistNode *prevs[kMaxHeight + 1];
-  DLDataEntry *prev_data_entry;
-  DLDataEntry *next_data_entry;
+  std::array<SkiplistNode *, kMaxHeight + 1> nexts;
+  std::array<SkiplistNode *, kMaxHeight + 1> prevs;
+  DLDataEntry *prev_data_entry{nullptr};
+  DLDataEntry *next_data_entry{nullptr};
+
+  Splice(SkiplistNode *h) : header(h) {}
 
   void Recompute(const pmem::obj::string_view &key, int l) {
     SkiplistNode *start_node;
     uint16_t start_height = l;
     while (1) {
-      if (prevs[start_height] == nullptr) {
+      if (start_height > kMaxHeight || prevs[start_height] == nullptr) {
         assert(header != nullptr);
+        start_height = kMaxHeight;
         start_node = header;
-        break;
-      }
-
-      // If prev on this height has been deleted, roll back to higher height
-      if (prevs[start_height]->Next(start_height).GetTag()) {
+      } else if (prevs[start_height]->Next(start_height).GetTag()) {
+        // If prev on this height has been deleted, roll back to higher height
         start_height++;
-        if (start_height > kMaxHeight) {
-          assert(header != nullptr);
-          start_node = header;
-          start_height = kMaxHeight;
-          break;
-        }
+        continue;
       } else {
         start_node = prevs[start_height];
-        break;
       }
+      start_node->SeekKey(key, start_height, l, this);
+      return;
     }
-
-    start_node->SeekKey(key, start_height, l, this);
   }
 };
 } // namespace KVDK_NAMESPACE
