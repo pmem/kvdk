@@ -776,7 +776,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
     }
 
     std::vector<SpinMutex *> spins;
-    thread_local Splice splice;
+    thread_local Splice splice(nullptr);
+    splice.header = skiplist->header();
     if (!skiplist->FindAndLockWritePos(&splice, user_key, hint, spins,
                                        &data_entry)) {
       continue;
@@ -848,7 +849,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     }
 
     std::vector<SpinMutex *> spins;
-    thread_local Splice splice;
+    thread_local Splice splice(nullptr);
+    splice.header = skiplist->header();
     if (!skiplist->FindAndLockWritePos(&splice, user_key, hint, spins,
                                        found ? &data_entry : nullptr)) {
       continue;
