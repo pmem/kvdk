@@ -4,7 +4,7 @@ import datetime
 n_thread = 64
 
 path = "/mnt/pmem0/kvdk_hashes"
-report_path = "./results-hashes-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+report_path = "./results-hashes-threads-{}-{}/".format(n_thread, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 value_sizes = [120]
 data_size = 100 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
@@ -12,7 +12,7 @@ benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
 populate = 1
-collections = 16
+collections = 64
 
 numanode = 0
 bin = "../build/bench"

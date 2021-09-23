@@ -132,7 +132,7 @@ char *random_str(unsigned int size) {
 
 uint64_t generate_key() { return key_generator->Next(); }
 
-void DBWrite(int id) {
+void DBWrite(int tid) {
   std::string k;
   std::string v;
   k.resize(8);
@@ -177,7 +177,7 @@ void DBWrite(int id) {
         fprintf(stderr, "Write latency overflow: %ld us\n", lat / 100);
         exit(-1);
       }
-      write_latencies[id][lat / 100]++;
+      write_latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {
@@ -191,7 +191,7 @@ void DBWrite(int id) {
   }
 }
 
-void DBScan(int id) {
+void DBScan(int tid) {
   uint64_t ops = 0;
   uint64_t num;
   std::string k;
@@ -246,7 +246,7 @@ void DBScan(int id) {
   }
 }
 
-void DBRead(int id) {
+void DBRead(int tid) {
   std::string value;
   std::string k;
   k.resize(8);
@@ -278,7 +278,7 @@ void DBRead(int id) {
         fprintf(stderr, "Read latency overflow: %ld us\n", lat / 100);
         exit(-1);
       }
-      read_latencies[id][lat / 100]++;
+      read_latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {

@@ -123,10 +123,9 @@ private:
                                       init, SortedHeaderRecord);
   }
 
+private:
   std::shared_ptr<UnorderedCollection> CreateUnorderedCollection(pmem::obj::string_view const collection_name);
-  public:
-  std::shared_ptr<UnorderedCollection> FindUnorderedCollection(pmem::obj::string_view const collection_name);
-  private:
+  UnorderedCollection* FindUnorderedCollection(pmem::obj::string_view collection_name);
   
   Status MaybeInitPendingBatchFile();
 

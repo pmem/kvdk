@@ -479,12 +479,12 @@ namespace KVDK_NAMESPACE
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent three nodes, not locked yet.
         /// Also accepts UnorderedIterator by implicit casting
         /// [deprecated]
-        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid = nullptr);
+        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DListIterator iter_mid, SpinMutex* spin_mid = nullptr);
 
         /// Make UniqueLockTriplet<SpinMutex> to lock adjacent two nodes between which the new node is to be emplaced
         /// Also locks the slot for new node
         /// [deprecated]
-        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new);
+        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DListIterator iter_prev, SpinMutex* spin_new);
 
         inline SpinMutex* _GetMutex_(pmem::obj::string_view internal_key)
         {
@@ -551,8 +551,8 @@ namespace KVDK_NAMESPACE
     private:
         /// shared pointer to pin the UnorderedCollection
         std::shared_ptr<UnorderedCollection> _sp_coll_;
-        /// DlistIterator does not ignore DlistDeleteRecord
-        DlistIterator _iterator_internal_;
+        /// DListIterator does not ignore DlistDeleteRecord
+        DListIterator _iterator_internal_;
         /// Whether the UnorderedIterator is at a DlistDataRecord
         bool _valid_;
 

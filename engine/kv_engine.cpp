@@ -1182,7 +1182,7 @@ std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(pmem::o
   return sp_uncoll;
 }
 
-std::shared_ptr<UnorderedCollection> KVEngine::FindUnorderedCollection(pmem::obj::string_view const collection_name)
+UnorderedCollection* KVEngine::FindUnorderedCollection(pmem::obj::string_view collection_name)
 {
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
@@ -1193,11 +1193,11 @@ std::shared_ptr<UnorderedCollection> KVEngine::FindUnorderedCollection(pmem::obj
   {
   case Status::NotFound:
   {
-    return std::shared_ptr<UnorderedCollection>{ nullptr };
+    return nullptr;
   }
   case Status::Ok:
   {
-    return std::shared_ptr<UnorderedCollection>{ hash_entry.p_uncoll->shared_from_this() };
+    return hash_entry.p_uncoll;
   }
   default:
   {
@@ -1210,13 +1210,13 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key,
                       std::string* value)
 {
-  std::shared_ptr<UnorderedCollection> sp_uncoll = FindUnorderedCollection(collection_name);
-  if (!sp_uncoll)
+  UnorderedCollection* p_uncoll = FindUnorderedCollection(collection_name);
+  if (!p_uncoll)
   {
     return Status::NotFound;
   }
 
-  std::string internal_key = sp_uncoll->GetInternalKey(key);
+  std::string internal_key = p_uncoll->GetInternalKey(key);
 
   while (true)
   {
@@ -1273,13 +1273,13 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
   assert(type == DataEntryType::DlistDataRecord || type == DataEntryType::DlistDeleteRecord && "Invalid use of HSetOrHDelete!");  
   
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
-  std::shared_ptr<UnorderedCollection> sp_uncoll;
+  UnorderedCollection* p_uncoll;
 
   // Creating UnorederedCollection if not found;
   {
     std::unique_lock<SpinMutex> lock_coll{*hint.spin};  
-    sp_uncoll = FindUnorderedCollection(collection_name);
-    if (!sp_uncoll)
+    p_uncoll = FindUnorderedCollection(collection_name);
+    if (!p_uncoll)
     {
       if (type == DataEntryType::DlistDeleteRecord)
       {
@@ -1289,9 +1289,11 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
       // UnorderedCollection not found, create one and insert Entry
       {
         std::lock_guard<std::mutex> lg{list_mu_};
-        sp_uncoll = CreateUnorderedCollection(collection_name);
-        _vec_sp_uncolls_.push_back(sp_uncoll);
-        void* p_uncoll = sp_uncoll.get();
+        {
+          std::shared_ptr<UnorderedCollection> sp_uncoll = CreateUnorderedCollection(collection_name);
+          p_uncoll = sp_uncoll.get();
+          _vec_sp_uncolls_.push_back(sp_uncoll);
+        }
 
         HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
         HashEntry hash_entry;
@@ -1310,7 +1312,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
   // Emplace the new DlistDataRecord
   {
     std::uint64_t ts = get_timestamp();
-    auto internal_key = sp_uncoll->GetInternalKey(key);
+    auto internal_key = p_uncoll->GetInternalKey(key);
     HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
 
     int n_try = 0;
@@ -1341,22 +1343,22 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         case Status::NotFound:
         {
           // Cached position for emplacement not available.
-          if (!pmp_last_emplacement || id_last != sp_uncoll->ID())
+          if (!pmp_last_emplacement || id_last != p_uncoll->ID())
           {
             // Emplace Front or Back according to hash to reduce lock contention
             if (hint.key_hash_value % 2 == 0)
             {
-              emplace_result = sp_uncoll->EmplaceFront(ts, key, value, type, lock);
+              emplace_result = p_uncoll->EmplaceFront(ts, key, value, type, lock);
             }
             else
             {
-              emplace_result = sp_uncoll->EmplaceBack(ts, key, value, type, lock);
+              emplace_result = p_uncoll->EmplaceBack(ts, key, value, type, lock);
             }
           }
           else
           {
-            emplace_result = sp_uncoll->EmplaceBefore(pmp_last_emplacement, ts, key, value, type, lock);
-            // emplace_result = sp_uncoll->EmplaceFront(ts, key, value, type, lock);
+            emplace_result = p_uncoll->EmplaceBefore(pmp_last_emplacement, ts, key, value, type, lock);
+            // emplace_result = p_uncoll->EmplaceFront(ts, key, value, type, lock);
           }
           
           if (!emplace_result.success)
@@ -1367,7 +1369,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
           // Update emplace position cache
           offset_last_emplacement = emplace_result.offset_new;
           pmp_last_emplacement = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(offset_last_emplacement));
-          id_last = sp_uncoll->ID();
+          id_last = p_uncoll->ID();
           
           hash_table_->Insert(hint, entry_base, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
 
@@ -1380,7 +1382,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         {
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset));
 
-          emplace_result = sp_uncoll->SwapEmplace(pmp_old_record ,ts, key, value, type, lock);
+          emplace_result = p_uncoll->SwapEmplace(pmp_old_record ,ts, key, value, type, lock);
           if (!emplace_result.success)
           {
             // Fail to acquire other locks, retry
@@ -1391,7 +1393,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
           // SwapEmplace may invalidify pmp_last_emplacement thus this updating is necessary.
           offset_last_emplacement = emplace_result.offset_new;
           pmp_last_emplacement = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(offset_last_emplacement));
-          id_last = sp_uncoll->ID();
+          id_last = p_uncoll->ID();
 
           hash_table_->Insert(hint, entry_base, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
 
@@ -1425,9 +1427,9 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
 std::shared_ptr<Iterator>
 KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name)
 {
-  std::shared_ptr<UnorderedCollection> sp_coll = FindUnorderedCollection(collection_name);
-  assert(sp_coll && "Trying to initialize an Iterator for a UnorderedCollection not created yet");
-  return sp_coll ? std::make_shared<UnorderedIterator>(sp_coll)
+  UnorderedCollection* p_uncoll = FindUnorderedCollection(collection_name);
+  assert(p_uncoll && "Trying to initialize an Iterator for a UnorderedCollection not created yet");
+  return p_uncoll ? std::make_shared<UnorderedIterator>(p_uncoll->shared_from_this())
                  : nullptr;
 }
 
@@ -1442,13 +1444,16 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
   {
     case DataEntryType::DlistRecord:
     {
+      UnorderedCollection* p_uncoll = nullptr;
       std::lock_guard<std::mutex> lg{list_mu_};
-      std::shared_ptr<UnorderedCollection> sp_uncoll = 
-        std::make_shared<UnorderedCollection>(pmem_allocator_,hash_table_, static_cast<DLDataEntry*>(pmp_record));
-      _vec_sp_uncolls_.push_back(sp_uncoll);
-      void* p_uncoll = sp_uncoll.get();
+      {
+        std::shared_ptr<UnorderedCollection> sp_uncoll = 
+          std::make_shared<UnorderedCollection>(pmem_allocator_,hash_table_, static_cast<DLDataEntry*>(pmp_record));
+        p_uncoll = sp_uncoll.get();
+        _vec_sp_uncolls_.emplace_back(sp_uncoll);       
+      }
 
-      std::string collection_name = sp_uncoll->Name();
+      std::string collection_name = p_uncoll->Name();
       HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
       HashEntry hash_entry;
       HashEntry *entry_base = nullptr;

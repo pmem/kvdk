@@ -19,7 +19,7 @@ namespace KVDK_NAMESPACE
         _time_stamp_{ timestamp }
     {
     {
-        auto space_list_record = _dlinked_list_._sp_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
+        auto space_list_record = _dlinked_list_._p_pmem_allocator_->Allocate(sizeof(DLDataEntry) + _name_.size() + sizeof(decltype(_id_)));
         if (space_list_record.size == 0)
         {
             DLinkedList::Deallocate(_dlinked_list_.Head());
@@ -29,7 +29,7 @@ namespace KVDK_NAMESPACE
             throw std::bad_alloc{};
         }
         std::uint64_t offset_list_record = space_list_record.space_entry.offset;
-        void* pmp_list_record = _dlinked_list_._sp_pmem_allocator_->offset2addr(offset_list_record);
+        void* pmp_list_record = _dlinked_list_._p_pmem_allocator_->offset2addr(offset_list_record);
         DLDataEntry entry_list_record;  // Set up entry with meta
         {
             entry_list_record.timestamp = timestamp;
@@ -100,8 +100,8 @@ namespace KVDK_NAMESPACE
     )
     {
         _CheckUserSuppliedPmp_(pmp);
-        DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp}; --iter_prev;
-        DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp};
+        DListIterator iter_prev{_dlinked_list_._p_pmem_allocator_, pmp}; --iter_prev;
+        DListIterator iter_next{_dlinked_list_._p_pmem_allocator_, pmp};
         EmplaceReturn ret = _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
         return ret;
     }
@@ -117,8 +117,8 @@ namespace KVDK_NAMESPACE
     )
     {
         _CheckUserSuppliedPmp_(pmp);
-        DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp};
-        DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp}; ++iter_next;
+        DListIterator iter_prev{_dlinked_list_._p_pmem_allocator_, pmp};
+        DListIterator iter_next{_dlinked_list_._p_pmem_allocator_, pmp}; ++iter_next;
 
         EmplaceReturn ret = _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
         return ret;
@@ -133,8 +133,8 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> const& lock
     )
     {
-        DlistIterator iter_prev{_dlinked_list_.Head()};
-        DlistIterator iter_next{_dlinked_list_.Head()}; ++iter_next;
+        DListIterator iter_prev{_dlinked_list_.Head()};
+        DListIterator iter_next{_dlinked_list_.Head()}; ++iter_next;
 
         EmplaceReturn ret = _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
         return ret;
@@ -149,8 +149,8 @@ namespace KVDK_NAMESPACE
         std::unique_lock<SpinMutex> const& lock
     )
     {
-        DlistIterator iter_prev{_dlinked_list_.Tail()}; --iter_prev;
-        DlistIterator iter_next{_dlinked_list_.Tail()}; 
+        DListIterator iter_prev{_dlinked_list_.Tail()}; --iter_prev;
+        DListIterator iter_next{_dlinked_list_.Tail()}; 
 
         EmplaceReturn ret = _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock);
         return ret;
@@ -168,11 +168,11 @@ namespace KVDK_NAMESPACE
     )
     {
         _CheckUserSuppliedPmp_(pmp);
-        DlistIterator iter_prev{_dlinked_list_._sp_pmem_allocator_, pmp}; --iter_prev;
-        DlistIterator iter_next{_dlinked_list_._sp_pmem_allocator_, pmp}; ++iter_next;
+        DListIterator iter_prev{_dlinked_list_._p_pmem_allocator_, pmp}; --iter_prev;
+        DListIterator iter_next{_dlinked_list_._p_pmem_allocator_, pmp}; ++iter_next;
 
         EmplaceReturn ret = _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, true);
-        ret.offset_old = _dlinked_list_._sp_pmem_allocator_->addr2offset(pmp);
+        ret.offset_old = _dlinked_list_._p_pmem_allocator_->addr2offset(pmp);
         return ret;
     }
 
@@ -191,8 +191,8 @@ namespace KVDK_NAMESPACE
         _CheckLock_(lock);
         _CheckEmplaceType_(type);
         
-        DlistIterator iter_prev{ _dlinked_list_._sp_pmem_allocator_, pmp_prev };
-        DlistIterator iter_next{ _dlinked_list_._sp_pmem_allocator_, pmp_next };        
+        DListIterator iter_prev{ _dlinked_list_._p_pmem_allocator_, pmp_prev };
+        DListIterator iter_next{ _dlinked_list_._p_pmem_allocator_, pmp_next };        
 
         // This locks may be invalidified after other threads insert another node!
         std::string internal_key = GetInternalKey(key);
@@ -233,8 +233,8 @@ namespace KVDK_NAMESPACE
         if (!is_swap_emplace)
         {
             bool has_other_thread_modified = false;
-            DlistIterator iter_prev_copy{iter_prev};
-            DlistIterator iter_next_copy(iter_next);
+            DListIterator iter_prev_copy{iter_prev};
+            DListIterator iter_next_copy(iter_next);
             has_other_thread_modified = has_other_thread_modified || (++iter_prev_copy != iter_next);
             has_other_thread_modified = has_other_thread_modified || (--iter_next_copy != iter_prev);
             if (has_other_thread_modified)
@@ -245,8 +245,8 @@ namespace KVDK_NAMESPACE
         else
         {
             bool has_other_thread_modified = false;
-            DlistIterator iter_prev_copy{iter_prev};
-            DlistIterator iter_next_copy(iter_next);
+            DListIterator iter_prev_copy{iter_prev};
+            DListIterator iter_next_copy(iter_next);
             has_other_thread_modified = has_other_thread_modified || (++++iter_prev_copy != iter_next);
             has_other_thread_modified = has_other_thread_modified || (----iter_next_copy != iter_prev);
             if (has_other_thread_modified)
@@ -254,15 +254,15 @@ namespace KVDK_NAMESPACE
                 return EmplaceReturn{};
             }            
         }
-        DlistIterator iter = _dlinked_list_._EmplaceBetween_(iter_prev, iter_next, timestamp, internal_key, value, type);
+        DListIterator iter = _dlinked_list_._EmplaceBetween_(iter_prev, iter_next, timestamp, internal_key, value, type);
         
         return EmplaceReturn{iter._GetOffset_(), EmplaceReturn::FailOffset, true};          
     }
 
-    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DlistIterator iter_mid, SpinMutex* spin_mid)
+    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DListIterator iter_mid, SpinMutex* spin_mid)
     // {
-    //     DlistIterator iter_prev{ iter_mid }; --iter_prev;
-    //     DlistIterator iter_next{ iter_mid }; ++iter_next;
+    //     DListIterator iter_prev{ iter_mid }; --iter_prev;
+    //     DListIterator iter_next{ iter_mid }; ++iter_next;
 
     //     SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
     //     SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
@@ -278,9 +278,9 @@ namespace KVDK_NAMESPACE
     //     return unique_lock_triplet;
     // }
 
-    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet2Nodes_(DlistIterator iter_prev, SpinMutex* spin_new)
+    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet2Nodes_(DListIterator iter_prev, SpinMutex* spin_new)
     // {
-    //     DlistIterator iter_next{ iter_prev }; ++iter_next;
+    //     DListIterator iter_next{ iter_prev }; ++iter_next;
 
     //     SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
     //     SpinMutex* p_spin_2 = spin_new;
@@ -309,7 +309,7 @@ namespace KVDK_NAMESPACE
 
     UnorderedIterator::UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry* pmp) :
         _sp_coll_{ sp_coll },
-        _iterator_internal_{ _sp_coll_->_dlinked_list_._sp_pmem_allocator_, pmp },
+        _iterator_internal_{ _sp_coll_->_dlinked_list_._p_pmem_allocator_, pmp },
         _valid_{ false }
     {
         if (!pmp)
@@ -430,7 +430,7 @@ namespace KVDK_NAMESPACE
             }          
         }
     FATAL_FAILURE:
-        throw std::runtime_error{ "UnorderedCollection::DlistIterator::_Prev_() fails!" };
+        throw std::runtime_error{ "UnorderedCollection::DListIterator::_Prev_() fails!" };
     }
 
 }
