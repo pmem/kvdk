@@ -568,7 +568,7 @@ namespace KVDK_NAMESPACE
         catch (std::bad_alloc const& ex)
         {
             std::cerr << ex.what() << std::endl;
-            std::cerr << "Fail to create DLinkedList object!" << std::endl;
+            std::cerr << "Fail to emplace DLinkedList node!" << std::endl;
             throw;
         }
 

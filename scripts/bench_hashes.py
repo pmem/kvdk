@@ -16,8 +16,8 @@ collections = 64
 
 numanode = 0
 bin = "../build/bench"
-exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
-
+# exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
+exec = "LD_PRELOAD=/usr/local/lib/libmimalloc.so numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 def Confirm(dir):
     y = input("Instance path : {}, it will be removed and recreated, confirm? (y/n)".format(dir))
@@ -41,55 +41,55 @@ if __name__ == "__main__":
             collections)
         print("{0} {1} > {2}".format(exec, para, report_path))
 
-        os.system("rm -rf {0}".format(path))
+        # os.system("rm -rf {0}".format(path))
 
         # Benchmark hashes
         # fill uniformly distributed kv
-        new_para = para + " -fill=1"
-        report = report_path + "hashes_vs{}_fill_thread{}".format(vs, benchmark_threads)
-        print("Fill hashes-type kv")
-        os.system("{0} {1} > {2}".format(exec, new_para, report))
+        # new_para = para + " -fill=1"
+        # report = report_path + "hashes_vs{}_fill_thread{}".format(vs, benchmark_threads)
+        # print("Fill hashes-type kv")
+        # os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        # random read
+        # # random read
         new_para = para + " -fill=0 -read_ratio=1 -key_distribution=random"
         report = report_path + "hashes_vs{}_random_read_thread{}".format(vs, benchmark_threads)
         print("Random read hashes-type kv")
         os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        # zipf read
-        new_para = para + " -fill=0 -read_ratio=1 -key_distribution=zipf"
-        report = report_path + "hashes_vs{}_zipf_read_thread{}".format(vs, benchmark_threads)
-        print("Zipf read hashes-type kv")
-        os.system("{0} {1} > {2}".format(exec, new_para, report))
+        # # zipf read
+        # new_para = para + " -fill=0 -read_ratio=1 -key_distribution=zipf"
+        # report = report_path + "hashes_vs{}_zipf_read_thread{}".format(vs, benchmark_threads)
+        # print("Zipf read hashes-type kv")
+        # os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        # insert new kvs
-        new_para = para + " -fill=0 -read_ratio=0 -existing_keys_ratio=0"
-        report = report_path + "hashes_vs{}_insert_thread{}".format(vs, benchmark_threads)
-        print("Insert new hashes-type kv")
-        os.system("{0} {1} > {2}".format(exec, new_para, report))
+        # # insert new kvs
+        # new_para = para + " -fill=0 -read_ratio=0 -existing_keys_ratio=0"
+        # report = report_path + "hashes_vs{}_insert_thread{}".format(vs, benchmark_threads)
+        # print("Insert new hashes-type kv")
+        # os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        # random update
-        new_para = para + " -fill=0 -read_ratio=0 -key_distribution=random"
-        report = report_path + "hashes_vs{}_random_update_thread{}".format(vs, benchmark_threads)
-        print("Random update hashes-type kv")
-        os.system("{0} {1} > {2}".format(exec, new_para, report))
+        # # random update
+        # new_para = para + " -fill=0 -read_ratio=0 -key_distribution=random"
+        # report = report_path + "hashes_vs{}_random_update_thread{}".format(vs, benchmark_threads)
+        # print("Random update hashes-type kv")
+        # os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        # zipf update
-        new_para = para + " -fill=0 -read_ratio=0 -key_distribution=zipf"
-        report = report_path + "hashes_vs{}_zipf_update_thread{}".format(vs, benchmark_threads)
-        print("Zipf update hashes-type kv")
-        os.system("{0} {1} > {2}".format(exec, new_para, report))
+        # # zipf update
+        # new_para = para + " -fill=0 -read_ratio=0 -key_distribution=zipf"
+        # report = report_path + "hashes_vs{}_zipf_update_thread{}".format(vs, benchmark_threads)
+        # print("Zipf update hashes-type kv")
+        # os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        # range scan
-        new_para = para + " -fill=0 -read_ratio=1 -scan=1"
-        report = report_path + "hashes_vs{}_scan_thread{}".format(vs, benchmark_threads)
-        print("Scan hashes-type kv")
-        os.system("{0} {1} > {2}".format(exec, new_para, report))
+        # # range scan
+        # new_para = para + " -fill=0 -read_ratio=1 -scan=1"
+        # report = report_path + "hashes_vs{}_scan_thread{}".format(vs, benchmark_threads)
+        # print("Scan hashes-type kv")
+        # os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        # read + update
-        new_para = para + " -fill=0 -read_ratio=0.9"
-        report = report_path + "hashes_vs{}_ru91_thread{}".format(vs, benchmark_threads)
-        print("Mixed read/update hashes-type kv")
-        os.system("{0} {1} > {2}".format(exec, new_para, report))
+        # # read + update
+        # new_para = para + " -fill=0 -read_ratio=0.9"
+        # report = report_path + "hashes_vs{}_ru91_thread{}".format(vs, benchmark_threads)
+        # print("Mixed read/update hashes-type kv")
+        # os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-        os.system("rm -rf {0}".format(path))
+        # os.system("rm -rf {0}".format(path))

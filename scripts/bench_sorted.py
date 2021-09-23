@@ -1,7 +1,7 @@
 import os
 import datetime
 
-n_thread = 1
+n_thread = 64
 
 path = "/mnt/pmem0/kvdk_sorted"
 report_path = "./results-sorted-threads-{}-{}/".format(n_thread, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -12,7 +12,7 @@ benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
 populate = 1
-collections = 16
+collections = 64
 
 numanode = 0
 bin = "../build/bench"
