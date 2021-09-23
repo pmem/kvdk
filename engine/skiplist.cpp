@@ -34,6 +34,7 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
           prev = result_splice->prevs[i];
         } else if (prev == this) {
           // this node has been deleted, so seek from header
+          assert(result_splice->header);
           prev = result_splice->header;
           i = kMaxHeight;
         } else {
@@ -198,15 +199,6 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
   // For update, we do not need to check because the key is already locked
   if (!updated_data_entry &&
       (prev->next != next_offset || (next && next->prev != prev_offset))) {
-    thread_local uint64_t cnt = 0;
-    if (++cnt > 1000000) {
-      GlobalLogger.Error("too many fail\n");
-      if (prev->next != next_offset) {
-        GlobalLogger.Error("fail reson 1\n");
-      } else {
-        GlobalLogger.Error("fail reson 2\n");
-      }
-    }
     for (auto &m : spins) {
       m->unlock();
     }

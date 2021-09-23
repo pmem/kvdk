@@ -555,7 +555,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     std::string got_val;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
     for (int i = 1; i <= count; i++) {
-      // GlobalLogger.Info("thread %d round %d\n", id, i);
       auto key = key_prefix + std::to_string(i);
       auto overall_val = std::to_string(i);
       auto t_val = std::to_string(i * 2);
@@ -576,7 +575,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   };
 
   LaunchNThreads(num_threads, SetupEngine);
-  GlobalLogger.Info("Close\n");
   delete engine;
 
   // reopen and restore engine and try gets
