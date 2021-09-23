@@ -26,10 +26,14 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
   for (int i = start_height; i >= end_height; i--) {
     uint64_t round = 0;
     while (1) {
-      if (++round > 100000) {
-        GlobalLogger.Error("round %lu\n", round);
-      }
       next = prev->Next(i);
+      // prev is logically deleted, redo seek. Make sure "this" won't be deleted
+      if (next.GetTag()) {
+        assert(prev != this);
+        prev = this;
+        continue;
+      }
+
       if (next.Null()) {
         result_splice->nexts[i] = nullptr;
         result_splice->prevs[i] = prev;

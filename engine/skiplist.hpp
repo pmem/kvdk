@@ -93,6 +93,7 @@ public:
     next[-l].store(x, std::memory_order_relaxed);
   }
 
+  // Logically delete node by tag next pointers from bottom to top
   void MarkAsRemoved() {
     for (int l = 1; l <= height; l++) {
       while (1) {
@@ -182,12 +183,16 @@ public:
                            std::vector<SpinMutex *> &spins,
                            DLDataEntry *updated_data_entry);
 
-  // Return nullptr if inserted a new height 0 node
+  // Insert "inserting_entry" to the skiplist on pmem, and create dram node for
+  // it. Insertion position of PMem and dram stored in "insert_splice". Return
+  // dram node of inserting data node, return nullptr if inserting node is
+  // height 0.
   SkiplistNode *InsertDataEntry(Splice *insert_splice,
                                 DLDataEntry *inserting_entry,
                                 const pmem::obj::string_view &inserting_key,
                                 SkiplistNode *data_node, bool is_update);
 
+  // Remove "deleting_entry" from dram and PMem part of the skiplist
   void DeleteDataEntry(DLDataEntry *deleting_entry, Splice *delete_splice,
                        SkiplistNode *dram_node);
 
@@ -243,11 +248,13 @@ struct Splice {
         break;
       }
 
-      if (prevs[start_height]->Next(start_height).GetTag() != 0) {
+      // If prev on this height has been deleted, roll back to higher height
+      if (prevs[start_height]->Next(start_height).GetTag()) {
         start_height++;
         if (start_height > kMaxHeight) {
           assert(header != nullptr);
           start_node = header;
+          start_height = kMaxHeight;
           break;
         }
       } else {
