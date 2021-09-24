@@ -36,7 +36,7 @@ def Confirm(dir):
     rlist, _, _ = select([sys.stdin], [], [], timeout)
     y = 'n'
     if rlist:
-        y = sys.stdin.readline()
+        y = sys.stdin.readline(1)
     else:
         print("Automatically confirmed after 60 seconds!")
         y = 'y'
