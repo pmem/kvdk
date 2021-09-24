@@ -1,7 +1,8 @@
 import os
 import datetime
 import git
-from threading import Timer
+import sys
+from select import select
 
 n_thread = 48
 sz_key = 8  # Don't modify, for now
@@ -30,11 +31,14 @@ bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 def Confirm(dir):
-    y = 'y'
-    t = Timer(60, print, "Automatically confirmed!")
-    t.start()
-    y = input("Instance path : {}, it will be removed and recreated, confirm? (y/n) (Automatically confirm in 60 seconds)".format(dir))
-    t.cancel()
+    timeout = 60
+    print("Instance path : {}, it will be removed and recreated, confirm? (y/n) (Automatically confirm in 60 seconds)")
+    rlist, _, _ = select([sys.stdin], [], [], timeout)
+    y = 'n'
+    if rlist:
+        y = sys.stdin.readline()
+    else:
+        y = 'y'
     if y != 'y':
         exit(1)
 
