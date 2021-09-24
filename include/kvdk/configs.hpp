@@ -55,7 +55,7 @@ struct Configs {
   //
   // It should be larger than hans entry size (which is 16) plus 8 (the pointer
   // to next bucket). It is recommended to set it align to cache line
-  uint32_t hash_bucket_size = 128;
+  uint32_t hash_bucket_size = 32;
 
   // The number of bucket groups in the hash table.
   //
@@ -64,7 +64,7 @@ struct Configs {
   // hash_bucket_num)
   // More buckets means less write contention, faster hash
   // search, but more internal memory fragmentation.
-  uint64_t hash_bucket_num = (1 << 27);
+  uint64_t hash_bucket_num = (1 << 20);
 
   // The number of buckets per hash slot.
   //

@@ -136,6 +136,7 @@ Status HashTable::Search(const KeyHashHint &hint,
         if (i == entries) {
           if (purpose >= SearchPurpose::Write) {
             if (reusable_entry != nullptr) {
+              assert(false);
               if (data_entry) {
                 memcpy(data_entry,
                        pmem_allocator_->offset2addr(reusable_entry->offset),
@@ -159,6 +160,7 @@ Status HashTable::Search(const KeyHashHint &hint,
           }
         } else {
           memcpy_8(&next_off, bucket_base + hash_bucket_size_ - 8);
+          assert(next_off);
         }
         assert(next_off);
         bucket_base = next_off;

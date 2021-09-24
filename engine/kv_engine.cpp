@@ -1435,10 +1435,14 @@ KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name)
 
 Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cached)
 {
-  // static std::atomic_uint64_t n_recovered = 0;
-  // GlobalLogger.Info("Recovered UnorderedCollection Records: %llu\n", n_recovered.load());
-  // GlobalLogger.Info("Recovering: %d\n", data_entry_cached.type);
-  // ++n_recovered;
+  static std::atomic_uint64_t n_recovered = 0;
+  ++n_recovered;
+  if (n_recovered % 1000000 == 0)
+  {
+    GlobalLogger.Info("Recovered UnorderedCollection Records: %llu\n", n_recovered.load());
+  }
+  
+  // std::unique_lock<std::mutex> lg{hash_table_->_mutex_htable};
 
   switch (data_entry_cached.type)
   {
@@ -1497,13 +1501,18 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
       while (true)
       {     
         ++n_try;
-        std::unique_lock<SpinMutex>{*hint.spin};
+
+        std::unique_lock<SpinMutex> lg{*hint.spin};
 
         HashEntry hash_entry;
         HashEntry *entry_base = nullptr;
+
         Status search_status = hash_table_->Search(hint, internal_key, 
-                                      DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, &hash_entry, nullptr,
-                                      &entry_base, HashTable::SearchPurpose::Write);
+                                      DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, 
+                                      &hash_entry, nullptr,
+                                      &entry_base, HashTable::SearchPurpose::Recover);
+        
+        
         switch (search_status)
         {
           case Status::NotFound:
@@ -1517,7 +1526,8 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
             DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset));
             if (pmp_old_record->timestamp < data_entry_cached.timestamp)
             {
-              hash_table_->Insert(hint, entry_base, data_entry_cached.type, offset_record, HashOffsetType::UnorderedCollectionElement);
+              hash_table_->Insert(hint, entry_base, data_entry_cached.type, offset_record, 
+                                  HashOffsetType::UnorderedCollectionElement);
             }
             return Status::Ok;
           }
