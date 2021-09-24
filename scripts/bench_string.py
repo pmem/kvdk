@@ -32,7 +32,7 @@ exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 def Confirm(dir):
     timeout = 60
-    print("Instance path : {}, it will be removed and recreated, confirm? (y/n) (Automatically confirm in 60 seconds)")
+    print("Instance path : {}, it will be removed and recreated, confirm? (y/n) (Automatically confirm in 60 seconds)".format(path_pmem))
     rlist, _, _ = select([sys.stdin], [], [], timeout)
     y = 'n'
     if rlist:
