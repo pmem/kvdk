@@ -592,6 +592,8 @@ Status KVEngine::Recovery() {
     }
   }
 
+  GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
+
   fs.clear();
   for (auto s : skiplists_) {
     fs.push_back(std::async(&Skiplist::Rebuild, s));
@@ -604,7 +606,7 @@ Status KVEngine::Recovery() {
     }
   }
 
-  GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
+  GlobalLogger.Info("In recovering skiplists\n");
 
   if (restored_.load() == 0) {
     if (configs_.populate_pmem_space) {
