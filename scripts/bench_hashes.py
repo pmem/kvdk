@@ -9,7 +9,7 @@ n_collections = 96
 git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
 
-path_report = "./results-hashes-n_threads-{}-sz_key-{}-sz_value-{}-n_collections-{}-git_hash-{}-timestamp-{}/".format(
+path_report = "./results-hashes-n_threads-{}-sz_key-{}-sz_value-{}-n_collections-{}-commit-{}-timestamp-{}/".format(
     n_thread, 
     sz_key,
     sz_value,
