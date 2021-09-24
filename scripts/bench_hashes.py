@@ -48,7 +48,7 @@ if __name__ == "__main__":
     # Benchmark hashes
     # fill uniformly distributed kv
     os.system("rm -rf {0}".format(path_pmem))
-    new_para = para_common + " -fill=1" + "-populate={}".format(populate_if_fill)
+    new_para = para_common + " -fill=1 -populate={}".format(populate_if_fill)
     report = path_report + "1.fill"
     print("Fill hashes-type kv")
     os.system("{0} {1} > {2}".format(exec, new_para, report))
@@ -65,34 +65,34 @@ if __name__ == "__main__":
     print("Zipf read hashes-type kv")
     os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-    # insert new kvs
-    new_para = para_common + " -fill=0 -read_ratio=0 -existing_keys_ratio=0"
-    report = path_report + "4.insert"
-    print("Insert new hashes-type kv")
-    os.system("{0} {1} > {2}".format(exec, new_para, report))
-
-    # random update
-    new_para = para_common + " -fill=0 -read_ratio=0 -key_distribution=random"
-    report = path_report + "5.update_random"
-    print("Random update hashes-type kv")
-    os.system("{0} {1} > {2}".format(exec, new_para, report))
-
-    # zipf update
-    new_para = para_common + " -fill=0 -read_ratio=0 -key_distribution=zipf"
-    report = path_report + "6.update_zipf"
-    print("Zipf update hashes-type kv")
-    os.system("{0} {1} > {2}".format(exec, new_para, report))
-
     # range scan
     new_para = para_common + " -fill=0 -read_ratio=1 -scan=1"
-    report = path_report + "7.scan"
+    report = path_report + "4.scan"
     print("Scan hashes-type kv")
     os.system("{0} {1} > {2}".format(exec, new_para, report))
 
     # read + update
     new_para = para_common + " -fill=0 -read_ratio=0.9"
-    report = path_report + "8.read_write_91"
+    report = path_report + "5.read_write_91"
     print("Mixed read/update hashes-type kv")
+    os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+    # insert new kvs
+    new_para = para_common + " -fill=0 -read_ratio=0 -existing_keys_ratio=0"
+    report = path_report + "6.insert"
+    print("Insert new hashes-type kv")
+    os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+    # random update
+    new_para = para_common + " -fill=0 -read_ratio=0 -key_distribution=random"
+    report = path_report + "7.update_random"
+    print("Random update hashes-type kv")
+    os.system("{0} {1} > {2}".format(exec, new_para, report))
+
+    # zipf update
+    new_para = para_common + " -fill=0 -read_ratio=0 -key_distribution=zipf"
+    report = path_report + "8.update_zipf"
+    print("Zipf update hashes-type kv")
     os.system("{0} {1} > {2}".format(exec, new_para, report))
 
     os.system("rm -rf {0}".format(path_pmem))
