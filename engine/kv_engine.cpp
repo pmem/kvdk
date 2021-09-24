@@ -661,7 +661,7 @@ Status KVEngine::Recovery() {
     }
   }
 
-  GlobalLogger.Info("In recovering skiplist\n");
+  GlobalLogger.Info("In recovering skiplists\n");
 
   if (restored_.load() == 0) {
     if (configs_.populate_pmem_space) {

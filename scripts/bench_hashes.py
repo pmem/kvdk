@@ -14,7 +14,7 @@ path_report = "./results-hashes-n_threads-{}-sz_key-{}-sz_value-{}-n_collections
     timestamp)
 
 path_pmem = "/mnt/pmem0/kvdk_hashes"
-t_duration = 60                         # For operations other than fill
+t_duration = 30                         # For operations other than fill
 populate_if_fill = 1                    # For fill only
 sz_data_on_pmem = 96 * 1024 * 1024 * 1024
 sz_pmem_file = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
