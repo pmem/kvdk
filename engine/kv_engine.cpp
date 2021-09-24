@@ -1197,7 +1197,7 @@ UnorderedCollection* KVEngine::FindUnorderedCollection(pmem::obj::string_view co
   }
   case Status::Ok:
   {
-    return hash_entry.p_uncoll;
+    return hash_entry.p_unordered_collection;
   }
   default:
   {

@@ -144,8 +144,6 @@ struct HashHeader {
 class UnorderedCollection;
 
 struct HashEntry {
-private: 
-
 public:
   HashEntry() = default;
   HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, uint64_t offset,
@@ -156,7 +154,7 @@ public:
   union
   {
     uint64_t offset;
-    UnorderedCollection* p_uncoll;
+    UnorderedCollection* p_unordered_collection;
   };
 
   

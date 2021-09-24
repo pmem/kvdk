@@ -31,7 +31,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     }
     case HashOffsetType::UnorderedCollection:
     {
-      UnorderedCollection* p_uncoll = hash_entry->p_uncoll;
+      UnorderedCollection* p_uncoll = hash_entry->p_unordered_collection;
       data_entry_key = p_uncoll->Name();
       break;
     }
@@ -70,34 +70,27 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
 Status HashTable::Search(const KeyHashHint &hint,
                          const pmem::obj::string_view &key, uint16_t type_mask,
                          HashEntry *hash_entry, DataEntry *data_entry,
-                         HashEntry **entry_base, SearchPurpose purpose) {
+                         HashEntry **entry_ptr, SearchPurpose purpose) {
   assert(purpose == SearchPurpose::Read || write_thread.id >= 0);
-  assert(entry_base);
-  assert((*entry_base) == nullptr);
+  assert(entry_ptr);
+  assert((*entry_ptr) == nullptr);
   HashEntry *reusable_entry = nullptr;
   char *bucket_base = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
-  char *bucket_base2 = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_base, _MM_HINT_T0);
 
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-  bool found = false;
-
-  if (entries == 7)
-  {
-    int breakpoint = 10;
-  }
-  
+  bool found = false;  
 
   // search cache
-  *entry_base = slots_[hint.slot].hash_cache.entry_base;
-  if (*entry_base != nullptr) {
-    memcpy_16(hash_entry, *entry_base);
+  *entry_ptr = slots_[hint.slot].hash_cache.entry_base;
+  if (*entry_ptr != nullptr) {
+    memcpy_16(hash_entry, *entry_ptr);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry,
                        data_entry)) {
       if (purpose >= SearchPurpose::Write) {
-        (*entry_base)->header.status = HashEntryStatus::Updating;
+        (*entry_ptr)->header.status = HashEntryStatus::Updating;
       }
       found = true;
     }
@@ -105,44 +98,40 @@ Status HashTable::Search(const KeyHashHint &hint,
 
   if (!found) {
     // iterate hash entrys
-    *entry_base = (HashEntry *)bucket_base;
-    HashEntry* p_hash_bucket_scanning = reinterpret_cast<HashEntry*>(bucket_base);
+    *entry_ptr = (HashEntry *)bucket_base;
     uint64_t i = 0;
     while (i < entries) {
-
-      HashEntry* p_hash_entry_scanning = reinterpret_cast<HashEntry*>(*entry_base);
-      assert(*entry_base);
-      memcpy_16(hash_entry, *entry_base);
+      assert(*entry_ptr);
+      memcpy_16(hash_entry, *entry_ptr);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry,
                          data_entry)) {
-        slots_[hint.slot].hash_cache.entry_base = *entry_base;
+        slots_[hint.slot].hash_cache.entry_base = *entry_ptr;
         found = true;
         break;
       }
-      assert(*entry_base);
+      assert(*entry_ptr);
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->header.data_type == StringDeleteRecord) {
-        reusable_entry = *entry_base;
+          && (*entry_ptr)->header.data_type == StringDeleteRecord) {
+        reusable_entry = *entry_ptr;
       }
 
       i++;
 
-      assert(*entry_base);
+      assert(*entry_ptr);
       // next bucket
       if (i % num_entries_per_bucket_ == 0) {
         char *next_off;
         if (i == entries) {
           if (purpose >= SearchPurpose::Write) {
             if (reusable_entry != nullptr) {
-              assert(false);
               if (data_entry) {
                 memcpy(data_entry,
                        pmem_allocator_->offset2addr(reusable_entry->offset),
                        sizeof(DataEntry));
               }
-              *entry_base = reusable_entry;
+              *entry_ptr = reusable_entry;
               break;
             } else {
               auto space = dram_allocator_->Allocate(hash_bucket_size_);
@@ -165,25 +154,24 @@ Status HashTable::Search(const KeyHashHint &hint,
         assert(next_off);
         bucket_base = next_off;
         _mm_prefetch(bucket_base, _MM_HINT_T0);
-        assert(bucket_base);
       }
-      (*entry_base) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
-      assert(*entry_base);
+      (*entry_ptr) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+      assert(*entry_ptr);
     }
   }
 
   if (purpose >= SearchPurpose::Write) {
     if (found) {
-      (*entry_base)->header.status = HashEntryStatus::Updating;
+      (*entry_ptr)->header.status = HashEntryStatus::Updating;
     } else {
-      if ((*entry_base) == reusable_entry) {
-        if ((*entry_base)->header.status == HashEntryStatus::Clean) {
-          (*entry_base)->header.status = HashEntryStatus::Updating;
+      if ((*entry_ptr) == reusable_entry) {
+        if ((*entry_ptr)->header.status == HashEntryStatus::Clean) {
+          (*entry_ptr)->header.status = HashEntryStatus::Updating;
         } else {
-          (*entry_base)->header.status = HashEntryStatus::BeingReused;
+          (*entry_ptr)->header.status = HashEntryStatus::BeingReused;
         }
       } else {
-        (*entry_base)->header.status = HashEntryStatus::Initializing;
+        (*entry_ptr)->header.status = HashEntryStatus::Initializing;
       }
     }
   }
@@ -194,11 +182,6 @@ Status HashTable::Search(const KeyHashHint &hint,
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
                        uint16_t type, uint64_t offset,
                        HashOffsetType offset_type) {
-
-  if (hash_bucket_entries_[hint.bucket] == 7)
-  {
-    int breakpoint = 10;
-  }
 
   assert(write_thread.id >= 0);
 
@@ -234,7 +217,7 @@ bool HashTable::MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry)
   }
   case HashOffsetType::UnorderedCollection:
   {
-    std::shared_ptr<UnorderedCollection> un_coll = matching_entry.p_uncoll->shared_from_this();
+    std::shared_ptr<UnorderedCollection> un_coll = matching_entry.p_unordered_collection->shared_from_this();
   }
   case HashOffsetType::SkiplistNode: {
     SkiplistNode *dram_node = (SkiplistNode *)matching_entry.offset;
