@@ -366,7 +366,7 @@ Status KVEngine::RestoreStringRecord(DataEntry *pmem_data_entry,
     return s;
   }
 
-  bool found = s == Status::Ok;
+  bool found = (s == Status::Ok);
   if (found && existing_data_entry.timestamp >= cached_meta->timestamp) {
     pmem_allocator_->Free(
         SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
@@ -1455,6 +1455,7 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
 
       std::string collection_name = p_uncoll->Name();
       HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
+      std::unique_lock<SpinMutex>{*hint.spin};
       HashEntry hash_entry;
       HashEntry *entry_base = nullptr;
       Status s = hash_table_->Search(hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
@@ -1465,6 +1466,11 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
       } 
       hash_table_->Insert(hint, entry_base, DataEntryType::DlistRecord, 
                           reinterpret_cast<uint64_t>(p_uncoll), HashOffsetType::UnorderedCollection); 
+      std::string msg;
+      msg += "Recovered UnorderedCollection: ";
+      msg += collection_name;
+      msg += ".\n";
+      GlobalLogger.Info(msg.data());
       return Status::Ok;
     }
     case DataEntryType::DlistHeadRecord:

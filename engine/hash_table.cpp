@@ -76,11 +76,19 @@ Status HashTable::Search(const KeyHashHint &hint,
   assert((*entry_base) == nullptr);
   HashEntry *reusable_entry = nullptr;
   char *bucket_base = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
+  char *bucket_base2 = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_base, _MM_HINT_T0);
+
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
   bool found = false;
+
+  if (entries == 7)
+  {
+    int breakpoint = 10;
+  }
+  
 
   // search cache
   *entry_base = slots_[hint.slot].hash_cache.entry_base;
@@ -98,8 +106,12 @@ Status HashTable::Search(const KeyHashHint &hint,
   if (!found) {
     // iterate hash entrys
     *entry_base = (HashEntry *)bucket_base;
+    HashEntry* p_hash_bucket_scanning = reinterpret_cast<HashEntry*>(bucket_base);
     uint64_t i = 0;
     while (i < entries) {
+
+      HashEntry* p_hash_entry_scanning = reinterpret_cast<HashEntry*>(*entry_base);
+      assert(*entry_base);
       memcpy_16(hash_entry, *entry_base);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry,
                          data_entry)) {
@@ -107,6 +119,7 @@ Status HashTable::Search(const KeyHashHint &hint,
         found = true;
         break;
       }
+      assert(*entry_base);
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
@@ -116,6 +129,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 
       i++;
 
+      assert(*entry_base);
       // next bucket
       if (i % num_entries_per_bucket_ == 0) {
         char *next_off;
@@ -136,6 +150,7 @@ Status HashTable::Search(const KeyHashHint &hint,
                 return Status::MemoryOverflow;
               }
               next_off = dram_allocator_->offset2addr(space.space_entry.offset);
+              assert(next_off);
               memset(next_off, 0, space.size);
               memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
             }
@@ -145,10 +160,13 @@ Status HashTable::Search(const KeyHashHint &hint,
         } else {
           memcpy_8(&next_off, bucket_base + hash_bucket_size_ - 8);
         }
+        assert(next_off);
         bucket_base = next_off;
         _mm_prefetch(bucket_base, _MM_HINT_T0);
+        assert(bucket_base);
       }
       (*entry_base) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+      assert(*entry_base);
     }
   }
 
@@ -174,6 +192,12 @@ Status HashTable::Search(const KeyHashHint &hint,
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
                        uint16_t type, uint64_t offset,
                        HashOffsetType offset_type) {
+
+  if (hash_bucket_entries_[hint.bucket] == 7)
+  {
+    int breakpoint = 10;
+  }
+
   assert(write_thread.id >= 0);
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset,
