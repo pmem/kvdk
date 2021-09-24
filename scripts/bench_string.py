@@ -31,7 +31,7 @@ exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 def Confirm(dir):
     y = 'y'
-    t = Timer(60)
+    t = Timer(60, print, "Automatically confirmed!")
     t.start()
     y = input("Instance path : {}, it will be removed and recreated, confirm? (y/n) (Automatically confirm in 60 seconds)".format(dir))
     t.cancel()
