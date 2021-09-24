@@ -229,7 +229,7 @@ public:
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
               uint64_t offset, HashOffsetType offset_type);
 
-  bool MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry, bool (*type_matcher)(DataEntryType));
+  bool MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry);
 
   HashEntry* SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, bool (*type_matcher)(DataEntryType));
 
