@@ -1,5 +1,5 @@
 import os
 
-os.system("bench_string.py")
-os.system("bench_sorted.py")
-os.system("bench_hashes.py")
+os.system("python3 bench_string.py")
+os.system("python3 bench_sorted.py")
+os.system("python3 bench_hashes.py")
