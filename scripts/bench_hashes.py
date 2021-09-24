@@ -12,7 +12,7 @@ benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
 populate = 1
-collections = 64
+collections = 96
 
 numanode = 0
 bin = "../build/bench"

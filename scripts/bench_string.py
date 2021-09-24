@@ -1,7 +1,7 @@
 import os
 import datetime
 
-n_thread = 64
+n_thread = 48
 
 path = "/mnt/pmem0/kvdk_string"
 report_path = "./results-string-threads-{}-{}/".format(n_thread, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
