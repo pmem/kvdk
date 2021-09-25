@@ -288,12 +288,12 @@ HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, 
       // Reach last entry of bucket, may jump to next bucket or initialize new bucket
       p_bucket = nullptr;
       memcpy(&p_bucket, p_entry_scanning, sizeof(HashEntry*));
-      // Bucket end is pointer to next bucket
+      // Bucket end is address of next bucket
       if (i < n_entries_in_bucket_chain)
       {
         // reach end of current bucket, jump to next bucket
         p_entry_scanning = p_bucket;
-        assert(next_bucket && "Should not have reach the end of bucket chain!");
+        assert(p_entry_scanning && "Should not have reach the end of bucket chain!");
         continue;
       }
       else
