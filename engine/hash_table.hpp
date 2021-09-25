@@ -233,8 +233,6 @@ public:
 
   void InsertImpl2(HashEntry* const where, HashEntry new_hash_entry);
 
-  std::mutex _mutex_htable{};
-
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
     return key_hash_value & (hash_bucket_num_ - 1);
