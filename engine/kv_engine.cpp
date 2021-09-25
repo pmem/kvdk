@@ -1347,66 +1347,57 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
           {
             // Emplace Front or Back according to hash to reduce lock contention
             if (hint.key_hash_value % 2 == 0)
-            {
               emplace_result = p_uncoll->EmplaceFront(ts, key, value, type, lock);
-            }
             else
-            {
               emplace_result = p_uncoll->EmplaceBack(ts, key, value, type, lock);
-            }
           }
           else
-          {
             emplace_result = p_uncoll->EmplaceBefore(pmp_last_emplacement, ts, key, value, type, lock);
-            // emplace_result = p_uncoll->EmplaceFront(ts, key, value, type, lock);
-          }
-          
-          if (!emplace_result.success)
-          {
-            // Fail to acquire other locks, retry
-            continue;
-          }
-          // Update emplace position cache
-          offset_last_emplacement = emplace_result.offset_new;
-          pmp_last_emplacement = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(offset_last_emplacement));
-          id_last = p_uncoll->ID();
-          
-          hash_table_->Insert(hint, entry_base, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
-
-          // if (n_try > 1)
-          //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
-
-          return Status::Ok;
+          break;
         }
         case Status::Ok:
         {
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry.offset));
 
           emplace_result = p_uncoll->SwapEmplace(pmp_old_record ,ts, key, value, type, lock);
-          if (!emplace_result.success)
-          {
-            // Fail to acquire other locks, retry
-            continue;
-          }
-          
-          // Update emplace position cache
-          // SwapEmplace may invalidify pmp_last_emplacement thus this updating is necessary.
-          offset_last_emplacement = emplace_result.offset_new;
-          pmp_last_emplacement = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(offset_last_emplacement));
-          id_last = p_uncoll->ID();
-
-          hash_table_->Insert(hint, entry_base, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
-
-          // if (n_try > 1)
-          //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
-
-          return Status::Ok;
+          break;
         }
         default:
         {
           throw std::runtime_error{"Invalid search result when trying to insert a new DlistDataRecord!"};
         }
       }
+
+      // Fail to acquire other locks, or the linkage is broken, retry
+      if (!emplace_result.success)
+      {
+        // Too many fails at emplacing in cached position, 
+        // the position may have been invalidated.
+        if (n_try > 2)
+        {
+          offset_last_emplacement = 0;
+          pmp_last_emplacement = nullptr;
+          id_last = 0;
+        }
+        continue;
+      }
+      // Successfully emplaced the new record
+      else
+      {
+        // Update emplace position cache
+        // SwapEmplace may invalidify pmp_last_emplacement thus this updating is necessary.
+        offset_last_emplacement = emplace_result.offset_new;
+        pmp_last_emplacement = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(offset_last_emplacement));
+        id_last = p_uncoll->ID();
+
+        hash_table_->Insert(hint, entry_base, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
+
+        // if (n_try > 1)
+        //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
+
+        return Status::Ok;
+      }
+      
     }
   }
 }
