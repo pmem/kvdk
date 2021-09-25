@@ -48,13 +48,13 @@ def run_bench_mark(
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     sz_key = 8                              # Not configuarble for now
 
-    path_report = "./results-hashes-threads-{}-key-{}-value-{}-collections-{}-commit-{}-timestamp-{}/".format(
+    path_report = "./results-hashes-threads-{}-key-{}-value-{}-collections-{}-timestamp-{}-commit-{}/".format(
         n_thread, 
         sz_key,
         sz_value,
         n_collection,
-        git_hash,
-        timestamp)
+        timestamp,
+        git_hash)
 
     Confirm(path_pmem)
     os.system("mkdir -p {}".format(path_report))

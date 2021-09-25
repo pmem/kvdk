@@ -41,4 +41,5 @@ build/
 .cache/
 
 scripts/result*
+scripts/__pycache__
 debug/
