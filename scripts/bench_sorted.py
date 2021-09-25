@@ -10,7 +10,7 @@ t_duration = 30                         # For operations other than fill
 populate_if_fill = 1                    # For fill only
 sz_pmem_file = 384 * 1024 * 1024 * 1024 # we need enough space to test insert
 sz_fill_data = 96 * 1024 * 1024 * 1024
-n_collections = 96
+n_collection = 96
 
 path_pmem = "/mnt/pmem0/kvdk_sorted"
 
@@ -39,7 +39,7 @@ def run_bench_mark(
     populate_if_fill=populate_if_fill,
     sz_pmem_file=sz_pmem_file, 
     sz_fill_data=sz_fill_data,
-    n_collections=n_collections,
+    n_collection=n_collection,
     path_pmem=path_pmem):
 
     n_thread_total = n_thread
@@ -52,7 +52,7 @@ def run_bench_mark(
         n_thread, 
         sz_key,
         sz_value,
-        n_collections,
+        n_collection,
         git_hash,
         timestamp)
 
@@ -67,7 +67,7 @@ def run_bench_mark(
         path_pmem, 
         n_operations,
         sz_pmem_file,
-        n_collections)
+        n_collection)
     print("{0} {1} > {2}".format(exec, para_shared, path_report))
 
     # Benchmark sorted
