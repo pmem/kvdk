@@ -1486,44 +1486,36 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
       DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
       auto internal_key = pmp_data_entry->Key();
       HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
+      std::unique_lock<SpinMutex> lg{*hint_record.spin};
 
-      int n_try = 0;
-      while (true)
-      {     
-        ++n_try;
-
-        std::unique_lock<SpinMutex> lg{*hint_record.spin};
-
-        HashEntry hash_entry_record;
-        HashEntry *p_hash_entry_record = nullptr;
-
-        Status search_status = hash_table_->Search(hint_record, internal_key, 
-                                      DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, 
-                                      &hash_entry_record, nullptr,
-                                      &p_hash_entry_record, HashTable::SearchPurpose::Recover);
-        
-        switch (search_status)
+      HashEntry hash_entry_record;
+      HashEntry *p_hash_entry_record = nullptr;
+      Status search_status = hash_table_->Search(hint_record, internal_key, 
+                                    DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, 
+                                    &hash_entry_record, nullptr,
+                                    &p_hash_entry_record, HashTable::SearchPurpose::Recover);
+      
+      switch (search_status)
+      {
+        case Status::NotFound:
         {
-          case Status::NotFound:
+          hash_table_->Insert(hint_record, p_hash_entry_record, data_entry_cached.type, offset_record, 
+                              HashOffsetType::UnorderedCollectionElement);
+          return Status::Ok;
+        }
+        case Status::Ok:
+        {
+          DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry_record.offset));
+          if (pmp_old_record->timestamp < data_entry_cached.timestamp)
           {
             hash_table_->Insert(hint_record, p_hash_entry_record, data_entry_cached.type, offset_record, 
                                 HashOffsetType::UnorderedCollectionElement);
-            return Status::Ok;
           }
-          case Status::Ok:
-          {
-            DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry_record.offset));
-            if (pmp_old_record->timestamp < data_entry_cached.timestamp)
-            {
-              hash_table_->Insert(hint_record, p_hash_entry_record, data_entry_cached.type, offset_record, 
-                                  HashOffsetType::UnorderedCollectionElement);
-            }
-            return Status::Ok;
-          }
-          default:
-          {
-            throw std::runtime_error{"Invalid search result when trying to insert a new DlistDataRecord!"};
-          }
+          return Status::Ok;
+        }
+        default:
+        {
+          throw std::runtime_error{"Invalid search result when trying to insert a new DlistDataRecord!"};
         }
       }
     }
