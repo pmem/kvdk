@@ -216,7 +216,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
       break;
     }
     case DataEntryType::SortedHeaderRecord: {
-      s = RestoreSkiplist(
+      s = RestoreSkiplistHead(
           static_cast<DLDataEntry *>(recovering_pmem_data_entry),
           &cached_recovering_data_entry);
       break;
@@ -258,7 +258,8 @@ uint32_t KVEngine::CalculateChecksum(DataEntry *data_entry) {
   return checksum;
 }
 
-Status KVEngine::RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *) {
+Status KVEngine::RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
+                                     DataEntry *) {
   assert(pmem_data_entry->type == SortedHeaderRecord);
   pmem::obj::string_view pmem_key = pmem_data_entry->Key();
   std::string key(string_view_2_string(pmem_key));
@@ -271,6 +272,8 @@ Status KVEngine::RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *) {
   Skiplist *skiplist;
   {
     std::lock_guard<std::mutex> lg(list_mu_);
+    entries_offsets_.insert(
+        {pmem_allocator_->addr2offset(pmem_data_entry), {false, nullptr}});
     skiplists_.push_back(std::make_shared<Skiplist>(
         (DLDataEntry *)pmem_data_entry, key, id, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
@@ -379,9 +382,15 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
         return Status::MemoryOverflow;
       }
       new_hash_offset = (uint64_t)dram_node;
+      if (visited_skiplist_ids_[dram_node->GetSkipListId()]++ % 100000 == 0) {
+        std::lock_guard<std::mutex> lg(list_mu_);
+        entries_offsets_.insert(
+            {pmem_allocator_->addr2offset(pmem_data_entry), {false, nullptr}});
+      }
     } else {
       new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
     }
+
     // Hash entry won't be reused during data recovering so we don't
     // neet to check status here
     hash_table_->Insert(hint, entry_base, cached_meta->type, new_hash_offset,
@@ -574,12 +583,219 @@ Status KVEngine::RestorePendingBatch() {
   return Status::Ok;
 }
 
+void KVEngine::UpdateEntriesOffset() {
+  std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>> new_kvs;
+  std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>::iterator it =
+      entries_offsets_.begin();
+  while (it != entries_offsets_.end()) {
+    DLDataEntry data_entry;
+    HashEntry *entry_base = nullptr;
+    HashEntry hash_entry;
+    SkiplistNode *node = nullptr;
+    DLDataEntry *cur_data_entry =
+        (DLDataEntry *)pmem_allocator_->offset2addr(it->first);
+    pmem::obj::string_view key = cur_data_entry->Key();
+
+    Status s = hash_table_->Search(
+        hash_table_->GetHint(key), key, SortedDataEntryType, &hash_entry,
+        &data_entry, &entry_base, HashTable::SearchPurpose::Read);
+    assert(s == Status::Ok);
+    if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
+      node = ((Skiplist *)hash_entry.offset)->header();
+    } else if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+      node = (SkiplistNode *)hash_entry.offset;
+    }
+    assert(node && "should be not empty!");
+
+    // remove old kv;
+    if (data_entry.timestamp > cur_data_entry->timestamp) {
+      it = entries_offsets_.erase(it);
+      new_kvs.insert(
+          {pmem_allocator_->addr2offset(node->data_entry), {false, node}});
+    } else {
+      it->second.second = node;
+      it++;
+    }
+  }
+  entries_offsets_.insert(new_kvs.begin(), new_kvs.end());
+}
+
+void KVEngine::LinkedNode(uint64_t thread_id, int height) {
+  for (auto v : thread_res_[thread_id].unlinked_node) {
+    if (v->Height() < height) {
+      continue;
+    }
+    if (v->data_entry->next != kNullPmemOffset && v->Next(height) == nullptr) {
+      SkiplistNode *next_node = nullptr;
+      // if height == 1, need to scan pmem data_entry
+      if (height == 1) {
+        uint64_t next_offset = v->data_entry->next;
+        while (next_offset != kNullPmemOffset) {
+          HashEntry hash_entry;
+          DLDataEntry data_entry;
+          HashEntry *entry_base = nullptr;
+          DLDataEntry *next_data_entry =
+              (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+          pmem::obj::string_view key = next_data_entry->Key();
+          Status s = hash_table_->Search(
+              hash_table_->GetHint(key), key, SortedDataEntryType, &hash_entry,
+              &data_entry, &entry_base, HashTable::SearchPurpose::Read);
+          assert(s == Status::Ok &&
+                 "It should be in hash_table when reseting entries_offset map");
+          next_offset = next_data_entry->next;
+
+          if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
+            next_node = ((Skiplist *)hash_entry.offset)->header();
+          } else if (hash_entry.header.offset_type ==
+                     HashOffsetType::SkiplistNode) {
+            next_node = (SkiplistNode *)hash_entry.offset;
+          } else {
+            continue;
+          }
+          if (next_node->Height() >= height) {
+            break;
+          }
+        }
+      } else {
+        SkiplistNode *pnode = v->Next(height - 1);
+        while (pnode) {
+          if (pnode->Height() >= height) {
+            next_node = pnode;
+            break;
+          }
+          pnode = pnode->Next(height - 1);
+        }
+      }
+      if (next_node) {
+        v->RelaxedSetNext(height, next_node);
+      }
+    }
+  }
+  thread_res_[thread_id].unlinked_node.clear();
+}
+
+SkiplistNode *KVEngine::GetSortedOffset(int height) {
+  std::lock_guard<std::mutex> kv_mux(list_mu_);
+  for (auto &kv : entries_offsets_) {
+    if (!kv.second.first && kv.second.second->height >= height - 1) {
+      kv.second.first = true;
+      return kv.second.second;
+    }
+  }
+  return nullptr;
+}
+
+void KVEngine::DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node) {
+  DLDataEntry *visit_data_entry = cur_node->data_entry;
+  long long i = 0;
+  while (true) {
+    uint64_t next_offset = visit_data_entry->next;
+    if (next_offset == kNullPmemOffset) {
+      break;
+    }
+    // continue to build connention
+    if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
+      DLDataEntry *next_data_entry =
+          (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+
+      thread_local HashEntry hash_entry;
+      thread_local DLDataEntry data_entry;
+      HashEntry *entry_base = nullptr;
+      pmem::obj::string_view key = next_data_entry->Key();
+      Status s = hash_table_->Search(
+          hash_table_->GetHint(key), key, SortedDataEntryType, &hash_entry,
+          &data_entry, &entry_base, HashTable::SearchPurpose::Read);
+      assert(s == Status::Ok &&
+             "the node should be already created during data restoring");
+
+      visit_data_entry = next_data_entry;
+
+      SkiplistNode *next_node = nullptr;
+      assert(hash_entry.header.offset_type != HashOffsetType::Skiplist &&
+             "next entry should be skiplistnode type or data_entry type!");
+      if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+        next_node = (SkiplistNode *)hash_entry.offset;
+      }
+      // excepte data_entry node (height = 0)
+      if (next_node) {
+        if (next_node->Height() >= 1) {
+          cur_node->RelaxedSetNext(1, next_node);
+          next_node->RelaxedSetNext(1, nullptr);
+          cur_node = next_node;
+        }
+      }
+      i++;
+    } else {
+      cur_node->RelaxedSetNext(1, nullptr);
+      thread_res_[thread_id].unlinked_node.insert(cur_node);
+      break;
+    }
+  }
+}
+
+void KVEngine::DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                                   int height) {
+  SkiplistNode *visited_node = cur_node;
+  bool first_visited = true;
+  while (true) {
+    if (visited_node->Height() >= height) {
+      if (first_visited) {
+        cur_node = visited_node;
+        first_visited = false;
+      }
+      if (cur_node != visited_node) {
+        cur_node->RelaxedSetNext(height, visited_node);
+        visited_node->RelaxedSetNext(height, nullptr);
+        cur_node = visited_node;
+      }
+    }
+
+    SkiplistNode *next_node = visited_node->Height() >= height
+                                  ? visited_node->Next(height - 1)
+                                  : visited_node->Next(visited_node->Height());
+    if (next_node == nullptr) {
+      if (cur_node->Height() >= height) {
+        cur_node->RelaxedSetNext(height, nullptr);
+        thread_res_[thread_id].unlinked_node.insert(cur_node);
+      }
+      break;
+    }
+    uint64_t next_offset = pmem_allocator_->addr2offset(next_node->data_entry);
+    // continue to build connention
+    if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
+      visited_node = next_node;
+    } else {
+      if (cur_node->Height() >= height) {
+        cur_node->RelaxedSetNext(height, nullptr);
+        thread_res_[thread_id].unlinked_node.insert(cur_node);
+      }
+      break;
+    }
+  }
+}
+
+void KVEngine::RestoreSkipList(int height, uint64_t thread_id) {
+
+  while (true) {
+    SkiplistNode *cur_node = GetSortedOffset(height);
+    if (!cur_node) {
+      break;
+    }
+    if (height == 1) {
+      DealWithFirstHeight(thread_id, cur_node);
+    } else {
+      DealWithOtherHeight(thread_id, cur_node, height);
+    }
+  }
+  KVEngine::LinkedNode(thread_id, height);
+}
+
 Status KVEngine::Recovery() {
   auto s = RestorePendingBatch();
   if (s != Status::Ok) {
     return s;
   }
-
+  GlobalLogger.Info("Restoring data:iterated %lu records\n", restored_.load());
   std::vector<std::future<Status>> fs;
   for (uint32_t i = 0; i < configs_.max_write_threads; i++) {
     fs.push_back(std::async(&KVEngine::RestoreData, this, i));
@@ -591,18 +807,44 @@ Status KVEngine::Recovery() {
       return s;
     }
   }
-
   fs.clear();
-  for (auto s : skiplists_) {
-    fs.push_back(std::async(&Skiplist::Rebuild, s));
-  }
+  GlobalLogger.Info("Restoring skiplist:iterated %lu records\n",
+                    restored_.load());
+  if (configs_.opt_restore_sorted) {
+    if (skiplists_.size() > 0) {
+      UpdateEntriesOffset();
+      for (int h = 1; h <= kMaxHeight; ++h) {
+        std::vector<std::future<void>> fv;
+        for (uint32_t j = 0; j < configs_.max_write_threads; ++j) {
+          fv.push_back(std::async(std::launch::async,
+                                  &KVEngine::RestoreSkipList, this, h, j));
+        }
+        for (auto &f : fv) {
+          f.get();
+        }
+        fv.clear();
+        for (auto &kv : entries_offsets_) {
+          kv.second.first = false;
+        }
+      }
+    }
+  } else {
+    for (auto s : skiplists_) {
+      fs.push_back(std::async(&Skiplist::Rebuild, s));
+    }
 
-  for (auto &f : fs) {
-    Status s = f.get();
-    if (s != Status::Ok) {
-      return s;
+    for (auto &f : fs) {
+      Status s = f.get();
+      if (s != Status::Ok) {
+        return s;
+      }
     }
   }
+#ifdef DEBUG_CHECK
+  for (auto s : skiplists_) {
+    s->CheckConnection(h);
+  }
+#endif
 
   GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
 
@@ -656,8 +898,8 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
         data_entry_meta->header.b_size * configs_.pmem_block_size;
     char data_buffer[pmem_data_entry_size];
     memcpy(data_buffer, pmem_data_entry, pmem_data_entry_size);
-    // If checksum mismatch, the pmem data entry is corrupted or been reused by
-    // another key, redo search
+    // If checksum mismatch, the pmem data entry is corrupted or been reused
+    // by another key, redo search
     auto checksum = CalculateChecksum((DataEntry *)data_buffer);
     if (checksum == data_entry_meta->header.checksum) {
       value->assign(data_buffer + key.size() +

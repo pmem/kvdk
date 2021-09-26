@@ -58,6 +58,54 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
+uint64_t SkiplistNode::GetSkipListId() {
+  uint64_t id;
+  memcpy_8(&id, data_entry->Key().data());
+  return id;
+}
+
+void Skiplist::CheckConnection(int height) {
+  SkiplistNode *cur_node = header_;
+  DLDataEntry *cur_data_entry = cur_node->data_entry;
+  while (true) {
+    SkiplistNode *next_node = cur_node->Next(height);
+    uint64_t next_offset = cur_data_entry->next;
+    if (next_offset == kNullPmemOffset) {
+      assert(next_node == nullptr && "when next offset is kNullPmemOffset, the "
+                                     "next node should be nullptr\n");
+      break;
+    }
+    HashEntry hash_entry;
+    DLDataEntry data_entry;
+    HashEntry *entry_base = nullptr;
+    DLDataEntry *next_data_entry =
+        (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+    pmem::obj::string_view key = next_data_entry->Key();
+    Status s = hash_table_->Search(
+        hash_table_->GetHint(key), key, SortedDataRecord | SortedDeleteRecord,
+        &hash_entry, &data_entry, &entry_base, HashTable::SearchPurpose::Read);
+    assert(s == Status::Ok && "search node fail!");
+
+    if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+      SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
+      if (next_node == nullptr) {
+        assert(dram_node->Height() < height &&
+               "when next_node is nullptr, the dram data entry should be "
+               "DLDataEntry or dram node's height < cur_node's height ");
+      } else {
+        if (dram_node->Height() >= height) {
+          assert((dram_node->Height() == next_node->Height() &&
+                  dram_node->GetSkipListId() == next_node->GetSkipListId() &&
+                  dram_node->UserKey() == next_node->UserKey()) &&
+                 "two skiplist node should be equal!");
+          cur_node = next_node;
+        }
+      }
+    }
+    cur_data_entry = next_data_entry;
+  }
+}
+
 void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
   SkiplistNode *prev = header_;
   SkiplistNode *tmp;

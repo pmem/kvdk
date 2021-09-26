@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <assert.h>
 #include <cstdint>
+#include <thread>
+#include <unordered_map>
 
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -55,7 +57,12 @@ public:
 
   pmem::obj::string_view UserKey();
 
-  SkiplistNode *Next(int l) { return next[-l].load(std::memory_order_acquire); }
+  uint64_t GetSkipListId();
+
+  SkiplistNode *Next(int l) {
+    assert((l > 0 && l <= height) && "should be less than node's height");
+    return next[-l].load(std::memory_order_acquire);
+  }
 
   bool CASNext(int l, SkiplistNode *expected, SkiplistNode *x) {
     assert(l > 0);
@@ -68,12 +75,12 @@ public:
   }
 
   void SetNext(int l, SkiplistNode *x) {
-    assert(l > 0);
+    assert(l > 0 && l <= height);
     next[-l].store(x, std::memory_order_release);
   }
 
   void RelaxedSetNext(int l, SkiplistNode *x) {
-    assert(l > 0);
+    assert(l > 0 && l <= height);
     next[-l].store(x, std::memory_order_relaxed);
   }
 
@@ -182,6 +189,8 @@ public:
   void DeleteDataEntry(Splice *delete_splice,
                        const pmem::obj::string_view &deleting_key,
                        SkiplistNode *dram_node);
+
+  void CheckConnection(int height);
 
 private:
   SkiplistNode *header_;
