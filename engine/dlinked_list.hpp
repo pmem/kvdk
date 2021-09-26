@@ -277,6 +277,7 @@ namespace KVDK_NAMESPACE
             _pmp_head_{ pmp_head },
             _pmp_tail_{ pmp_tail }
         {
+#ifndef NDEBUG
         {
             if (pmp_head->type != DataEntryType::DlistHeadRecord)
             {
@@ -324,6 +325,7 @@ namespace KVDK_NAMESPACE
                 }
             }            
         }
+#endif 
         }
 
         // _pmp_head_ and _pmp_tail_ points to persisted Record of Head and Tail on PMem

@@ -1117,7 +1117,7 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
     if (s == Status::MemoryOverflow) {
       return s;
     }
-    bool found = s == Status::Ok;
+    bool found = (s == Status::Ok);
     if (dt == StringDeleteRecord && batch_hint == nullptr) {
       if (found && entry_base->header.data_type != StringDeleteRecord) {
         sized_space_entry = pmem_allocator_->Allocate(requested_size);
