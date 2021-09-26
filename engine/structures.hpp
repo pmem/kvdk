@@ -15,7 +15,7 @@ namespace KVDK_NAMESPACE {
 
 struct PendingBatch {
   enum class Stage {
-    Done = 0,
+    Finish = 0,
     Processing = 1,
   };
 
