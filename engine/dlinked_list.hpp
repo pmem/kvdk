@@ -28,6 +28,8 @@
 
 #define hex_print(x) std::hex << std::setfill ('0') << std::setw(sizeof(decltype(x))*2) << x
 
+#define DEBUG_LEVEL 0
+
 namespace KVDK_NAMESPACE
 {
     /// DListIterator does not pin DlinkedList
@@ -277,7 +279,7 @@ namespace KVDK_NAMESPACE
             _pmp_head_{ pmp_head },
             _pmp_tail_{ pmp_tail }
         {
-#ifndef NDEBUG
+#if DEBUG_LEVEL > 0
         {
             if (pmp_head->type != DataEntryType::DlistHeadRecord)
             {

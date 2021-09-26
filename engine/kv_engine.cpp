@@ -1486,7 +1486,7 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
       DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
       auto internal_key = pmp_data_entry->Key();
       HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-      std::unique_lock<SpinMutex> lg{*hint_record.spin};
+      std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
 
       HashEntry hash_entry_record;
       HashEntry *p_hash_entry_record = nullptr;
