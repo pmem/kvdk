@@ -16,21 +16,17 @@
 namespace KVDK_NAMESPACE {
 enum class HashEntryStatus : uint8_t {
   Normal = 1,
-  // New created hash entry for inserting a new key
-  Initializing = 1 << 1,
-  // A entry being updated by the same key, or a CleanReusable hash entry being
-  // updated by a new key
-  Updating = 1 << 2,
-  // A Normal hash entry of a delete record that is reusing by a new key, it's
-  // unknown if there are older version data of the same key existing so we can
-  // not free corresponding PMem data entry
-  DirtyReusable = 1 << 3,
   // A hash entry of a delete record which has no older version data of the same
   // key exsiting on PMem, so the delete record can be safely freed after the
   // hash entry updated by a new key
-  CleanReusable = 1 << 4,
-  // A empty hash entry which points to nothing
-  Empty = 1 << 5,
+  Clean,
+  // New created hash entry for inserting a new key
+  Initializing,
+  // A entry being updated by the same key, or a CLEAN hash entry being updated
+  // by a new key
+  Updating,
+  // A Normal hash entry of a delete record that is reusing by a new key
+  BeingReused,
 };
 
 enum class HashOffsetType : uint8_t {
@@ -53,9 +49,9 @@ struct HashHeader {
 
 struct HashEntry {
   HashEntry() = default;
-  HashEntry(uint32_t kp, uint16_t t, uint64_t offset, HashEntryStatus status,
+  HashEntry(uint32_t kp, uint16_t t, uint64_t offset,
             HashOffsetType offset_type)
-      : header({kp, t, offset_type, status}), offset(offset) {}
+      : header({kp, t, offset_type, HashEntryStatus::Normal}), offset(offset) {}
 
   HashHeader header;
   uint64_t offset;
@@ -63,12 +59,6 @@ struct HashEntry {
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
   static void CopyOffset(HashEntry *dst, HashEntry *src) {
     dst->offset = src->offset;
-  }
-
-  bool Reusable() {
-    return (uint8_t)header.status & ((uint8_t)HashEntryStatus::CleanReusable |
-                                     (uint8_t)HashEntryStatus::DirtyReusable |
-                                     (uint8_t)HashEntryStatus::Empty);
   }
 };
 
