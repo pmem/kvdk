@@ -10,6 +10,9 @@ namespace KVDK_NAMESPACE {
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
                                uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry, void *data_entry) {
+  if (hash_entry->header.status == HashEntryStatus::Empty) {
+    return false;
+  }
   if ((target_type & hash_entry->header.data_type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
@@ -101,7 +104,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->header.data_type == StringDeleteRecord) {
+          && (*entry_base)->Reusable()) {
         reusable_entry = *entry_base;
       }
 
@@ -113,7 +116,8 @@ Status HashTable::Search(const KeyHashHint &hint,
         if (i == entries) {
           if (purpose >= SearchPurpose::Write) {
             if (reusable_entry != nullptr) {
-              if (data_entry) {
+              if (data_entry &&
+                  reusable_entry->header.status != HashEntryStatus::Empty) {
                 memcpy(data_entry,
                        pmem_allocator_->offset2addr(reusable_entry->offset),
                        sizeof(DataEntry));
@@ -148,10 +152,9 @@ Status HashTable::Search(const KeyHashHint &hint,
       (*entry_base)->header.status = HashEntryStatus::Updating;
     } else {
       if ((*entry_base) == reusable_entry) {
-        if ((*entry_base)->header.status == HashEntryStatus::Clean) {
+        if ((*entry_base)->header.status == HashEntryStatus::CleanReusable) {
+          // Reuse a clean reusable hash entry is as same as updating
           (*entry_base)->header.status = HashEntryStatus::Updating;
-        } else {
-          (*entry_base)->header.status = HashEntryStatus::BeingReused;
         }
       } else {
         (*entry_base)->header.status = HashEntryStatus::Initializing;
@@ -168,17 +171,15 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
   assert(write_thread.id >= 0);
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset,
+                           type == StringDeleteRecord
+                               ? HashEntryStatus::DirtyReusable
+                               : HashEntryStatus::Normal,
                            offset_type);
 
-  if (entry_base->header.status == HashEntryStatus::Updating) {
-    HashEntry::CopyOffset(entry_base, &new_hash_entry);
-    HashEntry::CopyHeader(entry_base, &new_hash_entry);
-  } else {
-    bool new_entry = entry_base->header.status == HashEntryStatus::Initializing;
-    memcpy_16(entry_base, &new_hash_entry);
-    if (new_entry) { // new allocated
-      hash_bucket_entries_[hint.bucket]++;
-    }
+  bool new_entry = entry_base->header.status == HashEntryStatus::Initializing;
+  memcpy_16(entry_base, &new_hash_entry);
+  if (new_entry) { // new allocated
+    hash_bucket_entries_[hint.bucket]++;
   }
 }
 } // namespace KVDK_NAMESPACE
