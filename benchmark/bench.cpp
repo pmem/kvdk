@@ -212,7 +212,7 @@ void DBScan(int id) {
         iter->Next();
       }
     } else {
-      fprintf(stderr, "SeekNode error\n");
+      fprintf(stderr, "Seek error\n");
       exit(-1);
     }
 
