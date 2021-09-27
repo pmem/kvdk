@@ -16,17 +16,7 @@
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
 
-static void LaunchNThreads(int n_thread, std::function<void(int tid)> func,
-                           uint32_t id_start = 0) {
-  std::vector<std::thread> ts;
-  for (int i = id_start; i < id_start + n_thread; i++) {
-    ts.emplace_back(std::thread(func, i));
-  }
-  for (auto &t : ts)
-    t.join();
-}
-
-class EngineBasicTest : public testing::Test {
+class HashesTest : public testing::Test {
 protected:
   Engine *engine = nullptr;
   Configs configs;
@@ -61,7 +51,7 @@ protected:
   }
 };
 
-TEST_F(EngineBasicTest, TestThreadManager) {
+TEST_F(HashesTest, TestThreadManager) {
   int max_write_threads = 1;
   configs.max_write_threads = max_write_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -84,7 +74,7 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBasicStringOperations) {
+TEST_F(HashesTest, TestBasicStringOperations) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -133,7 +123,7 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBatchWrite) {
+TEST_F(HashesTest, TestBatchWrite) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -193,7 +183,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestFreeList) {
+TEST_F(HashesTest, TestFreeList) {
   // TODO: Add more cases
   configs.pmem_segment_blocks = 4 * kMinPaddingBlockSize;
   configs.max_write_threads = 1;
@@ -235,7 +225,7 @@ TEST_F(EngineBasicTest, TestFreeList) {
   ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
 }
 
-TEST_F(EngineBasicTest, TestLocalSortedCollection) {
+TEST_F(HashesTest, TestLocalSortedCollection) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -333,7 +323,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
+TEST_F(HashesTest, TestGlobalSortedCollection) {
   const std::string global_skiplist = "skiplist";
   int num_threads = 16;
   configs.max_write_threads = num_threads;
@@ -437,7 +427,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestSeek) {
+TEST_F(HashesTest, TestSeek) {
   std::string val;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -468,7 +458,7 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(iter->Value(), "bar2");
 }
 
-TEST_F(EngineBasicTest, TestStringRestore) {
+TEST_F(HashesTest, TestStringRestore) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -529,7 +519,7 @@ TEST_F(EngineBasicTest, TestStringRestore) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestSortedRestore) {
+TEST_F(HashesTest, TestSortedRestore) {
   int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -625,7 +615,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
+TEST_F(HashesTest, TestLocalUnorderedCollection) {
   int num_threads = 16;
   int count = 100;
   configs.max_write_threads = num_threads;
@@ -689,7 +679,7 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
+TEST_F(HashesTest, TestGlobalUnorderedCollection) {
   int num_threads = 16;
   int count = 100;
   configs.max_write_threads = num_threads;
@@ -753,7 +743,7 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
+TEST_F(HashesTest, TestUnorderedCollectionRestore) {
   int count = 100;
   int num_threads = 16;
 
@@ -934,7 +924,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestStringHotspot) {
+TEST_F(HashesTest, TestStringHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
   configs.max_write_threads = n_thread_writing;
@@ -986,7 +976,7 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestSortedHotspot) {
+TEST_F(HashesTest, TestSortedHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
   configs.max_write_threads = n_thread_writing;

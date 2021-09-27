@@ -207,20 +207,20 @@ void DBScan(int tid) {
     if (bench_sorted)
     {
       auto iter = engine->NewSortedIterator(collections[num % num_collections]);
-      if (iter) {
-        iter->Seek(k);
-        int cnt = scan_length;
-        while (cnt > 0 && iter->Valid()) {
-          cnt--;
+      if (iter)
+      {
+        iter->SeekToFirst();
+        // iter->Seek(k);
+        for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
+        {
           ++ops;
           k = iter->Key();
           v = iter->Value();
-          iter->Next();
         }
       } else {
-        fprintf(stderr, "Seek error\n");
+        fprintf(stderr, "Error creating UnorderedIterator\n");
         exit(-1);
-      }
+      }     
     }
     else if (bench_hashes)
     {
@@ -228,12 +228,11 @@ void DBScan(int tid) {
       if (iter)
       {
         iter->SeekToFirst();
-        for (size_t i = 0; i < scan_length && iter->Valid(); i++)
+        for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
         {
           ++ops;
           k = iter->Key();
           v = iter->Value();
-          iter->Next();
         }
       } else {
         fprintf(stderr, "Error creating UnorderedIterator\n");

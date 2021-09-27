@@ -75,6 +75,14 @@ if (BUILD_TESTING)
     target_link_libraries(dbtest PUBLIC engine gtest gmock gtest_main)
 endif ()
 
+if (BUILD_TESTING)
+    set(TEST_SOURCES tests/test_hashes.cpp)
+    enable_testing()
+    include(GoogleTest)
+    add_executable(test_hashes ${TEST_SOURCES})
+    target_link_libraries(test_hashes PUBLIC engine gtest gmock gtest_main)
+endif ()
+
 option(BUILD_TUTORIAL "Build the tutorial" ON)
 add_subdirectory(examples/tutorial)
 
