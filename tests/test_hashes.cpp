@@ -35,7 +35,7 @@ protected:
   const size_t n_kv_per_thread{ 2ULL << 20 };   // 2M keys per thread, totaling about 100M records
 
   const size_t sz_key_min{ 2 };
-  const size_t sz_key_max{ 16 };
+  const size_t sz_key_max{ 8 };
   const size_t sz_value_min{ 16 };
   const size_t sz_value_max{ 1024 };
 
@@ -73,6 +73,17 @@ protected:
         {
             _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
         }
+        if (i % 100000 == 0)
+        {
+          std::cout 
+            << "[Info] "
+            << "Generated "
+            << i
+            << " strings for values and "
+            << i * n_thread
+            << " strings for keys."
+            << std::endl;
+        }
     }
     for (size_t i = 0; i < n_kv_per_thread; i++)
     {
@@ -81,11 +92,28 @@ protected:
             keys[tid].emplace_back(_keys_[i*n_thread+tid]);
             values[tid].emplace_back(_values_[i]);
         }
+        if (i % 100000 == 0)
+        {
+          std::cout 
+            << "[Info] "
+            << "Generated "
+            << i
+            << " string_views for values and "
+            << i * n_thread
+            << " string_views for keys."
+            << std::endl;
+        }
     }
     for (size_t tid = 0; tid < n_thread; tid++)
     {
         std::shuffle(keys[tid].begin(), keys[tid].end(), rand);
         std::shuffle(values[tid].begin(), values[tid].end(), rand);
+        std::cout
+          << "[Info] "
+          << "Shuffled keys and values for thread "
+          << tid
+          << "."
+          << std::endl;
     }
   }
 
@@ -97,8 +125,8 @@ protected:
 
 TEST_F(HashesTest, TestSetOnly) 
 {
-  kvdk::Status status;
   std::mutex mu_rw;
+  kvdk::Status status;
   std::unordered_multimap<std::string_view, std::string_view> possible_kvs;
   std::unordered_set<std::string_view> key_counter;
   for (size_t tid = 0; tid < n_thread; tid++)
@@ -108,6 +136,12 @@ TEST_F(HashesTest, TestSetOnly)
         possible_kvs.emplace(keys[tid][i], values[tid][i]);
         key_counter.insert(keys[tid][i]);
       }
+      std::cout
+        << "[Info] "
+        << "Preparing unordered_multimap and unordered_set for thread "
+        << tid
+        << " done."
+        << std::endl;
   }
 
   status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
@@ -122,6 +156,18 @@ TEST_F(HashesTest, TestSetOnly)
     {
       status = engine->HSet(global_collection_name, keys[tid][j], values[tid][j]);
       ASSERT_EQ(status, kvdk::Status::Ok);
+      if (j % 100000 == 0)
+      {
+        std::unique_lock<std::mutex> lock_write{mu_rw};
+        std::cout 
+          << "[Info] "
+          << "Thread "
+          << tid
+          << " have HSet "
+          << j
+          << " records."
+          << std::endl;
+      }
     }
   };
   
@@ -144,6 +190,18 @@ TEST_F(HashesTest, TestSetOnly)
         match = match || (value == iter->second);
       }
       ASSERT_TRUE(match);
+      if (n_entry % 1000000 == 0)
+      {
+        std::unique_lock<std::mutex> lock_write{mu_rw};
+        std::cout 
+          << "[Info] "
+          << "Thread "
+          << tid
+          << " have iterated "
+          << n_entry
+          << " records."
+          << std::endl;
+      }
     }
     ASSERT_EQ(key_counter.size(), n_entry);
   };

@@ -247,7 +247,7 @@ namespace KVDK_NAMESPACE
             bool has_other_thread_modified = false;
             DListIterator iter_prev_copy{iter_prev};
             DListIterator iter_next_copy(iter_next);
-            has_other_thread_modified = has_other_thread_modified || (++++iter_prev_copy != iter_next);
+            // has_other_thread_modified = has_other_thread_modified || (++++iter_prev_copy != iter_next);
             has_other_thread_modified = has_other_thread_modified || (----iter_next_copy != iter_prev);
             if (has_other_thread_modified)
             {

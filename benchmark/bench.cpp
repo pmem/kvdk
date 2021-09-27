@@ -209,8 +209,7 @@ void DBScan(int tid) {
       auto iter = engine->NewSortedIterator(collections[num % num_collections]);
       if (iter)
       {
-        iter->SeekToFirst();
-        // iter->Seek(k);
+        iter->Seek(k);
         for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
         {
           ++ops;
@@ -218,7 +217,7 @@ void DBScan(int tid) {
           v = iter->Value();
         }
       } else {
-        fprintf(stderr, "Error creating UnorderedIterator\n");
+        fprintf(stderr, "Error creating SortedIterator\n");
         exit(-1);
       }     
     }
@@ -227,8 +226,8 @@ void DBScan(int tid) {
       auto iter = engine->NewUnorderedIterator(collections[num % num_collections]);
       if (iter)
       {
-        iter->SeekToFirst();
-        for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
+        
+        for (iter->SeekToFirst(); iter->Valid(); iter->Next())
         {
           ++ops;
           k = iter->Key();
