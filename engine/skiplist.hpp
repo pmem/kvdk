@@ -14,8 +14,8 @@
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
-static const int kMaxHeight = 32;
-static const uint16_t kCacheHeight = 3;
+static const uint8_t kMaxHeight = 32;
+static const uint8_t kCacheHeight = 3;
 
 struct Splice;
 
@@ -31,8 +31,13 @@ public:
   // Doubly linked data entry on PMem
   DLDataEntry *data_entry;
   // TODO: save memory
-  uint16_t height;
   uint16_t cached_key_size;
+  uint8_t height;
+  // How many height this node are linked on its skiplist. If this node is
+  // phisically remove from some height of a skiplist, then valid_links-=1.
+  // valid_links==0 means this node is removed from every height of the
+  // skiplist, free this node.
+  std::atomic<uint8_t> valid_links{0};
   // 4 bytes for alignment, the actually allocated size may > 4
   char cached_key[4];
 
@@ -60,8 +65,8 @@ public:
   // between height "start_height" and "end"_height", and store position in
   // "result_splice", if "key" existing, the next pointers in splice point to
   // node of "key"
-  void SeekKey(const pmem::obj::string_view &key, uint16_t start_height,
-               uint16_t end_height, Splice *result_splice);
+  void SeekNode(const pmem::obj::string_view &key, uint8_t start_height,
+                uint8_t end_height, Splice *result_splice);
 
   uint16_t Height() { return height; }
 
@@ -133,7 +138,7 @@ public:
       : name_(n), id_(i), pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
     header_ = SkiplistNode::NewNode(n, h, kMaxHeight);
-    for (int i = 1; i <= kMaxHeight; i++) {
+    for (uint8_t i = 1; i <= kMaxHeight; i++) {
       header_->RelaxedSetNext(i, nullptr);
     }
   }
@@ -146,6 +151,14 @@ public:
         SkiplistNode::DeleteNode(to_delete);
         to_delete = next;
       }
+      std::lock_guard<SpinMutex> lg_a(in_deleting_nodes_spin_);
+      for (SkiplistNode *node : in_deleting_nodes_) {
+        SkiplistNode::DeleteNode(node);
+      }
+      std::lock_guard<SpinMutex> lg_b(pending_deletion_nodes_spin_);
+      for (SkiplistNode *node : pending_deletion_nodes_) {
+        SkiplistNode::DeleteNode(node);
+      }
     }
   }
 
@@ -155,8 +168,8 @@ public:
 
   SkiplistNode *header() { return header_; }
 
-  static int RandomHeight() {
-    int height = 0;
+  static uint8_t RandomHeight() {
+    uint8_t height = 0;
     while (height < kMaxHeight && fast_random_64() & 1) {
       height++;
     }
@@ -173,7 +186,7 @@ public:
   // Start position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
-  void SeekKey(const pmem::obj::string_view &key, Splice *result_splice);
+  void Seek(const pmem::obj::string_view &key, Splice *result_splice);
 
   Status Rebuild();
 
@@ -196,12 +209,43 @@ public:
   void DeleteDataEntry(DLDataEntry *deleting_entry, Splice *delete_splice,
                        SkiplistNode *dram_node);
 
+  void AddInvalidNodes(const std::vector<SkiplistNode *> nodes) {
+    std::lock_guard<SpinMutex> lg(pending_deletion_nodes_spin_);
+    for (SkiplistNode *node : nodes) {
+      pending_deletion_nodes_.push_back(node);
+    }
+  }
+
+  void MaybeDeleteNodes() {
+    std::lock_guard<SpinMutex> lg_a(in_deleting_nodes_spin_);
+    if (in_deleting_nodes_.size() > 0) {
+      for (SkiplistNode *node : in_deleting_nodes_) {
+        SkiplistNode::DeleteNode(node);
+      }
+      in_deleting_nodes_.swap(pending_deletion_nodes_);
+    }
+
+    std::lock_guard<SpinMutex> lg_b(pending_deletion_nodes_spin_);
+    pending_deletion_nodes_.swap(in_deleting_nodes_);
+  }
+
 private:
   SkiplistNode *header_;
   std::string name_;
   uint64_t id_;
   std::shared_ptr<HashTable> hash_table_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
+  // nodes to be deleted that unlinked from every height
+  std::vector<SkiplistNode *> pending_deletion_nodes_;
+  // protect pending_deletion_nodes_
+  SpinMutex pending_deletion_nodes_spin_;
+  // to avoid concurrent access a just deleted node, a node can be safely
+  // deleted only if a certain interval is passes after being moved from
+  // pending_deletion_nodes_ to in_deleting_nodes_, this is guaranteed by
+  // background thread of kvdk instance
+  std::vector<SkiplistNode *> in_deleting_nodes_;
+  // protect in_deleting_nodes_
+  SpinMutex in_deleting_nodes_spin_;
 };
 
 class SortedIterator : public Iterator {
@@ -231,24 +275,25 @@ private:
   DLDataEntry *current;
 };
 
+// A helper struct for seeking skiplist
 struct Splice {
-  // header node of seeking list
-  SkiplistNode *header;
+  // Seeking skiplist
+  Skiplist *seeking_list;
   std::array<SkiplistNode *, kMaxHeight + 1> nexts;
   std::array<SkiplistNode *, kMaxHeight + 1> prevs;
   DLDataEntry *prev_data_entry{nullptr};
   DLDataEntry *next_data_entry{nullptr};
 
-  Splice(SkiplistNode *h) : header(h) {}
+  Splice(Skiplist *s) : seeking_list(s) {}
 
-  void Recompute(const pmem::obj::string_view &key, int l) {
+  void Recompute(const pmem::obj::string_view &key, uint8_t l) {
     SkiplistNode *start_node;
-    uint16_t start_height = l;
+    uint8_t start_height = l;
     while (1) {
       if (start_height > kMaxHeight || prevs[start_height] == nullptr) {
-        assert(header != nullptr);
+        assert(seeking_list != nullptr);
         start_height = kMaxHeight;
-        start_node = header;
+        start_node = seeking_list->header();
       } else if (prevs[start_height]->Next(start_height).GetTag()) {
         // If prev on this height has been deleted, roll back to higher height
         start_height++;
@@ -256,7 +301,7 @@ struct Splice {
       } else {
         start_node = prevs[start_height];
       }
-      start_node->SeekKey(key, start_height, l, this);
+      start_node->SeekNode(key, start_height, l, this);
       return;
     }
   }

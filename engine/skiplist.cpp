@@ -17,13 +17,14 @@ pmem::obj::string_view SkiplistNode::UserKey() {
   return Skiplist::UserKey(data_entry->Key());
 }
 
-void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
-                           uint16_t start_height, uint16_t end_height,
-                           Splice *result_splice) {
+void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
+                            uint8_t start_height, uint8_t end_height,
+                            Splice *result_splice) {
+  std::unique_ptr<std::vector<SkiplistNode *>> to_delete(nullptr);
   assert(height >= start_height && end_height >= 1);
   SkiplistNode *prev = this;
   PointerWithTag<SkiplistNode> next;
-  for (int i = start_height; i >= end_height; i--) {
+  for (uint8_t i = start_height; i >= end_height; i--) {
     uint64_t round = 0;
     while (1) {
       next = prev->Next(i);
@@ -34,8 +35,8 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
           prev = result_splice->prevs[i];
         } else if (prev == this) {
           // this node has been deleted, so seek from header
-          assert(result_splice->header);
-          prev = result_splice->header;
+          assert(result_splice->seeking_list);
+          prev = result_splice->seeking_list->header();
           i = kMaxHeight;
         } else {
           prev = this;
@@ -49,12 +50,19 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
         break;
       }
 
-      // Phisically remove deleted nodes from skiplist
+      // Physically remove deleted "next" nodes from skiplist
       auto next_next = next->Next(i);
       if (next_next.GetTag()) {
-        // if prev is marked deleted before cas, cas will be faied, and prev
+        if (prev->CASNext(i, next, next_next.RawPointer())) {
+          if (--next->valid_links == 0) {
+            if (to_delete == nullptr) {
+              to_delete.reset(new std::vector<SkiplistNode *>());
+            }
+            to_delete->push_back(next.RawPointer());
+          }
+        }
+        // if prev is marked deleted before cas, cas will be failed, and prev
         // will be roll back in next round
-        prev->CASNext(i, next, next_next.RawPointer());
         continue;
       }
       int cmp = compare_string_view(key, next->UserKey());
@@ -68,13 +76,16 @@ void SkiplistNode::SeekKey(const pmem::obj::string_view &key,
       }
     }
   }
+  if (to_delete && to_delete->size() > 0) {
+    result_splice->seeking_list->AddInvalidNodes(*to_delete);
+  }
 }
 
 Status Skiplist::Rebuild() {
-  Splice splice(header());
+  Splice splice(this);
   HashEntry hash_entry;
   DLDataEntry data_entry;
-  for (int i = 1; i <= kMaxHeight; i++) {
+  for (uint8_t i = 1; i <= kMaxHeight; i++) {
     splice.prevs[i] = header_;
     splice.prev_data_entry = header_->data_entry;
   }
@@ -111,10 +122,9 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
-void Skiplist::SeekKey(const pmem::obj::string_view &key,
-                       Splice *result_splice) {
-  result_splice->header = header_;
-  header_->SeekKey(key, header_->Height(), 1, result_splice);
+void Skiplist::Seek(const pmem::obj::string_view &key, Splice *result_splice) {
+  result_splice->seeking_list = this;
+  header_->SeekNode(key, header_->Height(), 1, result_splice);
   assert(result_splice->prevs[1] != nullptr);
   DLDataEntry *prev_data_entry = result_splice->prevs[1]->data_entry;
   while (1) {
@@ -153,7 +163,7 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
     splice->prev_data_entry = prev;
     splice->next_data_entry = next;
   } else {
-    SeekKey(insert_key, splice);
+    Seek(insert_key, splice);
 
     prev = splice->prev_data_entry;
     next = splice->next_data_entry;
@@ -278,8 +288,8 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
 
 void SortedIterator::Seek(const std::string &key) {
   assert(skiplist_);
-  Splice splice(skiplist_->header());
-  skiplist_->SeekKey(key, &splice);
+  Splice splice(skiplist_);
+  skiplist_->Seek(key, &splice);
   current = splice.next_data_entry;
 }
 

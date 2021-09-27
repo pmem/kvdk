@@ -454,7 +454,7 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
-  // Test Seek
+  // Test SeekNode
   std::string collection = "col1";
   uint64_t z = 0;
   auto zero_filled_str = uint64_to_string(z);

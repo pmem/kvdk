@@ -64,10 +64,28 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
   return s;
 }
 
+void KVEngine::FreeSkiplistDramNodes() {
+  for (auto skiplist : skiplists_) {
+    skiplist->MaybeDeleteNodes();
+  }
+}
+
 void KVEngine::BackgroundWork() {
+  // To avoid free a referencing skiplist node, we do freeing in at least every
+  // 10 seconds
+  // TODO: Maybe free skiplist node in another bg thread?
+  double interval_free_skiplist_node =
+      std::max(10.0, configs_.background_work_interval);
   while (!closing_) {
     usleep(configs_.background_work_interval * 1000000);
+    interval_free_skiplist_node -= configs_.background_work_interval;
     pmem_allocator_->BackgroundWork();
+    if ((interval_free_skiplist_node -= configs_.background_work_interval) <=
+        0) {
+      FreeSkiplistDramNodes();
+      interval_free_skiplist_node =
+          std::max(10.0, configs_.background_work_interval);
+    }
   }
 }
 
@@ -777,7 +795,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
 
     std::vector<SpinMutex *> spins;
     thread_local Splice splice(nullptr);
-    splice.header = skiplist->header();
+    splice.seeking_list = skiplist;
     if (!skiplist->FindAndLockWritePos(&splice, user_key, hint, spins,
                                        &data_entry)) {
       continue;
@@ -850,7 +868,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
 
     std::vector<SpinMutex *> spins;
     thread_local Splice splice(nullptr);
-    splice.header = skiplist->header();
+    splice.seeking_list = skiplist;
     if (!skiplist->FindAndLockWritePos(&splice, user_key, hint, spins,
                                        found ? &data_entry : nullptr)) {
       continue;

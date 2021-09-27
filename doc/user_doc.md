@@ -300,8 +300,8 @@ int main()
     std::string end{"key8"};
     {
       int i = 1;
-      iter->Seek(beg);
-      for (iter->Seek(beg); iter->Valid() && iter->Key() < end; iter->Next()) {
+      iter->SeekNode(beg);
+      for (iter->SeekNode(beg); iter->Valid() && iter->Key() < end; iter->Next()) {
         assert(iter->Key() == kv_pairs[i].first);
         assert(iter->Value() == kv_pairs[i].second);
         ++i;
@@ -313,7 +313,7 @@ int main()
     end = "key1";
     {
       int i = 8;
-      for (iter->Seek(beg); iter->Valid() && iter->Key() > end; iter->Prev()) {
+      for (iter->SeekNode(beg); iter->Valid() && iter->Key() > end; iter->Prev()) {
         assert(iter->Key() == kv_pairs[i].first);
         assert(iter->Value() == kv_pairs[i].second);
         --i;

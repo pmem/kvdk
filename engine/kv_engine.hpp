@@ -154,6 +154,8 @@ private:
 
   Status CheckConfigs(const Configs &configs);
 
+  void FreeSkiplistDramNodes();
+
   inline uint64_t get_cpu_tsc() {
     uint32_t lo, hi;
     __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
