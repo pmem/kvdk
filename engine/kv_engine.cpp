@@ -1016,23 +1016,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     // Something wrong
     // TODO: roll back finished writes (hard to roll back hash table)
     if (s != Status::Ok) {
+      assert(s == Status::MemoryOverflow);
       exit(1);
-      /*
-      // To safely roll back, we need to padding data entry of finished writes
-      // before free allocated space
-      for (size_t j = 0; j < i; j++) {
-        DataEntry *padding_entry = (DataEntry *)pmem_allocator_->offset2addr(
-            batch_hints[j].allocated_space.space_entry.offset);
-        auto type = Padding;
-        pmem_memcpy_persist(&padding_entry->type, &type, sizeof(DataEntryType));
-      }
-      // Free allocated space after change stage to finish
-      pending_batch.PersistStage(PendingBatch::Stage::Finish);
-      for (size_t j = i; j < batch_hints.size(); j++) {
-        pmem_allocator_->Free(batch_hints[j].allocated_space);
-      }
-      return s;
-       */
     }
   }
 
