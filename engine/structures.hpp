@@ -13,47 +13,6 @@
 
 namespace KVDK_NAMESPACE {
 
-// A pointer with additional information on high 16 bits
-template <typename T> struct PointerWithTag {
-  uint64_t tagged_pointer;
-  static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
-
-  PointerWithTag(T *pointer) : tagged_pointer((uint64_t)pointer) {}
-
-  explicit PointerWithTag(T *pointer, uint16_t code)
-      : tagged_pointer((uint64_t)pointer | ((uint64_t)code << 48)) {}
-
-  PointerWithTag() : tagged_pointer(0) {}
-
-  T *RawPointer() { return (T *)(tagged_pointer & kPointerMask); }
-
-  const T *RawPointer() const {
-    return (const T *)(tagged_pointer & kPointerMask);
-  }
-
-  bool Null() { return RawPointer() == nullptr; }
-
-  uint16_t GetTag() { return tagged_pointer >> 48; }
-
-  void ClearTag() { tagged_pointer &= kPointerMask; }
-
-  void SetTag(uint16_t info) { tagged_pointer |= ((uint64_t)info << 48); }
-
-  const T &operator*() const { return *RawPointer(); }
-
-  T &operator*() { return *(RawPointer()); }
-
-  const T *operator->() const { return RawPointer(); }
-
-  T *operator->() { return RawPointer(); }
-
-  bool operator==(const T *raw_pointer) { return RawPointer() == raw_pointer; }
-
-  bool operator==(const T *raw_pointer) const {
-    return RawPointer() == raw_pointer;
-  }
-};
-
 struct PendingBatch {
   enum class Stage {
     Done = 0,

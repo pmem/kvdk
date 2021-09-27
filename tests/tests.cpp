@@ -42,7 +42,7 @@ protected:
     configs.hash_bucket_size = 64;
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
-    configs.background_work_interval = 0.1;
+    configs.background_work_interval = 0;
     db_path = "/mnt/pmem0/data";
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", db_path.c_str());
@@ -260,6 +260,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
     std::string got_val1, got_val2;
 
     AssignData(val1, 10);
+
     // Test Empty Key
     {
       std::string k0{""};
@@ -542,7 +543,7 @@ TEST_F(EngineBasicTest, TestStringRestore) {
 }
 
 TEST_F(EngineBasicTest, TestSortedRestore) {
-  int num_threads = 48;
+  int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -575,6 +576,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   };
 
   LaunchNThreads(num_threads, SetupEngine);
+
   delete engine;
 
   // reopen and restore engine and try gets
