@@ -155,13 +155,13 @@ TEST_F(HashesTest, TestSetOnly)
     for (size_t j = 0; j < n_kv_per_thread; j++)
     {
       status = engine->HSet(global_collection_name, keys[tid][j], values[tid][j]);
-      ASSERT_EQ(status, kvdk::Status::Ok) 
+      EXPECT_EQ(status, kvdk::Status::Ok) 
         << "Fail to set a key " 
         << keys[tid][j] 
         << " in collection "
         << global_collection_name;
 
-      if (j % 100000 == 0)
+      if (tid == 0 && j % 100000 == 0)
       {
         std::unique_lock<std::mutex> lock_write{mu_rw};
         std::cout 
@@ -191,14 +191,17 @@ TEST_F(HashesTest, TestSetOnly)
       auto range_found = possible_kvs.equal_range(key);
       for (auto iter = range_found.first; iter != range_found.second; ++iter)
       {
-        ASSERT_EQ(key, iter->first)
+        EXPECT_EQ(key, iter->first)
           << "Iterated key and key in unordered_multimap does not match: \n"
           << "Iterated key: " << key << "\n"
           << "Key in unordered_multimap: " << iter->first;
         match = match || (value == iter->second);
       }
-      ASSERT_TRUE(match) << "No kv-pair in unordered_multimap matching with iterated kv-pair!";
-      if (n_entry % 1000000 == 0)
+      EXPECT_TRUE(match) 
+        << "No kv-pair in unordered_multimap matching with iterated kv-pair:\n"
+        << "Key: " << key << "\n"
+        << "Value: " << value << "\n";
+      if (tid == 0 && n_entry % 1000000 == 0)
       {
         std::unique_lock<std::mutex> lock_write{mu_rw};
         std::cout 
@@ -218,6 +221,11 @@ TEST_F(HashesTest, TestSetOnly)
   LaunchNThreads(1, IteratingThrough);  
 
   delete engine;
+
+  status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+  ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+
+  LaunchNThreads(1, IteratingThrough);
 }
 
 int main(int argc, char **argv) 

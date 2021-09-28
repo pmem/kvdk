@@ -12,6 +12,7 @@ namespace KVDK_NAMESPACE
     )
     try :
         _sp_hash_table_{ sp_hash_table },
+        _p_pmem_allocator_{ sp_pmem_allocator.get() },
         _pmp_dlist_record_{ nullptr },
         _dlinked_list_{ sp_pmem_allocator, timestamp, _ID2View_(id), pmem::obj::string_view{""} },
         _name_{ name },
@@ -52,7 +53,7 @@ namespace KVDK_NAMESPACE
     {
         std::cerr << ex.what() << std::endl;
         std::cerr << "Fail to create UnorderedCollection object!" << std::endl;
-        throw ex;
+        throw;
     }
 
     UnorderedCollection::UnorderedCollection
@@ -62,6 +63,7 @@ namespace KVDK_NAMESPACE
         DLDataEntry* pmp_dlist_record
     ) : 
         _sp_hash_table_{ sp_hash_table },
+        _p_pmem_allocator_{ sp_pmem_allocator.get() },
         _pmp_dlist_record_{ pmp_dlist_record },
         _dlinked_list_
         { 
@@ -254,48 +256,10 @@ namespace KVDK_NAMESPACE
                 return EmplaceReturn{};
             }            
         }
-        DListIterator iter = _dlinked_list_._EmplaceBetween_(iter_prev, iter_next, timestamp, internal_key, value, type);
+        DListIterator iter = _dlinked_list_.EmplaceBetween(iter_prev, iter_next, timestamp, internal_key, value, type);
         
         return EmplaceReturn{iter._GetOffset_(), EmplaceReturn::FailOffset, true};          
     }
-
-    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet3Nodes_(DListIterator iter_mid, SpinMutex* spin_mid)
-    // {
-    //     DListIterator iter_prev{ iter_mid }; --iter_prev;
-    //     DListIterator iter_next{ iter_mid }; ++iter_next;
-
-    //     SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
-    //     SpinMutex* p_spin_2 = spin_mid ? spin_mid : _sp_hash_table_->GetHint(iter_mid->Key()).spin;
-    //     SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
-
-    //     UniqueLockTriplet<SpinMutex> unique_lock_triplet
-    //     {
-    //         *p_spin_1,
-    //         *p_spin_2,
-    //         *p_spin_3,
-    //         std::defer_lock
-    //     };
-    //     return unique_lock_triplet;
-    // }
-
-    // UniqueLockTriplet<SpinMutex> UnorderedCollection::_MakeUniqueLockTriplet2Nodes_(DListIterator iter_prev, SpinMutex* spin_new)
-    // {
-    //     DListIterator iter_next{ iter_prev }; ++iter_next;
-
-    //     SpinMutex* p_spin_1 = _sp_hash_table_->GetHint(iter_prev->Key()).spin;
-    //     SpinMutex* p_spin_2 = spin_new;
-    //     SpinMutex* p_spin_3 = _sp_hash_table_->GetHint(iter_next->Key()).spin;
-
-    //     UniqueLockTriplet<SpinMutex> unique_lock_triplet
-    //     {
-    //         *p_spin_1,
-    //         *p_spin_2,
-    //         *p_spin_3,
-    //         std::defer_lock
-    //     };
-    //     return unique_lock_triplet;
-    // }
-
 }
 
 namespace KVDK_NAMESPACE
@@ -432,5 +396,4 @@ namespace KVDK_NAMESPACE
     FATAL_FAILURE:
         throw std::runtime_error{ "UnorderedCollection::DListIterator::_Prev_() fails!" };
     }
-
 }

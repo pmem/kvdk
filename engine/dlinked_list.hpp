@@ -35,7 +35,7 @@ namespace KVDK_NAMESPACE
     /// DListIterator does not pin DlinkedList
     /// It's up to caller to ensure that any
     /// DListIterator constructed belongs to the
-    /// right DlinkedList and to ensure that
+    /// correct DlinkedList and to ensure that
     /// DlinkedList is valid when DListIterator
     /// accesses data on it.
     class DListIterator
@@ -48,7 +48,7 @@ namespace KVDK_NAMESPACE
 
         /// PMem pointer to current Record
         PMEMAllocator* _p_pmem_allocator_;
-        // std::shared_ptr<PMEMAllocator> _sp_pmem_allocator_;
+        /// Current position
         DLDataEntry* _pmp_curr_;
 
     public:
@@ -160,7 +160,6 @@ namespace KVDK_NAMESPACE
         {
             return _p_pmem_allocator_->addr2offset(_pmp_curr_);
         }
-
     };
 }
 
@@ -168,7 +167,8 @@ namespace KVDK_NAMESPACE
 {
     /// DLinkedList is a helper class to access PMem
     /// DLinkedList guarantees that forward links are always valid
-    /// Backward links are restored on recovery
+    /// Backward links may be broken 
+    /// if shutdown happens when new record is being emplaced.
     /// DLinkedList does not deallocate records. Deallocation is done by caller
     /// Locking is done by caller at HashTable
     class DLinkedList
@@ -190,7 +190,7 @@ namespace KVDK_NAMESPACE
 
     public:        
         /// Create DLinkedList and construct head and tail node on PMem.
-        /// key and value are stored in head and tail nodes
+        /// Caller supplied key and value are stored in head and tail nodes
         DLinkedList
         (
             std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
@@ -204,7 +204,7 @@ namespace KVDK_NAMESPACE
             _pmp_tail_{ nullptr }
         {
         {
-            // head and tail only holds DLDataEntry. No id or collection name needed.
+            // head and tail can hold any key and value supplied by caller.
             auto space_head = _p_pmem_allocator_->Allocate(sizeof(DLDataEntry)+key.size()+value.size());
             if (space_head.size == 0)
             {
@@ -264,7 +264,7 @@ namespace KVDK_NAMESPACE
         {
             std::cerr << ex.what() << std::endl;
             std::cerr << "Fail to create DLinkedList object!" << std::endl;
-            throw ex;
+            throw;
         }
 
         /// Create DLinkedList from existing head and tail node. Used for recovery.
@@ -334,107 +334,7 @@ namespace KVDK_NAMESPACE
         // No need to delete anything
         ~DLinkedList() = default;
 
-        /// Emplace right before iter.
-        DListIterator EmplaceBefore
-        (
-            DListIterator iter,
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value,
-            DataEntryType type
-        )
-        {
-            if (!iter.valid())
-            {
-                throw std::runtime_error{"Invalid iterator in dlinked_list!"};
-            }
-            
-            // Insert happens between iter_prev and iter_next
-            DListIterator iter_prev{ iter }; --iter_prev;
-            DListIterator iter_next{ iter };
-
-            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
-        }
-
-        /// Emplace right after iter.
-        DListIterator EmplaceAfter
-        (
-            DListIterator iter,
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value,
-            DataEntryType type
-        )
-        {
-            if (!iter.valid())
-            {
-                throw std::runtime_error{"Invalid iterator in dlinked_list!"};
-            }
-
-            // Insert happens between iter_prev and iter_next
-            DListIterator iter_prev{ iter };
-            DListIterator iter_next{ iter }; ++iter_next;
-
-            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
-        }
-
-        /// Emplace right after Head().
-        DListIterator EmplaceFront
-        (
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value,
-            DataEntryType type
-        )
-        {
-            // Insert happens between iter_prev and iter_next
-            DListIterator iter_prev{ Head() };
-            DListIterator iter_next{ Head() }; ++iter_next;
-
-            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
-        }
-
-        /// Emplace right before Tail().
-        DListIterator EmplaceBack
-        (
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value,
-            DataEntryType type
-        )
-        {
-            // Insert happens between iter_prev and iter_next
-            DListIterator iter_prev{ Tail() }; --iter_prev;
-            DListIterator iter_next{ Tail() };
-
-            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
-        }
-
-        /// In-place swap out an old record for new one
-        /// Old record should be freed by caller after calling this function
-        /// Timestamp should be checked by caller
-        DListIterator SwapEmplace
-        (
-            DListIterator iter,
-            std::uint64_t timestamp,    // Timestamp can only be supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value,
-            DataEntryType type
-        )
-        {
-            if (!iter.valid())
-            {
-                throw std::runtime_error{"Invalid iterator in dlinked_list!"};
-            }
-
-            // Swap happens between iter_prev and iter_next
-            DListIterator iter_prev{ iter }; --iter_prev;
-            DListIterator iter_next{ iter }; ++iter_prev;
-
-            return _EmplaceBetween_(iter_prev, iter_next, timestamp, key, value, type);
-        }
-
-        // Not checked yet
+        // Not checked yet, may return Tail()
         DListIterator First()
         {
             DListIterator ret{ _p_pmem_allocator_, _pmp_head_ };
@@ -443,7 +343,7 @@ namespace KVDK_NAMESPACE
             return ret;
         }
 
-        // Not checked yet
+        // Not checked yet, may return Head()
         DListIterator Last()
         {
             DListIterator ret{ _p_pmem_allocator_, _pmp_tail_ };
@@ -471,46 +371,6 @@ namespace KVDK_NAMESPACE
             );
         }
 
-    private:
-        inline static void _PersistRecord_
-        (
-            void* pmp,
-            DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value
-        )
-        {
-            // Persist key and value
-            size_t sz_entry = sizeof(DLDataEntry);
-            char* pmp_dest = static_cast<char*>(pmp);
-            pmp_dest += sz_entry;
-            pmem_memcpy(pmp_dest, key.data(), key.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
-            pmp_dest += key.size();
-            pmem_memcpy(pmp_dest, value.data(), value.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
-            pmem_flush(pmp, key.size() + value.size());
-            pmem_drain();
-
-            // Persist DLDataEntry last
-            pmem_memcpy(pmp, &entry, sz_entry, PMEM_F_MEM_NONTEMPORAL);
-        }
-
-        inline static std::uint32_t _CheckSum_
-        (
-            DLDataEntry const& entry,           // Incomplete DLDataEntry, only meta is valid
-            pmem::obj::string_view const key,
-            pmem::obj::string_view const value
-        )
-        {
-            std::uint32_t cs1 = get_checksum
-            (
-                reinterpret_cast<char const*>(&entry) + sizeof(decltype(entry.header)),
-                sizeof(DataEntry) - sizeof(decltype(entry.header))
-            );
-            std::uint32_t cs2 = get_checksum(key.data(), key.size());
-            std::uint32_t cs3 = get_checksum(value.data(), value.size());
-            return cs1 + cs2 + cs3;
-        }
-
         /// Emplace between iter_prev and iter_next, linkage not checked
         /// When fail to Emplace, throw bad_alloc
         /// If system fails, it is guaranteed the dlinked_list is in one of the following state:
@@ -519,7 +379,7 @@ namespace KVDK_NAMESPACE
         ///     3) entry emplaced and linked in the forward direction
         ///     4) entry emplaced and linked in both directions
         /// When recovering, just recover head and tail, then iterating through to repair
-        inline DListIterator _EmplaceBetween_
+        inline DListIterator EmplaceBetween
         (
             DListIterator iter_prev,
             DListIterator iter_next,
@@ -576,6 +436,54 @@ namespace KVDK_NAMESPACE
             throw;
         }
 
+    private:
+        /// Persist a DLDataEntry. 
+        /// The caller must supply complete DLDataEntry, aka,
+        /// a DLDataEntry with pre-calculated checksum
+        inline static void _PersistRecord_
+        (
+            void* pmp,
+            DLDataEntry const& entry,           // Complete DLDataEntry supplied by caller
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value
+        )
+        {
+            // Persist key and value
+            size_t sz_entry = sizeof(DLDataEntry);
+            char* pmp_dest = static_cast<char*>(pmp);
+            pmp_dest += sz_entry;
+            pmem_memcpy(pmp_dest, key.data(), key.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
+            pmp_dest += key.size();
+            pmem_memcpy(pmp_dest, value.data(), value.size(), PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
+            pmem_flush(pmp, key.size() + value.size());
+            pmem_drain();
+
+            // Persist DLDataEntry last
+            pmem_memcpy(pmp, &entry, sz_entry, PMEM_F_MEM_NONTEMPORAL);
+        }
+
+        /// Compute Checksum of the to-be-emplaced record
+        /// with meta, key and value.
+        inline static std::uint32_t _CheckSum_
+        (
+            DLDataEntry const& entry,           // Incomplete DLDataEntry, only meta is valid
+            pmem::obj::string_view const key,
+            pmem::obj::string_view const value
+        )
+        {
+            std::uint32_t cs1 = get_checksum
+            (
+                reinterpret_cast<char const*>(&entry) + sizeof(decltype(entry.header)),
+                sizeof(DataEntry) - sizeof(decltype(entry.header))
+            );
+            std::uint32_t cs2 = get_checksum(key.data(), key.size());
+            std::uint32_t cs3 = get_checksum(value.data(), value.size());
+            return cs1 + cs2 + cs3;
+        }
+
+        /// Extract user-key from internal-key used by the collection.
+        /// Internal key has 8-byte ID as prefix.
+        /// User-key does not have that ID.
         inline static pmem::obj::string_view _ExtractKey_(pmem::obj::string_view internal_key)
         {
             constexpr size_t sz_id = 8;
@@ -583,6 +491,7 @@ namespace KVDK_NAMESPACE
             return pmem::obj::string_view(internal_key.data() + sz_id, internal_key.size() - sz_id);
         }
 
+        /// Extract ID from internal-key
         inline static std::uint64_t _ExtractID_(pmem::obj::string_view internal_key)
         {
             std::uint64_t id;
@@ -591,11 +500,13 @@ namespace KVDK_NAMESPACE
             return id;
         }
 
+        /// Output DlinkedList to ostream for debugging purpose.
         friend std::ostream& operator<<(std::ostream& out, DLinkedList const& dlist)
         {
             out << "Contents of DlinkedList:\n";
             DListIterator iter = DListIterator{dlist._p_pmem_allocator_, dlist._pmp_head_};
-            while (iter != DListIterator{dlist._p_pmem_allocator_, dlist._pmp_tail_})
+            DListIterator iter_end = DListIterator{dlist._p_pmem_allocator_, dlist._pmp_tail_};
+            while (iter != iter_end)
             {
                 auto internal_key = iter->Key();
                 out << "Type: " << hex_print(iter->type)    <<"\t"

@@ -15,8 +15,6 @@
 #include "dlinked_list.hpp"
 #include "kvdk/iterator.hpp"
 
-/// TODO: Use DLinkedList to manipulate emplacements instead of _EmplaceBetween_
-
 namespace KVDK_NAMESPACE
 {
     /// [Obsolete?]
@@ -271,6 +269,8 @@ namespace KVDK_NAMESPACE
         /// For locking, locking only
         std::shared_ptr<HashTable> _sp_hash_table_;
 
+        PMEMAllocator* _p_pmem_allocator_;
+
         /// DlistRecord for recovering
         DLDataEntry* _pmp_dlist_record_;
 
@@ -372,6 +372,18 @@ namespace KVDK_NAMESPACE
             DataEntryType type,
             std::unique_lock<SpinMutex> const& lock
         );
+
+        /// Deallocate a Record given by caller.
+        /// Emplace functions does not do deallocations.
+        inline static void Deallocate(DLDataEntry* pmp, PMEMAllocator* p_pmem_allocator)
+        {
+            DLinkedList::Deallocate(DListIterator{p_pmem_allocator, pmp});
+        }
+
+        inline void Deallocate(DLDataEntry* pmp)
+        {
+            DLinkedList::Deallocate(DListIterator{_p_pmem_allocator_, pmp});
+        }
 
         inline std::uint64_t ID() const { return _id_; }
 
@@ -476,16 +488,6 @@ namespace KVDK_NAMESPACE
             return id;
         }
 
-        /// Make UniqueLockTriplet<SpinMutex> to lock adjacent three nodes, not locked yet.
-        /// Also accepts UnorderedIterator by implicit casting
-        /// [deprecated]
-        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet3Nodes_(DListIterator iter_mid, SpinMutex* spin_mid = nullptr);
-
-        /// Make UniqueLockTriplet<SpinMutex> to lock adjacent two nodes between which the new node is to be emplaced
-        /// Also locks the slot for new node
-        /// [deprecated]
-        // UniqueLockTriplet<SpinMutex> _MakeUniqueLockTriplet2Nodes_(DListIterator iter_prev, SpinMutex* spin_new);
-
         inline SpinMutex* _GetMutex_(pmem::obj::string_view internal_key)
         {
             return _sp_hash_table_->GetHint(internal_key).spin;
@@ -559,11 +561,12 @@ namespace KVDK_NAMESPACE
         friend class UnorderedCollection;
 
     public:
-        /// Construct UnorderedIterator of a certain UnorderedCollection
+        /// Construct UnorderedIterator of a given UnorderedCollection
         /// The Iterator is invalid now.
         /// Must SeekToFirst() or SeekToLast() before use.
         UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
+        /// [Deprecated?]
         /// Construct UnorderedIterator of a certain UnorderedCollection
         /// pointing to a DLDataEntry belonging to this collection
         /// Runtime checking the type of this UnorderedIterator,

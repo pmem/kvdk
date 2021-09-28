@@ -1353,6 +1353,12 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
       {
         case Status::NotFound:
         {
+          if (type == DataEntryType::DlistDeleteRecord)
+          {
+            assert(false && "Trying to delete non-existing key");
+            throw std::runtime_error{"Trying to delete non-existing key"};
+          }
+          
           // Cached position for emplacement not available.
           if (!pmp_last_emplacement || id_last != p_collection->ID())
           {
@@ -1371,6 +1377,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry_record.offset));
 
           emplace_result = p_collection->SwapEmplace(pmp_old_record ,ts, key, value, type, lock_record);
+          // p_collection->Deallocate(pmp_old_record);
           break;
         }
         default:
@@ -1510,6 +1517,11 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
           {
             hash_table_->Insert(hint_record, p_hash_entry_record, data_entry_cached.type, offset_record, 
                                 HashOffsetType::UnorderedCollectionElement);
+            UnorderedCollection::Deallocate(pmp_old_record, pmem_allocator_.get());
+          }
+          else
+          {
+            UnorderedCollection::Deallocate(static_cast<DLDataEntry*>(pmp_record), pmem_allocator_.get());
           }
           return Status::Ok;
         }

@@ -191,14 +191,16 @@ void DBWrite(int tid) {
   }
 }
 
-void DBScan(int tid) {
+void DBScan(int tid) 
+{
   uint64_t operations = 0;
   uint64_t operations_counted = 0;
   std::string k;
   std::string v;
   k.resize(8);
   int scan_length = 100;
-  while (!done) {
+  while (!done) 
+  {
     uint64_t num = generate_key();
     memcpy(&k[0], &num, 8);
     if (bench_sorted)
@@ -209,9 +211,14 @@ void DBScan(int tid) {
         iter->Seek(k);
         for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
         {
-          ++operations;
           k = iter->Key();
           v = iter->Value();
+          ++operations;
+          if (operations > operations_counted + 1000) 
+          {
+            read_ops += (operations - operations_counted);
+            operations_counted = operations;
+          }
         }
       } else {
         fprintf(stderr, "Error creating SortedIterator\n");
@@ -225,18 +232,19 @@ void DBScan(int tid) {
       {     
         for (iter->SeekToFirst(); iter->Valid(); iter->Next())
         {
-          ++operations;
           k = iter->Key();
           v = iter->Value();
+          ++operations;
+          if (operations > operations_counted + 1000) 
+          {
+            read_ops += (operations - operations_counted);
+            operations_counted = operations;
+          }
         }
       } else {
         fprintf(stderr, "Error creating UnorderedIterator\n");
         exit(-1);
       }     
-    }
-    if (operations > operations_counted + 1000) {
-      read_ops += (operations - operations_counted);
-      operations_counted = operations;
     }
   }
 }
@@ -405,13 +413,18 @@ int main(int argc, char **argv) {
   printf("------- ops in seconds -----------\n");
   printf("time (ms),   read ops,   not found,  write ops,  total read,  total "
          "write\n");
+  uint64_t total_read = 0;
+  uint64_t total_write = 0;
+  uint64_t total_not_found = 0;
   while (!done) {
     sleep(1);
-    if (!done) { // for latency, the last second may not accurate
+    { 
+      // for latency, the last second may not accurate
       run_time++;
-      uint64_t total_read = read_ops.load();
-      uint64_t total_write = write_ops.load();
-      uint64_t total_not_found = read_not_found.load();
+      total_read = read_ops.load();
+      total_write = write_ops.load();
+      total_not_found = read_not_found.load();
+
       auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now() - start_ts);
       printf("%-10lu  %-10lu  %-10lu  %-10lu  %-11lu  %-10lu\n",
@@ -424,11 +437,14 @@ int main(int argc, char **argv) {
       last_write_ops = total_write;
       last_read_notfound = total_not_found;
 
-      if (FLAGS_fill) {
-        if (total_write >= num_keys)
-          done = true;
-      } else if (run_time >= FLAGS_time) {
+      if (FLAGS_fill && total_write >= num_keys) {
+        // Fill
         done = true;
+      } else if (!FLAGS_fill && run_time >= FLAGS_time) {
+        // Read, scan, update and insert
+        done = true;
+      } else {
+        done = false;
       }
     }
   }
@@ -439,8 +455,8 @@ int main(int argc, char **argv) {
   for (auto &t : ts)
     t.join();
 
-  uint64_t read_thpt = read_ops.load() / run_time;
-  uint64_t write_thpt = write_ops.load() / run_time;
+  uint64_t read_thpt =  total_read / run_time;
+  uint64_t write_thpt = total_write / run_time;
 
   printf(" ------------ statistics ------------\n");
   printf("read ops %lu, write ops %lu\n", read_thpt, write_thpt);

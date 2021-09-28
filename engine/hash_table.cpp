@@ -31,8 +31,8 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     }
     case HashOffsetType::UnorderedCollection:
     {
-      UnorderedCollection* p_uncoll = hash_entry->p_unordered_collection;
-      data_entry_key = p_uncoll->Name();
+      UnorderedCollection* p_collection = hash_entry->p_unordered_collection;
+      data_entry_key = p_collection->Name();
       break;
     }
     case HashOffsetType::SkiplistNode: {
