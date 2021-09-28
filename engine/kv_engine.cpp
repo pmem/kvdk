@@ -1377,7 +1377,10 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(hash_entry_record.offset));
 
           emplace_result = p_collection->SwapEmplace(pmp_old_record ,ts, key, value, type, lock_record);
-          // p_collection->Deallocate(pmp_old_record);
+          if (emplace_result.success)
+          {
+            p_collection->Deallocate(pmp_old_record);
+          }
           break;
         }
         default:
@@ -1410,9 +1413,6 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         id_last = p_collection->ID();
 
         hash_table_->Insert(hint_record, p_hash_entry_record, type, emplace_result.offset_new, HashOffsetType::UnorderedCollectionElement);
-
-        // if (n_try > 1)
-        //   GlobalLogger.Info("HSetOrDelete takes %d tries.\n", n_try);          
 
         return Status::Ok;
       }
