@@ -110,11 +110,9 @@ private:
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const pmem::obj::string_view &key,
-                       const pmem::obj::string_view &value,
-                       BatchWriteHint *batch_hint);
+                       const pmem::obj::string_view &value);
 
-  Status StringDeleteImpl(const pmem::obj::string_view &key,
-                          BatchWriteHint *batch_hint = nullptr);
+  Status StringDeleteImpl(const pmem::obj::string_view &key);
 
   Status StringBatchWriteImpl(const WriteBatch::KV &kv,
                               BatchWriteHint &batch_hint);

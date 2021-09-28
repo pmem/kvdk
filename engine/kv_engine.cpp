@@ -728,7 +728,7 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return StringDeleteImpl(key, nullptr);
+  return StringDeleteImpl(key);
 }
 
 inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
@@ -1206,8 +1206,7 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
   return HashGetImpl(skiplist_key, value, SortedDataRecord);
 }
 
-Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key,
-                                  BatchWriteHint *batch_hint) {
+Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
@@ -1232,24 +1231,19 @@ Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key,
       return s;
     }
 
-    if (batch_hint == nullptr) {
-      // Deleted key may not existed, so we allocate space for delete record
-      // until we found the key
-      sized_space_entry = pmem_allocator_->Allocate(requested_size);
-      if (sized_space_entry.size == 0) {
-        return Status::PmemOverflow;
-      }
-    } else {
-      sized_space_entry = batch_hint->allocated_space;
-    }
-
-    uint64_t new_ts = batch_hint ? batch_hint->timestamp : get_timestamp();
-    if (new_ts < data_entry.timestamp) {
-      if (sized_space_entry.size > 0) {
-        pmem_allocator_->Free(sized_space_entry);
-      }
+    if (data_entry.type == StringDeleteRecord) {
       return Status::Ok;
     }
+
+    // Deleted key may not existed, so we allocate space for delete record
+    // until we found the key
+    sized_space_entry = pmem_allocator_->Allocate(requested_size);
+    if (sized_space_entry.size == 0) {
+      return Status::PmemOverflow;
+    }
+
+    uint64_t new_ts = get_timestamp();
+    assert(new_ts > data_entry.timestamp);
 
     block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
@@ -1269,8 +1263,7 @@ Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key,
 }
 
 Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
-                               const pmem::obj::string_view &value,
-                               BatchWriteHint *batch_hint) {
+                               const pmem::obj::string_view &value) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
@@ -1278,16 +1271,11 @@ Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
 
   uint32_t requested_size = v_size + key.size() + sizeof(DataEntry);
   char *block_base = nullptr;
-  SizedSpaceEntry sized_space_entry;
 
   // Space is already allocated for batch writes
-  if (batch_hint == nullptr) {
-    sized_space_entry = pmem_allocator_->Allocate(requested_size);
-    if (sized_space_entry.size == 0) {
-      return Status::PmemOverflow;
-    }
-  } else {
-    sized_space_entry = batch_hint->allocated_space;
+  SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(requested_size);
+  if (sized_space_entry.size == 0) {
+    return Status::PmemOverflow;
   }
 
   {
@@ -1304,13 +1292,8 @@ Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
     block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
-    uint64_t new_ts = batch_hint ? batch_hint->timestamp : get_timestamp();
-    if (found && new_ts < data_entry.timestamp) {
-      if (sized_space_entry.size > 0) {
-        pmem_allocator_->Free(sized_space_entry);
-      }
-      return Status::Ok;
-    }
+    uint64_t new_ts = get_timestamp();
+    assert(new_ts > data_entry.timestamp);
 
     DataEntry write_entry(0, sized_space_entry.size, new_ts, StringDataRecord,
                           key.size(), v_size);
@@ -1342,6 +1325,6 @@ Status KVEngine::Set(const pmem::obj::string_view key,
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
-  return StringSetImpl(key, value, nullptr);
+  return StringSetImpl(key, value);
 }
 } // namespace KVDK_NAMESPACE
