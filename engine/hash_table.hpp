@@ -148,9 +148,12 @@ private:
     return bucket / num_buckets_per_slot_;
   }
 
+  // Check if "key" of data type "target_type" is indexed by "hash_entry". If
+  // matches, copy metadata of data entry of "key" to "data_entry_metadata" and
+  // return true, otherwise return false.
   bool MatchHashEntry(const pmem::obj::string_view &key, uint32_t hash_k_prefix,
                       uint16_t target_type, const HashEntry *hash_entry,
-                      void *data_entry);
+                      void *data_entry_metadata);
 
   std::vector<uint64_t> hash_bucket_entries_;
   const uint64_t hash_bucket_num_;

@@ -9,7 +9,8 @@
 namespace KVDK_NAMESPACE {
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
                                uint32_t hash_k_prefix, uint16_t target_type,
-                               const HashEntry *hash_entry, void *data_entry) {
+                               const HashEntry *hash_entry,
+                               void *data_entry_metadata) {
   if ((target_type & hash_entry->header.data_type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
@@ -46,8 +47,8 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     }
     }
 
-    if (__glibc_likely(data_entry != nullptr)) {
-      memcpy(data_entry, data_entry_pmem,
+    if (__glibc_likely(data_entry_metadata != nullptr)) {
+      memcpy(data_entry_metadata, data_entry_pmem,
              data_entry_size(hash_entry->header.data_type));
     }
 
