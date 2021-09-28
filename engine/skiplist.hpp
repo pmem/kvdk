@@ -44,18 +44,21 @@ public:
   static void DeleteNode(SkiplistNode *node) { free(node->heap_space_start()); }
 
   static SkiplistNode *NewNode(const pmem::obj::string_view &key,
-                               DLDataEntry *entry_on_pmem, uint16_t l) {
+                               DLDataEntry *entry_on_pmem, uint8_t height) {
     size_t size;
-    if (l >= kCacheHeight && key.size() > 4) {
-      size = sizeof(SkiplistNode) + 8 * l + key.size() - 4;
+    if (height >= kCacheHeight && key.size() > 4) {
+      size = sizeof(SkiplistNode) + 8 * height + key.size() - 4;
     } else {
-      size = sizeof(SkiplistNode) + 8 * l;
+      size = sizeof(SkiplistNode) + 8 * height;
     }
     void *space = malloc(size);
-    SkiplistNode *node = (SkiplistNode *)((char *)space + 8 * l);
+    SkiplistNode *node = (SkiplistNode *)((char *)space + 8 * height);
     if (node != nullptr) {
       node->data_entry = entry_on_pmem;
-      node->height = l;
+      node->height = height;
+      // make sure this will be linked to skiplist at all the height after
+      // creation
+      node->valid_links = height;
       node->MaybeCacheKey(key);
     }
     return node;
@@ -155,10 +158,12 @@ public:
       for (SkiplistNode *node : in_deleting_nodes_) {
         SkiplistNode::DeleteNode(node);
       }
+      in_deleting_nodes_.clear();
       std::lock_guard<SpinMutex> lg_b(pending_deletion_nodes_spin_);
       for (SkiplistNode *node : pending_deletion_nodes_) {
         SkiplistNode::DeleteNode(node);
       }
+      pending_deletion_nodes_.clear();
     }
   }
 
@@ -222,7 +227,7 @@ public:
       for (SkiplistNode *node : in_deleting_nodes_) {
         SkiplistNode::DeleteNode(node);
       }
-      in_deleting_nodes_.swap(pending_deletion_nodes_);
+      in_deleting_nodes_.clear();
     }
 
     std::lock_guard<SpinMutex> lg_b(pending_deletion_nodes_spin_);
