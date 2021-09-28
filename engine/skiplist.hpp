@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -275,4 +276,32 @@ private:
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   DLDataEntry *current;
 };
+
+class KVEngine;
+class ConcurrentRebuildSorted {
+public:
+  ConcurrentRebuildSorted() = default;
+  void DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                           const KVEngine *engine);
+
+  void
+  DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node, int heightm,
+                      const std::shared_ptr<PMEMAllocator> &pmem_allocator);
+
+  SkiplistNode *GetSortedOffset(int height);
+
+  void LinkedNode(uint64_t thread_id, int height, const KVEngine *engine);
+
+  void Rebuild(const KVEngine *engine);
+
+  static std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>
+      entries_offsets_;
+
+  void UpdateEntriesOffset(const KVEngine *engine);
+
+private:
+  std::mutex map_mu_;
+  std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
+};
+
 } // namespace KVDK_NAMESPACE

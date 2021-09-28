@@ -32,6 +32,7 @@
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
 public:
+  friend class ConcurrentRebuildSorted;
   KVEngine();
   ~KVEngine();
 
@@ -66,7 +67,7 @@ private:
 
     alignas(64) uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
-    std::unordered_set<SkiplistNode *> unlinked_node;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids_;
   };
 
   bool CheckKeySize(const pmem::obj::string_view &key) {
@@ -118,19 +119,6 @@ private:
   Status Recovery();
 
   Status RestoreData(uint64_t thread_id);
-
-  void RestoreSkipList(int height, uint64_t thread_id);
-
-  void DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node);
-
-  void DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node,
-                           int height);
-
-  SkiplistNode *GetSortedOffset(int height);
-
-  void UpdateEntriesOffset();
-
-  void LinkedNode(uint64_t thread_id, int height);
 
   Status RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
                              DataEntry *cached_meta);
@@ -200,11 +188,6 @@ private:
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
-  // {data_entry_offset, <visited, is_created_skiplistnode>}
-  std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>
-      entries_offsets_;
-
-  std::unordered_map<uint64_t, int> visited_skiplist_ids_;
 };
 
 } // namespace KVDK_NAMESPACE
