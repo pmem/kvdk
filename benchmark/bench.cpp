@@ -192,17 +192,14 @@ void DBWrite(int tid) {
 }
 
 void DBScan(int tid) {
-  uint64_t ops = 0;
-  uint64_t num;
+  uint64_t operations = 0;
+  uint64_t operations_counted = 0;
   std::string k;
   std::string v;
   k.resize(8);
   int scan_length = 100;
-  while (true) {
-    if (done) {
-      return;
-    }
-    num = generate_key();
+  while (!done) {
+    uint64_t num = generate_key();
     memcpy(&k[0], &num, 8);
     if (bench_sorted)
     {
@@ -212,7 +209,7 @@ void DBScan(int tid) {
         iter->Seek(k);
         for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
         {
-          ++ops;
+          ++operations;
           k = iter->Key();
           v = iter->Value();
         }
@@ -225,11 +222,10 @@ void DBScan(int tid) {
     {
       auto iter = engine->NewUnorderedIterator(collections[num % num_collections]);
       if (iter)
-      {
-        
+      {     
         for (iter->SeekToFirst(); iter->Valid(); iter->Next())
         {
-          ++ops;
+          ++operations;
           k = iter->Key();
           v = iter->Value();
         }
@@ -238,8 +234,9 @@ void DBScan(int tid) {
         exit(-1);
       }     
     }
-    if (ops % 100 == 0) {
-      read_ops += 100;
+    if (operations > operations_counted + 1000) {
+      read_ops += (operations - operations_counted);
+      operations_counted = operations;
     }
   }
 }

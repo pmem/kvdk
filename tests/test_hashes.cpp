@@ -145,7 +145,7 @@ TEST_F(HashesTest, TestSetOnly)
   }
 
   status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-  ASSERT_EQ(status, kvdk::Status::Ok);
+  ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
 
   std::string global_collection_name{"GlobalCollection"};
 
@@ -155,7 +155,12 @@ TEST_F(HashesTest, TestSetOnly)
     for (size_t j = 0; j < n_kv_per_thread; j++)
     {
       status = engine->HSet(global_collection_name, keys[tid][j], values[tid][j]);
-      ASSERT_EQ(status, kvdk::Status::Ok);
+      ASSERT_EQ(status, kvdk::Status::Ok) 
+        << "Fail to set a key " 
+        << keys[tid][j] 
+        << " in collection "
+        << global_collection_name;
+
       if (j % 100000 == 0)
       {
         std::unique_lock<std::mutex> lock_write{mu_rw};
@@ -176,7 +181,7 @@ TEST_F(HashesTest, TestSetOnly)
     int n_entry = 0;
 
     auto u_iter = engine->NewUnorderedIterator(global_collection_name);
-    ASSERT_TRUE(u_iter != nullptr);
+    ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
     for (u_iter->SeekToFirst(); u_iter->Valid(); u_iter->Next())
     {
       ++n_entry;
@@ -186,10 +191,13 @@ TEST_F(HashesTest, TestSetOnly)
       auto range_found = possible_kvs.equal_range(key);
       for (auto iter = range_found.first; iter != range_found.second; ++iter)
       {
-        ASSERT_EQ(key, iter->first);
+        ASSERT_EQ(key, iter->first)
+          << "Iterated key and key in unordered_multimap does not match: \n"
+          << "Iterated key: " << key << "\n"
+          << "Key in unordered_multimap: " << iter->first;
         match = match || (value == iter->second);
       }
-      ASSERT_TRUE(match);
+      ASSERT_TRUE(match) << "No kv-pair in unordered_multimap matching with iterated kv-pair!";
       if (n_entry % 1000000 == 0)
       {
         std::unique_lock<std::mutex> lock_write{mu_rw};
@@ -203,7 +211,7 @@ TEST_F(HashesTest, TestSetOnly)
           << std::endl;
       }
     }
-    ASSERT_EQ(key_counter.size(), n_entry);
+    ASSERT_EQ(key_counter.size(), n_entry) << "Total entries in collection is incorrect!";
   };
 
   LaunchNThreads(n_thread, HSetHGetHDelete);
