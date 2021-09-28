@@ -269,8 +269,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 
 uint32_t KVEngine::CalculateChecksum(DataEntry *data_entry) {
   bool dl_entry = data_entry->type & (DLDataEntryType);
-  uint32_t checksum = dl_entry ? ((DLDataEntry *)data_entry)->Checksum()
-                               : data_entry->Checksum();
+  uint32_t checksum =
+      dl_entry ? ((DLDataEntry *)data_entry)->Checksum(configs_.pmem_block_size)
+               : data_entry->Checksum(configs_.pmem_block_size);
   return checksum;
 }
 
@@ -750,10 +751,12 @@ inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
   memcpy(data_cpy_target + entry_size + key.size(), value.data(), value.size());
   if (type & DLDataEntryType) {
     DLDataEntry *entry_with_data = ((DLDataEntry *)data_cpy_target);
-    entry_with_data->header.checksum = entry_with_data->Checksum();
+    entry_with_data->header.checksum =
+        entry_with_data->Checksum(configs_.pmem_block_size);
   } else {
     DataEntry *entry_with_data = ((DataEntry *)data_cpy_target);
-    entry_with_data->header.checksum = entry_with_data->Checksum();
+    entry_with_data->header.checksum =
+        entry_with_data->Checksum(configs_.pmem_block_size);
   }
   if (with_buffer) {
     pmem_memcpy(block_base, data_cpy_target,
