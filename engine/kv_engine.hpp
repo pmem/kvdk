@@ -57,8 +57,10 @@ public:
 
 private:
   struct BatchWriteHint {
-    SizedSpaceEntry sized_space_entry;
-    uint64_t ts;
+    uint64_t timestamp{0};
+    SizedSpaceEntry allocated_space{};
+    SizedSpaceEntry free_after_finish{};
+    bool delay_free{false};
   };
 
   struct ThreadLocalRes {
@@ -114,6 +116,9 @@ private:
   Status StringDeleteImpl(const pmem::obj::string_view &key,
                           BatchWriteHint *batch_hint = nullptr);
 
+  Status StringBatchWriteImpl(const WriteBatch::KV &kv,
+                              BatchWriteHint &batch_hint);
+
   Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
                   const pmem::obj::string_view &value);
 
@@ -126,18 +131,15 @@ private:
 
   Status RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *cached_meta);
 
-  Status RestoreSortedRecord(DLDataEntry *pmem_data_entry,
+  Status RestoreStringRecord(DataEntry *pmem_data_entry,
                              DataEntry *cached_meta);
 
-  Status RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
-                                     DataEntry *pmem_data_entry);
+  Status RestoreSortedRecord(DLDataEntry *pmem_data_entry,
+                             DataEntry *cached_meta);
 
   // Check if a sorted data entry has been successfully inserted, and try repair
   // un-finished prev pointer
   bool CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry);
-
-  Status RestoreStringRecord(DataEntry *pmem_data_entry,
-                             DataEntry *cached_meta);
 
   uint32_t CalculateChecksum(DataEntry *data_entry);
 

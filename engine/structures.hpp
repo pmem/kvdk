@@ -56,7 +56,7 @@ template <typename T> struct PointerWithTag {
 
 struct PendingBatch {
   enum class Stage {
-    Done = 0,
+    Finish = 0,
     Processing = 1,
   };
 
