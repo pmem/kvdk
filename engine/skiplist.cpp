@@ -36,9 +36,9 @@ Status Skiplist::Rebuild() {
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
     pmem::obj::string_view key = next_data_entry->Key();
-    Status s = hash_table_->Search(
+    Status s = hash_table_->SearchForRead(
         hash_table_->GetHint(key), key, SortedDataRecord | SortedDeleteRecord,
-        &hash_entry, &data_entry, &entry_base, HashTable::SearchPurpose::Read);
+        &entry_base, &hash_entry, &data_entry);
     // these nodes should be already created during data restoring
     if (s != Status::Ok) {
       GlobalLogger.Error("Rebuild skiplist error\n");

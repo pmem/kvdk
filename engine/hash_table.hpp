@@ -80,15 +80,6 @@ public:
     SpinMutex *spin;
   };
 
-  enum class SearchPurpose : uint8_t {
-    Read = 0,
-    // More read only purpose here
-
-    Write,
-    Recover,
-    // More write purpose here
-  };
-
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
             uint32_t num_buckets_per_slot,
             const std::shared_ptr<PMEMAllocator> &pmem_allocator,
@@ -116,11 +107,35 @@ public:
     return hint;
   }
 
-  Status Search(const KeyHashHint &hint, const pmem::obj::string_view &key,
-                uint16_t type_mask, HashEntry *hash_entry,
-                DataEntry *data_entry, HashEntry **entry_base,
-                SearchPurpose purpose);
+  // Search key in hash table for read operations
+  //
+  // type_mask: which data types to search
+  // entry_base: store hash entry position of "key" if found
+  // hash_entry_snap: store a hash entry copy of searching key for lock-free
+  // read, as hash entry maybe modified by write operations
+  // data_entry_meta: store a copy of data entry metadata part of searching key
+  Status SearchForRead(const KeyHashHint &hint,
+                       const pmem::obj::string_view &key, uint16_t type_mask,
+                       HashEntry **entry_base, HashEntry *hash_entry_snap,
+                       DataEntry *data_entry_meta);
 
+  // Search key in hash table for write operations
+  //
+  // type_mask: which data types to search
+  // entry_base: store hash entry position to write. It's either hash entry
+  // position of "key" to update if it's existing, or a clear position to insert
+  // new hash entry
+  // hash_entry_snap: store a hash entry copy of searching key
+  // data_entry_meta: store a copy of data entry metadata part of searching key
+  // in_recovery: whether called during recovery of kvdk instance
+  Status SearchForWrite(const KeyHashHint &hint,
+                        const pmem::obj::string_view &key, uint16_t type_mask,
+                        HashEntry **entry_base, HashEntry *hash_entry_snap,
+                        DataEntry *data_entry_meta, bool in_recovery = false);
+
+  // Insert a hash entry to hash table
+  //
+  // entry_base: position to insert, it's get from SearchForWrite()
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
               uint64_t offset, HashOffsetType offset_type);
 
