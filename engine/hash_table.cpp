@@ -134,7 +134,14 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
     // iterate hash entries
     *entry_base = (HashEntry *)bucket_base;
     uint64_t i = 0;
-    while (i < entries) {
+    for (i = 0; i < entries; i++) {
+      if (i > 0 && i % num_entries_per_bucket_ == 0) {
+        // next bucket
+        memcpy_8(&bucket_base, bucket_base + hash_bucket_size_ - 8);
+        _mm_prefetch(bucket_base, _MM_HINT_T0);
+      }
+      *entry_base = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+
       memcpy_16(hash_entry_snap, *entry_base);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                          data_entry_meta)) {
@@ -148,36 +155,33 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
           && (*entry_base)->header.data_type == StringDeleteRecord) {
         reusable_entry = *entry_base;
       }
+    }
 
-      i++;
-
-      if (i % num_entries_per_bucket_ == 0) {
-        // reach end of buckets, reuse entry or allocate a new bucket
-        if (i == entries) {
-          if (reusable_entry != nullptr) {
-            if (data_entry_meta) {
-              memcpy(data_entry_meta,
-                     pmem_allocator_->offset2addr(reusable_entry->offset),
-                     sizeof(DataEntry));
-            }
-            *entry_base = reusable_entry;
-            break;
-          } else {
-            auto space = dram_allocator_->Allocate(hash_bucket_size_);
-            if (space.size == 0) {
-              GlobalLogger.Error("Memory overflow!\n");
-              return Status::MemoryOverflow;
-            }
-            char *next_off;
-            next_off = dram_allocator_->offset2addr(space.space_entry.offset);
-            memset(next_off, 0, space.size);
-            memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
+    if (!found) {
+      // reach end of buckets, reuse entry or allocate a new bucket
+      if (i > 0 && i % num_entries_per_bucket_ == 0) {
+        if (reusable_entry != nullptr) {
+          if (data_entry_meta) {
+            memcpy(data_entry_meta,
+                   pmem_allocator_->offset2addr(reusable_entry->offset),
+                   sizeof(DataEntry));
           }
+          *entry_base = reusable_entry;
+        } else {
+          auto space = dram_allocator_->Allocate(hash_bucket_size_);
+          if (space.size == 0) {
+            GlobalLogger.Error("Memory overflow!\n");
+            return Status::MemoryOverflow;
+          }
+          char *next_off;
+          next_off = dram_allocator_->offset2addr(space.space_entry.offset);
+          memset(next_off, 0, space.size);
+          memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
+          *entry_base = (HashEntry *)next_off;
         }
-        memcpy_8(&bucket_base, bucket_base + hash_bucket_size_ - 8);
-        _mm_prefetch(bucket_base, _MM_HINT_T0);
+      } else {
+        *entry_base = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
       }
-      (*entry_base) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
     }
   }
 
