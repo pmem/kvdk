@@ -253,8 +253,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 
 uint32_t KVEngine::CalculateChecksum(DataEntry *data_entry) {
   bool dl_entry = data_entry->type & (DLDataEntryType);
-  uint32_t checksum = dl_entry ? ((DLDataEntry *)data_entry)->Checksum()
-                               : data_entry->Checksum();
+  uint32_t checksum =
+      dl_entry ? ((DLDataEntry *)data_entry)->Checksum(configs_.pmem_block_size)
+               : data_entry->Checksum(configs_.pmem_block_size);
   return checksum;
 }
 
@@ -567,7 +568,7 @@ Status KVEngine::RestorePendingBatch() {
                 pmem_persist(&data_entry->type, 8);
               }
             }
-            pending_batch->PersistStage(PendingBatch::Stage::Done);
+            pending_batch->PersistStage(PendingBatch::Stage::Finish);
           }
 
           if (id < configs_.max_write_threads) {
@@ -706,7 +707,7 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, "", StringDeleteRecord);
+  return StringWriteImpl(key, "", StringDeleteRecord);
 }
 
 inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
@@ -729,10 +730,12 @@ inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
   memcpy(data_cpy_target + entry_size + key.size(), value.data(), value.size());
   if (type & DLDataEntryType) {
     DLDataEntry *entry_with_data = ((DLDataEntry *)data_cpy_target);
-    entry_with_data->header.checksum = entry_with_data->Checksum();
+    entry_with_data->header.checksum =
+        entry_with_data->Checksum(configs_.pmem_block_size);
   } else {
     DataEntry *entry_with_data = ((DataEntry *)data_cpy_target);
-    entry_with_data->header.checksum = entry_with_data->Checksum();
+    entry_with_data->header.checksum =
+        entry_with_data->Checksum(configs_.pmem_block_size);
   }
   if (with_buffer) {
     pmem_memcpy(block_base, data_cpy_target,
@@ -995,41 +998,132 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
 
   uint64_t ts = get_timestamp();
 
+  // Allocate space for batch
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets(write_batch.Size());
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto &kv = write_batch.kvs[i];
     uint32_t requested_size =
         kv.key.size() + kv.value.size() + sizeof(DataEntry);
-    batch_hints[i].sized_space_entry =
-        pmem_allocator_->Allocate(requested_size);
-    if (batch_hints[i].sized_space_entry.size == 0) {
+    batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
+    // No enough space for batch write
+    if (batch_hints[i].allocated_space.size == 0) {
+      for (size_t j = 0; j < i; j++) {
+        pmem_allocator_->Free(batch_hints[j].allocated_space);
+      }
       return s;
     }
 
-    batch_hints[i].ts = ts;
-    space_entry_offsets[i] =
-        batch_hints[i].sized_space_entry.space_entry.offset *
-        configs_.pmem_block_size;
+    batch_hints[i].timestamp = ts;
+    space_entry_offsets[i] = batch_hints[i].allocated_space.space_entry.offset *
+                             configs_.pmem_block_size;
   }
 
+  // Persist batch write status as processing
   PendingBatch pending_batch(PendingBatch::Stage::Processing,
                              write_batch.Size(), ts);
   pending_batch.PersistProcessing(
       thread_res_[write_thread.id].persisted_pending_batch,
       space_entry_offsets);
 
+  // Do batch writes
   for (size_t i = 0; i < write_batch.Size(); i++) {
-    auto &kv = write_batch.kvs[i];
-    s = HashSetImpl(kv.key, kv.value, kv.type, &batch_hints[i]);
+    if (write_batch.kvs[i].type == StringDataRecord ||
+        write_batch.kvs[i].type == StringDeleteRecord) {
+      s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
+    } else {
+      return Status::NotSupported;
+    }
 
+    // Something wrong
+    // TODO: roll back finished writes (hard to roll back hash table)
     if (s != Status::Ok) {
-      return s;
+      assert(s == Status::MemoryOverflow);
+      exit(1);
     }
   }
 
-  pending_batch.PersistStage(PendingBatch::Stage::Done);
+  pending_batch.PersistStage(PendingBatch::Stage::Finish);
+
+  // Free updated kvs / unused space
+  for (size_t i = 0; i < write_batch.Size(); i++) {
+    if (batch_hints[i].free_after_finish.size > 0) {
+      if (batch_hints[i].delay_free) {
+        pmem_allocator_->DelayFree(batch_hints[i].free_after_finish);
+      } else {
+        pmem_allocator_->Free(batch_hints[i].free_after_finish);
+      }
+    }
+  }
   return s;
+}
+
+Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
+                                      BatchWriteHint &batch_hint) {
+  DataEntry data_entry;
+  HashEntry hash_entry;
+  HashEntry *entry_base = nullptr;
+
+  {
+    auto hash_hint = hash_table_->GetHint(kv.key);
+    std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+    Status s = hash_table_->Search(hash_hint, kv.key, StringDataEntryType,
+                                   &hash_entry, &data_entry, &entry_base,
+                                   HashTable::SearchPurpose::Write);
+    if (s == Status::MemoryOverflow) {
+      return s;
+    }
+    bool found = s == Status::Ok;
+
+    // Deleting kv is not existing
+    if (kv.type == StringDeleteRecord) {
+      if (!found || data_entry.type == StringDeleteRecord) {
+        batch_hint.free_after_finish = batch_hint.allocated_space;
+        batch_hint.delay_free = false;
+        return Status::Ok;
+      }
+    }
+
+    // A newer version has been set
+    if (found && batch_hint.timestamp < data_entry.timestamp) {
+      batch_hint.free_after_finish = batch_hint.allocated_space;
+      batch_hint.delay_free = false;
+      return Status::Ok;
+    }
+
+    char *block_base = pmem_allocator_->offset2addr(
+        batch_hint.allocated_space.space_entry.offset);
+
+    DataEntry write_entry(0, batch_hint.allocated_space.size,
+                          batch_hint.timestamp, kv.type, kv.key.size(),
+                          kv.value.size());
+
+    // We use if here to avoid compilation warning
+    if (kv.type == StringDataRecord || kv.type == StringDeleteRecord) {
+      PersistDataEntry(block_base, &write_entry, kv.key, kv.value, kv.type);
+    } else {
+      // Never reach
+      assert(false);
+      return Status::NotSupported;
+    }
+
+    auto entry_base_status = entry_base->header.status;
+    hash_table_->Insert(hash_hint, entry_base, kv.type,
+                        batch_hint.allocated_space.space_entry.offset,
+                        HashOffsetType::DataEntry);
+
+    if (entry_base_status == HashEntryStatus::Updating) {
+      batch_hint.free_after_finish = SizedSpaceEntry(
+          hash_entry.offset, data_entry.header.b_size, data_entry.timestamp);
+      batch_hint.delay_free = false;
+    } else if (entry_base_status == HashEntryStatus::BeingReused) {
+      batch_hint.free_after_finish = SizedSpaceEntry(
+          hash_entry.offset, data_entry.header.b_size, data_entry.timestamp);
+      batch_hint.delay_free = true;
+    }
+  }
+
+  return Status::Ok;
 }
 
 Status KVEngine::SGet(const pmem::obj::string_view collection,
@@ -1047,27 +1141,22 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
                      SortedDataRecord | SortedDeleteRecord);
 }
 
-Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
-                             const pmem::obj::string_view &value, uint16_t dt,
-                             BatchWriteHint *batch_hint) {
+Status KVEngine::StringWriteImpl(const pmem::obj::string_view &key,
+                                 const pmem::obj::string_view &value,
+                                 uint16_t dt) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
-  uint32_t v_size = value.size();
 
-  uint32_t requested_size = v_size + key.size() + sizeof(DataEntry);
+  uint32_t requested_size = value.size() + key.size() + sizeof(DataEntry);
   char *block_base = nullptr;
   SizedSpaceEntry sized_space_entry;
 
-  if (batch_hint == nullptr) {
-    if (dt != StringDeleteRecord) {
-      sized_space_entry = pmem_allocator_->Allocate(requested_size);
-      if (sized_space_entry.size == 0) {
-        return Status::PmemOverflow;
-      }
+  if (dt != StringDeleteRecord) {
+    sized_space_entry = pmem_allocator_->Allocate(requested_size);
+    if (sized_space_entry.size == 0) {
+      return Status::PmemOverflow;
     }
-  } else {
-    sized_space_entry = batch_hint->sized_space_entry;
   }
 
   {
@@ -1080,13 +1169,15 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
       return s;
     }
     bool found = s == Status::Ok;
-    if (dt == StringDeleteRecord && batch_hint == nullptr) {
+
+    if (dt == StringDeleteRecord) {
       if (found && entry_base->header.data_type != StringDeleteRecord) {
         sized_space_entry = pmem_allocator_->Allocate(requested_size);
         if (sized_space_entry.size == 0) {
           return Status::PmemOverflow;
         }
       } else {
+        // deleting kv is not existing
         return Status::Ok;
       }
     }
@@ -1094,16 +1185,11 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
     block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
-    uint64_t new_ts = batch_hint ? batch_hint->ts : get_timestamp();
-    if (found && new_ts < data_entry.timestamp) {
-      if (sized_space_entry.size > 0) {
-        pmem_allocator_->Free(sized_space_entry);
-      }
-      return Status::Ok;
-    }
+    uint64_t new_ts = get_timestamp();
+    assert(!found || new_ts > data_entry.timestamp);
 
     DataEntry write_entry(0, sized_space_entry.size, new_ts, dt, key.size(),
-                          v_size);
+                          value.size());
     PersistDataEntry(block_base, &write_entry, key, value, dt);
 
     auto entry_base_status = entry_base->header.status;
@@ -1132,6 +1218,6 @@ Status KVEngine::Set(const pmem::obj::string_view key,
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, value, StringDataRecord);
+  return StringWriteImpl(key, value, StringDataRecord);
 }
 } // namespace KVDK_NAMESPACE

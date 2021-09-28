@@ -49,15 +49,17 @@ protected:
     int res __attribute__((unused)) = system(cmd);
   }
 
-  virtual void TearDown() {
-    char cmd[1024];
-    sprintf(cmd, "rm -rf %s\n", db_path.c_str());
-    int res __attribute__((unused)) = system(cmd);
-    // delete db_path
-  }
+  virtual void TearDown() { Destroy(); }
 
   void AssignData(std::string &data, int len) {
     data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
+  }
+
+  void Destroy() {
+    // delete db_path
+    char cmd[1024];
+    sprintf(cmd, "rm -rf %s\n", db_path.c_str());
+    int res __attribute__((unused)) = system(cmd);
   }
 };
 
@@ -194,23 +196,25 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
 }
 
 TEST_F(EngineBasicTest, TestFreeList) {
-  // TODO: Add more cases
   configs.pmem_segment_blocks = 4 * kMinPaddingBlockSize;
   configs.max_write_threads = 1;
   configs.pmem_block_size = 64;
   configs.pmem_file_size =
       configs.pmem_segment_blocks * configs.pmem_block_size;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
+  configs.background_work_interval = 0.5;
+
   std::string key1("a1");
   std::string key2("a2");
   std::string key3("a3");
   std::string key4("a4");
   std::string small_value(64 * (kMinPaddingBlockSize - 1) + 1, 'a');
   std::string large_value(64 * (kMinPaddingBlockSize * 2 - 1) + 1, 'a');
+
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
   // We have 4 kMinimalPaddingBlockSize size chunk of blocks, this will take
   // up 2 of them
-
   ASSERT_EQ(engine->Set(key1, large_value), Status::Ok);
 
   // update large value, new value will be stored in 3th chunk
@@ -224,14 +228,22 @@ TEST_F(EngineBasicTest, TestFreeList) {
 
   ASSERT_EQ(engine->Set(key2, small_value), Status::Ok);
 
-  delete engine;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
+  // No more space to store large_value
+  ASSERT_EQ(engine->Set(key3, large_value), Status::PmemOverflow);
+
+  // Wait bg thread finish merging space of 3th and 4th chunks
+  sleep(2);
 
   // large key3 will be stored in merged 3th and 4th chunks
   ASSERT_EQ(engine->Set(key3, large_value), Status::Ok);
 
   // No more space
+  ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
+
+  delete engine;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // Still no more space after re-open
   ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
 }
 
