@@ -84,9 +84,14 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
 
   if (!found) {
     // iterate hash entrys
-    *entry_base = (HashEntry *)bucket_base;
-    uint64_t i = 0;
-    while (i < entries) {
+    for (uint64_t i = 0; i < entries; i++) {
+      if (i > 0 && i % num_entries_per_bucket_ == 0) {
+        // next bucket
+        memcpy_8(&bucket_base, bucket_base + hash_bucket_size_ - 8);
+        _mm_prefetch(bucket_base, _MM_HINT_T0);
+      }
+      *entry_base = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+
       memcpy_16(hash_entry_snap, *entry_base);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                          data_entry_meta)) {
@@ -94,21 +99,6 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
         found = true;
         break;
       }
-
-      i++;
-
-      // next bucket
-      if (i % num_entries_per_bucket_ == 0) {
-        char *next_off;
-        if (i == entries) {
-          break;
-        } else {
-          memcpy_8(&next_off, bucket_base + hash_bucket_size_ - 8);
-        }
-        bucket_base = next_off;
-        _mm_prefetch(bucket_base, _MM_HINT_T0);
-      }
-      (*entry_base) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
     }
   }
   return found ? Status::Ok : Status::NotFound;
@@ -141,7 +131,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
   }
 
   if (!found) {
-    // iterate hash entrys
+    // iterate hash entries
     *entry_base = (HashEntry *)bucket_base;
     uint64_t i = 0;
     while (i < entries) {
@@ -161,9 +151,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
 
       i++;
 
-      // next bucket
       if (i % num_entries_per_bucket_ == 0) {
-        char *next_off;
         // reach end of buckets, reuse entry or allocate a new bucket
         if (i == entries) {
           if (reusable_entry != nullptr) {
@@ -180,14 +168,13 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
               GlobalLogger.Error("Memory overflow!\n");
               return Status::MemoryOverflow;
             }
+            char *next_off;
             next_off = dram_allocator_->offset2addr(space.space_entry.offset);
             memset(next_off, 0, space.size);
             memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
           }
-        } else {
-          memcpy_8(&next_off, bucket_base + hash_bucket_size_ - 8);
         }
-        bucket_base = next_off;
+        memcpy_8(&bucket_base, bucket_base + hash_bucket_size_ - 8);
         _mm_prefetch(bucket_base, _MM_HINT_T0);
       }
       (*entry_base) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
