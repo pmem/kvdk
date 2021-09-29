@@ -1365,8 +1365,9 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         {
           if (type == DataEntryType::DlistDeleteRecord)
           {
-            assert(false && "Trying to delete non-existing key");
-            throw std::runtime_error{"Trying to delete non-existing key"};
+            // assert(false && "Trying to delete non-existing key");
+            // throw std::runtime_error{"Trying to delete non-existing key"};
+            return Status::Ok;
           }
           
           // Cached position for emplacement not available.
