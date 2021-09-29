@@ -64,56 +64,35 @@ protected:
     configs.hash_bucket_size = sz_hash_bucket;
     configs.pmem_segment_blocks = n_blocks_per_segment;
 
+    _keys_.reserve(n_thread * n_kv_per_thread);
+    _values_.reserve(n_kv_per_thread);
     keys.resize(n_thread);
     values.resize(n_thread);
-    for (size_t i = 0; i < n_kv_per_thread; i++)
-    {
-        _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
-        for (size_t tid = 0; tid < n_thread; tid++)
-        {
-            _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
-        }
-        if (i % 100000 == 0)
-        {
-          std::cout 
-            << "[Info] "
-            << "Generated "
-            << i
-            << " strings for values and "
-            << i * n_thread
-            << " strings for keys."
-            << std::endl;
-        }
-    }
-    for (size_t i = 0; i < n_kv_per_thread; i++)
-    {
-        for (size_t tid = 0; tid < n_thread; tid++)
-        {
-            keys[tid].emplace_back(_keys_[i*n_thread+tid]);
-            values[tid].emplace_back(_values_[i]);
-        }
-        if (i % 100000 == 0)
-        {
-          std::cout 
-            << "[Info] "
-            << "Generated "
-            << i
-            << " string_views for values and "
-            << i * n_thread
-            << " string_views for keys."
-            << std::endl;
-        }
-    }
     for (size_t tid = 0; tid < n_thread; tid++)
     {
-        std::shuffle(keys[tid].begin(), keys[tid].end(), rand);
-        std::shuffle(values[tid].begin(), values[tid].end(), rand);
-        std::cout
-          << "[Info] "
-          << "Shuffled keys and values for thread "
-          << tid
-          << "."
-          << std::endl;
+      keys[tid].reserve(n_kv_per_thread);
+      values[tid].reserve(n_kv_per_thread);
+    }
+    
+    std::cout << "Generating string for keys and values" << std::endl; 
+    for (size_t i = 0; i < n_kv_per_thread; i++)
+    {
+      _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
+      for (size_t tid = 0; tid < n_thread; tid++)
+          _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
+      if (i % 10000 == 0)
+        ShowProgress(std::cout, i, n_kv_per_thread);
+    }
+    std::cout << "Generating string_view for keys and values" << std::endl; 
+    for (size_t i = 0; i < n_kv_per_thread; i++)
+    {
+      for (size_t tid = 0; tid < n_thread; tid++)
+      {
+          keys[tid].emplace_back(_keys_[i*n_thread+tid]);
+          values[tid].emplace_back(_values_[i]);
+      }
+      if (i % 10000 == 0)
+        ShowProgress(std::cout, i, n_kv_per_thread);
     }
   }
 
@@ -121,66 +100,47 @@ protected:
   {
       PurgeDB();
   }
-};
 
-TEST_F(HashesTest, TestSetOnly) 
-{
-  std::mutex mu_rw;
-  kvdk::Status status;
-  std::unordered_multimap<std::string_view, std::string_view> possible_kvs;
-  std::unordered_set<std::string_view> key_counter;
-  for (size_t tid = 0; tid < n_thread; tid++)
+  void shuffle_keys(size_t tid)
   {
-      for (size_t i = 0; i < n_kv_per_thread; i++)
-      {
-        possible_kvs.emplace(keys[tid][i], values[tid][i]);
-        key_counter.insert(keys[tid][i]);
-      }
-      std::cout
-        << "[Info] "
-        << "Preparing unordered_multimap and unordered_set for thread "
-        << tid
-        << " done."
-        << std::endl;
+    std::shuffle(keys[tid].begin(), keys[tid].end(), rand);
+  }
+  void shuffle_values(size_t tid)
+  {
+    std::shuffle(values[tid].begin(), values[tid].end(), rand);
   }
 
-  status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-  ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
-
-  std::string global_collection_name{"GlobalCollection"};
-
-  auto HSetHGetHDelete = [&](uint32_t tid) 
+  void HSetOnly(uint32_t tid, std::string collection_name, bool report_progress = false) 
   {
-    std::string value_got;
+    kvdk::Status status;
+    if (report_progress)
+      std::cout << "Executing HSetOnly with thread " << tid << std::endl;
+    
     for (size_t j = 0; j < n_kv_per_thread; j++)
     {
-      status = engine->HSet(global_collection_name, keys[tid][j], values[tid][j]);
+      status = engine->HSet(collection_name, keys[tid][j], values[tid][j]);
       EXPECT_EQ(status, kvdk::Status::Ok) 
         << "Fail to set a key " 
         << keys[tid][j] 
         << " in collection "
-        << global_collection_name;
-
-      if (tid == 0 && j % 100000 == 0)
-      {
-        std::unique_lock<std::mutex> lock_write{mu_rw};
-        std::cout 
-          << "[Info] "
-          << "Thread "
-          << tid
-          << " have HSet "
-          << j
-          << " records."
-          << std::endl;
-      }
+        << collection_name;
+      
+      if (report_progress && j % 10000 == 0)
+        ShowProgress(std::cout, j, n_kv_per_thread);
     }
-  };
-  
-  auto IteratingThrough = [&](uint32_t tid) 
-  {
-    int n_entry = 0;
+  }
 
-    auto u_iter = engine->NewUnorderedIterator(global_collection_name);
+  // possible_kvs is searched to try to find a match with iterated records
+  void IterateThrough(uint32_t tid, std::string collection_name, 
+                        std::unordered_multimap<std::string_view, std::string_view> const& possible_kvs, 
+                        bool report_progress = false) 
+  {
+    if (report_progress)
+      std::cout << "IterateThrough Collection " << collection_name << " with thread " << tid << std::endl;
+    int n_entry = 0;
+    int n_iterated_possible_kvs = 0;
+
+    auto u_iter = engine->NewUnorderedIterator(collection_name);
     ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
     for (u_iter->SeekToFirst(); u_iter->Valid(); u_iter->Next())
     {
@@ -189,6 +149,7 @@ TEST_F(HashesTest, TestSetOnly)
       auto value = u_iter->Value();
       bool match = false;
       auto range_found = possible_kvs.equal_range(key);
+      
       for (auto iter = range_found.first; iter != range_found.second; ++iter)
       {
         EXPECT_EQ(key, iter->first)
@@ -196,36 +157,75 @@ TEST_F(HashesTest, TestSetOnly)
           << "Iterated key: " << key << "\n"
           << "Key in unordered_multimap: " << iter->first;
         match = match || (value == iter->second);
+        ++n_iterated_possible_kvs;
       }
       EXPECT_TRUE(match) 
         << "No kv-pair in unordered_multimap matching with iterated kv-pair:\n"
         << "Key: " << key << "\n"
         << "Value: " << value << "\n";
-      if (tid == 0 && n_entry % 1000000 == 0)
-      {
-        std::unique_lock<std::mutex> lock_write{mu_rw};
-        std::cout 
-          << "[Info] "
-          << "Thread "
-          << tid
-          << " have iterated "
-          << n_entry
-          << " records."
-          << std::endl;
-      }
+      if (report_progress && n_iterated_possible_kvs % 10000 == 0)
+        ShowProgress(std::cout, n_iterated_possible_kvs, possible_kvs.size());
     }
-    ASSERT_EQ(key_counter.size(), n_entry) << "Total entries in collection is incorrect!";
+  }
+};
+
+TEST_F(HashesTest, SetOnly) 
+{
+  kvdk::Status status;
+
+  status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+  ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+
+  std::string global_collection_name{"GlobalCollection"};
+
+  std::cout << "Preparing unordered_multimap and unordered_set to check contents of engine" << std::endl;
+  std::unordered_multimap<std::string_view, std::string_view> possible_kvs;
+  std::unordered_set<std::string_view> key_counter;
+  possible_kvs.reserve(n_thread * n_kv_per_thread * 2);
+  key_counter.reserve(n_thread * n_kv_per_thread * 2);
+  for (size_t tid = 0; tid < n_thread; tid++)
+  {
+      for (size_t i = 0; i < n_kv_per_thread; i++)
+      {
+        possible_kvs.emplace(keys[tid][i], values[tid][i]);
+        key_counter.insert(keys[tid][i]);
+      }
+      ShowProgress(std::cout, tid + 1, n_thread);
+  }
+
+  auto DoHSet = [&](std::uint64_t tid)
+  {
+    if (tid == 0)
+    {
+      HSetOnly(tid, global_collection_name, true);
+    }
+    else
+    {
+      HSetOnly(tid, global_collection_name, false);
+    }
   };
 
-  LaunchNThreads(n_thread, HSetHGetHDelete);
-  LaunchNThreads(1, IteratingThrough);  
+  auto DoIterate = [&](std::uint64_t tid)
+  {
+    if (tid == 0)
+    {
+      IterateThrough(tid, global_collection_name, possible_kvs, true);
+    }
+    else
+    {
+      IterateThrough(tid, global_collection_name, possible_kvs, false);
+    }
+  };
+
+  LaunchNThreads(n_thread, DoHSet);
+  LaunchNThreads(1, DoIterate);  
 
   delete engine;
 
   status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
   ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
 
-  LaunchNThreads(1, IteratingThrough);
+  LaunchNThreads(1, DoIterate);  
 }
 
 int main(int argc, char **argv) 

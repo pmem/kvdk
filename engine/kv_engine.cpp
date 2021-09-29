@@ -1232,6 +1232,7 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
     {
       case Status::NotFound:
       {
+        value->assign("");
         return Status::NotFound;
       }
       case Status::Ok:

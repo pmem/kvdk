@@ -7,6 +7,8 @@
 #include <vector>
 #include <random>
 #include <string>
+#include <cassert>
+#include <iomanip>
 
 /* Create a string that contains 8 bytes from uint64_t. */
 static inline std::string uint64_to_string(uint64_t &key) {
@@ -64,3 +66,36 @@ static inline void LaunchNThreads(int n_thread, std::function<void(int tid)> fun
     t.join();
 }
 
+static void ShowProgress(std::ostream& os, int progress, int total, size_t len_bar = 50, char symbol_done = '#', char symbol_fill = '-')
+{
+  assert(0 <= progress && progress <= total);
+  int step = total / len_bar;
+  if (step == 0)
+  {
+    len_bar = total;
+    step = 1;
+  }
+  
+  static bool done = false;
+  if ((total - progress) / step != 0)
+    done = false;
+  if (!done)
+  {
+    os << "\r";
+    os << std::setw(12) << std::right << progress;
+    os <<  "/";
+    os << std::setw(12) << std::left << total << "\t";
+    os << "[";
+    for (size_t i = 0; i < progress / step; i++)
+      os << symbol_done;
+    for (size_t i = 0; i < (total - progress) / step; i++)
+      os << symbol_fill;
+    os << "]";
+    os << std::flush;
+    if ((total - progress) / step == 0)
+    {
+      os << std::endl;
+      done = true;
+    }
+  }
+}
