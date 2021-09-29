@@ -154,16 +154,16 @@ public:
         SkiplistNode::DeleteNode(to_delete);
         to_delete = next;
       }
-      std::lock_guard<SpinMutex> lg_a(in_deleting_nodes_spin_);
-      for (SkiplistNode *node : in_deleting_nodes_) {
-        SkiplistNode::DeleteNode(node);
-      }
-      in_deleting_nodes_.clear();
-      std::lock_guard<SpinMutex> lg_b(pending_deletion_nodes_spin_);
+      std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
       for (SkiplistNode *node : pending_deletion_nodes_) {
         SkiplistNode::DeleteNode(node);
       }
       pending_deletion_nodes_.clear();
+      std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
+      for (SkiplistNode *node : obsolete_nodes_) {
+        SkiplistNode::DeleteNode(node);
+      }
+      obsolete_nodes_.clear();
     }
   }
 
@@ -215,23 +215,23 @@ public:
                        SkiplistNode *dram_node);
 
   void AddInvalidNodes(const std::vector<SkiplistNode *> nodes) {
-    std::lock_guard<SpinMutex> lg(pending_deletion_nodes_spin_);
+    std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
     for (SkiplistNode *node : nodes) {
-      pending_deletion_nodes_.push_back(node);
+      obsolete_nodes_.push_back(node);
     }
   }
 
-  void MaybeDeleteNodes() {
-    std::lock_guard<SpinMutex> lg_a(in_deleting_nodes_spin_);
-    if (in_deleting_nodes_.size() > 0) {
-      for (SkiplistNode *node : in_deleting_nodes_) {
+  void PurgeObsoleteNodes() {
+    std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
+    if (pending_deletion_nodes_.size() > 0) {
+      for (SkiplistNode *node : pending_deletion_nodes_) {
         SkiplistNode::DeleteNode(node);
       }
-      in_deleting_nodes_.clear();
+      pending_deletion_nodes_.clear();
     }
 
-    std::lock_guard<SpinMutex> lg_b(pending_deletion_nodes_spin_);
-    pending_deletion_nodes_.swap(in_deleting_nodes_);
+    std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
+    obsolete_nodes_.swap(pending_deletion_nodes_);
   }
 
 private:
@@ -240,17 +240,17 @@ private:
   uint64_t id_;
   std::shared_ptr<HashTable> hash_table_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  // nodes to be deleted that unlinked from every height
-  std::vector<SkiplistNode *> pending_deletion_nodes_;
-  // protect pending_deletion_nodes_
-  SpinMutex pending_deletion_nodes_spin_;
+  // nodes that unlinked on every height
+  std::vector<SkiplistNode *> obsolete_nodes_;
   // to avoid concurrent access a just deleted node, a node can be safely
   // deleted only if a certain interval is passes after being moved from
-  // pending_deletion_nodes_ to in_deleting_nodes_, this is guaranteed by
+  // obsolete_nodes_ to pending_deletion_nodes_, this is guaranteed by
   // background thread of kvdk instance
-  std::vector<SkiplistNode *> in_deleting_nodes_;
-  // protect in_deleting_nodes_
-  SpinMutex in_deleting_nodes_spin_;
+  std::vector<SkiplistNode *> pending_deletion_nodes_;
+  // protect obsolete_nodes_
+  SpinMutex obsolete_nodes_spin_;
+  // protect pending_deletion_nodes_
+  SpinMutex pending_delete_nodes_spin_;
 };
 
 class SortedIterator : public Iterator {
