@@ -13,7 +13,7 @@ instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
-populate = 0
+populate = 1
 collections = 16
 value_size_distribution = "constant"
 
