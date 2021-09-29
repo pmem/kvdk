@@ -220,12 +220,18 @@ TEST_F(HashesTest, SetOnly)
   LaunchNThreads(n_thread, DoHSet);
   LaunchNThreads(1, DoIterate);  
 
+  for (size_t i = 0; i < 5; i++)
+  {
+    // Repeatedly delete and open engine to test recovery
+    delete engine;
+
+    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+
+    LaunchNThreads(1, DoIterate);  
+  }
+
   delete engine;
-
-  status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-  ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
-
-  LaunchNThreads(1, DoIterate);  
 }
 
 int main(int argc, char **argv) 

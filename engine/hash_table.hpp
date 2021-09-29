@@ -155,6 +155,7 @@ public:
   {
     uint64_t offset;
     UnorderedCollection* p_unordered_collection;
+    HashEntry* p_next_bucket;
   };
 
   

@@ -176,12 +176,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
       uint32_t checksum = CalculateChecksum(
           static_cast<DataEntry *>(recovering_pmem_data_entry));
       if (cached_recovering_data_entry.header.checksum != checksum) {
-        // Checksum dismatch, mark PMem SizedSpaceEntry as padding to Free
+        // Checksum dismatch, mark as padding to be Freed
         // Otherwise the Restore will continue normally
-        DataEntryType type_padding = DataEntryType::Padding;
-        pmem_memcpy(&static_cast<DataEntry *>(recovering_pmem_data_entry)->type,
-                    &type_padding, sizeof(DataEntryType),
-                    PMEM_F_MEM_NONTEMPORAL);
         cached_recovering_data_entry.type = DataEntryType::Padding;
       }
       break;
@@ -208,6 +204,10 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
     // Free the space and fetch another
     if (cached_recovering_data_entry.type == DataEntryType::Padding)
     {
+      DataEntryType type_padding = DataEntryType::Padding;
+      pmem_memcpy(&static_cast<DataEntry *>(recovering_pmem_data_entry)->type,
+                  &type_padding, sizeof(DataEntryType),
+                  PMEM_F_MEM_NONTEMPORAL);
       pmem_allocator_->Free(SizedSpaceEntry(
           pmem_allocator_->addr2offset(recovering_pmem_data_entry),
           cached_recovering_data_entry.header.b_size,

@@ -28,6 +28,7 @@ enum DataEntryType : uint16_t {
   DlistTailRecord = 1 << 11,
   DlistRecord = 1 << 12,
 
+  Dummy = 1 << 14,  // For HashEntry used as pointer to next bucket
   Padding = 1 << 15,
 };
 
@@ -110,9 +111,9 @@ struct DataHeader {
 
 // We do not make this virtual because we need to persist it
 struct DataEntry {
-  DataEntry(uint32_t c, uint32_t bs, uint64_t v, uint16_t t, uint16_t ks,
-            uint32_t vs)
-      : header(c, bs), timestamp(v), type(t), k_size(ks), v_size(vs) {}
+  DataEntry(uint32_t checksum, uint32_t block_size, uint64_t _timestamp, uint16_t type, uint16_t key_size,
+            uint32_t value_size)
+      : header(checksum, block_size), timestamp(_timestamp), type(type), k_size(key_size), v_size(value_size) {}
   DataEntry() = default;
   // header, it can be atomically written to pmem
   alignas(8) DataHeader header;

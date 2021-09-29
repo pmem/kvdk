@@ -264,21 +264,22 @@ HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, 
     return p_entry_scanning;
       
   // Match cache failed, scanning whole bucket
-  size_t n_entries_in_bucket_chain = hash_bucket_entries_[hint.bucket];
-  HashEntry* p_bucket = p_bucket_chain;
+  size_t n_entry_in_bucket_chain = hash_bucket_entries_[hint.bucket];
+  HashEntry* p_bucket_scanning = p_bucket_chain;
   p_entry_scanning = p_bucket_chain;
-  for (size_t i = 0; i < n_entries_in_bucket_chain; ++i)
+  for (size_t n_entry_scanned = 0; n_entry_scanned < n_entry_in_bucket_chain; )
   {
     // Scan a HashEntry
     if (p_entry_scanning->header.key_prefix == key_hash_prefix &&
         type_matcher((DataEntryType)(p_entry_scanning->header.data_type)) &&
-        MatchImpl2(key, *p_entry_scanning)){}
+        MatchImpl2(key, *p_entry_scanning))
       return p_entry_scanning;
 
     // Else, not matching, goto next HashEntry,
     // Which can be in current bucket or next bucket
+    ++n_entry_scanned;
     ++p_entry_scanning;
-    if(i % num_entries_per_bucket_ != num_entries_per_bucket_-1)
+    if(n_entry_scanned % num_entries_per_bucket_ < num_entries_per_bucket_-1)
     {
       // Goto next HashEntry in current bucket
       continue;
@@ -286,39 +287,43 @@ HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, 
     else
     {
       // Reach last entry of bucket, may jump to next bucket or initialize new bucket
-      p_bucket = nullptr;
-      memcpy(&p_bucket, p_entry_scanning, sizeof(HashEntry*));
-      // Bucket end is address of next bucket
-      if (i < n_entries_in_bucket_chain)
+      // This last Dummy entry does not count as actual entry in HashTable
+      --n_entry_scanned;
+      p_bucket_scanning = p_entry_scanning->p_next_bucket;
+      if (n_entry_scanned < n_entry_in_bucket_chain)
       {
         // reach end of current bucket, jump to next bucket
-        p_entry_scanning = p_bucket;
+        p_entry_scanning = p_bucket_scanning;
         assert(p_entry_scanning && "Should not have reach the end of bucket chain!");
         continue;
       }
       else
       {
+        assert(n_entry_scanned == n_entry_in_bucket_chain);
         // reach end of current bucket and also end of bucket chain
-        // If the last HashEntry, treated as HashEntry*, is nullptr
+        // If the last HashEntry::p_next_entry == nullptr
         // Then we need to allocates new bucket
-        if (p_bucket == nullptr)
+        if (p_entry_scanning->p_next_bucket == nullptr)
         {
           auto space = dram_allocator_->Allocate(hash_bucket_size_);
           if (space.size == 0) {
             GlobalLogger.Error("Memory overflow!\n");
             throw std::bad_alloc{};
           }
-          p_bucket = reinterpret_cast<HashEntry*>(dram_allocator_->offset2addr(space.space_entry.offset));
+          p_bucket_scanning = reinterpret_cast<HashEntry*>(dram_allocator_->offset2addr(space.space_entry.offset));
 
-          p_entry_scanning = p_bucket;
-          memset(p_bucket, 0, hash_bucket_size_);
+          p_entry_scanning = p_bucket_scanning;
+          memset(p_bucket_scanning, 0, hash_bucket_size_);
+          p_entry_scanning->p_next_bucket = p_bucket_scanning;
+          p_entry_scanning = p_bucket_scanning;
 
           return p_entry_scanning;
         }
-        // New bucket allocated but no HashEntry has been put in
+        // New bucket allocated but no HashEntry has been put in. 
+        // This position can hold a new HashEntry.
         else
         {
-          p_entry_scanning = p_bucket;
+          p_entry_scanning = p_bucket_scanning;
           return p_entry_scanning;
         }        
       }        
