@@ -131,8 +131,9 @@ protected:
   }
 
   // possible_kvs is searched to try to find a match with iterated records
+  // possible_kvs is copied to keep track of records
   void IterateThrough(uint32_t tid, std::string collection_name, 
-                        std::unordered_multimap<std::string_view, std::string_view> const& possible_kvs, 
+                        std::unordered_multimap<std::string_view, std::string_view> possible_kvs, 
                         bool report_progress = false) 
   {
     if (report_progress)
@@ -163,8 +164,28 @@ protected:
         << "No kv-pair in unordered_multimap matching with iterated kv-pair:\n"
         << "Key: " << key << "\n"
         << "Value: " << value << "\n";
+      possible_kvs.erase(key);
       if (report_progress && n_iterated_possible_kvs % 10000 == 0)
         ShowProgress(std::cout, n_iterated_possible_kvs, possible_kvs.size());
+    }
+    // Remaining kv-pairs in possible_kvs are deleted kv-pairs
+    // Here we use a dirty trick to check for their deletion.
+    // HGet set the return string to empty string when the kv-pair is deleted,
+    // else it keeps the string unchanged.
+    {
+      kvdk::Status status;
+      for (auto iter = possible_kvs.begin(); iter != possible_kvs.end(); iter = possible_kvs.erase(iter))
+      {
+        std::string value_got{"Dummy"};
+        status = engine->HGet(collection_name, iter->first, &value_got);
+        EXPECT_EQ(status, kvdk::Status::NotFound)
+          << "Should not have found a key of a entry that cannot be iterated.\n";
+        EXPECT_EQ(value_got, "")
+          << "HGet DeleteRecords will set value_got as \"\"\n"; 
+      }
+      EXPECT_TRUE(possible_kvs.empty())
+        << "There should be no key left in possible_kvs, "
+        << "as they all should have been erased.\n";
     }
   }
 };

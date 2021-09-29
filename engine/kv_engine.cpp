@@ -1223,37 +1223,49 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
     HashTable::KeyHashHint hint = hash_table_->GetHint(internal_key);
 
     HashEntry hash_entry_found;
-    HashEntry hash_entry_found2;
     HashEntry *p_hash_entry_found_in_table = nullptr;
-    DataEntry data_entry_found;
-    Status search_result = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord, &hash_entry_found, nullptr,
+    Status search_result = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord || DataEntryType::DlistDeleteRecord, &hash_entry_found, nullptr,
                                   &p_hash_entry_found_in_table, HashTable::SearchPurpose::Read);
     switch (search_result)
     {
       case Status::NotFound:
       {
-        value->assign("");
         return Status::NotFound;
       }
       case Status::Ok:
       {
-        void* pmp = pmem_allocator_->offset2addr(hash_entry_found.offset);
-        auto val = static_cast<DLDataEntry*>(pmp)->Value();
-        value->assign(val.data(), val.size());
-        memcpy(&hash_entry_found2, p_hash_entry_found_in_table, sizeof(HashEntry));
-        bool modified = false;
-        modified = modified || (hash_entry_found.offset != hash_entry_found2.offset);
-        modified = modified || (hash_entry_found.header.data_type != hash_entry_found2.header.data_type);
-        modified = modified || (hash_entry_found.header.key_prefix != hash_entry_found2.header.key_prefix);
-        if (!modified)
+        if (hash_entry_found.header.data_type == DataEntryType::DlistDeleteRecord)
         {
-          return Status::Ok;
+          // This offers a dirty trick.
+          // DeleteRecord will change the value while
+          // no Record will keep value unchanged
+          value->assign("");
+          return Status::NotFound;
         }
-        else
+
+        // Load record from PMem into DRAM
+        void* pmp_record_found = pmem_allocator_->offset2addr(hash_entry_found.offset);
+        DLDataEntry dl_data_entry_found;
+        memcpy(&dl_data_entry_found, pmp_record_found, sizeof(DLDataEntry));
+        std::string internal_key_found;
         {
-          // data modified, search again.
+          auto key_view_found = static_cast<DLDataEntry*>(pmp_record_found)->Key();
+          internal_key_found.assign(key_view_found.data(), key_view_found.size());
+        }
+        auto value_found = static_cast<DLDataEntry*>(pmp_record_found)->Value();
+        value->assign(value_found.data(), value_found.size());
+
+        if (dl_data_entry_found.type != DataEntryType::DlistDataRecord)
           continue;
-        }
+
+        if (internal_key_found != internal_key)
+          continue;
+
+        auto hash = UnorderedCollection::CheckSum(dl_data_entry_found, internal_key_found, value_found);
+        if (hash != dl_data_entry_found.header.checksum)
+          continue;
+        
+        return Status::Ok;
       }
       default:
       {

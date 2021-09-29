@@ -398,9 +398,14 @@ namespace KVDK_NAMESPACE
 
         inline static std::uint32_t CheckSum(DLDataEntry* record)
         {
-            pmem::obj::string_view internal_key = record->Key();
-            pmem::obj::string_view value = record->Value();
-            return DLinkedList::_CheckSum_(*record, internal_key, value);
+            return CheckSum(*record, record->Key(), record->Value());
+        }
+
+        inline static std::uint32_t CheckSum(DLDataEntry const& dl_data_entry, 
+                                             pmem::obj::string_view internal_key, 
+                                             pmem::obj::string_view value)
+        {
+            return DLinkedList::_CheckSum_(dl_data_entry, internal_key, value);
         }
 
         friend std::ostream& operator<<(std::ostream& out, UnorderedCollection const& col)
