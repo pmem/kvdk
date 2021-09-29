@@ -1224,7 +1224,7 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
 
     HashEntry hash_entry_found;
     HashEntry *p_hash_entry_found_in_table = nullptr;
-    Status search_result = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord || DataEntryType::DlistDeleteRecord, &hash_entry_found, nullptr,
+    Status search_result = hash_table_->Search(hint, internal_key, DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord, &hash_entry_found, nullptr,
                                   &p_hash_entry_found_in_table, HashTable::SearchPurpose::Read);
     switch (search_result)
     {
@@ -1236,13 +1236,10 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
       {
         if (hash_entry_found.header.data_type == DataEntryType::DlistDeleteRecord)
         {
-          // This offers a dirty trick.
-          // DeleteRecord will change the value while
-          // no Record will keep value unchanged
           value->assign("");
           return Status::NotFound;
         }
-
+        
         // Load record from PMem into DRAM
         void* pmp_record_found = pmem_allocator_->offset2addr(hash_entry_found.offset);
         DLDataEntry dl_data_entry_found;

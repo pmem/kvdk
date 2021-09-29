@@ -166,6 +166,8 @@ protected:
         << "Key: " << key << "\n"
         << "Value: " << value << "\n";
       possible_kvs.erase(key);
+
+      n_removed_possible_kvs = n_total_possible_kvs - possible_kvs.size();
       if (report_progress && n_removed_possible_kvs > old_progress + 10000)
       {
         ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
@@ -187,6 +189,7 @@ protected:
         EXPECT_EQ(value_got, "")
           << "HGet DeleteRecords will set value_got as \"\"\n"; 
 
+        n_removed_possible_kvs = n_total_possible_kvs - possible_kvs.size();
         if (report_progress && n_removed_possible_kvs > old_progress + 10000)
         {
           ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
