@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 
+#include "../engine/kv_engine.hpp"
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
@@ -745,6 +746,61 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
     };
 
     LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
+  }
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
+  int num_threads = 48;
+  int num_collections = 16;
+  configs.max_write_threads = num_threads;
+  configs.opt_restore_sorted = true;
+  configs.populate_pmem_space = false;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // insert and delete some keys, then re-insert some deleted keys
+  uint64_t count = 1024;
+
+  auto SetupEngine = [&](uint32_t id) {
+    std::string key_prefix(id, 'a');
+    std::string got_val;
+    for (uint64_t i = 1; i <= count; i++) {
+      auto key = key_prefix + std::to_string(i);
+
+      std::string average_skiplist("a_skiplist" +
+                                   std::to_string(i % num_collections));
+      auto average_val = std::to_string(i);
+
+      std::string r_skiplist("r_skiplist" +
+                             std::to_string(rand() % num_threads));
+      auto r_val = std::to_string(i * 2);
+      ASSERT_EQ(engine->SSet(average_skiplist, key, average_val), Status::Ok);
+      ASSERT_EQ(engine->SSet(r_skiplist, key, r_val), Status::Ok);
+      ASSERT_EQ(engine->SGet(average_skiplist, key, &got_val), Status::Ok);
+      ASSERT_EQ(got_val, average_val);
+      ASSERT_EQ(engine->SGet(r_skiplist, key, &got_val), Status::Ok);
+      ASSERT_EQ(got_val, r_val);
+      if ((rand() % i) == 0) {
+        ASSERT_EQ(engine->SDelete(average_skiplist, key), Status::Ok);
+        ASSERT_EQ(engine->SDelete(r_skiplist, key), Status::Ok);
+        ASSERT_EQ(engine->SGet(average_skiplist, key, &got_val),
+                  Status::NotFound);
+        ASSERT_EQ(engine->SGet(r_skiplist, key, &got_val), Status::NotFound);
+      }
+    }
+  };
+
+  LaunchNThreads(num_threads, SetupEngine);
+
+  delete engine;
+  // reopen and restore engine and try gets
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  auto skiplists = (dynamic_cast<KVEngine *>(engine))->GetSkiplists();
+  for (int h = 1; h <= 32; ++h) {
+    for (auto s : skiplists) {
+      s->CheckConnection(h);
+    }
   }
   delete engine;
 }

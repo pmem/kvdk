@@ -56,6 +56,10 @@ public:
   NewSortedIterator(const pmem::obj::string_view collection) override;
   void ReleaseWriteThread() override { write_thread.Release(); }
 
+  const std::vector<std::shared_ptr<Skiplist>> &GetSkiplists() {
+    return skiplists_;
+  };
+
 private:
   struct BatchWriteHint {
     uint64_t timestamp{0};

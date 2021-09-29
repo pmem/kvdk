@@ -400,6 +400,7 @@ void ConcurrentRebuildSorted::DealWithFirstHeight(uint64_t thread_id,
   while (true) {
     uint64_t next_offset = visit_data_entry->next;
     if (next_offset == kNullPmemOffset) {
+      cur_node->RelaxedSetNext(1, nullptr);
       break;
     }
     // continue to build connention
@@ -472,8 +473,7 @@ void ConcurrentRebuildSorted::DealWithOtherHeight(
     }
     // continue to build connention
     uint64_t next_offset = pmem_allocator->addr2offset(next_node->data_entry);
-    if (entries_offsets_.find((uint64_t)next_offset) ==
-        entries_offsets_.end()) {
+    if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
       visited_node = next_node;
     } else {
       if (cur_node->Height() >= height) {
@@ -501,7 +501,12 @@ void ConcurrentRebuildSorted::UpdateEntriesOffset(const KVEngine *engine) {
     Status s = engine->hash_table_->Search(
         engine->hash_table_->GetHint(key), key, SortedDataEntryType,
         &hash_entry, &data_entry, &entry_base, HashTable::SearchPurpose::Read);
-    assert(s == Status::Ok);
+    assert(s == Status::Ok || s == Status::NotFound);
+    if (s == Status::NotFound ||
+        hash_entry.header.offset_type == HashOffsetType::DLDataEntry) {
+      it = entries_offsets_.erase(it);
+      continue;
+    }
     if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
       node = ((Skiplist *)hash_entry.offset)->header();
     } else if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
