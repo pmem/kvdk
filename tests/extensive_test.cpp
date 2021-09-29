@@ -17,7 +17,7 @@
 #include "test_util.h"
 #include "gtest/gtest.h"
 
-class HashesTest : public testing::Test {
+class EngineExtensiveTest : public testing::Test {
 protected:
   kvdk::Engine *engine = nullptr;
   kvdk::Configs configs;
@@ -25,7 +25,7 @@ protected:
   const std::string path_db{ "/mnt/pmem0/kvdk_test_hashes" };
 
   // Default configure parameters
-  const bool do_populate_when_initialize = false;
+  const bool do_populate_when_initialize = true;
   const size_t sz_pmem_file{ 256ULL << 30 };
   const size_t n_hash_bucket{ 1ULL << 20 };     // Less buckets to increase hash collisions
   const size_t sz_hash_bucket{ (3 + 1) * 16 };  // Smaller buckets to increase hash collisions
@@ -101,26 +101,27 @@ protected:
       PurgeDB();
   }
 
-  void shuffle_keys(size_t tid)
+  void ShuffleKeys(size_t tid)
   {
     std::shuffle(keys[tid].begin(), keys[tid].end(), rand);
   }
-  void shuffle_values(size_t tid)
+  
+  void ShuffleValues(size_t tid)
   {
     std::shuffle(values[tid].begin(), values[tid].end(), rand);
   }
 
-  void HSetOnly(uint32_t tid, std::string collection_name, bool report_progress = false) 
+  void HSet(uint32_t tid, std::string collection_name, bool report_progress = false) 
   {
     kvdk::Status status;
     if (report_progress)
-      std::cout << "Executing HSetOnly with thread " << tid << std::endl;
+      std::cout << "Executing HSet with thread " << tid << std::endl;
     
     for (size_t j = 0; j < n_kv_per_thread; j++)
     {
       status = engine->HSet(collection_name, keys[tid][j], values[tid][j]);
       EXPECT_EQ(status, kvdk::Status::Ok) 
-        << "Fail to set a key " 
+        << "Fail to HSet a key " 
         << keys[tid][j] 
         << " in collection "
         << collection_name;
@@ -130,14 +131,50 @@ protected:
     }
   }
 
+  void EvenHSetOddHDelete(uint32_t tid, std::string collection_name, bool report_progress = false) 
+  {
+    kvdk::Status status;
+    if (report_progress)
+      std::cout << "Executing EvenHSetOddHDelete with thread " << tid << std::endl;
+    
+    for (size_t j = 0; j < n_kv_per_thread; j++)
+    {
+      if (j % 2 == 0)
+      {
+        // Even HSet
+        status = engine->HSet(collection_name, keys[tid][j], values[tid][j]);
+        EXPECT_EQ(status, kvdk::Status::Ok) 
+          << "Fail to HSet a key " 
+          << keys[tid][j] 
+          << " in collection "
+          << collection_name;
+      }
+      else
+      {
+        // Odd HDelete
+        status = engine->HDelete(collection_name, keys[tid][j]);
+        EXPECT_EQ(status, kvdk::Status::Ok) 
+          << "Fail to HDelete a key " 
+          << keys[tid][j] 
+          << " in collection "
+          << collection_name;
+      }
+        
+      if (report_progress && j % 10000 == 0)
+        ShowProgress(std::cout, j, n_kv_per_thread);
+    }
+  }
+
   // possible_kvs is searched to try to find a match with iterated records
-  // possible_kvs is copied to keep track of records
-  void IterateThrough(uint32_t tid, std::string collection_name, 
+  // possible_kvs is copied because IterateThroughHashes erase entries to keep track of records
+  void IterateThroughHashes(uint32_t tid, std::string collection_name, 
                         std::unordered_multimap<std::string_view, std::string_view> possible_kvs, 
                         bool report_progress = false) 
   {
+    kvdk::Status status;
+
     if (report_progress)
-      std::cout << "IterateThrough Collection " << collection_name << " with thread " << tid << std::endl;
+      std::cout << "IterateThroughHashes Collection " << collection_name << " with thread " << tid << std::endl;
     
     int n_total_possible_kvs = possible_kvs.size();
     int n_removed_possible_kvs = 0;
@@ -148,8 +185,13 @@ protected:
     // TODO: also HGet to check the iterator
     for (u_iter->SeekToFirst(); u_iter->Valid(); u_iter->Next())
     {
+      std::string value_got;
       auto key = u_iter->Key();
       auto value = u_iter->Value();
+      status = engine->HGet(collection_name, key, &value_got);
+      EXPECT_EQ(value, value_got)
+        << "Iterated value does not match with HGet value\n";
+
       bool match = false;
       auto range_found = possible_kvs.equal_range(key);
       
@@ -165,8 +207,8 @@ protected:
         << "No kv-pair in unordered_multimap matching with iterated kv-pair:\n"
         << "Key: " << key << "\n"
         << "Value: " << value << "\n";
-      possible_kvs.erase(key);
 
+      possible_kvs.erase(key);
       n_removed_possible_kvs = n_total_possible_kvs - possible_kvs.size();
       if (report_progress && n_removed_possible_kvs > old_progress + 10000)
       {
@@ -179,7 +221,6 @@ protected:
     // HGet set the return string to empty string when the kv-pair is deleted,
     // else it keeps the string unchanged.
     {
-      kvdk::Status status;
       for (auto iter = possible_kvs.begin(); iter != possible_kvs.end(); iter = possible_kvs.erase(iter))
       {
         std::string value_got{"Dummy"};
@@ -187,7 +228,7 @@ protected:
         EXPECT_EQ(status, kvdk::Status::NotFound)
           << "Should not have found a key of a entry that cannot be iterated.\n";
         EXPECT_EQ(value_got, "")
-          << "HGet DeleteRecords will set value_got as \"\"\n"; 
+          << "HGet a DlistDeleteRecord should have set value_got as empty string\n"; 
 
         n_removed_possible_kvs = n_total_possible_kvs - possible_kvs.size();
         if (report_progress && n_removed_possible_kvs > old_progress + 10000)
@@ -203,7 +244,7 @@ protected:
   }
 };
 
-TEST_F(HashesTest, SetOnly) 
+TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) 
 {
   kvdk::Status status;
 
@@ -212,57 +253,118 @@ TEST_F(HashesTest, SetOnly)
 
   std::string global_collection_name{"GlobalCollection"};
 
-  std::cout << "Preparing unordered_multimap and unordered_set to check contents of engine" << std::endl;
-  std::unordered_multimap<std::string_view, std::string_view> possible_kvs;
-  std::unordered_set<std::string_view> key_counter;
-  possible_kvs.reserve(n_thread * n_kv_per_thread * 2);
-  key_counter.reserve(n_thread * n_kv_per_thread * 2);
-  for (size_t tid = 0; tid < n_thread; tid++)
-  {
-      for (size_t i = 0; i < n_kv_per_thread; i++)
-      {
-        possible_kvs.emplace(keys[tid][i], values[tid][i]);
-        key_counter.insert(keys[tid][i]);
-      }
-      ShowProgress(std::cout, tid + 1, n_thread);
-  }
-
   auto DoHSet = [&](std::uint64_t tid)
   {
     if (tid == 0)
-    {
-      HSetOnly(tid, global_collection_name, true);
-    }
+      HSet(tid, global_collection_name, true);
     else
-    {
-      HSetOnly(tid, global_collection_name, false);
-    }
+      HSet(tid, global_collection_name, false);
   };
+
+  LaunchNThreads(n_thread, DoHSet);
+
+  std::cout << "Preparing possible_kvs to check contents of engine" << std::endl;
+  std::unordered_multimap<std::string_view, std::string_view> possible_kvs;
+  possible_kvs.reserve(n_thread * n_kv_per_thread * 2);
+  for (size_t tid = 0; tid < n_thread; tid++)
+  {
+      for (size_t i = 0; i < n_kv_per_thread; i++)
+        possible_kvs.emplace(keys[tid][i], values[tid][i]);
+      ShowProgress(std::cout, tid + 1, n_thread);
+  }
 
   auto DoIterate = [&](std::uint64_t tid)
   {
     if (tid == 0)
-    {
-      IterateThrough(tid, global_collection_name, possible_kvs, true);
-    }
+      IterateThroughHashes(tid, global_collection_name, possible_kvs, true);
     else
-    {
-      IterateThrough(tid, global_collection_name, possible_kvs, false);
-    }
+      IterateThroughHashes(tid, global_collection_name, possible_kvs, false);
   };
 
-  LaunchNThreads(n_thread, DoHSet);
   LaunchNThreads(1, DoIterate);  
 
-  for (size_t i = 0; i < 5; i++)
+  for (size_t i = 0; i < 2; i++)
   {
-    // Repeatedly delete and open engine to test recovery
+    // Repeatedly close and open engine to test recovery
     delete engine;
 
     status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
 
     LaunchNThreads(1, DoIterate);  
+  }
+
+  delete engine;
+}
+
+TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) 
+{
+  kvdk::Status status;
+
+  status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+  ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+
+  std::string global_collection_name{"GlobalCollection"};
+
+  auto DoHSetHDelete = [&](std::uint64_t tid)
+  {
+    if (tid == 0)
+      EvenHSetOddHDelete(tid, global_collection_name, true);
+    else
+      EvenHSetOddHDelete(tid, global_collection_name, false);
+  };
+
+  LaunchNThreads(n_thread, DoHSetHDelete);
+
+  std::cout << "Preparing possible_kvs to check contents of engine" << std::endl;
+  std::unordered_multimap<std::string_view, std::string_view> possible_kvs;
+  possible_kvs.reserve(n_thread * n_kv_per_thread * 2);
+  for (size_t tid = 0; tid < n_thread; tid++)
+  {
+      for (size_t i = 0; i < n_kv_per_thread; i++)
+        if (i % 2 == 0)
+          possible_kvs.emplace(keys[tid][i], values[tid][i]);
+      ShowProgress(std::cout, tid + 1, n_thread);
+  }
+
+  auto DoIterate = [&](std::uint64_t tid)
+  {
+    if (tid == 0)
+      IterateThroughHashes(tid, global_collection_name, possible_kvs, true);
+    else
+      IterateThroughHashes(tid, global_collection_name, possible_kvs, false);
+  };
+
+  LaunchNThreads(1, DoIterate);  
+
+  for (size_t i = 0; i < 2; i++)
+  {
+    // Repeatedly close and open engine, excecute DoHSetHDelete to check
+    delete engine;
+
+    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+
+    LaunchNThreads(1, DoIterate);
+
+    for (size_t tid = 0; tid < n_thread; tid++)
+    {
+      ShuffleKeys(tid);
+      ShuffleValues(tid);
+    }
+    
+    LaunchNThreads(n_thread, DoHSetHDelete);
+
+    std::cout << "Updating possible_kvs to check contents of engine" << std::endl;
+    for (size_t tid = 0; tid < n_thread; tid++)
+    {
+        for (size_t i = 0; i < n_kv_per_thread; i++)
+          if (i % 2 == 0)
+            possible_kvs.emplace(keys[tid][i], values[tid][i]);
+        ShowProgress(std::cout, tid + 1, n_thread);
+    }
+
+    LaunchNThreads(1, DoIterate);
   }
 
   delete engine;
