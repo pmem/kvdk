@@ -196,7 +196,7 @@ namespace KVDK_NAMESPACE
         DListIterator iter_prev{ _dlinked_list_._p_pmem_allocator_, pmp_prev };
         DListIterator iter_next{ _dlinked_list_._p_pmem_allocator_, pmp_next };        
 
-        // This locks may be invalidified after other threads insert another node!
+        // These locks may be invalidified after other threads insert another node!
         std::string internal_key = GetInternalKey(key);
         SpinMutex* spin = lock.mutex();
         SpinMutex* spin1 = _GetMutex_(iter_prev->Key());
@@ -249,7 +249,7 @@ namespace KVDK_NAMESPACE
             bool has_other_thread_modified = false;
             DListIterator iter_prev_copy{iter_prev};
             DListIterator iter_next_copy(iter_next);
-            // has_other_thread_modified = has_other_thread_modified || (++++iter_prev_copy != iter_next);
+            has_other_thread_modified = has_other_thread_modified || (++++iter_prev_copy != iter_next);
             has_other_thread_modified = has_other_thread_modified || (----iter_next_copy != iter_prev);
             if (has_other_thread_modified)
             {
