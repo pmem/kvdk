@@ -11,10 +11,10 @@
 namespace KVDK_NAMESPACE {
 
 enum class LogLevel : uint8_t {
-  ALL = 0,
-  DEBUG,
-  INFO,
-  ERROR,
+  All = 0,
+  Debug,
+  Info,
+  Error,
 };
 
 struct Configs {
@@ -81,7 +81,7 @@ struct Configs {
   double background_work_interval = 5;
 
   // Log information to show
-  LogLevel log_level = LogLevel::INFO;
+  LogLevel log_level = LogLevel::Info;
 };
 
 } // namespace KVDK_NAMESPACE
