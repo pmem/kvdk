@@ -276,8 +276,10 @@ Status KVEngine::RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
     skiplists_.push_back(std::make_shared<Skiplist>(
         (DLDataEntry *)pmem_data_entry, key, id, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
-    ConcurrentRebuildSorted::entries_offsets_.insert(
-        {pmem_allocator_->addr2offset(pmem_data_entry), {false, nullptr}});
+    if (configs_.opt_restore_sorted) {
+      ParallelRebuildSorted::entries_offsets_.insert(
+          {pmem_allocator_->addr2offset(pmem_data_entry), {false, nullptr}});
+    }
   }
   compare_excange_if_larger(list_id_, id + 1);
 
@@ -383,13 +385,16 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
         return Status::MemoryOverflow;
       }
       new_hash_offset = (uint64_t)dram_node;
+// RESTORE_SKIPLIST_STRIDE: Select a data entry every 10000 into restored
+// skiplist map for multi-thread restoring large skiplist.
+#define RESTORE_SKIPLIST_STRIDE 10000
       if (configs_.opt_restore_sorted &&
           thread_res_[write_thread.id]
                       .visited_skiplist_ids_[dram_node->GetSkipListId()]++ %
-                  10000 ==
+                  RESTORE_SKIPLIST_STRIDE ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);
-        ConcurrentRebuildSorted::entries_offsets_.insert(
+        ParallelRebuildSorted::entries_offsets_.insert(
             {pmem_allocator_->addr2offset(pmem_data_entry), {false, nullptr}});
       }
     } else {
@@ -609,7 +614,7 @@ Status KVEngine::Recovery() {
   GlobalLogger.Info("Restoring skiplist:iterated %lu records\n",
                     restored_.load());
   if (configs_.opt_restore_sorted) {
-    ConcurrentRebuildSorted restore_skiplists;
+    ParallelRebuildSorted restore_skiplists;
     restore_skiplists.Rebuild(this);
   } else {
     for (auto s : skiplists_) {

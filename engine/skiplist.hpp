@@ -278,9 +278,9 @@ private:
 };
 
 class KVEngine;
-class ConcurrentRebuildSorted {
+class ParallelRebuildSorted {
 public:
-  ConcurrentRebuildSorted() = default;
+  ParallelRebuildSorted() = default;
   void DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
                            const KVEngine *engine);
 

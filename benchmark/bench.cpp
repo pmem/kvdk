@@ -69,8 +69,9 @@ DEFINE_uint64(space, (uint64_t)256 << 30,
               "Max usable PMem space of the instance");
 
 DEFINE_bool(opt_restore_sorted, false,
-            "Multi-thread recovery a skiplist. When having few large "
-            "skiplists, the optimization can get better performance");
+            " Optional optimization strategy which Multi-thread recovery a "
+            "skiplist. When having few large skiplists, the optimization can "
+            "get better performance");
 
 class Timer {
 public:

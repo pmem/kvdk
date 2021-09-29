@@ -32,7 +32,7 @@
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
 public:
-  friend class ConcurrentRebuildSorted;
+  friend class ParallelRebuildSorted;
   KVEngine();
   ~KVEngine();
 

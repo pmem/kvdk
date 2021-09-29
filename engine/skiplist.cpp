@@ -284,9 +284,9 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
 }
 
 std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>
-    ConcurrentRebuildSorted::entries_offsets_;
+    ParallelRebuildSorted::entries_offsets_;
 
-void ConcurrentRebuildSorted::Rebuild(const KVEngine *engine) {
+void ParallelRebuildSorted::Rebuild(const KVEngine *engine) {
   if (engine->skiplists_.size() > 0) {
     thread_cache_node_.resize(engine->configs_.max_write_threads);
     UpdateEntriesOffset(engine);
@@ -326,8 +326,8 @@ void ConcurrentRebuildSorted::Rebuild(const KVEngine *engine) {
   }
 }
 
-void ConcurrentRebuildSorted::LinkedNode(uint64_t thread_id, int height,
-                                         const KVEngine *engine) {
+void ParallelRebuildSorted::LinkedNode(uint64_t thread_id, int height,
+                                       const KVEngine *engine) {
   for (auto v : thread_cache_node_[thread_id]) {
     if (v->Height() < height) {
       continue;
@@ -382,7 +382,7 @@ void ConcurrentRebuildSorted::LinkedNode(uint64_t thread_id, int height,
   thread_cache_node_[thread_id].clear();
 }
 
-SkiplistNode *ConcurrentRebuildSorted::GetSortedOffset(int height) {
+SkiplistNode *ParallelRebuildSorted::GetSortedOffset(int height) {
   std::lock_guard<std::mutex> kv_mux(map_mu_);
   for (auto &kv : entries_offsets_) {
     if (!kv.second.first && kv.second.second->Height() >= height - 1) {
@@ -393,9 +393,9 @@ SkiplistNode *ConcurrentRebuildSorted::GetSortedOffset(int height) {
   return nullptr;
 }
 
-void ConcurrentRebuildSorted::DealWithFirstHeight(uint64_t thread_id,
-                                                  SkiplistNode *cur_node,
-                                                  const KVEngine *engine) {
+void ParallelRebuildSorted::DealWithFirstHeight(uint64_t thread_id,
+                                                SkiplistNode *cur_node,
+                                                const KVEngine *engine) {
   DLDataEntry *visit_data_entry = cur_node->data_entry;
   while (true) {
     uint64_t next_offset = visit_data_entry->next;
@@ -443,7 +443,7 @@ void ConcurrentRebuildSorted::DealWithFirstHeight(uint64_t thread_id,
   }
 }
 
-void ConcurrentRebuildSorted::DealWithOtherHeight(
+void ParallelRebuildSorted::DealWithOtherHeight(
     uint64_t thread_id, SkiplistNode *cur_node, int height,
     const std::shared_ptr<PMEMAllocator> &pmem_allocator) {
   SkiplistNode *visited_node = cur_node;
@@ -471,7 +471,7 @@ void ConcurrentRebuildSorted::DealWithOtherHeight(
       }
       break;
     }
-    // continue to build connention
+    // continue to find next
     uint64_t next_offset = pmem_allocator->addr2offset(next_node->data_entry);
     if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
       visited_node = next_node;
@@ -485,7 +485,7 @@ void ConcurrentRebuildSorted::DealWithOtherHeight(
   }
 }
 
-void ConcurrentRebuildSorted::UpdateEntriesOffset(const KVEngine *engine) {
+void ParallelRebuildSorted::UpdateEntriesOffset(const KVEngine *engine) {
   std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>> new_kvs;
   std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>::iterator it =
       entries_offsets_.begin();
