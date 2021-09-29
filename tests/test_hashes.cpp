@@ -138,14 +138,16 @@ protected:
   {
     if (report_progress)
       std::cout << "IterateThrough Collection " << collection_name << " with thread " << tid << std::endl;
-    int n_entry = 0;
-    int n_iterated_possible_kvs = 0;
+    
+    int n_total_possible_kvs = possible_kvs.size();
+    int n_removed_possible_kvs = 0;
+    int old_progress = n_removed_possible_kvs;
 
     auto u_iter = engine->NewUnorderedIterator(collection_name);
     ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
+    // TODO: also HGet to check the iterator
     for (u_iter->SeekToFirst(); u_iter->Valid(); u_iter->Next())
     {
-      ++n_entry;
       auto key = u_iter->Key();
       auto value = u_iter->Value();
       bool match = false;
@@ -158,15 +160,17 @@ protected:
           << "Iterated key: " << key << "\n"
           << "Key in unordered_multimap: " << iter->first;
         match = match || (value == iter->second);
-        ++n_iterated_possible_kvs;
       }
       EXPECT_TRUE(match) 
         << "No kv-pair in unordered_multimap matching with iterated kv-pair:\n"
         << "Key: " << key << "\n"
         << "Value: " << value << "\n";
       possible_kvs.erase(key);
-      if (report_progress && n_iterated_possible_kvs % 10000 == 0)
-        ShowProgress(std::cout, n_iterated_possible_kvs, possible_kvs.size());
+      if (report_progress && n_removed_possible_kvs > old_progress + 10000)
+      {
+        ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
+        old_progress = n_removed_possible_kvs;
+      }
     }
     // Remaining kv-pairs in possible_kvs are deleted kv-pairs
     // Here we use a dirty trick to check for their deletion.
@@ -182,6 +186,12 @@ protected:
           << "Should not have found a key of a entry that cannot be iterated.\n";
         EXPECT_EQ(value_got, "")
           << "HGet DeleteRecords will set value_got as \"\"\n"; 
+
+        if (report_progress && n_removed_possible_kvs > old_progress + 10000)
+        {
+          ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
+          old_progress = n_removed_possible_kvs;
+        }
       }
       EXPECT_TRUE(possible_kvs.empty())
         << "There should be no key left in possible_kvs, "
