@@ -246,6 +246,7 @@ namespace KVDK_NAMESPACE
         }
         else
         {
+            // SwapEmplace Should not worry?
             bool has_other_thread_modified = false;
             DListIterator iter_prev_copy{iter_prev};
             DListIterator iter_next_copy(iter_next);
