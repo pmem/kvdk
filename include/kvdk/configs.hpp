@@ -82,6 +82,11 @@ struct Configs {
 
   // Log information to show
   LogLevel log_level = LogLevel::INFO;
+
+  // Optional optimization strategy for few large skiplists by multi-thread
+  // recovery a skiplist. The optimization can get better performance when
+  // having few large skiplists. Default is to close optimization.
+  bool opt_large_sorted_collection_restore = false;
 };
 
 } // namespace KVDK_NAMESPACE

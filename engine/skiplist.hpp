@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <assert.h>
 #include <cstdint>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -55,7 +58,12 @@ public:
 
   pmem::obj::string_view UserKey();
 
-  SkiplistNode *Next(int l) { return next[-l].load(std::memory_order_acquire); }
+  uint64_t GetSkipListId();
+
+  SkiplistNode *Next(int l) {
+    assert((l > 0 && l <= height) && "should be less than node's height");
+    return next[-l].load(std::memory_order_acquire);
+  }
 
   bool CASNext(int l, SkiplistNode *expected, SkiplistNode *x) {
     assert(l > 0);
@@ -68,12 +76,12 @@ public:
   }
 
   void SetNext(int l, SkiplistNode *x) {
-    assert(l > 0);
+    assert(l > 0 && l <= height);
     next[-l].store(x, std::memory_order_release);
   }
 
   void RelaxedSetNext(int l, SkiplistNode *x) {
-    assert(l > 0);
+    assert(l > 0 && l <= height);
     next[-l].store(x, std::memory_order_relaxed);
   }
 
@@ -183,6 +191,8 @@ public:
                        const pmem::obj::string_view &deleting_key,
                        SkiplistNode *dram_node);
 
+  Status CheckConnection(int height);
+
 private:
   SkiplistNode *header_;
   std::string name_;
@@ -266,4 +276,39 @@ private:
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   DLDataEntry *current;
 };
+
+class KVEngine;
+class SortedCollectionRebuilder {
+public:
+  SortedCollectionRebuilder() = default;
+  Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                             const KVEngine *engine);
+
+  void
+  DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node, int heightm,
+                      const std::shared_ptr<PMEMAllocator> &pmem_allocator);
+
+  SkiplistNode *GetSortedOffset(int height);
+
+  void LinkedNode(uint64_t thread_id, int height, const KVEngine *engine);
+
+  Status Rebuild(const KVEngine *engine);
+
+  void UpdateEntriesOffset(const KVEngine *engine);
+
+  void SetEntriesOffsets(uint64_t entry_offset, bool is_visited,
+                         SkiplistNode *node) {
+    entries_offsets_.insert({entry_offset, {is_visited, node}});
+  }
+
+private:
+  struct SkiplistNodeInfo {
+    bool is_visited;
+    SkiplistNode *visited_node;
+  };
+  SpinMutex map_mu_;
+  std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
+  std::unordered_map<uint64_t, SkiplistNodeInfo> entries_offsets_;
+};
+
 } // namespace KVDK_NAMESPACE
