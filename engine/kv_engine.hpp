@@ -32,7 +32,7 @@
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
 public:
-  friend class ParallelRebuildSorted;
+  friend class SortedCollectionRebuilder;
   KVEngine();
   ~KVEngine();
 
@@ -73,7 +73,7 @@ private:
 
     alignas(64) uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
-    std::unordered_map<uint64_t, int> visited_skiplist_ids_;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids;
   };
 
   bool CheckKeySize(const pmem::obj::string_view &key) {
@@ -193,6 +193,7 @@ private:
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
+  SortedCollectionRebuilder sorted_rebuilder_;
 };
 
 } // namespace KVDK_NAMESPACE

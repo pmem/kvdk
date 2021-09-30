@@ -278,9 +278,9 @@ private:
 };
 
 class KVEngine;
-class ParallelRebuildSorted {
+class SortedCollectionRebuilder {
 public:
-  ParallelRebuildSorted() = default;
+  SortedCollectionRebuilder() = default;
   void DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
                            const KVEngine *engine);
 
@@ -294,14 +294,21 @@ public:
 
   void Rebuild(const KVEngine *engine);
 
-  static std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>
-      entries_offsets_;
-
   void UpdateEntriesOffset(const KVEngine *engine);
 
+  void SetEntriesOffsets(uint64_t entry_offset, bool is_visited,
+                         SkiplistNode *node) {
+    entries_offsets_.insert({entry_offset, {is_visited, node}});
+  }
+
 private:
-  std::mutex map_mu_;
+  struct SkiplistNodeInfo {
+    bool is_visited;
+    SkiplistNode *visited_node;
+  };
+  SpinMutex map_mu_;
   std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
+  std::unordered_map<uint64_t, SkiplistNodeInfo> entries_offsets_;
 };
 
 } // namespace KVDK_NAMESPACE

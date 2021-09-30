@@ -28,6 +28,9 @@ namespace KVDK_NAMESPACE {
 thread_local std::string thread_data_buffer;
 static const int kDataBufferSize = 1024 * 1024;
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
+// Select a data entry every 10000 into restored skiplist map for multi-thread
+// restoring large skiplist.
+constexpr uint64_t kRestoreSkiplistStride = 10000;
 
 void PendingBatch::PersistProcessing(
     void *target, const std::vector<uint64_t> &entry_offsets) {
@@ -276,9 +279,9 @@ Status KVEngine::RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
     skiplists_.push_back(std::make_shared<Skiplist>(
         (DLDataEntry *)pmem_data_entry, key, id, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
-    if (configs_.opt_restore_sorted) {
-      ParallelRebuildSorted::entries_offsets_.insert(
-          {pmem_allocator_->addr2offset(pmem_data_entry), {false, nullptr}});
+    if (configs_.restore_large_sorted_collection) {
+      sorted_rebuilder_.SetEntriesOffsets(
+          pmem_allocator_->addr2offset(pmem_data_entry), false, nullptr);
     }
   }
   compare_excange_if_larger(list_id_, id + 1);
@@ -385,17 +388,14 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
         return Status::MemoryOverflow;
       }
       new_hash_offset = (uint64_t)dram_node;
-// RESTORE_SKIPLIST_STRIDE: Select a data entry every 10000 into restored
-// skiplist map for multi-thread restoring large skiplist.
-#define RESTORE_SKIPLIST_STRIDE 10000
-      if (configs_.opt_restore_sorted &&
+      if (configs_.restore_large_sorted_collection &&
           thread_res_[write_thread.id]
-                      .visited_skiplist_ids_[dram_node->GetSkipListId()]++ %
-                  RESTORE_SKIPLIST_STRIDE ==
+                      .visited_skiplist_ids[dram_node->GetSkipListId()]++ %
+                  kRestoreSkiplistStride ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);
-        ParallelRebuildSorted::entries_offsets_.insert(
-            {pmem_allocator_->addr2offset(pmem_data_entry), {false, nullptr}});
+        sorted_rebuilder_.SetEntriesOffsets(
+            pmem_allocator_->addr2offset(pmem_data_entry), false, nullptr);
       }
     } else {
       new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
@@ -613,21 +613,9 @@ Status KVEngine::Recovery() {
   fs.clear();
   GlobalLogger.Info("Restoring skiplist:iterated %lu records\n",
                     restored_.load());
-  if (configs_.opt_restore_sorted) {
-    ParallelRebuildSorted restore_skiplists;
-    restore_skiplists.Rebuild(this);
-  } else {
-    for (auto s : skiplists_) {
-      fs.push_back(std::async(&Skiplist::Rebuild, s));
-    }
 
-    for (auto &f : fs) {
-      Status s = f.get();
-      if (s != Status::Ok) {
-        return s;
-      }
-    }
-  }
+  // restore skiplist by two optimization strategy
+  sorted_rebuilder_.Rebuild(this);
 
   GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
 

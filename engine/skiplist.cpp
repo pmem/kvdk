@@ -283,11 +283,9 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
   return data_node;
 }
 
-std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>
-    ParallelRebuildSorted::entries_offsets_;
-
-void ParallelRebuildSorted::Rebuild(const KVEngine *engine) {
-  if (engine->skiplists_.size() > 0) {
+void SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
+  if (engine->configs_.restore_large_sorted_collection &&
+      engine->skiplists_.size() > 0) {
     thread_cache_node_.resize(engine->configs_.max_write_threads);
     UpdateEntriesOffset(engine);
     for (int h = 1; h <= kMaxHeight; ++h) {
@@ -313,7 +311,7 @@ void ParallelRebuildSorted::Rebuild(const KVEngine *engine) {
       }
       fv.clear();
       for (auto &kv : entries_offsets_) {
-        kv.second.first = false;
+        kv.second.is_visited = false;
       }
       GlobalLogger.Info("Restoring skiplist height %d\n", h);
 #ifdef DEBUG_CHECK
@@ -323,11 +321,20 @@ void ParallelRebuildSorted::Rebuild(const KVEngine *engine) {
       }
 #endif
     }
+  } else {
+    std::vector<std::future<Status>> fs;
+    for (auto s : engine->skiplists_) {
+      fs.push_back(std::async(&Skiplist::Rebuild, s));
+    }
+    for (auto &f : fs) {
+      Status s = f.get();
+      assert(s == Status::Ok);
+    }
   }
 }
 
-void ParallelRebuildSorted::LinkedNode(uint64_t thread_id, int height,
-                                       const KVEngine *engine) {
+void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
+                                           const KVEngine *engine) {
   for (auto v : thread_cache_node_[thread_id]) {
     if (v->Height() < height) {
       continue;
@@ -382,20 +389,21 @@ void ParallelRebuildSorted::LinkedNode(uint64_t thread_id, int height,
   thread_cache_node_[thread_id].clear();
 }
 
-SkiplistNode *ParallelRebuildSorted::GetSortedOffset(int height) {
-  std::lock_guard<std::mutex> kv_mux(map_mu_);
+SkiplistNode *SortedCollectionRebuilder::GetSortedOffset(int height) {
+  std::lock_guard<SpinMutex> kv_mux(map_mu_);
   for (auto &kv : entries_offsets_) {
-    if (!kv.second.first && kv.second.second->Height() >= height - 1) {
-      kv.second.first = true;
-      return kv.second.second;
+    if (!kv.second.is_visited &&
+        kv.second.visited_node->Height() >= height - 1) {
+      kv.second.is_visited = true;
+      return kv.second.visited_node;
     }
   }
   return nullptr;
 }
 
-void ParallelRebuildSorted::DealWithFirstHeight(uint64_t thread_id,
-                                                SkiplistNode *cur_node,
-                                                const KVEngine *engine) {
+void SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
+                                                    SkiplistNode *cur_node,
+                                                    const KVEngine *engine) {
   DLDataEntry *visit_data_entry = cur_node->data_entry;
   while (true) {
     uint64_t next_offset = visit_data_entry->next;
@@ -422,8 +430,9 @@ void ParallelRebuildSorted::DealWithFirstHeight(uint64_t thread_id,
       visit_data_entry = next_data_entry;
 
       SkiplistNode *next_node = nullptr;
-      assert(hash_entry.header.offset_type != HashOffsetType::Skiplist &&
-             "next entry should be skiplistnode type or data_entry type!");
+      assert(hash_entry.header.offset_type == HashOffsetType::SkiplistNode ||
+             hash_entry.header.offset_type == HashOffsetType::DLDataEntry &&
+                 "next entry should be skiplistnode type or data_entry type!");
       if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
         next_node = (SkiplistNode *)hash_entry.offset;
       }
@@ -443,7 +452,7 @@ void ParallelRebuildSorted::DealWithFirstHeight(uint64_t thread_id,
   }
 }
 
-void ParallelRebuildSorted::DealWithOtherHeight(
+void SortedCollectionRebuilder::DealWithOtherHeight(
     uint64_t thread_id, SkiplistNode *cur_node, int height,
     const std::shared_ptr<PMEMAllocator> &pmem_allocator) {
   SkiplistNode *visited_node = cur_node;
@@ -485,9 +494,9 @@ void ParallelRebuildSorted::DealWithOtherHeight(
   }
 }
 
-void ParallelRebuildSorted::UpdateEntriesOffset(const KVEngine *engine) {
-  std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>> new_kvs;
-  std::unordered_map<uint64_t, std::pair<bool, SkiplistNode *>>::iterator it =
+void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
+  std::unordered_map<uint64_t, SkiplistNodeInfo> new_kvs;
+  std::unordered_map<uint64_t, SkiplistNodeInfo>::iterator it =
       entries_offsets_.begin();
   while (it != entries_offsets_.end()) {
     DLDataEntry data_entry;
@@ -520,7 +529,7 @@ void ParallelRebuildSorted::UpdateEntriesOffset(const KVEngine *engine) {
       new_kvs.insert({engine->pmem_allocator_->addr2offset(node->data_entry),
                       {false, node}});
     } else {
-      it->second.second = node;
+      it->second.visited_node = node;
       it++;
     }
   }
