@@ -364,7 +364,7 @@ namespace KVDK_NAMESPACE
         }
         }
 
-        ++_iterator_internal_;
+        --_iterator_internal_;
         while (_iterator_internal_.valid())
         {
             _valid_ = false;

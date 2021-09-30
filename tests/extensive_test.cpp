@@ -21,9 +21,31 @@
 // to keep track of the kv-pairs in a certain collection in the engine instance
 namespace IteratingFacility
 {
+  // Check value got by XGet(key) by looking up possible_kv_pairs
+  static void CheckXGetResult(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
+  {
+      bool match = false;
+      auto range_found = possible_kv_pairs.equal_range(key);
+      ASSERT_NE(range_found.first, range_found.second)
+        << "No key in possible_kv_pairs matching with iterated key:\n" 
+        << "Iterated key: " << key;
+      
+      for (auto iter = range_found.first; iter != range_found.second; ++iter)
+      {
+        ASSERT_EQ(key, iter->first)
+          << "Iterated key and key in possible_kv_pairs does not match: \n"
+          << "Iterated key: " << key << "\n"
+          << "Key in possible_kv_pairs: " << iter->first;
+        match = match || (value == iter->second);
+      }
+      ASSERT_TRUE(match) 
+        << "No kv-pair in possible_kv_pairs matching with iterated kv-pair:\n"
+        << "Key: " << key << "\n"
+        << "Value: " << value << "\n";
+  }
+
   // possible_kv_pairs is searched to try to find a match with iterated records
   // possible_kv_pairs is copied because IterateThroughHashes erase entries to keep track of records
-  // TODO: Also Iterate backwards
   static void IterateThroughHashes(kvdk::Engine* engine, std::string collection_name, 
                                    std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs, 
                                    bool report_progress) 
@@ -41,10 +63,16 @@ namespace IteratingFacility
     for (size_t i = 0; i < 2; i++)
     {
       ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
-      if (i == 0) // i == 0 for forward
+      if (i == 0) 
+      {
         u_iter->SeekToFirst();
-      else // i == 1 for backward
+        std::cout << "[Info] Iterating forward through Hashes." << std::endl;
+      }
+      else 
+      {
         u_iter->SeekToLast();
+        std::cout << "[Info] Iterating backward through Hashes." << std::endl;
+      }
       
       while (u_iter->Valid())
       {
@@ -177,25 +205,6 @@ namespace IteratingFacility
     }
   }
 
-  // Check value got by XGet(key) by looking up possible_kv_pairs
-  static void CheckXGetResult(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
-  {
-      bool match = false;
-      auto range_found = possible_kv_pairs.equal_range(key);
-      
-      for (auto iter = range_found.first; iter != range_found.second; ++iter)
-      {
-        ASSERT_EQ(key, iter->first)
-          << "Iterated key and key in possible_kv_pairs does not match: \n"
-          << "Iterated key: " << key << "\n"
-          << "Key in possible_kv_pairs: " << iter->first;
-        match = match || (value == iter->second);
-      }
-      ASSERT_TRUE(match) 
-        << "No kv-pair in possible_kv_pairs matching with iterated kv-pair:\n"
-        << "Key: " << key << "\n"
-        << "Value: " << value << "\n";
-  }
 };
 
 /// SetDeleteFacility offers functions for putting batches of keys and values into a collection in an engine instance.
@@ -349,13 +358,13 @@ protected:
   const size_t n_blocks_per_segment{ 1ULL << 20 };
   const size_t t_background_work_interval = 1;
 
-  const size_t n_thread{ 48 };
-  const size_t n_kv_per_thread{ 2ULL << 20 };   // 2M keys per thread, totaling about 100M records
+  const size_t n_thread{ 4 };
+  const size_t n_kv_per_thread{ 2ULL << 10 };   // 2M keys per thread, totaling about 100M records
 
-  const size_t sz_key_min{ 0 };                 // 0-sized key "" is a hotspot, which may reveal many defects
-  const size_t sz_key_max{ 16 };
+  const size_t sz_key_min{ 1 };                 // 0-sized key "" is a hotspot, which may reveal many defects
+  const size_t sz_key_max{ 1 };
   const size_t sz_value_min{ 0 };
-  const size_t sz_value_max{ 1024 };
+  const size_t sz_value_max{ 10 };
 
   std::vector<std::vector<std::string_view>> grouped_keys;
   std::vector<std::vector<std::string_view>> grouped_values;
@@ -602,7 +611,52 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
   std::string global_collection_name{"GlobalCollection"};
 
   LaunchHSetOnly(global_collection_name);
+
+  {
+    auto u_iter = engine->NewUnorderedIterator(global_collection_name);
+
+    // Iterating forward then backward. 
+    for (size_t i = 0; i < 2; i++)
+    {
+      ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
+      if (i == 0) 
+      {
+        u_iter->SeekToFirst();
+        std::cout << "[Info] Iterating forward through Hashes." << std::endl;
+      }
+      else 
+      {
+        u_iter->SeekToLast();
+        std::cout << "[Info] Iterating backward through Hashes." << std::endl;
+      }
+      
+      while (u_iter->Valid())
+      {
+        std::string value_got;
+        auto key = u_iter->Key();
+        auto value = u_iter->Value();
+        std::cout << "Key:\t" << key << "\tValue:\t" << value << std::endl;
+        status = engine->HGet(global_collection_name, key, &value_got);
+        ASSERT_EQ(status, kvdk::Status::Ok)
+          << "Iteration met kv-pair cannot be got with HGet\n";
+        ASSERT_EQ(value, value_got)
+          << "Iterated value does not match with HGet value\n";
+        
+        if (i == 0) // i == 0 for forward
+          u_iter->Next();
+        else // i == 1 for backward
+          u_iter->Prev();
+      }
+    }   
+  }
+  for (auto iter = possible_kv_pairs[global_collection_name].cbegin(); iter != possible_kv_pairs[global_collection_name].cend(); ++iter)
+  {
+        std::cout << "Key:\t" << iter->first << "\tValue:\t" << iter->second << std::endl;
+  }
+  
+
   CheckHashesCollection(global_collection_name);
+
 
   size_t n_repeat = 3;
   std::cout 

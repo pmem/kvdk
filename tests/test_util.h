@@ -50,9 +50,7 @@ inline std::string GetRandomString(size_t len)
 inline std::string GetRandomString(size_t min_len, size_t max_len)
 {
   static std::default_random_engine re;
-  size_t len = 0;
-  while (len < min_len)
-    len = re() % (max_len + 1);
+  size_t len = min_len + re() % (max_len - min_len + 1);
   return GetRandomString(len);  
 }
 
