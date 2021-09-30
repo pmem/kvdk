@@ -27,6 +27,16 @@ public:
   virtual uint64_t Next() = 0;
 };
 
+class ConstantGenerator : public Generator {
+public:
+  ConstantGenerator(uint64_t num) : num_(num) {}
+
+  uint64_t Next() override { return num_; }
+
+private:
+  uint64_t num_;
+};
+
 class UniformGenerator : public Generator {
 public:
   UniformGenerator(uint64_t max_num, int scale = 64)

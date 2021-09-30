@@ -12,9 +12,10 @@ instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 benchmark_threads = n_thread
 kvdk_max_write_threads = n_thread
 duration = 10
-populate = 0
+populate = 1
 collections = 16
 restore_large_sorted_collection = False
+value_size_distribution = "constant"
 numanode = 0
 bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
@@ -31,7 +32,7 @@ if __name__ == "__main__":
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
         num = data_size // (vs + 8)
-        para = "-populate={} -value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={} -collections={} -restore_large_sorted_collection={}".format(
+        para = "-populate={} -value_size={} -threads={} -time={} -path={} -num={} -space={} -max_write_threads={} -collections={} -restore_large_sorted_collection={} -value_size_distribution={}".format(
             populate,
             vs,
             benchmark_threads,
@@ -40,7 +41,8 @@ if __name__ == "__main__":
             instance_space,
             kvdk_max_write_threads,
             collections,
-            restore_large_sorted_collection)
+            restore_large_sorted_collection,
+            value_size_distribution)
 
         if (bench_string):
             os.system("rm -rf {0}".format(path))

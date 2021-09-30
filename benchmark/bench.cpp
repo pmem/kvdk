@@ -26,6 +26,12 @@ DEFINE_uint64(time, 600, "Time to benchmark, this is valid only if fill=false");
 
 DEFINE_uint64(value_size, 120, "Value size of KV");
 
+DEFINE_string(
+    value_size_distribution, "constant",
+    "Distribution of value size to write, can be constant/random/zipf, "
+    "default is constant. If set to random or zipf, the max value size "
+    "will be FLAGS_value_size");
+
 DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
 
 DEFINE_double(read_ratio, 0, "Read threads = threads * read_ratio");
@@ -95,7 +101,6 @@ std::atomic<uint64_t> read_not_found{0};
 std::atomic<uint64_t> read_cnt{UINT64_MAX};
 std::vector<std::vector<uint64_t>> read_latencies;
 std::vector<std::vector<uint64_t>> write_latencies;
-std::unique_ptr<UniformGenerator> generator{nullptr};
 std::vector<std::string> collections;
 Engine *engine;
 char *value_pool = nullptr;
@@ -109,6 +114,7 @@ double existing_keys_ratio;
 bool sorted;
 uint64_t num_collections;
 std::shared_ptr<Generator> key_generator;
+std::shared_ptr<Generator> value_size_generator;
 
 char *random_str(unsigned int size) {
   char *str = (char *)malloc(size + 1);
@@ -135,10 +141,8 @@ char *random_str(unsigned int size) {
 uint64_t generate_key() { return key_generator->Next(); }
 
 void DBWrite(int id) {
-  std::string k;
-  std::string v;
-  k.resize(8);
-  v.assign(value_pool + (rand() % 102400 - value_size), value_size);
+  std::string key;
+  key.resize(8);
   uint64_t num;
   uint64_t ops = 0;
   Timer timer;
@@ -152,23 +156,25 @@ void DBWrite(int id) {
 
     // generate key
     num = generate_key();
+    memcpy(&key[0], &num, 8);
 
-    memcpy(&k[0], &num, 8);
-    std::vector<std::string> sv;
+    pmem::obj::string_view value =
+        pmem::obj::string_view(value_pool, value_size_generator->Next());
+
     if (stat_latencies)
       timer.Start();
     if (!sorted) {
       if (batch_num == 0) {
-        s = engine->Set(k, v);
+        s = engine->Set(key, value);
       } else {
-        batch.Put(k, v);
+        batch.Put(key, std::string(value.data(), value.size()));
         if (batch.Size() == batch_num) {
           engine->BatchWrite(batch);
           batch.Clear();
         }
       }
     } else {
-      s = engine->SSet(collections[num % num_collections], k, v);
+      s = engine->SSet(collections[num % num_collections], key, value);
     }
 
     if (stat_latencies) {
@@ -308,6 +314,11 @@ bool ProcessBenchmarkConfigs() {
   num_keys = FLAGS_num;
   num_collections = FLAGS_collections;
 
+  if (value_size > 102400) {
+    printf("value size too large\n");
+    return false;
+  }
+
   uint64_t max_key = FLAGS_existing_keys_ratio == 0
                          ? UINT64_MAX
                          : num_keys / FLAGS_existing_keys_ratio;
@@ -320,6 +331,18 @@ bool ProcessBenchmarkConfigs() {
   } else {
     printf("key distribution %s is not supported\n",
            FLAGS_key_distribution.c_str());
+    return false;
+  }
+
+  if (FLAGS_value_size_distribution == "constant") {
+    value_size_generator.reset(new ConstantGenerator(fLU64::FLAGS_value_size));
+  } else if (FLAGS_value_size_distribution == "zipf") {
+    value_size_generator.reset(new ZipfianGenerator(fLU64::FLAGS_value_size));
+  } else if (FLAGS_value_size_distribution == "random") {
+    value_size_generator.reset(new RandomGenerator(fLU64::FLAGS_value_size));
+  } else {
+    printf("value size distribution %s is not supported\n",
+           FLAGS_value_size_distribution.c_str());
     return false;
   }
 
