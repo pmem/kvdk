@@ -219,7 +219,7 @@ public:
   void DeleteDataEntry(DLDataEntry *deleting_entry, Splice *delete_splice,
                        SkiplistNode *dram_node);
 
-  void AddInvalidNodes(const std::vector<SkiplistNode *> nodes) {
+  void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
     for (SkiplistNode *node : nodes) {
       obsolete_nodes_.push_back(node);

@@ -79,7 +79,7 @@ void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
     }
   }
   if (to_delete && to_delete->size() > 0) {
-    result_splice->seeking_list->AddInvalidNodes(*to_delete);
+    result_splice->seeking_list->ObsoleteNodes(*to_delete);
   }
 }
 
