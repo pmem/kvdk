@@ -586,9 +586,9 @@ protected:
     // possible_kv_pairs is copied here
     if (report_progress)
       std::cout 
-        << " [INFO] IterateThroughHashes " << collection_name 
+        << "[INFO] IterateThroughHashes " << collection_name 
         << " with thread " << tid << "\n"
-        << " [INFO] It may take a few seconds to copy possible_kv_pairs."
+        << "[INFO] It may take a few seconds to copy possible_kv_pairs."
         << std::endl;
     
     IteratingFacility::IterateThroughHashes(engine, collection_name, possible_kv_pairs, report_progress);
@@ -601,9 +601,9 @@ protected:
     // possible_kv_pairs is copied here
     if (report_progress)
       std::cout 
-        << " [INFO] IterateThroughSortedSets " << collection_name 
+        << "[INFO] IterateThroughSortedSets " << collection_name 
         << " with thread " << tid << "\n"
-        << " [INFO] It may take a few seconds to copy possible_kv_pairs."
+        << "[INFO] It may take a few seconds to copy possible_kv_pairs."
         << std::endl;
     
     IteratingFacility::IterateThroughSortedSets(engine, collection_name, possible_kv_pairs, report_progress);
