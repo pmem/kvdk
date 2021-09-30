@@ -14,8 +14,8 @@
 namespace KVDK_NAMESPACE {
 
 // A pointer with additional information on high 16 bits
-template <typename T> struct PointerWithTag {
-  uint64_t tagged_pointer;
+template <typename T> class PointerWithTag {
+public:
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
   PointerWithTag(T *pointer) : tagged_pointer((uint64_t)pointer) {}
@@ -52,6 +52,9 @@ template <typename T> struct PointerWithTag {
   bool operator==(const T *raw_pointer) const {
     return RawPointer() == raw_pointer;
   }
+
+private:
+  uint64_t tagged_pointer;
 };
 
 struct PendingBatch {

@@ -400,7 +400,7 @@ Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
       engine->skiplists_.size() > 0) {
     thread_cache_node_.resize(engine->configs_.max_write_threads);
     UpdateEntriesOffset(engine);
-    for (int h = 1; h <= kMaxHeight; ++h) {
+    for (uint8_t h = 1; h <= kMaxHeight; ++h) {
       for (uint32_t j = 0; j < engine->configs_.max_write_threads; ++j) {
         fs.push_back(
             std::async(std::launch::async, [j, h, this, engine]() -> Status {
