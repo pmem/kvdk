@@ -107,7 +107,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
-  bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
+  // bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
   return s;
 }
 

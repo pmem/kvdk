@@ -42,7 +42,7 @@ public:
   void DelayFree(const SizedSpaceEntry &entry);
 
   // translate block_offset of allocated space to address
-  inline char *offset2addr(uint64_t block_offset) {
+  inline char *offset2addr_checked(uint64_t block_offset) {
     if (block_offset == kNullPmemOffset) {
       assert(false && "Trying to access kNullPmemOffset");
       return nullptr;
@@ -54,7 +54,7 @@ public:
     }
   }
 
-  inline char *offset2addr_nocheck(uint64_t block_offset) {
+  inline char *offset2addr(uint64_t block_offset) {
     if (block_offset == kNullPmemOffset) {
       return nullptr;
     } else {
@@ -63,7 +63,7 @@ public:
   }
 
   // translate address of allocated space to block_offset
-  inline uint64_t addr2offset(void *addr) {
+  inline uint64_t addr2offset_checked(void *addr) {
     if (addr) {
       assert((static_cast<char *>(addr) - pmem_) / block_size_ <
                  max_block_offset_ / num_segment_blocks_ *
@@ -76,7 +76,7 @@ public:
     }
   }
 
-  inline uint64_t addr2offset_nocheck(void *addr) {
+  inline uint64_t addr2offset(void *addr) {
     if (addr) {
       return ((char *)addr - pmem_) / block_size_;
     } else {
