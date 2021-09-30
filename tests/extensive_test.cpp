@@ -16,81 +16,98 @@
 #include "test_util.h"
 #include "gtest/gtest.h"
 
-// Provides functions to iterate through a collection and check its contents
-class IteratingFacility
+// IteratingFacility provides functions to iterate through a collection and check its contents
+// It's up to user to maintain an unordered_multimap between keys and values 
+// to keep track of the kv-pairs in a certain collection in the engine instance
+namespace IteratingFacility
 {
-protected:
   // possible_kv_pairs is searched to try to find a match with iterated records
   // possible_kv_pairs is copied because IterateThroughHashes erase entries to keep track of records
   // TODO: Also Iterate backwards
-  void IterateThroughHashes(kvdk::Engine* engine, std::string collection_name, 
-                            std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs, 
-                            bool report_progress) 
+  static void IterateThroughHashes(kvdk::Engine* engine, std::string collection_name, 
+                                   std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs, 
+                                   bool report_progress) 
   {
     kvdk::Status status;
     
     int n_total_possible_kv_pairs = possible_kv_pairs.size();
     int n_removed_possible_kv_pairs = 0;
     int old_progress = n_removed_possible_kv_pairs;
+    std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs_copy{possible_kv_pairs};
 
     auto u_iter = engine->NewUnorderedIterator(collection_name);
-    ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
-    for (u_iter->SeekToFirst(); u_iter->Valid(); u_iter->Next())
+
+    // Iterating forward then backward. 
+    for (size_t i = 0; i < 2; i++)
     {
-      std::string value_got;
-      auto key = u_iter->Key();
-      auto value = u_iter->Value();
-      status = engine->HGet(collection_name, key, &value_got);
-      ASSERT_EQ(status, kvdk::Status::Ok)
-        << "Iteration met kv-pair cannot be got with HGet\n";
-      ASSERT_EQ(value, value_got)
-        << "Iterated value does not match with HGet value\n";
-
-      CheckXGetResult(key, value_got, possible_kv_pairs);
-
-      possible_kv_pairs.erase(key);
-      n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-      if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 || possible_kv_pairs.empty()))
+      ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
+      if (i == 0) // i == 0 for forward
+        u_iter->SeekToFirst();
+      else // i == 1 for backward
+        u_iter->SeekToLast();
+      
+      while (u_iter->Valid())
       {
-        ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
-        old_progress = n_removed_possible_kv_pairs;
-      }
-    }
-    // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
-    // Here we use a dirty trick to check for their deletion.
-    // HGet set the return string to empty string when the kv-pair is deleted,
-    // else it keeps the string unchanged.
-    {
-      for (auto iter = possible_kv_pairs.begin(); iter != possible_kv_pairs.end(); )
-      {
-        std::string value_got{"Dummy"};
-        status = engine->HGet(collection_name, iter->first, &value_got);
-        ASSERT_EQ(status, kvdk::Status::NotFound)
-          << "Should not have found a key of a entry that cannot be iterated.\n";
-        ASSERT_EQ(value_got, "")
-          << "HGet a DlistDeleteRecord should have set value_got as empty string\n"; 
+        std::string value_got;
+        auto key = u_iter->Key();
+        auto value = u_iter->Value();
+        status = engine->HGet(collection_name, key, &value_got);
+        ASSERT_EQ(status, kvdk::Status::Ok)
+          << "Iteration met kv-pair cannot be got with HGet\n";
+        ASSERT_EQ(value, value_got)
+          << "Iterated value does not match with HGet value\n";
 
-        iter = possible_kv_pairs.erase(iter);
+        CheckXGetResult(key, value_got, possible_kv_pairs);
+
+        possible_kv_pairs.erase(key);
         n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-
         if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 || possible_kv_pairs.empty()))
         {
           ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
           old_progress = n_removed_possible_kv_pairs;
         }
-
+        
+        if (i == 0) // i == 0 for forward
+          u_iter->Next();
+        else // i == 1 for backward
+          u_iter->Prev();
       }
-      ASSERT_TRUE(possible_kv_pairs.empty())
-        << "There should be no key left in possible_kv_pairs, "
-        << "as they all should have been erased.\n";
-    }
+      // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
+      // Here we use a dirty trick to check for their deletion.
+      // HGet set the return string to empty string when the kv-pair is deleted,
+      // else it keeps the string unchanged.
+      {
+        for (auto iter = possible_kv_pairs.begin(); iter != possible_kv_pairs.end(); )
+        {
+          std::string value_got{"Dummy"};
+          status = engine->HGet(collection_name, iter->first, &value_got);
+          ASSERT_EQ(status, kvdk::Status::NotFound)
+            << "Should not have found a key of a entry that cannot be iterated.\n";
+          ASSERT_EQ(value_got, "")
+            << "HGet a DlistDeleteRecord should have set value_got as empty string\n"; 
+
+          iter = possible_kv_pairs.erase(iter);
+          n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
+
+          if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 || possible_kv_pairs.empty()))
+          {
+            ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
+            old_progress = n_removed_possible_kv_pairs;
+          }
+
+        }
+        ASSERT_TRUE(possible_kv_pairs.empty())
+          << "There should be no key left in possible_kv_pairs, "
+          << "as they all should have been erased.\n";
+      }
+    }   
   }
 
   // possible_kv_pairs is searched to try to find a match with iterated records
   // possible_kv_pairs is copied because IterateThroughSortedSets erase entries to keep track of records
-  void IterateThroughSortedSets(kvdk::Engine* engine, std::string collection_name, 
-                        std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs, 
-                        bool report_progress) 
+  static void IterateThroughSortedSets(kvdk::Engine* engine, std::string collection_name, 
+                                       std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs, 
+                                       bool report_progress) 
   {
     kvdk::Status status;
     
@@ -161,7 +178,7 @@ protected:
   }
 
   // Check value got by XGet(key) by looking up possible_kv_pairs
-  void CheckXGetResult(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
+  static void CheckXGetResult(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
   {
       bool match = false;
       auto range_found = possible_kv_pairs.equal_range(key);
@@ -181,79 +198,12 @@ protected:
   }
 };
 
-class SetDeleteFacility
+/// SetDeleteFacility offers functions for putting batches of keys and values into a collection in an engine instance.
+namespace SetDeleteFacility
 {
-private:
-  static constexpr std::size_t _unordered_map_load_factor_inverse_ = 2;
-protected:
-  // Calling engine->HSet to put keys and values into collection named after collection_name.
-  void HSetOnly(kvdk::Engine* engine, 
-                std::string collection_name, 
-                std::vector<pmem::obj::string_view> const& keys, 
-                std::vector<pmem::obj::string_view> const& values, 
-                bool report_progress) 
-  {
-    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
-    {
-      return engine->HSet(coll_name, key, value);
-    };
-    xSetOnly(setter, collection_name, keys, values, report_progress);
-  }
-
-  // Calling engine->HSet to put keys and values into collection named after collection_name.
-  void SSetOnly(kvdk::Engine* engine, 
-                std::string collection_name, 
-                std::vector<pmem::obj::string_view> const& keys, 
-                std::vector<pmem::obj::string_view> const& values, 
-                bool report_progress) 
-  {
-    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
-    {
-      return engine->SSet(coll_name, key, value);
-    };
-    xSetOnly(setter, collection_name, keys, values, report_progress);
-  }
-
-  // Calling engine->HSet to put evenly indexed keys and values into collection named after collection_name.
-  // Calling engine->HDelete to delete oddly indexed keys from collection named after collection_name.
-  void EvenHSetOddHDelete(kvdk::Engine* engine, 
-                          std::string collection_name, 
-                          std::vector<pmem::obj::string_view> const& keys, 
-                          std::vector<pmem::obj::string_view> const& values, 
-                          bool report_progress)
-  {
-    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
-    {
-      return engine->HSet(coll_name, key, value);
-    };
-    auto deleter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key)
-    {
-      return engine->HDelete(coll_name, key);
-    };
-    evenXSetOddXDelete(setter, deleter, collection_name, keys, values, report_progress);
-  }
-
-  // Calling engine->SSet to put evenly indexed keys and values into collection named after collection_name.
-  // Calling engine->SDelete to delete oddly indexed keys from collection named after collection_name.
-  void EvenSSetOddSDelete(kvdk::Engine* engine, 
-                          std::string collection_name, 
-                          std::vector<pmem::obj::string_view> const& keys, 
-                          std::vector<pmem::obj::string_view> const& values, 
-                          bool report_progress)
-  {
-    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
-    {
-      return engine->SSet(coll_name, key, value);
-    };
-    auto deleter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key)
-    {
-      return engine->SDelete(coll_name, key);
-    };
-    evenXSetOddXDelete(setter, deleter, collection_name, keys, values, report_progress);
-  }
-
-private:
-  void xSetOnly(std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view, pmem::obj::string_view)> setter, 
+namespace // nested anonymous namespace to hide implementation
+{
+  static void xSetOnly(std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view, pmem::obj::string_view)> setter, 
                 std::string collection_name,
                 std::vector<pmem::obj::string_view> const& keys, 
                 std::vector<pmem::obj::string_view> const& values, 
@@ -276,7 +226,7 @@ private:
     }
   }
 
-  void evenXSetOddXDelete(std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view, pmem::obj::string_view)> setter, 
+  static void evenXSetOddXDelete(std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view, pmem::obj::string_view)> setter, 
                           std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view)> getter,
                           std::string collection_name,
                           std::vector<pmem::obj::string_view> const& keys, 
@@ -313,9 +263,77 @@ private:
         ShowProgress(std::cout, j + 1, keys.size());
     }
   }
-};
+}
 
-class EngineExtensiveTest : public testing::Test, protected IteratingFacility, protected SetDeleteFacility {
+  // Calling engine->HSet to put keys and values into collection named after collection_name.
+  static void HSetOnly(kvdk::Engine* engine, 
+                std::string collection_name, 
+                std::vector<pmem::obj::string_view> const& keys, 
+                std::vector<pmem::obj::string_view> const& values, 
+                bool report_progress) 
+  {
+    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
+    {
+      return engine->HSet(coll_name, key, value);
+    };
+    xSetOnly(setter, collection_name, keys, values, report_progress);
+  }
+
+  // Calling engine->HSet to put keys and values into collection named after collection_name.
+  static void SSetOnly(kvdk::Engine* engine, 
+                std::string collection_name, 
+                std::vector<pmem::obj::string_view> const& keys, 
+                std::vector<pmem::obj::string_view> const& values, 
+                bool report_progress) 
+  {
+    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
+    {
+      return engine->SSet(coll_name, key, value);
+    };
+    xSetOnly(setter, collection_name, keys, values, report_progress);
+  }
+
+  // Calling engine->HSet to put evenly indexed keys and values into collection named after collection_name.
+  // Calling engine->HDelete to delete oddly indexed keys from collection named after collection_name.
+  static void EvenHSetOddHDelete(kvdk::Engine* engine, 
+                          std::string collection_name, 
+                          std::vector<pmem::obj::string_view> const& keys, 
+                          std::vector<pmem::obj::string_view> const& values, 
+                          bool report_progress)
+  {
+    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
+    {
+      return engine->HSet(coll_name, key, value);
+    };
+    auto deleter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key)
+    {
+      return engine->HDelete(coll_name, key);
+    };
+    evenXSetOddXDelete(setter, deleter, collection_name, keys, values, report_progress);
+  }
+
+  // Calling engine->SSet to put evenly indexed keys and values into collection named after collection_name.
+  // Calling engine->SDelete to delete oddly indexed keys from collection named after collection_name.
+  static void EvenSSetOddSDelete(kvdk::Engine* engine, 
+                          std::string collection_name, 
+                          std::vector<pmem::obj::string_view> const& keys, 
+                          std::vector<pmem::obj::string_view> const& values, 
+                          bool report_progress)
+  {
+    auto setter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key, pmem::obj::string_view value)
+    {
+      return engine->SSet(coll_name, key, value);
+    };
+    auto deleter = [&](pmem::obj::string_view coll_name, pmem::obj::string_view key)
+    {
+      return engine->SDelete(coll_name, key);
+    };
+    evenXSetOddXDelete(setter, deleter, collection_name, keys, values, report_progress);
+  }
+
+}
+
+class EngineExtensiveTest : public testing::Test {
 protected:
   kvdk::Engine *engine = nullptr;
   kvdk::Configs configs;
@@ -334,9 +352,9 @@ protected:
   const size_t n_thread{ 48 };
   const size_t n_kv_per_thread{ 2ULL << 20 };   // 2M keys per thread, totaling about 100M records
 
-  const size_t sz_key_min{ 2 };
-  const size_t sz_key_max{ 8 };
-  const size_t sz_value_min{ 16 };
+  const size_t sz_key_min{ 0 };                 // 0-sized key "" is a hotspot, which may reveal many defects
+  const size_t sz_key_max{ 16 };
+  const size_t sz_value_min{ 0 };
   const size_t sz_value_max{ 1024 };
 
   std::vector<std::vector<std::string_view>> grouped_keys;
@@ -346,8 +364,8 @@ protected:
   std::unordered_map<std::string, std::unordered_multimap<std::string_view, std::string_view>> possible_kv_pairs;
 
 private:
-  std::vector<std::string> _values_;
   std::vector<std::string> _keys_;
+  std::vector<std::string> _values_;
   std::default_random_engine rand{ 42 };
 
 protected:
@@ -673,7 +691,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
   }
 }
 
-class EngineHotspotTest : public testing::Test, protected IteratingFacility, protected SetDeleteFacility {
+class EngineHotspotTest : public testing::Test {
 protected:
   kvdk::Engine *engine = nullptr;
   kvdk::Configs configs;
