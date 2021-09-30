@@ -41,9 +41,9 @@ protected:
       auto key = u_iter->Key();
       auto value = u_iter->Value();
       status = engine->HGet(collection_name, key, &value_got);
-      EXPECT_EQ(status, kvdk::Status::Ok)
+      ASSERT_EQ(status, kvdk::Status::Ok)
         << "Iteration met kv-pair cannot be got with HGet\n";
-      EXPECT_EQ(value, value_got)
+      ASSERT_EQ(value, value_got)
         << "Iterated value does not match with HGet value\n";
 
       CheckXGetResult(key, value_got, possible_kv_pairs);
@@ -65,9 +65,9 @@ protected:
       {
         std::string value_got{"Dummy"};
         status = engine->HGet(collection_name, iter->first, &value_got);
-        EXPECT_EQ(status, kvdk::Status::NotFound)
+        ASSERT_EQ(status, kvdk::Status::NotFound)
           << "Should not have found a key of a entry that cannot be iterated.\n";
-        EXPECT_EQ(value_got, "")
+        ASSERT_EQ(value_got, "")
           << "HGet a DlistDeleteRecord should have set value_got as empty string\n"; 
 
         iter = possible_kv_pairs.erase(iter);
@@ -80,7 +80,7 @@ protected:
         }
 
       }
-      EXPECT_TRUE(possible_kv_pairs.empty())
+      ASSERT_TRUE(possible_kv_pairs.empty())
         << "There should be no key left in possible_kv_pairs, "
         << "as they all should have been erased.\n";
     }
@@ -109,9 +109,9 @@ protected:
       auto key = s_iter->Key();
       auto value = s_iter->Value();
       status = engine->SGet(collection_name, key, &value_got);
-      EXPECT_EQ(status, kvdk::Status::Ok)
+      ASSERT_EQ(status, kvdk::Status::Ok)
         << "Iteration met kv-pair cannot be got with HGet\n";
-      EXPECT_EQ(value, value_got)
+      ASSERT_EQ(value, value_got)
         << "Iterated value does not match with SGet value\n";
 
       if (!first_read)
@@ -142,7 +142,7 @@ protected:
       {
         std::string value_got{"Dummy"};
         status = engine->SGet(collection_name, iter->first, &value_got);
-        EXPECT_EQ(status, kvdk::Status::NotFound)
+        ASSERT_EQ(status, kvdk::Status::NotFound)
           << "Should not have found a key of a entry that cannot be iterated.\n";
 
         iter = possible_kv_pairs.erase(iter);
@@ -154,7 +154,7 @@ protected:
           old_progress = n_removed_possible_kv_pairs;
         }
       }
-      EXPECT_TRUE(possible_kv_pairs.empty())
+      ASSERT_TRUE(possible_kv_pairs.empty())
         << "There should be no key left in possible_kv_pairs, "
         << "as they all should have been erased.\n";
     }
@@ -168,13 +168,13 @@ protected:
       
       for (auto iter = range_found.first; iter != range_found.second; ++iter)
       {
-        EXPECT_EQ(key, iter->first)
+        ASSERT_EQ(key, iter->first)
           << "Iterated key and key in possible_kv_pairs does not match: \n"
           << "Iterated key: " << key << "\n"
           << "Key in possible_kv_pairs: " << iter->first;
         match = match || (value == iter->second);
       }
-      EXPECT_TRUE(match) 
+      ASSERT_TRUE(match) 
         << "No kv-pair in possible_kv_pairs matching with iterated kv-pair:\n"
         << "Key: " << key << "\n"
         << "Value: " << value << "\n";
@@ -265,7 +265,7 @@ private:
     for (size_t j = 0; j < keys.size(); j++)
     {
       status = setter(collection_name, keys[j], values[j]);
-      EXPECT_EQ(status, kvdk::Status::Ok) 
+      ASSERT_EQ(status, kvdk::Status::Ok) 
         << "Fail to Set a key " 
         << keys[j] 
         << " in collection "
@@ -292,7 +292,7 @@ private:
       {
         // Even HSet
         status = setter(collection_name, keys[j], values[j]);
-        EXPECT_EQ(status, kvdk::Status::Ok) 
+        ASSERT_EQ(status, kvdk::Status::Ok) 
           << "Fail to Set a key " 
           << keys[j] 
           << " in collection "
@@ -302,7 +302,7 @@ private:
       {
         // Odd HDelete
         status = getter(collection_name, keys[j]);
-        EXPECT_EQ(status, kvdk::Status::Ok) 
+        ASSERT_EQ(status, kvdk::Status::Ok) 
           << "Fail to Delete a key " 
           << keys[j] 
           << " in collection "
@@ -777,12 +777,12 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot)
       if (j % 2 == 0)
       {
         status = engine->HSet(global_collection_name, keys[tid][j], values[tid][j]);
-        EXPECT_TRUE(status == kvdk::Status::Ok);
+        ASSERT_TRUE(status == kvdk::Status::Ok);
       }
       else
       {
         status = engine->HGet(global_collection_name, keys[tid][j], &value_got);
-        EXPECT_TRUE((status == kvdk::Status::NotFound) || (status == kvdk::Status::Ok));
+        ASSERT_TRUE((status == kvdk::Status::NotFound) || (status == kvdk::Status::Ok));
         if (status == kvdk::Status::Ok)
         {
           // IteratingFacility::CheckXGetResult(keys[tid][j], value_got, possible_kv_pairs);
