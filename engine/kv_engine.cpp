@@ -371,6 +371,10 @@ Status KVEngine::RestoreStringRecord(DataEntry *pmem_data_entry,
     pmem_allocator_->Free(
         SizedSpaceEntry(pmem_allocator_->addr2offset_checked(pmem_data_entry),
                         cached_meta->header.b_size, cached_meta->timestamp));
+    if (existing_data_entry.timestamp == cached_meta->timestamp)
+    {
+      GlobalLogger.Info("Met two StringRecord with same timestamp");
+    }
     return Status::Ok;
   }
 
@@ -418,6 +422,10 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
     pmem_allocator_->Free(
         SizedSpaceEntry(pmem_allocator_->addr2offset_checked(pmem_data_entry),
                         cached_meta->header.b_size, cached_meta->timestamp));
+    if (existing_data_entry.timestamp == cached_meta->timestamp)
+    {
+      GlobalLogger.Info("Met two SortedRecord with same timestamp");
+    }
     return Status::Ok;
   }
 
@@ -833,7 +841,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
         pmem_allocator_->offset2addr_checked(sized_space_entry.space_entry.offset);
     uint64_t new_ts = get_timestamp();
 
-    if (found && new_ts < data_entry.timestamp) {
+    if (found && new_ts <= data_entry.timestamp) {
+      GlobalLogger.Info("Trying to emplace Record with older timestamp than existing Record. Abort emplacement.");
       pmem_allocator_->Free(sized_space_entry);
       return Status::Ok;
     }
@@ -1133,7 +1142,8 @@ Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
         pmem_allocator_->offset2addr_checked(sized_space_entry.space_entry.offset);
 
     uint64_t new_ts = batch_hint ? batch_hint->ts : get_timestamp();
-    if (found && new_ts < data_entry.timestamp) {
+    if (found && new_ts <= data_entry.timestamp) {
+      GlobalLogger.Info("Trying to emplace a record with older timestamp than existing record. Abort emplacement.");
       if (sized_space_entry.size > 0) {
         pmem_allocator_->Free(sized_space_entry);
       }
@@ -1532,6 +1542,10 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
           }
           else
           {
+            if (pmp_old_record->timestamp == data_entry_cached.timestamp)
+            {
+              GlobalLogger.Info("Met two DlistRecord with same timestamp");
+            }
             UnorderedCollection::Deallocate(static_cast<DLDataEntry*>(pmp_record), pmem_allocator_.get());
           }
           return Status::Ok;
