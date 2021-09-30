@@ -50,7 +50,7 @@ protected:
 
       possible_kv_pairs.erase(key);
       n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-      if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
+      if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 || possible_kv_pairs.empty()))
       {
         ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
         old_progress = n_removed_possible_kv_pairs;
@@ -61,7 +61,7 @@ protected:
     // HGet set the return string to empty string when the kv-pair is deleted,
     // else it keeps the string unchanged.
     {
-      for (auto iter = possible_kv_pairs.begin(); iter != possible_kv_pairs.end(); iter = possible_kv_pairs.erase(iter))
+      for (auto iter = possible_kv_pairs.begin(); iter != possible_kv_pairs.end(); )
       {
         std::string value_got{"Dummy"};
         status = engine->HGet(collection_name, iter->first, &value_got);
@@ -70,12 +70,15 @@ protected:
         EXPECT_EQ(value_got, "")
           << "HGet a DlistDeleteRecord should have set value_got as empty string\n"; 
 
+        iter = possible_kv_pairs.erase(iter);
         n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-        if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
+
+        if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 || possible_kv_pairs.empty()))
         {
           ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
           old_progress = n_removed_possible_kv_pairs;
         }
+
       }
       EXPECT_TRUE(possible_kv_pairs.empty())
         << "There should be no key left in possible_kv_pairs, "
@@ -126,7 +129,7 @@ protected:
       
       possible_kv_pairs.erase(key);
       n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-      if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
+      if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 || possible_kv_pairs.empty()))
       {
         ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
         old_progress = n_removed_possible_kv_pairs;
@@ -135,15 +138,17 @@ protected:
     // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
     // We just cannot keep track of them
     {
-      for (auto iter = possible_kv_pairs.begin(); iter != possible_kv_pairs.end(); iter = possible_kv_pairs.erase(iter))
+      for (auto iter = possible_kv_pairs.begin(); iter != possible_kv_pairs.end(); )
       {
         std::string value_got{"Dummy"};
         status = engine->SGet(collection_name, iter->first, &value_got);
         EXPECT_EQ(status, kvdk::Status::NotFound)
           << "Should not have found a key of a entry that cannot be iterated.\n";
 
+        iter = possible_kv_pairs.erase(iter);
         n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-        if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
+
+        if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 || possible_kv_pairs.empty()))
         {
           ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
           old_progress = n_removed_possible_kv_pairs;
@@ -247,105 +252,6 @@ protected:
     evenXSetOddXDelete(setter, deleter, collection_name, keys, values, report_progress);
   }
 
-  // grouped_keys and grouped_values are organized by threads. Each thread holds a group.
-  std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view> 
-  GetPossibleKVsForXSetOnly(std::vector<std::vector<pmem::obj::string_view>> const& grouped_keys, 
-                            std::vector<std::vector<pmem::obj::string_view>> const& grouped_values)
-  {
-    // ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
-    //   << "Must have same amount of groups of keys and values!";
-
-    std::cout << "[INFO] Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
-
-    size_t total_keys = 0;
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-      total_keys += grouped_keys[tid].size();
-    
-    std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs;
-    possible_kv_pairs.reserve(total_keys * _unordered_map_load_factor_inverse_);
-
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-    {
-        // ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size()) 
-        //   << "Must have same amount of keys and values to form kv-pairs!";
-
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-            possible_kv_pairs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
-
-        ShowProgress(std::cout, tid + 1, grouped_keys.size());
-    }
-    return possible_kv_pairs;
-  }
-
-  std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view> 
-  GetPossibleKVsForEvenXSetOddXDelete(std::vector<std::vector<pmem::obj::string_view>> const& grouped_keys, 
-                                      std::vector<std::vector<pmem::obj::string_view>> const& grouped_values)
-  {    
-    // ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
-    //   << "Must have same amount of groups of keys and values!";
-
-    std::cout << "[INFO] Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
-
-    size_t total_keys = 0;
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-      total_keys += grouped_keys[tid].size();
-
-    std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs;
-    possible_kv_pairs.reserve(total_keys / 2 * _unordered_map_load_factor_inverse_);
-
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-    {
-        // ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size()) 
-        //   << "Must have same amount of keys and values to form kv-pairs!";
-
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-          if (i % 2 == 0)
-            possible_kv_pairs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
-        ShowProgress(std::cout, tid + 1, grouped_keys.size());
-    }
-    return possible_kv_pairs;
-  }
-
-  void UpdatePossibleKVsForXSetOnly(std::unordered_multimap<std::string_view, std::string_view>& possible_kv_pairs,
-                                    std::vector<std::vector<pmem::obj::string_view>> const& grouped_keys, 
-                                    std::vector<std::vector<pmem::obj::string_view>> const& grouped_values)
-  {
-    ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
-      << "Must have same amount of groups of keys and values!";
-
-    std::cout << "[INFO] Updating possible_kv_pairs to check contents of engine from keys and values" << std::endl;
-
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-    {
-        ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size()) 
-          << "Must have same amount of keys and values to form kv-pairs!";
-
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-            possible_kv_pairs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
-        ShowProgress(std::cout, tid + 1, grouped_keys.size());
-    }
-  }
-
-  void UpdatePossibleKVsForEvenXSetOddXDelete(std::unordered_multimap<std::string_view, std::string_view>& possible_kv_pairs,
-                                              std::vector<std::vector<pmem::obj::string_view>> const& grouped_keys, 
-                                              std::vector<std::vector<pmem::obj::string_view>> const& grouped_values)
-  {
-    ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
-      << "Must have same amount of groups of keys and values!";
-
-    std::cout << "[INFO] Updating possible_kv_pairs to check contents of engine from keys and values" << std::endl;
-
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-    {
-        ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size()) 
-          << "Must have same amount of keys and values to form kv-pairs!";
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-          if (i % 2 == 0)
-            possible_kv_pairs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
-        ShowProgress(std::cout, tid + 1, grouped_keys.size());
-    }
-  }
-
 private:
   void xSetOnly(std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view, pmem::obj::string_view)> setter, 
                 std::string collection_name,
@@ -365,7 +271,7 @@ private:
         << " in collection "
         << collection_name;
       
-      if (report_progress && ((j + 1) % 10000 == 0 || j + 1 == keys.size()))
+      if (report_progress && ((j + 1) % 1000 == 0 || j + 1 == keys.size()))
         ShowProgress(std::cout, j + 1, keys.size());
     }
   }
@@ -403,7 +309,7 @@ private:
           << collection_name;
       }
         
-      if (report_progress && ((j + 1) % 10000 == 0 || j + 1 == keys.size()))
+      if (report_progress && ((j + 1) % 1000 == 0 || j + 1 == keys.size()))
         ShowProgress(std::cout, j + 1, keys.size());
     }
   }
@@ -436,6 +342,9 @@ protected:
   std::vector<std::vector<std::string_view>> grouped_keys;
   std::vector<std::vector<std::string_view>> grouped_values;
 
+  // unordered_map[collection_name, unordered_multimap[key, value]]
+  std::unordered_map<std::string, std::unordered_multimap<std::string_view, std::string_view>> possible_kv_pairs;
+
 private:
   std::vector<std::string> _values_;
   std::vector<std::string> _keys_;
@@ -446,6 +355,14 @@ protected:
   {
     std::string cmd = "rm -rf " + path_db + "\n";
     int _sink = system(cmd.data());
+  }
+
+  void RebootDB()
+  {
+    delete engine;
+
+    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
   virtual void SetUp() override 
@@ -463,6 +380,7 @@ protected:
     _values_.reserve(n_kv_per_thread);
     grouped_keys.resize(n_thread);
     grouped_values.resize(n_thread);
+    possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
     for (size_t tid = 0; tid < n_thread; tid++)
     {
       grouped_keys[tid].reserve(n_kv_per_thread);
@@ -475,7 +393,7 @@ protected:
       _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
       for (size_t tid = 0; tid < n_thread; tid++)
           _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
-      if ((i + 1) % 10000 == 0 || (i + 1) == n_kv_per_thread)
+      if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
         ShowProgress(std::cout, (i + 1), n_kv_per_thread);
     }
     std::cout << "[INFO] Generating string_view for keys and values" << std::endl; 
@@ -499,145 +417,184 @@ protected:
     PurgeDB();
   }
 
-  void ShuffleKeys(size_t tid)
-  {
-    std::shuffle(grouped_keys[tid].begin(), grouped_keys[tid].end(), rand);
-  }
-  
-  void ShuffleValues(size_t tid)
-  {
-    std::shuffle(grouped_values[tid].begin(), grouped_values[tid].end(), rand);
-  }
-
   void ShuffleAllKeysValues()
   {
     for (size_t tid = 0; tid < n_thread; tid++)
     {
-      ShuffleKeys(tid);
-      ShuffleValues(tid);
+      shuffleKeys(tid);
+      shuffleValues(tid);
     }
   }
 
-  void HSetOnly(uint32_t tid, std::string collection_name, bool report_progress = false) 
+  void LaunchHSetOnly(std::string const& collection_name)
   {
-    if (report_progress)
-      std::cout 
-        << "[INFO] Executing HSetOnly in " << collection_name 
-        << " with thread " << tid << std::endl;
-
-    SetDeleteFacility::HSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
+    updatePossibleKVPairsForXSetOnly(collection_name);
+    
+    auto ModifyEngine = [&](int tid){ executeHSetOnly(collection_name, tid); };
+    LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void SSetOnly(uint32_t tid, std::string collection_name, bool report_progress = false) 
+  void LaunchEvenHSetOddHDelete(std::string const& collection_name)
   {
-    if (report_progress)
-      std::cout 
-        << "[INFO] Executing SSetOnly in " << collection_name 
-        << " with thread " << tid << std::endl;
+    updatePossibleKVsForEvenXSetOddXDelete(collection_name);
 
-    SetDeleteFacility::SSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
+    auto ModifyEngine = [&](int tid){ executeEvenHSetOddHDelete(collection_name, tid); };
+    LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void EvenHSetOddHDelete(uint32_t tid, std::string collection_name, bool report_progress = false) 
+  void LaunchSSetOnly(std::string const& collection_name)
   {
-    if (report_progress)
-      std::cout 
-        << "[INFO] Executing EvenHSetOddHDelete in " << collection_name 
-        << " with thread " << tid << std::endl;
+    updatePossibleKVPairsForXSetOnly(collection_name);
 
-    SetDeleteFacility::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
+    auto ModifyEngine = [&](int tid){ executeSSetOnly(collection_name, tid); };
+    LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void EvenSSetOddSDelete(uint32_t tid, std::string collection_name, bool report_progress = false) 
+  void LaunchEvenSSetOddSDelete(std::string const& collection_name)
   {
-    if (report_progress)
-      std::cout 
-        << "[INFO] Executing EvenSSetOddSDelete in " << collection_name 
-        << " with thread " << tid << std::endl;
+    updatePossibleKVsForEvenXSetOddXDelete(collection_name);
 
-    SetDeleteFacility::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
+    auto ModifyEngine = [&](int tid){ executeEvenSSetOddSDelete(collection_name, tid); };
+    LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view> GetPossibleKVsForXSetOnly()
+  void CheckHashesCollection(std::string collection_name)
   {
-    return SetDeleteFacility::GetPossibleKVsForXSetOnly(grouped_keys, grouped_values);
+    iterateThroughHashes(0, collection_name);
   }
 
-  std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view> GetPossibleKVsForEvenXSetOddXDelete()
+  void CheckSortedSetsCollection(std::string collection_name)
   {
-    return SetDeleteFacility::GetPossibleKVsForEvenXSetOddXDelete(grouped_keys, grouped_values);
+    iterateThroughSortedSets(0, collection_name);
   }
 
-  // Since we are shuffling all keys, the possible_kv_pairs should have been dumped and recreated?
-  void UpdatePossibleKVsForXSetOnly(std::unordered_multimap<std::string_view, std::string_view>& possible_kv_pairs)
+private:
+  void shuffleKeys(size_t tid)
   {
-    SetDeleteFacility::UpdatePossibleKVsForXSetOnly(possible_kv_pairs, grouped_keys, grouped_values);
+    std::shuffle(grouped_keys[tid].begin(), grouped_keys[tid].end(), rand);
+  }
+  
+  void shuffleValues(size_t tid)
+  {
+    std::shuffle(grouped_values[tid].begin(), grouped_values[tid].end(), rand);
   }
 
-  void UpdatePossibleKVsForEvenXSetOddXDelete(std::unordered_multimap<std::string_view, std::string_view>& possible_kv_pairs)
+  void iterateThroughHashes(uint32_t tid, std::string collection_name)
   {
-    SetDeleteFacility::UpdatePossibleKVsForEvenXSetOddXDelete(possible_kv_pairs, grouped_keys, grouped_values);
-  }
-
-  void IterateThroughHashes(uint32_t tid, std::string collection_name, 
-                        std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs, 
-                        bool report_progress = false)
-  {
-    // possible_kv_pairs is copied here
+    bool report_progress = (tid == 0);
     if (report_progress)
       std::cout 
         << "[INFO] IterateThroughHashes " << collection_name 
-        << " with thread " << tid << "\n"
-        << "[INFO] It may take a few seconds to copy possible_kv_pairs."
+        << " with thread " << tid << ". "
+        << "It may take a few seconds to copy possible_kv_pairs."
         << std::endl;
     
-    IteratingFacility::IterateThroughHashes(engine, collection_name, possible_kv_pairs, report_progress);
+    // possible_kv_pairs is copied here
+    IteratingFacility::IterateThroughHashes(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
   }
 
-  void IterateThroughSortedSets(uint32_t tid, std::string collection_name, 
-                        std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs, 
-                        bool report_progress = false)
+  void iterateThroughSortedSets(uint32_t tid, std::string collection_name)
   {
-    // possible_kv_pairs is copied here
+    bool report_progress = (tid == 0);
     if (report_progress)
       std::cout 
         << "[INFO] IterateThroughSortedSets " << collection_name 
-        << " with thread " << tid << "\n"
-        << "[INFO] It may take a few seconds to copy possible_kv_pairs."
+        << " with thread " << tid << ". "
+        << "It may take a few seconds to copy possible_kv_pairs."
         << std::endl;
     
-    IteratingFacility::IterateThroughSortedSets(engine, collection_name, possible_kv_pairs, report_progress);
+    // possible_kv_pairs is copied here
+    IteratingFacility::IterateThroughSortedSets(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
   }
 
+  void executeHSetOnly(std::string const& collection_name, std::uint64_t tid)
+  {
+    if (tid == 0)
+      SetDeleteFacility::HSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+    else
+      SetDeleteFacility::HSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+  }
+
+  void executeSSetOnly(std::string const& collection_name, std::uint64_t tid)
+  {
+    if (tid == 0)
+      SetDeleteFacility::SSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+    else
+      SetDeleteFacility::SSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+  }
+
+  void executeEvenHSetOddHDelete(std::string const& collection_name, std::uint64_t tid)
+  {
+    if (tid == 0)
+      SetDeleteFacility::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+    else
+      SetDeleteFacility::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+  }
+
+  void executeEvenSSetOddSDelete(std::string const& collection_name, std::uint64_t tid)
+  {
+    if (tid == 0)
+      SetDeleteFacility::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+    else
+      SetDeleteFacility::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+  }
+
+  void updatePossibleKVPairsForXSetOnly(std::string const& collection_name)
+  {
+    auto& possible_kvs = possible_kv_pairs[collection_name];
+    // Erase keys that will be overwritten
+    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+            possible_kvs.erase(grouped_keys[tid][i]);    
+
+    ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
+      << "Must have same amount of groups of keys and values!";
+
+    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
+    {
+      ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size()) 
+        << "Must have same amount of keys and values to form kv-pairs!";
+
+      for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+          possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+      ShowProgress(std::cout, tid + 1, grouped_keys.size());
+    }
+  }
+
+  void updatePossibleKVsForEvenXSetOddXDelete(std::string const& collection_name)
+  {
+    auto& possible_kvs = possible_kv_pairs[collection_name];
+    // Erase keys that will be overwritten
+    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+            possible_kvs.erase(grouped_keys[tid][i]);
+
+    ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
+      << "Must have same amount of groups of keys and values!";
+
+    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
+    {
+        ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size()) 
+          << "Must have same amount of keys and values to form kv-pairs!";
+
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+          if (i % 2 == 0)
+            possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+
+        ShowProgress(std::cout, tid + 1, grouped_keys.size());
+    }
+  }
 };
 
 TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) 
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  auto DoHSet = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      HSetOnly(tid, global_collection_name, true);
-    else
-      HSetOnly(tid, global_collection_name, false);
-  };
-
   std::cout << "[INFO] Execute HSet in a new collection." << std::endl;
-  LaunchNThreads(n_thread, DoHSet);
-
-  auto possible_kv_pairs = GetPossibleKVsForXSetOnly();
-
-  auto DoIterate = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      IterateThroughHashes(tid, global_collection_name, possible_kv_pairs, true);
-    else
-      IterateThroughHashes(tid, global_collection_name, possible_kv_pairs, false);
-  };
+  LaunchHSetOnly(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-  LaunchNThreads(1, DoIterate);  
+  CheckHashesCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
@@ -646,12 +603,10 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
   for (size_t i = 0; i < n_repeat; i++)
   {
     // Repeatedly close and open engine to test recovery
-    delete engine;
-    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+    RebootDB();
 
     std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-    LaunchNThreads(1, DoIterate);  
+    CheckHashesCollection(global_collection_name);
   }
 }
 
@@ -659,29 +614,11 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  auto DoHSetHDelete = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      EvenHSetOddHDelete(tid, global_collection_name, true);
-    else
-      EvenHSetOddHDelete(tid, global_collection_name, false);
-  };
-
   std::cout << "[INFO] Execute HSet and HDelete in a new collection." << std::endl;
-  LaunchNThreads(n_thread, DoHSetHDelete);
-
-  auto possible_kv_pairs = GetPossibleKVsForEvenXSetOddXDelete();
-
-  auto DoIterate = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      IterateThroughHashes(tid, global_collection_name, possible_kv_pairs, true);
-    else
-      IterateThroughHashes(tid, global_collection_name, possible_kv_pairs, false);
-  };
+  LaunchEvenHSetOddHDelete(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-  LaunchNThreads(1, DoIterate);  
+  CheckHashesCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
@@ -690,23 +627,18 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
   for (size_t i = 0; i < n_repeat; i++)
   {
     // Repeatedly close and open engine, excecute DoHSetHDelete and then check
-    delete engine;
-
-    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+    RebootDB();
 
     std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-    LaunchNThreads(1, DoIterate);
+    CheckHashesCollection(global_collection_name);
 
     ShuffleAllKeysValues();
 
     std::cout << "[INFO] Update reopened engine." << std::endl;
-    LaunchNThreads(n_thread, DoHSetHDelete);
-
-    UpdatePossibleKVsForEvenXSetOddXDelete(possible_kv_pairs);
+    LaunchEvenHSetOddHDelete(global_collection_name);
 
     std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-    LaunchNThreads(1, DoIterate);
+    CheckHashesCollection(global_collection_name);
   }
 }
 
@@ -714,29 +646,11 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  auto DoSSet = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      SSetOnly(tid, global_collection_name, true);
-    else
-      SSetOnly(tid, global_collection_name, false);
-  };
-
-  std::cout << "[INFO] Execute SSet in a new collection." << std::endl;
-  LaunchNThreads(n_thread, DoSSet);
-
-  auto possible_kv_pairs = GetPossibleKVsForXSetOnly();
-
-  auto DoIterate = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      IterateThroughSortedSets(tid, global_collection_name, possible_kv_pairs, true);
-    else
-      IterateThroughSortedSets(tid, global_collection_name, possible_kv_pairs, false);
-  };
+  std::cout << "[INFO] Execute HSet in a new collection." << std::endl;
+  LaunchSSetOnly(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-  LaunchNThreads(1, DoIterate);  
+  CheckSortedSetsCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
@@ -745,13 +659,10 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
   for (size_t i = 0; i < n_repeat; i++)
   {
     // Repeatedly close and open engine to test recovery
-    delete engine;
-
-    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+    RebootDB();
 
     std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-    LaunchNThreads(1, DoIterate);  
+    CheckSortedSetsCollection(global_collection_name);
   }
 }
 
@@ -759,29 +670,11 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  auto DoSSetSDelete = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      EvenSSetOddSDelete(tid, global_collection_name, true);
-    else
-      EvenSSetOddSDelete(tid, global_collection_name, false);
-  };
-
-  std::cout << "[INFO] Execute SSet and SDelete in a new collection." << std::endl;
-  LaunchNThreads(n_thread, DoSSetSDelete);
-
-  auto possible_kv_pairs = GetPossibleKVsForEvenXSetOddXDelete();
-
-  auto DoIterate = [&](std::uint64_t tid)
-  {
-    if (tid == 0)
-      IterateThroughSortedSets(tid, global_collection_name, possible_kv_pairs, true);
-    else
-      IterateThroughSortedSets(tid, global_collection_name, possible_kv_pairs, false);
-  };
+  std::cout << "[INFO] Execute HSet and HDelete in a new collection." << std::endl;
+  LaunchEvenSSetOddSDelete(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-  LaunchNThreads(1, DoIterate);  
+  CheckSortedSetsCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
@@ -789,24 +682,19 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
     << n_repeat << " times" << std::endl;
   for (size_t i = 0; i < n_repeat; i++)
   {
-    // Repeatedly close and open engine, excecute DoSSetSDelete and then check
-    delete engine;
-
-    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
+    // Repeatedly close and open engine, excecute DoHSetHDelete and then check
+    RebootDB();
 
     std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-    LaunchNThreads(1, DoIterate);
+    CheckSortedSetsCollection(global_collection_name);
 
     ShuffleAllKeysValues();
-    
-    std::cout << "[INFO] Update reopened engine." << std::endl;
-    LaunchNThreads(n_thread, DoSSetSDelete);
 
-    UpdatePossibleKVsForEvenXSetOddXDelete(possible_kv_pairs);
+    std::cout << "[INFO] Update reopened engine." << std::endl;
+    LaunchEvenSSetOddSDelete(global_collection_name);
 
     std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-    LaunchNThreads(1, DoIterate);
+    CheckSortedSetsCollection(global_collection_name);
   }
 }
 
@@ -904,7 +792,6 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot)
   int n_repeat = 1000;
   std::string global_collection_name{ "GlobalHashesCollection" };
   // EvenWriteOddRead is Similar to EvenSetOddDelete - only evenly indexed keys may appear
-  auto possible_kv_pairs = SetDeleteFacility::GetPossibleKVsForEvenXSetOddXDelete(keys, values);
 
   // Evenly indexed keys are write and oddly indexed keys are skipped
   auto EvenWriteOddRead = [&](uint32_t tid) 
@@ -923,7 +810,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot)
         EXPECT_TRUE((status == kvdk::Status::NotFound) || (status == kvdk::Status::Ok));
         if (status == kvdk::Status::Ok)
         {
-          IteratingFacility::CheckXGetResult(keys[tid][j], value_got, possible_kv_pairs);
+          // IteratingFacility::CheckXGetResult(keys[tid][j], value_got, possible_kv_pairs);
         }
       }
     }
