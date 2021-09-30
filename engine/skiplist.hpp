@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <assert.h>
 #include <cstdint>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -74,6 +77,8 @@ public:
   uint16_t Height() { return height; }
 
   pmem::obj::string_view UserKey();
+
+  uint64_t GetSkipListId();
 
   PointerWithTag<SkiplistNode> Next(int l) {
     assert(l > 0);
@@ -233,6 +238,7 @@ public:
     std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
     obsolete_nodes_.swap(pending_deletion_nodes_);
   }
+  Status CheckConnection(int height);
 
 private:
   SkiplistNode *header_;
@@ -311,4 +317,38 @@ struct Splice {
     }
   }
 };
+class KVEngine;
+class SortedCollectionRebuilder {
+public:
+  SortedCollectionRebuilder() = default;
+  Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                             const KVEngine *engine);
+
+  void
+  DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node, int heightm,
+                      const std::shared_ptr<PMEMAllocator> &pmem_allocator);
+
+  SkiplistNode *GetSortedOffset(int height);
+
+  void LinkedNode(uint64_t thread_id, int height, const KVEngine *engine);
+
+  Status Rebuild(const KVEngine *engine);
+
+  void UpdateEntriesOffset(const KVEngine *engine);
+
+  void SetEntriesOffsets(uint64_t entry_offset, bool is_visited,
+                         SkiplistNode *node) {
+    entries_offsets_.insert({entry_offset, {is_visited, node}});
+  }
+
+private:
+  struct SkiplistNodeInfo {
+    bool is_visited;
+    SkiplistNode *visited_node;
+  };
+  SpinMutex map_mu_;
+  std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
+  std::unordered_map<uint64_t, SkiplistNodeInfo> entries_offsets_;
+};
+
 } // namespace KVDK_NAMESPACE

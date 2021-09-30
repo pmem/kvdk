@@ -32,6 +32,7 @@
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
 public:
+  friend class SortedCollectionRebuilder;
   KVEngine();
   ~KVEngine();
 
@@ -55,6 +56,10 @@ public:
   NewSortedIterator(const pmem::obj::string_view collection) override;
   void ReleaseWriteThread() override { write_thread.Release(); }
 
+  const std::vector<std::shared_ptr<Skiplist>> &GetSkiplists() {
+    return skiplists_;
+  };
+
 private:
   struct BatchWriteHint {
     uint64_t timestamp{0};
@@ -68,6 +73,7 @@ private:
 
     alignas(64) uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids;
   };
 
   bool CheckKeySize(const pmem::obj::string_view &key) {
@@ -127,7 +133,8 @@ private:
 
   Status RestoreData(uint64_t thread_id);
 
-  Status RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *cached_meta);
+  Status RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
+                             DataEntry *cached_meta);
 
   Status RestoreStringRecord(DataEntry *pmem_data_entry,
                              DataEntry *cached_meta);
@@ -197,6 +204,7 @@ private:
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
+  SortedCollectionRebuilder sorted_rebuilder_;
 };
 
 } // namespace KVDK_NAMESPACE
