@@ -15,7 +15,6 @@ enum DataEntryType : uint16_t {
   StringDeleteRecord = 1 << 1,
 
   SortedDataRecord = 1 << 2,
-  SortedDeleteRecord = 1 << 3,
   SortedHeaderRecord = 1 << 4,
 
   HashListDataRecord = 1 << 5,
@@ -31,15 +30,14 @@ enum DataEntryType : uint16_t {
   Padding = 1 << 15,
 };
 
-const uint16_t SortedDataEntryType =
-    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);
+const uint16_t SortedDataEntryType = (SortedDataRecord | SortedHeaderRecord);
 
 const uint16_t DLDataEntryType =
-    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
-     HashListDataRecord | HashListDeleteRecord | HashListHeaderRecord);
+    (SortedDataRecord | SortedHeaderRecord | HashListDataRecord |
+     HashListDeleteRecord | HashListHeaderRecord);
 
 const uint16_t DeleteDataEntryType =
-    (SortedDeleteRecord | HashListDeleteRecord | StringDeleteRecord);
+    (HashListDeleteRecord | StringDeleteRecord);
 
 const uint16_t StringDataEntryType = (StringDataRecord | StringDeleteRecord);
 

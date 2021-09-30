@@ -115,14 +115,19 @@ private:
 
   Status MaybeInitPendingBatchFile();
 
+  Status StringSetImpl(const pmem::obj::string_view &key,
+                       const pmem::obj::string_view &value);
+
+  Status StringDeleteImpl(const pmem::obj::string_view &key);
+
   Status StringBatchWriteImpl(const WriteBatch::KV &kv,
                               BatchWriteHint &batch_hint);
 
-  Status StringWriteImpl(const pmem::obj::string_view &key,
-                         const pmem::obj::string_view &value, uint16_t dt);
-
   Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
-                  const pmem::obj::string_view &value, uint16_t dt);
+                  const pmem::obj::string_view &value);
+
+  Status SDeleteImpl(Skiplist *skiplist,
+                     const pmem::obj::string_view &user_key);
 
   Status Recovery();
 
@@ -131,11 +136,15 @@ private:
   Status RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
                              DataEntry *cached_meta);
 
+  Status RestoreStringRecord(DataEntry *pmem_data_entry,
+                             DataEntry *cached_meta);
+
   Status RestoreSortedRecord(DLDataEntry *pmem_data_entry,
                              DataEntry *cached_meta);
 
-  Status RestoreStringRecord(DataEntry *pmem_data_entry,
-                             DataEntry *cached_meta);
+  // Check if a sorted data entry has been successfully inserted, and try repair
+  // un-finished prev pointer
+  bool CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry);
 
   uint32_t CalculateChecksum(DataEntry *data_entry);
 
@@ -151,6 +160,8 @@ private:
                         const pmem::obj::string_view &value, uint16_t type);
 
   Status CheckConfigs(const Configs &configs);
+
+  void FreeSkiplistDramNodes();
 
   inline uint64_t get_cpu_tsc() {
     uint32_t lo, hi;
