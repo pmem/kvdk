@@ -81,28 +81,28 @@ public:
   uint64_t GetSkipListId();
 
   PointerWithTag<SkiplistNode> Next(int l) {
-    assert(l > 0);
+    assert(l > 0 && l <= height && "should be less than node's height");
     return next[-l].load(std::memory_order_acquire);
   }
 
   bool CASNext(int l, PointerWithTag<SkiplistNode> expected,
                PointerWithTag<SkiplistNode> x) {
-    assert(l > 0);
+    assert(l > 0 && l <= height && "should be less than node's height");
     return (next[-l].compare_exchange_strong(expected, x));
   }
 
   PointerWithTag<SkiplistNode> RelaxedNext(int l) {
-    assert(l > 0);
+    assert(l > 0 && l <= height && "should be less than node's height");
     return next[-l].load(std::memory_order_relaxed);
   }
 
   void SetNext(int l, PointerWithTag<SkiplistNode> x) {
-    assert(l > 0);
+    assert(l > 0 && l <= height && "should be less than node's height");
     next[-l].store(x, std::memory_order_release);
   }
 
   void RelaxedSetNext(int l, PointerWithTag<SkiplistNode> x) {
-    assert(l > 0);
+    assert(l > 0 && l <= height && "should be less than node's height");
     next[-l].store(x, std::memory_order_relaxed);
   }
 
