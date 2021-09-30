@@ -30,7 +30,7 @@ namespace KVDK_NAMESPACE
             throw std::bad_alloc{};
         }
         std::uint64_t offset_list_record = space_list_record.space_entry.offset;
-        void* pmp_list_record = _dlinked_list_._p_pmem_allocator_->offset2addr(offset_list_record);
+        void* pmp_list_record = _dlinked_list_._p_pmem_allocator_->offset2addr_checked(offset_list_record);
         DLDataEntry entry_list_record;  // Set up entry with meta
         {
             entry_list_record.timestamp = timestamp;
@@ -68,8 +68,8 @@ namespace KVDK_NAMESPACE
         _dlinked_list_
         { 
             sp_pmem_allocator,
-            reinterpret_cast<DLDataEntry*>(sp_pmem_allocator->offset2addr(pmp_dlist_record->prev)),
-            reinterpret_cast<DLDataEntry*>(sp_pmem_allocator->offset2addr(pmp_dlist_record->next)),
+            reinterpret_cast<DLDataEntry*>(sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->prev)),
+            reinterpret_cast<DLDataEntry*>(sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->next)),
         },
         _name_{ pmp_dlist_record->Key() },
         _id_{ _View2ID_(pmp_dlist_record->Value()) },
@@ -174,7 +174,7 @@ namespace KVDK_NAMESPACE
         DListIterator iter_next{_dlinked_list_._p_pmem_allocator_, pmp}; ++iter_next;
 
         EmplaceReturn ret = _EmplaceBetween_(iter_prev._pmp_curr_, iter_next._pmp_curr_, timestamp, key, value, type, lock, true);
-        ret.offset_old = _dlinked_list_._p_pmem_allocator_->addr2offset(pmp);
+        ret.offset_old = _dlinked_list_._p_pmem_allocator_->addr2offset_checked(pmp);
         return ret;
     }
 

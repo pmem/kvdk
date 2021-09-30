@@ -147,18 +147,18 @@ namespace KVDK_NAMESPACE
     private:
         inline DLDataEntry* _GetPmpNext_() const
         {
-            return reinterpret_cast<DLDataEntry*>(_p_pmem_allocator_->offset2addr(_pmp_curr_->next));
+            return reinterpret_cast<DLDataEntry*>(_p_pmem_allocator_->offset2addr_checked(_pmp_curr_->next));
         }
 
         inline DLDataEntry* _GetPmpPrev_() const
         {
-            return reinterpret_cast<DLDataEntry*>(_p_pmem_allocator_->offset2addr(_pmp_curr_->prev));
+            return reinterpret_cast<DLDataEntry*>(_p_pmem_allocator_->offset2addr_checked(_pmp_curr_->prev));
         }
 
     public:
         inline std::uint64_t _GetOffset_() const
         {
-            return _p_pmem_allocator_->addr2offset(_pmp_curr_);
+            return _p_pmem_allocator_->addr2offset_checked(_pmp_curr_);
         }
     };
 }
@@ -219,8 +219,8 @@ namespace KVDK_NAMESPACE
 
             std::uint64_t offset_head = space_head.space_entry.offset;
             std::uint64_t offset_tail = space_tail.space_entry.offset;
-            void* pmp_head = _p_pmem_allocator_->offset2addr(offset_head);
-            void* pmp_tail = _p_pmem_allocator_->offset2addr(offset_tail);
+            void* pmp_head = _p_pmem_allocator_->offset2addr_checked(offset_head);
+            void* pmp_tail = _p_pmem_allocator_->offset2addr_checked(offset_tail);
 
             DLDataEntry entry_head;  // Set up entry with meta
             {
@@ -405,7 +405,7 @@ namespace KVDK_NAMESPACE
                 throw std::bad_alloc{};
             }
             std::uint64_t offset = space.space_entry.offset;
-            void* pmp = _p_pmem_allocator_->offset2addr(offset);
+            void* pmp = _p_pmem_allocator_->offset2addr_checked(offset);
 
             DLDataEntry entry;  // Set up entry with meta
             {
