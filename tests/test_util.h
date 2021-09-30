@@ -75,27 +75,19 @@ static void ShowProgress(std::ostream& os, int progress, int total, size_t len_b
     len_bar = total;
     step = 1;
   }
-  
-  static bool done = false;
-  if ((total - progress) / step != 0)
-    done = false;
-  if (!done)
-  {
-    os << "\r";
-    os << std::setw(12) << std::right << progress;
-    os <<  "/";
-    os << std::setw(12) << std::left << total << "\t";
-    os << "[";
-    for (size_t i = 0; i < progress / step; i++)
-      os << symbol_done;
-    for (size_t i = 0; i < (total - progress) / step; i++)
-      os << symbol_fill;
-    os << "]";
-    os << std::flush;
-    if ((total - progress) / step == 0)
-    {
-      os << std::endl;
-      done = true;
-    }
-  }
+
+  os << "\r";
+  os << std::setw(12) << std::right << progress;
+  os <<  "/";
+  os << std::setw(12) << std::left << total << "\t";
+  os << "[";
+  for (size_t i = 0; i < progress / step; i++)
+    os << symbol_done;
+  for (size_t i = 0; i < (total - progress) / step; i++)
+    os << symbol_fill;
+  os << "]";
+  os << std::flush;
+
+  if (progress == total)
+    os << std::endl;
 }

@@ -41,6 +41,8 @@ protected:
       auto key = u_iter->Key();
       auto value = u_iter->Value();
       status = engine->HGet(collection_name, key, &value_got);
+      EXPECT_EQ(status, kvdk::Status::Ok)
+        << "Iteration met kv-pair cannot be got with HGet\n";
       EXPECT_EQ(value, value_got)
         << "Iterated value does not match with HGet value\n";
 
@@ -48,7 +50,7 @@ protected:
 
       possible_kv_pairs.erase(key);
       n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-      if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
+      if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
       {
         ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
         old_progress = n_removed_possible_kv_pairs;
@@ -69,7 +71,7 @@ protected:
           << "HGet a DlistDeleteRecord should have set value_got as empty string\n"; 
 
         n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-        if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
+        if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
         {
           ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
           old_progress = n_removed_possible_kv_pairs;
@@ -104,6 +106,8 @@ protected:
       auto key = s_iter->Key();
       auto value = s_iter->Value();
       status = engine->SGet(collection_name, key, &value_got);
+      EXPECT_EQ(status, kvdk::Status::Ok)
+        << "Iteration met kv-pair cannot be got with HGet\n";
       EXPECT_EQ(value, value_got)
         << "Iterated value does not match with SGet value\n";
 
@@ -122,7 +126,7 @@ protected:
       
       possible_kv_pairs.erase(key);
       n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-      if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
+      if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
       {
         ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
         old_progress = n_removed_possible_kv_pairs;
@@ -139,7 +143,7 @@ protected:
           << "Should not have found a key of a entry that cannot be iterated.\n";
 
         n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
-        if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
+        if (report_progress && (n_removed_possible_kv_pairs > old_progress + 10000 || possible_kv_pairs.empty()))
         {
           ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
           old_progress = n_removed_possible_kv_pairs;
@@ -361,8 +365,8 @@ private:
         << " in collection "
         << collection_name;
       
-      if (report_progress && (j % 10000 == 0))
-        ShowProgress(std::cout, j, keys.size());
+      if (report_progress && ((j + 1) % 10000 == 0 || j + 1 == keys.size()))
+        ShowProgress(std::cout, j + 1, keys.size());
     }
   }
 
@@ -399,8 +403,8 @@ private:
           << collection_name;
       }
         
-      if (report_progress && (j % 10000 == 0))
-        ShowProgress(std::cout, j, keys.size());
+      if (report_progress && ((j + 1) % 10000 == 0 || j + 1 == keys.size()))
+        ShowProgress(std::cout, j + 1, keys.size());
     }
   }
 };
@@ -471,19 +475,18 @@ protected:
       _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
       for (size_t tid = 0; tid < n_thread; tid++)
           _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
-      if (i % 10000 == 0)
-        ShowProgress(std::cout, i, n_kv_per_thread);
+      if ((i + 1) % 10000 == 0 || (i + 1) == n_kv_per_thread)
+        ShowProgress(std::cout, (i + 1), n_kv_per_thread);
     }
     std::cout << "Generating string_view for keys and values" << std::endl; 
-    for (size_t i = 0; i < n_kv_per_thread; i++)
+    for (size_t tid = 0; tid < n_thread; tid++)
     {
-      for (size_t tid = 0; tid < n_thread; tid++)
+      for (size_t i = 0; i < n_kv_per_thread; i++)
       {
           grouped_keys[tid].emplace_back(_keys_[i*n_thread+tid]);
           grouped_values[tid].emplace_back(_values_[i]);
       }
-      if (i % 10000 == 0)
-        ShowProgress(std::cout, i, n_kv_per_thread);
+      ShowProgress(std::cout, tid + 1, n_thread);
     }
   
     status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
@@ -791,8 +794,8 @@ protected:
   const size_t n_kv_per_thread{ 2ULL << 10 };   // 2K keys per thread, most of which are duplicate
                                                 // Actually will be less than 26^2+26+1=703 keys
 
-  const size_t sz_key_min{ 0 };                 // Small keys will raise many hotspots, key "" will occur about 1/3 times
-  const size_t sz_key_max{ 1 };
+  const size_t sz_key_min{ 0 };  // Small keys will raise many hotspots, empty string "" will happen about 1/3 times.
+  const size_t sz_key_max{ 2 };
   const size_t sz_value_min{ 16 };
   const size_t sz_value_max{ 1024 };
 
@@ -862,23 +865,23 @@ protected:
 
 TEST_F(EngineHotspotTest, HashesMultipleHotspot) 
 {
-  int n_repeat = 1;
+  int n_repeat = 1000;
   std::string global_collection_name{ "GlobalHashesCollection" };
   // EvenWriteOddRead is Similar to EvenSetOddDelete - only evenly indexed keys may appear
   auto possible_kv_pairs = SetDeleteFacility::GetPossibleKVsForEvenXSetOddXDelete(keys, values);
 
+  // Evenly indexed keys are write and oddly indexed keys are skipped
   auto EvenWriteOddRead = [&](uint32_t tid) 
   {
-    if (tid % 2 == 0) {
-      if (tid == 0)
-        SetDeleteFacility::HSetOnly(engine, global_collection_name, keys[tid], values[tid], true);
+    std::string value_got;
+    for (size_t j = 0; j < keys[tid].size(); j++)
+    {
+      if (j % 2 == 0)
+      {
+        status = engine->HSet(global_collection_name, keys[tid][j], values[tid][j]);
+        EXPECT_TRUE(status == kvdk::Status::Ok);
+      }
       else
-        SetDeleteFacility::HSetOnly(engine, global_collection_name, keys[tid], values[tid], false);
-    } 
-    else {
-      // Odd Read
-      std::string value_got;
-      for (size_t j = 0; j < keys[tid].size(); j++)
       {
         status = engine->HGet(global_collection_name, keys[tid][j], &value_got);
         EXPECT_TRUE((status == kvdk::Status::NotFound) || (status == kvdk::Status::Ok));
@@ -890,9 +893,11 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot)
     }
   };
 
+  std::cout << "Writing and Reading ..." << std::endl;
   for (size_t i = 0; i < n_repeat; i++)
   {
     LaunchNThreads(n_thread, EvenWriteOddRead);
+    ShowProgress(std::cout, i + 1, n_repeat);
   }
 }
 
