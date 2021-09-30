@@ -29,9 +29,9 @@ protected:
   {
     kvdk::Status status;
     
-    int n_total_possible_kvs = possible_kv_pairs.size();
-    int n_removed_possible_kvs = 0;
-    int old_progress = n_removed_possible_kvs;
+    int n_total_possible_kv_pairs = possible_kv_pairs.size();
+    int n_removed_possible_kv_pairs = 0;
+    int old_progress = n_removed_possible_kv_pairs;
 
     auto u_iter = engine->NewUnorderedIterator(collection_name);
     ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
@@ -47,11 +47,11 @@ protected:
       CheckXGetResult(key, value_got, possible_kv_pairs);
 
       possible_kv_pairs.erase(key);
-      n_removed_possible_kvs = n_total_possible_kvs - possible_kv_pairs.size();
-      if (report_progress && n_removed_possible_kvs > old_progress + 10000)
+      n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
+      if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
       {
-        ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
-        old_progress = n_removed_possible_kvs;
+        ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
+        old_progress = n_removed_possible_kv_pairs;
       }
     }
     // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
@@ -68,11 +68,11 @@ protected:
         EXPECT_EQ(value_got, "")
           << "HGet a DlistDeleteRecord should have set value_got as empty string\n"; 
 
-        n_removed_possible_kvs = n_total_possible_kvs - possible_kv_pairs.size();
-        if (report_progress && n_removed_possible_kvs > old_progress + 10000)
+        n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
+        if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
         {
-          ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
-          old_progress = n_removed_possible_kvs;
+          ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
+          old_progress = n_removed_possible_kv_pairs;
         }
       }
       EXPECT_TRUE(possible_kv_pairs.empty())
@@ -89,9 +89,9 @@ protected:
   {
     kvdk::Status status;
     
-    int n_total_possible_kvs = possible_kv_pairs.size();
-    int n_removed_possible_kvs = 0;
-    int old_progress = n_removed_possible_kvs;
+    int n_total_possible_kv_pairs = possible_kv_pairs.size();
+    int n_removed_possible_kv_pairs = 0;
+    int old_progress = n_removed_possible_kv_pairs;
 
     auto s_iter = engine->NewSortedIterator(collection_name);
     ASSERT_TRUE(s_iter != nullptr) << "Fail to create UnorderedIterator";
@@ -121,11 +121,11 @@ protected:
       CheckXGetResult(key, value_got, possible_kv_pairs);
       
       possible_kv_pairs.erase(key);
-      n_removed_possible_kvs = n_total_possible_kvs - possible_kv_pairs.size();
-      if (report_progress && n_removed_possible_kvs > old_progress + 10000)
+      n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
+      if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
       {
-        ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
-        old_progress = n_removed_possible_kvs;
+        ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
+        old_progress = n_removed_possible_kv_pairs;
       }
     }
     // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
@@ -134,15 +134,15 @@ protected:
       for (auto iter = possible_kv_pairs.begin(); iter != possible_kv_pairs.end(); iter = possible_kv_pairs.erase(iter))
       {
         std::string value_got{"Dummy"};
-        status = engine->HGet(collection_name, iter->first, &value_got);
+        status = engine->SGet(collection_name, iter->first, &value_got);
         EXPECT_EQ(status, kvdk::Status::NotFound)
           << "Should not have found a key of a entry that cannot be iterated.\n";
 
-        n_removed_possible_kvs = n_total_possible_kvs - possible_kv_pairs.size();
-        if (report_progress && n_removed_possible_kvs > old_progress + 10000)
+        n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
+        if (report_progress && n_removed_possible_kv_pairs > old_progress + 10000)
         {
-          ShowProgress(std::cout, n_removed_possible_kvs, n_total_possible_kvs);
-          old_progress = n_removed_possible_kvs;
+          ShowProgress(std::cout, n_removed_possible_kv_pairs, n_total_possible_kv_pairs);
+          old_progress = n_removed_possible_kv_pairs;
         }
       }
       EXPECT_TRUE(possible_kv_pairs.empty())
