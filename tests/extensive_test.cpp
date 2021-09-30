@@ -428,43 +428,49 @@ protected:
 
   void LaunchHSetOnly(std::string const& collection_name)
   {
-    updatePossibleKVPairsForXSetOnly(collection_name);
+    updatePossibleKVPairs(collection_name, false);
     
     auto ModifyEngine = [&](int tid){ executeHSetOnly(collection_name, tid); };
+    std::cout << "[INFO] Execute HSet in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
   void LaunchEvenHSetOddHDelete(std::string const& collection_name)
   {
-    updatePossibleKVsForEvenXSetOddXDelete(collection_name);
+    updatePossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid){ executeEvenHSetOddHDelete(collection_name, tid); };
+    std::cout << "[INFO] Execute HSet and HDelete in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
   void LaunchSSetOnly(std::string const& collection_name)
   {
-    updatePossibleKVPairsForXSetOnly(collection_name);
+    updatePossibleKVPairs(collection_name, false);
 
     auto ModifyEngine = [&](int tid){ executeSSetOnly(collection_name, tid); };
+    std::cout << "[INFO] Execute SSet in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
   void LaunchEvenSSetOddSDelete(std::string const& collection_name)
   {
-    updatePossibleKVsForEvenXSetOddXDelete(collection_name);
+    updatePossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid){ executeEvenSSetOddSDelete(collection_name, tid); };
+    std::cout << "[INFO] Execute SSet and SDelete in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
   void CheckHashesCollection(std::string collection_name)
   {
+    std::cout << "[INFO] Iterate through " << collection_name << " to check data." << std::endl;
     iterateThroughHashes(0, collection_name);
   }
 
   void CheckSortedSetsCollection(std::string collection_name)
   {
+    std::cout << "[INFO] Iterate through " << collection_name << " to check data." << std::endl;
     iterateThroughSortedSets(0, collection_name);
   }
 
@@ -539,13 +545,19 @@ private:
       SetDeleteFacility::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
 
-  void updatePossibleKVPairsForXSetOnly(std::string const& collection_name)
+  void updatePossibleKVPairs(std::string const& collection_name, bool odd_indexed_is_deleted)
   {
+    std::cout << "[INFO] Updating possible_kv_pairs." << std::endl;
+
     auto& possible_kvs = possible_kv_pairs[collection_name];
     // Erase keys that will be overwritten
     for (size_t tid = 0; tid < grouped_keys.size(); tid++)
+    {
         for (size_t i = 0; i < grouped_keys[tid].size(); i++)
             possible_kvs.erase(grouped_keys[tid][i]);    
+
+        ShowProgress(std::cout, tid + 1, grouped_keys.size());
+    }
 
     ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
       << "Must have same amount of groups of keys and values!";
@@ -556,32 +568,13 @@ private:
         << "Must have same amount of keys and values to form kv-pairs!";
 
       for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+      {
+          if (odd_indexed_is_deleted && (i % 2 == 1))
+            continue;
+          
           possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+      }
       ShowProgress(std::cout, tid + 1, grouped_keys.size());
-    }
-  }
-
-  void updatePossibleKVsForEvenXSetOddXDelete(std::string const& collection_name)
-  {
-    auto& possible_kvs = possible_kv_pairs[collection_name];
-    // Erase keys that will be overwritten
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-            possible_kvs.erase(grouped_keys[tid][i]);
-
-    ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
-      << "Must have same amount of groups of keys and values!";
-
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++)
-    {
-        ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size()) 
-          << "Must have same amount of keys and values to form kv-pairs!";
-
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-          if (i % 2 == 0)
-            possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
-
-        ShowProgress(std::cout, tid + 1, grouped_keys.size());
     }
   }
 };
@@ -590,22 +583,18 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  std::cout << "[INFO] Execute HSet in a new collection." << std::endl;
   LaunchHSetOnly(global_collection_name);
-
-  std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   CheckHashesCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
     << "[INFO] Close, reopen, iterate through engine for " 
-    << n_repeat << " times" << std::endl;
+    << n_repeat << " times to test recovery." << std::endl;
   for (size_t i = 0; i < n_repeat; i++)
   {
-    // Repeatedly close and open engine to test recovery
-    RebootDB();
+    std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
-    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
+    RebootDB();
     CheckHashesCollection(global_collection_name);
   }
 }
@@ -614,7 +603,6 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  std::cout << "[INFO] Execute HSet and HDelete in a new collection." << std::endl;
   LaunchEvenHSetOddHDelete(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
@@ -623,21 +611,17 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
   size_t n_repeat = 3;
   std::cout 
     << "[INFO] Close, reopen, iterate through, update, iterate through engine for " 
-    << n_repeat << " times" << std::endl;
+    << n_repeat << " times to test recovery and updating" << std::endl;
   for (size_t i = 0; i < n_repeat; i++)
   {
-    // Repeatedly close and open engine, excecute DoHSetHDelete and then check
-    RebootDB();
+    std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
-    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
+    RebootDB();
     CheckHashesCollection(global_collection_name);
 
     ShuffleAllKeysValues();
 
-    std::cout << "[INFO] Update reopened engine." << std::endl;
     LaunchEvenHSetOddHDelete(global_collection_name);
-
-    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     CheckHashesCollection(global_collection_name);
   }
 }
@@ -646,22 +630,18 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  std::cout << "[INFO] Execute HSet in a new collection." << std::endl;
   LaunchSSetOnly(global_collection_name);
-
-  std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   CheckSortedSetsCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
     << "[INFO] Close, reopen, iterate through engine for " 
-    << n_repeat << " times" << std::endl;
+    << n_repeat << " times to test recovery." << std::endl;
   for (size_t i = 0; i < n_repeat; i++)
   {
-    // Repeatedly close and open engine to test recovery
-    RebootDB();
+    std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
-    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
+    RebootDB();
     CheckSortedSetsCollection(global_collection_name);
   }
 }
@@ -670,30 +650,25 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  std::cout << "[INFO] Execute HSet and HDelete in a new collection." << std::endl;
   LaunchEvenSSetOddSDelete(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-  CheckSortedSetsCollection(global_collection_name);
+  CheckHashesCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
     << "[INFO] Close, reopen, iterate through, update, iterate through engine for " 
-    << n_repeat << " times" << std::endl;
+    << n_repeat << " times to test recovery and updating" << std::endl;
   for (size_t i = 0; i < n_repeat; i++)
   {
-    // Repeatedly close and open engine, excecute DoHSetHDelete and then check
-    RebootDB();
+    std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
-    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
+    RebootDB();
     CheckSortedSetsCollection(global_collection_name);
 
     ShuffleAllKeysValues();
 
-    std::cout << "[INFO] Update reopened engine." << std::endl;
     LaunchEvenSSetOddSDelete(global_collection_name);
-
-    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     CheckSortedSetsCollection(global_collection_name);
   }
 }
