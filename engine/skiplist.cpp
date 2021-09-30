@@ -432,8 +432,8 @@ Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
       for (auto &kv : entries_offsets_) {
         kv.second.is_visited = false;
       }
-      GlobalLogger.Info("Restoring skiplist height %d\n", h);
 #ifdef DEBUG_CHECK
+      GlobalLogger.Info("Restoring skiplist height %d\n", h);
       GlobalLogger.Info("Check skiplist connecton\n");
       for (auto skiplist : engine->skiplists_) {
         Status s = skiplist->CheckConnection(h);

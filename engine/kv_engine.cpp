@@ -878,11 +878,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     char *block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
     uint64_t new_ts = get_timestamp();
-
-    if (found && new_ts < data_entry.timestamp) {
-      pmem_allocator_->Free(sized_space_entry);
-      return Status::Ok;
-    }
+    assert(!found || new_ts > data_entry.timestamp);
 
     std::vector<SpinMutex *> spins;
     thread_local Splice splice(nullptr);
@@ -1308,7 +1304,7 @@ Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
     uint64_t new_ts = get_timestamp();
-    assert(new_ts > data_entry.timestamp);
+    assert(!found || new_ts > data_entry.timestamp);
 
     DataEntry write_entry(0, sized_space_entry.size, new_ts, StringDataRecord,
                           key.size(), v_size);
