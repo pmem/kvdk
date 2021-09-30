@@ -14,6 +14,7 @@ enum class Status : unsigned char {
   InvalidDataSize,
   IOError,
   InvalidConfiguration,
+  Abort
 };
 
 }

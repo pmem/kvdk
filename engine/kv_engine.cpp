@@ -279,7 +279,7 @@ Status KVEngine::RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
     skiplists_.push_back(std::make_shared<Skiplist>(
         (DLDataEntry *)pmem_data_entry, key, id, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
-    if (configs_.restore_large_sorted_collection) {
+    if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_.SetEntriesOffsets(
           pmem_allocator_->addr2offset(pmem_data_entry), false, nullptr);
     }
@@ -388,7 +388,7 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
         return Status::MemoryOverflow;
       }
       new_hash_offset = (uint64_t)dram_node;
-      if (configs_.restore_large_sorted_collection &&
+      if (configs_.opt_large_sorted_collection_restore &&
           thread_res_[write_thread.id]
                       .visited_skiplist_ids[dram_node->GetSkipListId()]++ %
                   kRestoreSkiplistStride ==
@@ -615,7 +615,10 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  sorted_rebuilder_.Rebuild(this);
+  s = sorted_rebuilder_.Rebuild(this);
+  if (s != Status::Ok) {
+    return s;
+  }
 
   GlobalLogger.Info("In restoring: iterated %lu records\n", restored_.load());
 

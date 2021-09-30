@@ -581,7 +581,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   std::vector<int> opt_restore_skiplists{0, 1};
   for (auto is_opt : opt_restore_skiplists) {
     configs.max_write_threads = num_threads;
-    configs.restore_large_sorted_collection = is_opt;
+    configs.opt_large_sorted_collection_restore = is_opt;
     // reopen and restore engine and try gets
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
               Status::Ok);
@@ -754,7 +754,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   int num_threads = 48;
   int num_collections = 16;
   configs.max_write_threads = num_threads;
-  configs.restore_large_sorted_collection = true;
+  configs.opt_large_sorted_collection_restore = true;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -798,7 +798,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   auto skiplists = (dynamic_cast<KVEngine *>(engine))->GetSkiplists();
   for (int h = 1; h <= 32; ++h) {
     for (auto s : skiplists) {
-      s->CheckConnection(h);
+      ASSERT_EQ(s->CheckConnection(h), Status::Ok);
     }
   }
   delete engine;

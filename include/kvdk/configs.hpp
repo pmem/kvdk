@@ -86,7 +86,7 @@ struct Configs {
   // Optional optimization strategy for few large skiplists by multi-thread
   // recovery a skiplist. The optimization can get better performance when
   // having few large skiplists. Default is to close optimization.
-  bool restore_large_sorted_collection = false;
+  bool opt_large_sorted_collection_restore = false;
 };
 
 } // namespace KVDK_NAMESPACE

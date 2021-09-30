@@ -66,15 +66,18 @@ uint64_t SkiplistNode::GetSkipListId() {
   return id;
 }
 
-void Skiplist::CheckConnection(int height) {
+Status Skiplist::CheckConnection(int height) {
   SkiplistNode *cur_node = header_;
   DLDataEntry *cur_data_entry = cur_node->data_entry;
   while (true) {
     SkiplistNode *next_node = cur_node->Next(height);
     uint64_t next_offset = cur_data_entry->next;
     if (next_offset == kNullPmemOffset) {
-      assert(next_node == nullptr && "when next offset is kNullPmemOffset, the "
-                                     "next node should be nullptr\n");
+      if (next_node != nullptr) {
+        GlobalLogger.Error("when next offset is kNullPmemOffset, the "
+                           "next node should be nullptr\n");
+        return Status::Abort;
+      }
       break;
     }
     HashEntry hash_entry;
@@ -91,21 +94,27 @@ void Skiplist::CheckConnection(int height) {
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
       SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
       if (next_node == nullptr) {
-        assert(dram_node->Height() < height &&
-               "when next_node is nullptr, the dram data entry should be "
-               "DLDataEntry or dram node's height < cur_node's height ");
+        if (dram_node->Height() >= height) {
+          GlobalLogger.Error(
+              "when next_node is nullptr, the dram data entry should be "
+              "DLDataEntry or dram node's height < cur_node's height\n");
+          return Status::Abort;
+        }
       } else {
         if (dram_node->Height() >= height) {
-          assert((dram_node->Height() == next_node->Height() &&
-                  dram_node->GetSkipListId() == next_node->GetSkipListId() &&
-                  dram_node->UserKey() == next_node->UserKey()) &&
-                 "two skiplist node should be equal!");
+          if (!(dram_node->Height() == next_node->Height() &&
+                dram_node->GetSkipListId() == next_node->GetSkipListId() &&
+                dram_node->UserKey() == next_node->UserKey())) {
+            GlobalLogger.Error("incorret skiplist node info\n");
+            return Status::Abort;
+          }
           cur_node = next_node;
         }
       }
     }
     cur_data_entry = next_data_entry;
   }
+  return Status::Ok;
 }
 
 void Skiplist::Seek(const pmem::obj::string_view &key, Splice *splice) {
@@ -283,54 +292,67 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
   return data_node;
 }
 
-void SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
-  if (engine->configs_.restore_large_sorted_collection &&
+Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
+  std::vector<std::future<Status>> fs;
+  if (engine->configs_.opt_large_sorted_collection_restore &&
       engine->skiplists_.size() > 0) {
     thread_cache_node_.resize(engine->configs_.max_write_threads);
     UpdateEntriesOffset(engine);
     for (int h = 1; h <= kMaxHeight; ++h) {
-      std::vector<std::future<void>> fv;
       for (uint32_t j = 0; j < engine->configs_.max_write_threads; ++j) {
-        fv.push_back(std::async(std::launch::async, [j, h, this, engine]() {
-          while (true) {
-            SkiplistNode *cur_node = GetSortedOffset(h);
-            if (!cur_node) {
-              break;
-            }
-            if (h == 1) {
-              DealWithFirstHeight(j, cur_node, engine);
-            } else {
-              DealWithOtherHeight(j, cur_node, h, engine->pmem_allocator_);
-            }
-          }
-          LinkedNode(j, h, engine);
-        }));
+        fs.push_back(
+            std::async(std::launch::async, [j, h, this, engine]() -> Status {
+              while (true) {
+                SkiplistNode *cur_node = GetSortedOffset(h);
+                if (!cur_node) {
+                  break;
+                }
+                if (h == 1) {
+                  Status s = DealWithFirstHeight(j, cur_node, engine);
+                  if (s != Status::Ok) {
+                    return s;
+                  }
+                } else {
+                  DealWithOtherHeight(j, cur_node, h, engine->pmem_allocator_);
+                }
+              }
+              LinkedNode(j, h, engine);
+              return Status::Ok;
+            }));
       }
-      for (auto &f : fv) {
-        f.get();
+      for (auto &f : fs) {
+        Status s = f.get();
+        if (s != Status::Ok) {
+          return s;
+        }
       }
-      fv.clear();
+      fs.clear();
       for (auto &kv : entries_offsets_) {
         kv.second.is_visited = false;
       }
       GlobalLogger.Info("Restoring skiplist height %d\n", h);
 #ifdef DEBUG_CHECK
       GlobalLogger.Info("Check skiplist connecton\n");
-      for (auto s : engine->skiplists_) {
-        s->CheckConnection(h);
+      for (auto skiplist : engine->skiplists_) {
+        Status s = skiplist->CheckConnection(h);
+        if (s != Status::Ok) {
+          return s;
+        }
       }
 #endif
     }
   } else {
-    std::vector<std::future<Status>> fs;
     for (auto s : engine->skiplists_) {
       fs.push_back(std::async(&Skiplist::Rebuild, s));
     }
     for (auto &f : fs) {
       Status s = f.get();
-      assert(s == Status::Ok);
+      if (s != Status::Ok) {
+        return s;
+      }
     }
   }
+  return Status::Ok;
 }
 
 void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
@@ -401,9 +423,9 @@ SkiplistNode *SortedCollectionRebuilder::GetSortedOffset(int height) {
   return nullptr;
 }
 
-void SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
-                                                    SkiplistNode *cur_node,
-                                                    const KVEngine *engine) {
+Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
+                                                      SkiplistNode *cur_node,
+                                                      const KVEngine *engine) {
   DLDataEntry *visit_data_entry = cur_node->data_entry;
   while (true) {
     uint64_t next_offset = visit_data_entry->next;
@@ -424,9 +446,11 @@ void SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
           engine->hash_table_->GetHint(key), key, SortedDataEntryType,
           &hash_entry, &data_entry, &entry_base,
           HashTable::SearchPurpose::Read);
-      assert(s == Status::Ok &&
-             "the node should be already created during data restoring");
-
+      if (s != Status::Ok) {
+        GlobalLogger.Error(
+            "the node should be already created during data restoring\n");
+        return Status::Abort;
+      }
       visit_data_entry = next_data_entry;
 
       SkiplistNode *next_node = nullptr;
@@ -450,6 +474,7 @@ void SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
       break;
     }
   }
+  return Status::Ok;
 }
 
 void SortedCollectionRebuilder::DealWithOtherHeight(

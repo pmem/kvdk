@@ -191,7 +191,7 @@ public:
                        const pmem::obj::string_view &deleting_key,
                        SkiplistNode *dram_node);
 
-  void CheckConnection(int height);
+  Status CheckConnection(int height);
 
 private:
   SkiplistNode *header_;
@@ -281,8 +281,8 @@ class KVEngine;
 class SortedCollectionRebuilder {
 public:
   SortedCollectionRebuilder() = default;
-  void DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
-                           const KVEngine *engine);
+  Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                             const KVEngine *engine);
 
   void
   DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node, int heightm,
@@ -292,7 +292,7 @@ public:
 
   void LinkedNode(uint64_t thread_id, int height, const KVEngine *engine);
 
-  void Rebuild(const KVEngine *engine);
+  Status Rebuild(const KVEngine *engine);
 
   void UpdateEntriesOffset(const KVEngine *engine);
 

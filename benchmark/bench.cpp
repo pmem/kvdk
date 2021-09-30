@@ -74,7 +74,7 @@ DEFINE_int32(max_write_threads, 32, "Max write threads of the instance");
 DEFINE_uint64(space, (uint64_t)256 << 30,
               "Max usable PMem space of the instance");
 
-DEFINE_bool(restore_large_sorted_collection, false,
+DEFINE_bool(opt_large_sorted_collection_restore, false,
             " Optional optimization strategy which Multi-thread recovery a "
             "skiplist. When having few large skiplists, the optimization can "
             "get better performance");
@@ -360,8 +360,8 @@ int main(int argc, char **argv) {
   configs.populate_pmem_space = FLAGS_populate;
   configs.max_write_threads = FLAGS_max_write_threads;
   configs.pmem_file_size = FLAGS_space;
-  configs.restore_large_sorted_collection =
-      FLAGS_restore_large_sorted_collection;
+  configs.opt_large_sorted_collection_restore =
+      FLAGS_opt_large_sorted_collection_restore;
 
   Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
 
