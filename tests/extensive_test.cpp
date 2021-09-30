@@ -255,7 +255,7 @@ protected:
     // ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
     //   << "Must have same amount of groups of keys and values!";
 
-    std::cout << "Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
+    std::cout << "[INFO] Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
 
     size_t total_keys = 0;
     for (size_t tid = 0; tid < grouped_keys.size(); tid++)
@@ -284,7 +284,7 @@ protected:
     // ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
     //   << "Must have same amount of groups of keys and values!";
 
-    std::cout << "Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
+    std::cout << "[INFO] Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
 
     size_t total_keys = 0;
     for (size_t tid = 0; tid < grouped_keys.size(); tid++)
@@ -313,7 +313,7 @@ protected:
     ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
       << "Must have same amount of groups of keys and values!";
 
-    std::cout << "Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
+    std::cout << "[INFO] Updating possible_kv_pairs to check contents of engine from keys and values" << std::endl;
 
     for (size_t tid = 0; tid < grouped_keys.size(); tid++)
     {
@@ -333,7 +333,7 @@ protected:
     ASSERT_EQ(grouped_keys.size(), grouped_values.size()) 
       << "Must have same amount of groups of keys and values!";
 
-    std::cout << "Preparing possible_kv_pairs to check contents of engine from keys and values" << std::endl;
+    std::cout << "[INFO] Updating possible_kv_pairs to check contents of engine from keys and values" << std::endl;
 
     for (size_t tid = 0; tid < grouped_keys.size(); tid++)
     {
@@ -469,7 +469,7 @@ protected:
       grouped_values[tid].reserve(n_kv_per_thread);
     }
     
-    std::cout << "Generating string for keys and values" << std::endl; 
+    std::cout << "[INFO] Generating string for keys and values" << std::endl; 
     for (size_t i = 0; i < n_kv_per_thread; i++)
     {
       _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
@@ -478,7 +478,7 @@ protected:
       if ((i + 1) % 10000 == 0 || (i + 1) == n_kv_per_thread)
         ShowProgress(std::cout, (i + 1), n_kv_per_thread);
     }
-    std::cout << "Generating string_view for keys and values" << std::endl; 
+    std::cout << "[INFO] Generating string_view for keys and values" << std::endl; 
     for (size_t tid = 0; tid < n_thread; tid++)
     {
       for (size_t i = 0; i < n_kv_per_thread; i++)
@@ -522,7 +522,7 @@ protected:
   {
     if (report_progress)
       std::cout 
-        << "Executing HSetOnly in " << collection_name 
+        << "[INFO] Executing HSetOnly in " << collection_name 
         << " with thread " << tid << std::endl;
 
     SetDeleteFacility::HSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
@@ -532,7 +532,7 @@ protected:
   {
     if (report_progress)
       std::cout 
-        << "Executing SSetOnly in " << collection_name 
+        << "[INFO] Executing SSetOnly in " << collection_name 
         << " with thread " << tid << std::endl;
 
     SetDeleteFacility::SSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
@@ -542,7 +542,7 @@ protected:
   {
     if (report_progress)
       std::cout 
-        << "Executing EvenHSetOddHDelete in " << collection_name 
+        << "[INFO] Executing EvenHSetOddHDelete in " << collection_name 
         << " with thread " << tid << std::endl;
 
     SetDeleteFacility::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
@@ -552,7 +552,7 @@ protected:
   {
     if (report_progress)
       std::cout 
-        << "Executing EvenSSetOddSDelete in " << collection_name 
+        << "[INFO] Executing EvenSSetOddSDelete in " << collection_name 
         << " with thread " << tid << std::endl;
 
     SetDeleteFacility::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], report_progress);
@@ -586,8 +586,10 @@ protected:
     // possible_kv_pairs is copied here
     if (report_progress)
       std::cout 
-        << "IterateThroughHashes " << collection_name 
-        << " with thread " << tid << std::endl;
+        << " [INFO] IterateThroughHashes " << collection_name 
+        << " with thread " << tid << "\n"
+        << " [INFO] It may take a few seconds to copy possible_kv_pairs."
+        << std::endl;
     
     IteratingFacility::IterateThroughHashes(engine, collection_name, possible_kv_pairs, report_progress);
   }
@@ -599,8 +601,10 @@ protected:
     // possible_kv_pairs is copied here
     if (report_progress)
       std::cout 
-        << "IterateThroughSortedSets " << collection_name 
-        << " with thread " << tid << std::endl;
+        << " [INFO] IterateThroughSortedSets " << collection_name 
+        << " with thread " << tid << "\n"
+        << " [INFO] It may take a few seconds to copy possible_kv_pairs."
+        << std::endl;
     
     IteratingFacility::IterateThroughSortedSets(engine, collection_name, possible_kv_pairs, report_progress);
   }
@@ -619,6 +623,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
       HSetOnly(tid, global_collection_name, false);
   };
 
+  std::cout << "[INFO] Execute HSet in a new collection." << std::endl;
   LaunchNThreads(n_thread, DoHSet);
 
   auto possible_kv_pairs = GetPossibleKVsForXSetOnly();
@@ -631,15 +636,21 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
       IterateThroughHashes(tid, global_collection_name, possible_kv_pairs, false);
   };
 
+  std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   LaunchNThreads(1, DoIterate);  
 
-  for (size_t i = 0; i < 3; i++)
+  size_t n_repeat = 3;
+  std::cout 
+    << "[INFO] Close, reopen, iterate through engine for " 
+    << n_repeat << " times" << std::endl;
+  for (size_t i = 0; i < n_repeat; i++)
   {
     // Repeatedly close and open engine to test recovery
     delete engine;
     status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
 
+    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     LaunchNThreads(1, DoIterate);  
   }
 }
@@ -656,6 +667,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
       EvenHSetOddHDelete(tid, global_collection_name, false);
   };
 
+  std::cout << "[INFO] Execute HSet and HDelete in a new collection." << std::endl;
   LaunchNThreads(n_thread, DoHSetHDelete);
 
   auto possible_kv_pairs = GetPossibleKVsForEvenXSetOddXDelete();
@@ -668,9 +680,14 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
       IterateThroughHashes(tid, global_collection_name, possible_kv_pairs, false);
   };
 
+  std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   LaunchNThreads(1, DoIterate);  
 
-  for (size_t i = 0; i < 3; i++)
+  size_t n_repeat = 3;
+  std::cout 
+    << "[INFO] Close, reopen, iterate through, update, iterate through engine for " 
+    << n_repeat << " times" << std::endl;
+  for (size_t i = 0; i < n_repeat; i++)
   {
     // Repeatedly close and open engine, excecute DoHSetHDelete and then check
     delete engine;
@@ -678,14 +695,17 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
     status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
 
+    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     LaunchNThreads(1, DoIterate);
 
     ShuffleAllKeysValues();
 
+    std::cout << "[INFO] Update reopened engine." << std::endl;
     LaunchNThreads(n_thread, DoHSetHDelete);
 
     UpdatePossibleKVsForEvenXSetOddXDelete(possible_kv_pairs);
 
+    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     LaunchNThreads(1, DoIterate);
   }
 }
@@ -702,6 +722,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
       SSetOnly(tid, global_collection_name, false);
   };
 
+  std::cout << "[INFO] Execute SSet in a new collection." << std::endl;
   LaunchNThreads(n_thread, DoSSet);
 
   auto possible_kv_pairs = GetPossibleKVsForXSetOnly();
@@ -714,9 +735,14 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
       IterateThroughSortedSets(tid, global_collection_name, possible_kv_pairs, false);
   };
 
+  std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   LaunchNThreads(1, DoIterate);  
 
-  for (size_t i = 0; i < 3; i++)
+  size_t n_repeat = 3;
+  std::cout 
+    << "[INFO] Close, reopen, iterate through engine for " 
+    << n_repeat << " times" << std::endl;
+  for (size_t i = 0; i < n_repeat; i++)
   {
     // Repeatedly close and open engine to test recovery
     delete engine;
@@ -724,6 +750,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
     status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
 
+    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     LaunchNThreads(1, DoIterate);  
   }
 }
@@ -740,6 +767,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
       EvenSSetOddSDelete(tid, global_collection_name, false);
   };
 
+  std::cout << "[INFO] Execute SSet and SDelete in a new collection." << std::endl;
   LaunchNThreads(n_thread, DoSSetSDelete);
 
   auto possible_kv_pairs = GetPossibleKVsForEvenXSetOddXDelete();
@@ -752,9 +780,14 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
       IterateThroughSortedSets(tid, global_collection_name, possible_kv_pairs, false);
   };
 
+  std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   LaunchNThreads(1, DoIterate);  
 
-  for (size_t i = 0; i < 3; i++)
+  size_t n_repeat = 3;
+  std::cout 
+    << "[INFO] Close, reopen, iterate through, update, iterate through engine for " 
+    << n_repeat << " times" << std::endl;
+  for (size_t i = 0; i < n_repeat; i++)
   {
     // Repeatedly close and open engine, excecute DoSSetSDelete and then check
     delete engine;
@@ -762,14 +795,17 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
     status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
 
+    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     LaunchNThreads(1, DoIterate);
 
     ShuffleAllKeysValues();
     
+    std::cout << "[INFO] Update reopened engine." << std::endl;
     LaunchNThreads(n_thread, DoSSetSDelete);
 
     UpdatePossibleKVsForEvenXSetOddXDelete(possible_kv_pairs);
 
+    std::cout << "[INFO] Iterate through collection to check data." << std::endl;
     LaunchNThreads(1, DoIterate);
   }
 }
@@ -835,14 +871,14 @@ protected:
       values[tid].reserve(n_kv_per_thread);
     }
     
-    std::cout << "Generating string for keys and values" << std::endl; 
+    std::cout << "[INFO] Generating string for keys and values" << std::endl; 
     for (size_t i = 0; i < n_kv_per_thread; i++)
     {
       _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
       for (size_t tid = 0; tid < n_thread; tid++)
           _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
     }
-    std::cout << "Generating string_view for keys and values" << std::endl; 
+    std::cout << "[INFO] Generating string_view for keys and values" << std::endl; 
     for (size_t i = 0; i < n_kv_per_thread; i++)
     {
       for (size_t tid = 0; tid < n_thread; tid++)
@@ -893,7 +929,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot)
     }
   };
 
-  std::cout << "Writing and Reading ..." << std::endl;
+  std::cout << "[INFO] Writing and Reading ..." << std::endl;
   for (size_t i = 0; i < n_repeat; i++)
   {
     LaunchNThreads(n_thread, EvenWriteOddRead);
