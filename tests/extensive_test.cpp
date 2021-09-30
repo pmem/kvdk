@@ -35,7 +35,6 @@ protected:
 
     auto u_iter = engine->NewUnorderedIterator(collection_name);
     ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
-    // TODO: also HGet to check the iterator
     for (u_iter->SeekToFirst(); u_iter->Valid(); u_iter->Next())
     {
       std::string value_got;
@@ -45,21 +44,7 @@ protected:
       EXPECT_EQ(value, value_got)
         << "Iterated value does not match with HGet value\n";
 
-      bool match = false;
-      auto range_found = possible_kv_pairs.equal_range(key);
-      
-      for (auto iter = range_found.first; iter != range_found.second; ++iter)
-      {
-        EXPECT_EQ(key, iter->first)
-          << "Iterated key and key in possible_kv_pairs does not match: \n"
-          << "Iterated key: " << key << "\n"
-          << "Key in possible_kv_pairs: " << iter->first;
-        match = match || (value == iter->second);
-      }
-      EXPECT_TRUE(match) 
-        << "No kv-pair in possible_kv_pairs matching with iterated kv-pair:\n"
-        << "Key: " << key << "\n"
-        << "Value: " << value << "\n";
+      CheckXGetResult(key, value_got, possible_kv_pairs);
 
       possible_kv_pairs.erase(key);
       n_removed_possible_kvs = n_total_possible_kvs - possible_kv_pairs.size();
@@ -132,23 +117,9 @@ protected:
       {
         first_read = false;
       }
-      
-      bool match = false;
-      auto range_found = possible_kv_pairs.equal_range(key);
-      
-      for (auto iter = range_found.first; iter != range_found.second; ++iter)
-      {
-        EXPECT_EQ(key, iter->first)
-          << "Iterated key and key in possible_kv_pairs does not match: \n"
-          << "Iterated key: " << key << "\n"
-          << "Key in possible_kv_pairs: " << iter->first;
-        match = match || (value == iter->second);
-      }
-      EXPECT_TRUE(match) 
-        << "No kv-pair in possible_kv_pairs matching with iterated kv-pair:\n"
-        << "Key: " << key << "\n"
-        << "Value: " << value << "\n";
 
+      CheckXGetResult(key, value_got, possible_kv_pairs);
+      
       possible_kv_pairs.erase(key);
       n_removed_possible_kvs = n_total_possible_kvs - possible_kv_pairs.size();
       if (report_progress && n_removed_possible_kvs > old_progress + 10000)
@@ -178,6 +149,26 @@ protected:
         << "There should be no key left in possible_kv_pairs, "
         << "as they all should have been erased.\n";
     }
+  }
+
+  // Check value got by XGet(key) by looking up possible_kv_pairs
+  void CheckXGetResult(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
+  {
+      bool match = false;
+      auto range_found = possible_kv_pairs.equal_range(key);
+      
+      for (auto iter = range_found.first; iter != range_found.second; ++iter)
+      {
+        EXPECT_EQ(key, iter->first)
+          << "Iterated key and key in possible_kv_pairs does not match: \n"
+          << "Iterated key: " << key << "\n"
+          << "Key in possible_kv_pairs: " << iter->first;
+        match = match || (value == iter->second);
+      }
+      EXPECT_TRUE(match) 
+        << "No kv-pair in possible_kv_pairs matching with iterated kv-pair:\n"
+        << "Key: " << key << "\n"
+        << "Value: " << value << "\n";
   }
 };
 
@@ -627,7 +618,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
 
   LaunchNThreads(n_thread, DoHSet);
 
-  std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs{GetPossibleKVsForXSetOnly()};
+  auto possible_kv_pairs = GetPossibleKVsForXSetOnly();
 
   auto DoIterate = [&](std::uint64_t tid)
   {
@@ -664,7 +655,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
 
   LaunchNThreads(n_thread, DoHSetHDelete);
 
-  std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs{GetPossibleKVsForEvenXSetOddXDelete()};
+  auto possible_kv_pairs = GetPossibleKVsForEvenXSetOddXDelete();
 
   auto DoIterate = [&](std::uint64_t tid)
   {
@@ -710,7 +701,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
 
   LaunchNThreads(n_thread, DoSSet);
 
-  std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs{GetPossibleKVsForXSetOnly()};
+  auto possible_kv_pairs = GetPossibleKVsForXSetOnly();
 
   auto DoIterate = [&](std::uint64_t tid)
   {
@@ -748,7 +739,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
 
   LaunchNThreads(n_thread, DoSSetSDelete);
 
-  std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs{GetPossibleKVsForEvenXSetOddXDelete()};
+  auto possible_kv_pairs = GetPossibleKVsForEvenXSetOddXDelete();
 
   auto DoIterate = [&](std::uint64_t tid)
   {
@@ -780,7 +771,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
   }
 }
 
-class EngineHotspotTest : public testing::Test, protected IteratingFacility {
+class EngineHotspotTest : public testing::Test, protected IteratingFacility, protected SetDeleteFacility {
 protected:
   kvdk::Engine *engine = nullptr;
   kvdk::Configs configs;
@@ -868,6 +859,42 @@ protected:
     PurgeDB();
   }
 };
+
+TEST_F(EngineHotspotTest, HashesMultipleHotspot) 
+{
+  int n_repeat = 1;
+  std::string global_collection_name{ "GlobalHashesCollection" };
+  // EvenWriteOddRead is Similar to EvenSetOddDelete - only evenly indexed keys may appear
+  auto possible_kv_pairs = SetDeleteFacility::GetPossibleKVsForEvenXSetOddXDelete(keys, values);
+
+  auto EvenWriteOddRead = [&](uint32_t tid) 
+  {
+    if (tid % 2 == 0) {
+      if (tid == 0)
+        SetDeleteFacility::HSetOnly(engine, global_collection_name, keys[tid], values[tid], true);
+      else
+        SetDeleteFacility::HSetOnly(engine, global_collection_name, keys[tid], values[tid], false);
+    } 
+    else {
+      // Odd Read
+      std::string value_got;
+      for (size_t j = 0; j < keys[tid].size(); j++)
+      {
+        status = engine->HGet(global_collection_name, keys[tid][j], &value_got);
+        EXPECT_TRUE((status == kvdk::Status::NotFound) || (status == kvdk::Status::Ok));
+        if (status == kvdk::Status::Ok)
+        {
+          IteratingFacility::CheckXGetResult(keys[tid][j], value_got, possible_kv_pairs);
+        }
+      }
+    }
+  };
+
+  for (size_t i = 0; i < n_repeat; i++)
+  {
+    LaunchNThreads(n_thread, EvenWriteOddRead);
+  }
+}
 
 int main(int argc, char **argv) 
 {
