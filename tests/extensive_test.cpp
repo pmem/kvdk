@@ -653,7 +653,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete)
   LaunchEvenSSetOddSDelete(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
-  CheckHashesCollection(global_collection_name);
+  CheckSortedSetsCollection(global_collection_name);
 
   size_t n_repeat = 3;
   std::cout 
