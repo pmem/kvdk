@@ -32,6 +32,7 @@
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
+  friend class SortedCollectionRebuilder;
 public:
   KVEngine();
   ~KVEngine();
@@ -73,10 +74,16 @@ public:
 
   void ReleaseWriteThread() override { write_thread.Release(); }
 
+  const std::vector<std::shared_ptr<Skiplist>> &GetSkiplists() {
+    return skiplists_;
+  };
+
 private:
   struct BatchWriteHint {
-    SizedSpaceEntry sized_space_entry;
-    uint64_t ts;
+    uint64_t timestamp{0};
+    SizedSpaceEntry allocated_space{};
+    SizedSpaceEntry free_after_finish{};
+    bool delay_free{false};
   };
 
   struct ThreadLocalRes {
@@ -84,6 +91,7 @@ private:
 
     alignas(64) uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids;
   };
 
   bool CheckKeySize(const pmem::obj::string_view &key) {
@@ -129,27 +137,36 @@ private:
   
   Status MaybeInitPendingBatchFile();
 
-  Status HashSetImpl(const pmem::obj::string_view &key,
-                     const pmem::obj::string_view &value, uint16_t dt,
-                     BatchWriteHint *batch_hint = nullptr);
+  Status StringSetImpl(const pmem::obj::string_view &key,
+                       const pmem::obj::string_view &value);
+
+  Status StringDeleteImpl(const pmem::obj::string_view &key);
+
+  Status StringBatchWriteImpl(const WriteBatch::KV &kv,
+                              BatchWriteHint &batch_hint);
 
   Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
                   const pmem::obj::string_view &value, uint16_t dt);
+
+  Status SDeleteImpl(Skiplist *skiplist,
+                     const pmem::obj::string_view &user_key);
 
   Status Recovery();
 
   Status RestoreData(uint64_t thread_id);
 
-  Status RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *cached_meta);
+  Status RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
+                             DataEntry *cached_meta);
+
+  Status RestoreStringRecord(DataEntry *pmem_data_entry,
+                             DataEntry *cached_meta);
 
   Status RestoreSortedRecord(DLDataEntry *pmem_data_entry,
                              DataEntry *cached_meta);
 
-  Status RestoreSkiplistOrHashRecord(DataEntry *recovering_data_entry,
-                                     DataEntry *pmem_data_entry);
-
-  Status RestoreStringRecord(DataEntry *pmem_data_entry,
-                             DataEntry *cached_meta);
+  // Check if a sorted data entry has been successfully inserted, and try repair
+  // un-finished prev pointer
+  bool CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry);
 
   uint32_t CalculateChecksum(DataEntry *data_entry);
 
@@ -173,6 +190,8 @@ private:
                         const pmem::obj::string_view &value, uint16_t type);
 
   Status CheckConfigs(const Configs &configs);
+
+  void FreeSkiplistDramNodes();
 
   inline uint64_t get_cpu_tsc() {
     uint32_t lo, hi;
@@ -216,6 +235,7 @@ private:
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
+  SortedCollectionRebuilder sorted_rebuilder_;
 };
 
 } // namespace KVDK_NAMESPACE

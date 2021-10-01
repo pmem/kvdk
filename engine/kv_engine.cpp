@@ -752,7 +752,7 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, "", StringDeleteRecord);
+  return StringSetImpl(key, "", StringDeleteRecord);
 }
 
 inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
@@ -1068,7 +1068,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
 
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto &kv = write_batch.kvs[i];
-    s = HashSetImpl(kv.key, kv.value, kv.type, &batch_hints[i]);
+    s = StringSetImpl(kv.key, kv.value, kv.type, &batch_hints[i]);
 
     if (s != Status::Ok) {
       return s;
@@ -1094,7 +1094,7 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
                      SortedDataRecord | SortedDeleteRecord);
 }
 
-Status KVEngine::HashSetImpl(const pmem::obj::string_view &key,
+Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
                              const pmem::obj::string_view &value, uint16_t dt,
                              BatchWriteHint *batch_hint) {
   DataEntry data_entry;
@@ -1180,7 +1180,7 @@ Status KVEngine::Set(const pmem::obj::string_view key,
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
-  return HashSetImpl(key, value, StringDataRecord);
+  return StringSetImpl(key, value, StringDataRecord);
 }
 
 std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(pmem::obj::string_view const collection_name)
