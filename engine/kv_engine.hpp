@@ -212,6 +212,20 @@ private:
 
   inline std::string config_file_name() { return dir_ + "configs"; }
 
+  inline bool checkDLDataEntryLinkageLeft(DLDataEntry* pmp_record)
+  {
+    uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
+    DLDataEntry* pmp_prev = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(pmp_record->prev));
+    return pmp_prev->next == offset;
+  }
+
+  inline bool checkDLDataEntryLinkageRight(DLDataEntry* pmp_record)
+  {
+    uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
+    DLDataEntry* pmp_next = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(pmp_record->next));
+    return pmp_next->prev == offset;
+  }
+
   std::vector<ThreadLocalRes> thread_res_;
 
   // restored kvs in reopen

@@ -28,7 +28,7 @@
 
 #define hex_print(x) std::hex << std::setfill ('0') << std::setw(sizeof(decltype(x))*2) << x
 
-#define DEBUG_LEVEL 0
+#define DEBUG_LEVEL 1
 
 namespace KVDK_NAMESPACE
 {
@@ -297,11 +297,15 @@ namespace KVDK_NAMESPACE
                 case DataEntryType::DlistDeleteRecord:
                 {
                     DListIterator next{curr}; ++next;
+                    DListIterator prev{curr}; --prev;
                     std::uint64_t offset_curr = curr._GetOffset_();
                     if (next->prev != offset_curr)
                     {
                         throw std::runtime_error{"Found broken linkage when rebuilding DLinkedList!"};
-                        // pmem_memcpy(&next->prev, &offset_curr, sizeof(decltype(offset_curr)), PMEM_F_MEM_NONTEMPORAL);
+                    }
+                    if (prev->next != offset_curr)
+                    {
+                        throw std::runtime_error{"Found broken linkage when rebuilding DLinkedList!"};
                     }
                     ++curr;
                     continue;
@@ -327,7 +331,7 @@ namespace KVDK_NAMESPACE
                 }
             }            
         }
-#endif 
+#endif // DEBUG_LEVEL > 0
         }
 
         // _pmp_head_ and _pmp_tail_ points to persisted Record of Head and Tail on PMem

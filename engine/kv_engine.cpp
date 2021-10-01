@@ -1707,12 +1707,20 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
     {
       DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
       assert(pmp_data_entry->prev == kNullPmemOffset);
+      if (!checkDLDataEntryLinkageRight(pmp_data_entry))
+      {
+        throw std::runtime_error{"Bad linkage found when RestoreDlistRecords.\n"};
+      }   
       return Status::Ok;
     }
     case DataEntryType::DlistTailRecord:
     {
       DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
       assert(pmp_data_entry->next == kNullPmemOffset);
+      if (!checkDLDataEntryLinkageLeft(pmp_data_entry))
+      {
+        throw std::runtime_error{"Bad linkage found when RestoreDlistRecords.\n"};
+      }
       return Status::Ok;
     }
     case DataEntryType::DlistDataRecord:
@@ -1720,6 +1728,7 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
     {
       std::uint64_t offset_record = pmem_allocator_->addr2offset_checked(pmp_record);
       DLDataEntry* pmp_data_entry = static_cast<DLDataEntry*>(pmp_record);
+
       auto internal_key = pmp_data_entry->Key();
       HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
       std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
@@ -1744,6 +1753,10 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
           DLDataEntry* pmp_old_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(hash_entry_record.offset));
           if (pmp_old_record->timestamp < data_entry_cached.timestamp)
           {
+            if (checkDLDataEntryLinkageRight(pmp_old_record) || checkDLDataEntryLinkageLeft(pmp_old_record))
+            {
+              throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
+            }
             hash_table_->Insert(hint_record, p_hash_entry_record, data_entry_cached.type, offset_record, 
                                 HashOffsetType::UnorderedCollectionElement);
             UnorderedCollection::Deallocate(pmp_old_record, pmem_allocator_.get());
@@ -1753,6 +1766,10 @@ Status KVEngine::RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cach
             if (pmp_old_record->timestamp == data_entry_cached.timestamp)
             {
               GlobalLogger.Info("Met two DlistRecord with same timestamp");
+            }
+            else if (checkDLDataEntryLinkageRight(pmp_data_entry) || checkDLDataEntryLinkageLeft(pmp_data_entry))
+            {
+              throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
             }
             UnorderedCollection::Deallocate(static_cast<DLDataEntry*>(pmp_record), pmem_allocator_.get());
           }
