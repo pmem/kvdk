@@ -146,7 +146,7 @@ private:
                               BatchWriteHint &batch_hint);
 
   Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
-                  const pmem::obj::string_view &value, uint16_t dt);
+                  const pmem::obj::string_view &value);
 
   Status SDeleteImpl(Skiplist *skiplist,
                      const pmem::obj::string_view &user_key);
