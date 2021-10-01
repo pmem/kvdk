@@ -40,14 +40,18 @@ protected:
   }
 
   virtual void TearDown() {
-    char cmd[1024];
-    sprintf(cmd, "rm -rf %s\n", db_path.c_str());
-    int res __attribute__((unused)) = system(cmd);
-    // delete db_path
+    Destroy();
   }
 
   void AssignData(std::string &data, int len) {
     data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
+  }
+
+  void Destroy() {
+    // delete db_path
+    char cmd[1024];
+    sprintf(cmd, "rm -rf %s\n", db_path.c_str());
+    int res __attribute__((unused)) = system(cmd);
   }
 };
 
@@ -190,8 +194,11 @@ TEST_F(EngineBasicTest, TestFreeList) {
   configs.pmem_block_size = 64;
   configs.pmem_file_size =
       configs.pmem_segment_blocks * configs.pmem_block_size;
+  configs.background_work_interval = 0.5;
+
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
+
   std::string key1("a1");
   std::string key2("a2");
   std::string key3("a3");
@@ -214,14 +221,22 @@ TEST_F(EngineBasicTest, TestFreeList) {
 
   ASSERT_EQ(engine->Set(key2, small_value), Status::Ok);
 
-  delete engine;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
+  // No more space to store large_value
+  ASSERT_EQ(engine->Set(key3, large_value), Status::PmemOverflow);
+
+  // Wait bg thread finish merging space of 3th and 4th chunks
+  sleep(2);
 
   // large key3 will be stored in merged 3th and 4th chunks
   ASSERT_EQ(engine->Set(key3, large_value), Status::Ok);
 
   // No more space
+  ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
+
+  delete engine;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // Still no more space after re-open
   ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
 }
 
@@ -555,35 +570,53 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   LaunchNThreads(num_threads, SetupEngine);
 
   delete engine;
+  std::vector<int> opt_restore_skiplists{0, 1};
+  for (auto is_opt : opt_restore_skiplists) {
+    configs.max_write_threads = num_threads;
+    configs.opt_large_sorted_collection_restore = is_opt;
+    // reopen and restore engine and try gets
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+              Status::Ok);
+    for (uint32_t id = 0; id < num_threads; id++) {
+      std::string t_skiplist(thread_skiplist + std::to_string(id));
+      std::string key_prefix(id, 'a');
+      std::string got_val;
+      for (int i = 1; i <= count; i++) {
+        std::string key(key_prefix + std::to_string(i));
+        std::string overall_val(std::to_string(i));
+        std::string t_val(std::to_string(i * 2));
+        Status s = engine->SGet(overall_skiplist, key, &got_val);
+        if (i % 2 == 1) {
+          ASSERT_EQ(s, Status::NotFound);
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+          ASSERT_EQ(got_val, overall_val);
+        }
+        s = engine->SGet(t_skiplist, key, &got_val);
+        if (i % 2 == 1) {
+          ASSERT_EQ(s, Status::NotFound);
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+          ASSERT_EQ(got_val, t_val);
+        }
+      }
 
-  // reopen and restore engine and try gets
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  for (uint32_t id = 0; id < num_threads; id++) {
-    std::string t_skiplist(thread_skiplist + std::to_string(id));
-    std::string key_prefix(id, 'a');
-    std::string got_val;
-    for (int i = 1; i <= count; i++) {
-      std::string key(key_prefix + std::to_string(i));
-      std::string overall_val(std::to_string(i));
-      std::string t_val(std::to_string(i * 2));
-      Status s = engine->SGet(overall_skiplist, key, &got_val);
-      if (i % 2 == 1) {
-        ASSERT_EQ(s, Status::NotFound);
-      } else {
-        ASSERT_EQ(s, Status::Ok);
-        ASSERT_EQ(got_val, overall_val);
+      auto iter = engine->NewSortedIterator(t_skiplist);
+      ASSERT_TRUE(iter != nullptr);
+      iter->SeekToFirst();
+      std::string prev = "";
+      int cnt = 0;
+      while (iter->Valid()) {
+        cnt++;
+        std::string k = iter->Key();
+        iter->Next();
+        ASSERT_TRUE(k.compare(prev) > 0);
+        prev = k;
       }
-      s = engine->SGet(t_skiplist, key, &got_val);
-      if (i % 2 == 1) {
-        ASSERT_EQ(s, Status::NotFound);
-      } else {
-        ASSERT_EQ(s, Status::Ok);
-        ASSERT_EQ(got_val, t_val);
-      }
+      ASSERT_EQ(cnt, count / 2);
     }
 
-    auto iter = engine->NewSortedIterator(t_skiplist);
+    auto iter = engine->NewSortedIterator(overall_skiplist);
     ASSERT_TRUE(iter != nullptr);
     iter->SeekToFirst();
     std::string prev = "";
@@ -595,23 +628,63 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       ASSERT_TRUE(k.compare(prev) > 0);
       prev = k;
     }
-    ASSERT_EQ(cnt, count / 2);
-  }
+    ASSERT_EQ(cnt, (count / 2) * num_threads);
 
-  auto iter = engine->NewSortedIterator(overall_skiplist);
-  ASSERT_TRUE(iter != nullptr);
-  iter->SeekToFirst();
-  std::string prev = "";
-  int cnt = 0;
-  while (iter->Valid()) {
-    cnt++;
-    std::string k = iter->Key();
-    iter->Next();
-    ASSERT_TRUE(k.compare(prev) > 0);
-    prev = k;
+    delete engine;
   }
-  ASSERT_EQ(cnt, (count / 2) * num_threads);
+}
 
+TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
+  int num_threads = 48;
+  int num_collections = 16;
+  configs.max_write_threads = num_threads;
+  configs.opt_large_sorted_collection_restore = true;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // insert and delete some keys, then re-insert some deleted keys
+  uint64_t count = 1024;
+
+  auto SetupEngine = [&](uint32_t id) {
+    std::string key_prefix(id, 'a');
+    std::string got_val;
+    for (uint64_t i = 1; i <= count; i++) {
+      auto key = key_prefix + std::to_string(i);
+
+      std::string average_skiplist("a_skiplist" +
+                                   std::to_string(i % num_collections));
+      auto average_val = std::to_string(i);
+
+      std::string r_skiplist("r_skiplist" +
+                             std::to_string(rand() % num_threads));
+      auto r_val = std::to_string(i * 2);
+      ASSERT_EQ(engine->SSet(average_skiplist, key, average_val), Status::Ok);
+      ASSERT_EQ(engine->SSet(r_skiplist, key, r_val), Status::Ok);
+      ASSERT_EQ(engine->SGet(average_skiplist, key, &got_val), Status::Ok);
+      ASSERT_EQ(got_val, average_val);
+      ASSERT_EQ(engine->SGet(r_skiplist, key, &got_val), Status::Ok);
+      ASSERT_EQ(got_val, r_val);
+      if ((rand() % i) == 0) {
+        ASSERT_EQ(engine->SDelete(average_skiplist, key), Status::Ok);
+        ASSERT_EQ(engine->SDelete(r_skiplist, key), Status::Ok);
+        ASSERT_EQ(engine->SGet(average_skiplist, key, &got_val),
+                  Status::NotFound);
+        ASSERT_EQ(engine->SGet(r_skiplist, key, &got_val), Status::NotFound);
+      }
+    }
+  };
+
+  LaunchNThreads(num_threads, SetupEngine);
+
+  delete engine;
+  // reopen and restore engine and try gets
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  auto skiplists = (dynamic_cast<KVEngine *>(engine))->GetSkiplists();
+  for (int h = 1; h <= 32; ++h) {
+    for (auto s : skiplists) {
+      ASSERT_EQ(s->CheckConnection(h), Status::Ok);
+    }
+  }
   delete engine;
 }
 
