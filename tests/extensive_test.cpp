@@ -52,9 +52,6 @@ namespace IteratingFacility
   {
     kvdk::Status status;
     
-    int n_total_possible_kv_pairs = possible_kv_pairs.size();
-    int n_removed_possible_kv_pairs = 0;
-    int old_progress = n_removed_possible_kv_pairs;
     std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs_copy{possible_kv_pairs};
 
     auto u_iter = engine->NewUnorderedIterator(collection_name);
@@ -62,6 +59,10 @@ namespace IteratingFacility
     // Iterating forward then backward. 
     for (size_t i = 0; i < 2; i++)
     {
+      int n_total_possible_kv_pairs = possible_kv_pairs.size();
+      int n_removed_possible_kv_pairs = 0;
+      int old_progress = 0;
+
       ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
       if (i == 0) 
       {
