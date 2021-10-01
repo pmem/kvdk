@@ -232,7 +232,7 @@ namespace // nested anonymous namespace to hide implementation
         << " in collection "
         << collection_name;
       
-      if (report_progress && ((j + 1) % 1000 == 0 || j + 1 == keys.size()))
+      if (report_progress && ((j + 1) % 100 == 0 || j + 1 == keys.size()))
         ShowProgress(std::cout, j + 1, keys.size());
     }
   }
@@ -270,7 +270,7 @@ namespace // nested anonymous namespace to hide implementation
           << collection_name;
       }
         
-      if (report_progress && ((j + 1) % 1000 == 0 || j + 1 == keys.size()))
+      if (report_progress && ((j + 1) % 100 == 0 || j + 1 == keys.size()))
         ShowProgress(std::cout, j + 1, keys.size());
     }
   }
