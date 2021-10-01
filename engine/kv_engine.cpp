@@ -146,10 +146,6 @@ Status KVEngine::MaybeInitWriteThread() {
   return thread_manager_->MaybeInitThread(write_thread);
 }
 
-Status KVEngine::MaybeInitWriteThread() {
-  return thread_manager_->MaybeInitThread(write_thread);
-}
-
 Status KVEngine::RestoreData(uint64_t thread_id) try {
   write_thread.id = thread_id;
 
@@ -188,7 +184,6 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 
     switch (cached_recovering_data_entry.type) {
     case DataEntryType::SortedDataRecord:
-    case DataEntryType::SortedDeleteRecord:
     case DataEntryType::SortedHeaderRecord:
     case DataEntryType::StringDataRecord:
     case DataEntryType::StringDeleteRecord: 
@@ -251,15 +246,14 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 
     Status s;
     switch (cached_recovering_data_entry.type) {
-    case DataEntryType::SortedDataRecord:
-    case DataEntryType::SortedDeleteRecord: {
+    case DataEntryType::SortedDataRecord: {
       s = RestoreSortedRecord(
           static_cast<DLDataEntry *>(recovering_pmem_data_entry),
           &cached_recovering_data_entry);
       break;
     }
     case DataEntryType::SortedHeaderRecord: {
-      s = RestoreSkiplist(
+      s = RestoreSkiplistHead(
           static_cast<DLDataEntry *>(recovering_pmem_data_entry),
           &cached_recovering_data_entry);
       break;
@@ -304,20 +298,19 @@ Status KVEngine::RestoreData(uint64_t thread_id) try {
 }
 
 uint32_t KVEngine::CalculateChecksum(DataEntry *data_entry) {
-  uint32_t checksum;
+  uint32_t checksum = 0;
   switch (data_entry->type)
   {
   case DataEntryType::StringDataRecord:
   case DataEntryType::StringDeleteRecord:
   {
-    checksum = data_entry->Checksum();
+    checksum = data_entry->Checksum(configs_.pmem_block_size);
     break;
   }
   case DataEntryType::SortedDataRecord:
-  case DataEntryType::SortedDeleteRecord:
   case DataEntryType::SortedHeaderRecord:
   {
-    checksum = static_cast<DLDataEntry*>(data_entry)->Checksum();
+    checksum = static_cast<DLDataEntry*>(data_entry)->Checksum(configs_.pmem_block_size);
     break;
   }
   case DataEntryType::DlistDataRecord:
@@ -338,7 +331,8 @@ uint32_t KVEngine::CalculateChecksum(DataEntry *data_entry) {
   return checksum;
 }
 
-Status KVEngine::RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *) {
+Status KVEngine::RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
+                                     DataEntry *) {
   assert(pmem_data_entry->type == SortedHeaderRecord);
   pmem::obj::string_view pmem_key = pmem_data_entry->Key();
   std::string key(string_view_2_string(pmem_key));
@@ -354,6 +348,10 @@ Status KVEngine::RestoreSkiplist(DLDataEntry *pmem_data_entry, DataEntry *) {
     skiplists_.push_back(std::make_shared<Skiplist>(
         (DLDataEntry *)pmem_data_entry, key, id, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
+    if (configs_.opt_large_sorted_collection_restore) {
+      sorted_rebuilder_.SetEntriesOffsets(
+          pmem_allocator_->addr2offset(pmem_data_entry), false, nullptr);
+    }
   }
   compare_excange_if_larger(list_id_, id + 1);
 
@@ -391,19 +389,15 @@ Status KVEngine::RestoreStringRecord(DataEntry *pmem_data_entry,
     return s;
   }
 
-  bool found = (s == Status::Ok);
+  bool found = s == Status::Ok;
   if (found && existing_data_entry.timestamp >= cached_meta->timestamp) {
     pmem_allocator_->Free(
-        SizedSpaceEntry(pmem_allocator_->addr2offset_checked(pmem_data_entry),
+        SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
                         cached_meta->header.b_size, cached_meta->timestamp));
-    if (existing_data_entry.timestamp == cached_meta->timestamp)
-    {
-      GlobalLogger.Info("Met two StringRecord with same timestamp");
-    }
     return Status::Ok;
   }
 
-  uint64_t new_hash_offset = pmem_allocator_->addr2offset_checked(pmem_data_entry);
+  uint64_t new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
   bool free_space = entry_base->header.status == HashEntryStatus::Updating;
   hash_table_->Insert(hint, entry_base, cached_meta->type, new_hash_offset,
                       HashOffsetType::DataEntry);
@@ -417,15 +411,39 @@ Status KVEngine::RestoreStringRecord(DataEntry *pmem_data_entry,
   // can reuse the hash entry and free the data entry
   entry_base->header.status =
       (!found && (cached_meta->type & DeleteDataEntryType)
-           ? HashEntryStatus::Clean
+           ? HashEntryStatus::CleanReusable
            : HashEntryStatus::Normal);
 
   return Status::Ok;
 }
 
+bool KVEngine::CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry) {
+  uint64_t offset = pmem_allocator_->addr2offset(sorted_data_entry);
+  DLDataEntry *prev =
+      (DLDataEntry *)pmem_allocator_->offset2addr(sorted_data_entry->prev);
+  DLDataEntry *next =
+      (DLDataEntry *)pmem_allocator_->offset2addr(sorted_data_entry->next);
+  if (prev->next != offset) {
+    return false;
+  }
+  if (next) {
+    if (next->prev != offset) {
+      pmem_memcpy_persist(&next->prev, &offset, 8);
+    }
+  }
+  return true;
+}
+
 Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
                                      DataEntry *cached_meta) {
-  assert(pmem_data_entry->type & (SortedDataRecord | SortedDeleteRecord));
+  if (!CheckAndRepairSortedRecord(pmem_data_entry)) {
+    pmem_allocator_->Free(
+        SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
+                        cached_meta->header.b_size, cached_meta->timestamp));
+    return Status::Ok;
+  }
+
+  assert(pmem_data_entry->type & SortedDataRecord);
   pmem::obj::string_view pmem_key = pmem_data_entry->Key();
   std::string key(string_view_2_string(pmem_key));
   thread_local DLDataEntry existing_data_entry;
@@ -434,9 +452,9 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
 
   auto hint = hash_table_->GetHint(key);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->Search(
-      hint, key, (SortedDataRecord | SortedDeleteRecord), &hash_entry,
-      &existing_data_entry, &entry_base, HashTable::SearchPurpose::Recover);
+  Status s = hash_table_->Search(hint, key, SortedDataRecord, &hash_entry,
+                                 &existing_data_entry, &entry_base,
+                                 HashTable::SearchPurpose::Recover);
 
   if (s == Status::MemoryOverflow) {
     return s;
@@ -445,12 +463,8 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
   bool found = s == Status::Ok;
   if (found && existing_data_entry.timestamp >= cached_meta->timestamp) {
     pmem_allocator_->Free(
-        SizedSpaceEntry(pmem_allocator_->addr2offset_checked(pmem_data_entry),
+        SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_data_entry),
                         cached_meta->header.b_size, cached_meta->timestamp));
-    if (existing_data_entry.timestamp == cached_meta->timestamp)
-    {
-      GlobalLogger.Info("Met two SortedRecord with same timestamp");
-    }
     return Status::Ok;
   }
 
@@ -467,9 +481,19 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
         return Status::MemoryOverflow;
       }
       new_hash_offset = (uint64_t)dram_node;
+      if (configs_.opt_large_sorted_collection_restore &&
+          thread_res_[write_thread.id]
+                      .visited_skiplist_ids[dram_node->GetSkipListId()]++ %
+                  kRestoreSkiplistStride ==
+              0) {
+        std::lock_guard<std::mutex> lg(list_mu_);
+        sorted_rebuilder_.SetEntriesOffsets(
+            pmem_allocator_->addr2offset(pmem_data_entry), false, nullptr);
+      }
     } else {
-      new_hash_offset = pmem_allocator_->addr2offset_checked(pmem_data_entry);
+      new_hash_offset = pmem_allocator_->addr2offset(pmem_data_entry);
     }
+
     // Hash entry won't be reused during data recovering so we don't
     // neet to check status here
     hash_table_->Insert(hint, entry_base, cached_meta->type, new_hash_offset,
@@ -478,13 +502,13 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
   } else {
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
       dram_node = (SkiplistNode *)hash_entry.offset;
-      old_data_offset = pmem_allocator_->addr2offset_checked(dram_node->data_entry);
+      old_data_offset = pmem_allocator_->addr2offset(dram_node->data_entry);
       dram_node->data_entry = (DLDataEntry *)pmem_data_entry;
       entry_base->header.data_type = cached_meta->type;
     } else {
       old_data_offset = hash_entry.offset;
       hash_table_->Insert(hint, entry_base, cached_meta->type,
-                          pmem_allocator_->addr2offset_checked(pmem_data_entry),
+                          pmem_allocator_->addr2offset(pmem_data_entry),
                           HashOffsetType::DLDataEntry);
     }
     pmem_allocator_->Free(SizedSpaceEntry(old_data_offset,
@@ -495,7 +519,7 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
   // can reuse the hash entry and free the data entry
   entry_base->header.status =
       (!found && (cached_meta->type & DeleteDataEntryType)
-           ? HashEntryStatus::Clean
+           ? HashEntryStatus::CleanReusable
            : HashEntryStatus::Normal);
 
   return Status::Ok;
