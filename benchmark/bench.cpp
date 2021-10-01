@@ -26,6 +26,12 @@ DEFINE_uint64(time, 600, "Time to benchmark, this is valid only if fill=false");
 
 DEFINE_uint64(value_size, 120, "Value size of KV");
 
+DEFINE_string(
+    value_size_distribution, "constant",
+    "Distribution of value size to write, can be constant/random/zipf, "
+    "default is constant. If set to random or zipf, the max value size "
+    "will be FLAGS_value_size");
+
 DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
 
 DEFINE_double(read_ratio, 0, "Read threads = threads * read_ratio");
@@ -68,6 +74,11 @@ DEFINE_int32(max_write_threads, 32, "Max write threads of the instance");
 DEFINE_uint64(space, (uint64_t)256 << 30,
               "Max usable PMem space of the instance");
 
+DEFINE_bool(opt_large_sorted_collection_restore, false,
+            " Optional optimization strategy which Multi-thread recovery a "
+            "skiplist. When having few large skiplists, the optimization can "
+            "get better performance");
+
 class Timer {
 public:
   void Start() { clock_gettime(CLOCK_REALTIME, &start); }
@@ -90,7 +101,6 @@ std::atomic<uint64_t> read_not_found{0};
 std::atomic<uint64_t> read_cnt{UINT64_MAX};
 std::vector<std::vector<uint64_t>> read_latencies;
 std::vector<std::vector<uint64_t>> write_latencies;
-std::unique_ptr<UniformGenerator> generator{nullptr};
 std::vector<std::string> collections;
 Engine *engine;
 char *value_pool = nullptr;
@@ -107,6 +117,7 @@ bool bench_sorted;
 bool bench_hashes;
 uint64_t num_collections;
 std::shared_ptr<Generator> key_generator;
+std::shared_ptr<Generator> value_size_generator;
 
 char *random_str(unsigned int size) {
   char *str = (char *)malloc(size + 1);
@@ -133,10 +144,8 @@ char *random_str(unsigned int size) {
 uint64_t generate_key() { return key_generator->Next(); }
 
 void DBWrite(int tid) {
-  std::string k;
-  std::string v;
-  k.resize(8);
-  v.assign(value_pool + (rand() % 102400 - value_size), value_size);
+  std::string key;
+  key.resize(8);
   uint64_t num;
   uint64_t ops = 0;
   Timer timer;
@@ -150,25 +159,27 @@ void DBWrite(int tid) {
 
     // generate key
     num = generate_key();
+    memcpy(&key[0], &num, 8);
 
-    memcpy(&k[0], &num, 8);
-    std::vector<std::string> sv;
+    pmem::obj::string_view value =
+        pmem::obj::string_view(value_pool, value_size_generator->Next());
+
     if (stat_latencies)
       timer.Start();
     if (bench_string) {
       if (batch_num == 0) {
-        s = engine->Set(k, v);
+        s = engine->Set(key, value);
       } else {
-        batch.Put(k, v);
+        batch.Put(key, value);
         if (batch.Size() == batch_num) {
           engine->BatchWrite(batch);
           batch.Clear();
         }
       }
     } else if (bench_sorted){
-      s = engine->SSet(collections[num % num_collections], k, v);
+      s = engine->SSet(collections[num % num_collections], key, value);
     } else if (bench_hashes){
-      s = engine->HSet(collections[num % num_collections], k, v);
+      s = engine->HSet(collections[num % num_collections], key, value);
     }
 
     if (stat_latencies) {
@@ -195,24 +206,24 @@ void DBScan(int tid)
 {
   uint64_t operations = 0;
   uint64_t operations_counted = 0;
-  std::string k;
-  std::string v;
-  k.resize(8);
+  std::string key;
+  std::string value;
+  key.resize(8);
   int scan_length = 100;
   while (!done) 
   {
     uint64_t num = generate_key();
-    memcpy(&k[0], &num, 8);
+    memcpy(&key[0], &num, 8);
     if (bench_sorted)
     {
       auto iter = engine->NewSortedIterator(collections[num % num_collections]);
       if (iter)
       {
-        iter->Seek(k);
+        iter->Seek(key);
         for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
         {
-          k = iter->Key();
-          v = iter->Value();
+          key = iter->Key();
+          value = iter->Value();
           ++operations;
           if (operations > operations_counted + 1000) 
           {
@@ -232,8 +243,8 @@ void DBScan(int tid)
       {     
         for (iter->SeekToFirst(); iter->Valid(); iter->Next())
         {
-          k = iter->Key();
-          v = iter->Value();
+          key = iter->Key();
+          value = iter->Value();
           ++operations;
           if (operations > operations_counted + 1000) 
           {
@@ -251,8 +262,8 @@ void DBScan(int tid)
 
 void DBRead(int tid) {
   std::string value;
-  std::string k;
-  k.resize(8);
+  std::string key;
+  key.resize(8);
   uint64_t num;
   uint64_t ops = 0;
   uint64_t not_found = 0;
@@ -264,16 +275,16 @@ void DBRead(int tid) {
       return;
     }
     num = generate_key();
-    memcpy(&k[0], &num, 8);
+    memcpy(&key[0], &num, 8);
     if (stat_latencies)
       timer.Start();
     Status s;
     if (bench_sorted) {
-      s = engine->SGet(collections[num % num_collections], k, &value);
+      s = engine->SGet(collections[num % num_collections], key, &value);
     } else if (bench_string) {
-      s = engine->Get(k, &value);
+      s = engine->Get(key, &value);
     } else if (bench_hashes) {
-      s = engine->HGet(collections[num % num_collections], k, &value);
+      s = engine->HGet(collections[num % num_collections], key, &value);
     }
     if (stat_latencies) {
       lat = timer.End();
@@ -344,6 +355,11 @@ bool ProcessBenchmarkConfigs() {
   num_keys = FLAGS_num;
   num_collections = FLAGS_collections;
 
+  if (value_size > 102400) {
+    printf("value size too large\n");
+    return false;
+  }
+
   uint64_t max_key = FLAGS_existing_keys_ratio == 0
                          ? UINT64_MAX
                          : num_keys / FLAGS_existing_keys_ratio;
@@ -356,6 +372,18 @@ bool ProcessBenchmarkConfigs() {
   } else {
     printf("key distribution %s is not supported\n",
            FLAGS_key_distribution.c_str());
+    return false;
+  }
+
+  if (FLAGS_value_size_distribution == "constant") {
+    value_size_generator.reset(new ConstantGenerator(fLU64::FLAGS_value_size));
+  } else if (FLAGS_value_size_distribution == "zipf") {
+    value_size_generator.reset(new ZipfianGenerator(fLU64::FLAGS_value_size));
+  } else if (FLAGS_value_size_distribution == "random") {
+    value_size_generator.reset(new RandomGenerator(fLU64::FLAGS_value_size));
+  } else {
+    printf("value size distribution %s is not supported\n",
+           FLAGS_value_size_distribution.c_str());
     return false;
   }
 
@@ -373,7 +401,9 @@ int main(int argc, char **argv) {
   configs.populate_pmem_space = FLAGS_populate;
   configs.max_write_threads = FLAGS_max_write_threads;
   configs.pmem_file_size = FLAGS_space;
-
+  configs.opt_large_sorted_collection_restore =
+      FLAGS_opt_large_sorted_collection_restore;
+      
   Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
 
   if (s != Status::Ok) {
