@@ -16,6 +16,8 @@
 #include "test_util.h"
 #include "gtest/gtest.h"
 
+// #define ENABLE_HASHES
+
 // IteratingFacility provides functions to iterate through a collection and check its contents
 // It's up to user to maintain an unordered_multimap between keys and values 
 // to keep track of the kv-pairs in a certain collection in the engine instance
@@ -44,6 +46,7 @@ namespace IteratingFacility
         << "Value: " << value << "\n";
   }
 
+#ifdef ENABLE_HASHES
   // possible_kv_pairs is searched to try to find a match with iterated records
   // possible_kv_pairs is copied because IterateThroughHashes erase entries to keep track of records
   static void IterateThroughHashes(kvdk::Engine* engine, std::string collection_name, 
@@ -132,6 +135,8 @@ namespace IteratingFacility
       possible_kv_pairs = std::move(possible_kv_pairs_copy);
     }   
   }
+
+#endif // ENABLE_HASHES
 
   // possible_kv_pairs is searched to try to find a match with iterated records
   // possible_kv_pairs is copied because IterateThroughSortedSets erase entries to keep track of records
@@ -276,6 +281,7 @@ namespace // nested anonymous namespace to hide implementation
   }
 }
 
+#ifdef ENABLE_HASHES
   // Calling engine->HSet to put keys and values into collection named after collection_name.
   static void HSetOnly(kvdk::Engine* engine, 
                 std::string collection_name, 
@@ -289,6 +295,7 @@ namespace // nested anonymous namespace to hide implementation
     };
     xSetOnly(setter, collection_name, keys, values, report_progress);
   }
+#endif // ENABLE_HASHES
 
   // Calling engine->HSet to put keys and values into collection named after collection_name.
   static void SSetOnly(kvdk::Engine* engine, 
@@ -304,6 +311,7 @@ namespace // nested anonymous namespace to hide implementation
     xSetOnly(setter, collection_name, keys, values, report_progress);
   }
 
+#ifdef ENABLE_HASHES
   // Calling engine->HSet to put evenly indexed keys and values into collection named after collection_name.
   // Calling engine->HDelete to delete oddly indexed keys from collection named after collection_name.
   static void EvenHSetOddHDelete(kvdk::Engine* engine, 
@@ -322,6 +330,7 @@ namespace // nested anonymous namespace to hide implementation
     };
     evenXSetOddXDelete(setter, deleter, collection_name, keys, values, report_progress);
   }
+#endif // ENABLE_HASHES
 
   // Calling engine->SSet to put evenly indexed keys and values into collection named after collection_name.
   // Calling engine->SDelete to delete oddly indexed keys from collection named after collection_name.
@@ -455,6 +464,7 @@ protected:
     }
   }
 
+#ifdef ENABLE_HASHES
   void LaunchHSetOnly(std::string const& collection_name)
   {
     updatePossibleKVPairs(collection_name, false);
@@ -472,6 +482,7 @@ protected:
     std::cout << "[INFO] Execute HSet and HDelete in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
+#endif // ENABLE_HASHES
 
   void LaunchSSetOnly(std::string const& collection_name)
   {
@@ -491,11 +502,13 @@ protected:
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
+#ifdef ENABLE_HASHES
   void CheckHashesCollection(std::string collection_name)
   {
     std::cout << "[INFO] Iterate through " << collection_name << " to check data." << std::endl;
     iterateThroughHashes(0, collection_name);
   }
+#endif // ENABLE_HASHES
 
   void CheckSortedSetsCollection(std::string collection_name)
   {
@@ -514,6 +527,7 @@ private:
     std::shuffle(grouped_values[tid].begin(), grouped_values[tid].end(), rand);
   }
 
+#ifdef ENABLE_HASHES
   void iterateThroughHashes(uint32_t tid, std::string collection_name)
   {
     bool report_progress = (tid == 0);
@@ -527,6 +541,7 @@ private:
     // possible_kv_pairs is copied here
     IteratingFacility::IterateThroughHashes(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
   }
+#endif // ENABLE_HASHES
 
   void iterateThroughSortedSets(uint32_t tid, std::string collection_name)
   {
@@ -542,6 +557,7 @@ private:
     IteratingFacility::IterateThroughSortedSets(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
   }
 
+#ifdef ENABLE_HASHES
   void executeHSetOnly(std::string const& collection_name, std::uint64_t tid)
   {
     if (tid == 0)
@@ -549,6 +565,7 @@ private:
     else
       SetDeleteFacility::HSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
+#endif // ENABLE_HASHES
 
   void executeSSetOnly(std::string const& collection_name, std::uint64_t tid)
   {
@@ -558,6 +575,7 @@ private:
       SetDeleteFacility::SSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
 
+#ifdef ENABLE_HASHES
   void executeEvenHSetOddHDelete(std::string const& collection_name, std::uint64_t tid)
   {
     if (tid == 0)
@@ -565,6 +583,7 @@ private:
     else
       SetDeleteFacility::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
+#endif // ENABLE_HASHES
 
   void executeEvenSSetOddSDelete(std::string const& collection_name, std::uint64_t tid)
   {
@@ -608,6 +627,7 @@ private:
   }
 };
 
+#ifdef ENABLE_HASHES
 TEST_F(EngineExtensiveTest, DISABLED_HashCollectionHSetOnly) 
 {
   std::string global_collection_name{"GlobalCollection"};
@@ -655,6 +675,7 @@ TEST_F(EngineExtensiveTest, DISABLED_HashCollectionHSetAndHDelete)
     CheckHashesCollection(global_collection_name);
   }
 }
+#endif
 
 TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly) 
 {
