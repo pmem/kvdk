@@ -43,15 +43,10 @@ public:
 
   // translate block_offset of allocated space to address
   inline char *offset2addr_checked(uint64_t block_offset) {
-    if (block_offset == kNullPmemOffset) {
-      assert(false && "Trying to access kNullPmemOffset");
-      return nullptr;
-    } else {
-      assert(block_offset < max_block_offset_ / num_segment_blocks_ *
-                                num_segment_blocks_ &&
-             "Trying to access invalid offset");
-      return pmem_ + block_offset * block_size_;
-    }
+    assert(block_offset < max_block_offset_ / num_segment_blocks_ *
+                              num_segment_blocks_ &&
+            "Trying to access invalid offset");
+    return pmem_ + block_offset * block_size_;
   }
 
   inline char *offset2addr(uint64_t block_offset) {

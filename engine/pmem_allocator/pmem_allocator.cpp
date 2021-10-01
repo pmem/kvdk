@@ -175,9 +175,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
     FetchSegmentSpace(&thread_cache.segment_entry);
 
     if (thread_cache.segment_entry.size < b_size) {
-      if (free_list_->MergeGet(b_size, &thread_cache.free_entry)) {
-        continue;
-      }
       GlobalLogger.Error("PMem OVERFLOW!\n");
       return space_entry;
     }
