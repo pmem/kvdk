@@ -667,7 +667,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
   }
 }
 
-TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly) 
+TEST_F(EngineExtensiveTest, DISABLED_SortedCollectionSSetOnly) 
 {
   std::string global_collection_name{"GlobalCollection"};
 
@@ -687,7 +687,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly)
   }
 }
 
-TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete) 
+TEST_F(EngineExtensiveTest, DISABLED_DSortedCollectionSSetAndSDelete) 
 {
   std::string global_collection_name{"GlobalCollection"};
 
@@ -805,7 +805,7 @@ protected:
 
 TEST_F(EngineHotspotTest, HashesMultipleHotspot) 
 {
-  int n_repeat = 100;
+  int n_repeat = 1000;
   std::string global_collection_name{ "GlobalHashesCollection" };
   // EvenWriteOddRead is Similar to EvenSetOddDelete - only evenly indexed keys may appear
 
