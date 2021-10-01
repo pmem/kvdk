@@ -16,10 +16,10 @@
 #include "test_util.h"
 #include "gtest/gtest.h"
 
-// IteratingFacility provides functions to iterate through a collection and check its contents
+// Contains functions to iterate through a collection and check its contents
 // It's up to user to maintain an unordered_multimap between keys and values 
 // to keep track of the kv-pairs in a certain collection in the engine instance
-namespace IteratingFacility
+namespace kvdk_testing
 {
   // Check value got by XGet(key) by looking up possible_kv_pairs
   static void CheckKVPair(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
@@ -45,8 +45,8 @@ namespace IteratingFacility
   }
 
   // possible_kv_pairs is searched to try to find a match with iterated records
-  // possible_kv_pairs is copied because IterateThroughHashes erase entries to keep track of records
-  static void IterateThroughHashes(kvdk::Engine* engine, std::string collection_name, 
+  // possible_kv_pairs is copied because HashesIterateThrough erase entries to keep track of records
+  static void HashesIterateThrough(kvdk::Engine* engine, std::string collection_name, 
                                    std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs, 
                                    bool report_progress) 
   {
@@ -135,8 +135,8 @@ namespace IteratingFacility
   }
 
   // possible_kv_pairs is searched to try to find a match with iterated records
-  // possible_kv_pairs is copied because IterateThroughSortedSets erase entries to keep track of records
-  static void IterateThroughSortedSets(kvdk::Engine* engine, std::string collection_name, 
+  // possible_kv_pairs is copied because SortedSetsIterateThrough erase entries to keep track of records
+  static void SortedSetsIterateThrough(kvdk::Engine* engine, std::string collection_name, 
                                        std::unordered_multimap<std::string_view, std::string_view> possible_kv_pairs, 
                                        bool report_progress) 
   {
@@ -209,12 +209,13 @@ namespace IteratingFacility
   }
 
 };
-/// SetDeleteFacility offers functions for putting batches of keys and values into a collection in an engine instance.
-namespace SetDeleteFacility
+
+/// Contains functions for putting batches of keys and values into a collection in an engine instance.
+namespace kvdk_testing
 {
 namespace // nested anonymous namespace to hide implementation
 {
-  static void xSetOnly(std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view, pmem::obj::string_view)> setter, 
+  static void allXSet(std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view, pmem::obj::string_view)> setter, 
                 std::string collection_name,
                 std::vector<pmem::obj::string_view> const& keys, 
                 std::vector<pmem::obj::string_view> const& values, 
@@ -278,7 +279,7 @@ namespace // nested anonymous namespace to hide implementation
 
 
   // Calling engine->HSet to put keys and values into collection named after collection_name.
-  static void HSetOnly(kvdk::Engine* engine, 
+  static void AllHSet(kvdk::Engine* engine, 
                 std::string collection_name, 
                 std::vector<pmem::obj::string_view> const& keys, 
                 std::vector<pmem::obj::string_view> const& values, 
@@ -288,11 +289,11 @@ namespace // nested anonymous namespace to hide implementation
     {
       return engine->HSet(coll_name, key, value);
     };
-    xSetOnly(setter, collection_name, keys, values, report_progress);
+    allXSet(setter, collection_name, keys, values, report_progress);
   }
 
   // Calling engine->HSet to put keys and values into collection named after collection_name.
-  static void SSetOnly(kvdk::Engine* engine, 
+  static void AllSSetOnly(kvdk::Engine* engine, 
                 std::string collection_name, 
                 std::vector<pmem::obj::string_view> const& keys, 
                 std::vector<pmem::obj::string_view> const& values, 
@@ -302,7 +303,7 @@ namespace // nested anonymous namespace to hide implementation
     {
       return engine->SSet(coll_name, key, value);
     };
-    xSetOnly(setter, collection_name, keys, values, report_progress);
+    allXSet(setter, collection_name, keys, values, report_progress);
   }
 
   // Calling engine->HSet to put evenly indexed keys and values into collection named after collection_name.
@@ -456,56 +457,52 @@ protected:
     }
   }
 
-
-  void LaunchHSetOnly(std::string const& collection_name)
+  void HashesAllHSetLaunchNThreads(std::string const& collection_name)
   {
     updatePossibleKVPairs(collection_name, false);
     
-    auto ModifyEngine = [&](int tid){ executeHSetOnly(collection_name, tid); };
+    auto ModifyEngine = [&](int tid){ hashesAllHSet(collection_name, tid); };
     std::cout << "[INFO] Execute HSet in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void LaunchEvenHSetOddHDelete(std::string const& collection_name)
+  void HashesEvenHSetOddHDeleteLaunchNThreads(std::string const& collection_name)
   {
     updatePossibleKVPairs(collection_name, true);
 
-    auto ModifyEngine = [&](int tid){ executeEvenHSetOddHDelete(collection_name, tid); };
+    auto ModifyEngine = [&](int tid){ hashesEvenHSetOddHDelete(collection_name, tid); };
     std::cout << "[INFO] Execute HSet and HDelete in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-
-  void LaunchSSetOnly(std::string const& collection_name)
+  void SortedSetsAllSSetLaunchNThreads(std::string const& collection_name)
   {
     updatePossibleKVPairs(collection_name, false);
 
-    auto ModifyEngine = [&](int tid){ executeSSetOnly(collection_name, tid); };
+    auto ModifyEngine = [&](int tid){ sortedSetsAllSSet(collection_name, tid); };
     std::cout << "[INFO] Execute SSet in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void LaunchEvenSSetOddSDelete(std::string const& collection_name)
+  void SortedSetsEvenSSetOddSDeleteLaunchNThreads(std::string const& collection_name)
   {
     updatePossibleKVPairs(collection_name, true);
 
-    auto ModifyEngine = [&](int tid){ executeEvenSSetOddSDelete(collection_name, tid); };
+    auto ModifyEngine = [&](int tid){ sortedSetsEvenSSetOddSDelete(collection_name, tid); };
     std::cout << "[INFO] Execute SSet and SDelete in " << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-
   void CheckHashesCollection(std::string collection_name)
   {
     std::cout << "[INFO] Iterate through " << collection_name << " to check data." << std::endl;
-    iterateThroughHashes(0, collection_name);
+    hashesIterateThrough(0, collection_name);
   }
-
 
   void CheckSortedSetsCollection(std::string collection_name)
   {
     std::cout << "[INFO] Iterate through " << collection_name << " to check data." << std::endl;
-    iterateThroughSortedSets(0, collection_name);
+    sortedSetsIterateThrough(0, collection_name);
   }
 
 private:
@@ -520,69 +517,69 @@ private:
   }
 
 
-  void iterateThroughHashes(uint32_t tid, std::string collection_name)
+  void hashesIterateThrough(uint32_t tid, std::string collection_name)
   {
     bool report_progress = (tid == 0);
     if (report_progress)
       std::cout 
-        << "[INFO] IterateThroughHashes " << collection_name 
+        << "[INFO] HashesIterateThrough " << collection_name 
         << " with thread " << tid << ". "
         << "It may take a few seconds to copy possible_kv_pairs."
         << std::endl;
     
     // possible_kv_pairs is copied here
-    IteratingFacility::IterateThroughHashes(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
+    kvdk_testing::HashesIterateThrough(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
   }
 
 
-  void iterateThroughSortedSets(uint32_t tid, std::string collection_name)
+  void sortedSetsIterateThrough(uint32_t tid, std::string collection_name)
   {
     bool report_progress = (tid == 0);
     if (report_progress)
       std::cout 
-        << "[INFO] IterateThroughSortedSets " << collection_name 
+        << "[INFO] SortedSetsIterateThrough " << collection_name 
         << " with thread " << tid << ". "
         << "It may take a few seconds to copy possible_kv_pairs."
         << std::endl;
     
     // possible_kv_pairs is copied here
-    IteratingFacility::IterateThroughSortedSets(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
+    kvdk_testing::SortedSetsIterateThrough(engine, collection_name, possible_kv_pairs[collection_name], report_progress);
   }
 
 
-  void executeHSetOnly(std::string const& collection_name, std::uint64_t tid)
+  void hashesAllHSet(std::string const& collection_name, std::uint64_t tid)
   {
     if (tid == 0)
-      SetDeleteFacility::HSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+      kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
     else
-      SetDeleteFacility::HSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+      kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
 
 
-  void executeSSetOnly(std::string const& collection_name, std::uint64_t tid)
+  void sortedSetsAllSSet(std::string const& collection_name, std::uint64_t tid)
   {
     if (tid == 0)
-      SetDeleteFacility::SSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+      kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
     else
-      SetDeleteFacility::SSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+      kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
 
 
-  void executeEvenHSetOddHDelete(std::string const& collection_name, std::uint64_t tid)
+  void hashesEvenHSetOddHDelete(std::string const& collection_name, std::uint64_t tid)
   {
     if (tid == 0)
-      SetDeleteFacility::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+      kvdk_testing::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
     else
-      SetDeleteFacility::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+      kvdk_testing::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
 
 
-  void executeEvenSSetOddSDelete(std::string const& collection_name, std::uint64_t tid)
+  void sortedSetsEvenSSetOddSDelete(std::string const& collection_name, std::uint64_t tid)
   {
     if (tid == 0)
-      SetDeleteFacility::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
+      kvdk_testing::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], true);
     else
-      SetDeleteFacility::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
+      kvdk_testing::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid], grouped_values[tid], false);
   }
 
   void updatePossibleKVPairs(std::string const& collection_name, bool odd_indexed_is_deleted)
@@ -623,7 +620,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  LaunchHSetOnly(global_collection_name);
+  HashesAllHSetLaunchNThreads(global_collection_name);
   CheckHashesCollection(global_collection_name);
 
 
@@ -644,7 +641,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  LaunchEvenHSetOddHDelete(global_collection_name);
+  HashesEvenHSetOddHDeleteLaunchNThreads(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   CheckHashesCollection(global_collection_name);
@@ -662,7 +659,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete)
 
     ShuffleAllKeysValuesWithinThread();
 
-    LaunchEvenHSetOddHDelete(global_collection_name);
+    HashesEvenHSetOddHDeleteLaunchNThreads(global_collection_name);
     CheckHashesCollection(global_collection_name);
   }
 }
@@ -671,7 +668,7 @@ TEST_F(EngineExtensiveTest, DISABLED_SortedCollectionSSetOnly)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  LaunchSSetOnly(global_collection_name);
+  SortedSetsAllSSetLaunchNThreads(global_collection_name);
   CheckSortedSetsCollection(global_collection_name);
 
   size_t n_repeat = 3;
@@ -691,7 +688,7 @@ TEST_F(EngineExtensiveTest, DISABLED_DSortedCollectionSSetAndSDelete)
 {
   std::string global_collection_name{"GlobalCollection"};
 
-  LaunchEvenSSetOddSDelete(global_collection_name);
+  SortedSetsEvenSSetOddSDeleteLaunchNThreads(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   CheckSortedSetsCollection(global_collection_name);
@@ -709,7 +706,7 @@ TEST_F(EngineExtensiveTest, DISABLED_DSortedCollectionSSetAndSDelete)
 
     ShuffleAllKeysValuesWithinThread();
 
-    LaunchEvenSSetOddSDelete(global_collection_name);
+    SortedSetsEvenSSetOddSDeleteLaunchNThreads(global_collection_name);
     CheckSortedSetsCollection(global_collection_name);
   }
 }
@@ -732,7 +729,7 @@ protected:
 
   const size_t n_thread{ 48 };
   const size_t n_kv_per_thread{ 2ULL << 10 };   // 2K keys per thread, most of which are duplicate
-                                                // Actually will be less than 26^2+26+1=703 keys
+                                                // Actually will be no more than 26^2+26+1=703 keys
 
   const size_t sz_key_min{ 0 };  // Small keys will raise many hotspots, empty string "" will happen about 1/3 times.
   const size_t sz_key_max{ 2 };
@@ -826,7 +823,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot)
         ASSERT_TRUE((status == kvdk::Status::NotFound) || (status == kvdk::Status::Ok));
         if (status == kvdk::Status::Ok)
         {
-          // IteratingFacility::CheckKVPair(keys[tid][j], value_got, possible_kv_pairs);
+          // kvdk_testing::CheckKVPair(keys[tid][j], value_got, possible_kv_pairs);
         }
       }
     }
