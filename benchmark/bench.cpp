@@ -170,7 +170,7 @@ void DBWrite(int tid) {
       if (batch_num == 0) {
         s = engine->Set(key, value);
       } else {
-        batch.Put(key, value);
+        batch.Put(key, std::string(value.data(), value.size()));
         if (batch.Size() == batch_num) {
           engine->BatchWrite(batch);
           batch.Clear();
