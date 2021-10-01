@@ -19,7 +19,7 @@ void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
 }
 
 void PMEMAllocator::PopulateSpace() {
-  GlobalLogger.Log("Populating PMem space ...\n");
+  GlobalLogger.Info("Populating PMem space ...\n");
   std::vector<std::thread> ths;
 
   int pu = get_usable_pu();
@@ -31,18 +31,16 @@ void PMEMAllocator::PopulateSpace() {
   }
   for (int i = 0; i < pu; i++) {
     ths.emplace_back([=]() {
-      uint64_t len = pmem_size_ / pu;
-      // Re-calculate the length of last chunk to cover the
-      // case that mapped_size_ is not divisible by pu.
-      if (i == pu - 1)
-        len = pmem_size_ - (pu - 1) * len;
-      pmem_memset(pmem_ + pmem_size_ * i / pu, 0, len, PMEM_F_MEM_NONTEMPORAL);
+      uint64_t offset = pmem_size_ * i / pu;
+      // To cover the case that mapped_size_ is not divisible by pu.
+      uint64_t len = std::min(pmem_size_ / pu, pmem_size_ - offset);
+      pmem_memset(pmem_ + offset, 0, len, PMEM_F_MEM_NONTEMPORAL);
     });
   }
   for (auto &t : ths) {
     t.join();
   }
-  GlobalLogger.Log("Populating done\n");
+  GlobalLogger.Info("Populating done\n");
 }
 
 PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
@@ -53,8 +51,8 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
     : thread_cache_(num_write_threads), num_segment_blocks_(num_segment_blocks),
       block_size_(block_size), offset_head_(0) {
   int is_pmem;
-  GlobalLogger.Log("Initializing PMem size %lu in file %s\n", pmem_space,
-                   pmem_file.c_str());
+  GlobalLogger.Info("Initializing PMem size %lu in file %s\n", pmem_space,
+                    pmem_file.c_str());
   if ((pmem_ = (char *)pmem_map_file(pmem_file.c_str(), pmem_space,
                                      PMEM_FILE_CREATE, 0666, &pmem_size_,
                                      &is_pmem)) == nullptr) {
@@ -70,11 +68,20 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
     GlobalLogger.Error("Pmem map file %s size %lu less than expected %lu\n",
                        pmem_file.c_str(), pmem_size_, pmem_space);
   }
-  max_block_offset_ = pmem_size_ / block_size_;
+  max_block_offset_ =
+      pmem_size_ / block_size_ / num_segment_blocks_ * num_segment_blocks_;
+  // num_segment_blocks and block_size are persisted and never changes.
+  // No need to worry user modify those parameters so that records may be
+  // skipped.
+  size_t sz_wasted = pmem_size_ % (block_size_ * num_segment_blocks_);
+  if (sz_wasted != 0)
+    GlobalLogger.Error(
+        "Pmem file size not aligned with segment size, %llu space is wasted.\n",
+        sz_wasted);
   free_list_ = std::make_shared<Freelist>(
       num_segment_blocks, num_write_threads,
       std::make_shared<SpaceMap>(max_block_offset_), this);
-  GlobalLogger.Log("Map pmem space done\n");
+  GlobalLogger.Info("Map pmem space done\n");
   init_data_size_2_block_size();
 }
 
@@ -91,9 +98,10 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
 
   segment_space_entry->space_entry.offset =
       offset_head_.fetch_add(num_segment_blocks_, std::memory_order_relaxed);
-  if (segment_space_entry->space_entry.offset >= max_block_offset_) {
+  // Don't fetch block that may excess PMem file boundary
+  if (segment_space_entry->space_entry.offset >
+      max_block_offset_ - num_segment_blocks_)
     return false;
-  }
   segment_space_entry->size = num_segment_blocks_;
   return true;
 }
@@ -106,9 +114,10 @@ void PMEMAllocator::FetchSegmentSpace(SizedSpaceEntry *segment_entry) {
       if (offset_head_.compare_exchange_strong(offset,
                                                offset + num_segment_blocks_)) {
         Free(*segment_entry);
-        *segment_entry = SizedSpaceEntry(
-            offset, std::min(num_segment_blocks_, max_block_offset_ - offset),
-            0);
+        *segment_entry = SizedSpaceEntry{offset, num_segment_blocks_, 0};
+        assert(segment_entry->space_entry.offset <=
+                   max_block_offset_ - num_segment_blocks_ &&
+               "Block may excess PMem file boundary");
         break;
       }
       continue;
@@ -166,9 +175,6 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
     FetchSegmentSpace(&thread_cache.segment_entry);
 
     if (thread_cache.segment_entry.size < b_size) {
-      if (free_list_->MergeGet(b_size, &thread_cache.free_entry)) {
-        continue;
-      }
       GlobalLogger.Error("PMem OVERFLOW!\n");
       return space_entry;
     }

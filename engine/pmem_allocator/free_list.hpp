@@ -42,9 +42,7 @@ private:
   struct Token {
   public:
     Token(bool is_start, uint8_t size)
-        : token_(size | (is_start ? (1 << 7) : 0)) {
-      assert(size <= INT8_MAX);
-    }
+        : token_(size | (is_start ? (1 << 7) : 0)) {}
     uint8_t Size() { return token_ & INT8_MAX; }
     void Clear() { token_ = 0; }
     bool Empty() { return token_ == 0; }
@@ -202,7 +200,8 @@ private:
 
   class SpaceCmp {
   public:
-    bool operator()(const SizedSpaceEntry &s1, const SizedSpaceEntry &s2) {
+    bool operator()(const SizedSpaceEntry &s1,
+                    const SizedSpaceEntry &s2) const {
       return s1.size > s2.size;
     }
   };

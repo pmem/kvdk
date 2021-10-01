@@ -14,31 +14,48 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class HashEntryStatus : uint16_t {
+enum class HashEntryStatus : uint8_t {
   Normal = 1,
+  // New created hash entry for inserting a new key
+  Initializing = 1 << 1,
+  // A entry being updated by the same key, or a CleanReusable hash entry being
+  // updated by a new key
+  Updating = 1 << 2,
+  // A Normal hash entry of a delete record that is reusing by a new key, it's
+  // unknown if there are older version data of the same key existing so we can
+  // not free corresponding PMem data entry
+  DirtyReusable = 1 << 3,
   // A hash entry of a delete record which has no older version data of the same
   // key exsiting on PMem, so the delete record can be safely freed after the
   // hash entry updated by a new key
-  Clean,
-  // New created hash entry for inserting a new key
-  Initializing,
-  // A entry being updated by the same key, or a CLEAN hash entry being updated
-  // by a new key
-  Updating,
-  // A Normal hash entry of a delete record that is reusing by a new key
-  BeingReused,
+  CleanReusable = 1 << 4,
+  // A empty hash entry which points to nothing
+  Empty = 1 << 5,
+};
+
+enum class HashOffsetType : uint8_t {
+  // Offset is PMem offset of a data entry
+  DataEntry = 1,
+  // Offset is PMem offset of a double linked data entry
+  DLDataEntry = 2,
+  // Offset is pointer to a dram skiplist node
+  SkiplistNode = 3,
+  // Offset is pointer to a dram skiplist struct
+  Skiplist = 4,
 };
 
 struct HashHeader {
   uint32_t key_prefix;
-  uint16_t type;
+  uint16_t data_type;
+  HashOffsetType offset_type;
   HashEntryStatus status;
 };
 
 struct HashEntry {
   HashEntry() = default;
-  HashEntry(uint32_t kp, uint16_t t, uint64_t bo)
-      : header({kp, t, HashEntryStatus::Normal}), offset(bo) {}
+  HashEntry(uint32_t kp, uint16_t t, uint64_t offset, HashEntryStatus status,
+            HashOffsetType offset_type)
+      : header({kp, t, offset_type, status}), offset(offset) {}
 
   HashHeader header;
   uint64_t offset;
@@ -46,6 +63,12 @@ struct HashEntry {
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
   static void CopyOffset(HashEntry *dst, HashEntry *src) {
     dst->offset = src->offset;
+  }
+
+  bool Reusable() {
+    return (uint8_t)header.status & ((uint8_t)HashEntryStatus::CleanReusable |
+                                     (uint8_t)HashEntryStatus::DirtyReusable |
+                                     (uint8_t)HashEntryStatus::Empty);
   }
 };
 
@@ -83,7 +106,7 @@ public:
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
         hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(new DRAMAllocator(write_threads)),
+        dram_allocator_(new ChunkBasedAllocator(write_threads)),
         pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)) {
@@ -109,7 +132,7 @@ public:
                 SearchPurpose purpose);
 
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
-              uint64_t offset);
+              uint64_t offset, HashOffsetType offset_type);
 
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
@@ -131,7 +154,7 @@ private:
   const uint64_t num_entries_per_bucket_;
   std::vector<Slot> slots_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  std::unique_ptr<DRAMAllocator> dram_allocator_;
+  std::unique_ptr<ChunkBasedAllocator> dram_allocator_;
   char *main_buckets_;
 };
 } // namespace KVDK_NAMESPACE

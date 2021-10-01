@@ -10,6 +10,13 @@
 
 namespace KVDK_NAMESPACE {
 
+enum class LogLevel : uint8_t {
+  ALL = 0,
+  DEBUG,
+  INFO,
+  ERROR,
+};
+
 struct Configs {
   // Max number of write threads.
   //
@@ -61,8 +68,10 @@ struct Configs {
 
   // The number of buckets per hash slot.
   //
-  // The hash slot is the minimum unit of write lock and hot-spot cache.
-  uint32_t num_buckets_per_slot = 1 << 4;
+  // The hash slot is the minimum unit of write lock and hot-spot cache, less
+  // buckets in a slot means better hot spot read performance, less write
+  // contentions and more memory consumption
+  uint32_t num_buckets_per_slot = 1;
 
   // Time interval to do background work in seconds
   //
@@ -70,6 +79,14 @@ struct Configs {
   // frequent execution will lead to better space utilization, but more
   // influence to foreground performance
   double background_work_interval = 5;
+
+  // Log information to show
+  LogLevel log_level = LogLevel::INFO;
+
+  // Optional optimization strategy for few large skiplists by multi-thread
+  // recovery a skiplist. The optimization can get better performance when
+  // having few large skiplists. Default is to close optimization.
+  bool opt_large_sorted_collection_restore = false;
 };
 
 } // namespace KVDK_NAMESPACE

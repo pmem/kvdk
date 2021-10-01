@@ -31,7 +31,7 @@ inline uint64_t get_checksum(const void *data, uint64_t size) {
   return XXH3_64bits(data, size);
 }
 
-inline uint64_t fast_random() {
+inline uint64_t fast_random_64() {
   static std::mt19937_64 generator;
   thread_local uint64_t seed = 0;
   if (seed == 0) {
@@ -43,17 +43,6 @@ inline uint64_t fast_random() {
   x ^= x >> 27;      // c
   seed = x;
   return x * 0x2545F4914F6CDD1D;
-}
-
-inline int memcmp_16(const void *a, const void *b) {
-  register __m128i xmm0, xmm1;
-  xmm0 = _mm_loadu_si128((__m128i *)(a));
-  xmm1 = _mm_loadu_si128((__m128i *)(b));
-  __m128i diff = _mm_xor_si128(xmm0, xmm1);
-  if (_mm_testz_si128(diff, diff))
-    return 0; // equal
-  else
-    return 1; // non-equal
 }
 
 inline void memcpy_16(void *dst, const void *src) {
@@ -96,8 +85,13 @@ inline int create_dir_if_missing(const std::string &name) {
   return res;
 }
 
-static int compare_string_view(const pmem::obj::string_view &src,
-                               const pmem::obj::string_view &target) {
+static inline std::string
+string_view_2_string(const pmem::obj::string_view &src) {
+  return std::string(src.data(), src.size());
+}
+
+static inline int compare_string_view(const pmem::obj::string_view &src,
+                                      const pmem::obj::string_view &target) {
   auto size = std::min(src.size(), target.size());
   for (uint32_t i = 0; i < size; i++) {
     if (src[i] != target[i]) {
