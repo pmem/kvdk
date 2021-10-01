@@ -43,16 +43,6 @@ inline bool isSortedDataEntry(DataEntryType type)
 {
   bool ret = false;
   ret = ret || (type == DataEntryType::SortedDataRecord);
-  ret = ret || (type == DataEntryType::SortedDeleteRecord);
-  ret = ret || (type == DataEntryType::SortedHeaderRecord);
-  return ret;
-}
-
-inline bool isDLDataEntry(DataEntryType type)
-{
-  bool ret = false;
-  ret = ret || (type == DataEntryType::SortedDataRecord);
-  ret = ret || (type == DataEntryType::SortedDeleteRecord);
   ret = ret || (type == DataEntryType::SortedHeaderRecord);
   return ret;
 }
@@ -60,7 +50,7 @@ inline bool isDLDataEntry(DataEntryType type)
 inline bool isDeletedDataEntry(DataEntryType type)
 {
   bool ret = false;
-  ret = ret || (type == DataEntryType::SortedDeleteRecord);
+  ret = ret || (type == DataEntryType::StringDeleteRecord);
   ret = ret || (type == DataEntryType::DlistDeleteRecord);
   return ret;
 }
@@ -87,6 +77,8 @@ inline bool isDlistDataDeleteRecord(DataEntryType type)
   ret = ret || (type == DataEntryType::DlistDataRecord);
   return ret;
 }
+
+const uint16_t SortedDataEntryType = (SortedDataRecord | SortedHeaderRecord);
 
 const uint16_t DLDataEntryType =
     (SortedDataRecord | SortedHeaderRecord | HashListDataRecord |

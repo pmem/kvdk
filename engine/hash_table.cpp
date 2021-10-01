@@ -11,6 +11,9 @@ namespace KVDK_NAMESPACE {
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
                                uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry, void *data_entry) {
+  if (hash_entry->header.status == HashEntryStatus::Empty) {
+    return false;
+  }
   if ((target_type & hash_entry->header.data_type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
@@ -70,27 +73,26 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
 Status HashTable::Search(const KeyHashHint &hint,
                          const pmem::obj::string_view &key, uint16_t type_mask,
                          HashEntry *hash_entry, DataEntry *data_entry,
-                         HashEntry **entry_ptr, SearchPurpose purpose) {
+                         HashEntry **entry_base, SearchPurpose purpose) {
   assert(purpose == SearchPurpose::Read || write_thread.id >= 0);
-  assert(entry_ptr);
-  assert((*entry_ptr) == nullptr);
+  assert(entry_base);
+  assert((*entry_base) == nullptr);
   HashEntry *reusable_entry = nullptr;
   char *bucket_base = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_base, _MM_HINT_T0);
-
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
   bool found = false;  
 
   // search cache
-  *entry_ptr = slots_[hint.slot].hash_cache.entry_base;
-  if (*entry_ptr != nullptr) {
-    memcpy_16(hash_entry, *entry_ptr);
+  *entry_base = slots_[hint.slot].hash_cache.entry_base;
+  if (*entry_base != nullptr) {
+    memcpy_16(hash_entry, *entry_base);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry,
                        data_entry)) {
       if (purpose >= SearchPurpose::Write) {
-        (*entry_ptr)->header.status = HashEntryStatus::Updating;
+        (*entry_base)->header.status = HashEntryStatus::Updating;
       }
       found = true;
     }
@@ -98,28 +100,28 @@ Status HashTable::Search(const KeyHashHint &hint,
 
   if (!found) {
     // iterate hash entrys
-    *entry_ptr = (HashEntry *)bucket_base;
+    *entry_base = (HashEntry *)bucket_base;
     uint64_t i = 0;
     while (i < entries) {
-      assert(*entry_ptr);
-      memcpy_16(hash_entry, *entry_ptr);
+      assert(*entry_base);
+      memcpy_16(hash_entry, *entry_base);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry,
                          data_entry)) {
-        slots_[hint.slot].hash_cache.entry_base = *entry_ptr;
+        slots_[hint.slot].hash_cache.entry_base = *entry_base;
         found = true;
         break;
       }
-      assert(*entry_ptr);
+      assert(*entry_base);
 
       if (purpose == SearchPurpose::Write /* we don't reused hash entry in
                                              recovering */
-          && (*entry_ptr)->header.data_type == StringDeleteRecord) {
-        reusable_entry = *entry_ptr;
+          && (*entry_base)->header.data_type == StringDeleteRecord) {
+        reusable_entry = *entry_base;
       }
 
       i++;
 
-      assert(*entry_ptr);
+      assert(*entry_base);
       // next bucket
       if (i % num_entries_per_bucket_ == 0) {
         char *next_off;
@@ -131,7 +133,7 @@ Status HashTable::Search(const KeyHashHint &hint,
                        pmem_allocator_->offset2addr(reusable_entry->offset),
                        sizeof(DataEntry));
               }
-              *entry_ptr = reusable_entry;
+              *entry_base = reusable_entry;
               break;
             } else {
               auto space = dram_allocator_->Allocate(hash_bucket_size_);
@@ -155,23 +157,23 @@ Status HashTable::Search(const KeyHashHint &hint,
         bucket_base = next_off;
         _mm_prefetch(bucket_base, _MM_HINT_T0);
       }
-      (*entry_ptr) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
-      assert(*entry_ptr);
+      (*entry_base) = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+      assert(*entry_base);
     }
   }
 
   if (purpose >= SearchPurpose::Write) {
     if (found) {
-      (*entry_ptr)->header.status = HashEntryStatus::Updating;
+      (*entry_base)->header.status = HashEntryStatus::Updating;
     } else {
-      if ((*entry_ptr) == reusable_entry) {
-        if ((*entry_ptr)->header.status == HashEntryStatus::Clean) {
-          (*entry_ptr)->header.status = HashEntryStatus::Updating;
+      if ((*entry_base) == reusable_entry) {
+        if ((*entry_base)->header.status == HashEntryStatus::Clean) {
+          (*entry_base)->header.status = HashEntryStatus::Updating;
         } else {
-          (*entry_ptr)->header.status = HashEntryStatus::BeingReused;
+          (*entry_base)->header.status = HashEntryStatus::BeingReused;
         }
       } else {
-        (*entry_ptr)->header.status = HashEntryStatus::Initializing;
+        (*entry_base)->header.status = HashEntryStatus::Initializing;
       }
     }
   }
