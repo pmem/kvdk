@@ -148,9 +148,14 @@ class UnorderedCollection;
 struct HashEntry {
 public:
   HashEntry() = default;
+  
   HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, uint64_t offset,
             HashOffsetType offset_type)
       : header({key_hash_prefix, data_entry_type, offset_type, HashEntryStatus::Normal}), offset(offset) {}
+
+  HashEntry(uint32_t kp, uint16_t t, uint64_t offset, HashEntryStatus status,
+            HashOffsetType offset_type)
+      : header({kp, t, offset_type, status}), offset(offset) {}
 
   HashHeader header;
   union

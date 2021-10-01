@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
+#include "../engine/kv_engine.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "test_util.h"
