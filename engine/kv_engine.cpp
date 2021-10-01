@@ -28,6 +28,9 @@ namespace KVDK_NAMESPACE {
 thread_local std::string thread_data_buffer;
 static const int kDataBufferSize = 1024 * 1024;
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
+// Select a data entry every 10000 into restored skiplist map for multi-thread
+// restoring large skiplist.
+constexpr uint64_t kRestoreSkiplistStride = 10000;
 
 void PendingBatch::PersistProcessing(
     void *target, const std::vector<uint64_t> &entry_offsets) {
@@ -64,10 +67,28 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
   return s;
 }
 
+void KVEngine::FreeSkiplistDramNodes() {
+  for (auto skiplist : skiplists_) {
+    skiplist->PurgeObsoleteNodes();
+  }
+}
+
 void KVEngine::BackgroundWork() {
+  // To avoid free a referencing skiplist node, we do freeing in at least every
+  // 10 seconds
+  // TODO: Maybe free skiplist node in another bg thread?
+  double interval_free_skiplist_node =
+      std::max(10.0, configs_.background_work_interval);
   while (!closing_) {
     usleep(configs_.background_work_interval * 1000000);
+    interval_free_skiplist_node -= configs_.background_work_interval;
     pmem_allocator_->BackgroundWork();
+    if ((interval_free_skiplist_node -= configs_.background_work_interval) <=
+        0) {
+      FreeSkiplistDramNodes();
+      interval_free_skiplist_node =
+          std::max(10.0, configs_.background_work_interval);
+    }
   }
 }
 
@@ -107,7 +128,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
-  // bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
+  bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
   return s;
 }
 
@@ -119,6 +140,10 @@ KVEngine::NewSortedIterator(const pmem::obj::string_view collection) {
   return s == Status::Ok
              ? std::make_shared<SortedIterator>(skiplist, pmem_allocator_)
              : nullptr;
+}
+
+Status KVEngine::MaybeInitWriteThread() {
+  return thread_manager_->MaybeInitThread(write_thread);
 }
 
 Status KVEngine::MaybeInitWriteThread() {
