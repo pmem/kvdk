@@ -22,7 +22,7 @@
 namespace IteratingFacility
 {
   // Check value got by XGet(key) by looking up possible_kv_pairs
-  static void CheckXGetResult(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
+  static void CheckKVPair(pmem::obj::string_view key, pmem::obj::string_view value, std::unordered_multimap<std::string_view, std::string_view> const& possible_kv_pairs)
   {
       bool match = false;
       auto range_found = possible_kv_pairs.equal_range(key);
@@ -85,7 +85,7 @@ namespace IteratingFacility
         ASSERT_EQ(value, value_got)
           << "Iterated value does not match with HGet value\n";
 
-        CheckXGetResult(key, value_got, possible_kv_pairs);
+        CheckKVPair(key, value_got, possible_kv_pairs);
 
         possible_kv_pairs.erase(key);
         n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
@@ -128,6 +128,8 @@ namespace IteratingFacility
           << "There should be no key left in possible_kv_pairs, "
           << "as they all should have been erased.\n";
       }
+      // Reset possible_kv_pairs for iterating backwards.
+      possible_kv_pairs = std::move(possible_kv_pairs_copy);
     }   
   }
 
@@ -170,7 +172,7 @@ namespace IteratingFacility
         first_read = false;
       }
 
-      CheckXGetResult(key, value_got, possible_kv_pairs);
+      CheckKVPair(key, value_got, possible_kv_pairs);
       
       possible_kv_pairs.erase(key);
       n_removed_possible_kv_pairs = n_total_possible_kv_pairs - possible_kv_pairs.size();
@@ -606,55 +608,11 @@ private:
   }
 };
 
-TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) 
+TEST_F(EngineExtensiveTest, DISABLED_HashCollectionHSetOnly) 
 {
   std::string global_collection_name{"GlobalCollection"};
 
   LaunchHSetOnly(global_collection_name);
-
-  {
-    auto u_iter = engine->NewUnorderedIterator(global_collection_name);
-
-    // Iterating forward then backward. 
-    for (size_t i = 0; i < 2; i++)
-    {
-      ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
-      if (i == 0) 
-      {
-        u_iter->SeekToFirst();
-        std::cout << "[Info] Iterating forward through Hashes." << std::endl;
-      }
-      else 
-      {
-        u_iter->SeekToLast();
-        std::cout << "[Info] Iterating backward through Hashes." << std::endl;
-      }
-      
-      while (u_iter->Valid())
-      {
-        std::string value_got;
-        auto key = u_iter->Key();
-        auto value = u_iter->Value();
-        std::cout << "Key:\t" << key << "\tValue:\t" << value << std::endl;
-        status = engine->HGet(global_collection_name, key, &value_got);
-        ASSERT_EQ(status, kvdk::Status::Ok)
-          << "Iteration met kv-pair cannot be got with HGet\n";
-        ASSERT_EQ(value, value_got)
-          << "Iterated value does not match with HGet value\n";
-        
-        if (i == 0) // i == 0 for forward
-          u_iter->Next();
-        else // i == 1 for backward
-          u_iter->Prev();
-      }
-    }   
-  }
-  for (auto iter = possible_kv_pairs[global_collection_name].cbegin(); iter != possible_kv_pairs[global_collection_name].cend(); ++iter)
-  {
-        std::cout << "Key:\t" << iter->first << "\tValue:\t" << iter->second << std::endl;
-  }
-  
-
   CheckHashesCollection(global_collection_name);
 
 
@@ -671,7 +629,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly)
   }
 }
 
-TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) 
+TEST_F(EngineExtensiveTest, DISABLED_HashCollectionHSetAndHDelete) 
 {
   std::string global_collection_name{"GlobalCollection"};
 
@@ -834,7 +792,7 @@ protected:
   }
 };
 
-TEST_F(EngineHotspotTest, HashesMultipleHotspot) 
+TEST_F(EngineHotspotTest, DISABLED_HashesMultipleHotspot) 
 {
   int n_repeat = 1000;
   std::string global_collection_name{ "GlobalHashesCollection" };
@@ -857,7 +815,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot)
         ASSERT_TRUE((status == kvdk::Status::NotFound) || (status == kvdk::Status::Ok));
         if (status == kvdk::Status::Ok)
         {
-          // IteratingFacility::CheckXGetResult(keys[tid][j], value_got, possible_kv_pairs);
+          // IteratingFacility::CheckKVPair(keys[tid][j], value_got, possible_kv_pairs);
         }
       }
     }
