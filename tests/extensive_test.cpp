@@ -353,25 +353,28 @@ protected:
 
   const std::string path_db{"/mnt/pmem0/kvdk_test_extensive"};
 
-  // Default configure parameters
-  const bool do_populate_when_initialize = false;
-  const size_t sz_pmem_file{256ULL << 30}; // 256GB PMem
-  const size_t n_hash_bucket{1ULL
-                             << 20}; // Less buckets to increase hash collisions
-  const size_t sz_hash_bucket{
-      (3 + 1) * 16}; // Smaller buckets to increase hash collisions
-  const size_t n_blocks_per_segment{1ULL << 20};
-  const size_t t_background_work_interval = 1;
+  /// Default configure parameters
+  static constexpr bool do_populate_when_initialize = false;
+  // 256GB PMem
+  static constexpr size_t sz_pmem_file{256ULL << 30}; 
+  // Less buckets to increase hash collisions
+  static constexpr size_t n_hash_bucket{1ULL << 20}; 
+  // Smaller buckets to increase hash collisions
+  static constexpr size_t sz_hash_bucket{(3 + 1) * 16}; 
+  static constexpr size_t n_blocks_per_segment{1ULL << 20};
+  static constexpr size_t t_background_work_interval = 1;
 
-  const size_t n_thread{48};
-  const size_t n_kv_per_thread{
-      2ULL << 20}; // 2M keys per thread, totaling about 100M records
-
-  const size_t sz_key_min{
-      0}; // 0-sized key "" is a hotspot, which may reveal many defects
-  const size_t sz_key_max{16};
-  const size_t sz_value_min{0};
-  const size_t sz_value_max{1024};
+  /// Test specific parameters
+  static constexpr size_t n_thread{48};
+  // 2M keys per thread, totaling about 100M records
+  static constexpr size_t n_kv_per_thread{2ULL << 20}; 
+  // 0-sized key "" is a hotspot, which may reveal many defects
+  static constexpr size_t sz_key_min{0}; 
+  static constexpr size_t sz_key_max{16};
+  static constexpr size_t sz_value_min{0};
+  static constexpr size_t sz_value_max{1024};
+  // Reboots n times to test kv_engine recovery
+  static constexpr size_t n_reboot{10};
 
   std::vector<std::vector<std::string_view>> grouped_keys;
   std::vector<std::vector<std::string_view>> grouped_values;
@@ -453,44 +456,70 @@ protected:
     }
   }
 
-  void HashesAllHSetLaunchNThreads(std::string const &collection_name) {
+  void HashesAllHSet(std::string const &collection_name) {
     updatePossibleKVPairs(collection_name, false);
 
-    auto ModifyEngine = [&](int tid) { hashesAllHSet(collection_name, tid); };
+    auto ModifyEngine = [&](int tid) { 
+      if (tid == 0)
+        kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], true);
+      else
+        kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], false);
+    };
+
     std::cout << "[INFO] Execute HSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void
-  HashesEvenHSetOddHDeleteLaunchNThreads(std::string const &collection_name) {
+  void HashesEvenHSetOddHDelete(std::string const &collection_name) {
     updatePossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid) {
-      hashesEvenHSetOddHDelete(collection_name, tid);
+      if (tid == 0)
+        kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
+                                        grouped_keys[tid], grouped_values[tid],
+                                        true);
+      else
+        kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
+                                        grouped_keys[tid], grouped_values[tid],
+                                        false);
     };
     std::cout << "[INFO] Execute HSet and HDelete in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void SortedSetsAllSSetLaunchNThreads(std::string const &collection_name) {
+  void SortedSetsAllSSet(std::string const &collection_name) {
     updatePossibleKVPairs(collection_name, false);
 
     auto ModifyEngine = [&](int tid) {
-      sortedSetsAllSSet(collection_name, tid);
+      if (tid == 0)
+        kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
+                                  grouped_values[tid], true);
+      else
+        kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
+                                  grouped_values[tid], false);
     };
     std::cout << "[INFO] Execute SSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void SortedSetsEvenSSetOddSDeleteLaunchNThreads(
+  void SortedSetsEvenSSetOddSDelete(
       std::string const &collection_name) {
     updatePossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid) {
-      sortedSetsEvenSSetOddSDelete(collection_name, tid);
+      if (tid == 0)
+        kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
+                                        grouped_keys[tid], grouped_values[tid],
+                                        true);
+      else
+        kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
+                                        grouped_keys[tid], grouped_values[tid],
+                                        false);
     };
     std::cout << "[INFO] Execute SSet and SDelete in " << collection_name << "."
               << std::endl;
@@ -546,49 +575,6 @@ private:
                                            report_progress);
   }
 
-  void hashesAllHSet(std::string const &collection_name, std::uint64_t tid) {
-    if (tid == 0)
-      kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
-                            grouped_values[tid], true);
-    else
-      kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
-                            grouped_values[tid], false);
-  }
-
-  void sortedSetsAllSSet(std::string const &collection_name,
-                         std::uint64_t tid) {
-    if (tid == 0)
-      kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
-                                grouped_values[tid], true);
-    else
-      kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
-                                grouped_values[tid], false);
-  }
-
-  void hashesEvenHSetOddHDelete(std::string const &collection_name,
-                                std::uint64_t tid) {
-    if (tid == 0)
-      kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
-                                       grouped_keys[tid], grouped_values[tid],
-                                       true);
-    else
-      kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
-                                       grouped_keys[tid], grouped_values[tid],
-                                       false);
-  }
-
-  void sortedSetsEvenSSetOddSDelete(std::string const &collection_name,
-                                    std::uint64_t tid) {
-    if (tid == 0)
-      kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
-                                       grouped_keys[tid], grouped_values[tid],
-                                       true);
-    else
-      kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
-                                       grouped_keys[tid], grouped_values[tid],
-                                       false);
-  }
-
   void updatePossibleKVPairs(std::string const &collection_name,
                              bool odd_indexed_is_deleted) {
     std::cout << "[INFO] Updating possible_kv_pairs." << std::endl;
@@ -623,13 +609,12 @@ private:
 TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
 
-  HashesAllHSetLaunchNThreads(global_collection_name);
+  HashesAllHSet(global_collection_name);
   CheckHashesCollection(global_collection_name);
 
-  size_t n_repeat = 3;
-  std::cout << "[INFO] Close, reopen, iterate through engine for " << n_repeat
+  std::cout << "[INFO] Close, reopen, iterate through engine for " << n_reboot
             << " times to test recovery." << std::endl;
-  for (size_t i = 0; i < n_repeat; i++) {
+  for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
     RebootDB();
@@ -640,16 +625,15 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
 TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) {
   std::string global_collection_name{"GlobalCollection"};
 
-  HashesEvenHSetOddHDeleteLaunchNThreads(global_collection_name);
+  HashesEvenHSetOddHDelete(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   CheckHashesCollection(global_collection_name);
 
-  size_t n_repeat = 3;
   std::cout << "[INFO] Close, reopen, iterate through, update, iterate through "
                "engine for "
-            << n_repeat << " times to test recovery and updating" << std::endl;
-  for (size_t i = 0; i < n_repeat; i++) {
+            << n_reboot << " times to test recovery and updating" << std::endl;
+  for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
     RebootDB();
@@ -657,7 +641,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) {
 
     ShuffleAllKeysValuesWithinThread();
 
-    HashesEvenHSetOddHDeleteLaunchNThreads(global_collection_name);
+    HashesEvenHSetOddHDelete(global_collection_name);
     CheckHashesCollection(global_collection_name);
   }
 }
@@ -665,13 +649,12 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) {
 TEST_F(EngineExtensiveTest, DISABLED_SortedCollectionSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
 
-  SortedSetsAllSSetLaunchNThreads(global_collection_name);
+  SortedSetsAllSSet(global_collection_name);
   CheckSortedSetsCollection(global_collection_name);
 
-  size_t n_repeat = 3;
-  std::cout << "[INFO] Close, reopen, iterate through engine for " << n_repeat
+  std::cout << "[INFO] Close, reopen, iterate through engine for " << n_reboot
             << " times to test recovery." << std::endl;
-  for (size_t i = 0; i < n_repeat; i++) {
+  for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
     RebootDB();
@@ -682,16 +665,15 @@ TEST_F(EngineExtensiveTest, DISABLED_SortedCollectionSSetOnly) {
 TEST_F(EngineExtensiveTest, DISABLED_DSortedCollectionSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
 
-  SortedSetsEvenSSetOddSDeleteLaunchNThreads(global_collection_name);
+  SortedSetsEvenSSetOddSDelete(global_collection_name);
 
   std::cout << "[INFO] Iterate through collection to check data." << std::endl;
   CheckSortedSetsCollection(global_collection_name);
 
-  size_t n_repeat = 3;
   std::cout << "[INFO] Close, reopen, iterate through, update, iterate through "
                "engine for "
-            << n_repeat << " times to test recovery and updating" << std::endl;
-  for (size_t i = 0; i < n_repeat; i++) {
+            << n_reboot << " times to test recovery and updating" << std::endl;
+  for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[INFO] Repeat: " << i + 1 << std::endl;
 
     RebootDB();
@@ -699,7 +681,7 @@ TEST_F(EngineExtensiveTest, DISABLED_DSortedCollectionSSetAndSDelete) {
 
     ShuffleAllKeysValuesWithinThread();
 
-    SortedSetsEvenSSetOddSDeleteLaunchNThreads(global_collection_name);
+    SortedSetsEvenSSetOddSDelete(global_collection_name);
     CheckSortedSetsCollection(global_collection_name);
   }
 }
