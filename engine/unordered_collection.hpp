@@ -194,6 +194,7 @@ struct EmplaceReturn {
     offset_new = other.offset_new;
     offset_old = other.offset_old;
     success = other.success;
+    return *this;
   }
 
   static constexpr std::uint64_t FailOffset = kNullPmemOffset;
