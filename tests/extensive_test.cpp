@@ -390,20 +390,8 @@ private:
   std::default_random_engine rand{42};
 
 protected:
-  void PurgeDB() {
-    std::string cmd = "rm -rf " + path_db + "\n";
-    int _sink = system(cmd.data());
-  }
-
-  void RebootDB() {
-    delete engine;
-
-    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
-    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
-  }
-
   virtual void SetUp() override {
-    PurgeDB();
+    purgeDB();
 
     configs.populate_pmem_space = do_populate_when_initialize;
     configs.pmem_file_size = sz_pmem_file;
@@ -446,7 +434,14 @@ protected:
 
   virtual void TearDown() {
     delete engine;
-    PurgeDB();
+    purgeDB();
+  }
+
+  void RebootDB() {
+    delete engine;
+
+    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
   void ShuffleAllKeysValuesWithinThread() {
@@ -539,6 +534,11 @@ protected:
   }
 
 private:
+  void purgeDB() {
+    std::string cmd = "rm -rf " + path_db + "\n";
+    int _sink = system(cmd.data());
+  }
+
   void shuffleKeys(size_t tid) {
     std::shuffle(grouped_keys[tid].begin(), grouped_keys[tid].end(), rand);
   }
@@ -724,13 +724,13 @@ private:
   std::default_random_engine rand{42};
 
 protected:
-  void PurgeDB() {
+  void purgeDB() {
     std::string cmd = "rm -rf " + path_db + "\n";
     int _sink = system(cmd.data());
   }
 
   virtual void SetUp() override {
-    PurgeDB();
+    purgeDB();
 
     configs.populate_pmem_space = do_populate_when_initialize;
     configs.pmem_file_size = sz_pmem_file;
@@ -769,7 +769,7 @@ protected:
 
   virtual void TearDown() {
     delete engine;
-    PurgeDB();
+    purgeDB();
   }
 };
 
