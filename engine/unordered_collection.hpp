@@ -381,7 +381,8 @@ private:
   inline static pmem::obj::string_view
   _ExtractKey_(pmem::obj::string_view internal_key) {
     constexpr size_t sz_id = sizeof(decltype(_id_));
-    assert(sz_id < internal_key.size() &&
+    // Allow empty string as key
+    assert(sz_id <= internal_key.size() &&
            "internal_key does not has space for key");
     return pmem::obj::string_view(internal_key.data() + sz_id,
                                   internal_key.size() - sz_id);
