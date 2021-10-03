@@ -176,9 +176,9 @@ void DBWrite(int tid) {
           batch.Clear();
         }
       }
-    } else if (bench_sorted){
+    } else if (bench_sorted) {
       s = engine->SSet(collections[num % num_collections], key, value);
-    } else if (bench_hashes){
+    } else if (bench_hashes) {
       s = engine->HSet(collections[num % num_collections], key, value);
     }
 
@@ -202,31 +202,26 @@ void DBWrite(int tid) {
   }
 }
 
-void DBScan(int tid) 
-{
+void DBScan(int tid) {
   uint64_t operations = 0;
   uint64_t operations_counted = 0;
   std::string key;
   std::string value;
   key.resize(8);
   int scan_length = 100;
-  while (!done) 
-  {
+  while (!done) {
     uint64_t num = generate_key();
     memcpy(&key[0], &num, 8);
-    if (bench_sorted)
-    {
+    if (bench_sorted) {
       auto iter = engine->NewSortedIterator(collections[num % num_collections]);
-      if (iter)
-      {
+      if (iter) {
         iter->Seek(key);
-        for (size_t i = 0; i < scan_length && iter->Valid(); i++, iter->Next())
-        {
+        for (size_t i = 0; i < scan_length && iter->Valid();
+             i++, iter->Next()) {
           key = iter->Key();
           value = iter->Value();
           ++operations;
-          if (operations > operations_counted + 1000) 
-          {
+          if (operations > operations_counted + 1000) {
             read_ops += (operations - operations_counted);
             operations_counted = operations;
           }
@@ -234,20 +229,16 @@ void DBScan(int tid)
       } else {
         fprintf(stderr, "Error creating SortedIterator\n");
         exit(-1);
-      }     
-    }
-    else if (bench_hashes)
-    {
-      auto iter = engine->NewUnorderedIterator(collections[num % num_collections]);
-      if (iter)
-      {     
-        for (iter->SeekToFirst(); iter->Valid(); iter->Next())
-        {
+      }
+    } else if (bench_hashes) {
+      auto iter =
+          engine->NewUnorderedIterator(collections[num % num_collections]);
+      if (iter) {
+        for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
           key = iter->Key();
           value = iter->Value();
           ++operations;
-          if (operations > operations_counted + 1000) 
-          {
+          if (operations > operations_counted + 1000) {
             read_ops += (operations - operations_counted);
             operations_counted = operations;
           }
@@ -255,7 +246,7 @@ void DBScan(int tid)
       } else {
         fprintf(stderr, "Error creating UnorderedIterator\n");
         exit(-1);
-      }     
+      }
     }
   }
 }
@@ -403,7 +394,7 @@ int main(int argc, char **argv) {
   configs.pmem_file_size = FLAGS_space;
   configs.opt_large_sorted_collection_restore =
       FLAGS_opt_large_sorted_collection_restore;
-      
+
   Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
 
   if (s != Status::Ok) {
@@ -448,7 +439,7 @@ int main(int argc, char **argv) {
   uint64_t total_not_found = 0;
   while (!done) {
     sleep(1);
-    { 
+    {
       // for latency, the last second may not accurate
       run_time++;
       total_read = read_ops.load();
@@ -485,7 +476,7 @@ int main(int argc, char **argv) {
   for (auto &t : ts)
     t.join();
 
-  uint64_t read_thpt =  total_read / run_time;
+  uint64_t read_thpt = total_read / run_time;
   uint64_t write_thpt = total_write / run_time;
 
   printf(" ------------ statistics ------------\n");

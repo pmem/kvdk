@@ -8,13 +8,13 @@
 #include <cassert>
 #include <cstdint>
 #include <deque>
+#include <iostream>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include <iostream>
 
 #include "data_entry.hpp"
 #include "dram_allocator.hpp"
@@ -33,6 +33,7 @@
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
+
 public:
   KVEngine();
   ~KVEngine();
@@ -62,13 +63,13 @@ public:
 
   // Unordered Collection
   virtual Status HGet(pmem::obj::string_view const collection_name,
-              pmem::obj::string_view const key,
-              std::string* value) override;
+                      pmem::obj::string_view const key,
+                      std::string *value) override;
   virtual Status HSet(pmem::obj::string_view const collection_name,
-              pmem::obj::string_view const key,
-              pmem::obj::string_view const value) override;
+                      pmem::obj::string_view const key,
+                      pmem::obj::string_view const value) override;
   virtual Status HDelete(pmem::obj::string_view const collection_name,
-                 pmem::obj::string_view const key) override;
+                         pmem::obj::string_view const key) override;
   std::shared_ptr<Iterator>
   NewUnorderedIterator(pmem::obj::string_view const collection_name) override;
 
@@ -132,9 +133,11 @@ private:
   }
 
 private:
-  std::shared_ptr<UnorderedCollection> CreateUnorderedCollection(pmem::obj::string_view const collection_name);
-  UnorderedCollection* FindUnorderedCollection(pmem::obj::string_view collection_name);
-  
+  std::shared_ptr<UnorderedCollection>
+  CreateUnorderedCollection(pmem::obj::string_view const collection_name);
+  UnorderedCollection *
+  FindUnorderedCollection(pmem::obj::string_view collection_name);
+
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const pmem::obj::string_view &key,
@@ -177,10 +180,10 @@ private:
   // DataEntryType DlistDataRecord for HSet
   // and DlistDeleteRecord for HDelete
   Status HSetOrHDelete(pmem::obj::string_view const collection_name,
-              pmem::obj::string_view const key,
-              pmem::obj::string_view const value, DataEntryType type);
+                       pmem::obj::string_view const key,
+                       pmem::obj::string_view const value, DataEntryType type);
 
-  Status RestoreDlistRecords(void* pmp_record, DataEntry data_entry_cached);
+  Status RestoreDlistRecords(void *pmp_record, DataEntry data_entry_cached);
 
   // Regularly works excecuted by background thread
   void BackgroundWork();
@@ -212,17 +215,17 @@ private:
 
   inline std::string config_file_name() { return dir_ + "configs"; }
 
-  inline bool checkDLDataEntryLinkageLeft(DLDataEntry* pmp_record)
-  {
+  inline bool checkDLDataEntryLinkageLeft(DLDataEntry *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLDataEntry* pmp_prev = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(pmp_record->prev));
+    DLDataEntry *pmp_prev = reinterpret_cast<DLDataEntry *>(
+        pmem_allocator_->offset2addr_checked(pmp_record->prev));
     return pmp_prev->next == offset;
   }
 
-  inline bool checkDLDataEntryLinkageRight(DLDataEntry* pmp_record)
-  {
+  inline bool checkDLDataEntryLinkageRight(DLDataEntry *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLDataEntry* pmp_next = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(pmp_record->next));
+    DLDataEntry *pmp_next = reinterpret_cast<DLDataEntry *>(
+        pmem_allocator_->offset2addr_checked(pmp_record->next));
     return pmp_next->prev == offset;
   }
 
@@ -238,7 +241,8 @@ private:
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<HashList>> hashlists_;
-  std::vector<std::shared_ptr<UnorderedCollection>> _vec_sp_unordered_collections_;
+  std::vector<std::shared_ptr<UnorderedCollection>>
+      _vec_sp_unordered_collections_;
   std::mutex list_mu_;
 
   std::string dir_;

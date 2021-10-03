@@ -32,9 +32,8 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
       break;
     }
-    case HashOffsetType::UnorderedCollection:
-    {
-      UnorderedCollection* p_collection = hash_entry->p_unordered_collection;
+    case HashOffsetType::UnorderedCollection: {
+      UnorderedCollection *p_collection = hash_entry->p_unordered_collection;
       data_entry_key = p_collection->Name();
       break;
     }
@@ -83,7 +82,7 @@ Status HashTable::Search(const KeyHashHint &hint,
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-  bool found = false;  
+  bool found = false;
 
   // search cache
   *entry_base = slots_[hint.slot].hash_cache.entry_base;
@@ -199,24 +198,26 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
   }
 }
 
-bool HashTable::MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry)
-{
+bool HashTable::MatchImpl2(pmem::obj::string_view key,
+                           HashEntry matching_entry) {
   pmem::obj::string_view record_key;
   switch (matching_entry.header.offset_type) {
   case HashOffsetType::DataEntry: {
-    DataEntry* pmp_record = reinterpret_cast<DataEntry*>(pmem_allocator_->offset2addr(matching_entry.offset));
+    DataEntry *pmp_record = reinterpret_cast<DataEntry *>(
+        pmem_allocator_->offset2addr(matching_entry.offset));
     record_key = pmp_record->Key();
     break;
   }
   case HashOffsetType::UnorderedCollectionElement:
   case HashOffsetType::DLDataEntry: {
-    DLDataEntry* pmp_record = reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr(matching_entry.offset));
+    DLDataEntry *pmp_record = reinterpret_cast<DLDataEntry *>(
+        pmem_allocator_->offset2addr(matching_entry.offset));
     record_key = pmp_record->Key();
     break;
   }
-  case HashOffsetType::UnorderedCollection:
-  {
-    std::shared_ptr<UnorderedCollection> un_coll = matching_entry.p_unordered_collection->shared_from_this();
+  case HashOffsetType::UnorderedCollection: {
+    std::shared_ptr<UnorderedCollection> un_coll =
+        matching_entry.p_unordered_collection->shared_from_this();
   }
   case HashOffsetType::SkiplistNode: {
     SkiplistNode *dram_node = (SkiplistNode *)matching_entry.offset;
@@ -231,7 +232,7 @@ bool HashTable::MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry)
   case HashOffsetType::Invalid:
   default: {
     GlobalLogger.Error("Not supported hash offset type: %u\n",
-                        matching_entry.header.offset_type);
+                       matching_entry.header.offset_type);
     assert(false && "Invalid HashOffsetType!");
     return false;
   }
@@ -242,14 +243,15 @@ bool HashTable::MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry)
 
 // If existing HashEntry indexing a key is found, its address is returned
 // Else return address suitable to position a HashEntry that matches the key
-// User should Check the content of this address himself or herself 
+// User should Check the content of this address himself or herself
 // by looking at HashEntry::DataEntryType.
-// If it is DataEntryType::Empty, then user should assume the search found nothing.
-// Otherwise a valid HashEntry* is returned and can be used to retrieve data
-// from PMem
-HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, bool (*type_matcher)(DataEntryType))
-{
-  HashEntry *p_bucket_chain = reinterpret_cast<HashEntry*>(main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_);
+// If it is DataEntryType::Empty, then user should assume the search found
+// nothing. Otherwise a valid HashEntry* is returned and can be used to retrieve
+// data from PMem
+HashEntry *HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key,
+                                  bool (*type_matcher)(DataEntryType)) {
+  HashEntry *p_bucket_chain = reinterpret_cast<HashEntry *>(
+      main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_);
   _mm_prefetch(p_bucket_chain, _MM_HINT_T0);
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
@@ -261,13 +263,12 @@ HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, 
       type_matcher((DataEntryType)(p_entry_scanning->header.data_type)) &&
       MatchImpl2(key, *p_entry_scanning))
     return p_entry_scanning;
-      
+
   // Match cache failed, scanning whole bucket
   size_t n_entry_in_bucket_chain = hash_bucket_entries_[hint.bucket];
-  HashEntry* p_bucket_scanning = p_bucket_chain;
+  HashEntry *p_bucket_scanning = p_bucket_chain;
   p_entry_scanning = p_bucket_chain;
-  for (size_t n_entry_scanned = 0; n_entry_scanned < n_entry_in_bucket_chain; )
-  {
+  for (size_t n_entry_scanned = 0; n_entry_scanned < n_entry_in_bucket_chain;) {
     // Scan a HashEntry
     if (p_entry_scanning->header.key_prefix == key_hash_prefix &&
         type_matcher((DataEntryType)(p_entry_scanning->header.data_type)) &&
@@ -278,38 +279,35 @@ HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, 
     // Which can be in current bucket or next bucket
     ++n_entry_scanned;
     ++p_entry_scanning;
-    if(n_entry_scanned % num_entries_per_bucket_ < num_entries_per_bucket_-1)
-    {
+    if (n_entry_scanned % num_entries_per_bucket_ <
+        num_entries_per_bucket_ - 1) {
       // Goto next HashEntry in current bucket
       continue;
-    }
-    else
-    {
-      // Reach last entry of bucket, may jump to next bucket or initialize new bucket
-      // This last Dummy entry does not count as actual entry in HashTable
+    } else {
+      // Reach last entry of bucket, may jump to next bucket or initialize new
+      // bucket This last Dummy entry does not count as actual entry in
+      // HashTable
       --n_entry_scanned;
       p_bucket_scanning = p_entry_scanning->p_next_bucket;
-      if (n_entry_scanned < n_entry_in_bucket_chain)
-      {
+      if (n_entry_scanned < n_entry_in_bucket_chain) {
         // reach end of current bucket, jump to next bucket
         p_entry_scanning = p_bucket_scanning;
-        assert(p_entry_scanning && "Should not have reach the end of bucket chain!");
+        assert(p_entry_scanning &&
+               "Should not have reach the end of bucket chain!");
         continue;
-      }
-      else
-      {
+      } else {
         assert(n_entry_scanned == n_entry_in_bucket_chain);
         // reach end of current bucket and also end of bucket chain
         // If the last HashEntry::p_next_entry == nullptr
         // Then we need to allocates new bucket
-        if (p_entry_scanning->p_next_bucket == nullptr)
-        {
+        if (p_entry_scanning->p_next_bucket == nullptr) {
           auto space = dram_allocator_->Allocate(hash_bucket_size_);
           if (space.size == 0) {
             GlobalLogger.Error("Memory overflow!\n");
             throw std::bad_alloc{};
           }
-          p_bucket_scanning = reinterpret_cast<HashEntry*>(dram_allocator_->offset2addr(space.space_entry.offset));
+          p_bucket_scanning = reinterpret_cast<HashEntry *>(
+              dram_allocator_->offset2addr(space.space_entry.offset));
 
           p_entry_scanning = p_bucket_scanning;
           memset(p_bucket_scanning, 0, hash_bucket_size_);
@@ -318,22 +316,19 @@ HashEntry* HashTable::SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, 
 
           return p_entry_scanning;
         }
-        // New bucket allocated but no HashEntry has been put in. 
+        // New bucket allocated but no HashEntry has been put in.
         // This position can hold a new HashEntry.
-        else
-        {
+        else {
           p_entry_scanning = p_bucket_scanning;
           return p_entry_scanning;
-        }        
-      }        
-    }     
+        }
+      }
+    }
   }
 }
 
-void HashTable::InsertImpl2(HashEntry* const where, HashEntry new_hash_entry)
-{
+void HashTable::InsertImpl2(HashEntry *const where, HashEntry new_hash_entry) {
   *where = new_hash_entry;
 }
-
 
 } // namespace KVDK_NAMESPACE

@@ -43,9 +43,9 @@ public:
 
   // translate block_offset of allocated space to address
   inline char *offset2addr_checked(uint64_t block_offset) {
-    assert(block_offset < max_block_offset_ / num_segment_blocks_ *
-                              num_segment_blocks_ &&
-            "Trying to access invalid offset");
+    assert(block_offset <
+               max_block_offset_ / num_segment_blocks_ * num_segment_blocks_ &&
+           "Trying to access invalid offset");
     return pmem_ + block_offset * block_size_;
   }
 
@@ -61,9 +61,8 @@ public:
   inline uint64_t addr2offset_checked(void *addr) {
     assert(addr >= pmem_);
     assert((static_cast<char *>(addr) - pmem_) / block_size_ <
-                max_block_offset_ / num_segment_blocks_ *
-                    num_segment_blocks_ &&
-            "Trying to create invalid offset");
+               max_block_offset_ / num_segment_blocks_ * num_segment_blocks_ &&
+           "Trying to create invalid offset");
     return ((char *)addr - pmem_) / block_size_;
   }
 

@@ -144,7 +144,9 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
         auto extra_space = thread_cache.free_entry.size - b_size;
         // TODO optimize, do not write PMem
         if (extra_space >= kMinPaddingBlockSize) {
-          DataEntry padding{ 0, static_cast<uint32_t>(extra_space), 0, DataEntryType::Padding, 0, 0 };
+          DataEntry padding{0, static_cast<uint32_t>(extra_space),
+                            0, DataEntryType::Padding,
+                            0, 0};
           pmem_memcpy_persist(
               offset2addr(thread_cache.free_entry.space_entry.offset + b_size),
               &padding, sizeof(DataEntry));

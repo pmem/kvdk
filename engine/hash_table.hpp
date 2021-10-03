@@ -6,8 +6,8 @@
 
 #include <atomic>
 #include <cstdio>
-#include <vector>
 #include <limits>
+#include <vector>
 
 #include "data_entry.hpp"
 #include "dram_allocator.hpp"
@@ -55,45 +55,34 @@ enum class HashOffsetType : uint8_t {
 // Multiple readers may hold the same resource
 // When a writer comes, it may mark the resource as dirty
 // This will preventing any future reader from acquiring the resource
-// 
-class RWMonitor
-{
+//
+class RWMonitor {
 private:
   // _counter_ registers the number of readers
   std::atomic_int16_t _counter_;
   constexpr static int16_t int16_min = std::numeric_limits<std::int16_t>::min();
 
 public:
-  RWMonitor() : _counter_{0}
-  {
-  }
+  RWMonitor() : _counter_{0} {}
 
-  // Add a reader to resource. 
+  // Add a reader to resource.
   // If resource marked dirty, fail and return false.
-  inline bool RegisterReader()
-  {
+  inline bool RegisterReader() {
     std::int16_t old = _counter_.fetch_add(1);
-    if (old < 0)
-    {
+    if (old < 0) {
       UnregisterReader();
       return false;
-    }
-    else
-    {
+    } else {
       return true;
     }
   }
 
   // Remove a reader from resource.
-  inline void UnregisterReader()
-  {
-    _counter_.fetch_sub(1);
-  }
+  inline void UnregisterReader() { _counter_.fetch_sub(1); }
 
   // Mark the resource dirty, prevent further reader from entering.
-  inline void MarkDirty()
-  {
-    if(_counter_.load() >= 0)
+  inline void MarkDirty() {
+    if (_counter_.load() >= 0)
       _counter_.fetch_add(int16_min);
   }
 
@@ -101,34 +90,24 @@ public:
   // and no writer have registered yet.
   // After first writer having registered,
   // Other writers are blocked out.
-  inline bool RegisterWriter()
-  {
+  inline bool RegisterWriter() {
     std::int16_t old = _counter_.load();
-    if (old < 0)
-    {
+    if (old < 0) {
       // Already marked dirty, no more Readers can enter
-      if (old == int16_min)
-      {
+      if (old == int16_min) {
         old = _counter_.fetch_add(1);
-        if (old == int16_min)
-        {
+        if (old == int16_min) {
           // Successfully registered as writer
           return true;
-        }
-        else
-        {
+        } else {
           // Resource acquired by other Writer
           return false;
         }
-      } 
-      else
-      {
+      } else {
         // Resource not released by readers or already acquired by other writer
         return false;
-      }     
-    }
-    else
-    {
+      }
+    } else {
       // Resource not marked dirty first, no writer should register
       return false;
     }
@@ -148,24 +127,23 @@ class UnorderedCollection;
 struct HashEntry {
 public:
   HashEntry() = default;
-  
+
   HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, uint64_t offset,
             HashOffsetType offset_type)
-      : header({key_hash_prefix, data_entry_type, offset_type, HashEntryStatus::Normal}), offset(offset) {}
+      : header({key_hash_prefix, data_entry_type, offset_type,
+                HashEntryStatus::Normal}),
+        offset(offset) {}
 
   HashEntry(uint32_t kp, uint16_t t, uint64_t offset, HashEntryStatus status,
             HashOffsetType offset_type)
       : header({kp, t, offset_type, status}), offset(offset) {}
 
   HashHeader header;
-  union
-  {
+  union {
     uint64_t offset;
-    UnorderedCollection* p_unordered_collection;
-    HashEntry* p_next_bucket;
+    UnorderedCollection *p_unordered_collection;
+    HashEntry *p_next_bucket;
   };
-
-  
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
   static void CopyOffset(HashEntry *dst, HashEntry *src) {
@@ -243,9 +221,10 @@ public:
 
   bool MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry);
 
-  HashEntry* SearchImpl2(KeyHashHint hint, pmem::obj::string_view key, bool (*type_matcher)(DataEntryType));
+  HashEntry *SearchImpl2(KeyHashHint hint, pmem::obj::string_view key,
+                         bool (*type_matcher)(DataEntryType));
 
-  void InsertImpl2(HashEntry* const where, HashEntry new_hash_entry);
+  void InsertImpl2(HashEntry *const where, HashEntry new_hash_entry);
 
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {

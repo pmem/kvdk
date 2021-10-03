@@ -27,51 +27,44 @@ enum DataEntryType : uint16_t {
   DlistTailRecord = 1 << 11,
   DlistRecord = 1 << 12,
 
-  Dummy = 1 << 14,  // For HashEntry used as pointer to next bucket
+  Dummy = 1 << 14, // For HashEntry used as pointer to next bucket
   Padding = 1 << 15,
 };
 
-inline bool isStringDataEntry(DataEntryType type)
-{
+inline bool isStringDataEntry(DataEntryType type) {
   bool ret = false;
   ret = ret || (type == DataEntryType::StringDataRecord);
   ret = ret || (type == DataEntryType::StringDeleteRecord);
   return ret;
 }
 
-inline bool isSortedDataEntry(DataEntryType type)
-{
+inline bool isSortedDataEntry(DataEntryType type) {
   bool ret = false;
   ret = ret || (type == DataEntryType::SortedDataRecord);
   ret = ret || (type == DataEntryType::SortedHeaderRecord);
   return ret;
 }
 
-inline bool isDeletedDataEntry(DataEntryType type)
-{
+inline bool isDeletedDataEntry(DataEntryType type) {
   bool ret = false;
   ret = ret || (type == DataEntryType::StringDeleteRecord);
   ret = ret || (type == DataEntryType::DlistDeleteRecord);
   return ret;
 }
 
-inline bool isDlistRecord(DataEntryType type)
-{
+inline bool isDlistRecord(DataEntryType type) {
   return type == DataEntryType::DlistRecord;
 }
 
-inline bool isDlistDataRecord(DataEntryType type)
-{
+inline bool isDlistDataRecord(DataEntryType type) {
   return type == DataEntryType::DlistDataRecord;
 }
 
-inline bool isDlistDeleteRecord(DataEntryType type)
-{
+inline bool isDlistDeleteRecord(DataEntryType type) {
   return type == DataEntryType::DlistDeleteRecord;
 }
 
-inline bool isDlistDataDeleteRecord(DataEntryType type)
-{
+inline bool isDlistDataDeleteRecord(DataEntryType type) {
   bool ret = false;
   ret = ret || (type == DataEntryType::DlistDeleteRecord);
   ret = ret || (type == DataEntryType::DlistDataRecord);
@@ -100,9 +93,10 @@ struct DataHeader {
 
 // We do not make this virtual because we need to persist it
 struct DataEntry {
-  DataEntry(uint32_t checksum, uint32_t block_size, uint64_t _timestamp, uint16_t type, uint16_t key_size,
-            uint32_t value_size)
-      : header(checksum, block_size), timestamp(_timestamp), type(type), k_size(key_size), v_size(value_size) {}
+  DataEntry(uint32_t checksum, uint32_t block_size, uint64_t _timestamp,
+            uint16_t type, uint16_t key_size, uint32_t value_size)
+      : header(checksum, block_size), timestamp(_timestamp), type(type),
+        k_size(key_size), v_size(value_size) {}
   DataEntry() = default;
   // header, it can be atomically written to pmem
   alignas(8) DataHeader header;
