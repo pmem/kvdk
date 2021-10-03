@@ -382,7 +382,10 @@ protected:
   // unordered_map[collection_name, unordered_multimap[key, value]]
   std::unordered_map<
       std::string, std::unordered_multimap<std::string_view, std::string_view>>
-      possible_kv_pairs;
+      hashes_possible_kv_pairs;
+  std::unordered_map<
+      std::string, std::unordered_multimap<std::string_view, std::string_view>>
+      soreted_sets_possible_kv_pairs;
 
 private:
   std::vector<std::string> _keys_;
@@ -400,33 +403,7 @@ protected:
     configs.pmem_segment_blocks = n_blocks_per_segment;
     configs.background_work_interval = t_background_work_interval;
 
-    _keys_.reserve(n_thread * n_kv_per_thread);
-    _values_.reserve(n_kv_per_thread);
-    grouped_keys.resize(n_thread);
-    grouped_values.resize(n_thread);
-    possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
-    for (size_t tid = 0; tid < n_thread; tid++) {
-      grouped_keys[tid].reserve(n_kv_per_thread);
-      grouped_values[tid].reserve(n_kv_per_thread);
-    }
-
-    std::cout << "[INFO] Generating string for keys and values" << std::endl;
-    for (size_t i = 0; i < n_kv_per_thread; i++) {
-      _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
-      for (size_t tid = 0; tid < n_thread; tid++)
-        _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
-      if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
-        ShowProgress(std::cout, (i + 1), n_kv_per_thread);
-    }
-    std::cout << "[INFO] Generating string_view for keys and values"
-              << std::endl;
-    for (size_t tid = 0; tid < n_thread; tid++) {
-      for (size_t i = 0; i < n_kv_per_thread; i++) {
-        grouped_keys[tid].emplace_back(_keys_[i * n_thread + tid]);
-        grouped_values[tid].emplace_back(_values_[i]);
-      }
-      ShowProgress(std::cout, tid + 1, n_thread);
-    }
+    prepareKVPairs();
 
     status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
@@ -452,7 +429,7 @@ protected:
   }
 
   void HashesAllHSet(std::string const &collection_name) {
-    updatePossibleKVPairs(collection_name, false);
+    updateHashesPossibleKVPairs(collection_name, false);
 
     auto ModifyEngine = [&](int tid) { 
       if (tid == 0)
@@ -469,7 +446,7 @@ protected:
   }
 
   void HashesEvenHSetOddHDelete(std::string const &collection_name) {
-    updatePossibleKVPairs(collection_name, true);
+    updateHashesPossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid) {
       if (tid == 0)
@@ -487,7 +464,7 @@ protected:
   }
 
   void SortedSetsAllSSet(std::string const &collection_name) {
-    updatePossibleKVPairs(collection_name, false);
+    updateSortedSetsPossibleKVPairs(collection_name, false);
 
     auto ModifyEngine = [&](int tid) {
       if (tid == 0)
@@ -504,7 +481,7 @@ protected:
 
   void SortedSetsEvenSSetOddSDelete(
       std::string const &collection_name) {
-    updatePossibleKVPairs(collection_name, true);
+    updateSortedSetsPossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid) {
       if (tid == 0)
@@ -524,13 +501,13 @@ protected:
   void CheckHashesCollection(std::string collection_name) {
     std::cout << "[INFO] Iterate through " << collection_name
               << " to check data." << std::endl;
-    hashesIterateThrough(0, collection_name);
+    hashesIterateThrough(0, collection_name, true);
   }
 
   void CheckSortedSetsCollection(std::string collection_name) {
     std::cout << "[INFO] Iterate through " << collection_name
               << " to check data." << std::endl;
-    sortedSetsIterateThrough(0, collection_name);
+    sortedSetsIterateThrough(0, collection_name, true);
   }
 
 private:
@@ -547,8 +524,7 @@ private:
     std::shuffle(grouped_values[tid].begin(), grouped_values[tid].end(), rand);
   }
 
-  void hashesIterateThrough(uint32_t tid, std::string collection_name) {
-    bool report_progress = (tid == 0);
+  void hashesIterateThrough(uint32_t tid, std::string collection_name, bool report_progress) {
     if (report_progress)
       std::cout << "[INFO] HashesIterateThrough " << collection_name
                 << " with thread " << tid << ". "
@@ -557,12 +533,11 @@ private:
 
     // possible_kv_pairs is copied here
     kvdk_testing::HashesIterateThrough(engine, collection_name,
-                                       possible_kv_pairs[collection_name],
+                                       hashes_possible_kv_pairs[collection_name],
                                        report_progress);
   }
 
-  void sortedSetsIterateThrough(uint32_t tid, std::string collection_name) {
-    bool report_progress = (tid == 0);
+  void sortedSetsIterateThrough(uint32_t tid, std::string collection_name, bool report_progress) {
     if (report_progress)
       std::cout << "[INFO] SortedSetsIterateThrough " << collection_name
                 << " with thread " << tid << ". "
@@ -571,15 +546,15 @@ private:
 
     // possible_kv_pairs is copied here
     kvdk_testing::SortedSetsIterateThrough(engine, collection_name,
-                                           possible_kv_pairs[collection_name],
+                                           soreted_sets_possible_kv_pairs[collection_name],
                                            report_progress);
   }
 
-  void updatePossibleKVPairs(std::string const &collection_name,
+  void updateHashesPossibleKVPairs(std::string const &collection_name,
                              bool odd_indexed_is_deleted) {
-    std::cout << "[INFO] Updating possible_kv_pairs." << std::endl;
+    std::cout << "[INFO] Updating hashes_possible_kv_pairs." << std::endl;
 
-    auto &possible_kvs = possible_kv_pairs[collection_name];
+    auto &possible_kvs = hashes_possible_kv_pairs[collection_name];
     // Erase keys that will be overwritten
     for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
       for (size_t i = 0; i < grouped_keys[tid].size(); i++)
@@ -604,6 +579,68 @@ private:
       ShowProgress(std::cout, tid + 1, grouped_keys.size());
     }
   }
+
+  void updateSortedSetsPossibleKVPairs(std::string const &collection_name,
+                             bool odd_indexed_is_deleted) {
+    std::cout << "[INFO] Updating soreted_sets_possible_kv_pairs." << std::endl;
+
+    auto &possible_kvs = soreted_sets_possible_kv_pairs[collection_name];
+    // Erase keys that will be overwritten
+    for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
+      for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+        possible_kvs.erase(grouped_keys[tid][i]);
+
+      ShowProgress(std::cout, tid + 1, grouped_keys.size());
+    }
+
+    ASSERT_EQ(grouped_keys.size(), grouped_values.size())
+        << "Must have same amount of groups of keys and values!";
+
+    for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
+      ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size())
+          << "Must have same amount of keys and values to form kv-pairs!";
+
+      for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
+        if (odd_indexed_is_deleted && (i % 2 == 1))
+          continue;
+
+        possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+      }
+      ShowProgress(std::cout, tid + 1, grouped_keys.size());
+    }
+  }
+
+  void prepareKVPairs()
+  {
+    _keys_.reserve(n_thread * n_kv_per_thread);
+    _values_.reserve(n_kv_per_thread);
+    grouped_keys.resize(n_thread);
+    grouped_values.resize(n_thread);
+    hashes_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
+    for (size_t tid = 0; tid < n_thread; tid++) {
+      grouped_keys[tid].reserve(n_kv_per_thread);
+      grouped_values[tid].reserve(n_kv_per_thread);
+    }
+
+    std::cout << "[INFO] Generating string for keys and values" << std::endl;
+    for (size_t i = 0; i < n_kv_per_thread; i++) {
+      _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
+      for (size_t tid = 0; tid < n_thread; tid++)
+        _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
+      if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
+        ShowProgress(std::cout, (i + 1), n_kv_per_thread);
+    }
+    std::cout << "[INFO] Generating string_view for keys and values"
+              << std::endl;
+    for (size_t tid = 0; tid < n_thread; tid++) {
+      for (size_t i = 0; i < n_kv_per_thread; i++) {
+        grouped_keys[tid].emplace_back(_keys_[i * n_thread + tid]);
+        grouped_values[tid].emplace_back(_values_[i]);
+      }
+      ShowProgress(std::cout, tid + 1, n_thread);
+    }
+  }
+
 };
 
 TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
