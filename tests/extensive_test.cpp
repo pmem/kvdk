@@ -800,7 +800,7 @@ protected:
   }
 };
 
-TEST_F(EngineHotspotTest, HashesMultipleHotspot) 
+TEST_F(EngineHotspotTest, DISABLED_HashesMultipleHotspot) 
 {
   int n_repeat = 1000;
   std::string global_collection_name{ "GlobalHashesCollection" };
