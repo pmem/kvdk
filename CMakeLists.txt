@@ -10,17 +10,21 @@ include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
 set(OPT "-msse4 -mavx -mavx2 -O2 -fno-omit-frame-pointer -momit-leaf-frame-pointer")
-
 option(DEBUG_CHECK "check connection" OFF)
 if(DEBUG_CHECK)
     ADD_DEFINITIONS(-DDEBUG_CHECK)
 endif()    
+
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     set(FLAGS "-DNDEBUG ${OPT}")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(FLAGS "-g -O0")
-else ()
+elseif (CMAKE_BUILD_TYPE STREQUAL "VTune")
+    set(FLAGS "-g -O2 -shared-libgcc")
+elseif (CMAKE_BUILD_TYPE STREQUAL "Assert")
     set(FLAGS "-g ${OPT}")
+else ()
+    message(FATAL_ERROR "Invalid build type!")
 endif ()
 
 set(CMAKE_C_FLAGS "${FLAGS}")
@@ -40,7 +44,9 @@ set(SOURCES
         engine/thread_manager.cpp
         engine/utils.cpp
         engine/pmem_allocator/free_list.cpp
-        engine/c.cc)
+        engine/c.cc
+        engine/unordered_collection.cpp
+    )
 
 
 # .a library
@@ -71,10 +77,12 @@ if (BUILD_TESTING)
     add_subdirectory(extern/gtest)
     add_executable(dbtest ${TEST_SOURCES})
     target_link_libraries(dbtest PUBLIC engine gtest gmock gtest_main)
+    set(TEST_SOURCES2 tests/extensive_test.cpp)
+    add_executable(dbtest_extensive ${TEST_SOURCES2})
+    target_link_libraries(dbtest_extensive PUBLIC engine gtest gmock gtest_main)
 endif ()
 
 option(BUILD_TUTORIAL "Build the tutorial" ON)
-
 add_subdirectory(examples/tutorial)
 
 add_custom_target(checkers ALL)

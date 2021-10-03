@@ -4,44 +4,51 @@
 
 #pragma once
 
+#include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <deque>
+#include <iostream>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include "atomic"
-#include "cassert"
 #include "data_entry.hpp"
 #include "dram_allocator.hpp"
 #include "hash_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
-#include "list"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "time.h"
-#include "unordered_map"
+#include "unordered_collection.hpp"
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
-public:
   friend class SortedCollectionRebuilder;
+
+public:
   KVEngine();
   ~KVEngine();
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
+
+  // Global Anonymous Collection
   Status Get(const pmem::obj::string_view key, std::string *value) override;
   Status Set(const pmem::obj::string_view key,
              const pmem::obj::string_view value) override;
   Status Delete(const pmem::obj::string_view key) override;
+  Status BatchWrite(const WriteBatch &write_batch) override;
+
+  // Sorted Collection
   Status SGet(const pmem::obj::string_view collection,
               const pmem::obj::string_view user_key,
               std::string *value) override;
@@ -51,9 +58,21 @@ public:
   // TODO: Release delete record and deleted nodes
   Status SDelete(const pmem::obj::string_view collection,
                  const pmem::obj::string_view user_key) override;
-  Status BatchWrite(const WriteBatch &write_batch) override;
   std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) override;
+
+  // Unordered Collection
+  virtual Status HGet(pmem::obj::string_view const collection_name,
+                      pmem::obj::string_view const key,
+                      std::string *value) override;
+  virtual Status HSet(pmem::obj::string_view const collection_name,
+                      pmem::obj::string_view const key,
+                      pmem::obj::string_view const value) override;
+  virtual Status HDelete(pmem::obj::string_view const collection_name,
+                         pmem::obj::string_view const key) override;
+  std::shared_ptr<Iterator>
+  NewUnorderedIterator(pmem::obj::string_view const collection_name) override;
+
   void ReleaseWriteThread() override { write_thread.Release(); }
 
   const std::vector<std::shared_ptr<Skiplist>> &GetSkiplists() {
@@ -113,6 +132,12 @@ private:
                                       init, SortedHeaderRecord);
   }
 
+private:
+  std::shared_ptr<UnorderedCollection>
+  CreateUnorderedCollection(pmem::obj::string_view const collection_name);
+  UnorderedCollection *
+  FindUnorderedCollection(pmem::obj::string_view collection_name);
+
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const pmem::obj::string_view &key,
@@ -152,6 +177,14 @@ private:
 
   Status PersistOrRecoverImmutableConfigs();
 
+  // DataEntryType DlistDataRecord for HSet
+  // and DlistDeleteRecord for HDelete
+  Status HSetOrHDelete(pmem::obj::string_view const collection_name,
+                       pmem::obj::string_view const key,
+                       pmem::obj::string_view const value, DataEntryType type);
+
+  Status RestoreDlistRecords(void *pmp_record, DataEntry data_entry_cached);
+
   // Regularly works excecuted by background thread
   void BackgroundWork();
 
@@ -182,6 +215,20 @@ private:
 
   inline std::string config_file_name() { return dir_ + "configs"; }
 
+  inline bool checkDLDataEntryLinkageLeft(DLDataEntry *pmp_record) {
+    uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
+    DLDataEntry *pmp_prev = reinterpret_cast<DLDataEntry *>(
+        pmem_allocator_->offset2addr_checked(pmp_record->prev));
+    return pmp_prev->next == offset;
+  }
+
+  inline bool checkDLDataEntryLinkageRight(DLDataEntry *pmp_record) {
+    uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
+    DLDataEntry *pmp_next = reinterpret_cast<DLDataEntry *>(
+        pmem_allocator_->offset2addr_checked(pmp_record->next));
+    return pmp_next->prev == offset;
+  }
+
   std::vector<ThreadLocalRes> thread_res_;
 
   // restored kvs in reopen
@@ -194,6 +241,8 @@ private:
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<HashList>> hashlists_;
+  std::vector<std::shared_ptr<UnorderedCollection>>
+      _vec_sp_unordered_collections_;
   std::mutex list_mu_;
 
   std::string dir_;

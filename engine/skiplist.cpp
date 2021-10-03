@@ -357,27 +357,16 @@ void SortedIterator::SeekToFirst() {
   current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
 }
 
-bool SortedIterator::Next() {
-  if (!Valid()) {
-    return false;
-  }
+void SortedIterator::Next() {
   current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
-  return current != nullptr;
 }
 
-bool SortedIterator::Prev() {
-  if (!Valid()) {
-    return false;
-  }
-
+void SortedIterator::Prev() {
   current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
 
   if (current == skiplist_->header()->data_entry) {
     current = nullptr;
-    return false;
   }
-
-  return true;
 }
 
 std::string SortedIterator::Key() {

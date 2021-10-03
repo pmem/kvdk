@@ -270,11 +270,15 @@ public:
 
   virtual void SeekToFirst() override;
 
+  virtual void SeekToLast() {
+    throw std::runtime_error{"SortedIterator::SeekToLast unimplemented yet."};
+  }
+
   virtual bool Valid() override { return (current != nullptr); }
 
-  virtual bool Next() override;
+  virtual void Next() override;
 
-  virtual bool Prev() override;
+  virtual void Prev() override;
 
   virtual std::string Key() override;
 
