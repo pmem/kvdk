@@ -357,30 +357,29 @@ protected:
 
   /// Default configure parameters
   static constexpr bool do_populate_when_initialize = false;
+//// static constexpr size_t sz_pmem_file{256ULL << 30}; 
   // 256GB PMem
-  // static constexpr size_t sz_pmem_file{256ULL << 30}; 
-  static constexpr size_t sz_pmem_file{256ULL << 20}; 
+  static constexpr size_t sz_pmem_file{256ULL << 28}; 
   // Less buckets to increase hash collisions
   static constexpr size_t n_hash_bucket{1ULL << 20}; 
   // Smaller buckets to increase hash collisions
   static constexpr size_t sz_hash_bucket{(3 + 1) * 16}; 
-  // static constexpr size_t n_blocks_per_segment{1ULL << 20};
-  static constexpr size_t n_blocks_per_segment{1ULL << 10};
+  static constexpr size_t n_blocks_per_segment{1ULL << 20};
   static constexpr size_t t_background_work_interval = 1;
 
   /// Test specific parameters
   static constexpr size_t n_thread{48};
+//// static constexpr size_t n_kv_per_thread{2ULL << 20}; 
   // 2M keys per thread, totaling about 100M records
-  // static constexpr size_t n_kv_per_thread{2ULL << 20}; 
-  static constexpr size_t n_kv_per_thread{2ULL << 10}; 
+  static constexpr size_t n_kv_per_thread{2ULL << 14}; 
   // 0-sized key "" is a hotspot, which may reveal many defects
   static constexpr size_t sz_key_min{0}; 
   static constexpr size_t sz_key_max{16};
   static constexpr size_t sz_value_min{0};
   static constexpr size_t sz_value_max{1024};
+//// static constexpr size_t n_reboot{3};
   // Reboots n times to test kv_engine recovery
-  // static constexpr size_t n_reboot{3};
-  static constexpr size_t n_reboot{30};
+  static constexpr size_t n_reboot{1};
 
   std::vector<std::vector<std::string_view>> grouped_keys;
   std::vector<std::vector<std::string_view>> grouped_values;
