@@ -325,8 +325,6 @@ public:
   ///     2) entry emplaced but not linked
   ///     3) entry emplaced and linked in the forward direction
   ///     4) entry emplaced and linked in both directions
-  /// When recovering, just recover head and tail, then iterating through to
-  /// repair
   inline DListIterator EmplaceBetween(
       DListIterator iter_prev, DListIterator iter_next,
       std::uint64_t timestamp, // Timestamp can only be supplied by caller
