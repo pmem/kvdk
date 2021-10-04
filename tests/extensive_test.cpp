@@ -73,7 +73,8 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
       u_iter->SeekToLast();
       std::cout << "[Testing] Iterating backward through Hashes." << std::endl;
     }
-
+      
+    ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs};
     while (u_iter->Valid()) {
       std::string value_got;
       auto key = u_iter->Key();
@@ -89,11 +90,9 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
       possible_kv_pairs.erase(key);
       n_removed_possible_kv_pairs =
           n_total_possible_kv_pairs - possible_kv_pairs.size();
-      if (report_progress &&
-          (n_removed_possible_kv_pairs > old_progress + 1000 ||
-           possible_kv_pairs.empty())) {
-        ShowProgress(std::cout, n_removed_possible_kv_pairs,
-                     n_total_possible_kv_pairs);
+      if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
+          possible_kv_pairs.empty()) {
+        progress_iterating.Update(n_removed_possible_kv_pairs);
         old_progress = n_removed_possible_kv_pairs;
       }
 
@@ -121,11 +120,9 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
         n_removed_possible_kv_pairs =
             n_total_possible_kv_pairs - possible_kv_pairs.size();
 
-        if (report_progress &&
-            (n_removed_possible_kv_pairs > old_progress + 1000 ||
-             possible_kv_pairs.empty())) {
-          ShowProgress(std::cout, n_removed_possible_kv_pairs,
-                       n_total_possible_kv_pairs);
+        if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
+             possible_kv_pairs.empty()) {
+          progress_iterating.Update(n_removed_possible_kv_pairs);
           old_progress = n_removed_possible_kv_pairs;
         }
       }
@@ -156,7 +153,9 @@ static void SortedSetsIterateThrough(
   ASSERT_TRUE(s_iter != nullptr) << "Fail to create UnorderedIterator";
 
   std::string old_key;
-  bool first_read = true;
+  // Set to false after first read, then we can check key ordering
+  bool first_read = true; 
+  ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs, report_progress};
   for (s_iter->SeekToFirst(); s_iter->Valid(); s_iter->Next()) {
     std::string value_got;
     auto key = s_iter->Key();
@@ -179,10 +178,9 @@ static void SortedSetsIterateThrough(
     possible_kv_pairs.erase(key);
     n_removed_possible_kv_pairs =
         n_total_possible_kv_pairs - possible_kv_pairs.size();
-    if (report_progress && (n_removed_possible_kv_pairs > old_progress + 1000 ||
-                            possible_kv_pairs.empty())) {
-      ShowProgress(std::cout, n_removed_possible_kv_pairs,
-                   n_total_possible_kv_pairs);
+    if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
+          possible_kv_pairs.empty()) {
+      progress_iterating.Update(n_removed_possible_kv_pairs);
       old_progress = n_removed_possible_kv_pairs;
     }
   }
@@ -201,11 +199,9 @@ static void SortedSetsIterateThrough(
       n_removed_possible_kv_pairs =
           n_total_possible_kv_pairs - possible_kv_pairs.size();
 
-      if (report_progress &&
-          (n_removed_possible_kv_pairs > old_progress + 1000 ||
-           possible_kv_pairs.empty())) {
-        ShowProgress(std::cout, n_removed_possible_kv_pairs,
-                     n_total_possible_kv_pairs);
+      if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
+          possible_kv_pairs.empty()) {
+        progress_iterating.Update(n_removed_possible_kv_pairs);
         old_progress = n_removed_possible_kv_pairs;
       }
     }
@@ -233,13 +229,16 @@ static void allXSet(
       << "Must have same amount of keys and values to form kv-pairs!";
   kvdk::Status status;
 
-  for (size_t j = 0; j < keys.size(); j++) {
-    status = setter(collection_name, keys[j], values[j]);
-    ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to Set a key " << keys[j]
-                                        << " in collection " << collection_name;
+  {
+    ProgressBar progress_xsetting{std::cout, "", static_cast<std::int64_t>(keys.size()), report_progress};
+    for (size_t j = 0; j < keys.size(); j++) {
+      status = setter(collection_name, keys[j], values[j]);
+      ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to Set a key " << keys[j]
+                                          << " in collection " << collection_name;
 
-    if (report_progress && ((j + 1) % 100 == 0 || j + 1 == keys.size()))
-      ShowProgress(std::cout, j + 1, keys.size());
+      if ((j + 1) % 100 == 0 || j + 1 == keys.size())
+        progress_xsetting.Update(j + 1);
+    }
   }
 }
 
@@ -256,23 +255,26 @@ static void evenXSetOddXDelete(
       << "Must have same amount of keys and values to form kv-pairs!";
   kvdk::Status status;
 
-  for (size_t j = 0; j < keys.size(); j++) {
-    if (j % 2 == 0) {
-      // Even HSet
-      status = setter(collection_name, keys[j], values[j]);
-      ASSERT_EQ(status, kvdk::Status::Ok)
-          << "Fail to Set a key " << keys[j] << " in collection "
-          << collection_name;
-    } else {
-      // Odd HDelete
-      status = getter(collection_name, keys[j]);
-      ASSERT_EQ(status, kvdk::Status::Ok)
-          << "Fail to Delete a key " << keys[j] << " in collection "
-          << collection_name;
-    }
+  {
+    ProgressBar progress_xupdating{std::cout, "", static_cast<std::int64_t>(keys.size()), report_progress };
+    for (size_t j = 0; j < keys.size(); j++) {
+      if (j % 2 == 0) {
+        // Even HSet
+        status = setter(collection_name, keys[j], values[j]);
+        ASSERT_EQ(status, kvdk::Status::Ok)
+            << "Fail to Set a key " << keys[j] << " in collection "
+            << collection_name;
+      } else {
+        // Odd HDelete
+        status = getter(collection_name, keys[j]);
+        ASSERT_EQ(status, kvdk::Status::Ok)
+            << "Fail to Delete a key " << keys[j] << " in collection "
+            << collection_name;
+      }
 
-    if (report_progress && ((j + 1) % 100 == 0 || j + 1 == keys.size()))
-      ShowProgress(std::cout, j + 1, keys.size());
+      if ((j + 1) % 100 == 0 || j + 1 == keys.size())
+        progress_xupdating.Update(j + 1);
+    }
   }
 }
 } // namespace
@@ -356,25 +358,29 @@ protected:
   /// Default configure parameters
   static constexpr bool do_populate_when_initialize = false;
   // 256GB PMem
-  static constexpr size_t sz_pmem_file{256ULL << 30}; 
+  // static constexpr size_t sz_pmem_file{256ULL << 30}; 
+  static constexpr size_t sz_pmem_file{256ULL << 20}; 
   // Less buckets to increase hash collisions
   static constexpr size_t n_hash_bucket{1ULL << 20}; 
   // Smaller buckets to increase hash collisions
   static constexpr size_t sz_hash_bucket{(3 + 1) * 16}; 
-  static constexpr size_t n_blocks_per_segment{1ULL << 20};
+  // static constexpr size_t n_blocks_per_segment{1ULL << 20};
+  static constexpr size_t n_blocks_per_segment{1ULL << 10};
   static constexpr size_t t_background_work_interval = 1;
 
   /// Test specific parameters
   static constexpr size_t n_thread{48};
   // 2M keys per thread, totaling about 100M records
-  static constexpr size_t n_kv_per_thread{2ULL << 20}; 
+  // static constexpr size_t n_kv_per_thread{2ULL << 20}; 
+  static constexpr size_t n_kv_per_thread{2ULL << 10}; 
   // 0-sized key "" is a hotspot, which may reveal many defects
   static constexpr size_t sz_key_min{0}; 
   static constexpr size_t sz_key_max{16};
   static constexpr size_t sz_value_min{0};
   static constexpr size_t sz_value_max{1024};
   // Reboots n times to test kv_engine recovery
-  static constexpr size_t n_reboot{10};
+  // static constexpr size_t n_reboot{3};
+  static constexpr size_t n_reboot{30};
 
   std::vector<std::vector<std::string_view>> grouped_keys;
   std::vector<std::vector<std::string_view>> grouped_values;
@@ -555,28 +561,31 @@ private:
     std::cout << "[Testing] Updating hashes_possible_kv_pairs." << std::endl;
 
     auto &possible_kvs = hashes_possible_kv_pairs[collection_name];
-    // Erase keys that will be overwritten
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
-      for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-        possible_kvs.erase(grouped_keys[tid][i]);
-
-      ShowProgress(std::cout, tid + 1, grouped_keys.size());
+    {
+      // Erase keys that will be overwritten
+      ProgressBar progress_erasing{std::cout, "", static_cast<std::int64_t>(grouped_keys.size()), true};
+      for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+          possible_kvs.erase(grouped_keys[tid][i]);
+        progress_erasing.Update(tid + 1);
+      }
     }
-
     ASSERT_EQ(grouped_keys.size(), grouped_values.size())
         << "Must have same amount of groups of keys and values!";
 
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
-      ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size())
-          << "Must have same amount of keys and values to form kv-pairs!";
+    {
+      ProgressBar progress_updating{std::cout, "", static_cast<std::int64_t>(grouped_keys.size()), true};
+      for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
+        ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size())
+            << "Must have same amount of keys and values to form kv-pairs!";
 
-      for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
-        if (odd_indexed_is_deleted && (i % 2 == 1))
-          continue;
-
-        possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
+          if (odd_indexed_is_deleted && (i % 2 == 1))
+            continue;
+          possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+        }
+        progress_updating.Update(tid + 1);
       }
-      ShowProgress(std::cout, tid + 1, grouped_keys.size());
     }
   }
 
@@ -585,28 +594,31 @@ private:
     std::cout << "[Testing] Updating soreted_sets_possible_kv_pairs." << std::endl;
 
     auto &possible_kvs = soreted_sets_possible_kv_pairs[collection_name];
-    // Erase keys that will be overwritten
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
-      for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-        possible_kvs.erase(grouped_keys[tid][i]);
-
-      ShowProgress(std::cout, tid + 1, grouped_keys.size());
+    {
+      // Erase keys that will be overwritten
+      ProgressBar progress_erasing{std::cout, "", static_cast<std::int64_t>(grouped_keys.size()), true};
+      for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+          possible_kvs.erase(grouped_keys[tid][i]);
+        progress_erasing.Update(tid + 1);
+      }
     }
 
     ASSERT_EQ(grouped_keys.size(), grouped_values.size())
         << "Must have same amount of groups of keys and values!";
 
-    for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
-      ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size())
-          << "Must have same amount of keys and values to form kv-pairs!";
-
-      for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
-        if (odd_indexed_is_deleted && (i % 2 == 1))
-          continue;
-
-        possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+    {
+      ProgressBar progress_updating{std::cout, "", static_cast<std::int64_t>(grouped_keys.size()), true};
+      for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
+        ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size())
+            << "Must have same amount of keys and values to form kv-pairs!";
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
+          if (odd_indexed_is_deleted && (i % 2 == 1))
+            continue;
+          possible_kvs.emplace(grouped_keys[tid][i], grouped_values[tid][i]);
+        }
+        progress_updating.Update(tid + 1);
       }
-      ShowProgress(std::cout, tid + 1, grouped_keys.size());
     }
   }
 
@@ -623,24 +635,30 @@ private:
     }
 
     std::cout << "[Testing] Generating string for keys and values" << std::endl;
-    for (size_t i = 0; i < n_kv_per_thread; i++) {
-      _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
-      for (size_t tid = 0; tid < n_thread; tid++)
-        _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
-      if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
-        ShowProgress(std::cout, (i + 1), n_kv_per_thread);
+    {
+      ProgressBar progress_gen_kv{std::cout, "", n_kv_per_thread, true};
+      for (size_t i = 0; i < n_kv_per_thread; i++) {
+        _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
+        for (size_t tid = 0; tid < n_thread; tid++)
+          _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
+
+        if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
+          progress_gen_kv.Update(i + 1);
+      }
     }
     std::cout << "[Testing] Generating string_view for keys and values"
               << std::endl;
-    for (size_t tid = 0; tid < n_thread; tid++) {
-      for (size_t i = 0; i < n_kv_per_thread; i++) {
-        grouped_keys[tid].emplace_back(_keys_[i * n_thread + tid]);
-        grouped_values[tid].emplace_back(_values_[i]);
+    {
+      ProgressBar progress_gen_kv_view{std::cout, "", n_thread, true};
+      for (size_t tid = 0; tid < n_thread; tid++) {
+        for (size_t i = 0; i < n_kv_per_thread; i++) {
+          grouped_keys[tid].emplace_back(_keys_[i * n_thread + tid]);
+          grouped_values[tid].emplace_back(_values_[i]);
+        }
+        progress_gen_kv_view.Update(tid + 1);
       }
-      ShowProgress(std::cout, tid + 1, n_thread);
     }
   }
-
 };
 
 TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
@@ -653,7 +671,6 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
             << " times to test recovery." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
-
     RebootDB();
     CheckHashesCollection(global_collection_name);
   }
@@ -837,9 +854,12 @@ TEST_F(EngineHotspotTest, DISABLED_HashesMultipleHotspot) {
   };
 
   std::cout << "[Testing] Writing and Reading ..." << std::endl;
-  for (size_t i = 0; i < n_repeat; i++) {
-    LaunchNThreads(n_thread, EvenWriteOddRead);
-    ShowProgress(std::cout, i + 1, n_repeat);
+  {
+    ProgressBar progress_rw{std::cout, "", n_repeat, true};
+    for (size_t i = 0; i < n_repeat; i++) {
+      LaunchNThreads(n_thread, EvenWriteOddRead);
+      progress_rw.Update(i + 1);
+    }
   }
 }
 
