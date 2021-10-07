@@ -186,7 +186,7 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
   assert(write_thread.id >= 0);
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset,
-                           (type == StringDeleteRecord || type == DlistDeleteRecord)
+                           (type == StringDeleteRecord)
                                ? HashEntryStatus::DirtyReusable
                                : HashEntryStatus::Normal,
                            offset_type);

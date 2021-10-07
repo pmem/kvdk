@@ -1669,10 +1669,6 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         {
           DLDataEntry* pmp_new_record = 
             reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(emplace_result.offset_new));
-          pmem_allocator_->DelayFree(
-            SizedSpaceEntry{emplace_result.offset_new, 
-                            pmp_new_record->header.b_size, 
-                            pmp_new_record->timestamp});
         }
         return Status::Ok;
       }
