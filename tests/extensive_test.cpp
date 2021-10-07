@@ -660,7 +660,7 @@ private:
   }
 };
 
-TEST_F(EngineExtensiveTest, DISABLED_HashCollectionHSetOnly) {
+TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
 
   HashesAllHSet(global_collection_name);
@@ -675,7 +675,7 @@ TEST_F(EngineExtensiveTest, DISABLED_HashCollectionHSetOnly) {
   }
 }
 
-TEST_F(EngineExtensiveTest, DISABLED_HashCollectionHSetAndHDelete) {
+TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) {
   std::string global_collection_name{"GlobalCollection"};
 
   HashesEvenHSetOddHDelete(global_collection_name);
@@ -770,7 +770,7 @@ protected:
   static constexpr size_t sz_value_min{0};
   static constexpr size_t sz_value_max{10};
   // Repeat n times to put all keys and values to engine
-  static constexpr size_t n_repeat{10};
+  static constexpr size_t n_repeat{2};
 
   std::vector<std::vector<std::string_view>> grouped_keys;
   std::vector<std::vector<std::string_view>> grouped_values;
