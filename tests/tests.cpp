@@ -186,7 +186,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestFreeList) {
+TEST_F(EngineBasicTest, DISABLED_TestFreeList) {
   // TODO: Add more cases
   configs.pmem_segment_blocks = 4 * kMinPaddingBlockSize;
   configs.max_write_threads = 1;
@@ -1072,7 +1072,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestStringHotspot) {
+TEST_F(EngineBasicTest, DISABLED_TestStringHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
   configs.max_write_threads = n_thread_writing;
@@ -1124,7 +1124,7 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestSortedHotspot) {
+TEST_F(EngineBasicTest, DISABLED_TestSortedHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
   configs.max_write_threads = n_thread_writing;
