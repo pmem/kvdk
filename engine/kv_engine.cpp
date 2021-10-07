@@ -1628,7 +1628,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
             assert(false && "Old record has newer timestamp than newly inserted record!");
             throw std::runtime_error("Old record has newer timestamp than newly inserted record!");
           }
-          
+
           p_collection->Deallocate(pmp_old_record);
         }
         break;
@@ -1664,7 +1664,16 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         hash_table_->Insert(hint_record, p_hash_entry_record, type,
                             emplace_result.offset_new,
                             HashOffsetType::UnorderedCollectionElement);
-
+        
+        if (type == DataEntryType::DlistDeleteRecord)
+        {
+          DLDataEntry* pmp_new_record = 
+            reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(emplace_result.offset_new));
+          pmem_allocator_->DelayFree(
+            SizedSpaceEntry{emplace_result.offset_new, 
+                            pmp_new_record->header.b_size, 
+                            pmp_new_record->timestamp});
+        }
         return Status::Ok;
       }
     }
