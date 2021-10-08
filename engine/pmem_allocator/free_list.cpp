@@ -12,6 +12,10 @@ namespace KVDK_NAMESPACE {
 const uint32_t kMinMovableEntries = 8;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
+  assert(offset < map_.size());
+  if (length == 0) {
+    return;
+  }
   auto cur = offset;
   SpinMutex *last_lock = &map_spins_[cur / lock_granularity_];
   std::lock_guard<SpinMutex> lg(*last_lock);
@@ -36,6 +40,10 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
 }
 
 uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
+  assert(offset < map_.size());
+  if (length == 0) {
+    return 0;
+  }
   uint64_t res = 0;
   uint64_t cur = offset;
   std::lock_guard<SpinMutex> start_lg(map_spins_[cur / lock_granularity_]);
@@ -66,8 +74,12 @@ uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
 
 uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
                             uint64_t min_merge_length) {
+  assert(offset < map_.size());
+  if (offset + min_merge_length > map_.size()) {
+    return 0;
+  }
   uint64_t cur = offset;
-  uint64_t end_offset = offset + max_merge_length;
+  uint64_t end_offset = std::min(offset + max_merge_length, map_.size());
   SpinMutex *last_lock = &map_spins_[cur / lock_granularity_];
   uint64_t merged = 0;
   std::lock_guard<SpinMutex> lg(*last_lock);
@@ -221,12 +233,14 @@ void Freelist::MergeAndCheckTSInPool() {
 }
 
 void Freelist::DelayPush(const SizedSpaceEntry &entry) {
+  assert(entry.size > 0);
   auto &thread_cache = thread_cache_[write_thread.id];
   std::lock_guard<SpinMutex> lg(thread_cache.spins.back());
   thread_cache.delay_freed_entries.emplace_back(entry);
 }
 
 void Freelist::Push(const SizedSpaceEntry &entry) {
+  assert(entry.size > 0);
   space_map_->Set(entry.space_entry.offset, entry.size);
   auto &thread_cache = thread_cache_[write_thread.id];
   if (entry.size >= thread_cache.active_entries.size()) {
