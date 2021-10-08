@@ -67,10 +67,10 @@ class ProgressBar {
 private:
   std::ostream &_out_stream_;
   std::string _tag_;
-  std::int64_t _total_progress_;
-  std::int64_t _current_progress_;
-  std::int64_t _bar_length_;
-  std::int64_t _step_;
+  size_t _total_progress_;
+  size_t _current_progress_;
+  size_t _bar_length_;
+  size_t _step_;
   bool _enabled_;
 
   bool _finished_{false};
@@ -79,8 +79,8 @@ private:
   static constexpr char _symbol_fill_{'-'};
 
 public:
-  explicit ProgressBar(std::ostream &out, std::string tag, std::int64_t total_progress,
-                       bool enabled = true, std::int64_t bar_length = 50)
+  explicit ProgressBar(std::ostream &out, std::string tag, size_t total_progress,
+                       bool enabled = true, size_t bar_length = 50)
       : _out_stream_{out}, _tag_{tag}, _total_progress_{total_progress},
         _current_progress_{0}, _bar_length_{bar_length}, 
         _step_{total_progress / bar_length}, _enabled_{ enabled } {
@@ -97,7 +97,7 @@ public:
     showProgress();
   }
 
-  void Update(std::int64_t current_progress) {
+  void Update(size_t current_progress) {
     assert(!_finished_ && "Trying to update a completed progress!");
     assert(_current_progress_ < current_progress &&
            current_progress <= _total_progress_);
@@ -129,7 +129,7 @@ private:
                  << "[";
 
     {
-      std::int64_t n_step_done = _current_progress_ / _step_;
+      size_t n_step_done = _current_progress_ / _step_;
       for (size_t i = 0; i < n_step_done; i++)
         _out_stream_ << _symbol_done_;
       for (size_t i = 0; i < _bar_length_ - n_step_done; i++)
