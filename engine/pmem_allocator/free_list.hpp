@@ -45,7 +45,7 @@ private:
         : token_(size | (is_start ? (1 << 7) : 0)) {}
     uint8_t Size() { return token_ & INT8_MAX; }
     void Clear() { token_ = 0; }
-    bool Empty() { return token_ == 0; }
+    bool Empty() { return Size() == 0; }
     bool IsStart() { return token_ & (1 << 7); }
     void UnStart() { token_ &= INT8_MAX; }
 
