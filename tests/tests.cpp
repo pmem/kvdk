@@ -318,25 +318,41 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
 
   auto IteratingThrough = [&](uint32_t id) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
-    std::vector<int> n_entries(num_threads, 0);
+    std::vector<int> n_entries_scan(num_threads, 0);
 
     auto t_iter = engine->NewSortedIterator(thread_local_skiplist);
     ASSERT_TRUE(t_iter != nullptr);
     t_iter->SeekToFirst();
     if (t_iter->Valid()) {
-      ++n_entries[id];
+      ++n_entries_scan[id];
       std::string prev = t_iter->Key();
       t_iter->Next();
       while (t_iter->Valid()) {
-        ++n_entries[id];
+        ++n_entries_scan[id];
         std::string k = t_iter->Key();
         t_iter->Next();
         ASSERT_EQ(true, k.compare(prev) > 0);
         prev = k;
       }
     }
-    ASSERT_EQ(n_local_entries[id], n_entries[id]);
-    n_entries[id] = 0;
+    ASSERT_EQ(n_local_entries[id], n_entries_scan[id]);
+    n_entries_scan[id] = 0;
+
+    t_iter->SeekToLast();
+    if (t_iter->Valid()) {
+      ++n_entries_scan[id];
+      std::string next = t_iter->Key();
+      t_iter->Prev();
+      while (t_iter->Valid()) {
+        ++n_entries_scan[id];
+        std::string k = t_iter->Key();
+        t_iter->Prev();
+        ASSERT_EQ(true, k.compare(next) < 0);
+        next = k;
+      }
+    }
+    ASSERT_EQ(n_local_entries[id], n_entries_scan[id]);
+    n_entries_scan[id] = 0;
   };
 
   LaunchNThreads(num_threads, SSetSGetSDelete);
@@ -425,6 +441,22 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
         iter->Next();
         ASSERT_EQ(true, k.compare(prev) > 0);
         prev = k;
+      }
+    }
+    ASSERT_EQ(n_global_entries, n_entries[id]);
+    n_entries[id] = 0;
+
+    iter->SeekToLast();
+    if (iter->Valid()) {
+      ++n_entries[id];
+      std::string next = iter->Key();
+      iter->Prev();
+      while (iter->Valid()) {
+        ++n_entries[id];
+        std::string k = iter->Key();
+        iter->Prev();
+        ASSERT_EQ(true, k.compare(next) < 0);
+        next = k;
       }
     }
     ASSERT_EQ(n_global_entries, n_entries[id]);
@@ -579,6 +611,8 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   delete engine;
   std::vector<int> opt_restore_skiplists{0, 1};
   for (auto is_opt : opt_restore_skiplists) {
+    GlobalLogger.Info("Restore with opt_large_sorted_collection_resotre: %d\n",
+                      is_opt);
     configs.max_write_threads = num_threads;
     configs.opt_large_sorted_collection_restore = is_opt;
     // reopen and restore engine and try gets
@@ -610,32 +644,73 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 
       auto iter = engine->NewSortedIterator(t_skiplist);
       ASSERT_TRUE(iter != nullptr);
+      int data_entries_scan = 0;
       iter->SeekToFirst();
-      std::string prev = "";
-      int cnt = 0;
+      if (iter->Valid()) {
+        data_entries_scan++;
+        std::string prev = iter->Key();
+        iter->Next();
+        while (iter->Valid()) {
+          data_entries_scan++;
+          std::string k = iter->Key();
+          iter->Next();
+          ASSERT_TRUE(k.compare(prev) > 0);
+          prev = k;
+        }
+      }
+      ASSERT_EQ(data_entries_scan, count / 2);
+
+      data_entries_scan = 0;
+      iter->SeekToLast();
+      if (iter->Valid()) {
+        data_entries_scan++;
+        std::string next = iter->Key();
+        iter->Prev();
+        while (iter->Valid()) {
+          data_entries_scan++;
+          std::string k = iter->Key();
+          iter->Prev();
+          ASSERT_TRUE(k.compare(next) < 0);
+          next = k;
+        }
+      }
+      ASSERT_EQ(data_entries_scan, count / 2);
+    }
+
+    int data_entries_scan = 0;
+    auto iter = engine->NewSortedIterator(overall_skiplist);
+    ASSERT_TRUE(iter != nullptr);
+    iter->SeekToFirst();
+    if (iter->Valid()) {
+      std::string prev = iter->Key();
+      data_entries_scan++;
+      iter->Next();
       while (iter->Valid()) {
-        cnt++;
+        data_entries_scan++;
         std::string k = iter->Key();
         iter->Next();
         ASSERT_TRUE(k.compare(prev) > 0);
         prev = k;
       }
-      ASSERT_EQ(cnt, count / 2);
     }
+    ASSERT_EQ(data_entries_scan, (count / 2) * num_threads);
+    data_entries_scan = 0;
 
-    auto iter = engine->NewSortedIterator(overall_skiplist);
-    ASSERT_TRUE(iter != nullptr);
-    iter->SeekToFirst();
-    std::string prev = "";
-    int cnt = 0;
-    while (iter->Valid()) {
-      cnt++;
-      std::string k = iter->Key();
-      iter->Next();
-      ASSERT_TRUE(k.compare(prev) > 0);
-      prev = k;
+    iter->SeekToLast();
+    if (iter->Valid()) {
+      std::string next = iter->Key();
+      data_entries_scan++;
+      iter->Prev();
+      while (iter->Valid()) {
+        data_entries_scan++;
+        std::string k = iter->Key();
+        iter->Prev();
+        ASSERT_TRUE(k.compare(next) < 0);
+        next = k;
+      }
     }
-    ASSERT_EQ(cnt, (count / 2) * num_threads);
+    ASSERT_EQ(data_entries_scan, (count / 2) * num_threads);
+    data_entries_scan = 0;
 
     delete engine;
   }

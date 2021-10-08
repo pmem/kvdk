@@ -270,7 +270,11 @@ public:
 
   virtual void SeekToFirst() override;
 
-  virtual bool Valid() override { return (current != nullptr); }
+  virtual void SeekToLast() override;
+
+  virtual bool Valid() override {
+    return (current != nullptr && current != skiplist_->header()->data_entry);
+  }
 
   virtual bool Next() override;
 

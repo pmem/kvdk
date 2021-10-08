@@ -506,7 +506,8 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
             pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
         DLDataEntry data_entry(0, sized_space_entry.size, get_timestamp(),
                                header_type, collection.size(), 8,
-                               kNullPmemOffset, kNullPmemOffset);
+                               sized_space_entry.space_entry.offset,
+                               sized_space_entry.space_entry.offset);
         uint64_t id = list_id_.fetch_add(1);
         PersistDataEntry(block_base, &data_entry, collection,
                          pmem::obj::string_view((char *)&id, 8), header_type);

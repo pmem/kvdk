@@ -14,6 +14,8 @@ public:
 
   virtual void SeekToFirst() = 0;
 
+  virtual void SeekToLast() = 0;
+
   virtual bool Valid() = 0;
 
   virtual bool Next() = 0;
