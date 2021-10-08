@@ -374,9 +374,8 @@ bool KVEngine::CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry) {
     return false;
   }
   if (next) {
-    if (next->prev != offset) {
-      pmem_memcpy_persist(&next->prev, &offset, 8);
-    }
+    next->prev = offset;
+    pmem_persist(&next->prev, 8);
   }
   return true;
 }
@@ -679,14 +678,16 @@ Status KVEngine::Recovery() {
 
 Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
                              std::string *value, uint16_t type_mask) {
-  std::unique_ptr<DataEntry> data_entry_meta(
-      type_mask & DLDataEntryType ? new DLDataEntry : new DataEntry);
+  // We need enough space for copy data entry metadata, DLDataEntry is the
+  // largest now
+  char buff[sizeof(DLDataEntry)];
+  DataEntry *data_entry_meta = (DataEntry *)buff;
   while (1) {
     HashEntry hash_entry;
     HashEntry *entry_base = nullptr;
     bool is_found =
         hash_table_->Search(hash_table_->GetHint(key), key, type_mask,
-                            &hash_entry, data_entry_meta.get(), &entry_base,
+                            &hash_entry, data_entry_meta, &entry_base,
                             HashTable::SearchPurpose::Read) == Status::Ok;
     if (!is_found || (hash_entry.header.data_type & DeleteDataEntryType)) {
       return Status::NotFound;

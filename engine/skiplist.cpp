@@ -309,11 +309,12 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
   assert(is_update || prev->next == pmem_allocator_->addr2offset(next));
   // For repair in recovery due to crashes during pointers changing, we should
   // first link inserting entry to prev's next
-  pmem_memcpy_persist(&insert_splice->prev_data_entry->next,
-                      &inserting_entry_offset, 8);
+  prev->next = inserting_entry_offset;
+  pmem_persist(&prev->next, 8);
   if (next != nullptr) {
     assert(is_update || next->prev == pmem_allocator_->addr2offset(prev));
-    pmem_memcpy_persist(&next->prev, &inserting_entry_offset, 8);
+    next->prev = inserting_entry_offset;
+    pmem_persist(&next->prev, 8);
   }
 
   // new dram node

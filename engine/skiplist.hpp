@@ -54,9 +54,10 @@ public:
     } else {
       size = sizeof(SkiplistNode) + 8 * height;
     }
+    SkiplistNode *node = nullptr;
     void *space = malloc(size);
-    SkiplistNode *node = (SkiplistNode *)((char *)space + 8 * height);
-    if (node != nullptr) {
+    if (space != nullptr) {
+      node = (SkiplistNode *)((char *)space + 8 * height);
       node->data_entry = entry_on_pmem;
       node->height = height;
       // make sure this will be linked to skiplist at all the height after
