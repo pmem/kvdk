@@ -161,7 +161,7 @@ public:
   /// Caller supplied key and value are stored in head and tail nodes
   DLinkedList(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
               std::uint64_t timestamp, pmem::obj::string_view const key,
-              pmem::obj::string_view const value) try : _p_pmem_allocator_ {
+              pmem::obj::string_view const value) : _p_pmem_allocator_ {
     sp_pmem_allocator.get()
   }
   , _pmp_head_{nullptr}, _pmp_tail_{nullptr} {
@@ -222,11 +222,6 @@ public:
       _pmp_head_ = static_cast<DLDataEntry *>(pmp_head);
       _pmp_tail_ = static_cast<DLDataEntry *>(pmp_tail);
     }
-  }
-  catch (std::bad_alloc const &ex) {
-    std::cerr << ex.what() << std::endl;
-    std::cerr << "Fail to create DLinkedList object!" << std::endl;
-    throw;
   }
 
   /// Create DLinkedList from existing head and tail node. Used for recovery.
@@ -329,7 +324,7 @@ public:
       DListIterator iter_prev, DListIterator iter_next,
       std::uint64_t timestamp, // Timestamp can only be supplied by caller
       pmem::obj::string_view const key, pmem::obj::string_view const value,
-      DataEntryType type) try {
+      DataEntryType type) {
     if (type != DataEntryType::DlistDataRecord &&
         type != DataEntryType::DlistDeleteRecord) {
       throw std::runtime_error{"Trying to emplace invalid Record!"};
@@ -369,11 +364,7 @@ public:
                 PMEM_F_MEM_NONTEMPORAL);
 
     return DListIterator{_p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
-  } catch (std::bad_alloc const &ex) {
-    std::cerr << ex.what() << std::endl;
-    std::cerr << "Fail to emplace DLinkedList node!" << std::endl;
-    throw;
-  }
+  } 
 
 private:
   /// Persist a DLDataEntry.
