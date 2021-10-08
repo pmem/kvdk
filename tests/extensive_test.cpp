@@ -703,7 +703,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) {
   }
 }
 
-TEST_F(EngineExtensiveTest, DISABLED_SortedCollectionSSetOnly) {
+TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
 
   SortedSetsAllSSet(global_collection_name);
@@ -719,7 +719,7 @@ TEST_F(EngineExtensiveTest, DISABLED_SortedCollectionSSetOnly) {
   }
 }
 
-TEST_F(EngineExtensiveTest, DISABLED_DSortedCollectionSSetAndSDelete) {
+TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
 
   SortedSetsEvenSSetOddSDelete(global_collection_name);
@@ -934,7 +934,7 @@ private:
   }
 };
 
-TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
+TEST_F(EngineHotspotTest, DISABLED_HashesMultipleHotspot) {
   std::string global_collection_name{"GlobalHashesCollection"};
   for (size_t i = 0; i < n_repeat; i++)
   {
