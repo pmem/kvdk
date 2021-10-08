@@ -680,7 +680,7 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
                              std::string *value, uint16_t type_mask) {
   // We need enough space for copy data entry metadata, DLDataEntry is the
   // largest now
-  thread_local char buff[sizeof(DLDataEntry)];
+  char buff[sizeof(DLDataEntry)];
   DataEntry *data_entry_meta = (DataEntry *)buff;
   while (1) {
     HashEntry hash_entry;
