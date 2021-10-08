@@ -375,19 +375,16 @@ private:
       DLDataEntry const &entry, // Complete DLDataEntry supplied by caller
       pmem::obj::string_view const key, pmem::obj::string_view const value) {
     // Persist key and value
-    size_t sz_entry = sizeof(DLDataEntry);
     char *pmp_dest = static_cast<char *>(pmp);
-    pmp_dest += sz_entry;
+    pmem_memcpy(pmp_dest, &entry, sizeof(DLDataEntry), PMEM_F_MEM_NONTEMPORAL);
+    pmp_dest += sizeof(DLDataEntry);
     pmem_memcpy(pmp_dest, key.data(), key.size(),
                 PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
     pmp_dest += key.size();
     pmem_memcpy(pmp_dest, value.data(), value.size(),
                 PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
-    pmem_flush(pmp, key.size() + value.size());
+    pmem_flush(pmp, sizeof(DLDataEntry) + key.size() + value.size());
     pmem_drain();
-
-    // Persist DLDataEntry last
-    pmem_memcpy(pmp, &entry, sz_entry, PMEM_F_MEM_NONTEMPORAL);
   }
 
   /// Compute Checksum of the to-be-emplaced record
