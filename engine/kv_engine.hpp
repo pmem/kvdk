@@ -242,7 +242,7 @@ private:
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<HashList>> hashlists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
-      _vec_sp_unordered_collections_;
+      vec_sp_unordered_collections_;
   std::mutex list_mu_;
 
   std::string dir_;

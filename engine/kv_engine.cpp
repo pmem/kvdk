@@ -1530,7 +1530,7 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
             std::shared_ptr<UnorderedCollection> sp_collection =
                 CreateUnorderedCollection(collection_name);
             p_collection = sp_collection.get();
-            _vec_sp_unordered_collections_.push_back(sp_collection);
+            vec_sp_unordered_collections_.push_back(sp_collection);
 
             HashEntry hash_entry_collection;
             HashEntry *p_hash_entry_collection = nullptr;
@@ -1710,7 +1710,7 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
               pmem_allocator_, hash_table_,
               pmp_record);
       p_collection = sp_collection.get();
-      _vec_sp_unordered_collections_.emplace_back(sp_collection);
+      vec_sp_unordered_collections_.emplace_back(sp_collection);
     }
 
     std::string collection_name = p_collection->Name();

@@ -155,13 +155,6 @@ public:
   void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
               uint64_t offset, HashOffsetType offset_type);
 
-  bool MatchImpl2(pmem::obj::string_view key, HashEntry matching_entry);
-
-  HashEntry *SearchImpl2(KeyHashHint hint, pmem::obj::string_view key,
-                         bool (*type_matcher)(DataEntryType));
-
-  void InsertImpl2(HashEntry *const where, HashEntry new_hash_entry);
-
 private:
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
     return key_hash_value & (hash_bucket_num_ - 1);
