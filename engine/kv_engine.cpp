@@ -128,7 +128,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
-  bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
+  // bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
   return s;
 }
 
@@ -1664,12 +1664,6 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         hash_table_->Insert(hint_record, p_hash_entry_record, type,
                             emplace_result.offset_new,
                             HashOffsetType::UnorderedCollectionElement);
-        
-        if (type == DataEntryType::DlistDeleteRecord)
-        {
-          DLDataEntry* pmp_new_record = 
-            reinterpret_cast<DLDataEntry*>(pmem_allocator_->offset2addr_checked(emplace_result.offset_new));
-        }
         return Status::Ok;
       }
     }

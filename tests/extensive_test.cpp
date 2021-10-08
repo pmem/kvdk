@@ -113,11 +113,12 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
         ASSERT_EQ(status, kvdk::Status::NotFound)
             << "Should not have found a key of a entry that cannot be "
                "iterated.\n";
+        /// No DelayFree
         // For now, HDelete will call DelayFree on a DlistDeleteRecord,
         // which will mark its HashEntry as DirtyReusable.
         // Thus a DlistDeleteRecord may disappear and this assertion will fail.
-        // ASSERT_EQ(value_got, "") << "HGet a DlistDeleteRecord should have set "
-        //                             "value_got as empty string\n";
+        ASSERT_EQ(value_got, "") << "HGet a DlistDeleteRecord should have set "
+                                    "value_got as empty string\n";
 
         iter = possible_kv_pairs.erase(iter);
         n_removed_possible_kv_pairs =
