@@ -96,6 +96,7 @@ Status Skiplist::Rebuild() {
     uint64_t next_offset = splice.prev_data_entry->next;
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
     if (next_data_entry == header()->data_entry) {
       break;
     }
@@ -162,6 +163,7 @@ Status Skiplist::CheckConnection(int height) {
     uint64_t next_offset = cur_data_entry->next;
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
     if (next_data_entry == header()->data_entry) {
       if (next_node != nullptr) {
         GlobalLogger.Error("when next pmem data entry is skiplist header, the "
@@ -462,6 +464,7 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
     uint64_t next_offset = v->data_entry->next;
     DLDataEntry *next_data_entry =
         (DLDataEntry *)engine->pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
     if (next_data_entry->type != SortedHeaderRecord &&
         v->Next(height) == nullptr) {
       SkiplistNode *next_node = nullptr;
@@ -532,6 +535,7 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
     uint64_t next_offset = visit_data_entry->next;
     DLDataEntry *next_data_entry =
         (DLDataEntry *)engine->pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
     if (next_data_entry->type == SortedHeaderRecord) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
