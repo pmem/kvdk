@@ -336,23 +336,21 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
       }
     }
     ASSERT_EQ(n_local_entries[id], n_entries_scan[id]);
-    n_entries_scan[id] = 0;
 
     t_iter->SeekToLast();
     if (t_iter->Valid()) {
-      ++n_entries_scan[id];
+      --n_entries_scan[id];
       std::string next = t_iter->Key();
       t_iter->Prev();
       while (t_iter->Valid()) {
-        ++n_entries_scan[id];
+        --n_entries_scan[id];
         std::string k = t_iter->Key();
         t_iter->Prev();
         ASSERT_EQ(true, k.compare(next) < 0);
         next = k;
       }
     }
-    ASSERT_EQ(n_local_entries[id], n_entries_scan[id]);
-    n_entries_scan[id] = 0;
+    ASSERT_EQ(n_entries_scan[id], 0);
   };
 
   LaunchNThreads(num_threads, SSetSGetSDelete);
@@ -444,23 +442,21 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
       }
     }
     ASSERT_EQ(n_global_entries, n_entries[id]);
-    n_entries[id] = 0;
 
     iter->SeekToLast();
     if (iter->Valid()) {
-      ++n_entries[id];
+      --n_entries[id];
       std::string next = iter->Key();
       iter->Prev();
       while (iter->Valid()) {
-        ++n_entries[id];
+        --n_entries[id];
         std::string k = iter->Key();
         iter->Prev();
         ASSERT_EQ(true, k.compare(next) < 0);
         next = k;
       }
     }
-    ASSERT_EQ(n_global_entries, n_entries[id]);
-    n_entries[id] = 0;
+    ASSERT_EQ(n_entries[id], 0);
   };
 
   auto SeekToDeleted = [&](uint32_t id) {
@@ -660,21 +656,20 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       }
       ASSERT_EQ(data_entries_scan, count / 2);
 
-      data_entries_scan = 0;
       iter->SeekToLast();
       if (iter->Valid()) {
-        data_entries_scan++;
+        data_entries_scan--;
         std::string next = iter->Key();
         iter->Prev();
         while (iter->Valid()) {
-          data_entries_scan++;
+          data_entries_scan--;
           std::string k = iter->Key();
           iter->Prev();
           ASSERT_TRUE(k.compare(next) < 0);
           next = k;
         }
       }
-      ASSERT_EQ(data_entries_scan, count / 2);
+      ASSERT_EQ(data_entries_scan, 0);
     }
 
     int data_entries_scan = 0;
@@ -694,23 +689,21 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       }
     }
     ASSERT_EQ(data_entries_scan, (count / 2) * num_threads);
-    data_entries_scan = 0;
 
     iter->SeekToLast();
     if (iter->Valid()) {
       std::string next = iter->Key();
-      data_entries_scan++;
+      data_entries_scan--;
       iter->Prev();
       while (iter->Valid()) {
-        data_entries_scan++;
+        data_entries_scan--;
         std::string k = iter->Key();
         iter->Prev();
         ASSERT_TRUE(k.compare(next) < 0);
         next = k;
       }
     }
-    ASSERT_EQ(data_entries_scan, (count / 2) * num_threads);
-    data_entries_scan = 0;
+    ASSERT_EQ(data_entries_scan, 0);
 
     delete engine;
   }
