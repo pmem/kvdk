@@ -677,7 +677,7 @@ private:
   }
 };
 
-TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
+TEST_F(EngineExtensiveTest, HashesHSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -693,7 +693,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetOnly) {
   }
 }
 
-TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) {
+TEST_F(EngineExtensiveTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -718,7 +718,7 @@ TEST_F(EngineExtensiveTest, HashCollectionHSetAndHDelete) {
   }
 }
 
-TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly) {
+TEST_F(EngineExtensiveTest, SortedSetsSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -735,7 +735,7 @@ TEST_F(EngineExtensiveTest, SortedCollectionSSetOnly) {
   }
 }
 
-TEST_F(EngineExtensiveTest, SortedCollectionSSetAndSDelete) {
+TEST_F(EngineExtensiveTest, SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
