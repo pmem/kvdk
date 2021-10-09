@@ -1560,10 +1560,9 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
   {
     auto internal_key = p_collection->GetInternalKey(key);
     HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-
+  
     int n_try = 0;
     while (true) {
-
       ++n_try;
 
       std::unique_lock<SpinMutex> lock_record{*hint_record.spin};

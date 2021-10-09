@@ -768,23 +768,21 @@ private:
     do_populate_when_initialize = false;
     // 16GB PMem
     sz_pmem_file = (16ULL << 30); 
-    // Much Less buckets to increase hash collisions
-    n_hash_bucket = (1ULL << 10); 
-    // Very Small buckets to increase hash collisions
-    sz_hash_bucket = (1 + 1) * 16; 
+    // Less buckets to increase hash collisions
+    n_hash_bucket = (1ULL << 20); 
+    // Small buckets to increase hash collisions
+    sz_hash_bucket = (3 + 1) * 16; 
     n_blocks_per_segment = (1ULL << 20);
     t_background_work_interval = 1;
 
     /// Test specific parameters
     n_thread = 48;
-    // 2M keys per thread, totaling about 100M records
-    // But since available keys are {"", "a", ..., "z"}, 
-    // there should be no more than 27 keys.
-    n_kv_per_thread = (2ULL << 20); 
+    // 1M keys per thread, totaling about 50M writes
+    n_kv_per_thread = (1ULL << 20); 
     // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
     sz_key_min = 0; 
-    sz_key_max = 1;
+    sz_key_max = 4;
     sz_value_min = 0;
     sz_value_max = 1024;
   }
