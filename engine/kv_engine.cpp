@@ -373,7 +373,8 @@ bool KVEngine::CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry) {
   if (prev->next != offset) {
     return false;
   }
-  if (next) {
+  // Repair un-finished write
+  if (next && next->prev != offset) {
     next->prev = offset;
     pmem_persist(&next->prev, 8);
   }
@@ -503,11 +504,14 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
         }
         char *block_base =
             pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
-        DLDataEntry data_entry(0, sized_space_entry.size, get_timestamp(),
-                               header_type, collection.size(), 8,
-                               kNullPmemOffset, kNullPmemOffset);
+        // PMem level of skiplist is circular, so the next and prev pointers of
+        // header point to itself
+        DLDataEntry header_data_entry(
+            0, sized_space_entry.size, get_timestamp(), header_type,
+            collection.size(), 8, sized_space_entry.space_entry.offset,
+            sized_space_entry.space_entry.offset);
         uint64_t id = list_id_.fetch_add(1);
-        PersistDataEntry(block_base, &data_entry, collection,
+        PersistDataEntry(block_base, &header_data_entry, collection,
                          pmem::obj::string_view((char *)&id, 8), header_type);
         {
           std::lock_guard<std::mutex> lg(list_mu_);
@@ -637,7 +641,7 @@ Status KVEngine::Recovery() {
   if (s != Status::Ok) {
     return s;
   }
-  GlobalLogger.Info("Restoring data:iterated %lu records\n", restored_.load());
+
   std::vector<std::future<Status>> fs;
   for (uint32_t i = 0; i < configs_.max_write_threads; i++) {
     fs.push_back(std::async(&KVEngine::RestoreData, this, i));
@@ -650,8 +654,6 @@ Status KVEngine::Recovery() {
     }
   }
   fs.clear();
-  GlobalLogger.Info("Restoring skiplist:iterated %lu records\n",
-                    restored_.load());
 
   // restore skiplist by two optimization strategy
   s = sorted_rebuilder_.Rebuild(this);
