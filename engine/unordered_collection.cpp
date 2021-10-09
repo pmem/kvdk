@@ -175,28 +175,29 @@ EmplaceReturn UnorderedCollection::_EmplaceBetween_(
   SpinMutex *spin2 = _GetMutex_(internal_key);
   SpinMutex *spin3 = _GetMutex_(iter_next->Key());
 
-  std::unique_lock<SpinMutex> lock1;
-  std::unique_lock<SpinMutex> lock2;
-  std::unique_lock<SpinMutex> lock3;
+  using lock_t = std::unique_lock<SpinMutex>;
+  lock_t lock1;
+  lock_t lock2;
+  lock_t lock3;
+  std::vector<lock_t> locks;
 
   if (spin1 != spin) {
-    lock1 = std::unique_lock<SpinMutex>{*spin1, std::try_to_lock};
-    if (!lock1.owns_lock()) {
-      return EmplaceReturn{};
-    }
+    locks.emplace_back(*spin1, std::defer_lock);
   }
   if (spin2 != spin && spin2 != spin1) {
-    lock2 = std::unique_lock<SpinMutex>{*spin2, std::try_to_lock};
-    if (!lock2.owns_lock()) {
-      return EmplaceReturn{};
-    }
+    locks.emplace_back(*spin2, std::defer_lock);
   }
   if (spin3 != spin && spin3 != spin1 && spin3 != spin2) {
-    lock3 = std::unique_lock<SpinMutex>{*spin3, std::try_to_lock};
-    if (!lock3.owns_lock()) {
-      return EmplaceReturn{};
-    }
+    locks.emplace_back(*spin3, std::defer_lock);
   }
+  std::sort(locks.begin(), locks.end(), 
+            [](lock_t const& lhs, lock_t const& rhs)
+            { return lhs.mutex() < rhs.mutex(); });
+  bool lock_success = true;
+  for (size_t i = 0; i < locks.size(); i++)
+    lock_success = lock_success && locks[i].try_lock();
+  if (!lock_success)
+    return EmplaceReturn{};
 
   if (!is_swap_emplace) {
     bool has_other_thread_modified = false;
