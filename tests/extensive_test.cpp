@@ -776,13 +776,14 @@ private:
     t_background_work_interval = 1;
 
     /// Test specific parameters
-    n_thread = 48;
+    // Too many threads will make this test too slow
+    n_thread = 4;
     // 1M keys per thread, totaling about 50M writes
     n_kv_per_thread = (1ULL << 20); 
     // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
     sz_key_min = 0; 
-    sz_key_max = 4;
+    sz_key_max = 1;
     sz_value_min = 0;
     sz_value_max = 1024;
   }
