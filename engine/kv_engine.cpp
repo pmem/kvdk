@@ -94,30 +94,53 @@ void KVEngine::BackgroundWork() {
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
   write_thread.id = 0;
-  dir_ = format_dir_path(name);
-  pending_batch_dir_ = dir_ + "pending_batch_files/";
-  int res = create_dir_if_missing(dir_);
-  if (res != 0) {
-    GlobalLogger.Error("Create engine dir %s error\n", dir_.c_str());
-    return Status::IOError;
+  Status s;
+  if (!configs.use_devdax_mode) {
+    dir_ = format_dir_path(name);
+    pending_batch_dir_ = dir_ + "pending_batch_files/";
+    int res = create_dir_if_missing(dir_);
+    if (res != 0) {
+      GlobalLogger.Error("Create engine dir %s error\n", dir_.c_str());
+      return Status::IOError;
+    }
+
+    res = create_dir_if_missing(pending_batch_dir_);
+    if (res != 0) {
+      GlobalLogger.Error("Create pending batch files dir %s error\n",
+                         pending_batch_dir_.c_str());
+      return Status::IOError;
+    }
+
+    db_file_ = db_file_name();
+    configs_ = configs;
+
+  } else {
+    configs_ = configs;
+    db_file_ = name;
+
+    // The devdax mode need to execute the shell scripts/init_devdax.sh,
+    // then a fsdax model namespace will be created and the
+    // configs_.devdax_meta_dir will be created on a xfs file system with a
+    // fsdax namespace
+    dir_ = format_dir_path(configs_.devdax_meta_dir);
+    pending_batch_dir_ = dir_ + "pending_batch_files/";
+
+    int res = create_dir_if_missing(pending_batch_dir_);
+    if (res != 0) {
+      GlobalLogger.Error("Create pending batch files dir %s error\n",
+                         pending_batch_dir_.c_str());
+      return Status::IOError;
+    }
   }
 
-  res = create_dir_if_missing(pending_batch_dir_);
-  if (res != 0) {
-    GlobalLogger.Error("Create pending batch files dir %s error\n",
-                       pending_batch_dir_.c_str());
-    return Status::IOError;
-  }
-
-  db_file_ = db_file_name();
-  configs_ = configs;
-  Status s = PersistOrRecoverImmutableConfigs();
+  s = PersistOrRecoverImmutableConfigs();
   if (s != Status::Ok) {
     return s;
   }
-  pmem_allocator_.reset(new PMEMAllocator(
-      db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
-      configs_.pmem_block_size, configs_.max_write_threads));
+  pmem_allocator_.reset(
+      new PMEMAllocator(db_file_, configs_.pmem_file_size,
+                        configs_.pmem_segment_blocks, configs_.pmem_block_size,
+                        configs_.max_write_threads, configs_.use_devdax_mode));
 
   thread_res_.resize(configs_.max_write_threads);
   thread_manager_.reset(new ThreadManager(configs_.max_write_threads));
@@ -777,8 +800,15 @@ inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
         entry_with_data->Checksum(configs_.pmem_block_size);
   }
   if (with_buffer) {
-    pmem_memcpy(block_base, data_cpy_target,
-                entry_size + key.size() + value.size(), PMEM_F_MEM_NONTEMPORAL);
+    if (configs_.use_devdax_mode) {
+      pmem_memcpy_persist(block_base, data_cpy_target,
+                          entry_size + key.size() + value.size());
+    } else {
+      pmem_memcpy(block_base, data_cpy_target,
+                  entry_size + key.size() + value.size(),
+                  PMEM_F_MEM_NONTEMPORAL);
+    }
+
   } else {
     pmem_flush(block_base, entry_size + key.size() + value.size());
   }
