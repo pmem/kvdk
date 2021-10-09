@@ -10,7 +10,7 @@ t_duration = 30                         # For operations other than fill
 populate_if_fill = 1                    # For fill only
 sz_pmem_file = 384 * 1024 * 1024 * 1024 # we need enough space to test insert
 sz_fill_data = 96 * 1024 * 1024 * 1024
-n_collection = 96
+n_collection = 16
 
 path_pmem = "/mnt/pmem0/kvdk_string"
 

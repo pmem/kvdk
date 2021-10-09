@@ -804,6 +804,20 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
   CheckHashesCollection(global_collection_name);
 }
 
+TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
+  std::string global_collection_name{"GlobalHashesCollection"};
+  
+  SortedSetsEvenSSetOddSDelete(global_collection_name);
+  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  CheckSortedSetsCollection(global_collection_name);
+
+  RebootDB();
+
+  SortedSetsEvenSSetOddSDelete(global_collection_name);
+  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  CheckSortedSetsCollection(global_collection_name);
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
