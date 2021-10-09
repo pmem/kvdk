@@ -3,7 +3,7 @@ import bench_sorted
 import bench_hashes
 
 n_thread = 48
-sz_value = 120
+sz_value = 200                          # About 256B/kv
 t_duration = 30                         # For operations other than fill
 populate_if_fill = 1                    # For fill only
 sz_pmem_file = 384 * 1024 * 1024 * 1024 # we need enough space to test insert
