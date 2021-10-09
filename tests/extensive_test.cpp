@@ -351,7 +351,7 @@ EvenSSetOddSDelete(kvdk::Engine *engine, std::string collection_name,
 
 } // namespace kvdk_testing
 
-class EngineExtensiveTest : public testing::Test {
+class EngineTestBase : public testing::Test {
 protected:
   kvdk::Engine *engine = nullptr;
   kvdk::Configs configs;
@@ -396,30 +396,8 @@ private:
   std::default_random_engine rand{42};
 
 protected:
-  virtual void SetUpParameters()
-  {
-    /// Default configure parameters
-    do_populate_when_initialize = false;
-    // 256GB PMem
-    sz_pmem_file = (256ULL << 30); 
-    // Less buckets to increase hash collisions
-    n_hash_bucket = (1ULL << 20); 
-    // Smaller buckets to increase hash collisions
-    sz_hash_bucket = (3 + 1) * 16; 
-    n_blocks_per_segment = (1ULL << 20);
-    t_background_work_interval = 1;
-
-    /// Test specific parameters
-    n_thread = 48;
-    // 2M keys per thread, totaling about 100M records
-    n_kv_per_thread = (2ULL << 20); 
-    // 0-sized key "" is a hotspot, which may reveal many defects
-    // These parameters set the range of sizes of keys and values
-    sz_key_min = 0; 
-    sz_key_max = 16;
-    sz_value_min = 0;
-    sz_value_max = 1024;
-  }
+  /// Other tests should overload this function to setup parameters
+  virtual void SetUpParameters() = 0;
 
   virtual void SetUp() override {
     purgeDB();
@@ -677,7 +655,35 @@ private:
   }
 };
 
-TEST_F(EngineExtensiveTest, HashesHSetOnly) {
+class EngineStressTest : public EngineTestBase {
+protected:
+  virtual void SetUpParameters()
+  {
+    /// Default configure parameters
+    do_populate_when_initialize = false;
+    // 256GB PMem
+    sz_pmem_file = (256ULL << 30); 
+    // Less buckets to increase hash collisions
+    n_hash_bucket = (1ULL << 20); 
+    // Smaller buckets to increase hash collisions
+    sz_hash_bucket = (3 + 1) * 16; 
+    n_blocks_per_segment = (1ULL << 20);
+    t_background_work_interval = 1;
+
+    /// Test specific parameters
+    n_thread = 48;
+    // 2M keys per thread, totaling about 100M records
+    n_kv_per_thread = (2ULL << 20); 
+    // 0-sized key "" is a hotspot, which may reveal many defects
+    // These parameters set the range of sizes of keys and values
+    sz_key_min = 0; 
+    sz_key_max = 16;
+    sz_value_min = 0;
+    sz_value_max = 1024;
+  }
+};
+
+TEST_F(EngineStressTest, HashesHSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -693,7 +699,7 @@ TEST_F(EngineExtensiveTest, HashesHSetOnly) {
   }
 }
 
-TEST_F(EngineExtensiveTest, HashesHSetAndHDelete) {
+TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -718,7 +724,7 @@ TEST_F(EngineExtensiveTest, HashesHSetAndHDelete) {
   }
 }
 
-TEST_F(EngineExtensiveTest, SortedSetsSSetOnly) {
+TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -735,7 +741,7 @@ TEST_F(EngineExtensiveTest, SortedSetsSSetOnly) {
   }
 }
 
-TEST_F(EngineExtensiveTest, SortedSetsSSetAndSDelete) {
+TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -760,7 +766,7 @@ TEST_F(EngineExtensiveTest, SortedSetsSSetAndSDelete) {
   }
 }
 
-class EngineHotspotTest : public EngineExtensiveTest {
+class EngineHotspotTest : public EngineTestBase {
 private:
   virtual void SetUpParameters()
   {
