@@ -28,7 +28,7 @@ def Confirm(dir):
 
 
 if __name__ == "__main__":
-    Confirm(path)
+   # Confirm(path)
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
         num = data_size // (vs + 8)
@@ -53,7 +53,7 @@ if __name__ == "__main__":
             cmd = "{0} {1} > {2}".format(exec, new_para, report)
             print(cmd)
             os.system(cmd)
-
+            '''
             # random read
             new_para = para + " -fill=0 -type=string -read_ratio=1 -key_distribution=random"
             report = report_path + "string_vs{}_ramdom_read_thread{}".format(vs, benchmark_threads)
@@ -177,3 +177,4 @@ if __name__ == "__main__":
             cmd = "{0} {1} > {2}".format(exec, new_para, report)
             print(cmd)
             os.system(cmd)
+            ‘’‘
