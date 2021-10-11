@@ -421,10 +421,10 @@ bool KVEngine::CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry) {
   if (prev->next != offset) {
     return false;
   }
-  if (next) {
-    if (next->prev != offset) {
-      pmem_memcpy_persist(&next->prev, &offset, 8);
-    }
+  // Repair un-finished write
+  if (next && next->prev != offset) {
+    next->prev = offset;
+    pmem_persist(&next->prev, 8);
   }
   return true;
 }
@@ -550,13 +550,16 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
         if (sized_space_entry.size == 0) {
           return Status::PmemOverflow;
         }
-        char *block_base = pmem_allocator_->offset2addr_checked(
+        char *block_base =
+            pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
+        // PMem level of skiplist is circular, so the next and prev pointers of
+        // header point to itself
+        DLDataEntry header_data_entry(
+            0, sized_space_entry.size, get_timestamp(), header_type,
+            collection.size(), 8, sized_space_entry.space_entry.offset,
             sized_space_entry.space_entry.offset);
-        DLDataEntry data_entry(0, sized_space_entry.size, get_timestamp(),
-                               header_type, collection.size(), 8,
-                               kNullPmemOffset, kNullPmemOffset);
         uint64_t id = list_id_.fetch_add(1);
-        PersistDataEntry(block_base, &data_entry, collection,
+        PersistDataEntry(block_base, &header_data_entry, collection,
                          pmem::obj::string_view((char *)&id, 8), header_type);
         {
           std::lock_guard<std::mutex> lg(list_mu_);
@@ -730,14 +733,16 @@ Status KVEngine::Recovery() {
 
 Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
                              std::string *value, uint16_t type_mask) {
-  std::unique_ptr<DataEntry> data_entry_meta(
-      type_mask & DLDataEntryType ? new DLDataEntry : new DataEntry);
+  // We need enough space for copy data entry metadata, DLDataEntry is the
+  // largest now
+  char buff[sizeof(DLDataEntry)];
+  DataEntry *data_entry_meta = (DataEntry *)buff;
   while (1) {
     HashEntry hash_entry;
     HashEntry *entry_base = nullptr;
     bool is_found =
         hash_table_->Search(hash_table_->GetHint(key), key, type_mask,
-                            &hash_entry, data_entry_meta.get(), &entry_base,
+                            &hash_entry, data_entry_meta, &entry_base,
                             HashTable::SearchPurpose::Read) == Status::Ok;
     if (!is_found || (hash_entry.header.data_type & DeleteDataEntryType)) {
       return Status::NotFound;

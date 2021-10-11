@@ -96,7 +96,7 @@ private:
     char padding[64 - sizeof(SizedSpaceEntry) * 2];
   };
 
-  void FetchSegmentSpace(SizedSpaceEntry *segment_entry);
+  void AllocateSegmentSpace(SizedSpaceEntry *segment_entry);
 
   void init_data_size_2_block_size() {
     data_size_2_block_size_.resize(4096);

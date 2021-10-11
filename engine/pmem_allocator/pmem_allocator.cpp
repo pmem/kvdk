@@ -11,10 +11,16 @@
 namespace KVDK_NAMESPACE {
 
 void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
+  if (entry.size == 0) {
+    return;
+  }
   free_list_->Push(entry);
 }
 
 void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
+  if (entry.size == 0) {
+    return;
+  }
   free_list_->DelayPush(entry);
 }
 
@@ -106,7 +112,7 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
   return true;
 }
 
-void PMEMAllocator::FetchSegmentSpace(SizedSpaceEntry *segment_entry) {
+void PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
   uint64_t offset;
   while (1) {
     offset = offset_head_.load(std::memory_order_relaxed);
@@ -174,7 +180,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
 
     // allocate a new segment, add remainning space of the old one
     // to the free list
-    FetchSegmentSpace(&thread_cache.segment_entry);
+    AllocateSegmentSpace(&thread_cache.segment_entry);
 
     if (thread_cache.segment_entry.size < b_size) {
       GlobalLogger.Error("PMem OVERFLOW!\n");

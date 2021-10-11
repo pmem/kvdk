@@ -94,13 +94,13 @@ Status Skiplist::Rebuild() {
   while (1) {
     HashEntry *entry_base = nullptr;
     uint64_t next_offset = splice.prev_data_entry->next;
-    if (next_offset == kNullPmemOffset) {
-      break;
-    }
-    // TODO: check failure
-
     DLDataEntry *next_data_entry =
         (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
+    if (next_data_entry == header()->data_entry) {
+      break;
+    }
+
     pmem::obj::string_view key = next_data_entry->Key();
     Status s = hash_table_->Search(hash_table_->GetHint(key), key,
                                    SortedDataRecord, &hash_entry, &data_entry,
@@ -129,24 +129,24 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *result_splice) {
   header_->SeekNode(key, header_->Height(), 1, result_splice);
   assert(result_splice->prevs[1] != nullptr);
   DLDataEntry *prev_data_entry = result_splice->prevs[1]->data_entry;
+  DLDataEntry *next_data_entry = nullptr;
   while (1) {
-    uint64_t next_data_entry_offset = prev_data_entry->next;
-    if (next_data_entry_offset == kNullPmemOffset) {
-      result_splice->prev_data_entry = prev_data_entry;
-      result_splice->next_data_entry = nullptr;
+    next_data_entry =
+        (DLDataEntry *)pmem_allocator_->offset2addr(prev_data_entry->next);
+    assert(next_data_entry != nullptr);
+    if (next_data_entry == header()->data_entry) {
       break;
     }
-    DLDataEntry *next_data_entry =
-        (DLDataEntry *)pmem_allocator_->offset2addr(next_data_entry_offset);
+
     int cmp = compare_string_view(key, UserKey(next_data_entry->Key()));
     if (cmp > 0) {
       prev_data_entry = next_data_entry;
     } else {
-      result_splice->next_data_entry = next_data_entry;
-      result_splice->prev_data_entry = prev_data_entry;
       break;
     }
   }
+  result_splice->next_data_entry = next_data_entry;
+  result_splice->prev_data_entry = prev_data_entry;
 }
 
 uint64_t SkiplistNode::GetSkipListId() {
@@ -161,9 +161,12 @@ Status Skiplist::CheckConnection(int height) {
   while (true) {
     SkiplistNode *next_node = cur_node->Next(height).RawPointer();
     uint64_t next_offset = cur_data_entry->next;
-    if (next_offset == kNullPmemOffset) {
+    DLDataEntry *next_data_entry =
+        (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
+    if (next_data_entry == header()->data_entry) {
       if (next_node != nullptr) {
-        GlobalLogger.Error("when next offset is kNullPmemOffset, the "
+        GlobalLogger.Error("when next pmem data entry is skiplist header, the "
                            "next node should be nullptr\n");
         return Status::Abort;
       }
@@ -172,8 +175,6 @@ Status Skiplist::CheckConnection(int height) {
     HashEntry hash_entry;
     DLDataEntry data_entry;
     HashEntry *entry_base = nullptr;
-    DLDataEntry *next_data_entry =
-        (DLDataEntry *)pmem_allocator_->offset2addr(next_offset);
     pmem::obj::string_view key = next_data_entry->Key();
     Status s = hash_table_->Search(hash_table_->GetHint(key), key,
                                    SortedDataRecord, &hash_entry, &data_entry,
@@ -241,11 +242,10 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
   if (prev_hint.spin != hint.spin) {
     spins.push_back(prev_hint.spin);
   }
-  if (next != nullptr) {
-    auto next_hint = hash_table_->GetHint(next->Key());
-    if (next_hint.spin != hint.spin && next_hint.spin != prev_hint.spin) {
-      spins.push_back(next_hint.spin);
-    }
+  assert(next != nullptr);
+  auto next_hint = hash_table_->GetHint(next->Key());
+  if (next_hint.spin != hint.spin && next_hint.spin != prev_hint.spin) {
+    spins.push_back(next_hint.spin);
   }
   std::sort(spins.begin(), spins.end(), cmp);
   for (int i = 0; i < spins.size(); i++) {
@@ -267,7 +267,7 @@ bool Skiplist::FindAndLockWritePos(Splice *splice,
   // Check the list has changed before we successfully locked
   // For update, we do not need to check because the key is already locked
   if (!updated_data_entry &&
-      (prev->next != next_offset || (next && next->prev != prev_offset))) {
+      (prev->next != next_offset || next->prev != prev_offset)) {
     for (auto &m : spins) {
       m->unlock();
     }
@@ -287,11 +287,10 @@ void Skiplist::DeleteDataEntry(DLDataEntry *deleting_entry,
   // first unlink deleting entry from prev's next
   prev->next = pmem_allocator_->addr2offset(next);
   pmem_persist(&prev->next, 8);
-  if (next) {
-    assert(next->prev == pmem_allocator_->addr2offset(deleting_entry));
-    next->prev = pmem_allocator_->addr2offset(prev);
-    pmem_persist(&next->prev, 8);
-  }
+  assert(next != nullptr);
+  assert(next->prev == pmem_allocator_->addr2offset(deleting_entry));
+  next->prev = pmem_allocator_->addr2offset(prev);
+  pmem_persist(&next->prev, 8);
 
   if (dram_node) {
     dram_node->MarkAsRemoved();
@@ -309,12 +308,12 @@ Skiplist::InsertDataEntry(Splice *insert_splice, DLDataEntry *inserting_entry,
   assert(is_update || prev->next == pmem_allocator_->addr2offset(next));
   // For repair in recovery due to crashes during pointers changing, we should
   // first link inserting entry to prev's next
-  pmem_memcpy_persist(&insert_splice->prev_data_entry->next,
-                      &inserting_entry_offset, 8);
-  if (next != nullptr) {
-    assert(is_update || next->prev == pmem_allocator_->addr2offset(prev));
-    pmem_memcpy_persist(&next->prev, &inserting_entry_offset, 8);
-  }
+  prev->next = inserting_entry_offset;
+  pmem_persist(&prev->next, 8);
+  assert(next != nullptr);
+  assert(is_update || next->prev == pmem_allocator_->addr2offset(prev));
+  next->prev = inserting_entry_offset;
+  pmem_persist(&next->prev, 8);
 
   // new dram node
   if (!is_update) {
@@ -357,16 +356,23 @@ void SortedIterator::SeekToFirst() {
   current = (DLDataEntry *)pmem_allocator_->offset2addr(first);
 }
 
+void SortedIterator::SeekToLast() {
+  uint64_t last = skiplist_->header()->data_entry->prev;
+  current = (DLDataEntry *)pmem_allocator_->offset2addr(last);
+}
+
 void SortedIterator::Next() {
+  if (!Valid()) {
+    return;
+  }
   current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
 }
 
 void SortedIterator::Prev() {
-  current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
-
-  if (current == skiplist_->header()->data_entry) {
-    current = nullptr;
+  if(!Valid()){
+    return;
   }
+  current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
 }
 
 std::string SortedIterator::Key() {
@@ -452,17 +458,19 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
     if (v->Height() < height) {
       continue;
     }
-    if (v->data_entry->next != kNullPmemOffset && v->Next(height) == nullptr) {
+    uint64_t next_offset = v->data_entry->next;
+    DLDataEntry *next_data_entry =
+        (DLDataEntry *)engine->pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
+    if (next_data_entry->type != SortedHeaderRecord &&
+        v->Next(height) == nullptr) {
       SkiplistNode *next_node = nullptr;
       // if height == 1, need to scan pmem data_entry
       if (height == 1) {
-        uint64_t next_offset = v->data_entry->next;
-        while (next_offset != kNullPmemOffset) {
+        while (next_data_entry->type != SortedHeaderRecord) {
           HashEntry hash_entry;
           DLDataEntry data_entry;
           HashEntry *entry_base = nullptr;
-          DLDataEntry *next_data_entry =
-              (DLDataEntry *)engine->pmem_allocator_->offset2addr(next_offset);
           pmem::obj::string_view key = next_data_entry->Key();
           Status s = engine->hash_table_->Search(
               engine->hash_table_->GetHint(key), key, SortedDataEntryType,
@@ -471,6 +479,8 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
           assert(s == Status::Ok &&
                  "It should be in hash_table when reseting entries_offset map");
           next_offset = next_data_entry->next;
+          next_data_entry =
+              (DLDataEntry *)engine->pmem_allocator_->offset2addr(next_offset);
 
           if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
             next_node = ((Skiplist *)hash_entry.offset)->header();
@@ -520,15 +530,15 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
   DLDataEntry *visit_data_entry = cur_node->data_entry;
   while (true) {
     uint64_t next_offset = visit_data_entry->next;
-    if (next_offset == kNullPmemOffset) {
+    DLDataEntry *next_data_entry =
+        (DLDataEntry *)engine->pmem_allocator_->offset2addr(next_offset);
+    assert(next_data_entry != nullptr);
+    if (next_data_entry->type == SortedHeaderRecord) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
     }
     // continue to build connention
     if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
-      DLDataEntry *next_data_entry =
-          (DLDataEntry *)engine->pmem_allocator_->offset2addr(next_offset);
-
       thread_local HashEntry hash_entry;
       thread_local DLDataEntry data_entry;
       HashEntry *entry_base = nullptr;
