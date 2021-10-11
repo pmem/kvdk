@@ -390,7 +390,7 @@ protected:
       hashes_possible_kv_pairs;
   std::unordered_map<
       std::string, std::unordered_multimap<std::string_view, std::string_view>>
-      soreted_sets_possible_kv_pairs;
+      sorted_sets_possible_kv_pairs;
 
 private:
   std::vector<std::string> _keys_;
@@ -558,7 +558,7 @@ private:
     // possible_kv_pairs is copied here
     kvdk_testing::SortedSetsIterateThrough(
         engine, collection_name,
-        soreted_sets_possible_kv_pairs[collection_name], report_progress);
+        sorted_sets_possible_kv_pairs[collection_name], report_progress);
   }
 
   void updateHashesPossibleKVPairs(std::string const &collection_name,
@@ -571,10 +571,10 @@ private:
 
   void updateSortedSetsPossibleKVPairs(std::string const &collection_name,
                                        bool odd_indexed_is_deleted) {
-    std::cout << "[Testing] Updating soreted_sets_possible_kv_pairs."
+    std::cout << "[Testing] Updating sorted_sets_possible_kv_pairs."
               << std::endl;
 
-    auto &possible_kvs = soreted_sets_possible_kv_pairs[collection_name];
+    auto &possible_kvs = sorted_sets_possible_kv_pairs[collection_name];
     updatePossibleKVPairs(possible_kvs, odd_indexed_is_deleted);
   }
 
@@ -624,7 +624,7 @@ private:
     grouped_keys.resize(n_thread);
     grouped_values.resize(n_thread);
     hashes_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
-    soreted_sets_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
+    sorted_sets_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
 
     for (size_t tid = 0; tid < n_thread; tid++) {
       grouped_keys[tid].reserve(n_kv_per_thread);
