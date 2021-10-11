@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <fcntl.h>
+#include <sys/mman.h>
+
 #include <memory>
 #include <set>
 #include <vector>
@@ -28,7 +31,7 @@ class PMEMAllocator : public Allocator {
 public:
   PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
                 uint64_t num_segment_blocks, uint32_t block_size,
-                uint32_t num_write_threads);
+                uint32_t num_write_threads, bool use_devdax_mode);
 
   ~PMEMAllocator();
 
@@ -90,6 +93,8 @@ private:
 
   void AllocateSegmentSpace(SizedSpaceEntry *segment_entry);
 
+  bool CheckDevDaxAndGetSize(const char *path, uint64_t *size);
+
   void init_data_size_2_block_size() {
     data_size_2_block_size_.resize(4096);
     for (size_t i = 0; i < data_size_2_block_size_.size(); i++) {
@@ -109,6 +114,7 @@ private:
   const uint64_t num_segment_blocks_;
   const uint32_t block_size_;
   std::atomic<uint64_t> offset_head_;
+  bool use_devdax_mode_;
   char *pmem_;
   uint64_t pmem_size_;
   uint64_t max_block_offset_;

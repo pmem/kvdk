@@ -79,6 +79,8 @@ DEFINE_bool(opt_large_sorted_collection_restore, false,
             "skiplist. When having few large skiplists, the optimization can "
             "get better performance");
 
+DEFINE_bool(use_devdax_mode, false, "Use devdax device for kvdk");
+
 class Timer {
 public:
   void Start() { clock_gettime(CLOCK_REALTIME, &start); }
@@ -362,6 +364,7 @@ int main(int argc, char **argv) {
   configs.pmem_file_size = FLAGS_space;
   configs.opt_large_sorted_collection_restore =
       FLAGS_opt_large_sorted_collection_restore;
+  configs.use_devdax_mode = FLAGS_use_devdax_mode;
 
   Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
 

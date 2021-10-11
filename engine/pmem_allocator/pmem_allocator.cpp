@@ -53,26 +53,55 @@ PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
 
 PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
                              uint64_t num_segment_blocks, uint32_t block_size,
-                             uint32_t num_write_threads)
-    : thread_cache_(num_write_threads), num_segment_blocks_(num_segment_blocks),
-      block_size_(block_size), offset_head_(0) {
+                             uint32_t num_write_threads, bool use_devdax_mode)
+    : thread_cache_(num_write_threads),
+      num_segment_blocks_(num_segment_blocks),
+      block_size_(block_size),
+      offset_head_(0),
+      use_devdax_mode_(use_devdax_mode) {
   int is_pmem;
   GlobalLogger.Info("Initializing PMem size %lu in file %s\n", pmem_space,
                     pmem_file.c_str());
-  if ((pmem_ = (char *)pmem_map_file(pmem_file.c_str(), pmem_space,
-                                     PMEM_FILE_CREATE, 0666, &pmem_size_,
-                                     &is_pmem)) == nullptr) {
-    GlobalLogger.Error("Pmem map file %s failed: %s\n", pmem_file.c_str(),
-                       strerror(errno));
-    exit(1);
+  if (!use_devdax_mode_) {
+    if ((pmem_ = (char *)pmem_map_file(pmem_file.c_str(), pmem_space,
+                                       PMEM_FILE_CREATE, 0666, &pmem_size_,
+                                       &is_pmem)) == nullptr) {
+      GlobalLogger.Error("Pmem map file %s failed: %s\n", pmem_file.c_str(),
+                         strerror(errno));
+      exit(1);
+    }
+    if (!is_pmem) {
+      GlobalLogger.Error("%s is not a pmem path\n", pmem_file.c_str());
+      exit(1);
+    }
+  } else {
+    if (!CheckDevDaxAndGetSize(pmem_file.c_str(), &pmem_size_)) {
+      GlobalLogger.Error(
+          "CheckDevDaxAndGetSize %s failed device %s faild: %s\n",
+          pmem_file.c_str(), strerror(errno));
+      exit(1);
+    }
+
+    int flags = PROT_READ | PROT_WRITE;
+    int fd = open(pmem_file.c_str(), O_RDWR, 0666);
+    if (fd < 0) {
+      GlobalLogger.Error("Open devdax device %s faild: %s\n", pmem_file.c_str(),
+                         strerror(errno));
+      exit(1);
+    }
+
+    if ((pmem_ = (char *)mmap(nullptr, pmem_space, flags, MAP_SHARED, fd, 0)) ==
+        nullptr) {
+      GlobalLogger.Error("Mmap devdax device %s faild: %s\n", pmem_file.c_str(),
+                         strerror(errno));
+      exit(1);
+    }
   }
-  if (!is_pmem) {
-    GlobalLogger.Error("%s is not a pmem path\n", pmem_file.c_str());
-    exit(1);
-  }
-  if (pmem_size_ != pmem_space) {
+
+  if (pmem_size_ < pmem_space) {
     GlobalLogger.Error("Pmem map file %s size %lu less than expected %lu\n",
                        pmem_file.c_str(), pmem_size_, pmem_space);
+    exit(1);
   }
   max_block_offset_ =
       pmem_size_ / block_size_ / num_segment_blocks_ * num_segment_blocks_;
@@ -130,6 +159,51 @@ void PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
     }
     break;
   }
+}
+
+bool PMEMAllocator::CheckDevDaxAndGetSize(const char *path, uint64_t *size) {
+  char spath[PATH_MAX];
+  char npath[PATH_MAX];
+  char *rpath;
+  FILE *sfile;
+  struct stat st;
+
+  if (stat(path, &st) < 0) {
+    GlobalLogger.Error("stat file %s failed %s\n", path, strerror(errno));
+    return false;
+  }
+
+  snprintf(spath, PATH_MAX, "/sys/dev/char/%d:%d/subsystem", major(st.st_rdev),
+           minor(st.st_rdev));
+  // Get the real path of the /sys/dev/char/major:minor/subsystem
+  if ((rpath = realpath(spath, npath)) == 0) {
+    GlobalLogger.Error("realpath on file %s failed %s\n", spath,
+                       strerror(errno));
+    return false;
+  }
+
+  // Checking the rpath is DAX device by compare
+  if (strcmp("/sys/class/dax", rpath)) {
+    return false;
+  }
+
+  snprintf(spath, PATH_MAX, "/sys/dev/char/%d:%d/size", major(st.st_rdev),
+           minor(st.st_rdev));
+
+  sfile = fopen(spath, "r");
+  if (!sfile) {
+    GlobalLogger.Error("fopen on file %s failed %s\n", spath, strerror(errno));
+    return false;
+  }
+
+  if (fscanf(sfile, "%lu", size) < 0) {
+    GlobalLogger.Error("fscanf on file %s failed %s\n", spath, strerror(errno));
+    fclose(sfile);
+    return false;
+  }
+
+  fclose(sfile);
+  return true;
 }
 
 SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {

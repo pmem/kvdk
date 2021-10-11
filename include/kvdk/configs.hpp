@@ -80,6 +80,27 @@ struct Configs {
   // influence to foreground performance
   double background_work_interval = 5;
 
+  // Support the devdax model with PMem
+  //
+  // The devdax mode will create a char device on a pmem region, we will
+  // use mmap to operator the devdax device.
+  bool use_devdax_mode = false;
+
+  // Store the immutable config and batch-write stats on devdax mode
+  //
+  // To use the config, you must create the devdax namespace with the shell
+  // scripts/init_devdax.sh.
+  // The shell will create a devdax namespace and a 32MB(the minum size of
+  // fsdax) fsdax namespace, and the fsdax namespace will mount on this dir.
+  //
+  // ps:
+  // If you want change the dir, you need change the scripts/init_devdax.sh's
+  // fsdax mount dir, and this dir should be same with shell's fsdax dir.
+  //
+  // TODO(zhg): organize the immutable config and pending_batch_dir on a same
+  // file of the data file.
+  std::string devdax_meta_dir = "/mnt/kvdk-pmem-meta";
+
   // Log information to show
   LogLevel log_level = LogLevel::INFO;
 
