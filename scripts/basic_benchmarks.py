@@ -7,7 +7,7 @@ bench_sorted = True
 
 path = "/mnt/pmem0/kvdk"
 report_path = "./results-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-value_sizes = [120]
+value_sizes = [128]
 data_size = 100 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 benchmark_threads = n_thread
