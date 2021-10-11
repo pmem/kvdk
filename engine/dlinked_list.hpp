@@ -27,7 +27,11 @@
 #define hex_print(x)                                                           \
   std::hex << std::setfill('0') << std::setw(sizeof(decltype(x)) * 2) << x
 
+#ifdef DEBUG
 #define DEBUG_LEVEL 1
+#else
+#define DEBUG_LEVEL 0
+#endif
 
 namespace KVDK_NAMESPACE {
 /// DListIterator does not pin DlinkedList
@@ -43,27 +47,27 @@ private:
 
 private:
   /// PMem pointer to current Record
-  PMEMAllocator *_p_pmem_allocator_;
+  PMEMAllocator *p_pmem_allocator_;
   /// Current position
-  DLDataEntry *_pmp_curr_;
+  DLDataEntry *pmp_curr_;
 
 public:
   /// It's up to caller to provide correct PMem pointer
   /// and PMemAllocator to construct a DListIterator
   explicit DListIterator(PMEMAllocator *p_pmem_allocator, DLDataEntry *curr)
-      : _p_pmem_allocator_{p_pmem_allocator}, _pmp_curr_{curr} {}
+      : p_pmem_allocator_{p_pmem_allocator}, pmp_curr_{curr} {}
 
   DListIterator(DListIterator const &other)
-      : _p_pmem_allocator_{other._p_pmem_allocator_},
-        _pmp_curr_(other._pmp_curr_) {}
+      : p_pmem_allocator_{other.p_pmem_allocator_},
+        pmp_curr_(other.pmp_curr_) {}
 
   /// Conversion to bool
   /// Returns true if the iterator is on some DlinkedList
   inline bool valid() const {
-    if (!_pmp_curr_) {
+    if (!pmp_curr_) {
       return false;
     }
-    switch (static_cast<DataEntryType>(_pmp_curr_->type)) {
+    switch (static_cast<DataEntryType>(pmp_curr_->type)) {
     case DataEntryType::DlistDataRecord:
     case DataEntryType::DlistDeleteRecord:
     case DataEntryType::DlistHeadRecord:
@@ -81,7 +85,7 @@ public:
 
   /// Increment and Decrement operators
   DListIterator &operator++() {
-    _pmp_curr_ = _GetPmpNext_();
+    pmp_curr_ = getPmpNext();
     return *this;
   }
 
@@ -92,7 +96,7 @@ public:
   }
 
   DListIterator &operator--() {
-    _pmp_curr_ = _GetPmpPrev_();
+    pmp_curr_ = getPmpPrev();
     return *this;
   }
 
@@ -102,13 +106,13 @@ public:
     return old;
   }
 
-  DLDataEntry &operator*() { return *_pmp_curr_; }
+  DLDataEntry &operator*() { return *pmp_curr_; }
 
-  DLDataEntry *operator->() { return _pmp_curr_; }
+  DLDataEntry *operator->() { return pmp_curr_; }
 
   friend bool operator==(DListIterator lhs, DListIterator rhs) {
-    assert(lhs._p_pmem_allocator_ == rhs._p_pmem_allocator_);
-    return lhs._pmp_curr_ == rhs._pmp_curr_;
+    assert(lhs.p_pmem_allocator_ == rhs.p_pmem_allocator_);
+    return lhs.pmp_curr_ == rhs.pmp_curr_;
   }
 
   friend bool operator!=(DListIterator lhs, DListIterator rhs) {
@@ -116,19 +120,19 @@ public:
   }
 
 private:
-  inline DLDataEntry *_GetPmpNext_() const {
+  inline DLDataEntry *getPmpNext() const {
     return reinterpret_cast<DLDataEntry *>(
-        _p_pmem_allocator_->offset2addr_checked(_pmp_curr_->next));
+        p_pmem_allocator_->offset2addr_checked(pmp_curr_->next));
   }
 
-  inline DLDataEntry *_GetPmpPrev_() const {
+  inline DLDataEntry *getPmpPrev() const {
     return reinterpret_cast<DLDataEntry *>(
-        _p_pmem_allocator_->offset2addr_checked(_pmp_curr_->prev));
+        p_pmem_allocator_->offset2addr_checked(pmp_curr_->prev));
   }
 
 public:
   inline std::uint64_t _GetOffset_() const {
-    return _p_pmem_allocator_->addr2offset_checked(_pmp_curr_);
+    return p_pmem_allocator_->addr2offset_checked(pmp_curr_);
   }
 };
 } // namespace KVDK_NAMESPACE
@@ -144,17 +148,17 @@ class DLinkedList {
 private:
   /// Allocator for allocating space for new nodes,
   /// as well as for deallocating space to delete nodes
-  PMEMAllocator *_p_pmem_allocator_;
+  PMEMAllocator *p_pmem_allocator_;
   /// PMem pointer(pmp) to head node on PMem
-  DLDataEntry *_pmp_head_;
+  DLDataEntry *pmp_head_;
   /// PMem pointer(pmp) to tail node on PMem
-  DLDataEntry *_pmp_tail_;
+  DLDataEntry *pmp_tail_;
 
   friend class DListIterator;
   friend class UnorderedCollection;
   friend class UnorderedIterator;
 
-  static constexpr std::uint64_t _null_offset_ = kNullPmemOffset;
+  static constexpr std::uint64_t NullPMemOffset = kNullPmemOffset;
 
 public:
   /// Create DLinkedList and construct head and tail node on PMem.
@@ -162,26 +166,26 @@ public:
   DLinkedList(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
               std::uint64_t timestamp, pmem::obj::string_view const key,
               pmem::obj::string_view const value)
-      : _p_pmem_allocator_{sp_pmem_allocator.get()}, _pmp_head_{nullptr},
-        _pmp_tail_{nullptr} {
+      : p_pmem_allocator_{sp_pmem_allocator.get()}, pmp_head_{nullptr},
+        pmp_tail_{nullptr} {
     {
       // head and tail can hold any key and value supplied by caller.
-      auto space_head = _p_pmem_allocator_->Allocate(sizeof(DLDataEntry) +
+      auto space_head = p_pmem_allocator_->Allocate(sizeof(DLDataEntry) +
                                                      key.size() + value.size());
       if (space_head.size == 0) {
         throw std::bad_alloc{};
       }
-      auto space_tail = _p_pmem_allocator_->Allocate(sizeof(DLDataEntry) +
+      auto space_tail = p_pmem_allocator_->Allocate(sizeof(DLDataEntry) +
                                                      key.size() + value.size());
       if (space_tail.size == 0) {
-        _p_pmem_allocator_->Free(space_head);
+        p_pmem_allocator_->Free(space_head);
         throw std::bad_alloc{};
       }
 
       std::uint64_t offset_head = space_head.space_entry.offset;
       std::uint64_t offset_tail = space_tail.space_entry.offset;
-      void *pmp_head = _p_pmem_allocator_->offset2addr_checked(offset_head);
-      void *pmp_tail = _p_pmem_allocator_->offset2addr_checked(offset_tail);
+      void *pmp_head = p_pmem_allocator_->offset2addr_checked(offset_head);
+      void *pmp_tail = p_pmem_allocator_->offset2addr_checked(offset_tail);
 
       DLDataEntry entry_head; // Set up entry with meta
       {
@@ -192,9 +196,9 @@ public:
 
         // checksum can only be calculated with complete meta
         entry_head.header.b_size = space_head.size;
-        entry_head.header.checksum = _CheckSum_(entry_head, key, value);
+        entry_head.header.checksum = checkSum(entry_head, key, value);
 
-        entry_head.prev = _null_offset_;
+        entry_head.prev = NullPMemOffset;
         entry_head.next = offset_tail;
       }
 
@@ -207,19 +211,19 @@ public:
 
         // checksum can only be calculated with complete meta
         entry_tail.header.b_size = space_head.size;
-        entry_tail.header.checksum = _CheckSum_(entry_tail, key, value);
+        entry_tail.header.checksum = checkSum(entry_tail, key, value);
 
         entry_tail.prev = offset_head;
-        entry_tail.next = _null_offset_;
+        entry_tail.next = NullPMemOffset;
       }
 
       // Persist tail first then head
       // If only tail is persisted then it can be deallocated by caller at
       // recovery
-      _PersistRecord_(pmp_tail, entry_tail, key, value);
-      _PersistRecord_(pmp_head, entry_head, key, value);
-      _pmp_head_ = static_cast<DLDataEntry *>(pmp_head);
-      _pmp_tail_ = static_cast<DLDataEntry *>(pmp_tail);
+      persistRecord(pmp_tail, entry_tail, key, value);
+      persistRecord(pmp_head, entry_head, key, value);
+      pmp_head_ = static_cast<DLDataEntry *>(pmp_head);
+      pmp_tail_ = static_cast<DLDataEntry *>(pmp_tail);
     }
   }
 
@@ -227,8 +231,8 @@ public:
   /// If from head to tail node is not forward linked, throw.
   DLinkedList(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
               DLDataEntry *pmp_head, DLDataEntry *pmp_tail)
-      : _p_pmem_allocator_{sp_pmem_allocator.get()}, _pmp_head_{pmp_head},
-        _pmp_tail_{pmp_tail} {
+      : p_pmem_allocator_{sp_pmem_allocator.get()}, pmp_head_{pmp_head},
+        pmp_tail_{pmp_tail} {
 #if DEBUG_LEVEL > 0
     {
       if (pmp_head->type != DataEntryType::DlistHeadRecord) {
@@ -237,7 +241,7 @@ public:
         throw std::runtime_error{"Cannot rebuild a DlinkedList from given PMem "
                                  "pointer not pointing to a DlistHeadRecord!"};
       }
-      DListIterator curr{_p_pmem_allocator_, pmp_head};
+      DListIterator curr{p_pmem_allocator_, pmp_head};
       ++curr;
 
       while (true) {
@@ -261,7 +265,7 @@ public:
           continue;
         }
         case DataEntryType::DlistTailRecord: {
-          if (curr._pmp_curr_ == pmp_tail) {
+          if (curr.pmp_curr_ == pmp_tail) {
             return;
           } else {
             throw std::runtime_error{
@@ -281,13 +285,13 @@ public:
 #endif // DEBUG_LEVEL > 0
   }
 
-  // _pmp_head_ and _pmp_tail_ points to persisted Record of Head and Tail on
+  // pmp_head_ and pmp_tail_ points to persisted Record of Head and Tail on
   // PMem No need to delete anything
   ~DLinkedList() = default;
 
   // Not checked yet, may return Tail()
   DListIterator First() {
-    DListIterator ret{_p_pmem_allocator_, _pmp_head_};
+    DListIterator ret{p_pmem_allocator_, pmp_head_};
     assert(ret.valid());
     ++ret;
     return ret;
@@ -295,19 +299,19 @@ public:
 
   // Not checked yet, may return Head()
   DListIterator Last() {
-    DListIterator ret{_p_pmem_allocator_, _pmp_tail_};
+    DListIterator ret{p_pmem_allocator_, pmp_tail_};
     assert(ret.valid());
     --ret;
     return ret;
   }
 
-  DListIterator Head() { return DListIterator{_p_pmem_allocator_, _pmp_head_}; }
+  DListIterator Head() { return DListIterator{p_pmem_allocator_, pmp_head_}; }
 
-  DListIterator Tail() { return DListIterator{_p_pmem_allocator_, _pmp_tail_}; }
+  DListIterator Tail() { return DListIterator{p_pmem_allocator_, pmp_tail_}; }
 
   /// Helper function to deallocate Record, called only by caller
   inline static void Deallocate(DListIterator iter) {
-    iter._p_pmem_allocator_->Free(SizedSpaceEntry{
+    iter.p_pmem_allocator_->Free(SizedSpaceEntry{
         iter._GetOffset_(), iter->header.b_size, iter->timestamp});
   }
 
@@ -332,13 +336,13 @@ public:
       throw std::runtime_error{"Invalid iterator in dlinked_list!"};
     }
 
-    auto space = _p_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() +
+    auto space = p_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() +
                                               value.size());
     if (space.size == 0) {
       throw std::bad_alloc{};
     }
     std::uint64_t offset = space.space_entry.offset;
-    void *pmp = _p_pmem_allocator_->offset2addr_checked(offset);
+    void *pmp = p_pmem_allocator_->offset2addr_checked(offset);
 
     DLDataEntry entry; // Set up entry with meta
     {
@@ -349,27 +353,27 @@ public:
 
       // checksum can only be calculated with complete meta
       entry.header.b_size = space.size;
-      entry.header.checksum = _CheckSum_(entry, key, value);
+      entry.header.checksum = checkSum(entry, key, value);
 
       entry.prev = iter_prev._GetOffset_();
       entry.next = iter_next._GetOffset_();
       // entry is now complete
     }
 
-    _PersistRecord_(pmp, entry, key, value);
+    persistRecord(pmp, entry, key, value);
     pmem_memcpy(&iter_prev->next, &offset, sizeof(offset),
                 PMEM_F_MEM_NONTEMPORAL);
     pmem_memcpy(&iter_next->prev, &offset, sizeof(offset),
                 PMEM_F_MEM_NONTEMPORAL);
 
-    return DListIterator{_p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
+    return DListIterator{p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
   }
 
 private:
   /// Persist a DLDataEntry.
   /// The caller must supply complete DLDataEntry, aka,
   /// a DLDataEntry with pre-calculated checksum
-  inline static void _PersistRecord_(
+  inline static void persistRecord(
       void *pmp,
       DLDataEntry const &entry, // Complete DLDataEntry supplied by caller
       pmem::obj::string_view const key, pmem::obj::string_view const value) {
@@ -388,7 +392,7 @@ private:
 
   /// Compute Checksum of the to-be-emplaced record
   /// with meta, key and value.
-  inline static std::uint32_t _CheckSum_(
+  inline static std::uint32_t checkSum(
       DLDataEntry const &entry, // Incomplete DLDataEntry, only meta is valid
       pmem::obj::string_view const key, pmem::obj::string_view const value) {
     std::uint32_t cs1 = get_checksum(
@@ -403,7 +407,7 @@ private:
   /// Internal key has 8-byte ID as prefix.
   /// User-key does not have that ID.
   inline static pmem::obj::string_view
-  _ExtractKey_(pmem::obj::string_view internal_key) {
+  extractKey(pmem::obj::string_view internal_key) {
     constexpr size_t sz_id = 8;
     assert(sz_id <= internal_key.size() &&
            "internal_key does not has space for key");
@@ -412,7 +416,7 @@ private:
   }
 
   /// Extract ID from internal-key
-  inline static std::uint64_t _ExtractID_(pmem::obj::string_view internal_key) {
+  inline static std::uint64_t extractID(pmem::obj::string_view internal_key) {
     std::uint64_t id;
     assert(sizeof(decltype(id)) <= internal_key.size() &&
            "internal_key is smaller than the size of an id!");
@@ -424,17 +428,17 @@ private:
   friend std::ostream &operator<<(std::ostream &out, DLinkedList const &dlist) {
     out << "Contents of DlinkedList:\n";
     DListIterator iter =
-        DListIterator{dlist._p_pmem_allocator_, dlist._pmp_head_};
+        DListIterator{dlist.p_pmem_allocator_, dlist.pmp_head_};
     DListIterator iter_end =
-        DListIterator{dlist._p_pmem_allocator_, dlist._pmp_tail_};
+        DListIterator{dlist.p_pmem_allocator_, dlist.pmp_tail_};
     while (iter != iter_end) {
       auto internal_key = iter->Key();
       out << "Type: " << hex_print(iter->type) << "\t"
           << "Offset: " << hex_print(iter._GetOffset_()) << "\t"
           << "Prev: " << hex_print(iter->prev) << "\t"
           << "Next: " << hex_print(iter->next) << "\t"
-          << "Key: " << hex_print(_ExtractID_(internal_key))
-          << _ExtractKey_(internal_key) << "\t"
+          << "Key: " << hex_print(extractID(internal_key))
+          << extractKey(internal_key) << "\t"
           << "Value: " << iter->Value() << "\n";
       ++iter;
     }
@@ -443,8 +447,8 @@ private:
         << "Offset: " << hex_print(iter._GetOffset_()) << "\t"
         << "Prev: " << hex_print(iter->prev) << "\t"
         << "Next: " << hex_print(iter->next) << "\t"
-        << "Key: " << hex_print(_ExtractID_(internal_key))
-        << _ExtractKey_(internal_key) << "\t"
+        << "Key: " << hex_print(extractID(internal_key))
+        << extractKey(internal_key) << "\t"
         << "Value: " << iter->Value() << "\n";
     return out;
   }

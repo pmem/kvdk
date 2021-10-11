@@ -134,9 +134,9 @@ private:
 
 private:
   std::shared_ptr<UnorderedCollection>
-  CreateUnorderedCollection(pmem::obj::string_view const collection_name);
+  createUnorderedCollection(pmem::obj::string_view const collection_name);
   UnorderedCollection *
-  FindUnorderedCollection(pmem::obj::string_view collection_name);
+  findUnorderedCollection(pmem::obj::string_view collection_name);
 
   Status MaybeInitPendingBatchFile();
 
@@ -179,7 +179,7 @@ private:
 
   // DataEntryType DlistDataRecord for HSet
   // and DlistDeleteRecord for HDelete
-  Status HSetOrHDelete(pmem::obj::string_view const collection_name,
+  Status doHSetOrHDelete(pmem::obj::string_view const collection_name,
                        pmem::obj::string_view const key,
                        pmem::obj::string_view const value, DataEntryType type);
 

@@ -1396,7 +1396,7 @@ Status KVEngine::Set(const pmem::obj::string_view key,
   return StringSetImpl(key, value);
 }
 
-std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(
+std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
     pmem::obj::string_view const collection_name) {
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
@@ -1408,7 +1408,7 @@ std::shared_ptr<UnorderedCollection> KVEngine::CreateUnorderedCollection(
 }
 
 UnorderedCollection *
-KVEngine::FindUnorderedCollection(pmem::obj::string_view collection_name) {
+KVEngine::findUnorderedCollection(pmem::obj::string_view collection_name) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
@@ -1423,15 +1423,15 @@ KVEngine::FindUnorderedCollection(pmem::obj::string_view collection_name) {
     return hash_entry.p_unordered_collection;
   }
   default: {
-    assert(false && "Invalid state in FindUnorderedCollection()!");
-    throw std::runtime_error{"Invalid state in FindUnorderedCollection()!"};
+    assert(false && "Invalid state in findUnorderedCollection()!");
+    throw std::runtime_error{"Invalid state in findUnorderedCollection()!"};
   }
   }
 }
 
 Status KVEngine::HGet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key, std::string *value) {
-  UnorderedCollection *p_uncoll = FindUnorderedCollection(collection_name);
+  UnorderedCollection *p_uncoll = findUnorderedCollection(collection_name);
   if (!p_uncoll) {
     return Status::NotFound;
   }
@@ -1494,7 +1494,7 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
   }
 }
 
-Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
+Status KVEngine::doHSetOrHDelete(pmem::obj::string_view const collection_name,
                                pmem::obj::string_view const key,
                                pmem::obj::string_view const value,
                                DataEntryType type) {
@@ -1504,15 +1504,15 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
   }
   if (type != DataEntryType::DlistDataRecord &&
       type != DataEntryType::DlistDeleteRecord) {
-    assert(false && "Invalid use of HSetOrHDelete!");
-    throw std::runtime_error{"Invalid use of HSetOrHDelete!"};
+    assert(false && "Invalid use of doHSetOrHDelete!");
+    throw std::runtime_error{"Invalid use of doHSetOrHDelete!"};
   }
 
   UnorderedCollection *p_collection;
 
   // Find UnorederedCollection, create if none exists
   {
-    p_collection = FindUnorderedCollection(collection_name);
+    p_collection = findUnorderedCollection(collection_name);
     if (!p_collection) {
       if (type == DataEntryType::DlistDeleteRecord) {
         // Calling HDelete on a non-existing UnorderedCollection
@@ -1530,10 +1530,10 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
         {
           // Lock and find again in case other threads have created the
           // UnorderedCollection
-          p_collection = FindUnorderedCollection(collection_name);
+          p_collection = findUnorderedCollection(collection_name);
           if (!p_collection) {
             std::shared_ptr<UnorderedCollection> sp_collection =
-                CreateUnorderedCollection(collection_name);
+                createUnorderedCollection(collection_name);
             p_collection = sp_collection.get();
             {
               std::lock_guard<std::mutex> lg{list_mu_};
@@ -1684,19 +1684,19 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
 Status KVEngine::HSet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key,
                       pmem::obj::string_view const value) {
-  return HSetOrHDelete(collection_name, key, value,
+  return doHSetOrHDelete(collection_name, key, value,
                        DataEntryType::DlistDataRecord);
 }
 
 Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
                          pmem::obj::string_view const key) {
-  return HSetOrHDelete(collection_name, key, "",
+  return doHSetOrHDelete(collection_name, key, "",
                        DataEntryType::DlistDeleteRecord);
 }
 
 std::shared_ptr<Iterator>
 KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name) {
-  UnorderedCollection *p_collection = FindUnorderedCollection(collection_name);
+  UnorderedCollection *p_collection = findUnorderedCollection(collection_name);
   if (!p_collection) {
     assert(false && "Trying to initialize an Iterator for a "
                     "UnorderedCollection not created yet");
@@ -1797,7 +1797,7 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
             checkDLDataEntryLinkageLeft(pmp_old_record)) {
           assert(false && "Old record is linked in Dlinkedlist!");
           throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
-        }
+        }        
         hash_table_->Insert(hint_record, p_hash_entry_record, pmp_record->type,
                             offset_record,
                             HashOffsetType::UnorderedCollectionElement);
