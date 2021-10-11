@@ -12,6 +12,7 @@
 
 NAMESPACE_TYPE_LISTS="fsdax,devdax,raw,sector"
 FSDAX_NAMESPACE_SIZE=33554432 # fsdax model need >= 16M
+KVDK_PMEM_META_DIR="/mnt/kvdk-pmem-meta"
 
 function error_record_and_exit() {
   err=${1}
@@ -83,11 +84,17 @@ function check_input_region() {
 }
 
 function check_namespace_type() {
-  type=${1}
-  echo "$NAMESPACE_TYPE_LISTS" |grep -w "$type" | \
-  error_record_and_exit $? 'echo "$NAMESPACE_TYPE_LISTS" |grep -w "$type'
+  namespace_type=${1}
+  echo "$NAMESPACE_TYPE_LISTS" |grep -w "$namespace_type" | \
+  error_record_and_exit $? 'echo "$NAMESPACE_TYPE_LISTS" |grep -w "$namespace_type'
 }
 
+function check_fs_type() {
+  fs_type=${1}
+  if [ "$fs_type" != "xfs" ] && [ "$fs_type" != "ext4" ];then
+    error_record_and_exit 1 'input fs_type (xfs | ext4) error with "$fs_type"'
+  fi
+}
 
 check_available_tools
 print_available_regions
@@ -111,19 +118,23 @@ echo "create $namespace_type model with $size in $region_name"
 # from the same region to create a fsdax namespace.
 # For we need to store the pending_batch data and immutable configs
 # on fsdax mode.
-if [ "$type" == "devdax" ];then
+if [ "$namespace_type" == "devdax" ];then
+  echo "you're creating a devdax model, you must create a fsdax mode!"
+  read -p "input fstype (xfs | ext4): " fs_type
+  check_fs_type "$fs_type"
+
   device_name=$(ndctl create-namespace --region="$region_name" \
                 --size="$FSDAX_NAMESPACE_SIZE" --mode=fsdax | jq -r '.blockdev')
   error_record_and_exit $? "ndctl create-namespace ... create the fsdax namespace"
 
-  mkfs.xfs -f /dev/"$device_name" | \
-      error_record_and_exit $? "mkfs.xfs -f /dev/'$device_name'"
-  mkdir -p /mnt/kvdk-pmem-meta | error_record_and_exit $? "mkdir "
-  chmod -R 666 /mnt/kvdk-pmem-meta | error_record_and_exit $? "chmod "
-  mount -o dax /dev/"$device_name" /mnt/kvdk-pmem-meta | \
-      error_record_and_exit $? "mount -o dax /dev/'$device_name' /mnt/kvdk-pmem-meta "
+  mkfs."$fs_type" /dev/"$device_name" | \
+      error_record_and_exit $? "mkfs.$fs_type /dev/'$device_name'"
+  mkdir -p $KVDK_PMEM_META_DIR | error_record_and_exit $? "mkdir "
+  chmod -R 666 $KVDK_PMEM_META_DIR | error_record_and_exit $? "chmod "
+  mount -o dax /dev/"$device_name" $KVDK_PMEM_META_DIR | \
+      error_record_and_exit $? "mount -o dax /dev/'$device_name' $KVDK_PMEM_META_DIR "
 
   echo "Success: "
   echo "create fsdax model with $FSDAX_NAMESPACE_SIZE in $region_name."
-  echo "mount /dev/$device_name at /mnt/kvdk-pmem-meta with xfs type"
+  echo "mount /dev/$device_name at $KVDK_PMEM_META_DIR with $fs_type type"
 fi
