@@ -800,15 +800,8 @@ inline void KVEngine::PersistDataEntry(char *block_base, DataEntry *data_entry,
         entry_with_data->Checksum(configs_.pmem_block_size);
   }
   if (with_buffer) {
-    if (configs_.use_devdax_mode) {
-      pmem_memcpy_persist(block_base, data_cpy_target,
-                          entry_size + key.size() + value.size());
-    } else {
-      pmem_memcpy(block_base, data_cpy_target,
-                  entry_size + key.size() + value.size(),
-                  PMEM_F_MEM_NONTEMPORAL);
-    }
-
+    pmem_memcpy(block_base, data_cpy_target,
+                entry_size + key.size() + value.size(), PMEM_F_MEM_NONTEMPORAL);
   } else {
     pmem_flush(block_base, entry_size + key.size() + value.size());
   }

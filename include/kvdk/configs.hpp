@@ -86,7 +86,7 @@ struct Configs {
   // use mmap to operator the devdax device.
   bool use_devdax_mode = false;
 
-  // Storage the immutable config and batch-write stats on devdax mode
+  // Store the immutable config and batch-write stats on devdax mode
   //
   // To use the config, you must create the devdax namespace with the shell
   // scripts/init_devdax.sh.
