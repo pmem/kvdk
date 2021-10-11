@@ -81,8 +81,6 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
       break;
     } else {
       merged += map_[cur].Size();
-      if (merged == 0)
-        break;
       if (cur != offset && map_[cur].IsStart()) {
         merged_offset.push_back(cur);
       }

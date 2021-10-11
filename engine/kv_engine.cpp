@@ -128,7 +128,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
-  // bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
+  bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
   return s;
 }
 
@@ -1518,7 +1518,6 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
       } else {
         // Only when HSet, we need to create new UnorderedCollection if not
         // found
-        std::lock_guard<std::mutex> lg{list_mu_};
         HashTable::KeyHashHint hint_collection =
             hash_table_->GetHint(collection_name);
         std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
@@ -1530,7 +1529,10 @@ Status KVEngine::HSetOrHDelete(pmem::obj::string_view const collection_name,
             std::shared_ptr<UnorderedCollection> sp_collection =
                 CreateUnorderedCollection(collection_name);
             p_collection = sp_collection.get();
-            vec_sp_unordered_collections_.push_back(sp_collection);
+            {
+              std::lock_guard<std::mutex> lg{list_mu_};
+              vec_sp_unordered_collections_.push_back(sp_collection);
+            }
 
             HashEntry hash_entry_collection;
             HashEntry *p_hash_entry_collection = nullptr;

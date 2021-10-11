@@ -11,7 +11,7 @@ void Logger::Info(const char *format, ...) {
   if (level_ <= LogLevel::INFO) {
     va_list args;
     va_start(args, format);
-    log_impl("[INFO]", format, args);
+    Log("[INFO]", format, args);
     va_end(args);
   }
 }
@@ -20,12 +20,12 @@ void Logger::Error(const char *format, ...) {
   if (level_ <= LogLevel::ERROR) {
     va_list args;
     va_start(args, format);
-    log_impl("[ERROR]", format, args);
+    Log("[ERROR]", format, args);
     va_end(args);
   }
 }
 
-void Logger::log_impl(const char *log_type, const char *format, va_list &args) {
+void Logger::Log(const char *log_type, const char *format, va_list &args) {
   if (log_file_ != nullptr) {
     std::lock_guard<std::mutex> lg(mut_);
     auto now = std::chrono::system_clock::now();

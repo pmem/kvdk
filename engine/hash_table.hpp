@@ -78,7 +78,6 @@ public:
   union {
     uint64_t offset;
     UnorderedCollection *p_unordered_collection;
-    HashEntry *p_next_bucket;
   };
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }

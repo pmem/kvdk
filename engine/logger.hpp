@@ -23,7 +23,7 @@ public:
   void Init(FILE *fp, LogLevel level);
 
 private:
-  void log_impl(const char *log_type, const char *format, va_list &args);
+  void Log(const char *log_type, const char *format, va_list &args);
 
   FILE *log_file_ = NULL;
   LogLevel level_;
