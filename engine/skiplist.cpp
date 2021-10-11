@@ -369,7 +369,7 @@ void SortedIterator::Next() {
 }
 
 void SortedIterator::Prev() {
-  if(!Valid()){
+  if (!Valid()) {
     return;
   }
   current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));

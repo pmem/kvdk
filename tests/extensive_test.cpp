@@ -73,7 +73,7 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
       u_iter->SeekToLast();
       std::cout << "[Testing] Iterating backward through Hashes." << std::endl;
     }
-      
+
     ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs};
     while (u_iter->Valid()) {
       std::string value_got;
@@ -125,7 +125,7 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
             n_total_possible_kv_pairs - possible_kv_pairs.size();
 
         if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
-             possible_kv_pairs.empty()) {
+            possible_kv_pairs.empty()) {
           progress_iterating.Update(n_removed_possible_kv_pairs);
           old_progress = n_removed_possible_kv_pairs;
         }
@@ -158,8 +158,9 @@ static void SortedSetsIterateThrough(
 
   std::string old_key;
   // Set to false after first read, then we can check key ordering
-  bool first_read = true; 
-  ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs, report_progress};
+  bool first_read = true;
+  ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs,
+                                 report_progress};
   for (s_iter->SeekToFirst(); s_iter->Valid(); s_iter->Next()) {
     std::string value_got;
     auto key = s_iter->Key();
@@ -183,7 +184,7 @@ static void SortedSetsIterateThrough(
     n_removed_possible_kv_pairs =
         n_total_possible_kv_pairs - possible_kv_pairs.size();
     if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
-          possible_kv_pairs.empty()) {
+        possible_kv_pairs.empty()) {
       progress_iterating.Update(n_removed_possible_kv_pairs);
       old_progress = n_removed_possible_kv_pairs;
     }
@@ -237,8 +238,9 @@ static void allXSet(
     ProgressBar progress_xsetting{std::cout, "", keys.size(), report_progress};
     for (size_t j = 0; j < keys.size(); j++) {
       status = setter(collection_name, keys[j], values[j]);
-      ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to Set a key " << keys[j]
-                                          << " in collection " << collection_name;
+      ASSERT_EQ(status, kvdk::Status::Ok)
+          << "Fail to Set a key " << keys[j] << " in collection "
+          << collection_name;
 
       if ((j + 1) % 100 == 0 || j + 1 == keys.size())
         progress_xsetting.Update(j + 1);
@@ -260,7 +262,7 @@ static void evenXSetOddXDelete(
   kvdk::Status status;
 
   {
-    ProgressBar progress_xupdating{std::cout, "", keys.size(), report_progress };
+    ProgressBar progress_xupdating{std::cout, "", keys.size(), report_progress};
     for (size_t j = 0; j < keys.size(); j++) {
       if (j % 2 == 0) {
         // Even HSet
@@ -363,17 +365,17 @@ protected:
   /// Override SetUpParameters to provide different parameters
   /// Default configure parameters
   bool do_populate_when_initialize;
-  size_t sz_pmem_file; 
-  size_t n_hash_bucket; 
-  size_t sz_hash_bucket; 
+  size_t sz_pmem_file;
+  size_t n_hash_bucket;
+  size_t sz_hash_bucket;
   size_t n_blocks_per_segment;
   size_t t_background_work_interval;
 
   /// Test specific parameters
   size_t n_thread;
-  size_t n_kv_per_thread; 
+  size_t n_kv_per_thread;
   // These parameters set the range of sizes of keys and values
-  size_t sz_key_min; 
+  size_t sz_key_min;
   size_t sz_key_max;
   size_t sz_value_min;
   size_t sz_value_max;
@@ -439,7 +441,7 @@ protected:
   void HashesAllHSet(std::string const &collection_name) {
     updateHashesPossibleKVPairs(collection_name, false);
 
-    auto ModifyEngine = [&](int tid) { 
+    auto ModifyEngine = [&](int tid) {
       if (tid == 0)
         kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
                               grouped_values[tid], true);
@@ -459,15 +461,15 @@ protected:
     auto ModifyEngine = [&](int tid) {
       if (tid == 0)
         kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
-                                        grouped_keys[tid], grouped_values[tid],
-                                        true);
+                                         grouped_keys[tid], grouped_values[tid],
+                                         true);
       else
         kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
-                                        grouped_keys[tid], grouped_values[tid],
-                                        false);
+                                         grouped_keys[tid], grouped_values[tid],
+                                         false);
     };
-    std::cout << "[Testing] Execute HSet and HDelete in " << collection_name << "."
-              << std::endl;
+    std::cout << "[Testing] Execute HSet and HDelete in " << collection_name
+              << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
@@ -487,22 +489,21 @@ protected:
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
-  void SortedSetsEvenSSetOddSDelete(
-      std::string const &collection_name) {
+  void SortedSetsEvenSSetOddSDelete(std::string const &collection_name) {
     updateSortedSetsPossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid) {
       if (tid == 0)
         kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
-                                        grouped_keys[tid], grouped_values[tid],
-                                        true);
+                                         grouped_keys[tid], grouped_values[tid],
+                                         true);
       else
         kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
-                                        grouped_keys[tid], grouped_values[tid],
-                                        false);
+                                         grouped_keys[tid], grouped_values[tid],
+                                         false);
     };
-    std::cout << "[Testing] Execute SSet and SDelete in " << collection_name << "."
-              << std::endl;
+    std::cout << "[Testing] Execute SSet and SDelete in " << collection_name
+              << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
   }
 
@@ -532,7 +533,8 @@ private:
     std::shuffle(grouped_values[tid].begin(), grouped_values[tid].end(), rand);
   }
 
-  void hashesIterateThrough(uint32_t tid, std::string collection_name, bool report_progress) {
+  void hashesIterateThrough(uint32_t tid, std::string collection_name,
+                            bool report_progress) {
     if (report_progress)
       std::cout << "[Testing] HashesIterateThrough " << collection_name
                 << " with thread " << tid << ". "
@@ -540,12 +542,13 @@ private:
                 << std::endl;
 
     // possible_kv_pairs is copied here
-    kvdk_testing::HashesIterateThrough(engine, collection_name,
-                                       hashes_possible_kv_pairs[collection_name],
-                                       report_progress);
+    kvdk_testing::HashesIterateThrough(
+        engine, collection_name, hashes_possible_kv_pairs[collection_name],
+        report_progress);
   }
 
-  void sortedSetsIterateThrough(uint32_t tid, std::string collection_name, bool report_progress) {
+  void sortedSetsIterateThrough(uint32_t tid, std::string collection_name,
+                                bool report_progress) {
     if (report_progress)
       std::cout << "[Testing] SortedSetsIterateThrough " << collection_name
                 << " with thread " << tid << ". "
@@ -553,13 +556,13 @@ private:
                 << std::endl;
 
     // possible_kv_pairs is copied here
-    kvdk_testing::SortedSetsIterateThrough(engine, collection_name,
-                                           soreted_sets_possible_kv_pairs[collection_name],
-                                           report_progress);
+    kvdk_testing::SortedSetsIterateThrough(
+        engine, collection_name,
+        soreted_sets_possible_kv_pairs[collection_name], report_progress);
   }
 
   void updateHashesPossibleKVPairs(std::string const &collection_name,
-                             bool odd_indexed_is_deleted) {
+                                   bool odd_indexed_is_deleted) {
     std::cout << "[Testing] Updating hashes_possible_kv_pairs." << std::endl;
 
     auto &possible_kvs = hashes_possible_kv_pairs[collection_name];
@@ -567,15 +570,17 @@ private:
   }
 
   void updateSortedSetsPossibleKVPairs(std::string const &collection_name,
-                             bool odd_indexed_is_deleted) {
-    std::cout << "[Testing] Updating soreted_sets_possible_kv_pairs." << std::endl;
+                                       bool odd_indexed_is_deleted) {
+    std::cout << "[Testing] Updating soreted_sets_possible_kv_pairs."
+              << std::endl;
 
     auto &possible_kvs = soreted_sets_possible_kv_pairs[collection_name];
     updatePossibleKVPairs(possible_kvs, odd_indexed_is_deleted);
   }
 
-  void updatePossibleKVPairs(std::unordered_multimap<std::string_view, std::string_view>& possible_kvs, bool odd_indexed_is_deleted)
-  {
+  void updatePossibleKVPairs(
+      std::unordered_multimap<std::string_view, std::string_view> &possible_kvs,
+      bool odd_indexed_is_deleted) {
     {
       // Erase keys that will be overwritten
       ProgressBar progress_erasing{std::cout, "", grouped_keys.size(), true};
@@ -598,24 +603,22 @@ private:
         // For every thread, every key has only one possible value or state
         // We use kvs to track that and then put those into possible_kvs
         std::unordered_map<std::string_view, std::string_view> kvs;
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
-        {
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
           if ((i % 2 == 0) || !odd_indexed_is_deleted)
             kvs[grouped_keys[tid][i]] = grouped_values[tid][i];
           else
             kvs.erase(grouped_keys[tid][i]);
         }
 
-        for(auto iter = kvs.begin(); iter != kvs.end(); ++iter)
+        for (auto iter = kvs.begin(); iter != kvs.end(); ++iter)
           possible_kvs.emplace(iter->first, iter->second);
-            
+
         progress_updating.Update(tid + 1);
       }
     }
   }
 
-  void prepareKVPairs()
-  {
+  void prepareKVPairs() {
     _keys_.reserve(n_thread * n_kv_per_thread);
     _values_.reserve(n_kv_per_thread);
     grouped_keys.resize(n_thread);
@@ -657,26 +660,25 @@ private:
 
 class EngineStressTest : public EngineTestBase {
 protected:
-  virtual void SetUpParameters()
-  {
+  virtual void SetUpParameters() {
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 256GB PMem
-    sz_pmem_file = (256ULL << 30); 
+    sz_pmem_file = (256ULL << 30);
     // Less buckets to increase hash collisions
-    n_hash_bucket = (1ULL << 20); 
+    n_hash_bucket = (1ULL << 20);
     // Smaller buckets to increase hash collisions
-    sz_hash_bucket = (3 + 1) * 16; 
+    sz_hash_bucket = (3 + 1) * 16;
     n_blocks_per_segment = (1ULL << 20);
     t_background_work_interval = 1;
 
     /// Test specific parameters
     n_thread = 48;
     // 2M keys per thread, totaling about 100M records
-    n_kv_per_thread = (2ULL << 20); 
+    n_kv_per_thread = (2ULL << 20);
     // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
-    sz_key_min = 0; 
+    sz_key_min = 0;
     sz_key_max = 16;
     sz_value_min = 0;
     sz_value_max = 1024;
@@ -690,8 +692,8 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
   HashesAllHSet(global_collection_name);
   CheckHashesCollection(global_collection_name);
 
-  std::cout << "[Testing] Close, reopen, iterate through engine for " << n_reboot
-            << " times to test recovery." << std::endl;
+  std::cout << "[Testing] Close, reopen, iterate through engine for "
+            << n_reboot << " times to test recovery." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
     RebootDB();
@@ -705,12 +707,14 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
 
   HashesEvenHSetOddHDelete(global_collection_name);
 
-  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  std::cout << "[Testing] Iterate through collection to check data."
+            << std::endl;
   CheckHashesCollection(global_collection_name);
 
-  std::cout << "[Testing] Close, reopen, iterate through, update, iterate through "
-               "engine for "
-            << n_reboot << " times to test recovery and updating" << std::endl;
+  std::cout
+      << "[Testing] Close, reopen, iterate through, update, iterate through "
+         "engine for "
+      << n_reboot << " times to test recovery and updating" << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -731,8 +735,8 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   SortedSetsAllSSet(global_collection_name);
   CheckSortedSetsCollection(global_collection_name);
 
-  std::cout << "[Testing] Close, reopen, iterate through engine for " << n_reboot
-            << " times to test recovery." << std::endl;
+  std::cout << "[Testing] Close, reopen, iterate through engine for "
+            << n_reboot << " times to test recovery." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -747,12 +751,14 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
 
   SortedSetsEvenSSetOddSDelete(global_collection_name);
 
-  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  std::cout << "[Testing] Iterate through collection to check data."
+            << std::endl;
   CheckSortedSetsCollection(global_collection_name);
 
-  std::cout << "[Testing] Close, reopen, iterate through, update, iterate through "
-               "engine for "
-            << n_reboot << " times to test recovery and updating" << std::endl;
+  std::cout
+      << "[Testing] Close, reopen, iterate through, update, iterate through "
+         "engine for "
+      << n_reboot << " times to test recovery and updating" << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -768,16 +774,15 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
 
 class EngineHotspotTest : public EngineTestBase {
 private:
-  virtual void SetUpParameters()
-  {
+  virtual void SetUpParameters() {
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 16GB PMem
-    sz_pmem_file = (16ULL << 30); 
+    sz_pmem_file = (16ULL << 30);
     // Less buckets to increase hash collisions
-    n_hash_bucket = (1ULL << 20); 
+    n_hash_bucket = (1ULL << 20);
     // Small buckets to increase hash collisions
-    sz_hash_bucket = (3 + 1) * 16; 
+    sz_hash_bucket = (3 + 1) * 16;
     n_blocks_per_segment = (1ULL << 20);
     t_background_work_interval = 1;
 
@@ -785,10 +790,10 @@ private:
     // Too many threads will make this test too slow
     n_thread = 4;
     // 1M keys per thread, totaling about 50M writes
-    n_kv_per_thread = (1ULL << 20); 
+    n_kv_per_thread = (1ULL << 20);
     // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
-    sz_key_min = 0; 
+    sz_key_min = 0;
     sz_key_max = 1;
     sz_value_min = 0;
     sz_value_max = 1024;
@@ -797,29 +802,33 @@ private:
 
 TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
   std::string global_collection_name{"GlobalHashesCollection"};
-  
+
   HashesEvenHSetOddHDelete(global_collection_name);
-  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  std::cout << "[Testing] Iterate through collection to check data."
+            << std::endl;
   CheckHashesCollection(global_collection_name);
 
   RebootDB();
 
   HashesEvenHSetOddHDelete(global_collection_name);
-  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  std::cout << "[Testing] Iterate through collection to check data."
+            << std::endl;
   CheckHashesCollection(global_collection_name);
 }
 
 TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
   std::string global_collection_name{"GlobalHashesCollection"};
-  
+
   SortedSetsEvenSSetOddSDelete(global_collection_name);
-  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  std::cout << "[Testing] Iterate through collection to check data."
+            << std::endl;
   CheckSortedSetsCollection(global_collection_name);
 
   RebootDB();
 
   SortedSetsEvenSSetOddSDelete(global_collection_name);
-  std::cout << "[Testing] Iterate through collection to check data." << std::endl;
+  std::cout << "[Testing] Iterate through collection to check data."
+            << std::endl;
   CheckSortedSetsCollection(global_collection_name);
 }
 

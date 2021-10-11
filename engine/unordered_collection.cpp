@@ -190,9 +190,10 @@ EmplaceReturn UnorderedCollection::_EmplaceBetween_(
   if (spin3 != spin && spin3 != spin1 && spin3 != spin2) {
     locks.emplace_back(*spin3, std::defer_lock);
   }
-  std::sort(locks.begin(), locks.end(), 
-            [](lock_t const& lhs, lock_t const& rhs)
-            { return lhs.mutex() < rhs.mutex(); });
+  std::sort(locks.begin(), locks.end(),
+            [](lock_t const &lhs, lock_t const &rhs) {
+              return lhs.mutex() < rhs.mutex();
+            });
   bool lock_success = true;
   for (size_t i = 0; i < locks.size(); i++)
     lock_success = lock_success && locks[i].try_lock();

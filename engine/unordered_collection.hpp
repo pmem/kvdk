@@ -16,7 +16,7 @@
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
-  
+
 struct EmplaceReturn {
   // Offset of newly emplaced Record
   std::uint64_t offset_new;

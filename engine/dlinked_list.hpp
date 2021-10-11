@@ -161,10 +161,9 @@ public:
   /// Caller supplied key and value are stored in head and tail nodes
   DLinkedList(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
               std::uint64_t timestamp, pmem::obj::string_view const key,
-              pmem::obj::string_view const value) : _p_pmem_allocator_ {
-    sp_pmem_allocator.get()
-  }
-  , _pmp_head_{nullptr}, _pmp_tail_{nullptr} {
+              pmem::obj::string_view const value)
+      : _p_pmem_allocator_{sp_pmem_allocator.get()}, _pmp_head_{nullptr},
+        _pmp_tail_{nullptr} {
     {
       // head and tail can hold any key and value supplied by caller.
       auto space_head = _p_pmem_allocator_->Allocate(sizeof(DLDataEntry) +
@@ -364,7 +363,7 @@ public:
                 PMEM_F_MEM_NONTEMPORAL);
 
     return DListIterator{_p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
-  } 
+  }
 
 private:
   /// Persist a DLDataEntry.

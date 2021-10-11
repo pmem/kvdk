@@ -79,11 +79,12 @@ private:
   static constexpr char _symbol_fill_{'-'};
 
 public:
-  explicit ProgressBar(std::ostream &out, std::string tag, size_t total_progress,
-                       bool enabled = true, size_t bar_length = 50)
+  explicit ProgressBar(std::ostream &out, std::string tag,
+                       size_t total_progress, bool enabled = true,
+                       size_t bar_length = 50)
       : _out_stream_{out}, _tag_{tag}, _total_progress_{total_progress},
-        _current_progress_{0}, _bar_length_{bar_length}, 
-        _step_{total_progress / bar_length}, _enabled_{ enabled } {
+        _current_progress_{0}, _bar_length_{bar_length},
+        _step_{total_progress / bar_length}, _enabled_{enabled} {
     assert(_total_progress_ > 0);
     assert(_bar_length_ > 0);
     if (_step_ == 0) {
@@ -120,7 +121,7 @@ private:
   void showProgress() {
     if (!_enabled_)
       return;
-    
+
     assert(0 <= _current_progress_ && _current_progress_ <= _current_progress_);
 
     _out_stream_ << "\r" << _tag_ << std::setw(10) << std::right
