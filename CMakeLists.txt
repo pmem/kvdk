@@ -14,7 +14,7 @@ if(DEBUG_CHECK)
     ADD_DEFINITIONS(-DDEBUG_CHECK)
 endif()
 
-set(OPT "-mavx -mavx2 -momit-leaf-frame-pointer")
+set(OPT "-mavx -mavx2")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     set(FLAGS "-O2 -DNDEBUG ${OPT}")
