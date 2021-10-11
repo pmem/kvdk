@@ -2,6 +2,7 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <sys/sysmacros.h>
 #include <thread>
 
 #include "../thread_manager.hpp"
@@ -54,10 +55,8 @@ PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
 PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t num_write_threads, bool use_devdax_mode)
-    : thread_cache_(num_write_threads),
-      num_segment_blocks_(num_segment_blocks),
-      block_size_(block_size),
-      offset_head_(0),
+    : thread_cache_(num_write_threads), num_segment_blocks_(num_segment_blocks),
+      block_size_(block_size), offset_head_(0),
       use_devdax_mode_(use_devdax_mode) {
   int is_pmem;
   GlobalLogger.Info("Initializing PMem size %lu in file %s\n", pmem_space,
