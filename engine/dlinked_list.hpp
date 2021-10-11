@@ -58,8 +58,8 @@ public:
       : p_pmem_allocator_{p_pmem_allocator}, pmp_curr_{curr} {}
 
   DListIterator(DListIterator const &other)
-      : p_pmem_allocator_{other.p_pmem_allocator_},
-        pmp_curr_(other.pmp_curr_) {}
+      : p_pmem_allocator_{other.p_pmem_allocator_}, pmp_curr_(other.pmp_curr_) {
+  }
 
   /// Conversion to bool
   /// Returns true if the iterator is on some DlinkedList
@@ -171,12 +171,12 @@ public:
     {
       // head and tail can hold any key and value supplied by caller.
       auto space_head = p_pmem_allocator_->Allocate(sizeof(DLDataEntry) +
-                                                     key.size() + value.size());
+                                                    key.size() + value.size());
       if (space_head.size == 0) {
         throw std::bad_alloc{};
       }
       auto space_tail = p_pmem_allocator_->Allocate(sizeof(DLDataEntry) +
-                                                     key.size() + value.size());
+                                                    key.size() + value.size());
       if (space_tail.size == 0) {
         p_pmem_allocator_->Free(space_head);
         throw std::bad_alloc{};
@@ -337,7 +337,7 @@ public:
     }
 
     auto space = p_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() +
-                                              value.size());
+                                             value.size());
     if (space.size == 0) {
       throw std::bad_alloc{};
     }

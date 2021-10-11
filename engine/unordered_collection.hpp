@@ -215,7 +215,7 @@ private:
   }
 
   inline static std::string makeInternalKey(std::uint64_t id,
-                                              pmem::obj::string_view key) {
+                                            pmem::obj::string_view key) {
     std::string internal_key{id2View(id)};
     internal_key += key;
     return internal_key;
@@ -386,8 +386,7 @@ public:
       throw std::runtime_error{
           "Accessing data with invalid UnorderedIterator!"};
     }
-    auto view_key =
-        UnorderedCollection::extractKey(internal_iterator_->Key());
+    auto view_key = UnorderedCollection::extractKey(internal_iterator_->Key());
     return std::string(view_key.data(), view_key.size());
   }
 

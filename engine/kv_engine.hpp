@@ -180,8 +180,9 @@ private:
   // DataEntryType DlistDataRecord for HSet
   // and DlistDeleteRecord for HDelete
   Status doHSetOrHDelete(pmem::obj::string_view const collection_name,
-                       pmem::obj::string_view const key,
-                       pmem::obj::string_view const value, DataEntryType type);
+                         pmem::obj::string_view const key,
+                         pmem::obj::string_view const value,
+                         DataEntryType type);
 
   Status RestoreDlistRecords(void *pmp_record);
 

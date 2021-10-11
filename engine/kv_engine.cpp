@@ -1495,9 +1495,9 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
 }
 
 Status KVEngine::doHSetOrHDelete(pmem::obj::string_view const collection_name,
-                               pmem::obj::string_view const key,
-                               pmem::obj::string_view const value,
-                               DataEntryType type) {
+                                 pmem::obj::string_view const key,
+                                 pmem::obj::string_view const value,
+                                 DataEntryType type) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1685,13 +1685,13 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key,
                       pmem::obj::string_view const value) {
   return doHSetOrHDelete(collection_name, key, value,
-                       DataEntryType::DlistDataRecord);
+                         DataEntryType::DlistDataRecord);
 }
 
 Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
                          pmem::obj::string_view const key) {
   return doHSetOrHDelete(collection_name, key, "",
-                       DataEntryType::DlistDeleteRecord);
+                         DataEntryType::DlistDeleteRecord);
 }
 
 std::shared_ptr<Iterator>
@@ -1797,7 +1797,7 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
             checkDLDataEntryLinkageLeft(pmp_old_record)) {
           assert(false && "Old record is linked in Dlinkedlist!");
           throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
-        }        
+        }
         hash_table_->Insert(hint_record, p_hash_entry_record, pmp_record->type,
                             offset_record,
                             HashOffsetType::UnorderedCollectionElement);

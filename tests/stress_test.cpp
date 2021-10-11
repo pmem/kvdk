@@ -557,8 +557,8 @@ private:
 
     // possible_kv_pairs is copied here
     kvdk_testing::SortedSetsIterateThrough(
-        engine, collection_name,
-        sorted_sets_possible_kv_pairs[collection_name], report_progress);
+        engine, collection_name, sorted_sets_possible_kv_pairs[collection_name],
+        report_progress);
   }
 
   void updateHashesPossibleKVPairs(std::string const &collection_name,

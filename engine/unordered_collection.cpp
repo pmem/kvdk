@@ -41,7 +41,7 @@ UnorderedCollection::UnorderedCollection(
       entry_list_record.next = _dlinked_list_.Tail()._GetOffset_();
     }
     DLinkedList::persistRecord(pmp_list_record, entry_list_record, name_,
-                                 id2View(id_));
+                               id2View(id_));
     pmp_dlist_record_ = static_cast<DLDataEntry *>(pmp_list_record);
   }
 }
@@ -54,8 +54,7 @@ catch (std::bad_alloc const &ex) {
 UnorderedCollection::UnorderedCollection(
     std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
     std::shared_ptr<HashTable> sp_hash_table, DLDataEntry *pmp_dlist_record)
-    : sp_hash_table_{sp_hash_table},
-      p_pmem_allocator_{sp_pmem_allocator.get()},
+    : sp_hash_table_{sp_hash_table}, p_pmem_allocator_{sp_pmem_allocator.get()},
       pmp_dlist_record_{pmp_dlist_record},
       _dlinked_list_{
           sp_pmem_allocator,
@@ -64,8 +63,7 @@ UnorderedCollection::UnorderedCollection(
           reinterpret_cast<DLDataEntry *>(
               sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->next)),
       },
-      name_{pmp_dlist_record->Key()}, id_{view2ID(
-                                           pmp_dlist_record->Value())},
+      name_{pmp_dlist_record->Key()}, id_{view2ID(pmp_dlist_record->Value())},
       time_stamp_{pmp_dlist_record->timestamp} {}
 
 UnorderedIterator UnorderedCollection::First() {
@@ -88,9 +86,8 @@ EmplaceReturn UnorderedCollection::EmplaceBefore(
   DListIterator iter_prev{_dlinked_list_.p_pmem_allocator_, pmp};
   --iter_prev;
   DListIterator iter_next{_dlinked_list_.p_pmem_allocator_, pmp};
-  EmplaceReturn ret =
-      emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_, timestamp,
-                       key, value, type, lock);
+  EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
+                                     timestamp, key, value, type, lock);
   return ret;
 }
 
@@ -103,9 +100,8 @@ EmplaceReturn UnorderedCollection::EmplaceAfter(
   DListIterator iter_next{_dlinked_list_.p_pmem_allocator_, pmp};
   ++iter_next;
 
-  EmplaceReturn ret =
-      emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_, timestamp,
-                       key, value, type, lock);
+  EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
+                                     timestamp, key, value, type, lock);
   return ret;
 }
 
@@ -117,9 +113,8 @@ EmplaceReturn UnorderedCollection::EmplaceFront(
   DListIterator iter_next{_dlinked_list_.Head()};
   ++iter_next;
 
-  EmplaceReturn ret =
-      emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_, timestamp,
-                       key, value, type, lock);
+  EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
+                                     timestamp, key, value, type, lock);
   return ret;
 }
 
@@ -131,9 +126,8 @@ EmplaceReturn UnorderedCollection::EmplaceBack(
   --iter_prev;
   DListIterator iter_next{_dlinked_list_.Tail()};
 
-  EmplaceReturn ret =
-      emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_, timestamp,
-                       key, value, type, lock);
+  EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
+                                     timestamp, key, value, type, lock);
   return ret;
 }
 
@@ -148,9 +142,8 @@ EmplaceReturn UnorderedCollection::SwapEmplace(
   DListIterator iter_next{_dlinked_list_.p_pmem_allocator_, pmp};
   ++iter_next;
 
-  EmplaceReturn ret =
-      emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_, timestamp,
-                       key, value, type, lock, true);
+  EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
+                                     timestamp, key, value, type, lock, true);
   ret.offset_old = _dlinked_list_.p_pmem_allocator_->addr2offset_checked(pmp);
   return ret;
 }
