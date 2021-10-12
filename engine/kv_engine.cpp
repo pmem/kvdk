@@ -63,6 +63,9 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
     *engine_ptr = engine;
+  } else {
+    GlobalLogger.Error("Init kvdk instance failed: %d\n", s);
+    delete engine;
   }
   return s;
 }
@@ -137,17 +140,24 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   if (s != Status::Ok) {
     return s;
   }
-  pmem_allocator_.reset(
-      new PMEMAllocator(db_file_, configs_.pmem_file_size,
-                        configs_.pmem_segment_blocks, configs_.pmem_block_size,
-                        configs_.max_write_threads, configs_.use_devdax_mode));
 
   thread_res_.resize(configs_.max_write_threads);
-  thread_manager_.reset(new ThreadManager(configs_.max_write_threads));
-  hash_table_.reset(new HashTable(configs_.hash_bucket_num,
-                                  configs_.hash_bucket_size,
-                                  configs_.num_buckets_per_slot,
-                                  pmem_allocator_, configs_.max_write_threads));
+  pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
+      db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
+      configs_.pmem_block_size, configs_.max_write_threads,
+      configs_.use_devdax_mode));
+  thread_manager_.reset(new (std::nothrow)
+                            ThreadManager(configs_.max_write_threads));
+  hash_table_.reset(HashTable::NewHashTable(
+      configs_.hash_bucket_num, configs_.hash_bucket_size,
+      configs_.num_buckets_per_slot, pmem_allocator_,
+      configs_.max_write_threads));
+  if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
+      thread_manager_ == nullptr) {
+    GlobalLogger.Error("Init kvdk basic components error\n");
+    return Status::Abort;
+  }
+
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;

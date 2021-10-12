@@ -8,6 +8,29 @@
 #include "unordered_collection.hpp"
 
 namespace KVDK_NAMESPACE {
+HashTable *
+HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
+                        uint32_t num_buckets_per_slot,
+                        const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+                        uint32_t write_threads) {
+  HashTable *table = new (std::nothrow)
+      HashTable(hash_bucket_num, hash_bucket_size, num_buckets_per_slot,
+                pmem_allocator, write_threads);
+  if (table) {
+    auto main_buckets_space =
+        table->dram_allocator_.Allocate(hash_bucket_size * hash_bucket_num);
+    if (main_buckets_space.size == 0) {
+      GlobalLogger.Error("No enough dram to create global hash table\n");
+      delete table;
+      table = nullptr;
+    } else {
+      table->main_buckets_ = table->dram_allocator_.offset2addr(
+          main_buckets_space.space_entry.offset);
+    }
+  }
+  return table;
+}
+
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
                                uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry, void *data_entry) {
@@ -136,12 +159,12 @@ Status HashTable::Search(const KeyHashHint &hint,
               *entry_base = reusable_entry;
               break;
             } else {
-              auto space = dram_allocator_->Allocate(hash_bucket_size_);
+              auto space = dram_allocator_.Allocate(hash_bucket_size_);
               if (space.size == 0) {
                 GlobalLogger.Error("Memory overflow!\n");
                 return Status::MemoryOverflow;
               }
-              next_off = dram_allocator_->offset2addr(space.space_entry.offset);
+              next_off = dram_allocator_.offset2addr(space.space_entry.offset);
               assert(next_off);
               memset(next_off, 0, space.size);
               memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);

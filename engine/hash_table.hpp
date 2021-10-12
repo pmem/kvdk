@@ -119,23 +119,11 @@ public:
     // More write purpose here
   };
 
-  HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
-            uint32_t num_buckets_per_slot,
-            const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-            uint32_t write_threads)
-      : hash_bucket_num_(hash_bucket_num),
-        num_buckets_per_slot_(num_buckets_per_slot),
-        hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(new ChunkBasedAllocator(write_threads)),
-        pmem_allocator_(pmem_allocator),
-        num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
-                                sizeof(HashEntry)) {
-    main_buckets_ = dram_allocator_->offset2addr(
-        (dram_allocator_->Allocate(hash_bucket_size * hash_bucket_num)
-             .space_entry.offset));
-    slots_.resize(hash_bucket_num / num_buckets_per_slot);
-    hash_bucket_entries_.resize(hash_bucket_num, 0);
-  }
+  static HashTable *
+  NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
+               uint32_t num_buckets_per_slot,
+               const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+               uint32_t write_threads);
 
   KeyHashHint GetHint(const pmem::obj::string_view &key) {
     KeyHashHint hint;
@@ -155,6 +143,20 @@ public:
               uint64_t offset, HashOffsetType offset_type);
 
 private:
+  HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
+            uint32_t num_buckets_per_slot,
+            const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+            uint32_t write_threads)
+      : hash_bucket_num_(hash_bucket_num),
+        num_buckets_per_slot_(num_buckets_per_slot),
+        hash_bucket_size_(hash_bucket_size),
+        dram_allocator_(ChunkBasedAllocator(write_threads)),
+        pmem_allocator_(pmem_allocator),
+        num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
+                                sizeof(HashEntry)),
+        slots_(hash_bucket_num / num_buckets_per_slot),
+        hash_bucket_entries_(hash_bucket_num, 0) {}
+
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
     return key_hash_value & (hash_bucket_num_ - 1);
   }
@@ -174,7 +176,7 @@ private:
   const uint64_t num_entries_per_bucket_;
   std::vector<Slot> slots_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  std::unique_ptr<ChunkBasedAllocator> dram_allocator_;
+  ChunkBasedAllocator dram_allocator_;
   char *main_buckets_;
 };
 } // namespace KVDK_NAMESPACE
