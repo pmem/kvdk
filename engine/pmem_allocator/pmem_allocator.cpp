@@ -11,18 +11,31 @@
 
 namespace KVDK_NAMESPACE {
 
+PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
+                             uint64_t num_segment_blocks, uint32_t block_size,
+                             uint32_t num_write_threads)
+    : pmem_(pmem), thread_cache_(num_write_threads),
+      num_segment_blocks_(num_segment_blocks), block_size_(block_size),
+      offset_head_(0), pmem_size_(pmem_size),
+      max_block_offset_(pmem_size_ / block_size_ / num_segment_blocks_ *
+                        num_segment_blocks_),
+      free_list_(num_segment_blocks_, num_write_threads, max_block_offset_,
+                 this) {
+  init_data_size_2_block_size();
+}
+
 void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
   if (entry.size == 0) {
     return;
   }
-  free_list_->Push(entry);
+  free_list_.Push(entry);
 }
 
 void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
   if (entry.size == 0) {
     return;
   }
-  free_list_->DelayPush(entry);
+  free_list_.DelayPush(entry);
 }
 
 void PMEMAllocator::PopulateSpace() {
@@ -52,33 +65,35 @@ void PMEMAllocator::PopulateSpace() {
 
 PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
 
-PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
-                             uint64_t num_segment_blocks, uint32_t block_size,
-                             uint32_t num_write_threads, bool use_devdax_mode)
-    : thread_cache_(num_write_threads), num_segment_blocks_(num_segment_blocks),
-      block_size_(block_size), offset_head_(0),
-      use_devdax_mode_(use_devdax_mode) {
+PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
+                                               uint64_t pmem_size,
+                                               uint64_t num_segment_blocks,
+                                               uint32_t block_size,
+                                               uint32_t num_write_threads,
+                                               bool use_devdax_mode) {
   int is_pmem;
-  GlobalLogger.Info("Initializing PMem size %lu in file %s\n", pmem_space,
-                    pmem_file.c_str());
-  if (!use_devdax_mode_) {
-    if ((pmem_ = (char *)pmem_map_file(pmem_file.c_str(), pmem_space,
-                                       PMEM_FILE_CREATE, 0666, &pmem_size_,
-                                       &is_pmem)) == nullptr) {
-      GlobalLogger.Error("Pmem map file %s failed: %s\n", pmem_file.c_str(),
+  uint64_t mapped_size;
+  char *pmem;
+  // TODO jiayu: Should we clear map failed file?
+  if (!use_devdax_mode) {
+    if ((pmem = (char *)pmem_map_file(pmem_file.c_str(), pmem_size,
+                                      PMEM_FILE_CREATE, 0666, &mapped_size,
+                                      &is_pmem)) == nullptr) {
+      GlobalLogger.Error("PMem map file %s failed: %s\n", pmem_file.c_str(),
                          strerror(errno));
-      exit(1);
+      return nullptr;
     }
+
     if (!is_pmem) {
       GlobalLogger.Error("%s is not a pmem path\n", pmem_file.c_str());
-      exit(1);
+      return nullptr;
     }
   } else {
-    if (!CheckDevDaxAndGetSize(pmem_file.c_str(), &pmem_size_)) {
+    if (!CheckDevDaxAndGetSize(pmem_file.c_str(), &mapped_size)) {
       GlobalLogger.Error(
           "CheckDevDaxAndGetSize %s failed device %s faild: %s\n",
           pmem_file.c_str(), strerror(errno));
-      exit(1);
+      return nullptr;
     }
 
     int flags = PROT_READ | PROT_WRITE;
@@ -86,37 +101,47 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
     if (fd < 0) {
       GlobalLogger.Error("Open devdax device %s faild: %s\n", pmem_file.c_str(),
                          strerror(errno));
-      exit(1);
+      return nullptr;
     }
 
-    if ((pmem_ = (char *)mmap(nullptr, pmem_space, flags, MAP_SHARED, fd, 0)) ==
+    if ((pmem = (char *)mmap(nullptr, pmem_size, flags, MAP_SHARED, fd, 0)) ==
         nullptr) {
       GlobalLogger.Error("Mmap devdax device %s faild: %s\n", pmem_file.c_str(),
                          strerror(errno));
-      exit(1);
+      return nullptr;
     }
   }
 
-  if (pmem_size_ < pmem_space) {
-    GlobalLogger.Error("Pmem map file %s size %lu less than expected %lu\n",
-                       pmem_file.c_str(), pmem_size_, pmem_space);
-    exit(1);
+  if (mapped_size != pmem_size) {
+    GlobalLogger.Error(
+        "Pmem map file %s size %lu is not same as expected %lu\n",
+        pmem_file.c_str(), mapped_size, pmem_size);
+    return nullptr;
   }
-  max_block_offset_ =
-      pmem_size_ / block_size_ / num_segment_blocks_ * num_segment_blocks_;
+
+  PMEMAllocator *allocator = nullptr;
+  // We need to allocate a byte map in pmem allocator which require a large
+  // memory, so we catch exception here
+  try {
+    allocator = new PMEMAllocator(pmem, pmem_size, num_segment_blocks,
+                                  block_size, num_write_threads);
+  } catch (std::bad_alloc &err) {
+    GlobalLogger.Error("Error while initialize PMEMAllocator: %s\n",
+                       err.what());
+    return nullptr;
+  }
+
   // num_segment_blocks and block_size are persisted and never changes.
   // No need to worry user modify those parameters so that records may be
   // skipped.
-  size_t sz_wasted = pmem_size_ % (block_size_ * num_segment_blocks_);
+  size_t sz_wasted = pmem_size % (block_size * num_segment_blocks);
   if (sz_wasted != 0)
     GlobalLogger.Error(
         "Pmem file size not aligned with segment size, %llu space is wasted.\n",
         sz_wasted);
-  free_list_ = std::make_shared<Freelist>(
-      num_segment_blocks, num_write_threads,
-      std::make_shared<SpaceMap>(max_block_offset_), this);
   GlobalLogger.Info("Map pmem space done\n");
-  init_data_size_2_block_size();
+
+  return allocator;
 }
 
 bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
@@ -245,7 +270,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
       }
 
       // allocate from free list
-      if (free_list_->Get(b_size, &thread_cache.free_entry)) {
+      if (free_list_.Get(b_size, &thread_cache.free_entry)) {
         continue;
       }
       break;

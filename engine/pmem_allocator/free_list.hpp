@@ -120,19 +120,18 @@ private:
 class Freelist {
 public:
   Freelist(uint32_t max_classified_b_size, uint64_t num_segment_blocks,
-           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map,
-           PMEMAllocator *allocator)
+           uint32_t num_threads, uint64_t max_offset, PMEMAllocator *allocator)
       : num_segment_blocks_(num_segment_blocks),
         max_classified_b_size_(max_classified_b_size),
         active_pool_(max_classified_b_size),
-        merged_pool_(max_classified_b_size), space_map_(space_map),
+        merged_pool_(max_classified_b_size), space_map_(max_offset),
         thread_cache_(num_threads, max_classified_b_size),
         min_timestamp_of_entries_(0), pmem_allocator_(allocator) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t num_threads,
-           std::shared_ptr<SpaceMap> space_map, PMEMAllocator *allocator)
+           uint64_t max_offset, PMEMAllocator *allocator)
       : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
-                 num_threads, space_map, allocator) {}
+                 num_threads, max_offset, allocator) {}
 
   // Add a space entry
   void Push(const SizedSpaceEntry &entry);
@@ -212,13 +211,13 @@ private:
       return 0;
     }
     uint64_t size =
-        space_map_->TryMerge(space_entry.offset, max_size, min_merge_size);
+        space_map_.TryMerge(space_entry.offset, max_size, min_merge_size);
     return size;
   }
 
   const uint64_t num_segment_blocks_;
   const uint32_t max_classified_b_size_;
-  std::shared_ptr<SpaceMap> space_map_;
+  SpaceMap space_map_;
   std::vector<ThreadCache> thread_cache_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;

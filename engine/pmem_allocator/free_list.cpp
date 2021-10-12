@@ -241,7 +241,7 @@ void Freelist::DelayPush(const SizedSpaceEntry &entry) {
 
 void Freelist::Push(const SizedSpaceEntry &entry) {
   assert(entry.size > 0);
-  space_map_->Set(entry.space_entry.offset, entry.size);
+  space_map_.Set(entry.space_entry.offset, entry.size);
   auto &thread_cache = thread_cache_[write_thread.id];
   if (entry.size >= thread_cache.active_entries.size()) {
     std::lock_guard<SpinMutex> lg(large_entries_spin_);
@@ -276,7 +276,7 @@ bool Freelist::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
   }
 
     if (found) {
-      if (space_map_->TestAndUnset(space_entry->space_entry.offset, i) == i) {
+      if (space_map_.TestAndUnset(space_entry->space_entry.offset, i) == i) {
         space_entry->size = i;
         return true;
       }
@@ -292,7 +292,7 @@ bool Freelist::Get(uint32_t b_size, SizedSpaceEntry *space_entry) {
         auto size = space->size;
         space_entry->space_entry = space->space_entry;
         large_entries_.erase(space);
-        if (space_map_->TestAndUnset(space_entry->space_entry.offset, size) ==
+        if (space_map_.TestAndUnset(space_entry->space_entry.offset, size) ==
             size) {
           thread_cache.last_used_entry_ts = space_entry->space_entry.info;
           space_entry->size = size;
@@ -358,7 +358,7 @@ bool Freelist::MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry) {
         space_entry->size = size;
         std::swap(cache_list[i][j], cache_list[i].back());
         cache_list[i].pop_back();
-        if (space_map_->TestAndUnset(space_entry->space_entry.offset, size) ==
+        if (space_map_.TestAndUnset(space_entry->space_entry.offset, size) ==
             size) {
           return true;
         }
