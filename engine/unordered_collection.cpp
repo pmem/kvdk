@@ -7,42 +7,39 @@ UnorderedCollection::UnorderedCollection(
     std::uint64_t id, std::uint64_t timestamp)
     : sp_hash_table_{sp_hash_table}, p_pmem_allocator_{sp_pmem_allocator.get()},
       pmp_dlist_record_{nullptr}, dlinked_list_{sp_pmem_allocator, timestamp,
-                                                 id2View(id),
-                                                 pmem::obj::string_view{""}},
+                                                id2View(id),
+                                                pmem::obj::string_view{""}},
       name_{name}, id_{id}, time_stamp_{timestamp} {
-  {
-    auto space_list_record = dlinked_list_.p_pmem_allocator_->Allocate(
-        sizeof(DLDataEntry) + name_.size() + sizeof(decltype(id_)));
-    if (space_list_record.size == 0) {
-      DLinkedList::Deallocate(dlinked_list_.Head());
-      DLinkedList::Deallocate(dlinked_list_.Tail());
-      dlinked_list_.pmp_head_ = nullptr;
-      dlinked_list_.pmp_tail_ = nullptr;
-      throw std::bad_alloc{};
-    }
-    std::uint64_t offset_list_record = space_list_record.space_entry.offset;
-    void *pmp_list_record =
-        dlinked_list_.p_pmem_allocator_->offset2addr_checked(
-            offset_list_record);
-    DLDataEntry entry_list_record; // Set up entry with meta
-    {
-      entry_list_record.timestamp = timestamp;
-      entry_list_record.type = DataEntryType::DlistRecord;
-      entry_list_record.k_size = name_.size();
-      entry_list_record.v_size = sizeof(decltype(id_));
-
-      // checksum can only be calculated with complete meta
-      entry_list_record.header.b_size = space_list_record.size;
-      entry_list_record.header.checksum =
-          DLinkedList::checkSum(entry_list_record, name_, id2View(id_));
-
-      entry_list_record.prev = dlinked_list_.Head().GetOffset();
-      entry_list_record.next = dlinked_list_.Tail().GetOffset();
-    }
-    DLinkedList::persistRecord(pmp_list_record, entry_list_record, name_,
-                               id2View(id_));
-    pmp_dlist_record_ = static_cast<DLDataEntry *>(pmp_list_record);
+  auto space_list_record = dlinked_list_.p_pmem_allocator_->Allocate(
+      sizeof(DLDataEntry) + name_.size() + sizeof(decltype(id_)));
+  if (space_list_record.size == 0) {
+    DLinkedList::Deallocate(dlinked_list_.Head());
+    DLinkedList::Deallocate(dlinked_list_.Tail());
+    dlinked_list_.pmp_head_ = nullptr;
+    dlinked_list_.pmp_tail_ = nullptr;
+    throw std::bad_alloc{};
   }
+  std::uint64_t offset_list_record = space_list_record.space_entry.offset;
+  void *pmp_list_record =
+      dlinked_list_.p_pmem_allocator_->offset2addr_checked(offset_list_record);
+  DLDataEntry entry_list_record; // Set up entry with meta
+  {
+    entry_list_record.timestamp = timestamp;
+    entry_list_record.type = DataEntryType::DlistRecord;
+    entry_list_record.k_size = name_.size();
+    entry_list_record.v_size = sizeof(decltype(id_));
+
+    // checksum can only be calculated with complete meta
+    entry_list_record.header.b_size = space_list_record.size;
+    entry_list_record.header.checksum =
+        DLinkedList::checkSum(entry_list_record, name_, id2View(id_));
+
+    entry_list_record.prev = dlinked_list_.Head().GetOffset();
+    entry_list_record.next = dlinked_list_.Tail().GetOffset();
+  }
+  DLinkedList::persistRecord(pmp_list_record, entry_list_record, name_,
+                             id2View(id_));
+  pmp_dlist_record_ = static_cast<DLDataEntry *>(pmp_list_record);
 }
 
 UnorderedCollection::UnorderedCollection(
@@ -57,7 +54,8 @@ UnorderedCollection::UnorderedCollection(
           reinterpret_cast<DLDataEntry *>(
               sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->next)),
       },
-      name_{pmp_dlist_record->Key()}, id_{view2ID(pmp_dlist_record->Value())},
+      name_{string_view_2_string(pmp_dlist_record->Key())},
+      id_{view2ID(pmp_dlist_record->Value())},
       time_stamp_{pmp_dlist_record->timestamp} {}
 
 UnorderedIterator UnorderedCollection::First() {
