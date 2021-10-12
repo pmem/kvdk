@@ -11,7 +11,7 @@ void Logger::Info(const char *format, ...) {
   if (level_ <= LogLevel::INFO) {
     va_list args;
     va_start(args, format);
-    Log("[LOG]", format, args);
+    Log("[INFO]", format, args);
     va_end(args);
   }
 }

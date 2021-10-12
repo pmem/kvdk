@@ -44,25 +44,33 @@ public:
   // just record these entries
   void DelayFree(const SizedSpaceEntry &entry);
 
-  // transfer block_offset of allocated space to address
+  // translate block_offset of allocated space to address
+  inline char *offset2addr_checked(uint64_t block_offset) {
+    assert(block_offset <
+               max_block_offset_ / num_segment_blocks_ * num_segment_blocks_ &&
+           "Trying to access invalid offset");
+    return pmem_ + block_offset * block_size_;
+  }
+
   inline char *offset2addr(uint64_t block_offset) {
     if (block_offset == kNullPmemOffset) {
       return nullptr;
     } else {
-      assert(block_offset < max_block_offset_ / num_segment_blocks_ *
-                                num_segment_blocks_ &&
-             "Trying to access invalid offset");
       return pmem_ + block_offset * block_size_;
     }
   }
 
-  // transfer address of allocated space to block_offset
+  // translate address of allocated space to block_offset
+  inline uint64_t addr2offset_checked(void *addr) {
+    assert(addr >= pmem_);
+    assert((static_cast<char *>(addr) - pmem_) / block_size_ <
+               max_block_offset_ / num_segment_blocks_ * num_segment_blocks_ &&
+           "Trying to create invalid offset");
+    return ((char *)addr - pmem_) / block_size_;
+  }
+
   inline uint64_t addr2offset(void *addr) {
     if (addr) {
-      assert((static_cast<char *>(addr) - pmem_) / block_size_ <
-                 max_block_offset_ / num_segment_blocks_ *
-                     num_segment_blocks_ &&
-             "Trying to create invalid offset");
       return ((char *)addr - pmem_) / block_size_;
     } else {
       return kNullPmemOffset;

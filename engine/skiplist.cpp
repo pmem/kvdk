@@ -361,22 +361,18 @@ void SortedIterator::SeekToLast() {
   current = (DLDataEntry *)pmem_allocator_->offset2addr(last);
 }
 
-bool SortedIterator::Next() {
+void SortedIterator::Next() {
   if (!Valid()) {
-    return false;
+    return;
   }
   current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
-  return Valid();
 }
 
-bool SortedIterator::Prev() {
+void SortedIterator::Prev() {
   if (!Valid()) {
-    return false;
+    return;
   }
-
   current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
-
-  return Valid();
 }
 
 std::string SortedIterator::Key() {
