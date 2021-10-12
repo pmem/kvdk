@@ -45,11 +45,11 @@ DEFINE_double(
 DEFINE_bool(latency, false, "Stat operation latencies");
 
 DEFINE_string(type, "string",
-              "Storage engine to benchmark, can be string, sorted or hashes");
+              "Storage engine to benchmark, can be string, sorted or hash");
 
 DEFINE_bool(scan, false,
             "If set true, read threads will do scan operations, this is valid "
-            "only if we benchmark sorted or hashes engine");
+            "only if we benchmark sorted or hash engine");
 
 DEFINE_uint64(collections, 1,
               "Number of collections in the instance to benchmark");
@@ -327,12 +327,12 @@ bool ProcessBenchmarkConfigs() {
       printf("scan is not supported for \"string\" type data\n");
       return false;
     }
-  } else if (FLAGS_type == "hashes") {
+  } else if (FLAGS_type == "hash") {
     bench_hashes = true;
     bench_string = false;
     bench_sorted = false;
     if (FLAGS_batch > 0) {
-      printf("Batch is not supported for \"hashes\" type data\n");
+      printf("Batch is not supported for \"hash\" type data\n");
       return false;
     }
     collections.resize(FLAGS_collections);

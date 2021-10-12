@@ -22,7 +22,7 @@ Explanation of arguments:
 
     -max_write_threads: Max concurrent write threads of the KVDK instance, set it to the number of the hyper-threads for performance consideration.
 
-    -type: Type of key-value pairs to benchmark, it can be "string" or "sorted".
+    -type: Type of key-value pairs to benchmark, it can be "string", "hash" or "sorted".
 
     -populate: Populate pmem space while creating new KVDK instance for best write performance in runtime, see "include/kvdk/configs.hpp" for explanation.
 
