@@ -4,13 +4,12 @@ namespace KVDK_NAMESPACE {
 UnorderedCollection::UnorderedCollection(
     std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
     std::shared_ptr<HashTable> sp_hash_table, std::string const &name,
-    std::uint64_t id, std::uint64_t timestamp) try : sp_hash_table_ {
-  sp_hash_table
-}
-, p_pmem_allocator_{sp_pmem_allocator.get()}, pmp_dlist_record_{nullptr},
-    _dlinked_list_{sp_pmem_allocator, timestamp, id2View(id),
-                   pmem::obj::string_view{""}},
-    name_{name}, id_{id}, time_stamp_{timestamp} {
+    std::uint64_t id, std::uint64_t timestamp)
+    : sp_hash_table_{sp_hash_table}, p_pmem_allocator_{sp_pmem_allocator.get()},
+      pmp_dlist_record_{nullptr}, _dlinked_list_{sp_pmem_allocator, timestamp,
+                                                 id2View(id),
+                                                 pmem::obj::string_view{""}},
+      name_{name}, id_{id}, time_stamp_{timestamp} {
   {
     auto space_list_record = _dlinked_list_.p_pmem_allocator_->Allocate(
         sizeof(DLDataEntry) + name_.size() + sizeof(decltype(id_)));
@@ -44,11 +43,6 @@ UnorderedCollection::UnorderedCollection(
                                id2View(id_));
     pmp_dlist_record_ = static_cast<DLDataEntry *>(pmp_list_record);
   }
-}
-catch (std::bad_alloc const &ex) {
-  std::cerr << ex.what() << std::endl;
-  std::cerr << "Fail to create UnorderedCollection object!" << std::endl;
-  throw;
 }
 
 UnorderedCollection::UnorderedCollection(

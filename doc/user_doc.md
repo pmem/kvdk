@@ -27,7 +27,7 @@ or how to reopen an existing KVDK instance at the path supplied.
 #include <thread>
 #include <vector>
 
-#define DEBUG // For assert
+#define Debug // For assert
 
 int main()
 {
