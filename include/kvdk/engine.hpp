@@ -67,10 +67,23 @@ public:
   virtual Status SDelete(const pmem::obj::string_view collection,
                          const pmem::obj::string_view key) = 0;
 
+  virtual Status HSet(const pmem::obj::string_view collection,
+                      const pmem::obj::string_view key,
+                      const pmem::obj::string_view value) = 0;
+
+  virtual Status HGet(const pmem::obj::string_view collection,
+                      const pmem::obj::string_view key, std::string *value) = 0;
+
+  virtual Status HDelete(const pmem::obj::string_view collection,
+                         const pmem::obj::string_view key) = 0;
+
   // Create a KV iterator on sorted collection "collection", which is able to
   // sequentially iterate all KVs in the "collection".
   virtual std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) = 0;
+
+  virtual std::shared_ptr<Iterator>
+  NewUnorderedIterator(pmem::obj::string_view const collection_name) = 0;
 
   // Release resources occupied by this write thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.

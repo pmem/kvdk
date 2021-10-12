@@ -41,3 +41,4 @@ build/
 .cache/
 
 scripts/result*
+scripts/__pycache__

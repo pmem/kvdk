@@ -102,9 +102,9 @@ Status Skiplist::Rebuild() {
     }
 
     pmem::obj::string_view key = next_data_entry->Key();
-    Status s = hash_table_->Search(hash_table_->GetHint(key), key,
-                                   SortedDataRecord, &hash_entry, &data_entry,
-                                   &entry_base, HashTable::SearchPurpose::Read);
+    Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                          SortedDataRecord, &entry_base,
+                                          &hash_entry, &data_entry);
     // these nodes should be already created during data restoring
     if (s != Status::Ok) {
       GlobalLogger.Error("Rebuild skiplist error\n");
@@ -176,9 +176,9 @@ Status Skiplist::CheckConnection(int height) {
     DLDataEntry data_entry;
     HashEntry *entry_base = nullptr;
     pmem::obj::string_view key = next_data_entry->Key();
-    Status s = hash_table_->Search(hash_table_->GetHint(key), key,
-                                   SortedDataRecord, &hash_entry, &data_entry,
-                                   &entry_base, HashTable::SearchPurpose::Read);
+    Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                          SortedDataRecord, &entry_base,
+                                          &hash_entry, &data_entry);
     assert(s == Status::Ok && "search node fail!");
 
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
@@ -361,22 +361,18 @@ void SortedIterator::SeekToLast() {
   current = (DLDataEntry *)pmem_allocator_->offset2addr(last);
 }
 
-bool SortedIterator::Next() {
+void SortedIterator::Next() {
   if (!Valid()) {
-    return false;
+    return;
   }
   current = (DLDataEntry *)pmem_allocator_->offset2addr(current->next);
-  return Valid();
 }
 
-bool SortedIterator::Prev() {
+void SortedIterator::Prev() {
   if (!Valid()) {
-    return false;
+    return;
   }
-
   current = (DLDataEntry *)(pmem_allocator_->offset2addr(current->prev));
-
-  return Valid();
 }
 
 std::string SortedIterator::Key() {
@@ -476,10 +472,9 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
           DLDataEntry data_entry;
           HashEntry *entry_base = nullptr;
           pmem::obj::string_view key = next_data_entry->Key();
-          Status s = engine->hash_table_->Search(
+          Status s = engine->hash_table_->SearchForRead(
               engine->hash_table_->GetHint(key), key, SortedDataEntryType,
-              &hash_entry, &data_entry, &entry_base,
-              HashTable::SearchPurpose::Read);
+              &entry_base, &hash_entry, &data_entry);
           assert(s == Status::Ok &&
                  "It should be in hash_table when reseting entries_offset map");
           next_offset = next_data_entry->next;
@@ -547,10 +542,9 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
       thread_local DLDataEntry data_entry;
       HashEntry *entry_base = nullptr;
       pmem::obj::string_view key = next_data_entry->Key();
-      Status s = engine->hash_table_->Search(
+      Status s = engine->hash_table_->SearchForRead(
           engine->hash_table_->GetHint(key), key, SortedDataEntryType,
-          &hash_entry, &data_entry, &entry_base,
-          HashTable::SearchPurpose::Read);
+          &entry_base, &hash_entry, &data_entry);
       if (s != Status::Ok) {
         GlobalLogger.Error(
             "the node should be already created during data restoring\n");
@@ -638,9 +632,9 @@ void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
         (DLDataEntry *)engine->pmem_allocator_->offset2addr(it->first);
     pmem::obj::string_view key = cur_data_entry->Key();
 
-    Status s = engine->hash_table_->Search(
+    Status s = engine->hash_table_->SearchForRead(
         engine->hash_table_->GetHint(key), key, SortedDataEntryType,
-        &hash_entry, &data_entry, &entry_base, HashTable::SearchPurpose::Read);
+        &entry_base, &hash_entry, &data_entry);
     assert(s == Status::Ok || s == Status::NotFound);
     if (s == Status::NotFound ||
         hash_entry.header.offset_type == HashOffsetType::DLDataEntry) {
