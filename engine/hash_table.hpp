@@ -4,7 +4,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include "data_entry.hpp"
@@ -15,6 +17,7 @@
 
 namespace KVDK_NAMESPACE {
 enum class HashEntryStatus : uint8_t {
+  Empty = 0,
   Normal = 1,
   // New created hash entry for inserting a new key
   Initializing = 1 << 1,
@@ -29,11 +32,11 @@ enum class HashEntryStatus : uint8_t {
   // key exsiting on PMem, so the delete record can be safely freed after the
   // hash entry updated by a new key
   CleanReusable = 1 << 4,
-  // A empty hash entry which points to nothing
-  Empty = 1 << 5,
 };
 
 enum class HashOffsetType : uint8_t {
+  // Value initialized considered as Invalid
+  Invalid = 0,
   // Offset is PMem offset of a data entry
   DataEntry = 1,
   // Offset is PMem offset of a double linked data entry
@@ -42,6 +45,10 @@ enum class HashOffsetType : uint8_t {
   SkiplistNode = 3,
   // Offset is pointer to a dram skiplist struct
   Skiplist = 4,
+  // Offset field contains pointer to UnorderedCollection object on DRAM
+  UnorderedCollection = 5,
+  // Offset field contains PMem pointer to element of UnorderedCollection
+  UnorderedCollectionElement = 6
 };
 
 struct HashHeader {
@@ -51,14 +58,27 @@ struct HashHeader {
   HashEntryStatus status;
 };
 
+class UnorderedCollection;
+
 struct HashEntry {
+public:
   HashEntry() = default;
+
+  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, uint64_t offset,
+            HashOffsetType offset_type)
+      : header({key_hash_prefix, data_entry_type, offset_type,
+                HashEntryStatus::Normal}),
+        offset(offset) {}
+
   HashEntry(uint32_t kp, uint16_t t, uint64_t offset, HashEntryStatus status,
             HashOffsetType offset_type)
       : header({kp, t, offset_type, status}), offset(offset) {}
 
   HashHeader header;
-  uint64_t offset;
+  union {
+    uint64_t offset;
+    UnorderedCollection *p_unordered_collection;
+  };
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
   static void CopyOffset(HashEntry *dst, HashEntry *src) {

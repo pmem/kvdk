@@ -277,9 +277,9 @@ public:
     return (current != nullptr && current != skiplist_->header()->data_entry);
   }
 
-  virtual bool Next() override;
+  virtual void Next() override;
 
-  virtual bool Prev() override;
+  virtual void Prev() override;
 
   virtual std::string Key() override;
 
