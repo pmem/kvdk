@@ -728,7 +728,7 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   }
 }
 
-TEST_F(EngineStressTest, SortedSetsSSetOnly) {
+TEST_F(EngineStressTest, DISABLED_SortedSetsSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
@@ -745,7 +745,7 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   }
 }
 
-TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
+TEST_F(EngineStressTest, DISABLED_SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
   size_t n_reboot = 3;
 
