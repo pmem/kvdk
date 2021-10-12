@@ -90,6 +90,9 @@ public:
                                      (uint8_t)HashEntryStatus::DirtyReusable |
                                      (uint8_t)HashEntryStatus::Empty);
   }
+
+  // Make this hash entry reusable while its content been deleted
+  void Clear() { header.status = HashEntryStatus::Empty; }
 };
 
 struct HashCache {
