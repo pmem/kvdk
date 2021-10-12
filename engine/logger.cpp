@@ -7,17 +7,26 @@
 
 namespace KVDK_NAMESPACE {
 
-void Logger::Info(const char *format, ...) {
-  if (level_ <= LogLevel::INFO) {
+void Logger::Debug(const char *format, ...) {
+  if (level_ <= LogLevel::Debug) {
     va_list args;
     va_start(args, format);
-    Log("[INFO]", format, args);
+    Log("[LOG]", format, args);
+    va_end(args);
+  }
+}
+
+void Logger::Info(const char *format, ...) {
+  if (level_ <= LogLevel::Info) {
+    va_list args;
+    va_start(args, format);
+    Log("[Info]", format, args);
     va_end(args);
   }
 }
 
 void Logger::Error(const char *format, ...) {
-  if (level_ <= LogLevel::ERROR) {
+  if (level_ <= LogLevel::Error) {
     va_list args;
     va_start(args, format);
     Log("[ERROR]", format, args);

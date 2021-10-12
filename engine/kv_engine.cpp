@@ -386,9 +386,9 @@ Status KVEngine::RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
   // Here key is the collection name
   auto hint = hash_table_->GetHint(key);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->Search(hint, key, SortedHeaderRecord, &hash_entry,
-                                 &existing_data_entry, &entry_base,
-                                 HashTable::SearchPurpose::Recover);
+  Status s = hash_table_->SearchForWrite(
+      hint, key, SortedHeaderRecord, &entry_base, &hash_entry,
+      &existing_data_entry, true /* in recovery */);
   if (s == Status::MemoryOverflow) {
     return s;
   }
@@ -409,9 +409,9 @@ Status KVEngine::RestoreStringRecord(DataEntry *pmem_data_entry,
 
   auto hint = hash_table_->GetHint(key);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->Search(hint, key, StringDataEntryType, &hash_entry,
-                                 &existing_data_entry, &entry_base,
-                                 HashTable::SearchPurpose::Recover);
+  Status s = hash_table_->SearchForWrite(
+      hint, key, StringDataEntryType, &entry_base, &hash_entry,
+      &existing_data_entry, true /* in recovery */);
 
   if (s == Status::MemoryOverflow) {
     return s;
@@ -480,9 +480,9 @@ Status KVEngine::RestoreSortedRecord(DLDataEntry *pmem_data_entry,
 
   auto hint = hash_table_->GetHint(key);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->Search(hint, key, SortedDataRecord, &hash_entry,
-                                 &existing_data_entry, &entry_base,
-                                 HashTable::SearchPurpose::Recover);
+  Status s = hash_table_->SearchForWrite(
+      hint, key, SortedDataRecord, &entry_base, &hash_entry,
+      &existing_data_entry, true /* in recovery */);
 
   if (s == Status::MemoryOverflow) {
     return s;
@@ -560,18 +560,17 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
   auto hint = hash_table_->GetHint(collection);
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
-  Status s =
-      hash_table_->Search(hint, collection, header_type, &hash_entry, nullptr,
-                          &entry_base, HashTable::SearchPurpose::Read);
+  Status s = hash_table_->SearchForRead(hint, collection, header_type,
+                                        &entry_base, &hash_entry, nullptr);
   if (s == Status::NotFound) {
     if (init) {
       DLDataEntry existing_data_entry;
       std::lock_guard<SpinMutex> lg(*hint.spin);
       // Since we do the first search without lock, we need to check again
       entry_base = nullptr;
-      s = hash_table_->Search(hint, collection, header_type, &hash_entry,
-                              &existing_data_entry, &entry_base,
-                              HashTable::SearchPurpose::Write);
+      s = hash_table_->SearchForWrite(hint, collection, header_type,
+                                      &entry_base, &hash_entry,
+                                      &existing_data_entry);
       if (s == Status::MemoryOverflow) {
         return s;
       }
@@ -773,10 +772,9 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
   while (1) {
     HashEntry hash_entry;
     HashEntry *entry_base = nullptr;
-    bool is_found =
-        hash_table_->Search(hash_table_->GetHint(key), key, type_mask,
-                            &hash_entry, data_entry_meta, &entry_base,
-                            HashTable::SearchPurpose::Read) == Status::Ok;
+    bool is_found = hash_table_->SearchForRead(
+                        hash_table_->GetHint(key), key, type_mask, &entry_base,
+                        &hash_entry, data_entry_meta) == Status::Ok;
     if (!is_found || (hash_entry.header.data_type & DeleteDataEntryType)) {
       return Status::NotFound;
     }
@@ -889,9 +887,9 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
     HashEntry *entry_base = nullptr;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    Status s = hash_table_->Search(hint, collection_key, SortedDataRecord,
-                                   &hash_entry, &data_entry, &entry_base,
-                                   HashTable::SearchPurpose::Write);
+    Status s =
+        hash_table_->SearchForWrite(hint, collection_key, SortedDataRecord,
+                                    &entry_base, &hash_entry, &data_entry);
     switch (s) {
     case Status::Ok:
       break;
@@ -957,9 +955,9 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     HashEntry *entry_base = nullptr;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    Status s = hash_table_->Search(hint, collection_key, SortedDataRecord,
-                                   &hash_entry, &data_entry, &entry_base,
-                                   HashTable::SearchPurpose::Write);
+    Status s =
+        hash_table_->SearchForWrite(hint, collection_key, SortedDataRecord,
+                                    &entry_base, &hash_entry, &data_entry);
     if (s == Status ::MemoryOverflow) {
       return s;
     }
@@ -1234,9 +1232,9 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
   {
     auto hash_hint = hash_table_->GetHint(kv.key);
     std::lock_guard<SpinMutex> lg(*hash_hint.spin);
-    Status s = hash_table_->Search(hash_hint, kv.key, StringDataEntryType,
-                                   &hash_entry, &data_entry, &entry_base,
-                                   HashTable::SearchPurpose::Write);
+    Status s =
+        hash_table_->SearchForWrite(hash_hint, kv.key, StringDataEntryType,
+                                    &entry_base, &hash_entry, &data_entry);
     if (s == Status::MemoryOverflow) {
       return s;
     }
@@ -1319,9 +1317,9 @@ Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key) {
   {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    Status s = hash_table_->Search(
-        hint, key, StringDeleteRecord | StringDataRecord, &hash_entry,
-        &data_entry, &entry_base, HashTable::SearchPurpose::Write);
+    Status s = hash_table_->SearchForWrite(
+        hint, key, StringDeleteRecord | StringDataRecord, &entry_base,
+        &hash_entry, &data_entry);
 
     switch (s) {
     case Status::Ok:
@@ -1382,9 +1380,9 @@ Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
   {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    Status s = hash_table_->Search(
-        hint, key, StringDeleteRecord | StringDataRecord, &hash_entry,
-        &data_entry, &entry_base, HashTable::SearchPurpose::Write);
+    Status s = hash_table_->SearchForWrite(
+        hint, key, StringDeleteRecord | StringDataRecord, &entry_base,
+        &hash_entry, &data_entry);
     if (s == Status::MemoryOverflow) {
       return s;
     }
@@ -1445,9 +1443,9 @@ KVEngine::findUnorderedCollection(pmem::obj::string_view collection_name) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
   HashEntry *entry_base = nullptr;
-  Status s = hash_table_->Search(
-      hint, collection_name, DataEntryType::DlistRecord, &hash_entry, nullptr,
-      &entry_base, HashTable::SearchPurpose::Read);
+  Status s = hash_table_->SearchForRead(hint, collection_name,
+                                        DataEntryType::DlistRecord, &entry_base,
+                                        &hash_entry, nullptr);
   switch (s) {
   case Status::NotFound: {
     return nullptr;
@@ -1476,11 +1474,10 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
 
     HashEntry hash_entry_found;
     HashEntry *p_hash_entry_found_in_table = nullptr;
-    Status search_result = hash_table_->Search(
+    Status search_result = hash_table_->SearchForRead(
         hint, internal_key,
         DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord,
-        &hash_entry_found, nullptr, &p_hash_entry_found_in_table,
-        HashTable::SearchPurpose::Read);
+        &p_hash_entry_found_in_table, &hash_entry_found, nullptr);
     switch (search_result) {
     case Status::NotFound: {
       return Status::NotFound;
@@ -1575,10 +1572,9 @@ Status KVEngine::doHSetOrHDelete(pmem::obj::string_view const collection_name,
 
             HashEntry hash_entry_collection;
             HashEntry *p_hash_entry_collection = nullptr;
-            Status s = hash_table_->Search(
+            Status s = hash_table_->SearchForWrite(
                 hint_collection, collection_name, DataEntryType::DlistRecord,
-                &hash_entry_collection, nullptr, &p_hash_entry_collection,
-                HashTable::SearchPurpose::Write);
+                &p_hash_entry_collection, &hash_entry_collection, nullptr);
             if (s != Status::NotFound) {
               assert(false && "Fail to found a UnorderedCollection "
                               "but error when creating a new one!");
@@ -1612,11 +1608,10 @@ Status KVEngine::doHSetOrHDelete(pmem::obj::string_view const collection_name,
 
       HashEntry hash_entry_record;
       HashEntry *p_hash_entry_record = nullptr;
-      Status search_result = hash_table_->Search(
+      Status search_result = hash_table_->SearchForWrite(
           hint_record, internal_key,
           DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord,
-          &hash_entry_record, nullptr, &p_hash_entry_record,
-          HashTable::SearchPurpose::Write);
+          &p_hash_entry_record, &hash_entry_record, nullptr);
 
       // pmp_last_emplacement maybe invalidified by SwapEmplace!
       thread_local std::uint64_t offset_last_emplacement = 0;
@@ -1763,10 +1758,10 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
 
     HashEntry hash_entry_collection;
     HashEntry *p_hash_entry_collection = nullptr;
-    Status s = hash_table_->Search(
+    Status s = hash_table_->SearchForWrite(
         hint_collection, collection_name, DataEntryType::DlistRecord,
-        &hash_entry_collection, nullptr, &p_hash_entry_collection,
-        HashTable::SearchPurpose::Write);
+        &p_hash_entry_collection, &hash_entry_collection, nullptr,
+        true /* in recovery */);
     if (s != Status::NotFound) {
       assert(false &&
              "Found a UnorderedCollection which should have not been created!");
@@ -1809,11 +1804,11 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
 
     HashEntry hash_entry_record;
     HashEntry *p_hash_entry_record = nullptr;
-    Status search_status = hash_table_->Search(
+    Status search_status = hash_table_->SearchForWrite(
         hint_record, internal_key,
         DataEntryType::DlistDataRecord | DataEntryType::DlistDeleteRecord,
-        &hash_entry_record, nullptr, &p_hash_entry_record,
-        HashTable::SearchPurpose::Recover);
+        &p_hash_entry_record, &hash_entry_record, nullptr,
+        true /* in recovery */);
 
     switch (search_status) {
     case Status::NotFound: {

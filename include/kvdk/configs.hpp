@@ -11,10 +11,10 @@
 namespace KVDK_NAMESPACE {
 
 enum class LogLevel : uint8_t {
-  ALL = 0,
-  DEBUG,
-  INFO,
-  ERROR,
+  All = 0,
+  Debug,
+  Info,
+  Error,
 };
 
 struct Configs {
@@ -102,7 +102,7 @@ struct Configs {
   std::string devdax_meta_dir = "/mnt/kvdk-pmem-meta";
 
   // Log information to show
-  LogLevel log_level = LogLevel::INFO;
+  LogLevel log_level = LogLevel::Info;
 
   // Optional optimization strategy for few large skiplists by multi-thread
   // recovery a skiplist. The optimization can get better performance when

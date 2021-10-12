@@ -20,6 +20,7 @@ class Logger {
 public:
   void Info(const char *format, ...);
   void Error(const char *format, ...);
+  void Debug(const char *format, ...);
   void Init(FILE *fp, LogLevel level);
 
 private:
