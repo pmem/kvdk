@@ -393,8 +393,8 @@ protected:
       sorted_sets_possible_kv_pairs;
 
 private:
-  std::vector<std::string> _keys_;
-  std::vector<std::string> _values_;
+  std::vector<std::string> keys_;
+  std::vector<std::string> values_;
   std::default_random_engine rand{42};
 
 protected:
@@ -619,8 +619,8 @@ private:
   }
 
   void prepareKVPairs() {
-    _keys_.reserve(n_thread * n_kv_per_thread);
-    _values_.reserve(n_kv_per_thread);
+    keys_.reserve(n_thread * n_kv_per_thread);
+    values_.reserve(n_kv_per_thread);
     grouped_keys.resize(n_thread);
     grouped_values.resize(n_thread);
     hashes_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
@@ -635,9 +635,9 @@ private:
     {
       ProgressBar progress_gen_kv{std::cout, "", n_kv_per_thread, true};
       for (size_t i = 0; i < n_kv_per_thread; i++) {
-        _values_.push_back(GetRandomString(sz_value_min, sz_value_max));
+        values_.push_back(GetRandomString(sz_value_min, sz_value_max));
         for (size_t tid = 0; tid < n_thread; tid++)
-          _keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
+          keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
 
         if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
           progress_gen_kv.Update(i + 1);
@@ -649,8 +649,8 @@ private:
       ProgressBar progress_gen_kv_view{std::cout, "", n_thread, true};
       for (size_t tid = 0; tid < n_thread; tid++) {
         for (size_t i = 0; i < n_kv_per_thread; i++) {
-          grouped_keys[tid].emplace_back(_keys_[i * n_thread + tid]);
-          grouped_values[tid].emplace_back(_values_[i]);
+          grouped_keys[tid].emplace_back(keys_[i * n_thread + tid]);
+          grouped_values[tid].emplace_back(values_[i]);
         }
         progress_gen_kv_view.Update(tid + 1);
       }
