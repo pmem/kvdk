@@ -97,9 +97,10 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
     }
   }
 
-  if (pmem_size_ < pmem_space) {
-    GlobalLogger.Error("Pmem map file %s size %lu less than expected %lu\n",
-                       pmem_file.c_str(), pmem_size_, pmem_space);
+  if (pmem_size_ != pmem_space) {
+    GlobalLogger.Error(
+        "Pmem map file %s size %lu is not same as expected %lu\n",
+        pmem_file.c_str(), pmem_size_, pmem_space);
     exit(1);
   }
   max_block_offset_ =
@@ -112,9 +113,8 @@ PMEMAllocator::PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
     GlobalLogger.Error(
         "Pmem file size not aligned with segment size, %llu space is wasted.\n",
         sz_wasted);
-  free_list_ = std::make_shared<Freelist>(
-      num_segment_blocks, num_write_threads,
-      std::make_shared<SpaceMap>(max_block_offset_), this);
+  free_list_ = std::make_shared<Freelist>(num_segment_blocks, num_write_threads,
+                                          max_block_offset_, this);
   GlobalLogger.Info("Map pmem space done\n");
   init_data_size_2_block_size();
 }
