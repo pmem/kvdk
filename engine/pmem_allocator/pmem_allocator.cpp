@@ -74,6 +74,7 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
   int is_pmem;
   uint64_t mapped_size;
   char *pmem;
+  // TODO jiayu: Should we clear map failed file?
   if (!use_devdax_mode) {
     if ((pmem = (char *)pmem_map_file(pmem_file.c_str(), pmem_size,
                                       PMEM_FILE_CREATE, 0666, &mapped_size,
