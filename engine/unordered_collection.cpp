@@ -6,43 +6,40 @@ UnorderedCollection::UnorderedCollection(
     std::shared_ptr<HashTable> sp_hash_table, std::string const &name,
     std::uint64_t id, std::uint64_t timestamp)
     : sp_hash_table_{sp_hash_table}, p_pmem_allocator_{sp_pmem_allocator.get()},
-      pmp_dlist_record_{nullptr}, _dlinked_list_{sp_pmem_allocator, timestamp,
-                                                 id2View(id),
-                                                 pmem::obj::string_view{""}},
+      pmp_dlist_record_{nullptr}, dlinked_list_{sp_pmem_allocator, timestamp,
+                                                id2View(id),
+                                                pmem::obj::string_view{""}},
       name_{name}, id_{id}, time_stamp_{timestamp} {
-  {
-    auto space_list_record = _dlinked_list_.p_pmem_allocator_->Allocate(
-        sizeof(DLDataEntry) + name_.size() + sizeof(decltype(id_)));
-    if (space_list_record.size == 0) {
-      DLinkedList::Deallocate(_dlinked_list_.Head());
-      DLinkedList::Deallocate(_dlinked_list_.Tail());
-      _dlinked_list_.pmp_head_ = nullptr;
-      _dlinked_list_.pmp_tail_ = nullptr;
-      throw std::bad_alloc{};
-    }
-    std::uint64_t offset_list_record = space_list_record.space_entry.offset;
-    void *pmp_list_record =
-        _dlinked_list_.p_pmem_allocator_->offset2addr_checked(
-            offset_list_record);
-    DLDataEntry entry_list_record; // Set up entry with meta
-    {
-      entry_list_record.timestamp = timestamp;
-      entry_list_record.type = DataEntryType::DlistRecord;
-      entry_list_record.k_size = name_.size();
-      entry_list_record.v_size = sizeof(decltype(id_));
-
-      // checksum can only be calculated with complete meta
-      entry_list_record.header.b_size = space_list_record.size;
-      entry_list_record.header.checksum =
-          DLinkedList::checkSum(entry_list_record, name_, id2View(id_));
-
-      entry_list_record.prev = _dlinked_list_.Head()._GetOffset_();
-      entry_list_record.next = _dlinked_list_.Tail()._GetOffset_();
-    }
-    DLinkedList::persistRecord(pmp_list_record, entry_list_record, name_,
-                               id2View(id_));
-    pmp_dlist_record_ = static_cast<DLDataEntry *>(pmp_list_record);
+  auto space_list_record = dlinked_list_.p_pmem_allocator_->Allocate(
+      sizeof(DLDataEntry) + name_.size() + sizeof(decltype(id_)));
+  if (space_list_record.size == 0) {
+    DLinkedList::Deallocate(dlinked_list_.Head());
+    DLinkedList::Deallocate(dlinked_list_.Tail());
+    dlinked_list_.pmp_head_ = nullptr;
+    dlinked_list_.pmp_tail_ = nullptr;
+    throw std::bad_alloc{};
   }
+  std::uint64_t offset_list_record = space_list_record.space_entry.offset;
+  void *pmp_list_record =
+      dlinked_list_.p_pmem_allocator_->offset2addr_checked(offset_list_record);
+  DLDataEntry entry_list_record; // Set up entry with meta
+  {
+    entry_list_record.timestamp = timestamp;
+    entry_list_record.type = DataEntryType::DlistRecord;
+    entry_list_record.k_size = name_.size();
+    entry_list_record.v_size = sizeof(decltype(id_));
+
+    // checksum can only be calculated with complete meta
+    entry_list_record.header.b_size = space_list_record.size;
+    entry_list_record.header.checksum =
+        DLinkedList::checkSum(entry_list_record, name_, id2View(id_));
+
+    entry_list_record.prev = dlinked_list_.Head().GetOffset();
+    entry_list_record.next = dlinked_list_.Tail().GetOffset();
+  }
+  DLinkedList::persistRecord(pmp_list_record, entry_list_record, name_,
+                             id2View(id_));
+  pmp_dlist_record_ = static_cast<DLDataEntry *>(pmp_list_record);
 }
 
 UnorderedCollection::UnorderedCollection(
@@ -50,14 +47,15 @@ UnorderedCollection::UnorderedCollection(
     std::shared_ptr<HashTable> sp_hash_table, DLDataEntry *pmp_dlist_record)
     : sp_hash_table_{sp_hash_table}, p_pmem_allocator_{sp_pmem_allocator.get()},
       pmp_dlist_record_{pmp_dlist_record},
-      _dlinked_list_{
+      dlinked_list_{
           sp_pmem_allocator,
           reinterpret_cast<DLDataEntry *>(
               sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->prev)),
           reinterpret_cast<DLDataEntry *>(
               sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->next)),
       },
-      name_{pmp_dlist_record->Key()}, id_{view2ID(pmp_dlist_record->Value())},
+      name_{string_view_2_string(pmp_dlist_record->Key())},
+      id_{view2ID(pmp_dlist_record->Value())},
       time_stamp_{pmp_dlist_record->timestamp} {}
 
 UnorderedIterator UnorderedCollection::First() {
@@ -77,9 +75,9 @@ EmplaceReturn UnorderedCollection::EmplaceBefore(
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
   checkUserSuppliedPmp(pmp);
-  DListIterator iter_prev{_dlinked_list_.p_pmem_allocator_, pmp};
+  DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   --iter_prev;
-  DListIterator iter_next{_dlinked_list_.p_pmem_allocator_, pmp};
+  DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp};
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
                                      timestamp, key, value, type, lock);
   return ret;
@@ -90,8 +88,8 @@ EmplaceReturn UnorderedCollection::EmplaceAfter(
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
   checkUserSuppliedPmp(pmp);
-  DListIterator iter_prev{_dlinked_list_.p_pmem_allocator_, pmp};
-  DListIterator iter_next{_dlinked_list_.p_pmem_allocator_, pmp};
+  DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
+  DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp};
   ++iter_next;
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
@@ -103,8 +101,8 @@ EmplaceReturn UnorderedCollection::EmplaceFront(
     std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  DListIterator iter_prev{_dlinked_list_.Head()};
-  DListIterator iter_next{_dlinked_list_.Head()};
+  DListIterator iter_prev{dlinked_list_.Head()};
+  DListIterator iter_next{dlinked_list_.Head()};
   ++iter_next;
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
@@ -116,9 +114,9 @@ EmplaceReturn UnorderedCollection::EmplaceBack(
     std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  DListIterator iter_prev{_dlinked_list_.Tail()};
+  DListIterator iter_prev{dlinked_list_.Tail()};
   --iter_prev;
-  DListIterator iter_next{_dlinked_list_.Tail()};
+  DListIterator iter_next{dlinked_list_.Tail()};
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
                                      timestamp, key, value, type, lock);
@@ -131,14 +129,14 @@ EmplaceReturn UnorderedCollection::SwapEmplace(
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
   checkUserSuppliedPmp(pmp);
-  DListIterator iter_prev{_dlinked_list_.p_pmem_allocator_, pmp};
+  DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   --iter_prev;
-  DListIterator iter_next{_dlinked_list_.p_pmem_allocator_, pmp};
+  DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp};
   ++iter_next;
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
                                      timestamp, key, value, type, lock, true);
-  ret.offset_old = _dlinked_list_.p_pmem_allocator_->addr2offset_checked(pmp);
+  ret.offset_old = dlinked_list_.p_pmem_allocator_->addr2offset_checked(pmp);
   return ret;
 }
 
@@ -152,8 +150,8 @@ EmplaceReturn UnorderedCollection::emplaceBetween(
   checkLock(lock);
   checkEmplaceType(type);
 
-  DListIterator iter_prev{_dlinked_list_.p_pmem_allocator_, pmp_prev};
-  DListIterator iter_next{_dlinked_list_.p_pmem_allocator_, pmp_next};
+  DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp_prev};
+  DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp_next};
 
   // These locks may be invalidified after other threads insert another node!
   std::string internal_key = GetInternalKey(key);
@@ -211,10 +209,10 @@ EmplaceReturn UnorderedCollection::emplaceBetween(
       return EmplaceReturn{};
     }
   }
-  DListIterator iter = _dlinked_list_.EmplaceBetween(
+  DListIterator iter = dlinked_list_.EmplaceBetween(
       iter_prev, iter_next, timestamp, internal_key, value, type);
 
-  return EmplaceReturn{iter._GetOffset_(), EmplaceReturn::FailOffset, true};
+  return EmplaceReturn{iter.GetOffset(), EmplaceReturn::FailOffset, true};
 }
 } // namespace KVDK_NAMESPACE
 
@@ -222,12 +220,12 @@ namespace KVDK_NAMESPACE {
 UnorderedIterator::UnorderedIterator(
     std::shared_ptr<UnorderedCollection> sp_coll)
     : sp_collection_{sp_coll},
-      internal_iterator_{sp_coll->_dlinked_list_.Head()}, valid_{false} {}
+      internal_iterator_{sp_coll->dlinked_list_.Head()}, valid_{false} {}
 
 UnorderedIterator::UnorderedIterator(
     std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry *pmp)
     : sp_collection_{sp_coll},
-      internal_iterator_{sp_collection_->_dlinked_list_.p_pmem_allocator_, pmp},
+      internal_iterator_{sp_collection_->dlinked_list_.p_pmem_allocator_, pmp},
       valid_{false} {
   if (!pmp) {
     throw std::runtime_error{

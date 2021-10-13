@@ -67,7 +67,7 @@ private:
   DLDataEntry *pmp_dlist_record_;
 
   /// DLinkedList manages data on PMem, also hold a PMemAllocator
-  DLinkedList _dlinked_list_;
+  DLinkedList dlinked_list_;
 
   std::string name_;
   std::uint64_t id_;
@@ -182,7 +182,7 @@ public:
         << "Next: " << hex_print(iter->next) << "\t"
         << "Key: " << iter->Key() << "\t"
         << "Value: " << iter->Value() << "\n";
-    out << col._dlinked_list_;
+    out << col.dlinked_list_;
     return out;
   }
 
@@ -340,14 +340,14 @@ public:
   /// Seek to First DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToFirst() final override {
-    internal_iterator_ = sp_collection_->_dlinked_list_.Head();
+    internal_iterator_ = sp_collection_->dlinked_list_.Head();
     internalNext();
   }
 
   /// Seek to Last DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToLast() final override {
-    internal_iterator_ = sp_collection_->_dlinked_list_.Tail();
+    internal_iterator_ = sp_collection_->dlinked_list_.Tail();
     internalPrev();
   }
 

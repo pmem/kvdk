@@ -131,7 +131,7 @@ private:
   }
 
 public:
-  inline std::uint64_t _GetOffset_() const {
+  inline std::uint64_t GetOffset() const {
     return p_pmem_allocator_->addr2offset_checked(pmp_curr_);
   }
 };
@@ -312,7 +312,7 @@ public:
   /// Helper function to deallocate Record, called only by caller
   inline static void Deallocate(DListIterator iter) {
     iter.p_pmem_allocator_->Free(SizedSpaceEntry{
-        iter._GetOffset_(), iter->header.b_size, iter->timestamp});
+        iter.GetOffset(), iter->header.b_size, iter->timestamp});
   }
 
   /// Emplace between iter_prev and iter_next, linkage not checked
@@ -355,8 +355,8 @@ public:
       entry.header.b_size = space.size;
       entry.header.checksum = checkSum(entry, key, value);
 
-      entry.prev = iter_prev._GetOffset_();
-      entry.next = iter_next._GetOffset_();
+      entry.prev = iter_prev.GetOffset();
+      entry.next = iter_next.GetOffset();
       // entry is now complete
     }
 
@@ -434,7 +434,7 @@ private:
     while (iter != iter_end) {
       auto internal_key = iter->Key();
       out << "Type: " << hex_print(iter->type) << "\t"
-          << "Offset: " << hex_print(iter._GetOffset_()) << "\t"
+          << "Offset: " << hex_print(iter.GetOffset()) << "\t"
           << "Prev: " << hex_print(iter->prev) << "\t"
           << "Next: " << hex_print(iter->next) << "\t"
           << "Key: " << hex_print(extractID(internal_key))
@@ -444,7 +444,7 @@ private:
     }
     auto internal_key = iter->Key();
     out << "Type: " << hex_print(iter->type) << "\t"
-        << "Offset: " << hex_print(iter._GetOffset_()) << "\t"
+        << "Offset: " << hex_print(iter.GetOffset()) << "\t"
         << "Prev: " << hex_print(iter->prev) << "\t"
         << "Next: " << hex_print(iter->next) << "\t"
         << "Key: " << hex_print(extractID(internal_key))

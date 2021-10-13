@@ -2,7 +2,7 @@
 
 To test performance of KVDK, you can run our benchmark tool "bench", the tool is auto-built along with KVDK library in the build dir. 
 
-You can manually run individual benchmark follow the examples as shown bellow, or simply run our basic benchmark script "scripts/basic_benchmarks.py" to test all the basic read/write performance.
+You can manually run individual benchmark follow the examples as shown bellow, or simply run our basic benchmark script "scripts/bench_all.py" to test all the basic read/write performance.
 
 ## Fill data to new instance
 
@@ -22,7 +22,7 @@ Explanation of arguments:
 
     -max_write_threads: Max concurrent write threads of the KVDK instance, set it to the number of the hyper-threads for performance consideration.
 
-    -type: Type of key-value pairs to benchmark, it can be "string" or "sorted".
+    -type: Type of key-value pairs to benchmark, it can be "string", "hash" or "sorted".
 
     -populate: Populate pmem space while creating new KVDK instance for best write performance in runtime, see "include/kvdk/configs.hpp" for explanation.
 
