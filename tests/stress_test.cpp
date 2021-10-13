@@ -663,13 +663,13 @@ protected:
     n_hash_bucket = (1ULL << 20);
     // Smaller buckets to increase hash collisions
     sz_hash_bucket = (3 + 1) * 16;
-    n_blocks_per_segment = (1ULL << 20);
+    n_blocks_per_segment = (1ULL << 10);
     t_background_work_interval = 1;
 
     /// Test specific parameters
     n_thread = 48;
     // 2M keys per thread, totaling about 100M records
-    n_kv_per_thread = (2ULL << 20);
+    n_kv_per_thread = (2ULL << 15);
     // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
     sz_key_min = 0;

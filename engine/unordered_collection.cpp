@@ -167,23 +167,22 @@ EmplaceReturn UnorderedCollection::Erase(
   lock_t lock1;
   lock_t lock2;
   lock_t lock3;
-  std::vector<lock_t> locks;
 
   if (spin1 != spin) {
-    locks.emplace_back(*spin1, std::defer_lock);
+    lock1 = lock_t{*spin1, std::defer_lock};
+    if (!lock1.try_lock())
+      return EmplaceReturn{};
   }
   if (spin2 != spin && spin2 != spin1) {
-    locks.emplace_back(*spin2, std::defer_lock);
+    lock2 = lock_t{*spin2, std::defer_lock};
+    if (!lock2.try_lock())
+      return EmplaceReturn{};
   }
   if (spin3 != spin && spin3 != spin1 && spin3 != spin2) {
-    locks.emplace_back(*spin3, std::defer_lock);
+    lock3 = lock_t{*spin3, std::defer_lock};
+    if (!lock3.try_lock())
+      return EmplaceReturn{};
   }
-  // Begin locking
-  bool lock_success = true; // not succeeded yet
-  for (size_t i = 0; i < locks.size(); i++)
-    lock_success = lock_success && locks[i].try_lock();
-  if (!lock_success)
-    return EmplaceReturn{};
   // acquired all locks
 
   {
@@ -234,20 +233,20 @@ EmplaceReturn UnorderedCollection::emplaceBetween(
   std::vector<lock_t> locks;
 
   if (spin1 != spin) {
-    locks.emplace_back(*spin1, std::defer_lock);
+    lock1 = lock_t{*spin1, std::defer_lock};
+    if (!lock1.try_lock())
+      return EmplaceReturn{};
   }
   if (spin2 != spin && spin2 != spin1) {
-    locks.emplace_back(*spin2, std::defer_lock);
+    lock2 = lock_t{*spin2, std::defer_lock};
+    if (!lock2.try_lock())
+      return EmplaceReturn{};
   }
   if (spin3 != spin && spin3 != spin1 && spin3 != spin2) {
-    locks.emplace_back(*spin3, std::defer_lock);
+    lock3 = lock_t{*spin3, std::defer_lock};
+    if (!lock3.try_lock())
+      return EmplaceReturn{};
   }
-  // Begin locking
-  bool lock_success = true; // not succeeded yet
-  for (size_t i = 0; i < locks.size(); i++)
-    lock_success = lock_success && locks[i].try_lock();
-  if (!lock_success)
-    return EmplaceReturn{};
   // acquired all locks
 
   if (!is_swap_emplace) {
