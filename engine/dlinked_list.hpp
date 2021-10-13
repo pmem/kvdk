@@ -69,7 +69,6 @@ public:
     }
     switch (static_cast<DataEntryType>(pmp_curr_->type)) {
     case DataEntryType::DlistDataRecord:
-    case DataEntryType::DlistDeleteRecord:
     case DataEntryType::DlistHeadRecord:
     case DataEntryType::DlistTailRecord: {
       return true;
@@ -246,8 +245,7 @@ public:
 
       while (true) {
         switch (static_cast<DataEntryType>(curr->type)) {
-        case DataEntryType::DlistDataRecord:
-        case DataEntryType::DlistDeleteRecord: {
+        case DataEntryType::DlistDataRecord: {
           DListIterator next{curr};
           ++next;
           DListIterator prev{curr};
@@ -311,6 +309,11 @@ public:
 
   /// Helper function to deallocate Record, called only by caller
   inline static void Deallocate(DListIterator iter) {
+    // This is redundant. Un-linked record will be 
+    iter->type = DataEntryType::Padding;
+    pmem_flush(iter.pmp_curr_, sizeof(DLDataEntry));
+    pmem_drain();
+
     iter.p_pmem_allocator_->Free(SizedSpaceEntry{
         iter.GetOffset(), iter->header.b_size, iter->timestamp});
   }
@@ -328,8 +331,7 @@ public:
       std::uint64_t timestamp, // Timestamp can only be supplied by caller
       pmem::obj::string_view const key, pmem::obj::string_view const value,
       DataEntryType type) {
-    if (type != DataEntryType::DlistDataRecord &&
-        type != DataEntryType::DlistDeleteRecord) {
+    if (type != DataEntryType::DlistDataRecord) {
       throw std::runtime_error{"Trying to emplace invalid Record!"};
     }
     if (!iter_prev || !iter_next) {
@@ -367,6 +369,27 @@ public:
                 PMEM_F_MEM_NONTEMPORAL);
 
     return DListIterator{p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
+  }
+
+  // Connect prev and next of node addressed by iter_record_to_erase,
+  // logically delete this record by de-link it.
+  // Return iterator at next node.
+  inline DListIterator Erase(DListIterator iter_record_to_erase) {
+    DListIterator iter_prev{iter_record_to_erase};
+    --iter_prev;
+    DListIterator iter_next{iter_record_to_erase};
+    ++iter_next;
+    if (!iter_prev || !iter_next) {
+      throw std::runtime_error{"Invalid iterator in dlinked_list!"};
+    }
+    auto prev_offset = iter_prev.GetOffset();
+    auto next_offset = iter_next.GetOffset();
+    pmem_memcpy(&iter_prev->next, &next_offset, sizeof(next_offset),
+                PMEM_F_MEM_NONTEMPORAL);
+    pmem_memcpy(&iter_next->prev, &prev_offset, sizeof(prev_offset),
+                PMEM_F_MEM_NONTEMPORAL);
+
+    return iter_next;
   }
 
 private:

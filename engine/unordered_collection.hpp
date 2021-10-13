@@ -134,11 +134,18 @@ public:
                             std::unique_lock<SpinMutex> const &lock);
 
   /// key is also checked to match old key
-  EmplaceReturn SwapEmplace(DLDataEntry *pmp, std::uint64_t timestamp,
+  EmplaceReturn SwapEmplace(DLDataEntry *pmp_record_to_be_swapped, 
+                            std::uint64_t timestamp,
                             pmem::obj::string_view const key,
                             pmem::obj::string_view const value,
                             DataEntryType type,
                             std::unique_lock<SpinMutex> const &lock);
+
+  /// Erase given record
+  /// Return new_offset as next record
+  /// old_offset as erased record
+  EmplaceReturn Erase(DLDataEntry *pmp_record_to_be_deleted,
+                      std::unique_lock<SpinMutex> const& lock);
 
   /// Deallocate a Record given by caller.
   /// Emplace functions does not do deallocations.
@@ -198,8 +205,7 @@ private:
 
   // Check the type of Record to be emplaced.
   inline static void checkEmplaceType(DataEntryType type) {
-    if (type != DataEntryType::DlistDataRecord &&
-        type != DataEntryType::DlistDeleteRecord) {
+    if (type != DataEntryType::DlistDataRecord) {
       throw std::runtime_error{"Trying to Emplace a Record with invalid type "
                                "in UnorderedCollection!"};
     }
@@ -261,12 +267,11 @@ private:
 
   /// When User Call Emplace functions with parameter pmp
   /// pmp supplied maybe invalid
-  /// User should only supply pmp to DlistDataRecord or DlistDeleteRecord
-  inline void checkUserSuppliedPmp(DLDataEntry *pmp) {
-    bool is_pmp_valid;
+  /// User should only supply pmp to DlistDataRecord
+  inline bool checkUserSuppliedPmp(DLDataEntry *pmp) {
+    bool is_pmp_valid = false;
     switch (static_cast<DataEntryType>(pmp->type)) {
-    case DataEntryType::DlistDataRecord:
-    case DataEntryType::DlistDeleteRecord: {
+    case DataEntryType::DlistDataRecord: {
       is_pmp_valid = true;
       break;
     }
@@ -279,23 +284,19 @@ private:
     }
     }
     if (is_pmp_valid) {
-      checkID(pmp);
-      return;
-    } else {
-      throw std::runtime_error{"User supplied pmp for UnorderedCollection "
-                               "Emplace functions is invalid!"};
-    }
+      is_pmp_valid = is_pmp_valid && checkID(pmp);
+    } 
+    return is_pmp_valid;
   }
 
   /// Treat pmp as PMem pointer to a
-  /// DlistHeadRecord, DlistTailRecord, DlistDataRecord, DlistDeleteRecord
+  /// DlistHeadRecord, DlistTailRecord, DlistDataRecord
   /// Access ID and check whether pmp belongs to current UnorderedCollection
-  inline void checkID(DLDataEntry *pmp) {
+  inline bool checkID(DLDataEntry *pmp) {
     if (UnorderedCollection::extractID(pmp->Key()) == ID()) {
-      return;
+      return true;
     } else {
-      throw std::runtime_error{
-          "User supplied pmp has different ID with the UnorderedCollection!"};
+      return false;
     }
   }
 };
@@ -307,7 +308,6 @@ class UnorderedIterator final : public Iterator {
 private:
   /// shared pointer to pin the UnorderedCollection
   std::shared_ptr<UnorderedCollection> sp_collection_;
-  /// DListIterator does not ignore DlistDeleteRecord
   DListIterator internal_iterator_;
   /// Whether the UnorderedIterator is at a DlistDataRecord
   bool valid_;
@@ -324,7 +324,7 @@ public:
   /// Construct UnorderedIterator of a certain UnorderedCollection
   /// pointing to a DLDataEntry belonging to this collection
   /// Runtime checking the type of this UnorderedIterator,
-  /// which can be DlistDataRecord, DlistDeleteRecord, DlistHeadRecord and
+  /// which can be DlistDataRecord, DlistHeadRecord and
   /// DlistTailRecord ID is also checked. Checking failure results in throwing
   /// runtime_error Valid() is true only if the iterator points to
   /// DlistDataRecord
@@ -352,7 +352,7 @@ public:
   }
 
   /// Valid() is true only if the UnorderedIterator points to a DlistDataRecord.
-  /// DlistHeadRecord, DlistTailRecord and DlistDeleteRecord is considered
+  /// DlistHeadRecord, DlistTailRecord is considered
   /// invalid. User should always check Valid() before accessing data with Key()
   /// and Value() Iterating with Next() and Prev()
   inline virtual bool Valid() final override { return valid_; }
@@ -403,12 +403,12 @@ public:
 
 private:
   // Proceed to next DlistDataRecord, can start from
-  // DlistHeadRecord, DlistDataRecord or DlistDeleteRecord
+  // DlistHeadRecord or DlistDataRecord
   // If reached DlistTailRecord, valid_ is set to false and returns
   void internalNext();
 
   // Proceed to prev DlistDataRecord, can start from
-  // DlistTailRecord, DlistDataRecord or DlistDeleteRecord
+  // DlistTailRecord or DlistDataRecord
   // If reached DlistHeadRecord, valid_ is set to false and returns
   void internalPrev();
 };
