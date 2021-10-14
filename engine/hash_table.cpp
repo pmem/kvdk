@@ -106,23 +106,17 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-  if (entries > 10)
+  static uint64_t max = 0;
+  if (entries > max)
   {
+    max = entries;
     std::cerr
-      << "Too many entries in one bucket!\n"
+      << "Max entries in one bucket increased!\n"
       << "Bucket: " << hint.bucket << "\t"
       << "Hash: " << hint.key_hash_value << "\t"
       << "Entries: " << entries << "\t"
       << "Type: " << type_mask << "\t"
       << "Key: " << key << std::endl;
-
-    // char* const p = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
-    // for (HashEntry const* p_bucket = reinterpret_cast<HashEntry const*>(p); i < count; i++)
-    // {
-    //   /* code */
-    // }
-     
-    // std::abort();
   }
 
   bool found = false;
@@ -176,6 +170,13 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
           }
           *entry_base = reusable_entry;
         } else {
+          static size_t n_allocate = 0;
+          ++n_allocate;
+          if (n_allocate % 1000000 == 0)
+          {
+            std::cerr << "Buckets: " << n_allocate << std::endl;
+          }
+          
           auto space = dram_allocator_.Allocate(hash_bucket_size_);
           if (space.size == 0) {
             GlobalLogger.Error("Memory overflow!\n");
