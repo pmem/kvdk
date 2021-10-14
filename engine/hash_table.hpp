@@ -17,7 +17,6 @@
 
 namespace KVDK_NAMESPACE {
 enum class HashEntryStatus : uint8_t {
-  Empty = 0,
   Normal = 1,
   // New created hash entry for inserting a new key
   Initializing = 1 << 1,
@@ -32,6 +31,7 @@ enum class HashEntryStatus : uint8_t {
   // key exsiting on PMem, so the delete record can be safely freed after the
   // hash entry updated by a new key
   CleanReusable = 1 << 4,
+  Empty = 1 << 5,
 };
 
 enum class HashOffsetType : uint8_t {

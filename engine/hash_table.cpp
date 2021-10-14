@@ -106,15 +106,24 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-  if (entries > 1000)
-  {
-    std::cerr 
-      << "Bucket: " << hint.bucket << "\t"
-      << "Hash: " << hint.key_hash_value << "\t"
-      << "Entries: " << entries << "\t"
-      << "Type: " << type_mask << "\t"
-      << "Key: " << key << std::endl;
-  }
+  // if (entries > 10)
+  // {
+  //   std::cerr
+  //     << "Too many entries in one bucket!\n"
+  //     << "Bucket: " << hint.bucket << "\t"
+  //     << "Hash: " << hint.key_hash_value << "\t"
+  //     << "Entries: " << entries << "\t"
+  //     << "Type: " << type_mask << "\t"
+  //     << "Key: " << key << std::endl;
+
+  //   // char* const p = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
+  //   // for (HashEntry const* p_bucket = reinterpret_cast<HashEntry const*>(p); i < count; i++)
+  //   // {
+  //   //   /* code */
+  //   // }
+     
+  //   // std::abort();
+  // }
   
   bool found = false;
 
