@@ -134,7 +134,7 @@ public:
                             std::unique_lock<SpinMutex> const &lock);
 
   /// key is also checked to match old key
-  EmplaceReturn SwapEmplace(DLDataEntry *pmp_record_to_be_swapped, 
+  EmplaceReturn SwapEmplace(DLDataEntry *pmp_record_to_be_swapped,
                             std::uint64_t timestamp,
                             pmem::obj::string_view const key,
                             pmem::obj::string_view const value,
@@ -145,7 +145,7 @@ public:
   /// Return new_offset as next record
   /// old_offset as erased record
   EmplaceReturn Erase(DLDataEntry *pmp_record_to_be_deleted,
-                      std::unique_lock<SpinMutex> const& lock);
+                      std::unique_lock<SpinMutex> const &lock);
 
   /// Deallocate a Record given by caller.
   /// Emplace functions does not do deallocations.
@@ -285,7 +285,7 @@ private:
     }
     if (is_pmp_valid) {
       is_pmp_valid = is_pmp_valid && checkID(pmp);
-    } 
+    }
     return is_pmp_valid;
   }
 

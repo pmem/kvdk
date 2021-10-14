@@ -74,7 +74,7 @@ EmplaceReturn UnorderedCollection::EmplaceBefore(
     DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  if(!checkUserSuppliedPmp(pmp))
+  if (!checkUserSuppliedPmp(pmp))
     return EmplaceReturn{};
   DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   --iter_prev;
@@ -88,7 +88,7 @@ EmplaceReturn UnorderedCollection::EmplaceAfter(
     DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  if(!checkUserSuppliedPmp(pmp))
+  if (!checkUserSuppliedPmp(pmp))
     return EmplaceReturn{};
   DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp};
@@ -130,7 +130,7 @@ EmplaceReturn UnorderedCollection::SwapEmplace(
     DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  if(!checkUserSuppliedPmp(pmp))
+  if (!checkUserSuppliedPmp(pmp))
     return EmplaceReturn{};
   DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   --iter_prev;
@@ -143,10 +143,10 @@ EmplaceReturn UnorderedCollection::SwapEmplace(
   return ret;
 }
 
-EmplaceReturn UnorderedCollection::Erase(
-    DLDataEntry *pmp_record_to_be_deleted,
-    std::unique_lock<SpinMutex> const& lock) {
-  if(!checkUserSuppliedPmp(pmp_record_to_be_deleted))
+EmplaceReturn
+UnorderedCollection::Erase(DLDataEntry *pmp_record_to_be_deleted,
+                           std::unique_lock<SpinMutex> const &lock) {
+  if (!checkUserSuppliedPmp(pmp_record_to_be_deleted))
     return EmplaceReturn{};
   DListIterator iter{dlinked_list_.p_pmem_allocator_, pmp_record_to_be_deleted};
   DListIterator iter_prev{iter};
@@ -199,7 +199,7 @@ EmplaceReturn UnorderedCollection::Erase(
       return EmplaceReturn{};
     }
   }
-  
+
   DListIterator iter_old{iter};
   iter = dlinked_list_.Erase(iter);
 

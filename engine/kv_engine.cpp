@@ -1470,8 +1470,7 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
     HashEntry hash_entry_found;
     HashEntry *p_hash_entry_found_in_table = nullptr;
     Status search_result = hash_table_->SearchForRead(
-        hint, internal_key,
-        DataEntryType::DlistDataRecord,
+        hint, internal_key, DataEntryType::DlistDataRecord,
         &p_hash_entry_found_in_table, &hash_entry_found, nullptr);
     switch (search_result) {
     case Status::NotFound: {
@@ -1534,13 +1533,11 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
         // Lock and find again in case other threads have created the
         // UnorderedCollection
         p_collection = findUnorderedCollection(collection_name);
-        if (p_collection)
-        {
+        if (p_collection) {
           // Some thread already created the collection
           // Do nothing
         } else {
-          auto sp_collection =
-              createUnorderedCollection(collection_name);
+          auto sp_collection = createUnorderedCollection(collection_name);
           p_collection = sp_collection.get();
           {
             std::lock_guard<std::mutex> lg{list_mu_};
@@ -1555,14 +1552,14 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
           if (s != Status::NotFound) {
             // Logically impossible
             GlobalLogger.Error("Fail to found a UnorderedCollection "
-                            "but error when creating a new one!");
+                               "but error when creating a new one!");
             std::abort();
           }
           hash_table_->Insert(hint_collection, p_hash_entry_collection,
                               DataEntryType::DlistRecord,
                               reinterpret_cast<uint64_t>(p_collection),
                               HashOffsetType::UnorderedCollection);
-        } 
+        }
       }
     }
   }
@@ -1583,8 +1580,7 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
       HashEntry hash_entry_record;
       HashEntry *p_hash_entry_record = nullptr;
       Status search_result = hash_table_->SearchForWrite(
-          hint_record, internal_key,
-          DataEntryType::DlistDataRecord,
+          hint_record, internal_key, DataEntryType::DlistDataRecord,
           &p_hash_entry_record, &hash_entry_record, nullptr);
 
       // pmp_last_emplacement maybe invalidified by SwapEmplace!
@@ -1598,16 +1594,16 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
         if (!pmp_last_emplacement || id_last != p_collection->ID()) {
           // Emplace Front or Back according to hash to reduce lock contention
           if (hint_record.key_hash_value % 2 == 0)
-            emplace_result =
-                p_collection->EmplaceFront(ts, key, value, DataEntryType::DlistDataRecord, lock_record);
+            emplace_result = p_collection->EmplaceFront(
+                ts, key, value, DataEntryType::DlistDataRecord, lock_record);
           else
-            emplace_result =
-                p_collection->EmplaceBack(ts, key, value, DataEntryType::DlistDataRecord, lock_record);
-        } else
-        {
+            emplace_result = p_collection->EmplaceBack(
+                ts, key, value, DataEntryType::DlistDataRecord, lock_record);
+        } else {
           // Emplace at cached position
           emplace_result = p_collection->EmplaceBefore(
-              pmp_last_emplacement, ts, key, value, DataEntryType::DlistDataRecord, lock_record);
+              pmp_last_emplacement, ts, key, value,
+              DataEntryType::DlistDataRecord, lock_record);
         }
         break;
       }
@@ -1615,21 +1611,24 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
         DLDataEntry *pmp_old_record = reinterpret_cast<DLDataEntry *>(
             pmem_allocator_->offset2addr_checked(hash_entry_record.offset));
 
-        emplace_result = p_collection->SwapEmplace(pmp_old_record, ts, key,
-                                                   value, DataEntryType::DlistDataRecord, lock_record);
+        emplace_result = p_collection->SwapEmplace(
+            pmp_old_record, ts, key, value, DataEntryType::DlistDataRecord,
+            lock_record);
         if (emplace_result.success) {
           DLDataEntry *pmp_new_record = reinterpret_cast<DLDataEntry *>(
               pmem_allocator_->offset2addr_checked(emplace_result.offset_new));
           DLDataEntry *pmp_old_record2 = reinterpret_cast<DLDataEntry *>(
               pmem_allocator_->offset2addr_checked(emplace_result.offset_old));
           if (pmp_old_record2 != pmp_old_record) {
-            GlobalLogger.Error("Updated a record, but HashEntry in HashTable is "
-                            "inconsistent with data on PMem!");
+            GlobalLogger.Error(
+                "Updated a record, but HashEntry in HashTable is "
+                "inconsistent with data on PMem!");
             std::abort();
           }
 
           if (pmp_old_record->timestamp >= pmp_new_record->timestamp) {
-            GlobalLogger.Error("Old record has newer timestamp than newly inserted record!");
+            GlobalLogger.Error(
+                "Old record has newer timestamp than newly inserted record!");
             std::abort();
           }
           p_collection->Deallocate(pmp_old_record);
@@ -1638,7 +1637,7 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
       }
       default: {
         GlobalLogger.Error("Invalid search result when trying to insert "
-                        "a new DlistDataRecord!");
+                           "a new DlistDataRecord!");
         std::abort();
       }
       }
@@ -1661,7 +1660,8 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
             pmem_allocator_->offset2addr_checked(emplace_result.offset_new));
         id_last = p_collection->ID();
 
-        hash_table_->Insert(hint_record, p_hash_entry_record, DataEntryType::DlistDataRecord,
+        hash_table_->Insert(hint_record, p_hash_entry_record,
+                            DataEntryType::DlistDataRecord,
                             emplace_result.offset_new,
                             HashOffsetType::UnorderedCollectionElement);
         return Status::Ok;
@@ -1677,7 +1677,8 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
     return s;
   }
   UnorderedCollection *p_collection = findUnorderedCollection(collection_name);
-  if (!p_collection) return Status::Ok;
+  if (!p_collection)
+    return Status::Ok;
 
   // Erase DlistDataRecord if found one.
   {
@@ -1692,14 +1693,13 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
       HashEntry hash_entry;
       HashEntry *p_hash_entry = nullptr;
       Status search_result = hash_table_->SearchForWrite(
-          hint_record, internal_key,
-          DataEntryType::DlistDataRecord,
+          hint_record, internal_key, DataEntryType::DlistDataRecord,
           &p_hash_entry, &hash_entry, nullptr);
 
       EmplaceReturn erase_result{};
       switch (search_result) {
       case Status::NotFound: {
-          return Status::Ok;
+        return Status::Ok;
       }
       case Status::Ok: {
         DLDataEntry *pmp_old_record = reinterpret_cast<DLDataEntry *>(
@@ -1711,16 +1711,15 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
               pmem_allocator_->offset2addr_checked(erase_result.offset_old));
           if (pmp_old_record2 != pmp_old_record) {
             // For Debugging. This is logically impossible.
-            GlobalLogger.Error("Deleted a record, but HashEntry in HashTable is "
-                               "inconsistent with data on PMem!\n");
+            GlobalLogger.Error(
+                "Deleted a record, but HashEntry in HashTable is "
+                "inconsistent with data on PMem!\n");
             std::abort();
           }
           p_hash_entry->Clear();
           p_collection->Deallocate(pmp_old_record);
           return Status::Ok;
-        }
-        else
-        {
+        } else {
           // !erase_result.success
           continue;
         }
@@ -1728,7 +1727,7 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
       }
       default: {
         GlobalLogger.Error("Invalid search result when trying to insert "
-                        "a new DlistDataRecord!");
+                           "a new DlistDataRecord!");
         std::abort();
       }
       }
@@ -1741,7 +1740,7 @@ KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name) {
   UnorderedCollection *p_collection = findUnorderedCollection(collection_name);
   if (!p_collection) {
     GlobalLogger.Error("Trying to initialize an Iterator for a "
-                    "UnorderedCollection not created yet");
+                       "UnorderedCollection not created yet");
     std::abort();
   }
   return p_collection ? std::make_shared<UnorderedIterator>(
@@ -1776,7 +1775,8 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
         &p_hash_entry_collection, &hash_entry_collection, nullptr,
         true /* in recovery */);
     if (s != Status::NotFound) {
-      GlobalLogger.Error("Found a UnorderedCollection which should have not been created!");
+      GlobalLogger.Error(
+          "Found a UnorderedCollection which should have not been created!");
       std::abort();
     }
     hash_table_->Insert(hint_collection, p_hash_entry_collection,
@@ -1788,7 +1788,8 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
   case DataEntryType::DlistHeadRecord: {
     if (pmp_record->prev != kNullPmemOffset ||
         !checkDLDataEntryLinkageRight(pmp_record)) {
-      GlobalLogger.Error("Bad linkage found when RestoreDlistRecords. Broken head.");
+      GlobalLogger.Error(
+          "Bad linkage found when RestoreDlistRecords. Broken head.");
       std::abort();
     }
     return Status::Ok;
@@ -1796,15 +1797,15 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
   case DataEntryType::DlistTailRecord: {
     if (pmp_record->next != kNullPmemOffset ||
         !checkDLDataEntryLinkageLeft(pmp_record)) {
-      GlobalLogger.Error("Bad linkage found when RestoreDlistRecords. Broken tail.");
+      GlobalLogger.Error(
+          "Bad linkage found when RestoreDlistRecords. Broken tail.");
       std::abort();
     }
     return Status::Ok;
   }
   case DataEntryType::DlistDataRecord: {
     std::uint64_t offset_record = pmem_allocator_->addr2offset_checked(pmp);
-    if (!isLinkedDLDataEntry(static_cast<DLDataEntry*>(pmp)))
-    {
+    if (!isLinkedDLDataEntry(static_cast<DLDataEntry *>(pmp))) {
       GlobalLogger.Error("Deleted DlistDataRecord should have been purged");
       std::abort();
     }
@@ -1816,8 +1817,7 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
     HashEntry hash_entry_record;
     HashEntry *p_hash_entry_record = nullptr;
     Status search_status = hash_table_->SearchForWrite(
-        hint_record, internal_key,
-        DataEntryType::DlistDataRecord,
+        hint_record, internal_key, DataEntryType::DlistDataRecord,
         &p_hash_entry_record, &hash_entry_record, nullptr,
         true /* in recovery */);
 
@@ -1830,11 +1830,13 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
       return Status::Ok;
     }
     case Status::Ok: {
-      GlobalLogger.Error("Same key in same UnorderedCollection should not appear twice!\n");
+      GlobalLogger.Error(
+          "Same key in same UnorderedCollection should not appear twice!\n");
       std::abort();
     }
     default: {
-      GlobalLogger.Error("Invalid search result when trying to insert a new DlistDataRecord!\n");
+      GlobalLogger.Error("Invalid search result when trying to insert a new "
+                         "DlistDataRecord!\n");
       std::abort();
     }
     }

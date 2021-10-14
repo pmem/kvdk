@@ -228,8 +228,7 @@ private:
     return pmp_next->prev == offset;
   }
 
-  bool isLinkedDLDataEntry(DLDataEntry *pmp_record)
-  {
+  bool isLinkedDLDataEntry(DLDataEntry *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
     DLDataEntry *pmp_prev = reinterpret_cast<DLDataEntry *>(
         pmem_allocator_->offset2addr_checked(pmp_record->prev));
@@ -238,24 +237,18 @@ private:
     bool is_linked_right = (pmp_prev->next == offset);
     bool is_linked_left = (pmp_next->prev == offset);
 
-    if (is_linked_left && is_linked_right)
-    {
+    if (is_linked_left && is_linked_right) {
       return true;
-    }
-    else if (!is_linked_left && !is_linked_right)
-    {
+    } else if (!is_linked_left && !is_linked_right) {
       return false;
-    }
-    else if (is_linked_left && !is_linked_right)
-    {
+    } else if (is_linked_left && !is_linked_right) {
       // We really shouldn't touch anything when recovering
-      GlobalLogger.Error("Broken DLDataEntry linkage: prev<=>curr->right, repaired.\n");
+      GlobalLogger.Error(
+          "Broken DLDataEntry linkage: prev<=>curr->right, repaired.\n");
       pmp_next->prev = offset;
       pmem_persist(&pmp_next->prev, sizeof(decltype(offset)));
       return true;
-    }
-    else
-    {
+    } else {
       GlobalLogger.Error("Broken DLDataEntry linkage: prev<-curr<=>right, "
                          "which is logically impossible! Abort...\n");
       std::abort();

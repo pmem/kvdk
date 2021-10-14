@@ -142,7 +142,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
       }
 
       /* we don't reused hash entry in recovering */
-      if (!in_recovery && (*entry_base)->Reusable()) {        
+      if (!in_recovery && (*entry_base)->Reusable()) {
         reusable_entry = *entry_base;
       }
     }
@@ -159,7 +159,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
           }
           *entry_base = reusable_entry;
         } else {
-          // allocate new bucket         
+          // allocate new bucket
           auto space = dram_allocator_.Allocate(hash_bucket_size_);
           if (space.size == 0) {
             GlobalLogger.Error("Memory overflow!\n");
