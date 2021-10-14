@@ -309,7 +309,7 @@ public:
 
   /// Helper function to deallocate Record, called only by caller
   inline static void Deallocate(DListIterator iter) {
-    // This is redundant. Un-linked record will be
+    // This is redundant.
     iter->type = DataEntryType::Padding;
     pmem_flush(iter.pmp_curr_, sizeof(DLDataEntry));
     pmem_drain();
