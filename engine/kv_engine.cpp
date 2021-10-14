@@ -1534,7 +1534,11 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
         // Lock and find again in case other threads have created the
         // UnorderedCollection
         p_collection = findUnorderedCollection(collection_name);
-        if (!p_collection) {
+        if (p_collection)
+        {
+          // Some thread already created the collection
+          // Do nothing
+        } else {
           auto sp_collection =
               createUnorderedCollection(collection_name);
           p_collection = sp_collection.get();
@@ -1558,10 +1562,7 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
                               DataEntryType::DlistRecord,
                               reinterpret_cast<uint64_t>(p_collection),
                               HashOffsetType::UnorderedCollection);
-        } else {
-          // Debug purpose
-          GlobalLogger.Info("Two threads creating same UnorderedCollection.\n");
-        }
+        } 
       }
     }
   }
@@ -1716,6 +1717,7 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
           }
           p_hash_entry->Clear();
           p_collection->Deallocate(pmp_old_record);
+          return Status::Ok;
         }
         else
         {

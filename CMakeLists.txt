@@ -14,22 +14,25 @@ if(DEBUG_CHECK)
     ADD_DEFINITIONS(-DDEBUG_CHECK)
 endif()
 
-set(OPT "-mavx -mavx2")
+set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(FLAGS "-O2 -DNDEBUG ${OPT}")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -O2 -DNDEBUG")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Assert")
-    set(FLAGS "-O2 ${OPT}")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -O2")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(FLAGS "-Og ${OPT}")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og")
 elseif (CMAKE_BUILD_TYPE STREQUAL "VTune")
-    set(FLAGS "-g -O2 -shared-libgcc -DNDEBUG ${OPT}")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2 -shared-libgcc -DNDEBUG")
+elseif (CMAKE_BUILD_TYPE STREQUAL "Asan")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2 -fsanitize=address")
+    set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fsanitize=address")
 else ()
     message(FATAL_ERROR "Invalid build type!")
 endif ()
 
-set(CMAKE_C_FLAGS "${FLAGS}")
-set(CMAKE_CXX_FLAGS "${FLAGS}")
+set(CMAKE_C_FLAGS "${KVDK_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_FLAGS}")
 
 # source files
 set(SOURCES
