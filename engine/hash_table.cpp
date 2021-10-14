@@ -141,7 +141,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
 
       if (!in_recovery /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->header.data_type == StringDeleteRecord) {
+          && (*entry_base)->Reusable()) {
         reusable_entry = *entry_base;
       }
     }
@@ -150,7 +150,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
       // reach end of buckets, reuse entry or allocate a new bucket
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
         if (reusable_entry != nullptr) {
-          if (data_entry_meta) {
+          if (data_entry_meta && !reusable_entry->Empty()) {
             memcpy(data_entry_meta,
                    pmem_allocator_->offset2addr(reusable_entry->offset),
                    sizeof(DataEntry));
