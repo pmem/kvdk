@@ -670,9 +670,8 @@ protected:
     n_thread = 48;
     // 2M keys per thread, totaling about 100M records
     n_kv_per_thread = (2ULL << 20);
-    // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
-    sz_key_min = 0;
+    sz_key_min = 1;
     sz_key_max = 16;
     sz_value_min = 0;
     sz_value_max = 1024;
@@ -692,6 +691,8 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
     RebootDB();
+    CheckHashesCollection(global_collection_name);
+    HashesAllHSet(global_collection_name);
     CheckHashesCollection(global_collection_name);
   }
 }
@@ -734,6 +735,8 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
     RebootDB();
+    CheckSortedSetsCollection(global_collection_name);
+    SortedSetsAllSSet(global_collection_name);
     CheckSortedSetsCollection(global_collection_name);
   }
 }
