@@ -91,6 +91,8 @@ public:
                                      (uint8_t)HashEntryStatus::Empty);
   }
 
+  bool Empty() { return header.status == HashEntryStatus::Empty; }
+
   // Make this hash entry reusable while its content been deleted
   void Clear() { header.status = HashEntryStatus::Empty; }
 };
