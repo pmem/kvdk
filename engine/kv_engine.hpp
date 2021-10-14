@@ -177,11 +177,6 @@ private:
 
   Status PersistOrRecoverImmutableConfigs();
 
-  Status doHSetOrHDelete(pmem::obj::string_view const collection_name,
-                         pmem::obj::string_view const key,
-                         pmem::obj::string_view const value,
-                         DataEntryType type);
-
   Status RestoreDlistRecords(void *pmp_record);
 
   // Regularly works excecuted by background thread
