@@ -658,7 +658,7 @@ protected:
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 256GB PMem
-    sz_pmem_file = (256ULL << 30);
+    sz_pmem_file = (256ULL << 20);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
     // Smaller buckets to increase hash collisions
@@ -669,7 +669,7 @@ protected:
     /// Test specific parameters
     n_thread = 48;
     // 2M keys per thread, totaling about 100M records
-    n_kv_per_thread = (2ULL << 20);
+    n_kv_per_thread = (2ULL << 13);
     // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
     sz_key_min = 0;
@@ -697,7 +697,7 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
 
 TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"GlobalCollection"};
-  size_t n_reboot = 3;
+  size_t n_reboot = 0;
 
   HashesEvenHSetOddHDelete(global_collection_name);
 
