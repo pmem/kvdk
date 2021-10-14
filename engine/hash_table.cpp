@@ -106,18 +106,6 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-  static uint64_t max = 0;
-  if (entries > max)
-  {
-    max = entries;
-    std::cerr
-      << "Max entries in one bucket increased!\n"
-      << "Bucket: " << hint.bucket << "\t"
-      << "Hash: " << hint.key_hash_value << "\t"
-      << "Entries: " << entries << "\t"
-      << "Type: " << type_mask << "\t"
-      << "Key: " << key << std::endl;
-  }
 
   bool found = false;
 
@@ -136,6 +124,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
     // iterate hash entries
     *entry_base = (HashEntry *)bucket_base;
     uint64_t i = 0;
+    // Scan
     for (i = 0; i < entries; i++) {
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
         // next bucket
@@ -153,8 +142,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
       }
 
       /* we don't reused hash entry in recovering */
-      if (!reusable_entry && !in_recovery 
-          && (*entry_base)->Reusable()) {        
+      if (!in_recovery && (*entry_base)->Reusable()) {        
         reusable_entry = *entry_base;
       }
     }
@@ -162,7 +150,8 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
     if (!found) {
       // reach end of buckets, reuse entry or allocate a new bucket
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
-        if (reusable_entry != nullptr) {
+        if (reusable_entry) {
+          // reuse
           if (data_entry_meta && !reusable_entry->Empty()) {
             memcpy(data_entry_meta,
                    pmem_allocator_->offset2addr(reusable_entry->offset),
@@ -170,13 +159,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
           }
           *entry_base = reusable_entry;
         } else {
-          static size_t n_allocate = 0;
-          ++n_allocate;
-          if (n_allocate % 1000000 == 0)
-          {
-            std::cerr << "Buckets: " << n_allocate << std::endl;
-          }
-          
+          // allocate new bucket         
           auto space = dram_allocator_.Allocate(hash_bucket_size_);
           if (space.size == 0) {
             GlobalLogger.Error("Memory overflow!\n");
@@ -198,10 +181,11 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
   if (found) {
     (*entry_base)->header.status = HashEntryStatus::Updating;
   } else {
-    if ((*entry_base) == reusable_entry) {
-      if ((*entry_base)->header.status == HashEntryStatus::CleanReusable) {
-        (*entry_base)->header.status = HashEntryStatus::Updating;
+    if (reusable_entry) {
+      if (reusable_entry->header.status == HashEntryStatus::CleanReusable) {
+        reusable_entry->header.status = HashEntryStatus::Updating;
       }
+      *entry_base = reusable_entry;
     } else {
       (*entry_base)->header.status = HashEntryStatus::Initializing;
     }
@@ -269,7 +253,7 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
 
   bool new_entry = entry_base->header.status == HashEntryStatus::Initializing;
   memcpy_16(entry_base, &new_hash_entry);
-  if (new_entry) { // new allocated
+  if (new_entry) { // newly allocated
     hash_bucket_entries_[hint.bucket]++;
   }
 }
