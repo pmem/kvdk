@@ -654,7 +654,7 @@ private:
 
 class EngineStressTest : public EngineTestBase {
 protected:
-  virtual void SetUpParameters() {
+  virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 256GB PMem
@@ -671,7 +671,7 @@ protected:
     // 2M keys per thread, totaling about 100M records
     n_kv_per_thread = (2ULL << 20);
     // These parameters set the range of sizes of keys and values
-    sz_key_min = 1;
+    sz_key_min = 2;
     sz_key_max = 16;
     sz_value_min = 0;
     sz_value_max = 1024;
@@ -769,7 +769,7 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
 
 class EngineHotspotTest : public EngineTestBase {
 private:
-  virtual void SetUpParameters() {
+  virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 16GB PMem
