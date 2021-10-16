@@ -1,16 +1,42 @@
 pipeline {
-  agent {
-    node {
+    agent {
       label 'AEP-wf-01'
     }
+    options {
+        timestamps() //日志时间
+	disableConcurrentBuilds()   //不允许两个job同时执行
+	buildDiscarder(logRotator(numToKeepStr: '30'))    
+		
+    }		
 
-  }
-  stages {
-    stage('pull code') {
-      steps {
-        git(url: 'https://github.com/asd19951995/kvdk.git', branch: 'jenkins_test', credentialsId: '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')
-      }
+    stages {
+        stage('build project') {
+            steps {
+                sh '''pwd
+		ls
+		cd kvdk
+		pwd
+		git submodule init 
+                git submodule update
+                mkdir -p build && cd build
+                cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
+                ./dbtest'''
+            }
+        }
+	stage('input') {
+            steps { 
+		    script{
+			input id: 'Test', message: '是否要继续？', parameters: [choice(choices: ['a', 'b'], name: 'test1')]
+                    }    
+            }
+        }    
+        stage('执行kvdk') {
+            steps {
+                sh '''cd kvdk
+		pwd
+                cd scripts
+                python3 basic_benchmarks.py'''
+            }
+        }
     }
-
-  }
 }
