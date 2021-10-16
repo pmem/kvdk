@@ -5,16 +5,14 @@ pipeline {
     options {
         timestamps() //日志时间
 	disableConcurrentBuilds()   //不允许两个job同时执行
-	buildDiscarder(logRotator(numToKeepStr: '30'))    
+	buildDiscarder(logRotator(numToKeepStr: '30'))   //日志保留30个 
 		
     }		
 
     stages {
         stage('build project') {
             steps {
-                sh '''pwd
-		ls
-		pwd
+                sh '''
                 mkdir -p build && cd build
                 cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
                 ./dbtest'''
@@ -27,10 +25,9 @@ pipeline {
                     }    
             }
         }    
-        stage('执行kvdk') {
+        stage('benchmarks') {
             steps {
                 sh '''
-		pwd
                 cd scripts
                 python3 basic_benchmarks.py'''
             }
