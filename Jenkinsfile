@@ -11,12 +11,18 @@ pipeline {
 
     stages {
         stage('dbtest') {
-            steps {
+	  options { 
+		  retry(3)
+		  timeout(time: 1, unit: 'HOURS')
+		  
+	  }
+		
+           steps {
                 sh '''
                 mkdir -p build && cd build
                 cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
                 ./dbtest'''
-            }
+           }
         }
 	stage('input') {
             steps { 
