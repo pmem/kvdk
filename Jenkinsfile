@@ -10,7 +10,7 @@ pipeline {
     }		
 
     stages {
-        stage('build project') {
+        stage('dbtest') {
             steps {
                 sh '''
                 mkdir -p build && cd build
