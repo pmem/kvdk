@@ -14,7 +14,6 @@ pipeline {
             steps {
                 sh '''pwd
 		ls
-		cd kvdk
 		pwd
 		git submodule init 
                 git submodule update
@@ -32,7 +31,7 @@ pipeline {
         }    
         stage('执行kvdk') {
             steps {
-                sh '''cd kvdk
+                sh '''
 		pwd
                 cd scripts
                 python3 basic_benchmarks.py'''
