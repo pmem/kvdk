@@ -6,20 +6,31 @@
 
 #define XXH_INLINE_ALL
 
-#include <assert.h>
-#include <atomic>
+#include <cassert>
 #include <cstdint>
-#include <emmintrin.h>
+
+#include <atomic>
+#include <exception>
 #include <random>
-#include <smmintrin.h>
 #include <string>
+#include <vector>
+
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <vector>
+
+#include <emmintrin.h>
+#include <smmintrin.h>
 
 #include "kvdk/namespace.hpp"
 #include "libpmemobj++/string_view.hpp"
 #include "xxhash.h"
+
+#define kvdk_assert(cond, msg)                                                 \
+  {                                                                            \
+    assert((cond) && msg);                                                     \
+    if (!(cond))                                                               \
+      throw std::runtime_error{msg};                                           \
+  }
 
 namespace KVDK_NAMESPACE {
 

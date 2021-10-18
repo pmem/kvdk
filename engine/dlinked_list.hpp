@@ -234,12 +234,9 @@ public:
         pmp_tail_{pmp_tail} {
 #if DEBUG_LEVEL > 0
     {
-      if (pmp_head->type != DataEntryType::DlistHeadRecord) {
-        assert(false && "Cannot rebuild a DlinkedList from given PMem pointer "
-                        "not pointing to a DlistHeadRecord!");
-        throw std::runtime_error{"Cannot rebuild a DlinkedList from given PMem "
-                                 "pointer not pointing to a DlistHeadRecord!"};
-      }
+      kvdk_assert(pmp_head->type == DataEntryType::DlistHeadRecord,
+                  "Cannot rebuild a DlinkedList from given PMem pointer "
+                  "not pointing to a DlistHeadRecord!");
       DListIterator curr{p_pmem_allocator_, pmp_head};
       ++curr;
 
@@ -251,31 +248,23 @@ public:
           DListIterator prev{curr};
           --prev;
           std::uint64_t offset_curr = curr._GetOffset_();
-          if (next->prev != offset_curr) {
-            throw std::runtime_error{
-                "Found broken linkage when rebuilding DLinkedList!"};
-          }
-          if (prev->next != offset_curr) {
-            throw std::runtime_error{
-                "Found broken linkage when rebuilding DLinkedList!"};
-          }
+          kvdk_assert(next->prev == offset_curr,
+                      "Found broken linkage when rebuilding DLinkedList!");
+          kvdk_assert(prev->next == offset_curr,
+                      "Found broken linkage when rebuilding DLinkedList!");
           ++curr;
           continue;
         }
         case DataEntryType::DlistTailRecord: {
-          if (curr.pmp_curr_ == pmp_tail) {
-            return;
-          } else {
-            throw std::runtime_error{
-                "Unmatched head and tail when rebuilding a DlinkedList!"};
-          }
+          kvdk_assert(curr.pmp_curr_ == pmp_tail,
+                      "Unmatched head and tail when rebuilding a DlinkedList!");
+          return;
         }
         case DataEntryType::DlistHeadRecord:
         case DataEntryType::DlistRecord:
         default: {
-          assert(false);
-          throw std::runtime_error{
-              "Invalid Record met when rebuilding a DlinkedList!"};
+          kvdk_assert(false,
+                      "Invalid Record met when rebuilding a DlinkedList!");
         }
         }
       }
@@ -331,12 +320,9 @@ public:
       std::uint64_t timestamp, // Timestamp can only be supplied by caller
       pmem::obj::string_view const key, pmem::obj::string_view const value,
       DataEntryType type) {
-    if (type != DataEntryType::DlistDataRecord) {
-      throw std::runtime_error{"Trying to emplace invalid Record!"};
-    }
-    if (!iter_prev || !iter_next) {
-      throw std::runtime_error{"Invalid iterator in dlinked_list!"};
-    }
+    kvdk_assert(type == DataEntryType::DlistDataRecord,
+                "Trying to emplace invalid Record!");
+    kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
 
     auto space = p_pmem_allocator_->Allocate(sizeof(DLDataEntry) + key.size() +
                                              value.size());
@@ -365,8 +351,10 @@ public:
     persistRecord(pmp, entry, key, value);
     pmem_memcpy(&iter_prev->next, &offset, sizeof(offset),
                 PMEM_F_MEM_NONTEMPORAL);
+    pmem_drain();
     pmem_memcpy(&iter_next->prev, &offset, sizeof(offset),
                 PMEM_F_MEM_NONTEMPORAL);
+    pmem_drain();
 
     return DListIterator{p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
   }
@@ -379,15 +367,15 @@ public:
     --iter_prev;
     DListIterator iter_next{iter_record_to_erase};
     ++iter_next;
-    if (!iter_prev || !iter_next) {
-      throw std::runtime_error{"Invalid iterator in dlinked_list!"};
-    }
+    kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
     auto prev_offset = iter_prev.GetOffset();
     auto next_offset = iter_next.GetOffset();
     pmem_memcpy(&iter_prev->next, &next_offset, sizeof(next_offset),
                 PMEM_F_MEM_NONTEMPORAL);
+    pmem_drain();
     pmem_memcpy(&iter_next->prev, &prev_offset, sizeof(prev_offset),
                 PMEM_F_MEM_NONTEMPORAL);
+    pmem_drain();
 
     return iter_next;
   }
