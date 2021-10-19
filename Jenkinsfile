@@ -24,19 +24,14 @@ pipeline {
                 ./dbtest'''
            }
         }
-	stage('input') {
-            steps { 
-		    script{
-			input id: 'Test', message: '是否要继续？', parameters: [choice(choices: ['a', 'b'], name: 'test1')]
-                    }    
-            }
-        }    
-        stage('benchmarks') {
-            steps {
-                sh '''
+	post {
+      success { sh '''
                 cd scripts
                 python3 basic_benchmarks.py'''
-            }
-        }
+    
+          }
+
+    }    
+        
     }
 }
