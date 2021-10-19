@@ -11,26 +11,36 @@ pipeline {
 
     stages {
         stage('dbtest') {
-	  options { 
+	    options { 
 		  retry(3)
 		  timeout(time: 1, unit: 'HOURS')
 		  
-	          }
+	    }
 		
            steps {
                 sh '''
                 mkdir -p build && cd build
                 cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
                 ./dbtest'''
-                 }
+           }
         }   
     }
 	post {
-      success { sh '''
+
+	  failure {
+				                
+               sh '''
+                 pwd
+                 '''
+      }	  
+
+    } 
+	stages {
+        stage('benchmarks') { sh '''
                 cd scripts
                 python3 basic_benchmarks.py'''
-    
-              }
+   
+    }
 
-    }  
+
 }
