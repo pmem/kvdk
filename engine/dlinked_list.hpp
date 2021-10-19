@@ -349,12 +349,8 @@ public:
     }
 
     persistRecord(pmp, entry, key, value);
-    pmem_memcpy(&iter_prev->next, &offset, sizeof(offset),
-                PMEM_F_MEM_NONTEMPORAL);
-    pmem_drain();
-    pmem_memcpy(&iter_next->prev, &offset, sizeof(offset),
-                PMEM_F_MEM_NONTEMPORAL);
-    pmem_drain();
+    pmem_memcpy_persist(&iter_prev->next, &offset, sizeof(offset));
+    pmem_memcpy_persist(&iter_next->prev, &offset, sizeof(offset));
 
     return DListIterator{p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
   }
@@ -370,12 +366,8 @@ public:
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
     auto prev_offset = iter_prev.GetOffset();
     auto next_offset = iter_next.GetOffset();
-    pmem_memcpy(&iter_prev->next, &next_offset, sizeof(next_offset),
-                PMEM_F_MEM_NONTEMPORAL);
-    pmem_drain();
-    pmem_memcpy(&iter_next->prev, &prev_offset, sizeof(prev_offset),
-                PMEM_F_MEM_NONTEMPORAL);
-    pmem_drain();
+    pmem_memcpy_persist(&iter_prev->next, &next_offset, sizeof(next_offset));
+    pmem_memcpy_persist(&iter_next->prev, &prev_offset, sizeof(prev_offset));
 
     return iter_next;
   }

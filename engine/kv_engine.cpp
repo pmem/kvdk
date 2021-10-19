@@ -255,8 +255,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     // Free the space and fetch another
     if (cached_recovering_data_entry.type == DataEntryType::Padding) {
       DataEntryType type_padding = DataEntryType::Padding;
-      pmem_memcpy(&static_cast<DataEntry *>(recovering_pmem_data_entry)->type,
-                  &type_padding, sizeof(DataEntryType), PMEM_F_MEM_NONTEMPORAL);
+      pmem_memcpy_persist(
+          &static_cast<DataEntry *>(recovering_pmem_data_entry)->type,
+          &type_padding, sizeof(DataEntryType));
       pmem_allocator_->Free(SizedSpaceEntry(
           pmem_allocator_->addr2offset_checked(recovering_pmem_data_entry),
           cached_recovering_data_entry.header.b_size,
