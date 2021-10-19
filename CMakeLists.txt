@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.12.4)
 
 project(KVDK VERSION 1.0
         DESCRIPTION "A fast persistent KV engine for Persistent Memory"
