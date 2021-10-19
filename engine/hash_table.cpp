@@ -181,10 +181,9 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
   if (found) {
     (*entry_base)->header.status = HashEntryStatus::Updating;
   } else {
-    if (reusable_entry) {
-      if (reusable_entry->header.status == HashEntryStatus::CleanReusable) {
-        reusable_entry->header.status = HashEntryStatus::Updating;
-      }
+    if ((*entry_base) == reusable_entry) {
+      if ((*entry_base)->header.status == HashEntryStatus::CleanReusable) {
+        (*entry_base)->header.status = HashEntryStatus::Updating;    if (reusable_entry) {
       *entry_base = reusable_entry;
     } else {
       (*entry_base)->header.status = HashEntryStatus::Initializing;

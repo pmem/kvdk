@@ -300,8 +300,7 @@ public:
   inline static void Deallocate(DListIterator iter) {
     // This is redundant.
     iter->type = DataEntryType::Padding;
-    pmem_flush(iter.pmp_curr_, sizeof(DLDataEntry));
-    pmem_drain();
+    pmem_persist(iter.pmp_curr_, sizeof(DLDataEntry));
 
     iter.p_pmem_allocator_->Free(SizedSpaceEntry{
         iter.GetOffset(), iter->header.b_size, iter->timestamp});
