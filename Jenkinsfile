@@ -40,4 +40,6 @@ pipeline {
                 python3 basic_benchmarks.py'''
 	   }	
        }
+    }		    
+	    
 }  
