@@ -1450,6 +1450,7 @@ KVEngine::findUnorderedCollection(pmem::obj::string_view collection_name) {
   }
   default: {
     kvdk_assert(false, "Invalid state in findUnorderedCollection()!");
+    return nullptr;
   }
   }
 }
@@ -1798,11 +1799,13 @@ Status KVEngine::RestoreDlistRecords(void *pmp) {
     default: {
       kvdk_assert(false, "Invalid search result when trying to insert a new "
                          "DlistDataRecord!\n");
+      return search_status;
     }
     }
   }
   default: {
     kvdk_assert(false, "Wrong type in RestoreDlistRecords!\n");
+    return Status::NotSupported;
   }
   }
 }

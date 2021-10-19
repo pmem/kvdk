@@ -27,12 +27,6 @@
 #define hex_print(x)                                                           \
   std::hex << std::setfill('0') << std::setw(sizeof(decltype(x)) * 2) << x
 
-#ifdef DEBUG
-#define DEBUG_LEVEL 1
-#else
-#define DEBUG_LEVEL 0
-#endif
-
 namespace KVDK_NAMESPACE {
 /// DListIterator does not pin DlinkedList
 /// It's up to caller to ensure that any
@@ -247,7 +241,7 @@ public:
           ++next;
           DListIterator prev{curr};
           --prev;
-          std::uint64_t offset_curr = curr._GetOffset_();
+          std::uint64_t offset_curr = curr.GetOffset();
           kvdk_assert(next->prev == offset_curr,
                       "Found broken linkage when rebuilding DLinkedList!");
           kvdk_assert(prev->next == offset_curr,

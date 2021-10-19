@@ -25,13 +25,19 @@
 #include "libpmemobj++/string_view.hpp"
 #include "xxhash.h"
 
+#if DEBUG_LEVEL > 0
 #define kvdk_assert(cond, msg)                                                 \
   {                                                                            \
     assert((cond) && msg);                                                     \
     if (!(cond))                                                               \
       throw std::runtime_error{msg};                                           \
   }
-
+#else
+#define kvdk_assert(cond, msg)                                                 \
+  {                                                                            \
+    assert((cond) && msg);                                                     \
+  }
+#endif
 namespace KVDK_NAMESPACE {
 
 inline uint64_t hash_str(const char *str, uint64_t size) {
