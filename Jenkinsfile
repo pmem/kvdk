@@ -15,23 +15,22 @@ pipeline {
 		  retry(3)
 		  timeout(time: 1, unit: 'HOURS')
 		  
-	  }
+	          }
 		
            steps {
                 sh '''
                 mkdir -p build && cd build
                 cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
                 ./dbtest'''
-           }
-        }
+                 }
+        }   
+    }
 	post {
       success { sh '''
                 cd scripts
                 python3 basic_benchmarks.py'''
     
-          }
+              }
 
-    }    
-        
-    }
+    }  
 }
