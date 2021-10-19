@@ -4,8 +4,8 @@ pipeline {
     }
     options {
         timestamps() //日志时间
-	disableConcurrentBuilds()   //不允许两个job同时执行
-	buildDiscarder(logRotator(numToKeepStr: '30'))   //日志保留30个 
+	    disableConcurrentBuilds()   //不允许两个job同时执行
+	    buildDiscarder(logRotator(numToKeepStr: '30'))   //日志保留30个 
 		
     }		
 
@@ -39,7 +39,7 @@ pipeline {
         stage('benchmarks') { sh '''
                 cd scripts
                 python3 basic_benchmarks.py'''
-   
+		}
     }
 
 
