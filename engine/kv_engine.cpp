@@ -274,7 +274,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       thread_res_[thread_id].newest_restored_ts = ts_recovering;
     }
 
-    Status s = Status::Processing;
+    Status s = Status::Ok;
     switch (cached_recovering_data_entry.type) {
     case DataEntryType::SortedDataRecord: {
       s = RestoreSortedRecord(

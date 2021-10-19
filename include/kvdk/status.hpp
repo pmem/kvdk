@@ -15,7 +15,6 @@ enum class Status : unsigned char {
   IOError,
   InvalidConfiguration,
   Abort,
-  Processing
 };
 
 }
