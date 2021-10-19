@@ -22,14 +22,19 @@ pipeline {
                 ./dbtest'''
            }
         }  
-	stage('test') {
+	stage('post') {
 	   steps {
 		post {
  			failure {
 				     sh '''
 				     pwd
 		 		     '''
-			}	  
+			}
+			success {
+			            sh '''
+				     pwd
+		 		     '''
+			}
 		} 			
 	   }
         }
