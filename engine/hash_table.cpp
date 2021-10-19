@@ -106,7 +106,6 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-
   bool found = false;
 
   // search cache
@@ -124,7 +123,6 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
     // iterate hash entries
     *entry_base = (HashEntry *)bucket_base;
     uint64_t i = 0;
-    // Scan
     for (i = 0; i < entries; i++) {
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
         // next bucket
@@ -141,8 +139,9 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
         break;
       }
 
-      /* we don't reused hash entry in recovering */
-      if (!in_recovery && (*entry_base)->Reusable()) {
+      if (!in_recovery /* we don't reused hash entry in
+                                             recovering */
+          && (*entry_base)->Reusable()) {
         reusable_entry = *entry_base;
       }
     }
@@ -150,8 +149,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
     if (!found) {
       // reach end of buckets, reuse entry or allocate a new bucket
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
-        if (reusable_entry) {
-          // reuse
+        if (reusable_entry != nullptr) {
           if (data_entry_meta && !reusable_entry->Empty()) {
             memcpy(data_entry_meta,
                    pmem_allocator_->offset2addr(reusable_entry->offset),
@@ -159,7 +157,6 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
           }
           *entry_base = reusable_entry;
         } else {
-          // allocate new bucket
           auto space = dram_allocator_.Allocate(hash_bucket_size_);
           if (space.size == 0) {
             GlobalLogger.Error("Memory overflow!\n");
@@ -183,8 +180,8 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
   } else {
     if ((*entry_base) == reusable_entry) {
       if ((*entry_base)->header.status == HashEntryStatus::CleanReusable) {
-        (*entry_base)->header.status = HashEntryStatus::Updating;    if (reusable_entry) {
-      *entry_base = reusable_entry;
+        (*entry_base)->header.status = HashEntryStatus::Updating;
+      }
     } else {
       (*entry_base)->header.status = HashEntryStatus::Initializing;
     }
@@ -252,7 +249,7 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
 
   bool new_entry = entry_base->header.status == HashEntryStatus::Initializing;
   memcpy_16(entry_base, &new_hash_entry);
-  if (new_entry) { // newly allocated
+  if (new_entry) { // new allocated
     hash_bucket_entries_[hint.bucket]++;
   }
 }
