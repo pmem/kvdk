@@ -35,7 +35,7 @@ enum class HashEntryStatus : uint8_t {
   // hash entry updated by a new key
   CleanReusable = 1 << 4,
   // A empty hash entry that points to nothing
-  Empty = 1 << 5,
+  Empty = 1 << 5
 };
 
 enum class HashOffsetType : uint8_t {

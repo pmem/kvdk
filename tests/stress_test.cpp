@@ -113,12 +113,6 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
         ASSERT_EQ(status, kvdk::Status::NotFound)
             << "Should not have found a key of a entry that cannot be "
                "iterated.\n";
-        /// No DelayFree
-        // For now, HDelete will call DelayFree on a DlistDeleteRecord,
-        // which will mark its HashEntry as DirtyReusable.
-        // Thus a DlistDeleteRecord may disappear and this assertion will fail.
-        ASSERT_EQ(value_got, "") << "HGet a DlistDeleteRecord should have set "
-                                    "value_got as empty string\n";
 
         iter = possible_kv_pairs.erase(iter);
         n_removed_possible_kv_pairs =
@@ -393,8 +387,8 @@ protected:
       sorted_sets_possible_kv_pairs;
 
 private:
-  std::vector<std::string> keys_;
-  std::vector<std::string> values_;
+  std::vector<std::string> key_pool;
+  std::vector<std::string> value_pool;
   std::default_random_engine rand{42};
 
 protected:
@@ -619,8 +613,8 @@ private:
   }
 
   void prepareKVPairs() {
-    keys_.reserve(n_thread * n_kv_per_thread);
-    values_.reserve(n_kv_per_thread);
+    key_pool.reserve(n_thread * n_kv_per_thread);
+    value_pool.reserve(n_kv_per_thread);
     grouped_keys.resize(n_thread);
     grouped_values.resize(n_thread);
     hashes_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
@@ -635,9 +629,9 @@ private:
     {
       ProgressBar progress_gen_kv{std::cout, "", n_kv_per_thread, true};
       for (size_t i = 0; i < n_kv_per_thread; i++) {
-        values_.push_back(GetRandomString(sz_value_min, sz_value_max));
+        value_pool.push_back(GetRandomString(sz_value_min, sz_value_max));
         for (size_t tid = 0; tid < n_thread; tid++)
-          keys_.push_back(GetRandomString(sz_key_min, sz_key_max));
+          key_pool.push_back(GetRandomString(sz_key_min, sz_key_max));
 
         if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
           progress_gen_kv.Update(i + 1);
@@ -649,8 +643,8 @@ private:
       ProgressBar progress_gen_kv_view{std::cout, "", n_thread, true};
       for (size_t tid = 0; tid < n_thread; tid++) {
         for (size_t i = 0; i < n_kv_per_thread; i++) {
-          grouped_keys[tid].emplace_back(keys_[i * n_thread + tid]);
-          grouped_values[tid].emplace_back(values_[i]);
+          grouped_keys[tid].emplace_back(key_pool[i * n_thread + tid]);
+          grouped_values[tid].emplace_back(value_pool[i]);
         }
         progress_gen_kv_view.Update(tid + 1);
       }
@@ -660,7 +654,7 @@ private:
 
 class EngineStressTest : public EngineTestBase {
 protected:
-  virtual void SetUpParameters() {
+  virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 256GB PMem
@@ -669,25 +663,25 @@ protected:
     n_hash_bucket = (1ULL << 20);
     // Smaller buckets to increase hash collisions
     sz_hash_bucket = (3 + 1) * 16;
-    n_blocks_per_segment = (1ULL << 20);
+    n_blocks_per_segment = (1ULL << 10);
     t_background_work_interval = 1;
 
     /// Test specific parameters
     n_thread = 48;
     // 2M keys per thread, totaling about 100M records
     n_kv_per_thread = (2ULL << 20);
-    // 0-sized key "" is a hotspot, which may reveal many defects
     // These parameters set the range of sizes of keys and values
-    sz_key_min = 0;
+    sz_key_min = 2;
     sz_key_max = 16;
     sz_value_min = 0;
     sz_value_max = 1024;
   }
+  // Shared among EngineStressTest
+  const size_t n_reboot = 3;
 };
 
 TEST_F(EngineStressTest, HashesHSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
-  size_t n_reboot = 3;
 
   HashesAllHSet(global_collection_name);
   CheckHashesCollection(global_collection_name);
@@ -698,12 +692,13 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
     RebootDB();
     CheckHashesCollection(global_collection_name);
+    HashesAllHSet(global_collection_name);
+    CheckHashesCollection(global_collection_name);
   }
 }
 
 TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"GlobalCollection"};
-  size_t n_reboot = 3;
 
   HashesEvenHSetOddHDelete(global_collection_name);
 
@@ -728,9 +723,8 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   }
 }
 
-TEST_F(EngineStressTest, DISABLED_SortedSetsSSetOnly) {
+TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
-  size_t n_reboot = 3;
 
   SortedSetsAllSSet(global_collection_name);
   CheckSortedSetsCollection(global_collection_name);
@@ -742,12 +736,13 @@ TEST_F(EngineStressTest, DISABLED_SortedSetsSSetOnly) {
 
     RebootDB();
     CheckSortedSetsCollection(global_collection_name);
+    SortedSetsAllSSet(global_collection_name);
+    CheckSortedSetsCollection(global_collection_name);
   }
 }
 
-TEST_F(EngineStressTest, DISABLED_SortedSetsSSetAndSDelete) {
+TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
-  size_t n_reboot = 3;
 
   SortedSetsEvenSSetOddSDelete(global_collection_name);
 
@@ -774,7 +769,7 @@ TEST_F(EngineStressTest, DISABLED_SortedSetsSSetAndSDelete) {
 
 class EngineHotspotTest : public EngineTestBase {
 private:
-  virtual void SetUpParameters() {
+  virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 16GB PMem

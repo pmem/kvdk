@@ -74,12 +74,13 @@ EmplaceReturn UnorderedCollection::EmplaceBefore(
     DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  checkUserSuppliedPmp(pmp);
+  if (!checkUserSuppliedPmp(pmp))
+    return EmplaceReturn{};
   DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   --iter_prev;
   DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp};
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
-                                     timestamp, key, value, type, lock);
+                                     timestamp, key, value, type, lock, true);
   return ret;
 }
 
@@ -87,13 +88,14 @@ EmplaceReturn UnorderedCollection::EmplaceAfter(
     DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  checkUserSuppliedPmp(pmp);
+  if (!checkUserSuppliedPmp(pmp))
+    return EmplaceReturn{};
   DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp};
   ++iter_next;
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
-                                     timestamp, key, value, type, lock);
+                                     timestamp, key, value, type, lock, true);
   return ret;
 }
 
@@ -106,7 +108,7 @@ EmplaceReturn UnorderedCollection::EmplaceFront(
   ++iter_next;
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
-                                     timestamp, key, value, type, lock);
+                                     timestamp, key, value, type, lock, true);
   return ret;
 }
 
@@ -119,34 +121,84 @@ EmplaceReturn UnorderedCollection::EmplaceBack(
   DListIterator iter_next{dlinked_list_.Tail()};
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
-                                     timestamp, key, value, type, lock);
+                                     timestamp, key, value, type, lock, true);
   return ret;
 }
 
 /// key is also checked to match old key
-EmplaceReturn UnorderedCollection::SwapEmplace(
+EmplaceReturn UnorderedCollection::Replace(
     DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
     pmem::obj::string_view const value, DataEntryType type,
     std::unique_lock<SpinMutex> const &lock) {
-  checkUserSuppliedPmp(pmp);
+  if (!checkUserSuppliedPmp(pmp))
+    return EmplaceReturn{};
   DListIterator iter_prev{dlinked_list_.p_pmem_allocator_, pmp};
   --iter_prev;
   DListIterator iter_next{dlinked_list_.p_pmem_allocator_, pmp};
   ++iter_next;
 
   EmplaceReturn ret = emplaceBetween(iter_prev.pmp_curr_, iter_next.pmp_curr_,
-                                     timestamp, key, value, type, lock, true);
+                                     timestamp, key, value, type, lock, false);
   ret.offset_old = dlinked_list_.p_pmem_allocator_->addr2offset_checked(pmp);
   return ret;
+}
+
+EmplaceReturn
+UnorderedCollection::Erase(DLDataEntry *pmp_record_to_be_deleted,
+                           std::unique_lock<SpinMutex> const &lock) {
+  if (!checkUserSuppliedPmp(pmp_record_to_be_deleted))
+    return EmplaceReturn{};
+  DListIterator iter{dlinked_list_.p_pmem_allocator_, pmp_record_to_be_deleted};
+  DListIterator iter_prev{iter};
+  --iter_prev;
+  DListIterator iter_next{iter};
+  ++iter_next;
+
+  checkLock(lock);
+
+  // These locks may be invalidified after other threads insert another node!
+  auto internal_key = pmp_record_to_be_deleted->Key();
+  SpinMutex *spin = lock.mutex();
+  SpinMutex *spin1 = getMutex(iter_prev->Key());
+  SpinMutex *spin2 = getMutex(internal_key);
+  SpinMutex *spin3 = getMutex(iter_next->Key());
+
+  using lock_t = std::unique_lock<SpinMutex>;
+  lock_t lock_left;
+  lock_t lock_middle;
+  lock_t lock_right;
+
+  if (spin1 != spin) {
+    lock_left = lock_t{*spin1, std::defer_lock};
+    if (!lock_left.try_lock())
+      return EmplaceReturn{};
+  }
+  if (spin2 != spin && spin2 != spin1) {
+    lock_middle = lock_t{*spin2, std::defer_lock};
+    if (!lock_middle.try_lock())
+      return EmplaceReturn{};
+  }
+  if (spin3 != spin && spin3 != spin1 && spin3 != spin2) {
+    lock_right = lock_t{*spin3, std::defer_lock};
+    if (!lock_right.try_lock())
+      return EmplaceReturn{};
+  }
+  // acquired all locks
+  // No need to check linkage.
+  // No thread can modify linkage as long as caller has
+  // acquired lock to middle node.
+
+  DListIterator iter_old{iter};
+  iter = dlinked_list_.Erase(iter);
+
+  return EmplaceReturn{iter.GetOffset(), iter_old.GetOffset(), true};
 }
 
 EmplaceReturn UnorderedCollection::emplaceBetween(
     DLDataEntry *pmp_prev, DLDataEntry *pmp_next, std::uint64_t timestamp,
     pmem::obj::string_view const key, pmem::obj::string_view const value,
-    DataEntryType type,
-    std::unique_lock<SpinMutex> const
-        &lock, // lock to prev or next or newly inserted, passed in and out.
-    bool is_swap_emplace) {
+    DataEntryType type, std::unique_lock<SpinMutex> const &lock,
+    bool check_linkage) {
   checkLock(lock);
   checkEmplaceType(type);
 
@@ -161,31 +213,30 @@ EmplaceReturn UnorderedCollection::emplaceBetween(
   SpinMutex *spin3 = getMutex(iter_next->Key());
 
   using lock_t = std::unique_lock<SpinMutex>;
-  lock_t lock1;
-  lock_t lock2;
-  lock_t lock3;
+  lock_t lock_left;
+  lock_t lock_middle;
+  lock_t lock_right;
   std::vector<lock_t> locks;
 
   if (spin1 != spin) {
-    locks.emplace_back(*spin1, std::defer_lock);
+    lock_left = lock_t{*spin1, std::defer_lock};
+    if (!lock_left.try_lock())
+      return EmplaceReturn{};
   }
   if (spin2 != spin && spin2 != spin1) {
-    locks.emplace_back(*spin2, std::defer_lock);
+    lock_middle = lock_t{*spin2, std::defer_lock};
+    if (!lock_middle.try_lock())
+      return EmplaceReturn{};
   }
   if (spin3 != spin && spin3 != spin1 && spin3 != spin2) {
-    locks.emplace_back(*spin3, std::defer_lock);
+    lock_right = lock_t{*spin3, std::defer_lock};
+    if (!lock_right.try_lock())
+      return EmplaceReturn{};
   }
-  std::sort(locks.begin(), locks.end(),
-            [](lock_t const &lhs, lock_t const &rhs) {
-              return lhs.mutex() < rhs.mutex();
-            });
-  bool lock_success = true;
-  for (size_t i = 0; i < locks.size(); i++)
-    lock_success = lock_success && locks[i].try_lock();
-  if (!lock_success)
-    return EmplaceReturn{};
+  // acquired all locks
 
-  if (!is_swap_emplace) {
+  // Only when insertion should we check linkage
+  if (check_linkage) {
     bool has_other_thread_modified = false;
     DListIterator iter_prev_copy{iter_prev};
     DListIterator iter_next_copy(iter_next);
@@ -193,18 +244,6 @@ EmplaceReturn UnorderedCollection::emplaceBetween(
         has_other_thread_modified || (++iter_prev_copy != iter_next);
     has_other_thread_modified =
         has_other_thread_modified || (--iter_next_copy != iter_prev);
-    if (has_other_thread_modified) {
-      return EmplaceReturn{};
-    }
-  } else {
-    // SwapEmplace Should not worry?
-    bool has_other_thread_modified = false;
-    DListIterator iter_prev_copy{iter_prev};
-    DListIterator iter_next_copy(iter_next);
-    has_other_thread_modified =
-        has_other_thread_modified || (++++iter_prev_copy != iter_next);
-    has_other_thread_modified =
-        has_other_thread_modified || (----iter_next_copy != iter_prev);
     if (has_other_thread_modified) {
       return EmplaceReturn{};
     }
@@ -227,10 +266,9 @@ UnorderedIterator::UnorderedIterator(
     : sp_collection_{sp_coll},
       internal_iterator_{sp_collection_->dlinked_list_.p_pmem_allocator_, pmp},
       valid_{false} {
-  if (!pmp) {
-    throw std::runtime_error{
-        "Explicit Constructor of UnorderedIterator does not accept nullptr!"};
-  }
+  kvdk_assert(
+      pmp,
+      "Explicit Constructor of UnorderedIterator does not accept nullptr!");
   sp_collection_->checkUserSuppliedPmp(pmp);
   valid_ = (pmp->type == DataEntryType::DlistDataRecord);
   return;
@@ -242,8 +280,7 @@ void UnorderedIterator::internalNext() {
   }
   switch (static_cast<DataEntryType>(internal_iterator_->type)) {
   case DataEntryType::DlistHeadRecord:
-  case DataEntryType::DlistDataRecord:
-  case DataEntryType::DlistDeleteRecord: {
+  case DataEntryType::DlistDataRecord: {
     break;
   }
   case DataEntryType::DlistRecord:
@@ -261,11 +298,6 @@ void UnorderedIterator::internalNext() {
       valid_ = true;
       return;
     }
-    case DataEntryType::DlistDeleteRecord: {
-      valid_ = false;
-      ++internal_iterator_;
-      continue;
-    }
     case DataEntryType::DlistTailRecord: {
       valid_ = false;
       return;
@@ -278,7 +310,7 @@ void UnorderedIterator::internalNext() {
     }
   }
 FATAL_FAILURE:
-  throw std::runtime_error{"UnorderedIterator::internalNext() fails!"};
+  kvdk_assert(false, "UnorderedIterator::internalNext() fails!");
 }
 
 void UnorderedIterator::internalPrev() {
@@ -287,8 +319,7 @@ void UnorderedIterator::internalPrev() {
   }
   switch (static_cast<DataEntryType>(internal_iterator_->type)) {
   case DataEntryType::DlistTailRecord:
-  case DataEntryType::DlistDataRecord:
-  case DataEntryType::DlistDeleteRecord: {
+  case DataEntryType::DlistDataRecord: {
     break;
   }
   case DataEntryType::DlistHeadRecord:
@@ -306,11 +337,6 @@ void UnorderedIterator::internalPrev() {
       valid_ = true;
       return;
     }
-    case DataEntryType::DlistDeleteRecord: {
-      valid_ = false;
-      --internal_iterator_;
-      continue;
-    }
     case DataEntryType::DlistHeadRecord: {
       valid_ = false;
       return;
@@ -323,7 +349,6 @@ void UnorderedIterator::internalPrev() {
     }
   }
 FATAL_FAILURE:
-  throw std::runtime_error{
-      "UnorderedCollection::DListIterator::internalPrev() fails!"};
+  kvdk_assert(false, "UnorderedIterator::internalPrev() fails!");
 }
 } // namespace KVDK_NAMESPACE
