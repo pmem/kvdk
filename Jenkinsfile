@@ -21,24 +21,21 @@ pipeline {
                 cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
                 ./dbtest'''
            }
-        }  
-	stage('post') {
-	   steps {
-		post {
- 			failure {
+	   post {
+ 			   failure {
 				     sh '''
 				     pwd
 		 		     '''
-			}
-			success {
-			            sh '''
+			   }
+			   success {
+				     sh '''
 				     pwd
 		 		     '''
-			}
-		} 			
-	   }
+			   }
+				
+	 } 			
         }
-	stage('benchmarks') {
+       stage('benchmarks') {
 	   steps {	
 		sh '''
                 cd scripts
@@ -48,3 +45,4 @@ pipeline {
     }		    
 	    
 }  
+ 
