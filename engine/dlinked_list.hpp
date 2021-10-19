@@ -349,8 +349,10 @@ public:
     }
 
     persistRecord(pmp, entry, key, value);
-    pmem_memcpy_persist(&iter_prev->next, &offset, sizeof(offset));
-    pmem_memcpy_persist(&iter_next->prev, &offset, sizeof(offset));
+    iter_prev->next = offset;
+    pmem_persist(&iter_prev->next, sizeof(offset));
+    iter_next->prev = offset;
+    pmem_persist(&iter_next->prev, sizeof(offset));
 
     return DListIterator{p_pmem_allocator_, static_cast<DLDataEntry *>(pmp)};
   }
@@ -366,8 +368,10 @@ public:
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
     auto prev_offset = iter_prev.GetOffset();
     auto next_offset = iter_next.GetOffset();
-    pmem_memcpy_persist(&iter_prev->next, &next_offset, sizeof(next_offset));
-    pmem_memcpy_persist(&iter_next->prev, &prev_offset, sizeof(prev_offset));
+    iter_prev->next = next_offset;
+    pmem_persist(&iter_prev->next, sizeof(next_offset));
+    iter_next->prev = prev_offset;
+    pmem_persist(&iter_next->prev, sizeof(prev_offset));
 
     return iter_next;
   }
@@ -382,15 +386,15 @@ private:
       pmem::obj::string_view const key, pmem::obj::string_view const value) {
     // Persist key and value
     char *pmp_dest = static_cast<char *>(pmp);
-    pmem_memcpy(pmp_dest, &entry, sizeof(DLDataEntry), PMEM_F_MEM_NONTEMPORAL);
+    pmem_memcpy(pmp_dest, &entry, sizeof(DLDataEntry), 
+                PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
     pmp_dest += sizeof(DLDataEntry);
     pmem_memcpy(pmp_dest, key.data(), key.size(),
                 PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
     pmp_dest += key.size();
     pmem_memcpy(pmp_dest, value.data(), value.size(),
                 PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
-    pmem_flush(pmp, sizeof(DLDataEntry) + key.size() + value.size());
-    pmem_drain();
+    pmem_persist(pmp, sizeof(DLDataEntry) + key.size() + value.size());
   }
 
   /// Compute Checksum of the to-be-emplaced record
