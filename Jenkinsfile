@@ -33,9 +33,11 @@ pipeline {
 		} 			
 	   }
         }
-	stage('benchmarks') { sh '''
+	stage('benchmarks') {
+	   steps {	
+		sh '''
                 cd scripts
                 python3 basic_benchmarks.py'''
-		            }	
+	   }	
        }
 }  
