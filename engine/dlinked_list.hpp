@@ -379,7 +379,7 @@ private:
       pmem::obj::string_view const key, pmem::obj::string_view const value) {
     // Persist key and value
     char *pmp_dest = static_cast<char *>(pmp);
-    pmem_memcpy(pmp_dest, &entry, sizeof(DLDataEntry), 
+    pmem_memcpy(pmp_dest, &entry, sizeof(DLDataEntry),
                 PMEM_F_MEM_NOFLUSH | PMEM_F_MEM_NONTEMPORAL);
     pmp_dest += sizeof(DLDataEntry);
     pmem_memcpy(pmp_dest, key.data(), key.size(),
