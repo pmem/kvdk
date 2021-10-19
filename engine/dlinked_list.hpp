@@ -298,7 +298,7 @@ public:
 
   /// Helper function to deallocate Record, called only by caller
   inline static void Deallocate(DListIterator iter) {
-    // This is redundant.
+    // Necessary, as security measure.
     iter->type = DataEntryType::Padding;
     pmem_persist(iter.pmp_curr_, sizeof(DLDataEntry));
 

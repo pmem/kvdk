@@ -950,7 +950,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     Status s =
         hash_table_->SearchForWrite(hint, collection_key, SortedDataRecord,
                                     &entry_base, &hash_entry, &data_entry);
-    if (s == Status ::MemoryOverflow) {
+    if (s == Status::MemoryOverflow) {
       return s;
     }
     bool found = s == Status::Ok;
