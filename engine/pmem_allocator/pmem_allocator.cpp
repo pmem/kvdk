@@ -14,8 +14,7 @@ namespace KVDK_NAMESPACE {
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t num_write_threads)
-    : pmem_(pmem), thread_cache_(num_write_threads),
-      num_segment_blocks_(num_segment_blocks), block_size_(block_size),
+    : pmem_(pmem), thread_cache_(num_write_threads), block_size_(block_size),
       segment_size_(num_segment_blocks * block_size), offset_head_(0),
       pmem_size_(pmem_size),
       max_block_offset_(pmem_size / block_size / num_segment_blocks *

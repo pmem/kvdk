@@ -135,7 +135,6 @@ private:
   }
 
   std::vector<ThreadCache> thread_cache_;
-  const uint64_t num_segment_blocks_;
   const uint32_t block_size_;
   const uint64_t segment_size_;
   std::atomic<uint64_t> offset_head_;
