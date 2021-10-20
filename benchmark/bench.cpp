@@ -30,7 +30,9 @@ DEFINE_string(
     value_size_distribution, "constant",
     "Distribution of value size to write, can be constant/random/zipf, "
     "default is constant. If set to random or zipf, the max value size "
-    "will be FLAGS_value_size");
+    "will be FLAGS_value_size. "
+    "##### Notice: ###### zipf generator is experimental and expensive, so the "
+    "zipf performance is not accurate");
 
 DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
 
@@ -359,6 +361,9 @@ bool ProcessBenchmarkConfigs() {
   if (fill || FLAGS_key_distribution == "uniform") {
     key_generator.reset(new UniformGenerator(num_keys));
   } else if (FLAGS_key_distribution == "zipf") {
+    printf("##### Notice: ###### zipf generator is experimental and expensive, "
+           "so the "
+           "performance is not accurate\n");
     key_generator.reset(new ZipfianGenerator(max_key));
   } else if (FLAGS_key_distribution == "random") {
     key_generator.reset(new RandomGenerator(max_key));

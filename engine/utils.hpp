@@ -34,7 +34,7 @@
   }
 #else
 #define kvdk_assert(cond, msg)                                                 \
-  { assert((cond) && msg); }
+  {}
 #endif
 namespace KVDK_NAMESPACE {
 

@@ -34,6 +34,7 @@ protected:
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
+    configs.log_level = LogLevel::All;
     db_path = "/mnt/pmem0/data";
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", db_path.c_str());
@@ -240,7 +241,7 @@ TEST_F(EngineBasicTest, TestFreeList) {
 }
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
-  int num_threads = 16;
+  int num_threads = 1;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -756,7 +757,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
-  int num_threads = 16;
+  int num_threads = 1;
   int count = 100;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),

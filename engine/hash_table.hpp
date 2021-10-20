@@ -9,7 +9,7 @@
 #include <limits>
 #include <vector>
 
-#include "data_entry.hpp"
+#include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
@@ -28,7 +28,7 @@ enum class HashEntryStatus : uint8_t {
   Updating = 1 << 2,
   // A Normal hash entry of a delete record that is reusing by a new key, it's
   // unknown if there are older version data of the same key existing so we can
-  // not free corresponding PMem data entry
+  // not free corresponding PMem data record
   DirtyReusable = 1 << 3,
   // A hash entry of a delete record which has no older version data of the same
   // key exsiting on PMem, so the delete record can be safely freed after the
@@ -41,10 +41,10 @@ enum class HashEntryStatus : uint8_t {
 enum class HashOffsetType : uint8_t {
   // Value initialized considered as Invalid
   Invalid = 0,
-  // Offset is PMem offset of a data entry
-  DataEntry = 1,
-  // Offset is PMem offset of a double linked data entry
-  DLDataEntry = 2,
+  // Offset is PMem offset of a string record
+  StringRecord = 1,
+  // Offset is PMem offset of a doubly linked record
+  DLRecord = 2,
   // Offset is pointer to a dram skiplist node
   SkiplistNode = 3,
   // Offset is pointer to a dram skiplist struct
@@ -190,11 +190,11 @@ private:
   }
 
   // Check if "key" of data type "target_type" is indexed by "hash_entry". If
-  // matches, copy metadata of data entry of "key" to "data_entry_metadata" and
-  // return true, otherwise return false.
+  // matches, copy data entry of data record of "key" to "data_entry_metadata"
+  // and return true, otherwise return false.
   bool MatchHashEntry(const pmem::obj::string_view &key, uint32_t hash_k_prefix,
                       uint16_t target_type, const HashEntry *hash_entry,
-                      void *data_entry_metadata);
+                      DataEntry *data_entry_metadata);
 
   std::vector<uint64_t> hash_bucket_entries_;
   const uint64_t hash_bucket_num_;
@@ -204,6 +204,6 @@ private:
   std::vector<Slot> slots_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   ChunkBasedAllocator dram_allocator_;
-  char *main_buckets_;
+  void *main_buckets_;
 };
 } // namespace KVDK_NAMESPACE

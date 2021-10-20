@@ -11,7 +11,7 @@ void Logger::Debug(const char *format, ...) {
   if (level_ <= LogLevel::Debug) {
     va_list args;
     va_start(args, format);
-    Log("[LOG]", format, args);
+    Log("[DEBUG]", format, args);
     va_end(args);
   }
 }
@@ -20,7 +20,7 @@ void Logger::Info(const char *format, ...) {
   if (level_ <= LogLevel::Info) {
     va_list args;
     va_start(args, format);
-    Log("[Info]", format, args);
+    Log("[INFO]", format, args);
     va_end(args);
   }
 }

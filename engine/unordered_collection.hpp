@@ -64,7 +64,7 @@ private:
   PMEMAllocator *p_pmem_allocator_;
 
   /// DlistRecord for recovering
-  DLDataEntry *pmp_dlist_record_;
+  DLRecord *pmp_dlist_record_;
 
   /// DLinkedList manages data on PMem, also hold a PMemAllocator
   DLinkedList dlinked_list_;
@@ -89,7 +89,7 @@ public:
   /// Recover UnorderedCollection from DLIST_RECORD
   UnorderedCollection(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
                       std::shared_ptr<HashTable> sp_hash_table,
-                      DLDataEntry *pmp_dlist_record);
+                      DLRecord *pmp_dlist_record);
 
   /// Create UnorderedIterator and SeekToFirst()
   UnorderedIterator First();
@@ -100,19 +100,19 @@ public:
   /// Emplace before pmp
   /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
   /// lock must been acquired before passed in
-  EmplaceReturn EmplaceBefore(DLDataEntry *pmp, std::uint64_t timestamp,
+  EmplaceReturn EmplaceBefore(DLRecord *pmp, std::uint64_t timestamp,
                               pmem::obj::string_view const key,
                               pmem::obj::string_view const value,
-                              DataEntryType type,
+                              RecordType type,
                               std::unique_lock<SpinMutex> const &lock);
 
   /// Emplace after pmp
   /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
   /// lock must been acquired before passed in
-  EmplaceReturn EmplaceAfter(DLDataEntry *pmp, std::uint64_t timestamp,
+  EmplaceReturn EmplaceAfter(DLRecord *pmp, std::uint64_t timestamp,
                              pmem::obj::string_view const key,
                              pmem::obj::string_view const value,
-                             DataEntryType type,
+                             RecordType type,
                              std::unique_lock<SpinMutex> const &lock);
 
   /// Emplace after Head()
@@ -121,7 +121,7 @@ public:
   EmplaceReturn EmplaceFront(std::uint64_t timestamp,
                              pmem::obj::string_view const key,
                              pmem::obj::string_view const value,
-                             DataEntryType type,
+                             RecordType type,
                              std::unique_lock<SpinMutex> const &lock);
 
   /// Emplace before Tail()
@@ -129,31 +129,30 @@ public:
   /// lock must been acquired before passed in
   EmplaceReturn EmplaceBack(std::uint64_t timestamp,
                             pmem::obj::string_view const key,
-                            pmem::obj::string_view const value,
-                            DataEntryType type,
+                            pmem::obj::string_view const value, RecordType type,
                             std::unique_lock<SpinMutex> const &lock);
 
   /// key is also checked to match old key
-  EmplaceReturn Replace(DLDataEntry *pmp_record_to_be_swapped,
+  EmplaceReturn Replace(DLRecord *pmp_record_to_replace,
                         std::uint64_t timestamp,
                         pmem::obj::string_view const key,
-                        pmem::obj::string_view const value, DataEntryType type,
+                        pmem::obj::string_view const value, RecordType type,
                         std::unique_lock<SpinMutex> const &lock);
 
   /// Erase given record
   /// Return new_offset as next record
   /// old_offset as erased record
-  EmplaceReturn Erase(DLDataEntry *pmp_record_to_be_deleted,
+  EmplaceReturn Erase(DLRecord *pmp_record_to_delete,
                       std::unique_lock<SpinMutex> const &lock);
 
   /// Deallocate a Record given by caller.
   /// Emplace functions does not do deallocations.
-  inline static void Deallocate(DLDataEntry *pmp,
+  inline static void Deallocate(DLRecord *pmp,
                                 PMEMAllocator *p_pmem_allocator) {
     DLinkedList::Deallocate(DListIterator{p_pmem_allocator, pmp});
   }
 
-  inline void Deallocate(DLDataEntry *pmp) {
+  inline void Deallocate(DLRecord *pmp) {
     DLinkedList::Deallocate(DListIterator{p_pmem_allocator_, pmp});
   }
 
@@ -167,23 +166,13 @@ public:
     return makeInternalKey(id_, key);
   }
 
-  inline static std::uint32_t CheckSum(DLDataEntry *record) {
-    return CheckSum(*record, record->Key(), record->Value());
-  }
-
-  inline static std::uint32_t CheckSum(DLDataEntry const &dl_data_entry,
-                                       pmem::obj::string_view internal_key,
-                                       pmem::obj::string_view value) {
-    return DLinkedList::checkSum(dl_data_entry, internal_key, value);
-  }
-
   friend std::ostream &operator<<(std::ostream &out,
                                   UnorderedCollection const &col) {
     auto iter = col.pmp_dlist_record_;
     auto internal_key = iter->Key();
     out << "Name: " << col.Name() << "\t"
         << "ID: " << hex_print(col.ID()) << "\n";
-    out << "Type: " << hex_print(iter->type) << "\t"
+    out << "Type: " << hex_print(iter->entry.meta.type) << "\t"
         << "Prev: " << hex_print(iter->prev) << "\t"
         << "Next: " << hex_print(iter->next) << "\t"
         << "Key: " << iter->Key() << "\t"
@@ -194,16 +183,16 @@ public:
 
 private:
   EmplaceReturn emplaceBetween(
-      DLDataEntry *pmp_prev, DLDataEntry *pmp_next, std::uint64_t timestamp,
+      DLRecord *pmp_prev, DLRecord *pmp_next, std::uint64_t timestamp,
       pmem::obj::string_view const key, pmem::obj::string_view const value,
-      DataEntryType type,
+      RecordType type,
       std::unique_lock<SpinMutex> const &lock, // lock already acquired
       bool check_linkage // Whether to check linkage after acquiring locks.
   );
 
   // Check the type of Record to be emplaced.
-  inline static void checkEmplaceType(DataEntryType type) {
-    kvdk_assert(type == DataEntryType::DlistDataRecord,
+  inline static void checkEmplaceType(RecordType type) {
+    kvdk_assert(type == RecordType::DlistDataRecord,
                 "Trying to Emplace a Record with invalid type "
                 "in UnorderedCollection!");
   }
@@ -263,16 +252,16 @@ private:
   /// When User Call Emplace functions with parameter pmp
   /// pmp supplied maybe invalid
   /// User should only supply pmp to DlistDataRecord
-  inline bool checkUserSuppliedPmp(DLDataEntry *pmp) {
+  inline bool checkUserSuppliedPmp(DLRecord *pmp) {
     bool is_pmp_valid = false;
-    switch (static_cast<DataEntryType>(pmp->type)) {
-    case DataEntryType::DlistDataRecord: {
+    switch (static_cast<RecordType>(pmp->entry.meta.type)) {
+    case RecordType::DlistDataRecord: {
       is_pmp_valid = true;
       break;
     }
-    case DataEntryType::DlistHeadRecord:
-    case DataEntryType::DlistTailRecord:
-    case DataEntryType::DlistRecord:
+    case RecordType::DlistHeadRecord:
+    case RecordType::DlistTailRecord:
+    case RecordType::DlistRecord:
     default: {
       is_pmp_valid = false;
       break;
@@ -287,13 +276,13 @@ private:
   /// Treat pmp as PMem pointer to a
   /// DlistHeadRecord, DlistTailRecord, DlistDataRecord
   /// Access ID and check whether pmp belongs to current UnorderedCollection
-  inline bool checkID(DLDataEntry *pmp) {
+  inline bool checkID(DLRecord *pmp) {
     if (UnorderedCollection::extractID(pmp->Key()) == ID()) {
       return true;
     } else {
       return false;
     }
-  }
+  } // namespace KVDK_NAMESPACE
 };
 
 } // namespace KVDK_NAMESPACE
@@ -317,15 +306,14 @@ public:
 
   /// [Deprecated?]
   /// Construct UnorderedIterator of a certain UnorderedCollection
-  /// pointing to a DLDataEntry belonging to this collection
+  /// pointing to a DLRecord belonging to this collection
   /// Runtime checking the type of this UnorderedIterator,
   /// which can be DlistDataRecord, DlistHeadRecord and
   /// DlistTailRecord ID is also checked. Checking failure results in throwing
-  /// runtime_error.
-  /// Valid() is true only if the iterator points to
+  /// runtime_error. Valid() is true only if the iterator points to
   /// DlistDataRecord
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll,
-                    DLDataEntry *pmp);
+                    DLRecord *pmp);
 
   /// UnorderedIterator currently does not support Seek to a key
   virtual void Seek(std::string const &key) final override {
@@ -391,12 +379,12 @@ public:
 
 private:
   // Proceed to next DlistDataRecord, can start from
-  // DlistHeadRecord or DlistDataRecord
+  // DlistHeadRecord, DlistDataRecord
   // If reached DlistTailRecord, valid_ is set to false and returns
   void internalNext();
 
   // Proceed to prev DlistDataRecord, can start from
-  // DlistTailRecord or DlistDataRecord
+  // DlistTailRecord, DlistDataRecord
   // If reached DlistHeadRecord, valid_ is set to false and returns
   void internalPrev();
 };

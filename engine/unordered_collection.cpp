@@ -11,7 +11,7 @@ UnorderedCollection::UnorderedCollection(
                                                 pmem::obj::string_view{""}},
       name_{name}, id_{id}, time_stamp_{timestamp} {
   auto space_list_record = dlinked_list_.p_pmem_allocator_->Allocate(
-      sizeof(DLDataEntry) + name_.size() + sizeof(decltype(id_)));
+      sizeof(DLRecord) + name_.size() + sizeof(decltype(id_)));
   if (space_list_record.size == 0) {
     DLinkedList::Deallocate(dlinked_list_.Head());
     DLinkedList::Deallocate(dlinked_list_.Tail());
@@ -20,43 +20,28 @@ UnorderedCollection::UnorderedCollection(
     throw std::bad_alloc{};
   }
   std::uint64_t offset_list_record = space_list_record.space_entry.offset;
-  void *pmp_list_record =
-      dlinked_list_.p_pmem_allocator_->offset2addr_checked(offset_list_record);
-  DLDataEntry entry_list_record; // Set up entry with meta
-  {
-    entry_list_record.timestamp = timestamp;
-    entry_list_record.type = DataEntryType::DlistRecord;
-    entry_list_record.k_size = name_.size();
-    entry_list_record.v_size = sizeof(decltype(id_));
-
-    // checksum can only be calculated with complete meta
-    entry_list_record.header.b_size = space_list_record.size;
-    entry_list_record.header.checksum =
-        DLinkedList::checkSum(entry_list_record, name_, id2View(id_));
-
-    entry_list_record.prev = dlinked_list_.Head().GetOffset();
-    entry_list_record.next = dlinked_list_.Tail().GetOffset();
-  }
-  DLinkedList::persistRecord(pmp_list_record, entry_list_record, name_,
-                             id2View(id_));
-  pmp_dlist_record_ = static_cast<DLDataEntry *>(pmp_list_record);
+  pmp_dlist_record_ = DLRecord::PersistDLRecord(
+      dlinked_list_.p_pmem_allocator_->offset2addr_checked(offset_list_record),
+      space_list_record.size, timestamp, RecordType::DlistRecord,
+      dlinked_list_.Head().GetOffset(), dlinked_list_.Tail().GetOffset(), name_,
+      id2View(id_));
 }
 
 UnorderedCollection::UnorderedCollection(
     std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
-    std::shared_ptr<HashTable> sp_hash_table, DLDataEntry *pmp_dlist_record)
+    std::shared_ptr<HashTable> sp_hash_table, DLRecord *pmp_dlist_record)
     : sp_hash_table_{sp_hash_table}, p_pmem_allocator_{sp_pmem_allocator.get()},
       pmp_dlist_record_{pmp_dlist_record},
       dlinked_list_{
           sp_pmem_allocator,
-          reinterpret_cast<DLDataEntry *>(
-              sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->prev)),
-          reinterpret_cast<DLDataEntry *>(
-              sp_pmem_allocator->offset2addr_checked(pmp_dlist_record->next)),
+          sp_pmem_allocator->offset2addr_checked<DLRecord>(
+              pmp_dlist_record->prev),
+          sp_pmem_allocator->offset2addr_checked<DLRecord>(
+              pmp_dlist_record->next),
       },
       name_{string_view_2_string(pmp_dlist_record->Key())},
       id_{view2ID(pmp_dlist_record->Value())},
-      time_stamp_{pmp_dlist_record->timestamp} {}
+      time_stamp_{pmp_dlist_record->entry.meta.timestamp} {}
 
 UnorderedIterator UnorderedCollection::First() {
   UnorderedIterator iter{shared_from_this()};
@@ -71,8 +56,8 @@ UnorderedIterator UnorderedCollection::Last() {
 }
 
 EmplaceReturn UnorderedCollection::EmplaceBefore(
-    DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
-    pmem::obj::string_view const value, DataEntryType type,
+    DLRecord *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
+    pmem::obj::string_view const value, RecordType type,
     std::unique_lock<SpinMutex> const &lock) {
   if (!checkUserSuppliedPmp(pmp))
     return EmplaceReturn{};
@@ -85,8 +70,8 @@ EmplaceReturn UnorderedCollection::EmplaceBefore(
 }
 
 EmplaceReturn UnorderedCollection::EmplaceAfter(
-    DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
-    pmem::obj::string_view const value, DataEntryType type,
+    DLRecord *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
+    pmem::obj::string_view const value, RecordType type,
     std::unique_lock<SpinMutex> const &lock) {
   if (!checkUserSuppliedPmp(pmp))
     return EmplaceReturn{};
@@ -101,7 +86,7 @@ EmplaceReturn UnorderedCollection::EmplaceAfter(
 
 EmplaceReturn UnorderedCollection::EmplaceFront(
     std::uint64_t timestamp, pmem::obj::string_view const key,
-    pmem::obj::string_view const value, DataEntryType type,
+    pmem::obj::string_view const value, RecordType type,
     std::unique_lock<SpinMutex> const &lock) {
   DListIterator iter_prev{dlinked_list_.Head()};
   DListIterator iter_next{dlinked_list_.Head()};
@@ -114,7 +99,7 @@ EmplaceReturn UnorderedCollection::EmplaceFront(
 
 EmplaceReturn UnorderedCollection::EmplaceBack(
     std::uint64_t timestamp, pmem::obj::string_view const key,
-    pmem::obj::string_view const value, DataEntryType type,
+    pmem::obj::string_view const value, RecordType type,
     std::unique_lock<SpinMutex> const &lock) {
   DListIterator iter_prev{dlinked_list_.Tail()};
   --iter_prev;
@@ -127,8 +112,8 @@ EmplaceReturn UnorderedCollection::EmplaceBack(
 
 /// key is also checked to match old key
 EmplaceReturn UnorderedCollection::Replace(
-    DLDataEntry *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
-    pmem::obj::string_view const value, DataEntryType type,
+    DLRecord *pmp, std::uint64_t timestamp, pmem::obj::string_view const key,
+    pmem::obj::string_view const value, RecordType type,
     std::unique_lock<SpinMutex> const &lock) {
   if (!checkUserSuppliedPmp(pmp))
     return EmplaceReturn{};
@@ -144,11 +129,11 @@ EmplaceReturn UnorderedCollection::Replace(
 }
 
 EmplaceReturn
-UnorderedCollection::Erase(DLDataEntry *pmp_record_to_be_deleted,
+UnorderedCollection::Erase(DLRecord *pmp_record_to_delete,
                            std::unique_lock<SpinMutex> const &lock) {
-  if (!checkUserSuppliedPmp(pmp_record_to_be_deleted))
+  if (!checkUserSuppliedPmp(pmp_record_to_delete))
     return EmplaceReturn{};
-  DListIterator iter{dlinked_list_.p_pmem_allocator_, pmp_record_to_be_deleted};
+  DListIterator iter{dlinked_list_.p_pmem_allocator_, pmp_record_to_delete};
   DListIterator iter_prev{iter};
   --iter_prev;
   DListIterator iter_next{iter};
@@ -157,7 +142,7 @@ UnorderedCollection::Erase(DLDataEntry *pmp_record_to_be_deleted,
   checkLock(lock);
 
   // These locks may be invalidified after other threads insert another node!
-  auto internal_key = pmp_record_to_be_deleted->Key();
+  auto internal_key = pmp_record_to_delete->Key();
   SpinMutex *spin = lock.mutex();
   SpinMutex *spin1 = getMutex(iter_prev->Key());
   SpinMutex *spin2 = getMutex(internal_key);
@@ -195,9 +180,11 @@ UnorderedCollection::Erase(DLDataEntry *pmp_record_to_be_deleted,
 }
 
 EmplaceReturn UnorderedCollection::emplaceBetween(
-    DLDataEntry *pmp_prev, DLDataEntry *pmp_next, std::uint64_t timestamp,
+    DLRecord *pmp_prev, DLRecord *pmp_next, std::uint64_t timestamp,
     pmem::obj::string_view const key, pmem::obj::string_view const value,
-    DataEntryType type, std::unique_lock<SpinMutex> const &lock,
+    RecordType type,
+    std::unique_lock<SpinMutex> const
+        &lock /* lock to prev or next or newly inserted, passed in and out. */,
     bool check_linkage) {
   checkLock(lock);
   checkEmplaceType(type);
@@ -233,6 +220,7 @@ EmplaceReturn UnorderedCollection::emplaceBetween(
     if (!lock_right.try_lock())
       return EmplaceReturn{};
   }
+
   // acquired all locks
 
   // Only when insertion should we check linkage
@@ -253,16 +241,14 @@ EmplaceReturn UnorderedCollection::emplaceBetween(
 
   return EmplaceReturn{iter.GetOffset(), EmplaceReturn::FailOffset, true};
 }
-} // namespace KVDK_NAMESPACE
 
-namespace KVDK_NAMESPACE {
 UnorderedIterator::UnorderedIterator(
     std::shared_ptr<UnorderedCollection> sp_coll)
     : sp_collection_{sp_coll},
       internal_iterator_{sp_coll->dlinked_list_.Head()}, valid_{false} {}
 
 UnorderedIterator::UnorderedIterator(
-    std::shared_ptr<UnorderedCollection> sp_coll, DLDataEntry *pmp)
+    std::shared_ptr<UnorderedCollection> sp_coll, DLRecord *pmp)
     : sp_collection_{sp_coll},
       internal_iterator_{sp_collection_->dlinked_list_.p_pmem_allocator_, pmp},
       valid_{false} {
@@ -270,7 +256,7 @@ UnorderedIterator::UnorderedIterator(
       pmp,
       "Explicit Constructor of UnorderedIterator does not accept nullptr!");
   sp_collection_->checkUserSuppliedPmp(pmp);
-  valid_ = (pmp->type == DataEntryType::DlistDataRecord);
+  valid_ = (pmp->entry.meta.type == RecordType::DlistDataRecord);
   return;
 }
 
@@ -278,13 +264,13 @@ void UnorderedIterator::internalNext() {
   if (!internal_iterator_.valid()) {
     goto FATAL_FAILURE;
   }
-  switch (static_cast<DataEntryType>(internal_iterator_->type)) {
-  case DataEntryType::DlistHeadRecord:
-  case DataEntryType::DlistDataRecord: {
+  switch (static_cast<RecordType>(internal_iterator_->entry.meta.type)) {
+  case RecordType::DlistHeadRecord:
+  case RecordType::DlistDataRecord: {
     break;
   }
-  case DataEntryType::DlistRecord:
-  case DataEntryType::DlistTailRecord:
+  case RecordType::DlistRecord:
+  case RecordType::DlistTailRecord:
   default: {
     goto FATAL_FAILURE;
   }
@@ -293,17 +279,17 @@ void UnorderedIterator::internalNext() {
   ++internal_iterator_;
   while (internal_iterator_.valid()) {
     valid_ = false;
-    switch (internal_iterator_->type) {
-    case DataEntryType::DlistDataRecord: {
+    switch (internal_iterator_->entry.meta.type) {
+    case RecordType::DlistDataRecord: {
       valid_ = true;
       return;
     }
-    case DataEntryType::DlistTailRecord: {
+    case RecordType::DlistTailRecord: {
       valid_ = false;
       return;
     }
-    case DataEntryType::DlistHeadRecord:
-    case DataEntryType::DlistRecord:
+    case RecordType::DlistHeadRecord:
+    case RecordType::DlistRecord:
     default: {
       goto FATAL_FAILURE;
     }
@@ -317,13 +303,13 @@ void UnorderedIterator::internalPrev() {
   if (!internal_iterator_.valid()) {
     goto FATAL_FAILURE;
   }
-  switch (static_cast<DataEntryType>(internal_iterator_->type)) {
-  case DataEntryType::DlistTailRecord:
-  case DataEntryType::DlistDataRecord: {
+  switch (static_cast<RecordType>(internal_iterator_->entry.meta.type)) {
+  case RecordType::DlistTailRecord:
+  case RecordType::DlistDataRecord: {
     break;
   }
-  case DataEntryType::DlistHeadRecord:
-  case DataEntryType::DlistRecord:
+  case RecordType::DlistHeadRecord:
+  case RecordType::DlistRecord:
   default: {
     goto FATAL_FAILURE;
   }
@@ -332,17 +318,17 @@ void UnorderedIterator::internalPrev() {
   --internal_iterator_;
   while (internal_iterator_.valid()) {
     valid_ = false;
-    switch (internal_iterator_->type) {
-    case DataEntryType::DlistDataRecord: {
+    switch (internal_iterator_->entry.meta.type) {
+    case RecordType::DlistDataRecord: {
       valid_ = true;
       return;
     }
-    case DataEntryType::DlistHeadRecord: {
+    case RecordType::DlistHeadRecord: {
       valid_ = false;
       return;
     }
-    case DataEntryType::DlistTailRecord:
-    case DataEntryType::DlistRecord:
+    case RecordType::DlistTailRecord:
+    case RecordType::DlistRecord:
     default: {
       goto FATAL_FAILURE;
     }

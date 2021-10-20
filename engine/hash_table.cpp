@@ -34,26 +34,26 @@ HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
 bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
                                uint32_t hash_k_prefix, uint16_t target_type,
                                const HashEntry *hash_entry,
-                               void *data_entry_metadata) {
+                               DataEntry *data_entry_metadata) {
   if (hash_entry->header.status == HashEntryStatus::Empty) {
     return false;
   }
   if ((target_type & hash_entry->header.data_type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
-    void *data_entry_pmem;
+    void *pmem_record;
     pmem::obj::string_view data_entry_key;
 
     switch (hash_entry->header.offset_type) {
-    case HashOffsetType::DataEntry: {
-      data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
-      data_entry_key = ((DataEntry *)data_entry_pmem)->Key();
+    case HashOffsetType::StringRecord: {
+      pmem_record = pmem_allocator_->offset2addr(hash_entry->offset);
+      data_entry_key = static_cast<StringRecord *>(pmem_record)->Key();
       break;
     }
     case HashOffsetType::UnorderedCollectionElement:
-    case HashOffsetType::DLDataEntry: {
-      data_entry_pmem = pmem_allocator_->offset2addr(hash_entry->offset);
-      data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
+    case HashOffsetType::DLRecord: {
+      pmem_record = pmem_allocator_->offset2addr(hash_entry->offset);
+      data_entry_key = static_cast<DLRecord *>(pmem_record)->Key();
       break;
     }
     case HashOffsetType::UnorderedCollection: {
@@ -63,13 +63,13 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     }
     case HashOffsetType::SkiplistNode: {
       SkiplistNode *dram_node = (SkiplistNode *)hash_entry->offset;
-      data_entry_pmem = dram_node->data_entry;
-      data_entry_key = ((DLDataEntry *)data_entry_pmem)->Key();
+      pmem_record = dram_node->record;
+      data_entry_key = static_cast<DLRecord *>(pmem_record)->Key();
       break;
     }
     case HashOffsetType::Skiplist: {
       Skiplist *skiplist = (Skiplist *)hash_entry->offset;
-      data_entry_pmem = skiplist->header()->data_entry;
+      pmem_record = skiplist->header()->record;
       data_entry_key = skiplist->name();
       break;
     }
@@ -82,8 +82,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
     }
 
     if (__glibc_likely(data_entry_metadata != nullptr)) {
-      memcpy(data_entry_metadata, data_entry_pmem,
-             data_entry_size(hash_entry->header.data_type));
+      memcpy(data_entry_metadata, pmem_record, sizeof(DataEntry));
     }
 
     if (compare_string_view(key, data_entry_key) == 0) {
@@ -101,7 +100,8 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
   assert(entry_base);
   assert((*entry_base) == nullptr);
   HashEntry *reusable_entry = nullptr;
-  char *bucket_base = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
+  char *bucket_base =
+      (char *)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_base, _MM_HINT_T0);
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
@@ -162,8 +162,8 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
             GlobalLogger.Error("Memory overflow!\n");
             return Status::MemoryOverflow;
           }
-          char *next_off;
-          next_off = dram_allocator_.offset2addr(space.space_entry.offset);
+          void *next_off =
+              dram_allocator_.offset2addr(space.space_entry.offset);
           memset(next_off, 0, space.size);
           memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
           *entry_base = (HashEntry *)next_off;
@@ -197,7 +197,8 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
                                 DataEntry *data_entry_meta) {
   assert(entry_base);
   assert((*entry_base) == nullptr);
-  char *bucket_base = main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
+  char *bucket_base =
+      (char *)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_base, _MM_HINT_T0);
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;

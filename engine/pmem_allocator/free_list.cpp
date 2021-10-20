@@ -232,23 +232,23 @@ void Freelist::MergeAndCheckTSInPool() {
   min_timestamp_of_entries_ = min_timestamp;
 }
 
-void Freelist::DelayPush(const SizedSpaceEntry &entry) {
-  assert(entry.size > 0);
+void Freelist::DelayPush(const SpaceEntry &entry, uint32_t b_size) {
+  assert(b_size > 0);
   auto &thread_cache = thread_cache_[write_thread.id];
   std::lock_guard<SpinMutex> lg(thread_cache.spins.back());
-  thread_cache.delay_freed_entries.emplace_back(entry);
+  thread_cache.delay_freed_entries.emplace_back(entry, b_size);
 }
 
-void Freelist::Push(const SizedSpaceEntry &entry) {
-  assert(entry.size > 0);
-  space_map_.Set(entry.space_entry.offset, entry.size);
+void Freelist::Push(const SpaceEntry &entry, uint32_t b_size) {
+  assert(b_size > 0);
+  space_map_.Set(entry.offset, b_size);
   auto &thread_cache = thread_cache_[write_thread.id];
-  if (entry.size >= thread_cache.active_entries.size()) {
+  if (b_size >= thread_cache.active_entries.size()) {
     std::lock_guard<SpinMutex> lg(large_entries_spin_);
-    large_entries_.insert(entry);
+    large_entries_.emplace(entry, b_size);
   } else {
-    std::lock_guard<SpinMutex> lg(thread_cache.spins[entry.size]);
-    thread_cache.active_entries[entry.size].emplace_back(entry.space_entry);
+    std::lock_guard<SpinMutex> lg(thread_cache.spins[b_size]);
+    thread_cache.active_entries[b_size].emplace_back(entry);
   }
 }
 

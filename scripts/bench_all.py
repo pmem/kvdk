@@ -2,9 +2,9 @@ import bench_string
 import bench_sorted
 import bench_hashes
 
-n_thread = 48
-sz_value = 200                          # About 256B/kv
-t_duration = 30                         # For operations other than fill
+n_thread = 64
+sz_value = 120                          # About 256B/kv
+t_duration = 10                         # For operations other than fill
 populate_if_fill = 1                    # For fill only
 sz_pmem_file = 384 * 1024 * 1024 * 1024 # we need enough space to test insert
 sz_fill_data = 96 * 1024 * 1024 * 1024
