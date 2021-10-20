@@ -792,8 +792,10 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
     }
 
     // Copy PMem data record to dram buffer
-    // TODO jiayu: record_size maybe invalid here?
     auto record_size = data_entry.header.record_size;
+    if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
+      continue;
+    }
     char data_buffer[record_size];
     memcpy(data_buffer, pmem_record, record_size);
     // If the pmem data record is corrupted or been reused by
