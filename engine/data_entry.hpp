@@ -22,7 +22,6 @@ enum DataEntryType : uint16_t {
   HashListHeaderRecord = 1 << 7,
 
   DlistDataRecord = 1 << 8,
-  DlistDeleteRecord = 1 << 9,
   DlistHeadRecord = 1 << 10,
   DlistTailRecord = 1 << 11,
   DlistRecord = 1 << 12,
