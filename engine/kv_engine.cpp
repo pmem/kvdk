@@ -793,6 +793,9 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
 
     // Copy PMem data record to dram buffer
     auto record_size = data_entry.header.record_size;
+    // Region of data_entry.header.record_size may be corrupted by a write
+    // operation if the original reading space entry is merged with the adjacent
+    // one by pmem allocator
     if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
       continue;
     }
