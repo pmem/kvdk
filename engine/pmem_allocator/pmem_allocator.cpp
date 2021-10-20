@@ -19,8 +19,8 @@ PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
       offset_head_(0), pmem_size_(pmem_size),
       max_block_offset_(pmem_size_ / block_size_ / num_segment_blocks_ *
                         num_segment_blocks_),
-      free_list_(num_segment_blocks_, num_write_threads, max_block_offset_,
-                 this) {
+      free_list_(num_segment_blocks_, block_size, num_write_threads,
+                 max_block_offset_, this) {
   init_data_size_2_block_size();
 }
 
@@ -28,14 +28,14 @@ void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
   if (entry.size == 0) {
     return;
   }
-  free_list_.Push(entry);
+  free_list_.Push(entry.space_entry, entry.size);
 }
 
 void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
   if (entry.size == 0) {
     return;
   }
-  free_list_.DelayPush(entry);
+  free_list_.DelayPush(entry.space_entry, entry.size);
 }
 
 void PMEMAllocator::PopulateSpace() {
@@ -248,9 +248,8 @@ SizedSpaceEntry PMEMAllocator::Allocate(unsigned long size) {
         auto extra_space = thread_cache.free_entry.size - b_size;
         // TODO optimize, do not write PMem
         if (extra_space >= kMinPaddingBlockSize) {
-          DataEntry padding{0, static_cast<uint32_t>(extra_space),
-                            0, DataEntryType::Padding,
-                            0, 0};
+          DataEntry padding(0, static_cast<uint32_t>(extra_space), 0,
+                            RecordType::Padding, 0, 0);
           pmem_memcpy_persist(
               offset2addr(thread_cache.free_entry.space_entry.offset + b_size),
               &padding, sizeof(DataEntry));

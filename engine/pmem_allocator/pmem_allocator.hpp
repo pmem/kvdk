@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "../allocator.hpp"
-#include "../data_entry.hpp"
+#include "../data_record.hpp"
 #include "../structures.hpp"
 #include "free_list.hpp"
 #include "kvdk/namespace.hpp"
@@ -22,7 +22,7 @@ namespace KVDK_NAMESPACE {
 constexpr uint64_t kNullPmemOffset = UINT64_MAX;
 constexpr uint64_t kMinPaddingBlockSize = 8;
 
-// Manage allocation/de-allocation of PMem space
+// Manage allocation/de-allocation of PMem space at block unit
 //
 // PMem space consists of several segment, and a segment is consists of
 // several blocks, a block is the minimal allocation unit of PMem space. The
@@ -46,19 +46,27 @@ public:
   void DelayFree(const SizedSpaceEntry &entry);
 
   // translate block_offset of allocated space to address
-  inline char *offset2addr_checked(uint64_t block_offset) {
+  inline void *offset2addr_checked(uint64_t block_offset) {
     assert(block_offset <
                max_block_offset_ / num_segment_blocks_ * num_segment_blocks_ &&
            "Trying to access invalid offset");
     return pmem_ + block_offset * block_size_;
   }
 
-  inline char *offset2addr(uint64_t block_offset) {
+  inline void *offset2addr(uint64_t block_offset) {
     if (block_offset == kNullPmemOffset) {
       return nullptr;
     } else {
       return pmem_ + block_offset * block_size_;
     }
+  }
+
+  template <typename T> inline T *offset2addr_checked(uint64_t block_offset) {
+    return static_cast<T *>(offset2addr_checked(block_offset));
+  }
+
+  template <typename T> inline T *offset2addr(uint64_t block_offset) {
+    return static_cast<T *>(offset2addr(block_offset));
   }
 
   // translate address of allocated space to block_offset

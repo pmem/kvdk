@@ -18,10 +18,11 @@ template <typename T> class PointerWithTag {
 public:
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
+  // TODO: Maybe explicit
   PointerWithTag(T *pointer) : tagged_pointer((uint64_t)pointer) {}
 
-  explicit PointerWithTag(T *pointer, uint16_t code)
-      : tagged_pointer((uint64_t)pointer | ((uint64_t)code << 48)) {}
+  explicit PointerWithTag(T *pointer, uint16_t tag)
+      : tagged_pointer((uint64_t)pointer | ((uint64_t)tag << 48)) {}
 
   PointerWithTag() : tagged_pointer(0) {}
 
@@ -37,7 +38,7 @@ public:
 
   void ClearTag() { tagged_pointer &= kPointerMask; }
 
-  void SetTag(uint16_t info) { tagged_pointer |= ((uint64_t)info << 48); }
+  void SetTag(uint16_t tag) { tagged_pointer |= ((uint64_t)tag << 48); }
 
   const T &operator*() const { return *RawPointer(); }
 

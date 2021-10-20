@@ -120,25 +120,26 @@ private:
 class Freelist {
 public:
   Freelist(uint32_t max_classified_b_size, uint64_t num_segment_blocks,
-           uint32_t num_threads, uint64_t max_offset, PMEMAllocator *allocator)
-      : num_segment_blocks_(num_segment_blocks),
+           uint32_t block_size, uint32_t num_threads, uint64_t max_offset,
+           PMEMAllocator *allocator)
+      : num_segment_blocks_(num_segment_blocks), block_size_(block_size),
         max_classified_b_size_(max_classified_b_size),
         active_pool_(max_classified_b_size),
         merged_pool_(max_classified_b_size), space_map_(max_offset),
         thread_cache_(num_threads, max_classified_b_size),
         min_timestamp_of_entries_(0), pmem_allocator_(allocator) {}
 
-  Freelist(uint64_t num_segment_blocks, uint32_t num_threads,
-           uint64_t max_offset, PMEMAllocator *allocator)
+  Freelist(uint64_t num_segment_blocks, uint32_t block_size,
+           uint32_t num_threads, uint64_t max_offset, PMEMAllocator *allocator)
       : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
-                 num_threads, max_offset, allocator) {}
+                 block_size, num_threads, max_offset, allocator) {}
 
   // Add a space entry
-  void Push(const SizedSpaceEntry &entry);
+  void Push(const SpaceEntry &entry, uint32_t b_size);
 
   // These entries can be safely freed only if no free space entry of smaller
   // timestamp existing in the free list, so just record these entries
-  void DelayPush(const SizedSpaceEntry &entry);
+  void DelayPush(const SpaceEntry &entry, uint32_t b_size);
 
   // Request a at least b_size free space entry
   bool Get(uint32_t b_size, SizedSpaceEntry *space_entry);
@@ -216,6 +217,7 @@ private:
   }
 
   const uint64_t num_segment_blocks_;
+  const uint32_t block_size_;
   const uint32_t max_classified_b_size_;
   SpaceMap space_map_;
   std::vector<ThreadCache> thread_cache_;

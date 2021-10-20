@@ -21,7 +21,10 @@ class ChunkBasedAllocator : Allocator {
 public:
   SizedSpaceEntry Allocate(uint64_t size) override;
   void Free(const SizedSpaceEntry &entry) override;
-  inline char *offset2addr(uint64_t offset) { return (char *)offset; }
+  inline void *offset2addr(uint64_t offset) { return (void *)offset; }
+  template <typename T> inline T *offset2addr(uint64_t offset) {
+    return static_cast<T *>(offset);
+  }
   inline uint64_t addr2offset(void *addr) { return (uint64_t)addr; }
   ChunkBasedAllocator(uint32_t write_threads) : thread_cache_(write_threads) {}
   ~ChunkBasedAllocator() {

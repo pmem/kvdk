@@ -4,9 +4,9 @@ import git
 import sys
 from select import select
 
-n_thread = 48
-sz_value = 200                          # About 256B/kv
-t_duration = 30                         # For operations other than fill
+n_thread = 64
+sz_value = 120                          # About 256B/kv
+t_duration = 10                         # For operations other than fill
 populate_if_fill = 1                    # For fill only
 sz_pmem_file = 384 * 1024 * 1024 * 1024 # we need enough space to test insert
 sz_fill_data = 96 * 1024 * 1024 * 1024
@@ -78,7 +78,7 @@ def run_bench_mark(
     print("Fill sorted-type kv")
     os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-    # random read
+    # random read (experimental)
     new_para = para_shared + " -fill=0 -read_ratio=1 -key_distribution=random"
     report = path_report + "2.read_random"
     print("Random read sorted-type kv")
@@ -114,7 +114,7 @@ def run_bench_mark(
     print("Random update sorted-type kv")
     os.system("{0} {1} > {2}".format(exec, new_para, report))
 
-    # zipf update
+    # zipf update (experimental)
     new_para = para_shared + " -fill=0 -read_ratio=0 -key_distribution=zipf"
     report = path_report + "8.update_zipf"
     print("Zipf update sorted-type kv")

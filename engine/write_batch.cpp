@@ -3,7 +3,7 @@
  */
 
 #include "kvdk/write_batch.hpp"
-#include "data_entry.hpp"
+#include "data_record.hpp"
 
 namespace KVDK_NAMESPACE {
 
