@@ -190,14 +190,14 @@ void DBWrite(int tid) {
       lat = timer.End();
       if (lat / 100 >= MAX_LAT) {
         fprintf(stderr, "Write latency overflow: %ld us\n", lat / 100);
-        exit(-1);
+        std::abort();
       }
       write_latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {
       fprintf(stderr, "Set error\n");
-      exit(-1);
+      std::abort();
     }
 
     if (++ops % 1000 == 0) {
@@ -232,7 +232,7 @@ void DBScan(int tid) {
         }
       } else {
         fprintf(stderr, "Error creating SortedIterator\n");
-        exit(-1);
+        std::abort();
       }
     } else if (bench_hashes) {
       auto iter =
@@ -249,7 +249,7 @@ void DBScan(int tid) {
         }
       } else {
         fprintf(stderr, "Error creating UnorderedIterator\n");
-        exit(-1);
+        std::abort();
       }
     }
   }
@@ -285,7 +285,7 @@ void DBRead(int tid) {
       lat = timer.End();
       if (lat / 100 >= MAX_LAT) {
         fprintf(stderr, "Read latency overflow: %ld us\n", lat / 100);
-        exit(-1);
+        std::abort();
       }
       read_latencies[tid][lat / 100]++;
     }
@@ -293,7 +293,7 @@ void DBRead(int tid) {
     if (s != Status::Ok) {
       if (s != Status::NotFound) {
         fprintf(stderr, "get error\n");
-        exit(-1);
+        std::abort();
       } else {
         if (++not_found % 1000 == 0) {
           read_not_found += 1000;
@@ -392,7 +392,7 @@ int main(int argc, char **argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
   if (!ProcessBenchmarkConfigs()) {
-    exit(1);
+    std::abort();
   }
 
   Configs configs;
@@ -407,7 +407,7 @@ int main(int argc, char **argv) {
 
   if (s != Status::Ok) {
     printf("open KVDK instance %s error\n", FLAGS_path.c_str());
-    exit(1);
+    std::abort();
   }
 
   value_pool = random_str(102400);

@@ -339,7 +339,7 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
   }
   default:
     kvdk_assert(false, "Unsupported type in ValidateRecordAndGetValue()!");
-    exit(1);
+    std::abort();
   }
 }
 
@@ -1169,7 +1169,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     // TODO: roll back finished writes (hard to roll back hash table)
     if (s != Status::Ok) {
       assert(s == Status::MemoryOverflow);
-      exit(1);
+      std::abort();
     }
   }
 
