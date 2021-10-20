@@ -91,7 +91,7 @@ Status Skiplist::Rebuild() {
     splice.prev_pmem_record = header_->record;
   }
   while (1) {
-    HashEntry *entry_base = nullptr;
+    HashEntry *entry_ptr = nullptr;
     uint64_t next_offset = splice.prev_pmem_record->next;
     DLRecord *next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
     assert(next_record != nullptr);
@@ -101,7 +101,7 @@ Status Skiplist::Rebuild() {
 
     pmem::obj::string_view key = next_record->Key();
     Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
-                                          SortedDataRecord, &entry_base,
+                                          SortedDataRecord, &entry_ptr,
                                           &hash_entry, nullptr);
     // these nodes should be already created during data restoring
     if (s != Status::Ok) {
@@ -170,10 +170,10 @@ Status Skiplist::CheckConnection(int height) {
     }
     HashEntry hash_entry;
     DataEntry data_entry;
-    HashEntry *entry_base = nullptr;
+    HashEntry *entry_ptr = nullptr;
     pmem::obj::string_view key = next_record->Key();
     Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
-                                          SortedDataRecord, &entry_base,
+                                          SortedDataRecord, &entry_ptr,
                                           &hash_entry, &data_entry);
     assert(s == Status::Ok && "search node fail!");
 
@@ -465,11 +465,11 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
         while (next_record->entry.meta.type != SortedHeaderRecord) {
           HashEntry hash_entry;
           DataEntry data_entry;
-          HashEntry *entry_base = nullptr;
+          HashEntry *entry_ptr = nullptr;
           pmem::obj::string_view key = next_record->Key();
           Status s = engine->hash_table_->SearchForRead(
               engine->hash_table_->GetHint(key), key, SortedRecordType,
-              &entry_base, &hash_entry, &data_entry);
+              &entry_ptr, &hash_entry, &data_entry);
           assert(s == Status::Ok &&
                  "It should be in hash_table when reseting entries_offset map");
           next_offset = next_record->next;
@@ -535,10 +535,10 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
     if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
       HashEntry hash_entry;
       DataEntry data_entry;
-      HashEntry *entry_base = nullptr;
+      HashEntry *entry_ptr = nullptr;
       pmem::obj::string_view key = next_record->Key();
       Status s = engine->hash_table_->SearchForRead(
-          engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_base,
+          engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,
           &hash_entry, &data_entry);
       if (s != Status::Ok) {
         GlobalLogger.Error(
@@ -620,7 +620,7 @@ void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
       entries_offsets_.begin();
   while (it != entries_offsets_.end()) {
     DataEntry data_entry;
-    HashEntry *entry_base = nullptr;
+    HashEntry *entry_ptr = nullptr;
     HashEntry hash_entry;
     SkiplistNode *node = nullptr;
     DLRecord *cur_record =
@@ -628,7 +628,7 @@ void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
     pmem::obj::string_view key = cur_record->Key();
 
     Status s = engine->hash_table_->SearchForRead(
-        engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_base,
+        engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,
         &hash_entry, &data_entry);
     assert(s == Status::Ok || s == Status::NotFound);
     if (s == Status::NotFound ||

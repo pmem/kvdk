@@ -47,13 +47,13 @@ struct DataHeader {
 
 struct DataMeta {
   DataMeta() = default;
-  DataMeta(uint64_t _timestamp, uint16_t _record_type, uint16_t _key_size,
+  DataMeta(uint64_t _timestamp, RecordType _record_type, uint16_t _key_size,
            uint16_t _value_size)
       : timestamp(_timestamp), type(_record_type), k_size(_key_size),
         v_size(_value_size) {}
 
   uint64_t timestamp;
-  uint16_t type;
+  RecordType type;
   uint16_t k_size;
   uint32_t v_size;
 };
@@ -62,7 +62,7 @@ struct DataMeta {
 struct DataEntry {
   // TODO jiayu: use typename for timestamp and record type instead of a number
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
-            uint64_t _timestamp, uint16_t _record_type, uint16_t _key_size,
+            uint64_t _timestamp, RecordType _record_type, uint16_t _key_size,
             uint16_t _value_size)
       : header(_checksum, _record_size),
         meta(_timestamp, _record_type, _key_size, _value_size) {}
@@ -88,7 +88,7 @@ public:
   // should larger than sizeof(StringRecord) + key size + value size
   static StringRecord *
   ConstructStringRecord(void *target_address, uint32_t _record_size,
-                        uint64_t _timestamp, uint16_t _record_type,
+                        uint64_t _timestamp, RecordType _record_type,
                         const pmem::obj::string_view &_key,
                         const pmem::obj::string_view &_value) {
     StringRecord *record = new (target_address)
@@ -98,7 +98,7 @@ public:
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord *PersistStringRecord(void *addr, uint32_t record_size,
-                                           uint64_t timestamp, uint16_t type,
+                                           uint64_t timestamp, RecordType type,
                                            const pmem::obj::string_view &key,
                                            const pmem::obj::string_view &value);
 
@@ -132,7 +132,7 @@ public:
 
 private:
   StringRecord(uint32_t _record_size, uint64_t _timestamp,
-               uint16_t _record_type, const pmem::obj::string_view &_key,
+               RecordType _record_type, const pmem::obj::string_view &_key,
                const pmem::obj::string_view &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()) {
@@ -173,7 +173,7 @@ public:
   // target_address: pre-allocated space to store constructed record, it
   // should no smaller than sizeof(DLRecord) + key size + value size
   static DLRecord *ConstructDLRecord(void *target_address, uint32_t record_size,
-                                     uint64_t timestamp, uint16_t record_type,
+                                     uint64_t timestamp, RecordType record_type,
                                      uint64_t prev, uint64_t next,
                                      const pmem::obj::string_view &key,
                                      const pmem::obj::string_view &value) {
@@ -214,7 +214,7 @@ public:
                                    const pmem::obj::string_view &value);
 
 private:
-  DLRecord(uint32_t _record_size, uint64_t _timestamp, uint16_t _record_type,
+  DLRecord(uint32_t _record_size, uint64_t _timestamp, RecordType _record_type,
            uint64_t _prev, uint64_t _next, const pmem::obj::string_view &_key,
            const pmem::obj::string_view &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),

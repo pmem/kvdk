@@ -94,55 +94,55 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
 
 Status HashTable::SearchForWrite(const KeyHashHint &hint,
                                  const pmem::obj::string_view &key,
-                                 uint16_t type_mask, HashEntry **entry_base,
+                                 uint16_t type_mask, HashEntry **entry_ptr,
                                  HashEntry *hash_entry_snap,
                                  DataEntry *data_entry_meta, bool in_recovery) {
-  assert(entry_base);
-  assert((*entry_base) == nullptr);
+  assert(entry_ptr);
+  assert((*entry_ptr) == nullptr);
   HashEntry *reusable_entry = nullptr;
-  char *bucket_base =
+  char *bucket_ptr =
       (char *)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
-  _mm_prefetch(bucket_base, _MM_HINT_T0);
+  _mm_prefetch(bucket_ptr, _MM_HINT_T0);
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
   bool found = false;
 
   // search cache
-  *entry_base = slots_[hint.slot].hash_cache.entry_base;
-  if (*entry_base != nullptr) {
-    memcpy_16(hash_entry_snap, *entry_base);
+  *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
+  if (*entry_ptr != nullptr) {
+    memcpy_16(hash_entry_snap, *entry_ptr);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                        data_entry_meta)) {
-      (*entry_base)->header.status = HashEntryStatus::Updating;
+      (*entry_ptr)->header.status = HashEntryStatus::Updating;
       found = true;
     }
   }
 
   if (!found) {
     // iterate hash entries
-    *entry_base = (HashEntry *)bucket_base;
+    *entry_ptr = (HashEntry *)bucket_ptr;
     uint64_t i = 0;
     for (i = 0; i < entries; i++) {
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
         // next bucket
-        memcpy_8(&bucket_base, bucket_base + hash_bucket_size_ - 8);
-        _mm_prefetch(bucket_base, _MM_HINT_T0);
+        memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
+        _mm_prefetch(bucket_ptr, _MM_HINT_T0);
       }
-      *entry_base = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+      *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
 
-      memcpy_16(hash_entry_snap, *entry_base);
+      memcpy_16(hash_entry_snap, *entry_ptr);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                          data_entry_meta)) {
-        slots_[hint.slot].hash_cache.entry_base = *entry_base;
+        slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
         found = true;
         break;
       }
 
       if (!in_recovery /* we don't reused hash entry in
                                              recovering */
-          && (*entry_base)->Reusable()) {
-        reusable_entry = *entry_base;
+          && (*entry_ptr)->Reusable()) {
+        reusable_entry = *entry_ptr;
       }
     }
 
@@ -155,7 +155,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
                    pmem_allocator_->offset2addr(reusable_entry->offset),
                    sizeof(DataEntry));
           }
-          *entry_base = reusable_entry;
+          *entry_ptr = reusable_entry;
         } else {
           auto space = dram_allocator_.Allocate(hash_bucket_size_);
           if (space.size == 0) {
@@ -165,25 +165,25 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
           void *next_off =
               dram_allocator_.offset2addr(space.space_entry.offset);
           memset(next_off, 0, space.size);
-          memcpy_8(bucket_base + hash_bucket_size_ - 8, &next_off);
-          *entry_base = (HashEntry *)next_off;
+          memcpy_8(bucket_ptr + hash_bucket_size_ - 8, &next_off);
+          *entry_ptr = (HashEntry *)next_off;
         }
       } else {
-        *entry_base = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+        *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
       }
     }
   }
 
   // set status of writing position, see comments of HashEntryStatus
   if (found) {
-    (*entry_base)->header.status = HashEntryStatus::Updating;
+    (*entry_ptr)->header.status = HashEntryStatus::Updating;
   } else {
-    if ((*entry_base) == reusable_entry) {
-      if ((*entry_base)->header.status == HashEntryStatus::CleanReusable) {
-        (*entry_base)->header.status = HashEntryStatus::Updating;
+    if ((*entry_ptr) == reusable_entry) {
+      if ((*entry_ptr)->header.status == HashEntryStatus::CleanReusable) {
+        (*entry_ptr)->header.status = HashEntryStatus::Updating;
       }
     } else {
-      (*entry_base)->header.status = HashEntryStatus::Initializing;
+      (*entry_ptr)->header.status = HashEntryStatus::Initializing;
     }
   }
 
@@ -192,23 +192,23 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
 
 Status HashTable::SearchForRead(const KeyHashHint &hint,
                                 const pmem::obj::string_view &key,
-                                uint16_t type_mask, HashEntry **entry_base,
+                                uint16_t type_mask, HashEntry **entry_ptr,
                                 HashEntry *hash_entry_snap,
                                 DataEntry *data_entry_meta) {
-  assert(entry_base);
-  assert((*entry_base) == nullptr);
-  char *bucket_base =
+  assert(entry_ptr);
+  assert((*entry_ptr) == nullptr);
+  char *bucket_ptr =
       (char *)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
-  _mm_prefetch(bucket_base, _MM_HINT_T0);
+  _mm_prefetch(bucket_ptr, _MM_HINT_T0);
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
   bool found = false;
 
   // search cache
-  *entry_base = slots_[hint.slot].hash_cache.entry_base;
-  if (*entry_base != nullptr) {
-    memcpy_16(hash_entry_snap, *entry_base);
+  *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
+  if (*entry_ptr != nullptr) {
+    memcpy_16(hash_entry_snap, *entry_ptr);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                        data_entry_meta)) {
       found = true;
@@ -220,15 +220,15 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
     for (uint64_t i = 0; i < entries; i++) {
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
         // next bucket
-        memcpy_8(&bucket_base, bucket_base + hash_bucket_size_ - 8);
-        _mm_prefetch(bucket_base, _MM_HINT_T0);
+        memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
+        _mm_prefetch(bucket_ptr, _MM_HINT_T0);
       }
-      *entry_base = (HashEntry *)bucket_base + (i % num_entries_per_bucket_);
+      *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
 
-      memcpy_16(hash_entry_snap, *entry_base);
+      memcpy_16(hash_entry_snap, *entry_ptr);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                          data_entry_meta)) {
-        slots_[hint.slot].hash_cache.entry_base = *entry_base;
+        slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
         found = true;
         break;
       }
@@ -237,7 +237,7 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
   return found ? Status::Ok : Status::NotFound;
 }
 
-void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
+void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_ptr,
                        uint16_t type, uint64_t offset,
                        HashOffsetType offset_type) {
   assert(write_thread.id >= 0);
@@ -248,8 +248,8 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_base,
                                : HashEntryStatus::Normal,
                            offset_type);
 
-  bool new_entry = entry_base->header.status == HashEntryStatus::Initializing;
-  memcpy_16(entry_base, &new_hash_entry);
+  bool new_entry = entry_ptr->header.status == HashEntryStatus::Initializing;
+  memcpy_16(entry_ptr, &new_hash_entry);
   if (new_entry) { // new allocated
     hash_bucket_entries_[hint.bucket]++;
   }

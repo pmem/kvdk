@@ -102,7 +102,7 @@ public:
 };
 
 struct HashCache {
-  HashEntry *entry_base = nullptr;
+  HashEntry *entry_ptr = nullptr;
 };
 
 struct Slot {
@@ -137,19 +137,19 @@ public:
   // Search key in hash table for read operations
   //
   // type_mask: which data types to search
-  // entry_base: store hash entry position of "key" if found
+  // entry_ptr: store hash entry position of "key" if found
   // hash_entry_snap: store a hash entry copy of searching key for lock-free
   // read, as hash entry maybe modified by write operations
   // data_entry_meta: store a copy of data entry metadata part of searching key
   Status SearchForRead(const KeyHashHint &hint,
                        const pmem::obj::string_view &key, uint16_t type_mask,
-                       HashEntry **entry_base, HashEntry *hash_entry_snap,
+                       HashEntry **entry_ptr, HashEntry *hash_entry_snap,
                        DataEntry *data_entry_meta);
 
   // Search key in hash table for write operations
   //
   // type_mask: which data types to search
-  // entry_base: store hash entry position to write. It's either hash entry
+  // entry_ptr: store hash entry position to write. It's either hash entry
   // position of "key" to update if it's existing, or a clear position to insert
   // new hash entry
   // hash_entry_snap: store a hash entry copy of searching key
@@ -157,13 +157,13 @@ public:
   // in_recovery: whether called during recovery of kvdk instance
   Status SearchForWrite(const KeyHashHint &hint,
                         const pmem::obj::string_view &key, uint16_t type_mask,
-                        HashEntry **entry_base, HashEntry *hash_entry_snap,
+                        HashEntry **entry_ptr, HashEntry *hash_entry_snap,
                         DataEntry *data_entry_meta, bool in_recovery = false);
 
   // Insert a hash entry to hash table
   //
-  // entry_base: position to insert, it's get from SearchForWrite()
-  void Insert(const KeyHashHint &hint, HashEntry *entry_base, uint16_t type,
+  // entry_ptr: position to insert, it's get from SearchForWrite()
+  void Insert(const KeyHashHint &hint, HashEntry *entry_ptr, uint16_t type,
               uint64_t offset, HashOffsetType offset_type);
 
 private:
