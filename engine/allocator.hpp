@@ -22,10 +22,12 @@ struct SpaceEntry {
 
 struct SizedSpaceEntry {
   SizedSpaceEntry() = default;
-  SizedSpaceEntry(uint64_t offset, uint64_t size, uint64_t i)
-      : space_entry(offset, i), size(size) {}
+  SizedSpaceEntry(uint64_t _offset, uint64_t _size, uint64_t _info)
+      : space_entry(_offset, _info), size(_size) {}
   SpaceEntry space_entry;
   uint64_t size = 0;
+  SizedSpaceEntry(const SpaceEntry &_entry, uint64_t _size)
+      : space_entry(_entry), size(_size) {}
 };
 
 class Allocator {

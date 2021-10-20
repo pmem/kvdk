@@ -34,6 +34,7 @@ protected:
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
+    configs.log_level = LogLevel::All;
     db_path = "/mnt/pmem0/data";
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", db_path.c_str());

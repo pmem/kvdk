@@ -22,7 +22,7 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og")
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 elseif (CMAKE_BUILD_TYPE STREQUAL "FastDebug")
-    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -O2")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2")
 elseif (CMAKE_BUILD_TYPE STREQUAL "VTune")
     set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -shared-libgcc")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Asan")
@@ -56,6 +56,7 @@ set(SOURCES
         engine/pmem_allocator/free_list.cpp
         engine/c.cc
         engine/unordered_collection.cpp
+        engine/data_record.cpp
     )
 
 
