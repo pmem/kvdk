@@ -285,6 +285,7 @@ void Skiplist::DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
   assert(next->prev == pmem_allocator_->addr2offset(deleting_record));
   next->prev = pmem_allocator_->addr2offset(prev);
   pmem_persist(&next->prev, 8);
+  deleting_record->Destroy();
 
   if (dram_node) {
     dram_node->MarkAsRemoved();

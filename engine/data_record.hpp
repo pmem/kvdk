@@ -5,6 +5,7 @@
 #pragma once
 
 #include "kvdk/namespace.hpp"
+#include "libpmem.h"
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -69,7 +70,10 @@ struct DataEntry {
 
   DataEntry() = default;
 
-  void Destroy() { meta.type == RecordType::Padding; }
+  void Destroy() {
+    meta.type == RecordType::Padding;
+    pmem_persist(&meta.type, sizeof(RecordType));
+  }
 
   // TODO jiayu: use function to access these
   DataHeader header;
