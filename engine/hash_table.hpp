@@ -17,7 +17,9 @@
 
 namespace KVDK_NAMESPACE {
 enum class HashEntryStatus : uint8_t {
-  Empty = 0,
+  // Hash entry in hash table should always being initialized, it should never
+  // be 0
+  Invalid = 0,
   Normal = 1,
   // New created hash entry for inserting a new key
   Initializing = 1 << 1,
@@ -32,6 +34,8 @@ enum class HashEntryStatus : uint8_t {
   // key exsiting on PMem, so the delete record can be safely freed after the
   // hash entry updated by a new key
   CleanReusable = 1 << 4,
+  // A empty hash entry that points to nothing
+  Empty = 1 << 5
 };
 
 enum class HashOffsetType : uint8_t {
@@ -90,6 +94,8 @@ public:
                                      (uint8_t)HashEntryStatus::DirtyReusable |
                                      (uint8_t)HashEntryStatus::Empty);
   }
+
+  bool Empty() { return header.status == HashEntryStatus::Empty; }
 
   // Make this hash entry reusable while its content been deleted
   void Clear() { header.status = HashEntryStatus::Empty; }

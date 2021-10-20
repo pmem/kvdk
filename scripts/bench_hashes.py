@@ -48,7 +48,7 @@ def run_bench_mark(
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     sz_key = 8                              # Not configuarble for now
 
-    path_report = "./results-hash-threads-{}-key-{}-value-{}-collections-{}-timestamp-{}-commit-{}/".format(
+    path_report = "./results-hashes-threads-{}-key-{}-value-{}-collections-{}-timestamp-{}-commit-{}/".format(
         n_thread, 
         sz_key,
         sz_value,
