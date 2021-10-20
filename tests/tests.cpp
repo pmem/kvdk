@@ -241,7 +241,7 @@ TEST_F(EngineBasicTest, TestFreeList) {
 }
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
-  int num_threads = 1;
+  int num_threads = 16;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -757,7 +757,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
-  int num_threads = 1;
+  int num_threads = 16;
   int count = 100;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
