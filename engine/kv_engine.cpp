@@ -1721,7 +1721,6 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
       return Status::Ok;
     }
     case Status::Ok: {
-      /*
       DLRecord *pmp_old_record = pmem_allocator_->offset2addr_checked<DLRecord>(
           hash_entry_record.offset);
       if (pmp_old_record->entry.meta.timestamp <
@@ -1748,11 +1747,6 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
         UnorderedCollection::Deallocate(pmp_record, pmem_allocator_.get());
       }
       return Status::Ok;
-      */
-      kvdk_assert(
-          false,
-          "Same key in same UnorderedCollection should not appear twice!\n");
-      return Status::Abort;
     }
     default: {
       kvdk_assert(false, "Invalid search result when trying to insert a new "
