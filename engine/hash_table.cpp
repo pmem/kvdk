@@ -230,7 +230,7 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
         return Status::Ok;
       } else {
         // check if hash entry modified by another write thread during
-        // MatchhashEntry
+        // MatchHashEntry
         if (memcmp(hash_entry_snap, *(entry_ptr), sizeof(HashEntry)) == 0) {
           break;
         }
