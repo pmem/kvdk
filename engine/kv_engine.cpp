@@ -904,12 +904,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     return Status::InvalidDataSize;
   }
 
-  HashEntry hash_entry;
-  DataEntry data_entry;
-  SkiplistNode *dram_node = nullptr;
-  DLRecord *existing_record = nullptr;
-  uint64_t existing_record_offset;
-
   auto request_size = value.size() + collection_key.size() + sizeof(DLRecord);
   SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
   if (sized_space_entry.size == 0) {
@@ -917,7 +911,12 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
   }
 
   while (1) {
+    SkiplistNode *dram_node = nullptr;
     HashEntry *entry_ptr = nullptr;
+    DLRecord *existing_record = nullptr;
+    uint64_t existing_record_offset;
+    HashEntry hash_entry;
+    DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s =
@@ -1704,7 +1703,14 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     std::uint64_t offset_record =
         pmem_allocator_->addr2offset_checked(pmp_record);
     bool linked = isLinkedDLDataEntry(static_cast<DLRecord *>(pmp_record));
-    kvdk_assert(linked, "Deleted DlistDataRecord should have been purged");
+    if (!linked) {
+      pmp_record->Destroy();
+      pmem_allocator_->Free(
+          SizedSpaceEntry(pmem_allocator_->addr2offset(pmp_record),
+                          pmp_record->entry.header.record_size,
+                          pmp_record->entry.meta.timestamp));
+      return Status::Ok;
+    }
 
     auto internal_key = pmp_record->Key();
     HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);

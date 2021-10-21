@@ -22,6 +22,7 @@ struct SpaceEntry {
 
 struct SizedSpaceEntry {
   SizedSpaceEntry() = default;
+
   SizedSpaceEntry(uint64_t _offset, uint64_t _size, uint64_t _info)
       : space_entry(_offset, _info), size(_size) {}
   SpaceEntry space_entry;
