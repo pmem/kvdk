@@ -189,7 +189,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
 
 TEST_F(EngineBasicTest, TestFreeList) {
   // TODO: Add more cases
-  configs.pmem_segment_blocks = 4 * kMinPaddingBlockSize;
+  configs.pmem_segment_blocks = 4 * kMinPaddingBlocks;
   configs.max_write_threads = 1;
   configs.pmem_block_size = 64;
   configs.pmem_file_size =
@@ -203,8 +203,8 @@ TEST_F(EngineBasicTest, TestFreeList) {
   std::string key2("a2");
   std::string key3("a3");
   std::string key4("a4");
-  std::string small_value(64 * (kMinPaddingBlockSize - 1) + 1, 'a');
-  std::string large_value(64 * (kMinPaddingBlockSize * 2 - 1) + 1, 'a');
+  std::string small_value(64 * (kMinPaddingBlocks - 1) + 1, 'a');
+  std::string large_value(64 * (kMinPaddingBlocks * 2 - 1) + 1, 'a');
   // We have 4 kMinimalPaddingBlockSize size chunk of blocks, this will take
   // up 2 of them
 

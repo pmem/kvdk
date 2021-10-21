@@ -116,6 +116,14 @@ static inline int compare_string_view(const pmem::obj::string_view &src,
   return src.size() - target.size();
 }
 
+static inline bool equal_string_view(const pmem::obj::string_view &src,
+                                     const pmem::obj::string_view &target) {
+  if (src.size() == target.size()) {
+    return compare_string_view(src, target) == 0;
+  }
+  return false;
+}
+
 class Slice {
 public:
   Slice() : _data(nullptr), _size(0) {}

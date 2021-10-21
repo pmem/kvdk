@@ -792,8 +792,13 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
     }
 
     // Copy PMem data record to dram buffer
-    // TODO jiayu: record_size maybe invalid here?
-    auto record_size = data_entry.header.record_size * configs_.pmem_block_size;
+    auto record_size = data_entry.header.record_size;
+    // Region of data_entry.header.record_size may be corrupted by a write
+    // operation if the original reading space entry is merged with the adjacent
+    // one by pmem allocator
+    if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
+      continue;
+    }
     char data_buffer[record_size];
     memcpy(data_buffer, pmem_record, record_size);
     // If the pmem data record is corrupted or been reused by
@@ -846,8 +851,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s =
-        hash_table_->SearchForWrite(hint, collection_key, SortedDataRecord,
-                                    &entry_ptr, &hash_entry, &data_entry);
+        hash_table_->SearchForRead(hint, collection_key, SortedDataRecord,
+                                   &entry_ptr, &hash_entry, &data_entry);
     switch (s) {
     case Status::Ok:
       break;
@@ -899,12 +904,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     return Status::InvalidDataSize;
   }
 
-  HashEntry hash_entry;
-  DataEntry data_entry;
-  SkiplistNode *dram_node = nullptr;
-  DLRecord *existing_record = nullptr;
-  uint64_t existing_record_offset;
-
   auto request_size = value.size() + collection_key.size() + sizeof(DLRecord);
   SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
   if (sized_space_entry.size == 0) {
@@ -912,7 +911,12 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
   }
 
   while (1) {
+    SkiplistNode *dram_node = nullptr;
     HashEntry *entry_ptr = nullptr;
+    DLRecord *existing_record = nullptr;
+    uint64_t existing_record_offset;
+    HashEntry hash_entry;
+    DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s =
@@ -1034,11 +1038,11 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
     return Status::InvalidConfiguration;
   }
 
-  auto sz_segment = configs.pmem_block_size * configs.pmem_segment_blocks;
-  if (configs.pmem_file_size % sz_segment != 0) {
+  auto segment_size = configs.pmem_block_size * configs.pmem_segment_blocks;
+  if (configs.pmem_file_size % segment_size != 0) {
     GlobalLogger.Error("pmem file size should align to segment "
                        "size(pmem_segment_blocks*pmem_block_size) (%d bytes)\n",
-                       sz_segment);
+                       segment_size);
     return Status::InvalidConfiguration;
   }
 
@@ -1145,8 +1149,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     }
 
     batch_hints[i].timestamp = ts;
-    space_entry_offsets[i] = batch_hints[i].allocated_space.space_entry.offset *
-                             configs_.pmem_block_size;
+    space_entry_offsets[i] = batch_hints[i].allocated_space.space_entry.offset;
   }
 
   // Persist batch write status as processing
@@ -1700,7 +1703,14 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     std::uint64_t offset_record =
         pmem_allocator_->addr2offset_checked(pmp_record);
     bool linked = isLinkedDLDataEntry(static_cast<DLRecord *>(pmp_record));
-    kvdk_assert(linked, "Deleted DlistDataRecord should have been purged");
+    if (!linked) {
+      pmp_record->Destroy();
+      pmem_allocator_->Free(
+          SizedSpaceEntry(pmem_allocator_->addr2offset(pmp_record),
+                          pmp_record->entry.header.record_size,
+                          pmp_record->entry.meta.timestamp));
+      return Status::Ok;
+    }
 
     auto internal_key = pmp_record->Key();
     HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
