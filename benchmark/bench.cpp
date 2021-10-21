@@ -362,8 +362,7 @@ bool ProcessBenchmarkConfigs() {
     key_generator.reset(new UniformGenerator(num_keys));
   } else if (FLAGS_key_distribution == "zipf") {
     printf("##### Notice: ###### zipf generator is experimental and expensive, "
-           "so the "
-           "performance is not accurate\n");
+           "so the performance is not accurate\n");
     key_generator.reset(new ZipfianGenerator(max_key));
   } else if (FLAGS_key_distribution == "random") {
     key_generator.reset(new RandomGenerator(max_key));
