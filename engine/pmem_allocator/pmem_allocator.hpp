@@ -115,7 +115,7 @@ private:
     char padding[64 - sizeof(SizedSpaceEntry) * 2];
   };
 
-  void AllocateSegmentSpace(SizedSpaceEntry *segment_entry);
+  bool AllocateSegmentSpace(SizedSpaceEntry *segment_entry);
 
   static bool CheckDevDaxAndGetSize(const char *path, uint64_t *size);
 

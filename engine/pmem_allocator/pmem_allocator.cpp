@@ -151,38 +151,26 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
     return false;
   }
 
-  if (segment_space_entry->size > 0) {
-    Free(*segment_space_entry);
-  }
-
-  // TODO jiayu: use AllocateSegmentSpace
-  segment_space_entry->space_entry.offset =
-      offset_head_.fetch_add(segment_size_, std::memory_order_relaxed);
-  // Don't fetch block that may excess PMem file boundary
-  if (segment_space_entry->space_entry.offset > pmem_size_ - segment_size_)
-    return false;
-  segment_space_entry->size = segment_size_;
-  return true;
+  return AllocateSegmentSpace(segment_space_entry);
 }
 
-void PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
+bool PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
   uint64_t offset;
   while (1) {
     offset = offset_head_.load(std::memory_order_relaxed);
     if (offset < pmem_size_) {
       if (offset_head_.compare_exchange_strong(offset,
                                                offset + segment_size_)) {
+        if (offset > pmem_size_ - segment_size_) {
+          return false;
+        }
         Free(*segment_entry);
         *segment_entry = SizedSpaceEntry{offset, segment_size_, 0};
-        assert(segment_entry->space_entry.offset <=
-                   pmem_size_ - segment_size_ &&
-               "Block may excess PMem file boundary");
-        break;
+        return true;
       }
       continue;
     }
-    // TODO jiayu: return false on fail
-    break;
+    return false;
   }
 }
 
@@ -241,8 +229,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
     return space_entry;
   }
   auto &thread_cache = thread_cache_[write_thread.id];
-  bool full_segment = thread_cache.segment_entry.size < aligned_size;
-  while (full_segment) {
+  while (thread_cache.segment_entry.size < aligned_size) {
     while (1) {
       // allocate from free list space
       if (thread_cache.free_entry.size >= aligned_size) {
@@ -281,13 +268,10 @@ SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 
     // allocate a new segment, add remainning space of the old one
     // to the free list
-    AllocateSegmentSpace(&thread_cache.segment_entry);
-
-    if (thread_cache.segment_entry.size < aligned_size) {
+    if (!AllocateSegmentSpace(&thread_cache.segment_entry)) {
       GlobalLogger.Error("PMem OVERFLOW!\n");
       return space_entry;
     }
-    full_segment = false;
   }
   space_entry = thread_cache.segment_entry;
   space_entry.size = aligned_size;
