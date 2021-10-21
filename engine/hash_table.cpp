@@ -85,7 +85,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       memcpy(data_entry_metadata, pmem_record, sizeof(DataEntry));
     }
 
-    if (compare_string_view(key, data_entry_key) == 0) {
+    if (equal_string_view(key, data_entry_key)) {
       return true;
     }
   }
@@ -203,7 +203,6 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-  bool found = false;
 
   // search cache
   *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
@@ -211,30 +210,34 @@ Status HashTable::SearchForRead(const KeyHashHint &hint,
     memcpy_16(hash_entry_snap, *entry_ptr);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                        data_entry_meta)) {
-      found = true;
+      return Status::Ok;
     }
   }
 
-  if (!found) {
-    // iterate hash entrys
-    for (uint64_t i = 0; i < entries; i++) {
-      if (i > 0 && i % num_entries_per_bucket_ == 0) {
-        // next bucket
-        memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
-        _mm_prefetch(bucket_ptr, _MM_HINT_T0);
-      }
-      *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
-
+  // iterate hash entrys
+  for (uint64_t i = 0; i < entries; i++) {
+    if (i > 0 && i % num_entries_per_bucket_ == 0) {
+      // next bucket
+      memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
+      _mm_prefetch(bucket_ptr, _MM_HINT_T0);
+    }
+    *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
+    while (1) {
       memcpy_16(hash_entry_snap, *entry_ptr);
       if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                          data_entry_meta)) {
         slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
-        found = true;
-        break;
+        return Status::Ok;
+      } else {
+        // check if hash entry modified by another write thread during
+        // MatchhashEntry
+        if (memcmp(hash_entry_snap, *(entry_ptr), sizeof(HashEntry)) == 0) {
+          break;
+        }
       }
     }
   }
-  return found ? Status::Ok : Status::NotFound;
+  return Status::NotFound;
 }
 
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_ptr,

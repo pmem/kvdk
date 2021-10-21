@@ -302,13 +302,16 @@ bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
     while (!large_entries_.empty()) {
       auto large_entry = large_entries_.begin();
       auto entry_size = large_entry->size;
+      auto entry_offset = large_entry->space_entry.offset;
       assert(entry_size % block_size_ == 0);
-      auto entry_b_size = large_entry->size / block_size_;
+      assert(entry_offset % block_size_ == 0);
+      auto entry_b_size = entry_size / block_size_;
+      auto entry_b_offset = entry_offset / block_size_;
       if (entry_b_size >= b_size) {
         space_entry->space_entry = large_entry->space_entry;
         large_entries_.erase(large_entry);
-        if (space_map_.TestAndUnset(space_entry->space_entry.offset,
-                                    entry_b_size) == entry_b_size) {
+        if (space_map_.TestAndUnset(entry_b_offset, entry_b_size) ==
+            entry_b_size) {
           thread_cache.last_used_entry_ts = space_entry->space_entry.info;
           space_entry->size = entry_size;
           return true;
