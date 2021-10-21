@@ -174,9 +174,10 @@ void Freelist::MergeAndCheckTSInPool() {
     if (active_pool_.TryFetchEntryList(merging_list, b_size)) {
       for (SpaceEntry &se : merging_list) {
         assert(se.offset % block_size_ == 0);
+        auto b_offset = se.offset / block_size_;
         uint64_t merged_blocks = MergeSpace(
-            se.offset / block_size_,
-            num_segment_blocks_ - se.offset % num_segment_blocks_, b_size);
+            b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
+            b_size);
 
         if (merged_blocks > 0) {
           // Persist merged free entry on PMem
@@ -302,13 +303,16 @@ bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
     while (!large_entries_.empty()) {
       auto large_entry = large_entries_.begin();
       auto entry_size = large_entry->size;
+      auto entry_offset = large_entry->space_entry.offset;
       assert(entry_size % block_size_ == 0);
-      auto entry_b_size = large_entry->size / block_size_;
+      assert(entry_offset % block_size_ == 0);
+      auto entry_b_size = entry_size / block_size_;
+      auto entry_b_offset = entry_offset / block_size_;
       if (entry_b_size >= b_size) {
         space_entry->space_entry = large_entry->space_entry;
         large_entries_.erase(large_entry);
-        if (space_map_.TestAndUnset(space_entry->space_entry.offset,
-                                    entry_b_size) == entry_b_size) {
+        if (space_map_.TestAndUnset(entry_b_offset, entry_b_size) ==
+            entry_b_size) {
           thread_cache.last_used_entry_ts = space_entry->space_entry.info;
           space_entry->size = entry_size;
           return true;
@@ -369,8 +373,7 @@ bool Freelist::MergeGet(uint32_t size, SizedSpaceEntry *space_entry) {
       assert(cache_list[i][j].offset % block_size_ == 0);
       auto b_offset = cache_list[i][j].offset / block_size_;
       uint64_t merged_blocks = MergeSpace(
-          b_offset,
-          num_segment_blocks_ - cache_list[i][j].offset % num_segment_blocks_,
+          b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
           b_size);
       if (merged_blocks >= b_size) {
         space_entry->space_entry = cache_list[i][j];

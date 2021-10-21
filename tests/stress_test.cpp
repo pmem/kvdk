@@ -21,10 +21,10 @@
 // to keep track of the kv-pairs in a certain collection in the engine instance
 namespace kvdk_testing {
 // Check value got by XGet(key) by looking up possible_kv_pairs
-static void
-CheckKVPair(pmem::obj::string_view key, pmem::obj::string_view value,
-            std::unordered_multimap<std::string_view, std::string_view> const
-                &possible_kv_pairs) {
+static void CheckKVPair(
+    pmem::obj::string_view key, pmem::obj::string_view value,
+    std::unordered_multimap<pmem::obj::string_view,
+                            pmem::obj::string_view> const &possible_kv_pairs) {
   bool match = false;
   auto range_found = possible_kv_pairs.equal_range(key);
   ASSERT_NE(range_found.first, range_found.second)
@@ -47,14 +47,14 @@ CheckKVPair(pmem::obj::string_view key, pmem::obj::string_view value,
 // possible_kv_pairs is searched to try to find a match with iterated records
 // possible_kv_pairs is copied because HashesIterateThrough erase entries to
 // keep track of records
-static void
-HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
-                     std::unordered_multimap<std::string_view, std::string_view>
-                         possible_kv_pairs,
-                     bool report_progress) {
+static void HashesIterateThrough(
+    kvdk::Engine *engine, std::string collection_name,
+    std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
+        possible_kv_pairs,
+    bool report_progress) {
   kvdk::Status status;
 
-  std::unordered_multimap<std::string_view, std::string_view>
+  std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
       possible_kv_pairs_copy{possible_kv_pairs};
 
   auto u_iter = engine->NewUnorderedIterator(collection_name);
@@ -138,7 +138,7 @@ HashesIterateThrough(kvdk::Engine *engine, std::string collection_name,
 // keep track of records
 static void SortedSetsIterateThrough(
     kvdk::Engine *engine, std::string collection_name,
-    std::unordered_multimap<std::string_view, std::string_view>
+    std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
         possible_kv_pairs,
     bool report_progress) {
   kvdk::Status status;
@@ -375,15 +375,17 @@ protected:
   size_t sz_value_max;
 
   // Actual keys an values used by thread for insertion
-  std::vector<std::vector<std::string_view>> grouped_keys;
-  std::vector<std::vector<std::string_view>> grouped_values;
+  std::vector<std::vector<pmem::obj::string_view>> grouped_keys;
+  std::vector<std::vector<pmem::obj::string_view>> grouped_values;
 
   // unordered_map[collection_name, unordered_multimap[key, value]]
   std::unordered_map<
-      std::string, std::unordered_multimap<std::string_view, std::string_view>>
+      std::string,
+      std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>>
       hashes_possible_kv_pairs;
   std::unordered_map<
-      std::string, std::unordered_multimap<std::string_view, std::string_view>>
+      std::string,
+      std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>>
       sorted_sets_possible_kv_pairs;
 
 private:
@@ -573,7 +575,8 @@ private:
   }
 
   void updatePossibleKVPairs(
-      std::unordered_multimap<std::string_view, std::string_view> &possible_kvs,
+      std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
+          &possible_kvs,
       bool odd_indexed_is_deleted) {
     {
       // Erase keys that will be overwritten
@@ -596,7 +599,7 @@ private:
 
         // For every thread, every key has only one possible value or state
         // We use kvs to track that and then put those into possible_kvs
-        std::unordered_map<std::string_view, std::string_view> kvs;
+        std::unordered_map<pmem::obj::string_view, pmem::obj::string_view> kvs;
         for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
           if ((i % 2 == 0) || !odd_indexed_is_deleted)
             kvs[grouped_keys[tid][i]] = grouped_values[tid][i];
