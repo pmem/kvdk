@@ -26,12 +26,14 @@ PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
 
 void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
   if (entry.size > 0) {
+    assert(entry.size % block_size_ == 0);
     free_list_.Push(entry);
   }
 }
 
 void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
   if (entry.size > 0) {
+    assert(entry.size % block_size_ == 0);
     free_list_.DelayPush(entry);
   }
 }

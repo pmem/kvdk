@@ -38,7 +38,9 @@ const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
 struct DataHeader {
   DataHeader() = default;
-  DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {}
+  DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {
+    ;
+  }
 
   uint32_t checksum;
   // Record size on Pmem in the unit of block

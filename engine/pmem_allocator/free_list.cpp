@@ -181,7 +181,7 @@ void Freelist::MergeAndCheckTSInPool() {
         if (merged_blocks > 0) {
           // Persist merged free entry on PMem
           if (merged_blocks > b_size) {
-            DataHeader header(0, merged_blocks);
+            DataHeader header(0, merged_blocks * block_size_);
             pmem_memcpy_persist(pmem_allocator_->offset2addr(se.offset),
                                 &header, sizeof(DataHeader));
             // As we marked new size on PMem, it contains no valid data so we
