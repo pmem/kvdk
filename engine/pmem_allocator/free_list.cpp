@@ -174,9 +174,10 @@ void Freelist::MergeAndCheckTSInPool() {
     if (active_pool_.TryFetchEntryList(merging_list, b_size)) {
       for (SpaceEntry &se : merging_list) {
         assert(se.offset % block_size_ == 0);
+        auto b_offset = se.offset / block_size_;
         uint64_t merged_blocks = MergeSpace(
-            se.offset / block_size_,
-            num_segment_blocks_ - se.offset % num_segment_blocks_, b_size);
+            b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
+            b_size);
 
         if (merged_blocks > 0) {
           // Persist merged free entry on PMem
@@ -372,8 +373,7 @@ bool Freelist::MergeGet(uint32_t size, SizedSpaceEntry *space_entry) {
       assert(cache_list[i][j].offset % block_size_ == 0);
       auto b_offset = cache_list[i][j].offset / block_size_;
       uint64_t merged_blocks = MergeSpace(
-          b_offset,
-          num_segment_blocks_ - cache_list[i][j].offset % num_segment_blocks_,
+          b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
           b_size);
       if (merged_blocks >= b_size) {
         space_entry->space_entry = cache_list[i][j];
