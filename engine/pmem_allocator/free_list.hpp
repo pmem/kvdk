@@ -45,7 +45,7 @@ private:
         : token_(size | (is_start ? (1 << 7) : 0)) {}
     uint8_t Size() { return token_ & INT8_MAX; }
     void Clear() { token_ = 0; }
-    bool Empty() { return token_ == 0; }
+    bool Empty() { return Size() == 0; }
     bool IsStart() { return token_ & (1 << 7); }
     void UnStart() { token_ &= INT8_MAX; }
 
@@ -120,19 +120,19 @@ private:
 class Freelist {
 public:
   Freelist(uint32_t max_classified_b_size, uint64_t num_segment_blocks,
-           uint32_t num_threads, std::shared_ptr<SpaceMap> space_map,
+           uint32_t block_size, uint32_t num_threads, uint64_t num_blocks,
            PMEMAllocator *allocator)
-      : num_segment_blocks_(num_segment_blocks),
+      : num_segment_blocks_(num_segment_blocks), block_size_(block_size),
         max_classified_b_size_(max_classified_b_size),
         active_pool_(max_classified_b_size),
-        merged_pool_(max_classified_b_size), space_map_(space_map),
+        merged_pool_(max_classified_b_size), space_map_(num_blocks),
         thread_cache_(num_threads, max_classified_b_size),
         min_timestamp_of_entries_(0), pmem_allocator_(allocator) {}
 
-  Freelist(uint64_t num_segment_blocks, uint32_t num_threads,
-           std::shared_ptr<SpaceMap> space_map, PMEMAllocator *allocator)
+  Freelist(uint64_t num_segment_blocks, uint32_t block_size,
+           uint32_t num_threads, uint64_t num_blocks, PMEMAllocator *allocator)
       : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
-                 num_threads, space_map, allocator) {}
+                 block_size, num_threads, num_blocks, allocator) {}
 
   // Add a space entry
   void Push(const SizedSpaceEntry &entry);
@@ -141,12 +141,12 @@ public:
   // timestamp existing in the free list, so just record these entries
   void DelayPush(const SizedSpaceEntry &entry);
 
-  // Request a at least b_size free space entry
-  bool Get(uint32_t b_size, SizedSpaceEntry *space_entry);
+  // Request a at least "size" free space entry
+  bool Get(uint32_t size, SizedSpaceEntry *space_entry);
 
-  // Try to merge thread-cached free space entries to get a at least b_size
+  // Try to merge thread-cached free space entries to get a at least "size"
   // entry
-  bool MergeGet(uint32_t b_size, SizedSpaceEntry *space_entry);
+  bool MergeGet(uint32_t size, SizedSpaceEntry *space_entry);
 
   // Merge adjacent free spaces stored in the entry pool into larger one
   //
@@ -189,9 +189,10 @@ private:
                 1 /* the last lock is for delay freed entries */),
           last_used_entry_ts(0) {}
 
+    // Entry size stored in block unit
     std::vector<std::vector<SpaceEntry>> active_entries;
     // These entries can be add to free list only if no entries with smaller
-    // timestamp exist
+    // timestamp exist.
     std::vector<SizedSpaceEntry> delay_freed_entries;
     std::vector<SpinMutex> spins;
     // timestamp of entry that recently fetched from active_entries
@@ -206,19 +207,19 @@ private:
     }
   };
 
-  uint64_t MergeSpace(const SpaceEntry &space_entry, uint64_t max_size,
+  uint64_t MergeSpace(uint64_t offset, uint64_t max_size,
                       uint64_t min_merge_size) {
     if (min_merge_size > max_size) {
       return 0;
     }
-    uint64_t size =
-        space_map_->TryMerge(space_entry.offset, max_size, min_merge_size);
+    uint64_t size = space_map_.TryMerge(offset, max_size, min_merge_size);
     return size;
   }
 
   const uint64_t num_segment_blocks_;
+  const uint32_t block_size_;
   const uint32_t max_classified_b_size_;
-  std::shared_ptr<SpaceMap> space_map_;
+  SpaceMap space_map_;
   std::vector<ThreadCache> thread_cache_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;

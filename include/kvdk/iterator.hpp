@@ -14,11 +14,13 @@ public:
 
   virtual void SeekToFirst() = 0;
 
+  virtual void SeekToLast() = 0;
+
   virtual bool Valid() = 0;
 
-  virtual bool Next() = 0;
+  virtual void Next() = 0;
 
-  virtual bool Prev() = 0;
+  virtual void Prev() = 0;
 
   virtual std::string Key() = 0;
 

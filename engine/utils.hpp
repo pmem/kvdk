@@ -6,21 +6,36 @@
 
 #define XXH_INLINE_ALL
 
-#include <assert.h>
-#include <atomic>
+#include <cassert>
 #include <cstdint>
-#include <emmintrin.h>
+
+#include <atomic>
+#include <exception>
 #include <random>
-#include <smmintrin.h>
 #include <string>
+#include <vector>
+
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <vector>
+
+#include <emmintrin.h>
+#include <smmintrin.h>
 
 #include "kvdk/namespace.hpp"
 #include "libpmemobj++/string_view.hpp"
 #include "xxhash.h"
 
+#if DEBUG_LEVEL > 0
+#define kvdk_assert(cond, msg)                                                 \
+  {                                                                            \
+    assert((cond) && msg);                                                     \
+    if (!(cond))                                                               \
+      throw std::runtime_error{msg};                                           \
+  }
+#else
+#define kvdk_assert(cond, msg)                                                 \
+  {}
+#endif
 namespace KVDK_NAMESPACE {
 
 inline uint64_t hash_str(const char *str, uint64_t size) {
@@ -99,6 +114,14 @@ static inline int compare_string_view(const pmem::obj::string_view &src,
     }
   }
   return src.size() - target.size();
+}
+
+static inline bool equal_string_view(const pmem::obj::string_view &src,
+                                     const pmem::obj::string_view &target) {
+  if (src.size() == target.size()) {
+    return compare_string_view(src, target) == 0;
+  }
+  return false;
 }
 
 class Slice {

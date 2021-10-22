@@ -30,7 +30,9 @@ DEFINE_string(
     value_size_distribution, "constant",
     "Distribution of value size to write, can be constant/random/zipf, "
     "default is constant. If set to random or zipf, the max value size "
-    "will be FLAGS_value_size");
+    "will be FLAGS_value_size. "
+    "##### Notice: ###### zipf generator is experimental and expensive, so the "
+    "zipf performance is not accurate");
 
 DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
 
@@ -45,11 +47,11 @@ DEFINE_double(
 DEFINE_bool(latency, false, "Stat operation latencies");
 
 DEFINE_string(type, "string",
-              "Storage engine to benchmark, can be string or sorted");
+              "Storage engine to benchmark, can be string, sorted or hash");
 
 DEFINE_bool(scan, false,
             "If set true, read threads will do scan operations, this is valid "
-            "only if we benchmark sorted engine");
+            "only if we benchmark sorted or hash engine");
 
 DEFINE_uint64(collections, 1,
               "Number of collections in the instance to benchmark");
@@ -78,6 +80,8 @@ DEFINE_bool(opt_large_sorted_collection_restore, false,
             " Optional optimization strategy which Multi-thread recovery a "
             "skiplist. When having few large skiplists, the optimization can "
             "get better performance");
+
+DEFINE_bool(use_devdax_mode, false, "Use devdax device for kvdk");
 
 class Timer {
 public:
@@ -111,7 +115,10 @@ int batch_num;
 bool fill;
 bool stat_latencies;
 double existing_keys_ratio;
-bool sorted;
+// Only one of following three can be true
+bool bench_string;
+bool bench_sorted;
+bool bench_hashes;
 uint64_t num_collections;
 std::shared_ptr<Generator> key_generator;
 std::shared_ptr<Generator> value_size_generator;
@@ -140,7 +147,7 @@ char *random_str(unsigned int size) {
 
 uint64_t generate_key() { return key_generator->Next(); }
 
-void DBWrite(int id) {
+void DBWrite(int tid) {
   std::string key;
   key.resize(8);
   uint64_t num;
@@ -163,7 +170,7 @@ void DBWrite(int id) {
 
     if (stat_latencies)
       timer.Start();
-    if (!sorted) {
+    if (bench_string) {
       if (batch_num == 0) {
         s = engine->Set(key, value);
       } else {
@@ -173,22 +180,24 @@ void DBWrite(int id) {
           batch.Clear();
         }
       }
-    } else {
+    } else if (bench_sorted) {
       s = engine->SSet(collections[num % num_collections], key, value);
+    } else if (bench_hashes) {
+      s = engine->HSet(collections[num % num_collections], key, value);
     }
 
     if (stat_latencies) {
       lat = timer.End();
       if (lat / 100 >= MAX_LAT) {
         fprintf(stderr, "Write latency overflow: %ld us\n", lat / 100);
-        exit(-1);
+        std::abort();
       }
-      write_latencies[id][lat / 100]++;
+      write_latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {
       fprintf(stderr, "Set error\n");
-      exit(-1);
+      std::abort();
     }
 
     if (++ops % 1000 == 0) {
@@ -197,80 +206,94 @@ void DBWrite(int id) {
   }
 }
 
-void DBScan(int id) {
-  uint64_t ops = 0;
-  uint64_t num;
-  std::string k;
-  std::string v;
-  k.resize(8);
+void DBScan(int tid) {
+  uint64_t operations = 0;
+  uint64_t operations_counted = 0;
+  std::string key;
+  std::string value;
+  key.resize(8);
   int scan_length = 100;
-  while (true) {
-    if (done) {
-      return;
-    }
-
-    num = generate_key();
-    memcpy(&k[0], &num, 8);
-    auto iter = engine->NewSortedIterator(collections[num % num_collections]);
-    if (iter) {
-      iter->Seek(k);
-      int cnt = scan_length;
-      while (cnt > 0 && iter->Valid()) {
-        cnt--;
-        ++ops;
-        k = iter->Key();
-        v = iter->Value();
-        iter->Next();
+  while (!done) {
+    uint64_t num = generate_key();
+    memcpy(&key[0], &num, 8);
+    if (bench_sorted) {
+      auto iter = engine->NewSortedIterator(collections[num % num_collections]);
+      if (iter) {
+        iter->Seek(key);
+        for (size_t i = 0; i < scan_length && iter->Valid();
+             i++, iter->Next()) {
+          key = iter->Key();
+          value = iter->Value();
+          ++operations;
+          if (operations > operations_counted + 1000) {
+            read_ops += (operations - operations_counted);
+            operations_counted = operations;
+          }
+        }
+      } else {
+        fprintf(stderr, "Error creating SortedIterator\n");
+        std::abort();
       }
-    } else {
-      fprintf(stderr, "Seek error\n");
-      exit(-1);
-    }
-
-    if (ops % 100 == 0) {
-      read_ops += 100;
+    } else if (bench_hashes) {
+      auto iter =
+          engine->NewUnorderedIterator(collections[num % num_collections]);
+      if (iter) {
+        for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+          key = iter->Key();
+          value = iter->Value();
+          ++operations;
+          if (operations > operations_counted + 1000) {
+            read_ops += (operations - operations_counted);
+            operations_counted = operations;
+          }
+        }
+      } else {
+        fprintf(stderr, "Error creating UnorderedIterator\n");
+        std::abort();
+      }
     }
   }
 }
 
-void DBRead(int id) {
+void DBRead(int tid) {
   std::string value;
-  std::string k;
-  k.resize(8);
+  std::string key;
+  key.resize(8);
   uint64_t num;
   uint64_t ops = 0;
   uint64_t not_found = 0;
   Timer timer;
   uint64_t lat = 0;
-  bool sorted = FLAGS_type == "sorted";
 
   while (true) {
     if (done) {
       return;
     }
     num = generate_key();
-    memcpy(&k[0], &num, 8);
+    memcpy(&key[0], &num, 8);
     if (stat_latencies)
       timer.Start();
     Status s;
-    if (sorted) {
-      s = engine->SGet(collections[num % num_collections], k, &value);
-    } else {
-      s = engine->Get(k, &value);
+    if (bench_sorted) {
+      s = engine->SGet(collections[num % num_collections], key, &value);
+    } else if (bench_string) {
+      s = engine->Get(key, &value);
+    } else if (bench_hashes) {
+      s = engine->HGet(collections[num % num_collections], key, &value);
     }
     if (stat_latencies) {
       lat = timer.End();
       if (lat / 100 >= MAX_LAT) {
         fprintf(stderr, "Read latency overflow: %ld us\n", lat / 100);
-        exit(-1);
+        std::abort();
       }
-      read_latencies[id][lat / 100]++;
+      read_latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {
       if (s != Status::NotFound) {
         fprintf(stderr, "get error\n");
-        exit(-1);
+        std::abort();
       } else {
         if (++not_found % 1000 == 0) {
           read_not_found += 1000;
@@ -286,7 +309,9 @@ void DBRead(int id) {
 
 bool ProcessBenchmarkConfigs() {
   if (FLAGS_type == "sorted") {
-    sorted = true;
+    bench_sorted = true;
+    bench_string = false;
+    bench_hashes = false;
     if (FLAGS_batch > 0) {
       printf("Batch is not supported for \"sorted\" type data\n");
       return false;
@@ -296,15 +321,26 @@ bool ProcessBenchmarkConfigs() {
       collections[i] = "skiplist" + std::to_string(i);
     }
   } else if (FLAGS_type == "string") {
-    sorted = false;
+    bench_string = true;
+    bench_sorted = false;
+    bench_hashes = false;
     batch_num = FLAGS_batch;
     if (FLAGS_scan) {
       printf("scan is not supported for \"string\" type data\n");
       return false;
     }
-  } else {
-    printf("Only support \"string\" or \"sorted\" type data");
-    return false;
+  } else if (FLAGS_type == "hash") {
+    bench_hashes = true;
+    bench_string = false;
+    bench_sorted = false;
+    if (FLAGS_batch > 0) {
+      printf("Batch is not supported for \"hash\" type data\n");
+      return false;
+    }
+    collections.resize(FLAGS_collections);
+    for (uint64_t i = 0; i < FLAGS_collections; i++) {
+      collections[i] = "Hashes_" + std::to_string(i);
+    }
   }
 
   fill = FLAGS_fill;
@@ -325,6 +361,8 @@ bool ProcessBenchmarkConfigs() {
   if (fill || FLAGS_key_distribution == "uniform") {
     key_generator.reset(new UniformGenerator(num_keys));
   } else if (FLAGS_key_distribution == "zipf") {
+    printf("##### Notice: ###### zipf generator is experimental and expensive, "
+           "so the performance is not accurate\n");
     key_generator.reset(new ZipfianGenerator(max_key));
   } else if (FLAGS_key_distribution == "random") {
     key_generator.reset(new RandomGenerator(max_key));
@@ -353,7 +391,7 @@ int main(int argc, char **argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
   if (!ProcessBenchmarkConfigs()) {
-    exit(1);
+    std::abort();
   }
 
   Configs configs;
@@ -362,12 +400,13 @@ int main(int argc, char **argv) {
   configs.pmem_file_size = FLAGS_space;
   configs.opt_large_sorted_collection_restore =
       FLAGS_opt_large_sorted_collection_restore;
+  configs.use_devdax_mode = FLAGS_use_devdax_mode;
 
   Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
 
   if (s != Status::Ok) {
     printf("open KVDK instance %s error\n", FLAGS_path.c_str());
-    exit(1);
+    std::abort();
   }
 
   value_pool = random_str(102400);
@@ -402,13 +441,18 @@ int main(int argc, char **argv) {
   printf("------- ops in seconds -----------\n");
   printf("time (ms),   read ops,   not found,  write ops,  total read,  total "
          "write\n");
+  uint64_t total_read = 0;
+  uint64_t total_write = 0;
+  uint64_t total_not_found = 0;
   while (!done) {
     sleep(1);
-    if (!done) { // for latency, the last second may not accurate
+    {
+      // for latency, the last second may not accurate
       run_time++;
-      uint64_t total_read = read_ops.load();
-      uint64_t total_write = write_ops.load();
-      uint64_t total_not_found = read_not_found.load();
+      total_read = read_ops.load();
+      total_write = write_ops.load();
+      total_not_found = read_not_found.load();
+
       auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now() - start_ts);
       printf("%-10lu  %-10lu  %-10lu  %-10lu  %-11lu  %-10lu\n",
@@ -421,11 +465,14 @@ int main(int argc, char **argv) {
       last_write_ops = total_write;
       last_read_notfound = total_not_found;
 
-      if (FLAGS_fill) {
-        if (total_write >= num_keys)
-          done = true;
-      } else if (run_time >= FLAGS_time) {
+      if (FLAGS_fill && total_write >= num_keys) {
+        // Fill
         done = true;
+      } else if (!FLAGS_fill && run_time >= FLAGS_time) {
+        // Read, scan, update and insert
+        done = true;
+      } else {
+        done = false;
       }
     }
   }
@@ -436,8 +483,8 @@ int main(int argc, char **argv) {
   for (auto &t : ts)
     t.join();
 
-  uint64_t read_thpt = read_ops.load() / run_time;
-  uint64_t write_thpt = write_ops.load() / run_time;
+  uint64_t read_thpt = total_read / run_time;
+  uint64_t write_thpt = total_write / run_time;
 
   printf(" ------------ statistics ------------\n");
   printf("read ops %lu, write ops %lu\n", read_thpt, write_thpt);

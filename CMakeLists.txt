@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.12.4)
 
 project(KVDK VERSION 1.0
         DESCRIPTION "A fast persistent KV engine for Persistent Memory"
@@ -9,22 +9,36 @@ include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(OPT "-msse4 -mavx -mavx2 -O2 -fno-omit-frame-pointer -momit-leaf-frame-pointer")
-
 option(DEBUG_CHECK "check connection" OFF)
 if(DEBUG_CHECK)
-    ADD_DEFINITIONS(-DDEBUG_CHECK)
-endif()    
+    add_compile_definitions(DEBUG_CHECK)
+endif()
+
+set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2")
+
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(FLAGS "-DNDEBUG ${OPT}")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -O2 -DNDEBUG")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(FLAGS "-g -O0")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og")
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+elseif (CMAKE_BUILD_TYPE STREQUAL "FastDebug")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2")
+elseif (CMAKE_BUILD_TYPE STREQUAL "VTune")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -shared-libgcc")
+elseif (CMAKE_BUILD_TYPE STREQUAL "Asan")
+    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
 else ()
-    set(FLAGS "-g ${OPT}")
+    message(FATAL_ERROR "Invalid build type!")
 endif ()
 
-set(CMAKE_C_FLAGS "${FLAGS}")
-set(CMAKE_CXX_FLAGS "${FLAGS}")
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_compile_definitions(DEBUG_LEVEL=0)
+else ()
+    add_compile_definitions(DEBUG_LEVEL=1)
+endif()
+
+set(CMAKE_C_FLAGS "${KVDK_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_FLAGS}")
 
 # source files
 set(SOURCES
@@ -40,7 +54,10 @@ set(SOURCES
         engine/thread_manager.cpp
         engine/utils.cpp
         engine/pmem_allocator/free_list.cpp
-        engine/c.cc)
+        engine/c.cc
+        engine/unordered_collection.cpp
+        engine/data_record.cpp
+    )
 
 
 # .a library
@@ -71,10 +88,12 @@ if (BUILD_TESTING)
     add_subdirectory(extern/gtest)
     add_executable(dbtest ${TEST_SOURCES})
     target_link_libraries(dbtest PUBLIC engine gtest gmock gtest_main)
+    set(TEST_SOURCES2 tests/stress_test.cpp)
+    add_executable(dbstress_test ${TEST_SOURCES2})
+    target_link_libraries(dbstress_test PUBLIC engine gtest gmock gtest_main)
 endif ()
 
 option(BUILD_TUTORIAL "Build the tutorial" ON)
-
 add_subdirectory(examples/tutorial)
 
 add_custom_target(checkers ALL)

@@ -4,12 +4,15 @@
 
 #pragma once
 
+#include <fcntl.h>
+#include <sys/mman.h>
+
 #include <memory>
 #include <set>
 #include <vector>
 
 #include "../allocator.hpp"
-#include "../data_entry.hpp"
+#include "../data_record.hpp"
 #include "../structures.hpp"
 #include "free_list.hpp"
 #include "kvdk/namespace.hpp"
@@ -17,53 +20,74 @@
 namespace KVDK_NAMESPACE {
 
 constexpr uint64_t kNullPmemOffset = UINT64_MAX;
-constexpr uint64_t kMinPaddingBlockSize = 8;
+constexpr uint64_t kMinPaddingBlocks = 8;
 
-// Manage allocation/de-allocation of PMem space
+// Manage allocation/de-allocation of PMem space at block unit
 //
 // PMem space consists of several segment, and a segment is consists of
 // several blocks, a block is the minimal allocation unit of PMem space. The
 // maximum allocated data size should smaller than a segment.
 class PMEMAllocator : public Allocator {
 public:
-  PMEMAllocator(const std::string &pmem_file, uint64_t pmem_space,
-                uint64_t num_segment_blocks, uint32_t block_size,
-                uint32_t num_write_threads);
-
   ~PMEMAllocator();
 
+  static PMEMAllocator *
+  NewPMEMAllocator(const std::string &pmem_file, uint64_t pmem_size,
+                   uint64_t num_segment_blocks, uint32_t block_size,
+                   uint32_t num_write_threads, bool use_devdax_mode);
+
+  // Allocate a PMem space, return offset and actually allocated space in bytes
   virtual SizedSpaceEntry Allocate(uint64_t size) override;
 
+  // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(const SizedSpaceEntry &entry) override;
 
   // These entries hold a delete record of some key, it can be safely freed only
   // if no free space entry of smaller timestamp existing in the free list, so
-  // just record these entries
+  // just record these entries. The entry should be allocated by this allocator.
   void DelayFree(const SizedSpaceEntry &entry);
 
-  // transfer block_offset of allocated space to address
-  inline char *offset2addr(uint64_t block_offset) {
-    if (block_offset == kNullPmemOffset) {
-      return nullptr;
-    } else {
-      assert(block_offset < max_block_offset_ / num_segment_blocks_ *
-                                num_segment_blocks_ &&
-             "Trying to access invalid offset");
-      return pmem_ + block_offset * block_size_;
-    }
+  // translate block_offset of allocated space to address
+  inline void *offset2addr_checked(uint64_t offset) {
+    assert(validate_offset(offset) && "Trying to access invalid offset");
+    return pmem_ + offset;
   }
 
-  // transfer address of allocated space to block_offset
+  inline void *offset2addr(uint64_t offset) {
+    if (validate_offset(offset)) {
+      return pmem_ + offset;
+    }
+    return nullptr;
+  }
+
+  template <typename T> inline T *offset2addr_checked(uint64_t block_offset) {
+    return static_cast<T *>(offset2addr_checked(block_offset));
+  }
+
+  template <typename T> inline T *offset2addr(uint64_t block_offset) {
+    return static_cast<T *>(offset2addr(block_offset));
+  }
+
+  // translate address of allocated space to block_offset
+  inline uint64_t addr2offset_checked(void *addr) {
+    assert((char *)addr >= pmem_);
+    uint64_t offset = (char *)addr - pmem_;
+    assert(validate_offset(offset) && "Trying to create invalid offset");
+    return offset;
+  }
+
   inline uint64_t addr2offset(void *addr) {
     if (addr) {
-      assert((static_cast<char *>(addr) - pmem_) / block_size_ <
-                 max_block_offset_ / num_segment_blocks_ *
-                     num_segment_blocks_ &&
-             "Trying to create invalid offset");
-      return ((char *)addr - pmem_) / block_size_;
-    } else {
-      return kNullPmemOffset;
+      uint64_t offset = (char *)addr - pmem_;
+      if (validate_offset(offset)) {
+        return offset;
+      }
     }
+    return kNullPmemOffset;
+  }
+
+  inline bool validate_offset(uint64_t offset) {
+    return offset < pmem_size_ && offset != kNullPmemOffset;
   }
 
   // Populate PMem space so the following access can be faster
@@ -75,20 +99,25 @@ public:
   bool FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry);
 
   // Regularly execute by background thread of KVDK
-  void BackgroundWork() { free_list_->OrganizeFreeSpace(); }
+  void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
 
 private:
+  PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
+                uint32_t block_size, uint32_t num_write_threads);
   // Write threads cache a dedicated PMem segment and a free space to
   // avoid contention
   struct ThreadCache {
-    // Space got from free list
+    // Space got from free list, the size is aligned to block_size_
     SizedSpaceEntry free_entry;
-    // Space fetched from head of PMem segments
+    // Space fetched from head of PMem segments, the size is aligned to
+    // block_size_
     SizedSpaceEntry segment_entry;
     char padding[64 - sizeof(SizedSpaceEntry) * 2];
   };
 
-  void FetchSegmentSpace(SizedSpaceEntry *segment_entry);
+  bool AllocateSegmentSpace(SizedSpaceEntry *segment_entry);
+
+  static bool CheckDevDaxAndGetSize(const char *path, uint64_t *size);
 
   void init_data_size_2_block_size() {
     data_size_2_block_size_.resize(4096);
@@ -106,13 +135,13 @@ private:
   }
 
   std::vector<ThreadCache> thread_cache_;
-  const uint64_t num_segment_blocks_;
   const uint32_t block_size_;
+  const uint64_t segment_size_;
   std::atomic<uint64_t> offset_head_;
   char *pmem_;
   uint64_t pmem_size_;
   uint64_t max_block_offset_;
-  std::shared_ptr<Freelist> free_list_;
+  Freelist free_list_;
   // For quickly get corresponding block size of a requested data size
   std::vector<uint16_t> data_size_2_block_size_;
 };
