@@ -669,6 +669,9 @@ Status KVEngine::RestorePendingBatch() {
   dirent *ent;
   uint64_t persisted_pending_file_size =
       kMaxWriteBatchSize * 8 /* offsets */ + sizeof(PendingBatch);
+  persisted_pending_file_size =
+      kPMEMMapSizeUnit *
+      (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
   size_t mapped_len;
   int is_pmem;
 
