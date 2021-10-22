@@ -42,6 +42,26 @@ pipeline {
                 python3 basic_benchmarks.py'''
 	   }	
        }
+	stage('compare') {
+	   steps {	
+		
+		   
+	   }
+	   post {
+ 			   failure {
+				     sh '''
+				     pwd
+		 		     '''
+			   }
+			   success {
+				     sh '''
+				     pwd
+		 		     '''
+			   }
+				
+	 } 				
+	   
+       }	    
     }		    
 	    
 }  
