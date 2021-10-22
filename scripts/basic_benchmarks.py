@@ -6,7 +6,7 @@ bench_string = True
 bench_sorted = True
 
 path = "/mnt/pmem0/kvdk"
-report_path = "./results-{}/".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+report_path = "./results_QPS_data/"
 value_sizes = [128]
 data_size = 50 * 1024 * 1024 * 1024
 instance_space = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
