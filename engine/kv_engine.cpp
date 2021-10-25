@@ -11,6 +11,7 @@
 #include <future>
 #include <libpmem.h>
 #include <limits>
+#include <math.h>
 #include <mutex>
 #include <sys/mman.h>
 #include <thread>
@@ -25,6 +26,8 @@
 
 namespace KVDK_NAMESPACE {
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
+// fsdax mode align to 2MB by default.
+constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
 // Select a record every 10000 into restored skiplist map for multi-thread
 // restoring large skiplist.
 constexpr uint64_t kRestoreSkiplistStride = 10000;
@@ -638,11 +641,13 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
 Status KVEngine::PersistOrRecoverImmutableConfigs() {
   size_t mapped_len;
   int is_pmem;
+  uint64_t len =
+      kPMEMMapSizeUnit *
+      (size_t)ceil(1.0 * sizeof(ImmutableConfigs) / kPMEMMapSizeUnit);
   ImmutableConfigs *configs = (ImmutableConfigs *)pmem_map_file(
-      config_file_name().c_str(), sizeof(ImmutableConfigs), PMEM_FILE_CREATE,
-      0666, &mapped_len, &is_pmem);
-  if (configs == nullptr || !is_pmem ||
-      mapped_len != sizeof(ImmutableConfigs)) {
+      config_file_name().c_str(), len, PMEM_FILE_CREATE, 0666, &mapped_len,
+      &is_pmem);
+  if (configs == nullptr || !is_pmem || mapped_len != len) {
     GlobalLogger.Error("Open immutable configs file error %s\n",
                        !is_pmem ? (dir_ + "is not a valid pmem path").c_str()
                                 : "");
@@ -664,6 +669,9 @@ Status KVEngine::RestorePendingBatch() {
   dirent *ent;
   uint64_t persisted_pending_file_size =
       kMaxWriteBatchSize * 8 /* offsets */ + sizeof(PendingBatch);
+  persisted_pending_file_size =
+      kPMEMMapSizeUnit *
+      (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
   size_t mapped_len;
   int is_pmem;
 
@@ -1103,6 +1111,10 @@ Status KVEngine::MaybeInitPendingBatchFile() {
     size_t mapped_len;
     uint64_t persisted_pending_file_size =
         kMaxWriteBatchSize * 8 + sizeof(PendingBatch);
+    persisted_pending_file_size =
+        kPMEMMapSizeUnit *
+        (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
+
     if ((thread_res_[write_thread.id].persisted_pending_batch =
              (PendingBatch *)pmem_map_file(
                  persisted_pending_block_file(write_thread.id).c_str(),
