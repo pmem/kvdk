@@ -22,12 +22,12 @@ exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 
 def Confirm(dir):
-#    y = input("Instance path : {}, it will be removed and recreated, confirm? (y/n)".format(dir))
+    y = input("Instance path : {}, it will be removed and recreated, confirm? (y/n)".format(dir))
 #    if y != 'y':
 #        exit(1)
 
 
-#if __name__ == "__main__":
+if __name__ == "__main__":
     Confirm(path)
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
