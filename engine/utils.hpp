@@ -34,7 +34,7 @@
   }
 #else
 #define kvdk_assert(cond, msg)                                                 \
-  { assert((cond) && msg); }
+  {}
 #endif
 namespace KVDK_NAMESPACE {
 
@@ -114,6 +114,14 @@ static inline int compare_string_view(const pmem::obj::string_view &src,
     }
   }
   return src.size() - target.size();
+}
+
+static inline bool equal_string_view(const pmem::obj::string_view &src,
+                                     const pmem::obj::string_view &target) {
+  if (src.size() == target.size()) {
+    return compare_string_view(src, target) == 0;
+  }
+  return false;
 }
 
 class Slice {

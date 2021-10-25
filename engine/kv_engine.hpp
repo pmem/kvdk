@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "data_entry.hpp"
+#include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "hash_list.hpp"
 #include "hash_table.hpp"
@@ -114,15 +114,6 @@ private:
                                     PersistentList **list, bool init,
                                     uint16_t header_type);
 
-  Status SearchOrInitHashlist(const pmem::obj::string_view &collection,
-                              HashList **hashlist, bool init) {
-    if (!CheckKeySize(collection)) {
-      return Status::InvalidDataSize;
-    }
-    return SearchOrInitPersistentList(collection, (PersistentList **)hashlist,
-                                      init, HashListHeaderRecord);
-  };
-
   Status SearchOrInitSkiplist(const pmem::obj::string_view &collection,
                               Skiplist **skiplist, bool init) {
     if (!CheckKeySize(collection)) {
@@ -158,33 +149,32 @@ private:
 
   Status RestoreData(uint64_t thread_id);
 
-  Status RestoreSkiplistHead(DLDataEntry *pmem_data_entry,
-                             DataEntry *cached_meta);
+  Status RestoreSkiplistHead(DLRecord *pmem_record,
+                             const DataEntry &cached_entry);
 
-  Status RestoreStringRecord(DataEntry *pmem_data_entry,
-                             DataEntry *cached_meta);
+  Status RestoreStringRecord(StringRecord *pmem_record,
+                             const DataEntry &cached_entry);
 
-  Status RestoreSortedRecord(DLDataEntry *pmem_data_entry,
-                             DataEntry *cached_meta);
+  Status RestoreSkiplistRecord(DLRecord *pmem_record,
+                               const DataEntry &cached_data_entry);
 
-  // Check if a sorted data entry has been successfully inserted, and try repair
-  // un-finished prev pointer
-  bool CheckAndRepairSortedRecord(DLDataEntry *sorted_data_entry);
+  // Check if a doubly linked record has been successfully inserted, and try
+  // repair un-finished prev pointer
+  bool CheckAndRepairDLRecord(DLRecord *record);
 
-  uint32_t CalculateChecksum(DataEntry *data_entry);
+  bool ValidateRecord(void *data_record);
+
+  bool ValidateRecordAndGetValue(void *data_record, uint32_t expected_checksum,
+                                 std::string *value);
 
   Status RestorePendingBatch();
 
   Status PersistOrRecoverImmutableConfigs();
 
-  Status RestoreDlistRecords(void *pmp_record);
+  Status RestoreDlistRecords(DLRecord *pmp_record);
 
   // Regularly works excecuted by background thread
   void BackgroundWork();
-
-  void PersistDataEntry(char *block_base, DataEntry *data_entry,
-                        const pmem::obj::string_view &key,
-                        const pmem::obj::string_view &value, uint16_t type);
 
   Status CheckConfigs(const Configs &configs);
 
@@ -209,26 +199,26 @@ private:
 
   inline std::string config_file_name() { return dir_ + "configs"; }
 
-  inline bool checkDLDataEntryLinkageLeft(DLDataEntry *pmp_record) {
+  inline bool checkDLRecordLinkageLeft(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLDataEntry *pmp_prev = reinterpret_cast<DLDataEntry *>(
-        pmem_allocator_->offset2addr_checked(pmp_record->prev));
-    return pmp_prev->next == offset;
+    DLRecord *pmem_record_prev =
+        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
+    return pmem_record_prev->next == offset;
   }
 
-  inline bool checkDLDataEntryLinkageRight(DLDataEntry *pmp_record) {
+  inline bool checkDLRecordLinkageRight(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLDataEntry *pmp_next = reinterpret_cast<DLDataEntry *>(
-        pmem_allocator_->offset2addr_checked(pmp_record->next));
+    DLRecord *pmp_next =
+        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
     return pmp_next->prev == offset;
   }
 
-  bool isLinkedDLDataEntry(DLDataEntry *pmp_record) {
+  bool isLinkedDLDataEntry(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLDataEntry *pmp_prev = reinterpret_cast<DLDataEntry *>(
-        pmem_allocator_->offset2addr_checked(pmp_record->prev));
-    DLDataEntry *pmp_next = reinterpret_cast<DLDataEntry *>(
-        pmem_allocator_->offset2addr_checked(pmp_record->next));
+    DLRecord *pmp_prev =
+        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
+    DLRecord *pmp_next =
+        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
     bool is_linked_right = (pmp_prev->next == offset);
     bool is_linked_left = (pmp_next->prev == offset);
 
@@ -237,7 +227,6 @@ private:
     } else if (!is_linked_left && !is_linked_right) {
       return false;
     } else if (is_linked_left && !is_linked_right) {
-      // We really shouldn't touch anything when recovering
       GlobalLogger.Error(
           "Broken DLDataEntry linkage: prev<=>curr->right, repaired.\n");
       pmp_next->prev = offset;
@@ -261,7 +250,6 @@ private:
   std::shared_ptr<HashTable> hash_table_;
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
-  std::vector<std::shared_ptr<HashList>> hashlists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
   std::mutex list_mu_;

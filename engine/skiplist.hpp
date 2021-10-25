@@ -23,16 +23,16 @@ static const uint8_t kCacheHeight = 3;
 struct Splice;
 
 /* Format:
- * next pointers | DataEntry on pmem | height | cached key size | cached key
- * We only cache key if height > kCache height or there are enough space in
- * the end of malloced space to cache the key (4B here).
+ * next pointers | DLRecord on pmem | height | cached key size |
+ * cached key We only cache key if height > kCache height or there are enough
+ * space in the end of malloced space to cache the key (4B here).
  * */
 struct SkiplistNode {
 public:
   // Tagged pointers means this node has been logically removed from the list
   std::atomic<PointerWithTag<SkiplistNode>> next[0];
-  // Doubly linked data entry on PMem
-  DLDataEntry *data_entry;
+  // Doubly linked record on PMem
+  DLRecord *record;
   // TODO: save memory
   uint16_t cached_key_size;
   uint8_t height;
@@ -47,7 +47,7 @@ public:
   static void DeleteNode(SkiplistNode *node) { free(node->heap_space_start()); }
 
   static SkiplistNode *NewNode(const pmem::obj::string_view &key,
-                               DLDataEntry *entry_on_pmem, uint8_t height) {
+                               DLRecord *record_on_pmem, uint8_t height) {
     size_t size;
     if (height >= kCacheHeight && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * height + key.size() - 4;
@@ -58,7 +58,7 @@ public:
     void *space = malloc(size);
     if (space != nullptr) {
       node = (SkiplistNode *)((char *)space + 8 * height);
-      node->data_entry = entry_on_pmem;
+      node->record = record_on_pmem;
       node->height = height;
       // make sure this will be linked to skiplist at all the height after
       // creation
@@ -141,7 +141,7 @@ private:
 
 class Skiplist : public PersistentList {
 public:
-  Skiplist(DLDataEntry *h, const std::string &n, uint64_t i,
+  Skiplist(DLRecord *h, const std::string &n, uint64_t i,
            const std::shared_ptr<PMEMAllocator> &pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
       : name_(n), id_(i), pmem_allocator_(pmem_allocator),
@@ -201,24 +201,22 @@ public:
 
   Status Rebuild();
 
-  bool FindAndLockWritePos(Splice *splice,
+  bool FindAndLockWritePos(std::vector<SpinMutex *> &spins, Splice *splice,
                            const pmem::obj::string_view &insert_key,
                            const HashTable::KeyHashHint &hint,
-                           std::vector<SpinMutex *> &spins,
-                           DLDataEntry *updated_data_entry);
+                           const DLRecord *updated_record);
 
-  // Insert "inserting_entry" to the skiplist on pmem, and create dram node for
+  // Remove "deleting_record" from dram and PMem part of the skiplist
+  void DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
+                    SkiplistNode *dram_node);
+
+  // Insert "inserting_record" to the skiplist on pmem, and create dram node for
   // it. Insertion position of PMem and dram stored in "insert_splice". Return
-  // dram node of inserting data node, return nullptr if inserting node is
+  // dram node of inserting record, return nullptr if inserting record is
   // height 0.
-  SkiplistNode *InsertDataEntry(Splice *insert_splice,
-                                DLDataEntry *inserting_entry,
-                                const pmem::obj::string_view &inserting_key,
-                                SkiplistNode *data_node, bool is_update);
-
-  // Remove "deleting_entry" from dram and PMem part of the skiplist
-  void DeleteDataEntry(DLDataEntry *deleting_entry, Splice *delete_splice,
-                       SkiplistNode *dram_node);
+  SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
+                             const pmem::obj::string_view &inserting_key,
+                             SkiplistNode *data_node, bool is_update);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
@@ -274,7 +272,7 @@ public:
   virtual void SeekToLast() override;
 
   virtual bool Valid() override {
-    return (current != nullptr && current != skiplist_->header()->data_entry);
+    return (current != nullptr && current != skiplist_->header()->record);
   }
 
   virtual void Next() override;
@@ -288,7 +286,7 @@ public:
 private:
   Skiplist *skiplist_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  DLDataEntry *current;
+  DLRecord *current;
 };
 
 // A helper struct for seeking skiplist
@@ -297,8 +295,8 @@ struct Splice {
   Skiplist *seeking_list;
   std::array<SkiplistNode *, kMaxHeight + 1> nexts;
   std::array<SkiplistNode *, kMaxHeight + 1> prevs;
-  DLDataEntry *prev_data_entry{nullptr};
-  DLDataEntry *next_data_entry{nullptr};
+  DLRecord *prev_pmem_record{nullptr};
+  DLRecord *next_pmem_record{nullptr};
 
   Splice(Skiplist *s) : seeking_list(s) {}
 
