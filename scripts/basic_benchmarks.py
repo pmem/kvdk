@@ -27,7 +27,7 @@ def Confirm(dir):
 #        exit(1)
 
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
     Confirm(path)
     os.system("mkdir -p {}".format(report_path))
     for vs in value_sizes:
