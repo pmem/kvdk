@@ -44,7 +44,9 @@ pipeline {
        }
 	stage('compare') {
 	   steps {	
-		
+		 sh '''
+		 pwd
+		 '''
 		   
 	   }
 	   post {
