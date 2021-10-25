@@ -49,7 +49,7 @@ struct DataHeader {
 struct DataMeta {
   DataMeta() = default;
   DataMeta(uint64_t _timestamp, RecordType _record_type, uint16_t _key_size,
-           uint16_t _value_size)
+           uint32_t _value_size)
       : timestamp(_timestamp), type(_record_type), k_size(_key_size),
         v_size(_value_size) {}
 
@@ -64,7 +64,7 @@ struct DataEntry {
   // TODO jiayu: use typename for timestamp and record type instead of a number
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
             uint64_t _timestamp, RecordType _record_type, uint16_t _key_size,
-            uint16_t _value_size)
+            uint32_t _value_size)
       : header(_checksum, _record_size),
         meta(_timestamp, _record_type, _key_size, _value_size) {}
 
