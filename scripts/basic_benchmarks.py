@@ -21,7 +21,7 @@ bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 
-#def Confirm(dir):
+def Confirm(dir):
 #    y = input("Instance path : {}, it will be removed and recreated, confirm? (y/n)".format(dir))
 #    if y != 'y':
 #        exit(1)
