@@ -3,7 +3,7 @@ pipeline {
       label 'AEP-wf-01'
     }
     options {
-        timestamps() //日志时间
+            timestamps() //日志时间
 	    disableConcurrentBuilds()   //不允许两个job同时执行
 	    buildDiscarder(logRotator(numToKeepStr: '30'))   //日志保留30个 	
     }		
@@ -12,7 +12,7 @@ pipeline {
         stage('dbtest') {
 	    options { 
 		  retry(3)
-		  timeout(time: 1, unit: 'HOURS')  
+		  timeout(time: 10, unit: 'MINUTES')  
 	    }
 		
            steps {
@@ -24,12 +24,12 @@ pipeline {
 	   post {
  			   failure {
 				     sh '''
-				     pwd
+				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
 		 		     '''
 			   }
 			   success {
 				     sh '''
-				     pwd
+				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
 		 		     '''
 			   }
 				
@@ -52,12 +52,12 @@ pipeline {
 	   post {
  			   failure {
 				     sh '''
-				     pwd
+				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
 		 		     '''
 			   }
 			   success {
 				     sh '''
-				     pwd
+				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
 		 		     '''
 			   }
 				
