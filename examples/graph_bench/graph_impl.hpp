@@ -116,7 +116,10 @@ public:
 	// The reason why don't put the function into graph_algorithm directory
 	// is that bfs search need the graph data map. Just put the function in
 	// there ,we can use the graph data map.
-	Status BFSSearch(const std::vector<Vertex>& input_vertexes, int n_depth);
+	//
+	// TODO(zhg) get the all degree element back for users.
+	void BFSSearch(const std::vector<Vertex>& input_vertexes, int n_depth,
+	                 std::vector<Status>* status);
 
 private:
 	Status AddInEdge(const Edge& edge);
@@ -125,6 +128,8 @@ private:
 
 	Status RemoveOutEdge(const Edge& edge);
 	Status RemoveInEdge(const Edge& edge);
+
+	Status BFSInternal(const Vertex& vertex, const int& n_depth);
 
 	inline bool CheckEdgeExists(const Vertex& src, const Vertex& dst,
 											 const int& direction, const Edge& edge) {

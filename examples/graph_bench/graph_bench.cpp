@@ -86,6 +86,29 @@ void GraphDataConstruct() {
 }
 
 void GraphDataSearchWithDegree() {
+	int32_t target_level = FLAGS_degree_level;
+	int32_t element_nums = FLAGS_degree_nums;
+
+	std::vector<Vertex> elements;
+
+	for (int i = 0;i < element_nums; i++) {
+		Vertex v;
+		auto s = graph_simulator->GetVertex(generator(), v);
+		while (s != Status::Ok) {
+			s = graph_simulator->GetVertex(generator(), v);
+		}
+		elements.emplace_back(v);
+	}
+
+	std::vector<Status> status;
+	int32_t correct = 0;
+	graph_simulator->BFSSearch(elements, target_level, &status);
+	for (auto& state : status) {
+		if (state == Status::Ok) {
+			correct++;
+		}
+	}
+	fprintf(stdout,"Success bfs search count : %d\n", correct);
 }
 
 int main(int argc, char* argv[]) {

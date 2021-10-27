@@ -376,6 +376,49 @@ Status GraphSimulator::GetTopN(std::vector<std::pair<Vertex, int>> *top_n_vertex
 	return Status::Ok;
 }
 
-Status GraphSimulator::BFSSearch(const std::vector<Vertex> &input_vertexes, int n_depth) {
+void GraphSimulator::BFSSearch(const std::vector<Vertex> &input_vertexes,
+                                 int n_depth, std::vector<Status>* status) {
+	if (input_vertexes.size() == 0) return;
 
+	for (int i = 0;i < input_vertexes.size(); i++) {
+		status->emplace_back(BFSInternal(input_vertexes[i], n_depth));
+	}
+}
+
+Status GraphSimulator::BFSInternal(const Vertex &vertex, const int& n_depth) {
+	std::queue<Vertex> Q;
+	std::map<Vertex, bool> visited;
+	Status s;
+
+	// record the current level, that's our target level.
+	int search_depth = 1;
+	Q.push(vertex);
+	visited[vertex] = true;
+	while (!Q.empty()) {
+		int size = Q.size();
+		// traverse the element in the queue
+		for (int ele = 0; ele < size; ele ++) {
+			EdgeList edge_list;
+			Vertex tmp_v = Q.front();
+			Q.pop();
+
+			// Get the edgelists of the current vertex
+			s = GetAllOutEdges(tmp_v, &edge_list);
+			if (s != Status::Ok && search_depth == 1) {
+				return s;
+			}
+
+			// add the current vertex's breadth elements into queue
+			for (int i = 0;i < edge_list.Num() && search_depth <= n_depth; i++) {
+				Vertex v = edge_list.edges[i].src;
+				if (visited[v]) {
+					continue;
+				}
+				Q.push(v);
+				visited[v] = true;
+			}
+		}
+		search_depth ++;
+	}
+	return Status::Ok;
 }
