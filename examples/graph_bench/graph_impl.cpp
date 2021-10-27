@@ -36,7 +36,7 @@ Status EdgeList::EdgeListDecode(std::string* input) {
 	return Status::Ok;
 }
 
-void Edge::EncodeTo(std::string *output) {
+void Edge::EncodeTo(std::string *output) const {
 	// Total edge size : src + dst + out_direction + weight + edge_info
 	uint32_t edge_size = src.Size() + dst.Size() + 4 + 4 + edge_info.size();
 
@@ -79,7 +79,7 @@ Status Edge::DecodeFrom(std::string *input) {
 }
 
 // vertex size(4bit)  ---- vertex_id (8bit) ---- vertex_info (string)
-void Vertex::EncodeTo(std::string *output) {
+void Vertex::EncodeTo(std::string *output) const {
 	// id + vertex_info
 	uint32_t vertex_size = 8 + vertex_info.size();
 	PutFixed32(output, vertex_size);
@@ -371,14 +371,43 @@ Status GraphSimulator::AddInEdge(const Edge &edge) {
 	return kv_engine_->Put(key, value);
 }
 
-Status GraphSimulator::GetTopN(std::vector<std::pair<Vertex, int>> *top_n_vertexes) {
+template <typename T>
+struct PairCmp {
+	bool operator() (const T& a, const T& b) const {
+		return std::get<1>(a) > std::get<1>(b);
+	}
+};
 
+Status GraphSimulator::GetTopN(std::vector<std::pair<Vertex, uint64_t>> &top_n_vertexes, int k) {
+	TopN<std::pair<Vertex,uint64_t >, PairCmp<std::pair<Vertex, uint64_t >> > top_n(k);
+
+	auto iter = kv_engine_->NewIterator();
+	iter->SeekToFirst();
+	for (; iter->Valid(); iter->Next()) {
+		Vertex vertex;
+		EdgeList edge_list;
+
+		if (!CheckInEdgeKey(iter->Key())) {
+			continue;
+		}
+
+		vertex = EdgeKeyDecode(iter->Key());
+		std::string value = iter->Value();
+		edge_list.EdgeListDecode(&value);
+		top_n.Push(std::make_pair(vertex, edge_list.Num()));
+	}
+
+	if (top_n.Size() == 0) {
+		return Status::Abort;
+	}
+
+	top_n_vertexes = top_n.Extract();
 	return Status::Ok;
 }
 
 void GraphSimulator::BFSSearch(const std::vector<Vertex> &input_vertexes,
                                  int n_depth, std::vector<Status>* status) {
-	if (input_vertexes.size() == 0) return;
+	if (input_vertexes.empty()) return;
 
 	for (int i = 0;i < input_vertexes.size(); i++) {
 		status->emplace_back(BFSInternal(input_vertexes[i], n_depth));

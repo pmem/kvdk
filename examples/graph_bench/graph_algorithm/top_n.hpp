@@ -17,6 +17,7 @@
 // small heap.
 template <class T, class Comparator = std::greater<T>>
 class TopN {
+public:
 	explicit TopN(size_t limit) : TopN(limit, Comparator()) {}
 	TopN(size_t limit, const Comparator &cmp) : limit_(limit), cmp_(cmp) {}
 

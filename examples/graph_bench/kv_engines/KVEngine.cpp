@@ -4,8 +4,14 @@
 
 #include "KVEngine.hpp"
 
+#include <gflags/gflags.h>
+
+DECLARE_string(topn_collection);
+
 PMemKVDK::PMemKVDK(const std::string &db_path){
 	path_ = "/mnt/pmem/kvdk";
+	collection_ = FLAGS_topn_collection;
+
 	// set some options
 	options_.pmem_file_size = 100ULL << 30;
 	options_.use_devdax_mode = false;

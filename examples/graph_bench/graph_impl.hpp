@@ -41,7 +41,7 @@ struct Vertex {
 	}
 
 	uint32_t Size() const { return 8 + 8 + vertex_info.size(); }
-	void EncodeTo(std::string* output);
+	void EncodeTo(std::string* output) const ;
 	void DecodeFrom(std::string* input);
 };
 
@@ -63,7 +63,7 @@ struct Edge {
 			 uint32_t direction, const std::string& info) : weight(w),
 			 src(first), dst(second), out_direction(direction), edge_info(info) {}
 
-	void EncodeTo(std::string* output);
+	void EncodeTo(std::string* output) const;
 	Status DecodeFrom(std::string* input);
 };
 
@@ -72,11 +72,37 @@ inline std::string VertexKeyEncode(const Vertex& v) { return std::to_string(v.id
 inline std::string VertexValueEncode(const Vertex& v) { return v.vertex_info; }
 
 inline std::string OutEdgeKeyEncode(const Vertex& src) {
-	return std::to_string(src.id) + src.vertex_info + "_O";
+	std::string output;
+	src.EncodeTo(&output);
+	output.append("_O");
+	return output;
 }
 
 inline std::string InEdgeKeyEncode(const Vertex& src) {
-	return std::to_string(src.id) + src.vertex_info + "_I";
+	std::string output;
+	src.EncodeTo(&output);
+	output.append("_I");
+	return output;
+}
+
+inline Vertex EdgeKeyDecode(std::string input) {
+	Vertex vertex;
+	vertex.DecodeFrom(&input);
+	return vertex;
+}
+
+inline bool CheckInEdgeKey(const std::string& input) {
+	std::string buffer(input);
+	size_t size  = input.size();
+	buffer.erase(0, size - 2);
+	return input == "_I";
+}
+
+inline bool CheckOutEdgeKey(const std::string& input) {
+	std::string buffer(input);
+	size_t size  = input.size();
+	buffer.erase(0, size - 2);
+	return input == "_O";
 }
 
 struct EdgeList {
@@ -109,7 +135,7 @@ public:
 	Status RemoveEdge(const Edge& edge);
 
 	// Get the top n vertex and it's in edge list nums.
-	Status GetTopN(std::vector<std::pair<Vertex,int>>* top_n_vertexes);
+	Status GetTopN(std::vector<std::pair<Vertex,uint64_t >>& top_n_vertexes, int k);
 
 	// Get the input_vertexes' n depth relationship by breadth first search.
 	//

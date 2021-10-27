@@ -8,6 +8,7 @@
 #include <random>
 #include <atomic>
 #include <thread>
+#include <sys/time.h>
 
 #include "graph_impl.hpp"
 #include "options.hpp"
@@ -15,6 +16,11 @@
 #include <gflags/gflags.h>
 
 using namespace google;
+
+DEFINE_bool(construct, true, "Construct the graphdb.");
+DEFINE_bool(search_degree, false, "Use the bfs search degree algo.");
+DEFINE_bool(topn, false, "Use the topn algo.");
+DEFINE_int32(topn_num, 10, "The top num of the search with topn!");
 
 DEFINE_int64(vertex_nums, 10000000, "The number of the vertexes in the simple graphdb.");
 DEFINE_int64(vertex_id_range, 30000000, "The range of the vertex's id.");
@@ -30,16 +36,8 @@ DEFINE_int32(degree_nums, 128, "The number of the begin vertexes when use degree
 
 std::mt19937_64 generator;
 std::atomic<int64_t> vertex_ops;
+std::unordered_map<std::string, double> bench_timer;
 GraphSimulator* graph_simulator{nullptr};
-
-static void StartThreads(std::function<void()> func, int32_t thread_nums) {
-	std::vector<std::thread> ths;
-	for (int i = 0; i < thread_nums; i++)
-		ths.emplace_back(func, i);
-
-	for (auto& t : ths)
-		t.join();
-}
 
 static Vertex CreateVertex(const uint64_t& id, const int32_t& len) {
 	return Vertex(id, std::string(len, id % 26 + 'a'));
@@ -51,6 +49,30 @@ static Edge CreateEdge(const Vertex& in, const Vertex& out, const int32_t& len) 
 	edge.dst = out;
 	edge.edge_info = std::string(len, in.id % 26 + 'b');
 	return edge;
+}
+
+double NowSecs() {
+	struct timeval tv;
+	gettimeofday(&tv, nullptr);
+	return static_cast<double> (tv.tv_usec / 1000000) + tv.tv_sec;
+}
+
+class Timer {
+public:
+	Timer(const std::string& name):start_(NowSecs()) ,bench_name_(name) {}
+	~Timer() { bench_timer.insert({bench_name_, NowSecs()-start_}); }
+private:
+	double start_;
+	std::string bench_name_;
+};
+
+static void StartThreads(std::function<void()> func, int32_t thread_nums) {
+	std::vector<std::thread> ths;
+	for (int i = 0; i < thread_nums; i++)
+		ths.emplace_back(func);
+
+	for (auto& t : ths)
+		t.join();
 }
 
 void GraphDataConstruct() {
@@ -111,7 +133,50 @@ void GraphDataSearchWithDegree() {
 	fprintf(stdout,"Success bfs search count : %d\n", correct);
 }
 
+void GraphDataTopN() {
+	assert(FLAGS_topn);
+	std::vector<std::pair<Vertex, uint64_t>> topn_res;
+	auto s = graph_simulator->GetTopN(topn_res, FLAGS_topn_num);
+	if (s != Status::Ok) {
+		fprintf(stdout, "Get the GraphData TopN Failed.");
+		return;
+	}
+
+	fprintf(stdout, "TopN: \n");
+	for (auto& item : topn_res) {
+		fprintf(stdout, "vertex : %llu  InEdge : %llu", item.first.id, item.second);
+	}
+}
+
+void LatencyPrint() {
+	if (bench_timer.empty()) {
+		fprintf(stdout, "bench_timer is empty, please check your workload.");
+		return;
+	}
+
+	for (auto& timer : bench_timer) {
+		fprintf(stdout, "benchmark : %s  timeval : %f s\n",
+		                 timer.first.c_str(), timer.second);
+	}
+}
+
 int main(int argc, char* argv[]) {
+	bench_timer.clear();
+	int32_t threads = FLAGS_threads;
+	if (FLAGS_construct) {
+		StartThreads(GraphDataConstruct, threads);
+	}
+
+	if (FLAGS_search_degree) {
+		Timer timer("GraphDataSearchWithDegree");
+		GraphDataSearchWithDegree();
+	}
+
+	if (FLAGS_topn) {
+		Timer timer("GraphDataTopN");
+		GraphDataTopN();
+	}
+	LatencyPrint();
 	return 0;
 }
 
