@@ -24,12 +24,12 @@ pipeline {
 	   post {
  			   failure {
 				     sh '''
-				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
+				     pwd
 		 		     '''
 			   }
 			   success {
 				     sh '''
-				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
+				     pwd
 		 		     '''
 			   }
 				
@@ -52,12 +52,12 @@ pipeline {
 	   post {
  			   failure {
 				     sh '''
-				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
+				     pwd
 		 		     '''
 			   }
 			   success {
 				     sh '''
-				     echo "Running ${env.BUILD_NUMBER} on ${JENKINS_URL}"
+				     pwd
 		 		     '''
 			   }
 				
