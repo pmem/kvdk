@@ -881,11 +881,11 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
       existing_record_offset = hash_entry.offset;
     }
 
-    std::vector<SpinMutex *> spins;
+    std::unique_lock<SpinMutex> prev_record_lock;
     thread_local Splice splice(nullptr);
     splice.seeking_list = skiplist;
-    if (!skiplist->FindAndLockWritePos(spins, &splice, user_key, hint,
-                                       existing_record)) {
+    if (!skiplist->FindWritePos(&splice, user_key, hint, existing_record,
+                                &prev_record_lock)) {
       continue;
     }
 
@@ -895,9 +895,6 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
     pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
                                           data_entry.header.record_size,
                                           data_entry.meta.timestamp));
-    for (auto &m : spins) {
-      m->unlock();
-    }
     break;
   }
   return Status::Ok;
@@ -951,11 +948,12 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     uint64_t new_ts = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
-    std::vector<SpinMutex *> spins;
+    std::unique_lock<SpinMutex> prev_record_lock;
     thread_local Splice splice(nullptr);
     splice.seeking_list = skiplist;
-    if (!skiplist->FindAndLockWritePos(spins, &splice, user_key, hint,
-                                       found ? existing_record : nullptr)) {
+    if (!skiplist->FindWritePos(&splice, user_key, hint,
+                                found ? existing_record : nullptr,
+                                &prev_record_lock)) {
       continue;
     }
 
@@ -1001,9 +999,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
                                             data_entry.meta.timestamp));
     }
 
-    for (auto &m : spins) {
-      m->unlock();
-    }
     break;
   }
   return Status::Ok;

@@ -201,10 +201,15 @@ public:
 
   Status Rebuild();
 
-  bool FindAndLockWritePos(std::vector<SpinMutex *> &spins, Splice *splice,
-                           const pmem::obj::string_view &insert_key,
-                           const HashTable::KeyHashHint &hint,
-                           const DLRecord *updated_record);
+  // Find skiplist position to write "key", store prev dram nodes and
+  // prev/next PMem DLRecord in "splice", and lock prev DLRecord
+  // The insert_key should be already locked before call this function
+  // If it's a update, pass updated DLRecord with updated_record, otherwise set
+  // it to nullptr
+  bool FindWritePos(Splice *splice, const pmem::obj::string_view &insert_key,
+                    const HashTable::KeyHashHint &hint,
+                    const DLRecord *updated_record,
+                    std::unique_lock<SpinMutex> *write_pos_lock);
 
   // Remove "deleting_record" from dram and PMem part of the skiplist
   void DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
