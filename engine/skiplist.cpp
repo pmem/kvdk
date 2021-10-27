@@ -221,8 +221,6 @@ bool Skiplist::FindAndLockWritePos(std::vector<SpinMutex *> &spins,
 
     prev = splice->prev_pmem_record;
     next = splice->next_pmem_record;
-    assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) < 0);
   }
 
   uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
@@ -259,14 +257,20 @@ bool Skiplist::FindAndLockWritePos(std::vector<SpinMutex *> &spins,
 
   // Check the list has changed before we successfully locked
   // For update, we do not need to check because the key is already locked
-  if (!updated_record &&
-      (prev->next != next_offset || next->prev != prev_offset)) {
-    for (auto &m : spins) {
-      m->unlock();
+  if (!updated_record) {
+    if (prev->next != next_offset || next->prev != prev_offset) {
+      for (auto &m : spins) {
+        m->unlock();
+      }
+      spins.clear();
+      return false;
     }
-    spins.clear();
-    return false;
   }
+
+  assert(prev == header_->record ||
+         compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) < 0);
+  assert(next == header_->record ||
+         compare_string_view(Skiplist::UserKey(next->Key()), insert_key) > 0);
 
   return true;
 }
