@@ -1,0 +1,452 @@
+//
+// Created by zhanghuigui on 2021/10/18.
+//
+
+#include "graph_impl.hpp"
+
+#include "coding.hpp"
+
+void EdgeList::EdgesListEncode(std::string *result) {
+  assert(!Empty());
+  PutFixed64(result, Num());
+  for (int i = 0; i < Num(); i++) {
+    edges[i].EncodeTo(result);
+  }
+}
+
+Status EdgeList::EdgeListDecode(std::string *input) {
+  uint64_t edges_num;
+  GetFixed64(input, &edges_num);
+
+  // We have the edge's DecodeFrom, so it's easy to decode the edge
+  // from the encoded edgelist.
+  for (int i = 0; i < edges_num; i++) {
+    Edge edge;
+    auto s = edge.DecodeFrom(input);
+    if (s != Status::Ok) {
+      SimpleLoger("EdgeList::EdgeListDecode failed.");
+      return Status::Abort;
+    }
+    edges.emplace_back(edge);
+  }
+  if (input->size() >= 0) {
+    SimpleLoger("EdgeList::EdgeListDecode failed for input is longer.");
+    return Status::Abort;
+  }
+  return Status::Ok;
+}
+
+void Edge::EncodeTo(std::string *output) const {
+  // Total edge size : src + dst + out_direction + weight + edge_info
+  uint32_t edge_size = src.Size() + dst.Size() + 4 + 4 + edge_info.size();
+
+  // Edge encode :
+  // 1. the whole edge's size
+  // 2. src vertex
+  // 3. fixed weight
+  // 4. fixed out_direction
+  // 5. dst vertex
+  // 6. edge_info
+  PutFixed32(output, edge_size);
+  src.EncodeTo(output);
+  PutFixed32(output, weight);
+  PutFixed32(output, out_direction);
+  dst.EncodeTo(output);
+  output->append(edge_info);
+}
+
+Status Edge::DecodeFrom(std::string *input) {
+  if (input->size() <= 8) {
+    SimpleLoger("Edge::DecodeFrom failed.");
+    return Status::Abort;
+  }
+
+  uint32_t edge_size;
+  std::string edge_input;
+
+  GetFixed32(input, &edge_size);
+  edge_input = std::string(*input, edge_size);
+
+  src.DecodeFrom(&edge_input);
+  GetFixed32(&edge_input, &weight);
+  GetFixed32(&edge_input, &out_direction);
+  dst.DecodeFrom(&edge_input);
+  edge_info = edge_input;
+
+  // Decode finished, need truncate the input string for other edge decode
+  input->erase(0, edge_size);
+  return Status::Ok;
+}
+
+// vertex size(4bit)  ---- vertex_id (8bit) ---- vertex_info (string)
+void Vertex::EncodeTo(std::string *output) const {
+  // id + vertex_info
+  uint32_t vertex_size = 8 + vertex_info.size();
+  PutFixed32(output, vertex_size);
+  PutFixed64(output, id);
+  output->append(vertex_info);
+}
+
+// DecodeFrom not only decode a vertex data, But also remove the
+// Vertex data from the input string.
+void Vertex::DecodeFrom(std::string *input) {
+  // input size : vertex size(uint32) + id(uint64)
+  assert(input->size() >= 12);
+
+  uint32_t vertex_size;
+  std::string vertex_input;
+
+  GetFixed32(input, &vertex_size);
+  vertex_input = std::string(*input, vertex_size);
+  GetFixed64(&vertex_input, &id);
+  vertex_info = vertex_input;
+
+  input->erase(0, vertex_size);
+}
+
+GraphSimulator::GraphSimulator(const std::string &db_name, GraphOptions opts) {
+  options_ = opts;
+  // Init the kv_engines map
+  Initial();
+  // Create the engine by factory and open the engine
+  kv_engine_ = CreateEngineByName::Create(db_name);
+  assert(kv_engine_ != nullptr);
+  SimpleLoger("Create Engine success with " + db_name);
+}
+GraphSimulator::~GraphSimulator() { delete kv_engine_; }
+
+Status GraphSimulator::AddVertex(const Vertex &vertex) {
+  std::string key = VertexKeyEncode(vertex);
+  std::string value = VertexValueEncode(vertex);
+
+  return kv_engine_->Put(key, value);
+}
+
+Status GraphSimulator::GetVertex(const uint64_t &id, Vertex &vertex) {
+  std::string value;
+  auto s = kv_engine_->Get(std::to_string(id), &value);
+  if (s != Status::Ok) {
+    if (s == Status::NotFound) {
+      SimpleLoger("GetVertex " + std::to_string(id) + " notfound.");
+      return s;
+    }
+    return s;
+  }
+
+  vertex.id = id;
+  vertex.vertex_info = value;
+  return s;
+}
+
+// Check if the edge is in edge or out edge, we need to distinguish the
+// direction For detail steps:
+//   1. Get the edge list
+//   2. Check the vertex of the input
+Status GraphSimulator::GetEdge(const Vertex &in, const Vertex &out,
+                               int direction, Edge &edge) {
+  if (direction > 2 || direction < 0) {
+    SimpleLoger("GraphSimulator::GetEdge direction is overbound.");
+    return Status::Abort;
+  }
+
+  std::string key, value;
+  EdgeList edge_list;
+  bool found = false;
+
+  if (direction == 1) {
+    key = OutEdgeKeyEncode(in);
+    auto s = kv_engine_->Get(key, &value);
+    if (s != Status::Ok) {
+      if (s == Status::NotFound) {
+        SimpleLoger("GraphSimulator::GetEdge the out edge is not exists");
+      }
+      return s;
+    }
+    edge_list.EdgeListDecode(&value);
+
+    for (auto &item : edge_list.edges) {
+      if ((found = CheckEdgeExists(in, out, direction, item))) edge = item;
+      break;
+    }
+    if (!found) return Status::NotFound;
+    return Status::Ok;
+  }
+
+  // deal the in direction
+  key = InEdgeKeyEncode(in);
+  auto s = kv_engine_->Get(key, &value);
+  if (s != Status::Ok) {
+    if (s == Status::NotFound) {
+      SimpleLoger("GraphSimulator::GetEdge the in edge is not exists");
+    }
+  }
+
+  edge_list.EdgeListDecode(&value);
+  for (auto &item : edge_list.edges) {
+    if ((found = CheckEdgeExists(in, out, direction, item))) edge = item;
+    break;
+  }
+  if (!found) return Status::NotFound;
+  return Status::Ok;
+}
+
+Status GraphSimulator::GetAllInEdges(const Vertex &dst, EdgeList *edge_list) {
+  std::string key, value;
+  key = InEdgeKeyEncode(dst);
+
+  auto s = kv_engine_->Get(key, &value);
+  if (s != Status::Ok) {
+    if (s == Status::NotFound) {
+      SimpleLoger("GraphSimulator::GetAllInEdges the out edge is not exists");
+    }
+    return s;
+  }
+
+  return edge_list->EdgeListDecode(&value);
+}
+
+Status GraphSimulator::GetAllOutEdges(const Vertex &src, EdgeList *edge_list) {
+  std::string key, value;
+  key = OutEdgeKeyEncode(src);
+
+  auto s = kv_engine_->Get(key, &value);
+  if (s != Status::Ok) {
+    if (s == Status::NotFound) {
+      SimpleLoger("GraphSimulator::GetAllInEdges the out edge is not exists");
+    }
+    return s;
+  }
+
+  return edge_list->EdgeListDecode(&value);
+}
+
+Status GraphSimulator::RemoveVertex(const Vertex &vertex) {
+  return kv_engine_->Delete(VertexValueEncode(vertex));
+}
+
+Status GraphSimulator::RemoveEdge(const Edge &edge) {
+  assert(edge.out_direction <= 2 && edge.out_direction >= 0);
+
+  if (edge.out_direction == 0) {
+    return RemoveInEdge(edge);
+  } else if (edge.out_direction == 1) {
+    return RemoveOutEdge(edge);
+  }
+}
+
+Status GraphSimulator::RemoveOutEdge(const Edge &edge) {
+  return kv_engine_->Delete(OutEdgeKeyEncode(edge.src));
+}
+
+Status GraphSimulator::RemoveInEdge(const Edge &edge) {
+  return kv_engine_->Delete(InEdgeKeyEncode(edge.dst));
+}
+
+Status GraphSimulator::AddEdge(Edge &edge) {
+  assert(edge.out_direction <= 2);
+  // edge's direction is important. If the direction < 2, for every edge's two
+  // vertex, we need to store two vertexes : src --> dst  and dst --> src. Their
+  // key and value's data is different in kuaishou's graph storage.
+  Status s;
+  if (edge.out_direction == 1) {
+    s = AddOutEdge(edge);
+    if (s != Status::Ok) {
+      SimpleLoger("GraphSimulator::AddOutEdge failed.");
+      return Status::Abort;
+    }
+    edge.out_direction = 0;
+    s = AddInEdge(edge);
+    if (s != Status::Ok) {
+      SimpleLoger("GraphSimulator::AddOutEdge failed.");
+      return Status::Abort;
+    }
+  }
+  return AddEdgeWithoutDirection(edge);
+}
+
+// Several steps:
+// 1. format a key with src vertex
+// 2. get the edgelist which is src vertex's value from engine
+// 3. decode the value and add/modify the edge to edge list
+// 4. format the edgelist to a new value and put into engine
+Status GraphSimulator::AddOutEdge(const Edge &edge) {
+  // Check the edge is a outedge, so we could know the direction is src --> dst
+  assert(edge.out_direction == 1);
+  std::string key;
+  std::string value;
+  EdgeList edge_list;
+  bool new_edge_node = false;
+  bool change_existing_edge = false;
+
+  key = OutEdgeKeyEncode(edge.src);
+  auto s = kv_engine_->Get(key, &value);
+  if (s != Status::Ok) {
+    if (s == Status::NotFound) {
+      new_edge_node = true;
+    } else {
+      SimpleLoger("GraphSimulator::AddOutEdge Get" + key + " failed.");
+      return s;
+    }
+  }
+
+  if (new_edge_node) {
+    edge_list.edges.emplace_back(edge);
+  } else {
+    edge_list.EdgeListDecode(&value);
+    for (auto &item : edge_list.edges) {
+      if (item.src == edge.src && item.dst == edge.dst) {
+        item.weight = edge.weight;
+        item.edge_info = edge.edge_info;
+        change_existing_edge = true;
+        break;
+      }
+    }
+    value.clear();
+    // TODO(zhg) deal the limit of edges' num.
+    if (change_existing_edge) {
+      edge_list.edges.emplace_back(edge);
+    }
+    edge_list.EdgesListEncode(&value);
+  }
+
+  // We need delete the old key
+  s = kv_engine_->Delete(key);
+  if (s != Status::Ok) {
+    SimpleLoger("GraphSimulator::AddOutEdge Delete " + key + " failed.");
+    return s;
+  }
+
+  return kv_engine_->Put(key, value);
+}
+
+Status GraphSimulator::AddInEdge(const Edge &edge) {
+  assert(edge.out_direction == 0);
+  std::string key;
+  std::string value;
+  EdgeList edge_list;
+  bool new_edge_node = false;
+  bool change_existing_edge = false;
+
+  key = InEdgeKeyEncode(edge.dst);
+  auto s = kv_engine_->Get(key, &value);
+  if (s != Status::Ok) {
+    if (s == Status::NotFound) {
+      new_edge_node = true;
+    } else {
+      SimpleLoger("GraphSimulator::AddOutEdge Get" + key + " failed.");
+      return s;
+    }
+  }
+
+  if (new_edge_node) {
+    edge_list.edges.emplace_back(edge);
+  } else {
+    edge_list.EdgeListDecode(&value);
+    for (auto &item : edge_list.edges) {
+      if (item.src == edge.src && item.dst == edge.dst) {
+        item.weight = edge.weight;
+        item.edge_info = edge.edge_info;
+        change_existing_edge = true;
+        break;
+      }
+    }
+    value.clear();
+    // TODO(zhg) deal the limit of edges' num.
+    if (change_existing_edge) {
+      edge_list.edges.emplace_back(edge);
+    }
+    edge_list.EdgesListEncode(&value);
+  }
+
+  // We need delete the old key
+  s = kv_engine_->Delete(key);
+  if (s != Status::Ok) {
+    SimpleLoger("GraphSimulator::AddInEdge Delete " + key + " failed.");
+    return s;
+  }
+
+  return kv_engine_->Put(key, value);
+}
+
+template <typename T>
+struct PairCmp {
+  bool operator()(const T &a, const T &b) const {
+    return std::get<1>(a) > std::get<1>(b);
+  }
+};
+
+Status GraphSimulator::GetTopN(
+    std::vector<std::pair<Vertex, uint64_t>> &top_n_vertexes, int k) {
+  TopN<std::pair<Vertex, uint64_t>, PairCmp<std::pair<Vertex, uint64_t>>> top_n(
+      k);
+
+  auto iter = kv_engine_->NewIterator();
+  iter->SeekToFirst();
+  for (; iter->Valid(); iter->Next()) {
+    Vertex vertex;
+    EdgeList edge_list;
+
+    if (!CheckInEdgeKey(iter->Key())) {
+      continue;
+    }
+
+    vertex = EdgeKeyDecode(iter->Key());
+    std::string value = iter->Value();
+    edge_list.EdgeListDecode(&value);
+    top_n.Push(std::make_pair(vertex, edge_list.Num()));
+  }
+
+  if (top_n.Size() == 0) {
+    return Status::Abort;
+  }
+
+  top_n_vertexes = top_n.Extract();
+  return Status::Ok;
+}
+
+void GraphSimulator::BFSSearch(const std::vector<Vertex> &input_vertexes,
+                               int n_depth, std::vector<Status> *status) {
+  if (input_vertexes.empty()) return;
+
+  for (int i = 0; i < input_vertexes.size(); i++) {
+    status->emplace_back(BFSInternal(input_vertexes[i], n_depth));
+  }
+}
+
+Status GraphSimulator::BFSInternal(const Vertex &vertex, const int &n_depth) {
+  std::queue<Vertex> Q;
+  std::map<Vertex, bool> visited;
+  Status s;
+
+  // record the current level, that's our target level.
+  int search_depth = 1;
+  Q.push(vertex);
+  visited[vertex] = true;
+  while (!Q.empty()) {
+    int size = Q.size();
+    // traverse the element in the queue
+    for (int ele = 0; ele < size; ele++) {
+      EdgeList edge_list;
+      Vertex tmp_v = Q.front();
+      Q.pop();
+
+      // Get the edgelists of the current vertex
+      s = GetAllOutEdges(tmp_v, &edge_list);
+      if (s != Status::Ok && search_depth == 1) {
+        return s;
+      }
+
+      // add the current vertex's breadth elements into queue
+      for (int i = 0; i < edge_list.Num() && search_depth <= n_depth; i++) {
+        Vertex v = edge_list.edges[i].src;
+        if (visited[v]) {
+          continue;
+        }
+        Q.push(v);
+        visited[v] = true;
+      }
+    }
+    search_depth++;
+  }
+  return Status::Ok;
+}
