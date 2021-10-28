@@ -303,7 +303,8 @@ bool Skiplist::FindInsertPos(Splice *splice,
 bool Skiplist::Insert(const pmem::obj::string_view &key,
                       const pmem::obj::string_view &value,
                       const SizedSpaceEntry &space_to_write, uint64_t timestamp,
-                      SkiplistNode **dram_node, SpinMutex *inserting_key_lock) {
+                      SkiplistNode **dram_node,
+                      const SpinMutex *inserting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
   if (!FindInsertPos(&splice, key, inserting_key_lock, &prev_record_lock)) {
@@ -350,7 +351,8 @@ bool Skiplist::Update(const pmem::obj::string_view &key,
                       const pmem::obj::string_view &value,
                       const DLRecord *updated_record,
                       const SizedSpaceEntry &space_to_write, uint64_t timestamp,
-                      SkiplistNode *dram_node, SpinMutex *updating_key_lock) {
+                      SkiplistNode *dram_node,
+                      const SpinMutex *updating_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
   if (!FindUpdatePos(&splice, key, updating_key_lock, updated_record,
@@ -376,7 +378,7 @@ bool Skiplist::Update(const pmem::obj::string_view &key,
 
 bool Skiplist::Delete(const pmem::obj::string_view &key,
                       DLRecord *deleted_record, SkiplistNode *dram_node,
-                      SpinMutex *deleting_key_lock) {
+                      const SpinMutex *deleting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
   if (!FindDeletePos(&splice, key, deleting_key_lock, deleted_record,

@@ -217,7 +217,7 @@ public:
   bool Insert(const pmem::obj::string_view &key,
               const pmem::obj::string_view &value,
               const SizedSpaceEntry &space_to_write, uint64_t timestamp,
-              SkiplistNode **dram_node, SpinMutex *inserting_key_lock);
+              SkiplistNode **dram_node, const SpinMutex *inserting_key_lock);
 
   // Update "key" in skiplist
   //
@@ -233,7 +233,7 @@ public:
               const pmem::obj::string_view &value,
               const DLRecord *updated_record,
               const SizedSpaceEntry &space_to_write, uint64_t timestamp,
-              SkiplistNode *dram_node, SpinMutex *updating_key_lock);
+              SkiplistNode *dram_node, const SpinMutex *updating_key_lock);
 
   // Delete "key" from skiplist
   //
@@ -245,7 +245,7 @@ public:
   //
   // Return true on success, return false on fail.
   bool Delete(const pmem::obj::string_view &key, DLRecord *deleted_record,
-              SkiplistNode *dram_node, SpinMutex *deleting_key_lock);
+              SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
