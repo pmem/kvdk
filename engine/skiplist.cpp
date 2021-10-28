@@ -203,28 +203,20 @@ Status Skiplist::CheckConnection(int height) {
   return Status::Ok;
 }
 
-bool Skiplist::FindWritePos(Splice *splice,
-                            const pmem::obj::string_view &insert_key,
-                            const HashTable::KeyHashHint &hint,
-                            const DLRecord *updated_record,
-                            std::unique_lock<SpinMutex> *prev_record_lock) {
+bool Skiplist::FindUpdatePos(Splice *splice,
+                             const pmem::obj::string_view &updated_key,
+                             const HashTable::KeyHashHint &hint,
+                             const DLRecord *updated_record,
+                             std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
-    DLRecord *prev;
-    DLRecord *next;
-    if (updated_record != nullptr) {
-      prev = pmem_allocator_->offset2addr<DLRecord>(updated_record->prev);
-      next = pmem_allocator_->offset2addr<DLRecord>(updated_record->next);
-      splice->prev_pmem_record = prev;
-      splice->next_pmem_record = next;
-    } else {
-      Seek(insert_key, splice);
-
-      prev = splice->prev_pmem_record;
-      next = splice->next_pmem_record;
-    }
-
+    DLRecord *prev =
+        pmem_allocator_->offset2addr<DLRecord>(updated_record->prev);
+    DLRecord *next =
+        pmem_allocator_->offset2addr<DLRecord>(updated_record->next);
     assert(prev != nullptr);
     assert(next != nullptr);
+    splice->prev_pmem_record = prev;
+    splice->next_pmem_record = next;
     uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
     uint64_t next_offset = pmem_allocator_->addr2offset(next);
 
@@ -237,22 +229,57 @@ bool Skiplist::FindWritePos(Splice *splice,
           std::unique_lock<SpinMutex>(*prev_hint.spin, std::adopt_lock);
     }
 
-    // Check if the list has changed before we successfully locked
-    // For update, as updating record is already locked, so we don't need to
+    // Check if the list has changed before we successfully acquire lock.
+    // As updating record is already locked, so we don't need to
     // check its next
-    if (updated_record &&
-        (updated_record->prev != prev_offset ||
-         prev->next != pmem_allocator_->addr2offset((void *)updated_record))) {
+    if (updated_record->prev != prev_offset ||
+        prev->next != pmem_allocator_->addr2offset((void *)updated_record)) {
       continue;
     }
-    if (!updated_record) {
-      if (prev->next != next_offset || next->prev != prev_offset) {
+
+    assert(updated_record->prev == prev_offset);
+    assert(updated_record->next == next_offset);
+    assert(next->prev == pmem_allocator_->addr2offset((void *)updated_record));
+    assert(prev == header_->record ||
+           compare_string_view(Skiplist::UserKey(prev->Key()), updated_key) <
+               0);
+    assert(next == header_->record ||
+           compare_string_view(Skiplist::UserKey(next->Key()), updated_key) >
+               0);
+
+    return true;
+  }
+}
+
+bool Skiplist::FindInsertPos(Splice *splice,
+                             const pmem::obj::string_view &insert_key,
+                             const HashTable::KeyHashHint &hint,
+                             std::unique_lock<SpinMutex> *prev_record_lock) {
+  while (1) {
+    Seek(insert_key, splice);
+    DLRecord *prev = splice->prev_pmem_record;
+
+    assert(prev != nullptr);
+    uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
+
+    auto prev_hint = hash_table_->GetHint(prev->Key());
+    if (prev_hint.spin != hint.spin) {
+      if (!prev_hint.spin->try_lock()) {
         return false;
       }
+      *prev_record_lock =
+          std::unique_lock<SpinMutex>(*prev_hint.spin, std::adopt_lock);
     }
-
-    assert(!updated_record || (updated_record->prev == prev_offset &&
-                               updated_record->next == next_offset));
+    uint64_t next_offset = prev->next;
+    DLRecord *next = pmem_allocator_->offset2addr<DLRecord>(next_offset);
+    assert(next != nullptr);
+    // Check if the linkage has changed before we successfully acquire lock.
+    if (next != splice->next_pmem_record || next->prev != prev_offset) {
+      prev_record_lock->unlock();
+      continue;
+    }
+    assert(prev->next == next_offset);
+    assert(next->prev == prev_offset);
 
     assert(prev == header_->record ||
            compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) < 0);
