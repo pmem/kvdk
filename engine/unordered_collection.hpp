@@ -114,11 +114,6 @@ public:
                               StringView const key, StringView const value,
                               LockType const &lock);
 
-  /// Emplace after pmp
-  EmplaceReturn EmplaceAfter(DLRecord *pos, std::uint64_t timestamp,
-                             StringView const key, StringView const value,
-                             LockType const &lock);
-
   /// Emplace after Head()
   EmplaceReturn EmplaceFront(std::uint64_t timestamp, StringView const key,
                              StringView const value,

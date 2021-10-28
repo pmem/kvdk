@@ -65,26 +65,6 @@ UnorderedCollection::EmplaceBefore(DLRecord *pos, std::uint64_t timestamp,
 }
 
 EmplaceReturn
-UnorderedCollection::EmplaceAfter(DLRecord *pos, std::uint64_t timestamp,
-                                  StringView const key, StringView const value,
-                                  LockType const &lock) {
-  if (!checkUserSuppliedPmp(pos))
-    return EmplaceReturn{};
-  iterator prev{pos};
-  iterator next{pos};
-  ++next;
-  LockPair lock_prev_and_next;
-  if(!lockPositions(prev, next, lock, lock_prev_and_next))
-    return EmplaceReturn{};
-  if (!isAdjacent(prev, next))
-    return EmplaceReturn{};
-
-  iterator curr = dlinked_list.EmplaceBefore(next, timestamp, makeInternalKey(key), value);
-  
-  return EmplaceReturn{curr.GetCurrentOffset(), EmplaceReturn::FailOffset, true};
-}
-
-EmplaceReturn
 UnorderedCollection::EmplaceFront(std::uint64_t timestamp, StringView const key,
                                   StringView const value,
                                   LockType const &lock) {
