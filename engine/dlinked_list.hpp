@@ -17,15 +17,14 @@
 #include <libpmem.h>
 #include <libpmemobj++/string_view.hpp>
 
-#include "hash_table.hpp"
+#include "kvdk/macros.h"
 #include "kvdk/engine.hpp"
+
+#include "hash_table.hpp"
 #include "structures.hpp"
 #include "utils.hpp"
 
 #include <list>
-
-#define hex_print(x)                                                           \
-  std::hex << std::setfill('0') << std::setw(sizeof(decltype(x)) * 2) << x
 
 namespace KVDK_NAMESPACE {
 using StringView = pmem::obj::string_view;
@@ -354,21 +353,21 @@ private:
     iterator iter_end = iterator{dlist.pmem_allocator_ptr, dlist.tail_pmmptr};
     while (iter != iter_end) {
       auto internal_key = iter->Key();
-      out << "Type: " << hex_print(iter->entry.meta.type) << "\t"
-          << "Offset: " << hex_print(iter.GetCurrentOffset()) << "\t"
-          << "Prev: " << hex_print(iter->prev) << "\t"
-          << "Next: " << hex_print(iter->next) << "\t"
-          << "Key: " << hex_print(extractID(internal_key))
+      out << "Type: " << to_hex(iter->entry.meta.type) << "\t"
+          << "Offset: " << to_hex(iter.GetCurrentOffset()) << "\t"
+          << "Prev: " << to_hex(iter->prev) << "\t"
+          << "Next: " << to_hex(iter->next) << "\t"
+          << "Key: " << to_hex(extractID(internal_key))
           << extractKey(internal_key) << "\t"
           << "Value: " << iter->Value() << "\n";
       ++iter;
     }
     auto internal_key = iter->Key();
-    out << "Type: " << hex_print(iter->entry.meta.type) << "\t"
-        << "Offset: " << hex_print(iter.GetCurrentOffset()) << "\t"
-        << "Prev: " << hex_print(iter->prev) << "\t"
-        << "Next: " << hex_print(iter->next) << "\t"
-        << "Key: " << hex_print(extractID(internal_key))
+    out << "Type: " << to_hex(iter->entry.meta.type) << "\t"
+        << "Offset: " << to_hex(iter.GetCurrentOffset()) << "\t"
+        << "Prev: " << to_hex(iter->prev) << "\t"
+        << "Next: " << to_hex(iter->next) << "\t"
+        << "Key: " << to_hex(extractID(internal_key))
         << extractKey(internal_key) << "\t"
         << "Value: " << iter->Value() << "\n";
     return out;

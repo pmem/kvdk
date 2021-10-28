@@ -4,8 +4,6 @@
 
 #pragma once
 
-#define XXH_INLINE_ALL
-
 #include <cassert>
 #include <cstdint>
 
@@ -21,21 +19,13 @@
 #include <emmintrin.h>
 #include <smmintrin.h>
 
-#include "kvdk/namespace.hpp"
 #include "libpmemobj++/string_view.hpp"
+
+#define XXH_INLINE_ALL
 #include "xxhash.h"
 
-#if DEBUG_LEVEL > 0
-#define kvdk_assert(cond, msg)                                                 \
-  {                                                                            \
-    assert((cond) && msg);                                                     \
-    if (!(cond))                                                               \
-      throw std::runtime_error{msg};                                           \
-  }
-#else
-#define kvdk_assert(cond, msg)                                                 \
-  {}
-#endif
+#include "kvdk/namespace.hpp"
+
 namespace KVDK_NAMESPACE {
 
 inline uint64_t hash_str(const char *str, uint64_t size) {

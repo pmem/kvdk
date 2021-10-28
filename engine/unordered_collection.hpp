@@ -5,13 +5,16 @@
 #pragma once
 
 #include <algorithm>
-#include <assert.h>
+
+#include <cassert>
 #include <cstdint>
+
+#include "kvdk/macros.h"
+#include "kvdk/engine.hpp"
+#include "kvdk/iterator.hpp"
 
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
 #include "structures.hpp"
 #include "utils.hpp"
 
@@ -170,10 +173,10 @@ public:
     auto iter = col.pmp_dlist_record_;
     auto internal_key = iter->Key();
     out << "Name: " << col.Name() << "\t"
-        << "ID: " << hex_print(col.ID()) << "\n";
-    out << "Type: " << hex_print(iter->entry.meta.type) << "\t"
-        << "Prev: " << hex_print(iter->prev) << "\t"
-        << "Next: " << hex_print(iter->next) << "\t"
+        << "ID: " << to_hex(col.ID()) << "\n";
+    out << "Type: " << to_hex(iter->entry.meta.type) << "\t"
+        << "Prev: " << to_hex(iter->prev) << "\t"
+        << "Next: " << to_hex(iter->next) << "\t"
         << "Key: " << iter->Key() << "\t"
         << "Value: " << iter->Value() << "\n";
     out << col.dlinked_list_;
