@@ -311,6 +311,101 @@ void Skiplist::DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
   }
 }
 
+bool Skiplist::Insert(const pmem::obj::string_view &inserting_key,
+                      const pmem::obj::string_view &value,
+                      const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+                      SkiplistNode **dram_node, SpinMutex *inserting_key_lock) {
+  Splice splice(this);
+  std::unique_lock<SpinMutex> prev_record_lock;
+  // if (!FindInsertPos(&splice, inserting_key, , &prev_record_lock)) {
+  // return false;
+  // }
+
+  std::string internal_key(InternalKey(inserting_key));
+  uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
+  uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
+  DLRecord *pmem_record = DLRecord::PersistDLRecord(
+      pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
+      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
+      next_offset, internal_key, value);
+
+  *dram_node =
+      InsertRecord(&splice, pmem_record, inserting_key, *dram_node, false);
+  return true;
+}
+
+bool Skiplist::Update(const pmem::obj::string_view &key,
+                      const pmem::obj::string_view &value,
+                      const DLRecord *updated_record,
+                      const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+                      SkiplistNode *dram_node, SpinMutex *inserting_key_lock) {
+  Splice splice(this);
+  std::unique_lock<SpinMutex> prev_record_lock;
+  // if (!FindUpdatePos(&splice, key, , updated_record, &prev_record_lock)) {
+  // return false;
+  // }
+
+  std::string internal_key(InternalKey(key));
+  uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
+  uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
+  DLRecord *pmem_record = DLRecord::PersistDLRecord(
+      pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
+      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
+      next_offset, internal_key, value);
+  UpdateRecord(&splice, pmem_record, dram_node);
+  return true;
+}
+
+void Skiplist::UpdateRecord(Splice *update_splice, DLRecord *new_record,
+                            SkiplistNode *dram_node) {
+  uint64_t new_record_offset = pmem_allocator_->addr2offset(new_record);
+  DLRecord *prev = update_splice->prev_pmem_record;
+  DLRecord *next = update_splice->next_pmem_record;
+  prev->next = new_record_offset;
+  pmem_persist(&prev->next, 8);
+  next->prev = new_record_offset;
+  pmem_persist(&next->prev, 8);
+  if (dram_node != nullptr) {
+    dram_node->record = new_record;
+  }
+}
+
+SkiplistNode *Skiplist::InsertRecord(Splice *insert_splice,
+                                     DLRecord *new_record,
+                                     const pmem::obj::string_view &key) {
+  uint64_t new_record_offset = pmem_allocator_->addr2offset(new_record);
+  DLRecord *prev = insert_splice->prev_pmem_record;
+  DLRecord *next = insert_splice->next_pmem_record;
+  prev->next = new_record_offset;
+  pmem_persist(&prev->next, 8);
+  next->prev = new_record_offset;
+  pmem_persist(&next->prev, 8);
+
+  auto height = Skiplist::RandomHeight();
+  if (height > 0) {
+    SkiplistNode *dram_node = SkiplistNode::NewNode(key, new_record, height);
+    for (int i = 1; i <= height; i++) {
+      while (1) {
+        auto now_next = insert_splice->prevs[i]->Next(i);
+        // if next has been changed or been deleted, re-compute
+        if (now_next.RawPointer() == insert_splice->nexts[i] &&
+            now_next.GetTag() == 0) {
+          dram_node->RelaxedSetNext(i, insert_splice->nexts[i]);
+          if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
+                                               dram_node)) {
+            break;
+          }
+        } else {
+          insert_splice->Recompute(key, i);
+        }
+      }
+    }
+    return dram_node;
+  } else {
+    return nullptr;
+  }
+}
+
 SkiplistNode *
 Skiplist::InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
                        const pmem::obj::string_view &inserting_key,
@@ -333,20 +428,23 @@ Skiplist::InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
   if (!is_update) {
     assert(dram_node == nullptr);
     auto height = Skiplist::RandomHeight();
-    dram_node = SkiplistNode::NewNode(inserting_key, inserting_record, height);
-    for (int i = 1; i <= height; i++) {
-      while (1) {
-        auto now_next = insert_splice->prevs[i]->Next(i);
-        // if next has been changed or been deleted, re-compute
-        if (now_next.RawPointer() == insert_splice->nexts[i] &&
-            now_next.GetTag() == 0) {
-          dram_node->RelaxedSetNext(i, insert_splice->nexts[i]);
-          if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
-                                               dram_node)) {
-            break;
+    if (height > 0) {
+      dram_node =
+          SkiplistNode::NewNode(inserting_key, inserting_record, height);
+      for (int i = 1; i <= height; i++) {
+        while (1) {
+          auto now_next = insert_splice->prevs[i]->Next(i);
+          // if next has been changed or been deleted, re-compute
+          if (now_next.RawPointer() == insert_splice->nexts[i] &&
+              now_next.GetTag() == 0) {
+            dram_node->RelaxedSetNext(i, insert_splice->nexts[i]);
+            if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
+                                                 dram_node)) {
+              break;
+            }
+          } else {
+            insert_splice->Recompute(inserting_key, i);
           }
-        } else {
-          insert_splice->Recompute(inserting_key, i);
         }
       }
     }

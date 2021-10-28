@@ -188,6 +188,10 @@ public:
     return height;
   }
 
+  std::string InternalKey(const pmem::obj::string_view &key) {
+    return PersistentList::ListKey(key, id_);
+  }
+
   inline static pmem::obj::string_view
   UserKey(const pmem::obj::string_view &skiplist_key) {
     return pmem::obj::string_view(skiplist_key.data() + 8,
@@ -201,9 +205,22 @@ public:
 
   Status Rebuild();
 
-  // Find and lock skiplist position to insert "key", store prev dram nodes and
-  // prev/next PMem DLRecord in "splice", and lock prev DLRecord
-  // The "insert_key" should be already locked before call this function
+  // Insert a new key "key" to skiplist, return height of inserted record on
+  // success, return -1 on fail or key already existed
+  bool Insert(const pmem::obj::string_view &key,
+              const pmem::obj::string_view &value,
+              const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+              SkiplistNode **dram_node, SpinMutex *inserting_key_lock);
+
+  bool Update(const pmem::obj::string_view &key,
+              const pmem::obj::string_view &value,
+              const DLRecord *updated_record,
+              const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+              SkiplistNode *dram_node, SpinMutex *inserting_key_lock);
+
+  // Find and lock skiplist position to insert "key", store prev dram nodes
+  // and prev/next PMem DLRecord in "splice", and lock prev DLRecord The
+  // "insert_key" should be already locked before call this function
   bool FindInsertPos(Splice *splice, const pmem::obj::string_view &insert_key,
                      const HashTable::KeyHashHint &hint,
                      std::unique_lock<SpinMutex> *prev_record_lock);
@@ -227,6 +244,12 @@ public:
   SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
                              const pmem::obj::string_view &inserting_key,
                              SkiplistNode *data_node, bool is_update);
+
+  void UpdateRecord(Splice *update_splice, DLRecord *new_record,
+                    SkiplistNode *dram_node);
+
+  SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *new_record,
+                             const pmem::obj::string_view &key);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
