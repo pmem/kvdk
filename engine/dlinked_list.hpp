@@ -28,104 +28,9 @@
   std::hex << std::setfill('0') << std::setw(sizeof(decltype(x)) * 2) << x
 
 namespace KVDK_NAMESPACE {
-/// DListIterator does not pin DlinkedList
-/// It's up to caller to ensure that any
-/// DListIterator constructed belongs to the
-/// correct DlinkedList and to ensure that
-/// DlinkedList is valid when DListIterator
-/// accesses data on it.
-class DListIterator {
-private:
-  friend class DLinkedList;
-  friend class UnorderedCollection;
-
-private:
-  /// PMem pointer to current Record
-  PMEMAllocator *p_pmem_allocator_;
-  /// Current position
-  DLRecord *pmp_curr_;
-
-public:
-  /// It's up to caller to provide correct PMem pointer
-  /// and PMemAllocator to construct a DListIterator
-  explicit DListIterator(PMEMAllocator *p_pmem_allocator, DLRecord *curr)
-      : p_pmem_allocator_{p_pmem_allocator}, pmp_curr_{curr} {}
-
-  DListIterator(DListIterator const &other)
-      : p_pmem_allocator_{other.p_pmem_allocator_}, pmp_curr_(other.pmp_curr_) {
-  }
-
-  /// Conversion to bool
-  /// Returns true if the iterator is on some DlinkedList
-  inline bool valid() const {
-    if (!pmp_curr_) {
-      return false;
-    }
-    switch (static_cast<RecordType>(pmp_curr_->entry.meta.type)) {
-    case RecordType::DlistDataRecord:
-    case RecordType::DlistHeadRecord:
-    case RecordType::DlistTailRecord: {
-      return true;
-    }
-    case RecordType::DlistRecord:
-    default: {
-      return false;
-    }
-    }
-  }
-
-  inline operator bool() const { return valid(); }
-
-  /// Increment and Decrement operators
-  DListIterator &operator++() {
-    pmp_curr_ = getPmpNext();
-    return *this;
-  }
-
-  DListIterator operator++(int) {
-    DListIterator old{*this};
-    this->operator++();
-    return old;
-  }
-
-  DListIterator &operator--() {
-    pmp_curr_ = getPmpPrev();
-    return *this;
-  }
-
-  DListIterator operator--(int) {
-    DListIterator old{*this};
-    this->operator--();
-    return old;
-  }
-
-  DLRecord &operator*() { return *pmp_curr_; }
-
-  DLRecord *operator->() { return pmp_curr_; }
-
-  friend bool operator==(DListIterator lhs, DListIterator rhs) {
-    assert(lhs.p_pmem_allocator_ == rhs.p_pmem_allocator_);
-    return lhs.pmp_curr_ == rhs.pmp_curr_;
-  }
-
-  friend bool operator!=(DListIterator lhs, DListIterator rhs) {
-    return !(lhs == rhs);
-  }
-
-private:
-  inline DLRecord *getPmpNext() const {
-    return p_pmem_allocator_->offset2addr_checked<DLRecord>(pmp_curr_->next);
-  }
-
-  inline DLRecord *getPmpPrev() const {
-    return p_pmem_allocator_->offset2addr_checked<DLRecord>(pmp_curr_->prev);
-  }
-
-public:
-  inline std::uint64_t GetOffset() const {
-    return p_pmem_allocator_->addr2offset_checked(pmp_curr_);
-  }
-};
+using StringView = pmem::obj::string_view;
+using OffsetType = std::uint64_t;
+using TimeStampType = std::uint64_t;
 } // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
@@ -135,81 +40,180 @@ namespace KVDK_NAMESPACE {
 /// if shutdown happens when new record is being emplaced.
 /// DLinkedList does not deallocate records. Deallocation is done by caller
 /// Locking is done by caller at HashTable
+template <RecordType HeadType, RecordType TailType, RecordType DataType>
 class DLinkedList {
+public:
+  /// It's up to caller to ensure that any
+  /// iterator constructed belongs to the
+  /// correct DlinkedList and to ensure that
+  /// DlinkedList is valid when iterator
+  /// accesses data on it.
+  class iterator {
+  private:
+    friend class DLinkedList;
+
+  private:
+    /// PMem pointer to current Record
+    PMEMAllocator *pmem_allocator_ptr;
+    /// Current position
+    DLRecord *current_pmmptr;
+
+  public:
+    /// It's up to caller to provide correct PMem pointer
+    /// and PMemAllocator to construct a iterator
+    explicit iterator(PMEMAllocator *p_pmem_allocator, DLRecord *curr)
+        : pmem_allocator_ptr{p_pmem_allocator}, current_pmmptr{curr} {}
+
+    iterator(iterator const &other)
+        : pmem_allocator_ptr{other.pmem_allocator_ptr},
+          current_pmmptr(other.current_pmmptr) {}
+
+    /// Conversion to bool
+    /// Returns true if the iterator is on some DlinkedList
+    inline bool valid() const {
+      if (!current_pmmptr) {
+        return false;
+      }
+      switch (static_cast<RecordType>(current_pmmptr->entry.meta.type)) {
+      case HeadType:
+      case TailType:
+      case DataType: {
+        return true;
+      }
+      default: {
+        return false;
+      }
+      }
+    }
+
+    inline operator bool() const { return valid(); }
+
+    /// Increment and Decrement operators
+    iterator &operator++() {
+      current_pmmptr = getNextAddress();
+      return *this;
+    }
+
+    iterator operator++(int) {
+      iterator old{*this};
+      this->operator++();
+      return old;
+    }
+
+    iterator &operator--() {
+      current_pmmptr = getPrevAddress();
+      return *this;
+    }
+
+    iterator operator--(int) {
+      iterator old{*this};
+      this->operator--();
+      return old;
+    }
+
+    DLRecord &operator*() { return *current_pmmptr; }
+
+    DLRecord *operator->() { return current_pmmptr; }
+
+    friend bool operator==(iterator lhs, iterator rhs) {
+      assert(lhs.pmem_allocator_ptr == rhs.pmem_allocator_ptr);
+      return lhs.current_pmmptr == rhs.current_pmmptr;
+    }
+
+    friend bool operator!=(iterator lhs, iterator rhs) { return !(lhs == rhs); }
+
+  private:
+    inline DLRecord *getNextAddress() const {
+      return pmem_allocator_ptr->offset2addr_checked<DLRecord>(
+          current_pmmptr->next);
+    }
+
+    inline DLRecord *getPrevAddress() const {
+      return pmem_allocator_ptr->offset2addr_checked<DLRecord>(
+          current_pmmptr->prev);
+    }
+
+  public:
+    inline OffsetType GetCurrentOffset() const {
+      return pmem_allocator_ptr->addr2offset_checked(current_pmmptr);
+    }
+
+    inline DLRecord *GetCurrentAddress() const { return current_pmmptr; }
+  };
+
 private:
   /// Allocator for allocating space for new nodes,
   /// as well as for deallocating space to delete nodes
-  PMEMAllocator *p_pmem_allocator_;
+  PMEMAllocator *pmem_allocator_ptr;
   /// PMem pointer(pmp) to head node on PMem
-  DLRecord *pmp_head_;
+  DLRecord *head_pmmptr;
   /// PMem pointer(pmp) to tail node on PMem
-  DLRecord *pmp_tail_;
+  DLRecord *tail_pmmptr;
 
-  friend class DListIterator;
   friend class UnorderedCollection;
   friend class UnorderedIterator;
 
-  static constexpr std::uint64_t NullPMemOffset = kNullPmemOffset;
+  static constexpr OffsetType NullPMemOffset = kNullPmemOffset;
 
 public:
   /// Create DLinkedList and construct head and tail node on PMem.
   /// Caller supplied key and value are stored in head and tail nodes
-  DLinkedList(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
-              std::uint64_t timestamp, pmem::obj::string_view const key,
-              pmem::obj::string_view const value)
-      : p_pmem_allocator_{sp_pmem_allocator.get()}, pmp_head_{nullptr},
-        pmp_tail_{nullptr} {
+  DLinkedList(std::shared_ptr<PMEMAllocator> pmem_allocator_shrdptr,
+              TimeStampType timestamp, StringView const key,
+              StringView const value)
+      : pmem_allocator_ptr{pmem_allocator_shrdptr.get()}, head_pmmptr{nullptr},
+        tail_pmmptr{nullptr} {
     // head and tail can hold any key and value supplied by caller.
-    auto space_head = p_pmem_allocator_->Allocate(sizeof(DLRecord) +
-                                                  key.size() + value.size());
-    if (space_head.size == 0) {
+    auto head_space_entry = pmem_allocator_ptr->Allocate(
+        sizeof(DLRecord) + key.size() + value.size());
+    if (head_space_entry.size == 0) {
       throw std::bad_alloc{};
     }
-    auto space_tail = p_pmem_allocator_->Allocate(sizeof(DLRecord) +
-                                                  key.size() + value.size());
-    if (space_tail.size == 0) {
-      p_pmem_allocator_->Free(space_head);
+    auto tail_space_entry = pmem_allocator_ptr->Allocate(
+        sizeof(DLRecord) + key.size() + value.size());
+    if (tail_space_entry.size == 0) {
+      pmem_allocator_ptr->Free(head_space_entry);
       throw std::bad_alloc{};
     }
 
-    std::uint64_t offset_head = space_head.space_entry.offset;
-    std::uint64_t offset_tail = space_tail.space_entry.offset;
-    void *pmp_head = p_pmem_allocator_->offset2addr_checked(offset_head);
-    void *pmp_tail = p_pmem_allocator_->offset2addr_checked(offset_tail);
+    OffsetType head_offset = head_space_entry.space_entry.offset;
+    OffsetType tail_offset = tail_space_entry.space_entry.offset;
 
     // Persist tail first then head
     // If only tail is persisted then it can be deallocated by caller at
     // recovery
-    pmp_tail_ = DLRecord::PersistDLRecord(
-        pmp_tail, space_tail.size, timestamp, RecordType::DlistTailRecord,
-        offset_head, NullPMemOffset, key, value);
-    pmp_head_ = DLRecord::PersistDLRecord(
-        pmp_head, space_head.size, timestamp, RecordType::DlistHeadRecord,
-        NullPMemOffset, offset_tail, key, value);
+    tail_pmmptr = DLRecord::PersistDLRecord(
+        pmem_allocator_ptr->offset2addr_checked(tail_offset),
+        tail_space_entry.size, timestamp, TailType, head_offset, NullPMemOffset,
+        key, value);
+    head_pmmptr = DLRecord::PersistDLRecord(
+        pmem_allocator_ptr->offset2addr_checked(head_offset),
+        head_space_entry.size, timestamp, HeadType, NullPMemOffset, tail_offset,
+        key, value);
   }
 
   /// Create DLinkedList from existing head and tail node. Used for recovery.
-  /// If from head to tail node is not forward linked, throw.
-  DLinkedList(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
-              DLRecord *pmp_head, DLRecord *pmp_tail)
-      : p_pmem_allocator_{sp_pmem_allocator.get()}, pmp_head_{pmp_head},
-        pmp_tail_{pmp_tail} {
-#if DEBUG_LEVEL > 0
+  /// If from head to tail node is not forward linked, assertion fails.
+  DLinkedList(std::shared_ptr<PMEMAllocator> pmem_allocator_shrdptr,
+              DLRecord *head_pmmptr, DLRecord *tail_pmmptr)
+      : pmem_allocator_ptr{pmem_allocator_shrdptr.get()},
+        head_pmmptr{head_pmmptr}, tail_pmmptr{tail_pmmptr} {
+#if DEBUG_LEVEL >= 0
     {
-      kvdk_assert(pmp_head->entry.meta.type == RecordType::DlistHeadRecord,
+      kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
                   "Cannot rebuild a DlinkedList from given PMem pointer "
-                  "not pointing to a DlistHeadRecord!");
-      DListIterator curr{p_pmem_allocator_, pmp_head};
+                  "not pointing to a valid Head Record!");
+      iterator curr{pmem_allocator_ptr, head_pmmptr};
       ++curr;
 
       while (true) {
         switch (static_cast<RecordType>(curr->entry.meta.type)) {
-        case RecordType::DlistDataRecord: {
-          DListIterator next{curr};
+        case DataType: {
+          iterator next{curr};
           ++next;
-          DListIterator prev{curr};
+          iterator prev{curr};
           --prev;
-          std::uint64_t offset_curr = curr.GetOffset();
+          OffsetType offset_curr = curr.GetCurrentOffset();
           kvdk_assert(next->prev == offset_curr,
                       "Found broken linkage when rebuilding DLinkedList!");
           kvdk_assert(prev->next == offset_curr,
@@ -217,17 +221,15 @@ public:
           ++curr;
           continue;
         }
-        case RecordType::DlistTailRecord: {
-          kvdk_assert(curr.pmp_curr_ == pmp_tail,
+        case TailType: {
+          kvdk_assert(curr.GetCurrentAddress() == tail_pmmptr,
                       "Unmatched head and tail when rebuilding a DlinkedList!");
           return;
         }
-        case RecordType::DlistHeadRecord:
-        case RecordType::DlistRecord:
         default: {
           kvdk_assert(false,
                       "Invalid Record met when rebuilding a DlinkedList!");
-          exit(1);
+          std::abort();
         }
         }
       }
@@ -235,38 +237,40 @@ public:
 #endif // DEBUG_LEVEL > 0
   }
 
-  // pmp_head_ and pmp_tail_ points to persisted Record of Head and Tail on
-  // PMem No need to delete anything
+  // head_pmmptr and tail_pmmptr points to persisted Record of Head and Tail on
+  // PMem.
+  // No need to delete anything
   ~DLinkedList() = default;
 
-  // Not checked yet, may return Tail()
-  DListIterator First() {
-    DListIterator ret{p_pmem_allocator_, pmp_head_};
-    assert(ret.valid());
+  iterator First() {
+    iterator ret{pmem_allocator_ptr, head_pmmptr};
     ++ret;
+    kvdk_assert(ret->entry.meta.type == DataType,
+                "Calling First on empty DlinkedList!");
     return ret;
   }
 
-  // Not checked yet, may return Head()
-  DListIterator Last() {
-    DListIterator ret{p_pmem_allocator_, pmp_tail_};
-    assert(ret.valid());
+  iterator Last() {
+    iterator ret{pmem_allocator_ptr, tail_pmmptr};
     --ret;
+    kvdk_assert(ret->entry.meta.type == DataType,
+                "Calling Last on empty DlinkedList!");
     return ret;
   }
 
-  DListIterator Head() { return DListIterator{p_pmem_allocator_, pmp_head_}; }
+  iterator Head() { return iterator{pmem_allocator_ptr, head_pmmptr}; }
 
-  DListIterator Tail() { return DListIterator{p_pmem_allocator_, pmp_tail_}; }
+  iterator Tail() { return iterator{pmem_allocator_ptr, tail_pmmptr}; }
 
   /// Helper function to deallocate Record, called only by caller
-  inline static void Deallocate(DListIterator iter) {
-    // TODO jiayu: for update, no need to padding
+  inline static void Deallocate(iterator iter) {
+    /// TODO: jiayu: for update, no need to padding
+    /// No padding may arise issues
     iter->entry.meta.type = RecordType::Padding;
-    pmem_persist(iter.pmp_curr_, sizeof(DLRecord));
-    iter.p_pmem_allocator_->Free(SizedSpaceEntry{iter.GetOffset(),
-                                                 iter->entry.header.record_size,
-                                                 iter->entry.meta.timestamp});
+    pmem_persist(iter.current_pmmptr, sizeof(DLRecord));
+    iter.pmem_allocator_ptr->Free(
+        SizedSpaceEntry{iter.GetCurrentOffset(), iter->entry.header.record_size,
+                        iter->entry.meta.timestamp});
   }
 
   /// Emplace between iter_prev and iter_next, linkage not checked
@@ -277,46 +281,44 @@ public:
   ///     2) entry emplaced but not linked
   ///     3) entry emplaced and linked in the forward direction
   ///     4) entry emplaced and linked in both directions
-  inline DListIterator EmplaceBetween(
-      DListIterator iter_prev, DListIterator iter_next,
-      std::uint64_t timestamp, // Timestamp can only be supplied by caller
-      pmem::obj::string_view const key, pmem::obj::string_view const value,
-      RecordType type) {
-    kvdk_assert(type == RecordType::DlistDataRecord,
-                "Trying to emplace invalid Record!");
+  inline iterator EmplaceBetween(
+      iterator iter_prev, iterator iter_next,
+      TimeStampType timestamp, // Timestamp can only be supplied by caller
+      StringView const key, StringView const value, RecordType type) {
+    kvdk_assert(type == DataType, "Trying to emplace invalid Record!");
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
 
-    auto space = p_pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
-                                             value.size());
+    auto space = pmem_allocator_ptr->Allocate(sizeof(DLRecord) + key.size() +
+                                              value.size());
     if (space.size == 0) {
       throw std::bad_alloc{};
     }
     std::uint64_t offset = space.space_entry.offset;
-    void *pmp = p_pmem_allocator_->offset2addr_checked(offset);
+    void *pmp = pmem_allocator_ptr->offset2addr_checked(offset);
 
     DLRecord *record = DLRecord::PersistDLRecord(
-        pmp, space.size, timestamp, type, iter_prev.GetOffset(),
-        iter_next.GetOffset(), key, value);
+        pmp, space.size, timestamp, type, iter_prev.GetCurrentOffset(),
+        iter_next.GetCurrentOffset(), key, value);
 
     iter_prev->next = offset;
     pmem_persist(&iter_prev->next, 8);
     iter_next->prev = offset;
     pmem_persist(&iter_next->prev, 8);
 
-    return DListIterator{p_pmem_allocator_, record};
+    return iterator{pmem_allocator_ptr, record};
   }
 
   // Connect prev and next of node addressed by iter_record_to_erase,
   // logically delete this record by de-link it.
   // Return iterator at next node.
-  inline DListIterator Erase(DListIterator iter_record_to_erase) {
-    DListIterator iter_prev{iter_record_to_erase};
+  inline iterator Erase(iterator iter_record_to_erase) {
+    iterator iter_prev{iter_record_to_erase};
     --iter_prev;
-    DListIterator iter_next{iter_record_to_erase};
+    iterator iter_next{iter_record_to_erase};
     ++iter_next;
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
-    auto prev_offset = iter_prev.GetOffset();
-    auto next_offset = iter_next.GetOffset();
+    auto prev_offset = iter_prev.GetCurrentOffset();
+    auto next_offset = iter_next.GetCurrentOffset();
     iter_prev->next = next_offset;
     pmem_persist(&iter_prev->next, sizeof(next_offset));
     iter_next->prev = prev_offset;
@@ -329,17 +331,15 @@ private:
   /// Extract user-key from internal-key used by the collection.
   /// Internal key has 8-byte ID as prefix.
   /// User-key does not have that ID.
-  inline static pmem::obj::string_view
-  extractKey(pmem::obj::string_view internal_key) {
+  inline static StringView extractKey(StringView internal_key) {
     constexpr size_t sz_id = 8;
     assert(sz_id <= internal_key.size() &&
            "internal_key does not has space for key");
-    return pmem::obj::string_view(internal_key.data() + sz_id,
-                                  internal_key.size() - sz_id);
+    return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
   }
 
   /// Extract ID from internal-key
-  inline static std::uint64_t extractID(pmem::obj::string_view internal_key) {
+  inline static std::uint64_t extractID(StringView internal_key) {
     std::uint64_t id;
     assert(sizeof(decltype(id)) <= internal_key.size() &&
            "internal_key is smaller than the size of an id!");
@@ -350,14 +350,12 @@ private:
   /// Output DlinkedList to ostream for debugging purpose.
   friend std::ostream &operator<<(std::ostream &out, DLinkedList const &dlist) {
     out << "Contents of DlinkedList:\n";
-    DListIterator iter =
-        DListIterator{dlist.p_pmem_allocator_, dlist.pmp_head_};
-    DListIterator iter_end =
-        DListIterator{dlist.p_pmem_allocator_, dlist.pmp_tail_};
+    iterator iter = iterator{dlist.pmem_allocator_ptr, dlist.head_pmmptr};
+    iterator iter_end = iterator{dlist.pmem_allocator_ptr, dlist.tail_pmmptr};
     while (iter != iter_end) {
       auto internal_key = iter->Key();
       out << "Type: " << hex_print(iter->entry.meta.type) << "\t"
-          << "Offset: " << hex_print(iter.GetOffset()) << "\t"
+          << "Offset: " << hex_print(iter.GetCurrentOffset()) << "\t"
           << "Prev: " << hex_print(iter->prev) << "\t"
           << "Next: " << hex_print(iter->next) << "\t"
           << "Key: " << hex_print(extractID(internal_key))
@@ -367,7 +365,7 @@ private:
     }
     auto internal_key = iter->Key();
     out << "Type: " << hex_print(iter->entry.meta.type) << "\t"
-        << "Offset: " << hex_print(iter.GetOffset()) << "\t"
+        << "Offset: " << hex_print(iter.GetCurrentOffset()) << "\t"
         << "Prev: " << hex_print(iter->prev) << "\t"
         << "Next: " << hex_print(iter->next) << "\t"
         << "Key: " << hex_print(extractID(internal_key))

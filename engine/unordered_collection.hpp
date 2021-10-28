@@ -61,13 +61,16 @@ private:
   /// For locking, locking only
   std::shared_ptr<HashTable> sp_hash_table_;
 
-  PMEMAllocator *p_pmem_allocator_;
+  PMEMAllocator *pmem_allocator_ptr;
 
   /// DlistRecord for recovering
   DLRecord *pmp_dlist_record_;
 
   /// DLinkedList manages data on PMem, also hold a PMemAllocator
-  DLinkedList dlinked_list_;
+  using DLinkedListType =
+      DLinkedList<RecordType::DlistHeadRecord, RecordType::DlistTailRecord,
+                  RecordType::DlistDataRecord>;
+  DLinkedListType dlinked_list_;
 
   std::string name_;
   std::uint64_t id_;
@@ -101,8 +104,7 @@ public:
   /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
   /// lock must been acquired before passed in
   EmplaceReturn EmplaceBefore(DLRecord *pmp, std::uint64_t timestamp,
-                              pmem::obj::string_view const key,
-                              pmem::obj::string_view const value,
+                              StringView const key, StringView const value,
                               RecordType type,
                               std::unique_lock<SpinMutex> const &lock);
 
@@ -110,33 +112,28 @@ public:
   /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
   /// lock must been acquired before passed in
   EmplaceReturn EmplaceAfter(DLRecord *pmp, std::uint64_t timestamp,
-                             pmem::obj::string_view const key,
-                             pmem::obj::string_view const value,
+                             StringView const key, StringView const value,
                              RecordType type,
                              std::unique_lock<SpinMutex> const &lock);
 
   /// Emplace after Head()
   /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
   /// lock must been acquired before passed in
-  EmplaceReturn EmplaceFront(std::uint64_t timestamp,
-                             pmem::obj::string_view const key,
-                             pmem::obj::string_view const value,
-                             RecordType type,
+  EmplaceReturn EmplaceFront(std::uint64_t timestamp, StringView const key,
+                             StringView const value, RecordType type,
                              std::unique_lock<SpinMutex> const &lock);
 
   /// Emplace before Tail()
   /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
   /// lock must been acquired before passed in
-  EmplaceReturn EmplaceBack(std::uint64_t timestamp,
-                            pmem::obj::string_view const key,
-                            pmem::obj::string_view const value, RecordType type,
+  EmplaceReturn EmplaceBack(std::uint64_t timestamp, StringView const key,
+                            StringView const value, RecordType type,
                             std::unique_lock<SpinMutex> const &lock);
 
   /// key is also checked to match old key
   EmplaceReturn Replace(DLRecord *pmp_record_to_replace,
-                        std::uint64_t timestamp,
-                        pmem::obj::string_view const key,
-                        pmem::obj::string_view const value, RecordType type,
+                        std::uint64_t timestamp, StringView const key,
+                        StringView const value, RecordType type,
                         std::unique_lock<SpinMutex> const &lock);
 
   /// Erase given record
@@ -149,11 +146,13 @@ public:
   /// Emplace functions does not do deallocations.
   inline static void Deallocate(DLRecord *pmp,
                                 PMEMAllocator *p_pmem_allocator) {
-    DLinkedList::Deallocate(DListIterator{p_pmem_allocator, pmp});
+    DLinkedListType::Deallocate(
+        DLinkedListType::iterator{p_pmem_allocator, pmp});
   }
 
   inline void Deallocate(DLRecord *pmp) {
-    DLinkedList::Deallocate(DListIterator{p_pmem_allocator_, pmp});
+    DLinkedListType::Deallocate(
+        DLinkedListType::iterator{pmem_allocator_ptr, pmp});
   }
 
   inline std::uint64_t ID() const { return id_; }
@@ -162,7 +161,7 @@ public:
 
   inline std::uint64_t Timestamp() const { return time_stamp_; };
 
-  inline std::string GetInternalKey(pmem::obj::string_view key) {
+  inline std::string GetInternalKey(StringView key) {
     return makeInternalKey(id_, key);
   }
 
@@ -184,8 +183,7 @@ public:
 private:
   EmplaceReturn emplaceBetween(
       DLRecord *pmp_prev, DLRecord *pmp_next, std::uint64_t timestamp,
-      pmem::obj::string_view const key, pmem::obj::string_view const value,
-      RecordType type,
+      StringView const key, StringView const value, RecordType type,
       std::unique_lock<SpinMutex> const &lock, // lock already acquired
       bool check_linkage // Whether to check linkage after acquiring locks.
   );
@@ -204,24 +202,21 @@ private:
     kvdk_assert(lock.owns_lock(), "User supplied lock not acquired!");
   }
 
-  inline static std::string makeInternalKey(std::uint64_t id,
-                                            pmem::obj::string_view key) {
+  inline static std::string makeInternalKey(std::uint64_t id, StringView key) {
     std::string internal_key{id2View(id)};
     internal_key += key;
     return internal_key;
   }
 
-  inline static pmem::obj::string_view
-  extractKey(pmem::obj::string_view internal_key) {
+  inline static StringView extractKey(StringView internal_key) {
     constexpr size_t sz_id = sizeof(decltype(id_));
     // Allow empty string as key
     assert(sz_id <= internal_key.size() &&
            "internal_key does not has space for key");
-    return pmem::obj::string_view(internal_key.data() + sz_id,
-                                  internal_key.size() - sz_id);
+    return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
   }
 
-  inline static std::uint64_t extractID(pmem::obj::string_view internal_key) {
+  inline static std::uint64_t extractID(StringView internal_key) {
     std::uint64_t id;
     assert(sizeof(decltype(id)) <= internal_key.size() &&
            "internal_key is smaller than the size of an id!");
@@ -229,15 +224,15 @@ private:
     return id;
   }
 
-  inline static pmem::obj::string_view id2View(std::uint64_t id) {
+  inline static StringView id2View(std::uint64_t id) {
     // Thread local copy to prevent variable destruction
     thread_local uint64_t id_copy;
     id_copy = id;
-    return pmem::obj::string_view{reinterpret_cast<char *>(&id_copy),
-                                  sizeof(decltype(id_copy))};
+    return StringView{reinterpret_cast<char *>(&id_copy),
+                      sizeof(decltype(id_copy))};
   }
 
-  inline static std::uint64_t view2ID(pmem::obj::string_view view) {
+  inline static std::uint64_t view2ID(StringView view) {
     std::uint64_t id;
     assert(sizeof(decltype(id)) == view.size() &&
            "id_view does not match the size of an id!");
@@ -245,7 +240,7 @@ private:
     return id;
   }
 
-  inline SpinMutex *getMutex(pmem::obj::string_view internal_key) {
+  inline SpinMutex *getMutex(StringView internal_key) {
     return sp_hash_table_->GetHint(internal_key).spin;
   }
 
@@ -292,7 +287,11 @@ class UnorderedIterator final : public Iterator {
 private:
   /// shared pointer to pin the UnorderedCollection
   std::shared_ptr<UnorderedCollection> sp_collection_;
-  DListIterator internal_iterator_;
+  using DLinkedListType =
+      DLinkedList<RecordType::DlistHeadRecord, RecordType::DlistTailRecord,
+                  RecordType::DlistDataRecord>;
+
+  DLinkedListType::iterator internal_iterator_;
   /// Whether the UnorderedIterator is at a DlistDataRecord
   bool valid_;
 
