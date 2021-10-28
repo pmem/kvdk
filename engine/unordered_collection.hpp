@@ -22,18 +22,18 @@ namespace KVDK_NAMESPACE {
 
 struct EmplaceReturn {
   // Offset of newly emplaced Record
-  std::uint64_t offset_new;
+  PMemOffsetType offset_new;
   // Offset of old Record for Replace. Otherwise set as FailOffset
-  std::uint64_t offset_old;
+  PMemOffsetType offset_old;
   bool success;
 
   explicit EmplaceReturn()
       : offset_new{FailOffset}, offset_old{FailOffset}, success{false} {}
 
-  explicit EmplaceReturn(std::uint64_t offset_new_, std::uint64_t offset_old_,
+  explicit EmplaceReturn(PMemOffsetType offset_new_, PMemOffsetType offset_old_,
                          bool emplace_result)
-      : offset_new{offset_new_}, offset_old{offset_old_}, success{
-                                                              emplace_result} {}
+      : offset_new{offset_new_}, offset_old{offset_old_}, 
+        success{emplace_result} {}
 
   EmplaceReturn &operator=(EmplaceReturn const &other) {
     offset_new = other.offset_new;
@@ -42,9 +42,8 @@ struct EmplaceReturn {
     return *this;
   }
 
-  static constexpr std::uint64_t FailOffset = kNullPmemOffset;
+  static constexpr PMemOffsetType FailOffset = kNullPmemOffset;
 };
-
 } // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
@@ -61,116 +60,106 @@ class UnorderedIterator;
 class UnorderedCollection final
     : public std::enable_shared_from_this<UnorderedCollection> {
 private:
-  /// For locking, locking only
-  std::shared_ptr<HashTable> sp_hash_table_;
+  using LockType = std::unique_lock<SpinMutex>;
+  using LockPair = std::pair<LockType, LockType>;
 
-  PMEMAllocator *pmem_allocator_ptr;
+  /// For locking, locking only
+  static HashTable* hash_table_ptr;
 
   /// DlistRecord for recovering
-  DLRecord *pmp_dlist_record_;
+  DLRecord *collection_record_ptr;
 
   /// DLinkedList manages data on PMem, also hold a PMemAllocator
   using DLinkedListType =
       DLinkedList<RecordType::DlistHeadRecord, RecordType::DlistTailRecord,
                   RecordType::DlistDataRecord>;
-  DLinkedListType dlinked_list_;
+  using iterator = DLinkedListType::iterator;
+  DLinkedListType dlinked_list;
 
-  std::string name_;
-  std::uint64_t id_;
-  std::uint64_t time_stamp_;
+  std::string collection_name;
+  CollectionIDType collection_id;
+  TimeStampType timestamp;
 
   friend class UnorderedIterator;
 
 public:
+  static void SetPMemAllocatorPtr(PMEMAllocator* ptr)
+  {
+    DLinkedListType::SetPMemAllocatorPtr(ptr);
+  }
+
+  static void SetHashTablePtr(HashTable* ptr)
+  {
+    hash_table_ptr = ptr;
+  }
+
   /// Create UnorderedCollection and persist it on PMem
   /// DlistHeadRecord and DlistTailRecord holds ID as key
   /// and empty string as value
   /// DlistRecord holds collection name as key
   /// and ID as value
-  UnorderedCollection(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
-                      std::shared_ptr<HashTable> sp_hash_table,
-                      std::string const &name, std::uint64_t id,
-                      std::uint64_t timestamp);
+  UnorderedCollection(std::string const name, 
+                      CollectionIDType id,
+                      TimeStampType timestamp);
 
   /// Recover UnorderedCollection from DLIST_RECORD
-  UnorderedCollection(std::shared_ptr<PMEMAllocator> sp_pmem_allocator,
-                      std::shared_ptr<HashTable> sp_hash_table,
-                      DLRecord *pmp_dlist_record);
+  UnorderedCollection(DLRecord *collection_record);
 
-  /// Create UnorderedIterator and SeekToFirst()
-  UnorderedIterator First();
-
-  /// Create UnorderedIterator and SeekToLast()
-  UnorderedIterator Last();
-
-  /// Emplace before pmp
+  /// Emplace Functions:
   /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
-  /// lock must been acquired before passed in
-  EmplaceReturn EmplaceBefore(DLRecord *pmp, std::uint64_t timestamp,
+  /// lock to emplaced node must been acquired before being passed in
+  ///
+  /// Emplace before pmp
+  EmplaceReturn EmplaceBefore(DLRecord *pos, std::uint64_t timestamp,
                               StringView const key, StringView const value,
-                              RecordType type,
-                              std::unique_lock<SpinMutex> const &lock);
+                              LockType const &lock);
 
   /// Emplace after pmp
-  /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
-  /// lock must been acquired before passed in
-  EmplaceReturn EmplaceAfter(DLRecord *pmp, std::uint64_t timestamp,
+  EmplaceReturn EmplaceAfter(DLRecord *pos, std::uint64_t timestamp,
                              StringView const key, StringView const value,
-                             RecordType type,
-                             std::unique_lock<SpinMutex> const &lock);
+                             LockType const &lock);
 
   /// Emplace after Head()
-  /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
-  /// lock must been acquired before passed in
   EmplaceReturn EmplaceFront(std::uint64_t timestamp, StringView const key,
-                             StringView const value, RecordType type,
-                             std::unique_lock<SpinMutex> const &lock);
+                             StringView const value,
+                             LockType const &lock);
 
   /// Emplace before Tail()
-  /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
-  /// lock must been acquired before passed in
   EmplaceReturn EmplaceBack(std::uint64_t timestamp, StringView const key,
-                            StringView const value, RecordType type,
-                            std::unique_lock<SpinMutex> const &lock);
+                            StringView const value,
+                            LockType const &lock);
 
   /// key is also checked to match old key
-  EmplaceReturn Replace(DLRecord *pmp_record_to_replace,
+  EmplaceReturn Replace(DLRecord *pos,
                         std::uint64_t timestamp, StringView const key,
-                        StringView const value, RecordType type,
-                        std::unique_lock<SpinMutex> const &lock);
+                        StringView const value,
+                        LockType const &lock);
 
   /// Erase given record
   /// Return new_offset as next record
   /// old_offset as erased record
-  EmplaceReturn Erase(DLRecord *pmp_record_to_delete,
-                      std::unique_lock<SpinMutex> const &lock);
+  EmplaceReturn Erase(DLRecord *pos,
+                      LockType const &lock);
 
   /// Deallocate a Record given by caller.
   /// Emplace functions does not do deallocations.
-  inline static void Deallocate(DLRecord *pmp,
-                                PMEMAllocator *p_pmem_allocator) {
-    DLinkedListType::Deallocate(
-        DLinkedListType::iterator{p_pmem_allocator, pmp});
+  inline static void Deallocate(DLRecord *pmp) {
+    DLinkedListType::Deallocate(iterator{pmp});
   }
 
-  inline void Deallocate(DLRecord *pmp) {
-    DLinkedListType::Deallocate(
-        DLinkedListType::iterator{pmem_allocator_ptr, pmp});
-  }
+  inline std::uint64_t ID() const { return collection_id; }
 
-  inline std::uint64_t ID() const { return id_; }
+  inline std::string const &Name() const { return collection_name; }
 
-  inline std::string const &Name() const { return name_; }
-
-  inline std::uint64_t Timestamp() const { return time_stamp_; };
+  inline std::uint64_t Timestamp() const { return timestamp; };
 
   inline std::string GetInternalKey(StringView key) {
-    return makeInternalKey(id_, key);
+    return makeInternalKey(collection_id, key);
   }
 
   friend std::ostream &operator<<(std::ostream &out,
                                   UnorderedCollection const &col) {
-    auto iter = col.pmp_dlist_record_;
+    auto iter = col.collection_record_ptr;
     auto internal_key = iter->Key();
     out << "Name: " << col.Name() << "\t"
         << "ID: " << to_hex(col.ID()) << "\n";
@@ -179,30 +168,40 @@ public:
         << "Next: " << to_hex(iter->next) << "\t"
         << "Key: " << iter->Key() << "\t"
         << "Value: " << iter->Value() << "\n";
-    out << col.dlinked_list_;
+    out << col.dlinked_list;
     return out;
   }
 
 private:
-  EmplaceReturn emplaceBetween(
-      DLRecord *pmp_prev, DLRecord *pmp_next, std::uint64_t timestamp,
-      StringView const key, StringView const value, RecordType type,
-      std::unique_lock<SpinMutex> const &lock, // lock already acquired
-      bool check_linkage // Whether to check linkage after acquiring locks.
-  );
+  inline static bool lockPositions(iterator pos1, iterator pos2, LockType const& lock, LockPair& lock_holder)
+  {
+    SpinMutex *spin = lock.mutex();
+    SpinMutex *spin1 = getMutex(pos1->Key());
+    SpinMutex *spin2 = getMutex(pos2->Key());
 
-  // Check the type of Record to be emplaced.
-  inline static void checkEmplaceType(RecordType type) {
-    kvdk_assert(type == RecordType::DlistDataRecord,
-                "Trying to Emplace a Record with invalid type "
-                "in UnorderedCollection!");
+    kvdk_assert(lock.owns_lock(), "User supplied lock not acquired!")
+
+    if (spin1 != spin) {
+      lock_holder.first = LockType{*spin1, std::defer_lock};
+      if (!lock_holder.first.try_lock())
+        return false;
+    }
+    if (spin2 != spin && spin2 != spin1) {
+      lock_holder.second = LockType{*spin2, std::defer_lock};
+      if (!lock_holder.second.try_lock())
+        return false;
+    }
+    return true;
   }
 
-  // Check the spin of Record to be emplaced.
-  // Whether the spin is associated with the Record to be inserted should be
-  // checked by user.
-  inline static void checkLock(std::unique_lock<SpinMutex> const &lock) {
-    kvdk_assert(lock.owns_lock(), "User supplied lock not acquired!");
+  inline static bool isAdjacent(iterator prev, iterator next)
+  {
+    iterator curr{prev};
+    if (++curr != next)
+      return false;
+    if (--curr != prev)
+      return false; 
+    return true;
   }
 
   inline static std::string makeInternalKey(std::uint64_t id, StringView key) {
@@ -211,8 +210,12 @@ private:
     return internal_key;
   }
 
+  inline std::string makeInternalKey(StringView key) {
+    return makeInternalKey(collection_id, key);
+  }
+
   inline static StringView extractKey(StringView internal_key) {
-    constexpr size_t sz_id = sizeof(decltype(id_));
+    constexpr size_t sz_id = sizeof(decltype(collection_id));
     // Allow empty string as key
     assert(sz_id <= internal_key.size() &&
            "internal_key does not has space for key");
@@ -243,13 +246,13 @@ private:
     return id;
   }
 
-  inline SpinMutex *getMutex(StringView internal_key) {
-    return sp_hash_table_->GetHint(internal_key).spin;
+  inline static SpinMutex *getMutex(StringView internal_key) {
+    return hash_table_ptr->GetHint(internal_key).spin;
   }
 
   /// When User Call Emplace functions with parameter pmp
   /// pmp supplied maybe invalid
-  /// User should only supply pmp to DlistDataRecord
+  /// User should only supply pmp to DataType
   inline bool checkUserSuppliedPmp(DLRecord *pmp) {
     bool is_pmp_valid = false;
     switch (static_cast<RecordType>(pmp->entry.meta.type)) {
@@ -289,14 +292,15 @@ namespace KVDK_NAMESPACE {
 class UnorderedIterator final : public Iterator {
 private:
   /// shared pointer to pin the UnorderedCollection
-  std::shared_ptr<UnorderedCollection> sp_collection_;
+  std::shared_ptr<UnorderedCollection> collection_shrdptr;
   using DLinkedListType =
       DLinkedList<RecordType::DlistHeadRecord, RecordType::DlistTailRecord,
                   RecordType::DlistDataRecord>;
+  using iterator = DLinkedListType::iterator;
 
-  DLinkedListType::iterator internal_iterator_;
+  iterator internal_iterator;
   /// Whether the UnorderedIterator is at a DlistDataRecord
-  bool valid_;
+  bool valid;
 
   friend class UnorderedCollection;
 
@@ -319,20 +323,20 @@ public:
 
   /// UnorderedIterator currently does not support Seek to a key
   virtual void Seek(std::string const &key) final override {
-    kvdk_assert(false, "UnorderedIterator does not support Seek()!");
+    throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 
   /// Seek to First DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToFirst() final override {
-    internal_iterator_ = sp_collection_->dlinked_list_.Head();
+    internal_iterator = collection_shrdptr->dlinked_list.Head();
     internalNext();
   }
 
   /// Seek to Last DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToLast() final override {
-    internal_iterator_ = sp_collection_->dlinked_list_.Tail();
+    internal_iterator = collection_shrdptr->dlinked_list.Tail();
     internalPrev();
   }
 
@@ -340,12 +344,12 @@ public:
   /// DlistHeadRecord, DlistTailRecord is considered
   /// invalid. User should always check Valid() before accessing data with Key()
   /// and Value() Iterating with Next() and Prev()
-  inline virtual bool Valid() final override { return valid_; }
+  inline virtual bool Valid() final override { return valid; }
 
   /// Try proceeding to next DlistDataRecord.
   /// User should check Valid() before accessing data.
   /// Calling Next() on invalid UnorderedIterator will do nothing.
-  /// This prevents any further mistakes
+  /// This prevents any further misuses.
   virtual void Next() final override {
     if (Valid()) {
       internalNext();
@@ -356,7 +360,7 @@ public:
   /// Try proceeding to previous DlistDataRecord
   /// User should check Valid() before accessing data
   /// Calling Prev() on invalid UnorderedIterator will do nothing.
-  /// This prevents any further mistakes
+  /// This prevents any further misuses
   virtual void Prev() final override {
     if (Valid()) {
       internalPrev();
@@ -367,7 +371,7 @@ public:
   /// return key in DlistDataRecord
   inline virtual std::string Key() override {
     kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
-    auto view_key = UnorderedCollection::extractKey(internal_iterator_->Key());
+    auto view_key = UnorderedCollection::extractKey(internal_iterator->Key());
     return std::string(view_key.data(), view_key.size());
   }
 
@@ -375,7 +379,7 @@ public:
   /// throw runtime_error if !Valid()
   inline virtual std::string Value() override {
     kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
-    auto view_value = internal_iterator_->Value();
+    auto view_value = internal_iterator->Value();
     return std::string(view_value.data(), view_value.size());
   }
 

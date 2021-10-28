@@ -162,6 +162,10 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   s = Recovery();
   write_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
+
+  UnorderedCollection::SetHashTablePtr(hash_table_.get());
+  UnorderedCollection::SetPMemAllocatorPtr(pmem_allocator_.get());
+
   return s;
 }
 
@@ -1415,8 +1419,7 @@ std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
-      std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, name,
-                                            id, ts);
+      std::make_shared<UnorderedCollection>(name, id, ts);
   return sp_uncoll;
 }
 
@@ -1531,14 +1534,14 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
           // Emplace Front or Back according to hash to reduce lock contention
           if (hint_record.key_hash_value % 2 == 0)
             emplace_result = p_collection->EmplaceFront(
-                ts, key, value, RecordType::DlistDataRecord, lock_record);
+                ts, key, value, lock_record);
           else
             emplace_result = p_collection->EmplaceBack(
-                ts, key, value, RecordType::DlistDataRecord, lock_record);
+                ts, key, value, lock_record);
         } else {
           // Emplace at cached position
           emplace_result = p_collection->EmplaceBefore(
-              pmp_last_emplacement, ts, key, value, RecordType::DlistDataRecord,
+              pmp_last_emplacement, ts, key, value,
               lock_record);
         }
         break;
@@ -1549,8 +1552,7 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
                 hash_entry_record.offset);
 
         emplace_result =
-            p_collection->Replace(pmp_old_record, ts, key, value,
-                                  RecordType::DlistDataRecord, lock_record);
+            p_collection->Replace(pmp_old_record, ts, key, value, lock_record);
         if (emplace_result.success) {
           DLRecord *pmp_new_record =
               pmem_allocator_->offset2addr_checked<DLRecord>(
@@ -1676,8 +1678,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     std::lock_guard<std::mutex> lg{list_mu_};
     {
       std::shared_ptr<UnorderedCollection> sp_collection =
-          std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_,
-                                                pmp_record);
+          std::make_shared<UnorderedCollection>(pmp_record);
       p_collection = sp_collection.get();
       vec_sp_unordered_collections_.emplace_back(sp_collection);
     }
@@ -1755,18 +1756,18 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             pmp_record->entry.meta.type, offset_record,
                             HashOffsetType::UnorderedCollectionElement);
-        UnorderedCollection::Deallocate(pmp_old_record, pmem_allocator_.get());
+        UnorderedCollection::Deallocate(pmp_old_record);
       } else if (pmp_old_record->entry.meta.timestamp ==
                  pmp_record->entry.meta.timestamp) {
         GlobalLogger.Info("Met two DlistRecord with same timestamp");
-        UnorderedCollection::Deallocate(pmp_record, pmem_allocator_.get());
+        UnorderedCollection::Deallocate(pmp_record);
       } else {
         if (checkDLRecordLinkageRight((DLRecord *)pmp_record) ||
             checkDLRecordLinkageLeft((DLRecord *)pmp_record)) {
           assert(false && "Old record is linked in Dlinkedlist!");
           throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
         }
-        UnorderedCollection::Deallocate(pmp_record, pmem_allocator_.get());
+        UnorderedCollection::Deallocate(pmp_record);
       }
       return Status::Ok;
     }
