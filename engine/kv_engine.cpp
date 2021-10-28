@@ -896,8 +896,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
 Status KVEngine::SSetImpl(Skiplist *skiplist,
                           const pmem::obj::string_view &user_key,
                           const pmem::obj::string_view &value) {
-  uint64_t id = skiplist->id();
-  std::string collection_key(PersistentList::ListKey(user_key, id));
+  std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
@@ -1255,8 +1254,7 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
     return s;
   }
   assert(skiplist);
-  uint64_t id = skiplist->id();
-  std::string skiplist_key(PersistentList::ListKey(user_key, id));
+  std::string skiplist_key(skiplist->InternalKey(user_key));
   return HashGetImpl(skiplist_key, value, SortedDataRecord);
 }
 

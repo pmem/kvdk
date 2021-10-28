@@ -83,6 +83,16 @@ void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
   }
 }
 
+// Insert DLRecord "inserting" between "prev" and "next"
+void Skiplist::InsertDLRecord(DLRecord *prev, DLRecord *next,
+                              DLRecord *inserting) {
+  uint64_t inserting_record_offset = pmem_allocator_->addr2offset(inserting);
+  prev->next = inserting_record_offset;
+  pmem_persist(&prev->next, 8);
+  next->prev = inserting_record_offset;
+  pmem_persist(&next->prev, 8);
+}
+
 Status Skiplist::Rebuild() {
   Splice splice(this);
   HashEntry hash_entry;
@@ -290,47 +300,49 @@ bool Skiplist::FindInsertPos(Splice *splice,
   }
 }
 
-void Skiplist::DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
-                            SkiplistNode *dram_node) {
-  uint64_t deleting_offset = pmem_allocator_->addr2offset(deleting_record);
-  DLRecord *prev = delete_splice->prev_pmem_record;
-  DLRecord *next = delete_splice->next_pmem_record;
-  assert(prev->next == deleting_offset);
-  // For repair in recovery due to crashes during pointers changing, we should
-  // first unlink deleting entry from prev's next
-  prev->next = pmem_allocator_->addr2offset(next);
-  pmem_persist(&prev->next, 8);
-  assert(next != nullptr);
-  assert(next->prev == pmem_allocator_->addr2offset(deleting_record));
-  next->prev = pmem_allocator_->addr2offset(prev);
-  pmem_persist(&next->prev, 8);
-  deleting_record->Destroy();
-
-  if (dram_node) {
-    dram_node->MarkAsRemoved();
-  }
-}
-
-bool Skiplist::Insert(const pmem::obj::string_view &inserting_key,
+bool Skiplist::Insert(const pmem::obj::string_view &key,
                       const pmem::obj::string_view &value,
                       const SizedSpaceEntry &space_to_write, uint64_t timestamp,
                       SkiplistNode **dram_node, SpinMutex *inserting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindInsertPos(&splice, inserting_key, inserting_key_lock,
-                     &prev_record_lock)) {
+  if (!FindInsertPos(&splice, key, inserting_key_lock, &prev_record_lock)) {
     return false;
   }
 
-  std::string internal_key(InternalKey(inserting_key));
+  std::string internal_key(InternalKey(key));
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
-  DLRecord *pmem_record = DLRecord::PersistDLRecord(
+  DLRecord *new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
       space_to_write.size, timestamp, SortedDataRecord, prev_offset,
       next_offset, internal_key, value);
 
-  *dram_node = InsertRecord(&splice, pmem_record, inserting_key);
+  // link new record to PMem
+  InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
+
+  // create dram node for new record
+  auto height = Skiplist::RandomHeight();
+  if (height > 0) {
+    *dram_node = SkiplistNode::NewNode(key, new_record, height);
+    for (int i = 1; i <= height; i++) {
+      while (1) {
+        auto now_next = splice.prevs[i]->Next(i);
+        // if next has been changed or been deleted, re-compute
+        if (now_next.RawPointer() == splice.nexts[i] &&
+            now_next.GetTag() == 0) {
+          (*dram_node)->RelaxedSetNext(i, splice.nexts[i]);
+          if (splice.prevs[i]->CASNext(i, splice.nexts[i], *(dram_node))) {
+            break;
+          }
+        } else {
+          splice.Recompute(key, i);
+        }
+      }
+    }
+  } else {
+    *dram_node = nullptr;
+  }
   return true;
 }
 
@@ -349,11 +361,16 @@ bool Skiplist::Update(const pmem::obj::string_view &key,
   std::string internal_key(InternalKey(key));
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
-  DLRecord *pmem_record = DLRecord::PersistDLRecord(
+  DLRecord *new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
       space_to_write.size, timestamp, SortedDataRecord, prev_offset,
       next_offset, internal_key, value);
-  UpdateRecord(&splice, pmem_record, dram_node);
+
+  // link new record
+  InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
+  if (dram_node != nullptr) {
+    dram_node->record = new_record;
+  }
   return true;
 }
 
@@ -385,56 +402,6 @@ bool Skiplist::Delete(const pmem::obj::string_view &key,
     dram_node->MarkAsRemoved();
   }
   return true;
-}
-
-void Skiplist::UpdateRecord(Splice *update_splice, DLRecord *new_record,
-                            SkiplistNode *dram_node) {
-  uint64_t new_record_offset = pmem_allocator_->addr2offset(new_record);
-  DLRecord *prev = update_splice->prev_pmem_record;
-  DLRecord *next = update_splice->next_pmem_record;
-  prev->next = new_record_offset;
-  pmem_persist(&prev->next, 8);
-  next->prev = new_record_offset;
-  pmem_persist(&next->prev, 8);
-  if (dram_node != nullptr) {
-    dram_node->record = new_record;
-  }
-}
-
-SkiplistNode *Skiplist::InsertRecord(Splice *insert_splice,
-                                     DLRecord *new_record,
-                                     const pmem::obj::string_view &key) {
-  uint64_t new_record_offset = pmem_allocator_->addr2offset(new_record);
-  DLRecord *prev = insert_splice->prev_pmem_record;
-  DLRecord *next = insert_splice->next_pmem_record;
-  prev->next = new_record_offset;
-  pmem_persist(&prev->next, 8);
-  next->prev = new_record_offset;
-  pmem_persist(&next->prev, 8);
-
-  auto height = Skiplist::RandomHeight();
-  if (height > 0) {
-    SkiplistNode *dram_node = SkiplistNode::NewNode(key, new_record, height);
-    for (int i = 1; i <= height; i++) {
-      while (1) {
-        auto now_next = insert_splice->prevs[i]->Next(i);
-        // if next has been changed or been deleted, re-compute
-        if (now_next.RawPointer() == insert_splice->nexts[i] &&
-            now_next.GetTag() == 0) {
-          dram_node->RelaxedSetNext(i, insert_splice->nexts[i]);
-          if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
-                                               dram_node)) {
-            break;
-          }
-        } else {
-          insert_splice->Recompute(key, i);
-        }
-      }
-    }
-    return dram_node;
-  } else {
-    return nullptr;
-  }
 }
 
 void SortedIterator::Seek(const std::string &key) {

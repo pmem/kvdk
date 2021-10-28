@@ -247,15 +247,12 @@ public:
   bool Delete(const pmem::obj::string_view &key, DLRecord *deleted_record,
               SkiplistNode *dram_node, SpinMutex *deleting_key_lock);
 
-  // Remove "deleting_record" from dram and PMem part of the skiplist
-  void DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
-                    SkiplistNode *dram_node);
-
-  void UpdateRecord(Splice *update_splice, DLRecord *new_record,
-                    SkiplistNode *dram_node);
-
-  SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *new_record,
-                             const pmem::obj::string_view &key);
+  void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
+    std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
+    for (SkiplistNode *node : nodes) {
+      obsolete_nodes_.push_back(node);
+    }
+  }
 
   void PurgeObsoletedNodes() {
     std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
@@ -273,13 +270,6 @@ public:
   Status CheckConnection(int height);
 
 private:
-  void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
-    std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
-    for (SkiplistNode *node : nodes) {
-      obsolete_nodes_.push_back(node);
-    }
-  }
-
   // Insert DLRecord "inserting" between "prev" and "next"
   void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
 
