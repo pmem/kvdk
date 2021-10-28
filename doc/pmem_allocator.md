@@ -14,7 +14,7 @@
 - 若从free list分配空间仍然失败，则从PMEM Space中fetch一段新的segment
 
 ## 空间释放：
-	- 将free的空间指针加入cache中对应大小的free list链表
+- 将free的空间指针加入cache中对应大小的free list链表
 	
 ## 碎片合并：
-	- 尚未画出
+- 尚未画出
