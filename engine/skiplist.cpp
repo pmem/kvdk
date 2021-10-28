@@ -330,8 +330,7 @@ bool Skiplist::Insert(const pmem::obj::string_view &inserting_key,
       space_to_write.size, timestamp, SortedDataRecord, prev_offset,
       next_offset, internal_key, value);
 
-  *dram_node =
-      InsertRecord(&splice, pmem_record, inserting_key, *dram_node, false);
+  *dram_node = InsertRecord(&splice, pmem_record, inserting_key);
   return true;
 }
 
@@ -355,6 +354,36 @@ bool Skiplist::Update(const pmem::obj::string_view &key,
       space_to_write.size, timestamp, SortedDataRecord, prev_offset,
       next_offset, internal_key, value);
   UpdateRecord(&splice, pmem_record, dram_node);
+  return true;
+}
+
+bool Skiplist::Delete(const pmem::obj::string_view &key,
+                      DLRecord *deleted_record, SkiplistNode *dram_node,
+                      SpinMutex *deleting_key_lock) {
+  Splice splice(this);
+  std::unique_lock<SpinMutex> prev_record_lock;
+  if (!FindDeletePos(&splice, key, deleting_key_lock, deleted_record,
+                     &prev_record_lock)) {
+    return false;
+  }
+
+  // Modify linkage to drop deleted record
+  uint64_t deleting_offset = pmem_allocator_->addr2offset(deleted_record);
+  DLRecord *prev = splice.prev_pmem_record;
+  DLRecord *next = splice.next_pmem_record;
+  assert(prev->next == deleting_offset);
+  assert(next->prev == deleting_offset);
+  // For repair in recovery due to crashes during pointers changing, we should
+  // first unlink deleting entry from prev's next
+  prev->next = pmem_allocator_->addr2offset(next);
+  pmem_persist(&prev->next, 8);
+  next->prev = pmem_allocator_->addr2offset(prev);
+  pmem_persist(&next->prev, 8);
+  deleted_record->Destroy();
+
+  if (dram_node) {
+    dram_node->MarkAsRemoved();
+  }
   return true;
 }
 
@@ -406,56 +435,6 @@ SkiplistNode *Skiplist::InsertRecord(Splice *insert_splice,
   } else {
     return nullptr;
   }
-}
-
-SkiplistNode *
-Skiplist::InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
-                       const pmem::obj::string_view &inserting_key,
-                       SkiplistNode *dram_node, bool is_update) {
-  uint64_t inserting_record_offset =
-      pmem_allocator_->addr2offset(inserting_record);
-  DLRecord *prev = insert_splice->prev_pmem_record;
-  DLRecord *next = insert_splice->next_pmem_record;
-  assert(is_update || prev->next == pmem_allocator_->addr2offset(next));
-  // For repair in recovery due to crashes during pointers changing, we should
-  // first link inserting entry to prev's next
-  prev->next = inserting_record_offset;
-  pmem_persist(&prev->next, 8);
-  assert(next != nullptr);
-  assert(is_update || next->prev == pmem_allocator_->addr2offset(prev));
-  next->prev = inserting_record_offset;
-  pmem_persist(&next->prev, 8);
-
-  // new dram node
-  if (!is_update) {
-    assert(dram_node == nullptr);
-    auto height = Skiplist::RandomHeight();
-    if (height > 0) {
-      dram_node =
-          SkiplistNode::NewNode(inserting_key, inserting_record, height);
-      for (int i = 1; i <= height; i++) {
-        while (1) {
-          auto now_next = insert_splice->prevs[i]->Next(i);
-          // if next has been changed or been deleted, re-compute
-          if (now_next.RawPointer() == insert_splice->nexts[i] &&
-              now_next.GetTag() == 0) {
-            dram_node->RelaxedSetNext(i, insert_splice->nexts[i]);
-            if (insert_splice->prevs[i]->CASNext(i, insert_splice->nexts[i],
-                                                 dram_node)) {
-              break;
-            }
-          } else {
-            insert_splice->Recompute(inserting_key, i);
-          }
-        }
-      }
-    }
-  } else {
-    if (dram_node != nullptr) {
-      dram_node->record = inserting_record;
-    }
-  }
-  return dram_node;
 }
 
 void SortedIterator::Seek(const std::string &key) {

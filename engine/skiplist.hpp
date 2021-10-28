@@ -173,12 +173,6 @@ public:
     }
   }
 
-  uint64_t id() override { return id_; }
-
-  const std::string &name() { return name_; }
-
-  SkiplistNode *header() { return header_; }
-
   static uint8_t RandomHeight() {
     uint8_t height = 0;
     while (height < kMaxHeight && fast_random_64() & 1) {
@@ -187,6 +181,12 @@ public:
 
     return height;
   }
+
+  uint64_t id() override { return id_; }
+
+  const std::string &name() { return name_; }
+
+  SkiplistNode *header() { return header_; }
 
   std::string InternalKey(const pmem::obj::string_view &key) {
     return PersistentList::ListKey(key, id_);
@@ -205,18 +205,83 @@ public:
 
   Status Rebuild();
 
-  // Insert a new key "key" to skiplist, return height of inserted record on
-  // success, return -1 on fail or key already existed
+  // Insert a new key "key" to skiplist,
+  //
+  // space_to_write: PMem space entry to store new record.
+  // dram_node: If height of new record > 0, store new dram node to it,
+  // otherwise store nullptr instead
+  // inserting_key_lock: lock of inserting key, should be already locked while
+  // calling this function
+  //
+  // Return true on success, return false on fail.
   bool Insert(const pmem::obj::string_view &key,
               const pmem::obj::string_view &value,
               const SizedSpaceEntry &space_to_write, uint64_t timestamp,
               SkiplistNode **dram_node, SpinMutex *inserting_key_lock);
 
+  // Update "key" in skiplist
+  //
+  // space_to_write: PMem space entry to store new record
+  // updated_record: existing record of updating key
+  // dram_node: dram node of existing record, if it's a height 0 record, then
+  // pass nullptr
+  // updating_key_lock: lock of updating key, should be already locked while
+  // calling this function
+  //
+  // Return true on success, return false on fail.
   bool Update(const pmem::obj::string_view &key,
               const pmem::obj::string_view &value,
               const DLRecord *updated_record,
               const SizedSpaceEntry &space_to_write, uint64_t timestamp,
-              SkiplistNode *dram_node, SpinMutex *inserting_key_lock);
+              SkiplistNode *dram_node, SpinMutex *updating_key_lock);
+
+  // Delete "key" from skiplist
+  //
+  // deleted_record:existing record of deleting key
+  // dram_node:dram node of existing record, if it's a height 0 record, then
+  // pass nullptr
+  // deleting_key_lock: lock of deleting key, should be already locked while
+  // calling this function
+  //
+  // Return true on success, return false on fail.
+  bool Delete(const pmem::obj::string_view &key, DLRecord *deleted_record,
+              SkiplistNode *dram_node, SpinMutex *deleting_key_lock);
+
+  // Remove "deleting_record" from dram and PMem part of the skiplist
+  void DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
+                    SkiplistNode *dram_node);
+
+  void UpdateRecord(Splice *update_splice, DLRecord *new_record,
+                    SkiplistNode *dram_node);
+
+  SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *new_record,
+                             const pmem::obj::string_view &key);
+
+  void PurgeObsoletedNodes() {
+    std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
+    if (pending_deletion_nodes_.size() > 0) {
+      for (SkiplistNode *node : pending_deletion_nodes_) {
+        SkiplistNode::DeleteNode(node);
+      }
+      pending_deletion_nodes_.clear();
+    }
+
+    std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
+    obsolete_nodes_.swap(pending_deletion_nodes_);
+  }
+
+  Status CheckConnection(int height);
+
+private:
+  void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
+    std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
+    for (SkiplistNode *node : nodes) {
+      obsolete_nodes_.push_back(node);
+    }
+  }
+
+  // Insert DLRecord "inserting" between "prev" and "next"
+  void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
 
   // Find and lock skiplist position to insert "key", store prev dram nodes
   // and prev/next PMem DLRecord in "splice", and lock prev DLRecord The
@@ -234,46 +299,14 @@ public:
                      const DLRecord *updated_record,
                      std::unique_lock<SpinMutex> *prev_record_lock);
 
-  // Remove "deleting_record" from dram and PMem part of the skiplist
-  void DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
-                    SkiplistNode *dram_node);
-
-  // Insert "inserting_record" to the skiplist on pmem, and create dram node for
-  // it. Insertion position of PMem and dram stored in "insert_splice". Return
-  // dram node of inserting record, return nullptr if inserting record is
-  // height 0.
-  SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
-                             const pmem::obj::string_view &inserting_key,
-                             SkiplistNode *data_node, bool is_update);
-
-  void UpdateRecord(Splice *update_splice, DLRecord *new_record,
-                    SkiplistNode *dram_node);
-
-  SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *new_record,
-                             const pmem::obj::string_view &key);
-
-  void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
-    std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
-    for (SkiplistNode *node : nodes) {
-      obsolete_nodes_.push_back(node);
-    }
+  bool FindDeletePos(Splice *splice, const pmem::obj::string_view &deleting_key,
+                     const SpinMutex *deleting_key_lock,
+                     const DLRecord *deleted_record,
+                     std::unique_lock<SpinMutex> *prev_record_lock) {
+    return FindUpdatePos(splice, deleting_key, deleting_key_lock,
+                         deleted_record, prev_record_lock);
   }
 
-  void PurgeObsoleteNodes() {
-    std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
-    if (pending_deletion_nodes_.size() > 0) {
-      for (SkiplistNode *node : pending_deletion_nodes_) {
-        SkiplistNode::DeleteNode(node);
-      }
-      pending_deletion_nodes_.clear();
-    }
-
-    std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
-    obsolete_nodes_.swap(pending_deletion_nodes_);
-  }
-  Status CheckConnection(int height);
-
-private:
   SkiplistNode *header_;
   std::string name_;
   uint64_t id_;

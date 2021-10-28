@@ -72,7 +72,7 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
 
 void KVEngine::FreeSkiplistDramNodes() {
   for (auto skiplist : skiplists_) {
-    skiplist->PurgeObsoleteNodes();
+    skiplist->PurgeObsoletedNodes();
   }
 }
 
@@ -848,13 +848,12 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
     return Status::InvalidDataSize;
   }
 
-  HashEntry hash_entry;
-  DataEntry data_entry;
-  SkiplistNode *dram_node = nullptr;
-  uint64_t existing_record_offset;
-  DLRecord *existing_record = nullptr;
-
   while (1) {
+    HashEntry hash_entry;
+    DataEntry data_entry;
+    SkiplistNode *dram_node = nullptr;
+    uint64_t existing_record_offset;
+    DLRecord *existing_record = nullptr;
     HashEntry *entry_ptr = nullptr;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
@@ -881,15 +880,9 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
       existing_record_offset = hash_entry.offset;
     }
 
-    std::unique_lock<SpinMutex> prev_record_lock;
-    thread_local Splice splice(nullptr);
-    splice.seeking_list = skiplist;
-    if (!skiplist->FindUpdatePos(&splice, user_key, hint.spin, existing_record,
-                                 &prev_record_lock)) {
+    if (!skiplist->Delete(user_key, existing_record, dram_node, hint.spin)) {
       continue;
     }
-
-    skiplist->DeleteRecord(existing_record, &splice, dram_node);
 
     entry_ptr->Clear();
     pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
@@ -932,46 +925,42 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     }
     bool found = s == Status::Ok;
 
+    uint64_t new_ts = get_timestamp();
+    assert(!found || new_ts > data_entry.meta.timestamp);
+
     if (found) {
       if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
         dram_node = (SkiplistNode *)(hash_entry.offset);
         existing_record = dram_node->record;
         existing_record_offset = pmem_allocator_->addr2offset(existing_record);
       } else {
+        dram_node = nullptr;
         assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
         existing_record_offset = hash_entry.offset;
         existing_record =
             pmem_allocator_->offset2addr<DLRecord>(existing_record_offset);
       }
-    }
 
-    uint64_t new_ts = get_timestamp();
-    assert(!found || new_ts > data_entry.meta.timestamp);
+      if (!skiplist->Update(user_key, value, existing_record, sized_space_entry,
+                            new_ts, dram_node, hint.spin)) {
+        continue;
+      }
 
-    std::unique_lock<SpinMutex> prev_record_lock;
-    thread_local Splice splice(nullptr);
-    splice.seeking_list = skiplist;
-    if (found ? (!skiplist->FindUpdatePos(&splice, user_key, hint.spin,
-                                          existing_record, &prev_record_lock))
-              : (!skiplist->FindInsertPos(&splice, user_key, hint.spin,
-                                          &prev_record_lock))) {
-      continue;
-    }
+      // update a height 0 node
+      if (dram_node == nullptr) {
+        hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
+                            sized_space_entry.space_entry.offset,
+                            HashOffsetType::DLRecord);
+      }
+      pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
+                                            data_entry.header.record_size,
+                                            data_entry.meta.timestamp));
+    } else {
+      if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
+                            &dram_node, hint.spin)) {
+        continue;
+      }
 
-    uint64_t prev_offset =
-        pmem_allocator_->addr2offset(splice.prev_pmem_record);
-    uint64_t next_offset =
-        pmem_allocator_->addr2offset(splice.next_pmem_record);
-
-    DLRecord *pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
-        sized_space_entry.size, new_ts, SortedDataRecord, prev_offset,
-        next_offset, collection_key, value);
-
-    dram_node = skiplist->InsertRecord(&splice, pmem_record, user_key,
-                                       dram_node, found);
-
-    if (!found) {
       uint64_t offset = (dram_node == nullptr)
                             ? sized_space_entry.space_entry.offset
                             : (uint64_t)dram_node;
@@ -988,16 +977,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
             SizedSpaceEntry(hash_entry.offset, data_entry.header.record_size,
                             data_entry.meta.timestamp));
       }
-    } else {
-      // update a height 0 node
-      if (dram_node == nullptr) {
-        hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
-                            sized_space_entry.space_entry.offset,
-                            HashOffsetType::DLRecord);
-      }
-      pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
-                                            data_entry.header.record_size,
-                                            data_entry.meta.timestamp));
     }
 
     break;
