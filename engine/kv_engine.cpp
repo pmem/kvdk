@@ -884,7 +884,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
     std::unique_lock<SpinMutex> prev_record_lock;
     thread_local Splice splice(nullptr);
     splice.seeking_list = skiplist;
-    if (!skiplist->FindUpdatePos(&splice, user_key, hint, existing_record,
+    if (!skiplist->FindUpdatePos(&splice, user_key, hint.spin, existing_record,
                                  &prev_record_lock)) {
       continue;
     }
@@ -951,9 +951,9 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
     std::unique_lock<SpinMutex> prev_record_lock;
     thread_local Splice splice(nullptr);
     splice.seeking_list = skiplist;
-    if (found ? (!skiplist->FindUpdatePos(&splice, user_key, hint,
+    if (found ? (!skiplist->FindUpdatePos(&splice, user_key, hint.spin,
                                           existing_record, &prev_record_lock))
-              : (!skiplist->FindInsertPos(&splice, user_key, hint,
+              : (!skiplist->FindInsertPos(&splice, user_key, hint.spin,
                                           &prev_record_lock))) {
       continue;
     }

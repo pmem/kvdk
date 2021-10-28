@@ -205,7 +205,7 @@ Status Skiplist::CheckConnection(int height) {
 
 bool Skiplist::FindUpdatePos(Splice *splice,
                              const pmem::obj::string_view &updated_key,
-                             const HashTable::KeyHashHint &hint,
+                             const SpinMutex *updating_key_lock,
                              const DLRecord *updated_record,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
@@ -221,7 +221,7 @@ bool Skiplist::FindUpdatePos(Splice *splice,
     uint64_t next_offset = pmem_allocator_->addr2offset(next);
 
     auto prev_hint = hash_table_->GetHint(prev->Key());
-    if (prev_hint.spin != hint.spin) {
+    if (prev_hint.spin != updating_key_lock) {
       if (!prev_hint.spin->try_lock()) {
         return false;
       }
@@ -253,7 +253,7 @@ bool Skiplist::FindUpdatePos(Splice *splice,
 
 bool Skiplist::FindInsertPos(Splice *splice,
                              const pmem::obj::string_view &insert_key,
-                             const HashTable::KeyHashHint &hint,
+                             const SpinMutex *inserting_key_lock,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
     Seek(insert_key, splice);
@@ -263,7 +263,7 @@ bool Skiplist::FindInsertPos(Splice *splice,
     uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
 
     auto prev_hint = hash_table_->GetHint(prev->Key());
-    if (prev_hint.spin != hint.spin) {
+    if (prev_hint.spin != inserting_key_lock) {
       if (!prev_hint.spin->try_lock()) {
         return false;
       }
@@ -317,9 +317,10 @@ bool Skiplist::Insert(const pmem::obj::string_view &inserting_key,
                       SkiplistNode **dram_node, SpinMutex *inserting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  // if (!FindInsertPos(&splice, inserting_key, , &prev_record_lock)) {
-  // return false;
-  // }
+  if (!FindInsertPos(&splice, inserting_key, inserting_key_lock,
+                     &prev_record_lock)) {
+    return false;
+  }
 
   std::string internal_key(InternalKey(inserting_key));
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
@@ -338,12 +339,13 @@ bool Skiplist::Update(const pmem::obj::string_view &key,
                       const pmem::obj::string_view &value,
                       const DLRecord *updated_record,
                       const SizedSpaceEntry &space_to_write, uint64_t timestamp,
-                      SkiplistNode *dram_node, SpinMutex *inserting_key_lock) {
+                      SkiplistNode *dram_node, SpinMutex *updating_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  // if (!FindUpdatePos(&splice, key, , updated_record, &prev_record_lock)) {
-  // return false;
-  // }
+  if (!FindUpdatePos(&splice, key, updating_key_lock, updated_record,
+                     &prev_record_lock)) {
+    return false;
+  }
 
   std::string internal_key(InternalKey(key));
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
