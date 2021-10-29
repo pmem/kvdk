@@ -284,7 +284,33 @@ bool Skiplist::FindInsertPos(Splice *splice,
     DLRecord *next = pmem_allocator_->offset2addr<DLRecord>(next_offset);
     assert(next != nullptr);
     // Check if the linkage has changed before we successfully acquire lock.
-    if (next != splice->next_pmem_record || next->prev != prev_offset) {
+    auto check_linkage = [&]() {
+      return next == splice->next_pmem_record && next->prev == prev_offset;
+    };
+    // Check id and order as prev and next may be both freed, then inserted
+    // to another position while keep linkage, before we lock them
+    // For example:
+    // Before lock:
+    // this skip list: record1 -> "prev" -> "next" -> record2
+    // After lock:
+    // this skip list: "new record reuse prev" -> "new record reuse next" ->
+    // record1 -> record2
+    // or:
+    // this skip list: record1 -> record2
+    // another skip list:"new record reuse prev" -> "new record reuse next" ->
+    auto check_id = [&]() {
+      return SkiplistId(next) == id_ && SkiplistId(prev) == id_;
+    };
+    auto check_order = [&]() {
+      bool res = /*check next*/ (next == header_->record ||
+                                 compare_string_view(
+                                     insert_key, UserKey(next->Key())) < 0) &&
+                 /*check prev*/ (
+                     prev == header_->record ||
+                     compare_string_view(insert_key, UserKey(prev->Key())) > 0);
+      return res;
+    };
+    if (!check_linkage() || !check_id() || !check_order()) {
       prev_record_lock->unlock();
       continue;
     }

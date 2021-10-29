@@ -198,6 +198,29 @@ public:
                                   skiplist_key.size() - 8);
   }
 
+  inline static uint64_t
+  SkiplistId(const pmem::obj::string_view &skiplist_key) {
+    uint64_t id;
+    memcpy_8(&id, skiplist_key.data());
+    return id;
+  }
+
+  inline static uint64_t SkiplistId(DLRecord *record) {
+    uint64_t id = 0;
+    switch (record->entry.meta.type) {
+    case RecordType::SortedDataRecord:
+      id = SkiplistId(record->Key());
+      break;
+    case RecordType::SortedHeaderRecord:
+      memcpy_8(&id, record->Value().data());
+      break;
+    default:
+      kvdk_assert(false, "Wrong type in SkiplistId");
+      break;
+    }
+    return id;
+  }
+
   // Start position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
