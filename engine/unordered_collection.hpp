@@ -9,9 +9,9 @@
 #include <cassert>
 #include <cstdint>
 
-#include "kvdk/macros.h"
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
+#include "kvdk/macros.h"
 
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
@@ -32,8 +32,8 @@ struct EmplaceReturn {
 
   explicit EmplaceReturn(PMemOffsetType offset_new_, PMemOffsetType offset_old_,
                          bool emplace_result)
-      : offset_new{offset_new_}, offset_old{offset_old_}, 
-        success{emplace_result} {}
+      : offset_new{offset_new_}, offset_old{offset_old_}, success{
+                                                              emplace_result} {}
 
   EmplaceReturn &operator=(EmplaceReturn const &other) {
     offset_new = other.offset_new;
@@ -64,7 +64,7 @@ private:
   using LockPair = std::pair<LockType, LockType>;
 
   /// For locking, locking only
-  static HashTable* hash_table_ptr;
+  static HashTable *hash_table_ptr;
 
   /// DlistRecord for recovering
   DLRecord *collection_record_ptr;
@@ -83,63 +83,41 @@ private:
   friend class UnorderedIterator;
 
 public:
-  static void SetPMemAllocatorPtr(PMEMAllocator* ptr)
-  {
+  static void SetPMemAllocatorPtr(PMEMAllocator *ptr) {
     DLinkedListType::SetPMemAllocatorPtr(ptr);
   }
 
-  static void SetHashTablePtr(HashTable* ptr)
-  {
-    hash_table_ptr = ptr;
-  }
+  static void SetHashTablePtr(HashTable *ptr) { hash_table_ptr = ptr; }
 
   /// Create UnorderedCollection and persist it on PMem
   /// DlistHeadRecord and DlistTailRecord holds ID as key
   /// and empty string as value
   /// DlistRecord holds collection name as key
   /// and ID as value
-  UnorderedCollection(std::string const name, 
-                      CollectionIDType id,
+  UnorderedCollection(std::string const name, CollectionIDType id,
                       TimeStampType timestamp);
 
   /// Recover UnorderedCollection from DLIST_RECORD
   UnorderedCollection(DLRecord *collection_record);
 
-  /// Emplace Functions:
-  /// Runtime checking is done to ensure pmp belongs to this UnorderedCollection
+  /// Emplace a Record into the Collection
   /// lock to emplaced node must been acquired before being passed in
-  ///
-  /// Emplace before pmp
-  EmplaceReturn EmplaceBefore(DLRecord *pos, std::uint64_t timestamp,
-                              StringView const key, StringView const value,
-                              LockType const &lock);
+  EmplaceReturn Emplace(std::uint64_t timestamp, StringView const key,
+                        StringView const value, LockType const &lock);
 
-  /// Emplace after Head()
-  EmplaceReturn EmplaceFront(std::uint64_t timestamp, StringView const key,
-                             StringView const value,
-                             LockType const &lock);
-
-  /// Emplace before Tail()
-  EmplaceReturn EmplaceBack(std::uint64_t timestamp, StringView const key,
-                            StringView const value,
-                            LockType const &lock);
-
-  /// key is also checked to match old key
-  EmplaceReturn Replace(DLRecord *pos,
-                        std::uint64_t timestamp, StringView const key,
-                        StringView const value,
+  EmplaceReturn Replace(DLRecord *pos, std::uint64_t timestamp,
+                        StringView const key, StringView const value,
                         LockType const &lock);
 
   /// Erase given record
   /// Return new_offset as next record
   /// old_offset as erased record
-  EmplaceReturn Erase(DLRecord *pos,
-                      LockType const &lock);
+  EmplaceReturn Erase(DLRecord *pos, LockType const &lock);
 
   /// Deallocate a Record given by caller.
   /// Emplace functions does not do deallocations.
-  inline static void Deallocate(DLRecord *pmp) {
-    DLinkedListType::Deallocate(iterator{pmp});
+  inline static void Deallocate(DLRecord *record_pmmptr) {
+    DLinkedListType::Deallocate(iterator{record_pmmptr});
   }
 
   inline std::uint64_t ID() const { return collection_id; }
@@ -168,15 +146,16 @@ public:
   }
 
 private:
-  inline static bool lockPositions(iterator pos1, iterator pos2, LockType const& lock, LockPair& lock_holder)
-  {
+  inline static bool lockPositions(iterator pos1, iterator pos2,
+                                   LockType const &lock,
+                                   LockPair &lock_holder) {
     SpinMutex *spin = lock.mutex();
     SpinMutex *spin1 = getMutex(pos1->Key());
     SpinMutex *spin2 = getMutex(pos2->Key());
 
     kvdk_assert(lock.owns_lock(), "User supplied lock not acquired!")
 
-    if (spin1 != spin) {
+        if (spin1 != spin) {
       lock_holder.first = LockType{*spin1, std::defer_lock};
       if (!lock_holder.first.try_lock())
         return false;
@@ -189,14 +168,36 @@ private:
     return true;
   }
 
-  inline static bool isAdjacent(iterator prev, iterator next)
-  {
+  inline static bool isAdjacent(iterator prev, iterator next) {
     iterator curr{prev};
     if (++curr != next)
       return false;
     if (--curr != prev)
-      return false; 
+      return false;
     return true;
+  }
+
+  inline static bool isLinked(DLRecord *pos) {
+    iterator curr{pos};
+    iterator prev{pos};
+    --prev;
+    iterator next{pos};
+    ++next;
+    return (--next == curr) && (++prev == curr);
+  }
+
+  inline bool checkID(DLRecord *record_pmmptr) {
+    if (!record_pmmptr || extractID(record_pmmptr->Key()) != ID())
+      return false;
+    return true;
+  }
+
+  // Check if the Record is a valid record linked in current collection
+  inline bool isValidRecord(DLRecord *record_pmmptr) {
+    return checkID(record_pmmptr) &&
+           (static_cast<RecordType>(record_pmmptr->entry.meta.type) ==
+            RecordType::DlistDataRecord) &&
+           isLinked(record_pmmptr);
   }
 
   inline static std::string makeInternalKey(std::uint64_t id, StringView key) {
@@ -244,41 +245,6 @@ private:
   inline static SpinMutex *getMutex(StringView internal_key) {
     return hash_table_ptr->GetHint(internal_key).spin;
   }
-
-  /// When User Call Emplace functions with parameter pmp
-  /// pmp supplied maybe invalid
-  /// User should only supply pmp to DataType
-  inline bool checkUserSuppliedPmp(DLRecord *pmp) {
-    bool is_pmp_valid = false;
-    switch (static_cast<RecordType>(pmp->entry.meta.type)) {
-    case RecordType::DlistDataRecord: {
-      is_pmp_valid = true;
-      break;
-    }
-    case RecordType::DlistHeadRecord:
-    case RecordType::DlistTailRecord:
-    case RecordType::DlistRecord:
-    default: {
-      is_pmp_valid = false;
-      break;
-    }
-    }
-    if (is_pmp_valid) {
-      is_pmp_valid = is_pmp_valid && checkID(pmp);
-    }
-    return is_pmp_valid;
-  }
-
-  /// Treat pmp as PMem pointer to a
-  /// DlistHeadRecord, DlistTailRecord, DlistDataRecord
-  /// Access ID and check whether pmp belongs to current UnorderedCollection
-  inline bool checkID(DLRecord *pmp) {
-    if (UnorderedCollection::extractID(pmp->Key()) == ID()) {
-      return true;
-    } else {
-      return false;
-    }
-  } // namespace KVDK_NAMESPACE
 };
 
 } // namespace KVDK_NAMESPACE
@@ -314,7 +280,7 @@ public:
   /// runtime_error. Valid() is true only if the iterator points to
   /// DlistDataRecord
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll,
-                    DLRecord *pmp);
+                    DLRecord *record_pmmptr);
 
   /// UnorderedIterator currently does not support Seek to a key
   virtual void Seek(std::string const &key) final override {

@@ -17,9 +17,9 @@
 #include <libpmem.h>
 #include <libpmemobj++/string_view.hpp>
 
-#include "kvdk/macros.h"
-#include "kvdk/engine.hpp"
 #include "kvdk/alias.hpp"
+#include "kvdk/engine.hpp"
+#include "kvdk/macros.h"
 
 #include "hash_table.hpp"
 #include "structures.hpp"
@@ -54,11 +54,9 @@ public:
   public:
     /// It's up to caller to provide correct PMem pointer
     /// and PMemAllocator to construct a iterator
-    explicit iterator(DLRecord *curr)
-        : current_pmmptr{curr} {}
+    explicit iterator(DLRecord *curr) : current_pmmptr{curr} {}
 
-    iterator(iterator const &other)
-        : current_pmmptr(other.current_pmmptr) {}
+    iterator(iterator const &other) : current_pmmptr(other.current_pmmptr) {}
 
     /// Conversion to bool
     /// Returns true if the iterator is on some DlinkedList
@@ -147,48 +145,46 @@ private:
   static constexpr PMemOffsetType NullPMemOffset = kNullPmemOffset;
 
 public:
-  /// User must set PMEMAllocator* before constructing any object of DLinkedList!
-  inline static void SetPMemAllocatorPtr(PMEMAllocator* ptr)
-  {
+  /// User must set PMEMAllocator* before constructing any object of
+  /// DLinkedList!
+  inline static void SetPMemAllocatorPtr(PMEMAllocator *ptr) {
     pmem_allocator_ptr = ptr;
   }
 
   /// Create DLinkedList and construct head and tail node on PMem.
   /// Caller supplied key and value are stored in head and tail nodes
-  DLinkedList(TimeStampType timestamp, 
-              StringView const key,
+  DLinkedList(TimeStampType timestamp, StringView const key,
               StringView const value)
-      : head_pmmptr{nullptr},
-        tail_pmmptr{nullptr} {
-  {
-    // head and tail can hold any key and value supplied by caller.
-    auto head_space_entry = pmem_allocator_ptr->Allocate(
-        sizeof(DLRecord) + key.size() + value.size());
-    if (head_space_entry.size == 0) {
-      throw std::bad_alloc{};
-    }
-    auto tail_space_entry = pmem_allocator_ptr->Allocate(
-        sizeof(DLRecord) + key.size() + value.size());
-    if (tail_space_entry.size == 0) {
-      pmem_allocator_ptr->Free(head_space_entry);
-      throw std::bad_alloc{};
-    }
+      : head_pmmptr{nullptr}, tail_pmmptr{nullptr} {
+    {
+      // head and tail can hold any key and value supplied by caller.
+      auto head_space_entry = pmem_allocator_ptr->Allocate(
+          sizeof(DLRecord) + key.size() + value.size());
+      if (head_space_entry.size == 0) {
+        throw std::bad_alloc{};
+      }
+      auto tail_space_entry = pmem_allocator_ptr->Allocate(
+          sizeof(DLRecord) + key.size() + value.size());
+      if (tail_space_entry.size == 0) {
+        pmem_allocator_ptr->Free(head_space_entry);
+        throw std::bad_alloc{};
+      }
 
-    PMemOffsetType head_offset = head_space_entry.space_entry.offset;
-    PMemOffsetType tail_offset = tail_space_entry.space_entry.offset;
+      PMemOffsetType head_offset = head_space_entry.space_entry.offset;
+      PMemOffsetType tail_offset = tail_space_entry.space_entry.offset;
 
-    // Persist tail first then head
-    // If only tail is persisted then it can be deallocated by caller at
-    // recovery
-    tail_pmmptr = DLRecord::PersistDLRecord(
-        pmem_allocator_ptr->offset2addr_checked(tail_offset),
-        tail_space_entry.size, timestamp, TailType, head_offset, NullPMemOffset,
-        key, value);
-    head_pmmptr = DLRecord::PersistDLRecord(
-        pmem_allocator_ptr->offset2addr_checked(head_offset),
-        head_space_entry.size, timestamp, HeadType, NullPMemOffset, tail_offset,
-        key, value);
-  }
+      // Persist tail first then head
+      // If only tail is persisted then it can be deallocated by caller at
+      // recovery
+      tail_pmmptr = DLRecord::PersistDLRecord(
+          pmem_allocator_ptr->offset2addr_checked(tail_offset),
+          tail_space_entry.size, timestamp, TailType, head_offset,
+          NullPMemOffset, key, value);
+      head_pmmptr = DLRecord::PersistDLRecord(
+          pmem_allocator_ptr->offset2addr_checked(head_offset),
+          head_space_entry.size, timestamp, HeadType, NullPMemOffset,
+          tail_offset, key, value);
+    }
   }
 
   /// Create DLinkedList from existing head and tail node. Used for recovery.
@@ -265,9 +261,9 @@ public:
     /// No padding may cause issues. Need further investigation
     iter->entry.meta.type = RecordType::Padding;
     pmem_persist(iter.current_pmmptr, sizeof(DLRecord));
-    pmem_allocator_ptr->Free(
-        SizedSpaceEntry{iter.GetCurrentOffset(), iter->entry.header.record_size,
-                        iter->entry.meta.timestamp});
+    pmem_allocator_ptr->Free(SizedSpaceEntry{iter.GetCurrentOffset(),
+                                             iter->entry.header.record_size,
+                                             iter->entry.meta.timestamp});
   }
 
   // Connect prev and next of node addressed by pos,
@@ -290,62 +286,38 @@ public:
     return iter_next;
   }
 
-  inline void PopFront()
-  {
-    Erase(First());
-  }
+  inline void PopFront() { Erase(First()); }
 
-  inline void PopBack()
-  {
-    Erase(Last());
-  }
+  inline void PopBack() { Erase(Last()); }
 
-  inline iterator EmplaceFront(
-    TimeStampType timestamp,
-    StringView const key,
-    StringView const value
-  ) {
+  inline iterator EmplaceFront(TimeStampType timestamp, StringView const key,
+                               StringView const value) {
     return EmplaceAfter(Head(), timestamp, key, value);
   }
 
-  inline iterator EmplaceBack(
-    TimeStampType timestamp,
-    StringView const key,
-    StringView const value
-  ) {
+  inline iterator EmplaceBack(TimeStampType timestamp, StringView const key,
+                              StringView const value) {
     return EmplaceBefore(Tail(), timestamp, key, value);
   }
 
-  inline iterator EmplaceBefore(
-    iterator pos,
-    TimeStampType timestamp,
-    StringView const key,
-    StringView const value
-  ) {
+  inline iterator EmplaceBefore(iterator pos, TimeStampType timestamp,
+                                StringView const key, StringView const value) {
     iterator iter_prev{pos};
     --iter_prev;
     iterator iter_next{pos};
     return emplaceBetween(iter_prev, iter_next, timestamp, key, value);
   }
 
-  inline iterator EmplaceAfter(
-    iterator pos,
-    TimeStampType timestamp,
-    StringView const key,
-    StringView const value
-  ) {
+  inline iterator EmplaceAfter(iterator pos, TimeStampType timestamp,
+                               StringView const key, StringView const value) {
     iterator iter_prev{pos};
     iterator iter_next{pos};
     ++iter_next;
     return emplaceBetween(iter_prev, iter_next, timestamp, key, value);
   }
 
-  inline iterator Replace(
-    iterator pos,
-    TimeStampType timestamp,
-    StringView const key,
-    StringView const value
-  ) {
+  inline iterator Replace(iterator pos, TimeStampType timestamp,
+                          StringView const key, StringView const value) {
     iterator iter_prev{pos};
     --iter_prev;
     iterator iter_next{pos};
@@ -366,10 +338,9 @@ private:
   ///     3) node emplaced and linked in the forward direction
   ///     4) node emplaced and linked in both directions
   /// Return iterator at newly emplace node
-  inline iterator emplaceBetween(
-      iterator iter_prev, iterator iter_next,
-      TimeStampType timestamp,
-      StringView const key, StringView const value) {
+  inline iterator emplaceBetween(iterator iter_prev, iterator iter_next,
+                                 TimeStampType timestamp, StringView const key,
+                                 StringView const value) {
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
 
     auto space = pmem_allocator_ptr->Allocate(sizeof(DLRecord) + key.size() +
@@ -440,6 +411,7 @@ private:
 };
 
 template <RecordType HeadType, RecordType TailType, RecordType DataType>
-PMEMAllocator* DLinkedList<HeadType, TailType, DataType>::pmem_allocator_ptr = nullptr;
+PMEMAllocator *DLinkedList<HeadType, TailType, DataType>::pmem_allocator_ptr =
+    nullptr;
 
 } // namespace KVDK_NAMESPACE

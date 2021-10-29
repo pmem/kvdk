@@ -1522,51 +1522,30 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
           hint_record, internal_key, RecordType::DlistDataRecord,
           &p_hash_entry_record, &hash_entry_record, nullptr);
 
-      // pmp_last_emplacement maybe invalidified by Replace!
-      thread_local DLRecord *pmp_last_emplacement = nullptr;
-      thread_local std::uint64_t id_last = 0;
-
       EmplaceReturn emplace_result{};
       switch (search_result) {
       case Status::NotFound: {
-        // Cached position for emplacement not available.
-        if (!pmp_last_emplacement || id_last != p_collection->ID()) {
-          // Emplace Front or Back according to hash to reduce lock contention
-          if (hint_record.key_hash_value % 2 == 0)
-            emplace_result = p_collection->EmplaceFront(
-                ts, key, value, lock_record);
-          else
-            emplace_result = p_collection->EmplaceBack(
-                ts, key, value, lock_record);
-        } else {
-          // Emplace at cached position
-          emplace_result = p_collection->EmplaceBefore(
-              pmp_last_emplacement, ts, key, value,
-              lock_record);
-        }
+        emplace_result = p_collection->Emplace(ts, key, value, lock_record);
         break;
       }
       case Status::Ok: {
         DLRecord *pmp_old_record =
             pmem_allocator_->offset2addr_checked<DLRecord>(
                 hash_entry_record.offset);
-
         emplace_result =
             p_collection->Replace(pmp_old_record, ts, key, value, lock_record);
+        // Additional check
         if (emplace_result.success) {
+          kvdk_assert(hash_entry_record.offset == emplace_result.offset_old,
+                      "Updated a record, but HashEntry in HashTable is "
+                      "inconsistent with data on PMem!");
           DLRecord *pmp_new_record =
               pmem_allocator_->offset2addr_checked<DLRecord>(
                   emplace_result.offset_new);
-          DLRecord *pmp_old_record2 =
-              pmem_allocator_->offset2addr_checked<DLRecord>(
-                  emplace_result.offset_old);
-          kvdk_assert(pmp_old_record2 == pmp_old_record,
-                      "Updated a record, but HashEntry in HashTable is "
-                      "inconsistent with data on PMem!")
-              kvdk_assert(
-                  pmp_old_record->entry.meta.timestamp <
-                      pmp_new_record->entry.meta.timestamp,
-                  "Old record has newer timestamp than newly inserted record!");
+          kvdk_assert(
+              pmp_old_record->entry.meta.timestamp <
+                  pmp_new_record->entry.meta.timestamp,
+              "Old record has newer timestamp than newly inserted record!");
           p_collection->Deallocate(pmp_old_record);
         }
         break;
@@ -1578,23 +1557,10 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
       }
 
       if (!emplace_result.success) {
-        // Fail to acquire other locks, or the linkage is broken, retry
-        if (n_try > 2) {
-          // Too many fails at emplacing in cached position,
-          // the position may have been invalidated.
-          // Remove cache so that thread will EmplaceFront or EmplaceBack
-          pmp_last_emplacement = nullptr;
-          id_last = 0;
-        }
         // Retry
         continue;
       } else {
         // Successfully emplaced the new record
-        // Update emplace position cache
-        pmp_last_emplacement = pmem_allocator_->offset2addr_checked<DLRecord>(
-            emplace_result.offset_new);
-        id_last = p_collection->ID();
-
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             RecordType::DlistDataRecord,
                             emplace_result.offset_new,
@@ -1655,8 +1621,8 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
         break;
       }
       default: {
-        kvdk_assert(false, "Invalid search result when trying to insert "
-                           "a new DlistDataRecord!");
+        kvdk_assert(false, "Invalid search result when trying to erase "
+                           "a DlistDataRecord!");
       }
       }
     }

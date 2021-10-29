@@ -1,14 +1,13 @@
 #include "unordered_collection.hpp"
 
 namespace KVDK_NAMESPACE {
-HashTable* UnorderedCollection::hash_table_ptr = nullptr;
+HashTable *UnorderedCollection::hash_table_ptr = nullptr;
 
-UnorderedCollection::UnorderedCollection(
-  std::string const name, 
-  CollectionIDType id,
-  TimeStampType timestamp)
-    : collection_record_ptr{nullptr},
-      dlinked_list{timestamp, id2View(id), StringView{""}},
+UnorderedCollection::UnorderedCollection(std::string const name,
+                                         CollectionIDType id,
+                                         TimeStampType timestamp)
+    : collection_record_ptr{nullptr}, dlinked_list{timestamp, id2View(id),
+                                                   StringView{""}},
       collection_name{name}, collection_id{id}, timestamp{timestamp} {
   {
     auto list_record_space = DLinkedListType::pmem_allocator_ptr->Allocate(
@@ -26,13 +25,12 @@ UnorderedCollection::UnorderedCollection(
             offset_list_record),
         list_record_space.size, timestamp, RecordType::DlistRecord,
         dlinked_list.Head().GetCurrentOffset(),
-        dlinked_list.Tail().GetCurrentOffset(), 
-        collection_name, id2View(collection_id));
+        dlinked_list.Tail().GetCurrentOffset(), collection_name,
+        id2View(collection_id));
   }
 }
 
-UnorderedCollection::UnorderedCollection(
-      DLRecord *pmp_dlist_record)
+UnorderedCollection::UnorderedCollection(DLRecord *pmp_dlist_record)
     : collection_record_ptr{pmp_dlist_record},
       dlinked_list{
           DLinkedListType::pmem_allocator_ptr->offset2addr_checked<DLRecord>(
@@ -44,69 +42,62 @@ UnorderedCollection::UnorderedCollection(
       collection_id{view2ID(pmp_dlist_record->Value())},
       timestamp{pmp_dlist_record->entry.meta.timestamp} {}
 
-EmplaceReturn
-UnorderedCollection::EmplaceBefore(DLRecord *pos, std::uint64_t timestamp,
-                                  StringView const key, StringView const value,
-                                  LockType const &lock) {
-  if (!checkUserSuppliedPmp(pos))
-    return EmplaceReturn{};
-  iterator prev{pos};
-  --prev;
-  iterator next{pos};
-  LockPair lock_prev_and_next;
-  if(!lockPositions(prev, next, lock, lock_prev_and_next))
-    return EmplaceReturn{};
-  if (!isAdjacent(prev, next))
-    return EmplaceReturn{};
+EmplaceReturn UnorderedCollection::Emplace(std::uint64_t timestamp,
+                                           StringView const key,
+                                           StringView const value,
+                                           LockType const &lock) {
+  thread_local DLRecord *last_emplacement_pos = nullptr;
 
-  iterator curr = dlinked_list.EmplaceBefore(next, timestamp, makeInternalKey(key), value);
-  
-  return EmplaceReturn{curr.GetCurrentOffset(), EmplaceReturn::FailOffset, true};
+  iterator prev{nullptr};
+  iterator next{nullptr};
+  LockPair lock_prev_and_next;
+
+  if (isValidRecord(last_emplacement_pos)) {
+    prev = iterator{last_emplacement_pos};
+    --prev;
+    next = iterator{last_emplacement_pos};
+    if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
+        !isAdjacent(prev, next) || !isValidRecord(last_emplacement_pos)) {
+      last_emplacement_pos = nullptr;
+      return EmplaceReturn{};
+    }
+  } else {
+    KeyHashType hash = hash_str(key.data(), key.size());
+    if (hash % 2 == 0) {
+      prev = dlinked_list.Head();
+      next = dlinked_list.Head();
+      ++next;
+      if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
+          !isAdjacent(prev, next)) {
+        return EmplaceReturn{};
+      }
+    } else {
+      prev = dlinked_list.Tail();
+      --prev;
+      next = dlinked_list.Tail();
+      if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
+          !isAdjacent(prev, next)) {
+        return EmplaceReturn{};
+      }
+    }
+  }
+
+  iterator curr =
+      dlinked_list.EmplaceBefore(next, timestamp, makeInternalKey(key), value);
+  last_emplacement_pos = curr.GetCurrentAddress();
+
+  return EmplaceReturn{curr.GetCurrentOffset(), EmplaceReturn::FailOffset,
+                       true};
 }
 
-EmplaceReturn
-UnorderedCollection::EmplaceFront(std::uint64_t timestamp, StringView const key,
-                                  StringView const value,
-                                  LockType const &lock) {
-  iterator prev{dlinked_list.Head()};
-  iterator next{dlinked_list.Head()};
-  ++next;
-  LockPair lock_prev_and_next;
-  if(!lockPositions(prev, next, lock, lock_prev_and_next))
-    return EmplaceReturn{};
-  if (!isAdjacent(prev, next))
-    return EmplaceReturn{};
+EmplaceReturn UnorderedCollection::Replace(DLRecord *pos,
+                                           std::uint64_t timestamp,
+                                           StringView const key,
+                                           StringView const value,
+                                           LockType const &lock) {
+  kvdk_assert(checkID(pos) && isLinked(pos),
+              "Trying to replace invalid record!");
 
-  iterator curr = dlinked_list.EmplaceBefore(next, timestamp, makeInternalKey(key), value);
-  
-  return EmplaceReturn{curr.GetCurrentOffset(), EmplaceReturn::FailOffset, true};
-}
-
-EmplaceReturn
-UnorderedCollection::EmplaceBack(std::uint64_t timestamp, StringView const key,
-                                 StringView const value,
-                                 LockType const &lock) {
-  iterator prev{dlinked_list.Tail()};
-  --prev;
-  iterator next{dlinked_list.Tail()};
-  LockPair lock_prev_and_next;
-  if(!lockPositions(prev, next, lock, lock_prev_and_next))
-    return EmplaceReturn{};
-  if (!isAdjacent(prev, next))
-    return EmplaceReturn{};
-
-  iterator curr = dlinked_list.EmplaceBefore(next, timestamp, makeInternalKey(key), value);
-  
-  return EmplaceReturn{curr.GetCurrentOffset(), EmplaceReturn::FailOffset, true};
-}
-
-/// key is also checked to match old key
-EmplaceReturn
-UnorderedCollection::Replace(DLRecord *pos, std::uint64_t timestamp,
-                             StringView const key, StringView const value,
-                             LockType const &lock) {
-  if (!checkUserSuppliedPmp(pos))
-    return EmplaceReturn{};
   iterator old{pos};
   iterator prev{pos};
   --prev;
@@ -114,19 +105,18 @@ UnorderedCollection::Replace(DLRecord *pos, std::uint64_t timestamp,
   --next;
 
   LockPair lock_prev_and_next;
-  if(!lockPositions(prev, next, lock, lock_prev_and_next))
+  if (!lockPositions(prev, next, lock, lock_prev_and_next))
     return EmplaceReturn{};
 
-  iterator curr = dlinked_list.Replace(old, timestamp, makeInternalKey(key), value);
+  iterator curr =
+      dlinked_list.Replace(old, timestamp, makeInternalKey(key), value);
 
   return EmplaceReturn{curr.GetCurrentOffset(), old.GetCurrentOffset(), true};
 }
 
-EmplaceReturn
-UnorderedCollection::Erase(DLRecord *pos,
-                           LockType const &lock) {
-  if (!checkUserSuppliedPmp(pos))
-    return EmplaceReturn{};
+EmplaceReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
+  kvdk_assert(checkID(pos) && isLinked(pos), "Trying to erase invalid record!");
+
   iterator old{pos};
   iterator prev{pos};
   --prev;
@@ -134,7 +124,7 @@ UnorderedCollection::Erase(DLRecord *pos,
   --next;
 
   LockPair lock_prev_and_next;
-  if(!lockPositions(prev, next, lock, lock_prev_and_next))
+  if (!lockPositions(prev, next, lock, lock_prev_and_next))
     return EmplaceReturn{};
 
   dlinked_list.Erase(old);
@@ -149,13 +139,11 @@ UnorderedIterator::UnorderedIterator(
 
 UnorderedIterator::UnorderedIterator(
     std::shared_ptr<UnorderedCollection> sp_coll, DLRecord *pmp)
-    : collection_shrdptr{sp_coll},
-      internal_iterator{pmp},
-      valid{false} {
+    : collection_shrdptr{sp_coll}, internal_iterator{pmp}, valid{false} {
   kvdk_assert(
       pmp,
       "Explicit Constructor of UnorderedIterator does not accept nullptr!");
-  collection_shrdptr->checkUserSuppliedPmp(pmp);
+  collection_shrdptr->isValidRecord(pmp);
   valid = (pmp->entry.meta.type == RecordType::DlistDataRecord);
   return;
 }
