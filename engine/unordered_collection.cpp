@@ -50,7 +50,10 @@ EmplaceReturn UnorderedCollection::Emplace(std::uint64_t timestamp,
 
   iterator prev{nullptr};
   iterator next{nullptr};
+  iterator new_record{nullptr};
   LockPair lock_prev_and_next;
+
+  auto internal_key = makeInternalKey(key);
 
   if (isValidRecord(last_emplacement_pos)) {
     prev = iterator{last_emplacement_pos};
@@ -61,6 +64,8 @@ EmplaceReturn UnorderedCollection::Emplace(std::uint64_t timestamp,
       last_emplacement_pos = nullptr;
       return EmplaceReturn{};
     }
+    new_record =
+        dlinked_list.EmplaceBefore(next, timestamp, internal_key, value);
   } else {
     KeyHashType hash = hash_str(key.data(), key.size());
     if (hash % 2 == 0) {
@@ -71,6 +76,7 @@ EmplaceReturn UnorderedCollection::Emplace(std::uint64_t timestamp,
           !isAdjacent(prev, next)) {
         return EmplaceReturn{};
       }
+      new_record = dlinked_list.EmplaceFront(timestamp, internal_key, value);
     } else {
       prev = dlinked_list.Tail();
       --prev;
@@ -79,14 +85,13 @@ EmplaceReturn UnorderedCollection::Emplace(std::uint64_t timestamp,
           !isAdjacent(prev, next)) {
         return EmplaceReturn{};
       }
+      new_record = dlinked_list.EmplaceBack(timestamp, internal_key, value);
     }
   }
 
-  iterator curr =
-      dlinked_list.EmplaceBefore(next, timestamp, makeInternalKey(key), value);
-  last_emplacement_pos = curr.GetCurrentAddress();
+  last_emplacement_pos = new_record.GetCurrentAddress();
 
-  return EmplaceReturn{curr.GetCurrentOffset(), EmplaceReturn::FailOffset,
+  return EmplaceReturn{new_record.GetCurrentOffset(), EmplaceReturn::FailOffset,
                        true};
 }
 
@@ -95,14 +100,14 @@ EmplaceReturn UnorderedCollection::Replace(DLRecord *pos,
                                            StringView const key,
                                            StringView const value,
                                            LockType const &lock) {
-  kvdk_assert(checkID(pos) && isLinked(pos),
+  kvdk_assert(checkID(pos) && isValidRecord(pos),
               "Trying to replace invalid record!");
 
   iterator old{pos};
   iterator prev{pos};
   --prev;
   iterator next{pos};
-  --next;
+  ++next;
 
   LockPair lock_prev_and_next;
   if (!lockPositions(prev, next, lock, lock_prev_and_next))
@@ -115,13 +120,14 @@ EmplaceReturn UnorderedCollection::Replace(DLRecord *pos,
 }
 
 EmplaceReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
-  kvdk_assert(checkID(pos) && isLinked(pos), "Trying to erase invalid record!");
+  kvdk_assert(checkID(pos) && isValidRecord(pos),
+              "Trying to erase invalid record!");
 
   iterator old{pos};
   iterator prev{pos};
   --prev;
   iterator next{pos};
-  --next;
+  ++next;
 
   LockPair lock_prev_and_next;
   if (!lockPositions(prev, next, lock, lock_prev_and_next))
