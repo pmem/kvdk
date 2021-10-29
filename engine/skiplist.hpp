@@ -315,16 +315,22 @@ private:
   // Insert DLRecord "inserting" between "prev" and "next"
   void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
 
-  // Find and lock skiplist position to insert "key", store prev dram nodes
-  // and prev/next PMem DLRecord in "splice", and lock prev DLRecord The
-  // "insert_key" should be already locked before call this function
+  // Find and lock skiplist position to insert "key"
+  //
+  // Store prev dram nodes and prev/next PMem DLRecord in "splice", lock
+  // prev DLRecord and manage the lock with "prev_record_lock".
+  //
+  // The "insert_key" should be already locked before call this function
   bool FindInsertPos(Splice *splice,
                      const pmem::obj::string_view &inserting_key,
                      const SpinMutex *inserting_key_lock,
                      std::unique_lock<SpinMutex> *prev_record_lock);
 
-  // Find and lock skiplist position to update or delete "key", store prev/next
-  // PMem DLRecord in "splice", and lock prev DLRecord.
+  // Find and lock skiplist position to update"key".
+  //
+  // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and manage
+  // the lock with "prev_record_lock".
+  //
   //  The "updated_key" should be already locked before call this function
   bool FindUpdatePos(Splice *splice, const pmem::obj::string_view &updating_key,
                      const SpinMutex *updating_key_lock,
