@@ -7,7 +7,6 @@
 #include <assert.h>
 
 #include <cstdint>
-#include <kvdk/status.hpp>
 #include <string>
 #include <vector>
 
@@ -26,14 +25,10 @@ struct Vertex {
       : id(v), vertex_info(info) {}
 
   bool operator==(const Vertex& v) const {
-    if (id || v.id) {
-      return id == v.id;
-    } else {
-      return vertex_info == v.vertex_info;
-    }
+  	return (id == v.id) && (vertex_info == v.vertex_info);
   }
 
-  bool operator<(const Vertex& v) {
+  bool operator<(const Vertex& v) const {
     if (id != v.id) {
       return id < v.id;
     } else {
@@ -41,7 +36,7 @@ struct Vertex {
     }
   }
 
-  uint32_t Size() const { return 8 + 8 + vertex_info.size(); }
+  uint32_t Size() const { return 4 + 8 + vertex_info.size(); }
   void EncodeTo(std::string* output) const;
   void DecodeFrom(std::string* input);
 };

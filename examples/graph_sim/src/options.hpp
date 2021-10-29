@@ -2,6 +2,8 @@
 // Created by zhanghuigui on 2021/10/19.
 //
 
+#pragma once
+
 #include <cstdint>
 
 struct GraphOptions {

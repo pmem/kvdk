@@ -29,7 +29,8 @@ Status EdgeList::EdgeListDecode(std::string *input) {
     }
     edges.emplace_back(edge);
   }
-  if (input->size() >= 0) {
+
+  if (input->size() > 0) {
     SimpleLoger("EdgeList::EdgeListDecode failed for input is longer.");
     return Status::Abort;
   }
@@ -65,7 +66,7 @@ Status Edge::DecodeFrom(std::string *input) {
   std::string edge_input;
 
   GetFixed32(input, &edge_size);
-  edge_input = std::string(*input, edge_size);
+  edge_input = input->substr(0, edge_size);
 
   src.DecodeFrom(&edge_input);
   GetFixed32(&edge_input, &weight);
@@ -80,7 +81,7 @@ Status Edge::DecodeFrom(std::string *input) {
 
 // vertex size(4bit)  ---- vertex_id (8bit) ---- vertex_info (string)
 void Vertex::EncodeTo(std::string *output) const {
-  // id + vertex_info
+  // vertex size + id + vertex_info
   uint32_t vertex_size = 8 + vertex_info.size();
   PutFixed32(output, vertex_size);
   PutFixed64(output, id);
@@ -97,7 +98,7 @@ void Vertex::DecodeFrom(std::string *input) {
   std::string vertex_input;
 
   GetFixed32(input, &vertex_size);
-  vertex_input = std::string(*input, vertex_size);
+  vertex_input = input->substr(0, vertex_size);
   GetFixed64(&vertex_input, &id);
   vertex_info = vertex_input;
 
@@ -173,12 +174,13 @@ Status GraphSimulator::GetEdge(const Vertex &in, const Vertex &out,
   }
 
   // deal the in direction
-  key = InEdgeKeyEncode(in);
+  key = InEdgeKeyEncode(out);
   auto s = kv_engine_->Get(key, &value);
   if (s != Status::Ok) {
     if (s == Status::NotFound) {
       SimpleLoger("GraphSimulator::GetEdge the in edge is not exists");
     }
+    return s;
   }
 
   edge_list.EdgeListDecode(&value);
@@ -212,7 +214,7 @@ Status GraphSimulator::GetAllOutEdges(const Vertex &src, EdgeList *edge_list) {
   auto s = kv_engine_->Get(key, &value);
   if (s != Status::Ok) {
     if (s == Status::NotFound) {
-      SimpleLoger("GraphSimulator::GetAllInEdges the out edge is not exists");
+      SimpleLoger("GraphSimulator::GetAllOutEdges the out edge is not exists");
     }
     return s;
   }
@@ -221,7 +223,7 @@ Status GraphSimulator::GetAllOutEdges(const Vertex &src, EdgeList *edge_list) {
 }
 
 Status GraphSimulator::RemoveVertex(const Vertex &vertex) {
-  return kv_engine_->Delete(VertexValueEncode(vertex));
+  return kv_engine_->Delete(VertexKeyEncode(vertex));
 }
 
 Status GraphSimulator::RemoveEdge(const Edge &edge) {
@@ -257,7 +259,7 @@ Status GraphSimulator::AddEdge(Edge &edge) {
     edge.out_direction = 0;
     s = AddInEdge(edge);
     if (s != Status::Ok) {
-      SimpleLoger("GraphSimulator::AddOutEdge failed.");
+      SimpleLoger("GraphSimulator::AddInEdge failed.");
       return Status::Abort;
     }
   }
@@ -303,18 +305,20 @@ Status GraphSimulator::AddOutEdge(const Edge &edge) {
     }
     value.clear();
     // TODO(zhg) deal the limit of edges' num.
-    if (change_existing_edge) {
+    if (!change_existing_edge) {
       edge_list.edges.emplace_back(edge);
     }
-    edge_list.EdgesListEncode(&value);
   }
+	edge_list.EdgesListEncode(&value);
 
-  // We need delete the old key
-  s = kv_engine_->Delete(key);
-  if (s != Status::Ok) {
-    SimpleLoger("GraphSimulator::AddOutEdge Delete " + key + " failed.");
-    return s;
-  }
+	// We need delete the old key
+  if (!new_edge_node) {
+		s = kv_engine_->Delete(key);
+		if (s != Status::Ok) {
+			SimpleLoger("GraphSimulator::AddOutEdge Delete " + key + " failed.");
+			return s;
+		}
+	}
 
   return kv_engine_->Put(key, value);
 }
@@ -352,18 +356,20 @@ Status GraphSimulator::AddInEdge(const Edge &edge) {
     }
     value.clear();
     // TODO(zhg) deal the limit of edges' num.
-    if (change_existing_edge) {
+    if (!change_existing_edge) {
       edge_list.edges.emplace_back(edge);
     }
-    edge_list.EdgesListEncode(&value);
   }
+	edge_list.EdgesListEncode(&value);
 
-  // We need delete the old key
-  s = kv_engine_->Delete(key);
-  if (s != Status::Ok) {
-    SimpleLoger("GraphSimulator::AddInEdge Delete " + key + " failed.");
-    return s;
-  }
+	// We need delete the old key
+  if (!new_edge_node) {
+		s = kv_engine_->Delete(key);
+		if (s != Status::Ok) {
+			SimpleLoger("GraphSimulator::AddInEdge Delete " + key + " failed.");
+			return s;
+		}
+	}
 
   return kv_engine_->Put(key, value);
 }

@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <kvdk/engine.hpp>
-#include <kvdk/status.hpp>
 #include <map>
 #include <string>
 #include <vector>
@@ -17,7 +16,7 @@
 typedef kvdk::Status Status;
 
 static void SimpleLoger(const std::string& content) {
-  fprintf(stdout, "[GRAPH-BENCH]%s", content.c_str());
+  fprintf(stdout, "[GRAPH-BENCH]%s \n", content.c_str());
 }
 
 // The simple abstract of the different engines.

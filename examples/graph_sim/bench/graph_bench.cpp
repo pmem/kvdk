@@ -12,8 +12,8 @@
 #include <thread>
 #include <vector>
 
-#include "src/graph_impl.hpp"
-#include "src/options.hpp"
+#include "graph_impl.hpp"
+#include "options.hpp"
 
 using namespace google;
 
@@ -39,6 +39,9 @@ DEFINE_int32(edge_info_len, 128,
 DEFINE_int32(degree_level, 2, "The depth of the search in the simple graphdb.");
 DEFINE_int32(degree_nums, 128,
              "The number of the begin vertexes when use degree search.");
+
+DEFINE_string(topn_collection, "kvdk_collection",
+ 	     	  "The topn collection in kvdk which will be used for sorted skiplist build.");
 
 std::mt19937_64 generator;
 std::atomic<int64_t> vertex_ops;

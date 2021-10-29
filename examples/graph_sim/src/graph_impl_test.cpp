@@ -47,6 +47,84 @@ class GraphSimulatorTest : public testing::Test {
   virtual void TearDown() override { delete graph_simulator; }
 };
 
+TEST_F(GraphSimulatorTest, VertexDecodeAndEncode) {
+	// Vertex encode and decode
+	Vertex v1(1, "vertex_v1");
+	std::string buffer;
+	Vertex tmp;
+	v1.EncodeTo(&buffer);
+	tmp.DecodeFrom(&buffer);
+	ASSERT_EQ(tmp.vertex_info, "vertex_v1");
+	ASSERT_EQ(tmp.id, 1);
+	ASSERT_TRUE(tmp == v1);
+}
+
+TEST_F(GraphSimulatorTest, EdgeEncodeAndDecode) {
+	// Edge encode and decode
+	Vertex v1(1, "vertex_v1");
+	Vertex v2(2, "vertex_v2");
+	Edge edge(2, v1, v2, 0, "v1 --> v2");
+	Edge tmp_e;
+	std::string buffer;
+
+	edge.EncodeTo(&buffer);
+	tmp_e.DecodeFrom(&buffer);
+	ASSERT_EQ(tmp_e.weight, edge.weight);
+	ASSERT_EQ(tmp_e.edge_info, edge.edge_info);
+	ASSERT_EQ(tmp_e.out_direction, edge.out_direction);
+	ASSERT_TRUE(tmp_e.src == edge.src);
+	ASSERT_TRUE(tmp_e.dst == edge.dst);
+}
+
+TEST_F(GraphSimulatorTest, TwoEdgeDecodeAndEncode) {
+	// Edge encode and decode
+	Vertex v1(1, "vertex_v1");
+	Vertex v2(2, "vertex_v2");
+	Vertex v3(3, "vertex_v3");
+	Edge edge1(2, v1, v2, 0, "v1 --> v2");
+	Edge edge2(2, v1, v3, 0, "v1 --> v3");
+	Edge tmp_e1, tmp_e2;
+	std::string buffer;
+
+	edge1.EncodeTo(&buffer);
+	edge2.EncodeTo(&buffer);
+
+	tmp_e1.DecodeFrom(&buffer);
+	ASSERT_EQ(tmp_e1.weight, edge1.weight);
+	ASSERT_EQ(tmp_e1.out_direction, edge1.out_direction);
+	ASSERT_TRUE(tmp_e1.src == edge1.src);
+	ASSERT_TRUE(tmp_e1.dst == edge1.dst);
+	ASSERT_EQ(tmp_e1.edge_info, edge1.edge_info);
+	tmp_e2.DecodeFrom(&buffer);
+	ASSERT_EQ(tmp_e2.weight, edge2.weight);
+	ASSERT_EQ(tmp_e2.edge_info, edge2.edge_info);
+	ASSERT_EQ(tmp_e2.out_direction, edge2.out_direction);
+}
+
+TEST_F(GraphSimulatorTest, EdgeListEncodeAndDecode) {
+	// Edge list encode and decode
+	std::vector<Vertex> vertexes;
+	EdgeList edge_list, tmp_list;
+	std::string buffer;
+
+	for (int i = 0; i <= 5; i++){
+		vertexes.emplace_back(Vertex(i, "vertex_v"+std::to_string(i)));
+	}
+	for (int i = 1; i <= 5; i++) {
+		edge_list.edges.emplace_back(Edge(2, vertexes[0], vertexes[i],
+					 0, vertexes[0].vertex_info + "--" + vertexes[i].vertex_info));
+	}
+	edge_list.EdgesListEncode(&buffer);
+	tmp_list.EdgeListDecode(&buffer);
+	ASSERT_FALSE(tmp_list.Empty());
+	ASSERT_EQ(tmp_list.edges.size(), edge_list.edges.size());
+	ASSERT_EQ(tmp_list.edges[0].src, vertexes[0]);
+	for (int i = 1; i <=5; i++) {
+		ASSERT_TRUE(tmp_list.edges[i-1].src == vertexes[0]);
+		ASSERT_TRUE(tmp_list.edges[i-1].dst == vertexes[i]);
+	}
+}
+
 TEST_F(GraphSimulatorTest, GraphSimulatorBasic) {
   assert(graph_simulator != nullptr);
   // Some vertex add test
@@ -56,7 +134,7 @@ TEST_F(GraphSimulatorTest, GraphSimulatorBasic) {
   ASSERT_EQ(graph_simulator->AddVertex(src), Status::Ok);
   ASSERT_EQ(graph_simulator->AddVertex(dst), Status::Ok);
 
-  Edge edge = FormEdgeWithVertex(src, dst, 0);
+  Edge edge = FormEdgeWithVertex(src, dst, 1);
   ASSERT_EQ(graph_simulator->AddEdge(edge), Status::Ok);
 
   Vertex first_vertex, second_vertex;
@@ -64,14 +142,14 @@ TEST_F(GraphSimulatorTest, GraphSimulatorBasic) {
   ASSERT_EQ(graph_simulator->GetVertex(0, first_vertex), Status::Ok);
   ASSERT_TRUE(first_vertex.id == 0);
   ASSERT_EQ(graph_simulator->GetVertex(1, second_vertex), Status::Ok);
-  ASSERT_TRUE(second_vertex.id == 0);
+  ASSERT_TRUE(second_vertex.id == 1);
 
   // Some Edge list test
   // ---------------------------------------------------------------------------------------
   Edge tmp_edge;
   ASSERT_EQ(graph_simulator->GetEdge(src, dst, 0, tmp_edge), Status::Ok);
-  ASSERT_TRUE(tmp_edge.src == first_vertex);
-  ASSERT_FALSE(tmp_edge.src == second_vertex);
+  ASSERT_TRUE(tmp_edge.src == src);
+  ASSERT_TRUE(tmp_edge.dst == dst);
 
   EdgeList edge_list;
   ASSERT_EQ(graph_simulator->GetAllOutEdges(src, &edge_list), Status::Ok);
@@ -79,7 +157,7 @@ TEST_F(GraphSimulatorTest, GraphSimulatorBasic) {
   ASSERT_FALSE(edge_list.Empty());
 
   Vertex vertex_3rd = FormVertexWithId(2);
-  Edge edge_2cd = FormEdgeWithVertex(src, vertex_3rd, 0);
+  Edge edge_2cd = FormEdgeWithVertex(src, vertex_3rd, 1);
   ASSERT_EQ(graph_simulator->AddEdge(edge_2cd), Status::Ok);
   edge_list.Reset();
   ASSERT_EQ(graph_simulator->GetAllOutEdges(src, &edge_list), Status::Ok);
@@ -88,7 +166,7 @@ TEST_F(GraphSimulatorTest, GraphSimulatorBasic) {
   ASSERT_EQ(graph_simulator->GetAllInEdges(dst, &edge_list), Status::Ok);
   ASSERT_EQ(edge_list.Num(), 1);
   edge_list.Reset();
-  ASSERT_EQ(graph_simulator->GetAllOutEdges(vertex_3rd, &edge_list),
+  ASSERT_NE(graph_simulator->GetAllOutEdges(vertex_3rd, &edge_list),
             Status::Ok);
   ASSERT_EQ(edge_list.Num(), 0);
 
@@ -96,9 +174,14 @@ TEST_F(GraphSimulatorTest, GraphSimulatorBasic) {
   // ---------------------------------------------------------------------------------------
   ASSERT_EQ(graph_simulator->RemoveVertex(src), Status::Ok);
   ASSERT_EQ(graph_simulator->GetVertex(0, first_vertex), Status::NotFound);
-  // remove in edge and get in edge should not exist
+  // Remove in edge and get in edge should not exist
   ASSERT_EQ(graph_simulator->RemoveEdge(edge), Status::Ok);
   ASSERT_EQ(graph_simulator->GetEdge(src, dst, 0, tmp_edge), Status::NotFound);
   // We don't remove out edge ,the out edge should exist
   ASSERT_EQ(graph_simulator->GetEdge(src, dst, 1, tmp_edge), Status::Ok);
+
+	// Remove the out edge.
+	Edge out_edge = FormEdgeWithVertex(src, dst, 1);
+	ASSERT_EQ(graph_simulator->RemoveEdge(out_edge), Status::Ok);
+	ASSERT_NE(graph_simulator->GetEdge(src, dst, 1, tmp_edge), Status::Ok);
 }

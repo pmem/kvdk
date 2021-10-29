@@ -104,6 +104,6 @@ inline bool GetFixed32(std::string* input, uint32_t* value) {
     return false;
   }
   *value = DecodeFixed32(input->data());
-  input->erase(sizeof(uint32_t));
+  input->erase(0, sizeof(uint32_t));
   return true;
 }
