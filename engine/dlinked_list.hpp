@@ -49,14 +49,17 @@ public:
   private:
     /// PMem pointer to current Record
     /// Current position
+    PMEMAllocator *pmem_allocator_ptr;
     DLRecord *current_pmmptr;
 
-  public:
+  private:
     /// It's up to caller to provide correct PMem pointer
     /// and PMemAllocator to construct a iterator
-    explicit iterator(DLRecord *curr) : current_pmmptr{curr} {}
+    explicit iterator(PMEMAllocator *pmem_allocator_p, DLRecord *curr)
+        : pmem_allocator_ptr{pmem_allocator_p}, current_pmmptr{curr} {}
 
-    iterator(iterator const &other) : current_pmmptr(other.current_pmmptr) {}
+  public:
+    iterator(iterator const &other) = default;
 
     /// Conversion to bool
     /// Returns true if the iterator is on some DlinkedList
@@ -106,7 +109,8 @@ public:
     DLRecord *operator->() { return current_pmmptr; }
 
     friend bool operator==(iterator lhs, iterator rhs) {
-      return lhs.current_pmmptr == rhs.current_pmmptr;
+      return lhs.pmem_allocator_ptr == rhs.pmem_allocator_ptr &&
+             lhs.current_pmmptr == rhs.current_pmmptr;
     }
 
     friend bool operator!=(iterator lhs, iterator rhs) { return !(lhs == rhs); }
@@ -133,7 +137,7 @@ public:
 private:
   /// Allocator for allocating space for new nodes,
   /// as well as for deallocating space to delete nodes
-  static PMEMAllocator *pmem_allocator_ptr;
+  PMEMAllocator *pmem_allocator_ptr;
   /// PMem pointer(pmp) to head node on PMem
   DLRecord *head_pmmptr;
   /// PMem pointer(pmp) to tail node on PMem
@@ -145,19 +149,12 @@ private:
   static constexpr PMemOffsetType NullPMemOffset = kNullPmemOffset;
 
 public:
-  /// User must set PMEMAllocator* before constructing any object of
-  /// DLinkedList!
-  inline static void SetPMemAllocatorPtr(PMEMAllocator *ptr) {
-    pmem_allocator_ptr = ptr;
-  }
-
-  inline static void ResetPMemAllocatorPtr() { pmem_allocator_ptr = nullptr; }
-
   /// Create DLinkedList and construct head and tail node on PMem.
   /// Caller supplied key and value are stored in head and tail nodes
-  DLinkedList(TimeStampType timestamp, StringView const key,
-              StringView const value)
-      : head_pmmptr{nullptr}, tail_pmmptr{nullptr} {
+  DLinkedList(PMEMAllocator *pmem_allocator_p, TimeStampType timestamp,
+              StringView const key, StringView const value)
+      : pmem_allocator_ptr{pmem_allocator_p}, head_pmmptr{nullptr},
+        tail_pmmptr{nullptr} {
     {
       // head and tail can hold any key and value supplied by caller.
       auto head_space_entry = pmem_allocator_ptr->Allocate(
@@ -191,14 +188,16 @@ public:
 
   /// Create DLinkedList from existing head and tail node. Used for recovery.
   /// If from head to tail node is not forward linked, assertion fails.
-  DLinkedList(DLRecord *head_pmmptr, DLRecord *tail_pmmptr)
-      : head_pmmptr{head_pmmptr}, tail_pmmptr{tail_pmmptr} {
+  DLinkedList(PMEMAllocator *pmem_allocator_p, DLRecord *head_pmmptr,
+              DLRecord *tail_pmmptr)
+      : pmem_allocator_ptr{pmem_allocator_p}, head_pmmptr{head_pmmptr},
+        tail_pmmptr{tail_pmmptr} {
 #if DEBUG_LEVEL >= 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
                   "Cannot rebuild a DlinkedList from given PMem pointer "
                   "not pointing to a valid Head Record!");
-      iterator curr{head_pmmptr};
+      iterator curr{pmem_allocator_ptr, head_pmmptr};
       ++curr;
 
       while (true) {
@@ -238,7 +237,7 @@ public:
   ~DLinkedList() = default;
 
   iterator First() {
-    iterator ret{head_pmmptr};
+    iterator ret = Head();
     ++ret;
     kvdk_assert(ret->entry.meta.type == DataType,
                 "Calling First on empty DlinkedList!");
@@ -246,26 +245,23 @@ public:
   }
 
   iterator Last() {
-    iterator ret{tail_pmmptr};
+    iterator ret = Tail();
     --ret;
     kvdk_assert(ret->entry.meta.type == DataType,
                 "Calling Last on empty DlinkedList!");
     return ret;
   }
 
-  iterator Head() { return iterator{head_pmmptr}; }
+  iterator Head() const { return makeIterator(head_pmmptr); }
 
-  iterator Tail() { return iterator{tail_pmmptr}; }
+  iterator Tail() const { return makeIterator(tail_pmmptr); }
 
-  /// Helper function to deallocate Record, called only by caller
-  inline static void Deallocate(iterator iter) {
-    /// TODO: jiayu: for update, no need to padding
-    /// No padding may cause issues. Need further investigation
-    iter->entry.meta.type = RecordType::Padding;
-    pmem_persist(iter.current_pmmptr, sizeof(DLRecord));
-    pmem_allocator_ptr->Free(SizedSpaceEntry{iter.GetCurrentOffset(),
-                                             iter->entry.header.record_size,
-                                             iter->entry.meta.timestamp});
+  void PurgeAndFree(DLRecord *record_pmmptr) {
+    record_pmmptr->Destroy();
+    pmem_allocator_ptr->Free(
+        SizedSpaceEntry(pmem_allocator_ptr->addr2offset_checked(record_pmmptr),
+                        record_pmmptr->entry.header.record_size,
+                        record_pmmptr->entry.meta.timestamp));
   }
 
   // Connect prev and next of node addressed by pos,
@@ -278,12 +274,10 @@ public:
     iterator iter_next{pos};
     ++iter_next;
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
-    auto prev_offset = iter_prev.GetCurrentOffset();
-    auto next_offset = iter_next.GetCurrentOffset();
-    iter_prev->next = next_offset;
-    pmem_persist(&iter_prev->next, sizeof(next_offset));
-    iter_next->prev = prev_offset;
-    pmem_persist(&iter_next->prev, sizeof(prev_offset));
+    iter_prev->next = iter_next.GetCurrentOffset();
+    pmem_persist(&iter_prev->next, sizeof(PMemOffsetType));
+    iter_next->prev = iter_prev.GetCurrentOffset();
+    pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
 
     return iter_next;
   }
@@ -328,6 +322,10 @@ public:
   }
 
 private:
+  iterator makeIterator(DLRecord *pos) const {
+    return iterator{pmem_allocator_ptr, pos};
+  }
+
   /// Emplace between iter_prev and iter_next, linkage not checked
   /// iter_prev and iter_next may be adjacent or separated
   /// If they are separated, node(s) between them are lost.
@@ -362,7 +360,7 @@ private:
     iter_next->prev = offset;
     pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
 
-    return iterator{record};
+    return iterator{pmem_allocator_ptr, record};
   }
 
   /// Extract user-key from internal-key used by the collection.
@@ -377,18 +375,18 @@ private:
 
   /// Extract ID from internal-key
   inline static std::uint64_t extractID(StringView internal_key) {
-    std::uint64_t id;
-    assert(sizeof(decltype(id)) <= internal_key.size() &&
+    CollectionIDType id;
+    assert(sizeof(CollectionIDType) <= internal_key.size() &&
            "internal_key is smaller than the size of an id!");
-    memcpy(&id, internal_key.data(), sizeof(decltype(id)));
+    memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
     return id;
   }
 
   /// Output DlinkedList to ostream for debugging purpose.
   friend std::ostream &operator<<(std::ostream &out, DLinkedList const &dlist) {
     out << "Contents of DlinkedList:\n";
-    iterator iter = iterator{dlist.head_pmmptr};
-    iterator iter_end = iterator{dlist.tail_pmmptr};
+    iterator iter = dlist.Head();
+    iterator iter_end = dlist.Tail();
     while (iter != iter_end) {
       auto internal_key = iter->Key();
       out << "Type: " << to_hex(iter->entry.meta.type) << "\t"
@@ -411,9 +409,5 @@ private:
     return out;
   }
 };
-
-template <RecordType HeadType, RecordType TailType, RecordType DataType>
-PMEMAllocator *DLinkedList<HeadType, TailType, DataType>::pmem_allocator_ptr =
-    nullptr;
 
 } // namespace KVDK_NAMESPACE

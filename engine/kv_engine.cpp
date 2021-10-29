@@ -55,9 +55,6 @@ KVEngine::~KVEngine() {
     t.join();
   }
 
-  UnorderedCollection::ResetHashTablePtr();
-  UnorderedCollection::ResetPMemAllocatorPtr();
-
   GlobalLogger.Info("Instance closed\n");
 }
 
@@ -161,9 +158,6 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
   }
-
-  UnorderedCollection::SetHashTablePtr(hash_table_.get());
-  UnorderedCollection::SetPMemAllocatorPtr(pmem_allocator_.get());
 
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
@@ -1423,7 +1417,8 @@ std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
-      std::make_shared<UnorderedCollection>(name, id, ts);
+      std::make_shared<UnorderedCollection>(
+          hash_table_.get(), pmem_allocator_.get(), name, id, ts);
   return sp_uncoll;
 }
 
@@ -1550,7 +1545,7 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
               pmp_old_record->entry.meta.timestamp <
                   pmp_new_record->entry.meta.timestamp,
               "Old record has newer timestamp than newly inserted record!");
-          p_collection->Deallocate(pmp_old_record);
+          purgeAndFree(pmp_old_record);
         }
         break;
       }
@@ -1616,7 +1611,8 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
               pmem_allocator_->offset2addr_checked<DLRecord>(
                   erase_result.offset_old);
           p_hash_entry->Clear();
-          p_collection->Deallocate(pmp_old_record);
+          purgeAndFree(pmp_old_record);
+
           return Status::Ok;
         } else {
           // !erase_result.success
@@ -1648,7 +1644,8 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     std::lock_guard<std::mutex> lg{list_mu_};
     {
       std::shared_ptr<UnorderedCollection> sp_collection =
-          std::make_shared<UnorderedCollection>(pmp_record);
+          std::make_shared<UnorderedCollection>(
+              hash_table_.get(), pmem_allocator_.get(), pmp_record);
       p_collection = sp_collection.get();
       vec_sp_unordered_collections_.emplace_back(sp_collection);
     }
@@ -1687,11 +1684,8 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
         pmem_allocator_->addr2offset_checked(pmp_record);
     bool linked = isLinkedDLDataEntry(static_cast<DLRecord *>(pmp_record));
     if (!linked) {
-      pmp_record->Destroy();
-      pmem_allocator_->Free(
-          SizedSpaceEntry(pmem_allocator_->addr2offset(pmp_record),
-                          pmp_record->entry.header.record_size,
-                          pmp_record->entry.meta.timestamp));
+      purgeAndFree(pmp_record);
+
       return Status::Ok;
     }
 
@@ -1726,18 +1720,20 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             pmp_record->entry.meta.type, offset_record,
                             HashOffsetType::UnorderedCollectionElement);
-        UnorderedCollection::Deallocate(pmp_old_record);
+        purgeAndFree(pmp_old_record);
+
       } else if (pmp_old_record->entry.meta.timestamp ==
                  pmp_record->entry.meta.timestamp) {
         GlobalLogger.Info("Met two DlistRecord with same timestamp");
-        UnorderedCollection::Deallocate(pmp_record);
+        purgeAndFree(pmp_record);
+
       } else {
         if (checkDLRecordLinkageRight((DLRecord *)pmp_record) ||
             checkDLRecordLinkageLeft((DLRecord *)pmp_record)) {
           assert(false && "Old record is linked in Dlinkedlist!");
           throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
         }
-        UnorderedCollection::Deallocate(pmp_record);
+        purgeAndFree(pmp_record);
       }
       return Status::Ok;
     }

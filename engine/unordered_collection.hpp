@@ -64,7 +64,7 @@ private:
   using LockPair = std::pair<LockType, LockType>;
 
   /// For locking, locking only
-  static HashTable *hash_table_ptr;
+  HashTable *hash_table_ptr;
 
   /// DlistRecord for recovering
   DLRecord *collection_record_ptr;
@@ -83,35 +83,26 @@ private:
   friend class UnorderedIterator;
 
 public:
-  static void SetPMemAllocatorPtr(PMEMAllocator *ptr) {
-    DLinkedListType::SetPMemAllocatorPtr(ptr);
-  }
-
-  static void ResetPMemAllocatorPtr() {
-    DLinkedListType::ResetPMemAllocatorPtr();
-  }
-
-  static void SetHashTablePtr(HashTable *ptr) { hash_table_ptr = ptr; }
-
-  static void ResetHashTablePtr() { hash_table_ptr = nullptr; }
-
   /// Create UnorderedCollection and persist it on PMem
   /// DlistHeadRecord and DlistTailRecord holds ID as key
   /// and empty string as value
   /// DlistRecord holds collection name as key
   /// and ID as value
-  UnorderedCollection(std::string const name, CollectionIDType id,
-                      TimeStampType timestamp);
+  UnorderedCollection(HashTable *hash_table_ptr,
+                      PMEMAllocator *pmem_allocator_ptr, std::string const name,
+                      CollectionIDType id, TimeStampType timestamp);
 
   /// Recover UnorderedCollection from DLIST_RECORD
-  UnorderedCollection(DLRecord *collection_record);
+  UnorderedCollection(HashTable *hash_table_ptr,
+                      PMEMAllocator *pmem_allocator_ptr,
+                      DLRecord *collection_record);
 
   /// Emplace a Record into the Collection
   /// lock to emplaced node must been acquired before being passed in
-  EmplaceReturn Emplace(std::uint64_t timestamp, StringView const key,
+  EmplaceReturn Emplace(TimeStampType timestamp, StringView const key,
                         StringView const value, LockType const &lock);
 
-  EmplaceReturn Replace(DLRecord *pos, std::uint64_t timestamp,
+  EmplaceReturn Replace(DLRecord *pos, TimeStampType timestamp,
                         StringView const key, StringView const value,
                         LockType const &lock);
 
@@ -120,17 +111,11 @@ public:
   /// old_offset as erased record
   EmplaceReturn Erase(DLRecord *pos, LockType const &lock);
 
-  /// Deallocate a Record given by caller.
-  /// Emplace functions does not do deallocations.
-  inline static void Deallocate(DLRecord *record_pmmptr) {
-    DLinkedListType::Deallocate(iterator{record_pmmptr});
-  }
-
-  inline std::uint64_t ID() const { return collection_id; }
+  inline CollectionIDType ID() const { return collection_id; }
 
   inline std::string const &Name() const { return collection_name; }
 
-  inline std::uint64_t Timestamp() const { return timestamp; };
+  inline TimeStampType Timestamp() const { return timestamp; };
 
   inline std::string GetInternalKey(StringView key) {
     return makeInternalKey(collection_id, key);
@@ -152,9 +137,8 @@ public:
   }
 
 private:
-  inline static bool lockPositions(iterator pos1, iterator pos2,
-                                   LockType const &lock,
-                                   LockPair &lock_holder) {
+  inline bool lockPositions(iterator pos1, iterator pos2, LockType const &lock,
+                            LockPair &lock_holder) {
     SpinMutex *spin = lock.mutex();
     SpinMutex *spin1 = getMutex(pos1->Key());
     SpinMutex *spin2 = getMutex(pos2->Key());
@@ -183,11 +167,11 @@ private:
     return true;
   }
 
-  inline static bool isLinked(DLRecord *pos) {
-    iterator curr{pos};
-    iterator prev{pos};
+  inline bool isLinked(DLRecord *pos) {
+    iterator curr = dlinked_list.makeIterator(pos);
+    iterator prev{curr};
     --prev;
-    iterator next{pos};
+    iterator next{curr};
     ++next;
     return (--next == curr) && (++prev == curr);
   }
@@ -206,7 +190,8 @@ private:
            isLinked(record_pmmptr);
   }
 
-  inline static std::string makeInternalKey(std::uint64_t id, StringView key) {
+  inline static std::string makeInternalKey(CollectionIDType id,
+                                            StringView key) {
     std::string internal_key{id2View(id)};
     internal_key += key;
     return internal_key;
@@ -217,39 +202,43 @@ private:
   }
 
   inline static StringView extractKey(StringView internal_key) {
-    constexpr size_t sz_id = sizeof(decltype(collection_id));
+    constexpr size_t sz_id = sizeof(CollectionIDType);
     // Allow empty string as key
     assert(sz_id <= internal_key.size() &&
            "internal_key does not has space for key");
     return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
   }
 
-  inline static std::uint64_t extractID(StringView internal_key) {
-    std::uint64_t id;
-    assert(sizeof(decltype(id)) <= internal_key.size() &&
+  inline static CollectionIDType extractID(StringView internal_key) {
+    CollectionIDType id;
+    assert(sizeof(CollectionIDType) <= internal_key.size() &&
            "internal_key is smaller than the size of an id!");
-    memcpy(&id, internal_key.data(), sizeof(decltype(id)));
+    memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
     return id;
   }
 
-  inline static StringView id2View(std::uint64_t id) {
+  inline static StringView id2View(CollectionIDType id) {
     // Thread local copy to prevent variable destruction
-    thread_local uint64_t id_copy;
+    thread_local CollectionIDType id_copy;
     id_copy = id;
     return StringView{reinterpret_cast<char *>(&id_copy),
-                      sizeof(decltype(id_copy))};
+                      sizeof(CollectionIDType)};
   }
 
-  inline static std::uint64_t view2ID(StringView view) {
-    std::uint64_t id;
-    assert(sizeof(decltype(id)) == view.size() &&
+  inline static CollectionIDType view2ID(StringView view) {
+    CollectionIDType id;
+    assert(sizeof(CollectionIDType) == view.size() &&
            "id_view does not match the size of an id!");
-    memcpy(&id, view.data(), sizeof(decltype(id)));
+    memcpy(&id, view.data(), sizeof(CollectionIDType));
     return id;
   }
 
-  inline static SpinMutex *getMutex(StringView internal_key) {
+  inline SpinMutex *getMutex(StringView internal_key) {
     return hash_table_ptr->GetHint(internal_key).spin;
+  }
+
+  inline iterator makeInternalIterator(DLRecord *pos) {
+    return dlinked_list.makeIterator(pos);
   }
 };
 
