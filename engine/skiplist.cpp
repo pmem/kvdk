@@ -239,13 +239,13 @@ bool Skiplist::FindUpdatePos(Splice *splice,
     // As updating record is already locked, so we don't need to
     // check its next
     if (updated_record->prev != prev_offset ||
-        prev->next != pmem_allocator_->addr2offset((void *)updated_record)) {
+        prev->next != pmem_allocator_->addr2offset(updated_record)) {
       continue;
     }
 
     assert(updated_record->prev == prev_offset);
     assert(updated_record->next == next_offset);
-    assert(next->prev == pmem_allocator_->addr2offset((void *)updated_record));
+    assert(next->prev == pmem_allocator_->addr2offset(updated_record));
     assert(prev == header_->record ||
            compare_string_view(Skiplist::UserKey(prev->Key()), updated_key) <
                0);

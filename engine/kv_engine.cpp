@@ -842,7 +842,6 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
 
 Status KVEngine::SDeleteImpl(Skiplist *skiplist,
                              const pmem::obj::string_view &user_key) {
-  uint64_t id = skiplist->id();
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key)) {
     return Status::InvalidDataSize;
