@@ -54,6 +54,10 @@ KVEngine::~KVEngine() {
   for (auto &t : bg_threads_) {
     t.join();
   }
+
+  UnorderedCollection::ResetHashTablePtr();
+  UnorderedCollection::ResetPMemAllocatorPtr();
+
   GlobalLogger.Info("Instance closed\n");
 }
 
@@ -158,13 +162,13 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
     return Status::Abort;
   }
 
+  UnorderedCollection::SetHashTablePtr(hash_table_.get());
+  UnorderedCollection::SetPMemAllocatorPtr(pmem_allocator_.get());
+
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
-
-  UnorderedCollection::SetHashTablePtr(hash_table_.get());
-  UnorderedCollection::SetPMemAllocatorPtr(pmem_allocator_.get());
 
   return s;
 }

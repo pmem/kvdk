@@ -151,6 +151,10 @@ public:
     pmem_allocator_ptr = ptr;
   }
 
+  inline static void ResetPMemAllocatorPtr() {
+    pmem_allocator_ptr = nullptr;
+  }
+
   /// Create DLinkedList and construct head and tail node on PMem.
   /// Caller supplied key and value are stored in head and tail nodes
   DLinkedList(TimeStampType timestamp, StringView const key,

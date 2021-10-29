@@ -1251,5 +1251,9 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
+
+  // testing::FLAGS_gtest_repeat = 1000;
+  // testing::FLAGS_gtest_filter = "*Unorder*Restore*";  
+
   return RUN_ALL_TESTS();
 }

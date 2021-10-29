@@ -87,7 +87,13 @@ public:
     DLinkedListType::SetPMemAllocatorPtr(ptr);
   }
 
+  static void ResetPMemAllocatorPtr() {
+    DLinkedListType::ResetPMemAllocatorPtr();
+  }
+
   static void SetHashTablePtr(HashTable *ptr) { hash_table_ptr = ptr; }
+
+  static void ResetHashTablePtr() { hash_table_ptr = nullptr; }
 
   /// Create UnorderedCollection and persist it on PMem
   /// DlistHeadRecord and DlistTailRecord holds ID as key
