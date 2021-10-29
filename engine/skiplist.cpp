@@ -13,11 +13,10 @@
 namespace KVDK_NAMESPACE {
 
 pmem::obj::string_view SkiplistNode::UserKey() {
-  if (cached_key_size > 0) {
-    return pmem::obj::string_view(cached_key, cached_key_size);
-  }
-  return Skiplist::UserKey(record->Key());
+  return Skiplist::UserKey(this);
 }
+
+uint64_t SkiplistNode::SkiplistId() { return Skiplist::SkiplistId(this); }
 
 void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
                             uint8_t start_height, uint8_t end_height,
@@ -145,7 +144,7 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *result_splice) {
       break;
     }
 
-    int cmp = compare_string_view(key, UserKey(next_record->Key()));
+    int cmp = compare_string_view(key, UserKey(next_record));
     if (cmp > 0) {
       prev_record = next_record;
     } else {
@@ -155,8 +154,6 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *result_splice) {
   result_splice->next_pmem_record = next_record;
   result_splice->prev_pmem_record = prev_record;
 }
-
-uint64_t SkiplistNode::GetSkipListId() { return Skiplist::SkiplistId(record); }
 
 Status Skiplist::CheckConnection(int height) {
   SkiplistNode *cur_node = header_;
@@ -195,7 +192,7 @@ Status Skiplist::CheckConnection(int height) {
       } else {
         if (dram_node->Height() >= height) {
           if (!(dram_node->Height() == next_node->Height() &&
-                dram_node->GetSkipListId() == next_node->GetSkipListId() &&
+                dram_node->SkiplistId() == next_node->SkiplistId() &&
                 dram_node->UserKey() == next_node->UserKey())) {
             GlobalLogger.Error("incorret skiplist node info\n");
             return Status::Abort;
@@ -247,11 +244,9 @@ bool Skiplist::FindUpdatePos(Splice *splice,
     assert(updated_record->next == next_offset);
     assert(next->prev == pmem_allocator_->addr2offset(updated_record));
     assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev->Key()), updated_key) <
-               0);
+           compare_string_view(Skiplist::UserKey(prev), updated_key) < 0);
     assert(next == header_->record ||
-           compare_string_view(Skiplist::UserKey(next->Key()), updated_key) >
-               0);
+           compare_string_view(Skiplist::UserKey(next), updated_key) > 0);
 
     return true;
   }
@@ -298,12 +293,11 @@ bool Skiplist::FindInsertPos(Splice *splice,
       return SkiplistId(next) == id_ && SkiplistId(prev) == id_;
     };
     auto check_order = [&]() {
-      bool res = /*check next*/ (next == header_->record ||
-                                 compare_string_view(
-                                     insert_key, UserKey(next->Key())) < 0) &&
-                 /*check prev*/ (
-                     prev == header_->record ||
-                     compare_string_view(insert_key, UserKey(prev->Key())) > 0);
+      bool res =
+          /*check next*/ (next == header_->record ||
+                          compare_string_view(insert_key, UserKey(next)) < 0) &&
+          /*check prev*/ (prev == header_->record ||
+                          compare_string_view(insert_key, UserKey(prev)) > 0);
       return res;
     };
     if (!check_linkage() || !check_id() || !check_order()) {
@@ -314,9 +308,9 @@ bool Skiplist::FindInsertPos(Splice *splice,
     assert(next->prev == prev_offset);
 
     assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev->Key()), insert_key) < 0);
+           compare_string_view(Skiplist::UserKey(prev), insert_key) < 0);
     assert(next == header_->record ||
-           compare_string_view(Skiplist::UserKey(next->Key()), insert_key) > 0);
+           compare_string_view(Skiplist::UserKey(next), insert_key) > 0);
 
     return true;
   }
@@ -462,15 +456,13 @@ void SortedIterator::Prev() {
 std::string SortedIterator::Key() {
   if (!Valid())
     return "";
-  pmem::obj::string_view key = Skiplist::UserKey(current->Key());
-  return std::string(key.data(), key.size());
+  return string_view_2_string(Skiplist::UserKey(current));
 }
 
 std::string SortedIterator::Value() {
   if (!Valid())
     return "";
-  pmem::obj::string_view value = current->Value();
-  return std::string(value.data(), value.size());
+  return string_view_2_string(current->Value());
 }
 
 Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {

@@ -520,7 +520,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
       new_hash_offset = (uint64_t)dram_node;
       if (configs_.opt_large_sorted_collection_restore &&
           thread_res_[write_thread.id]
-                      .visited_skiplist_ids[dram_node->GetSkipListId()]++ %
+                      .visited_skiplist_ids[dram_node->SkiplistId()]++ %
                   kRestoreSkiplistStride ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);

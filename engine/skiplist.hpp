@@ -79,7 +79,7 @@ public:
 
   pmem::obj::string_view UserKey();
 
-  uint64_t GetSkipListId();
+  uint64_t SkiplistId();
 
   PointerWithTag<SkiplistNode> Next(int l) {
     assert(l > 0 && l <= height && "should be less than node's height");
@@ -198,6 +198,19 @@ public:
                                   skiplist_key.size() - 8);
   }
 
+  inline static pmem::obj::string_view UserKey(const SkiplistNode *node) {
+    assert(node != nullptr);
+    if (node->cached_key_size > 0) {
+      return pmem::obj::string_view(node->cached_key, node->cached_key_size);
+    }
+    return UserKey(node->record->Key());
+  }
+
+  inline static pmem::obj::string_view UserKey(const DLRecord *record) {
+    assert(record != nullptr);
+    return UserKey(record->Key());
+  }
+
   inline static uint64_t
   SkiplistId(const pmem::obj::string_view &skiplist_key) {
     uint64_t id;
@@ -205,7 +218,8 @@ public:
     return id;
   }
 
-  inline static uint64_t SkiplistId(DLRecord *record) {
+  inline static uint64_t SkiplistId(const DLRecord *record) {
+    assert(record != nullptr);
     uint64_t id = 0;
     switch (record->entry.meta.type) {
     case RecordType::SortedDataRecord:
@@ -219,6 +233,11 @@ public:
       break;
     }
     return id;
+  }
+
+  inline static uint64_t SkiplistId(const SkiplistNode *node) {
+    assert(node != nullptr);
+    return SkiplistId(node->record);
   }
 
   // Start position of "key" on both dram and PMem node in the skiplist, and
