@@ -156,11 +156,7 @@ void Skiplist::Seek(const pmem::obj::string_view &key, Splice *result_splice) {
   result_splice->prev_pmem_record = prev_record;
 }
 
-uint64_t SkiplistNode::GetSkipListId() {
-  uint64_t id;
-  memcpy_8(&id, record->Key().data());
-  return id;
-}
+uint64_t SkiplistNode::GetSkipListId() { return Skiplist::SkiplistId(record); }
 
 Status Skiplist::CheckConnection(int height) {
   SkiplistNode *cur_node = header_;
