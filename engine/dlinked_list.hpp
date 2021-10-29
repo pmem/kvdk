@@ -256,14 +256,6 @@ public:
 
   iterator Tail() const { return makeIterator(tail_pmmptr); }
 
-  void PurgeAndFree(DLRecord *record_pmmptr) {
-    record_pmmptr->Destroy();
-    pmem_allocator_ptr->Free(
-        SizedSpaceEntry(pmem_allocator_ptr->addr2offset_checked(record_pmmptr),
-                        record_pmmptr->entry.header.record_size,
-                        record_pmmptr->entry.meta.timestamp));
-  }
-
   // Connect prev and next of node addressed by pos,
   // logically delete this record by de-link it.
   // Return iterator at next node.
@@ -324,6 +316,14 @@ public:
 private:
   iterator makeIterator(DLRecord *pos) const {
     return iterator{pmem_allocator_ptr, pos};
+  }
+
+  void purgeAndFree(DLRecord *record_pmmptr) {
+    record_pmmptr->Destroy();
+    pmem_allocator_ptr->Free(
+        SizedSpaceEntry(pmem_allocator_ptr->addr2offset_checked(record_pmmptr),
+                        record_pmmptr->entry.header.record_size,
+                        record_pmmptr->entry.meta.timestamp));
   }
 
   /// Emplace between iter_prev and iter_next, linkage not checked

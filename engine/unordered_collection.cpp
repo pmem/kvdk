@@ -13,8 +13,8 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_p,
     auto list_record_space = dlinked_list.pmem_allocator_ptr->Allocate(
         sizeof(DLRecord) + collection_name.size() + sizeof(CollectionIDType));
     if (list_record_space.size == 0) {
-      dlinked_list.PurgeAndFree(dlinked_list.Head().GetCurrentAddress());
-      dlinked_list.PurgeAndFree(dlinked_list.Tail().GetCurrentAddress());
+      dlinked_list.purgeAndFree(dlinked_list.Head().GetCurrentAddress());
+      dlinked_list.purgeAndFree(dlinked_list.Tail().GetCurrentAddress());
       dlinked_list.head_pmmptr = nullptr;
       dlinked_list.tail_pmmptr = nullptr;
       throw std::bad_alloc{};
