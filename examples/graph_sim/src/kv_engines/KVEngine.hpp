@@ -46,7 +46,7 @@ class KVEngine {
 // KVDK engine
 class PMemKVDK : public KVEngine {
  public:
-  explicit PMemKVDK(const std::string& db_path);
+  PMemKVDK(const std::string& db_path);
   ~PMemKVDK();
   Status Put(const std::string& key, const std::string& value) override;
   Status Get(const std::string& key, std::string* value) override;
@@ -65,13 +65,43 @@ class RocksEngine : public KVEngine {
  public:
   explicit RocksEngine(const std::string& db_path) : path_(db_path) {}
   Status Get(const std::string& key, std::string* value) override {
+    // return db_->Get(rocksdb::ReadOptions(), const std::string& key,
+    // std::string* value);
     return Status::Ok;
   }
   Status Put(const std::string& key, const std::string& value) override {
+    // return db_->Put(rocksdb::WriteOptions(), const std::string& key, const
+    // std::string& value);
     return Status::Ok;
   }
-  Status Delete(const std::string& key) override { return Status::Ok; }
-  Iterator* NewIterator() override { return nullptr; }
+  Status Delete(const std::string& key) override {
+    // return db_->Delete(rocksdb::WriteOptions(), const std::string& key);
+    return Status::Ok;
+  }
+
+  // We should keep the comment for other users who want to test with rocksdb
+  //
+  // class RocksdbIterator : public KVEngine::Iterator {
+  // public:
+  // 	explicit RocksdbIterator(rocksdb::Iterator* it) : itr_(it) {}
+  // 	~RocksdbIterator() { delete iter_;}
+
+  // 	void Seek(const std::string& key) { return itr_->Seek(key); }
+  // 	void SeekToFirst() { return itr_->SeekToFirst(); }
+  // 	void Next() { return itr_->Next(); }
+  // 	void Prev() { return itr_->Prev(); }
+  // 	bool Valid() { return itr_->Valid(); }
+
+  // 	std::string Key() { return itr_->Key().ToString(); }
+  // 	std::string Value() { return itr_->Value().ToString(); }
+  // private:
+  // 	rocksdb::Iterator* itr_;
+  // };
+
+  // Iterator* NewIterator() override {
+  // 	rocksdb::Iterator* it = db_->NewIterator(rocksdb::ReadOptions());
+  // 	return RocksdbIterator(it);
+  // }
 
  private:
   std::string path_;
@@ -99,6 +129,7 @@ class MemoryEngine : public KVEngine {
     memory_db_.erase(key);
     return Status::Ok;
   }
+
   class MemoryIterator : public KVEngine::Iterator {
    public:
     explicit MemoryIterator(std::map<std::string, std::string>::iterator it)

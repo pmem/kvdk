@@ -25,7 +25,7 @@ struct Vertex {
       : id(v), vertex_info(info) {}
 
   bool operator==(const Vertex& v) const {
-  	return (id == v.id) && (vertex_info == v.vertex_info);
+    return (id == v.id) && (vertex_info == v.vertex_info);
   }
 
   bool operator<(const Vertex& v) const {
@@ -86,6 +86,13 @@ inline std::string InEdgeKeyEncode(const Vertex& src) {
   return output;
 }
 
+inline std::string NoDirectionKeyEncode(const Vertex& src) {
+  std::string output;
+  src.EncodeTo(&output);
+  output.append("_N");
+  return output;
+}
+
 inline Vertex EdgeKeyDecode(std::string input) {
   Vertex vertex;
   vertex.DecodeFrom(&input);
@@ -124,7 +131,7 @@ class GraphSimulator {
   GraphSimulator(const std::string& db_name, GraphOptions opts);
   ~GraphSimulator();
 
-  Status AddEdge(Edge& edge);
+  Status AddEdge(const Edge& edge);
   Status AddVertex(const Vertex& vertex);
 
   Status GetVertex(const uint64_t& id, Vertex& vertex);
@@ -151,17 +158,12 @@ class GraphSimulator {
                  std::vector<Status>* status);
 
  private:
-  Status AddInEdge(const Edge& edge);
-  Status AddOutEdge(const Edge& edge);
-  Status AddEdgeWithoutDirection(const Edge& edge);
-
-  Status RemoveOutEdge(const Edge& edge);
-  Status RemoveInEdge(const Edge& edge);
-
+  Status AddInternalEdge(const Edge& edge);
+  Status RemoveInternalEdge(const Edge& edge);
   Status BFSInternal(const Vertex& vertex, const int& n_depth);
 
-  inline bool CheckEdgeExists(const Vertex& src, const Vertex& dst,
-                              const int& direction, const Edge& edge) {
+  static inline bool CheckEdgeExists(const Vertex& src, const Vertex& dst,
+                                     const int& direction, const Edge& edge) {
     return src == edge.src && dst == edge.dst &&
            direction == edge.out_direction;
   }

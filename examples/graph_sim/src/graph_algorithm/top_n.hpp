@@ -8,14 +8,12 @@
 #include <queue>
 #include <vector>
 
-// A very simple TopN algorithm with the priority_queue.
-// And the implementation is just store the element in the
-// limited small heap.
+// A very simple TopN algorithm with the priority_queue. And the implementation
+// is just store the element in the limited small heap.
 //
-// Only if the push element is bigger than the small heap's
-// top ,then we pop the small heap and push the element in
-// small heap. We keep the small heap's size in a limit, when
-// finish the push element, the element in small heap is our
+// Only if the push element is bigger than the small heap's top ,then we pop the
+// small heap and push the element in small heap. We keep the small heap's size
+// in a limit, when finish the push element, the element in small heap is our
 // topn.
 template <class T, class Comparator = std::greater<T>>
 class TopN {

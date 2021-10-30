@@ -41,7 +41,8 @@ DEFINE_int32(degree_nums, 128,
              "The number of the begin vertexes when use degree search.");
 
 DEFINE_string(topn_collection, "kvdk_collection",
- 	     	  "The topn collection in kvdk which will be used for sorted skiplist build.");
+              "The topn collection in kvdk which will be used for sorted "
+              "skiplist build.");
 
 std::mt19937_64 generator;
 std::atomic<int64_t> vertex_ops;
@@ -53,10 +54,11 @@ static Vertex CreateVertex(const uint64_t& id, const int32_t& len) {
 }
 
 static Edge CreateEdge(const Vertex& in, const Vertex& out,
-                       const int32_t& len) {
+                       const uint32_t& direction, const int32_t& len) {
   Edge edge;
   edge.src = in;
   edge.dst = out;
+  edge.out_direction = direction;
   edge.edge_info = std::string(len, in.id % 26 + 'b');
   return edge;
 }
@@ -108,8 +110,11 @@ void GraphDataConstruct() {
     s = graph_simulator->AddVertex(dst);
     assert(s != Status::Ok);
 
-    Edge edge = CreateEdge(src, dst, FLAGS_edge_info_len);
-    s = graph_simulator->AddEdge(edge);
+    Edge out_edge = CreateEdge(src, dst, 1, FLAGS_edge_info_len);
+    s = graph_simulator->AddEdge(out_edge);
+    assert(s != Status::Ok);
+    Edge in_edge = CreateEdge(src, dst, 0, FLAGS_edge_info_len);
+    s = graph_simulator->AddEdge(in_edge);
     assert(s != Status::Ok);
 
     current_vertexes -= 2;

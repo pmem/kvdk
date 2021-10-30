@@ -228,42 +228,34 @@ Status GraphSimulator::RemoveVertex(const Vertex &vertex) {
 
 Status GraphSimulator::RemoveEdge(const Edge &edge) {
   assert(edge.out_direction <= 2 && edge.out_direction >= 0);
+  return RemoveInternalEdge(edge);
+}
 
-  if (edge.out_direction == 0) {
-    return RemoveInEdge(edge);
-  } else if (edge.out_direction == 1) {
-    return RemoveOutEdge(edge);
+Status GraphSimulator::RemoveInternalEdge(const Edge &edge) {
+  std::string key;
+  switch (edge.out_direction) {
+    case 0:
+      key = InEdgeKeyEncode(edge.dst);
+      break;
+    case 1:
+      key = OutEdgeKeyEncode(edge.src);
+      break;
+    case 2:
+      key = NoDirectionKeyEncode(edge.src);
+      break;
+    default:
+      SimpleLoger("RemoveInternalEdge error, the direction is wrong.");
+      break;
   }
+  return kv_engine_->Delete(key);
 }
 
-Status GraphSimulator::RemoveOutEdge(const Edge &edge) {
-  return kv_engine_->Delete(OutEdgeKeyEncode(edge.src));
-}
-
-Status GraphSimulator::RemoveInEdge(const Edge &edge) {
-  return kv_engine_->Delete(InEdgeKeyEncode(edge.dst));
-}
-
-Status GraphSimulator::AddEdge(Edge &edge) {
+Status GraphSimulator::AddEdge(const Edge &edge) {
   assert(edge.out_direction <= 2);
   // edge's direction is important. If the direction < 2, for every edge's two
   // vertex, we need to store two vertexes : src --> dst  and dst --> src. Their
   // key and value's data is different in kuaishou's graph storage.
-  Status s;
-  if (edge.out_direction == 1) {
-    s = AddOutEdge(edge);
-    if (s != Status::Ok) {
-      SimpleLoger("GraphSimulator::AddOutEdge failed.");
-      return Status::Abort;
-    }
-    edge.out_direction = 0;
-    s = AddInEdge(edge);
-    if (s != Status::Ok) {
-      SimpleLoger("GraphSimulator::AddInEdge failed.");
-      return Status::Abort;
-    }
-  }
-  return AddEdgeWithoutDirection(edge);
+  return AddInternalEdge(edge);
 }
 
 // Several steps:
@@ -271,22 +263,29 @@ Status GraphSimulator::AddEdge(Edge &edge) {
 // 2. get the edgelist which is src vertex's value from engine
 // 3. decode the value and add/modify the edge to edge list
 // 4. format the edgelist to a new value and put into engine
-Status GraphSimulator::AddOutEdge(const Edge &edge) {
+Status GraphSimulator::AddInternalEdge(const Edge &edge) {
   // Check the edge is a outedge, so we could know the direction is src --> dst
-  assert(edge.out_direction == 1);
+  assert(edge.out_direction <= 2);
   std::string key;
   std::string value;
   EdgeList edge_list;
   bool new_edge_node = false;
   bool change_existing_edge = false;
 
-  key = OutEdgeKeyEncode(edge.src);
+  if (edge.out_direction == 1) {
+    key = OutEdgeKeyEncode(edge.src);
+  } else if (edge.out_direction == 0) {
+    key = InEdgeKeyEncode(edge.dst);
+  } else {
+    key = NoDirectionKeyEncode(edge.src);
+  }
+
   auto s = kv_engine_->Get(key, &value);
   if (s != Status::Ok) {
     if (s == Status::NotFound) {
       new_edge_node = true;
     } else {
-      SimpleLoger("GraphSimulator::AddOutEdge Get" + key + " failed.");
+      SimpleLoger("GraphSimulator::AddInternalEdge Get" + key + " failed.");
       return s;
     }
   }
@@ -309,71 +308,21 @@ Status GraphSimulator::AddOutEdge(const Edge &edge) {
       edge_list.edges.emplace_back(edge);
     }
   }
-	edge_list.EdgesListEncode(&value);
+  edge_list.EdgesListEncode(&value);
 
-	// We need delete the old key
+  // We need delete the old key
   if (!new_edge_node) {
-		s = kv_engine_->Delete(key);
-		if (s != Status::Ok) {
-			SimpleLoger("GraphSimulator::AddOutEdge Delete " + key + " failed.");
-			return s;
-		}
-	}
-
-  return kv_engine_->Put(key, value);
-}
-
-Status GraphSimulator::AddInEdge(const Edge &edge) {
-  assert(edge.out_direction == 0);
-  std::string key;
-  std::string value;
-  EdgeList edge_list;
-  bool new_edge_node = false;
-  bool change_existing_edge = false;
-
-  key = InEdgeKeyEncode(edge.dst);
-  auto s = kv_engine_->Get(key, &value);
-  if (s != Status::Ok) {
-    if (s == Status::NotFound) {
-      new_edge_node = true;
-    } else {
-      SimpleLoger("GraphSimulator::AddOutEdge Get" + key + " failed.");
+    s = RemoveEdge(edge);
+    if (s != Status::Ok) {
+      SimpleLoger("GraphSimulator::AddInternalEdge RemoveEdge failed.");
       return s;
     }
   }
 
-  if (new_edge_node) {
-    edge_list.edges.emplace_back(edge);
-  } else {
-    edge_list.EdgeListDecode(&value);
-    for (auto &item : edge_list.edges) {
-      if (item.src == edge.src && item.dst == edge.dst) {
-        item.weight = edge.weight;
-        item.edge_info = edge.edge_info;
-        change_existing_edge = true;
-        break;
-      }
-    }
-    value.clear();
-    // TODO(zhg) deal the limit of edges' num.
-    if (!change_existing_edge) {
-      edge_list.edges.emplace_back(edge);
-    }
-  }
-	edge_list.EdgesListEncode(&value);
-
-	// We need delete the old key
-  if (!new_edge_node) {
-		s = kv_engine_->Delete(key);
-		if (s != Status::Ok) {
-			SimpleLoger("GraphSimulator::AddInEdge Delete " + key + " failed.");
-			return s;
-		}
-	}
-
   return kv_engine_->Put(key, value);
 }
 
+// The comparator for the top_n algo.
 template <typename T>
 struct PairCmp {
   bool operator()(const T &a, const T &b) const {
@@ -414,8 +363,8 @@ void GraphSimulator::BFSSearch(const std::vector<Vertex> &input_vertexes,
                                int n_depth, std::vector<Status> *status) {
   if (input_vertexes.empty()) return;
 
-  for (int i = 0; i < input_vertexes.size(); i++) {
-    status->emplace_back(BFSInternal(input_vertexes[i], n_depth));
+  for (const auto &input_vertex : input_vertexes) {
+    status->emplace_back(BFSInternal(input_vertex, n_depth));
   }
 }
 
