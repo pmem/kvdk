@@ -45,10 +45,10 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_p,
       collection_id{view2ID(pmp_dlist_record->Value())},
       timestamp{pmp_dlist_record->entry.meta.timestamp} {}
 
-EmplaceReturn UnorderedCollection::Emplace(TimeStampType timestamp,
-                                           StringView const key,
-                                           StringView const value,
-                                           LockType const &lock) {
+ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
+                                          StringView const key,
+                                          StringView const value,
+                                          LockType const &lock) {
   thread_local DLRecord *last_emplacement_pos = nullptr;
 
   iterator new_record = makeInternalIterator(nullptr);
@@ -62,12 +62,18 @@ EmplaceReturn UnorderedCollection::Emplace(TimeStampType timestamp,
     iterator next = makeInternalIterator(last_emplacement_pos);
     if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
         !isAdjacent(prev, next) || !isValidRecord(last_emplacement_pos)) {
+      // Locking failed or the cached position is modified
+      // Invalidate the cache and try again
       last_emplacement_pos = nullptr;
-      return EmplaceReturn{};
+      return ModifyReturn{};
     }
     new_record =
         dlinked_list.EmplaceBefore(next, timestamp, internal_key, value);
+    return ModifyReturn{new_record.GetCurrentOffset(), ModifyReturn::FailOffset,
+                        true};
   } else {
+    // No cached position for emplacing
+    // Emplace front or back based on oddity of hash
     KeyHashType hash = hash_str(key.data(), key.size());
     if (hash % 2 == 0) {
       iterator prev = dlinked_list.Head();
@@ -75,32 +81,33 @@ EmplaceReturn UnorderedCollection::Emplace(TimeStampType timestamp,
       ++next;
       if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
           !isAdjacent(prev, next)) {
-        return EmplaceReturn{};
+        return ModifyReturn{};
       }
       new_record = dlinked_list.EmplaceFront(timestamp, internal_key, value);
+      last_emplacement_pos = new_record.GetCurrentAddress();
+      return ModifyReturn{new_record.GetCurrentOffset(),
+                          ModifyReturn::FailOffset, true};
     } else {
       iterator prev = dlinked_list.Tail();
       --prev;
       iterator next = dlinked_list.Tail();
       if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
           !isAdjacent(prev, next)) {
-        return EmplaceReturn{};
+        return ModifyReturn{};
       }
       new_record = dlinked_list.EmplaceBack(timestamp, internal_key, value);
+      last_emplacement_pos = new_record.GetCurrentAddress();
+      return ModifyReturn{new_record.GetCurrentOffset(),
+                          ModifyReturn::FailOffset, true};
     }
   }
-
-  last_emplacement_pos = new_record.GetCurrentAddress();
-
-  return EmplaceReturn{new_record.GetCurrentOffset(), EmplaceReturn::FailOffset,
-                       true};
 }
 
-EmplaceReturn UnorderedCollection::Replace(DLRecord *pos,
-                                           TimeStampType timestamp,
-                                           StringView const key,
-                                           StringView const value,
-                                           LockType const &lock) {
+ModifyReturn UnorderedCollection::Replace(DLRecord *pos,
+                                          TimeStampType timestamp,
+                                          StringView const key,
+                                          StringView const value,
+                                          LockType const &lock) {
   kvdk_assert(checkID(pos) && isValidRecord(pos),
               "Trying to replace invalid record!");
 
@@ -112,15 +119,15 @@ EmplaceReturn UnorderedCollection::Replace(DLRecord *pos,
 
   LockPair lock_prev_and_next;
   if (!lockPositions(prev, next, lock, lock_prev_and_next))
-    return EmplaceReturn{};
+    return ModifyReturn{};
 
   iterator curr =
       dlinked_list.Replace(old, timestamp, makeInternalKey(key), value);
 
-  return EmplaceReturn{curr.GetCurrentOffset(), old.GetCurrentOffset(), true};
+  return ModifyReturn{curr.GetCurrentOffset(), old.GetCurrentOffset(), true};
 }
 
-EmplaceReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
+ModifyReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
   kvdk_assert(checkID(pos) && isValidRecord(pos),
               "Trying to erase invalid record!");
 
@@ -132,29 +139,17 @@ EmplaceReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
 
   LockPair lock_prev_and_next;
   if (!lockPositions(prev, next, lock, lock_prev_and_next))
-    return EmplaceReturn{};
+    return ModifyReturn{};
 
   dlinked_list.Erase(old);
 
-  return EmplaceReturn{EmplaceReturn::FailOffset, old.GetCurrentOffset(), true};
+  return ModifyReturn{ModifyReturn::FailOffset, old.GetCurrentOffset(), true};
 }
 
 UnorderedIterator::UnorderedIterator(
     std::shared_ptr<UnorderedCollection> sp_coll)
     : collection_shrdptr{sp_coll},
       internal_iterator{sp_coll->dlinked_list.Head()}, valid{false} {}
-
-UnorderedIterator::UnorderedIterator(
-    std::shared_ptr<UnorderedCollection> sp_coll, DLRecord *pmp)
-    : collection_shrdptr{sp_coll},
-      internal_iterator{sp_coll->makeInternalIterator(pmp)}, valid{false} {
-  kvdk_assert(
-      pmp,
-      "Explicit Constructor of UnorderedIterator does not accept nullptr!");
-  collection_shrdptr->isValidRecord(pmp);
-  valid = (pmp->entry.meta.type == RecordType::DlistDataRecord);
-  return;
-}
 
 void UnorderedIterator::internalNext() {
   if (!internal_iterator.valid()) {

@@ -1521,7 +1521,7 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
           hint_record, internal_key, RecordType::DlistDataRecord,
           &p_hash_entry_record, &hash_entry_record, nullptr);
 
-      EmplaceReturn emplace_result{};
+      ModifyReturn emplace_result{};
       switch (search_result) {
       case Status::NotFound: {
         emplace_result = p_collection->Emplace(ts, key, value, lock_record);
@@ -1596,7 +1596,7 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
           hint_record, internal_key, RecordType::DlistDataRecord, &p_hash_entry,
           &hash_entry, nullptr);
 
-      EmplaceReturn erase_result{};
+      ModifyReturn erase_result{};
       switch (search_result) {
       case Status::NotFound: {
         return Status::Ok;

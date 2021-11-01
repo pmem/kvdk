@@ -20,22 +20,22 @@
 
 namespace KVDK_NAMESPACE {
 
-struct EmplaceReturn {
-  // Offset of newly emplaced Record
+struct ModifyReturn {
+  // Offset of newly emplaced Record for Emplace, otherwise set as FailOffset.
   PMemOffsetType offset_new;
-  // Offset of old Record for Replace. Otherwise set as FailOffset
+  // Offset of old Record for Replace or Erase, otherwise set as FailOffset.
   PMemOffsetType offset_old;
   bool success;
 
-  explicit EmplaceReturn()
+  explicit ModifyReturn()
       : offset_new{FailOffset}, offset_old{FailOffset}, success{false} {}
 
-  explicit EmplaceReturn(PMemOffsetType offset_new_, PMemOffsetType offset_old_,
-                         bool emplace_result)
+  explicit ModifyReturn(PMemOffsetType offset_new_, PMemOffsetType offset_old_,
+                        bool emplace_result)
       : offset_new{offset_new_}, offset_old{offset_old_}, success{
                                                               emplace_result} {}
 
-  EmplaceReturn &operator=(EmplaceReturn const &other) {
+  ModifyReturn &operator=(ModifyReturn const &other) {
     offset_new = other.offset_new;
     offset_old = other.offset_old;
     success = other.success;
@@ -99,17 +99,17 @@ public:
 
   /// Emplace a Record into the Collection
   /// lock to emplaced node must been acquired before being passed in
-  EmplaceReturn Emplace(TimeStampType timestamp, StringView const key,
-                        StringView const value, LockType const &lock);
+  ModifyReturn Emplace(TimeStampType timestamp, StringView const key,
+                       StringView const value, LockType const &lock);
 
-  EmplaceReturn Replace(DLRecord *pos, TimeStampType timestamp,
-                        StringView const key, StringView const value,
-                        LockType const &lock);
+  ModifyReturn Replace(DLRecord *pos, TimeStampType timestamp,
+                       StringView const key, StringView const value,
+                       LockType const &lock);
 
   /// Erase given record
   /// Return new_offset as next record
   /// old_offset as erased record
-  EmplaceReturn Erase(DLRecord *pos, LockType const &lock);
+  ModifyReturn Erase(DLRecord *pos, LockType const &lock);
 
   inline CollectionIDType ID() const { return collection_id; }
 
@@ -265,17 +265,6 @@ public:
   /// The Iterator is invalid now.
   /// Must SeekToFirst() or SeekToLast() before use.
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
-
-  /// [Deprecated?]
-  /// Construct UnorderedIterator of a certain UnorderedCollection
-  /// pointing to a DLRecord belonging to this collection
-  /// Runtime checking the type of this UnorderedIterator,
-  /// which can be DlistDataRecord, DlistHeadRecord and
-  /// DlistTailRecord ID is also checked. Checking failure results in throwing
-  /// runtime_error. Valid() is true only if the iterator points to
-  /// DlistDataRecord
-  UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll,
-                    DLRecord *record_pmmptr);
 
   /// UnorderedIterator currently does not support Seek to a key
   virtual void Seek(std::string const &key) final override {

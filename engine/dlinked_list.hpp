@@ -4,12 +4,13 @@
 
 #pragma once
 
-#include <algorithm>
-#include <bitset>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+
+#include <algorithm>
+#include <bitset>
 #include <exception>
 #include <iomanip>
 #include <iostream>
@@ -25,15 +26,13 @@
 #include "structures.hpp"
 #include "utils.hpp"
 
-#include <list>
-
 namespace KVDK_NAMESPACE {
 /// DLinkedList is a helper class to access PMem
 /// DLinkedList guarantees that forward links are always valid
 /// Backward links may be broken
 /// if shutdown happens when new record is being emplaced.
-/// DLinkedList does not deallocate records. Deallocation is done by caller
-/// Locking is done by caller at HashTable
+/// DLinkedList does not deallocate records.
+/// Deallocation is done by caller.
 template <RecordType HeadType, RecordType TailType, RecordType DataType>
 class DLinkedList {
 public:
@@ -318,6 +317,8 @@ private:
     return iterator{pmem_allocator_ptr, pos};
   }
 
+  // Only called by UnorderedCollection when fail to allocate space for
+  // DlistRecord
   void purgeAndFree(DLRecord *record_pmmptr) {
     record_pmmptr->Destroy();
     pmem_allocator_ptr->Free(
@@ -363,27 +364,22 @@ private:
     return iterator{pmem_allocator_ptr, record};
   }
 
-  /// Extract user-key from internal-key used by the collection.
-  /// Internal key has 8-byte ID as prefix.
-  /// User-key does not have that ID.
-  inline static StringView extractKey(StringView internal_key) {
-    constexpr size_t sz_id = 8;
-    assert(sz_id <= internal_key.size() &&
-           "internal_key does not has space for key");
-    return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
-  }
-
-  /// Extract ID from internal-key
-  inline static std::uint64_t extractID(StringView internal_key) {
-    CollectionIDType id;
-    assert(sizeof(CollectionIDType) <= internal_key.size() &&
-           "internal_key is smaller than the size of an id!");
-    memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
-    return id;
-  }
-
   /// Output DlinkedList to ostream for debugging purpose.
   friend std::ostream &operator<<(std::ostream &out, DLinkedList const &dlist) {
+    auto extractKey = [](StringView internal_key) {
+      assert(sizeof(CollectionIDType) <= internal_key.size() &&
+             "internal_key does not has space for key");
+      return StringView(internal_key.data() + sizeof(CollectionIDType),
+                        internal_key.size() - sizeof(CollectionIDType));
+    };
+    auto extractID = [](StringView internal_key) {
+      CollectionIDType id;
+      assert(sizeof(CollectionIDType) <= internal_key.size() &&
+             "internal_key is smaller than the size of an id!");
+      memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
+      return id;
+    };
+
     out << "Contents of DlinkedList:\n";
     iterator iter = dlist.Head();
     iterator iter_end = dlist.Tail();
