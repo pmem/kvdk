@@ -8,6 +8,9 @@
 
 void EdgeList::EdgesListEncode(std::string *result) {
   assert(!Empty());
+  // Reserve the Num edges' size for the result , or the
+  // string will be expand space frequently.
+  result->reserve(Num() * edges[0].Size() + 8);
   PutFixed64(result, Num());
   for (int i = 0; i < Num(); i++) {
     edges[i].EncodeTo(result);
@@ -363,8 +366,8 @@ void GraphSimulator::BFSSearch(const std::vector<Vertex> &input_vertexes,
                                int n_depth, std::vector<Status> *status) {
   if (input_vertexes.empty()) return;
 
-  for (const auto &input_vertex : input_vertexes) {
-    status->emplace_back(BFSInternal(input_vertex, n_depth));
+	for (const auto &input_vertex : input_vertexes) {
+		status->emplace_back(BFSInternal(input_vertex, n_depth));
   }
 }
 
@@ -385,7 +388,8 @@ Status GraphSimulator::BFSInternal(const Vertex &vertex, const int &n_depth) {
       Vertex tmp_v = Q.front();
       Q.pop();
 
-      // Get the edgelists of the current vertex
+      // Get the current vertex's out edgelists, then we could traverse
+      // all over the graph vertex.
       s = GetAllOutEdges(tmp_v, &edge_list);
       if (s != Status::Ok && search_depth == 1) {
         return s;

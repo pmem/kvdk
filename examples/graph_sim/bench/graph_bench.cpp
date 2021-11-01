@@ -44,6 +44,18 @@ DEFINE_string(topn_collection, "kvdk_collection",
               "The topn collection in kvdk which will be used for sorted "
               "skiplist build.");
 
+// A small timer used for record the time
+#define def_timer uint64_t elapsed; \
+   struct timeval st, et;
+
+#define start_timer gettimeofday(&st,NULL);
+
+#define end_timer(msg, args...) ;do { \
+   gettimeofday(&et,NULL); \
+   elapsed = ((et.tv_sec - st.tv_sec) * 1000000) + (et.tv_usec - st.tv_usec) + 1; \
+   printf("(%s,%d) [%6lums] " msg "\n", __FUNCTION__ , __LINE__, elapsed/1000, ##args); \
+} while(0)
+
 std::mt19937_64 generator;
 std::atomic<int64_t> vertex_ops;
 std::unordered_map<std::string, double> bench_timer;
@@ -69,6 +81,7 @@ double NowSecs() {
   return static_cast<double>(tv.tv_usec / 1000000) + tv.tv_sec;
 }
 
+// Simple timer to record some stats' time.
 class Timer {
  public:
   Timer(const std::string& name) : start_(NowSecs()), bench_name_(name) {}
@@ -130,6 +143,7 @@ void GraphDataSearchWithDegree() {
   for (int i = 0; i < element_nums; i++) {
     Vertex v;
     auto s = graph_simulator->GetVertex(generator(), v);
+    // Not found, and search until find.
     while (s != Status::Ok) {
       s = graph_simulator->GetVertex(generator(), v);
     }
@@ -191,5 +205,7 @@ int main(int argc, char* argv[]) {
     GraphDataTopN();
   }
   LatencyPrint();
+
+  delete graph_simulator;
   return 0;
 }
