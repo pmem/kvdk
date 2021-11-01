@@ -289,6 +289,8 @@ bool Skiplist::FindInsertPos(Splice *splice,
     // or:
     // this skip list: record1 -> record2
     // another skip list:"new record reuse prev" -> "new record reuse next" ->
+    // In this case, inserting record will be mis-inserted between "new record
+    // reuse prev" and "new record reuse next"
     auto check_id = [&]() {
       return SkiplistId(next) == id_ && SkiplistId(prev) == id_;
     };
