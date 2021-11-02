@@ -18,11 +18,11 @@
 #include <libpmem.h>
 #include <libpmemobj++/string_view.hpp>
 
-#include "kvdk/alias.hpp"
 #include "kvdk/engine.hpp"
-#include "kvdk/macros.h"
 
+#include "alias.hpp"
 #include "hash_table.hpp"
+#include "macros.h"
 #include "structures.hpp"
 #include "utils.hpp"
 

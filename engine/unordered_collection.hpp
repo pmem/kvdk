@@ -11,10 +11,10 @@
 
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
-#include "kvdk/macros.h"
 
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
+#include "macros.h"
 #include "structures.hpp"
 #include "utils.hpp"
 
