@@ -219,8 +219,8 @@ private:
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
     DLRecord *pmp_next =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
-    bool is_linked_right = (pmp_prev->next == offset);
-    bool is_linked_left = (pmp_next->prev == offset);
+    bool is_linked_left = (pmp_prev->next == offset);
+    bool is_linked_right = (pmp_next->prev == offset);
 
     if (is_linked_left && is_linked_right) {
       return true;
@@ -238,6 +238,7 @@ private:
       std::abort();
     }
   }
+  
   inline void purgeAndFree(DLRecord *record_pmmptr) {
     record_pmmptr->Destroy();
     pmem_allocator_->Free(
