@@ -332,14 +332,17 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
   case RecordType::SortedHeaderRecord:
   case RecordType::DlistDataRecord:
   case RecordType::DlistRecord:
-  case RecordType::DlistHeadRecord:
-  case RecordType::DlistTailRecord: {
+  {
     DLRecord *dl_record = static_cast<DLRecord *>(data_record);
     if (dl_record->Validate(expected_checksum)) {
       auto v = dl_record->Value();
       value->assign(v.data(), v.size());
       return true;
     }
+    return false;
+  }
+  case RecordType::Padding:
+  {
     return false;
   }
   default:
