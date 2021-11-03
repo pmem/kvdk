@@ -344,6 +344,7 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
     return false;
   }
   default:
+    GlobalLogger.Error("Unsupported type in ValidateRecordAndGetValue()!");
     kvdk_assert(false, "Unsupported type in ValidateRecordAndGetValue()!");
     std::abort();
   }
