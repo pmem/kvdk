@@ -238,7 +238,7 @@ private:
       std::abort();
     }
   }
-  
+
   inline void purgeAndFree(DLRecord *record_pmmptr) {
     record_pmmptr->Destroy();
     pmem_allocator_->Free(

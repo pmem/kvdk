@@ -331,8 +331,7 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
   case RecordType::SortedDataRecord:
   case RecordType::SortedHeaderRecord:
   case RecordType::DlistDataRecord:
-  case RecordType::DlistRecord:
-  {
+  case RecordType::DlistRecord: {
     DLRecord *dl_record = static_cast<DLRecord *>(data_record);
     if (dl_record->Validate(expected_checksum)) {
       auto v = dl_record->Value();
@@ -341,8 +340,7 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
     }
     return false;
   }
-  case RecordType::Padding:
-  {
+  case RecordType::Padding: {
     return false;
   }
   default:
