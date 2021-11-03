@@ -336,8 +336,8 @@ void GraphSimulator::BFSSearch(const std::vector<Vertex> &input_vertexes,
                                int n_depth, std::vector<Status> *status) {
   if (input_vertexes.empty()) return;
 
-	for (const auto &input_vertex : input_vertexes) {
-		status->emplace_back(BFSInternal(input_vertex, n_depth));
+  for (const auto &input_vertex : input_vertexes) {
+    status->emplace_back(BFSInternal(input_vertex, n_depth));
   }
 }
 

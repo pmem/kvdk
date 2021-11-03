@@ -1,4 +1,5 @@
 #!/bin/bash
+# The shell is for build the rocksdb as a compared engine with kvdk in CmakeList.txt.
 
 set -x
 

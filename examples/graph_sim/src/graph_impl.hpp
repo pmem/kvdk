@@ -63,8 +63,8 @@ struct Edge {
         out_direction(direction),
         edge_info(info) {}
 
-	size_t Size() const {
-  	return src.Size() + dst.Size() + 4 + 4 + edge_info.size();
+  size_t Size() const {
+    return src.Size() + dst.Size() + 4 + 4 + edge_info.size();
   }
 
   void EncodeTo(std::string* output) const;
@@ -78,8 +78,8 @@ inline std::string VertexValueEncode(const Vertex& v) { return v.vertex_info; }
 
 inline std::string OutEdgeKeyEncode(const Vertex& src) {
   std::string output;
-	output.reserve(src.Size() + 2);
-	src.EncodeTo(&output);
+  output.reserve(src.Size() + 2);
+  src.EncodeTo(&output);
   output.append("_O");
   return output;
 }
@@ -94,8 +94,8 @@ inline std::string InEdgeKeyEncode(const Vertex& src) {
 
 inline std::string NoDirectionKeyEncode(const Vertex& src) {
   std::string output;
-	output.reserve(src.Size() + 2);
-	src.EncodeTo(&output);
+  output.reserve(src.Size() + 2);
+  src.EncodeTo(&output);
   output.append("_N");
   return output;
 }

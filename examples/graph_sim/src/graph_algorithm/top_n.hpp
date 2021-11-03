@@ -54,7 +54,8 @@ void TopN<T, Comparator>::Push(const T& v) {
 
   if (small_heap_.size() < Limit()) {
     small_heap_.push(v);
-  } else if (small_heap_.size() == Limit() && cmp_(small_heap_.top(), v) == false) {
+  } else if (small_heap_.size() == Limit() &&
+             cmp_(small_heap_.top(), v) == false) {
     small_heap_.pop();
     small_heap_.push(v);
   }

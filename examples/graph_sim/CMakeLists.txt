@@ -8,14 +8,15 @@ message(${CMAKE_CURRENT_SOURCE_DIR})
 option(BUILD_ROCKSDB "build with rocksdb" OFF)
 if (BUILD_ROCKSDB)
     # Build the rocksdb and add the include / library / defines
-    execute_process(COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build.sh)
+    execute_process(COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_rocksdb.sh)
     set(ROCKSDB_INCLUDE_DIR ${PROJECT_BINARY_DIR}/rocksdb/include)
     set(ROCKSDB_LIBRARY ${PROJECT_BINARY_DIR}/rocksdb/build/librocksdb.so)
     add_definitions(-DBUILD_ROCKSDB)
 endif()
 
 file(GLOB sources
-        src/kv_engines/KVEngine.cpp
+        src/kv_engines/kvdk.cpp
+        src/kv_engines/rocksdb.cpp
         src/kv_engines/KVEngine.hpp
         src/kv_engines/engine_factory.hpp
         src/graph_algorithm/top_n.hpp

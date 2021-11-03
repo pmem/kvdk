@@ -44,7 +44,7 @@ DEFINE_string(topn_collection, "kvdk_collection",
               "The topn collection in kvdk which will be used for sorted "
               "skiplist build.");
 
-std::mt19937_64 generator; // A simple random id producer.
+std::mt19937_64 generator;  // A simple random id producer.
 std::unordered_map<std::string, double> bench_timer;
 GraphSimulator* graph_simulator{nullptr};
 
@@ -157,7 +157,7 @@ void GraphDataTopN() {
 
   fprintf(stdout, "TopN: \n");
   for (auto& item : topn_res) {
-    fprintf(stdout, "vertex : %llu  InEdge : %llu", item.first.id, item.second);
+    fprintf(stdout, "vertex : %llu  InEdges : %llu\n", item.first.id, item.second);
   }
 }
 
@@ -174,15 +174,15 @@ void LatencyPrint() {
 }
 
 int main(int argc, char* argv[]) {
-	ParseCommandLineFlags(&argc, &argv, true);
+  ParseCommandLineFlags(&argc, &argv, true);
 
   bench_timer.clear();
   int32_t threads = FLAGS_client_threads;
   graph_simulator = new GraphSimulator(FLAGS_engine_name, GraphOptions());
 
   if (FLAGS_construct) {
-		Timer timer("GraphDataConstruct");
-		StartThreads(GraphDataConstruct, threads);
+    Timer timer("GraphDataConstruct");
+    StartThreads(GraphDataConstruct, threads);
   }
 
   if (FLAGS_search_degree) {

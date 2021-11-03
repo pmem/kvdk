@@ -195,71 +195,71 @@ TEST_F(GraphSimulatorTest, GraphSimulatorBasic) {
   ASSERT_EQ(graph_simulator->RemoveEdge(edge_2cd_out), Status::Ok);
 }
 
-
 TEST_F(GraphSimulatorTest, MemoryEngineTest) {
-	engine_name = "memory";
-	kv_engine = CreateEngineByName::Create(engine_name);
+  engine_name = "memory";
+  kv_engine = CreateEngineByName::Create(engine_name);
 
-	ASSERT_EQ(kv_engine->Put("key1", "value1"), Status::Ok);
-	ASSERT_EQ(kv_engine->Put("key2", "value2"), Status::Ok);
-	ASSERT_EQ(kv_engine->Put("key3", "value3"), Status::Ok);
-	ASSERT_EQ(kv_engine->Put("key4", "value3"), Status::Ok);
+  ASSERT_EQ(kv_engine->Put("key1", "value1"), Status::Ok);
+  ASSERT_EQ(kv_engine->Put("key2", "value2"), Status::Ok);
+  ASSERT_EQ(kv_engine->Put("key3", "value3"), Status::Ok);
+  ASSERT_EQ(kv_engine->Put("key4", "value3"), Status::Ok);
 
-	std::string value;
-	ASSERT_EQ(kv_engine->Get("key2", &value), Status::Ok);
-	ASSERT_EQ(kv_engine->Delete("key2"), Status::Ok);
-	ASSERT_EQ(kv_engine->Get("key2", &value), Status::NotFound);
-	ASSERT_EQ(kv_engine->Put("key2", "value2"), Status::Ok);
+  std::string value;
+  ASSERT_EQ(kv_engine->Get("key2", &value), Status::Ok);
+  ASSERT_EQ(kv_engine->Delete("key2"), Status::Ok);
+  ASSERT_EQ(kv_engine->Get("key2", &value), Status::NotFound);
+  ASSERT_EQ(kv_engine->Put("key2", "value2"), Status::Ok);
 
-	auto it = kv_engine->NewIterator();
-	int i = 1;
-	for (it->SeekToFirst(); it->Valid(); it->Next()) {
-		ASSERT_EQ(it->Key().c_str(), "key" + std::to_string(i));
-		i++;
-	}
-	delete kv_engine;
+  auto it = kv_engine->NewIterator();
+  int i = 1;
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    ASSERT_EQ(it->Key().c_str(), "key" + std::to_string(i));
+    i++;
+  }
+  delete kv_engine;
 }
 
 TEST_F(GraphSimulatorTest, GraphSimulatorTopN) {
-	// Use the simple memory engine to check the topn.
-	engine_name = "memory";
-	graph_simulator = new GraphSimulator(engine_name, options);
+  // Use the simple memory engine to check the topn.
+  engine_name = "memory";
+  graph_simulator = new GraphSimulator(engine_name, options);
 
-	// Edge list encode and decode
-	std::vector<Vertex> vertexes;
-	std::string buffer;
+  // Edge list encode and decode
+  std::vector<Vertex> vertexes;
+  std::string buffer;
 
-	for (int i = 0; i <= 5; i++) {
-		vertexes.emplace_back(Vertex(i, "vertex_v" + std::to_string(i)));
-	}
-	for (int i = 1; i <= 5; i++) {
-		Edge edge(2, vertexes[i], vertexes[0], 0,
-				 vertexes[0].vertex_info + "--" + vertexes[i].vertex_info);
-		ASSERT_EQ(graph_simulator->AddEdge(edge), Status::Ok);
-	}
+  for (int i = 0; i <= 5; i++) {
+    vertexes.emplace_back(Vertex(i, "vertex_v" + std::to_string(i)));
+  }
+  for (int i = 1; i <= 5; i++) {
+    Edge edge(2, vertexes[i], vertexes[0], 0,
+              vertexes[0].vertex_info + "--" + vertexes[i].vertex_info);
+    ASSERT_EQ(graph_simulator->AddEdge(edge), Status::Ok);
+  }
 
-	EdgeList tmp_list;
-	ASSERT_EQ(graph_simulator->GetAllOutEdges(vertexes[0], &tmp_list), Status::Ok);
-	ASSERT_EQ(tmp_list.Num(), 5);
+  EdgeList tmp_list;
+  ASSERT_EQ(graph_simulator->GetAllInEdges(vertexes[0], &tmp_list),
+            Status::Ok);
+  ASSERT_EQ(tmp_list.Num(), 5);
 
-	std::vector<std::pair<Vertex,uint64_t>> top_n;
-	ASSERT_EQ(graph_simulator->GetTopN(top_n,1), Status::Ok);
-	ASSERT_EQ(top_n.size(), 1);
-	ASSERT_EQ(top_n[0].second,5);
-	ASSERT_EQ(top_n[0].first,vertexes[0]);
+  std::vector<std::pair<Vertex, uint64_t>> top_n;
+  ASSERT_EQ(graph_simulator->GetTopN(top_n, 1), Status::Ok);
+  ASSERT_EQ(top_n.size(), 1);
+  ASSERT_EQ(top_n[0].second, 5);
+  ASSERT_EQ(top_n[0].first, vertexes[0]);
 
-	for (int i = 1; i <= 5; i++) {
-		if (i == 3) continue;
-		Edge edge(2, vertexes[i], vertexes[3], 0,
-		     vertexes[1].vertex_info + "--" + vertexes[i].vertex_info);
-		ASSERT_EQ(graph_simulator->AddEdge(edge), Status::Ok);
-	}
+  for (int i = 1; i <= 5; i++) {
+    if (i == 3) continue;
+    Edge edge(2, vertexes[i], vertexes[3], 0,
+              vertexes[1].vertex_info + "--" + vertexes[i].vertex_info);
+    ASSERT_EQ(graph_simulator->AddEdge(edge), Status::Ok);
+  }
 
-	top_n.clear();
-	ASSERT_EQ(graph_simulator->GetTopN(top_n, 2), Status::Ok);
-	ASSERT_EQ(top_n.size(), 2);
-	ASSERT_EQ(top_n[0].second,5);
-	ASSERT_EQ(top_n[0].first, vertexes[0]);
-	ASSERT_EQ(top_n[1].second,4);
-	ASSERT_EQ(top_n[1].first,vertexes[3]);
+  top_n.clear();
+  ASSERT_EQ(graph_simulator->GetTopN(top_n, 2), Status::Ok);
+  ASSERT_EQ(top_n.size(), 2);
+  ASSERT_EQ(top_n[0].second, 5);
+  ASSERT_EQ(top_n[0].first, vertexes[0]);
+  ASSERT_EQ(top_n[1].second, 4);
+  ASSERT_EQ(top_n[1].first, vertexes[3]);
 }

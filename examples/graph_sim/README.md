@@ -18,7 +18,7 @@ make -j
 ```
 If you want to compare the kvdk with rocksdb, then add `-DBUILD_ROCKSDB=ON`, the rocksdb engine will be add.
 
-After build success, the result binary will be produced at `build/example/graph_sim`.
+After build success, the result binary and lib will produce to `build/example/graph_sim`.
 
 ## Benchmarks
 The bench mark is for construct the graph data and run the different algos.
@@ -62,6 +62,11 @@ numactl --membind=0 --cpubind=0 \
 -topn=true \
 -topn_num=10 \
 -topn_collection="cold-data" \
+```
+
+The result will output the total time of the current workload.
+```shell
+
 ```
 
 1. 1,000,000 vertexes and 1,000,000,000 edges, it's hot data with read and write.

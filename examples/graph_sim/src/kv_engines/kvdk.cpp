@@ -2,13 +2,15 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
-#include "KVEngine.hpp"
-
 #include <gflags/gflags.h>
 
-DEFINE_string(kvdk_collection, "", "The collection for construct sorted structure in kvdk.");
-DEFINE_int64(kvdk_pmem_file_size, 100ULL<<30, "The size of kvdk pmem file size.");
-DEFINE_string(kvdk_path, "/mnt/pmem0/kvkd", "The path of the kvdk pmem file.");
+#include "KVEngine.hpp"
+
+DEFINE_string(kvdk_collection, "",
+              "The collection for construct sorted structure in kvdk.");
+DEFINE_int64(kvdk_pmem_file_size, 100ULL << 30,
+             "The size of kvdk pmem file size.");
+DEFINE_string(kvdk_path, "/mnt/pmem0/kvdk", "The path of the kvdk pmem file.");
 
 PMemKVDK::PMemKVDK(const std::string &db_path) {
   path_ = FLAGS_kvdk_path;
@@ -72,9 +74,9 @@ class PMemKVDKIterator : public KVEngine::Iterator {
 };
 
 KVEngine::Iterator *PMemKVDK::NewIterator() {
-	if (!collection_.empty()) {
-		auto it = db_->NewSortedIterator(collection_);
-		return new PMemKVDKIterator(reinterpret_cast<Iterator*>(it.get()));
-	}
-	return nullptr;
+  if (!collection_.empty()) {
+    auto it = db_->NewSortedIterator(collection_);
+    return new PMemKVDKIterator(reinterpret_cast<Iterator *>(it.get()));
+  }
+  return nullptr;
 }
