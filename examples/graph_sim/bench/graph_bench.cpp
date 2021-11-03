@@ -1,6 +1,6 @@
-//
-// Created by zhanghuigui on 2021/10/25.
-//
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
 
 #include <gflags/gflags.h>
 #include <sys/time.h>
@@ -25,7 +25,7 @@ DEFINE_int32(topn_num, 10, "The top num of the search with topn!");
 DEFINE_int64(vertex_nums, 10000000,
              "The number of the vertexes in the simple graphdb.");
 DEFINE_int64(vertex_id_range, 30000000, "The range of the vertex's id.");
-DEFINE_int32(threads, 32,
+DEFINE_int32(client_threads, 32,
              "The number of the threads to run the graphdb's workload.");
 DEFINE_string(engine_name, "kvdk",
               "The name of the engine, if you want to create other"
@@ -44,20 +44,7 @@ DEFINE_string(topn_collection, "kvdk_collection",
               "The topn collection in kvdk which will be used for sorted "
               "skiplist build.");
 
-// A small timer used for record the time
-#define def_timer uint64_t elapsed; \
-   struct timeval st, et;
-
-#define start_timer gettimeofday(&st,NULL);
-
-#define end_timer(msg, args...) ;do { \
-   gettimeofday(&et,NULL); \
-   elapsed = ((et.tv_sec - st.tv_sec) * 1000000) + (et.tv_usec - st.tv_usec) + 1; \
-   printf("(%s,%d) [%6lums] " msg "\n", __FUNCTION__ , __LINE__, elapsed/1000, ##args); \
-} while(0)
-
-std::mt19937_64 generator;
-std::atomic<int64_t> vertex_ops;
+std::mt19937_64 generator; // A simple random id producer.
 std::unordered_map<std::string, double> bench_timer;
 GraphSimulator* graph_simulator{nullptr};
 
@@ -75,10 +62,10 @@ static Edge CreateEdge(const Vertex& in, const Vertex& out,
   return edge;
 }
 
-double NowSecs() {
+static double NowSecs() {
   struct timeval tv;
   gettimeofday(&tv, nullptr);
-  return static_cast<double>(tv.tv_usec / 1000000) + tv.tv_sec;
+  return static_cast<double>(tv.tv_usec / 1000000.0) + tv.tv_sec;
 }
 
 // Simple timer to record some stats' time.
@@ -100,8 +87,8 @@ static void StartThreads(std::function<void()> func, int32_t thread_nums) {
 }
 
 void GraphDataConstruct() {
-  assert(FLAGS_threads != 0);
-  int64_t current_vertexes = vertex_ops / FLAGS_threads;
+  assert(FLAGS_client_threads != 0);
+  int64_t current_vertexes = FLAGS_vertex_nums / FLAGS_client_threads;
 
   while (current_vertexes > 0) {
     Status s;
@@ -119,16 +106,14 @@ void GraphDataConstruct() {
     Vertex dst = CreateVertex(second_id, vertex_info_len);
 
     s = graph_simulator->AddVertex(src);
-    assert(s != Status::Ok);
+    assert(s == Status::Ok);
     s = graph_simulator->AddVertex(dst);
-    assert(s != Status::Ok);
+    assert(s == Status::Ok);
 
     Edge out_edge = CreateEdge(src, dst, 1, FLAGS_edge_info_len);
-    s = graph_simulator->AddEdge(out_edge);
-    assert(s != Status::Ok);
+    graph_simulator->AddEdge(out_edge);
     Edge in_edge = CreateEdge(src, dst, 0, FLAGS_edge_info_len);
-    s = graph_simulator->AddEdge(in_edge);
-    assert(s != Status::Ok);
+    graph_simulator->AddEdge(in_edge);
 
     current_vertexes -= 2;
   }
@@ -142,10 +127,10 @@ void GraphDataSearchWithDegree() {
 
   for (int i = 0; i < element_nums; i++) {
     Vertex v;
-    auto s = graph_simulator->GetVertex(generator(), v);
+    auto s = graph_simulator->GetVertex(generator() % FLAGS_vertex_id_range, v);
     // Not found, and search until find.
     while (s != Status::Ok) {
-      s = graph_simulator->GetVertex(generator(), v);
+      s = graph_simulator->GetVertex(generator() % FLAGS_vertex_id_range, v);
     }
     elements.emplace_back(v);
   }
@@ -158,7 +143,7 @@ void GraphDataSearchWithDegree() {
       correct++;
     }
   }
-  fprintf(stdout, "Success bfs search count : %d\n", correct);
+  fprintf(stdout, " success bfs search count : %d\n", correct);
 }
 
 void GraphDataTopN() {
@@ -189,10 +174,15 @@ void LatencyPrint() {
 }
 
 int main(int argc, char* argv[]) {
+	ParseCommandLineFlags(&argc, &argv, true);
+
   bench_timer.clear();
-  int32_t threads = FLAGS_threads;
+  int32_t threads = FLAGS_client_threads;
+  graph_simulator = new GraphSimulator(FLAGS_engine_name, GraphOptions());
+
   if (FLAGS_construct) {
-    StartThreads(GraphDataConstruct, threads);
+		Timer timer("GraphDataConstruct");
+		StartThreads(GraphDataConstruct, threads);
   }
 
   if (FLAGS_search_degree) {

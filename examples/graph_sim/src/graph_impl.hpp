@@ -1,6 +1,6 @@
-//
-// Created by zhanghuigui on 2021/10/18.
-//
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
 
 #pragma once
 
@@ -110,14 +110,14 @@ inline bool CheckInEdgeKey(const std::string& input) {
   std::string buffer(input);
   size_t size = input.size();
   buffer.erase(0, size - 2);
-  return input == "_I";
+  return buffer == "_I";
 }
 
 inline bool CheckOutEdgeKey(const std::string& input) {
   std::string buffer(input);
   size_t size = input.size();
   buffer.erase(0, size - 2);
-  return input == "_O";
+  return buffer == "_O";
 }
 
 struct EdgeList {

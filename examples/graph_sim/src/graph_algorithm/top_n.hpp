@@ -1,6 +1,6 @@
-//
-// Created by zhanghuigui on 2021/10/25.
-//
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
 
 #pragma once
 
@@ -47,14 +47,14 @@ class TopN {
 
 template <class T, class Comparator>
 void TopN<T, Comparator>::Push(const T& v) {
-  if (limit_ == 0) {  // There is no limit
+  if (Limit() == 0) {  // There is no limit
     small_heap_.push(v);
     return;
   }
 
   if (small_heap_.size() < Limit()) {
     small_heap_.push(v);
-  } else if (small_heap_.size() == Limit() && cmp_(small_heap_.top(), v) < 0) {
+  } else if (small_heap_.size() == Limit() && cmp_(small_heap_.top(), v) == false) {
     small_heap_.pop();
     small_heap_.push(v);
   }

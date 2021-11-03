@@ -1,20 +1,21 @@
-//
-// Created by zhanghuigui on 2021/10/18.
-//
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
 
 #include "KVEngine.hpp"
 
 #include <gflags/gflags.h>
 
+DEFINE_string(kvdk_collection, "", "The collection for construct sorted structure in kvdk.");
+DEFINE_int64(kvdk_pmem_file_size, 100ULL<<30, "The size of kvdk pmem file size.");
+DEFINE_string(kvdk_path, "/mnt/pmem0/kvkd", "The path of the kvdk pmem file.");
 
 PMemKVDK::PMemKVDK(const std::string &db_path) {
-  path_ = "/mnt/pmem/kvdk";
-
-  // collection_ = "TEST-COLLECTION";
+  path_ = FLAGS_kvdk_path;
+  collection_ = FLAGS_kvdk_collection;
 
   // set some options
-  options_.pmem_file_size = 100ULL << 30;
-  options_.use_devdax_mode = false;
+  options_.pmem_file_size = FLAGS_kvdk_pmem_file_size;
 
   auto s = kvdk::Engine::Open(path_, &db_, options_);
   if (s != kvdk::Status::Ok) {
@@ -45,14 +46,6 @@ Status PMemKVDK::Get(const std::string &key, std::string *value) {
   } else {
     s = db_->Get(key, value);
   }
-  if (s != kvdk::Status::Ok) {
-    if (s == kvdk::Status::NotFound) {
-      SimpleLoger("KVDK Get " + key + " not found");
-      value->clear();
-      return s;
-    }
-    SimpleLoger("KVDK Get failed");
-  }
   return s;
 }
 
@@ -79,6 +72,9 @@ class PMemKVDKIterator : public KVEngine::Iterator {
 };
 
 KVEngine::Iterator *PMemKVDK::NewIterator() {
-  auto it = db_->NewSortedIterator(collection_);
-  return new PMemKVDKIterator(reinterpret_cast<Iterator *>(it.get()));
+	if (!collection_.empty()) {
+		auto it = db_->NewSortedIterator(collection_);
+		return new PMemKVDKIterator(reinterpret_cast<Iterator*>(it.get()));
+	}
+	return nullptr;
 }

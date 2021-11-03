@@ -1,6 +1,6 @@
-//
-// Created by zhanghuigui on 2021/10/18.
-//
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
 
 #include "graph_impl.hpp"
 
@@ -129,13 +129,7 @@ Status GraphSimulator::AddVertex(const Vertex &vertex) {
 Status GraphSimulator::GetVertex(const uint64_t &id, Vertex &vertex) {
   std::string value;
   auto s = kv_engine_->Get(std::to_string(id), &value);
-  if (s != Status::Ok) {
-    if (s == Status::NotFound) {
-      SimpleLoger("GetVertex " + std::to_string(id) + " notfound.");
-      return s;
-    }
-    return s;
-  }
+  if (s != Status::Ok) return s;
 
   vertex.id = id;
   vertex.vertex_info = value;
@@ -149,7 +143,6 @@ Status GraphSimulator::GetVertex(const uint64_t &id, Vertex &vertex) {
 Status GraphSimulator::GetEdge(const Vertex &in, const Vertex &out,
                                int direction, Edge &edge) {
   if (direction > 2 || direction < 0) {
-    SimpleLoger("GraphSimulator::GetEdge direction is overbound.");
     return Status::Abort;
   }
 
@@ -160,12 +153,7 @@ Status GraphSimulator::GetEdge(const Vertex &in, const Vertex &out,
   if (direction == 1) {
     key = OutEdgeKeyEncode(in);
     auto s = kv_engine_->Get(key, &value);
-    if (s != Status::Ok) {
-      if (s == Status::NotFound) {
-        SimpleLoger("GraphSimulator::GetEdge the out edge is not exists");
-      }
-      return s;
-    }
+    if (s != Status::Ok) return s;
     edge_list.EdgeListDecode(&value);
 
     for (auto &item : edge_list.edges) {
@@ -179,12 +167,7 @@ Status GraphSimulator::GetEdge(const Vertex &in, const Vertex &out,
   // deal the in direction
   key = InEdgeKeyEncode(out);
   auto s = kv_engine_->Get(key, &value);
-  if (s != Status::Ok) {
-    if (s == Status::NotFound) {
-      SimpleLoger("GraphSimulator::GetEdge the in edge is not exists");
-    }
-    return s;
-  }
+  if (s != Status::Ok) return s;
 
   edge_list.EdgeListDecode(&value);
   for (auto &item : edge_list.edges) {
@@ -200,12 +183,7 @@ Status GraphSimulator::GetAllInEdges(const Vertex &dst, EdgeList *edge_list) {
   key = InEdgeKeyEncode(dst);
 
   auto s = kv_engine_->Get(key, &value);
-  if (s != Status::Ok) {
-    if (s == Status::NotFound) {
-      SimpleLoger("GraphSimulator::GetAllInEdges the out edge is not exists");
-    }
-    return s;
-  }
+  if (s != Status::Ok) return s;
 
   return edge_list->EdgeListDecode(&value);
 }
@@ -215,12 +193,7 @@ Status GraphSimulator::GetAllOutEdges(const Vertex &src, EdgeList *edge_list) {
   key = OutEdgeKeyEncode(src);
 
   auto s = kv_engine_->Get(key, &value);
-  if (s != Status::Ok) {
-    if (s == Status::NotFound) {
-      SimpleLoger("GraphSimulator::GetAllOutEdges the out edge is not exists");
-    }
-    return s;
-  }
+  if (s != Status::Ok) return s;
 
   return edge_list->EdgeListDecode(&value);
 }
@@ -288,7 +261,6 @@ Status GraphSimulator::AddInternalEdge(const Edge &edge) {
     if (s == Status::NotFound) {
       new_edge_node = true;
     } else {
-      SimpleLoger("GraphSimulator::AddInternalEdge Get" + key + " failed.");
       return s;
     }
   }
@@ -316,10 +288,7 @@ Status GraphSimulator::AddInternalEdge(const Edge &edge) {
   // We need delete the old key
   if (!new_edge_node) {
     s = RemoveEdge(edge);
-    if (s != Status::Ok) {
-      SimpleLoger("GraphSimulator::AddInternalEdge RemoveEdge failed.");
-      return s;
-    }
+    if (s != Status::Ok) return s;
   }
 
   return kv_engine_->Put(key, value);
@@ -329,7 +298,7 @@ Status GraphSimulator::AddInternalEdge(const Edge &edge) {
 template <typename T>
 struct PairCmp {
   bool operator()(const T &a, const T &b) const {
-    return std::get<1>(a) > std::get<1>(b);
+    return std::get<1>(a) >= std::get<1>(b);
   }
 };
 
@@ -343,13 +312,14 @@ Status GraphSimulator::GetTopN(
   for (; iter->Valid(); iter->Next()) {
     Vertex vertex;
     EdgeList edge_list;
+    std::string key = iter->Key();
+    std::string value = iter->Value();
 
-    if (!CheckInEdgeKey(iter->Key())) {
+    if (!CheckInEdgeKey(key)) {
       continue;
     }
 
-    vertex = EdgeKeyDecode(iter->Key());
-    std::string value = iter->Value();
+    vertex = EdgeKeyDecode(key);
     edge_list.EdgeListDecode(&value);
     top_n.Push(std::make_pair(vertex, edge_list.Num()));
   }
@@ -376,7 +346,7 @@ Status GraphSimulator::BFSInternal(const Vertex &vertex, const int &n_depth) {
   std::map<Vertex, bool> visited;
   Status s;
 
-  // record the current level, that's our target level.
+  // record the current level, and n_depth is our target level.
   int search_depth = 1;
   Q.push(vertex);
   visited[vertex] = true;
