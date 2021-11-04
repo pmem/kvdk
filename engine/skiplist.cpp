@@ -40,6 +40,8 @@ void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
           prev = this;
         } else {
           // this node has been deleted, so seek from header
+          kvdk_assert(result_splice->seeking_list != nullptr,
+                      "skiplist must be set for seek operation!");
           return result_splice->seeking_list->header()->SeekNode(
               key, kMaxHeight, end_height, result_splice);
         }
