@@ -1,12 +1,11 @@
 #!/bin/bash
 # The shell is for build the rocksdb as a compared engine with kvdk in CmakeList.txt.
 
-set -x
-
 # Clone rocksdb
 function clone_rocksdb()
 {
   if [ -e "rocksdb" ]; then cd rocksdb; return; fi
+  echo "cloning rocksdb, please wait a moment ......"
   git clone  https://github.com/facebook/rocksdb.git rocksdb
   if [ $? -ne 0 ]; then echo "git clone rocksdb failed."; exit 1;fi
   cd rocksdb
@@ -37,7 +36,7 @@ function build_gflags()
 
   mkdir -p "$build_dir"/ \
     && cd "$build_dir"/ \
-    && cmake3 .. -DCMAKE_INSTALL_PREFIX="$build_dir" -DBUILD_SHARED_LIBS=1 -DBUILD_STATIC_LIBS=1 \
+    && cmake .. -DCMAKE_INSTALL_PREFIX="$build_dir" -DBUILD_SHARED_LIBS=1 -DBUILD_STATIC_LIBS=1 \
     && make \
     && cd ../../
 }
@@ -58,6 +57,6 @@ fi
 
 mkdir -p "$BUILD_DIR"/ \
   && cd "$BUILD_DIR"/ \
-  && cmake3 "$SOURCE_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$GFLAGS_LIB_DIR \
+  && cmake "$SOURCE_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$GFLAGS_LIB_DIR \
   && make -j"$NUM_CPU_CORES" \
 

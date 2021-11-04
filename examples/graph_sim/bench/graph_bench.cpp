@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <cinttypes>
 
 #include "graph_impl.hpp"
 #include "options.hpp"
@@ -136,14 +137,14 @@ void GraphDataSearchWithDegree() {
   }
 
   std::vector<Status> status;
-  int32_t correct = 0;
+  uint32_t correct = 0;
   graph_simulator->BFSSearch(elements, target_level, &status);
   for (auto& state : status) {
     if (state == Status::Ok) {
       correct++;
     }
   }
-  fprintf(stdout, " success bfs search count : %d\n", correct);
+  fprintf(stdout, " success bfs search count : %" PRIu32 "\n", correct);
 }
 
 void GraphDataTopN() {
@@ -157,7 +158,7 @@ void GraphDataTopN() {
 
   fprintf(stdout, "TopN: \n");
   for (auto& item : topn_res) {
-    fprintf(stdout, "vertex : %llu  InEdges : %llu\n", item.first.id, item.second);
+    fprintf(stdout, "vertex : %" PRIu64 "InEdges : %" PRIu64 "\n", item.first.id, item.second);
   }
 }
 
