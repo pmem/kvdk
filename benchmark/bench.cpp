@@ -172,8 +172,7 @@ void DBWrite(int tid) {
     num = generate_key();
     memcpy(&key[0], &num, 8);
 
-    StringView value =
-        StringView(value_pool, value_size_generator->Next());
+    StringView value = StringView(value_pool, value_size_generator->Next());
 
     if (stat_latencies)
       timer.Start();
