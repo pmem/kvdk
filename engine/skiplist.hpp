@@ -4,15 +4,17 @@
 
 #pragma once
 
-#include <algorithm>
-#include <assert.h>
+#include <cassert>
 #include <cstdint>
+
+#include <algorithm>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
-#include "hash_table.hpp"
 #include "kvdk/engine.hpp"
+
+#include "hash_table.hpp"
 #include "structures.hpp"
 #include "utils.hpp"
 
@@ -46,8 +48,8 @@ public:
 
   static void DeleteNode(SkiplistNode *node) { free(node->heap_space_start()); }
 
-  static SkiplistNode *NewNode(const pmem::obj::string_view &key,
-                               DLRecord *record_on_pmem, uint8_t height) {
+  static SkiplistNode *NewNode(const StringView &key, DLRecord *record_on_pmem,
+                               uint8_t height) {
     size_t size;
     if (height >= kCacheHeight && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * height + key.size() - 4;
@@ -72,12 +74,12 @@ public:
   // between height "start_height" and "end"_height", and store position in
   // "result_splice", if "key" existing, the next pointers in splice point to
   // node of "key"
-  void SeekNode(const pmem::obj::string_view &key, uint8_t start_height,
-                uint8_t end_height, Splice *result_splice);
+  void SeekNode(const StringView &key, uint8_t start_height, uint8_t end_height,
+                Splice *result_splice);
 
   uint16_t Height() { return height; }
 
-  pmem::obj::string_view UserKey();
+  StringView UserKey();
 
   uint64_t GetSkipListId();
 
@@ -127,7 +129,7 @@ public:
 private:
   SkiplistNode() {}
 
-  void MaybeCacheKey(const pmem::obj::string_view &key) {
+  void MaybeCacheKey(const StringView &key) {
     if (height >= kCacheHeight || key.size() <= 4) {
       cached_key_size = key.size();
       memcpy(cached_key, key.data(), key.size());
@@ -188,21 +190,19 @@ public:
     return height;
   }
 
-  inline static pmem::obj::string_view
-  UserKey(const pmem::obj::string_view &skiplist_key) {
-    return pmem::obj::string_view(skiplist_key.data() + 8,
-                                  skiplist_key.size() - 8);
+  inline static StringView UserKey(const StringView &skiplist_key) {
+    return StringView(skiplist_key.data() + 8, skiplist_key.size() - 8);
   }
 
   // Start position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
-  void Seek(const pmem::obj::string_view &key, Splice *result_splice);
+  void Seek(const StringView &key, Splice *result_splice);
 
   Status Rebuild();
 
   bool FindAndLockWritePos(std::vector<SpinMutex *> &spins, Splice *splice,
-                           const pmem::obj::string_view &insert_key,
+                           const StringView &insert_key,
                            const HashTable::KeyHashHint &hint,
                            const DLRecord *updated_record);
 
@@ -215,7 +215,7 @@ public:
   // dram node of inserting record, return nullptr if inserting record is
   // height 0.
   SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
-                             const pmem::obj::string_view &inserting_key,
+                             const StringView &inserting_key,
                              SkiplistNode *data_node, bool is_update);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
@@ -300,7 +300,7 @@ struct Splice {
 
   Splice(Skiplist *s) : seeking_list(s) {}
 
-  void Recompute(const pmem::obj::string_view &key, uint8_t l) {
+  void Recompute(const StringView &key, uint8_t l) {
     SkiplistNode *start_node;
     uint8_t start_height = l;
     while (1) {

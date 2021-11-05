@@ -23,8 +23,11 @@
 
 #define XXH_INLINE_ALL
 #include "xxhash.h"
+#undef XXH_INLINE_ALL
 
 #include "kvdk/namespace.hpp"
+
+#include "alias.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -90,13 +93,12 @@ inline int create_dir_if_missing(const std::string &name) {
   return res;
 }
 
-static inline std::string
-string_view_2_string(const pmem::obj::string_view &src) {
+static inline std::string string_view_2_string(const StringView &src) {
   return std::string(src.data(), src.size());
 }
 
-static inline int compare_string_view(const pmem::obj::string_view &src,
-                                      const pmem::obj::string_view &target) {
+static inline int compare_string_view(const StringView &src,
+                                      const StringView &target) {
   auto size = std::min(src.size(), target.size());
   for (uint32_t i = 0; i < size; i++) {
     if (src[i] != target[i]) {
@@ -106,8 +108,8 @@ static inline int compare_string_view(const pmem::obj::string_view &src,
   return src.size() - target.size();
 }
 
-static inline bool equal_string_view(const pmem::obj::string_view &src,
-                                     const pmem::obj::string_view &target) {
+static inline bool equal_string_view(const StringView &src,
+                                     const StringView &target) {
   if (src.size() == target.size()) {
     return compare_string_view(src, target) == 0;
   }
@@ -121,8 +123,7 @@ public:
   Slice(const char *data, uint64_t size) : _data(data), _size(size) {}
 
   Slice(const std::string &str) : _data(str.data()), _size(str.size()) {}
-  Slice(const pmem::obj::string_view &sv)
-      : _data(sv.data()), _size(sv.size()) {}
+  Slice(const StringView &sv) : _data(sv.data()), _size(sv.size()) {}
 
   const char *data() const { return _data; }
 

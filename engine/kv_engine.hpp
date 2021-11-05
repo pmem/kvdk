@@ -18,7 +18,6 @@
 
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "hash_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "logger.hpp"

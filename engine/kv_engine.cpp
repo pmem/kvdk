@@ -4,22 +4,24 @@
 
 #include "kv_engine.hpp"
 
+#include <cmath>
+#include <cstdint>
+
 #include <algorithm>
 #include <atomic>
-#include <cstdint>
-#include <dirent.h>
 #include <future>
-#include <libpmem.h>
 #include <limits>
-#include <math.h>
 #include <mutex>
-#include <sys/mman.h>
 #include <thread>
+
+#include <dirent.h>
+#include <libpmem.h>
+#include <sys/mman.h>
+
+#include "kvdk/engine.hpp"
 
 #include "configs.hpp"
 #include "dram_allocator.hpp"
-#include "hash_list.hpp"
-#include "kvdk/engine.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "utils.hpp"
@@ -168,7 +170,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
 }
 
 std::shared_ptr<Iterator>
-KVEngine::NewSortedIterator(const pmem::obj::string_view collection) {
+KVEngine::NewSortedIterator(const StringView collection) {
   Skiplist *skiplist;
   Status s = SearchOrInitSkiplist(collection, &skiplist, false);
 
@@ -374,7 +376,7 @@ bool KVEngine::ValidateRecord(void *data_record) {
 
 Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
   assert(pmem_record->entry.meta.type == SortedHeaderRecord);
-  pmem::obj::string_view pmem_key = pmem_record->Key();
+  StringView pmem_key = pmem_record->Key();
   std::string key(string_view_2_string(pmem_key));
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -412,7 +414,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
-  pmem::obj::string_view pmem_key = pmem_record->Key();
+  StringView pmem_key = pmem_record->Key();
   std::string key(string_view_2_string(pmem_key));
   DataEntry existing_data_entry;
   HashEntry hash_entry;
@@ -483,7 +485,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   }
 
   assert(pmem_record->entry.meta.type & SortedDataRecord);
-  pmem::obj::string_view pmem_key = pmem_record->Key();
+  StringView pmem_key = pmem_record->Key();
   std::string key(string_view_2_string(pmem_key));
   DataEntry existing_data_entry;
   HashEntry hash_entry;
@@ -567,10 +569,9 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   return Status::Ok;
 }
 
-Status
-KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
-                                     PersistentList **list, bool init,
-                                     uint16_t header_type) {
+Status KVEngine::SearchOrInitPersistentList(const StringView &collection,
+                                            PersistentList **list, bool init,
+                                            uint16_t header_type) {
   auto hint = hash_table_->GetHint(collection);
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -603,7 +604,7 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
             sized_space_entry.size, get_timestamp(), (RecordType)header_type,
             sized_space_entry.space_entry.offset,
             sized_space_entry.space_entry.offset, collection,
-            pmem::obj::string_view((char *)&id, 8));
+            StringView((char *)&id, 8));
 
         {
           std::lock_guard<std::mutex> lg(list_mu_);
@@ -775,8 +776,8 @@ Status KVEngine::Recovery() {
   return Status::Ok;
 }
 
-Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
-                             std::string *value, uint16_t type_mask) {
+Status KVEngine::HashGetImpl(const StringView &key, std::string *value,
+                             uint16_t type_mask) {
   DataEntry data_entry;
   while (1) {
     HashEntry hash_entry;
@@ -824,14 +825,14 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
   return Status::Ok;
 }
 
-Status KVEngine::Get(const pmem::obj::string_view key, std::string *value) {
+Status KVEngine::Get(const StringView key, std::string *value) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
   return HashGetImpl(key, value, StringRecordType);
 }
 
-Status KVEngine::Delete(const pmem::obj::string_view key) {
+Status KVEngine::Delete(const StringView key) {
   Status s = MaybeInitWriteThread();
 
   if (s != Status::Ok) {
@@ -844,8 +845,7 @@ Status KVEngine::Delete(const pmem::obj::string_view key) {
   return StringDeleteImpl(key);
 }
 
-Status KVEngine::SDeleteImpl(Skiplist *skiplist,
-                             const pmem::obj::string_view &user_key) {
+Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
   uint64_t id = skiplist->id();
   std::string collection_key(PersistentList::ListKey(user_key, id));
   if (!CheckKeySize(collection_key)) {
@@ -907,9 +907,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
   return Status::Ok;
 }
 
-Status KVEngine::SSetImpl(Skiplist *skiplist,
-                          const pmem::obj::string_view &user_key,
-                          const pmem::obj::string_view &value) {
+Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
+                          const StringView &value) {
   uint64_t id = skiplist->id();
   std::string collection_key(PersistentList::ListKey(user_key, id));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
@@ -1013,9 +1012,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
   return Status::Ok;
 }
 
-Status KVEngine::SSet(const pmem::obj::string_view collection,
-                      const pmem::obj::string_view user_key,
-                      const pmem::obj::string_view value) {
+Status KVEngine::SSet(const StringView collection, const StringView user_key,
+                      const StringView value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1093,8 +1091,8 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
   return Status::Ok;
 }
 
-Status KVEngine::SDelete(const pmem::obj::string_view collection,
-                         const pmem::obj::string_view user_key) {
+Status KVEngine::SDelete(const StringView collection,
+                         const StringView user_key) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1275,8 +1273,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
   return Status::Ok;
 }
 
-Status KVEngine::SGet(const pmem::obj::string_view collection,
-                      const pmem::obj::string_view user_key,
+Status KVEngine::SGet(const StringView collection, const StringView user_key,
                       std::string *value) {
   Skiplist *skiplist = nullptr;
   Status s = SearchOrInitSkiplist(collection, &skiplist, false);
@@ -1289,7 +1286,7 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
   return HashGetImpl(skiplist_key, value, SortedDataRecord);
 }
 
-Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key) {
+Status KVEngine::StringDeleteImpl(const StringView &key) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -1344,8 +1341,7 @@ Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key) {
   return Status::Ok;
 }
 
-Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
-                               const pmem::obj::string_view &value) {
+Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -1397,8 +1393,7 @@ Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
   return Status::Ok;
 }
 
-Status KVEngine::Set(const pmem::obj::string_view key,
-                     const pmem::obj::string_view value) {
+Status KVEngine::Set(const StringView key, const StringView value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1413,8 +1408,8 @@ Status KVEngine::Set(const pmem::obj::string_view key,
 } // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
-std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
-    pmem::obj::string_view const collection_name) {
+std::shared_ptr<UnorderedCollection>
+KVEngine::createUnorderedCollection(StringView const collection_name) {
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
@@ -1425,7 +1420,7 @@ std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
 }
 
 UnorderedCollection *
-KVEngine::findUnorderedCollection(pmem::obj::string_view collection_name) {
+KVEngine::findUnorderedCollection(StringView collection_name) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -1446,8 +1441,8 @@ KVEngine::findUnorderedCollection(pmem::obj::string_view collection_name) {
   }
 }
 
-Status KVEngine::HGet(pmem::obj::string_view const collection_name,
-                      pmem::obj::string_view const key, std::string *value) {
+Status KVEngine::HGet(StringView const collection_name, StringView const key,
+                      std::string *value) {
   UnorderedCollection *p_uncoll = findUnorderedCollection(collection_name);
   if (!p_uncoll) {
     return Status::NotFound;
@@ -1457,9 +1452,8 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
   return HashGetImpl(internal_key, value, RecordType::DlistDataRecord);
 }
 
-Status KVEngine::HSet(pmem::obj::string_view const collection_name,
-                      pmem::obj::string_view const key,
-                      pmem::obj::string_view const value) {
+Status KVEngine::HSet(StringView const collection_name, StringView const key,
+                      StringView const value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1572,8 +1566,8 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
   }
 }
 
-Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
-                         pmem::obj::string_view const key) {
+Status KVEngine::HDelete(StringView const collection_name,
+                         StringView const key) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1632,7 +1626,7 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
 }
 
 std::shared_ptr<Iterator>
-KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name) {
+KVEngine::NewUnorderedIterator(StringView const collection_name) {
   UnorderedCollection *p_collection = findUnorderedCollection(collection_name);
   return p_collection ? std::make_shared<UnorderedIterator>(
                             p_collection->shared_from_this())

@@ -12,6 +12,9 @@
 #include "kvdk/iterator.hpp"
 #include "kvdk/write_batch.hpp"
 
+#include "alias.hpp"
+
+using kvdk::StringView;
 using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::Iterator;
@@ -142,7 +145,7 @@ char *KVDKGet(KVDKEngine *engine, const char *key, size_t key_len,
               size_t *val_len, char **error) {
   std::string val_str;
   char *val = nullptr;
-  Status s = engine->rep->Get(pmem::obj::string_view(key, key_len), &val_str);
+  Status s = engine->rep->Get(StringView(key, key_len), &val_str);
   if (s == Status::Ok) {
     *val_len = val_str.size();
     val = CopyStringToChar(val_str);
@@ -155,22 +158,22 @@ char *KVDKGet(KVDKEngine *engine, const char *key, size_t key_len,
 
 void KVDKSet(KVDKEngine *engine, const char *key, size_t key_len,
              const char *val, size_t val_len, char **error) {
-  SaveError(error, engine->rep->Set(pmem::obj::string_view(key, key_len),
-                                    pmem::obj::string_view(val, val_len)));
+  SaveError(error, engine->rep->Set(StringView(key, key_len),
+                                    StringView(val, val_len)));
 }
 
 void KVDKDelete(KVDKEngine *engine, const char *key, size_t key_len,
                 char **error) {
-  SaveError(error, engine->rep->Delete(pmem::obj::string_view(key, key_len)));
+  SaveError(error, engine->rep->Delete(StringView(key, key_len)));
 }
 
 void KVDKSortedSet(KVDKEngine *engine, const char *collection,
                    size_t collection_len, const char *key, size_t key_len,
                    const char *val, size_t val_len, char **error) {
   SaveError(error, engine->rep->SSet(
-                       pmem::obj::string_view(collection, collection_len),
-                       pmem::obj::string_view(key, key_len),
-                       pmem::obj::string_view(val, val_len)));
+                       StringView(collection, collection_len),
+                       StringView(key, key_len),
+                       StringView(val, val_len)));
 }
 
 char *KVDKSortedGet(KVDKEngine *engine, const char *collection,
@@ -179,8 +182,8 @@ char *KVDKSortedGet(KVDKEngine *engine, const char *collection,
   std::string val_str;
   char *val = nullptr;
   Status s =
-      engine->rep->SGet(pmem::obj::string_view(collection, collection_len),
-                        pmem::obj::string_view(key, key_len), &val_str);
+      engine->rep->SGet(StringView(collection, collection_len),
+                        StringView(key, key_len), &val_str);
   if (s == Status::Ok) {
 
     *val_len = val_str.size();
@@ -196,8 +199,8 @@ void KVDKSortedDelete(KVDKEngine *engine, const char *collection,
                       size_t collection_len, const char *key, size_t key_len,
                       char **error) {
   SaveError(error, engine->rep->SDelete(
-                       pmem::obj::string_view(collection, collection_len),
-                       pmem::obj::string_view(key, key_len)));
+                       StringView(collection, collection_len),
+                       StringView(key, key_len)));
 }
 
 KVDKIterator *KVDKCreateIterator(KVDKEngine *engine, const char *collection) {

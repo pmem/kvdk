@@ -4,8 +4,10 @@
 
 #pragma once
 
-#include "kvdk/namespace.hpp"
 #include "libpmem.h"
+
+#include "kvdk/namespace.hpp"
+
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
