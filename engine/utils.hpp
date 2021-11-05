@@ -28,6 +28,7 @@
 #include "kvdk/namespace.hpp"
 
 #include "alias.hpp"
+#include "macros.h"
 
 namespace KVDK_NAMESPACE {
 
