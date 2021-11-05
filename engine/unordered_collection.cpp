@@ -6,44 +6,44 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_p,
                                          std::string const name,
                                          CollectionIDType id,
                                          TimeStampType timestamp)
-    : hash_table_ptr{hash_table_p}, collection_record_ptr{nullptr},
-      dlinked_list{pmem_allocator_p, timestamp, id2View(id), StringView{""}},
-      collection_name{name}, collection_id{id}, timestamp{timestamp} {
+    : hash_table_ptr_{hash_table_p}, collection_record_ptr_{nullptr},
+      dlinked_list_{pmem_allocator_p, timestamp, id2View(id), StringView{""}},
+      collection_name_{name}, collection_id_{id}, timestamp_{timestamp} {
   {
-    auto list_record_space = dlinked_list.pmem_allocator_ptr->Allocate(
-        sizeof(DLRecord) + collection_name.size() + sizeof(CollectionIDType));
+    auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
+        sizeof(DLRecord) + collection_name_.size() + sizeof(CollectionIDType));
     if (list_record_space.size == 0) {
-      dlinked_list.purgeAndFree(dlinked_list.Head().GetCurrentAddress());
-      dlinked_list.purgeAndFree(dlinked_list.Tail().GetCurrentAddress());
-      dlinked_list.head_pmmptr = nullptr;
-      dlinked_list.tail_pmmptr = nullptr;
+      dlinked_list_.purgeAndFree(dlinked_list_.Head().GetCurrentAddress());
+      dlinked_list_.purgeAndFree(dlinked_list_.Tail().GetCurrentAddress());
+      dlinked_list_.head_pmmptr_ = nullptr;
+      dlinked_list_.tail_pmmptr_ = nullptr;
       throw std::bad_alloc{};
     }
     PMemOffsetType offset_list_record = list_record_space.space_entry.offset;
-    collection_record_ptr = DLRecord::PersistDLRecord(
-        dlinked_list.pmem_allocator_ptr->offset2addr_checked(
+    collection_record_ptr_ = DLRecord::PersistDLRecord(
+        dlinked_list_.pmem_allocator_ptr_->offset2addr_checked(
             offset_list_record),
         list_record_space.size, timestamp, RecordType::DlistRecord,
-        dlinked_list.Head().GetCurrentOffset(),
-        dlinked_list.Tail().GetCurrentOffset(), collection_name,
-        id2View(collection_id));
+        dlinked_list_.Head().GetCurrentOffset(),
+        dlinked_list_.Tail().GetCurrentOffset(), collection_name_,
+        id2View(collection_id_));
   }
 }
 
 UnorderedCollection::UnorderedCollection(HashTable *hash_table_p,
                                          PMEMAllocator *pmem_allocator_p,
                                          DLRecord *pmp_dlist_record)
-    : hash_table_ptr{hash_table_p}, collection_record_ptr{pmp_dlist_record},
-      dlinked_list{
+    : hash_table_ptr_{hash_table_p}, collection_record_ptr_{pmp_dlist_record},
+      dlinked_list_{
           pmem_allocator_p,
           pmem_allocator_p->offset2addr_checked<DLRecord>(
               pmp_dlist_record->prev),
           pmem_allocator_p->offset2addr_checked<DLRecord>(
               pmp_dlist_record->next),
       },
-      collection_name{string_view_2_string(pmp_dlist_record->Key())},
-      collection_id{view2ID(pmp_dlist_record->Value())},
-      timestamp{pmp_dlist_record->entry.meta.timestamp} {}
+      collection_name_{string_view_2_string(pmp_dlist_record->Key())},
+      collection_id_{view2ID(pmp_dlist_record->Value())},
+      timestamp_{pmp_dlist_record->entry.meta.timestamp} {}
 
 ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
                                           StringView const key,
@@ -68,7 +68,7 @@ ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
       return ModifyReturn{};
     }
     new_record =
-        dlinked_list.EmplaceBefore(next, timestamp, internal_key, value);
+        dlinked_list_.EmplaceBefore(next, timestamp, internal_key, value);
     return ModifyReturn{new_record.GetCurrentOffset(), ModifyReturn::FailOffset,
                         true};
   } else {
@@ -76,26 +76,26 @@ ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
     // Emplace front or back based on oddity of hash
     KeyHashType hash = hash_str(key.data(), key.size());
     if (hash % 2 == 0) {
-      iterator prev = dlinked_list.Head();
-      iterator next = dlinked_list.Head();
+      iterator prev = dlinked_list_.Head();
+      iterator next = dlinked_list_.Head();
       ++next;
       if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
           !isAdjacent(prev, next)) {
         return ModifyReturn{};
       }
-      new_record = dlinked_list.EmplaceFront(timestamp, internal_key, value);
+      new_record = dlinked_list_.EmplaceFront(timestamp, internal_key, value);
       last_emplacement_pos = new_record.GetCurrentAddress();
       return ModifyReturn{new_record.GetCurrentOffset(),
                           ModifyReturn::FailOffset, true};
     } else {
-      iterator prev = dlinked_list.Tail();
+      iterator prev = dlinked_list_.Tail();
       --prev;
-      iterator next = dlinked_list.Tail();
+      iterator next = dlinked_list_.Tail();
       if (!lockPositions(prev, next, lock, lock_prev_and_next) ||
           !isAdjacent(prev, next)) {
         return ModifyReturn{};
       }
-      new_record = dlinked_list.EmplaceBack(timestamp, internal_key, value);
+      new_record = dlinked_list_.EmplaceBack(timestamp, internal_key, value);
       last_emplacement_pos = new_record.GetCurrentAddress();
       return ModifyReturn{new_record.GetCurrentOffset(),
                           ModifyReturn::FailOffset, true};
@@ -122,7 +122,7 @@ ModifyReturn UnorderedCollection::Replace(DLRecord *pos,
     return ModifyReturn{};
 
   iterator curr =
-      dlinked_list.Replace(old, timestamp, makeInternalKey(key), value);
+      dlinked_list_.Replace(old, timestamp, makeInternalKey(key), value);
 
   return ModifyReturn{curr.GetCurrentOffset(), old.GetCurrentOffset(), true};
 }
@@ -141,7 +141,7 @@ ModifyReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
   if (!lockPositions(prev, next, lock, lock_prev_and_next))
     return ModifyReturn{};
 
-  dlinked_list.Erase(old);
+  dlinked_list_.Erase(old);
 
   return ModifyReturn{ModifyReturn::FailOffset, old.GetCurrentOffset(), true};
 }
@@ -149,7 +149,7 @@ ModifyReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
 UnorderedIterator::UnorderedIterator(
     std::shared_ptr<UnorderedCollection> sp_coll)
     : collection_shrdptr{sp_coll},
-      internal_iterator{sp_coll->dlinked_list.Head()}, valid{false} {}
+      internal_iterator{sp_coll->dlinked_list_.Head()}, valid{false} {}
 
 void UnorderedIterator::internalNext() {
   if (!internal_iterator.valid()) {

@@ -64,21 +64,21 @@ private:
   using LockPair = std::pair<LockType, LockType>;
 
   /// For locking, locking only
-  HashTable *hash_table_ptr;
+  HashTable *hash_table_ptr_;
 
   /// DlistRecord for recovering
-  DLRecord *collection_record_ptr;
+  DLRecord *collection_record_ptr_;
 
   /// DLinkedList manages data on PMem, also hold a PMemAllocator
   using DLinkedListType =
       DLinkedList<RecordType::DlistHeadRecord, RecordType::DlistTailRecord,
                   RecordType::DlistDataRecord>;
   using iterator = DLinkedListType::iterator;
-  DLinkedListType dlinked_list;
+  DLinkedListType dlinked_list_;
 
-  std::string collection_name;
-  CollectionIDType collection_id;
-  TimeStampType timestamp;
+  std::string collection_name_;
+  CollectionIDType collection_id_;
+  TimeStampType timestamp_;
 
   friend class UnorderedIterator;
 
@@ -111,19 +111,19 @@ public:
   /// old_offset as erased record
   ModifyReturn Erase(DLRecord *pos, LockType const &lock);
 
-  inline CollectionIDType ID() const { return collection_id; }
+  inline CollectionIDType ID() const { return collection_id_; }
 
-  inline std::string const &Name() const { return collection_name; }
+  inline std::string const &Name() const { return collection_name_; }
 
-  inline TimeStampType Timestamp() const { return timestamp; };
+  inline TimeStampType Timestamp() const { return timestamp_; };
 
   inline std::string GetInternalKey(StringView key) {
-    return makeInternalKey(collection_id, key);
+    return makeInternalKey(collection_id_, key);
   }
 
   friend std::ostream &operator<<(std::ostream &out,
                                   UnorderedCollection const &col) {
-    auto iter = col.collection_record_ptr;
+    auto iter = col.collection_record_ptr_;
     auto internal_key = iter->Key();
     out << "Name: " << col.Name() << "\t"
         << "ID: " << to_hex(col.ID()) << "\n";
@@ -132,7 +132,7 @@ public:
         << "Next: " << to_hex(iter->next) << "\t"
         << "Key: " << iter->Key() << "\t"
         << "Value: " << iter->Value() << "\n";
-    out << col.dlinked_list;
+    out << col.dlinked_list_;
     return out;
   }
 
@@ -168,7 +168,7 @@ private:
   }
 
   inline bool isLinked(DLRecord *pos) {
-    iterator curr = dlinked_list.makeIterator(pos);
+    iterator curr = dlinked_list_.makeIterator(pos);
     iterator prev{curr};
     --prev;
     iterator next{curr};
@@ -198,7 +198,7 @@ private:
   }
 
   inline std::string makeInternalKey(StringView key) {
-    return makeInternalKey(collection_id, key);
+    return makeInternalKey(collection_id_, key);
   }
 
   inline static StringView extractKey(StringView internal_key) {
@@ -234,11 +234,11 @@ private:
   }
 
   inline SpinMutex *getMutex(StringView internal_key) {
-    return hash_table_ptr->GetHint(internal_key).spin;
+    return hash_table_ptr_->GetHint(internal_key).spin;
   }
 
   inline iterator makeInternalIterator(DLRecord *pos) {
-    return dlinked_list.makeIterator(pos);
+    return dlinked_list_.makeIterator(pos);
   }
 };
 
@@ -274,14 +274,14 @@ public:
   /// Seek to First DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToFirst() final override {
-    internal_iterator = collection_shrdptr->dlinked_list.Head();
+    internal_iterator = collection_shrdptr->dlinked_list_.Head();
     internalNext();
   }
 
   /// Seek to Last DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToLast() final override {
-    internal_iterator = collection_shrdptr->dlinked_list.Tail();
+    internal_iterator = collection_shrdptr->dlinked_list_.Tail();
     internalPrev();
   }
 

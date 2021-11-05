@@ -48,14 +48,14 @@ public:
   private:
     /// PMem pointer to current Record
     /// Current position
-    PMEMAllocator *pmem_allocator_ptr;
-    DLRecord *current_pmmptr;
+    PMEMAllocator *pmem_allocator_ptr_;
+    DLRecord *current_pmmptr_;
 
   private:
     /// It's up to caller to provide correct PMem pointer
     /// and PMemAllocator to construct a iterator
     explicit iterator(PMEMAllocator *pmem_allocator_p, DLRecord *curr)
-        : pmem_allocator_ptr{pmem_allocator_p}, current_pmmptr{curr} {}
+        : pmem_allocator_ptr_{pmem_allocator_p}, current_pmmptr_{curr} {}
 
   public:
     iterator(iterator const &other) = default;
@@ -63,10 +63,10 @@ public:
     /// Conversion to bool
     /// Returns true if the iterator is on some DlinkedList
     inline bool valid() const {
-      if (!current_pmmptr) {
+      if (!current_pmmptr_) {
         return false;
       }
-      switch (static_cast<RecordType>(current_pmmptr->entry.meta.type)) {
+      switch (static_cast<RecordType>(current_pmmptr_->entry.meta.type)) {
       case HeadType:
       case TailType:
       case DataType: {
@@ -82,7 +82,7 @@ public:
 
     /// Increment and Decrement operators
     iterator &operator++() {
-      current_pmmptr = getNextAddress();
+      current_pmmptr_ = getNextAddress();
       return *this;
     }
 
@@ -93,7 +93,7 @@ public:
     }
 
     iterator &operator--() {
-      current_pmmptr = getPrevAddress();
+      current_pmmptr_ = getPrevAddress();
       return *this;
     }
 
@@ -103,44 +103,44 @@ public:
       return old;
     }
 
-    DLRecord &operator*() { return *current_pmmptr; }
+    DLRecord &operator*() { return *current_pmmptr_; }
 
-    DLRecord *operator->() { return current_pmmptr; }
+    DLRecord *operator->() { return current_pmmptr_; }
 
     friend bool operator==(iterator lhs, iterator rhs) {
-      return lhs.pmem_allocator_ptr == rhs.pmem_allocator_ptr &&
-             lhs.current_pmmptr == rhs.current_pmmptr;
+      return lhs.pmem_allocator_ptr_ == rhs.pmem_allocator_ptr_ &&
+             lhs.current_pmmptr_ == rhs.current_pmmptr_;
     }
 
     friend bool operator!=(iterator lhs, iterator rhs) { return !(lhs == rhs); }
 
   private:
     inline DLRecord *getNextAddress() const {
-      return pmem_allocator_ptr->offset2addr_checked<DLRecord>(
-          current_pmmptr->next);
+      return pmem_allocator_ptr_->offset2addr_checked<DLRecord>(
+          current_pmmptr_->next);
     }
 
     inline DLRecord *getPrevAddress() const {
-      return pmem_allocator_ptr->offset2addr_checked<DLRecord>(
-          current_pmmptr->prev);
+      return pmem_allocator_ptr_->offset2addr_checked<DLRecord>(
+          current_pmmptr_->prev);
     }
 
   public:
     inline PMemOffsetType GetCurrentOffset() const {
-      return pmem_allocator_ptr->addr2offset_checked(current_pmmptr);
+      return pmem_allocator_ptr_->addr2offset_checked(current_pmmptr_);
     }
 
-    inline DLRecord *GetCurrentAddress() const { return current_pmmptr; }
+    inline DLRecord *GetCurrentAddress() const { return current_pmmptr_; }
   };
 
 private:
   /// Allocator for allocating space for new nodes,
   /// as well as for deallocating space to delete nodes
-  PMEMAllocator *pmem_allocator_ptr;
+  PMEMAllocator *pmem_allocator_ptr_;
   /// PMem pointer(pmp) to head node on PMem
-  DLRecord *head_pmmptr;
+  DLRecord *head_pmmptr_;
   /// PMem pointer(pmp) to tail node on PMem
-  DLRecord *tail_pmmptr;
+  DLRecord *tail_pmmptr_;
 
   friend class UnorderedCollection;
   friend class UnorderedIterator;
@@ -152,19 +152,19 @@ public:
   /// Caller supplied key and value are stored in head and tail nodes
   DLinkedList(PMEMAllocator *pmem_allocator_p, TimeStampType timestamp,
               StringView const key, StringView const value)
-      : pmem_allocator_ptr{pmem_allocator_p}, head_pmmptr{nullptr},
-        tail_pmmptr{nullptr} {
+      : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{nullptr},
+        tail_pmmptr_{nullptr} {
     {
       // head and tail can hold any key and value supplied by caller.
-      auto head_space_entry = pmem_allocator_ptr->Allocate(
+      auto head_space_entry = pmem_allocator_ptr_->Allocate(
           sizeof(DLRecord) + key.size() + value.size());
       if (head_space_entry.size == 0) {
         throw std::bad_alloc{};
       }
-      auto tail_space_entry = pmem_allocator_ptr->Allocate(
+      auto tail_space_entry = pmem_allocator_ptr_->Allocate(
           sizeof(DLRecord) + key.size() + value.size());
       if (tail_space_entry.size == 0) {
-        pmem_allocator_ptr->Free(head_space_entry);
+        pmem_allocator_ptr_->Free(head_space_entry);
         throw std::bad_alloc{};
       }
 
@@ -174,12 +174,12 @@ public:
       // Persist tail first then head
       // If only tail is persisted then it can be deallocated by caller at
       // recovery
-      tail_pmmptr = DLRecord::PersistDLRecord(
-          pmem_allocator_ptr->offset2addr_checked(tail_offset),
+      tail_pmmptr_ = DLRecord::PersistDLRecord(
+          pmem_allocator_ptr_->offset2addr_checked(tail_offset),
           tail_space_entry.size, timestamp, TailType, head_offset,
           NullPMemOffset, key, value);
-      head_pmmptr = DLRecord::PersistDLRecord(
-          pmem_allocator_ptr->offset2addr_checked(head_offset),
+      head_pmmptr_ = DLRecord::PersistDLRecord(
+          pmem_allocator_ptr_->offset2addr_checked(head_offset),
           head_space_entry.size, timestamp, HeadType, NullPMemOffset,
           tail_offset, key, value);
     }
@@ -189,14 +189,14 @@ public:
   /// If from head to tail node is not forward linked, assertion fails.
   DLinkedList(PMEMAllocator *pmem_allocator_p, DLRecord *head_pmmptr,
               DLRecord *tail_pmmptr)
-      : pmem_allocator_ptr{pmem_allocator_p}, head_pmmptr{head_pmmptr},
-        tail_pmmptr{tail_pmmptr} {
+      : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{head_pmmptr},
+        tail_pmmptr_{tail_pmmptr} {
 #if DEBUG_LEVEL >= 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
                   "Cannot rebuild a DlinkedList from given PMem pointer "
                   "not pointing to a valid Head Record!");
-      iterator curr{pmem_allocator_ptr, head_pmmptr};
+      iterator curr{pmem_allocator_ptr_, head_pmmptr};
       ++curr;
 
       while (true) {
@@ -251,9 +251,9 @@ public:
     return ret;
   }
 
-  iterator Head() const { return makeIterator(head_pmmptr); }
+  iterator Head() const { return makeIterator(head_pmmptr_); }
 
-  iterator Tail() const { return makeIterator(tail_pmmptr); }
+  iterator Tail() const { return makeIterator(tail_pmmptr_); }
 
   // Connect prev and next of node addressed by pos,
   // logically delete this record by de-link it.
@@ -314,15 +314,15 @@ public:
 
 private:
   iterator makeIterator(DLRecord *pos) const {
-    return iterator{pmem_allocator_ptr, pos};
+    return iterator{pmem_allocator_ptr_, pos};
   }
 
   // Only called by UnorderedCollection when fail to allocate space for
   // DlistRecord
   void purgeAndFree(DLRecord *record_pmmptr) {
     record_pmmptr->Destroy();
-    pmem_allocator_ptr->Free(
-        SizedSpaceEntry(pmem_allocator_ptr->addr2offset_checked(record_pmmptr),
+    pmem_allocator_ptr_->Free(
+        SizedSpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
                         record_pmmptr->entry.header.record_size,
                         record_pmmptr->entry.meta.timestamp));
   }
@@ -344,13 +344,13 @@ private:
                                  StringView const value) {
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
 
-    auto space = pmem_allocator_ptr->Allocate(sizeof(DLRecord) + key.size() +
+    auto space = pmem_allocator_ptr_->Allocate(sizeof(DLRecord) + key.size() +
                                               value.size());
     if (space.size == 0) {
       throw std::bad_alloc{};
     }
     std::uint64_t offset = space.space_entry.offset;
-    void *pmp = pmem_allocator_ptr->offset2addr_checked(offset);
+    void *pmp = pmem_allocator_ptr_->offset2addr_checked(offset);
 
     DLRecord *record = DLRecord::PersistDLRecord(
         pmp, space.size, timestamp, DataType, iter_prev.GetCurrentOffset(),
@@ -361,7 +361,7 @@ private:
     iter_next->prev = offset;
     pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
 
-    return iterator{pmem_allocator_ptr, record};
+    return iterator{pmem_allocator_ptr_, record};
   }
 
   /// Output DlinkedList to ostream for debugging purpose.
