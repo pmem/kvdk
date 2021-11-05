@@ -345,7 +345,7 @@ private:
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
 
     auto space = pmem_allocator_ptr_->Allocate(sizeof(DLRecord) + key.size() +
-                                               value.size());
+                                              value.size());
     if (space.size == 0) {
       throw std::bad_alloc{};
     }
