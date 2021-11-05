@@ -11,6 +11,7 @@ DEFINE_string(kvdk_collection, "",
 DEFINE_int64(kvdk_pmem_file_size, 100ULL << 30,
              "The size of kvdk pmem file size.");
 DEFINE_string(kvdk_path, "/mnt/pmem0/kvdk", "The path of the kvdk pmem file.");
+DEFINE_int64(kvdk_max_write_threads, 48, "The max write threads number in kvdk.");
 
 PMemKVDK::PMemKVDK(const std::string &db_path) {
   path_ = FLAGS_kvdk_path;
@@ -66,8 +67,8 @@ class PMemKVDKIterator : public KVEngine::Iterator {
   void Next() override { iter_->Next(); }
   void Prev() override { iter_->Prev(); }
   bool Valid() override { iter_->Valid(); }
-  std::string Key() override { iter_->Key(); }
-  std::string Value() override { iter_->Value(); }
+  std::string Key() override { return iter_->Key(); }
+  std::string Value() override { return iter_->Value(); }
 
  private:
   kvdk::Iterator *iter_;
