@@ -19,6 +19,7 @@ PMemKVDK::PMemKVDK(const std::string &db_path) {
 
   // set some options
   options_.pmem_file_size = FLAGS_kvdk_pmem_file_size;
+  options_.max_write_threads = FLAGS_kvdk_max_write_threads;
 
   auto s = kvdk::Engine::Open(path_, &db_, options_);
   if (s != kvdk::Status::Ok) {
