@@ -81,7 +81,7 @@ public:
 
   StringView UserKey();
 
-  uint64_t GetSkipListId();
+  uint64_t SkiplistId();
 
   PointerWithTag<SkiplistNode> Next(int l) {
     assert(l > 0 && l <= height && "should be less than node's height");
@@ -175,12 +175,6 @@ public:
     }
   }
 
-  uint64_t id() override { return id_; }
-
-  const std::string &name() { return name_; }
-
-  SkiplistNode *header() { return header_; }
-
   static uint8_t RandomHeight() {
     uint8_t height = 0;
     while (height < kMaxHeight && fast_random_64() & 1) {
@@ -190,8 +184,62 @@ public:
     return height;
   }
 
-  inline static StringView UserKey(const StringView &skiplist_key) {
-    return StringView(skiplist_key.data() + 8, skiplist_key.size() - 8);
+  uint64_t id() override { return id_; }
+
+  const std::string &name() { return name_; }
+
+  SkiplistNode *header() { return header_; }
+
+  std::string InternalKey(const pmem::obj::string_view &key) {
+    return PersistentList::ListKey(key, id_);
+  }
+
+  inline static pmem::obj::string_view
+  UserKey(const pmem::obj::string_view &skiplist_key) {
+    return pmem::obj::string_view(skiplist_key.data() + 8,
+                                  skiplist_key.size() - 8);
+  }
+
+  inline static pmem::obj::string_view UserKey(const SkiplistNode *node) {
+    assert(node != nullptr);
+    if (node->cached_key_size > 0) {
+      return pmem::obj::string_view(node->cached_key, node->cached_key_size);
+    }
+    return UserKey(node->record->Key());
+  }
+
+  inline static pmem::obj::string_view UserKey(const DLRecord *record) {
+    assert(record != nullptr);
+    return UserKey(record->Key());
+  }
+
+  inline static uint64_t
+  SkiplistId(const pmem::obj::string_view &skiplist_key) {
+    uint64_t id;
+    memcpy_8(&id, skiplist_key.data());
+    return id;
+  }
+
+  inline static uint64_t SkiplistId(const DLRecord *record) {
+    assert(record != nullptr);
+    uint64_t id = 0;
+    switch (record->entry.meta.type) {
+    case RecordType::SortedDataRecord:
+      id = SkiplistId(record->Key());
+      break;
+    case RecordType::SortedHeaderRecord:
+      memcpy_8(&id, record->Value().data());
+      break;
+    default:
+      kvdk_assert(false, "Wrong type in SkiplistId");
+      break;
+    }
+    return id;
+  }
+
+  inline static uint64_t SkiplistId(const SkiplistNode *node) {
+    assert(node != nullptr);
+    return SkiplistId(node->record);
   }
 
   // Start position of "key" on both dram and PMem node in the skiplist, and
@@ -201,22 +249,47 @@ public:
 
   Status Rebuild();
 
-  bool FindAndLockWritePos(std::vector<SpinMutex *> &spins, Splice *splice,
-                           const StringView &insert_key,
-                           const HashTable::KeyHashHint &hint,
-                           const DLRecord *updated_record);
+  // Insert a new key "key" to skiplist,
+  //
+  // space_to_write: PMem space entry to store new record.
+  // dram_node: If height of new record > 0, store new dram node to it,
+  // otherwise store nullptr instead
+  // inserting_key_lock: lock of inserting key, should be already locked while
+  // calling this function
+  //
+  // Return true on success, return false on fail.
+  bool Insert(const pmem::obj::string_view &key,
+              const pmem::obj::string_view &value,
+              const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+              SkiplistNode **dram_node, const SpinMutex *inserting_key_lock);
 
-  // Remove "deleting_record" from dram and PMem part of the skiplist
-  void DeleteRecord(DLRecord *deleting_record, Splice *delete_splice,
-                    SkiplistNode *dram_node);
+  // Update "key" in skiplist
+  //
+  // space_to_write: PMem space entry to store new record
+  // updated_record: existing record of updating key
+  // dram_node: dram node of existing record, if it's a height 0 record, then
+  // pass nullptr
+  // updating_key_lock: lock of updating key, should be already locked while
+  // calling this function
+  //
+  // Return true on success, return false on fail.
+  bool Update(const pmem::obj::string_view &key,
+              const pmem::obj::string_view &value,
+              const DLRecord *updated_record,
+              const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+              SkiplistNode *dram_node, const SpinMutex *updating_key_lock);
 
-  // Insert "inserting_record" to the skiplist on pmem, and create dram node for
-  // it. Insertion position of PMem and dram stored in "insert_splice". Return
-  // dram node of inserting record, return nullptr if inserting record is
-  // height 0.
-  SkiplistNode *InsertRecord(Splice *insert_splice, DLRecord *inserting_record,
-                             const StringView &inserting_key,
-                             SkiplistNode *data_node, bool is_update);
+  // Delete "key" from skiplist
+  //
+  // deleted_record:existing record of deleting key
+  // dram_node:dram node of existing record, if it's a height 0 record, then
+  // pass nullptr
+  // deleting_key_lock: lock of deleting key, should be already locked while
+  // calling this function
+  //
+  // Return true on success, return false on fail.
+  bool Delete(const pmem::obj::string_view &key, DLRecord *deleted_record,
+              SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
@@ -225,7 +298,7 @@ public:
     }
   }
 
-  void PurgeObsoleteNodes() {
+  void PurgeObsoletedNodes() {
     std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
     if (pending_deletion_nodes_.size() > 0) {
       for (SkiplistNode *node : pending_deletion_nodes_) {
@@ -237,9 +310,43 @@ public:
     std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
     obsolete_nodes_.swap(pending_deletion_nodes_);
   }
+
   Status CheckConnection(int height);
 
 private:
+  // Insert DLRecord "inserting" between "prev" and "next"
+  void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
+
+  // Find and lock skiplist position to insert "key"
+  //
+  // Store prev dram nodes and prev/next PMem DLRecord in "splice", lock
+  // prev DLRecord and manage the lock with "prev_record_lock".
+  //
+  // The "insert_key" should be already locked before call this function
+  bool FindInsertPos(Splice *splice,
+                     const pmem::obj::string_view &inserting_key,
+                     const SpinMutex *inserting_key_lock,
+                     std::unique_lock<SpinMutex> *prev_record_lock);
+
+  // Find and lock skiplist position to update"key".
+  //
+  // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and manage
+  // the lock with "prev_record_lock".
+  //
+  //  The "updated_key" should be already locked before call this function
+  bool FindUpdatePos(Splice *splice, const pmem::obj::string_view &updating_key,
+                     const SpinMutex *updating_key_lock,
+                     const DLRecord *updated_record,
+                     std::unique_lock<SpinMutex> *prev_record_lock);
+
+  bool FindDeletePos(Splice *splice, const pmem::obj::string_view &deleting_key,
+                     const SpinMutex *deleting_key_lock,
+                     const DLRecord *deleted_record,
+                     std::unique_lock<SpinMutex> *prev_record_lock) {
+    return FindUpdatePos(splice, deleting_key, deleting_key_lock,
+                         deleted_record, prev_record_lock);
+  }
+
   SkiplistNode *header_;
   std::string name_;
   uint64_t id_;

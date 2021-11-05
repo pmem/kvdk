@@ -1,20 +1,11 @@
-#include "namespace.hpp"
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
+
+#pragma once
+
+#include "status.h"
 
 namespace KVDK_NAMESPACE {
-
-enum class Status : unsigned char {
-  Ok = 1,
-  NotFound,
-  MemoryOverflow,
-  PmemOverflow,
-  NotSupported,
-  MapError,
-  BatchOverflow,
-  TooManyWriteThreads,
-  InvalidDataSize,
-  IOError,
-  InvalidConfiguration,
-  Abort,
-};
-
-}
+using Status = KVDKStatus;
+} // kvdk

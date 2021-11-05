@@ -75,7 +75,7 @@ Status KVEngine::Open(const std::string &name, Engine **engine_ptr,
 
 void KVEngine::FreeSkiplistDramNodes() {
   for (auto skiplist : skiplists_) {
-    skiplist->PurgeObsoleteNodes();
+    skiplist->PurgeObsoletedNodes();
   }
 }
 
@@ -526,7 +526,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
       new_hash_offset = (uint64_t)dram_node;
       if (configs_.opt_large_sorted_collection_restore &&
           thread_res_[write_thread.id]
-                      .visited_skiplist_ids[dram_node->GetSkipListId()]++ %
+                      .visited_skiplist_ids[dram_node->SkiplistId()]++ %
                   kRestoreSkiplistStride ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);
@@ -845,20 +845,19 @@ Status KVEngine::Delete(const StringView key) {
   return StringDeleteImpl(key);
 }
 
-Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
-  uint64_t id = skiplist->id();
-  std::string collection_key(PersistentList::ListKey(user_key, id));
+Status KVEngine::SDeleteImpl(Skiplist *skiplist,
+                             const pmem::obj::string_view &user_key) {
+  std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key)) {
     return Status::InvalidDataSize;
   }
 
-  HashEntry hash_entry;
-  DataEntry data_entry;
-  SkiplistNode *dram_node = nullptr;
-  uint64_t existing_record_offset;
-  DLRecord *existing_record = nullptr;
-
   while (1) {
+    HashEntry hash_entry;
+    DataEntry data_entry;
+    SkiplistNode *dram_node = nullptr;
+    uint64_t existing_record_offset;
+    DLRecord *existing_record = nullptr;
     HashEntry *entry_ptr = nullptr;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
@@ -885,32 +884,23 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
       existing_record_offset = hash_entry.offset;
     }
 
-    std::vector<SpinMutex *> spins;
-    thread_local Splice splice(nullptr);
-    splice.seeking_list = skiplist;
-    if (!skiplist->FindAndLockWritePos(spins, &splice, user_key, hint,
-                                       existing_record)) {
+    if (!skiplist->Delete(user_key, existing_record, dram_node, hint.spin)) {
       continue;
     }
-
-    skiplist->DeleteRecord(existing_record, &splice, dram_node);
 
     entry_ptr->Clear();
     pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
                                           data_entry.header.record_size,
                                           data_entry.meta.timestamp));
-    for (auto &m : spins) {
-      m->unlock();
-    }
     break;
   }
   return Status::Ok;
 }
 
-Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
-                          const StringView &value) {
-  uint64_t id = skiplist->id();
-  std::string collection_key(PersistentList::ListKey(user_key, id));
+Status KVEngine::SSetImpl(Skiplist *skiplist,
+                          const pmem::obj::string_view &user_key,
+                          const pmem::obj::string_view &value) {
+  std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
@@ -938,44 +928,42 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
     bool found = s == Status::Ok;
 
+    uint64_t new_ts = get_timestamp();
+    assert(!found || new_ts > data_entry.meta.timestamp);
+
     if (found) {
       if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
         dram_node = (SkiplistNode *)(hash_entry.offset);
         existing_record = dram_node->record;
         existing_record_offset = pmem_allocator_->addr2offset(existing_record);
       } else {
+        dram_node = nullptr;
         assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
         existing_record_offset = hash_entry.offset;
         existing_record =
             pmem_allocator_->offset2addr<DLRecord>(existing_record_offset);
       }
-    }
 
-    uint64_t new_ts = get_timestamp();
-    assert(!found || new_ts > data_entry.meta.timestamp);
+      if (!skiplist->Update(user_key, value, existing_record, sized_space_entry,
+                            new_ts, dram_node, hint.spin)) {
+        continue;
+      }
 
-    std::vector<SpinMutex *> spins;
-    thread_local Splice splice(nullptr);
-    splice.seeking_list = skiplist;
-    if (!skiplist->FindAndLockWritePos(spins, &splice, user_key, hint,
-                                       found ? existing_record : nullptr)) {
-      continue;
-    }
+      // update a height 0 node
+      if (dram_node == nullptr) {
+        hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
+                            sized_space_entry.space_entry.offset,
+                            HashOffsetType::DLRecord);
+      }
+      pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
+                                            data_entry.header.record_size,
+                                            data_entry.meta.timestamp));
+    } else {
+      if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
+                            &dram_node, hint.spin)) {
+        continue;
+      }
 
-    uint64_t prev_offset =
-        pmem_allocator_->addr2offset(splice.prev_pmem_record);
-    uint64_t next_offset =
-        pmem_allocator_->addr2offset(splice.next_pmem_record);
-
-    DLRecord *pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
-        sized_space_entry.size, new_ts, SortedDataRecord, prev_offset,
-        next_offset, collection_key, value);
-
-    dram_node = skiplist->InsertRecord(&splice, pmem_record, user_key,
-                                       dram_node, found);
-
-    if (!found) {
       uint64_t offset = (dram_node == nullptr)
                             ? sized_space_entry.space_entry.offset
                             : (uint64_t)dram_node;
@@ -992,21 +980,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
             SizedSpaceEntry(hash_entry.offset, data_entry.header.record_size,
                             data_entry.meta.timestamp));
       }
-    } else {
-      // update a height 0 node
-      if (dram_node == nullptr) {
-        hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
-                            sized_space_entry.space_entry.offset,
-                            HashOffsetType::DLRecord);
-      }
-      pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
-                                            data_entry.header.record_size,
-                                            data_entry.meta.timestamp));
     }
 
-    for (auto &m : spins) {
-      m->unlock();
-    }
     break;
   }
   return Status::Ok;
@@ -1281,8 +1256,7 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
     return s;
   }
   assert(skiplist);
-  uint64_t id = skiplist->id();
-  std::string skiplist_key(PersistentList::ListKey(user_key, id));
+  std::string skiplist_key(skiplist->InternalKey(user_key));
   return HashGetImpl(skiplist_key, value, SortedDataRecord);
 }
 

@@ -69,14 +69,14 @@ public:
   }
 
   // translate address of allocated space to block_offset
-  inline uint64_t addr2offset_checked(void *addr) {
+  inline uint64_t addr2offset_checked(const void *addr) {
     assert((char *)addr >= pmem_);
     uint64_t offset = (char *)addr - pmem_;
     assert(validate_offset(offset) && "Trying to create invalid offset");
     return offset;
   }
 
-  inline uint64_t addr2offset(void *addr) {
+  inline uint64_t addr2offset(const void *addr) {
     if (addr) {
       uint64_t offset = (char *)addr - pmem_;
       if (validate_offset(offset)) {

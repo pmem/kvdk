@@ -111,12 +111,12 @@ public:
   void Destroy() { entry.Destroy(); }
 
   // make sure there is data followed in data[0]
-  pmem::obj::string_view Key() {
+  pmem::obj::string_view Key() const {
     return pmem::obj::string_view(data, entry.meta.k_size);
   }
 
   // make sure there is data followed in data[0]
-  pmem::obj::string_view Value() {
+  pmem::obj::string_view Value() const {
     return pmem::obj::string_view(data + entry.meta.k_size, entry.meta.v_size);
   }
 
@@ -204,11 +204,11 @@ public:
     return false;
   }
 
-  pmem::obj::string_view Key() {
+  pmem::obj::string_view Key() const {
     return pmem::obj::string_view(data, entry.meta.k_size);
   }
 
-  pmem::obj::string_view Value() {
+  pmem::obj::string_view Value() const {
     return pmem::obj::string_view(data + entry.meta.k_size, entry.meta.v_size);
   }
 
