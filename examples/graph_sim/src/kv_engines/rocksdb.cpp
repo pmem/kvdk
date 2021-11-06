@@ -19,10 +19,10 @@ class RocksdbIterator : public KVEngine::Iterator {
   explicit RocksdbIterator(rocksdb::Iterator* it) : itr_(it) {}
   ~RocksdbIterator() { delete itr_; }
 
-  void Seek(const std::string& key) { return itr_->Seek(key); }
-  void SeekToFirst() { return itr_->SeekToFirst(); }
-  void Next() { return itr_->Next(); }
-  void Prev() { return itr_->Prev(); }
+  void Seek(const std::string& key) { itr_->Seek(key); }
+  void SeekToFirst() { itr_->SeekToFirst(); }
+  void Next() { itr_->Next(); }
+  void Prev() { itr_->Prev(); }
   bool Valid() { return itr_->Valid(); }
 
   std::string Key() { return itr_->key().ToString(); }

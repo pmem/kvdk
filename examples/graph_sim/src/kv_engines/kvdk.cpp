@@ -67,7 +67,7 @@ class PMemKVDKIterator : public KVEngine::Iterator {
   void SeekToFirst() override { iter_->SeekToFirst(); }
   void Next() override { iter_->Next(); }
   void Prev() override { iter_->Prev(); }
-  bool Valid() override { iter_->Valid(); }
+  bool Valid() override { return iter_->Valid(); }
   std::string Key() override { return iter_->Key(); }
   std::string Value() override { return iter_->Value(); }
 
