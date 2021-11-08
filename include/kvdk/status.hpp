@@ -8,4 +8,4 @@
 
 namespace KVDK_NAMESPACE {
 using Status = KVDKStatus;
-} // kvdk
+} // namespace KVDK_NAMESPACE

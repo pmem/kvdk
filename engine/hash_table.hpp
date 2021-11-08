@@ -125,7 +125,7 @@ public:
                const std::shared_ptr<PMEMAllocator> &pmem_allocator,
                uint32_t write_threads);
 
-  KeyHashHint GetHint(const pmem::obj::string_view &key) {
+  KeyHashHint GetHint(const StringView &key) {
     KeyHashHint hint;
     hint.key_hash_value = hash_str(key.data(), key.size());
     hint.bucket = get_bucket_num(hint.key_hash_value);
@@ -141,10 +141,9 @@ public:
   // hash_entry_snap: store a hash entry copy of searching key for lock-free
   // read, as hash entry maybe modified by write operations
   // data_entry_meta: store a copy of data entry metadata part of searching key
-  Status SearchForRead(const KeyHashHint &hint,
-                       const pmem::obj::string_view &key, uint16_t type_mask,
-                       HashEntry **entry_ptr, HashEntry *hash_entry_snap,
-                       DataEntry *data_entry_meta);
+  Status SearchForRead(const KeyHashHint &hint, const StringView &key,
+                       uint16_t type_mask, HashEntry **entry_ptr,
+                       HashEntry *hash_entry_snap, DataEntry *data_entry_meta);
 
   // Search key in hash table for write operations
   //
@@ -156,10 +155,10 @@ public:
   // data_entry_meta: store a copy of data entry metadata part of searching key
   // in_recovery: whether called during recovery of kvdk instance
   // hint: make sure hint.spin is hold
-  Status SearchForWrite(const KeyHashHint &hint,
-                        const pmem::obj::string_view &key, uint16_t type_mask,
-                        HashEntry **entry_ptr, HashEntry *hash_entry_snap,
-                        DataEntry *data_entry_meta, bool in_recovery = false);
+  Status SearchForWrite(const KeyHashHint &hint, const StringView &key,
+                        uint16_t type_mask, HashEntry **entry_ptr,
+                        HashEntry *hash_entry_snap, DataEntry *data_entry_meta,
+                        bool in_recovery = false);
 
   // Insert a hash entry to hash table
   //
@@ -193,7 +192,7 @@ private:
   // Check if "key" of data type "target_type" is indexed by "hash_entry". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
   // and return true, otherwise return false.
-  bool MatchHashEntry(const pmem::obj::string_view &key, uint32_t hash_k_prefix,
+  bool MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
                       uint16_t target_type, const HashEntry *hash_entry,
                       DataEntry *data_entry_metadata);
 

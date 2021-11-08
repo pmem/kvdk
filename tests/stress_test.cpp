@@ -11,10 +11,15 @@
 #include <unordered_set>
 #include <vector>
 
+#include "gtest/gtest.h"
+
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
+
+#include "../engine/alias.hpp"
 #include "test_util.h"
-#include "gtest/gtest.h"
+
+using kvdk::StringView;
 
 // Contains functions to iterate through a collection and check its contents
 // It's up to user to maintain an unordered_multimap between keys and values
@@ -22,9 +27,8 @@
 namespace kvdk_testing {
 // Check value got by XGet(key) by looking up possible_kv_pairs
 static void CheckKVPair(
-    pmem::obj::string_view key, pmem::obj::string_view value,
-    std::unordered_multimap<pmem::obj::string_view,
-                            pmem::obj::string_view> const &possible_kv_pairs) {
+    StringView key, StringView value,
+    std::unordered_multimap<StringView, StringView> const &possible_kv_pairs) {
   bool match = false;
   auto range_found = possible_kv_pairs.equal_range(key);
   ASSERT_NE(range_found.first, range_found.second)
@@ -49,13 +53,12 @@ static void CheckKVPair(
 // keep track of records
 static void HashesIterateThrough(
     kvdk::Engine *engine, std::string collection_name,
-    std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
-        possible_kv_pairs,
+    std::unordered_multimap<StringView, StringView> possible_kv_pairs,
     bool report_progress) {
   kvdk::Status status;
 
-  std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
-      possible_kv_pairs_copy{possible_kv_pairs};
+  std::unordered_multimap<StringView, StringView> possible_kv_pairs_copy{
+      possible_kv_pairs};
 
   auto u_iter = engine->NewUnorderedIterator(collection_name);
 
@@ -138,8 +141,7 @@ static void HashesIterateThrough(
 // keep track of records
 static void SortedSetsIterateThrough(
     kvdk::Engine *engine, std::string collection_name,
-    std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
-        possible_kv_pairs,
+    std::unordered_multimap<StringView, StringView> possible_kv_pairs,
     bool report_progress) {
   kvdk::Status status;
 
@@ -217,13 +219,10 @@ static void SortedSetsIterateThrough(
 namespace kvdk_testing {
 namespace // nested anonymous namespace to hide implementation
 {
-static void allXSet(
-    std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view,
-                               pmem::obj::string_view)>
-        setter,
-    std::string collection_name,
-    std::vector<pmem::obj::string_view> const &keys,
-    std::vector<pmem::obj::string_view> const &values, bool report_progress) {
+static void
+allXSet(std::function<kvdk::Status(StringView, StringView, StringView)> setter,
+        std::string collection_name, std::vector<StringView> const &keys,
+        std::vector<StringView> const &values, bool report_progress) {
   ASSERT_EQ(keys.size(), values.size())
       << "Must have same amount of keys and values to form kv-pairs!";
   kvdk::Status status;
@@ -243,14 +242,10 @@ static void allXSet(
 }
 
 static void evenXSetOddXDelete(
-    std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view,
-                               pmem::obj::string_view)>
-        setter,
-    std::function<kvdk::Status(pmem::obj::string_view, pmem::obj::string_view)>
-        getter,
-    std::string collection_name,
-    std::vector<pmem::obj::string_view> const &keys,
-    std::vector<pmem::obj::string_view> const &values, bool report_progress) {
+    std::function<kvdk::Status(StringView, StringView, StringView)> setter,
+    std::function<kvdk::Status(StringView, StringView)> getter,
+    std::string collection_name, std::vector<StringView> const &keys,
+    std::vector<StringView> const &values, bool report_progress) {
   ASSERT_EQ(keys.size(), values.size())
       << "Must have same amount of keys and values to form kv-pairs!";
   kvdk::Status status;
@@ -282,11 +277,10 @@ static void evenXSetOddXDelete(
 // Calling engine->HSet to put keys and values into collection named after
 // collection_name.
 static void AllHSet(kvdk::Engine *engine, std::string collection_name,
-                    std::vector<pmem::obj::string_view> const &keys,
-                    std::vector<pmem::obj::string_view> const &values,
+                    std::vector<StringView> const &keys,
+                    std::vector<StringView> const &values,
                     bool report_progress) {
-  auto setter = [&](pmem::obj::string_view coll_name,
-                    pmem::obj::string_view key, pmem::obj::string_view value) {
+  auto setter = [&](StringView coll_name, StringView key, StringView value) {
     return engine->HSet(coll_name, key, value);
   };
   allXSet(setter, collection_name, keys, values, report_progress);
@@ -295,11 +289,10 @@ static void AllHSet(kvdk::Engine *engine, std::string collection_name,
 // Calling engine->HSet to put keys and values into collection named after
 // collection_name.
 static void AllSSetOnly(kvdk::Engine *engine, std::string collection_name,
-                        std::vector<pmem::obj::string_view> const &keys,
-                        std::vector<pmem::obj::string_view> const &values,
+                        std::vector<StringView> const &keys,
+                        std::vector<StringView> const &values,
                         bool report_progress) {
-  auto setter = [&](pmem::obj::string_view coll_name,
-                    pmem::obj::string_view key, pmem::obj::string_view value) {
+  auto setter = [&](StringView coll_name, StringView key, StringView value) {
     return engine->SSet(coll_name, key, value);
   };
   allXSet(setter, collection_name, keys, values, report_progress);
@@ -308,17 +301,15 @@ static void AllSSetOnly(kvdk::Engine *engine, std::string collection_name,
 // Calling engine->HSet to put evenly indexed keys and values into collection
 // named after collection_name. Calling engine->HDelete to delete oddly indexed
 // keys from collection named after collection_name.
-static void
-EvenHSetOddHDelete(kvdk::Engine *engine, std::string collection_name,
-                   std::vector<pmem::obj::string_view> const &keys,
-                   std::vector<pmem::obj::string_view> const &values,
-                   bool report_progress) {
-  auto setter = [&](pmem::obj::string_view coll_name,
-                    pmem::obj::string_view key, pmem::obj::string_view value) {
+static void EvenHSetOddHDelete(kvdk::Engine *engine,
+                               std::string collection_name,
+                               std::vector<StringView> const &keys,
+                               std::vector<StringView> const &values,
+                               bool report_progress) {
+  auto setter = [&](StringView coll_name, StringView key, StringView value) {
     return engine->HSet(coll_name, key, value);
   };
-  auto deleter = [&](pmem::obj::string_view coll_name,
-                     pmem::obj::string_view key) {
+  auto deleter = [&](StringView coll_name, StringView key) {
     return engine->HDelete(coll_name, key);
   };
   evenXSetOddXDelete(setter, deleter, collection_name, keys, values,
@@ -328,17 +319,15 @@ EvenHSetOddHDelete(kvdk::Engine *engine, std::string collection_name,
 // Calling engine->SSet to put evenly indexed keys and values into collection
 // named after collection_name. Calling engine->SDelete to delete oddly indexed
 // keys from collection named after collection_name.
-static void
-EvenSSetOddSDelete(kvdk::Engine *engine, std::string collection_name,
-                   std::vector<pmem::obj::string_view> const &keys,
-                   std::vector<pmem::obj::string_view> const &values,
-                   bool report_progress) {
-  auto setter = [&](pmem::obj::string_view coll_name,
-                    pmem::obj::string_view key, pmem::obj::string_view value) {
+static void EvenSSetOddSDelete(kvdk::Engine *engine,
+                               std::string collection_name,
+                               std::vector<StringView> const &keys,
+                               std::vector<StringView> const &values,
+                               bool report_progress) {
+  auto setter = [&](StringView coll_name, StringView key, StringView value) {
     return engine->SSet(coll_name, key, value);
   };
-  auto deleter = [&](pmem::obj::string_view coll_name,
-                     pmem::obj::string_view key) {
+  auto deleter = [&](StringView coll_name, StringView key) {
     return engine->SDelete(coll_name, key);
   };
   evenXSetOddXDelete(setter, deleter, collection_name, keys, values,
@@ -375,17 +364,15 @@ protected:
   size_t sz_value_max;
 
   // Actual keys an values used by thread for insertion
-  std::vector<std::vector<pmem::obj::string_view>> grouped_keys;
-  std::vector<std::vector<pmem::obj::string_view>> grouped_values;
+  std::vector<std::vector<StringView>> grouped_keys;
+  std::vector<std::vector<StringView>> grouped_values;
 
   // unordered_map[collection_name, unordered_multimap[key, value]]
-  std::unordered_map<
-      std::string,
-      std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>>
+  std::unordered_map<std::string,
+                     std::unordered_multimap<StringView, StringView>>
       hashes_possible_kv_pairs;
-  std::unordered_map<
-      std::string,
-      std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>>
+  std::unordered_map<std::string,
+                     std::unordered_multimap<StringView, StringView>>
       sorted_sets_possible_kv_pairs;
 
 private:
@@ -575,8 +562,7 @@ private:
   }
 
   void updatePossibleKVPairs(
-      std::unordered_multimap<pmem::obj::string_view, pmem::obj::string_view>
-          &possible_kvs,
+      std::unordered_multimap<StringView, StringView> &possible_kvs,
       bool odd_indexed_is_deleted) {
     {
       // Erase keys that will be overwritten
@@ -599,7 +585,7 @@ private:
 
         // For every thread, every key has only one possible value or state
         // We use kvs to track that and then put those into possible_kvs
-        std::unordered_map<pmem::obj::string_view, pmem::obj::string_view> kvs;
+        std::unordered_map<StringView, StringView> kvs;
         for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
           if ((i % 2 == 0) || !odd_indexed_is_deleted)
             kvs[grouped_keys[tid][i]] = grouped_values[tid][i];

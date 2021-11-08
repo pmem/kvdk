@@ -7,12 +7,15 @@
 #include <thread>
 #include <vector>
 
-#include "../engine/kv_engine.hpp"
-#include "../engine/pmem_allocator/pmem_allocator.hpp"
+#include "gtest/gtest.h"
+
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
+
+#include "../engine/kv_engine.hpp"
+#include "../engine/pmem_allocator/pmem_allocator.hpp"
+
 #include "test_util.h"
-#include "gtest/gtest.h"
 
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
