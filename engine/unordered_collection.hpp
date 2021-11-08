@@ -14,7 +14,7 @@
 
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
-#include "macros.h"
+#include "macros.hpp"
 #include "structures.hpp"
 #include "utils.hpp"
 
