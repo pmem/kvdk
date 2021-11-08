@@ -21,25 +21,23 @@
 extern "C" {
 #endif
 
-#define FOREACH_ENUM(GEN) \
-    GEN(Ok) \
-    GEN(NotFound) \
-    GEN(MemoryOverflow) \
-    GEN(PmemOverflow) \
-    GEN(NotSupported) \
-    GEN(MapError) \
-    GEN(BatchOverflow)\
-    GEN(TooManyWriteThreads) \
-    GEN(InvalidDataSize) \
-    GEN(IOError) \
-    GEN(InvalidConfiguration) \
-    GEN(Abort)
+#define FOREACH_ENUM(GEN)                                                      \
+  GEN(Ok)                                                                      \
+  GEN(NotFound)                                                                \
+  GEN(MemoryOverflow)                                                          \
+  GEN(PmemOverflow)                                                            \
+  GEN(NotSupported)                                                            \
+  GEN(MapError)                                                                \
+  GEN(BatchOverflow)                                                           \
+  GEN(TooManyWriteThreads)                                                     \
+  GEN(InvalidDataSize)                                                         \
+  GEN(IOError)                                                                 \
+  GEN(InvalidConfiguration)                                                    \
+  GEN(Abort)
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,
 
-typedef enum {
- FOREACH_ENUM(GENERATE_ENUM)
-} KVDKStatus;
+typedef enum { FOREACH_ENUM(GENERATE_ENUM) } KVDKStatus;
 
 #ifdef __cplusplus
 } /* end extern "C" */
