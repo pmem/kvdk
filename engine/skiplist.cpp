@@ -67,8 +67,15 @@ void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
       }
 
       DLRecord *next_pmem_record = next->record;
-      int cmp = compare_string_view(key, next->UserKey());
-      // next record maybe updated before compare string, then the compare
+      // pmem record maybe updated during seek, then the next record could be
+      // invalid, so we need to catch exceptions here
+      int cmp;
+      try {
+        cmp = compare_string_view(key, next->UserKey());
+      } catch (std::runtime_error &) {
+        continue;
+      }
+      // pmem record maybe updated before comparing string, then the compare
       // result will be invalid, so we need to do double check
       if (next->record != next_pmem_record) {
         continue;
@@ -145,13 +152,19 @@ void Skiplist::Seek(const StringView &key, Splice *result_splice) {
   DLRecord *next_record = nullptr;
   while (1) {
     next_record = pmem_allocator_->offset2addr<DLRecord>(prev_record->next);
-    assert(next_record != nullptr);
     if (next_record == header()->record) {
       break;
     }
 
-    int cmp = compare_string_view(key, UserKey(next_record));
-    // next record maybe updated before compare string, then the compare
+    // pmem record maybe updated during seek, then the next record could be
+    // invalid, so we need to catch exceptions here
+    int cmp;
+    try {
+      cmp = compare_string_view(key, UserKey(next_record));
+    } catch (std::runtime_error &e) {
+      return Seek(key, result_splice);
+    }
+    // pmem record maybe updated before comparing string, then the comparing
     // result will be invalid, so we need to do double check
     if (!ValidateDLRecord(next_record)) {
       return Seek(key, result_splice);
