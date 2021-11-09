@@ -1,14 +1,21 @@
-#include "algorithm"
-#include "generator.hpp"
-#include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
-#include "sys/time.h"
+#include <unistd.h>
+
+#include <algorithm>
 #include <atomic>
-#include <gflags/gflags.h>
 #include <iostream>
 #include <string>
 #include <thread>
-#include <unistd.h>
+
+#include <gflags/gflags.h>
+
+#include "sys/time.h"
+
+#include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
+
+#include "../engine/alias.hpp"
+
+#include "generator.hpp"
 
 using namespace google;
 using namespace KVDK_NAMESPACE;
@@ -165,8 +172,7 @@ void DBWrite(int tid) {
     num = generate_key();
     memcpy(&key[0], &num, 8);
 
-    pmem::obj::string_view value =
-        pmem::obj::string_view(value_pool, value_size_generator->Next());
+    StringView value = StringView(value_pool, value_size_generator->Next());
 
     if (stat_latencies)
       timer.Start();

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <future>
+
 #include <libpmem.h>
 
 #include "hash_table.hpp"
@@ -111,7 +112,7 @@ Status Skiplist::Rebuild() {
       break;
     }
 
-    pmem::obj::string_view key = next_record->Key();
+    StringView key = next_record->Key();
     Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
                                           SortedDataRecord, &entry_ptr,
                                           &hash_entry, nullptr);
@@ -134,7 +135,7 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
-void Skiplist::Seek(const pmem::obj::string_view &key, Splice *result_splice) {
+void Skiplist::Seek(const StringView &key, Splice *result_splice) {
   result_splice->seeking_list = this;
   header_->SeekNode(key, header_->Height(), 1, result_splice);
   assert(result_splice->prevs[1] != nullptr);
@@ -177,7 +178,7 @@ Status Skiplist::CheckConnection(int height) {
     HashEntry hash_entry;
     DataEntry data_entry;
     HashEntry *entry_ptr = nullptr;
-    pmem::obj::string_view key = next_record->Key();
+    StringView key = next_record->Key();
     Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
                                           SortedDataRecord, &entry_ptr,
                                           &hash_entry, &data_entry);
@@ -553,7 +554,7 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
           HashEntry hash_entry;
           DataEntry data_entry;
           HashEntry *entry_ptr = nullptr;
-          pmem::obj::string_view key = next_record->Key();
+          StringView key = next_record->Key();
           Status s = engine->hash_table_->SearchForRead(
               engine->hash_table_->GetHint(key), key, SortedRecordType,
               &entry_ptr, &hash_entry, &data_entry);
@@ -623,7 +624,7 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
       HashEntry hash_entry;
       DataEntry data_entry;
       HashEntry *entry_ptr = nullptr;
-      pmem::obj::string_view key = next_record->Key();
+      StringView key = next_record->Key();
       Status s = engine->hash_table_->SearchForRead(
           engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,
           &hash_entry, &data_entry);
@@ -712,7 +713,7 @@ void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
     SkiplistNode *node = nullptr;
     DLRecord *cur_record =
         engine->pmem_allocator_->offset2addr<DLRecord>(it->first);
-    pmem::obj::string_view key = cur_record->Key();
+    StringView key = cur_record->Key();
 
     Status s = engine->hash_table_->SearchForRead(
         engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,

@@ -31,8 +31,8 @@ HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
   return table;
 }
 
-bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
-                               uint32_t hash_k_prefix, uint16_t target_type,
+bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
+                               uint16_t target_type,
                                const HashEntry *hash_entry,
                                DataEntry *data_entry_metadata) {
   if (hash_entry->header.status == HashEntryStatus::Empty) {
@@ -42,7 +42,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
       hash_k_prefix == hash_entry->header.key_prefix) {
 
     void *pmem_record;
-    pmem::obj::string_view data_entry_key;
+    StringView data_entry_key;
 
     switch (hash_entry->header.offset_type) {
     case HashOffsetType::StringRecord: {
@@ -92,8 +92,7 @@ bool HashTable::MatchHashEntry(const pmem::obj::string_view &key,
   return false;
 }
 
-Status HashTable::SearchForWrite(const KeyHashHint &hint,
-                                 const pmem::obj::string_view &key,
+Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
                                  uint16_t type_mask, HashEntry **entry_ptr,
                                  HashEntry *hash_entry_snap,
                                  DataEntry *data_entry_meta, bool in_recovery) {
@@ -190,8 +189,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint,
   return found ? Status::Ok : Status::NotFound;
 }
 
-Status HashTable::SearchForRead(const KeyHashHint &hint,
-                                const pmem::obj::string_view &key,
+Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
                                 uint16_t type_mask, HashEntry **entry_ptr,
                                 HashEntry *hash_entry_snap,
                                 DataEntry *data_entry_meta) {

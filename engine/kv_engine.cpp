@@ -4,22 +4,24 @@
 
 #include "kv_engine.hpp"
 
+#include <cmath>
+#include <cstdint>
+
 #include <algorithm>
 #include <atomic>
-#include <cstdint>
-#include <dirent.h>
 #include <future>
-#include <libpmem.h>
 #include <limits>
-#include <math.h>
 #include <mutex>
-#include <sys/mman.h>
 #include <thread>
+
+#include <dirent.h>
+#include <libpmem.h>
+#include <sys/mman.h>
+
+#include "kvdk/engine.hpp"
 
 #include "configs.hpp"
 #include "dram_allocator.hpp"
-#include "hash_list.hpp"
-#include "kvdk/engine.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "utils.hpp"
@@ -54,6 +56,7 @@ KVEngine::~KVEngine() {
   for (auto &t : bg_threads_) {
     t.join();
   }
+
   GlobalLogger.Info("Instance closed\n");
 }
 
@@ -162,11 +165,12 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   s = Recovery();
   write_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
+
   return s;
 }
 
 std::shared_ptr<Iterator>
-KVEngine::NewSortedIterator(const pmem::obj::string_view collection) {
+KVEngine::NewSortedIterator(const StringView collection) {
   Skiplist *skiplist;
   Status s = SearchOrInitSkiplist(collection, &skiplist, false);
 
@@ -329,9 +333,7 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
   case RecordType::SortedDataRecord:
   case RecordType::SortedHeaderRecord:
   case RecordType::DlistDataRecord:
-  case RecordType::DlistRecord:
-  case RecordType::DlistHeadRecord:
-  case RecordType::DlistTailRecord: {
+  case RecordType::DlistRecord: {
     DLRecord *dl_record = static_cast<DLRecord *>(data_record);
     if (dl_record->Validate(expected_checksum)) {
       auto v = dl_record->Value();
@@ -340,7 +342,11 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
     }
     return false;
   }
+  case RecordType::Padding: {
+    return false;
+  }
   default:
+    GlobalLogger.Error("Unsupported type in ValidateRecordAndGetValue()!");
     kvdk_assert(false, "Unsupported type in ValidateRecordAndGetValue()!");
     std::abort();
   }
@@ -370,7 +376,7 @@ bool KVEngine::ValidateRecord(void *data_record) {
 
 Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
   assert(pmem_record->entry.meta.type == SortedHeaderRecord);
-  pmem::obj::string_view pmem_key = pmem_record->Key();
+  StringView pmem_key = pmem_record->Key();
   std::string key(string_view_2_string(pmem_key));
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -408,7 +414,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
-  pmem::obj::string_view pmem_key = pmem_record->Key();
+  StringView pmem_key = pmem_record->Key();
   std::string key(string_view_2_string(pmem_key));
   DataEntry existing_data_entry;
   HashEntry hash_entry;
@@ -479,7 +485,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   }
 
   assert(pmem_record->entry.meta.type & SortedDataRecord);
-  pmem::obj::string_view pmem_key = pmem_record->Key();
+  StringView pmem_key = pmem_record->Key();
   std::string key(string_view_2_string(pmem_key));
   DataEntry existing_data_entry;
   HashEntry hash_entry;
@@ -563,10 +569,9 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   return Status::Ok;
 }
 
-Status
-KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
-                                     PersistentList **list, bool init,
-                                     uint16_t header_type) {
+Status KVEngine::SearchOrInitPersistentList(const StringView &collection,
+                                            PersistentList **list, bool init,
+                                            uint16_t header_type) {
   auto hint = hash_table_->GetHint(collection);
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -599,7 +604,7 @@ KVEngine::SearchOrInitPersistentList(const pmem::obj::string_view &collection,
             sized_space_entry.size, get_timestamp(), (RecordType)header_type,
             sized_space_entry.space_entry.offset,
             sized_space_entry.space_entry.offset, collection,
-            pmem::obj::string_view((char *)&id, 8));
+            StringView((char *)&id, 8));
 
         {
           std::lock_guard<std::mutex> lg(list_mu_);
@@ -771,8 +776,8 @@ Status KVEngine::Recovery() {
   return Status::Ok;
 }
 
-Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
-                             std::string *value, uint16_t type_mask) {
+Status KVEngine::HashGetImpl(const StringView &key, std::string *value,
+                             uint16_t type_mask) {
   DataEntry data_entry;
   while (1) {
     HashEntry hash_entry;
@@ -820,14 +825,14 @@ Status KVEngine::HashGetImpl(const pmem::obj::string_view &key,
   return Status::Ok;
 }
 
-Status KVEngine::Get(const pmem::obj::string_view key, std::string *value) {
+Status KVEngine::Get(const StringView key, std::string *value) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
   return HashGetImpl(key, value, StringRecordType);
 }
 
-Status KVEngine::Delete(const pmem::obj::string_view key) {
+Status KVEngine::Delete(const StringView key) {
   Status s = MaybeInitWriteThread();
 
   if (s != Status::Ok) {
@@ -982,9 +987,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist,
   return Status::Ok;
 }
 
-Status KVEngine::SSet(const pmem::obj::string_view collection,
-                      const pmem::obj::string_view user_key,
-                      const pmem::obj::string_view value) {
+Status KVEngine::SSet(const StringView collection, const StringView user_key,
+                      const StringView value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1062,8 +1066,8 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
   return Status::Ok;
 }
 
-Status KVEngine::SDelete(const pmem::obj::string_view collection,
-                         const pmem::obj::string_view user_key) {
+Status KVEngine::SDelete(const StringView collection,
+                         const StringView user_key) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1244,8 +1248,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
   return Status::Ok;
 }
 
-Status KVEngine::SGet(const pmem::obj::string_view collection,
-                      const pmem::obj::string_view user_key,
+Status KVEngine::SGet(const StringView collection, const StringView user_key,
                       std::string *value) {
   Skiplist *skiplist = nullptr;
   Status s = SearchOrInitSkiplist(collection, &skiplist, false);
@@ -1257,7 +1260,7 @@ Status KVEngine::SGet(const pmem::obj::string_view collection,
   return HashGetImpl(skiplist_key, value, SortedDataRecord);
 }
 
-Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key) {
+Status KVEngine::StringDeleteImpl(const StringView &key) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -1312,8 +1315,7 @@ Status KVEngine::StringDeleteImpl(const pmem::obj::string_view &key) {
   return Status::Ok;
 }
 
-Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
-                               const pmem::obj::string_view &value) {
+Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
   DataEntry data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -1365,8 +1367,7 @@ Status KVEngine::StringSetImpl(const pmem::obj::string_view &key,
   return Status::Ok;
 }
 
-Status KVEngine::Set(const pmem::obj::string_view key,
-                     const pmem::obj::string_view value) {
+Status KVEngine::Set(const StringView key, const StringView value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1381,19 +1382,19 @@ Status KVEngine::Set(const pmem::obj::string_view key,
 } // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
-std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
-    pmem::obj::string_view const collection_name) {
+std::shared_ptr<UnorderedCollection>
+KVEngine::createUnorderedCollection(StringView const collection_name) {
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
-      std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_, name,
-                                            id, ts);
+      std::make_shared<UnorderedCollection>(
+          hash_table_.get(), pmem_allocator_.get(), name, id, ts);
   return sp_uncoll;
 }
 
 UnorderedCollection *
-KVEngine::findUnorderedCollection(pmem::obj::string_view collection_name) {
+KVEngine::findUnorderedCollection(StringView collection_name) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -1414,8 +1415,8 @@ KVEngine::findUnorderedCollection(pmem::obj::string_view collection_name) {
   }
 }
 
-Status KVEngine::HGet(pmem::obj::string_view const collection_name,
-                      pmem::obj::string_view const key, std::string *value) {
+Status KVEngine::HGet(StringView const collection_name, StringView const key,
+                      std::string *value) {
   UnorderedCollection *p_uncoll = findUnorderedCollection(collection_name);
   if (!p_uncoll) {
     return Status::NotFound;
@@ -1425,9 +1426,8 @@ Status KVEngine::HGet(pmem::obj::string_view const collection_name,
   return HashGetImpl(internal_key, value, RecordType::DlistDataRecord);
 }
 
-Status KVEngine::HSet(pmem::obj::string_view const collection_name,
-                      pmem::obj::string_view const key,
-                      pmem::obj::string_view const value) {
+Status KVEngine::HSet(StringView const collection_name, StringView const key,
+                      StringView const value) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1491,53 +1491,31 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
           hint_record, internal_key, RecordType::DlistDataRecord,
           &p_hash_entry_record, &hash_entry_record, nullptr);
 
-      // pmp_last_emplacement maybe invalidified by Replace!
-      thread_local DLRecord *pmp_last_emplacement = nullptr;
-      thread_local std::uint64_t id_last = 0;
-
-      EmplaceReturn emplace_result{};
+      ModifyReturn emplace_result{};
       switch (search_result) {
       case Status::NotFound: {
-        // Cached position for emplacement not available.
-        if (!pmp_last_emplacement || id_last != p_collection->ID()) {
-          // Emplace Front or Back according to hash to reduce lock contention
-          if (hint_record.key_hash_value % 2 == 0)
-            emplace_result = p_collection->EmplaceFront(
-                ts, key, value, RecordType::DlistDataRecord, lock_record);
-          else
-            emplace_result = p_collection->EmplaceBack(
-                ts, key, value, RecordType::DlistDataRecord, lock_record);
-        } else {
-          // Emplace at cached position
-          emplace_result = p_collection->EmplaceBefore(
-              pmp_last_emplacement, ts, key, value, RecordType::DlistDataRecord,
-              lock_record);
-        }
+        emplace_result = p_collection->Emplace(ts, key, value, lock_record);
         break;
       }
       case Status::Ok: {
         DLRecord *pmp_old_record =
             pmem_allocator_->offset2addr_checked<DLRecord>(
                 hash_entry_record.offset);
-
         emplace_result =
-            p_collection->Replace(pmp_old_record, ts, key, value,
-                                  RecordType::DlistDataRecord, lock_record);
+            p_collection->Replace(pmp_old_record, ts, key, value, lock_record);
+        // Additional check
         if (emplace_result.success) {
+          kvdk_assert(hash_entry_record.offset == emplace_result.offset_old,
+                      "Updated a record, but HashEntry in HashTable is "
+                      "inconsistent with data on PMem!");
           DLRecord *pmp_new_record =
               pmem_allocator_->offset2addr_checked<DLRecord>(
                   emplace_result.offset_new);
-          DLRecord *pmp_old_record2 =
-              pmem_allocator_->offset2addr_checked<DLRecord>(
-                  emplace_result.offset_old);
-          kvdk_assert(pmp_old_record2 == pmp_old_record,
-                      "Updated a record, but HashEntry in HashTable is "
-                      "inconsistent with data on PMem!")
-              kvdk_assert(
-                  pmp_old_record->entry.meta.timestamp <
-                      pmp_new_record->entry.meta.timestamp,
-                  "Old record has newer timestamp than newly inserted record!");
-          p_collection->Deallocate(pmp_old_record);
+          kvdk_assert(
+              pmp_old_record->entry.meta.timestamp <
+                  pmp_new_record->entry.meta.timestamp,
+              "Old record has newer timestamp than newly inserted record!");
+          purgeAndFree(pmp_old_record);
         }
         break;
       }
@@ -1548,23 +1526,10 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
       }
 
       if (!emplace_result.success) {
-        // Fail to acquire other locks, or the linkage is broken, retry
-        if (n_try > 2) {
-          // Too many fails at emplacing in cached position,
-          // the position may have been invalidated.
-          // Remove cache so that thread will EmplaceFront or EmplaceBack
-          pmp_last_emplacement = nullptr;
-          id_last = 0;
-        }
         // Retry
         continue;
       } else {
         // Successfully emplaced the new record
-        // Update emplace position cache
-        pmp_last_emplacement = pmem_allocator_->offset2addr_checked<DLRecord>(
-            emplace_result.offset_new);
-        id_last = p_collection->ID();
-
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             RecordType::DlistDataRecord,
                             emplace_result.offset_new,
@@ -1575,8 +1540,8 @@ Status KVEngine::HSet(pmem::obj::string_view const collection_name,
   }
 }
 
-Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
-                         pmem::obj::string_view const key) {
+Status KVEngine::HDelete(StringView const collection_name,
+                         StringView const key) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1601,7 +1566,7 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
           hint_record, internal_key, RecordType::DlistDataRecord, &p_hash_entry,
           &hash_entry, nullptr);
 
-      EmplaceReturn erase_result{};
+      ModifyReturn erase_result{};
       switch (search_result) {
       case Status::NotFound: {
         return Status::Ok;
@@ -1616,7 +1581,8 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
               pmem_allocator_->offset2addr_checked<DLRecord>(
                   erase_result.offset_old);
           p_hash_entry->Clear();
-          p_collection->Deallocate(pmp_old_record);
+          purgeAndFree(pmp_old_record);
+
           return Status::Ok;
         } else {
           // !erase_result.success
@@ -1625,8 +1591,8 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
         break;
       }
       default: {
-        kvdk_assert(false, "Invalid search result when trying to insert "
-                           "a new DlistDataRecord!");
+        kvdk_assert(false, "Invalid search result when trying to erase "
+                           "a DlistDataRecord!");
       }
       }
     }
@@ -1634,7 +1600,7 @@ Status KVEngine::HDelete(pmem::obj::string_view const collection_name,
 }
 
 std::shared_ptr<Iterator>
-KVEngine::NewUnorderedIterator(pmem::obj::string_view const collection_name) {
+KVEngine::NewUnorderedIterator(StringView const collection_name) {
   UnorderedCollection *p_collection = findUnorderedCollection(collection_name);
   return p_collection ? std::make_shared<UnorderedIterator>(
                             p_collection->shared_from_this())
@@ -1648,8 +1614,8 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     std::lock_guard<std::mutex> lg{list_mu_};
     {
       std::shared_ptr<UnorderedCollection> sp_collection =
-          std::make_shared<UnorderedCollection>(pmem_allocator_, hash_table_,
-                                                pmp_record);
+          std::make_shared<UnorderedCollection>(
+              hash_table_.get(), pmem_allocator_.get(), pmp_record);
       p_collection = sp_collection.get();
       vec_sp_unordered_collections_.emplace_back(sp_collection);
     }
@@ -1688,11 +1654,8 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
         pmem_allocator_->addr2offset_checked(pmp_record);
     bool linked = isLinkedDLDataEntry(static_cast<DLRecord *>(pmp_record));
     if (!linked) {
-      pmp_record->Destroy();
-      pmem_allocator_->Free(
-          SizedSpaceEntry(pmem_allocator_->addr2offset(pmp_record),
-                          pmp_record->entry.header.record_size,
-                          pmp_record->entry.meta.timestamp));
+      purgeAndFree(pmp_record);
+
       return Status::Ok;
     }
 
@@ -1727,18 +1690,20 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             pmp_record->entry.meta.type, offset_record,
                             HashOffsetType::UnorderedCollectionElement);
-        UnorderedCollection::Deallocate(pmp_old_record, pmem_allocator_.get());
+        purgeAndFree(pmp_old_record);
+
       } else if (pmp_old_record->entry.meta.timestamp ==
                  pmp_record->entry.meta.timestamp) {
         GlobalLogger.Info("Met two DlistRecord with same timestamp");
-        UnorderedCollection::Deallocate(pmp_record, pmem_allocator_.get());
+        purgeAndFree(pmp_record);
+
       } else {
         if (checkDLRecordLinkageRight((DLRecord *)pmp_record) ||
             checkDLRecordLinkageLeft((DLRecord *)pmp_record)) {
           assert(false && "Old record is linked in Dlinkedlist!");
           throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
         }
-        UnorderedCollection::Deallocate(pmp_record, pmem_allocator_.get());
+        purgeAndFree(pmp_record);
       }
       return Status::Ok;
     }

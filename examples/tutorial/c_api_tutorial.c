@@ -207,8 +207,7 @@ int main() {
          KVDKIterPre(kvdk_iter)) {
       ++cnt;
     }
-    printf(
-        "Successfully performed Get Set Delete Iterate on HashList.\n");
+    printf("Successfully performed Get Set Delete Iterate on HashList.\n");
     assert(cnt == 9);
     KVDKIterDestory(kvdk_iter);
   }

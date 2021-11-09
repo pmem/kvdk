@@ -17,16 +17,17 @@ endif()
 set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -O2 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og")
-    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${KVDK_COMPILE_SHARED_FLAGS}")
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${KVDK_COMPILE_SHARED_FLAGS}")
 elseif (CMAKE_BUILD_TYPE STREQUAL "FastDebug")
-    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2")
+    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2")
 elseif (CMAKE_BUILD_TYPE STREQUAL "VTune")
-    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -shared-libgcc")
+    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -shared-libgcc")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Asan")
-    set(KVDK_COMPILE_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
+    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
 else ()
     message(FATAL_ERROR "Invalid build type!")
 endif ()
@@ -37,8 +38,8 @@ else ()
     add_compile_definitions(DEBUG_LEVEL=1)
 endif()
 
-set(CMAKE_C_FLAGS "${KVDK_COMPILE_FLAGS}")
-set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
 
 # source files
 set(SOURCES
@@ -48,7 +49,6 @@ set(SOURCES
         engine/hash_table.cpp
         engine/skiplist.cpp
         engine/write_batch.cpp
-        engine/hash_list.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
@@ -97,7 +97,7 @@ option(BUILD_TUTORIAL "Build the tutorial" ON)
 add_subdirectory(examples/tutorial)
 
 option(BUILD_GRAPH_SIMULATOR "Build the graph simulator" ON)
-add_subdirectory(examples/graph_sim)
+# add_subdirectory(examples/graph_sim)
 
 add_custom_target(checkers ALL)
 add_custom_target(cppstyle)

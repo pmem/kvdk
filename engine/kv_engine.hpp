@@ -18,7 +18,6 @@
 
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "hash_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
@@ -219,8 +218,8 @@ private:
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
     DLRecord *pmp_next =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
-    bool is_linked_right = (pmp_prev->next == offset);
-    bool is_linked_left = (pmp_next->prev == offset);
+    bool is_linked_left = (pmp_prev->next == offset);
+    bool is_linked_right = (pmp_next->prev == offset);
 
     if (is_linked_left && is_linked_right) {
       return true;
@@ -237,6 +236,14 @@ private:
                          "which is logically impossible! Abort...\n");
       std::abort();
     }
+  }
+
+  inline void purgeAndFree(DLRecord *record_pmmptr) {
+    record_pmmptr->Destroy();
+    pmem_allocator_->Free(
+        SizedSpaceEntry(pmem_allocator_->addr2offset_checked(record_pmmptr),
+                        record_pmmptr->entry.header.record_size,
+                        record_pmmptr->entry.meta.timestamp));
   }
 
   std::vector<ThreadLocalRes> thread_res_;
