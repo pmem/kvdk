@@ -341,6 +341,18 @@ private:
                          deleted_record, prev_record_lock);
   }
 
+  bool ValidateDLRecord(const DLRecord *record) {
+    // if record is not a valid dl record, then its prev maybe a invalid
+    // pointer, so we need to catch exception here
+    try {
+      DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
+      return prev->next == pmem_allocator_->addr2offset(record) &&
+             SkiplistId(record) == id_;
+    } catch (std::runtime_error &e) {
+      return false;
+    }
+  }
+
   SkiplistNode *header_;
   std::string name_;
   uint64_t id_;
