@@ -17,9 +17,10 @@ StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
 
 uint64_t SkiplistNode::SkiplistId() { return Skiplist::SkiplistId(this); }
 
-void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
-                            uint8_t end_height, Splice *result_splice) {
-  std::unique_ptr<std::vector<SkiplistNode *>> to_delete(nullptr);
+void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
+                            uint8_t start_height, uint8_t end_height,
+                            Splice *result_splice) {
+  std::vector<SkiplistNode *> to_delete;
   assert(height >= start_height && end_height >= 1);
   SkiplistNode *prev = this;
   PointerWithTag<SkiplistNode> next;
@@ -57,17 +58,21 @@ void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
       if (next_next.GetTag()) {
         if (prev->CASNext(i, next, next_next.RawPointer())) {
           if (--next->valid_links == 0) {
-            if (to_delete == nullptr) {
-              to_delete.reset(new std::vector<SkiplistNode *>());
-            }
-            to_delete->push_back(next.RawPointer());
+            to_delete.push_back(next.RawPointer());
           }
         }
         // if prev is marked deleted before cas, cas will be failed, and prev
         // will be roll back in next round
         continue;
       }
+
+      DLRecord *next_pmem_record = next->record;
       int cmp = compare_string_view(key, next->UserKey());
+      // next record maybe updated before compare string, then the compare
+      // result will be invalid, so we need to do double check
+      if (next->record != next_pmem_record) {
+        continue;
+      }
 
       if (cmp > 0) {
         prev = next.RawPointer();
@@ -78,8 +83,8 @@ void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
       }
     }
   }
-  if (to_delete && to_delete->size() > 0) {
-    result_splice->seeking_list->ObsoleteNodes(*to_delete);
+  if (to_delete.size() > 0) {
+    result_splice->seeking_list->ObsoleteNodes(to_delete);
   }
 }
 
@@ -146,6 +151,12 @@ void Skiplist::Seek(const StringView &key, Splice *result_splice) {
     }
 
     int cmp = compare_string_view(key, UserKey(next_record));
+    // next record maybe updated before compare string, then the compare
+    // result will be invalid, so we need to do double check
+    if (!ValidateDLRecord(next_record)) {
+      return Seek(key, result_splice);
+    }
+
     if (cmp > 0) {
       prev_record = next_record;
     } else {
