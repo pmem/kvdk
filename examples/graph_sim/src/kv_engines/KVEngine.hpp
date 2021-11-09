@@ -110,12 +110,6 @@ class MemoryEngine : public KVEngine {
     return Status::Ok;
   }
 
-  struct CMP {
-    bool operator()(const std::string& a, const std::string& b) {
-      return a.compare(b) < 0;
-    }
-  };
-
   class MemoryIterator : public KVEngine::Iterator {
    public:
     explicit MemoryIterator(std::map<std::string, std::string>::iterator start,
@@ -149,7 +143,7 @@ class MemoryEngine : public KVEngine {
 
  private:
   std::string path_;
-  std::map<std::string, std::string, CMP> memory_db_;
+  std::map<std::string, std::string, std::less<>> memory_db_;
 };
 
 // Construct the engine's map with their engine name.
