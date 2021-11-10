@@ -13,15 +13,12 @@
 
 namespace KVDK_NAMESPACE {
 
-pmem::obj::string_view SkiplistNode::UserKey() {
-  return Skiplist::UserKey(this);
-}
+StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
 
 uint64_t SkiplistNode::SkiplistId() { return Skiplist::SkiplistId(this); }
 
-void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
-                            uint8_t start_height, uint8_t end_height,
-                            Splice *result_splice) {
+void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
+                            uint8_t end_height, Splice *result_splice) {
   std::unique_ptr<std::vector<SkiplistNode *>> to_delete(nullptr);
   assert(height >= start_height && end_height >= 1);
   SkiplistNode *prev = this;
@@ -210,8 +207,7 @@ Status Skiplist::CheckConnection(int height) {
   return Status::Ok;
 }
 
-bool Skiplist::FindUpdatePos(Splice *splice,
-                             const pmem::obj::string_view &updated_key,
+bool Skiplist::FindUpdatePos(Splice *splice, const StringView &updated_key,
                              const SpinMutex *updating_key_lock,
                              const DLRecord *updated_record,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
@@ -256,8 +252,7 @@ bool Skiplist::FindUpdatePos(Splice *splice,
   }
 }
 
-bool Skiplist::FindInsertPos(Splice *splice,
-                             const pmem::obj::string_view &insert_key,
+bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
                              const SpinMutex *inserting_key_lock,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
@@ -322,8 +317,7 @@ bool Skiplist::FindInsertPos(Splice *splice,
   }
 }
 
-bool Skiplist::Insert(const pmem::obj::string_view &key,
-                      const pmem::obj::string_view &value,
+bool Skiplist::Insert(const StringView &key, const StringView &value,
                       const SizedSpaceEntry &space_to_write, uint64_t timestamp,
                       SkiplistNode **dram_node,
                       const SpinMutex *inserting_key_lock) {
@@ -369,8 +363,7 @@ bool Skiplist::Insert(const pmem::obj::string_view &key,
   return true;
 }
 
-bool Skiplist::Update(const pmem::obj::string_view &key,
-                      const pmem::obj::string_view &value,
+bool Skiplist::Update(const StringView &key, const StringView &value,
                       const DLRecord *updated_record,
                       const SizedSpaceEntry &space_to_write, uint64_t timestamp,
                       SkiplistNode *dram_node,
@@ -398,8 +391,8 @@ bool Skiplist::Update(const pmem::obj::string_view &key,
   return true;
 }
 
-bool Skiplist::Delete(const pmem::obj::string_view &key,
-                      DLRecord *deleted_record, SkiplistNode *dram_node,
+bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
+                      SkiplistNode *dram_node,
                       const SpinMutex *deleting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;

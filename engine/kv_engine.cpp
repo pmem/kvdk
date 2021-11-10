@@ -845,8 +845,7 @@ Status KVEngine::Delete(const StringView key) {
   return StringDeleteImpl(key);
 }
 
-Status KVEngine::SDeleteImpl(Skiplist *skiplist,
-                             const pmem::obj::string_view &user_key) {
+Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key)) {
     return Status::InvalidDataSize;
@@ -897,9 +896,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
   return Status::Ok;
 }
 
-Status KVEngine::SSetImpl(Skiplist *skiplist,
-                          const pmem::obj::string_view &user_key,
-                          const pmem::obj::string_view &value) {
+Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
+                          const StringView &value) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
