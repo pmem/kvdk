@@ -75,7 +75,7 @@ public:
 
 private:
   struct BatchWriteHint {
-    uint64_t timestamp{0};
+    TimeStampType timestamp{0};
     SizedSpaceEntry allocated_space{};
     SizedSpaceEntry free_after_finish{};
     bool delay_free{false};
@@ -175,7 +175,7 @@ private:
     return ((uint64_t)lo) | (((uint64_t)hi) << 32);
   }
 
-  inline uint64_t get_timestamp() {
+  inline TimeStampType get_timestamp() {
     auto res = get_cpu_tsc() - ts_on_startup_ + newest_version_on_startup_;
     return res;
   }

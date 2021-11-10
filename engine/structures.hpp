@@ -64,7 +64,7 @@ struct PendingBatch {
     Processing = 1,
   };
 
-  PendingBatch(Stage s, uint32_t nkv, uint64_t ts)
+  PendingBatch(Stage s, uint32_t nkv, TimeStampType ts)
       : stage(s), num_kv(nkv), timestamp(ts) {}
 
   void PersistProcessing(void *target,
@@ -78,7 +78,7 @@ struct PendingBatch {
 
   Stage stage;
   uint32_t num_kv;
-  uint64_t timestamp;
+  TimeStampType timestamp;
 };
 
 class PersistentList {

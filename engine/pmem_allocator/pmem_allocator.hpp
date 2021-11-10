@@ -19,7 +19,7 @@
 
 namespace KVDK_NAMESPACE {
 
-constexpr uint64_t kNullPmemOffset = UINT64_MAX;
+constexpr PMemOffsetType kPMemNull = UINT64_MAX;
 constexpr uint64_t kMinPaddingBlocks = 8;
 
 // Manage allocation/de-allocation of PMem space at block unit
@@ -37,7 +37,7 @@ public:
                    uint32_t num_write_threads, bool use_devdax_mode);
 
   // Allocate a PMem space, return offset and actually allocated space in bytes
-  virtual SizedSpaceEntry Allocate(uint64_t size) override;
+  SizedSpaceEntry Allocate(uint64_t size) override;
 
   // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(const SizedSpaceEntry &entry) override;
@@ -60,8 +60,8 @@ public:
     return nullptr;
   }
 
-  template <typename T> inline T *offset2addr_checked(uint64_t block_offset) {
-    return static_cast<T *>(offset2addr_checked(block_offset));
+  template <typename T> inline T *offset2addr_checked(uint64_t offset) {
+    return static_cast<T *>(offset2addr_checked(offset));
   }
 
   template <typename T> inline T *offset2addr(uint64_t block_offset) {
@@ -83,11 +83,11 @@ public:
         return offset;
       }
     }
-    return kNullPmemOffset;
+    return kPMemNull;
   }
 
   inline bool validate_offset(uint64_t offset) {
-    return offset < pmem_size_ && offset != kNullPmemOffset;
+    return offset < pmem_size_ && offset != kPMemNull;
   }
 
   // Populate PMem space so the following access can be faster
