@@ -158,6 +158,9 @@ void Skiplist::Seek(const StringView &key, Splice *result_splice) {
 
     // pmem record maybe updated during seek, then the next record could be
     // invalid, so we need to catch exceptions here
+    if (next_record == nullptr) {
+      return Seek(key, result_splice);
+    }
     int cmp;
     try {
       cmp = compare_string_view(key, UserKey(next_record));
