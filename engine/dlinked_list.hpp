@@ -145,7 +145,7 @@ private:
   friend class UnorderedCollection;
   friend class UnorderedIterator;
 
-  static constexpr PMemOffsetType NullPMemOffset = kPMemNull;
+  static constexpr PMemOffsetType NullPMemOffset = kPmemNullOffset;
 
 public:
   /// Create DLinkedList and construct head and tail node on PMem.

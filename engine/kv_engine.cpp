@@ -1636,13 +1636,13 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     return Status::Ok;
   }
   case RecordType::DlistHeadRecord: {
-    kvdk_assert(pmp_record->prev == kPMemNull &&
+    kvdk_assert(pmp_record->prev == kPmemNullOffset &&
                     checkDLRecordLinkageRight(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken head.");
     return Status::Ok;
   }
   case RecordType::DlistTailRecord: {
-    kvdk_assert(pmp_record->next == kPMemNull &&
+    kvdk_assert(pmp_record->next == kPmemNullOffset &&
                     checkDLRecordLinkageLeft(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken tail.");
     return Status::Ok;

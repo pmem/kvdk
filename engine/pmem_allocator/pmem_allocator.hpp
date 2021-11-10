@@ -19,7 +19,7 @@
 
 namespace KVDK_NAMESPACE {
 
-constexpr PMemOffsetType kPMemNull = UINT64_MAX;
+constexpr PMemOffsetType kPmemNullOffset = UINT64_MAX;
 constexpr uint64_t kMinPaddingBlocks = 8;
 
 // Manage allocation/de-allocation of PMem space at block unit
@@ -83,11 +83,11 @@ public:
         return offset;
       }
     }
-    return kPMemNull;
+    return kPmemNullOffset;
   }
 
   inline bool validate_offset(uint64_t offset) {
-    return offset < pmem_size_ && offset != kPMemNull;
+    return offset < pmem_size_ && offset != kPmemNullOffset;
   }
 
   // Populate PMem space so the following access can be faster
