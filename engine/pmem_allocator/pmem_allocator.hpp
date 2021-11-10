@@ -140,7 +140,6 @@ private:
   std::atomic<uint64_t> offset_head_;
   char *pmem_;
   uint64_t pmem_size_;
-  uint64_t max_block_offset_;
   Freelist free_list_;
   // For quickly get corresponding block size of a requested data size
   std::vector<uint16_t> data_size_2_block_size_;
