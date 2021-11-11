@@ -19,73 +19,6 @@ pmem::obj::string_view SkiplistNode::UserKey() {
 
 uint64_t SkiplistNode::SkiplistId() { return Skiplist::SkiplistId(this); }
 
-void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
-                            uint8_t start_height, uint8_t end_height,
-                            Splice *result_splice) {
-  std::unique_ptr<std::vector<SkiplistNode *>> to_delete(nullptr);
-  assert(height >= start_height && end_height >= 1);
-  SkiplistNode *prev = this;
-  PointerWithTag<SkiplistNode> next;
-  for (uint8_t i = start_height; i >= end_height; i--) {
-    uint64_t round = 0;
-    while (1) {
-      next = prev->Next(i);
-      // prev is logically deleted, roll back to prev height.
-      if (next.GetTag()) {
-        if (i < start_height) {
-          i++;
-          prev = result_splice->prevs[i];
-        } else if (prev != this) {
-          // re-seek from this node for start height
-          i = start_height;
-          prev = this;
-        } else {
-          // this node has been deleted, so seek from header
-          kvdk_assert(result_splice->seeking_list != nullptr,
-                      "skiplist must be set for seek operation!");
-          return result_splice->seeking_list->header()->SeekNode(
-              key, kMaxHeight, end_height, result_splice);
-        }
-        continue;
-      }
-
-      if (next.Null()) {
-        result_splice->nexts[i] = nullptr;
-        result_splice->prevs[i] = prev;
-        break;
-      }
-
-      // Physically remove deleted "next" nodes from skiplist
-      auto next_next = next->Next(i);
-      if (next_next.GetTag()) {
-        if (prev->CASNext(i, next, next_next.RawPointer())) {
-          if (--next->valid_links == 0) {
-            if (to_delete == nullptr) {
-              to_delete.reset(new std::vector<SkiplistNode *>());
-            }
-            to_delete->push_back(next.RawPointer());
-          }
-        }
-        // if prev is marked deleted before cas, cas will be failed, and prev
-        // will be roll back in next round
-        continue;
-      }
-      int cmp = compare_string_view(key, next->UserKey());
-
-      if (cmp > 0) {
-        prev = next.RawPointer();
-      } else {
-        result_splice->nexts[i] = next.RawPointer();
-        result_splice->prevs[i] = prev;
-        break;
-      }
-    }
-  }
-  if (to_delete && to_delete->size() > 0) {
-    result_splice->seeking_list->ObsoleteNodes(*to_delete);
-  }
-}
-
 // Insert DLRecord "inserting" between "prev" and "next"
 void Skiplist::InsertDLRecord(DLRecord *prev, DLRecord *next,
                               DLRecord *inserting) {
@@ -135,9 +68,22 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
-void Skiplist::Seek(const StringView &key, Splice *result_splice) {
+void Skiplist::Seek(const StringView &key, StringView value,
+                    Splice *result_splice) {
   result_splice->seeking_list = this;
-  header_->SeekNode(key, header_->Height(), 1, result_splice);
+  if (!priority_key && value.empty()) {
+    HashEntry hash_entry;
+    HashEntry *entry_ptr = nullptr;
+    DataEntry data_entry;
+    Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                          SortedDataRecord, &entry_ptr,
+                                          &hash_entry, &data_entry);
+    if (s != NotFound) {
+      return;
+    }
+    value = ((SkiplistNode *)hash_entry.offset)->record->Value();
+  }
+  SeekNode(key, value, header_, header_->Height(), 1, result_splice);
   assert(result_splice->prevs[1] != nullptr);
   DLRecord *prev_record = result_splice->prevs[1]->record;
   DLRecord *next_record = nullptr;
@@ -258,10 +204,11 @@ bool Skiplist::FindUpdatePos(Splice *splice,
 
 bool Skiplist::FindInsertPos(Splice *splice,
                              const pmem::obj::string_view &insert_key,
+                             const StringView &insert_value,
                              const SpinMutex *inserting_key_lock,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
-    Seek(insert_key, splice);
+    Seek(insert_key, insert_value, splice);
     DLRecord *prev = splice->prev_pmem_record;
 
     assert(prev != nullptr);
@@ -329,7 +276,8 @@ bool Skiplist::Insert(const pmem::obj::string_view &key,
                       const SpinMutex *inserting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindInsertPos(&splice, key, inserting_key_lock, &prev_record_lock)) {
+  if (!FindInsertPos(&splice, key, value, inserting_key_lock,
+                     &prev_record_lock)) {
     return false;
   }
 
@@ -359,7 +307,7 @@ bool Skiplist::Insert(const pmem::obj::string_view &key,
             break;
           }
         } else {
-          splice.Recompute(key, i);
+          splice.Recompute(key, value, i);
         }
       }
     }
@@ -428,10 +376,85 @@ bool Skiplist::Delete(const pmem::obj::string_view &key,
   return true;
 }
 
+void Skiplist::SeekNode(const pmem::obj::string_view &key,
+                        const StringView &value, SkiplistNode *start_node,
+                        uint8_t start_height, uint8_t end_height,
+                        Splice *result_splice) {
+  std::unique_ptr<std::vector<SkiplistNode *>> to_delete(nullptr);
+  assert(start_node->height >= start_height && end_height >= 1);
+  SkiplistNode *prev = start_node;
+  PointerWithTag<SkiplistNode> next;
+  for (uint8_t i = start_height; i >= end_height; i--) {
+    uint64_t round = 0;
+    while (1) {
+      next = prev->Next(i);
+      // prev is logically deleted, roll back to prev height.
+      if (next.GetTag()) {
+        if (i < start_height) {
+          i++;
+          prev = result_splice->prevs[i];
+        } else if (prev != start_node) {
+          // re-seek from this node for start height
+          i = start_height;
+          prev = start_node;
+        } else {
+          // this node has been deleted, so seek from header
+          kvdk_assert(result_splice->seeking_list != nullptr,
+                      "skiplist must be set for seek operation!");
+          return SeekNode(key, value, result_splice->seeking_list->header(),
+                          kMaxHeight, end_height, result_splice);
+        }
+        continue;
+      }
+
+      if (next.Null()) {
+        result_splice->nexts[i] = nullptr;
+        result_splice->prevs[i] = prev;
+        break;
+      }
+
+      // Physically remove deleted "next" nodes from skiplist
+      auto next_next = next->Next(i);
+      if (next_next.GetTag()) {
+        if (prev->CASNext(i, next, next_next.RawPointer())) {
+          if (--next->valid_links == 0) {
+            if (to_delete == nullptr) {
+              to_delete.reset(new std::vector<SkiplistNode *>());
+            }
+            to_delete->push_back(next.RawPointer());
+          }
+        }
+        // if prev is marked deleted before cas, cas will be failed, and prev
+        // will be roll back in next round
+        continue;
+      }
+
+      // cosidering two situation: (1) insert sorting by value, if value is
+      // same, sorted by key. (2) insert sorting by key. The key is always
+      // unique in this two situation
+      int cmp = priority_key ? Comparekey(key, next->UserKey())
+                             : (CompareValue(value, next->record->Value()) != 0
+                                    ? CompareValue(value, next->record->Value())
+                                    : Comparekey(key, next->UserKey()));
+
+      if (cmp > 0) {
+        prev = next.RawPointer();
+      } else {
+        result_splice->nexts[i] = next.RawPointer();
+        result_splice->prevs[i] = prev;
+        break;
+      }
+    }
+  }
+  if (to_delete && to_delete->size() > 0) {
+    result_splice->seeking_list->ObsoleteNodes(*to_delete);
+  }
+}
+
 void SortedIterator::Seek(const std::string &key) {
   assert(skiplist_);
   Splice splice(skiplist_);
-  skiplist_->Seek(key, &splice);
+  skiplist_->Seek(key, "", &splice);
   current = splice.next_pmem_record;
 }
 

@@ -91,4 +91,30 @@ public:
         .append(user_key.data(), user_key.size());
   }
 };
+
+class CompContext {
+public:
+  CompContext(){};
+  ~CompContext(){};
+  void SetCompStrategy(KeyCompareFunc key_cmp_func,
+                       ValueCompareFunc val_cmp_func) {
+    key_cmp = key_cmp_func;
+    val_cmp = val_cmp_func;
+  }
+  KeyCompareFunc key_cmp = compare_string_view;
+  ValueCompareFunc val_cmp = compare_string_view;
+  bool priority_key = true;
+};
+
+template <typename child> class CompStrategy : public CompContext {
+public:
+  int Comparekey(const StringView key0, const StringView key1) {
+    return static_cast<child *>(this)->key_cmp(key0, key1);
+  }
+
+  int CompareValue(const StringView val0, const StringView &val1) {
+    return static_cast<child *>(this)->val_cmp(val0, val1);
+  }
+};
+
 } // namespace KVDK_NAMESPACE

@@ -70,13 +70,6 @@ public:
     return node;
   }
 
-  // Start seek from this node, find dram position of "key" in the skiplist
-  // between height "start_height" and "end"_height", and store position in
-  // "result_splice", if "key" existing, the next pointers in splice point to
-  // node of "key"
-  void SeekNode(const StringView &key, uint8_t start_height, uint8_t end_height,
-                Splice *result_splice);
-
   uint16_t Height() { return height; }
 
   StringView UserKey();
@@ -141,7 +134,7 @@ private:
   void *heap_space_start() { return (char *)this - height * 8; }
 };
 
-class Skiplist : public PersistentList {
+class Skiplist : public PersistentList, public CompStrategy<Skiplist> {
 public:
   Skiplist(DLRecord *h, const std::string &n, uint64_t i,
            const std::shared_ptr<PMEMAllocator> &pmem_allocator,
@@ -245,7 +238,8 @@ public:
   // Start position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
-  void Seek(const StringView &key, Splice *result_splice);
+  void Seek(const StringView &key, StringView value,
+            Splice *result_splice);
 
   Status Rebuild();
 
@@ -313,6 +307,14 @@ public:
 
   Status CheckConnection(int height);
 
+  // Start seek from start node, find dram position of "key" in the skiplist
+  // between height "start_height" and "end"_height", and store position in
+  // "result_splice", if "key" existing, the next pointers in splice point to
+  // node of "key"
+  void SeekNode(const StringView &key, const StringView &value,
+                SkiplistNode *start_node, uint8_t start_height,
+                uint8_t end_height, Splice *result_splice);
+
 private:
   // Insert DLRecord "inserting" between "prev" and "next"
   void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
@@ -325,6 +327,7 @@ private:
   // The "insert_key" should be already locked before call this function
   bool FindInsertPos(Splice *splice,
                      const pmem::obj::string_view &inserting_key,
+                     const StringView &inserting_value,
                      const SpinMutex *inserting_key_lock,
                      std::unique_lock<SpinMutex> *prev_record_lock);
 
@@ -363,6 +366,9 @@ private:
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
+  // default key and value comparation function.
+  KeyCompareFunc key_cmpfunc_;
+  ValueCompareFunc val_cmpfunc_;
 };
 
 class SortedIterator : public Iterator {
@@ -407,7 +413,7 @@ struct Splice {
 
   Splice(Skiplist *s) : seeking_list(s) {}
 
-  void Recompute(const StringView &key, uint8_t l) {
+  void Recompute(const StringView &key, const StringView &value, uint8_t l) {
     SkiplistNode *start_node;
     uint8_t start_height = l;
     while (1) {
@@ -422,11 +428,12 @@ struct Splice {
       } else {
         start_node = prevs[start_height];
       }
-      start_node->SeekNode(key, start_height, l, this);
+      seeking_list->SeekNode(key, value, start_node, start_height, l, this);
       return;
     }
   }
 };
+
 class KVEngine;
 class SortedCollectionRebuilder {
 public:
