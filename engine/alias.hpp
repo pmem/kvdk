@@ -1,6 +1,6 @@
 #include <cinttypes>
 
-#include "../libpmemobj++/string_view.hpp"
+#include "libpmem.h"
 
 namespace KVDK_NAMESPACE {
 using StringView = pmem::obj::string_view;

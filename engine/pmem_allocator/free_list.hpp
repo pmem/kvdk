@@ -190,14 +190,17 @@ private:
           last_used_entry_ts(0) {}
 
     // Entry size stored in block unit
-    std::vector<std::vector<SpaceEntry>> active_entries;
+    FixedVector<std::vector<SpaceEntry>> active_entries;
     // These entries can be add to free list only if no entries with smaller
     // timestamp exist.
     std::vector<SizedSpaceEntry> delay_freed_entries;
-    std::vector<SpinMutex> spins;
+    FixedVector<SpinMutex> spins;
     // timestamp of entry that recently fetched from active_entries
     uint64_t last_used_entry_ts;
+    char padding[64 - sizeof(active_entries) - sizeof(delay_freed_entries) -
+                 sizeof(spins) - sizeof(last_used_entry_ts)];
   };
+  static_assert(sizeof(ThreadCache) == 64);
 
   class SpaceCmp {
   public:

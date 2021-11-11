@@ -36,11 +36,15 @@ public:
   }
 
 private:
-  struct ThreadCache {
+  struct alignas(64) ThreadCache {
     alignas(64) char *chunk_addr = nullptr;
     uint64_t usable_bytes = 0;
     std::vector<void *> allocated_chunks;
+
+    char padding[64 - sizeof(allocated_chunks) - sizeof(usable_bytes) -
+                 sizeof(chunk_addr)];
   };
+  static_assert(sizeof(ThreadCache) == 64);
 
   const uint32_t chunk_size_ = (1 << 20);
   std::vector<ThreadCache> thread_cache_;

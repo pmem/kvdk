@@ -117,6 +117,41 @@ static inline bool equal_string_view(const StringView &src,
   return false;
 }
 
+template <typename T> class FixedVector {
+public:
+  FixedVector(uint64_t size) : size_(size) { data_ = new T[size]; }
+
+  FixedVector() = delete;
+
+  FixedVector(const FixedVector<T> &v) {
+    size_ = v.size_;
+    data_ = new T[size_];
+    memcpy(data_, v.data_, size_ * sizeof(T));
+  }
+
+  ~FixedVector() {
+    if (data_ != nullptr) {
+      delete[] data_;
+    }
+  }
+
+  T &back() {
+    assert(size_ > 0);
+    return data_[size_ - 1];
+  }
+
+  T &operator[](uint64_t index) {
+    assert(index < size_);
+    return data_[index];
+  }
+
+  uint64_t size() { return size_; }
+
+private:
+  T *data_;
+  uint64_t size_;
+};
+
 class Slice {
 public:
   Slice() : _data(nullptr), _size(0) {}
