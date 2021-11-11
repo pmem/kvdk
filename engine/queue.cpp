@@ -40,21 +40,21 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
       collection_id_{view2ID(collection_record->Value())},
       timestamp_{collection_record->entry.meta.timestamp} {}
 
-void Queue::LPush(TimeStampType timestamp,
+void Queue::PushFront(TimeStampType timestamp,
                   StringView const value) {
     LockType lock_queue{queue_lock_};
     dlinked_list_.EmplaceFront(timestamp, makeInternalKey(""), value);
     ++sz_;
 }
 
-void Queue::RPush(TimeStampType timestamp,
+void Queue::PushBack(TimeStampType timestamp,
                   StringView const value) {
     LockType lock_queue{queue_lock_};
     dlinked_list_.EmplaceBack(timestamp, makeInternalKey(""), value);
     ++sz_;
 }
 
-bool Queue::LPop(std::string *value_got) {
+bool Queue::PopFront(std::string *value_got) {
     LockType lock_queue{queue_lock_};
     if (sz_ > 0)
     {
@@ -72,7 +72,7 @@ bool Queue::LPop(std::string *value_got) {
     }
 }
 
-bool Queue::RPop(std::string *value_got) {
+bool Queue::PopBack(std::string *value_got) {
     LockType lock_queue{queue_lock_};
     if (sz_ > 0)
     {

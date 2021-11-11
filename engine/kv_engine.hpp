@@ -4,9 +4,11 @@
 
 #pragma once
 
-#include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <ctime>
+
+#include <atomic>
 #include <deque>
 #include <iostream>
 #include <list>
@@ -25,7 +27,7 @@
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
-#include "time.h"
+#include "queue.hpp"
 #include "unordered_collection.hpp"
 #include "utils.hpp"
 
@@ -60,7 +62,7 @@ public:
   std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) override;
 
-  // Unordered Collection
+  // UnorderedCollection
   virtual Status HGet(pmem::obj::string_view const collection_name,
                       pmem::obj::string_view const key,
                       std::string *value) override;
@@ -71,6 +73,31 @@ public:
                          pmem::obj::string_view const key) override;
   std::shared_ptr<Iterator>
   NewUnorderedIterator(pmem::obj::string_view const collection_name) override;
+
+  // Queue
+  virtual Status LPop(pmem::obj::string_view const collection_name, 
+                      std::string *value) override
+  {
+    return xPop(collection_name, value, QueueOpWhere::Left);
+  }
+
+  virtual Status RPop(pmem::obj::string_view const collection_name, 
+                      std::string *value) override
+  {
+    return xPop(collection_name, value, QueueOpWhere::Right);
+  }
+
+  virtual Status LPush(pmem::obj::string_view const collection_name, 
+                       pmem::obj::string_view const value) override
+  {
+    return xPush(collection_name, value, QueueOpWhere::Left);
+  }
+
+  virtual Status RPush(pmem::obj::string_view const collection_name, 
+                       pmem::obj::string_view const value) override
+  {
+    return xPush(collection_name, value, QueueOpWhere::Right);
+  }
 
   void ReleaseWriteThread() override { write_thread.Release(); }
 
@@ -126,7 +153,24 @@ private:
   std::shared_ptr<UnorderedCollection>
   createUnorderedCollection(pmem::obj::string_view const collection_name);
   UnorderedCollection *
-  findUnorderedCollection(pmem::obj::string_view collection_name);
+  findUnorderedCollection(pmem::obj::string_view const collection_name);
+
+  std::unique_ptr<Queue>
+  createQueue(pmem::obj::string_view const collection_name);
+  Queue*
+  findQueue(pmem::obj::string_view const collection_name);
+
+  enum class QueueOpWhere
+  {
+    Left, Right
+  };
+  Status xPush(pmem::obj::string_view const collection_name, 
+               pmem::obj::string_view const value,
+               QueueOpWhere where);
+
+  Status xPop(pmem::obj::string_view const collection_name, 
+               std::string *value, 
+               QueueOpWhere where);
 
   Status MaybeInitPendingBatchFile();
 
@@ -172,6 +216,8 @@ private:
 
   Status RestoreDlistRecords(DLRecord *pmp_record);
 
+  Status RestoreQueueRecords(DLRecord *pmp_record);
+
   // Regularly works excecuted by background thread
   void BackgroundWork();
 
@@ -212,7 +258,7 @@ private:
     return pmp_next->prev == offset;
   }
 
-  bool isLinkedDLDataEntry(DLRecord *pmp_record) {
+  bool checkLinkageAndTryRepair(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
     DLRecord *pmp_prev =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
@@ -227,10 +273,11 @@ private:
       return false;
     } else if (is_linked_left && !is_linked_right) {
       GlobalLogger.Error(
-          "Broken DLDataEntry linkage: prev<=>curr->right, repaired.\n");
-      pmp_next->prev = offset;
-      pmem_persist(&pmp_next->prev, sizeof(decltype(offset)));
-      return true;
+          "Broken DLDataEntry linkage: prev<=>curr->right, abort...\n");
+      std::abort();
+      // pmp_next->prev = offset;
+      // pmem_persist(&pmp_next->prev, sizeof(decltype(offset)));
+      // return true;
     } else {
       GlobalLogger.Error("Broken DLDataEntry linkage: prev<-curr<=>right, "
                          "which is logically impossible! Abort...\n");
@@ -259,6 +306,7 @@ private:
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
+  std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;
   std::mutex list_mu_;
 
   std::string dir_;

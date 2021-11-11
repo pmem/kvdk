@@ -49,13 +49,13 @@ public:
 
   Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record);
 
-  void LPush(TimeStampType timestamp, StringView const value);
+  void PushFront(TimeStampType timestamp, StringView const value);
 
-  void RPush(TimeStampType timestamp, StringView const value);
+  void PushBack(TimeStampType timestamp, StringView const value);
 
-  bool LPop(std::string *value_got);
+  bool PopFront(std::string *value_got);
 
-  bool RPop(std::string *value_got);
+  bool PopBack(std::string *value_got);
 
   inline CollectionIDType ID() const { return collection_id_; }
 
