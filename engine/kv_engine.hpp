@@ -24,10 +24,10 @@
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
+#include "queue.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
-#include "queue.hpp"
 #include "unordered_collection.hpp"
 #include "utils.hpp"
 
@@ -75,27 +75,23 @@ public:
   NewUnorderedIterator(pmem::obj::string_view const collection_name) override;
 
   // Queue
-  virtual Status LPop(pmem::obj::string_view const collection_name, 
-                      std::string *value) override
-  {
+  virtual Status LPop(pmem::obj::string_view const collection_name,
+                      std::string *value) override {
     return xPop(collection_name, value, QueueOpWhere::Left);
   }
 
-  virtual Status RPop(pmem::obj::string_view const collection_name, 
-                      std::string *value) override
-  {
+  virtual Status RPop(pmem::obj::string_view const collection_name,
+                      std::string *value) override {
     return xPop(collection_name, value, QueueOpWhere::Right);
   }
 
-  virtual Status LPush(pmem::obj::string_view const collection_name, 
-                       pmem::obj::string_view const value) override
-  {
+  virtual Status LPush(pmem::obj::string_view const collection_name,
+                       pmem::obj::string_view const value) override {
     return xPush(collection_name, value, QueueOpWhere::Left);
   }
 
-  virtual Status RPush(pmem::obj::string_view const collection_name, 
-                       pmem::obj::string_view const value) override
-  {
+  virtual Status RPush(pmem::obj::string_view const collection_name,
+                       pmem::obj::string_view const value) override {
     return xPush(collection_name, value, QueueOpWhere::Right);
   }
 
@@ -157,20 +153,14 @@ private:
 
   std::unique_ptr<Queue>
   createQueue(pmem::obj::string_view const collection_name);
-  Queue*
-  findQueue(pmem::obj::string_view const collection_name);
+  Queue *findQueue(pmem::obj::string_view const collection_name);
 
-  enum class QueueOpWhere
-  {
-    Left, Right
-  };
-  Status xPush(pmem::obj::string_view const collection_name, 
-               pmem::obj::string_view const value,
-               QueueOpWhere where);
+  enum class QueueOpWhere { Left, Right };
+  Status xPush(pmem::obj::string_view const collection_name,
+               pmem::obj::string_view const value, QueueOpWhere where);
 
-  Status xPop(pmem::obj::string_view const collection_name, 
-               std::string *value, 
-               QueueOpWhere where);
+  Status xPop(pmem::obj::string_view const collection_name, std::string *value,
+              QueueOpWhere where);
 
   Status MaybeInitPendingBatchFile();
 
@@ -258,7 +248,7 @@ private:
     return pmp_next->prev == offset;
   }
 
-  bool checkLinkageAndTryRepair(DLRecord *pmp_record) {
+  bool checkLinkage(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
     DLRecord *pmp_prev =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
@@ -272,12 +262,10 @@ private:
     } else if (!is_linked_left && !is_linked_right) {
       return false;
     } else if (is_linked_left && !is_linked_right) {
+      /// TODO: Repair this situation
       GlobalLogger.Error(
           "Broken DLDataEntry linkage: prev<=>curr->right, abort...\n");
       std::abort();
-      // pmp_next->prev = offset;
-      // pmem_persist(&pmp_next->prev, sizeof(decltype(offset)));
-      // return true;
     } else {
       GlobalLogger.Error("Broken DLDataEntry linkage: prev<-curr<=>right, "
                          "which is logically impossible! Abort...\n");

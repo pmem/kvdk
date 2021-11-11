@@ -2,9 +2,10 @@
 
 namespace KVDK_NAMESPACE {
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
-             CollectionIDType id, TimeStampType timestamp) 
-    : collection_record_ptr_{nullptr},
-      dlinked_list_{pmem_allocator_ptr, timestamp, id2View(id), StringView{""}},
+             CollectionIDType id, TimeStampType timestamp)
+    : collection_record_ptr_{nullptr}, dlinked_list_{pmem_allocator_ptr,
+                                                     timestamp, id2View(id),
+                                                     StringView{""}},
       collection_name_{name}, collection_id_{id}, timestamp_{timestamp} {
   {
     auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
@@ -38,56 +39,55 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
       },
       collection_name_{string_view_2_string(collection_record->Key())},
       collection_id_{view2ID(collection_record->Value())},
-      timestamp_{collection_record->entry.meta.timestamp} {}
-
-void Queue::PushFront(TimeStampType timestamp,
-                  StringView const value) {
-    LockType lock_queue{queue_lock_};
-    dlinked_list_.EmplaceFront(timestamp, makeInternalKey(""), value);
+      timestamp_{collection_record->entry.meta.timestamp} {
+  sz_ = 0;
+  for (iterator iter = dlinked_list_.First(); iter != dlinked_list_.Tail();
+       ++iter)
     ++sz_;
 }
 
-void Queue::PushBack(TimeStampType timestamp,
-                  StringView const value) {
-    LockType lock_queue{queue_lock_};
-    dlinked_list_.EmplaceBack(timestamp, makeInternalKey(""), value);
-    ++sz_;
+void Queue::PushFront(TimeStampType timestamp, StringView const value) {
+  LockType lock_queue{queue_lock_};
+  dlinked_list_.EmplaceFront(timestamp, makeInternalKey(""), value);
+  ++sz_;
+}
+
+void Queue::PushBack(TimeStampType timestamp, StringView const value) {
+  LockType lock_queue{queue_lock_};
+  dlinked_list_.EmplaceBack(timestamp, makeInternalKey(""), value);
+  ++sz_;
 }
 
 bool Queue::PopFront(std::string *value_got) {
-    LockType lock_queue{queue_lock_};
-    if (sz_ > 0)
-    {
-      --sz_;
-      DLRecord* old_front = dlinked_list_.First().GetCurrentAddress();
-      auto val = old_front->Value();
-      kvdk_assert(extractID(old_front->Key()) == ID(), "");
-      value_got->assign(val.data(), val.size());
-      dlinked_list_.PopFront();
-      return true;
-    }
-    else
-    {
-      return false;
-    }
+  LockType lock_queue{queue_lock_};
+  if (sz_ > 0) {
+    --sz_;
+    DLRecord *old_front = dlinked_list_.First().GetCurrentAddress();
+    auto val = old_front->Value();
+    kvdk_assert(extractID(old_front->Key()) == ID(), "");
+    value_got->assign(val.data(), val.size());
+    dlinked_list_.PopFront();
+    dlinked_list_.purgeAndFree(old_front);
+    return true;
+  } else {
+    return false;
+  }
 }
 
 bool Queue::PopBack(std::string *value_got) {
-    LockType lock_queue{queue_lock_};
-    if (sz_ > 0)
-    {
-      --sz_;
-      DLRecord* old_back = dlinked_list_.Last().GetCurrentAddress();
-      auto val = old_back->Value();
-      kvdk_assert(extractID(old_front->Key()) == ID(), "");
-      value_got->assign(val.data(), val.size());
-      dlinked_list_.PopBack();
-      return true;
-    }
-    else
-    {
-      return false;
-    }  
+  LockType lock_queue{queue_lock_};
+  if (sz_ > 0) {
+    --sz_;
+    DLRecord *old_back = dlinked_list_.Last().GetCurrentAddress();
+    auto val = old_back->Value();
+    kvdk_assert(extractID(old_back->Key()) == ID(), "");
+    value_got->assign(val.data(), val.size());
+    dlinked_list_.PopBack();
+    dlinked_list_.purgeAndFree(old_back);
+    return true;
+  } else {
+    return false;
+  }
 }
 
 } // namespace KVDK_NAMESPACE

@@ -37,7 +37,8 @@ const uint16_t SortedRecordType = (SortedDataRecord | SortedHeaderRecord);
 
 const uint16_t DLRecordType =
     (SortedDataRecord | SortedHeaderRecord | DlistDataRecord | DlistHeadRecord |
-     DlistTailRecord | DlistRecord);
+     DlistTailRecord | DlistRecord | QueueDataRecord | QueueHeadRecord |
+     QueueTailRecord | QueueRecord);
 
 const uint16_t DeleteRecordType = (StringDeleteRecord);
 
@@ -78,7 +79,7 @@ struct DataEntry {
   DataEntry() = default;
 
   void Destroy() {
-    meta.type == RecordType::Padding;
+    meta.type = RecordType::Padding;
     pmem_persist(&meta.type, sizeof(RecordType));
   }
 

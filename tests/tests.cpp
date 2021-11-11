@@ -603,7 +603,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   delete engine;
   std::vector<int> opt_restore_skiplists{0, 1};
   for (auto is_opt : opt_restore_skiplists) {
-    GlobalLogger.Info("Restore with opt_large_sorted_collection_resotre: %d\n",
+    GlobalLogger.Info("Restore with opt_large_sorted_collection_restore: %d\n",
                       is_opt);
     configs.max_write_threads = num_threads;
     configs.opt_large_sorted_collection_restore = is_opt;
@@ -1140,6 +1140,131 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   LaunchNThreads(num_threads, IteratingThroughThreadLocal);
   LaunchNThreads(num_threads, HGetGlobal);
   LaunchNThreads(num_threads, HGetThreadLocal);
+
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestLocalQueue) {
+  int num_threads = 16;
+  int count = 100;
+  configs.max_write_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // insert and delete some keys, then re-insert some deleted keys
+
+  std::vector<std::vector<std::string>> local_values(num_threads);
+  std::vector<std::string> local_collection_names(num_threads);
+  for (size_t i = 0; i < num_threads; i++) {
+    local_collection_names[i] = "local_uncoll_t" + std::to_string(i);
+    for (size_t j = 0; j < count * 3; j++) {
+      local_values[i].push_back(GetRandomString(1024));
+    }
+  }
+
+  auto LPushRPop = [&](uint32_t tid) {
+    std::string value_got;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(
+          engine->LPush(local_collection_names[tid], local_values[tid][j]),
+          Status::Ok);
+    }
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
+                Status::Ok);
+      ASSERT_EQ(local_values[tid][j], value_got);
+    }
+    ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
+              Status::NotFound);
+  };
+
+  auto RPushLPop = [&](uint32_t tid) {
+    std::string value_got;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(
+          engine->RPush(local_collection_names[tid], local_values[tid][j]),
+          Status::Ok);
+    }
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
+                Status::Ok);
+      ASSERT_EQ(local_values[tid][j], value_got);
+    }
+    ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
+              Status::NotFound);
+  };
+
+  LaunchNThreads(num_threads, LPushRPop);
+  LaunchNThreads(num_threads, RPushLPop);
+
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestQueueRestoration) {
+  int num_threads = 16;
+  int count = 100;
+  configs.max_write_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // insert and delete some keys, then re-insert some deleted keys
+
+  std::vector<std::vector<std::string>> local_values(num_threads);
+  std::vector<std::string> local_collection_names(num_threads);
+  for (size_t i = 0; i < num_threads; i++) {
+    local_collection_names[i] = "local_uncoll_t" + std::to_string(i);
+    for (size_t j = 0; j < count; j++) {
+      local_values[i].push_back(GetRandomString(1024));
+    }
+  }
+
+  auto LPush = [&](uint32_t tid) {
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(
+          engine->LPush(local_collection_names[tid], local_values[tid][j]),
+          Status::Ok);
+    }
+  };
+
+  auto RPop = [&](uint32_t tid) {
+    std::string value_got;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
+                Status::Ok);
+      ASSERT_EQ(local_values[tid][j], value_got);
+    }
+    ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
+              Status::NotFound);
+  };
+
+  auto RPush = [&](uint32_t tid) {
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(
+          engine->RPush(local_collection_names[tid], local_values[tid][j]),
+          Status::Ok);
+    }
+  };
+
+  auto LPop = [&](uint32_t tid) {
+    std::string value_got;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
+                Status::Ok);
+      ASSERT_EQ(local_values[tid][j], value_got);
+    }
+    ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
+              Status::NotFound);
+  };
+
+  LaunchNThreads(num_threads, LPush);
+  delete engine;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  LaunchNThreads(num_threads, RPop);
+
+  LaunchNThreads(num_threads, RPush);
+  delete engine;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  LaunchNThreads(num_threads, LPop);
 
   delete engine;
 }

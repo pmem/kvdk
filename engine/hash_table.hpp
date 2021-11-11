@@ -86,7 +86,7 @@ public:
   union {
     uint64_t offset;
     UnorderedCollection *p_unordered_collection;
-    Queue* queue_ptr;
+    Queue *queue_ptr;
   };
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
