@@ -845,8 +845,7 @@ Status KVEngine::Delete(const StringView key) {
   return StringDeleteImpl(key);
 }
 
-Status KVEngine::SDeleteImpl(Skiplist *skiplist,
-                             const pmem::obj::string_view &user_key) {
+Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key)) {
     return Status::InvalidDataSize;
@@ -897,9 +896,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist,
   return Status::Ok;
 }
 
-Status KVEngine::SSetImpl(Skiplist *skiplist,
-                          const pmem::obj::string_view &user_key,
-                          const pmem::obj::string_view &value) {
+Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
+                          const StringView &value) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
@@ -1119,7 +1117,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return s;
   }
 
-  uint64_t ts = get_timestamp();
+  TimeStampType ts = get_timestamp();
 
   // Allocate space for batch
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
@@ -1384,7 +1382,7 @@ Status KVEngine::Set(const StringView key, const StringView value) {
 namespace KVDK_NAMESPACE {
 std::shared_ptr<UnorderedCollection>
 KVEngine::createUnorderedCollection(StringView const collection_name) {
-  std::uint64_t ts = get_timestamp();
+  TimeStampType ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
@@ -1483,7 +1481,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
 
       std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
 
-      std::uint64_t ts = get_timestamp();
+      TimeStampType ts = get_timestamp();
 
       HashEntry hash_entry_record;
       HashEntry *p_hash_entry_record = nullptr;
@@ -1638,13 +1636,13 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     return Status::Ok;
   }
   case RecordType::DlistHeadRecord: {
-    kvdk_assert(pmp_record->prev == kNullPmemOffset &&
+    kvdk_assert(pmp_record->prev == kPmemNullOffset &&
                     checkDLRecordLinkageRight(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken head.");
     return Status::Ok;
   }
   case RecordType::DlistTailRecord: {
-    kvdk_assert(pmp_record->next == kNullPmemOffset &&
+    kvdk_assert(pmp_record->next == kPmemNullOffset &&
                     checkDLRecordLinkageLeft(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken tail.");
     return Status::Ok;

@@ -64,7 +64,7 @@ struct PendingBatch {
     Processing = 1,
   };
 
-  PendingBatch(Stage s, uint32_t nkv, uint64_t ts)
+  PendingBatch(Stage s, uint32_t nkv, TimeStampType ts)
       : stage(s), num_kv(nkv), timestamp(ts) {}
 
   void PersistProcessing(void *target,
@@ -78,14 +78,14 @@ struct PendingBatch {
 
   Stage stage;
   uint32_t num_kv;
-  uint64_t timestamp;
+  TimeStampType timestamp;
 };
 
 class PersistentList {
 public:
   virtual uint64_t id() = 0;
 
-  inline static std::string ListKey(const pmem::obj::string_view &user_key,
+  inline static std::string ListKey(const StringView &user_key,
                                     uint64_t list_id) {
     return std::string((char *)&list_id, 8)
         .append(user_key.data(), user_key.size());
