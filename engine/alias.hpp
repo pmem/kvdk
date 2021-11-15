@@ -6,6 +6,7 @@
 
 #include <cinttypes>
 
+#include "kvdk/namespace.hpp"
 #include "libpmem.h"
 
 namespace KVDK_NAMESPACE {
