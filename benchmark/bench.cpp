@@ -53,8 +53,9 @@ DEFINE_double(
 
 DEFINE_bool(latency, false, "Stat operation latencies");
 
-DEFINE_string(type, "string",
-              "Storage engine to benchmark, can be string, sorted, hash or queue");
+DEFINE_string(
+    type, "string",
+    "Storage engine to benchmark, can be string, sorted, hash or queue");
 
 DEFINE_bool(scan, false,
             "If set true, read threads will do scan operations, this is valid "
@@ -123,13 +124,7 @@ bool fill;
 bool stat_latencies;
 double existing_keys_ratio;
 
-enum class DataType
-{
-  String,
-  Sorted,
-  Hashes,
-  Queue
-} bench_what;
+enum class DataType { String, Sorted, Hashes, Queue } bench_what;
 
 uint64_t num_collections;
 std::shared_ptr<Generator> key_generator;
@@ -181,10 +176,8 @@ void DBWrite(int tid) {
 
     if (stat_latencies)
       timer.Start();
-    switch (bench_what)
-    {
-    case DataType::String:
-    {
+    switch (bench_what) {
+    case DataType::String: {
       if (batch_num == 0) {
         s = engine->Set(key, value);
       } else {
@@ -196,35 +189,28 @@ void DBWrite(int tid) {
       }
       break;
     }
-    case DataType::Sorted:
-    {
+    case DataType::Sorted: {
       s = engine->SSet(collections[num % num_collections], key, value);
       break;
     }
-    case DataType::Hashes:
-    {
+    case DataType::Hashes: {
       s = engine->HSet(collections[num % num_collections], key, value);
       break;
     }
-    case DataType::Queue:
-    {
-      switch ((num/num_collections) % 2)
-      {
-      case 0:
-      {
+    case DataType::Queue: {
+      switch ((num / num_collections) % 2) {
+      case 0: {
         s = engine->LPush(collections[num % num_collections], value);
         break;
       }
-      case 1:
-      {
+      case 1: {
         s = engine->RPush(collections[num % num_collections], value);
         break;
       }
       }
       break;
     }
-    default:
-    {
+    default: {
       throw std::runtime_error{"Unsupported!"};
     }
     }
@@ -259,10 +245,8 @@ void DBScan(int tid) {
   while (!done) {
     uint64_t num = generate_key();
     memcpy(&key[0], &num, 8);
-    switch (bench_what)
-    {
-    case DataType::Sorted:
-    {
+    switch (bench_what) {
+    case DataType::Sorted: {
       auto iter = engine->NewSortedIterator(collections[num % num_collections]);
       if (iter) {
         iter->Seek(key);
@@ -282,8 +266,7 @@ void DBScan(int tid) {
       }
       break;
     }
-    case DataType::Hashes:
-    {
+    case DataType::Hashes: {
       auto iter =
           engine->NewUnorderedIterator(collections[num % num_collections]);
       if (iter) {
@@ -299,13 +282,12 @@ void DBScan(int tid) {
       } else {
         fprintf(stderr, "Error creating UnorderedIterator\n");
         std::abort();
-      }      
+      }
       break;
     }
     case DataType::String:
     case DataType::Queue:
-    default:
-    {
+    default: {
       throw std::runtime_error{"Unsupported!"};
     }
     }
@@ -331,43 +313,34 @@ void DBRead(int tid) {
     if (stat_latencies)
       timer.Start();
     Status s;
-    switch (bench_what)
-    {
-    case DataType::String:
-    {
+    switch (bench_what) {
+    case DataType::String: {
       s = engine->Get(key, &value);
       break;
     }
-    case DataType::Sorted:
-    {
+    case DataType::Sorted: {
       s = engine->SGet(collections[num % num_collections], key, &value);
       break;
     }
-    case DataType::Hashes:
-    {
+    case DataType::Hashes: {
       s = engine->HGet(collections[num % num_collections], key, &value);
       break;
     }
-    case DataType::Queue:
-    {
+    case DataType::Queue: {
       std::string sink;
-      switch ((num/num_collections) % 2)
-      {
-      case 0:
-      {
+      switch ((num / num_collections) % 2) {
+      case 0: {
         s = engine->LPop(collections[num % num_collections], &sink);
         break;
       }
-      case 1:
-      {
+      case 1: {
         s = engine->RPop(collections[num % num_collections], &sink);
         break;
       }
       }
       break;
     }
-    default:
-    {
+    default: {
       throw std::runtime_error{"Unsupported!"};
     }
     }
@@ -411,19 +384,17 @@ bool ProcessBenchmarkConfigs() {
     return false;
   }
   // Initialize collections and batch parameters
-  switch (bench_what)
-  {
-  case DataType::String:
-  {
+  switch (bench_what) {
+  case DataType::String: {
     batch_num = FLAGS_batch;
     break;
   }
   case DataType::Queue:
   case DataType::Hashes:
-  case DataType::Sorted:
-  {
+  case DataType::Sorted: {
     if (FLAGS_batch > 0) {
-      std::cerr << R"(Batch is only supported for "hash" type data.)" << std::endl;
+      std::cerr << R"(Batch is only supported for "hash" type data.)"
+                << std::endl;
       return false;
     }
     collections.resize(FLAGS_collections);
@@ -431,28 +402,26 @@ bool ProcessBenchmarkConfigs() {
       collections[i] = "Collection_" + std::to_string(i);
     }
     break;
-  } 
+  }
   default:
     throw;
   }
   // Check for scan flag
-  switch (bench_what)
-  {
+  switch (bench_what) {
   case DataType::String:
-  case DataType::Queue:
-  {
-    if (FLAGS_scan)
-    {
-      std::cerr << R"(Scan is only supported for "hash" and "sorted" type data.)" << std::endl;
+  case DataType::Queue: {
+    if (FLAGS_scan) {
+      std::cerr
+          << R"(Scan is only supported for "hash" and "sorted" type data.)"
+          << std::endl;
       return false;
     }
     break;
   }
   case DataType::Hashes:
-  case DataType::Sorted:
-  {
+  case DataType::Sorted: {
     break;
-  } 
+  }
   default:
     throw;
   }
