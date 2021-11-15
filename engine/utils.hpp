@@ -126,7 +126,9 @@ public:
   FixedVector(const FixedVector<T> &v) {
     size_ = v.size_;
     data_ = new T[size_];
-    memcpy(data_, v.data_, size_ * sizeof(T));
+    for (size_t i = 0; i < size_; i++) {
+      data_[i] = v.data_[i];
+    }
   }
 
   ~FixedVector() {
@@ -236,11 +238,20 @@ public:
 
   //  bool hold() { return owner == write_thread.id; }
 
-  SpinMutex(const SpinMutex &s) : locked(ATOMIC_FLAG_INIT) {}
+  // We implement these construction function for put spin mutex in vector, but
+  // they should never be called
+  SpinMutex(const SpinMutex &s) : locked(ATOMIC_FLAG_INIT) {
+    kvdk_assert(false, "call copy construction on spin mutex");
+  }
 
-  SpinMutex(const SpinMutex &&s) : locked(ATOMIC_FLAG_INIT) {}
-
+  SpinMutex(const SpinMutex &&s) : locked(ATOMIC_FLAG_INIT) {
+    kvdk_assert(false, "call move construction on spin mutex");
+  }
   SpinMutex() : locked(ATOMIC_FLAG_INIT) {}
+  SpinMutex &operator=(const SpinMutex &s) {
+    locked.clear(std::memory_order_release);
+    kvdk_assert(false, "call assignment on spin mutex");
+  }
 };
 
 // Return the number of process unit (PU) that are bound to the kvdk instance
