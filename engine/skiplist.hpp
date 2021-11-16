@@ -343,7 +343,8 @@ private:
 
   bool ValidateDLRecord(const DLRecord *record) {
     DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
-    return prev->next == pmem_allocator_->addr2offset(record) &&
+    return prev != nullptr &&
+           prev->next == pmem_allocator_->addr2offset(record) &&
            SkiplistId(record) == id_;
   }
 
