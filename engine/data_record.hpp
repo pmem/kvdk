@@ -56,12 +56,12 @@ struct DataHeader {
 
 struct DataMeta {
   DataMeta() = default;
-  DataMeta(uint64_t _timestamp, RecordType _record_type, uint16_t _key_size,
-           uint32_t _value_size)
+  DataMeta(TimeStampType _timestamp, RecordType _record_type,
+           uint16_t _key_size, uint32_t _value_size)
       : timestamp(_timestamp), type(_record_type), k_size(_key_size),
         v_size(_value_size) {}
 
-  uint64_t timestamp;
+  TimeStampType timestamp;
   RecordType type;
   uint16_t k_size;
   uint32_t v_size;
@@ -71,8 +71,8 @@ struct DataMeta {
 struct DataEntry {
   // TODO jiayu: use typename for timestamp and record type instead of a number
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
-            uint64_t _timestamp, RecordType _record_type, uint16_t _key_size,
-            uint32_t _value_size)
+            TimeStampType _timestamp, RecordType _record_type,
+            uint16_t _key_size, uint32_t _value_size)
       : header(_checksum, _record_size),
         meta(_timestamp, _record_type, _key_size, _value_size) {}
 
@@ -100,9 +100,8 @@ public:
   // should larger than sizeof(StringRecord) + key size + value size
   static StringRecord *
   ConstructStringRecord(void *target_address, uint32_t _record_size,
-                        uint64_t _timestamp, RecordType _record_type,
-                        const pmem::obj::string_view &_key,
-                        const pmem::obj::string_view &_value) {
+                        TimeStampType _timestamp, RecordType _record_type,
+                        const StringView &_key, const StringView &_value) {
     StringRecord *record = new (target_address)
         StringRecord(_record_size, _timestamp, _record_type, _key, _value);
     return record;
@@ -110,20 +109,19 @@ public:
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord *PersistStringRecord(void *addr, uint32_t record_size,
-                                           uint64_t timestamp, RecordType type,
-                                           const pmem::obj::string_view &key,
-                                           const pmem::obj::string_view &value);
+                                           TimeStampType timestamp,
+                                           RecordType type,
+                                           const StringView &key,
+                                           const StringView &value);
 
   void Destroy() { entry.Destroy(); }
 
   // make sure there is data followed in data[0]
-  pmem::obj::string_view Key() const {
-    return pmem::obj::string_view(data, entry.meta.k_size);
-  }
+  StringView Key() const { return StringView(data, entry.meta.k_size); }
 
   // make sure there is data followed in data[0]
-  pmem::obj::string_view Value() const {
-    return pmem::obj::string_view(data + entry.meta.k_size, entry.meta.v_size);
+  StringView Value() const {
+    return StringView(data + entry.meta.k_size, entry.meta.v_size);
   }
 
   // Check whether the record corrupted
@@ -143,9 +141,9 @@ public:
   }
 
 private:
-  StringRecord(uint32_t _record_size, uint64_t _timestamp,
-               RecordType _record_type, const pmem::obj::string_view &_key,
-               const pmem::obj::string_view &_value)
+  StringRecord(uint32_t _record_size, TimeStampType _timestamp,
+               RecordType _record_type, const StringView &_key,
+               const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()) {
     assert(_record_type == StringDataRecord ||
@@ -185,10 +183,10 @@ public:
   // target_address: pre-allocated space to store constructed record, it
   // should no smaller than sizeof(DLRecord) + key size + value size
   static DLRecord *ConstructDLRecord(void *target_address, uint32_t record_size,
-                                     uint64_t timestamp, RecordType record_type,
-                                     uint64_t prev, uint64_t next,
-                                     const pmem::obj::string_view &key,
-                                     const pmem::obj::string_view &value) {
+                                     TimeStampType timestamp,
+                                     RecordType record_type, uint64_t prev,
+                                     uint64_t next, const StringView &key,
+                                     const StringView &value) {
     DLRecord *record = new (target_address)
         DLRecord(record_size, timestamp, record_type, prev, next, key, value);
     return record;
@@ -210,25 +208,23 @@ public:
     return false;
   }
 
-  pmem::obj::string_view Key() const {
-    return pmem::obj::string_view(data, entry.meta.k_size);
-  }
+  StringView Key() const { return StringView(data, entry.meta.k_size); }
 
-  pmem::obj::string_view Value() const {
-    return pmem::obj::string_view(data + entry.meta.k_size, entry.meta.v_size);
+  StringView Value() const {
+    return StringView(data + entry.meta.k_size, entry.meta.v_size);
   }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord *PersistDLRecord(void *addr, uint32_t record_size,
-                                   uint64_t timestamp, RecordType type,
+                                   TimeStampType timestamp, RecordType type,
                                    uint64_t prev, uint64_t next,
-                                   const pmem::obj::string_view &key,
-                                   const pmem::obj::string_view &value);
+                                   const StringView &key,
+                                   const StringView &value);
 
 private:
-  DLRecord(uint32_t _record_size, uint64_t _timestamp, RecordType _record_type,
-           uint64_t _prev, uint64_t _next, const pmem::obj::string_view &_key,
-           const pmem::obj::string_view &_value)
+  DLRecord(uint32_t _record_size, TimeStampType _timestamp,
+           RecordType _record_type, uint64_t _prev, uint64_t _next,
+           const StringView &_key, const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
         prev(_prev), next(_next) {

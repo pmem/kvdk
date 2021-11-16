@@ -146,7 +146,7 @@ private:
   friend class UnorderedIterator;
   friend class Queue;
 
-  static constexpr PMemOffsetType NullPMemOffset = kNullPmemOffset;
+  static constexpr PMemOffsetType NullPMemOffset = kPmemNullOffset;
 
 public:
   /// Create DLinkedList and construct head and tail node on PMem.
