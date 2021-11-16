@@ -1,6 +1,13 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
+
+#pragma once
+
 #include <cinttypes>
 
-#include "../libpmemobj++/string_view.hpp"
+#include "kvdk/namespace.hpp"
+#include "libpmem.h"
 
 namespace KVDK_NAMESPACE {
 using StringView = pmem::obj::string_view;

@@ -41,36 +41,31 @@ public:
                      const Configs &configs);
 
   // Global Anonymous Collection
-  Status Get(const pmem::obj::string_view key, std::string *value) override;
-  Status Set(const pmem::obj::string_view key,
-             const pmem::obj::string_view value) override;
-  Status Delete(const pmem::obj::string_view key) override;
+  Status Get(const StringView key, std::string *value) override;
+  Status Set(const StringView key, const StringView value) override;
+  Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch &write_batch) override;
 
   // Sorted Collection
-  Status SGet(const pmem::obj::string_view collection,
-              const pmem::obj::string_view user_key,
+  Status SGet(const StringView collection, const StringView user_key,
               std::string *value) override;
-  Status SSet(const pmem::obj::string_view collection,
-              const pmem::obj::string_view user_key,
-              const pmem::obj::string_view value) override;
+  Status SSet(const StringView collection, const StringView user_key,
+              const StringView value) override;
   // TODO: Release delete record and deleted nodes
-  Status SDelete(const pmem::obj::string_view collection,
-                 const pmem::obj::string_view user_key) override;
+  Status SDelete(const StringView collection,
+                 const StringView user_key) override;
   std::shared_ptr<Iterator>
-  NewSortedIterator(const pmem::obj::string_view collection) override;
+  NewSortedIterator(const StringView collection) override;
 
   // Unordered Collection
-  virtual Status HGet(pmem::obj::string_view const collection_name,
-                      pmem::obj::string_view const key,
+  virtual Status HGet(StringView const collection_name, StringView const key,
                       std::string *value) override;
-  virtual Status HSet(pmem::obj::string_view const collection_name,
-                      pmem::obj::string_view const key,
-                      pmem::obj::string_view const value) override;
-  virtual Status HDelete(pmem::obj::string_view const collection_name,
-                         pmem::obj::string_view const key) override;
+  virtual Status HSet(StringView const collection_name, StringView const key,
+                      StringView const value) override;
+  virtual Status HDelete(StringView const collection_name,
+                         StringView const key) override;
   std::shared_ptr<Iterator>
-  NewUnorderedIterator(pmem::obj::string_view const collection_name) override;
+  NewUnorderedIterator(StringView const collection_name) override;
 
   void ReleaseWriteThread() override { write_thread.Release(); }
 
@@ -80,7 +75,7 @@ public:
 
 private:
   struct BatchWriteHint {
-    uint64_t timestamp{0};
+    TimeStampType timestamp{0};
     SizedSpaceEntry allocated_space{};
     SizedSpaceEntry free_after_finish{};
     bool delay_free{false};
@@ -94,27 +89,25 @@ private:
     std::unordered_map<uint64_t, int> visited_skiplist_ids;
   };
 
-  bool CheckKeySize(const pmem::obj::string_view &key) {
-    return key.size() <= UINT16_MAX;
-  }
+  bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
 
-  bool CheckValueSize(const pmem::obj::string_view &value) {
+  bool CheckValueSize(const StringView &value) {
     return value.size() <= UINT32_MAX;
   }
 
   Status Init(const std::string &name, const Configs &configs);
 
-  Status HashGetImpl(const pmem::obj::string_view &key, std::string *value,
+  Status HashGetImpl(const StringView &key, std::string *value,
                      uint16_t type_mask);
 
   inline Status MaybeInitWriteThread();
 
-  Status SearchOrInitPersistentList(const pmem::obj::string_view &collection,
+  Status SearchOrInitPersistentList(const StringView &collection,
                                     PersistentList **list, bool init,
                                     uint16_t header_type);
 
-  Status SearchOrInitSkiplist(const pmem::obj::string_view &collection,
-                              Skiplist **skiplist, bool init) {
+  Status SearchOrInitSkiplist(const StringView &collection, Skiplist **skiplist,
+                              bool init) {
     if (!CheckKeySize(collection)) {
       return Status::InvalidDataSize;
     }
@@ -124,25 +117,22 @@ private:
 
 private:
   std::shared_ptr<UnorderedCollection>
-  createUnorderedCollection(pmem::obj::string_view const collection_name);
-  UnorderedCollection *
-  findUnorderedCollection(pmem::obj::string_view collection_name);
+  createUnorderedCollection(StringView const collection_name);
+  UnorderedCollection *findUnorderedCollection(StringView collection_name);
 
   Status MaybeInitPendingBatchFile();
 
-  Status StringSetImpl(const pmem::obj::string_view &key,
-                       const pmem::obj::string_view &value);
+  Status StringSetImpl(const StringView &key, const StringView &value);
 
-  Status StringDeleteImpl(const pmem::obj::string_view &key);
+  Status StringDeleteImpl(const StringView &key);
 
   Status StringBatchWriteImpl(const WriteBatch::KV &kv,
                               BatchWriteHint &batch_hint);
 
-  Status SSetImpl(Skiplist *skiplist, const pmem::obj::string_view &user_key,
-                  const pmem::obj::string_view &value);
+  Status SSetImpl(Skiplist *skiplist, const StringView &user_key,
+                  const StringView &value);
 
-  Status SDeleteImpl(Skiplist *skiplist,
-                     const pmem::obj::string_view &user_key);
+  Status SDeleteImpl(Skiplist *skiplist, const StringView &user_key);
 
   Status Recovery();
 
@@ -185,7 +175,7 @@ private:
     return ((uint64_t)lo) | (((uint64_t)hi) << 32);
   }
 
-  inline uint64_t get_timestamp() {
+  inline TimeStampType get_timestamp() {
     auto res = get_cpu_tsc() - ts_on_startup_ + newest_version_on_startup_;
     return res;
   }

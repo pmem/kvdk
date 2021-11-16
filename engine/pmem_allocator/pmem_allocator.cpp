@@ -17,10 +17,10 @@ PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
     : pmem_(pmem), thread_cache_(num_write_threads), block_size_(block_size),
       segment_size_(num_segment_blocks * block_size), offset_head_(0),
       pmem_size_(pmem_size),
-      max_block_offset_(pmem_size / block_size / num_segment_blocks *
-                        num_segment_blocks),
       free_list_(num_segment_blocks, block_size, num_write_threads,
-                 max_block_offset_, this) {
+                 pmem_size / block_size / num_segment_blocks *
+                     num_segment_blocks /*num blocks*/,
+                 this) {
   init_data_size_2_block_size();
 }
 

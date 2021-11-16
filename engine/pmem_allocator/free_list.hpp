@@ -189,15 +189,23 @@ private:
                 1 /* the last lock is for delay freed entries */),
           last_used_entry_ts(0) {}
 
+    ThreadCache() = delete;
+    ThreadCache(ThreadCache &&) = delete;
+    ThreadCache(const ThreadCache &) = delete;
+
     // Entry size stored in block unit
-    std::vector<std::vector<SpaceEntry>> active_entries;
+    Array<std::vector<SpaceEntry>> active_entries;
     // These entries can be add to free list only if no entries with smaller
     // timestamp exist.
     std::vector<SizedSpaceEntry> delay_freed_entries;
-    std::vector<SpinMutex> spins;
+    // Protect active_entries and delay_freed_entries
+    Array<SpinMutex> spins;
     // timestamp of entry that recently fetched from active_entries
     uint64_t last_used_entry_ts;
+    char padding[64 - sizeof(active_entries) - sizeof(delay_freed_entries) -
+                 sizeof(spins) - sizeof(last_used_entry_ts)];
   };
+  static_assert(sizeof(ThreadCache) == 64);
 
   class SpaceCmp {
   public:
@@ -220,7 +228,7 @@ private:
   const uint32_t block_size_;
   const uint32_t max_classified_b_size_;
   SpaceMap space_map_;
-  std::vector<ThreadCache> thread_cache_;
+  Array<ThreadCache> thread_cache_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;
   // Store all large free space entries that larger than max_classified_b_size_

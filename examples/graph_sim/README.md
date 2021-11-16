@@ -66,7 +66,9 @@ numactl --membind=0 --cpubind=0 \
 
 The result will output the total time of the current workload.
 ```shell
-
+GraphDataConstruct  timeval :  3012.404703 s
+GraphDataSearchWithDegree  timeval : 160.206967 s
+GraphDataTopN  timeval : 79.895641 s
 ```
 
 1. 1,000,000 vertexes and 1,000,000,000 edges, it's hot data with read and write.
