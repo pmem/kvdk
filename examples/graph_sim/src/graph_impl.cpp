@@ -283,6 +283,12 @@ Status GraphSimulator::AddInternalEdge(const Edge &edge) {
       edge_list.edges.emplace_back(edge);
     }
   }
+
+  if (edge_list.Num() > options_.max_edge_nums_per_value) {
+  	SimpleLoger("GraphSimulator::AddInternalEdge edgelist overflow.\n");
+  	return Status::Abort;
+  }
+
   edge_list.EdgesListEncode(&value);
 
   // We need delete the old key
