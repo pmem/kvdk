@@ -161,9 +161,8 @@ KVDKStatus KVDKSortedDelete(KVDKEngine *engine, const char *collection,
 KVDKStatus KVDKHashSet(KVDKEngine *engine, const char *collection,
                        size_t collection_len, const char *key, size_t key_len,
                        const char *val, size_t val_len) {
-  return engine->rep->HSet(pmem::obj::string_view(collection, collection_len),
-                           pmem::obj::string_view(key, key_len),
-                           pmem::obj::string_view(val, val_len));
+  return engine->rep->HSet(StringView(collection, collection_len),
+                           StringView(key, key_len), StringView(val, val_len));
 }
 
 void KVDKSetSortedCompareFunc(KVDKEngine *engine, const char *collection,
@@ -179,9 +178,8 @@ void KVDKSetSortedCompareFunc(KVDKEngine *engine, const char *collection,
 KVDKStatus KVDKHashDelete(KVDKEngine *engine, const char *collection,
                           size_t collection_len, const char *key,
                           size_t key_len) {
-  return engine->rep->HDelete(
-      pmem::obj::string_view(collection, collection_len),
-      pmem::obj::string_view(key, key_len));
+  return engine->rep->HDelete(StringView(collection, collection_len),
+                              StringView(key, key_len));
 }
 
 KVDKStatus KVDKHashGet(KVDKEngine *engine, const char *collection,
@@ -189,9 +187,8 @@ KVDKStatus KVDKHashGet(KVDKEngine *engine, const char *collection,
                        size_t *val_len, char **val) {
   std::string val_str;
   *val = nullptr;
-  KVDKStatus s =
-      engine->rep->HGet(pmem::obj::string_view(collection, collection_len),
-                        pmem::obj::string_view(key, key_len), &val_str);
+  KVDKStatus s = engine->rep->HGet(StringView(collection, collection_len),
+                                   StringView(key, key_len), &val_str);
   if (s != KVDKStatus::Ok) {
     *val_len = 0;
     return s;

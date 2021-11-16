@@ -328,7 +328,8 @@ bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
 void Freelist::MoveCachedListsToPool() {
   std::vector<SpaceEntry> moving_list;
   uint64_t min_ts = min_timestamp_of_entries_;
-  for (auto &tc : thread_cache_) {
+  for (uint64_t i = 0; i < thread_cache_.size(); i++) {
+    auto &tc = thread_cache_[i];
     {
       std::lock_guard<SpinMutex> lg(
           tc.spins.back() /* delay freed entries lock*/);

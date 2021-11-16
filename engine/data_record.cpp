@@ -3,6 +3,7 @@
  */
 
 #include "data_record.hpp"
+#include "alias.hpp"
 #include "libpmem.h"
 
 namespace KVDK_NAMESPACE {
@@ -11,7 +12,7 @@ thread_local std::string thread_data_buffer;
 static constexpr int kDataBufferSize = 1024 * 1024;
 
 StringRecord *StringRecord::PersistStringRecord(
-    void *addr, uint32_t record_size, uint64_t timestamp, RecordType type,
+    void *addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
     const StringView &key, const StringView &value) {
   void *data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(StringRecord);
@@ -37,7 +38,7 @@ StringRecord *StringRecord::PersistStringRecord(
 }
 
 DLRecord *DLRecord::PersistDLRecord(void *addr, uint32_t record_size,
-                                    uint64_t timestamp, RecordType type,
+                                    TimeStampType timestamp, RecordType type,
                                     uint64_t prev, uint64_t next,
                                     const StringView &key,
                                     const StringView &value) {

@@ -148,9 +148,10 @@ public:
     if (GetCollectionCompFuncMap().find(n) !=
         GetCollectionCompFuncMap().end()) {
       SetCompStrategy(GetCollectionCompFuncMap()[n]);
+    } else {
+      SetCollectionCompFunc(n, cmp_ctx.key_cmp, cmp_ctx.val_cmp,
+                            cmp_ctx.priority_key);
     }
-    SetCollectionCompFunc(n, cmp_ctx.key_cmp, cmp_ctx.val_cmp,
-                          cmp_ctx.priority_key);
   }
 
   ~Skiplist() {
@@ -189,31 +190,28 @@ public:
 
   SkiplistNode *header() { return header_; }
 
-  std::string InternalKey(const pmem::obj::string_view &key) {
+  std::string InternalKey(const StringView &key) {
     return PersistentList::ListKey(key, id_);
   }
 
-  inline static pmem::obj::string_view
-  UserKey(const pmem::obj::string_view &skiplist_key) {
-    return pmem::obj::string_view(skiplist_key.data() + 8,
-                                  skiplist_key.size() - 8);
+  inline static StringView UserKey(const StringView &skiplist_key) {
+    return StringView(skiplist_key.data() + 8, skiplist_key.size() - 8);
   }
 
-  inline static pmem::obj::string_view UserKey(const SkiplistNode *node) {
+  inline static StringView UserKey(const SkiplistNode *node) {
     assert(node != nullptr);
     if (node->cached_key_size > 0) {
-      return pmem::obj::string_view(node->cached_key, node->cached_key_size);
+      return StringView(node->cached_key, node->cached_key_size);
     }
     return UserKey(node->record->Key());
   }
 
-  inline static pmem::obj::string_view UserKey(const DLRecord *record) {
+  inline static StringView UserKey(const DLRecord *record) {
     assert(record != nullptr);
     return UserKey(record->Key());
   }
 
-  inline static uint64_t
-  SkiplistId(const pmem::obj::string_view &skiplist_key) {
+  inline static uint64_t SkiplistId(const StringView &skiplist_key) {
     uint64_t id;
     memcpy_8(&id, skiplist_key.data());
     return id;
@@ -257,9 +255,8 @@ public:
   // calling this function
   //
   // Return true on success, return false on fail.
-  bool Insert(const pmem::obj::string_view &key,
-              const pmem::obj::string_view &value,
-              const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+  bool Insert(const StringView &key, const StringView &value,
+              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
               SkiplistNode **dram_node, const SpinMutex *inserting_key_lock);
 
   // Update "key" in skiplist
@@ -272,10 +269,9 @@ public:
   // calling this function
   //
   // Return true on success, return false on fail.
-  bool Update(const pmem::obj::string_view &key,
-              const pmem::obj::string_view &value,
+  bool Update(const StringView &key, const StringView &value,
               const DLRecord *updated_record,
-              const SizedSpaceEntry &space_to_write, uint64_t timestamp,
+              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
               SkiplistNode *dram_node, const SpinMutex *updating_key_lock);
 
   // Delete "key" from skiplist
@@ -287,7 +283,7 @@ public:
   // calling this function
   //
   // Return true on success, return false on fail.
-  bool Delete(const pmem::obj::string_view &key, DLRecord *deleted_record,
+  bool Delete(const StringView &key, DLRecord *deleted_record,
               SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
@@ -330,8 +326,7 @@ private:
   // prev DLRecord and manage the lock with "prev_record_lock".
   //
   // The "insert_key" should be already locked before call this function
-  bool FindInsertPos(Splice *splice,
-                     const pmem::obj::string_view &inserting_key,
+  bool FindInsertPos(Splice *splice, const StringView &inserting_key,
                      const StringView &inserting_value,
                      const SpinMutex *inserting_key_lock,
                      std::unique_lock<SpinMutex> *prev_record_lock);
@@ -342,13 +337,13 @@ private:
   // the lock with "prev_record_lock".
   //
   //  The "updated_key" should be already locked before call this function
-  bool FindUpdatePos(Splice *splice, const pmem::obj::string_view &updating_key,
+  bool FindUpdatePos(Splice *splice, const StringView &updating_key,
                      const StringView &updating_value,
                      const SpinMutex *updating_key_lock,
                      const DLRecord *updated_record,
                      std::unique_lock<SpinMutex> *prev_record_lock);
 
-  bool FindDeletePos(Splice *splice, const pmem::obj::string_view &deleting_key,
+  bool FindDeletePos(Splice *splice, const StringView &deleting_key,
                      const SpinMutex *deleting_key_lock,
                      const DLRecord *deleted_record,
                      std::unique_lock<SpinMutex> *prev_record_lock) {
@@ -356,6 +351,9 @@ private:
                          deleted_record, prev_record_lock);
   }
 
+  // cosidering two situation: (1) insert sorting by value, if value is
+  // same, sorted by key. (2) insert sorting by key. The key is always
+  // unique in this two situation
   int compare(const StringView &aKey, const StringView &bKey,
               const StringView &aVal, const StringView &bVal) {
     return cmp_ctx.priority_key
@@ -363,6 +361,13 @@ private:
                                               : CompareValue(aVal, bVal))
                : (CompareValue(aVal, bVal) != 0 ? CompareValue(aVal, bVal)
                                                 : Comparekey(aKey, bKey));
+  }
+
+  bool ValidateDLRecord(const DLRecord *record) {
+    DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
+    return prev != nullptr &&
+           prev->next == pmem_allocator_->addr2offset(record) &&
+           SkiplistId(record) == id_;
   }
 
   SkiplistNode *header_;

@@ -118,6 +118,55 @@ static inline bool equal_string_view(const StringView &src,
   return false;
 }
 
+template <typename T> class Array {
+public:
+  template <typename... A>
+  explicit Array(uint64_t size, A &&... args) : size_(size) {
+    data_ = (T *)malloc(sizeof(T) * size);
+    for (uint64_t i = 0; i < size; i++) {
+      new (data_ + i) T(std::forward<A>(args)...);
+    }
+  }
+
+  Array(const Array<T> &v) = delete;
+  Array &operator=(const Array &) = delete;
+  Array(Array &&) = delete;
+
+  Array() : size_(0), data_(nullptr){};
+
+  ~Array() {
+    if (data_ != nullptr) {
+      for (uint64_t i = 0; i < size_; i++) {
+        data_[i].~T();
+      }
+      free(data_);
+    }
+  }
+
+  T &back() {
+    assert(size_ > 0);
+    return data_[size_ - 1];
+  }
+
+  T &front() {
+    assert(size_ > 0);
+    return data_[0];
+  }
+
+  T &operator[](uint64_t index) {
+    if (index >= size_) {
+      throw std::out_of_range("array out of range");
+    }
+    return data_[index];
+  }
+
+  uint64_t size() { return size_; }
+
+private:
+  T *data_;
+  uint64_t size_;
+};
+
 class Slice {
 public:
   Slice() : _data(nullptr), _size(0) {}
@@ -180,6 +229,8 @@ private:
   //  int owner = -1;
 
 public:
+  SpinMutex() = default;
+
   void lock() {
     while (locked.test_and_set(std::memory_order_acquire)) {
       asm volatile("pause");
@@ -202,11 +253,9 @@ public:
 
   //  bool hold() { return owner == write_thread.id; }
 
-  SpinMutex(const SpinMutex &s) : locked(ATOMIC_FLAG_INIT) {}
-
-  SpinMutex(const SpinMutex &&s) : locked(ATOMIC_FLAG_INIT) {}
-
-  SpinMutex() : locked(ATOMIC_FLAG_INIT) {}
+  SpinMutex(const SpinMutex &s) = delete;
+  SpinMutex(SpinMutex &&s) = delete;
+  SpinMutex &operator=(const SpinMutex &s) = delete;
 };
 
 // Return the number of process unit (PU) that are bound to the kvdk instance
