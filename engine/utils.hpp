@@ -98,21 +98,22 @@ static inline std::string string_view_2_string(const StringView &src) {
   return std::string(src.data(), src.size());
 }
 
-static inline int compare_string_view(const StringView &src,
-                                      const StringView &target) {
-  auto size = std::min(src.size(), target.size());
+static inline int compare_string_view(const char *src, size_t src_len,
+                                      const char *target, size_t target_len) {
+  auto size = std::min(src_len, target_len);
   for (uint32_t i = 0; i < size; i++) {
     if (src[i] != target[i]) {
       return src[i] - target[i];
     }
   }
-  return src.size() - target.size();
+  return src_len - target_len;
 }
 
 static inline bool equal_string_view(const StringView &src,
                                      const StringView &target) {
   if (src.size() == target.size()) {
-    return compare_string_view(src, target) == 0;
+    return compare_string_view(src.data(), src.size(), target.data(),
+                               target.size()) == 0;
   }
   return false;
 }

@@ -145,6 +145,12 @@ public:
     for (uint8_t i = 1; i <= kMaxHeight; i++) {
       header_->RelaxedSetNext(i, nullptr);
     }
+    if (GetCollectionCompFuncMap().find(n) !=
+        GetCollectionCompFuncMap().end()) {
+      SetCompStrategy(GetCollectionCompFuncMap()[n]);
+    }
+    SetCollectionCompFunc(n, cmp_ctx.key_cmp, cmp_ctx.val_cmp,
+                          cmp_ctx.priority_key);
   }
 
   ~Skiplist() {
@@ -238,8 +244,7 @@ public:
   // Start position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
-  void Seek(const StringView &key, StringView value,
-            Splice *result_splice);
+  void Seek(const StringView &key, StringView value, Splice *result_splice);
 
   Status Rebuild();
 
@@ -338,6 +343,7 @@ private:
   //
   //  The "updated_key" should be already locked before call this function
   bool FindUpdatePos(Splice *splice, const pmem::obj::string_view &updating_key,
+                     const StringView &updating_value,
                      const SpinMutex *updating_key_lock,
                      const DLRecord *updated_record,
                      std::unique_lock<SpinMutex> *prev_record_lock);
@@ -346,8 +352,17 @@ private:
                      const SpinMutex *deleting_key_lock,
                      const DLRecord *deleted_record,
                      std::unique_lock<SpinMutex> *prev_record_lock) {
-    return FindUpdatePos(splice, deleting_key, deleting_key_lock,
+    return FindUpdatePos(splice, deleting_key, "", deleting_key_lock,
                          deleted_record, prev_record_lock);
+  }
+
+  int compare(const StringView &aKey, const StringView &bKey,
+              const StringView &aVal, const StringView &bVal) {
+    return cmp_ctx.priority_key
+               ? (Comparekey(aKey, bKey) != 0 ? Comparekey(aKey, bKey)
+                                              : CompareValue(aVal, bVal))
+               : (CompareValue(aVal, bVal) != 0 ? CompareValue(aVal, bVal)
+                                                : Comparekey(aKey, bKey));
   }
 
   SkiplistNode *header_;
@@ -366,9 +381,6 @@ private:
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
-  // default key and value comparation function.
-  KeyCompareFunc key_cmpfunc_;
-  ValueCompareFunc val_cmpfunc_;
 };
 
 class SortedIterator : public Iterator {

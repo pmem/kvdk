@@ -57,6 +57,13 @@ public:
   // TODO: Release delete record and deleted nodes
   Status SDelete(const pmem::obj::string_view collection,
                  const pmem::obj::string_view user_key) override;
+
+  void SetSortedCompareFunc(
+      const pmem::obj::string_view collection,
+      std::function<int(const char *, size_t, const char *, size_t)> key_comp,
+      std::function<int(const char *, size_t, const char *, size_t)> value_comp,
+      bool priority_key = true) override;
+
   std::shared_ptr<Iterator>
   NewSortedIterator(const pmem::obj::string_view collection) override;
 

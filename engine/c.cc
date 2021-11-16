@@ -166,6 +166,16 @@ KVDKStatus KVDKHashSet(KVDKEngine *engine, const char *collection,
                            pmem::obj::string_view(val, val_len));
 }
 
+void KVDKSetSortedCompareFunc(KVDKEngine *engine, const char *collection,
+                              int (*key_comp_func)(const char *, size_t,
+                                                   const char *, size_t),
+                              int (*val_comp_func)(const char *, size_t,
+                                                   const char *, size_t)) {
+  engine->rep->SetSortedCompareFunc(pmem::obj::string_view(collection),
+                                    key_comp_func, val_comp_func);
+  return;
+}
+
 KVDKStatus KVDKHashDelete(KVDKEngine *engine, const char *collection,
                           size_t collection_len, const char *key,
                           size_t key_len) {

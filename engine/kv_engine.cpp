@@ -1003,6 +1003,21 @@ Status KVEngine::SSet(const StringView collection, const StringView user_key,
   return SSetImpl(skiplist, user_key, value);
 }
 
+void KVEngine::SetSortedCompareFunc(
+    const pmem::obj::string_view collection,
+    std::function<int(const char *, size_t, const char *, size_t)> key_comp,
+    std::function<int(const char *, size_t, const char *, size_t)> value_comp,
+    bool priority_key /*= true*/) {
+  if (!key_comp) {
+    key_comp = compare_string_view;
+  }
+  if (!value_comp) {
+    value_comp = compare_string_view;
+  }
+  SetCollectionCompFunc(string_view_2_string(collection), key_comp, value_comp,
+                        priority_key);
+}
+
 Status KVEngine::CheckConfigs(const Configs &configs) {
   auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
 

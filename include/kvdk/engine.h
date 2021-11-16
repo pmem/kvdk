@@ -86,6 +86,11 @@ extern KVDK_LIBRARY_API KVDKStatus
 KVDKSortedGet(KVDKEngine *engine, const char *collection, size_t collection_len,
               const char *key, size_t key_len, size_t *val_len, char **val);
 
+extern KVDK_LIBRARY_API void KVDKSetSortedCompareFunc(
+    KVDKEngine *engine, const char *collection,
+    int (*key_comp_func)(const char *, size_t, const char *, size_t),
+    int (*val_comp_func)(const char *, size_t, const char *, size_t));
+
 // For Hash Collection
 extern KVDK_LIBRARY_API KVDKStatus KVDKHashSet(KVDKEngine *engine,
                                                const char *collection,

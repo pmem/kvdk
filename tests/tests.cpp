@@ -2,6 +2,7 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <algorithm>
 #include <future>
 #include <string>
 #include <thread>
@@ -1249,6 +1250,120 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
     LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
   }
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
+  using kvpair = std::pair<std::string, std::string>;
+  int threads = 16;
+  configs.max_write_threads = threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::vector<std::string> collections{"collection0", "collection1",
+                                       "collection2"};
+
+  auto val_cmp0 = [](const char *a, size_t a_len, const char *b,
+                     size_t b_len) -> int {
+    double scorea = atof(a);
+    double scoreb = atof(b);
+    if (scorea == scoreb)
+      return 0;
+    else if (scorea < scoreb)
+      return 1;
+    else
+      return -1;
+  };
+
+  auto val_cmp1 = [](const char *a, size_t a_len, const char *b,
+                     size_t b_len) -> int {
+    double scorea = atof(a);
+    double scoreb = atof(b);
+    if (scorea == scoreb)
+      return 0;
+    else if (scorea > scoreb)
+      return 1;
+    else
+      return -1;
+  };
+
+  std::vector<kvpair> key_values{
+      {"a", "100"}, {"b", "98"}, {"c", "97"}, {"d", "96"}, {"e", "100"},
+      {"f", "97"},  {"g", "98"}, {"h", "96"}, {"i", "95"}, {"j", "98"}};
+
+  int count = 10;
+  for (size_t i = 0; i < collections.size(); ++i) {
+    if (i == 0) {
+      engine->SetSortedCompareFunc(
+          collections[i], compare_string_view,
+          [&](const char *src, size_t src_len, const char *target,
+              size_t target_len) -> int {
+            return val_cmp0(src, src_len, target, target_len);
+          },
+          false);
+    } else if (i == 1) {
+      engine->SetSortedCompareFunc(
+          collections[i], nullptr,
+          [&](const char *src, size_t src_len, const char *target,
+              size_t target_len) -> int {
+            return val_cmp1(src, src_len, target, target_len);
+          },
+          false);
+    }
+    engine->ReleaseWriteThread();
+
+    auto EvenWriteOddRead = [&](uint32_t id) {
+      for (size_t j = 0; j < count; j++) {
+        ASSERT_EQ(engine->SSet(collections[i], key_values[j].first,
+                               key_values[j].second),
+                  Status::Ok);
+      }
+    };
+
+    LaunchNThreads(threads, EvenWriteOddRead);
+  }
+
+  for (size_t i = 0; i < collections.size(); ++i) {
+    std::vector<kvpair> expected_res(key_values);
+    if (i == 0) {
+      std::sort(expected_res.begin(), expected_res.end(),
+                [&](kvpair a, kvpair b) -> bool {
+                  int cmp = val_cmp0(a.second.data(), a.second.size(),
+                                     b.second.data(), b.second.size());
+                  if (cmp == 0)
+                    return a.first < b.first;
+                  return cmp > 0 ? false : true;
+                });
+    } else if (i == 1) {
+      std::sort(expected_res.begin(), expected_res.end(),
+                [&](kvpair a, kvpair b) -> bool {
+                  int cmp = val_cmp1(a.second.data(), a.second.size(),
+                                     b.second.data(), b.second.size());
+                  if (cmp == 0)
+                    return a.first < b.first;
+                  return cmp > 0 ? false : true;
+                });
+    }
+    auto iter = engine->NewSortedIterator(collections[i]);
+    ASSERT_TRUE(iter != nullptr);
+    iter->Seek("a");
+    ASSERT_TRUE(iter->Valid());
+    ASSERT_EQ(iter->Value(), "100");
+    iter->Seek("aa");
+    ASSERT_TRUE(iter->Valid());
+
+    iter->SeekToFirst();
+    int cnt = 0;
+    while (iter->Valid()) {
+      std::string key = iter->Key();
+      std::string val = iter->Value();
+      ASSERT_EQ(key, expected_res[cnt].first);
+      ASSERT_EQ(val, expected_res[cnt].second);
+      iter->Next();
+      cnt++;
+    }
+  }
+  ASSERT_EQ(engine->SDelete("collection0", "a"), Status::Ok);
   delete engine;
 }
 

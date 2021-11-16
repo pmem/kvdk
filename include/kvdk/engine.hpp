@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -47,6 +48,15 @@ public:
   // Return Ok on success or the "key" did not exist, return non-Ok on any
   // error.
   virtual Status Delete(const pmem::obj::string_view key) = 0;
+
+  // set sorted collection configs(custom key/value compare function) by user.
+  // compare function have a unified function signature: int func(string_view,
+  // string_view)
+  virtual void SetSortedCompareFunc(
+      const pmem::obj::string_view collection,
+      std::function<int(const char *, size_t, const char *, size_t)> key_comp,
+      std::function<int(const char *, size_t, const char *, size_t)> value_comp,
+      bool priority_key = true) = 0;
 
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return Ok

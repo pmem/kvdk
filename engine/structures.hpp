@@ -92,29 +92,40 @@ public:
   }
 };
 
-class CompContext {
+struct CompContext {
 public:
-  CompContext(){};
-  ~CompContext(){};
-  void SetCompStrategy(KeyCompareFunc key_cmp_func,
-                       ValueCompareFunc val_cmp_func) {
-    key_cmp = key_cmp_func;
-    val_cmp = val_cmp_func;
-  }
   KeyCompareFunc key_cmp = compare_string_view;
   ValueCompareFunc val_cmp = compare_string_view;
   bool priority_key = true;
 };
 
-template <typename child> class CompStrategy : public CompContext {
+template <typename child> class CompStrategy {
 public:
-  int Comparekey(const StringView key0, const StringView key1) {
-    return static_cast<child *>(this)->key_cmp(key0, key1);
+  int Comparekey(const StringView src_key, const StringView target_key) {
+    return static_cast<child *>(this)->cmp_ctx.key_cmp(
+        src_key.data(), src_key.size(), target_key.data(), target_key.size());
   }
 
-  int CompareValue(const StringView val0, const StringView &val1) {
-    return static_cast<child *>(this)->val_cmp(val0, val1);
+  int CompareValue(const StringView src_val, const StringView &target_val) {
+    return static_cast<child *>(this)->cmp_ctx.val_cmp(
+        src_val.data(), src_val.size(), target_val.data(), target_val.size());
   }
+
+  void SetCompStrategy(CompContext ctx) { cmp_ctx = ctx; }
+  CompContext cmp_ctx;
 };
+
+std::unordered_map<std::string, CompContext> &GetCollectionCompFuncMap();
+
+inline void SetCollectionCompFunc(const std::string &collection_name,
+                                  KeyCompareFunc key_func,
+                                  ValueCompareFunc val_func,
+                                  bool priority_key) {
+  assert(GetCollectionCompFuncMap().find(collection_name) ==
+             GetCollectionCompFuncMap().end() &&
+         "it hash already registered!");
+  GetCollectionCompFuncMap()[collection_name] =
+      CompContext{key_func, val_func, priority_key};
+}
 
 } // namespace KVDK_NAMESPACE

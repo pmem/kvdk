@@ -13,6 +13,11 @@
 
 namespace KVDK_NAMESPACE {
 
+std::unordered_map<std::string, CompContext> &GetCollectionCompFuncMap() {
+  static std::unordered_map<std::string, CompContext> CollectionFactoryMap;
+  return CollectionFactoryMap;
+}
+
 pmem::obj::string_view SkiplistNode::UserKey() {
   return Skiplist::UserKey(this);
 }
@@ -71,19 +76,27 @@ Status Skiplist::Rebuild() {
 void Skiplist::Seek(const StringView &key, StringView value,
                     Splice *result_splice) {
   result_splice->seeking_list = this;
-  if (!priority_key && value.empty()) {
+  if (!cmp_ctx.priority_key && value.empty()) {
     HashEntry hash_entry;
     HashEntry *entry_ptr = nullptr;
     DataEntry data_entry;
-    Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
-                                          SortedDataRecord, &entry_ptr,
-                                          &hash_entry, &data_entry);
-    if (s != NotFound) {
+    std::string internal_key = InternalKey(key);
+    Status s = hash_table_->SearchForRead(hash_table_->GetHint(internal_key),
+                                          internal_key, SortedDataRecord,
+                                          &entry_ptr, &hash_entry, &data_entry);
+    if (s == NotFound) {
+      result_splice->next_pmem_record =
+          pmem_allocator_->offset2addr<DLRecord>(header()->record->prev);
       return;
     }
-    value = ((SkiplistNode *)hash_entry.offset)->record->Value();
+    value = (hash_entry.header.offset_type == HashOffsetType::SkiplistNode)
+                ? ((SkiplistNode *)hash_entry.offset)->record->Value()
+                : (pmem_allocator_->offset2addr<DLRecord>(hash_entry.offset))
+                      ->Value();
   }
+
   SeekNode(key, value, header_, header_->Height(), 1, result_splice);
+
   assert(result_splice->prevs[1] != nullptr);
   DLRecord *prev_record = result_splice->prevs[1]->record;
   DLRecord *next_record = nullptr;
@@ -94,7 +107,7 @@ void Skiplist::Seek(const StringView &key, StringView value,
       break;
     }
 
-    int cmp = compare_string_view(key, UserKey(next_record));
+    int cmp = compare(key, UserKey(next_record), value, next_record->Value());
     if (cmp > 0) {
       prev_record = next_record;
     } else {
@@ -158,9 +171,14 @@ Status Skiplist::CheckConnection(int height) {
 
 bool Skiplist::FindUpdatePos(Splice *splice,
                              const pmem::obj::string_view &updated_key,
+                             const StringView &updated_value,
                              const SpinMutex *updating_key_lock,
                              const DLRecord *updated_record,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
+  StringView update_val = updated_value;
+  if (!cmp_ctx.priority_key && updated_value.empty()) {
+    update_val = updated_record->Value();
+  }
   while (1) {
     DLRecord *prev =
         pmem_allocator_->offset2addr<DLRecord>(updated_record->prev);
@@ -194,9 +212,9 @@ bool Skiplist::FindUpdatePos(Splice *splice,
     assert(updated_record->next == next_offset);
     assert(next->prev == pmem_allocator_->addr2offset(updated_record));
     assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev), updated_key) < 0);
+           compare(updated_key, UserKey(prev), update_val, prev->Value()) > 0);
     assert(next == header_->record ||
-           compare_string_view(Skiplist::UserKey(next), updated_key) > 0);
+           compare(updated_key, UserKey(next), update_val, next->Value()) < 0);
 
     return true;
   }
@@ -245,12 +263,16 @@ bool Skiplist::FindInsertPos(Splice *splice,
     auto check_id = [&]() {
       return SkiplistId(next) == id_ && SkiplistId(prev) == id_;
     };
+
+    int next_cmp =
+        compare(insert_key, UserKey(next), insert_value, next->Value());
+    int prev_cmp =
+        compare(insert_key, UserKey(prev), insert_value, prev->Value());
+
     auto check_order = [&]() {
       bool res =
-          /*check next*/ (next == header_->record ||
-                          compare_string_view(insert_key, UserKey(next)) < 0) &&
-          /*check prev*/ (prev == header_->record ||
-                          compare_string_view(insert_key, UserKey(prev)) > 0);
+          /*check next*/ (next == header_->record || next_cmp < 0) &&
+          /*check prev*/ (prev == header_->record || prev_cmp > 0);
       return res;
     };
     if (!check_linkage() || !check_id() || !check_order()) {
@@ -260,10 +282,8 @@ bool Skiplist::FindInsertPos(Splice *splice,
     assert(prev->next == next_offset);
     assert(next->prev == prev_offset);
 
-    assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev), insert_key) < 0);
-    assert(next == header_->record ||
-           compare_string_view(Skiplist::UserKey(next), insert_key) > 0);
+    assert(prev == header_->record || prev_cmp > 0);
+    assert(next == header_->record || next_cmp < 0);
 
     return true;
   }
@@ -325,7 +345,7 @@ bool Skiplist::Update(const pmem::obj::string_view &key,
                       const SpinMutex *updating_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindUpdatePos(&splice, key, updating_key_lock, updated_record,
+  if (!FindUpdatePos(&splice, key, value, updating_key_lock, updated_record,
                      &prev_record_lock)) {
     return false;
   }
@@ -432,11 +452,7 @@ void Skiplist::SeekNode(const pmem::obj::string_view &key,
       // cosidering two situation: (1) insert sorting by value, if value is
       // same, sorted by key. (2) insert sorting by key. The key is always
       // unique in this two situation
-      int cmp = priority_key ? Comparekey(key, next->UserKey())
-                             : (CompareValue(value, next->record->Value()) != 0
-                                    ? CompareValue(value, next->record->Value())
-                                    : Comparekey(key, next->UserKey()));
-
+      int cmp = compare(key, next->UserKey(), value, next->record->Value());
       if (cmp > 0) {
         prev = next.RawPointer();
       } else {
