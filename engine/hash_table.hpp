@@ -201,7 +201,7 @@ private:
   const uint32_t num_buckets_per_slot_;
   const uint32_t hash_bucket_size_;
   const uint64_t num_entries_per_bucket_;
-  std::vector<Slot> slots_;
+  Array<Slot> slots_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   ChunkBasedAllocator dram_allocator_;
   void *main_buckets_;
