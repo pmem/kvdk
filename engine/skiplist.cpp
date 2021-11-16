@@ -17,9 +17,8 @@ StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
 
 uint64_t SkiplistNode::SkiplistId() { return Skiplist::SkiplistId(this); }
 
-void SkiplistNode::SeekNode(const pmem::obj::string_view &key,
-                            uint8_t start_height, uint8_t end_height,
-                            Splice *result_splice) {
+void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
+                            uint8_t end_height, Splice *result_splice) {
   std::vector<SkiplistNode *> to_delete;
   assert(height >= start_height && end_height >= 1);
   SkiplistNode *prev = this;
