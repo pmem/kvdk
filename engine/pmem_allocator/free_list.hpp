@@ -189,8 +189,8 @@ private:
                 1 /* the last lock is for delay freed entries */),
           last_used_entry_ts(0) {}
 
-    ThreadCache() = default;
-
+    ThreadCache() = delete;
+    ThreadCache(ThreadCache &&) = delete;
     ThreadCache(const ThreadCache &) = delete;
 
     // Entry size stored in block unit
