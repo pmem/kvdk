@@ -28,7 +28,8 @@ public:
   inline uint64_t addr2offset(void *addr) { return (uint64_t)addr; }
   ChunkBasedAllocator(uint32_t write_threads) : thread_cache_(write_threads) {}
   ~ChunkBasedAllocator() {
-    for (auto &tc : thread_cache_) {
+    for (uint64_t i = 0; i < thread_cache_.size(); i++) {
+      auto &tc = thread_cache_[i];
       for (void *chunk : tc.allocated_chunks) {
         free(chunk);
       }
@@ -47,6 +48,6 @@ private:
   static_assert(sizeof(ThreadCache) == 64);
 
   const uint32_t chunk_size_ = (1 << 20);
-  std::vector<ThreadCache> thread_cache_;
+  Array<ThreadCache> thread_cache_;
 };
 } // namespace KVDK_NAMESPACE

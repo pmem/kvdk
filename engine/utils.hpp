@@ -117,23 +117,28 @@ static inline bool equal_string_view(const StringView &src,
   return false;
 }
 
-template <typename T> class FixedVector {
+template <typename T> class Array {
 public:
-  FixedVector(uint64_t size) : size_(size) { data_ = new T[size]; }
-
-  FixedVector() = delete;
-
-  FixedVector(const FixedVector<T> &v) {
-    size_ = v.size_;
-    data_ = new T[size_];
-    for (size_t i = 0; i < size_; i++) {
-      data_[i] = v.data_[i];
+  template <typename... A>
+  explicit Array(uint64_t size, A &&... args) : size_(size) {
+    data_ = (T *)malloc(sizeof(T) * size);
+    for (uint64_t i = 0; i < size; i++) {
+      new (data_ + i) T(std::forward<A>(args)...);
     }
   }
 
-  ~FixedVector() {
+  Array(const Array<T> &v) = delete;
+  Array &operator=(const Array &) = delete;
+  Array(Array &&) = delete;
+
+  Array() : size_(0), data_(nullptr){};
+
+  ~Array() {
     if (data_ != nullptr) {
-      delete[] data_;
+      for (uint64_t i = 0; i < size_; i++) {
+        data_[i].~T();
+      }
+      free(data_);
     }
   }
 
@@ -142,8 +147,15 @@ public:
     return data_[size_ - 1];
   }
 
+  T &front() {
+    assert(size_ > 0);
+    return data_[0];
+  }
+
   T &operator[](uint64_t index) {
-    assert(index < size_);
+    if (index >= size_) {
+      throw std::out_of_range("array out of range");
+    }
     return data_[index];
   }
 
@@ -216,6 +228,8 @@ private:
   //  int owner = -1;
 
 public:
+  SpinMutex() = default;
+
   void lock() {
     while (locked.test_and_set(std::memory_order_acquire)) {
       asm volatile("pause");
@@ -238,20 +252,9 @@ public:
 
   //  bool hold() { return owner == write_thread.id; }
 
-  // We implement these construction function for put spin mutex in vector, but
-  // they should never be called
-  SpinMutex(const SpinMutex &s) : locked(ATOMIC_FLAG_INIT) {
-    kvdk_assert(false, "call copy construction on spin mutex");
-  }
-
-  SpinMutex(const SpinMutex &&s) : locked(ATOMIC_FLAG_INIT) {
-    kvdk_assert(false, "call move construction on spin mutex");
-  }
-  SpinMutex() : locked(ATOMIC_FLAG_INIT) {}
-  SpinMutex &operator=(const SpinMutex &s) {
-    locked.clear(std::memory_order_release);
-    kvdk_assert(false, "call assignment on spin mutex");
-  }
+  SpinMutex(const SpinMutex &s) = delete;
+  SpinMutex(SpinMutex &&s) = delete;
+  SpinMutex &operator=(const SpinMutex &s) = delete;
 };
 
 // Return the number of process unit (PU) that are bound to the kvdk instance
