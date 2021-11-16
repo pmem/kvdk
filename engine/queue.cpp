@@ -67,6 +67,9 @@ bool Queue::PopFront(std::string *value_got) {
     kvdk_assert(extractID(old_front->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
     dlinked_list_.PopFront();
+
+    lock_queue.unlock();
+
     dlinked_list_.purgeAndFree(old_front);
     return true;
   } else {
@@ -83,6 +86,9 @@ bool Queue::PopBack(std::string *value_got) {
     kvdk_assert(extractID(old_back->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
     dlinked_list_.PopBack();
+
+    lock_queue.unlock();
+
     dlinked_list_.purgeAndFree(old_back);
     return true;
   } else {
