@@ -341,6 +341,13 @@ private:
                          deleted_record, prev_record_lock);
   }
 
+  bool ValidateDLRecord(const DLRecord *record) {
+    DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
+    return prev != nullptr &&
+           prev->next == pmem_allocator_->addr2offset(record) &&
+           SkiplistId(record) == id_;
+  }
+
   SkiplistNode *header_;
   std::string name_;
   uint64_t id_;
