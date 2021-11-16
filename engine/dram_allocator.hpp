@@ -42,6 +42,10 @@ private:
     uint64_t usable_bytes = 0;
     std::vector<void *> allocated_chunks;
 
+    ThreadCache() = default;
+    ThreadCache(const ThreadCache &) = delete;
+    ThreadCache(ThreadCache &&) = delete;
+
     char padding[64 - sizeof(allocated_chunks) - sizeof(usable_bytes) -
                  sizeof(chunk_addr)];
   };
