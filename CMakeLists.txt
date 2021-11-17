@@ -69,7 +69,18 @@ configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
 	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
-set_target_properties(engine PROPERTIES PUBLIC_HEADER "include/kvdk/engine.hpp;include/kvdk/namespace.hpp;include/kvdk/configs.hpp;include/kvdk/iterator.hpp;include/kvdk/status.hpp;include/kvdk/write_batch.hpp")
+set_target_properties(
+engine PROPERTIES PUBLIC_HEADER 
+"\
+include/kvdk/configs.hpp;\
+include/kvdk/engine.h;\
+include/kvdk/engine.hpp;\
+include/kvdk/iterator.hpp;\
+include/kvdk/namespace.hpp;\
+include/kvdk/status.h;\
+include/kvdk/status.hpp;\
+include/kvdk/write_batch.hpp")
+
 
 install(TARGETS engine
 		PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
