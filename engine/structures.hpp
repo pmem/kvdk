@@ -111,21 +111,7 @@ public:
         src_val.data(), src_val.size(), target_val.data(), target_val.size());
   }
 
-  void SetCompStrategy(CompContext ctx) { cmp_ctx = ctx; }
   CompContext cmp_ctx;
 };
-
-std::unordered_map<std::string, CompContext> &GetCollectionCompFuncMap();
-
-inline void SetCollectionCompFunc(const std::string &collection_name,
-                                  KeyCompareFunc key_func,
-                                  ValueCompareFunc val_func,
-                                  bool priority_key) {
-  assert(GetCollectionCompFuncMap().find(collection_name) ==
-             GetCollectionCompFuncMap().end() &&
-         "it hash already registered!");
-  GetCollectionCompFuncMap()[collection_name] =
-      CompContext{key_func, val_func, priority_key};
-}
 
 } // namespace KVDK_NAMESPACE

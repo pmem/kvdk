@@ -243,6 +243,26 @@ private:
                         record_pmmptr->entry.meta.timestamp));
   }
 
+  void SetCollectionCompFunc(const std::string &collection_name,
+                             KeyCompareFunc key_func, ValueCompareFunc val_func,
+                             bool priority_key) {
+    assert(CollectionFactoryMap.find(collection_name) ==
+               CollectionFactoryMap.end() &&
+           "it hash already registered!");
+    CollectionFactoryMap[collection_name] =
+        CompContext{key_func, val_func, priority_key};
+  }
+
+  CompContext &GetCollectionCompFunc(const std::string &collection_name) {
+    if (CollectionFactoryMap.find(collection_name) ==
+        CollectionFactoryMap.end()) {
+      CompContext ctx;
+      SetCollectionCompFunc(collection_name, ctx.key_cmp, ctx.val_cmp,
+                            ctx.priority_key);
+    }
+    return CollectionFactoryMap[collection_name];
+  }
+
   std::vector<ThreadLocalRes> thread_res_;
 
   // restored kvs in reopen
@@ -267,6 +287,7 @@ private:
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
   SortedCollectionRebuilder sorted_rebuilder_;
-};
+  std::unordered_map<std::string, CompContext> CollectionFactoryMap;
+}; // namespace KVDK_NAMESPACE
 
 } // namespace KVDK_NAMESPACE

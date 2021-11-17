@@ -138,20 +138,14 @@ class Skiplist : public PersistentList, public CompStrategy<Skiplist> {
 public:
   Skiplist(DLRecord *h, const std::string &n, uint64_t i,
            const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-           std::shared_ptr<HashTable> hash_table)
+           std::shared_ptr<HashTable> hash_table, CompContext ctx)
       : name_(n), id_(i), pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
     header_ = SkiplistNode::NewNode(n, h, kMaxHeight);
     for (uint8_t i = 1; i <= kMaxHeight; i++) {
       header_->RelaxedSetNext(i, nullptr);
     }
-    if (GetCollectionCompFuncMap().find(n) !=
-        GetCollectionCompFuncMap().end()) {
-      SetCompStrategy(GetCollectionCompFuncMap()[n]);
-    } else {
-      SetCollectionCompFunc(n, cmp_ctx.key_cmp, cmp_ctx.val_cmp,
-                            cmp_ctx.priority_key);
-    }
+    cmp_ctx = ctx;
   }
 
   ~Skiplist() {

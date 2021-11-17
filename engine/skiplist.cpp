@@ -13,11 +13,6 @@
 
 namespace KVDK_NAMESPACE {
 
-std::unordered_map<std::string, CompContext> &GetCollectionCompFuncMap() {
-  static std::unordered_map<std::string, CompContext> CollectionFactoryMap;
-  return CollectionFactoryMap;
-}
-
 StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
 
 uint64_t SkiplistNode::SkiplistId() { return Skiplist::SkiplistId(this); }

@@ -50,7 +50,6 @@ void PendingBatch::PersistStage(Stage s) {
 KVEngine::KVEngine() {}
 
 KVEngine::~KVEngine() {
-  GetCollectionCompFuncMap().clear();
   closing_ = true;
   GlobalLogger.Info("Closing instance ... \n");
   GlobalLogger.Info("Waiting bg threads exit ... \n");
@@ -387,8 +386,9 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
   Skiplist *skiplist;
   {
     std::lock_guard<std::mutex> lg(list_mu_);
-    skiplists_.push_back(std::make_shared<Skiplist>(
-        pmem_record, key, id, pmem_allocator_, hash_table_));
+    skiplists_.push_back(
+        std::make_shared<Skiplist>(pmem_record, key, id, pmem_allocator_,
+                                   hash_table_, GetCollectionCompFunc(key)));
     skiplist = skiplists_.back().get();
     if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_.SetEntriesOffsets(
@@ -613,7 +613,9 @@ Status KVEngine::SearchOrInitPersistentList(const StringView &collection,
           case SortedHeaderRecord:
             skiplists_.push_back(std::make_shared<Skiplist>(
                 pmem_record, std::string(collection.data(), collection.size()),
-                id, pmem_allocator_, hash_table_));
+                id, pmem_allocator_, hash_table_,
+                GetCollectionCompFunc(
+                    std::string(collection.data(), collection.size()))));
             *list = skiplists_.back().get();
             break;
           default:
