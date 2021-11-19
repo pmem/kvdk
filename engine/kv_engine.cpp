@@ -1742,9 +1742,7 @@ std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
-  std::unique_ptr<Queue> queue_uptr =
-      std::make_unique<Queue>(pmem_allocator_.get(), name, id, ts);
-  return queue_uptr;
+  return std::make_unique<Queue>(pmem_allocator_.get(), name, id, ts);
 }
 
 Queue *KVEngine::findQueue(StringView const collection_name) {
@@ -1769,7 +1767,7 @@ Queue *KVEngine::findQueue(StringView const collection_name) {
 }
 
 Status KVEngine::xPop(StringView const collection_name, std::string *value,
-                      KVEngine::QueueOpWhere where) {
+                      KVEngine::QueueOpPosition pop_pos) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1779,12 +1777,12 @@ Status KVEngine::xPop(StringView const collection_name, std::string *value,
     return Status::NotFound;
   }
   bool pop_success = false;
-  switch (where) {
-  case QueueOpWhere::Left: {
+  switch (pop_pos) {
+  case QueueOpPosition::Left: {
     pop_success = queue_ptr->PopFront(value);
     break;
   }
-  case QueueOpWhere::Right: {
+  case QueueOpPosition::Right: {
     pop_success = queue_ptr->PopBack(value);
     break;
   }
@@ -1801,7 +1799,7 @@ Status KVEngine::xPop(StringView const collection_name, std::string *value,
 }
 
 Status KVEngine::xPush(StringView const collection_name, StringView const value,
-                       KVEngine::QueueOpWhere where) try {
+                       KVEngine::QueueOpPosition push_pos) try {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
@@ -1824,11 +1822,10 @@ Status KVEngine::xPush(StringView const collection_name, StringView const value,
           // Some thread already created the collection
           // Do nothing
         } else {
-          auto queue_uptr = createQueue(collection_name);
-          queue_ptr = queue_uptr.get();
           {
             std::lock_guard<std::mutex> lg{list_mu_};
-            queue_uptr_vec_.emplace_back(queue_uptr.release());
+            queue_uptr_vec_.emplace_back(createQueue(collection_name));
+            queue_ptr = queue_uptr_vec_.back().get();
           }
 
           HashEntry hash_entry_collection;
@@ -1848,12 +1845,12 @@ Status KVEngine::xPush(StringView const collection_name, StringView const value,
   // Push
   {
     TimeStampType ts = get_timestamp();
-    switch (where) {
-    case QueueOpWhere::Left: {
+    switch (push_pos) {
+    case QueueOpPosition::Left: {
       queue_ptr->PushFront(ts, value);
       return Status::Ok;
     }
-    case QueueOpWhere::Right: {
+    case QueueOpPosition::Right: {
       queue_ptr->PushBack(ts, value);
       return Status::Ok;
     }
@@ -1907,12 +1904,10 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     return Status::Ok;
   }
   case RecordType::QueueDataRecord: {
-    std::uint64_t offset_record =
-        pmem_allocator_->addr2offset_checked(pmp_record);
     bool linked = checkLinkage(static_cast<DLRecord *>(pmp_record));
     if (!linked) {
       GlobalLogger.Error("Bad linkage!\n");
-      // Bad linkage handled by Skiplist.
+      // Bad linkage handled by DlinkedList.
       return Status::Ok;
     } else {
       return Status::Ok;

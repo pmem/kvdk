@@ -124,7 +124,7 @@ bool fill;
 bool stat_latencies;
 double existing_keys_ratio;
 
-enum class DataType { String, Sorted, Hashes, Queue } bench_what;
+enum class DataType { String, Sorted, Hashes, Queue } bench_data_type;
 
 uint64_t num_collections;
 std::shared_ptr<Generator> key_generator;
@@ -176,7 +176,7 @@ void DBWrite(int tid) {
 
     if (stat_latencies)
       timer.Start();
-    switch (bench_what) {
+    switch (bench_data_type) {
     case DataType::String: {
       if (batch_num == 0) {
         s = engine->Set(key, value);
@@ -198,16 +198,10 @@ void DBWrite(int tid) {
       break;
     }
     case DataType::Queue: {
-      switch ((num / num_collections) % 2) {
-      case 0: {
+      if ((num / num_collections) % 2 == 0)
         s = engine->LPush(collections[num % num_collections], value);
-        break;
-      }
-      case 1: {
+      else
         s = engine->RPush(collections[num % num_collections], value);
-        break;
-      }
-      }
       break;
     }
     default: {
@@ -245,7 +239,7 @@ void DBScan(int tid) {
   while (!done) {
     uint64_t num = generate_key();
     memcpy(&key[0], &num, 8);
-    switch (bench_what) {
+    switch (bench_data_type) {
     case DataType::Sorted: {
       auto iter = engine->NewSortedIterator(collections[num % num_collections]);
       if (iter) {
@@ -313,7 +307,7 @@ void DBRead(int tid) {
     if (stat_latencies)
       timer.Start();
     Status s;
-    switch (bench_what) {
+    switch (bench_data_type) {
     case DataType::String: {
       s = engine->Get(key, &value);
       break;
@@ -328,16 +322,10 @@ void DBRead(int tid) {
     }
     case DataType::Queue: {
       std::string sink;
-      switch ((num / num_collections) % 2) {
-      case 0: {
+      if ((num / num_collections) % 2 == 0)
         s = engine->LPop(collections[num % num_collections], &sink);
-        break;
-      }
-      case 1: {
+      else
         s = engine->RPop(collections[num % num_collections], &sink);
-        break;
-      }
-      }
       break;
     }
     default: {
@@ -373,18 +361,18 @@ void DBRead(int tid) {
 
 bool ProcessBenchmarkConfigs() {
   if (FLAGS_type == "sorted") {
-    bench_what = DataType::Sorted;
+    bench_data_type = DataType::Sorted;
   } else if (FLAGS_type == "string") {
-    bench_what = DataType::String;
+    bench_data_type = DataType::String;
   } else if (FLAGS_type == "hash") {
-    bench_what = DataType::Hashes;
+    bench_data_type = DataType::Hashes;
   } else if (FLAGS_type == "queue") {
-    bench_what = DataType::Queue;
+    bench_data_type = DataType::Queue;
   } else {
     return false;
   }
   // Initialize collections and batch parameters
-  switch (bench_what) {
+  switch (bench_data_type) {
   case DataType::String: {
     batch_num = FLAGS_batch;
     break;
@@ -407,7 +395,7 @@ bool ProcessBenchmarkConfigs() {
     throw;
   }
   // Check for scan flag
-  switch (bench_what) {
+  switch (bench_data_type) {
   case DataType::String:
   case DataType::Queue: {
     if (FLAGS_scan) {

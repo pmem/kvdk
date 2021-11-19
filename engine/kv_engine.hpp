@@ -70,24 +70,24 @@ public:
   NewUnorderedIterator(StringView const collection_name) override;
 
   // Queue
-  virtual Status LPop(pmem::obj::string_view const collection_name,
+  virtual Status LPop(StringView const collection_name,
                       std::string *value) override {
-    return xPop(collection_name, value, QueueOpWhere::Left);
+    return xPop(collection_name, value, QueueOpPosition::Left);
   }
 
-  virtual Status RPop(pmem::obj::string_view const collection_name,
+  virtual Status RPop(StringView const collection_name,
                       std::string *value) override {
-    return xPop(collection_name, value, QueueOpWhere::Right);
+    return xPop(collection_name, value, QueueOpPosition::Right);
   }
 
-  virtual Status LPush(pmem::obj::string_view const collection_name,
-                       pmem::obj::string_view const value) override {
-    return xPush(collection_name, value, QueueOpWhere::Left);
+  virtual Status LPush(StringView const collection_name,
+                       StringView const value) override {
+    return xPush(collection_name, value, QueueOpPosition::Left);
   }
 
-  virtual Status RPush(pmem::obj::string_view const collection_name,
-                       pmem::obj::string_view const value) override {
-    return xPush(collection_name, value, QueueOpWhere::Right);
+  virtual Status RPush(StringView const collection_name,
+                       StringView const value) override {
+    return xPush(collection_name, value, QueueOpPosition::Right);
   }
 
   void ReleaseWriteThread() override { write_thread.Release(); }
@@ -141,19 +141,17 @@ private:
 private:
   std::shared_ptr<UnorderedCollection>
   createUnorderedCollection(StringView const collection_name);
-  UnorderedCollection *
-  findUnorderedCollection(StringView collection_name);
+  UnorderedCollection *findUnorderedCollection(StringView collection_name);
 
-  std::unique_ptr<Queue>
-  createQueue(pmem::obj::string_view const collection_name);
-  Queue *findQueue(pmem::obj::string_view const collection_name);
+  std::unique_ptr<Queue> createQueue(StringView const collection_name);
+  Queue *findQueue(StringView const collection_name);
 
-  enum class QueueOpWhere { Left, Right };
-  Status xPush(pmem::obj::string_view const collection_name,
-               pmem::obj::string_view const value, QueueOpWhere where);
+  enum class QueueOpPosition { Left, Right };
+  Status xPush(StringView const collection_name, StringView const value,
+               QueueOpPosition push_pos);
 
-  Status xPop(pmem::obj::string_view const collection_name, std::string *value,
-              QueueOpWhere where);
+  Status xPop(StringView const collection_name, std::string *value,
+              QueueOpPosition pop_pos);
 
   Status MaybeInitPendingBatchFile();
 
