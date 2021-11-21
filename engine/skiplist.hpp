@@ -233,9 +233,9 @@ public:
     return SkiplistId(node->record);
   }
 
-  // Start position of "key" on both dram and PMem node in the skiplist, and
-  // store position in "result_splice". If "key" existing, the next pointers in
-  // splice point to node of "key"
+  // Start position of "key" or "val" on both dram and PMem node in the
+  // skiplist, and store position in "result_splice". If "key" existing, the
+  // next pointers in splice point to node of "key"
   void Seek(const StringView &key, StringView value, Splice *result_splice);
 
   Status Rebuild();
@@ -389,7 +389,7 @@ public:
       : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current(nullptr) {
   }
 
-  virtual void Seek(const std::string &key) override;
+  virtual void Seek(const std::string &str, bool is_key /*= true*/) override;
 
   virtual void SeekToFirst() override;
 

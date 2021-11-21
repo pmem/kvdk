@@ -465,10 +465,15 @@ void Skiplist::SeekNode(const pmem::obj::string_view &key,
   }
 }
 
-void SortedIterator::Seek(const std::string &key) {
+void SortedIterator::Seek(const std::string &str, bool is_key /*=true*/) {
   assert(skiplist_);
+  if (skiplist_->cmp_ctx.priority_key != is_key) {
+    GlobalLogger.Info("The sorting way and the seek way must be consistent");
+    return;
+  }
   Splice splice(skiplist_);
-  skiplist_->Seek(key, "", &splice);
+  skiplist_->cmp_ctx.priority_key ? skiplist_->Seek(str, "", &splice)
+                                  : skiplist_->Seek("", str, &splice);
   current = splice.next_pmem_record;
 }
 
