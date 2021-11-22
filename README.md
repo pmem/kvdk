@@ -68,4 +68,6 @@ Please refer to [User guide](./doc/user_doc.md) for API introductions of KVDK.
 
 # Support
 Welcome to join the wechat group for KVDK tech discussion.
-![image.png](pic/kvdk-qrcode.png)
+
+<img src="pic/kvdk-qrcode.png" width="300">
+
