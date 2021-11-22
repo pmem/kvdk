@@ -65,3 +65,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON && make -j
 Please refer to [User guide](./doc/user_doc.md) for API introductions of KVDK.
 
 ### Architecture
+
+# Support
+Welcome to join the wechat group for KVDK tech discussion.
+![image.png](pic/kvdk-qrcode.png)
