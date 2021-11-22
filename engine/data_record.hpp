@@ -14,16 +14,21 @@ namespace KVDK_NAMESPACE {
 
 enum RecordType : uint16_t {
   Empty = 0,
-  StringDataRecord = 1,
-  StringDeleteRecord = 1 << 1,
+  StringDataRecord = (1 << 0),
+  StringDeleteRecord = (1 << 1),
 
-  SortedDataRecord = 1 << 2,
-  SortedHeaderRecord = 1 << 3,
+  SortedDataRecord = (1 << 2),
+  SortedHeaderRecord = (1 << 3),
 
-  DlistDataRecord = 1 << 4,
-  DlistHeadRecord = 1 << 5,
-  DlistTailRecord = 1 << 6,
-  DlistRecord = 1 << 7,
+  DlistDataRecord = (1 << 4),
+  DlistHeadRecord = (1 << 5),
+  DlistTailRecord = (1 << 6),
+  DlistRecord = (1 << 7),
+
+  QueueDataRecord = (1 << 8),
+  QueueHeadRecord = (1 << 9),
+  QueueTailRecord = (1 << 10),
+  QueueRecord = (1 << 11),
 
   Padding = 1 << 15,
 };
@@ -32,7 +37,8 @@ const uint16_t SortedRecordType = (SortedDataRecord | SortedHeaderRecord);
 
 const uint16_t DLRecordType =
     (SortedDataRecord | SortedHeaderRecord | DlistDataRecord | DlistHeadRecord |
-     DlistTailRecord | DlistRecord);
+     DlistTailRecord | DlistRecord | QueueDataRecord | QueueHeadRecord |
+     QueueTailRecord | QueueRecord);
 
 const uint16_t DeleteRecordType = (StringDeleteRecord);
 

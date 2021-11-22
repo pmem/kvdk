@@ -4,9 +4,11 @@
 
 #pragma once
 
-#include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <ctime>
+
+#include <atomic>
 #include <deque>
 #include <iostream>
 #include <list>
@@ -22,10 +24,10 @@
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
+#include "queue.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
-#include "time.h"
 #include "unordered_collection.hpp"
 #include "utils.hpp"
 
@@ -66,6 +68,27 @@ public:
                          StringView const key) override;
   std::shared_ptr<Iterator>
   NewUnorderedIterator(StringView const collection_name) override;
+
+  // Queue
+  virtual Status LPop(StringView const collection_name,
+                      std::string *value) override {
+    return xPop(collection_name, value, QueueOpPosition::Left);
+  }
+
+  virtual Status RPop(StringView const collection_name,
+                      std::string *value) override {
+    return xPop(collection_name, value, QueueOpPosition::Right);
+  }
+
+  virtual Status LPush(StringView const collection_name,
+                       StringView const value) override {
+    return xPush(collection_name, value, QueueOpPosition::Left);
+  }
+
+  virtual Status RPush(StringView const collection_name,
+                       StringView const value) override {
+    return xPush(collection_name, value, QueueOpPosition::Right);
+  }
 
   void ReleaseWriteThread() override { write_thread.Release(); }
 
@@ -120,6 +143,16 @@ private:
   createUnorderedCollection(StringView const collection_name);
   UnorderedCollection *findUnorderedCollection(StringView collection_name);
 
+  std::unique_ptr<Queue> createQueue(StringView const collection_name);
+  Queue *findQueue(StringView const collection_name);
+
+  enum class QueueOpPosition { Left, Right };
+  Status xPush(StringView const collection_name, StringView const value,
+               QueueOpPosition push_pos);
+
+  Status xPop(StringView const collection_name, std::string *value,
+              QueueOpPosition pop_pos);
+
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const StringView &key, const StringView &value);
@@ -162,6 +195,8 @@ private:
 
   Status RestoreDlistRecords(DLRecord *pmp_record);
 
+  Status RestoreQueueRecords(DLRecord *pmp_record);
+
   // Regularly works excecuted by background thread
   void BackgroundWork();
 
@@ -202,7 +237,7 @@ private:
     return pmp_next->prev == offset;
   }
 
-  bool isLinkedDLDataEntry(DLRecord *pmp_record) {
+  bool checkLinkage(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
     DLRecord *pmp_prev =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
@@ -216,11 +251,10 @@ private:
     } else if (!is_linked_left && !is_linked_right) {
       return false;
     } else if (is_linked_left && !is_linked_right) {
+      /// TODO: Repair this situation
       GlobalLogger.Error(
-          "Broken DLDataEntry linkage: prev<=>curr->right, repaired.\n");
-      pmp_next->prev = offset;
-      pmem_persist(&pmp_next->prev, sizeof(decltype(offset)));
-      return true;
+          "Broken DLDataEntry linkage: prev<=>curr->right, abort...\n");
+      std::abort();
     } else {
       GlobalLogger.Error("Broken DLDataEntry linkage: prev<-curr<=>right, "
                          "which is logically impossible! Abort...\n");
@@ -249,6 +283,7 @@ private:
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
+  std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;
   std::mutex list_mu_;
 
   std::string dir_;

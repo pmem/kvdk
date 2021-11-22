@@ -144,6 +144,7 @@ private:
 
   friend class UnorderedCollection;
   friend class UnorderedIterator;
+  friend class Queue;
 
   static constexpr PMemOffsetType NullPMemOffset = kPmemNullOffset;
 
@@ -191,6 +192,7 @@ public:
               DLRecord *tail_pmmptr)
       : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{head_pmmptr},
         tail_pmmptr_{tail_pmmptr} {
+
 #if DEBUG_LEVEL >= 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
@@ -198,19 +200,18 @@ public:
                   "not pointing to a valid Head Record!");
       iterator curr{pmem_allocator_ptr_, head_pmmptr};
       ++curr;
-
       while (true) {
         switch (static_cast<RecordType>(curr->entry.meta.type)) {
         case DataType: {
           iterator next{curr};
           ++next;
-          iterator prev{curr};
-          --prev;
           PMemOffsetType offset_curr = curr.GetCurrentOffset();
-          kvdk_assert(next->prev == offset_curr,
-                      "Found broken linkage when rebuilding DLinkedList!");
-          kvdk_assert(prev->next == offset_curr,
-                      "Found broken linkage when rebuilding DLinkedList!");
+          if (next->prev != offset_curr) {
+            GlobalLogger.Error(
+                "Found broken linkage when rebuilding DLinkedList! Repaired");
+            next->prev = offset_curr;
+            pmem_persist(&next->prev, sizeof(PMemOffsetType));
+          }
           ++curr;
           continue;
         }
@@ -220,8 +221,8 @@ public:
           return;
         }
         default: {
-          kvdk_assert(false,
-                      "Invalid Record met when rebuilding a DlinkedList!");
+          kvdk_assert(false, "Invalid record when iterating through "
+                             "DlinkedList! Cannot be repaired!");
           std::abort();
         }
         }
@@ -366,6 +367,7 @@ private:
 
   /// Output DlinkedList to ostream for debugging purpose.
   friend std::ostream &operator<<(std::ostream &out, DLinkedList const &dlist) {
+
     auto extractKey = [](StringView internal_key) {
       assert(sizeof(CollectionIDType) <= internal_key.size() &&
              "internal_key does not has space for key");
@@ -380,28 +382,27 @@ private:
       return id;
     };
 
+    auto printRecord = [&](DLRecord *record) {
+      auto internal_key = record->Key();
+      out << "Type:\t" << to_hex(record->entry.meta.type) << "\t"
+          << "Offset:\t"
+          << to_hex(dlist.pmem_allocator_ptr_->addr2offset_checked(record))
+          << "\t"
+          << "Prev:\t" << to_hex(record->prev) << "\t"
+          << "Next:\t" << to_hex(record->next) << "\t"
+          << "Key: " << to_hex(extractID(internal_key))
+          << extractKey(internal_key) << "\t"
+          << "Value: " << record->Value() << "\n";
+    };
+
     out << "Contents of DlinkedList:\n";
     iterator iter = dlist.Head();
     iterator iter_end = dlist.Tail();
     while (iter != iter_end) {
-      auto internal_key = iter->Key();
-      out << "Type: " << to_hex(iter->entry.meta.type) << "\t"
-          << "Offset: " << to_hex(iter.GetCurrentOffset()) << "\t"
-          << "Prev: " << to_hex(iter->prev) << "\t"
-          << "Next: " << to_hex(iter->next) << "\t"
-          << "Key: " << to_hex(extractID(internal_key))
-          << extractKey(internal_key) << "\t"
-          << "Value: " << iter->Value() << "\n";
+      printRecord(iter.GetCurrentAddress());
       ++iter;
     }
-    auto internal_key = iter->Key();
-    out << "Type: " << to_hex(iter->entry.meta.type) << "\t"
-        << "Offset: " << to_hex(iter.GetCurrentOffset()) << "\t"
-        << "Prev: " << to_hex(iter->prev) << "\t"
-        << "Next: " << to_hex(iter->next) << "\t"
-        << "Key: " << to_hex(extractID(internal_key))
-        << extractKey(internal_key) << "\t"
-        << "Value: " << iter->Value() << "\n";
+    printRecord(iter.GetCurrentAddress());
     return out;
   }
 };

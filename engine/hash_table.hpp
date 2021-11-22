@@ -9,9 +9,10 @@
 #include <limits>
 #include <vector>
 
+#include "kvdk/engine.hpp"
+
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "kvdk/engine.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
 
@@ -52,7 +53,9 @@ enum class HashOffsetType : uint8_t {
   // Offset field contains pointer to UnorderedCollection object on DRAM
   UnorderedCollection = 5,
   // Offset field contains PMem pointer to element of UnorderedCollection
-  UnorderedCollectionElement = 6
+  UnorderedCollectionElement = 6,
+  //
+  Queue = 7
 };
 
 struct HashHeader {
@@ -63,6 +66,7 @@ struct HashHeader {
 };
 
 class UnorderedCollection;
+class Queue;
 
 struct HashEntry {
 public:
@@ -82,6 +86,7 @@ public:
   union {
     uint64_t offset;
     UnorderedCollection *p_unordered_collection;
+    Queue *queue_ptr;
   };
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }

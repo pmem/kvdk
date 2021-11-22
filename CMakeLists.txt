@@ -57,6 +57,7 @@ set(SOURCES
         engine/c.cc
         engine/unordered_collection.cpp
         engine/data_record.cpp
+        engine/queue.cpp
     )
 
 

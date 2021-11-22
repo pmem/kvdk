@@ -3,6 +3,7 @@
  */
 
 #include "hash_table.hpp"
+#include "queue.hpp"
 #include "skiplist.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
@@ -58,6 +59,11 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
     }
     case HashOffsetType::UnorderedCollection: {
       UnorderedCollection *p_collection = hash_entry->p_unordered_collection;
+      data_entry_key = p_collection->Name();
+      break;
+    }
+    case HashOffsetType::Queue: {
+      Queue *p_collection = hash_entry->queue_ptr;
       data_entry_key = p_collection->Name();
       break;
     }

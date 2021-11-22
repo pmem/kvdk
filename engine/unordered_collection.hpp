@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include <algorithm>
-
 #include <cassert>
 #include <cstdint>
+
+#include <algorithm>
 
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"

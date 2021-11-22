@@ -77,6 +77,19 @@ public:
   virtual Status HDelete(const pmem::obj::string_view collection,
                          const pmem::obj::string_view key) = 0;
 
+  // Queue
+  virtual Status LPop(pmem::obj::string_view const collection_name,
+                      std::string *value) = 0;
+
+  virtual Status RPop(pmem::obj::string_view const collection_name,
+                      std::string *value) = 0;
+
+  virtual Status LPush(pmem::obj::string_view const collection_name,
+                       pmem::obj::string_view const value) = 0;
+
+  virtual Status RPush(pmem::obj::string_view const collection_name,
+                       pmem::obj::string_view const value) = 0;
+
   // Create a KV iterator on sorted collection "collection", which is able to
   // sequentially iterate all KVs in the "collection".
   virtual std::shared_ptr<Iterator>

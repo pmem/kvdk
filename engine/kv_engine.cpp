@@ -223,7 +223,11 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     case RecordType::DlistRecord:
     case RecordType::DlistHeadRecord:
     case RecordType::DlistTailRecord:
-    case RecordType::DlistDataRecord: {
+    case RecordType::DlistDataRecord:
+    case RecordType::QueueRecord:
+    case RecordType::QueueDataRecord:
+    case RecordType::QueueHeadRecord:
+    case RecordType::QueueTailRecord: {
       if (!ValidateRecord(recovering_pmem_record)) {
         // Checksum dismatch, mark as padding to be Freed
         // Otherwise the Restore will continue normally
@@ -296,6 +300,13 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       s = RestoreDlistRecords(static_cast<DLRecord *>(recovering_pmem_record));
       break;
     }
+    case RecordType::QueueRecord:
+    case RecordType::QueueDataRecord:
+    case RecordType::QueueHeadRecord:
+    case RecordType::QueueTailRecord: {
+      s = RestoreQueueRecords(static_cast<DLRecord *>(recovering_pmem_record));
+      break;
+    }
     default: {
       GlobalLogger.Error("Invalid Record type when recovering. Trying "
                          "restoring record. Record type: %u\n",
@@ -365,7 +376,11 @@ bool KVEngine::ValidateRecord(void *data_record) {
   case RecordType::DlistDataRecord:
   case RecordType::DlistRecord:
   case RecordType::DlistHeadRecord:
-  case RecordType::DlistTailRecord: {
+  case RecordType::DlistTailRecord:
+  case RecordType::QueueRecord:
+  case RecordType::QueueDataRecord:
+  case RecordType::QueueHeadRecord:
+  case RecordType::QueueTailRecord: {
     return static_cast<DLRecord *>(data_record)->Validate();
   }
   default:
@@ -1392,7 +1407,7 @@ KVEngine::createUnorderedCollection(StringView const collection_name) {
 }
 
 UnorderedCollection *
-KVEngine::findUnorderedCollection(StringView collection_name) {
+KVEngine::findUnorderedCollection(StringView const collection_name) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -1449,6 +1464,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
           // Do nothing
         } else {
           auto sp_collection = createUnorderedCollection(collection_name);
+
           p_collection = sp_collection.get();
           {
             std::lock_guard<std::mutex> lg{list_mu_};
@@ -1650,7 +1666,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
   case RecordType::DlistDataRecord: {
     std::uint64_t offset_record =
         pmem_allocator_->addr2offset_checked(pmp_record);
-    bool linked = isLinkedDLDataEntry(static_cast<DLRecord *>(pmp_record));
+    bool linked = checkLinkage(static_cast<DLRecord *>(pmp_record));
     if (!linked) {
       purgeAndFree(pmp_record);
 
@@ -1710,6 +1726,191 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
                          "DlistDataRecord!\n");
       return search_status;
     }
+    }
+  }
+  default: {
+    kvdk_assert(false, "Wrong type in RestoreDlistRecords!\n");
+    return Status::Abort;
+  }
+  }
+}
+
+} // namespace KVDK_NAMESPACE
+
+namespace KVDK_NAMESPACE {
+std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
+  std::uint64_t ts = get_timestamp();
+  uint64_t id = list_id_.fetch_add(1);
+  std::string name(collection_name.data(), collection_name.size());
+  return std::make_unique<Queue>(pmem_allocator_.get(), name, id, ts);
+}
+
+Queue *KVEngine::findQueue(StringView const collection_name) {
+  HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
+  HashEntry hash_entry;
+  HashEntry *entry_ptr = nullptr;
+  Status s =
+      hash_table_->SearchForRead(hint, collection_name, RecordType::QueueRecord,
+                                 &entry_ptr, &hash_entry, nullptr);
+  switch (s) {
+  case Status::NotFound: {
+    return nullptr;
+  }
+  case Status::Ok: {
+    return hash_entry.queue_ptr;
+  }
+  default: {
+    kvdk_assert(false, "Invalid state in findQueue()!");
+    return nullptr;
+  }
+  }
+}
+
+Status KVEngine::xPop(StringView const collection_name, std::string *value,
+                      KVEngine::QueueOpPosition pop_pos) {
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+  Queue *queue_ptr = findQueue(collection_name);
+  if (!queue_ptr) {
+    return Status::NotFound;
+  }
+  bool pop_success = false;
+  switch (pop_pos) {
+  case QueueOpPosition::Left: {
+    pop_success = queue_ptr->PopFront(value);
+    break;
+  }
+  case QueueOpPosition::Right: {
+    pop_success = queue_ptr->PopBack(value);
+    break;
+  }
+  default: {
+    GlobalLogger.Error("Impossible!");
+    return Status::Abort;
+  }
+  }
+  if (pop_success) {
+    return Status::Ok;
+  } else {
+    return Status::NotFound;
+  }
+}
+
+Status KVEngine::xPush(StringView const collection_name, StringView const value,
+                       KVEngine::QueueOpPosition push_pos) try {
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  Queue *queue_ptr = nullptr;
+
+  // Find UnorederedCollection, create if none exists
+  {
+    queue_ptr = findQueue(collection_name);
+    if (!queue_ptr) {
+      HashTable::KeyHashHint hint_collection =
+          hash_table_->GetHint(collection_name);
+      std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
+      {
+        // Lock and find again in case other threads have created the
+        // UnorderedCollection
+        queue_ptr = findQueue(collection_name);
+        if (queue_ptr) {
+          // Some thread already created the collection
+          // Do nothing
+        } else {
+          {
+            std::lock_guard<std::mutex> lg{list_mu_};
+            queue_uptr_vec_.emplace_back(createQueue(collection_name));
+            queue_ptr = queue_uptr_vec_.back().get();
+          }
+
+          HashEntry hash_entry_collection;
+          HashEntry *p_hash_entry_collection = nullptr;
+          Status s = hash_table_->SearchForWrite(
+              hint_collection, collection_name, RecordType::QueueRecord,
+              &p_hash_entry_collection, &hash_entry_collection, nullptr);
+          kvdk_assert(s == Status::NotFound, "Logically impossible!");
+          hash_table_->Insert(
+              hint_collection, p_hash_entry_collection, RecordType::QueueRecord,
+              reinterpret_cast<uint64_t>(queue_ptr), HashOffsetType::Queue);
+        }
+      }
+    }
+  }
+
+  // Push
+  {
+    TimeStampType ts = get_timestamp();
+    switch (push_pos) {
+    case QueueOpPosition::Left: {
+      queue_ptr->PushFront(ts, value);
+      return Status::Ok;
+    }
+    case QueueOpPosition::Right: {
+      queue_ptr->PushBack(ts, value);
+      return Status::Ok;
+    }
+    default: {
+      GlobalLogger.Error("Impossible!");
+      return Status::Abort;
+    }
+    }
+  }
+} catch (std::bad_alloc const &ex) {
+  return Status::PmemOverflow;
+}
+
+Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
+  switch (pmp_record->entry.meta.type) {
+  case RecordType::QueueRecord: {
+    Queue *queue_ptr = nullptr;
+    std::lock_guard<std::mutex> lg{list_mu_};
+    {
+      queue_uptr_vec_.emplace_back(
+          std::make_unique<Queue>(pmem_allocator_.get(), pmp_record));
+      queue_ptr = queue_uptr_vec_.back().get();
+    }
+
+    std::string collection_name = queue_ptr->Name();
+    HashTable::KeyHashHint hint_collection =
+        hash_table_->GetHint(collection_name);
+    std::unique_lock<SpinMutex>{*hint_collection.spin};
+
+    HashEntry hash_entry_collection;
+    HashEntry *p_hash_entry_collection = nullptr;
+    Status s = hash_table_->SearchForWrite(
+        hint_collection, collection_name, RecordType::QueueRecord,
+        &p_hash_entry_collection, &hash_entry_collection, nullptr,
+        true /* in recovery */);
+    hash_table_->Insert(
+        hint_collection, p_hash_entry_collection, RecordType::QueueRecord,
+        reinterpret_cast<uint64_t>(queue_ptr), HashOffsetType::Queue);
+    return Status::Ok;
+  }
+  case RecordType::QueueHeadRecord: {
+    kvdk_assert(pmp_record->prev == kNullPmemOffset &&
+                    checkDLRecordLinkageRight(pmp_record),
+                "Bad linkage found when RestoreDlistRecords. Broken head.");
+    return Status::Ok;
+  }
+  case RecordType::QueueTailRecord: {
+    kvdk_assert(pmp_record->next == kNullPmemOffset &&
+                    checkDLRecordLinkageLeft(pmp_record),
+                "Bad linkage found when RestoreDlistRecords. Broken tail.");
+    return Status::Ok;
+  }
+  case RecordType::QueueDataRecord: {
+    bool linked = checkLinkage(static_cast<DLRecord *>(pmp_record));
+    if (!linked) {
+      GlobalLogger.Error("Bad linkage!\n");
+      // Bad linkage handled by DlinkedList.
+      return Status::Ok;
+    } else {
+      return Status::Ok;
     }
   }
   default: {
