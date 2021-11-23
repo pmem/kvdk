@@ -103,7 +103,7 @@ private:
   inline static std::string makeInternalKey(CollectionIDType id,
                                             StringView key) {
     std::string internal_key{id2View(id)};
-    internal_key += key;
+    internal_key += std::string{key};
     return internal_key;
   }
 
