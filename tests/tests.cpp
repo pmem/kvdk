@@ -1287,11 +1287,18 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       return -1;
   };
 
-  std::vector<kvpair> key_values{
-      {"a", "100"}, {"b", "98"}, {"c", "97"}, {"d", "96"}, {"e", "100"},
-      {"f", "97"},  {"g", "98"}, {"h", "96"}, {"i", "95"}, {"j", "98"}};
+  // std::vector<kvpair> key_values = {
+  //     {"a", "100"}, {"b", "98"}, {"c", "97"}, {"d", "96"}, {"e", "100"},
+  //     {"f", "97"},  {"g", "98"}, {"h", "96"}, {"i", "95"}, {"j", "98"}};
 
   int count = 10;
+  std::vector<kvpair> key_values(count);
+  std::generate(key_values.begin(), key_values.end(), []() {
+    const char k = rand() % (90 - 65 + 1) + 65;
+    std::string v = std::to_string(rand() % 100);
+    printf("key_value: %c %s\n", k, v.data());
+    return std::make_pair(std::string(1, k), v);
+  });
   for (size_t i = 0; i < collections.size(); ++i) {
     if (i == 0) {
       engine->SetSortedCompareFunc(
@@ -1346,11 +1353,19 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     }
     auto iter = engine->NewSortedIterator(collections[i]);
     ASSERT_TRUE(iter != nullptr);
-    iter->Seek("a");
-    ASSERT_TRUE(iter->Valid());
-    ASSERT_EQ(iter->Value(), "100");
-    iter->Seek("aa");
-    ASSERT_TRUE(iter->Valid());
+    if (i == 2) {
+      iter->Seek("100", false);
+      ASSERT_FALSE(iter->Valid());
+      iter->Seek("aa", true);
+      ASSERT_TRUE(iter->Valid());
+      ASSERT_EQ(iter->Key(), "b");
+    } else {
+      iter->Seek("100", false);
+      ASSERT_TRUE(iter->Valid());
+      ASSERT_EQ(iter->Key(), "a");
+      iter->Seek("aa", true);
+      ASSERT_FALSE(iter->Valid());
+    }
 
     iter->SeekToFirst();
     int cnt = 0;

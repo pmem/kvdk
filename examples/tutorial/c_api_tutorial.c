@@ -112,8 +112,8 @@ int main() {
     const char *end = "key8";
 
     int i = 1;
-    KVDKIterSeek(kvdk_iter, beg);
-    for (KVDKIterSeek(kvdk_iter, beg);
+    KVDKIterSeek(kvdk_iter, beg, 1u);
+    for (KVDKIterSeek(kvdk_iter, beg, 1u);
          KVDKIterValid(kvdk_iter) && (strcmp(KVDKIterKey(kvdk_iter), end) <= 0);
          KVDKIterNext(kvdk_iter)) {
       char key[10] = "key", value[10] = "value";
@@ -130,7 +130,7 @@ int main() {
     end = "key1";
 
     i = 8;
-    for (KVDKIterSeek(kvdk_iter, beg);
+    for (KVDKIterSeek(kvdk_iter, beg, 1u);
          KVDKIterValid(kvdk_iter) && (strcmp(KVDKIterKey(kvdk_iter), end) >= 0);
          KVDKIterPre(kvdk_iter)) {
       char key[10] = "key", value[10] = "value";

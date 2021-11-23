@@ -87,7 +87,7 @@ KVDKSortedGet(KVDKEngine *engine, const char *collection, size_t collection_len,
               const char *key, size_t key_len, size_t *val_len, char **val);
 
 extern KVDK_LIBRARY_API void KVDKSetSortedCompareFunc(
-    KVDKEngine *engine, const char *collection,
+    KVDKEngine *engine, const char *collection, size_t collection_len,
     int (*key_comp_func)(const char *, size_t, const char *, size_t),
     int (*val_comp_func)(const char *, size_t, const char *, size_t));
 
@@ -114,7 +114,8 @@ KVDKCreateIterator(KVDKEngine *engine, const char *collection,
 extern KVDK_LIBRARY_API void KVDKIterDestory(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToFirst(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToLast(KVDKIterator *iter);
-extern KVDK_LIBRARY_API void KVDKIterSeek(KVDKIterator *iter, const char *key);
+extern KVDK_LIBRARY_API void KVDKIterSeek(KVDKIterator *iter, const char *str,
+                                          unsigned char is_key);
 extern KVDK_LIBRARY_API void KVDKIterNext(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterPre(KVDKIterator *iter);
 extern KVDK_LIBRARY_API unsigned char KVDKIterValid(KVDKIterator *iter);

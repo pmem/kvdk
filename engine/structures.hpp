@@ -92,6 +92,7 @@ public:
   }
 };
 
+enum class SeekMaskType { MASK_NULL, MASK_KEY, MASK_VALUE };
 struct CompContext {
 public:
   KeyCompareFunc key_cmp = compare_string_view;

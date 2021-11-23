@@ -246,9 +246,14 @@ private:
   void SetCollectionCompFunc(const std::string &collection_name,
                              KeyCompareFunc key_func, ValueCompareFunc val_func,
                              bool priority_key) {
-    assert(CollectionFactoryMap.find(collection_name) ==
-               CollectionFactoryMap.end() &&
-           "it hash already registered!");
+    if (CollectionFactoryMap.find(collection_name) !=
+        CollectionFactoryMap.end()) {
+      // std::string str = "The " + collection_name +
+      //                   "'s compare function has already registered. So use "
+      //                   "the first registered compare function";
+      // GlobalLogger.Info(str.data());
+      return;
+    }
     CollectionFactoryMap[collection_name] =
         CompContext{key_func, val_func, priority_key};
   }

@@ -165,11 +165,10 @@ KVDKStatus KVDKHashSet(KVDKEngine *engine, const char *collection,
                            StringView(key, key_len), StringView(val, val_len));
 }
 
-void KVDKSetSortedCompareFunc(KVDKEngine *engine, const char *collection,
-                              int (*key_comp_func)(const char *, size_t,
-                                                   const char *, size_t),
-                              int (*val_comp_func)(const char *, size_t,
-                                                   const char *, size_t)) {
+void KVDKSetSortedCompareFunc(
+    KVDKEngine *engine, const char *collection, size_t collection_len,
+    int (*key_comp_func)(const char *, size_t, const char *, size_t),
+    int (*val_comp_func)(const char *, size_t, const char *, size_t)) {
   engine->rep->SetSortedCompareFunc(pmem::obj::string_view(collection),
                                     key_comp_func, val_comp_func);
   return;
@@ -216,8 +215,8 @@ void KVDKIterSeekToFirst(KVDKIterator *iter) { iter->rep->SeekToFirst(); }
 
 void KVDKIterSeekToLast(KVDKIterator *iter) { iter->rep->SeekToLast(); }
 
-void KVDKIterSeek(KVDKIterator *iter, const char *key) {
-  iter->rep->Seek(std::string(key));
+void KVDKIterSeek(KVDKIterator *iter, const char *key, unsigned char is_key) {
+  iter->rep->Seek(std::string(key), is_key);
 }
 
 unsigned char KVDKIterValid(KVDKIterator *iter) { return iter->rep->Valid(); }

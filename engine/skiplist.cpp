@@ -66,29 +66,12 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
-void Skiplist::Seek(const StringView &key, StringView value,
-                    Splice *result_splice) {
+void Skiplist::Seek(const StringView &key, const StringView &value,
+                    Splice *result_splice, SeekMaskType seek_mask_type) {
   result_splice->seeking_list = this;
-  if (!cmp_ctx.priority_key && value.empty()) {
-    HashEntry hash_entry;
-    HashEntry *entry_ptr = nullptr;
-    DataEntry data_entry;
-    std::string internal_key = InternalKey(key);
-    Status s = hash_table_->SearchForRead(hash_table_->GetHint(internal_key),
-                                          internal_key, SortedDataRecord,
-                                          &entry_ptr, &hash_entry, &data_entry);
-    if (s == NotFound) {
-      result_splice->next_pmem_record =
-          pmem_allocator_->offset2addr<DLRecord>(header()->record->prev);
-      return;
-    }
-    value = (hash_entry.header.offset_type == HashOffsetType::SkiplistNode)
-                ? ((SkiplistNode *)hash_entry.offset)->record->Value()
-                : (pmem_allocator_->offset2addr<DLRecord>(hash_entry.offset))
-                      ->Value();
-  }
 
-  SeekNode(key, value, header_, header_->Height(), 1, result_splice);
+  SeekNode(key, value, header_, header_->Height(), 1, result_splice,
+           seek_mask_type);
 
   assert(result_splice->prevs[1] != nullptr);
   DLRecord *prev_record = result_splice->prevs[1]->record;
@@ -100,13 +83,13 @@ void Skiplist::Seek(const StringView &key, StringView value,
     }
 
     if (next_record == nullptr) {
-      return Seek(key, value, result_splice);
+      return Seek(key, value, result_splice, seek_mask_type);
     }
     int cmp = compare(key, UserKey(next_record), value, next_record->Value());
     // pmem record maybe updated before comparing string, then the comparing
     // result will be invalid, so we need to do double check
     if (!ValidateDLRecord(next_record)) {
-      return Seek(key, value, result_splice);
+      return Seek(key, value, result_splice, seek_mask_type);
     }
 
     if (cmp > 0) {
@@ -225,7 +208,7 @@ bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
                              const SpinMutex *inserting_key_lock,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
-    Seek(insert_key, insert_value, splice);
+    Seek(insert_key, insert_value, splice, SeekMaskType::MASK_NULL);
     DLRecord *prev = splice->prev_pmem_record;
 
     assert(prev != nullptr);
@@ -342,6 +325,15 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
                       const SpinMutex *updating_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
+  // bool find_success =
+  //     cmp_ctx.priority_key
+  //         ? FindUpdatePos(&splice, key, value, updating_key_lock,
+  //                         updated_record, &prev_record_lock)
+  //         : FindInsertPos(&splice, key, value, updating_key_lock,
+  //                         &prev_record_lock);
+  // if (!find_success) {
+  //   return false;
+  // }
   if (!FindUpdatePos(&splice, key, value, updating_key_lock, updated_record,
                      &prev_record_lock)) {
     return false;
@@ -360,6 +352,11 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
   if (dram_node != nullptr) {
     dram_node->record = new_record;
   }
+  // // if sorting by value, we need to update dram_node's next and prev
+  // if (!cmp_ctx.priority_key) {
+  //   for (int i = 1; i <= dram_node->height; i++) {
+  //   }
+  // }
   return true;
 }
 
@@ -396,7 +393,7 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
 void Skiplist::SeekNode(const pmem::obj::string_view &key,
                         const StringView &value, SkiplistNode *start_node,
                         uint8_t start_height, uint8_t end_height,
-                        Splice *result_splice) {
+                        Splice *result_splice, SeekMaskType seek_mask_type) {
   std::vector<SkiplistNode *> to_delete;
   assert(start_node->height >= start_height && end_height >= 1);
   SkiplistNode *prev = start_node;
@@ -419,7 +416,8 @@ void Skiplist::SeekNode(const pmem::obj::string_view &key,
           kvdk_assert(result_splice->seeking_list != nullptr,
                       "skiplist must be set for seek operation!");
           return SeekNode(key, value, result_splice->seeking_list->header(),
-                          kMaxHeight, end_height, result_splice);
+                          kMaxHeight, end_height, result_splice,
+                          seek_mask_type);
         }
         continue;
       }
@@ -468,12 +466,20 @@ void Skiplist::SeekNode(const pmem::obj::string_view &key,
 void SortedIterator::Seek(const std::string &str, bool is_key /*=true*/) {
   assert(skiplist_);
   if (skiplist_->cmp_ctx.priority_key != is_key) {
-    GlobalLogger.Info("The sorting way and the seek way must be consistent");
+    skiplist_->cmp_ctx.priority_key
+        ? GlobalLogger.Info("The sorting way and the seek way must be "
+                            "consistent: please seek by key\n")
+        : GlobalLogger.Info("The sorting way and the seek way must be "
+                            "consistent: please seek by value\n");
+    current = nullptr;
     return;
   }
   Splice splice(skiplist_);
-  skiplist_->cmp_ctx.priority_key ? skiplist_->Seek(str, "", &splice)
-                                  : skiplist_->Seek("", str, &splice);
+  if (skiplist_->cmp_ctx.priority_key) {
+    skiplist_->Seek(str, "", &splice, SeekMaskType::MASK_VALUE);
+  } else {
+    skiplist_->Seek("", str, &splice, SeekMaskType::MASK_KEY);
+  }
   current = splice.next_pmem_record;
 }
 

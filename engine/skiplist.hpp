@@ -233,10 +233,11 @@ public:
     return SkiplistId(node->record);
   }
 
-  // Start position of "key" or "val" on both dram and PMem node in the
+  // Start position of "key" on both dram and PMem node in the
   // skiplist, and store position in "result_splice". If "key" existing, the
   // next pointers in splice point to node of "key"
-  void Seek(const StringView &key, StringView value, Splice *result_splice);
+  void Seek(const StringView &key, const StringView &value,
+            Splice *result_splice, SeekMaskType seek_mask_type);
 
   Status Rebuild();
 
@@ -308,7 +309,8 @@ public:
   // node of "key"
   void SeekNode(const StringView &key, const StringView &value,
                 SkiplistNode *start_node, uint8_t start_height,
-                uint8_t end_height, Splice *result_splice);
+                uint8_t end_height, Splice *result_splice,
+                SeekMaskType seek_mask_type);
 
 private:
   // Insert DLRecord "inserting" between "prev" and "next"
@@ -345,16 +347,31 @@ private:
                          deleted_record, prev_record_lock);
   }
 
-  // cosidering two situation: (1) insert sorting by value, if value is
-  // same, sorted by key. (2) insert sorting by key. The key is always
-  // unique in this two situation
-  int compare(const StringView &aKey, const StringView &bKey,
-              const StringView &aVal, const StringView &bVal) {
-    return cmp_ctx.priority_key
-               ? (Comparekey(aKey, bKey) != 0 ? Comparekey(aKey, bKey)
-                                              : CompareValue(aVal, bVal))
-               : (CompareValue(aVal, bVal) != 0 ? CompareValue(aVal, bVal)
-                                                : Comparekey(aKey, bKey));
+  // cosidering four situation:
+  // (1) insert sorting by value, if value is same, sorted by key.
+  // (2) insert sorting by key. The key is always unique in this two situation
+  // (3) seek by value, find the first equal pos since the value isn't unique .
+  // (4) seek by key.
+  int compare(const StringView &src_key, const StringView &target_key,
+              const StringView &src_value, const StringView &target_value,
+              SeekMaskType mask_type = SeekMaskType::MASK_NULL) {
+    switch (mask_type) {
+    case SeekMaskType::MASK_NULL:
+      return cmp_ctx.priority_key ? Comparekey(src_key, target_key)
+                                  : (CompareValue(src_value, target_value) != 0
+                                         ? CompareValue(src_value, target_value)
+                                         : Comparekey(src_key, target_key));
+    case SeekMaskType::MASK_KEY:
+      return CompareValue(src_value, target_value);
+      break;
+    case SeekMaskType::MASK_VALUE:
+      Comparekey(src_key, target_key);
+      break;
+    default:
+      GlobalLogger.Error("Seek Skiplist node by key(MASK_VALUE) or "
+                         "value(MASK_KEY), or key+value(MASK_NULL)");
+      break;
+    }
   }
 
   bool ValidateDLRecord(const DLRecord *record) {
@@ -439,7 +456,8 @@ struct Splice {
       } else {
         start_node = prevs[start_height];
       }
-      seeking_list->SeekNode(key, value, start_node, start_height, l, this);
+      seeking_list->SeekNode(key, value, start_node, start_height, l, this,
+                             SeekMaskType::MASK_NULL);
       return;
     }
   }
