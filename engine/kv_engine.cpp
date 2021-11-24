@@ -1892,13 +1892,13 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     return Status::Ok;
   }
   case RecordType::QueueHeadRecord: {
-    kvdk_assert(pmp_record->prev == kNullPmemOffset &&
+    kvdk_assert(pmp_record->prev == kPmemNullOffset &&
                     checkDLRecordLinkageRight(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken head.");
     return Status::Ok;
   }
   case RecordType::QueueTailRecord: {
-    kvdk_assert(pmp_record->next == kNullPmemOffset &&
+    kvdk_assert(pmp_record->next == kPmemNullOffset &&
                     checkDLRecordLinkageLeft(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken tail.");
     return Status::Ok;
