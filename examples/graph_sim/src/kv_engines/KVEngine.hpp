@@ -6,10 +6,12 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <kvdk/engine.hpp>
+
 #include <map>
 #include <string>
 #include <vector>
+
+#include <kvdk/engine.hpp>
 
 #if defined(BUILD_ROCKSDB)
 #include <rocksdb/db.h>
@@ -143,7 +145,7 @@ class MemoryEngine : public KVEngine {
 
  private:
   std::string path_;
-  std::map<std::string, std::string, std::less<>> memory_db_;
+  std::map<std::string, std::string> memory_db_;
 };
 
 // Construct the engine's map with their engine name.

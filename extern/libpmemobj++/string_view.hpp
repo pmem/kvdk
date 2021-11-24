@@ -15,7 +15,10 @@
 #include <string>
 #include <utility>
 
-#if __cpp_lib_string_view
+#define USE_STL_STRING_VIEW_IF_POSSIBLE false
+#define USE_STL_STRING_VIEW (__cpp_lib_string_view && USE_STL_STRING_VIEW_IF_POSSIBLE)
+
+#if USE_STL_STRING_VIEW
 #include <string_view>
 #endif
 
@@ -25,7 +28,7 @@ namespace pmem
 namespace obj
 {
 
-#if __cpp_lib_string_view
+#if USE_STL_STRING_VIEW
 
 template <typename CharT, typename Traits = std::char_traits<CharT>>
 using basic_string_view = std::basic_string_view<CharT, Traits>;
@@ -67,6 +70,8 @@ public:
 	constexpr basic_string_view(const CharT *data, size_type size);
 	constexpr basic_string_view(const std::basic_string<CharT, Traits> &s);
 	constexpr basic_string_view(const CharT *data);
+	
+	explicit operator std::basic_string<CharT, Traits>() const;
 
 	/** Constructor initialized with the basic_string_view *rhs*.
 	 *
@@ -213,6 +218,12 @@ constexpr inline basic_string_view<CharT, Traits>::basic_string_view(
 	const CharT *data)
     : data_(data), size_(Traits::length(data))
 {
+}
+
+template <class CharT, class Traits>
+inline basic_string_view<CharT, Traits>::operator std::basic_string<CharT, Traits>() const
+{
+	return std::basic_string<CharT, Traits>{data_, size_};
 }
 
 /**
@@ -1388,9 +1399,27 @@ operator>=(
 {
 	return lhs.compare(rhs) >= 0;
 }
+
+template <class CharT, class Traits>
+std::ostream& operator<<(std::ostream& out, basic_string_view<CharT, Traits> const& sv)
+{
+	out << std::basic_string<CharT, Traits>{sv};
+	return out;
+}
+
 #endif
 
 } /* namespace obj */
 } /* namespace pmem */
+
+#if !USE_STL_STRING_VIEW
+#include<bits/functional_hash.h>
+template<>
+struct std::hash<pmem::obj::string_view>
+{
+	size_t operator()(pmem::obj::string_view const& sv) const noexcept
+	{ return std::_Hash_impl::hash(sv.data(), sv.size()); }
+};
+#endif /* !USE_STL_STRING_VIEW */
 
 #endif /* LIBPMEMOBJ_CPP_STRING_VIEW */

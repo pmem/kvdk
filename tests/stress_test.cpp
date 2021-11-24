@@ -77,7 +77,8 @@ static void HashesIterateThrough(
       std::cout << "[Testing] Iterating backward through Hashes." << std::endl;
     }
 
-    ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs};
+    ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs,
+                                   report_progress};
     while (u_iter->Valid()) {
       std::string value_got;
       auto key = u_iter->Key();
@@ -100,9 +101,12 @@ static void HashesIterateThrough(
       }
 
       if (i == 0) // i == 0 for forward
+      {
         u_iter->Next();
-      else // i == 1 for backward
+      } else // i == 1 for backward
+      {
         u_iter->Prev();
+      }
     }
     // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
     // Here we use a dirty trick to check for their deletion.
@@ -219,10 +223,10 @@ static void SortedSetsIterateThrough(
 namespace kvdk_testing {
 namespace // nested anonymous namespace to hide implementation
 {
-static void
-allXSet(std::function<kvdk::Status(StringView, StringView, StringView)> setter,
-        std::string collection_name, std::vector<StringView> const &keys,
-        std::vector<StringView> const &values, bool report_progress) {
+void allXSet(
+    std::function<kvdk::Status(StringView, StringView, StringView)> setter,
+    std::string collection_name, std::vector<StringView> const &keys,
+    std::vector<StringView> const &values, bool report_progress) {
   ASSERT_EQ(keys.size(), values.size())
       << "Must have same amount of keys and values to form kv-pairs!";
   kvdk::Status status;
@@ -235,13 +239,14 @@ allXSet(std::function<kvdk::Status(StringView, StringView, StringView)> setter,
           << "Fail to Set a key " << keys[j] << " in collection "
           << collection_name;
 
-      if ((j + 1) % 100 == 0 || j + 1 == keys.size())
+      if ((j + 1) % 100 == 0 || j + 1 == keys.size()) {
         progress_xsetting.Update(j + 1);
+      }
     }
   }
 }
 
-static void evenXSetOddXDelete(
+void evenXSetOddXDelete(
     std::function<kvdk::Status(StringView, StringView, StringView)> setter,
     std::function<kvdk::Status(StringView, StringView)> getter,
     std::string collection_name, std::vector<StringView> const &keys,
@@ -267,8 +272,9 @@ static void evenXSetOddXDelete(
             << collection_name;
       }
 
-      if ((j + 1) % 100 == 0 || j + 1 == keys.size())
+      if ((j + 1) % 100 == 0 || j + 1 == keys.size()) {
         progress_xupdating.Update(j + 1);
+      }
     }
   }
 }
@@ -398,7 +404,7 @@ protected:
 
     prepareKVPairs();
 
-    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+    status = kvdk::Engine::Open(path_db, &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
@@ -410,7 +416,7 @@ protected:
   void RebootDB() {
     delete engine;
 
-    status = kvdk::Engine::Open(path_db.data(), &engine, configs, stderr);
+    status = kvdk::Engine::Open(path_db, &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
@@ -425,12 +431,14 @@ protected:
     updateHashesPossibleKVPairs(collection_name, false);
 
     auto ModifyEngine = [&](int tid) {
-      if (tid == 0)
+      if (tid == 0) {
         kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
                               grouped_values[tid], true);
-      else
+
+      } else {
         kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
                               grouped_values[tid], false);
+      }
     };
 
     std::cout << "[Testing] Execute HSet in " << collection_name << "."
@@ -442,14 +450,15 @@ protected:
     updateHashesPossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid) {
-      if (tid == 0)
+      if (tid == 0) {
         kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
                                          grouped_keys[tid], grouped_values[tid],
                                          true);
-      else
+      } else {
         kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
                                          grouped_keys[tid], grouped_values[tid],
                                          false);
+      }
     };
     std::cout << "[Testing] Execute HSet and HDelete in " << collection_name
               << "." << std::endl;
@@ -460,12 +469,13 @@ protected:
     updateSortedSetsPossibleKVPairs(collection_name, false);
 
     auto ModifyEngine = [&](int tid) {
-      if (tid == 0)
+      if (tid == 0) {
         kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
                                   grouped_values[tid], true);
-      else
+      } else {
         kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
                                   grouped_values[tid], false);
+      }
     };
     std::cout << "[Testing] Execute SSet in " << collection_name << "."
               << std::endl;
@@ -476,14 +486,15 @@ protected:
     updateSortedSetsPossibleKVPairs(collection_name, true);
 
     auto ModifyEngine = [&](int tid) {
-      if (tid == 0)
+      if (tid == 0) {
         kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
                                          grouped_keys[tid], grouped_values[tid],
                                          true);
-      else
+      } else {
         kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
                                          grouped_keys[tid], grouped_values[tid],
                                          false);
+      }
     };
     std::cout << "[Testing] Execute SSet and SDelete in " << collection_name
               << "." << std::endl;
@@ -505,7 +516,7 @@ protected:
 private:
   void purgeDB() {
     std::string cmd = "rm -rf " + path_db + "\n";
-    int _sink = system(cmd.data());
+    [[gnu::unused]] int _sink = system(cmd.data());
   }
 
   void shuffleKeys(size_t tid) {
@@ -518,11 +529,12 @@ private:
 
   void hashesIterateThrough(uint32_t tid, std::string collection_name,
                             bool report_progress) {
-    if (report_progress)
+    if (report_progress) {
       std::cout << "[Testing] HashesIterateThrough " << collection_name
                 << " with thread " << tid << ". "
                 << "It may take a few seconds to copy possible_kv_pairs."
                 << std::endl;
+    }
 
     // possible_kv_pairs is copied here
     kvdk_testing::HashesIterateThrough(
@@ -532,11 +544,12 @@ private:
 
   void sortedSetsIterateThrough(uint32_t tid, std::string collection_name,
                                 bool report_progress) {
-    if (report_progress)
+    if (report_progress) {
       std::cout << "[Testing] SortedSetsIterateThrough " << collection_name
                 << " with thread " << tid << ". "
                 << "It may take a few seconds to copy possible_kv_pairs."
                 << std::endl;
+    }
 
     // possible_kv_pairs is copied here
     kvdk_testing::SortedSetsIterateThrough(
@@ -568,8 +581,9 @@ private:
       // Erase keys that will be overwritten
       ProgressBar progress_erasing{std::cout, "", grouped_keys.size(), true};
       for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++)
+        for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
           possible_kvs.erase(grouped_keys[tid][i]);
+        }
         progress_erasing.Update(tid + 1);
       }
     }
@@ -587,14 +601,16 @@ private:
         // We use kvs to track that and then put those into possible_kvs
         std::unordered_map<StringView, StringView> kvs;
         for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
-          if ((i % 2 == 0) || !odd_indexed_is_deleted)
+          if ((i % 2 == 0) || !odd_indexed_is_deleted) {
             kvs[grouped_keys[tid][i]] = grouped_values[tid][i];
-          else
+          } else {
             kvs.erase(grouped_keys[tid][i]);
+          }
         }
 
-        for (auto iter = kvs.begin(); iter != kvs.end(); ++iter)
+        for (auto iter = kvs.begin(); iter != kvs.end(); ++iter) {
           possible_kvs.emplace(iter->first, iter->second);
+        }
 
         progress_updating.Update(tid + 1);
       }
@@ -619,11 +635,13 @@ private:
       ProgressBar progress_gen_kv{std::cout, "", n_kv_per_thread, true};
       for (size_t i = 0; i < n_kv_per_thread; i++) {
         value_pool.push_back(GetRandomString(sz_value_min, sz_value_max));
-        for (size_t tid = 0; tid < n_thread; tid++)
+        for (size_t tid = 0; tid < n_thread; tid++) {
           key_pool.push_back(GetRandomString(sz_key_min, sz_key_max));
+        }
 
-        if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread)
+        if ((i + 1) % 1000 == 0 || (i + 1) == n_kv_per_thread) {
           progress_gen_kv.Update(i + 1);
+        }
       }
     }
     std::cout << "[Testing] Generating string_view for keys and values"

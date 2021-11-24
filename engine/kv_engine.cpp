@@ -254,7 +254,6 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     // or the space is padding, empty or with corrupted record
     // Free the space and fetch another
     if (data_entry_cached.meta.type == RecordType::Padding) {
-      RecordType type_padding = RecordType::Padding;
       // TODO: there is a redundant persist for a padding record
       // no need to manually persist here
       static_cast<DataEntry *>(recovering_pmem_record)->Destroy();
@@ -1591,12 +1590,8 @@ Status KVEngine::HDelete(StringView const collection_name,
 
         erase_result = p_collection->Erase(pmp_old_record, lock_record);
         if (erase_result.success) {
-          DLRecord *pmp_old_record2 =
-              pmem_allocator_->offset2addr_checked<DLRecord>(
-                  erase_result.offset_old);
           p_hash_entry->Clear();
           purgeAndFree(pmp_old_record);
-
           return Status::Ok;
         } else {
           // !erase_result.success
@@ -1649,6 +1644,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
                         RecordType::DlistRecord,
                         reinterpret_cast<uint64_t>(p_collection),
                         HashOffsetType::UnorderedCollection);
+    kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
     return Status::Ok;
   }
   case RecordType::DlistHeadRecord: {
@@ -1742,7 +1738,7 @@ std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
-  return std::make_unique<Queue>(pmem_allocator_.get(), name, id, ts);
+  return std::unique_ptr<Queue>(new Queue{pmem_allocator_.get(), name, id, ts});
 }
 
 Queue *KVEngine::findQueue(StringView const collection_name) {
@@ -1871,7 +1867,7 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     std::lock_guard<std::mutex> lg{list_mu_};
     {
       queue_uptr_vec_.emplace_back(
-          std::make_unique<Queue>(pmem_allocator_.get(), pmp_record));
+          new Queue{pmem_allocator_.get(), pmp_record});
       queue_ptr = queue_uptr_vec_.back().get();
     }
 
@@ -1886,19 +1882,20 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
         hint_collection, collection_name, RecordType::QueueRecord,
         &p_hash_entry_collection, &hash_entry_collection, nullptr,
         true /* in recovery */);
+    kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
     hash_table_->Insert(
         hint_collection, p_hash_entry_collection, RecordType::QueueRecord,
         reinterpret_cast<uint64_t>(queue_ptr), HashOffsetType::Queue);
     return Status::Ok;
   }
   case RecordType::QueueHeadRecord: {
-    kvdk_assert(pmp_record->prev == kNullPmemOffset &&
+    kvdk_assert(pmp_record->prev == kPmemNullOffset &&
                     checkDLRecordLinkageRight(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken head.");
     return Status::Ok;
   }
   case RecordType::QueueTailRecord: {
-    kvdk_assert(pmp_record->next == kNullPmemOffset &&
+    kvdk_assert(pmp_record->next == kPmemNullOffset &&
                     checkDLRecordLinkageLeft(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken tail.");
     return Status::Ok;

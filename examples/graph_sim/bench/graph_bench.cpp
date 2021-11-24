@@ -5,13 +5,15 @@
 #include <gflags/gflags.h>
 #include <sys/time.h>
 
-#include <atomic>
 #include <cstdint>
+#include <cinttypes>
+
+#include <atomic>
 #include <random>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
-#include <cinttypes>
 
 #include "graph_impl.hpp"
 #include "options.hpp"

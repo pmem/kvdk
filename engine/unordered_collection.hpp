@@ -9,6 +9,8 @@
 
 #include <algorithm>
 
+#include "../extern/libpmemobj++/string_view.hpp"
+
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
 
@@ -124,7 +126,6 @@ public:
   friend std::ostream &operator<<(std::ostream &out,
                                   UnorderedCollection const &col) {
     auto iter = col.collection_record_ptr_;
-    auto internal_key = iter->Key();
     out << "Name: " << col.Name() << "\t"
         << "ID: " << to_hex(col.ID()) << "\n";
     out << "Type: " << to_hex(iter->entry.meta.type) << "\t"
@@ -193,7 +194,7 @@ private:
   inline static std::string makeInternalKey(CollectionIDType id,
                                             StringView key) {
     std::string internal_key{id2View(id)};
-    internal_key += key;
+    internal_key += std::string{key};
     return internal_key;
   }
 
@@ -267,7 +268,8 @@ public:
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
   /// UnorderedIterator currently does not support Seek to a key
-  virtual void Seek(std::string const &key) final override {
+  [[gnu::deprecated]] virtual void Seek([
+      [gnu::unused]] std::string const &key) final override {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 

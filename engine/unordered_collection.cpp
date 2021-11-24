@@ -1,12 +1,12 @@
 #include "unordered_collection.hpp"
 
 namespace KVDK_NAMESPACE {
-UnorderedCollection::UnorderedCollection(HashTable *hash_table_p,
+UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
                                          PMEMAllocator *pmem_allocator_p,
                                          std::string const name,
                                          CollectionIDType id,
                                          TimeStampType timestamp)
-    : hash_table_ptr_{hash_table_p}, collection_record_ptr_{nullptr},
+    : hash_table_ptr_{hash_table_ptr}, collection_record_ptr_{nullptr},
       dlinked_list_{pmem_allocator_p, timestamp, id2View(id), StringView{""}},
       collection_name_{name}, collection_id_{id}, timestamp_{timestamp} {
   {
@@ -30,10 +30,10 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_p,
   }
 }
 
-UnorderedCollection::UnorderedCollection(HashTable *hash_table_p,
+UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
                                          PMEMAllocator *pmem_allocator_p,
                                          DLRecord *pmp_dlist_record)
-    : hash_table_ptr_{hash_table_p}, collection_record_ptr_{pmp_dlist_record},
+    : hash_table_ptr_{hash_table_ptr}, collection_record_ptr_{pmp_dlist_record},
       dlinked_list_{
           pmem_allocator_p,
           pmem_allocator_p->offset2addr_checked<DLRecord>(
@@ -118,8 +118,9 @@ ModifyReturn UnorderedCollection::Replace(DLRecord *pos,
   ++next;
 
   LockPair lock_prev_and_next;
-  if (!lockPositions(prev, next, lock, lock_prev_and_next))
+  if (!lockPositions(prev, next, lock, lock_prev_and_next)) {
     return ModifyReturn{};
+  }
 
   iterator curr =
       dlinked_list_.Replace(old, timestamp, makeInternalKey(key), value);
@@ -138,8 +139,9 @@ ModifyReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
   ++next;
 
   LockPair lock_prev_and_next;
-  if (!lockPositions(prev, next, lock, lock_prev_and_next))
+  if (!lockPositions(prev, next, lock, lock_prev_and_next)) {
     return ModifyReturn{};
+  }
 
   dlinked_list_.Erase(old);
 

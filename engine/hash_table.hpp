@@ -178,8 +178,7 @@ private:
             uint32_t write_threads)
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
-        hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(ChunkBasedAllocator(write_threads)),
+        hash_bucket_size_(hash_bucket_size), dram_allocator_(write_threads),
         pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)),

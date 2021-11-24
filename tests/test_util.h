@@ -54,7 +54,7 @@ inline std::string GetRandomString(size_t min_len, size_t max_len) {
 }
 
 inline void LaunchNThreads(int n_thread, std::function<void(int tid)> func,
-                           uint32_t id_start = 0) {
+                           int id_start = 0) {
   std::vector<std::thread> ts;
   for (int i = id_start; i < id_start + n_thread; i++) {
     ts.emplace_back(std::thread(func, i));
@@ -122,7 +122,7 @@ private:
     if (!enabled_)
       return;
 
-    assert(0 <= current_progress_ && current_progress_ <= current_progress_);
+    assert(current_progress_ <= current_progress_);
 
     out_stream_ << "\r" << tag_ << std::setw(10) << std::right
                 << current_progress_ << "/" << std::setw(10) << std::left

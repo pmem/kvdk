@@ -8,7 +8,7 @@ set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
 include(GNUInstallDirs)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 11)
 option(DEBUG_CHECK "check connection" OFF)
 if(DEBUG_CHECK)
     add_compile_definitions(DEBUG_CHECK)
@@ -109,7 +109,7 @@ option(BUILD_TUTORIAL "Build the tutorial" ON)
 add_subdirectory(examples/tutorial)
 
 option(BUILD_GRAPH_SIMULATOR "Build the graph simulator" ON)
-# add_subdirectory(examples/graph_sim)
+add_subdirectory(examples/graph_sim)
 
 add_custom_target(checkers ALL)
 add_custom_target(cppstyle)
