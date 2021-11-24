@@ -108,7 +108,7 @@ endif ()
 option(BUILD_TUTORIAL "Build the tutorial" ON)
 add_subdirectory(examples/tutorial)
 
-option(BUILD_GRAPH_SIMULATOR "Build the graph simulator" OFF)
+option(BUILD_GRAPH_SIMULATOR "Build the graph simulator" ON)
 add_subdirectory(examples/graph_sim)
 
 add_custom_target(checkers ALL)
