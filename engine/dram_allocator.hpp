@@ -27,6 +27,8 @@ public:
   }
   inline uint64_t addr2offset(void *addr) { return (uint64_t)addr; }
   ChunkBasedAllocator(uint32_t write_threads) : thread_cache_(write_threads) {}
+  ChunkBasedAllocator(ChunkBasedAllocator const &) = delete;
+  ChunkBasedAllocator(ChunkBasedAllocator &&) = delete;
   ~ChunkBasedAllocator() {
     for (uint64_t i = 0; i < thread_cache_.size(); i++) {
       auto &tc = thread_cache_[i];

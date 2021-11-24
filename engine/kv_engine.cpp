@@ -1742,7 +1742,7 @@ std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
   std::uint64_t ts = get_timestamp();
   uint64_t id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
-  return std::make_unique<Queue>(pmem_allocator_.get(), name, id, ts);
+  return std::unique_ptr<Queue>(new Queue{pmem_allocator_.get(), name, id, ts});
 }
 
 Queue *KVEngine::findQueue(StringView const collection_name) {
@@ -1871,7 +1871,7 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     std::lock_guard<std::mutex> lg{list_mu_};
     {
       queue_uptr_vec_.emplace_back(
-          std::make_unique<Queue>(pmem_allocator_.get(), pmp_record));
+          new Queue{pmem_allocator_.get(), pmp_record});
       queue_ptr = queue_uptr_vec_.back().get();
     }
 
