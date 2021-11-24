@@ -268,8 +268,8 @@ public:
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
   /// UnorderedIterator currently does not support Seek to a key
-  [[gnu::deprecated]]
-  virtual void Seek([[gnu::unused]] std::string const &key) final override {
+  [[gnu::deprecated]] virtual void Seek([
+      [gnu::unused]] std::string const &key) final override {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 

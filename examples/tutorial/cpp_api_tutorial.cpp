@@ -243,7 +243,8 @@ int main() {
   std::string engine_path{pmem_path};
 
   // Purge old KVDK instance
-  [[gnu::unused]] int sink = system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
+  [[gnu::unused]] int sink =
+      system(std::string{"rm -rf " + engine_path + "\n"}.c_str());
 
   status = kvdk::Engine::Open(engine_path, &engine, engine_configs, stdout);
   assert(status == kvdk::Status::Ok);

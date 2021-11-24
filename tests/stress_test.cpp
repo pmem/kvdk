@@ -77,7 +77,8 @@ static void HashesIterateThrough(
       std::cout << "[Testing] Iterating backward through Hashes." << std::endl;
     }
 
-    ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs, report_progress};
+    ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs,
+                                   report_progress};
     while (u_iter->Valid()) {
       std::string value_got;
       auto key = u_iter->Key();
