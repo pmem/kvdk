@@ -106,7 +106,7 @@ private:
                 uint32_t block_size, uint32_t num_write_threads);
   // Write threads cache a dedicated PMem segment and a free space to
   // avoid contention
-  struct alignas(64) ThreadCache {
+  struct ThreadCache {
     // Space got from free list, the size is aligned to block_size_
     SizedSpaceEntry free_entry;
     // Space fetched from head of PMem segments, the size is aligned to
