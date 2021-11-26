@@ -112,9 +112,7 @@ private:
     // Space fetched from head of PMem segments, the size is aligned to
     // block_size_
     SizedSpaceEntry segment_entry;
-    char padding[64 - sizeof(SizedSpaceEntry) * 2];
   };
-  static_assert(sizeof(ThreadCache) == 64);
 
   bool AllocateSegmentSpace(SizedSpaceEntry *segment_entry);
 
