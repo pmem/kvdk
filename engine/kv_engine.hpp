@@ -107,7 +107,7 @@ private:
   struct ThreadLocalRes {
     ThreadLocalRes() = default;
 
-    alignas(64) uint64_t newest_restored_ts = 0;
+    uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
     std::unordered_map<uint64_t, int> visited_skiplist_ids;
   };

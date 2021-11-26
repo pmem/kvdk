@@ -182,7 +182,7 @@ private:
   // avoid contention. To balance free space entries among threads, if too many
   // entries cached by a thread, newly freed entries will be stored to
   // backup_entries and move to entry pool which shared by all threads.
-  struct alignas(64) ThreadCache {
+  struct ThreadCache {
     ThreadCache(uint32_t max_classified_b_size)
         : active_entries(max_classified_b_size),
           spins(max_classified_b_size +
@@ -202,10 +202,7 @@ private:
     Array<SpinMutex> spins;
     // timestamp of entry that recently fetched from active_entries
     uint64_t last_used_entry_ts;
-    char padding[64 - sizeof(active_entries) - sizeof(delay_freed_entries) -
-                 sizeof(spins) - sizeof(last_used_entry_ts)];
   };
-  static_assert(sizeof(ThreadCache) == 64);
 
   class SpaceCmp {
   public:
