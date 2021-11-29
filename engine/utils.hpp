@@ -6,9 +6,12 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 
 #include <atomic>
 #include <exception>
+#include <memory>
+#include <mutex>
 #include <random>
 #include <string>
 #include <vector>
@@ -117,17 +120,106 @@ static inline bool equal_string_view(const StringView &src,
   return false;
 }
 
-template <typename T> class Array {
+class SpinMutex {
+private:
+  std::atomic_flag locked = ATOMIC_FLAG_INIT;
+
 public:
-  template <typename... A>
-  explicit Array(uint64_t size, A &&... args) : size_(size) {
-    data_ = (T *)malloc(sizeof(T) * size);
-    for (uint64_t i = 0; i < size; i++) {
-      new (data_ + i) T(std::forward<A>(args)...);
+  SpinMutex() = default;
+
+  void lock() {
+    while (locked.test_and_set(std::memory_order_acquire)) {
+      asm volatile("pause");
     }
   }
 
-  Array(const Array<T> &v) = delete;
+  void unlock() {
+    locked.clear(std::memory_order_release);
+  }
+
+  bool try_lock() {
+    if (locked.test_and_set(std::memory_order_acquire)) {
+      return false;
+    }
+    return true;
+  }
+
+  SpinMutex(const SpinMutex &s) = delete;
+  SpinMutex(SpinMutex &&s) = delete;
+  SpinMutex &operator=(const SpinMutex &s) = delete;
+};
+
+template <typename T> class AlignedAllocator {
+  static_assert(alignof(T) <= 1024,
+                "Alignment greater than 1024B not supported");
+
+private:
+  static constexpr size_t pool_size = 64;
+
+  std::vector<T *> pools_;
+  size_t pos_;
+  SpinMutex spin_;
+
+public:
+  using value_type = T;
+
+  explicit inline AlignedAllocator() : pos_{0} {
+    std::lock_guard<SpinMutex> guard{spin_};
+    pools_.reserve(64);
+    allocate_trunk();
+  }
+
+  inline AlignedAllocator(AlignedAllocator const &) : AlignedAllocator{} {}
+  AlignedAllocator(AlignedAllocator &&) = delete;
+  ~AlignedAllocator() {
+    for (auto p : pools_) {
+      free(p);
+    }
+  }
+
+  inline T *allocate(size_t n) {
+    std::lock_guard<SpinMutex> guard{spin_};
+
+    if (pos_ + n <= pool_size) {
+      size_t old_pos = pos_;
+      pos_ += n;
+      return &pools_.back()[old_pos];
+    } else if (n <= pool_size) {
+      allocate_trunk();
+      pos_ = n;
+      return &pools_.back()[0];
+    } else {
+      allocate_trunk(n);
+      pos_ = pool_size;
+      return &pools_.back()[0];
+    }
+  }
+
+  inline void deallocate(T *, size_t) noexcept { return; }
+
+private:
+  inline void allocate_trunk(size_t sz = pool_size) {
+    pools_.emplace_back(
+        static_cast<T *>(aligned_alloc(alignof(T), sizeof(T) * sz)));
+    kvdk_assert(pools_.back() != nullptr, "aligned_alloc failed!");
+    kvdk_assert(alignof(pools_.back()[0]) == alignof(T), "Align failed!");
+    if (pools_.back() == nullptr) {
+      throw std::bad_alloc{};
+    }
+  }
+};
+
+template <typename T, typename Alloc = AlignedAllocator<T>> class Array {
+public:
+  template <typename... Args>
+  explicit Array(uint64_t size, Args &&... args) : size_(size) {
+    data_ = alloc_.allocate(size_);
+    for (uint64_t i = 0; i < size; i++) {
+      new (data_ + i) T{std::forward<Args>(args)...};
+    }
+  }
+
+  Array(const Array &) = delete;
   Array &operator=(const Array &) = delete;
   Array(Array &&) = delete;
 
@@ -138,7 +230,7 @@ public:
       for (uint64_t i = 0; i < size_; i++) {
         data_[i].~T();
       }
-      free(data_);
+      alloc_.deallocate(data_, size_);
     }
   }
 
@@ -162,8 +254,9 @@ public:
   uint64_t size() { return size_; }
 
 private:
-  T *data_;
-  uint64_t size_;
+  uint64_t const size_;
+  T *data_{nullptr};
+  Alloc alloc_{};
 };
 
 class Slice {
@@ -221,41 +314,6 @@ void compare_excange_if_larger(std::atomic<T> &num, T target) {
     break;
   }
 }
-
-class SpinMutex {
-private:
-  std::atomic_flag locked = ATOMIC_FLAG_INIT;
-  //  int owner = -1;
-
-public:
-  SpinMutex() = default;
-
-  void lock() {
-    while (locked.test_and_set(std::memory_order_acquire)) {
-      asm volatile("pause");
-    }
-    //    owner = write_thread.id;
-  }
-
-  void unlock() {
-    //    owner = -1;
-    locked.clear(std::memory_order_release);
-  }
-
-  bool try_lock() {
-    if (locked.test_and_set(std::memory_order_acquire)) {
-      return false;
-    }
-    //    owner = write_thread.id;
-    return true;
-  }
-
-  //  bool hold() { return owner == write_thread.id; }
-
-  SpinMutex(const SpinMutex &s) = delete;
-  SpinMutex(SpinMutex &&s) = delete;
-  SpinMutex &operator=(const SpinMutex &s) = delete;
-};
 
 // Return the number of process unit (PU) that are bound to the kvdk instance
 int get_usable_pu(void);
