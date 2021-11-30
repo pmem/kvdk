@@ -126,7 +126,7 @@ private:
   inline Status MaybeInitWriteThread();
 
   Status SearchOrInitCollection(const StringView &collection, Collection **list,
-                                bool init, uint16_t header_type);
+                                bool init, uint16_t collection_type);
 
   Status SearchOrInitSkiplist(const StringView &collection, Skiplist **skiplist,
                               bool init) {
