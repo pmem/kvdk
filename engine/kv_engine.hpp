@@ -273,7 +273,7 @@ private:
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};
-  std::atomic<uint64_t> list_id_{0};
+  std::atomic<CollectionIDType> list_id_{0};
 
   uint64_t ts_on_startup_ = 0;
   uint64_t newest_version_on_startup_ = 0;

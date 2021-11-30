@@ -98,7 +98,7 @@ private:
                       sizeof(CollectionIDType)};
   }
 
-  inline static CollectionIDType view2ID(StringView view) {
+  inline static CollectionIDType String2ID(StringView view) {
     CollectionIDType id;
     assert(sizeof(CollectionIDType) == view.size() &&
            "id_view does not match the size of an id!");

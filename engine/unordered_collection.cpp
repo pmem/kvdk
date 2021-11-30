@@ -8,7 +8,7 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
                                          TimeStampType timestamp)
     : Collection(name, id), hash_table_ptr_{hash_table_ptr},
       collection_record_ptr_{nullptr}, dlinked_list_{pmem_allocator_p,
-                                                     timestamp, id2View(id),
+                                                     timestamp, ID2String(id),
                                                      StringView{""}},
       timestamp_{timestamp} {
   {
@@ -27,7 +27,7 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
             offset_list_record),
         list_record_space.size, timestamp, RecordType::DlistRecord,
         dlinked_list_.Head().GetCurrentOffset(),
-        dlinked_list_.Tail().GetCurrentOffset(), Name(), id2View(ID()));
+        dlinked_list_.Tail().GetCurrentOffset(), Name(), ID2String(ID()));
   }
 }
 
@@ -35,7 +35,7 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
                                          PMEMAllocator *pmem_allocator_p,
                                          DLRecord *pmp_dlist_record)
     : Collection{string_view_2_string(pmp_dlist_record->Key()),
-                 view2ID(pmp_dlist_record->Value())},
+                 string2ID(pmp_dlist_record->Value())},
       hash_table_ptr_{hash_table_ptr}, collection_record_ptr_{pmp_dlist_record},
       dlinked_list_{
           pmem_allocator_p,

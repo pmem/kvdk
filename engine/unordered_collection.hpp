@@ -182,22 +182,6 @@ private:
            isLinked(record_pmmptr);
   }
 
-  inline static StringView id2View(CollectionIDType id) {
-    // Thread local copy to prevent variable destruction
-    thread_local CollectionIDType id_copy;
-    id_copy = id;
-    return StringView{reinterpret_cast<char *>(&id_copy),
-                      sizeof(CollectionIDType)};
-  }
-
-  inline static CollectionIDType view2ID(StringView view) {
-    CollectionIDType id;
-    assert(sizeof(CollectionIDType) == view.size() &&
-           "id_view does not match the size of an id!");
-    memcpy(&id, view.data(), sizeof(CollectionIDType));
-    return id;
-  }
-
   inline SpinMutex *getMutex(StringView internal_key) {
     return hash_table_ptr_->GetHint(internal_key).spin;
   }

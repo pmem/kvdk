@@ -395,8 +395,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
 
-  uint64_t id;
-  memcpy_8(&id, pmem_record->Value().data());
+  CollectionIDType id = Skiplist::SkiplistID(pmem_record);
   Skiplist *skiplist;
   {
     std::lock_guard<std::mutex> lg(list_mu_);
@@ -597,8 +596,9 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
       std::lock_guard<SpinMutex> lg(*hint.spin);
       // Since we do the first search without lock, we need to check again
       entry_ptr = nullptr;
-      s = hash_table_->SearchForWrite(hint, collection, collection_type, &entry_ptr,
-                                      &hash_entry, &existing_data_entry);
+      s = hash_table_->SearchForWrite(hint, collection, collection_type,
+                                      &entry_ptr, &hash_entry,
+                                      &existing_data_entry);
       if (s == Status::MemoryOverflow) {
         return s;
       }
@@ -610,13 +610,13 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
         if (sized_space_entry.size == 0) {
           return Status::PmemOverflow;
         }
-        uint64_t id = list_id_.fetch_add(1);
+        CollectionIDType id = list_id_.fetch_add(1);
         // PMem level of skiplist is circular, so the next and prev pointers of
         // header point to itself
         DLRecord *pmem_record = DLRecord::PersistDLRecord(
             pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
-            sized_space_entry.size, get_timestamp(), (RecordType)collection_type,
-            sized_space_entry.space_entry.offset,
+            sized_space_entry.size, get_timestamp(),
+            (RecordType)collection_type, sized_space_entry.space_entry.offset,
             sized_space_entry.space_entry.offset, collection,
             StringView((char *)&id, 8));
 
@@ -1397,7 +1397,7 @@ namespace KVDK_NAMESPACE {
 std::shared_ptr<UnorderedCollection>
 KVEngine::createUnorderedCollection(StringView const collection_name) {
   TimeStampType ts = get_timestamp();
-  uint64_t id = list_id_.fetch_add(1);
+  CollectionIDType id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
       std::make_shared<UnorderedCollection>(
@@ -1736,7 +1736,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
 namespace KVDK_NAMESPACE {
 std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
   std::uint64_t ts = get_timestamp();
-  uint64_t id = list_id_.fetch_add(1);
+  CollectionIDType id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   return std::unique_ptr<Queue>(new Queue{pmem_allocator_.get(), name, id, ts});
 }

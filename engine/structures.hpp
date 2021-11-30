@@ -84,7 +84,7 @@ struct PendingBatch {
 // A collection of key-value pairs
 class Collection {
 public:
-  Collection(const std::string &name, uint64_t id)
+  Collection(const std::string &name, CollectionIDType id)
       : collection_name_(name), collection_id_(id) {}
   // Return unique ID of the collection
   virtual uint64_t ID() const { return collection_id_; }
@@ -95,13 +95,7 @@ public:
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id
   virtual std::string InternalKey(const StringView &key) {
-    return MakeInternalKey(key, ID());
-  }
-
-  inline static std::string MakeInternalKey(const StringView &user_key,
-                                            uint64_t list_id) {
-    return std::string((char *)&list_id, 8)
-        .append(user_key.data(), user_key.size());
+    return makeInternalKey(key, ID());
   }
 
   inline static StringView ExtractUserKey(const StringView &internal_key) {
@@ -117,8 +111,26 @@ public:
     return id;
   }
 
-private:
+protected:
+  inline static std::string makeInternalKey(const StringView &user_key,
+                                            uint64_t list_id) {
+    return std::string((char *)&list_id, 8)
+        .append(user_key.data(), user_key.size());
+  }
+
+  inline static std::string ID2String(CollectionIDType id) {
+    return std::string(reinterpret_cast<char *>(&id), 8);
+  }
+
+  inline static CollectionIDType string2ID(const StringView &string_id) {
+    CollectionIDType id;
+    kvdk_assert(sizeof(CollectionIDType) == string_id.size(),
+                "size of string id does not match CollectionIDType size!");
+    memcpy(&id, string_id.data(), sizeof(CollectionIDType));
+    return id;
+  }
+
   std::string collection_name_;
-  uint64_t collection_id_;
+  CollectionIDType collection_id_;
 };
 } // namespace KVDK_NAMESPACE

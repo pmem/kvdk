@@ -81,7 +81,7 @@ public:
 
   StringView UserKey();
 
-  uint64_t SkiplistID();
+  CollectionIDType SkiplistID();
 
   PointerWithTag<SkiplistNode> Next(int l) {
     assert(l > 0 && l <= height && "should be less than node's height");
@@ -141,14 +141,24 @@ private:
   void *heap_space_start() { return (char *)this - height * 8; }
 };
 
+// A persistent sorted collection implemented as skiplist struct, data organized
+// sorted by key
+//
+// The lowest level of the skiplist are persisted on PMem along with key and
+// values, while higher level nodes are stored in DRAM, and re-construct at
+// recovery.
+// The insert and seek operations are indexed by the multi-level links and
+// implemented in O(logn) time. Meanwhile, the skiplist nodes is also indexed by
+// the global hash table, so the updates/delete and point read operations can be
+// indexed by hash table and implemented in ~O(1) time
 class Skiplist : public Collection {
 public:
-  Skiplist(DLRecord *h, const std::string &n, uint64_t i,
+  Skiplist(DLRecord *h, const std::string &name, CollectionIDType id,
            const std::shared_ptr<PMEMAllocator> &pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
-      : Collection(n, i), pmem_allocator_(pmem_allocator),
+      : Collection(name, id), pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
-    header_ = SkiplistNode::NewNode(n, h, kMaxHeight);
+    header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
     for (uint8_t i = 1; i <= kMaxHeight; i++) {
       header_->RelaxedSetNext(i, nullptr);
     }
@@ -199,26 +209,24 @@ public:
     return ExtractUserKey(record->Key());
   }
 
-  inline static uint64_t SkiplistID(const SkiplistNode *node) {
+  inline static CollectionIDType SkiplistID(const SkiplistNode *node) {
     assert(node != nullptr);
     return SkiplistID(node->record);
   }
 
-  inline static uint64_t SkiplistID(const DLRecord *record) {
+  inline static CollectionIDType SkiplistID(const DLRecord *record) {
     assert(record != nullptr);
-    uint64_t id = 0;
     switch (record->entry.meta.type) {
     case RecordType::SortedDataRecord:
-      id = ExtractID(record->Key());
+      return ExtractID(record->Key());
       break;
     case RecordType::SortedHeaderRecord:
-      memcpy_8(&id, record->Value().data());
-      break;
+      return string2ID(record->Value());
     default:
       kvdk_assert(false, "Wrong type in SkiplistID");
-      break;
+      GlobalLogger.Error("Wrong type in SkiplistID");
     }
-    return id;
+    return 0;
   }
 
   // Start position of "key" on both dram and PMem node in the skiplist, and

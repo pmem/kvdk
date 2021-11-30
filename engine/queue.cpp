@@ -4,7 +4,8 @@ namespace KVDK_NAMESPACE {
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
              CollectionIDType id, TimeStampType timestamp)
     : Collection{name, id}, collection_record_ptr_{nullptr},
-      dlinked_list_{pmem_allocator_ptr, timestamp, id2View(id), StringView{""}},
+      dlinked_list_{pmem_allocator_ptr, timestamp, ID2String(id),
+                    StringView{""}},
       timestamp_{timestamp} {
   {
     auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
@@ -22,13 +23,13 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
             offset_list_record),
         list_record_space.size, timestamp, RecordType::QueueRecord,
         dlinked_list_.Head().GetCurrentOffset(),
-        dlinked_list_.Tail().GetCurrentOffset(), Name(), id2View(ID()));
+        dlinked_list_.Tail().GetCurrentOffset(), Name(), ID2String(ID()));
   }
 }
 
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
     : Collection{string_view_2_string(collection_record->Key()),
-                 view2ID(collection_record->Value())},
+                 String2ID(collection_record->Value())},
       collection_record_ptr_{collection_record},
       dlinked_list_{
           pmem_allocator_ptr,
