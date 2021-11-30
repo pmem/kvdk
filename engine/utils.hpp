@@ -149,25 +149,21 @@ public:
   SpinMutex &operator=(const SpinMutex &s) = delete;
 };
 
+/// Caution: AlignedAllocator is not thread-safe
 template <typename T> class AlignedAllocator {
   static_assert(alignof(T) <= 1024,
                 "Alignment greater than 1024B not supported");
 
 private:
-  static constexpr size_t pool_size = 64;
+  static constexpr size_t TrunkSize = 1024;
 
   std::vector<T *> pools_;
   size_t pos_;
-  SpinMutex spin_;
 
 public:
   using value_type = T;
 
-  explicit inline AlignedAllocator() : pos_{0} {
-    std::lock_guard<SpinMutex> guard{spin_};
-    pools_.reserve(64);
-    allocate_trunk();
-  }
+  explicit inline AlignedAllocator() : pools_{}, pos_{TrunkSize} {}
 
   inline AlignedAllocator(AlignedAllocator const &) : AlignedAllocator{} {}
   AlignedAllocator(AlignedAllocator &&) = delete;
@@ -178,19 +174,21 @@ public:
   }
 
   inline T *allocate(size_t n) {
-    std::lock_guard<SpinMutex> guard{spin_};
-
-    if (pos_ + n <= pool_size) {
+    if (pools_.capacity() < 64) {
+      pools_.reserve(64);
+    }
+    
+    if (pos_ + n <= TrunkSize) {
       size_t old_pos = pos_;
       pos_ += n;
       return &pools_.back()[old_pos];
-    } else if (n <= pool_size) {
+    } else if (n <= TrunkSize) {
       allocate_trunk();
       pos_ = n;
       return &pools_.back()[0];
     } else {
       allocate_trunk(n);
-      pos_ = pool_size;
+      pos_ = TrunkSize;
       return &pools_.back()[0];
     }
   }
@@ -198,12 +196,10 @@ public:
   inline void deallocate(T *, size_t) noexcept { return; }
 
 private:
-  inline void allocate_trunk(size_t sz = pool_size) {
+  inline void allocate_trunk(size_t sz = TrunkSize) {
     pools_.emplace_back(
         static_cast<T *>(aligned_alloc(alignof(T), sizeof(T) * sz)));
-    kvdk_assert(pools_.back() != nullptr, "aligned_alloc failed!");
-    kvdk_assert(alignof(pools_.back()[0]) == alignof(T), "Align failed!");
-    if (pools_.back() == nullptr) {
+    if (pools_.back() == nullptr || alignof(pools_.back()[0]) != alignof(T)) {
       throw std::bad_alloc{};
     }
   }
