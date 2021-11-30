@@ -14,6 +14,7 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
 
+#include "collection.hpp"
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
 #include "macros.hpp"

@@ -14,6 +14,7 @@
 
 #include "kvdk/engine.hpp"
 
+#include "collection.hpp"
 #include "hash_table.hpp"
 #include "structures.hpp"
 #include "utils.hpp"

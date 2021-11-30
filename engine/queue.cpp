@@ -29,7 +29,7 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
 
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
     : Collection{string_view_2_string(collection_record->Key()),
-                 String2ID(collection_record->Value())},
+                 string2ID(collection_record->Value())},
       collection_record_ptr_{collection_record},
       dlinked_list_{
           pmem_allocator_ptr,

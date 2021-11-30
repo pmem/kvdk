@@ -12,6 +12,7 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
 
+#include "collection.hpp"
 #include "dlinked_list.hpp"
 #include "macros.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
@@ -88,22 +89,6 @@ private:
            (static_cast<RecordType>(record_pmmptr->entry.meta.type) ==
             RecordType::DlistDataRecord) &&
            isLinked(record_pmmptr);
-  }
-
-  inline static StringView id2View(CollectionIDType id) {
-    // Thread local copy to prevent variable destruction
-    thread_local CollectionIDType id_copy;
-    id_copy = id;
-    return StringView{reinterpret_cast<char *>(&id_copy),
-                      sizeof(CollectionIDType)};
-  }
-
-  inline static CollectionIDType String2ID(StringView view) {
-    CollectionIDType id;
-    assert(sizeof(CollectionIDType) == view.size() &&
-           "id_view does not match the size of an id!");
-    memcpy(&id, view.data(), sizeof(CollectionIDType));
-    return id;
   }
 
   inline iterator makeInternalIterator(DLRecord *pos) {
