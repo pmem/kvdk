@@ -374,13 +374,6 @@ private:
       return StringView(internal_key.data() + sizeof(CollectionIDType),
                         internal_key.size() - sizeof(CollectionIDType));
     };
-    auto extractID = [](StringView internal_key) {
-      CollectionIDType id;
-      assert(sizeof(CollectionIDType) <= internal_key.size() &&
-             "internal_key is smaller than the size of an id!");
-      memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
-      return id;
-    };
 
     auto printRecord = [&](DLRecord *record) {
       auto internal_key = record->Key();
@@ -390,8 +383,8 @@ private:
           << "\t"
           << "Prev:\t" << to_hex(record->prev) << "\t"
           << "Next:\t" << to_hex(record->next) << "\t"
-          << "Key: " << to_hex(extractID(internal_key))
-          << extractKey(internal_key) << "\t"
+          << "Key: " << to_hex(Collection::ExtractID(internal_key))
+          << Collection::ExtractUserKey(internal_key) << "\t"
           << "Value: " << record->Value() << "\n";
     };
 

@@ -60,7 +60,8 @@ class UnorderedIterator;
 /// the DlistRecord and then stored in HashTable.
 /// The DlistRecord is for recovery only and never visited again
 class UnorderedCollection final
-    : public std::enable_shared_from_this<UnorderedCollection> {
+    : public std::enable_shared_from_this<UnorderedCollection>,
+      public Collection {
 private:
   using LockType = std::unique_lock<SpinMutex>;
   using LockPair = std::pair<LockType, LockType>;
@@ -78,8 +79,6 @@ private:
   using iterator = DLinkedListType::iterator;
   DLinkedListType dlinked_list_;
 
-  std::string collection_name_;
-  CollectionIDType collection_id_;
   TimeStampType timestamp_;
 
   friend class UnorderedIterator;
@@ -113,15 +112,7 @@ public:
   /// old_offset as erased record
   ModifyReturn Erase(DLRecord *pos, LockType const &lock);
 
-  inline CollectionIDType ID() const { return collection_id_; }
-
-  inline std::string const &Name() const { return collection_name_; }
-
   inline TimeStampType Timestamp() const { return timestamp_; };
-
-  inline std::string GetInternalKey(StringView key) {
-    return makeInternalKey(collection_id_, key);
-  }
 
   friend std::ostream &operator<<(std::ostream &out,
                                   UnorderedCollection const &col) {
@@ -178,7 +169,7 @@ private:
   }
 
   inline bool checkID(DLRecord *record_pmmptr) {
-    if (!record_pmmptr || extractID(record_pmmptr->Key()) != ID())
+    if (!record_pmmptr || ExtractID(record_pmmptr->Key()) != ID())
       return false;
     return true;
   }
@@ -189,33 +180,6 @@ private:
            (static_cast<RecordType>(record_pmmptr->entry.meta.type) ==
             RecordType::DlistDataRecord) &&
            isLinked(record_pmmptr);
-  }
-
-  inline static std::string makeInternalKey(CollectionIDType id,
-                                            StringView key) {
-    std::string internal_key{id2View(id)};
-    internal_key += std::string{key};
-    return internal_key;
-  }
-
-  inline std::string makeInternalKey(StringView key) {
-    return makeInternalKey(collection_id_, key);
-  }
-
-  inline static StringView extractKey(StringView internal_key) {
-    constexpr size_t sz_id = sizeof(CollectionIDType);
-    // Allow empty string as key
-    assert(sz_id <= internal_key.size() &&
-           "internal_key does not has space for key");
-    return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
-  }
-
-  inline static CollectionIDType extractID(StringView internal_key) {
-    CollectionIDType id;
-    assert(sizeof(CollectionIDType) <= internal_key.size() &&
-           "internal_key is smaller than the size of an id!");
-    memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
-    return id;
   }
 
   inline static StringView id2View(CollectionIDType id) {
@@ -268,8 +232,8 @@ public:
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
   /// UnorderedIterator currently does not support Seek to a key
-  [[gnu::deprecated]] virtual void Seek([
-      [gnu::unused]] std::string const &key) final override {
+  [[gnu::deprecated]] virtual void
+  Seek([[gnu::unused]] std::string const &key) final override {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 
@@ -318,7 +282,8 @@ public:
   /// return key in DlistDataRecord
   inline virtual std::string Key() override {
     kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
-    auto view_key = UnorderedCollection::extractKey(internal_iterator->Key());
+    auto view_key =
+        UnorderedCollection::ExtractUserKey(internal_iterator->Key());
     return std::string(view_key.data(), view_key.size());
   }
 

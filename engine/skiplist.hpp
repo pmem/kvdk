@@ -81,7 +81,7 @@ public:
 
   StringView UserKey();
 
-  uint64_t SkiplistId();
+  uint64_t SkiplistID();
 
   PointerWithTag<SkiplistNode> Next(int l) {
     assert(l > 0 && l <= height && "should be less than node's height");
@@ -141,12 +141,12 @@ private:
   void *heap_space_start() { return (char *)this - height * 8; }
 };
 
-class Skiplist : public PersistentList {
+class Skiplist : public Collection {
 public:
   Skiplist(DLRecord *h, const std::string &n, uint64_t i,
            const std::shared_ptr<PMEMAllocator> &pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
-      : name_(n), id_(i), pmem_allocator_(pmem_allocator),
+      : Collection(n, i), pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
     header_ = SkiplistNode::NewNode(n, h, kMaxHeight);
     for (uint8_t i = 1; i <= kMaxHeight; i++) {
@@ -184,59 +184,41 @@ public:
     return height;
   }
 
-  uint64_t id() override { return id_; }
-
-  const std::string &name() { return name_; }
-
   SkiplistNode *header() { return header_; }
-
-  std::string InternalKey(const StringView &key) {
-    return PersistentList::ListKey(key, id_);
-  }
-
-  inline static StringView UserKey(const StringView &skiplist_key) {
-    return StringView(skiplist_key.data() + 8, skiplist_key.size() - 8);
-  }
 
   inline static StringView UserKey(const SkiplistNode *node) {
     assert(node != nullptr);
     if (node->cached_key_size > 0) {
       return StringView(node->cached_key, node->cached_key_size);
     }
-    return UserKey(node->record->Key());
+    return ExtractUserKey(node->record->Key());
   }
 
   inline static StringView UserKey(const DLRecord *record) {
     assert(record != nullptr);
-    return UserKey(record->Key());
+    return ExtractUserKey(record->Key());
   }
 
-  inline static uint64_t SkiplistId(const StringView &skiplist_key) {
-    uint64_t id;
-    memcpy_8(&id, skiplist_key.data());
-    return id;
+  inline static uint64_t SkiplistID(const SkiplistNode *node) {
+    assert(node != nullptr);
+    return SkiplistID(node->record);
   }
 
-  inline static uint64_t SkiplistId(const DLRecord *record) {
+  inline static uint64_t SkiplistID(const DLRecord *record) {
     assert(record != nullptr);
     uint64_t id = 0;
     switch (record->entry.meta.type) {
     case RecordType::SortedDataRecord:
-      id = SkiplistId(record->Key());
+      id = ExtractID(record->Key());
       break;
     case RecordType::SortedHeaderRecord:
       memcpy_8(&id, record->Value().data());
       break;
     default:
-      kvdk_assert(false, "Wrong type in SkiplistId");
+      kvdk_assert(false, "Wrong type in SkiplistID");
       break;
     }
     return id;
-  }
-
-  inline static uint64_t SkiplistId(const SkiplistNode *node) {
-    assert(node != nullptr);
-    return SkiplistId(node->record);
   }
 
   // Start position of "key" on both dram and PMem node in the skiplist, and
@@ -345,12 +327,10 @@ private:
     DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
     return prev != nullptr &&
            prev->next == pmem_allocator_->addr2offset(record) &&
-           SkiplistId(record) == id_;
+           SkiplistID(record) == ID();
   }
 
   SkiplistNode *header_;
-  std::string name_;
-  uint64_t id_;
   std::shared_ptr<HashTable> hash_table_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   // nodes that unlinked on every height

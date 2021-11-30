@@ -531,8 +531,8 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   if (!found) {
     auto height = Skiplist::RandomHeight();
     if (height > 0) {
-      dram_node =
-          SkiplistNode::NewNode(Skiplist::UserKey(key), pmem_record, height);
+      dram_node = SkiplistNode::NewNode(Skiplist::ExtractUserKey(key),
+                                        pmem_record, height);
       if (dram_node == nullptr) {
         GlobalLogger.Error("Memory overflow in recovery\n");
         return Status::MemoryOverflow;
@@ -540,7 +540,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
       new_hash_offset = (uint64_t)dram_node;
       if (configs_.opt_large_sorted_collection_restore &&
           thread_res_[write_thread.id]
-                      .visited_skiplist_ids[dram_node->SkiplistId()]++ %
+                      .visited_skiplist_ids[dram_node->SkiplistID()]++ %
                   kRestoreSkiplistStride ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);
@@ -583,9 +583,9 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   return Status::Ok;
 }
 
-Status KVEngine::SearchOrInitPersistentList(const StringView &collection,
-                                            PersistentList **list, bool init,
-                                            uint16_t header_type) {
+Status KVEngine::SearchOrInitCollection(const StringView &collection,
+                                        Collection **list, bool init,
+                                        uint16_t header_type) {
   auto hint = hash_table_->GetHint(collection);
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -603,8 +603,8 @@ Status KVEngine::SearchOrInitPersistentList(const StringView &collection,
         return s;
       }
       if (s == Status::NotFound) {
-        uint32_t request_size =
-            sizeof(DLRecord) + collection.size() + 8 /* id */;
+        uint32_t request_size = sizeof(DLRecord) + collection.size() +
+                                sizeof(CollectionIDType) /* id */;
         SizedSpaceEntry sized_space_entry =
             pmem_allocator_->Allocate(request_size);
         if (sized_space_entry.size == 0) {
@@ -651,7 +651,7 @@ Status KVEngine::SearchOrInitPersistentList(const StringView &collection,
   }
 
   if (s == Status::Ok) {
-    *list = (PersistentList *)hash_entry.offset;
+    *list = (Collection *)hash_entry.offset;
   }
 
   return s;
@@ -1434,7 +1434,7 @@ Status KVEngine::HGet(StringView const collection_name, StringView const key,
     return Status::NotFound;
   }
 
-  std::string internal_key = p_uncoll->GetInternalKey(key);
+  std::string internal_key = p_uncoll->InternalKey(key);
   return HashGetImpl(internal_key, value, RecordType::DlistDataRecord);
 }
 
@@ -1487,7 +1487,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
 
   // Emplace the new DlistDataRecord
   {
-    auto internal_key = p_collection->GetInternalKey(key);
+    auto internal_key = p_collection->InternalKey(key);
     HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
 
     int n_try = 0;
@@ -1565,7 +1565,7 @@ Status KVEngine::HDelete(StringView const collection_name,
 
   // Erase DlistDataRecord if found one.
   {
-    auto internal_key = p_collection->GetInternalKey(key);
+    auto internal_key = p_collection->InternalKey(key);
     HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
 
     int n_try = 0;

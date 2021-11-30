@@ -47,7 +47,6 @@ private:
     ThreadCache() = default;
     ThreadCache(const ThreadCache &) = delete;
     ThreadCache(ThreadCache &&) = delete;
-
   };
 
   const uint32_t chunk_size_ = (1 << 20);

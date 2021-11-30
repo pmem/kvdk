@@ -81,14 +81,44 @@ struct PendingBatch {
   TimeStampType timestamp;
 };
 
-class PersistentList {
+// A collection of key-value pairs
+class Collection {
 public:
-  virtual uint64_t id() = 0;
+  Collection(const std::string &name, uint64_t id)
+      : collection_name_(name), collection_id_(id) {}
+  // Return unique ID of the collection
+  virtual uint64_t ID() const { return collection_id_; }
 
-  inline static std::string ListKey(const StringView &user_key,
-                                    uint64_t list_id) {
+  // Return name of the collection
+  virtual const std::string &Name() const { return collection_name_; }
+
+  // Return internal representation of "key" in the collection
+  // By default, we concat key with the collection id
+  virtual std::string InternalKey(const StringView &key) {
+    return MakeInternalKey(key, ID());
+  }
+
+  inline static std::string MakeInternalKey(const StringView &user_key,
+                                            uint64_t list_id) {
     return std::string((char *)&list_id, 8)
         .append(user_key.data(), user_key.size());
   }
+
+  inline static StringView ExtractUserKey(const StringView &internal_key) {
+    constexpr size_t sz_id = sizeof(CollectionIDType);
+    kvdk_assert(sz_id <= internal_key.size(),
+                "internal_key does not has space for key");
+    return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
+  }
+
+  inline static uint64_t ExtractID(const StringView &internal_key) {
+    CollectionIDType id;
+    memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
+    return id;
+  }
+
+private:
+  std::string collection_name_;
+  uint64_t collection_id_;
 };
 } // namespace KVDK_NAMESPACE

@@ -125,17 +125,16 @@ private:
 
   inline Status MaybeInitWriteThread();
 
-  Status SearchOrInitPersistentList(const StringView &collection,
-                                    PersistentList **list, bool init,
-                                    uint16_t header_type);
+  Status SearchOrInitCollection(const StringView &collection, Collection **list,
+                                bool init, uint16_t header_type);
 
   Status SearchOrInitSkiplist(const StringView &collection, Skiplist **skiplist,
                               bool init) {
     if (!CheckKeySize(collection)) {
       return Status::InvalidDataSize;
     }
-    return SearchOrInitPersistentList(collection, (PersistentList **)skiplist,
-                                      init, SortedHeaderRecord);
+    return SearchOrInitCollection(collection, (Collection **)skiplist, init,
+                                  SortedHeaderRecord);
   }
 
 private:

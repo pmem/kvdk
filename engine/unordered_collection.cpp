@@ -6,12 +6,14 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
                                          std::string const name,
                                          CollectionIDType id,
                                          TimeStampType timestamp)
-    : hash_table_ptr_{hash_table_ptr}, collection_record_ptr_{nullptr},
-      dlinked_list_{pmem_allocator_p, timestamp, id2View(id), StringView{""}},
-      collection_name_{name}, collection_id_{id}, timestamp_{timestamp} {
+    : Collection(name, id), hash_table_ptr_{hash_table_ptr},
+      collection_record_ptr_{nullptr}, dlinked_list_{pmem_allocator_p,
+                                                     timestamp, id2View(id),
+                                                     StringView{""}},
+      timestamp_{timestamp} {
   {
     auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
-        sizeof(DLRecord) + collection_name_.size() + sizeof(CollectionIDType));
+        sizeof(DLRecord) + Name().size() + sizeof(CollectionIDType));
     if (list_record_space.size == 0) {
       dlinked_list_.purgeAndFree(dlinked_list_.Head().GetCurrentAddress());
       dlinked_list_.purgeAndFree(dlinked_list_.Tail().GetCurrentAddress());
@@ -25,15 +27,16 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
             offset_list_record),
         list_record_space.size, timestamp, RecordType::DlistRecord,
         dlinked_list_.Head().GetCurrentOffset(),
-        dlinked_list_.Tail().GetCurrentOffset(), collection_name_,
-        id2View(collection_id_));
+        dlinked_list_.Tail().GetCurrentOffset(), Name(), id2View(ID()));
   }
 }
 
 UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
                                          PMEMAllocator *pmem_allocator_p,
                                          DLRecord *pmp_dlist_record)
-    : hash_table_ptr_{hash_table_ptr}, collection_record_ptr_{pmp_dlist_record},
+    : Collection{string_view_2_string(pmp_dlist_record->Key()),
+                 view2ID(pmp_dlist_record->Value())},
+      hash_table_ptr_{hash_table_ptr}, collection_record_ptr_{pmp_dlist_record},
       dlinked_list_{
           pmem_allocator_p,
           pmem_allocator_p->offset2addr_checked<DLRecord>(
@@ -41,8 +44,6 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
           pmem_allocator_p->offset2addr_checked<DLRecord>(
               pmp_dlist_record->next),
       },
-      collection_name_{string_view_2_string(pmp_dlist_record->Key())},
-      collection_id_{view2ID(pmp_dlist_record->Value())},
       timestamp_{pmp_dlist_record->entry.meta.timestamp} {}
 
 ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
@@ -54,7 +55,7 @@ ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
   iterator new_record = makeInternalIterator(nullptr);
   LockPair lock_prev_and_next;
 
-  auto internal_key = makeInternalKey(key);
+  auto internal_key = InternalKey(key);
 
   if (isValidRecord(last_emplacement_pos)) {
     iterator prev = makeInternalIterator(last_emplacement_pos);
@@ -123,7 +124,7 @@ ModifyReturn UnorderedCollection::Replace(DLRecord *pos,
   }
 
   iterator curr =
-      dlinked_list_.Replace(old, timestamp, makeInternalKey(key), value);
+      dlinked_list_.Replace(old, timestamp, InternalKey(key), value);
 
   return ModifyReturn{curr.GetCurrentOffset(), old.GetCurrentOffset(), true};
 }
