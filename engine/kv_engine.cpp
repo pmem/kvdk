@@ -390,8 +390,7 @@ bool KVEngine::ValidateRecord(void *data_record) {
 
 Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
   assert(pmem_record->entry.meta.type == SortedHeaderRecord);
-  StringView pmem_key = pmem_record->Key();
-  std::string key(string_view_2_string(pmem_key));
+  std::string name = string_view_2_string(pmem_record->Key());
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
 
@@ -400,7 +399,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
   {
     std::lock_guard<std::mutex> lg(list_mu_);
     skiplists_.push_back(std::make_shared<Skiplist>(
-        pmem_record, key, id, pmem_allocator_, hash_table_));
+        pmem_record, name, id, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
     if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_.SetEntriesOffsets(
@@ -410,10 +409,10 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
   compare_excange_if_larger(list_id_, id + 1);
 
   // Here key is the collection name
-  auto hint = hash_table_->GetHint(key);
+  auto hint = hash_table_->GetHint(name);
   std::lock_guard<SpinMutex> lg(*hint.spin);
   Status s =
-      hash_table_->SearchForWrite(hint, key, SortedHeaderRecord, &entry_ptr,
+      hash_table_->SearchForWrite(hint, name, SortedHeaderRecord, &entry_ptr,
                                   &hash_entry, nullptr, true /* in recovery */);
   if (s == Status::MemoryOverflow) {
     return s;
@@ -427,8 +426,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
-  StringView pmem_key = pmem_record->Key();
-  std::string key(string_view_2_string(pmem_key));
+  std::string key(string_view_2_string(pmem_record->Key()));
   DataEntry existing_data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -498,16 +496,16 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   }
 
   assert(pmem_record->entry.meta.type & SortedDataRecord);
-  StringView pmem_key = pmem_record->Key();
-  std::string key(string_view_2_string(pmem_key));
+  std::string internal_key = string_view_2_string(pmem_record->Key());
+  StringView user_key = Skiplist::ExtractUserKey(internal_key);
   DataEntry existing_data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
 
-  auto hint = hash_table_->GetHint(key);
+  auto hint = hash_table_->GetHint(internal_key);
   std::lock_guard<SpinMutex> lg(*hint.spin);
   Status s = hash_table_->SearchForWrite(
-      hint, key, SortedDataRecord, &entry_ptr, &hash_entry,
+      hint, internal_key, SortedDataRecord, &entry_ptr, &hash_entry,
       &existing_data_entry, true /* in recovery */);
 
   if (s == Status::MemoryOverflow) {
@@ -530,8 +528,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   if (!found) {
     auto height = Skiplist::RandomHeight();
     if (height > 0) {
-      dram_node = SkiplistNode::NewNode(Skiplist::ExtractUserKey(key),
-                                        pmem_record, height);
+      dram_node = SkiplistNode::NewNode(user_key, pmem_record, height);
       if (dram_node == nullptr) {
         GlobalLogger.Error("Memory overflow in recovery\n");
         return Status::MemoryOverflow;
