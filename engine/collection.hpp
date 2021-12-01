@@ -15,14 +15,14 @@ public:
   Collection(const std::string &name, CollectionIDType id)
       : collection_name_(name), collection_id_(id) {}
   // Return unique ID of the collection
-  virtual uint64_t ID() const { return collection_id_; }
+  uint64_t ID() const { return collection_id_; }
 
   // Return name of the collection
-  virtual const std::string &Name() const { return collection_name_; }
+  const std::string &Name() const { return collection_name_; }
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id
-  virtual std::string InternalKey(const StringView &key) {
+  std::string InternalKey(const StringView &key) {
     return makeInternalKey(key, ID());
   }
 

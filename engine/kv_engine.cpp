@@ -426,7 +426,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
-  std::string key(string_view_2_string(pmem_record->Key()));
+  std::string key(pmem_record->Key());
   DataEntry existing_data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -496,7 +496,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   }
 
   assert(pmem_record->entry.meta.type & SortedDataRecord);
-  std::string internal_key = string_view_2_string(pmem_record->Key());
+  std::string internal_key(pmem_record->Key());
   StringView user_key = Skiplist::ExtractUserKey(internal_key);
   DataEntry existing_data_entry;
   HashEntry hash_entry;
