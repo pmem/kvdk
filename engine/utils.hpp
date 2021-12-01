@@ -133,9 +133,7 @@ public:
     }
   }
 
-  void unlock() {
-    locked.clear(std::memory_order_release);
-  }
+  void unlock() { locked.clear(std::memory_order_release); }
 
   bool try_lock() {
     if (locked.test_and_set(std::memory_order_acquire)) {
@@ -149,8 +147,8 @@ public:
   SpinMutex &operator=(const SpinMutex &s) = delete;
 };
 
-/// Caution: AlignedAllocator is not thread-safe
-template <typename T> class AlignedAllocator {
+/// Caution: AlignedPoolAllocator is not thread-safe
+template <typename T> class AlignedPoolAllocator {
   static_assert(alignof(T) <= 1024,
                 "Alignment greater than 1024B not supported");
 
@@ -163,11 +161,12 @@ private:
 public:
   using value_type = T;
 
-  explicit inline AlignedAllocator() : pools_{}, pos_{TrunkSize} {}
+  explicit inline AlignedPoolAllocator() : pools_{}, pos_{TrunkSize} {}
 
-  inline AlignedAllocator(AlignedAllocator const &) : AlignedAllocator{} {}
-  AlignedAllocator(AlignedAllocator &&) = delete;
-  ~AlignedAllocator() {
+  inline AlignedPoolAllocator(AlignedPoolAllocator const &)
+      : AlignedPoolAllocator{} {}
+  AlignedPoolAllocator(AlignedPoolAllocator &&) = delete;
+  ~AlignedPoolAllocator() {
     for (auto p : pools_) {
       free(p);
     }
@@ -177,7 +176,7 @@ public:
     if (pools_.capacity() < 64) {
       pools_.reserve(64);
     }
-    
+
     if (pos_ + n <= TrunkSize) {
       size_t old_pos = pos_;
       pos_ += n;
@@ -203,6 +202,22 @@ private:
       throw std::bad_alloc{};
     }
   }
+};
+
+// Thread safety guaranteed by aligned_alloc
+template <typename T> class AlignedAllocator {
+public:
+  using value_type = T;
+
+  inline T *allocate(size_t n) {
+    T *p = static_cast<T *>(aligned_alloc(alignof(T), n * sizeof(T)));
+    if (p == nullptr) {
+      throw std::bad_alloc{};
+    }
+    return p;
+  }
+
+  inline void deallocate(T *p, size_t) noexcept { free(p); }
 };
 
 template <typename T, typename Alloc = AlignedAllocator<T>> class Array {
