@@ -3,13 +3,13 @@
 namespace KVDK_NAMESPACE {
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
              CollectionIDType id, TimeStampType timestamp)
-    : collection_record_ptr_{nullptr}, dlinked_list_{pmem_allocator_ptr,
-                                                     timestamp, id2View(id),
-                                                     StringView{""}},
-      collection_name_{name}, collection_id_{id}, timestamp_{timestamp} {
+    : Collection{name, id}, collection_record_ptr_{nullptr},
+      dlinked_list_{pmem_allocator_ptr, timestamp, ID2String(id),
+                    StringView{""}},
+      timestamp_{timestamp} {
   {
     auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
-        sizeof(DLRecord) + collection_name_.size() + sizeof(CollectionIDType));
+        sizeof(DLRecord) + Name().size() + sizeof(CollectionIDType));
     if (list_record_space.size == 0) {
       dlinked_list_.purgeAndFree(dlinked_list_.Head().GetCurrentAddress());
       dlinked_list_.purgeAndFree(dlinked_list_.Tail().GetCurrentAddress());
@@ -23,13 +23,14 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
             offset_list_record),
         list_record_space.size, timestamp, RecordType::QueueRecord,
         dlinked_list_.Head().GetCurrentOffset(),
-        dlinked_list_.Tail().GetCurrentOffset(), collection_name_,
-        id2View(collection_id_));
+        dlinked_list_.Tail().GetCurrentOffset(), Name(), ID2String(ID()));
   }
 }
 
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
-    : collection_record_ptr_{collection_record},
+    : Collection{string_view_2_string(collection_record->Key()),
+                 string2ID(collection_record->Value())},
+      collection_record_ptr_{collection_record},
       dlinked_list_{
           pmem_allocator_ptr,
           pmem_allocator_ptr->offset2addr_checked<DLRecord>(
@@ -37,8 +38,6 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
           pmem_allocator_ptr->offset2addr_checked<DLRecord>(
               collection_record->next),
       },
-      collection_name_{string_view_2_string(collection_record->Key())},
-      collection_id_{view2ID(collection_record->Value())},
       timestamp_{collection_record->entry.meta.timestamp} {
   sz_ = 0;
   for (iterator iter = dlinked_list_.First(); iter != dlinked_list_.Tail();
@@ -48,13 +47,13 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
 
 void Queue::PushFront(TimeStampType timestamp, StringView const value) {
   LockType lock_queue{queue_lock_};
-  dlinked_list_.EmplaceFront(timestamp, makeInternalKey(""), value);
+  dlinked_list_.EmplaceFront(timestamp, InternalKey(""), value);
   ++sz_;
 }
 
 void Queue::PushBack(TimeStampType timestamp, StringView const value) {
   LockType lock_queue{queue_lock_};
-  dlinked_list_.EmplaceBack(timestamp, makeInternalKey(""), value);
+  dlinked_list_.EmplaceBack(timestamp, InternalKey(""), value);
   ++sz_;
 }
 
@@ -64,7 +63,7 @@ bool Queue::PopFront(std::string *value_got) {
     --sz_;
     DLRecord *old_front = dlinked_list_.First().GetCurrentAddress();
     auto val = old_front->Value();
-    kvdk_assert(extractID(old_front->Key()) == ID(), "");
+    kvdk_assert(ExtractID(old_front->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
     dlinked_list_.PopFront();
 
@@ -83,7 +82,7 @@ bool Queue::PopBack(std::string *value_got) {
     --sz_;
     DLRecord *old_back = dlinked_list_.Last().GetCurrentAddress();
     auto val = old_back->Value();
-    kvdk_assert(extractID(old_back->Key()) == ID(), "");
+    kvdk_assert(ExtractID(old_back->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
     dlinked_list_.PopBack();
 

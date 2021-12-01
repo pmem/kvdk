@@ -120,7 +120,7 @@ static inline bool equal_string_view(const StringView &src,
 template <typename T> class Array {
 public:
   template <typename... A>
-  explicit Array(uint64_t size, A &&... args) : size_(size) {
+  explicit Array(uint64_t size, A &&...args) : size_(size) {
     data_ = (T *)malloc(sizeof(T) * size);
     for (uint64_t i = 0; i < size; i++) {
       new (data_ + i) T(std::forward<A>(args)...);

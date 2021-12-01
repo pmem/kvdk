@@ -76,7 +76,7 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
     case HashOffsetType::Skiplist: {
       Skiplist *skiplist = (Skiplist *)hash_entry->offset;
       pmem_record = skiplist->header()->record;
-      data_entry_key = skiplist->name();
+      data_entry_key = skiplist->Name();
       break;
     }
     default: {
