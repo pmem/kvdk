@@ -80,15 +80,4 @@ struct PendingBatch {
   uint32_t num_kv;
   TimeStampType timestamp;
 };
-
-class PersistentList {
-public:
-  virtual uint64_t id() = 0;
-
-  inline static std::string ListKey(const StringView &user_key,
-                                    uint64_t list_id) {
-    return std::string((char *)&list_id, 8)
-        .append(user_key.data(), user_key.size());
-  }
-};
 } // namespace KVDK_NAMESPACE

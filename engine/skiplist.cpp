@@ -15,7 +15,7 @@ namespace KVDK_NAMESPACE {
 
 StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
 
-uint64_t SkiplistNode::SkiplistId() { return Skiplist::SkiplistId(this); }
+uint64_t SkiplistNode::SkiplistID() { return Skiplist::SkiplistID(this); }
 
 void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
                             uint8_t end_height, Splice *result_splice) {
@@ -205,7 +205,7 @@ Status Skiplist::CheckConnection(int height) {
       } else {
         if (dram_node->Height() >= height) {
           if (!(dram_node->Height() == next_node->Height() &&
-                dram_node->SkiplistId() == next_node->SkiplistId() &&
+                dram_node->SkiplistID() == next_node->SkiplistID() &&
                 dram_node->UserKey() == next_node->UserKey())) {
             GlobalLogger.Error("incorret skiplist node info\n");
             return Status::Abort;
@@ -303,7 +303,7 @@ bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
     // In this case, inserting record will be mis-inserted between "new record
     // reuse prev" and "new record reuse next"
     auto check_id = [&]() {
-      return SkiplistId(next) == id_ && SkiplistId(prev) == id_;
+      return SkiplistID(next) == ID() && SkiplistID(prev) == ID();
     };
     auto check_order = [&]() {
       bool res =

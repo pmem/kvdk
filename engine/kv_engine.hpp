@@ -125,17 +125,16 @@ private:
 
   inline Status MaybeInitWriteThread();
 
-  Status SearchOrInitPersistentList(const StringView &collection,
-                                    PersistentList **list, bool init,
-                                    uint16_t header_type);
+  Status SearchOrInitCollection(const StringView &collection, Collection **list,
+                                bool init, uint16_t collection_type);
 
   Status SearchOrInitSkiplist(const StringView &collection, Skiplist **skiplist,
                               bool init) {
     if (!CheckKeySize(collection)) {
       return Status::InvalidDataSize;
     }
-    return SearchOrInitPersistentList(collection, (PersistentList **)skiplist,
-                                      init, SortedHeaderRecord);
+    return SearchOrInitCollection(collection, (Collection **)skiplist, init,
+                                  SortedHeaderRecord);
   }
 
 private:
@@ -274,7 +273,7 @@ private:
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};
-  std::atomic<uint64_t> list_id_{0};
+  std::atomic<CollectionIDType> list_id_{0};
 
   uint64_t ts_on_startup_ = 0;
   uint64_t newest_version_on_startup_ = 0;
