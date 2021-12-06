@@ -103,18 +103,40 @@ extern KVDK_LIBRARY_API KVDKStatus KVDKHashGet(KVDKEngine *engine,
                                                const char *key, size_t key_len,
                                                size_t *val_len, char **val);
 
+// For Queue
+extern KVDK_LIBRARY_API KVDKStatus KVDKLPush(KVDKEngine *engine,
+                                             const char *collection,
+                                             size_t collection_len,
+                                             const char *key, size_t key_len);
+extern KVDK_LIBRARY_API KVDKStatus KVDKLPop(KVDKEngine *engine,
+                                            const char *collection,
+                                            size_t collection_len, char **key,
+                                            size_t *key_len);
+extern KVDK_LIBRARY_API KVDKStatus KVDKRPush(KVDKEngine *engine,
+                                             const char *collection,
+                                             size_t collection_len,
+                                             const char *key, size_t key_len);
+
+extern KVDK_LIBRARY_API KVDKStatus KVDKRPop(KVDKEngine *engine,
+                                            const char *collection,
+                                            size_t collection_len, char **key,
+                                            size_t *key_len);
+
 extern KVDK_LIBRARY_API KVDKIterator *
 KVDKCreateIterator(KVDKEngine *engine, const char *collection,
                    KVDKIterType iter_type);
 extern KVDK_LIBRARY_API void KVDKIterDestory(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToFirst(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToLast(KVDKIterator *iter);
-extern KVDK_LIBRARY_API void KVDKIterSeek(KVDKIterator *iter, const char *key);
+extern KVDK_LIBRARY_API void KVDKIterSeek(KVDKIterator *iter, const char *str,
+                                          size_t str_len);
 extern KVDK_LIBRARY_API void KVDKIterNext(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterPre(KVDKIterator *iter);
 extern KVDK_LIBRARY_API unsigned char KVDKIterValid(KVDKIterator *iter);
-extern KVDK_LIBRARY_API const char *KVDKIterKey(KVDKIterator *iter);
-extern KVDK_LIBRARY_API const char *KVDKIterValue(KVDKIterator *iter);
+extern KVDK_LIBRARY_API const char *KVDKIterKey(KVDKIterator *iter,
+                                                size_t *key_len);
+extern KVDK_LIBRARY_API const char *KVDKIterValue(KVDKIterator *iter,
+                                                  size_t *val_len);
 
 #ifdef __cplusplus
 } /* end extern "C" */
