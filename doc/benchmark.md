@@ -2,7 +2,7 @@
 
 To test performance of KVDK, you can run our benchmark tool "bench", the tool is auto-built along with KVDK library in the build dir. 
 
-You can manually run individual benchmark follow the examples as shown bellow, or simply run our basic benchmark script "scripts/bench_all.py" to test all the basic read/write performance.
+You can manually run individual benchmark follow the examples as shown bellow, or simply run our basic benchmark script "scripts/run_benchmark.py" to test all the basic read/write performance.
 
 ## Fill data to new instance
 
