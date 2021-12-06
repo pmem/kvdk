@@ -244,7 +244,9 @@ KVDKIterator *KVDKCreateIterator(KVDKEngine *engine, const char *collection,
   } else {
     return nullptr;
   }
-  assert(result->rep != nullptr && "Create Iterator Failed!");
+  if (!result->rep) {
+    return nullptr;
+  }
   return result;
 }
 
