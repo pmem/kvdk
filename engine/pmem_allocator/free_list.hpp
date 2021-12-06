@@ -102,11 +102,13 @@ public:
 
   // try to fetch b_size free space entries from a entry list of pool to dst
   bool TryFetchEntryList(std::vector<SpaceEntry> &dst, uint32_t b_size) {
-    std::lock_guard<SpinMutex> lg(spins_[b_size]);
     if (pool_[b_size].size() != 0) {
-      dst.swap(pool_[b_size].back());
-      pool_[b_size].pop_back();
-      return true;
+      std::lock_guard<SpinMutex> lg(spins_[b_size]);
+      if (pool_[b_size].size() != 0) {
+        dst.swap(pool_[b_size].back());
+        pool_[b_size].pop_back();
+        return true;
+      }
     }
     return false;
   }
