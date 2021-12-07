@@ -77,7 +77,7 @@ def range_scan(exec, shared_para, data_type, report_path):
 
 
 def confirm(dir):
-    timeout = 5
+    timeout = 60
     print("Instance path : {}, it will be removed and recreated, confirm? (y/n) (Automatically confirm in {} seconds)".format(dir, timeout))
     rlist, _, _ = select([sys.stdin], [], [], timeout)
     y = 'n'
@@ -90,11 +90,11 @@ def confirm(dir):
         exit(1)
 
 
-def run_bench_mark(
+def run_benchmark(
+    data_type,
     exec,
     pmem_path,
     pmem_size,
-    data_type,
     populate_on_fill,
     sz_fill_data,
     n_thread,
@@ -137,9 +137,6 @@ def run_bench_mark(
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
-        if benchmark == 'fill':
-            print(
-                "warning: fill will always run before run bencharmk, no need to manualy add it to benchmarks")
         benchmark(exec, shared_para, data_type, report_path)
 
     os.system("rm -rf {0}".format(pmem_path))

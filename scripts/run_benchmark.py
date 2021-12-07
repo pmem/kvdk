@@ -24,8 +24,8 @@ def bench_string(benchmarks=[]):
         benchmarks = [benchmark_impl.read_random, benchmark_impl.insert_random,
                       benchmark_impl.batch_insert_random, benchmark_impl.update_random, benchmark_impl.read_write_random]
     for value_dist in value_size_distributions:
-        benchmark_impl.run_bench_mark(exec, pmem_path, pmem_size, data_type, populate_on_fill, fill_data_size,
-                                      num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
+        benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill, fill_data_size,
+                                     num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
 
 
 def bench_sorted(benchmarks=[]):
@@ -34,8 +34,8 @@ def bench_sorted(benchmarks=[]):
         benchmarks = [benchmark_impl.read_random, benchmark_impl.range_scan, benchmark_impl.insert_random,
                       benchmark_impl.update_random, benchmark_impl.read_write_random]
     for value_dist in value_size_distributions:
-        benchmark_impl.run_bench_mark(exec, pmem_path, pmem_size, data_type, populate_on_fill, fill_data_size,
-                                      num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
+        benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill, fill_data_size,
+                                     num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
 
 
 def bench_hash(benchmarks=[]):
@@ -44,8 +44,8 @@ def bench_hash(benchmarks=[]):
         benchmarks = [benchmark_impl.read_random, benchmark_impl.range_scan, benchmark_impl.insert_random,
                       benchmark_impl.update_random, benchmark_impl.read_write_random]
     for value_dist in value_size_distributions:
-        benchmark_impl.run_bench_mark(exec, pmem_path, pmem_size, data_type, populate_on_fill, fill_data_size,
-                                      num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
+        benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill, fill_data_size,
+                                     num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
 
 
 def bench_queue(benchmarks=[]):
@@ -54,8 +54,8 @@ def bench_queue(benchmarks=[]):
         benchmarks = [benchmark_impl.read_random, benchmark_impl.insert_random,
                       benchmark_impl.read_write_random]
     for value_dist in value_size_distributions:
-        benchmark_impl.run_bench_mark(exec, pmem_path, pmem_size, data_type, populate_on_fill, fill_data_size,
-                                      num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
+        benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill, fill_data_size,
+                                     num_thread, num_collection, test_duration, value_size, value_dist, benchmarks)
 
 
 def bench_all():
