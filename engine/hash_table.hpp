@@ -28,7 +28,7 @@ enum class HashEntryStatus : uint8_t {
   // updated by a new key
   Updating = 1 << 2,
   // A empty hash entry that points to nothing
-  Empty = 1 << 5
+  Empty = 1 << 3
 };
 
 enum class HashOffsetType : uint8_t {
