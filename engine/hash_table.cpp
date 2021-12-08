@@ -47,34 +47,35 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
 
     switch (hash_entry->header.offset_type) {
     case HashOffsetType::StringRecord: {
-      pmem_record = pmem_allocator_->offset2addr(hash_entry->offset);
-      data_entry_key = static_cast<StringRecord *>(pmem_record)->Key();
+      pmem_record = hash_entry->index.string_record;
+      data_entry_key = hash_entry->index.string_record->Key();
       break;
     }
     case HashOffsetType::UnorderedCollectionElement:
     case HashOffsetType::DLRecord: {
-      pmem_record = pmem_allocator_->offset2addr(hash_entry->offset);
-      data_entry_key = static_cast<DLRecord *>(pmem_record)->Key();
+      pmem_record = hash_entry->index.dl_record;
+      data_entry_key = hash_entry->index.dl_record->Key();
       break;
     }
     case HashOffsetType::UnorderedCollection: {
-      UnorderedCollection *p_collection = hash_entry->p_unordered_collection;
+      UnorderedCollection *p_collection =
+          hash_entry->index.p_unordered_collection;
       data_entry_key = p_collection->Name();
       break;
     }
     case HashOffsetType::Queue: {
-      Queue *p_collection = hash_entry->queue_ptr;
+      Queue *p_collection = hash_entry->index.queue_ptr;
       data_entry_key = p_collection->Name();
       break;
     }
     case HashOffsetType::SkiplistNode: {
-      SkiplistNode *dram_node = (SkiplistNode *)hash_entry->offset;
+      SkiplistNode *dram_node = hash_entry->index.skiplist_node;
       pmem_record = dram_node->record;
-      data_entry_key = static_cast<DLRecord *>(pmem_record)->Key();
+      data_entry_key = dram_node->record->Key();
       break;
     }
     case HashOffsetType::Skiplist: {
-      Skiplist *skiplist = (Skiplist *)hash_entry->offset;
+      Skiplist *skiplist = hash_entry->index.skiplist;
       pmem_record = skiplist->header()->record;
       data_entry_key = skiplist->Name();
       break;
@@ -156,8 +157,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
         if (reusable_entry != nullptr) {
           if (data_entry_meta && !reusable_entry->Empty()) {
-            memcpy(data_entry_meta,
-                   pmem_allocator_->offset2addr(reusable_entry->offset),
+            memcpy(data_entry_meta, reusable_entry->index.string_record,
                    sizeof(DataEntry));
           }
           *entry_ptr = reusable_entry;
@@ -245,11 +245,10 @@ Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
 }
 
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_ptr,
-                       uint16_t type, uint64_t offset,
-                       HashOffsetType offset_type) {
+                       uint16_t type, void *index, HashOffsetType offset_type) {
   assert(write_thread.id >= 0);
 
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, offset,
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index,
                            (type == StringDeleteRecord)
                                ? HashEntryStatus::DirtyReusable
                                : HashEntryStatus::Normal,

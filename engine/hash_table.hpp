@@ -65,33 +65,44 @@ struct HashHeader {
   HashEntryStatus status;
 };
 
+class Skiplist;
+class SkiplistNode;
 class UnorderedCollection;
 class Queue;
 
 struct HashEntry {
 public:
-  HashEntry() = default;
-
-  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, uint64_t offset,
-            HashOffsetType offset_type)
-      : header({key_hash_prefix, data_entry_type, offset_type,
-                HashEntryStatus::Normal}),
-        offset(offset) {}
-
-  HashEntry(uint32_t kp, uint16_t t, uint64_t offset, HashEntryStatus status,
-            HashOffsetType offset_type)
-      : header({kp, t, offset_type, status}), offset(offset) {}
-
-  HashHeader header;
-  union {
-    uint64_t offset;
+  union Index {
+    Index(void *_ptr) : ptr(_ptr) {}
+    Index() = default;
+    void *ptr;
+    SkiplistNode *skiplist_node;
+    StringRecord *string_record;
+    DLRecord *dl_record;
+    Skiplist *skiplist;
     UnorderedCollection *p_unordered_collection;
     Queue *queue_ptr;
   };
+  static_assert(sizeof(Index) == 8);
+
+  HashEntry() = default;
+
+  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void *_index,
+            HashOffsetType offset_type)
+      : header({key_hash_prefix, data_entry_type, offset_type,
+                HashEntryStatus::Normal}),
+        index(_index) {}
+
+  HashEntry(uint32_t kp, uint16_t t, void *_index, HashEntryStatus status,
+            HashOffsetType offset_type)
+      : header({kp, t, offset_type, status}), index(_index) {}
+
+  HashHeader header;
+  Index index;
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
   static void CopyOffset(HashEntry *dst, HashEntry *src) {
-    dst->offset = src->offset;
+    dst->index = src->index;
   }
 
   bool Reusable() {
@@ -169,7 +180,7 @@ public:
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
   void Insert(const KeyHashHint &hint, HashEntry *entry_ptr, uint16_t type,
-              uint64_t offset, HashOffsetType offset_type);
+              void *index, HashOffsetType offset_type);
 
 private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,

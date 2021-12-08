@@ -418,7 +418,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
     return s;
   }
   assert(s == Status::NotFound);
-  hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, (uint64_t)skiplist,
+  hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist,
                       HashOffsetType::Skiplist);
   return Status::Ok;
 }
@@ -450,14 +450,14 @@ Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
     return Status::Ok;
   }
 
-  uint64_t new_hash_offset = pmem_allocator_->addr2offset(pmem_record);
   bool free_space = entry_ptr->header.status == HashEntryStatus::Updating;
-  hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, new_hash_offset,
+  hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, pmem_record,
                       HashOffsetType::StringRecord);
   if (free_space) {
-    pmem_allocator_->Free(SizedSpaceEntry(
-        hash_entry.offset, existing_data_entry.header.record_size,
-        existing_data_entry.meta.timestamp));
+    pmem_allocator_->Free(
+        SizedSpaceEntry(pmem_allocator_->addr2offset(hash_entry.index.ptr),
+                        existing_data_entry.header.record_size,
+                        existing_data_entry.meta.timestamp));
   }
 
   // If a delete record is the only existing record of a key, then we
@@ -522,7 +522,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
     return Status::Ok;
   }
 
-  uint64_t new_hash_offset;
+  void *new_hash_index;
   uint64_t old_data_offset;
   SkiplistNode *dram_node;
   if (!found) {
@@ -533,7 +533,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
         GlobalLogger.Error("Memory overflow in recovery\n");
         return Status::MemoryOverflow;
       }
-      new_hash_offset = (uint64_t)dram_node;
+      new_hash_index = dram_node;
       if (configs_.opt_large_sorted_collection_restore &&
           thread_res_[write_thread.id]
                       .visited_skiplist_ids[dram_node->SkiplistID()]++ %
@@ -544,26 +544,26 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
             pmem_allocator_->addr2offset(pmem_record), false, nullptr);
       }
     } else {
-      new_hash_offset = pmem_allocator_->addr2offset(pmem_record);
+      new_hash_index = pmem_record;
     }
 
     // Hash entry won't be reused during data recovering so we don't
     // neet to check status here
     hash_table_->Insert(
-        hint, entry_ptr, cached_data_entry.meta.type, new_hash_offset,
+        hint, entry_ptr, cached_data_entry.meta.type, new_hash_index,
         height > 0 ? HashOffsetType::SkiplistNode : HashOffsetType::DLRecord);
   } else {
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      dram_node = (SkiplistNode *)hash_entry.offset;
-      old_data_offset = pmem_allocator_->addr2offset(dram_node->record);
+      dram_node = hash_entry.index.skiplist_node;
+      old_data_offset = pmem_allocator_->addr2offset_checked(dram_node->record);
       dram_node->record = pmem_record;
       entry_ptr->header.data_type = cached_data_entry.meta.type;
     } else {
       assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
-      old_data_offset = hash_entry.offset;
+      old_data_offset =
+          pmem_allocator_->addr2offset_checked(hash_entry.index.dl_record);
       hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
-                          pmem_allocator_->addr2offset(pmem_record),
-                          HashOffsetType::DLRecord);
+                          pmem_record, HashOffsetType::DLRecord);
     }
     pmem_allocator_->Free(
         SizedSpaceEntry(old_data_offset, existing_data_entry.header.record_size,
@@ -631,16 +631,20 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
           }
         }
         auto entry_base_status = entry_ptr->header.status;
-        hash_table_->Insert(hint, entry_ptr, collection_type, (uint64_t)(*list),
+        hash_table_->Insert(hint, entry_ptr, collection_type, *list,
                             HashOffsetType::Skiplist);
         if (entry_base_status == HashEntryStatus::Updating) {
-          pmem_allocator_->Free(SizedSpaceEntry(
-              hash_entry.offset, existing_data_entry.header.record_size,
-              existing_data_entry.meta.timestamp));
+          pmem_allocator_->Free(
+              SizedSpaceEntry(pmem_allocator_->addr2offset_checked(
+                                  hash_entry.index.string_record),
+                              existing_data_entry.header.record_size,
+                              existing_data_entry.meta.timestamp));
         } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-          pmem_allocator_->DelayFree(SizedSpaceEntry(
-              hash_entry.offset, existing_data_entry.header.record_size,
-              existing_data_entry.meta.timestamp));
+          pmem_allocator_->DelayFree(
+              SizedSpaceEntry(pmem_allocator_->addr2offset_checked(
+                                  hash_entry.index.string_record),
+                              existing_data_entry.header.record_size,
+                              existing_data_entry.meta.timestamp));
         }
         return Status::Ok;
       }
@@ -648,7 +652,7 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
   }
 
   if (s == Status::Ok) {
-    *list = (Collection *)hash_entry.offset;
+    *list = static_cast<Collection *>(hash_entry.index.ptr);
   }
 
   return s;
@@ -802,14 +806,14 @@ Status KVEngine::HashGetImpl(const StringView &key, std::string *value,
 
     void *pmem_record = nullptr;
     if (hash_entry.header.data_type & (StringDataRecord | DlistDataRecord)) {
-      pmem_record = pmem_allocator_->offset2addr_checked(hash_entry.offset);
+      pmem_record = hash_entry.index.ptr;
     } else if (hash_entry.header.data_type == SortedDataRecord) {
       if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-        SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
-        pmem_record = (char *)dram_node->record;
+        SkiplistNode *dram_node = hash_entry.index.skiplist_node;
+        pmem_record = dram_node->record;
       } else {
         assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
-        pmem_record = pmem_allocator_->offset2addr_checked(hash_entry.offset);
+        pmem_record = hash_entry.index.dl_record;
       }
     } else {
       return Status::NotSupported;
@@ -884,14 +888,15 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     }
 
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      dram_node = (SkiplistNode *)(hash_entry.offset);
+      dram_node = hash_entry.index.skiplist_node;
       existing_record = dram_node->record;
-      existing_record_offset = pmem_allocator_->addr2offset(existing_record);
+      existing_record_offset =
+          pmem_allocator_->addr2offset_checked(existing_record);
     } else {
       assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
-      existing_record =
-          pmem_allocator_->offset2addr<DLRecord>(hash_entry.offset);
-      existing_record_offset = hash_entry.offset;
+      existing_record = hash_entry.index.dl_record;
+      existing_record_offset =
+          pmem_allocator_->addr2offset_checked(existing_record);
     }
 
     if (!skiplist->Delete(user_key, existing_record, dram_node, hint.spin)) {
@@ -919,6 +924,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
   if (sized_space_entry.size == 0) {
     return Status::PmemOverflow;
   }
+  void *new_record_pmem_ptr =
+      pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
   while (1) {
     SkiplistNode *dram_node = nullptr;
@@ -942,16 +949,14 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
 
     if (found) {
       if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-        dram_node = (SkiplistNode *)(hash_entry.offset);
+        dram_node = hash_entry.index.skiplist_node;
         existing_record = dram_node->record;
-        existing_record_offset = pmem_allocator_->addr2offset(existing_record);
       } else {
         dram_node = nullptr;
         assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
-        existing_record_offset = hash_entry.offset;
-        existing_record =
-            pmem_allocator_->offset2addr<DLRecord>(existing_record_offset);
+        existing_record = hash_entry.index.dl_record;
       }
+      existing_record_offset = pmem_allocator_->addr2offset(existing_record);
 
       if (!skiplist->Update(user_key, value, existing_record, sized_space_entry,
                             new_ts, dram_node, hint.spin)) {
@@ -961,8 +966,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
       // update a height 0 node
       if (dram_node == nullptr) {
         hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
-                            sized_space_entry.space_entry.offset,
-                            HashOffsetType::DLRecord);
+                            new_record_pmem_ptr, HashOffsetType::DLRecord);
       }
       pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
                                             data_entry.header.record_size,
@@ -973,21 +977,20 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
         continue;
       }
 
-      uint64_t offset = (dram_node == nullptr)
-                            ? sized_space_entry.space_entry.offset
-                            : (uint64_t)dram_node;
+      void *new_hash_index =
+          (dram_node == nullptr) ? new_record_pmem_ptr : dram_node;
       auto entry_base_status = entry_ptr->header.status;
-      hash_table_->Insert(hint, entry_ptr, SortedDataRecord, offset,
+      hash_table_->Insert(hint, entry_ptr, SortedDataRecord, new_hash_index,
                           dram_node ? HashOffsetType::SkiplistNode
                                     : HashOffsetType::DLRecord);
       if (entry_base_status == HashEntryStatus::Updating) {
-        pmem_allocator_->Free(SizedSpaceEntry(hash_entry.offset,
-                                              data_entry.header.record_size,
-                                              data_entry.meta.timestamp));
+        pmem_allocator_->Free(SizedSpaceEntry(
+            pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
+            data_entry.header.record_size, data_entry.meta.timestamp));
       } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-        pmem_allocator_->DelayFree(
-            SizedSpaceEntry(hash_entry.offset, data_entry.header.record_size,
-                            data_entry.meta.timestamp));
+        pmem_allocator_->DelayFree(SizedSpaceEntry(
+            pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
+            data_entry.header.record_size, data_entry.meta.timestamp));
       }
     }
 
@@ -1237,19 +1240,18 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     }
 
     auto entry_base_status = entry_ptr->header.status;
-    hash_table_->Insert(hash_hint, entry_ptr, kv.type,
-                        batch_hint.allocated_space.space_entry.offset,
+    hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
                         HashOffsetType::StringRecord);
 
     if (entry_base_status == HashEntryStatus::Updating) {
-      batch_hint.free_after_finish =
-          SizedSpaceEntry(hash_entry.offset, data_entry.header.record_size,
-                          data_entry.meta.timestamp);
+      batch_hint.free_after_finish = SizedSpaceEntry(
+          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
+          data_entry.header.record_size, data_entry.meta.timestamp);
       batch_hint.delay_free = false;
     } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-      batch_hint.free_after_finish =
-          SizedSpaceEntry(hash_entry.offset, data_entry.header.record_size,
-                          data_entry.meta.timestamp);
+      batch_hint.free_after_finish = SizedSpaceEntry(
+          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
+          data_entry.header.record_size, data_entry.meta.timestamp);
       batch_hint.delay_free = true;
     }
   }
@@ -1314,12 +1316,11 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
                                       new_ts, StringDeleteRecord, key, "");
 
     assert(entry_ptr->header.status == HashEntryStatus::Updating);
-    hash_table_->Insert(hint, entry_ptr, StringDeleteRecord,
-                        sized_space_entry.space_entry.offset,
+    hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, block_base,
                         HashOffsetType::StringRecord);
-    pmem_allocator_->Free(SizedSpaceEntry(hash_entry.offset,
-                                          data_entry.header.record_size,
-                                          data_entry.meta.timestamp));
+    pmem_allocator_->Free(SizedSpaceEntry(
+        pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
+        data_entry.header.record_size, data_entry.meta.timestamp));
   }
   return Status::Ok;
 }
@@ -1359,17 +1360,16 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
                                       new_ts, StringDataRecord, key, value);
 
     auto entry_base_status = entry_ptr->header.status;
-    hash_table_->Insert(hint, entry_ptr, StringDataRecord,
-                        sized_space_entry.space_entry.offset,
+    hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
                         HashOffsetType::StringRecord);
     if (entry_base_status == HashEntryStatus::Updating) {
-      pmem_allocator_->Free(SizedSpaceEntry(hash_entry.offset,
-                                            data_entry.header.record_size,
-                                            data_entry.meta.timestamp));
+      pmem_allocator_->Free(SizedSpaceEntry(
+          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
+          data_entry.header.record_size, data_entry.meta.timestamp));
     } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-      pmem_allocator_->DelayFree(SizedSpaceEntry(hash_entry.offset,
-                                                 data_entry.header.record_size,
-                                                 data_entry.meta.timestamp));
+      pmem_allocator_->DelayFree(SizedSpaceEntry(
+          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
+          data_entry.header.record_size, data_entry.meta.timestamp));
     }
   }
 
@@ -1415,7 +1415,7 @@ KVEngine::findUnorderedCollection(StringView const collection_name) {
     return nullptr;
   }
   case Status::Ok: {
-    return hash_entry.p_unordered_collection;
+    return hash_entry.index.p_unordered_collection;
   }
   default: {
     kvdk_assert(false, "Invalid state in findUnorderedCollection()!");
@@ -1474,8 +1474,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
               &p_hash_entry_collection, &hash_entry_collection, nullptr);
           kvdk_assert(s == Status::NotFound, "Logically impossible!");
           hash_table_->Insert(hint_collection, p_hash_entry_collection,
-                              RecordType::DlistRecord,
-                              reinterpret_cast<uint64_t>(p_collection),
+                              RecordType::DlistRecord, p_collection,
                               HashOffsetType::UnorderedCollection);
         }
       }
@@ -1508,16 +1507,16 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
         break;
       }
       case Status::Ok: {
-        DLRecord *pmp_old_record =
-            pmem_allocator_->offset2addr_checked<DLRecord>(
-                hash_entry_record.offset);
+        DLRecord *pmp_old_record = hash_entry_record.index.dl_record;
         emplace_result =
             p_collection->Replace(pmp_old_record, ts, key, value, lock_record);
         // Additional check
         if (emplace_result.success) {
-          kvdk_assert(hash_entry_record.offset == emplace_result.offset_old,
+          kvdk_assert(pmem_allocator_->addr2offset_checked(pmp_old_record) ==
+                          emplace_result.offset_old,
                       "Updated a record, but HashEntry in HashTable is "
                       "inconsistent with data on PMem!");
+
           DLRecord *pmp_new_record =
               pmem_allocator_->offset2addr_checked<DLRecord>(
                   emplace_result.offset_new);
@@ -1540,9 +1539,11 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
         continue;
       } else {
         // Successfully emplaced the new record
+        DLRecord *pmp_new_record =
+            pmem_allocator_->offset2addr_checked<DLRecord>(
+                emplace_result.offset_new);
         hash_table_->Insert(hint_record, p_hash_entry_record,
-                            RecordType::DlistDataRecord,
-                            emplace_result.offset_new,
+                            RecordType::DlistDataRecord, pmp_new_record,
                             HashOffsetType::UnorderedCollectionElement);
         return Status::Ok;
       }
@@ -1582,8 +1583,7 @@ Status KVEngine::HDelete(StringView const collection_name,
         return Status::Ok;
       }
       case Status::Ok: {
-        DLRecord *pmp_old_record =
-            pmem_allocator_->offset2addr_checked<DLRecord>(hash_entry.offset);
+        DLRecord *pmp_old_record = hash_entry.index.dl_record;
 
         erase_result = p_collection->Erase(pmp_old_record, lock_record);
         if (erase_result.success) {
@@ -1638,8 +1638,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
         &p_hash_entry_collection, &hash_entry_collection, nullptr,
         true /* in recovery */);
     hash_table_->Insert(hint_collection, p_hash_entry_collection,
-                        RecordType::DlistRecord,
-                        reinterpret_cast<uint64_t>(p_collection),
+                        RecordType::DlistRecord, p_collection,
                         HashOffsetType::UnorderedCollection);
     kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
     return Status::Ok;
@@ -1657,8 +1656,6 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     return Status::Ok;
   }
   case RecordType::DlistDataRecord: {
-    std::uint64_t offset_record =
-        pmem_allocator_->addr2offset_checked(pmp_record);
     bool linked = checkLinkage(static_cast<DLRecord *>(pmp_record));
     if (!linked) {
       purgeAndFree(pmp_record);
@@ -1680,13 +1677,12 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     switch (search_status) {
     case Status::NotFound: {
       hash_table_->Insert(hint_record, p_hash_entry_record,
-                          pmp_record->entry.meta.type, offset_record,
+                          pmp_record->entry.meta.type, pmp_record,
                           HashOffsetType::UnorderedCollectionElement);
       return Status::Ok;
     }
     case Status::Ok: {
-      DLRecord *pmp_old_record = pmem_allocator_->offset2addr_checked<DLRecord>(
-          hash_entry_record.offset);
+      DLRecord *pmp_old_record = hash_entry_record.index.dl_record;
       if (pmp_old_record->entry.meta.timestamp <
           pmp_record->entry.meta.timestamp) {
         if (checkDLRecordLinkageRight((DLRecord *)pmp_old_record) ||
@@ -1695,7 +1691,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
           throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
         }
         hash_table_->Insert(hint_record, p_hash_entry_record,
-                            pmp_record->entry.meta.type, offset_record,
+                            pmp_record->entry.meta.type, pmp_record,
                             HashOffsetType::UnorderedCollectionElement);
         purgeAndFree(pmp_old_record);
 
@@ -1750,7 +1746,7 @@ Queue *KVEngine::findQueue(StringView const collection_name) {
     return nullptr;
   }
   case Status::Ok: {
-    return hash_entry.queue_ptr;
+    return hash_entry.index.queue_ptr;
   }
   default: {
     kvdk_assert(false, "Invalid state in findQueue()!");
@@ -1827,9 +1823,9 @@ Status KVEngine::xPush(StringView const collection_name, StringView const value,
               hint_collection, collection_name, RecordType::QueueRecord,
               &p_hash_entry_collection, &hash_entry_collection, nullptr);
           kvdk_assert(s == Status::NotFound, "Logically impossible!");
-          hash_table_->Insert(
-              hint_collection, p_hash_entry_collection, RecordType::QueueRecord,
-              reinterpret_cast<uint64_t>(queue_ptr), HashOffsetType::Queue);
+          hash_table_->Insert(hint_collection, p_hash_entry_collection,
+                              RecordType::QueueRecord, queue_ptr,
+                              HashOffsetType::Queue);
         }
       }
     }
@@ -1880,9 +1876,9 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
         &p_hash_entry_collection, &hash_entry_collection, nullptr,
         true /* in recovery */);
     kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
-    hash_table_->Insert(
-        hint_collection, p_hash_entry_collection, RecordType::QueueRecord,
-        reinterpret_cast<uint64_t>(queue_ptr), HashOffsetType::Queue);
+    hash_table_->Insert(hint_collection, p_hash_entry_collection,
+                        RecordType::QueueRecord, queue_ptr,
+                        HashOffsetType::Queue);
     return Status::Ok;
   }
   case RecordType::QueueHeadRecord: {
