@@ -1151,6 +1151,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // Free updated kvs / unused space
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (batch_hints[i].free_after_finish.size > 0) {
+      // TODO: we should purge all updated kvs before release locks, and after
+      // persist finish stage
       pmem_allocator_->Free(batch_hints[i].free_after_finish);
     }
   }
