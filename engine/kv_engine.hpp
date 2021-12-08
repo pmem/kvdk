@@ -261,12 +261,12 @@ private:
     }
   }
 
-  inline void purgeAndFree(DLRecord *record_pmmptr) {
-    record_pmmptr->Destroy();
-    pmem_allocator_->Free(
-        SizedSpaceEntry(pmem_allocator_->addr2offset_checked(record_pmmptr),
-                        record_pmmptr->entry.header.record_size,
-                        record_pmmptr->entry.meta.timestamp));
+  inline void purgeAndFree(void *pmem_record) {
+    DataEntry *data_entry = static_cast<DataEntry *>(pmem_record);
+    data_entry->Destroy();
+    pmem_allocator_->Free(SizedSpaceEntry(
+        pmem_allocator_->addr2offset_checked(pmem_record),
+        data_entry->header.record_size, data_entry->meta.timestamp));
   }
 
   std::vector<ThreadLocalRes> thread_res_;

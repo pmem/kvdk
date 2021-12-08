@@ -1283,46 +1283,20 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s = hash_table_->SearchForWrite(
-        hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
-        &hash_entry, &data_entry);
+        hint, key, StringDataRecord, &entry_ptr, &hash_entry, &data_entry);
 
     switch (s) {
     case Status::Ok:
-      break;
+      assert(entry_ptr->header.status == HashEntryStatus::Updating);
+      purgeAndFree(hash_entry.index.string_record);
+      entry_ptr->Clear();
+      return s;
     case Status::NotFound:
       return Status::Ok;
     default:
       return s;
     }
-
-    if (data_entry.meta.type == StringDeleteRecord) {
-      return Status::Ok;
-    }
-
-    // Deleted key may not existed, so we allocate space for delete record
-    // until we found the key
-    sized_space_entry = pmem_allocator_->Allocate(requested_size);
-    if (sized_space_entry.size == 0) {
-      return Status::PmemOverflow;
-    }
-
-    uint64_t new_ts = get_timestamp();
-    assert(new_ts > data_entry.meta.timestamp);
-
-    void *block_base =
-        pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
-
-    StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
-                                      new_ts, StringDeleteRecord, key, "");
-
-    assert(entry_ptr->header.status == HashEntryStatus::Updating);
-    hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, block_base,
-                        HashOffsetType::StringRecord);
-    pmem_allocator_->Free(SizedSpaceEntry(
-        pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
-        data_entry.header.record_size, data_entry.meta.timestamp));
   }
-  return Status::Ok;
 }
 
 Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
