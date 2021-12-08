@@ -254,9 +254,6 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     // or the space is padding, empty or with corrupted record
     // Free the space and fetch another
     if (data_entry_cached.meta.type == RecordType::Padding) {
-      // TODO: there is a redundant persist for a padding record
-      // no need to manually persist here
-      static_cast<DataEntry *>(recovering_pmem_record)->Destroy();
       pmem_allocator_->Free(SizedSpaceEntry(
           pmem_allocator_->addr2offset_checked(recovering_pmem_record),
           data_entry_cached.header.record_size,
@@ -444,9 +441,8 @@ Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
   bool found = s == Status::Ok;
   if (found &&
       existing_data_entry.meta.timestamp >= cached_entry.meta.timestamp) {
-    pmem_allocator_->Free(SizedSpaceEntry(
-        pmem_allocator_->addr2offset(pmem_record),
-        cached_entry.header.record_size, cached_entry.meta.timestamp));
+    entry_ptr->header.status = HashEntryStatus::Normal;
+    purgeAndFree(pmem_record);
     return Status::Ok;
   }
 
@@ -454,10 +450,7 @@ Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
   hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, pmem_record,
                       HashOffsetType::StringRecord);
   if (free_space) {
-    pmem_allocator_->Free(
-        SizedSpaceEntry(pmem_allocator_->addr2offset(hash_entry.index.ptr),
-                        existing_data_entry.header.record_size,
-                        existing_data_entry.meta.timestamp));
+    purgeAndFree(hash_entry.index.ptr);
   }
 
   return Status::Ok;
@@ -481,10 +474,7 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord *record) {
 Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
                                        const DataEntry &cached_data_entry) {
   if (!CheckAndRepairDLRecord(pmem_record)) {
-    pmem_allocator_->Free(
-        SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_record),
-                        cached_data_entry.header.record_size,
-                        cached_data_entry.meta.timestamp));
+    purgeAndFree(pmem_record);
     return Status::Ok;
   }
 
@@ -508,15 +498,12 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   bool found = s == Status::Ok;
   if (found &&
       existing_data_entry.meta.timestamp >= cached_data_entry.meta.timestamp) {
-    pmem_allocator_->Free(
-        SizedSpaceEntry(pmem_allocator_->addr2offset(pmem_record),
-                        cached_data_entry.header.record_size,
-                        cached_data_entry.meta.timestamp));
+    purgeAndFree(pmem_record);
     return Status::Ok;
   }
 
   void *new_hash_index;
-  uint64_t old_data_offset;
+  DLRecord *old_pmem_record;
   SkiplistNode *dram_node;
   if (!found) {
     auto height = Skiplist::RandomHeight();
@@ -548,19 +535,20 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   } else {
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
       dram_node = hash_entry.index.skiplist_node;
-      old_data_offset = pmem_allocator_->addr2offset_checked(dram_node->record);
+      old_pmem_record = dram_node->record;
       dram_node->record = pmem_record;
       entry_ptr->header.data_type = cached_data_entry.meta.type;
     } else {
       assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
-      old_data_offset =
-          pmem_allocator_->addr2offset_checked(hash_entry.index.dl_record);
+      old_pmem_record = hash_entry.index.dl_record;
       hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
                           pmem_record, HashOffsetType::DLRecord);
     }
-    pmem_allocator_->Free(
-        SizedSpaceEntry(old_data_offset, existing_data_entry.header.record_size,
-                        existing_data_entry.meta.timestamp));
+    kvdk_assert(old_pmem_record->entry.meta.timestamp <
+                    pmem_record->entry.meta.timestamp,
+                "old pmem record has larger ts than new restored one in "
+                "restore skiplist record");
+    purgeAndFree(old_pmem_record);
   }
 
   return Status::Ok;
@@ -845,7 +833,6 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     HashEntry hash_entry;
     DataEntry data_entry;
     SkiplistNode *dram_node = nullptr;
-    uint64_t existing_record_offset;
     DLRecord *existing_record = nullptr;
     HashEntry *entry_ptr = nullptr;
     auto hint = hash_table_->GetHint(collection_key);
@@ -865,13 +852,9 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
       dram_node = hash_entry.index.skiplist_node;
       existing_record = dram_node->record;
-      existing_record_offset =
-          pmem_allocator_->addr2offset_checked(existing_record);
     } else {
       assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
       existing_record = hash_entry.index.dl_record;
-      existing_record_offset =
-          pmem_allocator_->addr2offset_checked(existing_record);
     }
 
     if (!skiplist->Delete(user_key, existing_record, dram_node, hint.spin)) {
@@ -879,9 +862,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     }
 
     entry_ptr->Clear();
-    pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
-                                          data_entry.header.record_size,
-                                          data_entry.meta.timestamp));
+    purgeAndFree(existing_record);
     break;
   }
   return Status::Ok;
@@ -906,7 +887,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     SkiplistNode *dram_node = nullptr;
     HashEntry *entry_ptr = nullptr;
     DLRecord *existing_record = nullptr;
-    uint64_t existing_record_offset;
     HashEntry hash_entry;
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
@@ -931,7 +911,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
         assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
         existing_record = hash_entry.index.dl_record;
       }
-      existing_record_offset = pmem_allocator_->addr2offset(existing_record);
 
       if (!skiplist->Update(user_key, value, existing_record, sized_space_entry,
                             new_ts, dram_node, hint.spin)) {
@@ -943,9 +922,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
         hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
                             new_record_pmem_ptr, HashOffsetType::DLRecord);
       }
-      pmem_allocator_->Free(SizedSpaceEntry(existing_record_offset,
-                                            data_entry.header.record_size,
-                                            data_entry.meta.timestamp));
+      purgeAndFree(existing_record);
     } else {
       if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
                             &dram_node, hint.spin)) {
@@ -1100,15 +1077,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return s;
   }
 
-  class LockCmp {
-  public:
-    bool operator()(const std::unique_lock<SpinMutex> &l1,
-                    const std::unique_lock<SpinMutex> &l2) {
-      return l1.mutex() < l2.mutex();
-    }
-  };
-
-  std::set<std::unique_lock<SpinMutex>, LockCmp> locks;
+  std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
   for (size_t i = 0; i < write_batch.Size(); i++) {
@@ -1134,12 +1103,13 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     }
 
     batch_hints[i].hash_hint = hash_table_->GetHint(kv.key);
-    locks.emplace(std::unique_lock<SpinMutex>(*batch_hints[i].hash_hint.spin,
-                                              std::defer_lock));
+    spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
   }
 
-  for (std::unique_lock<SpinMutex> &ul : locks) {
-    ul.lock();
+  // lock spin mutex with order to avoid deadlock
+  std::vector<std::unique_lock<SpinMutex>> ul_locks;
+  for (const SpinMutex *l : spins_to_lock) {
+    ul_locks.emplace_back(const_cast<SpinMutex &>(*l));
   }
 
   TimeStampType ts = get_timestamp();
@@ -1173,7 +1143,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
 
   pending_batch.PersistStage(PendingBatch::Stage::Finish);
 
-  // Free updated kvs, we should purge all updated kvs before release locks
+  // Free updated kvs, we should purge all updated kvs before release locks and
+  // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (batch_hints[i].pmem_record_to_free != nullptr) {
       purgeAndFree(batch_hints[i].pmem_record_to_free);
