@@ -732,7 +732,10 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
 
 TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
-
+  kvdk::Collection *global_collection_ptr;
+  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name,
+                                           &global_collection_ptr),
+            kvdk::Status::Ok);
   SortedSetsAllSSet(global_collection_name);
   CheckSortedSetsCollection(global_collection_name);
 
@@ -750,6 +753,10 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
 
 TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
+  kvdk::Collection *global_collection_ptr;
+  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name,
+                                           &global_collection_ptr),
+            kvdk::Status::Ok);
 
   SortedSetsEvenSSetOddSDelete(global_collection_name);
 
@@ -821,6 +828,10 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
 TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
   std::string global_collection_name{"GlobalHashesCollection"};
 
+  kvdk::Collection *global_collection_ptr;
+  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name,
+                                           &global_collection_ptr),
+            kvdk::Status::Ok);
   SortedSetsEvenSSetOddSDelete(global_collection_name);
   std::cout << "[Testing] Iterate through collection to check data."
             << std::endl;

@@ -169,11 +169,30 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   return s;
 }
 
+Status KVEngine::CreateSortedCollection(const StringView collection_name,
+                                        Collection **collection_ptr,
+                                        const pmem::obj::string_view &comp_name,
+                                        SortedBy sorted_by) {
+  *collection_ptr = nullptr;
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+  s = InitCollection(collection_name, collection_ptr,
+                     RecordType::SortedHeaderRecord);
+  auto skiplist = (Skiplist *)(*collection_ptr);
+  if (!comp_name.empty()) {
+    skiplist->SetComparaInfo(sorted_by, comparator_.GetComparaFunc(comp_name));
+  }
+  ReleaseWriteThread();
+  return s;
+}
+
 std::shared_ptr<Iterator>
 KVEngine::NewSortedIterator(const StringView collection) {
   Skiplist *skiplist;
-  Status s = SearchOrInitSkiplist(collection, &skiplist, false);
-
+  Status s =
+      FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
   return s == Status::Ok
              ? std::make_shared<SortedIterator>(skiplist, pmem_allocator_)
              : nullptr;
@@ -497,7 +516,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
 
   assert(pmem_record->entry.meta.type & SortedDataRecord);
   std::string internal_key(pmem_record->Key());
-  StringView user_key = Skiplist::ExtractUserKey(internal_key);
+  StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
   DataEntry existing_data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -579,76 +598,71 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   return Status::Ok;
 }
 
-Status KVEngine::SearchOrInitCollection(const StringView &collection,
-                                        Collection **list, bool init,
-                                        uint16_t collection_type) {
+Status KVEngine::InitCollection(const StringView &collection, Collection **list,
+                                uint16_t collection_type) {
+  if (!CheckKeySize(collection)) {
+    return Status::InvalidDataSize;
+  }
+
   auto hint = hash_table_->GetHint(collection);
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
-  Status s = hash_table_->SearchForRead(hint, collection, collection_type,
-                                        &entry_ptr, &hash_entry, nullptr);
-  if (s == Status::NotFound) {
-    if (init) {
-      DataEntry existing_data_entry;
-      std::lock_guard<SpinMutex> lg(*hint.spin);
-      // Since we do the first search without lock, we need to check again
-      entry_ptr = nullptr;
-      s = hash_table_->SearchForWrite(hint, collection, collection_type,
-                                      &entry_ptr, &hash_entry,
-                                      &existing_data_entry);
-      if (s == Status::MemoryOverflow) {
-        return s;
-      }
-      if (s == Status::NotFound) {
-        uint32_t request_size = sizeof(DLRecord) + collection.size() +
-                                sizeof(CollectionIDType) /* id */;
-        SizedSpaceEntry sized_space_entry =
-            pmem_allocator_->Allocate(request_size);
-        if (sized_space_entry.size == 0) {
-          return Status::PmemOverflow;
-        }
-        CollectionIDType id = list_id_.fetch_add(1);
-        // PMem level of skiplist is circular, so the next and prev pointers of
-        // header point to itself
-        DLRecord *pmem_record = DLRecord::PersistDLRecord(
-            pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
-            sized_space_entry.size, get_timestamp(),
-            (RecordType)collection_type, sized_space_entry.space_entry.offset,
-            sized_space_entry.space_entry.offset, collection,
-            StringView((char *)&id, 8));
-
-        {
-          std::lock_guard<std::mutex> lg(list_mu_);
-          switch (collection_type) {
-          case SortedHeaderRecord:
-            skiplists_.push_back(std::make_shared<Skiplist>(
-                pmem_record, string_view_2_string(collection), id,
-                pmem_allocator_, hash_table_));
-            *list = skiplists_.back().get();
-            break;
-          default:
-            return Status::NotSupported;
-          }
-        }
-        auto entry_base_status = entry_ptr->header.status;
-        hash_table_->Insert(hint, entry_ptr, collection_type, (uint64_t)(*list),
-                            HashOffsetType::Skiplist);
-        if (entry_base_status == HashEntryStatus::Updating) {
-          pmem_allocator_->Free(SizedSpaceEntry(
-              hash_entry.offset, existing_data_entry.header.record_size,
-              existing_data_entry.meta.timestamp));
-        } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-          pmem_allocator_->DelayFree(SizedSpaceEntry(
-              hash_entry.offset, existing_data_entry.header.record_size,
-              existing_data_entry.meta.timestamp));
-        }
-        return Status::Ok;
-      }
-    }
+  DataEntry existing_data_entry;
+  std::lock_guard<SpinMutex> lg(*hint.spin);
+  // Since we do the first search without lock, we need to check again
+  entry_ptr = nullptr;
+  Status s =
+      hash_table_->SearchForWrite(hint, collection, collection_type, &entry_ptr,
+                                  &hash_entry, &existing_data_entry);
+  if (s == Status::MemoryOverflow) {
+    return s;
   }
-
   if (s == Status::Ok) {
     *list = (Collection *)hash_entry.offset;
+  }
+  if (s == Status::NotFound) {
+    uint32_t request_size = sizeof(DLRecord) + collection.size() +
+                            sizeof(CollectionIDType) /* id */;
+    SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
+    if (sized_space_entry.size == 0) {
+      return Status::PmemOverflow;
+    }
+    CollectionIDType id = list_id_.fetch_add(1);
+    // PMem level of skiplist is circular, so the next and prev pointers of
+    // header point to itself
+    DLRecord *pmem_record = DLRecord::PersistDLRecord(
+        pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
+        sized_space_entry.size, get_timestamp(), (RecordType)collection_type,
+        sized_space_entry.space_entry.offset,
+        sized_space_entry.space_entry.offset, collection,
+        StringView((char *)&id, 8));
+
+    {
+      std::lock_guard<std::mutex> lg(list_mu_);
+      switch (collection_type) {
+      case SortedHeaderRecord:
+        skiplists_.push_back(std::make_shared<Skiplist>(
+            pmem_record, string_view_2_string(collection), id, pmem_allocator_,
+            hash_table_));
+        *list = skiplists_.back().get();
+        break;
+      default:
+        return Status::NotSupported;
+      }
+    }
+    auto entry_base_status = entry_ptr->header.status;
+    hash_table_->Insert(hint, entry_ptr, collection_type, (uint64_t)(*list),
+                        HashOffsetType::Skiplist);
+    if (entry_base_status == HashEntryStatus::Updating) {
+      pmem_allocator_->Free(SizedSpaceEntry(
+          hash_entry.offset, existing_data_entry.header.record_size,
+          existing_data_entry.meta.timestamp));
+    } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
+      pmem_allocator_->DelayFree(SizedSpaceEntry(
+          hash_entry.offset, existing_data_entry.header.record_size,
+          existing_data_entry.meta.timestamp));
+    }
+    return Status::Ok;
   }
 
   return s;
@@ -920,6 +934,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     return Status::PmemOverflow;
   }
 
+  bool sorted_by_value = false;
   while (1) {
     SkiplistNode *dram_node = nullptr;
     HashEntry *entry_ptr = nullptr;
@@ -937,6 +952,10 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
     bool found = s == Status::Ok;
 
+    if (found && !skiplist->IsSortedByKey()) {
+      sorted_by_value = true;
+      break;
+    }
     uint64_t new_ts = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
@@ -993,6 +1012,14 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
 
     break;
   }
+  if (sorted_by_value) {
+    Status s = SDeleteImpl(skiplist, user_key);
+    if (s != Status::Ok)
+      return s;
+    s = SSetImpl(skiplist, user_key, value);
+    if (s != Status::Ok)
+      return s;
+  }
   return Status::Ok;
 }
 
@@ -1004,7 +1031,7 @@ Status KVEngine::SSet(const StringView collection, const StringView user_key,
   }
 
   Skiplist *skiplist = nullptr;
-  s = SearchOrInitSkiplist(collection, &skiplist, true);
+  s = FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
   if (s != Status::Ok) {
     return s;
   }
@@ -1083,7 +1110,7 @@ Status KVEngine::SDelete(const StringView collection,
   }
 
   Skiplist *skiplist = nullptr;
-  s = SearchOrInitSkiplist(collection, &skiplist, false);
+  s = FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
   if (s != Status::Ok) {
     return s == Status::NotFound ? Status::Ok : s;
   }
@@ -1260,7 +1287,8 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
 Status KVEngine::SGet(const StringView collection, const StringView user_key,
                       std::string *value) {
   Skiplist *skiplist = nullptr;
-  Status s = SearchOrInitSkiplist(collection, &skiplist, false);
+  Status s =
+      FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
   if (s != Status::Ok) {
     return s;
   }
@@ -1402,32 +1430,12 @@ KVEngine::createUnorderedCollection(StringView const collection_name) {
   return sp_uncoll;
 }
 
-UnorderedCollection *
-KVEngine::findUnorderedCollection(StringView const collection_name) {
-  HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
-  HashEntry hash_entry;
-  HashEntry *entry_ptr = nullptr;
-  Status s =
-      hash_table_->SearchForRead(hint, collection_name, RecordType::DlistRecord,
-                                 &entry_ptr, &hash_entry, nullptr);
-  switch (s) {
-  case Status::NotFound: {
-    return nullptr;
-  }
-  case Status::Ok: {
-    return hash_entry.p_unordered_collection;
-  }
-  default: {
-    kvdk_assert(false, "Invalid state in findUnorderedCollection()!");
-    return nullptr;
-  }
-  }
-}
-
 Status KVEngine::HGet(StringView const collection_name, StringView const key,
                       std::string *value) {
-  UnorderedCollection *p_uncoll = findUnorderedCollection(collection_name);
-  if (!p_uncoll) {
+  UnorderedCollection *p_uncoll;
+  Status s =
+      FindCollection(collection_name, &p_uncoll, RecordType::DlistRecord);
+  if (s == Status::NotFound) {
     return Status::NotFound;
   }
 
@@ -1446,16 +1454,17 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
 
   // Find UnorederedCollection, create if none exists
   {
-    p_collection = findUnorderedCollection(collection_name);
-    if (!p_collection) {
+    s = FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
+    if (s == Status::NotFound) {
       HashTable::KeyHashHint hint_collection =
           hash_table_->GetHint(collection_name);
       std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
       {
         // Lock and find again in case other threads have created the
         // UnorderedCollection
-        p_collection = findUnorderedCollection(collection_name);
-        if (p_collection) {
+        s = FindCollection(collection_name, &p_collection,
+                           RecordType::DlistRecord);
+        if (s == Status::Ok) {
           // Some thread already created the collection
           // Do nothing
         } else {
@@ -1556,8 +1565,9 @@ Status KVEngine::HDelete(StringView const collection_name,
   if (s != Status::Ok) {
     return s;
   }
-  UnorderedCollection *p_collection = findUnorderedCollection(collection_name);
-  if (!p_collection)
+  UnorderedCollection *p_collection;
+  s = FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
+  if (s == Status::NotFound)
     return Status::Ok;
 
   // Erase DlistDataRecord if found one.
@@ -1607,10 +1617,12 @@ Status KVEngine::HDelete(StringView const collection_name,
 
 std::shared_ptr<Iterator>
 KVEngine::NewUnorderedIterator(StringView const collection_name) {
-  UnorderedCollection *p_collection = findUnorderedCollection(collection_name);
-  return p_collection ? std::make_shared<UnorderedIterator>(
-                            p_collection->shared_from_this())
-                      : nullptr;
+  UnorderedCollection *p_collection;
+  Status s =
+      FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
+  return s == Status::Ok ? std::make_shared<UnorderedIterator>(
+                               p_collection->shared_from_this())
+                         : nullptr;
 }
 
 Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
@@ -1738,36 +1750,16 @@ std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
   return std::unique_ptr<Queue>(new Queue{pmem_allocator_.get(), name, id, ts});
 }
 
-Queue *KVEngine::findQueue(StringView const collection_name) {
-  HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
-  HashEntry hash_entry;
-  HashEntry *entry_ptr = nullptr;
-  Status s =
-      hash_table_->SearchForRead(hint, collection_name, RecordType::QueueRecord,
-                                 &entry_ptr, &hash_entry, nullptr);
-  switch (s) {
-  case Status::NotFound: {
-    return nullptr;
-  }
-  case Status::Ok: {
-    return hash_entry.queue_ptr;
-  }
-  default: {
-    kvdk_assert(false, "Invalid state in findQueue()!");
-    return nullptr;
-  }
-  }
-}
-
 Status KVEngine::xPop(StringView const collection_name, std::string *value,
                       KVEngine::QueueOpPosition pop_pos) {
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
     return s;
   }
-  Queue *queue_ptr = findQueue(collection_name);
-  if (!queue_ptr) {
-    return Status::NotFound;
+  Queue *queue_ptr;
+  s = FindCollection(collection_name, &queue_ptr, RecordType::QueueRecord);
+  if (s != Status::Ok) {
+    return s;
   }
   bool pop_success = false;
   switch (pop_pos) {
@@ -1802,16 +1794,17 @@ Status KVEngine::xPush(StringView const collection_name, StringView const value,
 
   // Find UnorederedCollection, create if none exists
   {
-    queue_ptr = findQueue(collection_name);
-    if (!queue_ptr) {
+    s = FindCollection(collection_name, &queue_ptr, RecordType::QueueRecord);
+    if (s == Status::NotFound) {
       HashTable::KeyHashHint hint_collection =
           hash_table_->GetHint(collection_name);
       std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
       {
         // Lock and find again in case other threads have created the
         // UnorderedCollection
-        queue_ptr = findQueue(collection_name);
-        if (queue_ptr) {
+        s = FindCollection(collection_name, &queue_ptr,
+                           RecordType::QueueRecord);
+        if (s == Status::Ok) {
           // Some thread already created the collection
           // Do nothing
         } else {

@@ -14,7 +14,6 @@
 
 #include "kvdk/engine.hpp"
 
-#include "collection.hpp"
 #include "hash_table.hpp"
 #include "structures.hpp"
 #include "utils.hpp"
@@ -70,13 +69,6 @@ public:
     }
     return node;
   }
-
-  // Start seek from this node, find dram position of "key" in the skiplist
-  // between height "start_height" and "end"_height", and store position in
-  // "result_splice", if "key" existing, the next pointers in splice point to
-  // node of "key"
-  void SeekNode(const StringView &key, uint8_t start_height, uint8_t end_height,
-                Splice *result_splice);
 
   uint16_t Height() { return height; }
 
@@ -202,12 +194,12 @@ public:
     if (node->cached_key_size > 0) {
       return StringView(node->cached_key, node->cached_key_size);
     }
-    return ExtractUserKey(node->record->Key());
+    return CollectionUtils::ExtractUserKey(node->record->Key());
   }
 
   inline static StringView UserKey(const DLRecord *record) {
     assert(record != nullptr);
-    return ExtractUserKey(record->Key());
+    return CollectionUtils::ExtractUserKey(record->Key());
   }
 
   inline static CollectionIDType SkiplistID(const SkiplistNode *node) {
@@ -219,10 +211,10 @@ public:
     assert(record != nullptr);
     switch (record->entry.meta.type) {
     case RecordType::SortedDataRecord:
-      return ExtractID(record->Key());
+      return CollectionUtils::ExtractID(record->Key());
       break;
     case RecordType::SortedHeaderRecord:
-      return string2ID(record->Value());
+      return CollectionUtils::string2ID(record->Value());
     default:
       kvdk_assert(false, "Wrong type in SkiplistID");
       GlobalLogger.Error("Wrong type in SkiplistID");
@@ -230,10 +222,19 @@ public:
     return 0;
   }
 
+  // Start seek from this node, find dram position of "key" in the skiplist
+  // between height "start_height" and "end"_height", and store position in
+  // "result_splice", if "key" existing, the next pointers in splice point to
+  // node of "key"
+  void SeekNode(const StringView &key, const StringView &value,
+                SkiplistNode *start_node, uint8_t start_height,
+                uint8_t end_height, Splice *result_splice);
+
   // Start position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
-  void Seek(const StringView &key, Splice *result_splice);
+  void Seek(const StringView &key, const StringView &value,
+            Splice *result_splice);
 
   Status Rebuild();
 
@@ -299,6 +300,13 @@ public:
 
   Status CheckConnection(int height);
 
+  void SetComparaInfo(SortedBy sorted_by, CompFunc comp_func) {
+    sorted_by_ = sorted_by;
+    compare_func_ = comp_func;
+  }
+
+  bool IsSortedByKey() { return sorted_by_ == SortedBy::KEY ? true : false; }
+
 private:
   // Insert DLRecord "inserting" between "prev" and "next"
   void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
@@ -310,6 +318,7 @@ private:
   //
   // The "insert_key" should be already locked before call this function
   bool FindInsertPos(Splice *splice, const StringView &inserting_key,
+                     const StringView &inserting_value,
                      const SpinMutex *inserting_key_lock,
                      std::unique_lock<SpinMutex> *prev_record_lock);
 
@@ -320,6 +329,7 @@ private:
   //
   //  The "updated_key" should be already locked before call this function
   bool FindUpdatePos(Splice *splice, const StringView &updating_key,
+                     const StringView &updated_value,
                      const SpinMutex *updating_key_lock,
                      const DLRecord *updated_record,
                      std::unique_lock<SpinMutex> *prev_record_lock);
@@ -328,7 +338,8 @@ private:
                      const SpinMutex *deleting_key_lock,
                      const DLRecord *deleted_record,
                      std::unique_lock<SpinMutex> *prev_record_lock) {
-    return FindUpdatePos(splice, deleting_key, deleting_key_lock,
+    StringView deleting_val = deleted_record->Value();
+    return FindUpdatePos(splice, deleting_key, deleting_val, deleting_key_lock,
                          deleted_record, prev_record_lock);
   }
 
@@ -337,6 +348,22 @@ private:
     return prev != nullptr &&
            prev->next == pmem_allocator_->addr2offset(record) &&
            SkiplistID(record) == ID();
+  }
+
+  int compare(const StringView &src_key, const StringView &target_key,
+              const StringView &src_value, const StringView &target_value) {
+    if (sorted_by_ == SortedBy::KEY) {
+      return compare_func_(src_key, target_key);
+    } else if (sorted_by_ == SortedBy::VALUE) {
+      int cmp = compare_func_(src_value, target_value);
+      if (cmp == 0)
+        cmp = compare_string_view(src_key, target_key);
+      return cmp;
+    } else {
+      kvdk_assert(0, "Sorted Collection only support two sorted way: sorted by "
+                     "key and value\n");
+      return 0;
+    }
   }
 
   SkiplistNode *header_;
@@ -353,6 +380,8 @@ private:
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
+  CompFunc compare_func_ = compare_string_view;
+  SortedBy sorted_by_ = SortedBy::KEY;
 };
 
 class SortedIterator : public Iterator {
@@ -397,7 +426,7 @@ struct Splice {
 
   Splice(Skiplist *s) : seeking_list(s) {}
 
-  void Recompute(const StringView &key, uint8_t l) {
+  void Recompute(const StringView &key, const StringView &value, uint8_t l) {
     SkiplistNode *start_node;
     uint8_t start_height = l;
     while (1) {
@@ -412,7 +441,7 @@ struct Splice {
       } else {
         start_node = prevs[start_height];
       }
-      start_node->SeekNode(key, start_height, l, this);
+      seeking_list->SeekNode(key, value, start_node, start_height, l, this);
       return;
     }
   }

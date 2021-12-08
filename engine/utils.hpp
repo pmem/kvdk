@@ -120,7 +120,7 @@ static inline bool equal_string_view(const StringView &src,
 template <typename T> class Array {
 public:
   template <typename... A>
-  explicit Array(uint64_t size, A &&...args) : size_(size) {
+  explicit Array(uint64_t size, A &&... args) : size_(size) {
     data_ = (T *)malloc(sizeof(T) * size);
     for (uint64_t i = 0; i < size; i++) {
       new (data_ + i) T(std::forward<A>(args)...);
@@ -260,4 +260,31 @@ public:
 // Return the number of process unit (PU) that are bound to the kvdk instance
 int get_usable_pu(void);
 
+namespace CollectionUtils {
+inline static StringView ExtractUserKey(const StringView &internal_key) {
+  constexpr size_t sz_id = sizeof(CollectionIDType);
+  kvdk_assert(sz_id <= internal_key.size(),
+              "internal_key does not has space for key");
+  return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
+}
+
+inline static uint64_t ExtractID(const StringView &internal_key) {
+  CollectionIDType id;
+  memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
+  return id;
+}
+
+inline static std::string ID2String(CollectionIDType id) {
+  return std::string(reinterpret_cast<char *>(&id), 8);
+}
+
+inline static CollectionIDType string2ID(const StringView &string_id) {
+  CollectionIDType id;
+  kvdk_assert(sizeof(CollectionIDType) == string_id.size(),
+              "size of string id does not match CollectionIDType size!");
+  memcpy(&id, string_id.data(), sizeof(CollectionIDType));
+  return id;
+}
+
+} // namespace CollectionUtils
 } // namespace KVDK_NAMESPACE
