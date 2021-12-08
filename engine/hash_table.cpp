@@ -183,11 +183,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
   if (found) {
     (*entry_ptr)->header.status = HashEntryStatus::Updating;
   } else {
-    if ((*entry_ptr) == reusable_entry) {
-      if ((*entry_ptr)->header.status == HashEntryStatus::CleanReusable) {
-        (*entry_ptr)->header.status = HashEntryStatus::Updating;
-      }
-    } else {
+    if ((*entry_ptr) != reusable_entry) {
       (*entry_ptr)->header.status = HashEntryStatus::Initializing;
     }
   }

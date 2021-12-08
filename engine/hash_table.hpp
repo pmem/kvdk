@@ -27,14 +27,6 @@ enum class HashEntryStatus : uint8_t {
   // A entry being updated by the same key, or a CleanReusable hash entry being
   // updated by a new key
   Updating = 1 << 2,
-  // A Normal hash entry of a delete record that is reusing by a new key, it's
-  // unknown if there are older version data of the same key existing so we can
-  // not free corresponding PMem data record
-  DirtyReusable = 1 << 3,
-  // A hash entry of a delete record which has no older version data of the same
-  // key exsiting on PMem, so the delete record can be safely freed after the
-  // hash entry updated by a new key
-  CleanReusable = 1 << 4,
   // A empty hash entry that points to nothing
   Empty = 1 << 5
 };
@@ -105,11 +97,7 @@ public:
     dst->index = src->index;
   }
 
-  bool Reusable() {
-    return (uint8_t)header.status & ((uint8_t)HashEntryStatus::CleanReusable |
-                                     (uint8_t)HashEntryStatus::DirtyReusable |
-                                     (uint8_t)HashEntryStatus::Empty);
-  }
+  bool Reusable() { return header.status == HashEntryStatus::Empty; }
 
   bool Empty() { return header.status == HashEntryStatus::Empty; }
 

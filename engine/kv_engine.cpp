@@ -460,13 +460,6 @@ Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                         existing_data_entry.meta.timestamp));
   }
 
-  // If a delete record is the only existing record of a key, then we
-  // can reuse the hash entry and free the record
-  entry_ptr->header.status =
-      (!found && (cached_entry.meta.type & DeleteRecordType)
-           ? HashEntryStatus::CleanReusable
-           : HashEntryStatus::Normal);
-
   return Status::Ok;
 }
 
@@ -569,12 +562,6 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
         SizedSpaceEntry(old_data_offset, existing_data_entry.header.record_size,
                         existing_data_entry.meta.timestamp));
   }
-  // If a delete record is the only existing record of a key, then we
-  // can reuse the hash entry and free the record
-  entry_ptr->header.status =
-      (!found && (cached_data_entry.meta.type & DeleteRecordType)
-           ? HashEntryStatus::CleanReusable
-           : HashEntryStatus::Normal);
 
   return Status::Ok;
 }
@@ -631,7 +618,7 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
           }
         }
         assert(entry_ptr->header.status == HashEntryStatus::Initializing ||
-               entry_ptr->header.status == HashEntryStatus::CleanReusable);
+               entry_ptr->header.status == HashEntryStatus::Empty);
         hash_table_->Insert(hint, entry_ptr, collection_type, *list,
                             HashOffsetType::Skiplist);
         return Status::Ok;
@@ -1164,11 +1151,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // Free updated kvs / unused space
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (batch_hints[i].free_after_finish.size > 0) {
-      if (batch_hints[i].delay_free) {
-        pmem_allocator_->DelayFree(batch_hints[i].free_after_finish);
-      } else {
-        pmem_allocator_->Free(batch_hints[i].free_after_finish);
-      }
+      pmem_allocator_->Free(batch_hints[i].free_after_finish);
     }
   }
   return s;
@@ -1195,7 +1178,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     if (kv.type == StringDeleteRecord) {
       if (!found || data_entry.meta.type == StringDeleteRecord) {
         batch_hint.free_after_finish = batch_hint.allocated_space;
-        batch_hint.delay_free = false;
         return Status::Ok;
       }
     }
@@ -1203,7 +1185,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     // A newer version has been set
     if (found && batch_hint.timestamp < data_entry.meta.timestamp) {
       batch_hint.free_after_finish = batch_hint.allocated_space;
-      batch_hint.delay_free = false;
       return Status::Ok;
     }
 
@@ -1229,12 +1210,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
       batch_hint.free_after_finish = SizedSpaceEntry(
           pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
           data_entry.header.record_size, data_entry.meta.timestamp);
-      batch_hint.delay_free = false;
-    } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-      batch_hint.free_after_finish = SizedSpaceEntry(
-          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
-          data_entry.header.record_size, data_entry.meta.timestamp);
-      batch_hint.delay_free = true;
     }
   }
 

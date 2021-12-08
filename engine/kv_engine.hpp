@@ -101,7 +101,6 @@ private:
     TimeStampType timestamp{0};
     SizedSpaceEntry allocated_space{};
     SizedSpaceEntry free_after_finish{};
-    bool delay_free{false};
   };
 
   struct ThreadLocalRes {
