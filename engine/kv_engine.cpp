@@ -630,22 +630,10 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
             return Status::NotSupported;
           }
         }
-        auto entry_base_status = entry_ptr->header.status;
+        assert(entry_ptr->header.status == HashEntryStatus::Initializing ||
+               entry_ptr->header.status == HashEntryStatus::CleanReusable);
         hash_table_->Insert(hint, entry_ptr, collection_type, *list,
                             HashOffsetType::Skiplist);
-        if (entry_base_status == HashEntryStatus::Updating) {
-          pmem_allocator_->Free(
-              SizedSpaceEntry(pmem_allocator_->addr2offset_checked(
-                                  hash_entry.index.string_record),
-                              existing_data_entry.header.record_size,
-                              existing_data_entry.meta.timestamp));
-        } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-          pmem_allocator_->DelayFree(
-              SizedSpaceEntry(pmem_allocator_->addr2offset_checked(
-                                  hash_entry.index.string_record),
-                              existing_data_entry.header.record_size,
-                              existing_data_entry.meta.timestamp));
-        }
         return Status::Ok;
       }
     }
@@ -984,13 +972,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                           dram_node ? HashOffsetType::SkiplistNode
                                     : HashOffsetType::DLRecord);
       if (entry_base_status == HashEntryStatus::Updating) {
-        pmem_allocator_->Free(SizedSpaceEntry(
-            pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
-            data_entry.header.record_size, data_entry.meta.timestamp));
-      } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-        pmem_allocator_->DelayFree(SizedSpaceEntry(
-            pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
-            data_entry.header.record_size, data_entry.meta.timestamp));
+        purgeAndFree(hash_entry.index.dl_record);
       }
     }
 
@@ -1283,7 +1265,8 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s = hash_table_->SearchForWrite(
-        hint, key, StringDataRecord, &entry_ptr, &hash_entry, &data_entry);
+        hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
+        &hash_entry, &data_entry);
 
     switch (s) {
     case Status::Ok:
@@ -1337,13 +1320,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
                         HashOffsetType::StringRecord);
     if (entry_base_status == HashEntryStatus::Updating) {
-      pmem_allocator_->Free(SizedSpaceEntry(
-          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
-          data_entry.header.record_size, data_entry.meta.timestamp));
-    } else if (entry_base_status == HashEntryStatus::DirtyReusable) {
-      pmem_allocator_->DelayFree(SizedSpaceEntry(
-          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
-          data_entry.header.record_size, data_entry.meta.timestamp));
+      purgeAndFree(hash_entry.index.string_record);
     }
   }
 

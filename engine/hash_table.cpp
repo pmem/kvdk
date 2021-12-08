@@ -249,10 +249,7 @@ void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_ptr,
   assert(write_thread.id >= 0);
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index,
-                           (type == StringDeleteRecord)
-                               ? HashEntryStatus::DirtyReusable
-                               : HashEntryStatus::Normal,
-                           offset_type);
+                           HashEntryStatus::Normal, offset_type);
 
   bool new_entry = entry_ptr->header.status == HashEntryStatus::Initializing;
   memcpy_16(entry_ptr, &new_hash_entry);
