@@ -100,7 +100,8 @@ private:
   struct BatchWriteHint {
     TimeStampType timestamp{0};
     SizedSpaceEntry allocated_space{};
-    SizedSpaceEntry free_after_finish{};
+    HashTable::KeyHashHint hash_hint{};
+    void *pmem_record_to_free = nullptr;
   };
 
   struct ThreadLocalRes {

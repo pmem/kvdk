@@ -1100,31 +1100,56 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return s;
   }
 
-  TimeStampType ts = get_timestamp();
+  class LockCmp {
+  public:
+    bool operator()(const std::unique_lock<SpinMutex> &l1,
+                    const std::unique_lock<SpinMutex> &l2) {
+      return l1.mutex() < l2.mutex();
+    }
+  };
 
-  // Allocate space for batch
+  std::set<std::unique_lock<SpinMutex>, LockCmp> locks;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
-  std::vector<uint64_t> space_entry_offsets(write_batch.Size());
+  std::vector<uint64_t> space_entry_offsets;
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto &kv = write_batch.kvs[i];
-    uint32_t requested_size =
-        kv.key.size() + kv.value.size() + sizeof(StringRecord);
-    batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
-    // No enough space for batch write
-    if (batch_hints[i].allocated_space.size == 0) {
-      for (size_t j = 0; j < i; j++) {
-        pmem_allocator_->Free(batch_hints[j].allocated_space);
+    if (kv.type == StringDataRecord) {
+      // Allocate space for data records
+      uint32_t requested_size =
+          kv.key.size() + kv.value.size() + sizeof(StringRecord);
+      batch_hints[i].allocated_space =
+          pmem_allocator_->Allocate(requested_size);
+      // No enough space for batch write
+      if (batch_hints[i].allocated_space.size == 0) {
+        for (size_t j = 0; j < i; j++) {
+          pmem_allocator_->Free(batch_hints[j].allocated_space);
+        }
+        return s;
       }
-      return s;
+      space_entry_offsets.emplace_back(
+          batch_hints[i].allocated_space.space_entry.offset);
+    } else {
+      kvdk_assert(kv.type == StringDeleteRecord,
+                  "only support string type batch write");
     }
 
+    batch_hints[i].hash_hint = hash_table_->GetHint(kv.key);
+    locks.emplace(std::unique_lock<SpinMutex>(*batch_hints[i].hash_hint.spin,
+                                              std::defer_lock));
+  }
+
+  for (std::unique_lock<SpinMutex> &ul : locks) {
+    ul.lock();
+  }
+
+  TimeStampType ts = get_timestamp();
+  for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
-    space_entry_offsets[i] = batch_hints[i].allocated_space.space_entry.offset;
   }
 
   // Persist batch write status as processing
   PendingBatch pending_batch(PendingBatch::Stage::Processing,
-                             write_batch.Size(), ts);
+                             space_entry_offsets.size(), ts);
   pending_batch.PersistProcessing(
       thread_res_[write_thread.id].persisted_pending_batch,
       space_entry_offsets);
@@ -1139,7 +1164,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     }
 
     // Something wrong
-    // TODO: roll back finished writes (hard to roll back hash table)
+    // TODO: roll back finished writes (hard to roll back hash table now)
     if (s != Status::Ok) {
       assert(s == Status::MemoryOverflow);
       std::abort();
@@ -1148,12 +1173,10 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
 
   pending_batch.PersistStage(PendingBatch::Stage::Finish);
 
-  // Free updated kvs / unused space
+  // Free updated kvs, we should purge all updated kvs before release locks
   for (size_t i = 0; i < write_batch.Size(); i++) {
-    if (batch_hints[i].free_after_finish.size > 0) {
-      // TODO: we should purge all updated kvs before release locks, and after
-      // persist finish stage
-      pmem_allocator_->Free(batch_hints[i].free_after_finish);
+    if (batch_hints[i].pmem_record_to_free != nullptr) {
+      purgeAndFree(batch_hints[i].pmem_record_to_free);
     }
   }
   return s;
@@ -1166,8 +1189,9 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
   HashEntry *entry_ptr = nullptr;
 
   {
-    auto hash_hint = hash_table_->GetHint(kv.key);
-    std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+    auto &hash_hint = batch_hint.hash_hint;
+    // hash table for the hint should be alread locked, so we do not lock it
+    // here
     Status s =
         hash_table_->SearchForWrite(hash_hint, kv.key, StringRecordType,
                                     &entry_ptr, &hash_entry, &data_entry);
@@ -1178,30 +1202,27 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
 
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord) {
-      if (!found || data_entry.meta.type == StringDeleteRecord) {
-        batch_hint.free_after_finish = batch_hint.allocated_space;
-        return Status::Ok;
+      if (found) {
+        batch_hint.pmem_record_to_free = hash_entry.index.string_record;
       }
-    }
-
-    // A newer version has been set
-    if (found && batch_hint.timestamp < data_entry.meta.timestamp) {
-      batch_hint.free_after_finish = batch_hint.allocated_space;
       return Status::Ok;
     }
+
+    kvdk_assert(!found || batch_hint.timestamp > data_entry.meta.timestamp,
+                "ts of new data smaller than existing data in batch write");
 
     void *block_base = pmem_allocator_->offset2addr(
         batch_hint.allocated_space.space_entry.offset);
 
     // We use if here to avoid compilation warning
-    if (kv.type == StringDataRecord || kv.type == StringDeleteRecord) {
+    if (kv.type == StringDataRecord) {
       StringRecord::PersistStringRecord(
           block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
           static_cast<RecordType>(kv.type), kv.key, kv.value);
     } else {
       // Never reach
-      assert(false);
-      return Status::NotSupported;
+      kvdk_assert(false, "wrong data type in batch write");
+      std::abort();
     }
 
     auto entry_base_status = entry_ptr->header.status;
@@ -1209,9 +1230,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
                         HashOffsetType::StringRecord);
 
     if (entry_base_status == HashEntryStatus::Updating) {
-      batch_hint.free_after_finish = SizedSpaceEntry(
-          pmem_allocator_->addr2offset_checked(hash_entry.index.ptr),
-          data_entry.header.record_size, data_entry.meta.timestamp);
+      batch_hint.pmem_record_to_free = hash_entry.index.string_record;
     }
   }
 
