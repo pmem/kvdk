@@ -156,10 +156,6 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
       // reach end of buckets, reuse entry or allocate a new bucket
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
         if (reusable_entry != nullptr) {
-          if (data_entry_meta && !reusable_entry->Empty()) {
-            memcpy(data_entry_meta, reusable_entry->index.string_record,
-                   sizeof(DataEntry));
-          }
           *entry_ptr = reusable_entry;
         } else {
           auto space = dram_allocator_.Allocate(hash_bucket_size_);
