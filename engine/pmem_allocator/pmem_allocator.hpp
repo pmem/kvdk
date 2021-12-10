@@ -106,7 +106,7 @@ private:
                 uint32_t block_size, uint32_t num_write_threads);
   // Write threads cache a dedicated PMem segment and a free space to
   // avoid contention
-  struct ThreadCache {
+  struct alignas(64) ThreadCache {
     // Space got from free list, the size is aligned to block_size_
     SizedSpaceEntry free_entry;
     // Space fetched from head of PMem segments, the size is aligned to
@@ -133,7 +133,7 @@ private:
     return data_size / block_size_ + (data_size % block_size_ == 0 ? 0 : 1);
   }
 
-  std::vector<ThreadCache> thread_cache_;
+  std::vector<ThreadCache, AlignedAllocator<ThreadCache>> thread_cache_;
   const uint32_t block_size_;
   const uint64_t segment_size_;
   std::atomic<uint64_t> offset_head_;

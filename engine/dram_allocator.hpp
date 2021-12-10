@@ -39,7 +39,7 @@ public:
   }
 
 private:
-  struct ThreadCache {
+  struct alignas(64) ThreadCache {
     char *chunk_addr = nullptr;
     uint64_t usable_bytes = 0;
     std::vector<void *> allocated_chunks;
