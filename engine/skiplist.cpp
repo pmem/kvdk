@@ -123,7 +123,7 @@ Status Skiplist::Rebuild() {
       return s;
     }
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
+      SkiplistNode *dram_node = hash_entry.index.skiplist_node;
       int height = dram_node->Height();
       for (int i = 1; i <= height; i++) {
         splice.prevs[i]->RelaxedSetNext(i, dram_node);
@@ -194,7 +194,7 @@ Status Skiplist::CheckConnection(int height) {
     assert(s == Status::Ok && "search node fail!");
 
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      SkiplistNode *dram_node = (SkiplistNode *)hash_entry.offset;
+      SkiplistNode *dram_node = hash_entry.index.skiplist_node;
       if (next_node == nullptr) {
         if (dram_node->Height() >= height) {
           GlobalLogger.Error(
@@ -570,10 +570,10 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
               engine->pmem_allocator_->offset2addr<DLRecord>(next_offset);
 
           if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
-            next_node = ((Skiplist *)hash_entry.offset)->header();
+            next_node = hash_entry.index.skiplist->header();
           } else if (hash_entry.header.offset_type ==
                      HashOffsetType::SkiplistNode) {
-            next_node = (SkiplistNode *)hash_entry.offset;
+            next_node = hash_entry.index.skiplist_node;
           } else {
             continue;
           }
@@ -645,7 +645,7 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
              hash_entry.header.offset_type == HashOffsetType::DLRecord &&
                  "next entry should be skiplistnode type or data_entry type!");
       if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-        next_node = (SkiplistNode *)hash_entry.offset;
+        next_node = hash_entry.index.skiplist_node;
       }
       // excepte data_entry node (height = 0)
       if (next_node) {
@@ -730,9 +730,9 @@ void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
       continue;
     }
     if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
-      node = ((Skiplist *)hash_entry.offset)->header();
+      node = hash_entry.index.skiplist->header();
     } else if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      node = (SkiplistNode *)hash_entry.offset;
+      node = hash_entry.index.skiplist_node;
     }
     assert(node && "should be not empty!");
 

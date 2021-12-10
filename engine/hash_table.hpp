@@ -27,16 +27,8 @@ enum class HashEntryStatus : uint8_t {
   // A entry being updated by the same key, or a CleanReusable hash entry being
   // updated by a new key
   Updating = 1 << 2,
-  // A Normal hash entry of a delete record that is reusing by a new key, it's
-  // unknown if there are older version data of the same key existing so we can
-  // not free corresponding PMem data record
-  DirtyReusable = 1 << 3,
-  // A hash entry of a delete record which has no older version data of the same
-  // key exsiting on PMem, so the delete record can be safely freed after the
-  // hash entry updated by a new key
-  CleanReusable = 1 << 4,
   // A empty hash entry that points to nothing
-  Empty = 1 << 5
+  Empty = 1 << 3
 };
 
 enum class HashOffsetType : uint8_t {
@@ -65,40 +57,47 @@ struct HashHeader {
   HashEntryStatus status;
 };
 
+class Skiplist;
+class SkiplistNode;
 class UnorderedCollection;
 class Queue;
 
 struct HashEntry {
 public:
-  HashEntry() = default;
-
-  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, uint64_t offset,
-            HashOffsetType offset_type)
-      : header({key_hash_prefix, data_entry_type, offset_type,
-                HashEntryStatus::Normal}),
-        offset(offset) {}
-
-  HashEntry(uint32_t kp, uint16_t t, uint64_t offset, HashEntryStatus status,
-            HashOffsetType offset_type)
-      : header({kp, t, offset_type, status}), offset(offset) {}
-
-  HashHeader header;
-  union {
-    uint64_t offset;
+  union Index {
+    Index(void *_ptr) : ptr(_ptr) {}
+    Index() = default;
+    void *ptr;
+    SkiplistNode *skiplist_node;
+    StringRecord *string_record;
+    DLRecord *dl_record;
+    Skiplist *skiplist;
     UnorderedCollection *p_unordered_collection;
     Queue *queue_ptr;
   };
+  static_assert(sizeof(Index) == 8);
+
+  HashEntry() = default;
+
+  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void *_index,
+            HashOffsetType offset_type)
+      : header({key_hash_prefix, data_entry_type, offset_type,
+                HashEntryStatus::Normal}),
+        index(_index) {}
+
+  HashEntry(uint32_t kp, uint16_t t, void *_index, HashEntryStatus status,
+            HashOffsetType offset_type)
+      : header({kp, t, offset_type, status}), index(_index) {}
+
+  HashHeader header;
+  Index index;
 
   static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
   static void CopyOffset(HashEntry *dst, HashEntry *src) {
-    dst->offset = src->offset;
+    dst->index = src->index;
   }
 
-  bool Reusable() {
-    return (uint8_t)header.status & ((uint8_t)HashEntryStatus::CleanReusable |
-                                     (uint8_t)HashEntryStatus::DirtyReusable |
-                                     (uint8_t)HashEntryStatus::Empty);
-  }
+  bool Reusable() { return header.status == HashEntryStatus::Empty; }
 
   bool Empty() { return header.status == HashEntryStatus::Empty; }
 
@@ -169,7 +168,7 @@ public:
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
   void Insert(const KeyHashHint &hint, HashEntry *entry_ptr, uint16_t type,
-              uint64_t offset, HashOffsetType offset_type);
+              void *index, HashOffsetType offset_type);
 
 private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,

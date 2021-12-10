@@ -31,13 +31,6 @@ void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
   }
 }
 
-void PMEMAllocator::DelayFree(const SizedSpaceEntry &entry) {
-  if (entry.size > 0) {
-    assert(entry.size % block_size_ == 0);
-    free_list_.DelayPush(entry);
-  }
-}
-
 void PMEMAllocator::PopulateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");
   std::vector<std::thread> ths;
