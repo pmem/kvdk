@@ -42,11 +42,6 @@ public:
   // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(const SizedSpaceEntry &entry) override;
 
-  // These entries hold a delete record of some key, it can be safely freed only
-  // if no free space entry of smaller timestamp existing in the free list, so
-  // just record these entries. The entry should be allocated by this allocator.
-  void DelayFree(const SizedSpaceEntry &entry);
-
   // translate block_offset of allocated space to address
   inline void *offset2addr_checked(uint64_t offset) {
     assert(validate_offset(offset) && "Trying to access invalid offset");

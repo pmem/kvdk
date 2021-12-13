@@ -129,7 +129,7 @@ public:
         active_pool_(max_classified_b_size),
         merged_pool_(max_classified_b_size), space_map_(num_blocks),
         thread_cache_(num_threads, max_classified_b_size),
-        min_timestamp_of_entries_(0), pmem_allocator_(allocator) {}
+        pmem_allocator_(allocator) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t block_size,
            uint32_t num_threads, uint64_t num_blocks, PMEMAllocator *allocator)
@@ -138,10 +138,6 @@ public:
 
   // Add a space entry
   void Push(const SizedSpaceEntry &entry);
-
-  // These entries can be safely freed only if no free space entry of smaller
-  // timestamp existing in the free list, so just record these entries
-  void DelayPush(const SizedSpaceEntry &entry);
 
   // Request a at least "size" free space entry
   bool Get(uint32_t size, SizedSpaceEntry *space_entry);
@@ -167,16 +163,8 @@ public:
   // active_pool_, and update minimal timestamp of free entries meantime
   void MoveCachedListsToPool();
 
-  // Add delay freed entries to the list
-  //
-  // As delay freed entry holds a delete record of some key, if timestamp of a
-  // delay freed entry is smaller than minimal timestamp of free entries in the
-  // list, it means no older data of the same key existing, so the delay freed
-  // entry can be safely added to the list
-  void HandleDelayFreedEntries();
-
-  // Origanize free space entries, including merging adjacent space and add
-  // delay freed entries to the list
+  // Origanize free space entries, including merging adjacent space and move
+  // thread cached space entries to pool
   void OrganizeFreeSpace();
 
 private:
@@ -186,10 +174,7 @@ private:
   // backup_entries and move to entry pool which shared by all threads.
   struct alignas(64) ThreadCache {
     ThreadCache(uint32_t max_classified_b_size)
-        : active_entries(max_classified_b_size),
-          spins(max_classified_b_size +
-                1 /* the last lock is for delay freed entries */),
-          last_used_entry_ts(0) {}
+        : active_entries(max_classified_b_size), spins(max_classified_b_size) {}
 
     ThreadCache() = delete;
     ThreadCache(ThreadCache &&) = delete;
@@ -197,13 +182,8 @@ private:
 
     // Entry size stored in block unit
     Array<std::vector<SpaceEntry>> active_entries;
-    // These entries can be add to free list only if no entries with smaller
-    // timestamp exist.
-    std::vector<SizedSpaceEntry> delay_freed_entries;
-    // Protect active_entries and delay_freed_entries
+    // Protect active_entries
     Array<SpinMutex> spins;
-    // timestamp of entry that recently fetched from active_entries
-    uint64_t last_used_entry_ts;
   };
 
   class SpaceCmp {
@@ -232,9 +212,7 @@ private:
   SpaceEntryPool merged_pool_;
   // Store all large free space entries that larger than max_classified_b_size_
   std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
-  std::vector<std::vector<SizedSpaceEntry>> delay_freed_entries_;
   SpinMutex large_entries_spin_;
-  uint64_t min_timestamp_of_entries_;
   PMEMAllocator *pmem_allocator_;
 };
 
