@@ -65,8 +65,8 @@ void AnonymousCollectionExample(KVDKEngine *kvdk_engine) {
          "global collection.\n");
 }
 
-// Reads and Writes on Named Collection
-void NamedCollectionExample(KVDKEngine *kvdk_engine) {
+// Reads and Writes on Named Sorted Collection
+void SortedCollectionExample(KVDKEngine *kvdk_engine) {
   const char *collection1 = "collection1";
   const char *collection2 = "collection2";
   const char *key1 = "key1";
@@ -77,8 +77,18 @@ void NamedCollectionExample(KVDKEngine *kvdk_engine) {
   char *read_v2;
   size_t read_v1_len, read_v2_len;
   int cmp;
-  KVDKStatus s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1),
-                               key1, strlen(key1), value1, strlen(value1));
+
+  KVDKCollection *collecton1_ptr;
+  KVDKStatus s =
+      KVDKCreateSortedCollection(kvdk_engine, &collecton1_ptr, collection1,
+                                 strlen(collection1), "", 0, KEY);
+  assert(s == Ok);
+  KVDKCollection *collecton2_ptr;
+  s = KVDKCreateSortedCollection(kvdk_engine, &collecton2_ptr, collection2,
+                                 strlen(collection2), "", 0, KEY);
+  assert(s == Ok);
+  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+                    strlen(key1), value1, strlen(value1));
   assert(s == Ok);
   s = KVDKSortedSet(kvdk_engine, collection2, strlen(collection2), key2,
                     strlen(key2), value2, strlen(value2));
@@ -109,6 +119,8 @@ void NamedCollectionExample(KVDKEngine *kvdk_engine) {
   assert(s == Ok);
   free(read_v1);
   free(read_v2);
+  KVDKDestorySortedCollection(collecton1_ptr);
+  KVDKDestorySortedCollection(collecton2_ptr);
   printf("Successfully performed SortedGet, SortedSet, SortedDelete "
          "operations on named "
          "collections.\n");
@@ -119,18 +131,22 @@ void SortedCollectinIterExample(KVDKEngine *kvdk_engine) {
   const char *sorted_nums[10] = {"0", "1", "2", "3", "4",
                                  "5", "6", "7", "8", "9"};
   const char *sorted_collection = "sorted_collection";
+  KVDKCollection *collecton_ptr;
+  KVDKStatus s =
+      KVDKCreateSortedCollection(kvdk_engine, &collecton_ptr, sorted_collection,
+                                 strlen(sorted_collection), "", 0, KEY);
+  assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key", value[10] = "value";
     strcat(key, nums[i]);
     strcat(value, nums[i]);
-    KVDKStatus s =
-        KVDKSortedSet(kvdk_engine, sorted_collection, strlen(sorted_collection),
+    s = KVDKSortedSet(kvdk_engine, sorted_collection, strlen(sorted_collection),
                       key, strlen(key), value, strlen(value));
     assert(s == Ok);
   }
   // create sorted iterator
-  KVDKIterator *kvdk_iter =
-      KVDKCreateIterator(kvdk_engine, sorted_collection, SORTED);
+  KVDKIterator *kvdk_iter = KVDKCreateIterator(
+      kvdk_engine, sorted_collection, strlen(sorted_collection), SORTED);
   KVDKIterSeekToFirst(kvdk_iter);
   // Iterate through range ["key1", "key8").
   const char *beg = "key1";
@@ -180,7 +196,73 @@ void SortedCollectinIterExample(KVDKEngine *kvdk_engine) {
   }
   assert(i == 0);
   printf("Successfully iterated through a sorted named collections.\n");
+  KVDKDestorySortedCollection(collecton_ptr);
   KVDKIterDestory(kvdk_iter);
+}
+
+int val_cmp(const char *a, size_t a_len, const char *b, size_t b_len) {
+  double scorea = atof(a);
+  double scoreb = atof(b);
+  if (scorea == scoreb)
+    return 0;
+  else if (scorea < scoreb)
+    return 1;
+  else
+    return -1;
+}
+
+void CompFuncForSortedCollectionExample(KVDKEngine *kvdk_engine) {
+  const char *collection = "collection0";
+  struct student_info {
+    const char *student;
+    const char *score;
+  };
+
+  struct student_info array[5] = {
+      {"a", "100"}, {"c", "50"}, {"d", "50"}, {"b", "30"}, {"f", "90"}};
+
+  struct student_info expected_array[5] = {
+      {"a", "100"}, {"f", "90"}, {"c", "50"}, {"d", "50"}, {"b", "30"}};
+
+  // regitser compare function
+  const char *comp_name = "double_comp";
+  KVDKRegisterCompFunc(kvdk_engine, comp_name, strlen(comp_name), val_cmp);
+  // create sorted collection
+  KVDKCollection *collecton_ptr;
+  KVDKStatus s = KVDKCreateSortedCollection(
+      kvdk_engine, &collecton_ptr, collection, strlen(collection), comp_name,
+      strlen(comp_name), VALUE);
+  assert(s == Ok);
+  for (int i = 0; i < 5; ++i) {
+    s = KVDKSortedSet(kvdk_engine, collection, strlen(collection),
+                      array[i].student, strlen(array[i].student),
+                      array[i].score, strlen(array[i].score));
+    assert(s == Ok);
+  }
+  KVDKIterator *iter =
+      KVDKCreateIterator(kvdk_engine, collection, strlen(collection), SORTED);
+
+  assert(iter != NULL);
+
+  int i = 0;
+  for (KVDKIterSeekToFirst(iter); KVDKIterValid(iter); KVDKIterNext(iter)) {
+    size_t key_len, value_len;
+    const char *key = KVDKIterKey(iter, &key_len);
+    const char *value = KVDKIterValue(iter, &value_len);
+    if (CmpCompare(key, key_len, expected_array[i].student,
+                   strlen(expected_array[i].student)) != 0) {
+      printf("sort key error, current key: %s , but expected key: %s\n", key,
+             expected_array[i].student);
+    }
+    if (CmpCompare(value, value_len, expected_array[i].score,
+                   strlen(expected_array[i].score)) != 0) {
+      printf("sort value error, current value: %s , but expected value: %s\n",
+             value, expected_array[i].score);
+    }
+    ++i;
+  }
+  printf("Successfully collections sorted by value.\n");
+  KVDKDestorySortedCollection(collecton_ptr);
 }
 
 void BatchWriteAnonCollectionExample(KVDKEngine *kvdk_engine) {
@@ -237,8 +319,8 @@ void HashesCollectionExample(KVDKEngine *kvdk_engine) {
                      "key8", strlen("key8"));
   assert(s == Ok);
   // create sorted iterator
-  KVDKIterator *kvdk_iter =
-      KVDKCreateIterator(kvdk_engine, hash_collection, HASH);
+  KVDKIterator *kvdk_iter = KVDKCreateIterator(kvdk_engine, hash_collection,
+                                               strlen(hash_collection), HASH);
   int cnt = 0;
   for (KVDKIterSeekToFirst(kvdk_iter); KVDKIterValid(kvdk_iter);
        KVDKIterNext(kvdk_iter)) {
@@ -290,6 +372,7 @@ void ListsCollectionExample(KVDKEngine *kvdk_engine) {
     assert(cmp == 0);
     free(key_res);
   }
+  printf("Successfully performed RPush RPop LPush LPop on Lists.\n");
 }
 
 int main() {
@@ -309,11 +392,13 @@ int main() {
   // Anonymous Global Collection Example
   AnonymousCollectionExample(kvdk_engine);
 
-  // Named Collection Example
-  NamedCollectionExample(kvdk_engine);
+  // Named Sorted Collection Example
+  SortedCollectionExample(kvdk_engine);
 
   // Sorted Named Collection Example
   SortedCollectinIterExample(kvdk_engine);
+
+  CompFuncForSortedCollectionExample(kvdk_engine);
 
   // BatchWrite on Anonymous Global Collection Example
   BatchWriteAnonCollectionExample(kvdk_engine);

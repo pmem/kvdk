@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cinttypes>
+#include <functional>
 
 #include "kvdk/namespace.hpp"
 #include "libpmem.h"
@@ -15,4 +16,6 @@ using PMemOffsetType = std::uint64_t;
 using TimeStampType = std::uint64_t;
 using CollectionIDType = std::uint64_t;
 using KeyHashType = std::uint64_t;
+using CompFunc =
+    std::function<int(const StringView &src, const StringView &target)>;
 } // namespace KVDK_NAMESPACE

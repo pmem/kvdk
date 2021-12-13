@@ -14,7 +14,6 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
 
-#include "collection.hpp"
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
 #include "macros.hpp"
@@ -170,7 +169,8 @@ private:
   }
 
   inline bool checkID(DLRecord *record_pmmptr) {
-    if (!record_pmmptr || ExtractID(record_pmmptr->Key()) != ID())
+    if (!record_pmmptr ||
+        CollectionUtils::ExtractID(record_pmmptr->Key()) != ID())
       return false;
     return true;
   }
@@ -267,8 +267,7 @@ public:
   /// return key in DlistDataRecord
   inline virtual std::string Key() override {
     kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
-    auto view_key =
-        UnorderedCollection::ExtractUserKey(internal_iterator->Key());
+    auto view_key = CollectionUtils::ExtractUserKey(internal_iterator->Key());
     return std::string(view_key.data(), view_key.size());
   }
 

@@ -4,8 +4,8 @@ namespace KVDK_NAMESPACE {
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
              CollectionIDType id, TimeStampType timestamp)
     : Collection{name, id}, collection_record_ptr_{nullptr},
-      dlinked_list_{pmem_allocator_ptr, timestamp, ID2String(id),
-                    StringView{""}},
+      dlinked_list_{pmem_allocator_ptr, timestamp,
+                    CollectionUtils::ID2String(id), StringView{""}},
       timestamp_{timestamp} {
   {
     auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
@@ -23,13 +23,14 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
             offset_list_record),
         list_record_space.size, timestamp, RecordType::QueueRecord,
         dlinked_list_.Head().GetCurrentOffset(),
-        dlinked_list_.Tail().GetCurrentOffset(), Name(), ID2String(ID()));
+        dlinked_list_.Tail().GetCurrentOffset(), Name(),
+        CollectionUtils::ID2String(ID()));
   }
 }
 
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
     : Collection{string_view_2_string(collection_record->Key()),
-                 string2ID(collection_record->Value())},
+                 CollectionUtils::string2ID(collection_record->Value())},
       collection_record_ptr_{collection_record},
       dlinked_list_{
           pmem_allocator_ptr,
@@ -63,7 +64,7 @@ bool Queue::PopFront(std::string *value_got) {
     --sz_;
     DLRecord *old_front = dlinked_list_.First().GetCurrentAddress();
     auto val = old_front->Value();
-    kvdk_assert(ExtractID(old_front->Key()) == ID(), "");
+    kvdk_assert(CollectionUtils::ExtractID(old_front->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
     dlinked_list_.PopFront();
 
@@ -82,7 +83,7 @@ bool Queue::PopBack(std::string *value_got) {
     --sz_;
     DLRecord *old_back = dlinked_list_.Last().GetCurrentAddress();
     auto val = old_back->Value();
-    kvdk_assert(ExtractID(old_back->Key()) == ID(), "");
+    kvdk_assert(CollectionUtils::ExtractID(old_back->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
     dlinked_list_.PopBack();
 

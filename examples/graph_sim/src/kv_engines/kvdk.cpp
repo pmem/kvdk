@@ -11,7 +11,8 @@ DEFINE_string(kvdk_collection, "",
 DEFINE_int64(kvdk_pmem_file_size, 100ULL << 30,
              "The size of kvdk pmem file size.");
 DEFINE_string(kvdk_path, "/mnt/pmem0/kvdk", "The path of the kvdk pmem file.");
-DEFINE_int64(kvdk_max_write_threads, 48, "The max write threads number in kvdk.");
+DEFINE_int64(kvdk_max_write_threads, 48,
+             "The max write threads number in kvdk.");
 
 PMemKVDK::PMemKVDK(const std::string &db_path) {
   path_ = FLAGS_kvdk_path;
@@ -24,6 +25,11 @@ PMemKVDK::PMemKVDK(const std::string &db_path) {
   auto s = kvdk::Engine::Open(path_, &db_, options_);
   if (s != kvdk::Status::Ok) {
     SimpleLoger("KVDK Open failed");
+    return;
+  }
+  s = db_->CreateSortedCollection(collection_, &collection_ptr_);
+  if (s != kvdk::Status::Ok) {
+    SimpleLoger("Create Sorted Collection Failed!");
     return;
   }
 }
@@ -59,7 +65,7 @@ Status PMemKVDK::Delete(const std::string &key) {
 }
 
 class PMemKVDKIterator : public KVEngine::Iterator {
- public:
+public:
   explicit PMemKVDKIterator(kvdk::Iterator *it) : iter_(it) {}
   ~PMemKVDKIterator() = default;
 
@@ -71,7 +77,7 @@ class PMemKVDKIterator : public KVEngine::Iterator {
   std::string Key() override { return iter_->Key(); }
   std::string Value() override { return iter_->Value(); }
 
- private:
+private:
   kvdk::Iterator *iter_;
 };
 
