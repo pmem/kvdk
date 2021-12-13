@@ -198,6 +198,27 @@ void Freelist::Push(const SizedSpaceEntry &entry) {
   }
 }
 
+void Freelist::BatchPush(const std::vector<SizedSpaceEntry> &entries) {
+  Array<std::vector<SpaceEntry>> moving_list(max_classified_b_size_);
+  for (const SizedSpaceEntry &entry : entries) {
+    kvdk_assert(entry.size % block_size_ == 0,
+                "batch freed entry size is not aligned to block size");
+    uint32_t b_size = entry.size / block_size_;
+    if (b_size < max_classified_b_size_) {
+      moving_list[b_size].emplace_back(entry.space_entry);
+      if (moving_list[b_size].size() == kMinMovableEntries) {
+        active_pool_.MoveEntryList(moving_list[b_size], b_size);
+      }
+    }
+  }
+
+  for (uint32_t b_size = 1; b_size < moving_list.size(); b_size++) {
+    if (moving_list[b_size].size() > 0) {
+      active_pool_.MoveEntryList(moving_list[b_size], b_size);
+    }
+  }
+}
+
 bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;

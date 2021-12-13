@@ -9,6 +9,7 @@
 #include <ctime>
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <iostream>
 #include <list>
@@ -38,7 +39,7 @@ class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
 
 public:
-  KVEngine();
+  KVEngine(const Configs &configs) : thread_cache_(configs.max_write_threads){};
   ~KVEngine();
 
   static Status Open(const std::string &name, Engine **engine_ptr,
@@ -135,6 +136,7 @@ private:
 
     std::deque<PendingFreeDeleteRecord> pending_free_delete_records{};
     std::deque<PendingFreeDataRecord> pending_free_data_records{};
+    SpinMutex pending_free_delete_records_lock;
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
@@ -223,6 +225,7 @@ private:
 
   // Regularly works excecuted by background thread
   void backgroundWorkImpl() {
+    bg_free_cv_.notify_all();
     updateSmallestSnapshot();
     pmem_allocator_->BackgroundWork();
   }
@@ -250,11 +253,15 @@ private:
 
   void maybeHandleCachedPendingFreeSpace();
 
+  void backgroundPendingFreeSpaceHandler();
+
   inline void delayFree(PendingFreeDeleteRecord &&);
 
   inline void delayFree(PendingFreeDataRecord &&);
 
-  void handlePendingFreeDataRecord(const PendingFreeDataRecord &);
+  SizedSpaceEntry handlePendingFreeRecord(const PendingFreeDataRecord &);
+
+  SizedSpaceEntry handlePendingFreeRecord(const PendingFreeDeleteRecord &);
 
   void backgroundWork();
 
@@ -320,7 +327,7 @@ private:
         data_entry->header.record_size, data_entry->meta.timestamp));
   }
 
-  std::vector<ThreadCache> thread_cache_;
+  Array<ThreadCache> thread_cache_;
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};
@@ -346,6 +353,15 @@ private:
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
   SortedCollectionRebuilder sorted_rebuilder_;
+
+  // background free space
+  std::vector<std::deque<PendingFreeDataRecord>>
+      pending_free_data_records_pool_;
+  std::vector<std::deque<PendingFreeDeleteRecord>>
+      pending_free_delete_records_pool_;
+  bool bg_free_processing_{false};
+  SpinMutex bg_free_lock_;
+  std::condition_variable_any bg_free_cv_;
 };
 
 } // namespace KVDK_NAMESPACE

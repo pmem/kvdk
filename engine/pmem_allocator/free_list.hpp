@@ -139,6 +139,9 @@ public:
   // Add a space entry
   void Push(const SizedSpaceEntry &entry);
 
+  // Add a batch of space entry to free list entries pool
+  void BatchPush(const std::vector<SizedSpaceEntry> &entries);
+
   // Request a at least "size" free space entry
   bool Get(uint32_t size, SizedSpaceEntry *space_entry);
 

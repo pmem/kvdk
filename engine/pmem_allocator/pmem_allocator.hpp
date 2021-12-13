@@ -96,6 +96,10 @@ public:
   // Regularly execute by background thread of KVDK
   void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
 
+  void BatchFree(const std::vector<SizedSpaceEntry> &entries) {
+    free_list_.BatchPush(entries);
+  }
+
 private:
   PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
                 uint32_t block_size, uint32_t num_write_threads);
