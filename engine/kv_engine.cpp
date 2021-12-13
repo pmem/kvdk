@@ -79,7 +79,7 @@ void KVEngine::FreeSkiplistDramNodes() {
   }
 }
 
-void KVEngine::BackgroundWork() {
+void KVEngine::backgroundWork() {
   // To avoid free a referencing skiplist node, we do freeing in at least every
   // 10 seconds
   // TODO: Maybe free skiplist node in another bg thread?
@@ -88,7 +88,7 @@ void KVEngine::BackgroundWork() {
   while (!closing_) {
     usleep(configs_.background_work_interval * 1000000);
     interval_free_skiplist_node -= configs_.background_work_interval;
-    pmem_allocator_->BackgroundWork();
+    backgroundWorkImpl();
     if ((interval_free_skiplist_node -= configs_.background_work_interval) <=
         0) {
       FreeSkiplistDramNodes();
@@ -144,7 +144,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
     return s;
   }
 
-  thread_res_.resize(configs_.max_write_threads);
+  thread_cache_.resize(configs_.max_write_threads);
   pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
       db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
       configs_.pmem_block_size, configs_.max_write_threads,
@@ -164,7 +164,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
-  bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundWork, this);
 
   return s;
 }
@@ -266,8 +266,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     cnt++;
 
     auto ts_recovering = data_entry_cached.meta.timestamp;
-    if (ts_recovering > thread_res_[thread_id].newest_restored_ts) {
-      thread_res_[thread_id].newest_restored_ts = ts_recovering;
+    if (ts_recovering > thread_cache_[thread_id].newest_restored_ts) {
+      thread_cache_[thread_id].newest_restored_ts = ts_recovering;
     }
 
     Status s(Status::Ok);
@@ -515,7 +515,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
       }
       new_hash_index = dram_node;
       if (configs_.opt_large_sorted_collection_restore &&
-          thread_res_[write_thread.id]
+          thread_cache_[write_thread.id]
                       .visited_skiplist_ids[dram_node->SkiplistID()]++ %
                   kRestoreSkiplistStride ==
               0) {
@@ -691,7 +691,7 @@ Status KVEngine::RestorePendingBatch() {
           }
 
           if (id < configs_.max_write_threads) {
-            thread_res_[id].persisted_pending_batch = pending_batch;
+            thread_cache_[id].persisted_pending_batch = pending_batch;
           } else {
             remove(pending_batch_file.c_str());
           }
@@ -744,12 +744,14 @@ Status KVEngine::Recovery() {
       pmem_allocator_->PopulateSpace();
     }
   } else {
-    for (auto &ts : thread_res_) {
+    for (auto &ts : thread_cache_) {
       if (ts.newest_restored_ts > newest_version_on_startup_) {
         newest_version_on_startup_ = ts.newest_restored_ts;
       }
     }
   }
+
+  smallest_snapshot_ = SnapshotImpl(newest_version_on_startup_);
 
   return Status::Ok;
 }
@@ -1041,7 +1043,7 @@ Status KVEngine::SDelete(const StringView collection,
 }
 
 Status KVEngine::MaybeInitPendingBatchFile() {
-  if (thread_res_[write_thread.id].persisted_pending_batch == nullptr) {
+  if (thread_cache_[write_thread.id].persisted_pending_batch == nullptr) {
     int is_pmem;
     size_t mapped_len;
     uint64_t persisted_pending_file_size =
@@ -1050,7 +1052,7 @@ Status KVEngine::MaybeInitPendingBatchFile() {
         kPMEMMapSizeUnit *
         (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
 
-    if ((thread_res_[write_thread.id].persisted_pending_batch =
+    if ((thread_cache_[write_thread.id].persisted_pending_batch =
              (PendingBatch *)pmem_map_file(
                  persisted_pending_block_file(write_thread.id).c_str(),
                  persisted_pending_file_size, PMEM_FILE_CREATE, 0666,
@@ -1121,7 +1123,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   PendingBatch pending_batch(PendingBatch::Stage::Processing,
                              space_entry_offsets.size(), ts);
   pending_batch.PersistProcessing(
-      thread_res_[write_thread.id].persisted_pending_batch,
+      thread_cache_[write_thread.id].persisted_pending_batch,
       space_entry_offsets);
 
   // Do batch writes
@@ -1231,16 +1233,43 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
   {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
+    // Set current snapshot to this thread
+    // TODO: merge these two
+    TimeStampType new_ts = get_timestamp();
+    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
+                          new_ts);
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
         &hash_entry, &data_entry);
 
     switch (s) {
-    case Status::Ok:
+    case Status::Ok: {
       assert(entry_ptr->header.status == HashEntryStatus::Updating);
-      purgeAndFree(hash_entry.index.string_record);
-      entry_ptr->Clear();
+      if (entry_ptr->header.data_type == StringDeleteRecord) {
+        entry_ptr->header.status = HashEntryStatus::Normal;
+        return s;
+      }
+      auto request_size = key.size() + sizeof(StringRecord);
+      SizedSpaceEntry sized_space_entry =
+          pmem_allocator_->Allocate(request_size);
+      if (sized_space_entry.size == 0) {
+        return Status::PmemOverflow;
+      }
+
+      void *pmem_ptr = pmem_allocator_->offset2addr_checked(
+          sized_space_entry.space_entry.offset);
+
+      StringRecord::PersistStringRecord(pmem_ptr, sized_space_entry.size,
+                                        new_ts, StringDeleteRecord, key, "");
+
+      hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
+                          HashOffsetType::StringRecord);
+      delayFree(PendingFreeDataRecord{hash_entry.index.string_record, new_ts});
+      // We also delay free this delete record to recycle PMem and DRAM space
+      delayFree(
+          PendingFreeDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
       return s;
+    }
     case Status::NotFound:
       return Status::Ok;
     default:
@@ -1252,7 +1281,7 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
 Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
   DataEntry data_entry;
   HashEntry hash_entry;
-  HashEntry *entry_ptr = nullptr;
+  HashEntry *hash_entry_ptr = nullptr;
   uint32_t v_size = value.size();
 
   uint32_t requested_size = v_size + key.size() + sizeof(StringRecord);
@@ -1266,8 +1295,14 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
   {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
+    // Set current snapshot to this thread
+    TimeStampType new_ts = get_timestamp();
+    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
+                          new_ts);
+
+    // Search position to write index in hash table.
     Status s = hash_table_->SearchForWrite(
-        hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
+        hint, key, StringDeleteRecord | StringDataRecord, &hash_entry_ptr,
         &hash_entry, &data_entry);
     if (s == Status::MemoryOverflow) {
       return s;
@@ -1277,17 +1312,21 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     void *block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
-    uint64_t new_ts = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
+    // Persist key-value pair to PMem
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
                                       new_ts, StringDataRecord, key, value);
 
-    auto entry_base_status = entry_ptr->header.status;
-    hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
+    auto entry_base_status = hash_entry_ptr->header.status;
+    auto updated_type = hash_entry_ptr->header.data_type;
+    // Write hash index
+    hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord, block_base,
                         HashOffsetType::StringRecord);
-    if (entry_base_status == HashEntryStatus::Updating) {
-      purgeAndFree(hash_entry.index.string_record);
+    if (entry_base_status == HashEntryStatus::Updating &&
+        updated_type == StringDataRecord) {
+      /* delete record is self-freed, so we don't need to free it here */
+      delayFree(PendingFreeDataRecord{hash_entry.index.string_record, new_ts});
     }
   }
 
@@ -1828,4 +1867,89 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
   }
 }
 
+void KVEngine::maybeHandleCachedPendingFreeSpace() {
+  kvdk_assert(write_thread.id >= 0,
+              "call KVEngine::maybeHandleCachedPendingFreeSpace in a "
+              "un-initialized write thread");
+  auto &tc = thread_cache_[write_thread.id];
+  size_t limit_free = 1;
+  while (tc.pending_free_data_records.size() > 0 &&
+         tc.pending_free_data_records.front().newer_version_timestamp <
+             smallest_snapshot_.GetTimestamp() &&
+         limit_free-- > 0) {
+    handlePendingFreeDataRecord(tc.pending_free_data_records.front());
+    tc.pending_free_data_records.pop_front();
+  }
+}
+
+void KVEngine::delayFree(PendingFreeDeleteRecord &&pending_free_delete_record) {
+  // To avoid too many records pending free, we upadte global smallest snapshot
+  // regularly
+  maybeUpdateSmallestSnapshot();
+
+  kvdk_assert(write_thread.id >= 0, "uninitialized write thread in delayFree");
+  auto &tc = thread_cache_[write_thread.id];
+  tc.pending_free_delete_records.emplace_back(
+      std::forward<PendingFreeDeleteRecord>(pending_free_delete_record));
+  maybeHandleCachedPendingFreeSpace();
+}
+
+void KVEngine::delayFree(PendingFreeDataRecord &&pending_free_data_record) {
+  // To avoid too many records pending free, we upadte global smallest snapshot
+  // regularly
+  maybeUpdateSmallestSnapshot();
+
+  kvdk_assert(write_thread.id >= 0, "uninitialized write thread in delayFree");
+  auto &tc = thread_cache_[write_thread.id];
+  tc.pending_free_data_records.emplace_back(
+      std::forward<PendingFreeDataRecord>(pending_free_data_record));
+  maybeHandleCachedPendingFreeSpace();
+}
+
+void KVEngine::handlePendingFreeDataRecord(
+    const PendingFreeDataRecord &pending_free_record) {
+  DataEntry *data_entry =
+      static_cast<DataEntry *>(pending_free_record.pmem_data_record);
+  switch (data_entry->meta.type) {
+  case StringDataRecord: {
+    purgeAndFree(pending_free_record.pmem_data_record);
+    break;
+  }
+  case StringDeleteRecord: {
+    /*
+    if (pending_free_record.hash_entry_ref->index.string_record ==
+        pending_free_record.pmem_data_record) {
+      std::lock_guard<SpinMutex> lg(*pending_free_record.hash_entry_lock);
+      if (pending_free_record.hash_entry_ref->index.string_record ==
+          pending_free_record.pmem_data_record) {
+        pending_free_record.hash_entry_ref->Clear();
+      }
+    }
+    // we don't need to purge a delete record
+    free(pending_free_record.pmem_data_record);
+    */
+    break;
+  }
+  default:
+    std::abort();
+  }
+}
+
+void KVEngine::updateSmallestSnapshot() {
+  TimeStampType ts = get_timestamp();
+  for (auto &tc : thread_cache_) {
+    ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
+  }
+  smallest_snapshot_.timestamp = ts;
+}
+
+void KVEngine::maybeUpdateSmallestSnapshot() {
+  // To avoid too many records pending free, we upadte global smallest snapshot
+  // regularly. We update it every kUpdateSnapshotRound to mitigate the overhead
+  static size_t kUpdateSnapshotRound = 10000;
+  thread_local size_t round = 0;
+  if ((++round) % kUpdateSnapshotRound == 0) {
+    updateSmallestSnapshot();
+  }
+}
 } // namespace KVDK_NAMESPACE

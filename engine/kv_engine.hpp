@@ -14,6 +14,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -23,6 +24,7 @@
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
+#include "mvcc.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
 #include "skiplist.hpp"
@@ -41,6 +43,10 @@ public:
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
+
+  std::shared_ptr<Snapshot> GetSnapshot() override {
+    return std::make_shared<SnapshotImpl>(get_timestamp());
+  }
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string *value) override;
@@ -104,12 +110,31 @@ private:
     void *pmem_record_to_free = nullptr;
   };
 
-  struct ThreadLocalRes {
-    ThreadLocalRes() = default;
+  struct PendingFreeDataRecord {
+    void *pmem_data_record;
+    TimeStampType newer_version_timestamp;
+  };
+
+  struct PendingFreeDeleteRecord {
+    void *pmem_data_record;
+    TimeStampType newer_version_timestamp;
+    // We need ref to hash entry for clear index of delete record
+    HashEntry *hash_entry_ref;
+    SpinMutex *hash_entry_lock;
+  };
+
+  struct ThreadCache {
+    ThreadCache() = default;
 
     uint64_t newest_restored_ts = 0;
-    PendingBatch *persisted_pending_batch = nullptr;
     std::unordered_map<uint64_t, int> visited_skiplist_ids;
+
+    PendingBatch *persisted_pending_batch = nullptr;
+
+    SnapshotImpl holding_snapshot{kMaxTimestamp};
+
+    std::deque<PendingFreeDeleteRecord> pending_free_delete_records{};
+    std::deque<PendingFreeDataRecord> pending_free_data_records{};
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
@@ -197,7 +222,10 @@ private:
   Status RestoreQueueRecords(DLRecord *pmp_record);
 
   // Regularly works excecuted by background thread
-  void BackgroundWork();
+  void backgroundWorkImpl() {
+    updateSmallestSnapshot();
+    pmem_allocator_->BackgroundWork();
+  }
 
   Status CheckConfigs(const Configs &configs);
 
@@ -213,6 +241,22 @@ private:
     auto res = get_cpu_tsc() - ts_on_startup_ + newest_version_on_startup_;
     return res;
   }
+
+  inline SnapshotImpl makeSnapshot() { return SnapshotImpl(get_timestamp()); }
+
+  void updateSmallestSnapshot();
+
+  void maybeUpdateSmallestSnapshot();
+
+  void maybeHandleCachedPendingFreeSpace();
+
+  inline void delayFree(PendingFreeDeleteRecord &&);
+
+  inline void delayFree(PendingFreeDataRecord &&);
+
+  void handlePendingFreeDataRecord(const PendingFreeDataRecord &);
+
+  void backgroundWork();
 
   inline std::string db_file_name() { return dir_ + "data"; }
 
@@ -269,7 +313,14 @@ private:
         data_entry->header.record_size, data_entry->meta.timestamp));
   }
 
-  std::vector<ThreadLocalRes> thread_res_;
+  inline void free(void *pmem_record) {
+    DataEntry *data_entry = static_cast<DataEntry *>(pmem_record);
+    pmem_allocator_->Free(SizedSpaceEntry(
+        pmem_allocator_->addr2offset_checked(pmem_record),
+        data_entry->header.record_size, data_entry->meta.timestamp));
+  }
+
+  std::vector<ThreadCache> thread_cache_;
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};
@@ -277,6 +328,7 @@ private:
 
   uint64_t ts_on_startup_ = 0;
   uint64_t newest_version_on_startup_ = 0;
+  SnapshotImpl smallest_snapshot_{0};
   std::shared_ptr<HashTable> hash_table_;
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
