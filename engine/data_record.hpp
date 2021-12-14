@@ -93,6 +93,7 @@ struct DataEntry {
 struct StringRecord {
 public:
   DataEntry entry;
+  PMemOffsetType prev_version_offset;
   char data[0];
 
   // Construct a StringRecord instance at target_address. As the record need
@@ -103,18 +104,19 @@ public:
   static StringRecord *
   ConstructStringRecord(void *target_address, uint32_t _record_size,
                         TimeStampType _timestamp, RecordType _record_type,
+                        PMemOffsetType _prev_version_offset,
                         const StringView &_key, const StringView &_value) {
     StringRecord *record = new (target_address)
-        StringRecord(_record_size, _timestamp, _record_type, _key, _value);
+        StringRecord(_record_size, _timestamp, _record_type,
+                     _prev_version_offset, _key, _value);
     return record;
   }
 
   // Construct and persist a string record at pmem address "addr"
-  static StringRecord *PersistStringRecord(void *addr, uint32_t record_size,
-                                           TimeStampType timestamp,
-                                           RecordType type,
-                                           const StringView &key,
-                                           const StringView &value);
+  static StringRecord *
+  PersistStringRecord(void *addr, uint32_t record_size, TimeStampType timestamp,
+                      RecordType type, PMemOffsetType prev_version_offset,
+                      const StringView &key, const StringView &value);
 
   void Destroy() { entry.Destroy(); }
 
@@ -144,10 +146,11 @@ public:
 
 private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
-               RecordType _record_type, const StringView &_key,
-               const StringView &_value)
+               RecordType _record_type, PMemOffsetType _prev_version_offset,
+               const StringView &_key, const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
-              _value.size()) {
+              _value.size()),
+        prev_version_offset(_prev_version_offset) {
     assert(_record_type == StringDataRecord ||
            _record_type == StringDeleteRecord);
     memcpy(data, _key.data(), _key.size());

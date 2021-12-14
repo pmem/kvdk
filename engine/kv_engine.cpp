@@ -1195,7 +1195,11 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     if (kv.type == StringDataRecord) {
       StringRecord::PersistStringRecord(
           block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
-          static_cast<RecordType>(kv.type), kv.key, kv.value);
+          static_cast<RecordType>(kv.type),
+          found ? pmem_allocator_->addr2offset_checked(
+                      hash_entry.index.string_record)
+                : kPmemNullOffset,
+          kv.key, kv.value);
     } else {
       // Never reach
       kvdk_assert(false, "wrong data type in batch write");
@@ -1261,8 +1265,10 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
       void *pmem_ptr = pmem_allocator_->offset2addr_checked(
           sized_space_entry.space_entry.offset);
 
-      StringRecord::PersistStringRecord(pmem_ptr, sized_space_entry.size,
-                                        new_ts, StringDeleteRecord, key, "");
+      StringRecord::PersistStringRecord(
+          pmem_ptr, sized_space_entry.size, new_ts, StringDeleteRecord,
+          pmem_allocator_->addr2offset_checked(hash_entry.index.string_record),
+          key, "");
 
       hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
                           HashOffsetType::StringRecord);
@@ -1314,8 +1320,12 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
     // Persist key-value pair to PMem
-    StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
-                                      new_ts, StringDataRecord, key, value);
+    StringRecord::PersistStringRecord(
+        block_base, sized_space_entry.size, new_ts, StringDataRecord,
+        found ? pmem_allocator_->addr2offset_checked(
+                    hash_entry.index.string_record)
+              : kPmemNullOffset,
+        key, value);
 
     auto entry_base_status = hash_entry_ptr->header.status;
     auto updated_type = hash_entry_ptr->header.data_type;

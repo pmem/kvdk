@@ -13,7 +13,8 @@ static constexpr int kDataBufferSize = 1024 * 1024;
 
 StringRecord *StringRecord::PersistStringRecord(
     void *addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
-    const StringView &key, const StringView &value) {
+    PMemOffsetType prev_version_offset, const StringView &key,
+    const StringView &value) {
   void *data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(StringRecord);
   bool with_buffer = write_size <= kDataBufferSize;
@@ -26,7 +27,8 @@ StringRecord *StringRecord::PersistStringRecord(
     data_cpy_target = addr;
   }
   StringRecord *record = StringRecord::ConstructStringRecord(
-      data_cpy_target, record_size, timestamp, type, key, value);
+      data_cpy_target, record_size, timestamp, type, prev_version_offset, key,
+      value);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();
