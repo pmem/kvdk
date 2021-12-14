@@ -39,14 +39,17 @@ class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
 
 public:
-  KVEngine(const Configs &configs) : thread_cache_(configs.max_write_threads){};
+  KVEngine(const Configs &configs)
+      : thread_cache_(configs.max_write_threads),
+        version_controller_(configs.max_write_threads){};
   ~KVEngine();
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
   std::shared_ptr<Snapshot> GetSnapshot() override {
-    return std::make_shared<SnapshotImpl>(get_timestamp());
+    return std::make_shared<SnapshotImpl>(
+        version_controller_.CurrentTimestamp());
   }
 
   // Global Anonymous Collection
@@ -226,7 +229,7 @@ private:
   // Regularly works excecuted by background thread
   void backgroundWorkImpl() {
     bg_free_cv_.notify_all();
-    updateSmallestSnapshot();
+    version_controller_.UpdatedOldestSnapshot();
     pmem_allocator_->BackgroundWork();
   }
 
@@ -234,22 +237,7 @@ private:
 
   void FreeSkiplistDramNodes();
 
-  inline uint64_t get_cpu_tsc() {
-    uint32_t lo, hi;
-    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)lo) | (((uint64_t)hi) << 32);
-  }
-
-  inline TimeStampType get_timestamp() {
-    auto res = get_cpu_tsc() - ts_on_startup_ + newest_version_on_startup_;
-    return res;
-  }
-
-  inline SnapshotImpl makeSnapshot() { return SnapshotImpl(get_timestamp()); }
-
-  void updateSmallestSnapshot();
-
-  void maybeUpdateSmallestSnapshot();
+  void maybeUpdateOldestSnapshot();
 
   void maybeHandleCachedPendingFreeSpace();
 
@@ -335,9 +323,6 @@ private:
   std::atomic<uint64_t> restored_{0};
   std::atomic<CollectionIDType> list_id_{0};
 
-  uint64_t ts_on_startup_ = 0;
-  uint64_t newest_version_on_startup_ = 0;
-  SnapshotImpl smallest_snapshot_{0};
   std::shared_ptr<HashTable> hash_table_;
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
@@ -355,6 +340,7 @@ private:
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
   SortedCollectionRebuilder sorted_rebuilder_;
+  VersionController version_controller_;
 
   // background free space
   std::vector<std::deque<PendingFreeDataRecord>>

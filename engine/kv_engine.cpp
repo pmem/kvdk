@@ -158,7 +158,6 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
     return Status::Abort;
   }
 
-  ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::backgroundWork, this);
@@ -590,7 +589,7 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
         // header point to itself
         DLRecord *pmem_record = DLRecord::PersistDLRecord(
             pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
-            sized_space_entry.size, get_timestamp(),
+            sized_space_entry.size, version_controller_.CurrentTimestamp(),
             (RecordType)collection_type, sized_space_entry.space_entry.offset,
             sized_space_entry.space_entry.offset, collection,
             StringView((char *)&id, 8));
@@ -742,6 +741,7 @@ Status KVEngine::Recovery() {
 
   GlobalLogger.Info("Rebuild skiplist done\n");
 
+  uint64_t version_base = 0;
   if (restored_.load() == 0) {
     if (configs_.populate_pmem_space) {
       pmem_allocator_->PopulateSpace();
@@ -749,13 +749,12 @@ Status KVEngine::Recovery() {
   } else {
     for (size_t i = 0; i < thread_cache_.size(); i++) {
       auto &thread_cache = thread_cache_[i];
-      if (thread_cache.newest_restored_ts > newest_version_on_startup_) {
-        newest_version_on_startup_ = thread_cache.newest_restored_ts;
-      }
+      version_base = std::max(thread_cache.newest_restored_ts, version_base);
     }
   }
 
-  updateSmallestSnapshot();
+  version_controller_.Init(version_base);
+
   handlePendingFreeSpace();
 
   return Status::Ok;
@@ -906,7 +905,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
     bool found = s == Status::Ok;
 
-    uint64_t new_ts = get_timestamp();
+    uint64_t new_ts = version_controller_.CurrentTimestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
     if (found) {
@@ -1119,7 +1118,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     ul_locks.emplace_back(const_cast<SpinMutex &>(*l));
   }
 
-  TimeStampType ts = get_timestamp();
+  TimeStampType ts = version_controller_.CurrentTimestamp();
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
   }
@@ -1239,10 +1238,8 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
-    // TODO: merge these two
-    TimeStampType new_ts = get_timestamp();
-    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
-                          new_ts);
+    TimeStampType new_ts = version_controller_.CurrentTimestamp();
+    SnapshotSetter setter(version_controller_.HoldingSnapshot(), new_ts);
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
         &hash_entry, &data_entry);
@@ -1301,9 +1298,8 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
-    TimeStampType new_ts = get_timestamp();
-    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
-                          new_ts);
+    TimeStampType new_ts = version_controller_.CurrentTimestamp();
+    SnapshotSetter setter(version_controller_.HoldingSnapshot(), new_ts);
 
     // Search position to write index in hash table.
     Status s = hash_table_->SearchForWrite(
@@ -1316,8 +1312,6 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
 
     void *block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
-
-    assert(!found || new_ts > data_entry.meta.timestamp);
 
     // Persist key-value pair to PMem
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
@@ -1355,7 +1349,7 @@ Status KVEngine::Set(const StringView key, const StringView value) {
 namespace KVDK_NAMESPACE {
 std::shared_ptr<UnorderedCollection>
 KVEngine::createUnorderedCollection(StringView const collection_name) {
-  TimeStampType ts = get_timestamp();
+  TimeStampType ts = version_controller_.CurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
@@ -1454,7 +1448,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
 
       std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
 
-      TimeStampType ts = get_timestamp();
+      TimeStampType ts = version_controller_.CurrentTimestamp();
 
       HashEntry hash_entry_record;
       HashEntry *p_hash_entry_record = nullptr;
@@ -1690,7 +1684,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
 
 namespace KVDK_NAMESPACE {
 std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
-  std::uint64_t ts = get_timestamp();
+  std::uint64_t ts = version_controller_.CurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   return std::unique_ptr<Queue>(new Queue{pmem_allocator_.get(), name, id, ts});
@@ -1795,7 +1789,7 @@ Status KVEngine::xPush(StringView const collection_name, StringView const value,
 
   // Push
   {
-    TimeStampType ts = get_timestamp();
+    TimeStampType ts = version_controller_.CurrentTimestamp();
     switch (push_pos) {
     case QueueOpPosition::Left: {
       queue_ptr->PushFront(ts, value);
@@ -1881,7 +1875,7 @@ void KVEngine::maybeHandleCachedPendingFreeSpace() {
   size_t limit_free = 1;
   while (tc.pending_free_data_records.size() > 0 &&
          tc.pending_free_data_records.front().newer_version_timestamp <
-             smallest_snapshot_.GetTimestamp() &&
+             version_controller_.OldestSnapshot() &&
          limit_free-- > 0) {
     pmem_allocator_->Free(
         handlePendingFreeRecord(tc.pending_free_data_records.front()));
@@ -1895,9 +1889,9 @@ void KVEngine::maybeHandleCachedPendingFreeSpace() {
 }
 
 void KVEngine::delayFree(PendingFreeDeleteRecord &&pending_free_delete_record) {
-  // To avoid too many records pending free, we upadte global smallest snapshot
+  // To avoid too many records pending free, we upadte global oldest snapshot
   // regularly
-  maybeUpdateSmallestSnapshot();
+  maybeUpdateOldestSnapshot();
 
   kvdk_assert(write_thread.id >= 0, "uninitialized write thread in delayFree");
   auto &tc = thread_cache_[write_thread.id];
@@ -1908,9 +1902,9 @@ void KVEngine::delayFree(PendingFreeDeleteRecord &&pending_free_delete_record) {
 }
 
 void KVEngine::delayFree(PendingFreeDataRecord &&pending_free_data_record) {
-  // To avoid too many records pending free, we upadte global smallest snapshot
+  // To avoid too many records pending free, we upadte global oldest snapshot
   // regularly
-  maybeUpdateSmallestSnapshot();
+  maybeUpdateOldestSnapshot();
 
   kvdk_assert(write_thread.id >= 0, "uninitialized write thread in delayFree");
   auto &tc = thread_cache_[write_thread.id];
@@ -1962,22 +1956,13 @@ SizedSpaceEntry KVEngine::handlePendingFreeRecord(
   }
 }
 
-void KVEngine::updateSmallestSnapshot() {
-  TimeStampType ts = get_timestamp();
-  for (size_t i = 0; i < thread_cache_.size(); i++) {
-    auto &tc = thread_cache_[i];
-    ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
-  }
-  smallest_snapshot_.timestamp = ts;
-}
-
-void KVEngine::maybeUpdateSmallestSnapshot() {
+void KVEngine::maybeUpdateOldestSnapshot() {
   // To avoid too many records pending free, we upadte global smallest snapshot
   // regularly. We update it every kUpdateSnapshotRound to mitigate the overhead
   static size_t kUpdateSnapshotRound = 10000;
   thread_local size_t round = 0;
   if ((++round) % kUpdateSnapshotRound == 0) {
-    updateSmallestSnapshot();
+    version_controller_.UpdatedOldestSnapshot();
   }
 }
 
@@ -1986,8 +1971,8 @@ void KVEngine::handlePendingFreeSpace() {
   std::deque<PendingFreeDeleteRecord> unfreed_delete_record;
   std::vector<SizedSpaceEntry> space_to_free;
   bg_free_processing_ = true;
-  updateSmallestSnapshot();
-  TimeStampType smallest_snapshot_ts = smallest_snapshot_.GetTimestamp();
+  version_controller_.UpdatedOldestSnapshot();
+  TimeStampType smallest_snapshot_ts = version_controller_.OldestSnapshot();
   for (size_t i = 0; i < thread_cache_.size(); i++) {
     auto &thread_cache = thread_cache_[i];
     if (thread_cache.pending_free_data_records.size() > 0 ||

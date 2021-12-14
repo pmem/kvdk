@@ -183,11 +183,11 @@ void DBWrite(int tid) {
           s = engine->Set(key, value);
         } else {
           // todo: restore
-          if (fast_random_64() % 2 == 0) {
-            s = engine->Set(key, value);
-          } else {
-            s = engine->Delete(key);
-          }
+          // if (fast_random_64() % 2 == 0) {
+          s = engine->Set(key, value);
+          // } else {
+          // s = engine->Delete(key);
+          // }
         }
       } else {
         batch.Put(key, std::string(value.data(), value.size()));
