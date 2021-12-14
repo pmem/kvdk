@@ -253,6 +253,8 @@ private:
 
   void maybeHandleCachedPendingFreeSpace();
 
+  void handlePendingFreeSpace();
+
   void backgroundPendingFreeSpaceHandler();
 
   inline void delayFree(PendingFreeDeleteRecord &&);
