@@ -179,7 +179,16 @@ void DBWrite(int tid) {
     switch (bench_data_type) {
     case DataType::String: {
       if (batch_num == 0) {
-        s = engine->Set(key, value);
+        if (fill) {
+          s = engine->Set(key, value);
+        } else {
+          // todo: restore
+          if (fast_random_64() % 2 == 0) {
+            s = engine->Set(key, value);
+          } else {
+            s = engine->Delete(key);
+          }
+        }
       } else {
         batch.Put(key, std::string(value.data(), value.size()));
         if (batch.Size() == batch_num) {

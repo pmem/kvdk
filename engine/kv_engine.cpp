@@ -1867,6 +1867,7 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
 }
 
 void KVEngine::maybeHandleCachedPendingFreeSpace() {
+  constexpr size_t kMaxPendingFreeDeleteRecord = 10000;
   kvdk_assert(write_thread.id >= 0,
               "call KVEngine::maybeHandleCachedPendingFreeSpace in a "
               "un-initialized write thread");
@@ -1881,7 +1882,8 @@ void KVEngine::maybeHandleCachedPendingFreeSpace() {
     tc.pending_free_data_records.pop_front();
   }
 
-  if (tc.pending_free_delete_records.size() > 10000 && bg_free_processing_) {
+  if (tc.pending_free_delete_records.size() > kMaxPendingFreeDeleteRecord &&
+      !bg_free_processing_) {
     bg_free_cv_.notify_all();
   }
 }
@@ -1982,8 +1984,10 @@ void KVEngine::backgroundPendingFreeSpaceHandler() {
     std::deque<PendingFreeDataRecord> unfreed_data_record;
     std::deque<PendingFreeDeleteRecord> unfreed_delete_record;
     std::vector<SizedSpaceEntry> space_to_free;
-    std::unique_lock<SpinMutex> ul(bg_free_lock_);
-    bg_free_cv_.wait(ul);
+    {
+      std::unique_lock<SpinMutex> ul(bg_free_lock_);
+      bg_free_cv_.wait(ul);
+    }
     bg_free_processing_ = true;
     updateSmallestSnapshot();
     TimeStampType smallest_snapshot_ts = smallest_snapshot_.GetTimestamp();
@@ -2028,7 +2032,9 @@ void KVEngine::backgroundPendingFreeSpaceHandler() {
         }
       }
     }
-
+    GlobalLogger.Info("batch free %lu, unfree data %lu, unfree delete %lu\n",
+                      space_to_free.size(), unfreed_data_record.size(),
+                      unfreed_delete_record.size());
     pmem_allocator_->BatchFree(space_to_free);
 
     pending_free_data_records_pool_.clear();
