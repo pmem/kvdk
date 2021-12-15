@@ -89,7 +89,7 @@ public:
     return global_snapshots_.New(CurrentTimestamp());
   }
 
-  void ReleaseSnapshot(SnapshotImpl *impl) {
+  void ReleaseSnapshot(const SnapshotImpl *impl) {
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
     global_snapshots_.Delete(impl);
   }

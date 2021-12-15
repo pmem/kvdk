@@ -91,7 +91,10 @@ public:
                        pmem::obj::string_view const value) = 0;
 
   // Get a snapshot of the instance at this moment
-  virtual std::shared_ptr<Snapshot> GetSnapshot() = 0;
+  virtual Snapshot *GetSnapshot() = 0;
+
+  // Release a snapshot of the instance
+  virtual void ReleaseSnapshot(const Snapshot *) = 0;
 
   // Create a KV iterator on sorted collection "collection", which is able to
   // sequentially iterate all KVs in the "collection".

@@ -47,9 +47,13 @@ public:
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
-  std::shared_ptr<Snapshot> GetSnapshot() override {
-    return std::make_shared<SnapshotImpl>(
-        version_controller_.CurrentTimestamp());
+  Snapshot *GetSnapshot() override {
+    return version_controller_.MakeSnapshot();
+  }
+
+  void ReleaseSnapshot(const Snapshot *snapshot) override {
+    version_controller_.ReleaseSnapshot(
+        static_cast<const SnapshotImpl *>(snapshot));
   }
 
   // Global Anonymous Collection
