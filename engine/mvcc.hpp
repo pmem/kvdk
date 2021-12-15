@@ -10,16 +10,51 @@ namespace KVDK_NAMESPACE {
 constexpr TimeStampType kMaxTimestamp = UINT64_MAX;
 
 struct SnapshotImpl : public Snapshot {
-  explicit SnapshotImpl(const TimeStampType &t) : timestamp(t) {}
+  explicit SnapshotImpl(const TimeStampType &t)
+      : timestamp(t), next(nullptr), prev(nullptr) {}
 
-  SnapshotImpl() : timestamp(kMaxTimestamp) {}
+  SnapshotImpl() : SnapshotImpl(kMaxTimestamp) {}
 
   TimeStampType GetTimestamp() override { return timestamp; }
 
   TimeStampType timestamp;
+  SnapshotImpl *prev;
+  SnapshotImpl *next;
 };
 
-// set snapshot to "new_ts", and set it to kMaxTimestamp on destruct
+class SnapshotList {
+public:
+  SnapshotList() : head_() {
+    head_.prev = &head_;
+    head_.next = &head_;
+  }
+
+  SnapshotImpl *New(TimeStampType ts) {
+    SnapshotImpl *impl = new SnapshotImpl(ts);
+    impl->prev = &head_;
+    impl->next = head_.next;
+    head_.next->prev = impl;
+    head_.next = impl;
+    return impl;
+  }
+
+  void Delete(const SnapshotImpl *impl) {
+    impl->prev->next = impl->next;
+    impl->next->prev = impl->prev;
+    delete impl;
+  }
+
+  TimeStampType OldestSnapshotTS() {
+    return empty() ? kMaxTimestamp : head_.prev->GetTimestamp();
+  }
+
+private:
+  bool empty() { return head_.prev == &head_; }
+
+  SnapshotImpl head_;
+};
+
+// set snapshot to "new_ts", and set it to kMaxTimestamp on destroy
 struct SnapshotSetter {
 public:
   explicit SnapshotSetter(SnapshotImpl &snapshot, TimeStampType new_ts)
@@ -33,20 +68,13 @@ private:
   SnapshotImpl &snapshot_;
 };
 
-struct ChainedSnapshot {
-  SnapshotImpl snapshot;
-
-  ChainedSnapshot *prev;
-  ChainedSnapshot *next;
-};
-
 class VersionController {
 public:
   VersionController(uint64_t max_write_threads)
       : thread_cache_(max_write_threads) {}
 
   void Init(uint64_t version_base) {
-    ts_on_startup_ = get_cpu_tsc();
+    tsc_on_startup_ = get_cpu_tsc();
     version_base_ = version_base;
     UpdatedOldestSnapshot();
   }
@@ -56,8 +84,18 @@ public:
     return thread_cache_[write_thread.id].holding_snapshot;
   }
 
+  SnapshotImpl *MakeSnapshot() {
+    std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
+    return global_snapshots_.New(CurrentTimestamp());
+  }
+
+  void ReleaseSnapshot(SnapshotImpl *impl) {
+    std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
+    global_snapshots_.Delete(impl);
+  }
+
   inline TimeStampType CurrentTimestamp() {
-    auto res = get_cpu_tsc() - ts_on_startup_ + version_base_;
+    auto res = get_cpu_tsc() - tsc_on_startup_ + version_base_;
     return res;
   }
 
@@ -69,7 +107,9 @@ public:
       auto &tc = thread_cache_[i];
       ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
     }
-    oldest_snapshot_.timestamp = ts;
+    std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
+    oldest_snapshot_.timestamp =
+        std::min(ts, global_snapshots_.OldestSnapshotTS());
   }
 
 private:
@@ -85,9 +125,14 @@ private:
     return ((uint64_t)lo) | (((uint64_t)hi) << 32);
   }
 
-  uint64_t version_base_;
-  uint64_t ts_on_startup_;
+  // Known oldest holding snapshot, there is delay existing until call
+  // UpdatedOldestSnapshot()
   SnapshotImpl oldest_snapshot_;
+  SnapshotList global_snapshots_;
+  SpinMutex global_snapshots_lock_;
+
+  uint64_t version_base_;
+  uint64_t tsc_on_startup_;
   Array<ThreadCache> thread_cache_;
 };
 
