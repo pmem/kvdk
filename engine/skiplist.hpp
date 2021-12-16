@@ -219,6 +219,7 @@ public:
     assert(record != nullptr);
     switch (record->entry.meta.type) {
     case RecordType::SortedDataRecord:
+    case RecordType::SortedDeleteRecord:
       return ExtractID(record->Key());
       break;
     case RecordType::SortedHeaderRecord:
@@ -277,6 +278,19 @@ public:
   bool Delete(const StringView &key, DLRecord *deleted_record,
               SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
 
+  // Delete "key" from skiplist
+  //
+  // deleted_record:existing record of deleting key
+  // dram_node:dram node of existing record, if it's a height 0 record, then
+  // pass nullptr
+  // deleting_key_lock: lock of deleting key, should be already locked while
+  // calling this function
+  //
+  // Return true on success, return false on fail.
+  bool Delete(const StringView &key, DLRecord *deleted_record,
+              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
+              SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
+
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
     for (SkiplistNode *node : nodes) {
@@ -300,8 +314,8 @@ public:
   Status CheckConnection(int height);
 
 private:
-  // Insert DLRecord "inserting" between "prev" and "next"
-  void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
+  // Link DLRecord "linking" between "prev" and "next"
+  void LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking);
 
   // Find and lock skiplist position to insert "key"
   //

@@ -214,6 +214,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
 
     switch (data_entry_cached.meta.type) {
     case RecordType::SortedDataRecord:
+    case RecordType::SortedDeleteRecord:
     case RecordType::SortedHeaderRecord:
     case RecordType::StringDataRecord:
     case RecordType::StringDeleteRecord:
@@ -269,7 +270,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
 
     Status s(Status::Ok);
     switch (data_entry_cached.meta.type) {
-    case RecordType::SortedDataRecord: {
+    case RecordType::SortedDataRecord:
+    case RecordType::SortedDeleteRecord: {
       s = RestoreSkiplistRecord(static_cast<DLRecord *>(recovering_pmem_record),
                                 data_entry_cached);
       break;
@@ -366,6 +368,7 @@ bool KVEngine::ValidateRecord(void *data_record) {
   }
   case RecordType::SortedDataRecord:
   case RecordType::SortedHeaderRecord:
+  case RecordType::SortedDeleteRecord:
   case RecordType::DlistDataRecord:
   case RecordType::DlistRecord:
   case RecordType::DlistHeadRecord:
@@ -480,7 +483,8 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
     return Status::Ok;
   }
 
-  assert(pmem_record->entry.meta.type & SortedDataRecord);
+  assert(pmem_record->entry.meta.type == SortedDataRecord ||
+         pmem_record->entry.meta.type == SortedDeleteRecord);
   std::string internal_key(pmem_record->Key());
   StringView user_key = Skiplist::ExtractUserKey(internal_key);
   DataEntry existing_data_entry;
@@ -504,9 +508,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
     return Status::Ok;
   }
 
-  void *new_hash_index;
-  DLRecord *old_pmem_record;
-  SkiplistNode *dram_node;
+  SkiplistNode *dram_node = nullptr;
   if (!found) {
     auto height = Skiplist::RandomHeight();
     if (height > 0) {
@@ -515,7 +517,6 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
         GlobalLogger.Error("Memory overflow in recovery\n");
         return Status::MemoryOverflow;
       }
-      new_hash_index = dram_node;
       if (configs_.opt_large_sorted_collection_restore &&
           thread_cache_[write_thread.id]
                       .visited_skiplist_ids[dram_node->SkiplistID()]++ %
@@ -525,16 +526,17 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
         sorted_rebuilder_.SetEntriesOffsets(
             pmem_allocator_->addr2offset(pmem_record), false, nullptr);
       }
-    } else {
-      new_hash_index = pmem_record;
     }
 
     // Hash entry won't be reused during data recovering so we don't
     // neet to check status here
-    hash_table_->Insert(
-        hint, entry_ptr, cached_data_entry.meta.type, new_hash_index,
-        height > 0 ? HashOffsetType::SkiplistNode : HashOffsetType::DLRecord);
+    hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
+                        dram_node == nullptr ? (void *)pmem_record
+                                             : (void *)dram_node,
+                        dram_node == nullptr ? HashOffsetType::DLRecord
+                                             : HashOffsetType::SkiplistNode);
   } else {
+    DLRecord *old_pmem_record;
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
       dram_node = hash_entry.index.skiplist_node;
       old_pmem_record = dram_node->record;
@@ -835,23 +837,37 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     return Status::InvalidDataSize;
   }
 
+  SizedSpaceEntry sized_space_entry;
+
   while (1) {
-    HashEntry hash_entry;
-    DataEntry data_entry;
     SkiplistNode *dram_node = nullptr;
     DLRecord *existing_record = nullptr;
     HashEntry *entry_ptr = nullptr;
+    HashEntry hash_entry;
+    DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
+    uint64_t new_ts = version_controller_.CurrentTimestamp();
+    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
+                          new_ts);
     Status s =
         hash_table_->SearchForRead(hint, collection_key, SortedDataRecord,
                                    &entry_ptr, &hash_entry, &data_entry);
     switch (s) {
     case Status::Ok:
+      if (hash_entry.header.data_type == SortedDeleteRecord) {
+        return s;
+      }
       break;
     case Status::NotFound:
+      if (sized_space_entry.size > 0) {
+        pmem_allocator_->Free(sized_space_entry);
+      }
       return Status::Ok;
     default:
+      if (sized_space_entry.size > 0) {
+        pmem_allocator_->Free(sized_space_entry);
+      }
       return s;
     }
 
@@ -859,16 +875,35 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
       dram_node = hash_entry.index.skiplist_node;
       existing_record = dram_node->record;
     } else {
+      dram_node = nullptr;
       assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
       existing_record = hash_entry.index.dl_record;
     }
 
-    if (!skiplist->Delete(user_key, existing_record, dram_node, hint.spin)) {
+    if (sized_space_entry.size == 0) {
+      auto request_size = collection_key.size() + sizeof(DLRecord);
+      sized_space_entry = pmem_allocator_->Allocate(request_size);
+      // TODO: always keep space for delete record
+      if (sized_space_entry.size == 0) {
+        return Status::PmemOverflow;
+      }
+    }
+
+    void *delete_record_pmem_ptr =
+        pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
+
+    if (!skiplist->Delete(user_key, existing_record, sized_space_entry, new_ts,
+                          dram_node, hint.spin)) {
       continue;
     }
 
-    entry_ptr->Clear();
-    purgeAndFree(existing_record);
+    if (dram_node == nullptr) {
+      hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord,
+                          delete_record_pmem_ptr, HashOffsetType::DLRecord);
+    } else {
+      entry_ptr->header.data_type = SortedDeleteRecord;
+    }
+    delayFree(PendingFreeDataRecord{existing_record, new_ts});
     break;
   }
   return Status::Ok;
@@ -897,6 +932,9 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
+    uint64_t new_ts = version_controller_.CurrentTimestamp();
+    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
+                          new_ts);
     Status s =
         hash_table_->SearchForWrite(hint, collection_key, SortedDataRecord,
                                     &entry_ptr, &hash_entry, &data_entry);
@@ -905,7 +943,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
     bool found = s == Status::Ok;
 
-    uint64_t new_ts = version_controller_.CurrentTimestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
     if (found) {
@@ -927,8 +964,11 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
       if (dram_node == nullptr) {
         hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
                             new_record_pmem_ptr, HashOffsetType::DLRecord);
+      } else {
+        entry_ptr->header.data_type = SortedDataRecord;
       }
-      purgeAndFree(existing_record);
+      delayFree(PendingFreeDataRecord{existing_record, new_ts});
+      // purgeAndFree(existing_record);
     } else {
       if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
                             &dram_node, hint.spin)) {
@@ -942,7 +982,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                           dram_node ? HashOffsetType::SkiplistNode
                                     : HashOffsetType::DLRecord);
       if (entry_base_status == HashEntryStatus::Updating) {
-        purgeAndFree(hash_entry.index.dl_record);
+        delayFree(PendingFreeDataRecord{hash_entry.index.dl_record, new_ts});
+        // purgeAndFree(hash_entry.index.dl_record);
       }
     }
 
@@ -1955,7 +1996,8 @@ SizedSpaceEntry KVEngine::handlePendingFreeRecord(
   DataEntry *data_entry =
       static_cast<DataEntry *>(pending_free_data_record.pmem_data_record);
   switch (data_entry->meta.type) {
-  case StringDataRecord: {
+  case StringDataRecord:
+  case SortedDataRecord: {
     data_entry->Destroy();
     return SizedSpaceEntry(pmem_allocator_->addr2offset(data_entry),
                            data_entry->header.record_size,
