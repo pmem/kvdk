@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <random>
 #include <thread>
@@ -86,7 +87,8 @@ public:
     if (curr_ < upper_) {
       return old;
     } else {
-      curr_ = lower_;
+      // Sleep 10ms, slow down generation
+      std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(10));
       return curr_;
     }
   }
