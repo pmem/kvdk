@@ -522,7 +522,7 @@ int main(int argc, char **argv) {
       last_write_ops = total_write;
       last_read_notfound = total_not_found;
 
-      if (FLAGS_fill && total_write >= FLAGS_num + FLAGS_threads * 10) {
+      if (FLAGS_fill && total_write >= FLAGS_num) {
         // Fill
         // Leave about 1s to ensure that every thread has done its job.
         /// TODO: Introduce mechanism to signal that every thread has done
