@@ -266,17 +266,17 @@ public:
               const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
               SkiplistNode *dram_node, const SpinMutex *updating_key_lock);
 
-  // Delete "key" from skiplist
+  // Purge a dl record of "key" from the skiplist
   //
-  // deleted_record:existing record of deleting key
+  // purged_record:existing record to purge
   // dram_node:dram node of existing record, if it's a height 0 record, then
   // pass nullptr
-  // deleting_key_lock: lock of deleting key, should be already locked while
+  // purging_key_lock: lock of purged_record, should be already locked while
   // calling this function
   //
   // Return true on success, return false on fail.
-  bool Delete(const StringView &key, DLRecord *deleted_record,
-              SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
+  bool Purge(const StringView &key, DLRecord *purged_record,
+             SkiplistNode *dram_node, const SpinMutex *purging_key_lock);
 
   // Delete "key" from skiplist
   //

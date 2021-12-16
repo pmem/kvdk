@@ -124,7 +124,7 @@ private:
   };
 
   struct PendingFreeDeleteRecord {
-    void *pmem_data_record;
+    void *pmem_delete_record;
     TimeStampType newer_version_timestamp;
     // We need ref to hash entry for clear index of delete record
     HashEntry *hash_entry_ref;

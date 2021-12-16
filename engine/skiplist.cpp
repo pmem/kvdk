@@ -436,29 +436,29 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
   return true;
 }
 
-bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
-                      SkiplistNode *dram_node,
-                      const SpinMutex *deleting_key_lock) {
+bool Skiplist::Purge(const StringView &key, DLRecord *purged_record,
+                     SkiplistNode *dram_node,
+                     const SpinMutex *purging_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindDeletePos(&splice, key, deleting_key_lock, deleted_record,
+  if (!FindDeletePos(&splice, key, purging_key_lock, purged_record,
                      &prev_record_lock)) {
     return false;
   }
 
   // Modify linkage to drop deleted record
-  uint64_t deleting_offset = pmem_allocator_->addr2offset(deleted_record);
+  uint64_t purging_offset = pmem_allocator_->addr2offset(purged_record);
   DLRecord *prev = splice.prev_pmem_record;
   DLRecord *next = splice.next_pmem_record;
-  assert(prev->next == deleting_offset);
-  assert(next->prev == deleting_offset);
+  assert(prev->next == purging_offset);
+  assert(next->prev == purging_offset);
   // For repair in recovery due to crashes during pointers changing, we should
   // first unlink deleting entry from prev's next
   prev->next = pmem_allocator_->addr2offset(next);
   pmem_persist(&prev->next, 8);
   next->prev = pmem_allocator_->addr2offset(prev);
   pmem_persist(&next->prev, 8);
-  deleted_record->Destroy();
+  purged_record->Destroy();
 
   if (dram_node) {
     dram_node->MarkAsRemoved();

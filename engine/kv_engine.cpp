@@ -1968,15 +1968,15 @@ void KVEngine::delayFree(PendingFreeDataRecord &&pending_free_data_record) {
 SizedSpaceEntry KVEngine::handlePendingFreeRecord(
     const PendingFreeDeleteRecord &pending_free_delete_record) {
   DataEntry *data_entry =
-      static_cast<DataEntry *>(pending_free_delete_record.pmem_data_record);
+      static_cast<DataEntry *>(pending_free_delete_record.pmem_delete_record);
   switch (data_entry->meta.type) {
   case StringDeleteRecord: {
     if (pending_free_delete_record.hash_entry_ref->index.string_record ==
-        pending_free_delete_record.pmem_data_record) {
+        pending_free_delete_record.pmem_delete_record) {
       std::lock_guard<SpinMutex> lg(
           *pending_free_delete_record.hash_entry_lock);
       if (pending_free_delete_record.hash_entry_ref->index.string_record ==
-          pending_free_delete_record.pmem_data_record) {
+          pending_free_delete_record.pmem_delete_record) {
         pending_free_delete_record.hash_entry_ref->Clear();
       }
     }
@@ -1984,6 +1984,36 @@ SizedSpaceEntry KVEngine::handlePendingFreeRecord(
     return SizedSpaceEntry(pmem_allocator_->addr2offset(data_entry),
                            data_entry->header.record_size,
                            data_entry->meta.timestamp);
+  }
+  case SortedDeleteRecord: {
+    while (1) {
+      std::lock_guard<SpinMutex> lg(
+          *pending_free_delete_record.hash_entry_lock);
+      HashEntry *hash_entry_ref = pending_free_delete_record.hash_entry_ref;
+      DLRecord *hash_indexed_pmem_record = nullptr;
+      SkiplistNode *dram_node = nullptr;
+      switch (hash_entry_ref->header.offset_type) {
+      case HashOffsetType::DLRecord:
+        hash_indexed_pmem_record = hash_entry_ref->index.dl_record;
+        break;
+      case HashOffsetType::SkiplistNode:
+        dram_node = hash_entry_ref->index.skiplist_node;
+        hash_indexed_pmem_record = dram_node->record;
+        break;
+      default:
+        GlobalLogger.Error(
+            "Wrong time in handle pending free skiplist delete record\n");
+        std::abort();
+      }
+
+      if (hash_indexed_pmem_record ==
+          pending_free_delete_record.pmem_delete_record) {
+      }
+
+      return SizedSpaceEntry(pmem_allocator_->addr2offset(data_entry),
+                             data_entry->header.record_size,
+                             data_entry->meta.timestamp);
+    }
   }
   default: {
     std::abort();
