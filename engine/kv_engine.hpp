@@ -352,6 +352,7 @@ private:
   std::vector<std::deque<PendingFreeDeleteRecord>>
       pending_free_delete_records_pool_;
   bool bg_free_processing_{false};
+  bool bg_free_closed_{false};
   SpinMutex bg_free_lock_;
   std::condition_variable_any bg_free_cv_;
 };

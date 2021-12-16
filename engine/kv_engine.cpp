@@ -51,6 +51,10 @@ KVEngine::~KVEngine() {
   closing_ = true;
   GlobalLogger.Info("Closing instance ... \n");
   GlobalLogger.Info("Waiting bg threads exit ... \n");
+  while (!bg_free_closed_) {
+    bg_free_cv_.notify_all();
+    sleep(1);
+  }
   for (auto &t : bg_threads_) {
     t.join();
   }
@@ -2096,6 +2100,8 @@ void KVEngine::handlePendingFreeSpace() {
   }
 
   for (auto &pending_free_delete_records : pending_free_delete_records_pool_) {
+    GlobalLogger.Info("handle %lu pending delete records\n",
+                      pending_free_delete_records.size());
     for (auto &record : pending_free_delete_records) {
       if (record.newer_version_timestamp <= smallest_snapshot_ts) {
         space_to_free.emplace_back(handlePendingFreeRecord(record));
@@ -2117,9 +2123,11 @@ void KVEngine::handlePendingFreeSpace() {
 }
 
 void KVEngine::backgroundPendingFreeSpaceHandler() {
+  bg_free_closed_ = false;
   while (1) {
     bg_free_processing_ = false;
     if (closing_) {
+      bg_free_closed_ = true;
       return;
     }
     {
