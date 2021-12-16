@@ -278,6 +278,10 @@ public:
   bool Purge(const StringView &key, DLRecord *purged_record,
              SkiplistNode *dram_node, const SpinMutex *purging_key_lock);
 
+  static bool Purge(DLRecord *purged_record, SkiplistNode *dram_node,
+                    const SpinMutex *purging_key_lock,
+                    PMEMAllocator *pmem_allocator, HashTable *hash_table);
+
   // Delete "key" from skiplist
   //
   // deleted_record:existing record of deleting key
@@ -333,18 +337,26 @@ private:
   // the lock with "prev_record_lock".
   //
   //  The "updated_key" should be already locked before call this function
-  bool FindUpdatePos(Splice *splice, const StringView &updating_key,
-                     const SpinMutex *updating_key_lock,
+  bool FindUpdatePos(Splice *splice, const SpinMutex *updating_key_lock,
                      const DLRecord *updated_record,
-                     std::unique_lock<SpinMutex> *prev_record_lock);
+                     std::unique_lock<SpinMutex> *prev_record_lock) {
+    return findAndLockRecordPos(splice, updating_key_lock, updated_record,
+                                prev_record_lock, pmem_allocator_.get(),
+                                hash_table_.get());
+  }
 
-  bool FindDeletePos(Splice *splice, const StringView &deleting_key,
-                     const SpinMutex *deleting_key_lock,
+  bool FindDeletePos(Splice *splice, const SpinMutex *deleting_key_lock,
                      const DLRecord *deleted_record,
                      std::unique_lock<SpinMutex> *prev_record_lock) {
-    return FindUpdatePos(splice, deleting_key, deleting_key_lock,
-                         deleted_record, prev_record_lock);
+    return FindUpdatePos(splice, deleting_key_lock, deleted_record,
+                         prev_record_lock);
   }
+
+  static bool
+  findAndLockRecordPos(Splice *splice, const SpinMutex *updating_key_lock,
+                       const DLRecord *updated_record,
+                       std::unique_lock<SpinMutex> *prev_record_lock,
+                       PMEMAllocator *pmem_allocator, HashTable *hash_table);
 
   bool ValidateDLRecord(const DLRecord *record) {
     DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);

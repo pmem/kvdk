@@ -218,23 +218,23 @@ Status Skiplist::CheckConnection(int height) {
   return Status::Ok;
 }
 
-bool Skiplist::FindUpdatePos(Splice *splice, const StringView &updated_key,
-                             const SpinMutex *updating_key_lock,
-                             const DLRecord *updated_record,
-                             std::unique_lock<SpinMutex> *prev_record_lock) {
+bool Skiplist::findAndLockRecordPos(
+    Splice *splice, const SpinMutex *updating_key_lock,
+    const DLRecord *target_record,
+    std::unique_lock<SpinMutex> *prev_record_lock,
+    PMEMAllocator *pmem_allocator, HashTable *hash_table) {
   while (1) {
-    DLRecord *prev =
-        pmem_allocator_->offset2addr<DLRecord>(updated_record->prev);
-    DLRecord *next =
-        pmem_allocator_->offset2addr<DLRecord>(updated_record->next);
+    StringView user_key = UserKey(target_record);
+    DLRecord *prev = pmem_allocator->offset2addr<DLRecord>(target_record->prev);
+    DLRecord *next = pmem_allocator->offset2addr<DLRecord>(target_record->next);
     assert(prev != nullptr);
     assert(next != nullptr);
     splice->prev_pmem_record = prev;
     splice->next_pmem_record = next;
-    uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
-    uint64_t next_offset = pmem_allocator_->addr2offset(next);
+    uint64_t prev_offset = pmem_allocator->addr2offset(prev);
+    uint64_t next_offset = pmem_allocator->addr2offset(next);
 
-    auto prev_hint = hash_table_->GetHint(prev->Key());
+    auto prev_hint = hash_table->GetHint(prev->Key());
     if (prev_hint.spin != updating_key_lock) {
       if (!prev_hint.spin->try_lock()) {
         return false;
@@ -246,18 +246,18 @@ bool Skiplist::FindUpdatePos(Splice *splice, const StringView &updated_key,
     // Check if the list has changed before we successfully acquire lock.
     // As updating record is already locked, so we don't need to
     // check its next
-    if (updated_record->prev != prev_offset ||
-        prev->next != pmem_allocator_->addr2offset(updated_record)) {
+    if (target_record->prev != prev_offset ||
+        prev->next != pmem_allocator->addr2offset(target_record)) {
       continue;
     }
 
-    assert(updated_record->prev == prev_offset);
-    assert(updated_record->next == next_offset);
-    assert(next->prev == pmem_allocator_->addr2offset(updated_record));
-    assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev), updated_key) < 0);
-    assert(next == header_->record ||
-           compare_string_view(Skiplist::UserKey(next), updated_key) > 0);
+    assert(target_record->prev == prev_offset);
+    assert(target_record->next == next_offset);
+    assert(next->prev == pmem_allocator->addr2offset(target_record));
+    assert(prev->entry.meta.type == SortedHeaderRecord ||
+           compare_string_view(Skiplist::UserKey(prev), user_key) < 0);
+    assert(next->entry.meta.type == SortedHeaderRecord ||
+           compare_string_view(Skiplist::UserKey(next), user_key) > 0);
 
     return true;
   }
@@ -381,7 +381,7 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
                       const SpinMutex *updating_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindUpdatePos(&splice, key, updating_key_lock, updated_record,
+  if (!FindUpdatePos(&splice, updating_key_lock, updated_record,
                      &prev_record_lock)) {
     return false;
   }
@@ -408,7 +408,7 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
                       const SpinMutex *deleting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindDeletePos(&splice, key, deleting_key_lock, deleted_record,
+  if (!FindDeletePos(&splice, deleting_key_lock, deleted_record,
                      &prev_record_lock)) {
     return false;
   }
@@ -436,12 +436,42 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
   return true;
 }
 
+bool Skiplist::Purge(DLRecord *purged_record, SkiplistNode *dram_node,
+                     const SpinMutex *purging_key_lock,
+                     PMEMAllocator *pmem_allocator, HashTable *hash_table) {
+  Splice splice(nullptr);
+  std::unique_lock<SpinMutex> prev_record_lock;
+  if (!findAndLockRecordPos(&splice, purging_key_lock, purged_record,
+                            &prev_record_lock, pmem_allocator, hash_table)) {
+    return false;
+  }
+
+  // Modify linkage to drop deleted record
+  uint64_t purging_offset = pmem_allocator->addr2offset(purged_record);
+  DLRecord *prev = splice.prev_pmem_record;
+  DLRecord *next = splice.next_pmem_record;
+  assert(prev->next == purging_offset);
+  assert(next->prev == purging_offset);
+  // For repair in recovery due to crashes during pointers changing, we should
+  // first unlink deleting entry from prev's next
+  prev->next = pmem_allocator->addr2offset(next);
+  pmem_persist(&prev->next, 8);
+  next->prev = pmem_allocator->addr2offset(prev);
+  pmem_persist(&next->prev, 8);
+  purged_record->Destroy();
+
+  if (dram_node) {
+    dram_node->MarkAsRemoved();
+  }
+  return true;
+}
+
 bool Skiplist::Purge(const StringView &key, DLRecord *purged_record,
                      SkiplistNode *dram_node,
                      const SpinMutex *purging_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindDeletePos(&splice, key, purging_key_lock, purged_record,
+  if (!FindDeletePos(&splice, purging_key_lock, purged_record,
                      &prev_record_lock)) {
     return false;
   }

@@ -904,6 +904,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
       entry_ptr->header.data_type = SortedDeleteRecord;
     }
     delayFree(PendingFreeDataRecord{existing_record, new_ts});
+    delayFree(PendingFreeDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr,
+                                      hint.spin});
     break;
   }
   return Status::Ok;
@@ -1987,9 +1989,9 @@ SizedSpaceEntry KVEngine::handlePendingFreeRecord(
   }
   case SortedDeleteRecord: {
     while (1) {
-      std::lock_guard<SpinMutex> lg(
-          *pending_free_delete_record.hash_entry_lock);
       HashEntry *hash_entry_ref = pending_free_delete_record.hash_entry_ref;
+      SpinMutex *hash_entry_lock = pending_free_delete_record.hash_entry_lock;
+      std::lock_guard<SpinMutex> lg(*hash_entry_lock);
       DLRecord *hash_indexed_pmem_record = nullptr;
       SkiplistNode *dram_node = nullptr;
       switch (hash_entry_ref->header.offset_type) {
@@ -2008,6 +2010,13 @@ SizedSpaceEntry KVEngine::handlePendingFreeRecord(
 
       if (hash_indexed_pmem_record ==
           pending_free_delete_record.pmem_delete_record) {
+        if (!Skiplist::Purge(static_cast<DLRecord *>(
+                                 pending_free_delete_record.pmem_delete_record),
+                             dram_node, hash_entry_lock, pmem_allocator_.get(),
+                             hash_table_.get())) {
+          continue;
+        }
+        hash_entry_ref->Clear();
       }
 
       return SizedSpaceEntry(pmem_allocator_->addr2offset(data_entry),
