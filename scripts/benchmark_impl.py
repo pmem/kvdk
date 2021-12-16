@@ -39,7 +39,7 @@ def insert_random(exec, shared_para, data_type, report_path):
 def batch_insert_random(exec, shared_para, data_type, report_path):
     assert data_type == "string"
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0 -batch=100 -key_distribution=random -existing_keys_ratio=0".format(
+        " -fill=0 -type={} -read_ratio=0 -batch_num=100 -key_distribution=random -existing_keys_ratio=0".format(
             data_type)
     report = report_path + "batch_insert_random"
     print("Batch insert random {}".format(data_type))
@@ -126,7 +126,7 @@ def run_benchmark(
     # run benchmarks
     print("Run benchmarks for data type :{}, value size distribution: {}".format(
         data_type, value_size_distribution))
-    shared_para = "-path={} -space={} -populate={} -num={} -threads={} -max_write_threads={} -collections={} -time={} -value_size={} -value_size_distribution={}".format(
+    shared_para = "-path={} -space={} -populate={} -num={} -threads={} -max_write_threads={} -num_collection={} -time={} -value_size={} -value_size_distribution={}".format(
         pmem_path, pmem_size, populate_on_fill, num_fill_kv, n_thread, n_thread, num_collection, bench_duration, value_size, value_size_distribution)
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
