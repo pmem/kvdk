@@ -498,8 +498,8 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   auto hint = hash_table_->GetHint(internal_key);
   std::lock_guard<SpinMutex> lg(*hint.spin);
   Status s = hash_table_->SearchForWrite(
-      hint, internal_key, SortedDataRecord, &entry_ptr, &hash_entry,
-      &existing_data_entry, true /* in recovery */);
+      hint, internal_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
+      &hash_entry, &existing_data_entry, true /* in recovery */);
 
   if (s == Status::MemoryOverflow) {
     return s;
@@ -854,12 +854,15 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     uint64_t new_ts = version_controller_.CurrentTimestamp();
     SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
                           new_ts);
-    Status s =
-        hash_table_->SearchForRead(hint, collection_key, SortedDataRecord,
-                                   &entry_ptr, &hash_entry, &data_entry);
+    Status s = hash_table_->SearchForRead(hint, collection_key,
+                                          SortedDataRecord | SortedDeleteRecord,
+                                          &entry_ptr, &hash_entry, &data_entry);
     switch (s) {
     case Status::Ok:
       if (hash_entry.header.data_type == SortedDeleteRecord) {
+        if (sized_space_entry.size > 0) {
+          pmem_allocator_->Free(sized_space_entry);
+        }
         return s;
       }
       break;
@@ -941,9 +944,9 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     uint64_t new_ts = version_controller_.CurrentTimestamp();
     SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
                           new_ts);
-    Status s =
-        hash_table_->SearchForWrite(hint, collection_key, SortedDataRecord,
-                                    &entry_ptr, &hash_entry, &data_entry);
+    Status s = hash_table_->SearchForWrite(
+        hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
+        &hash_entry, &data_entry);
     if (s == Status::MemoryOverflow) {
       return s;
     }
@@ -967,13 +970,16 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
       }
 
       // update a height 0 node
+      auto updated_type = entry_ptr->header.data_type;
       if (dram_node == nullptr) {
         hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
                             new_record_pmem_ptr, HashOffsetType::DLRecord);
       } else {
         entry_ptr->header.data_type = SortedDataRecord;
       }
-      delayFree(PendingFreeDataRecord{existing_record, new_ts});
+      if (updated_type == SortedDataRecord) {
+        delayFree(PendingFreeDataRecord{existing_record, new_ts});
+      }
       // purgeAndFree(existing_record);
     } else {
       if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
@@ -1274,7 +1280,8 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
   }
   assert(skiplist);
   std::string skiplist_key(skiplist->InternalKey(user_key));
-  return HashGetImpl(skiplist_key, value, SortedDataRecord);
+  return HashGetImpl(skiplist_key, value,
+                     SortedDataRecord | SortedDeleteRecord);
 }
 
 Status KVEngine::StringDeleteImpl(const StringView &key) {
@@ -2100,8 +2107,6 @@ void KVEngine::handlePendingFreeSpace() {
   }
 
   for (auto &pending_free_delete_records : pending_free_delete_records_pool_) {
-    GlobalLogger.Info("handle %lu pending delete records\n",
-                      pending_free_delete_records.size());
     for (auto &record : pending_free_delete_records) {
       if (record.newer_version_timestamp <= smallest_snapshot_ts) {
         space_to_free.emplace_back(handlePendingFreeRecord(record));
