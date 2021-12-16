@@ -1576,8 +1576,12 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
   case RecordType::DlistDataRecord: {
     bool linked = checkLinkage(static_cast<DLRecord *>(pmp_record));
     if (!linked) {
-      purgeAndFree(pmp_record);
-
+      GlobalLogger.Error("Bad linkage!\n");
+      if (DEBUG_LEVEL == 0) {
+        GlobalLogger.Error(
+            "Bad linkage can only be repaired when DEBUG_LEVEL > 0!\n");
+        std::abort();
+      }
       return Status::Ok;
     }
 
@@ -1816,6 +1820,12 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     if (!linked) {
       GlobalLogger.Error("Bad linkage!\n");
       // Bad linkage handled by DlinkedList.
+      if (DEBUG_LEVEL == 0) {
+        GlobalLogger.Error(
+            "Bad linkage can only be repaired when DEBUG_LEVEL > 0!\n");
+        std::abort();
+      }
+
       return Status::Ok;
     } else {
       return Status::Ok;

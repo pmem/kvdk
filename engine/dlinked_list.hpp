@@ -193,7 +193,7 @@ public:
       : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{head_pmmptr},
         tail_pmmptr_{tail_pmmptr} {
 
-#if DEBUG_LEVEL >= 0
+#if DEBUG_LEVEL > 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
                   "Cannot rebuild a DlinkedList from given PMem pointer "
