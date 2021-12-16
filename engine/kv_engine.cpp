@@ -1257,11 +1257,12 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
 
   uint32_t requested_size = v_size + key.size() + sizeof(StringRecord);
 
+  SizedSpaceEntry sized_space_entry{};
   // Space is already allocated for batch writes
-  SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(requested_size);
-  if (sized_space_entry.size == 0) {
-    return Status::PmemOverflow;
-  }
+  // SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(requested_size);
+  // if (sized_space_entry.size == 0) {
+  //   return Status::PmemOverflow;
+  // }
 
   {
     auto hint = hash_table_->GetHint(key);
@@ -1277,18 +1278,18 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     void *block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
-    uint64_t new_ts = get_timestamp();
+    uint64_t new_ts;// = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
-    StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
-                                      new_ts, StringDataRecord, key, value);
+    // StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
+    //                                   new_ts, StringDataRecord, key, value);
 
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
                         HashOffsetType::StringRecord);
-    if (entry_base_status == HashEntryStatus::Updating) {
-      purgeAndFree(hash_entry.index.string_record);
-    }
+    // if (entry_base_status == HashEntryStatus::Updating) {
+    //   purgeAndFree(hash_entry.index.string_record);
+    // }
   }
 
   return Status::Ok;
