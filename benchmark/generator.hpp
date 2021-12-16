@@ -87,8 +87,8 @@ public:
     if (curr_ < upper_) {
       return old;
     } else {
-      // Sleep 10ms, slow down generation
-      std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(10));
+      // Sleep 100ms, slow down generation
+      std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(100));
       return curr_;
     }
   }

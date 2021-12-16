@@ -522,11 +522,11 @@ int main(int argc, char **argv) {
       last_write_ops = total_write;
       last_read_notfound = total_not_found;
 
-      if (FLAGS_fill && total_write >= FLAGS_num * 1001 / 1000) {
-        // Leave some time to guarantee every thread has done its job
+      if (FLAGS_fill && total_write >= FLAGS_num + FLAGS_threads * 10) {
+        // Fill
+        // Leave about 1s to ensure that every thread has done its job.
         /// TODO: Introduce mechanism to signal that every thread has done
         /// filling.
-        // Fill
         done = true;
       } else if (!FLAGS_fill && run_time >= FLAGS_time) {
         // Read, scan, update and insert
