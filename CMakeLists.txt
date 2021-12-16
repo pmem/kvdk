@@ -14,7 +14,7 @@ if(DEBUG_CHECK)
     add_compile_definitions(DEBUG_CHECK)
 endif()
 
-set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2")
+set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2 -mavx512f")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
