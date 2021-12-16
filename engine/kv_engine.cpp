@@ -1277,7 +1277,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     void *block_base =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
-    uint64_t new_ts;// = get_timestamp();
+    uint64_t new_ts = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
