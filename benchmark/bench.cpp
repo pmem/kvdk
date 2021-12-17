@@ -522,9 +522,8 @@ int main(int argc, char **argv) {
       last_write_ops = total_write;
       last_read_notfound = total_not_found;
 
-      if (FLAGS_fill && total_write >= FLAGS_num) {
+      if (FLAGS_fill && total_write >= FLAGS_num * 99 / 100) {
         // Fill
-        // Leave about 1s to ensure that every thread has done its job.
         /// TODO: Introduce mechanism to signal that every thread has done
         /// filling.
         done = true;
@@ -538,7 +537,10 @@ int main(int argc, char **argv) {
   }
 
   printf("finish bench\n");
-  done = true;
+  if (FLAGS_fill) {
+    // Make sure every thread has done its job.
+    sleep(5);
+  }
 
   for (auto &t : ts)
     t.join();
