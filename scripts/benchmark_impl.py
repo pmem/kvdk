@@ -39,7 +39,7 @@ def insert_random(exec, shared_para, data_type, report_path):
 def batch_insert_random(exec, shared_para, data_type, report_path):
     assert data_type == "string"
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0 -batch_num=100 -key_distribution=random -existing_keys_ratio=0".format(
+        " -fill=0 -type={} -read_ratio=0 -batch_size=100 -key_distribution=random -existing_keys_ratio=0".format(
             data_type)
     report = report_path + "batch_insert_random"
     print("Batch insert random {}".format(data_type))

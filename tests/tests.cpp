@@ -135,7 +135,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  int batch_num = 10;
+  int batch_size = 10;
   int count = 500;
   auto BatchSetDelete = [&](uint32_t id) {
     std::string key_prefix(std::string(id, 'a'));
@@ -143,14 +143,14 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     WriteBatch batch;
     int cnt = count;
     while (cnt--) {
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
         auto val = std::to_string(i * id);
         batch.Put(key, val);
       }
       ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
       batch.Clear();
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         if ((i * cnt) % 2 == 1) {
           auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
           auto val = std::to_string(i * id);
@@ -175,7 +175,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     std::string got_val;
     int cnt = count;
     while (cnt--) {
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
         if ((i * cnt) % 2 == 1) {
           ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);

@@ -65,7 +65,7 @@ DEFINE_uint64(num_collection, 1,
               "Number of collections in the instance to benchmark");
 
 DEFINE_uint64(
-    batch_num, 0,
+    batch_size, 0,
     "Size of write batch. If batch>0, write string type kv with atomic batch "
     "write, this is valid only if we benchmark string engine");
 
@@ -170,11 +170,11 @@ void DBWrite(int tid) {
       timer.Start();
     switch (bench_data_type) {
     case DataType::String: {
-      if (FLAGS_batch_num == 0) {
+      if (FLAGS_batch_size == 0) {
         s = engine->Set(key, value);
       } else {
         batch.Put(key, std::string(value.data(), value.size()));
-        if (batch.Size() == FLAGS_batch_num) {
+        if (batch.Size() == FLAGS_batch_size) {
           engine->BatchWrite(batch);
           batch.Clear();
         }
@@ -372,7 +372,7 @@ bool ProcessBenchmarkConfigs() {
   case DataType::Queue:
   case DataType::Hashes:
   case DataType::Sorted: {
-    if (FLAGS_batch_num > 0) {
+    if (FLAGS_batch_size > 0) {
       std::cerr << R"(Batch is only supported for "hash" type data.)"
                 << std::endl;
       return false;
