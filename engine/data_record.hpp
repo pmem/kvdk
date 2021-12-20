@@ -60,12 +60,12 @@ struct DataHeader {
 
 struct DataMeta {
   DataMeta() = default;
-  DataMeta(TimeStampType _timestamp, RecordType _record_type,
+  DataMeta(TimestampType _timestamp, RecordType _record_type,
            uint16_t _key_size, uint32_t _value_size)
       : timestamp(_timestamp), type(_record_type), k_size(_key_size),
         v_size(_value_size) {}
 
-  TimeStampType timestamp;
+  TimestampType timestamp;
   RecordType type;
   uint16_t k_size;
   uint32_t v_size;
@@ -75,7 +75,7 @@ struct DataMeta {
 struct DataEntry {
   // TODO jiayu: use typename for timestamp and record type instead of a number
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
-            TimeStampType _timestamp, RecordType _record_type,
+            TimestampType _timestamp, RecordType _record_type,
             uint16_t _key_size, uint32_t _value_size)
       : header(_checksum, _record_size),
         meta(_timestamp, _record_type, _key_size, _value_size) {}
@@ -105,7 +105,7 @@ public:
   // should larger than sizeof(StringRecord) + key size + value size
   static StringRecord *
   ConstructStringRecord(void *target_address, uint32_t _record_size,
-                        TimeStampType _timestamp, RecordType _record_type,
+                        TimestampType _timestamp, RecordType _record_type,
                         PMemOffsetType _older_version, const StringView &_key,
                         const StringView &_value) {
     StringRecord *record = new (target_address) StringRecord(
@@ -115,7 +115,7 @@ public:
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord *
-  PersistStringRecord(void *addr, uint32_t record_size, TimeStampType timestamp,
+  PersistStringRecord(void *addr, uint32_t record_size, TimestampType timestamp,
                       RecordType type, PMemOffsetType older_version,
                       const StringView &key, const StringView &value);
 
@@ -146,7 +146,7 @@ public:
   }
 
 private:
-  StringRecord(uint32_t _record_size, TimeStampType _timestamp,
+  StringRecord(uint32_t _record_size, TimestampType _timestamp,
                RecordType _record_type, PMemOffsetType _older_version,
                const StringView &_key, const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
@@ -191,7 +191,7 @@ public:
   // should no smaller than sizeof(DLRecord) + key size + value size
   static DLRecord *
   ConstructDLRecord(void *target_address, uint32_t record_size,
-                    TimeStampType timestamp, RecordType record_type,
+                    TimestampType timestamp, RecordType record_type,
                     PMemOffsetType older_version, uint64_t prev, uint64_t next,
                     const StringView &key, const StringView &value) {
     DLRecord *record =
@@ -224,14 +224,14 @@ public:
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord *PersistDLRecord(void *addr, uint32_t record_size,
-                                   TimeStampType timestamp, RecordType type,
+                                   TimestampType timestamp, RecordType type,
                                    PMemOffsetType older_version,
                                    PMemOffsetType prev, PMemOffsetType next,
                                    const StringView &key,
                                    const StringView &value);
 
 private:
-  DLRecord(uint32_t _record_size, TimeStampType _timestamp,
+  DLRecord(uint32_t _record_size, TimestampType _timestamp,
            RecordType _record_type, PMemOffsetType _older_version,
            PMemOffsetType _prev, PMemOffsetType _next, const StringView &_key,
            const StringView &_value)

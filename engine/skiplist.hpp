@@ -238,62 +238,60 @@ public:
 
   Status Rebuild();
 
-  // Insert a new key "key" to skiplist,
+  // Insert a new key "key" to the skiplist,
   //
   // space_to_write: PMem space entry to store new record.
   // dram_node: If height of new record > 0, store new dram node to it,
   // otherwise store nullptr instead
-  // inserting_key_lock: lock of inserting key, should be already locked while
-  // calling this function
+  // inserting_key_lock: lock of inserting key, should be locked before call
+  // this function
   //
   // Return true on success, return false on fail.
   bool Insert(const StringView &key, const StringView &value,
-              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
-              SkiplistNode **dram_node, const SpinMutex *inserting_key_lock);
+              const SpinMutex *inserting_key_lock, TimestampType timestamp,
+              SkiplistNode **dram_node, const SizedSpaceEntry &space_to_write);
 
-  // Update "key" in skiplist
+  // Update "key" in the skiplist
   //
   // space_to_write: PMem space entry to store new record
   // updated_record: existing record of updating key
   // dram_node: dram node of existing record, if it's a height 0 record, then
   // pass nullptr
-  // updating_key_lock: lock of updating key, should be already locked while
-  // calling this function
+  // updating_record_lock: lock of updating record, should be locked before call
+  // this function
   //
   // Return true on success, return false on fail.
   bool Update(const StringView &key, const StringView &value,
-              const DLRecord *updated_record,
-              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
-              SkiplistNode *dram_node, const SpinMutex *updating_key_lock);
+              const DLRecord *updating_record,
+              const SpinMutex *updating_record_lock, TimestampType timestamp,
+              SkiplistNode *dram_node, const SizedSpaceEntry &space_to_write);
 
-  // Purge a dl record of "key" from the skiplist
-  //
-  // purged_record:existing record to purge
-  // dram_node:dram node of existing record, if it's a height 0 record, then
-  // pass nullptr
-  // purging_key_lock: lock of purged_record, should be already locked while
-  // calling this function
-  //
-  // Return true on success, return false on fail.
-  bool Purge(const StringView &key, DLRecord *purged_record,
-             SkiplistNode *dram_node, const SpinMutex *purging_key_lock);
-
-  static bool Purge(DLRecord *purged_record, SkiplistNode *dram_node,
-                    const SpinMutex *purging_key_lock,
-                    PMEMAllocator *pmem_allocator, HashTable *hash_table);
-
-  // Delete "key" from skiplist
+  // Delete "key" from the skiplist by replace it with a delete record
   //
   // deleted_record:existing record of deleting key
   // dram_node:dram node of existing record, if it's a height 0 record, then
   // pass nullptr
-  // deleting_key_lock: lock of deleting key, should be already locked while
-  // calling this function
+  // deleting_key_lock: lock of deleting key, should be locked before call this
+  // function
   //
   // Return true on success, return false on fail.
-  bool Delete(const StringView &key, DLRecord *deleted_record,
-              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
-              SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
+  bool Delete(const StringView &key, DLRecord *deleting_record,
+              const SpinMutex *deleting_record_lock, TimestampType timestamp,
+              SkiplistNode *dram_node, const SizedSpaceEntry &space_to_write);
+
+  // Purge a dl record from its skiplist by remove it from linkage
+  //
+  // purged_record:existing record to purge
+  // dram_node:dram node of purging record, if it's a height 0 record, then
+  // pass nullptr
+  // purging_record_lock: lock of purging_record, should be locked before call
+  // this function
+  //
+  // Return true on success, return false on fail.
+  static bool Purge(DLRecord *purging_record,
+                    const SpinMutex *purging_record_lock,
+                    SkiplistNode *dram_node, PMEMAllocator *pmem_allocator,
+                    HashTable *hash_table);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
@@ -327,36 +325,38 @@ private:
   // prev DLRecord and manage the lock with "prev_record_lock".
   //
   // The "insert_key" should be already locked before call this function
-  bool FindInsertPos(Splice *splice, const StringView &inserting_key,
-                     const SpinMutex *inserting_key_lock,
-                     std::unique_lock<SpinMutex> *prev_record_lock);
+  bool searchAndLockInsertPos(Splice *splice, const StringView &inserting_key,
+                              const SpinMutex *inserting_key_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock);
 
-  // Find and lock skiplist position to update"key".
+  // Search and lock skiplist position to update"key".
   //
   // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and manage
   // the lock with "prev_record_lock".
   //
   //  The "updated_key" should be already locked before call this function
-  bool FindUpdatePos(Splice *splice, const SpinMutex *updating_key_lock,
-                     const DLRecord *updated_record,
-                     std::unique_lock<SpinMutex> *prev_record_lock) {
-    return findAndLockRecordPos(splice, updating_key_lock, updated_record,
-                                prev_record_lock, pmem_allocator_.get(),
-                                hash_table_.get());
+  bool searchAndLockUpdatePos(Splice *splice, const DLRecord *updating_record,
+                              const SpinMutex *updating_record_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock) {
+    return searchAndLockRecordPos(splice, updating_record, updating_record_lock,
+                                  prev_record_lock, pmem_allocator_.get(),
+                                  hash_table_.get());
   }
 
-  bool FindDeletePos(Splice *splice, const SpinMutex *deleting_key_lock,
-                     const DLRecord *deleted_record,
-                     std::unique_lock<SpinMutex> *prev_record_lock) {
-    return FindUpdatePos(splice, deleting_key_lock, deleted_record,
-                         prev_record_lock);
+  bool searchAndLockDeletePos(Splice *splice, const DLRecord *deleting_record,
+                              const SpinMutex *deleting_record_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock) {
+    return searchAndLockUpdatePos(splice, deleting_record, deleting_record_lock,
+                                  prev_record_lock);
   }
 
+  // Find position of "searching_record" in its skiplist and lock its previous
+  // node
   static bool
-  findAndLockRecordPos(Splice *splice, const SpinMutex *updating_key_lock,
-                       const DLRecord *updated_record,
-                       std::unique_lock<SpinMutex> *prev_record_lock,
-                       PMEMAllocator *pmem_allocator, HashTable *hash_table);
+  searchAndLockRecordPos(Splice *splice, const DLRecord *searching_record,
+                         const SpinMutex *record_lock,
+                         std::unique_lock<SpinMutex> *prev_record_lock,
+                         PMEMAllocator *pmem_allocator, HashTable *hash_table);
 
   bool ValidateDLRecord(const DLRecord *record) {
     DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);

@@ -7,17 +7,17 @@
 #include "thread_manager.hpp"
 
 namespace KVDK_NAMESPACE {
-constexpr TimeStampType kMaxTimestamp = UINT64_MAX;
+constexpr TimestampType kMaxTimestamp = UINT64_MAX;
 
 struct SnapshotImpl : public Snapshot {
-  explicit SnapshotImpl(const TimeStampType &t)
+  explicit SnapshotImpl(const TimestampType &t)
       : timestamp(t), next(nullptr), prev(nullptr) {}
 
   SnapshotImpl() : SnapshotImpl(kMaxTimestamp) {}
 
-  TimeStampType GetTimestamp() override { return timestamp; }
+  TimestampType GetTimestamp() { return timestamp; }
 
-  TimeStampType timestamp;
+  TimestampType timestamp;
   SnapshotImpl *prev;
   SnapshotImpl *next;
 };
@@ -29,7 +29,7 @@ public:
     head_.next = &head_;
   }
 
-  SnapshotImpl *New(TimeStampType ts) {
+  SnapshotImpl *New(TimestampType ts) {
     SnapshotImpl *impl = new SnapshotImpl(ts);
     impl->prev = &head_;
     impl->next = head_.next;
@@ -44,7 +44,7 @@ public:
     delete impl;
   }
 
-  TimeStampType OldestSnapshotTS() {
+  TimestampType OldestSnapshotTS() {
     return empty() ? kMaxTimestamp : head_.prev->GetTimestamp();
   }
 
@@ -57,7 +57,7 @@ private:
 // set snapshot to "new_ts", and set it to kMaxTimestamp on destroy
 struct SnapshotSetter {
 public:
-  explicit SnapshotSetter(SnapshotImpl &snapshot, TimeStampType new_ts)
+  explicit SnapshotSetter(SnapshotImpl &snapshot, TimestampType new_ts)
       : snapshot_(snapshot) {
     snapshot.timestamp = new_ts;
   }
@@ -79,30 +79,34 @@ public:
     UpdatedOldestSnapshot();
   }
 
-  inline SnapshotImpl &HoldingSnapshot() {
+  inline SnapshotImpl &ThreadHoldingSnapshot() {
     assert(write_thread.id >= 0);
     return thread_cache_[write_thread.id].holding_snapshot;
   }
 
-  SnapshotImpl *MakeSnapshot() {
+  // Create a new global snapshot
+  SnapshotImpl *NewSnapshot() {
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
-    return global_snapshots_.New(CurrentTimestamp());
+    return global_snapshots_.New(GetCurrentTimestamp());
   }
 
+  // Release a global snapshot, it should be created by this instance
   void ReleaseSnapshot(const SnapshotImpl *impl) {
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
     global_snapshots_.Delete(impl);
   }
 
-  inline TimeStampType CurrentTimestamp() {
+  inline TimestampType GetCurrentTimestamp() {
     auto res = get_cpu_tsc() - tsc_on_startup_ + version_base_;
     return res;
   }
 
-  TimeStampType OldestSnapshot() { return oldest_snapshot_.GetTimestamp(); }
+  TimestampType OldestSnapshotTS() { return oldest_snapshot_.GetTimestamp(); }
 
+  // Update recorded oldest snapshot to current stat by iterating every thread
+  // holding snapshot
   void UpdatedOldestSnapshot() {
-    TimeStampType ts = CurrentTimestamp();
+    TimestampType ts = GetCurrentTimestamp();
     for (size_t i = 0; i < thread_cache_.size(); i++) {
       auto &tc = thread_cache_[i];
       ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
@@ -113,6 +117,8 @@ public:
   }
 
 private:
+  // Each access thread of the instance hold its own local snapshot in thread
+  // cache to avoid thread contention
   struct alignas(64) ThreadCache {
     ThreadCache() : holding_snapshot(kMaxTimestamp) {}
 
@@ -125,15 +131,18 @@ private:
     return ((uint64_t)lo) | (((uint64_t)hi) << 32);
   }
 
-  // Known oldest holding snapshot, there is delay existing until call
-  // UpdatedOldestSnapshot()
-  SnapshotImpl oldest_snapshot_;
+  Array<ThreadCache> thread_cache_;
   SnapshotList global_snapshots_;
   SpinMutex global_snapshots_lock_;
+  // Known oldest snapshot of the instance, there is delay with the actual
+  // oldest snapshot until call UpdatedOldestSnapshot()
+  SnapshotImpl oldest_snapshot_;
 
+  // These two used to get current timestamp of the instance
+  // version_base_: The latest timestamp on instance start up
+  // tsc_on_startup_: The CPU tsc on instance start up
   uint64_t version_base_;
   uint64_t tsc_on_startup_;
-  Array<ThreadCache> thread_cache_;
 };
 
 } // namespace KVDK_NAMESPACE

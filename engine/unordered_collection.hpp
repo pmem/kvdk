@@ -80,7 +80,7 @@ private:
   using iterator = DLinkedListType::iterator;
   DLinkedListType dlinked_list_;
 
-  TimeStampType timestamp_;
+  TimestampType timestamp_;
 
   friend class UnorderedIterator;
 
@@ -92,7 +92,7 @@ public:
   /// and ID as value
   UnorderedCollection(HashTable *hash_table_ptr,
                       PMEMAllocator *pmem_allocator_ptr, std::string const name,
-                      CollectionIDType id, TimeStampType timestamp);
+                      CollectionIDType id, TimestampType timestamp);
 
   /// Recover UnorderedCollection from DLIST_RECORD
   UnorderedCollection(HashTable *hash_table_ptr,
@@ -101,10 +101,10 @@ public:
 
   /// Emplace a Record into the Collection
   /// lock to emplaced node must been acquired before being passed in
-  ModifyReturn Emplace(TimeStampType timestamp, StringView const key,
+  ModifyReturn Emplace(TimestampType timestamp, StringView const key,
                        StringView const value, LockType const &lock);
 
-  ModifyReturn Replace(DLRecord *pos, TimeStampType timestamp,
+  ModifyReturn Replace(DLRecord *pos, TimestampType timestamp,
                        StringView const key, StringView const value,
                        LockType const &lock);
 
@@ -113,7 +113,7 @@ public:
   /// old_offset as erased record
   ModifyReturn Erase(DLRecord *pos, LockType const &lock);
 
-  inline TimeStampType Timestamp() const { return timestamp_; };
+  inline TimestampType Timestamp() const { return timestamp_; };
 
   friend std::ostream &operator<<(std::ostream &out,
                                   UnorderedCollection const &col) {

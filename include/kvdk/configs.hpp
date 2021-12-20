@@ -17,10 +17,7 @@ enum class LogLevel : uint8_t {
   Error,
 };
 
-struct Snapshot {
-public:
-  virtual uint64_t GetTimestamp() = 0;
-};
+struct Snapshot {};
 
 struct Configs {
   // Max number of write threads.

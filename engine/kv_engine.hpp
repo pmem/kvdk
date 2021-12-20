@@ -39,17 +39,12 @@ class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
 
 public:
-  KVEngine(const Configs &configs)
-      : thread_cache_(configs.max_write_threads),
-        version_controller_(configs.max_write_threads){};
   ~KVEngine();
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
-  Snapshot *GetSnapshot() override {
-    return version_controller_.MakeSnapshot();
-  }
+  Snapshot *GetSnapshot() override { return version_controller_.NewSnapshot(); }
 
   void ReleaseSnapshot(const Snapshot *snapshot) override {
     version_controller_.ReleaseSnapshot(
@@ -111,8 +106,12 @@ public:
   };
 
 private:
+  KVEngine(const Configs &configs)
+      : thread_cache_(configs.max_write_threads),
+        version_controller_(configs.max_write_threads){};
+
   struct BatchWriteHint {
-    TimeStampType timestamp{0};
+    TimestampType timestamp{0};
     SizedSpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
     void *pmem_record_to_free = nullptr;
@@ -120,12 +119,12 @@ private:
 
   struct PendingFreeDataRecord {
     void *pmem_data_record;
-    TimeStampType newer_version_timestamp;
+    TimestampType newer_version_timestamp;
   };
 
   struct PendingFreeDeleteRecord {
     void *pmem_delete_record;
-    TimeStampType newer_version_timestamp;
+    TimestampType newer_version_timestamp;
     // We need ref to hash entry for clear index of delete record
     HashEntry *hash_entry_ref;
     SpinMutex *hash_entry_lock;
@@ -139,8 +138,7 @@ private:
 
     PendingBatch *persisted_pending_batch = nullptr;
 
-    SnapshotImpl holding_snapshot{kMaxTimestamp};
-
+    // Used for background free space, this is required for MVCC
     std::deque<PendingFreeDeleteRecord> pending_free_delete_records{};
     std::deque<PendingFreeDataRecord> pending_free_data_records{};
     SpinMutex pending_free_delete_records_lock;
@@ -346,7 +344,7 @@ private:
   SortedCollectionRebuilder sorted_rebuilder_;
   VersionController version_controller_;
 
-  // background free space
+  // Used for background free space, this is required for MVCC
   std::vector<std::deque<PendingFreeDataRecord>>
       pending_free_data_records_pool_;
   std::vector<std::deque<PendingFreeDeleteRecord>>

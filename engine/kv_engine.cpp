@@ -595,7 +595,7 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
         // header point to itself
         DLRecord *pmem_record = DLRecord::PersistDLRecord(
             pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
-            sized_space_entry.size, version_controller_.CurrentTimestamp(),
+            sized_space_entry.size, version_controller_.GetCurrentTimestamp(),
             (RecordType)collection_type, kNullPMemOffset,
             sized_space_entry.space_entry.offset,
             sized_space_entry.space_entry.offset, collection,
@@ -852,9 +852,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    uint64_t new_ts = version_controller_.CurrentTimestamp();
-    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
-                          new_ts);
+    uint64_t new_ts = version_controller_.GetCurrentTimestamp();
+    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
     Status s = hash_table_->SearchForRead(hint, collection_key,
                                           SortedDataRecord | SortedDeleteRecord,
                                           &entry_ptr, &hash_entry, &data_entry);
@@ -900,8 +899,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     void *delete_record_pmem_ptr =
         pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
 
-    if (!skiplist->Delete(user_key, existing_record, sized_space_entry, new_ts,
-                          dram_node, hint.spin)) {
+    if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
+                          dram_node, sized_space_entry)) {
       continue;
     }
 
@@ -942,9 +941,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    uint64_t new_ts = version_controller_.CurrentTimestamp();
-    SnapshotSetter setter(thread_cache_[write_thread.id].holding_snapshot,
-                          new_ts);
+    uint64_t new_ts = version_controller_.GetCurrentTimestamp();
+    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
     Status s = hash_table_->SearchForWrite(
         hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
         &hash_entry, &data_entry);
@@ -965,8 +963,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
         existing_record = hash_entry.index.dl_record;
       }
 
-      if (!skiplist->Update(user_key, value, existing_record, sized_space_entry,
-                            new_ts, dram_node, hint.spin)) {
+      if (!skiplist->Update(user_key, value, existing_record, hint.spin, new_ts,
+                            dram_node, sized_space_entry)) {
         continue;
       }
 
@@ -983,8 +981,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
       }
       // purgeAndFree(existing_record);
     } else {
-      if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
-                            &dram_node, hint.spin)) {
+      if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
+                            sized_space_entry)) {
         continue;
       }
 
@@ -1172,7 +1170,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     ul_locks.emplace_back(const_cast<SpinMutex &>(*l));
   }
 
-  TimeStampType ts = version_controller_.CurrentTimestamp();
+  TimestampType ts = version_controller_.GetCurrentTimestamp();
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
   }
@@ -1297,8 +1295,8 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
-    TimeStampType new_ts = version_controller_.CurrentTimestamp();
-    SnapshotSetter setter(version_controller_.HoldingSnapshot(), new_ts);
+    TimestampType new_ts = version_controller_.GetCurrentTimestamp();
+    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
         &hash_entry, &data_entry);
@@ -1359,8 +1357,8 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
-    TimeStampType new_ts = version_controller_.CurrentTimestamp();
-    SnapshotSetter setter(version_controller_.HoldingSnapshot(), new_ts);
+    TimestampType new_ts = version_controller_.GetCurrentTimestamp();
+    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
 
     // Search position to write index in hash table.
     Status s = hash_table_->SearchForWrite(
@@ -1414,7 +1412,7 @@ Status KVEngine::Set(const StringView key, const StringView value) {
 namespace KVDK_NAMESPACE {
 std::shared_ptr<UnorderedCollection>
 KVEngine::createUnorderedCollection(StringView const collection_name) {
-  TimeStampType ts = version_controller_.CurrentTimestamp();
+  TimestampType ts = version_controller_.GetCurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
@@ -1513,7 +1511,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
 
       std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
 
-      TimeStampType ts = version_controller_.CurrentTimestamp();
+      TimestampType ts = version_controller_.GetCurrentTimestamp();
 
       HashEntry hash_entry_record;
       HashEntry *p_hash_entry_record = nullptr;
@@ -1749,7 +1747,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
 
 namespace KVDK_NAMESPACE {
 std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
-  std::uint64_t ts = version_controller_.CurrentTimestamp();
+  std::uint64_t ts = version_controller_.GetCurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   return std::unique_ptr<Queue>(new Queue{pmem_allocator_.get(), name, id, ts});
@@ -1854,7 +1852,7 @@ Status KVEngine::xPush(StringView const collection_name, StringView const value,
 
   // Push
   {
-    TimeStampType ts = version_controller_.CurrentTimestamp();
+    TimestampType ts = version_controller_.GetCurrentTimestamp();
     switch (push_pos) {
     case QueueOpPosition::Left: {
       queue_ptr->PushFront(ts, value);
@@ -1940,7 +1938,7 @@ void KVEngine::maybeHandleCachedPendingFreeSpace() {
   size_t limit_free = 1;
   while (tc.pending_free_data_records.size() > 0 &&
          tc.pending_free_data_records.front().newer_version_timestamp <
-             version_controller_.OldestSnapshot() &&
+             version_controller_.OldestSnapshotTS() &&
          limit_free-- > 0) {
     pmem_allocator_->Free(
         handlePendingFreeRecord(tc.pending_free_data_records.front()));
@@ -2024,7 +2022,7 @@ SizedSpaceEntry KVEngine::handlePendingFreeRecord(
           pending_free_delete_record.pmem_delete_record) {
         if (!Skiplist::Purge(static_cast<DLRecord *>(
                                  pending_free_delete_record.pmem_delete_record),
-                             dram_node, hash_entry_lock, pmem_allocator_.get(),
+                             hash_entry_lock, dram_node, pmem_allocator_.get(),
                              hash_table_.get())) {
           continue;
         }
@@ -2075,7 +2073,7 @@ void KVEngine::handlePendingFreeSpace() {
   std::vector<SizedSpaceEntry> space_to_free;
   bg_free_processing_ = true;
   version_controller_.UpdatedOldestSnapshot();
-  TimeStampType smallest_snapshot_ts = version_controller_.OldestSnapshot();
+  TimestampType smallest_snapshot_ts = version_controller_.OldestSnapshotTS();
   for (size_t i = 0; i < thread_cache_.size(); i++) {
     auto &thread_cache = thread_cache_[i];
     if (thread_cache.pending_free_data_records.size() > 0 ||

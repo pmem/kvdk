@@ -35,7 +35,7 @@ private:
   using iterator = DLinkedListType::iterator;
   DLinkedListType dlinked_list_;
 
-  TimeStampType timestamp_;
+  TimestampType timestamp_;
   size_t sz_ = 0;
 
   SpinMutex queue_lock_;
@@ -44,19 +44,19 @@ private:
 
 public:
   Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
-        CollectionIDType id, TimeStampType timestamp);
+        CollectionIDType id, TimestampType timestamp);
 
   Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record);
 
-  void PushFront(TimeStampType timestamp, StringView const value);
+  void PushFront(TimestampType timestamp, StringView const value);
 
-  void PushBack(TimeStampType timestamp, StringView const value);
+  void PushBack(TimestampType timestamp, StringView const value);
 
   bool PopFront(std::string *value_got);
 
   bool PopBack(std::string *value_got);
 
-  inline TimeStampType Timestamp() const { return timestamp_; };
+  inline TimestampType Timestamp() const { return timestamp_; };
 
 private:
   inline static bool isAdjacent(iterator prev, iterator next) {
