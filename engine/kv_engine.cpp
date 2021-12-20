@@ -596,7 +596,8 @@ Status KVEngine::SearchOrInitCollection(const StringView &collection,
         DLRecord *pmem_record = DLRecord::PersistDLRecord(
             pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
             sized_space_entry.size, version_controller_.CurrentTimestamp(),
-            (RecordType)collection_type, sized_space_entry.space_entry.offset,
+            (RecordType)collection_type, kNullPMemOffset,
+            sized_space_entry.space_entry.offset,
             sized_space_entry.space_entry.offset, collection,
             StringView((char *)&id, 8));
 
@@ -1251,7 +1252,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
           static_cast<RecordType>(kv.type),
           found ? pmem_allocator_->addr2offset_checked(
                       hash_entry.index.string_record)
-                : kPmemNullOffset,
+                : kNullPMemOffset,
           kv.key, kv.value);
     } else {
       // Never reach
@@ -1378,7 +1379,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
         block_base, sized_space_entry.size, new_ts, StringDataRecord,
         found ? pmem_allocator_->addr2offset_checked(
                     hash_entry.index.string_record)
-              : kPmemNullOffset,
+              : kNullPMemOffset,
         key, value);
 
     auto entry_base_status = hash_entry_ptr->header.status;
@@ -1664,13 +1665,13 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     return Status::Ok;
   }
   case RecordType::DlistHeadRecord: {
-    kvdk_assert(pmp_record->prev == kPmemNullOffset &&
+    kvdk_assert(pmp_record->prev == kNullPMemOffset &&
                     checkDLRecordLinkageRight(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken head.");
     return Status::Ok;
   }
   case RecordType::DlistTailRecord: {
-    kvdk_assert(pmp_record->next == kPmemNullOffset &&
+    kvdk_assert(pmp_record->next == kNullPMemOffset &&
                     checkDLRecordLinkageLeft(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken tail.");
     return Status::Ok;
@@ -1902,13 +1903,13 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     return Status::Ok;
   }
   case RecordType::QueueHeadRecord: {
-    kvdk_assert(pmp_record->prev == kPmemNullOffset &&
+    kvdk_assert(pmp_record->prev == kNullPMemOffset &&
                     checkDLRecordLinkageRight(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken head.");
     return Status::Ok;
   }
   case RecordType::QueueTailRecord: {
-    kvdk_assert(pmp_record->next == kPmemNullOffset &&
+    kvdk_assert(pmp_record->next == kNullPMemOffset &&
                     checkDLRecordLinkageLeft(pmp_record),
                 "Bad linkage found when RestoreDlistRecords. Broken tail.");
     return Status::Ok;

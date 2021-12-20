@@ -19,7 +19,7 @@
 
 namespace KVDK_NAMESPACE {
 
-constexpr PMemOffsetType kPmemNullOffset = UINT64_MAX;
+constexpr PMemOffsetType kNullPMemOffset = UINT64_MAX;
 constexpr uint64_t kMinPaddingBlocks = 8;
 
 // Manage allocation/de-allocation of PMem space at block unit
@@ -43,46 +43,46 @@ public:
   void Free(const SizedSpaceEntry &entry) override;
 
   // translate block_offset of allocated space to address
-  inline void *offset2addr_checked(uint64_t offset) {
+  inline void *offset2addr_checked(PMemOffsetType offset) {
     assert(validate_offset(offset) && "Trying to access invalid offset");
     return pmem_ + offset;
   }
 
-  inline void *offset2addr(uint64_t offset) {
+  inline void *offset2addr(PMemOffsetType offset) {
     if (validate_offset(offset)) {
       return pmem_ + offset;
     }
     return nullptr;
   }
 
-  template <typename T> inline T *offset2addr_checked(uint64_t offset) {
+  template <typename T> inline T *offset2addr_checked(PMemOffsetType offset) {
     return static_cast<T *>(offset2addr_checked(offset));
   }
 
-  template <typename T> inline T *offset2addr(uint64_t block_offset) {
+  template <typename T> inline T *offset2addr(PMemOffsetType block_offset) {
     return static_cast<T *>(offset2addr(block_offset));
   }
 
   // translate address of allocated space to block_offset
-  inline uint64_t addr2offset_checked(const void *addr) {
+  inline PMemOffsetType addr2offset_checked(const void *addr) {
     assert((char *)addr >= pmem_);
-    uint64_t offset = (char *)addr - pmem_;
+    PMemOffsetType offset = (char *)addr - pmem_;
     assert(validate_offset(offset) && "Trying to create invalid offset");
     return offset;
   }
 
-  inline uint64_t addr2offset(const void *addr) {
+  inline PMemOffsetType addr2offset(const void *addr) {
     if (addr) {
-      uint64_t offset = (char *)addr - pmem_;
+      PMemOffsetType offset = (char *)addr - pmem_;
       if (validate_offset(offset)) {
         return offset;
       }
     }
-    return kPmemNullOffset;
+    return kNullPMemOffset;
   }
 
   inline bool validate_offset(uint64_t offset) {
-    return offset < pmem_size_ && offset != kPmemNullOffset;
+    return offset < pmem_size_ && offset != kNullPMemOffset;
   }
 
   // Populate PMem space so the following access can be faster

@@ -22,7 +22,7 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
         dlinked_list_.pmem_allocator_ptr_->offset2addr_checked(
             offset_list_record),
         list_record_space.size, timestamp, RecordType::QueueRecord,
-        dlinked_list_.Head().GetCurrentOffset(),
+        kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(), ID2String(ID()));
   }
 }

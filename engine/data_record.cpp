@@ -13,7 +13,7 @@ static constexpr int kDataBufferSize = 1024 * 1024;
 
 StringRecord *StringRecord::PersistStringRecord(
     void *addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
-    PMemOffsetType prev_version_offset, const StringView &key,
+    PMemOffsetType older_version, const StringView &key,
     const StringView &value) {
   void *data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(StringRecord);
@@ -27,8 +27,7 @@ StringRecord *StringRecord::PersistStringRecord(
     data_cpy_target = addr;
   }
   StringRecord *record = StringRecord::ConstructStringRecord(
-      data_cpy_target, record_size, timestamp, type, prev_version_offset, key,
-      value);
+      data_cpy_target, record_size, timestamp, type, older_version, key, value);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();
@@ -41,7 +40,8 @@ StringRecord *StringRecord::PersistStringRecord(
 
 DLRecord *DLRecord::PersistDLRecord(void *addr, uint32_t record_size,
                                     TimeStampType timestamp, RecordType type,
-                                    uint64_t prev, uint64_t next,
+                                    PMemOffsetType older_version,
+                                    PMemOffsetType prev, PMemOffsetType next,
                                     const StringView &key,
                                     const StringView &value) {
   void *data_cpy_target;
@@ -55,8 +55,9 @@ DLRecord *DLRecord::PersistDLRecord(void *addr, uint32_t record_size,
   } else {
     data_cpy_target = addr;
   }
-  DLRecord *record = DLRecord::ConstructDLRecord(
-      data_cpy_target, record_size, timestamp, type, prev, next, key, value);
+  DLRecord *record =
+      DLRecord::ConstructDLRecord(data_cpy_target, record_size, timestamp, type,
+                                  older_version, prev, next, key, value);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();

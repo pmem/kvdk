@@ -95,7 +95,7 @@ struct DataEntry {
 struct StringRecord {
 public:
   DataEntry entry;
-  PMemOffsetType prev_version_offset;
+  PMemOffsetType older_version;
   char data[0];
 
   // Construct a StringRecord instance at target_address. As the record need
@@ -106,18 +106,17 @@ public:
   static StringRecord *
   ConstructStringRecord(void *target_address, uint32_t _record_size,
                         TimeStampType _timestamp, RecordType _record_type,
-                        PMemOffsetType _prev_version_offset,
-                        const StringView &_key, const StringView &_value) {
-    StringRecord *record = new (target_address)
-        StringRecord(_record_size, _timestamp, _record_type,
-                     _prev_version_offset, _key, _value);
+                        PMemOffsetType _older_version, const StringView &_key,
+                        const StringView &_value) {
+    StringRecord *record = new (target_address) StringRecord(
+        _record_size, _timestamp, _record_type, _older_version, _key, _value);
     return record;
   }
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord *
   PersistStringRecord(void *addr, uint32_t record_size, TimeStampType timestamp,
-                      RecordType type, PMemOffsetType prev_version_offset,
+                      RecordType type, PMemOffsetType older_version,
                       const StringView &key, const StringView &value);
 
   void Destroy() { entry.Destroy(); }
@@ -148,11 +147,11 @@ public:
 
 private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
-               RecordType _record_type, PMemOffsetType _prev_version_offset,
+               RecordType _record_type, PMemOffsetType _older_version,
                const StringView &_key, const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        prev_version_offset(_prev_version_offset) {
+        older_version(_older_version) {
     assert(_record_type == StringDataRecord ||
            _record_type == StringDeleteRecord);
     memcpy(data, _key.data(), _key.size());
@@ -180,8 +179,9 @@ private:
 struct DLRecord {
 public:
   DataEntry entry;
-  uint64_t prev;
-  uint64_t next;
+  PMemOffsetType older_version;
+  PMemOffsetType prev;
+  PMemOffsetType next;
   char data[0];
 
   // Construct a DLRecord instance at "target_address". As the record need
@@ -189,13 +189,14 @@ public:
   //
   // target_address: pre-allocated space to store constructed record, it
   // should no smaller than sizeof(DLRecord) + key size + value size
-  static DLRecord *ConstructDLRecord(void *target_address, uint32_t record_size,
-                                     TimeStampType timestamp,
-                                     RecordType record_type, uint64_t prev,
-                                     uint64_t next, const StringView &key,
-                                     const StringView &value) {
-    DLRecord *record = new (target_address)
-        DLRecord(record_size, timestamp, record_type, prev, next, key, value);
+  static DLRecord *
+  ConstructDLRecord(void *target_address, uint32_t record_size,
+                    TimeStampType timestamp, RecordType record_type,
+                    PMemOffsetType older_version, uint64_t prev, uint64_t next,
+                    const StringView &key, const StringView &value) {
+    DLRecord *record =
+        new (target_address) DLRecord(record_size, timestamp, record_type,
+                                      older_version, prev, next, key, value);
     return record;
   }
 
@@ -224,17 +225,19 @@ public:
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord *PersistDLRecord(void *addr, uint32_t record_size,
                                    TimeStampType timestamp, RecordType type,
-                                   uint64_t prev, uint64_t next,
+                                   PMemOffsetType older_version,
+                                   PMemOffsetType prev, PMemOffsetType next,
                                    const StringView &key,
                                    const StringView &value);
 
 private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,
-           RecordType _record_type, uint64_t _prev, uint64_t _next,
-           const StringView &_key, const StringView &_value)
+           RecordType _record_type, PMemOffsetType _older_version,
+           PMemOffsetType _prev, PMemOffsetType _next, const StringView &_key,
+           const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        prev(_prev), next(_next) {
+        older_version(_older_version), prev(_prev), next(_next) {
     assert(_record_type & DLRecordType);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());

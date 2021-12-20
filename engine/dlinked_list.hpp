@@ -146,7 +146,7 @@ private:
   friend class UnorderedIterator;
   friend class Queue;
 
-  static constexpr PMemOffsetType NullPMemOffset = kPmemNullOffset;
+  static constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 
 public:
   /// Create DLinkedList and construct head and tail node on PMem.
@@ -177,12 +177,12 @@ public:
       // recovery
       tail_pmmptr_ = DLRecord::PersistDLRecord(
           pmem_allocator_ptr_->offset2addr_checked(tail_offset),
-          tail_space_entry.size, timestamp, TailType, head_offset,
-          NullPMemOffset, key, value);
+          tail_space_entry.size, timestamp, TailType, NullPMemOffset,
+          head_offset, NullPMemOffset, key, value);
       head_pmmptr_ = DLRecord::PersistDLRecord(
           pmem_allocator_ptr_->offset2addr_checked(head_offset),
           head_space_entry.size, timestamp, HeadType, NullPMemOffset,
-          tail_offset, key, value);
+          NullPMemOffset, tail_offset, key, value);
     }
   }
 
@@ -354,8 +354,8 @@ private:
     void *pmp = pmem_allocator_ptr_->offset2addr_checked(offset);
 
     DLRecord *record = DLRecord::PersistDLRecord(
-        pmp, space.size, timestamp, DataType, iter_prev.GetCurrentOffset(),
-        iter_next.GetCurrentOffset(), key, value);
+        pmp, space.size, timestamp, DataType, kNullPMemOffset,
+        iter_prev.GetCurrentOffset(), iter_next.GetCurrentOffset(), key, value);
 
     iter_prev->next = offset;
     pmem_persist(&iter_prev->next, sizeof(PMemOffsetType));

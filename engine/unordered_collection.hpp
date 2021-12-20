@@ -45,7 +45,7 @@ struct ModifyReturn {
     return *this;
   }
 
-  static constexpr PMemOffsetType FailOffset = kPmemNullOffset;
+  static constexpr PMemOffsetType FailOffset = kNullPMemOffset;
 };
 } // namespace KVDK_NAMESPACE
 

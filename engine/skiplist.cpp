@@ -343,8 +343,8 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
-      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
-      next_offset, internal_key, value);
+      space_to_write.size, timestamp, SortedDataRecord, kNullPMemOffset,
+      prev_offset, next_offset, internal_key, value);
 
   // link new record to PMem
   LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -387,12 +387,16 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
   }
 
   std::string internal_key(InternalKey(key));
-  uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
-  uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
+  PMemOffsetType updated_offset =
+      pmem_allocator_->addr2offset_checked(updated_record);
+  PMemOffsetType prev_offset =
+      pmem_allocator_->addr2offset_checked(splice.prev_pmem_record);
+  PMemOffsetType next_offset =
+      pmem_allocator_->addr2offset_checked(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
-      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
-      next_offset, internal_key, value);
+      space_to_write.size, timestamp, SortedDataRecord, updated_offset,
+      prev_offset, next_offset, internal_key, value);
 
   // link new record
   LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -414,16 +418,16 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
   }
 
   std::string internal_key(InternalKey(key));
-  uint64_t prev_offset =
+  PMemOffsetType prev_offset =
       pmem_allocator_->addr2offset_checked(splice.prev_pmem_record);
-  uint64_t next_offset =
+  PMemOffsetType next_offset =
       pmem_allocator_->addr2offset_checked(splice.next_pmem_record);
-  uint64_t deleted_offset =
+  PMemOffsetType deleted_offset =
       pmem_allocator_->addr2offset_checked(deleted_record);
   DLRecord *delete_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
-      space_to_write.size, timestamp, SortedDeleteRecord, prev_offset,
-      next_offset, internal_key, "");
+      space_to_write.size, timestamp, SortedDeleteRecord, deleted_offset,
+      prev_offset, next_offset, internal_key, "");
 
   assert(splice.prev_pmem_record->next == deleted_offset);
   assert(splice.next_pmem_record->prev == deleted_offset);
