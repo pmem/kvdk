@@ -539,7 +539,7 @@ int main(int argc, char **argv) {
   printf("finish bench\n");
   if (FLAGS_fill) {
     // Make sure every thread has done its job.
-    sleep(5);
+    sleep(30);
   }
 
   for (auto &t : ts)
