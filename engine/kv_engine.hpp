@@ -46,6 +46,9 @@ public:
 
   Snapshot *GetSnapshot() override { return version_controller_.NewSnapshot(); }
 
+  Status Backup(const pmem::obj::string_view backup_path,
+                const Snapshot *snapshot) override;
+
   void ReleaseSnapshot(const Snapshot *snapshot) override {
     version_controller_.ReleaseSnapshot(
         static_cast<const SnapshotImpl *>(snapshot));
@@ -222,6 +225,8 @@ private:
 
   Status RestorePendingBatch();
 
+  Status RestoreBackupFile();
+
   Status PersistOrRecoverImmutableConfigs();
 
   Status RestoreDlistRecords(DLRecord *pmp_record);
@@ -251,13 +256,27 @@ private:
 
   void backgroundWork();
 
-  inline std::string db_file_name() { return dir_ + "data"; }
+  inline std::string data_file() { return dir_ + "data"; }
+
+  inline static std::string data_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "data";
+  }
 
   inline std::string persisted_pending_block_file(int thread_id) {
     return pending_batch_dir_ + std::to_string(thread_id);
   }
 
-  inline std::string config_file_name() { return dir_ + "configs"; }
+  inline std::string backup_mark_file() { return dir_ + "backup_mark"; }
+
+  inline static std::string backup_mark_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "backup_mark";
+  }
+
+  inline std::string config_file() { return dir_ + "configs"; }
+
+  inline static std::string config_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "configs";
+  }
 
   inline bool checkDLRecordLinkageLeft(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
@@ -344,6 +363,11 @@ private:
   bool bg_free_thread_processing_{false};
   bool bg_free_thread_closed_{false};
   SpinCondvar bg_free_thread_cv_;
+
+  // Max timestamp of records that could be restored in recovery, this is used
+  // for backup instance, for an instance that is not a backup, this is set to
+  // kMaxTimestamp by default
+  TimestampType max_timestamp_in_recovery_{kMaxTimestamp};
 };
 
 } // namespace KVDK_NAMESPACE

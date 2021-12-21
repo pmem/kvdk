@@ -100,6 +100,8 @@ public:
     free_list_.BatchPush(entries);
   }
 
+  Status Backup(const std::string &backup_file);
+
 private:
   PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
                 uint32_t block_size, uint32_t num_write_threads);

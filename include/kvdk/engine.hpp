@@ -93,6 +93,10 @@ public:
   // Get a snapshot of the instance at this moment
   virtual Snapshot *GetSnapshot() = 0;
 
+  // Make a backup on "snapshot" to "backup_path"
+  virtual Status Backup(const pmem::obj::string_view backup_path,
+                        const Snapshot *snapshot) = 0;
+
   // Release a snapshot of the instance
   virtual void ReleaseSnapshot(const Snapshot *) = 0;
 

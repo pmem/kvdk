@@ -272,4 +272,19 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   return space_entry;
 }
 
+Status PMEMAllocator::Backup(const std::string &backup_file) {
+  size_t mapped_len;
+  void *backup_data_file = pmem_map_file(
+      backup_file.c_str(), pmem_size_, PMEM_FILE_EXCL, 0666, &mapped_len,
+      nullptr /* we do not care if backup path is on PMem*/);
+
+  if (backup_data_file == nullptr || mapped_len != pmem_size_) {
+    GlobalLogger.Error("Map backup file error in PMemAllocator");
+    return Status::IOError;
+  }
+
+  pmem_memcpy_persist(backup_data_file, pmem_, offset_head_.load());
+  return Status::Ok;
+}
+
 } // namespace KVDK_NAMESPACE

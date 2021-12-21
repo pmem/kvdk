@@ -15,7 +15,7 @@ struct SnapshotImpl : public Snapshot {
 
   SnapshotImpl() : SnapshotImpl(kMaxTimestamp) {}
 
-  TimestampType GetTimestamp() { return timestamp; }
+  TimestampType GetTimestamp() const { return timestamp; }
 
   TimestampType timestamp;
   SnapshotImpl *prev;

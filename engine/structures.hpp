@@ -58,6 +58,15 @@ private:
   uint64_t tagged_pointer;
 };
 
+struct BackupMark {
+  enum class Stage {
+    Processing = 0,
+    Finish = 1,
+  };
+  TimestampType backup_ts;
+  Stage stage;
+};
+
 struct PendingBatch {
   enum class Stage {
     Finish = 0,

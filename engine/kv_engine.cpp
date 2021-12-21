@@ -120,7 +120,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
       return Status::IOError;
     }
 
-    db_file_ = db_file_name();
+    db_file_ = data_file();
     configs_ = configs;
 
   } else {
@@ -628,7 +628,7 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
       kPMEMMapSizeUnit *
       (size_t)ceil(1.0 * sizeof(ImmutableConfigs) / kPMEMMapSizeUnit);
   ImmutableConfigs *configs = (ImmutableConfigs *)pmem_map_file(
-      config_file_name().c_str(), len, PMEM_FILE_CREATE, 0666, &mapped_len,
+      config_file().c_str(), len, PMEM_FILE_CREATE, 0666, &mapped_len,
       &is_pmem);
   if (configs == nullptr || !is_pmem || mapped_len != len) {
     GlobalLogger.Error("Open immutable configs file error %s\n",
@@ -645,6 +645,84 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
     configs->PersistImmutableConfigs(configs_);
   }
   return s;
+}
+
+Status KVEngine::Backup(const pmem::obj::string_view backup_path,
+                        const Snapshot *snapshot) {
+  // TODO: handle batch write
+  std::string path(backup_path);
+  create_dir_if_missing(path);
+  // TODO: make sure backup_path is empty
+
+  size_t mapped_len;
+  BackupMark *backup_mark = static_cast<BackupMark *>(
+      pmem_map_file(backup_mark_file(path).c_str(), sizeof(BackupMark),
+                    PMEM_FILE_CREATE, 0666, &mapped_len,
+                    nullptr /* we do not care if backup path is on PMem*/));
+
+  if (backup_mark == nullptr || mapped_len != sizeof(BackupMark)) {
+    GlobalLogger.Error("Map backup mark file %s error in Backup\n",
+                       backup_mark_file(path).c_str());
+    return Status::IOError;
+  }
+
+  ImmutableConfigs *imm_configs = static_cast<ImmutableConfigs *>(
+      pmem_map_file(config_file(path).c_str(), sizeof(ImmutableConfigs),
+                    PMEM_FILE_CREATE, 0666, &mapped_len,
+                    nullptr /* we do not care if backup path is on PMem*/));
+  if (imm_configs == nullptr || mapped_len != sizeof(ImmutableConfigs)) {
+    GlobalLogger.Error("Map persistent config file %s error in Backup\n",
+                       config_file(path).c_str());
+    return Status::IOError;
+  }
+
+  backup_mark->stage = BackupMark::Stage::Processing;
+  backup_mark->backup_ts =
+      static_cast<const SnapshotImpl *>(snapshot)->GetTimestamp();
+  pmem_persist(backup_mark, sizeof(BackupMark));
+
+  imm_configs->PersistImmutableConfigs(configs_);
+
+  Status s = pmem_allocator_->Backup(data_file(path));
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  backup_mark->stage = BackupMark::Stage::Finish;
+  pmem_persist(backup_mark, sizeof(BackupMark));
+  return Status::Ok;
+}
+
+Status KVEngine::RestoreBackupFile() {
+  size_t mapped_len;
+  int is_pmem;
+  BackupMark *backup_mark = static_cast<BackupMark *>(
+      pmem_map_file(backup_mark_file().c_str(), sizeof(BackupMark),
+                    PMEM_FILE_EXCL, 0666, &mapped_len, &is_pmem));
+  if (backup_mark != nullptr) {
+    if (!is_pmem || mapped_len != sizeof(BackupMark)) {
+      GlobalLogger.Error("Map persisted backup mark file %s failed\n",
+                         backup_mark_file().c_str());
+      return Status::IOError;
+    }
+
+    switch (backup_mark->stage) {
+    case BackupMark::Stage::Processing: {
+      GlobalLogger.Error("Recover from a unfinished backup instance\n");
+      return Status::Abort;
+    }
+    case BackupMark::Stage::Finish: {
+      GlobalLogger.Info("Recover from a backup KVDK instance\n");
+      max_timestamp_in_recovery_ = backup_mark->backup_ts;
+      break;
+    }
+    default:
+      GlobalLogger.Error(
+          "Recover from a backup instance with wrong backup stage\n");
+      return Status ::Abort;
+    }
+  }
+  return Status::Ok;
 }
 
 Status KVEngine::RestorePendingBatch() {
@@ -712,6 +790,12 @@ Status KVEngine::Recovery() {
   if (s != Status::Ok) {
     return s;
   }
+
+  s = RestoreBackupFile();
+  if (s != Status::Ok) {
+    return s;
+  }
+
   GlobalLogger.Info("RestorePendingBatch done: iterated %lu records\n",
                     restored_.load());
 
