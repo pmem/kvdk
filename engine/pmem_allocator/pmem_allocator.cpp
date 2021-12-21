@@ -24,7 +24,7 @@ PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
   init_data_size_2_block_size();
 }
 
-void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
+void PMEMAllocator::Free(const SpaceEntry &entry) {
   if (entry.size > 0) {
     assert(entry.size % block_size_ == 0);
     free_list_.Push(entry);
@@ -137,7 +137,7 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
   return allocator;
 }
 
-bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
+bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
   if (segment_space_entry->size == segment_size_) {
     thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
@@ -147,7 +147,7 @@ bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
   return AllocateSegmentSpace(segment_space_entry);
 }
 
-bool PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
+bool PMEMAllocator::AllocateSegmentSpace(SpaceEntry *segment_entry) {
   uint64_t offset;
   while (1) {
     offset = offset_head_.load(std::memory_order_relaxed);
@@ -158,7 +158,7 @@ bool PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
           return false;
         }
         Free(*segment_entry);
-        *segment_entry = SizedSpaceEntry{offset, segment_size_};
+        *segment_entry = SpaceEntry{offset, segment_size_};
         return true;
       }
       continue;
@@ -212,8 +212,8 @@ bool PMEMAllocator::CheckDevDaxAndGetSize(const char *path, uint64_t *size) {
   return true;
 }
 
-SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
-  SizedSpaceEntry space_entry;
+SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
+  SpaceEntry space_entry;
   uint32_t b_size = size_2_block_size(size);
   uint32_t aligned_size = b_size * block_size_;
   // Now the requested block size should smaller than segment size

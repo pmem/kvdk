@@ -208,7 +208,7 @@ Status KVEngine::MaybeInitWriteThread() {
 Status KVEngine::RestoreData(uint64_t thread_id) {
   write_thread.id = thread_id;
 
-  SizedSpaceEntry segment_recovering;
+  SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
   bool fetch = false;
   uint64_t cnt = 0;
@@ -275,7 +275,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     // or the space is padding, empty or with corrupted record
     // Free the space and fetch another
     if (data_entry_cached.meta.type == RecordType::Padding) {
-      pmem_allocator_->Free(SizedSpaceEntry(
+      pmem_allocator_->Free(SpaceEntry(
           pmem_allocator_->addr2offset_checked(recovering_pmem_record),
           data_entry_cached.header.record_size));
       continue;
@@ -599,7 +599,7 @@ Status KVEngine::InitCollection(const StringView &collection, Collection **list,
 
   uint32_t request_size =
       sizeof(DLRecord) + collection.size() + sizeof(CollectionIDType) /* id */;
-  SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
+  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
   if (sized_space_entry.size == 0) {
     return Status::PmemOverflow;
   }
@@ -887,7 +887,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
   }
 
   auto request_size = value.size() + collection_key.size() + sizeof(DLRecord);
-  SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
+  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
   if (sized_space_entry.size == 0) {
     return Status::PmemOverflow;
   }
@@ -1250,7 +1250,7 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
   HashEntry *entry_ptr = nullptr;
 
   uint32_t requested_size = key.size() + sizeof(StringRecord);
-  SizedSpaceEntry sized_space_entry;
+  SpaceEntry sized_space_entry;
 
   {
     auto hint = hash_table_->GetHint(key);
@@ -1282,7 +1282,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
   uint32_t requested_size = v_size + key.size() + sizeof(StringRecord);
 
   // Space is already allocated for batch writes
-  SizedSpaceEntry sized_space_entry = pmem_allocator_->Allocate(requested_size);
+  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(requested_size);
   if (sized_space_entry.size == 0) {
     return Status::PmemOverflow;
   }

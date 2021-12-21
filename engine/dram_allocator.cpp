@@ -8,12 +8,12 @@
 
 namespace KVDK_NAMESPACE {
 
-void ChunkBasedAllocator::Free(const SizedSpaceEntry &entry) {
+void ChunkBasedAllocator::Free(const SpaceEntry &entry) {
   // Not supported yet
 }
 
-SizedSpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
-  SizedSpaceEntry entry;
+SpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
+  SpaceEntry entry;
   if (size > chunk_size_) {
     void *addr = malloc(size);
     if (addr != nullptr) {

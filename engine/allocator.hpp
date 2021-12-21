@@ -8,18 +8,17 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-struct SizedSpaceEntry {
-  SizedSpaceEntry() = default;
+struct SpaceEntry {
+  SpaceEntry() = default;
 
-  SizedSpaceEntry(uint64_t _offset, uint64_t _size)
-      : offset(_offset), size(_size) {}
-  PMemOffsetType offset;
+  SpaceEntry(uint64_t _offset, uint64_t _size) : offset(_offset), size(_size) {}
+  uint64_t offset;
   uint64_t size = 0;
 };
 
 class Allocator {
 public:
-  virtual SizedSpaceEntry Allocate(uint64_t size) = 0;
-  virtual void Free(const SizedSpaceEntry &entry) = 0;
+  virtual SpaceEntry Allocate(uint64_t size) = 0;
+  virtual void Free(const SpaceEntry &entry) = 0;
 };
 } // namespace KVDK_NAMESPACE

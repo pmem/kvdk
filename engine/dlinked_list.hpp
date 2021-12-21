@@ -323,8 +323,8 @@ private:
   void purgeAndFree(DLRecord *record_pmmptr) {
     record_pmmptr->Destroy();
     pmem_allocator_ptr_->Free(
-        SizedSpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
-                        record_pmmptr->entry.header.record_size));
+        SpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
+                   record_pmmptr->entry.header.record_size));
   }
 
   /// Emplace between iter_prev and iter_next, linkage not checked

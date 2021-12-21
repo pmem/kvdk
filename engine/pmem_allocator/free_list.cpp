@@ -177,7 +177,7 @@ void Freelist::MergeAndCheckTSInPool() {
   }
 }
 
-void Freelist::Push(const SizedSpaceEntry &entry) {
+void Freelist::Push(const SpaceEntry &entry) {
   assert(entry.size > 0);
   assert(entry.size % block_size_ == 0);
   assert(entry.offset % block_size_ == 0);
@@ -194,7 +194,7 @@ void Freelist::Push(const SizedSpaceEntry &entry) {
   }
 }
 
-bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
+bool Freelist::Get(uint32_t size, SpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
   auto &thread_cache = thread_cache_[write_thread.id];
@@ -277,7 +277,7 @@ void Freelist::MoveCachedListsToPool() {
   }
 }
 
-bool Freelist::MergeGet(uint32_t size, SizedSpaceEntry *space_entry) {
+bool Freelist::MergeGet(uint32_t size, SpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
   auto &cache_list = thread_cache_[write_thread.id].active_entry_offsets;

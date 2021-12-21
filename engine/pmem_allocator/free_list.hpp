@@ -137,14 +137,14 @@ public:
                  block_size, num_threads, num_blocks, allocator) {}
 
   // Add a space entry
-  void Push(const SizedSpaceEntry &entry);
+  void Push(const SpaceEntry &entry);
 
   // Request a at least "size" free space entry
-  bool Get(uint32_t size, SizedSpaceEntry *space_entry);
+  bool Get(uint32_t size, SpaceEntry *space_entry);
 
   // Try to merge thread-cached free space entries to get a at least "size"
   // entry
-  bool MergeGet(uint32_t size, SizedSpaceEntry *space_entry);
+  bool MergeGet(uint32_t size, SpaceEntry *space_entry);
 
   // Merge adjacent free spaces stored in the entry pool into larger one
   //
@@ -189,8 +189,7 @@ private:
 
   class SpaceCmp {
   public:
-    bool operator()(const SizedSpaceEntry &s1,
-                    const SizedSpaceEntry &s2) const {
+    bool operator()(const SpaceEntry &s1, const SpaceEntry &s2) const {
       return s1.size > s2.size;
     }
   };
@@ -212,7 +211,7 @@ private:
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;
   // Store all large free space entries that larger than max_classified_b_size_
-  std::set<SizedSpaceEntry, SpaceCmp> large_entries_;
+  std::set<SpaceEntry, SpaceCmp> large_entries_;
   SpinMutex large_entries_spin_;
   PMEMAllocator *pmem_allocator_;
 };
