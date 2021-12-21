@@ -228,24 +228,18 @@ private:
 
   Status RestoreQueueRecords(DLRecord *pmp_record);
 
-  // Regularly works excecuted by background thread
-  void backgroundWorkImpl() {
-    bg_free_cv_.notify_all();
-    version_controller_.UpdatedOldestSnapshot();
-    pmem_allocator_->BackgroundWork();
-  }
-
   Status CheckConfigs(const Configs &configs);
 
   void FreeSkiplistDramNodes();
 
   void maybeUpdateOldestSnapshot();
 
-  void maybeHandleCachedPendingFreeSpace();
+  void handleThreadLocalPendingFreeRecords();
 
-  void handlePendingFreeSpace();
+  // Run in background to handle pending free records regularly
+  void pendingFreeRecordsHandler();
 
-  void backgroundPendingFreeSpaceHandler();
+  void handlePendingFreeRecords();
 
   inline void delayFree(PendingFreeDeleteRecord &&);
 
@@ -345,14 +339,11 @@ private:
   VersionController version_controller_;
 
   // Used for background free space, this is required for MVCC
-  std::vector<std::deque<PendingFreeDataRecord>>
-      pending_free_data_records_pool_;
-  std::vector<std::deque<PendingFreeDeleteRecord>>
-      pending_free_delete_records_pool_;
-  bool bg_free_processing_{false};
-  bool bg_free_closed_{false};
-  SpinMutex bg_free_lock_;
-  std::condition_variable_any bg_free_cv_;
+  std::vector<std::deque<PendingFreeDataRecord>> bg_free_data_records_;
+  std::vector<std::deque<PendingFreeDeleteRecord>> bg_free_delete_records_;
+  bool bg_free_thread_processing_{false};
+  bool bg_free_thread_closed_{false};
+  SpinCondvar bg_free_thread_cv_;
 };
 
 } // namespace KVDK_NAMESPACE

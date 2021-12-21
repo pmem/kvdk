@@ -103,7 +103,7 @@ public:
 
   TimestampType OldestSnapshotTS() { return oldest_snapshot_.GetTimestamp(); }
 
-  // Update recorded oldest snapshot to current stat by iterating every thread
+  // Update recorded oldest snapshot up to state by iterating every thread
   // holding snapshot
   void UpdatedOldestSnapshot() {
     TimestampType ts = GetCurrentTimestamp();
