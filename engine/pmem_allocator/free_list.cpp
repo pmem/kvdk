@@ -127,15 +127,15 @@ void Freelist::OrganizeFreeSpace() {
 }
 
 void Freelist::MergeAndCheckTSInPool() {
-  std::vector<SpaceEntry> merging_list;
-  std::vector<std::vector<SpaceEntry>> merged_entry_list(
+  std::vector<PMemOffsetType> merging_list;
+  std::vector<std::vector<PMemOffsetType>> merged_entry_list(
       max_classified_b_size_);
 
   for (uint32_t b_size = 1; b_size < max_classified_b_size_; b_size++) {
     if (active_pool_.TryFetchEntryList(merging_list, b_size)) {
-      for (SpaceEntry &se : merging_list) {
-        assert(se.offset % block_size_ == 0);
-        auto b_offset = se.offset / block_size_;
+      for (PMemOffsetType &offset : merging_list) {
+        assert(offset % block_size_ == 0);
+        auto b_offset = offset / block_size_;
         uint64_t merged_blocks = MergeSpace(
             b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
             b_size);
@@ -144,21 +144,17 @@ void Freelist::MergeAndCheckTSInPool() {
           // Persist merged free entry on PMem
           if (merged_blocks > b_size) {
             DataHeader header(0, merged_blocks * block_size_);
-            pmem_memcpy_persist(pmem_allocator_->offset2addr(se.offset),
-                                &header, sizeof(DataHeader));
-            // As we pading and marked new size on PMem, it contains no valid
-            // data so we can set it's ts to 0
-            se.info = 0;
+            pmem_memcpy_persist(pmem_allocator_->offset2addr(offset), &header,
+                                sizeof(DataHeader));
           }
 
           // large space entries
           if (merged_blocks >= merged_entry_list.size()) {
             std::lock_guard<SpinMutex> lg(large_entries_spin_);
-            large_entries_.emplace(se.offset, merged_blocks * block_size_,
-                                   se.info);
+            large_entries_.emplace(offset, merged_blocks * block_size_);
             // move merged entries to merging pool to avoid redundant merging
           } else {
-            merged_entry_list[merged_blocks].emplace_back(std::move(se));
+            merged_entry_list[merged_blocks].emplace_back(std::move(offset));
             if (merged_entry_list[merged_blocks].size() >= kMinMovableEntries) {
               merged_pool_.MoveEntryList(merged_entry_list[merged_blocks],
                                          merged_blocks);
@@ -169,7 +165,7 @@ void Freelist::MergeAndCheckTSInPool() {
     }
   }
 
-  std::vector<SpaceEntry> merged_list;
+  std::vector<PMemOffsetType> merged_list;
   for (uint32_t b_size = 1; b_size < max_classified_b_size_; b_size++) {
     while (merged_pool_.TryFetchEntryList(merged_list, b_size)) {
       active_pool_.MoveEntryList(merged_list, b_size);
@@ -184,17 +180,17 @@ void Freelist::MergeAndCheckTSInPool() {
 void Freelist::Push(const SizedSpaceEntry &entry) {
   assert(entry.size > 0);
   assert(entry.size % block_size_ == 0);
-  assert(entry.space_entry.offset % block_size_ == 0);
+  assert(entry.offset % block_size_ == 0);
   auto b_size = entry.size / block_size_;
-  auto b_offset = entry.space_entry.offset / block_size_;
+  auto b_offset = entry.offset / block_size_;
   space_map_.Set(b_offset, b_size);
   auto &thread_cache = thread_cache_[write_thread.id];
-  if (b_size >= thread_cache.active_entries.size()) {
+  if (b_size >= thread_cache.active_entry_offsets.size()) {
     std::lock_guard<SpinMutex> lg(large_entries_spin_);
     large_entries_.emplace(entry);
   } else {
     std::lock_guard<SpinMutex> lg(thread_cache.spins[b_size]);
-    thread_cache.active_entries[b_size].emplace_back(entry.space_entry);
+    thread_cache.active_entry_offsets[b_size].emplace_back(entry.offset);
   }
 }
 
@@ -202,28 +198,30 @@ bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
   auto &thread_cache = thread_cache_[write_thread.id];
-  for (uint32_t i = b_size; i < thread_cache.active_entries.size(); i++) {
+  for (uint32_t i = b_size; i < thread_cache.active_entry_offsets.size(); i++) {
     bool found = false;
   search_entry : {
     std::lock_guard<SpinMutex> lg(thread_cache.spins[i]);
-    if (thread_cache.active_entries[i].size() == 0) {
-      if (!active_pool_.TryFetchEntryList(thread_cache.active_entries[i], i) &&
-          !merged_pool_.TryFetchEntryList(thread_cache.active_entries[i], i)) {
+    if (thread_cache.active_entry_offsets[i].size() == 0) {
+      if (!active_pool_.TryFetchEntryList(thread_cache.active_entry_offsets[i],
+                                          i) &&
+          !merged_pool_.TryFetchEntryList(thread_cache.active_entry_offsets[i],
+                                          i)) {
         // no usable b_size free space entry
         continue;
       }
     }
 
-    if (thread_cache.active_entries[i].size() != 0) {
-      space_entry->space_entry = thread_cache.active_entries[i].back();
-      thread_cache.active_entries[i].pop_back();
+    if (thread_cache.active_entry_offsets[i].size() != 0) {
+      space_entry->offset = thread_cache.active_entry_offsets[i].back();
+      thread_cache.active_entry_offsets[i].pop_back();
       found = true;
     }
   }
 
     if (found) {
-      assert(space_entry->space_entry.offset % block_size_ == 0);
-      auto b_offset = space_entry->space_entry.offset / block_size_;
+      assert(space_entry->offset % block_size_ == 0);
+      auto b_offset = space_entry->offset / block_size_;
       if (space_map_.TestAndUnset(b_offset, i) == i) {
         space_entry->size = i * block_size_;
         return true;
@@ -237,13 +235,13 @@ bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
     while (!large_entries_.empty()) {
       auto large_entry = large_entries_.begin();
       auto entry_size = large_entry->size;
-      auto entry_offset = large_entry->space_entry.offset;
+      auto entry_offset = large_entry->offset;
       assert(entry_size % block_size_ == 0);
       assert(entry_offset % block_size_ == 0);
       auto entry_b_size = entry_size / block_size_;
       auto entry_b_offset = entry_offset / block_size_;
       if (entry_b_size >= b_size) {
-        space_entry->space_entry = large_entry->space_entry;
+        space_entry->offset = large_entry->offset;
         large_entries_.erase(large_entry);
         if (space_map_.TestAndUnset(entry_b_offset, entry_b_size) ==
             entry_b_size) {
@@ -259,16 +257,16 @@ bool Freelist::Get(uint32_t size, SizedSpaceEntry *space_entry) {
 }
 
 void Freelist::MoveCachedListsToPool() {
-  std::vector<SpaceEntry> moving_list;
+  std::vector<PMemOffsetType> moving_list;
   for (uint64_t i = 0; i < thread_cache_.size(); i++) {
     auto &tc = thread_cache_[i];
 
-    for (size_t b_size = 1; b_size < tc.active_entries.size(); b_size++) {
+    for (size_t b_size = 1; b_size < tc.active_entry_offsets.size(); b_size++) {
       moving_list.clear();
       {
         std::lock_guard<SpinMutex> lg(tc.spins[b_size]);
-        if (tc.active_entries[b_size].size() > 0) {
-          moving_list.swap(tc.active_entries[b_size]);
+        if (tc.active_entry_offsets[b_size].size() > 0) {
+          moving_list.swap(tc.active_entry_offsets[b_size]);
         }
       }
 
@@ -282,17 +280,17 @@ void Freelist::MoveCachedListsToPool() {
 bool Freelist::MergeGet(uint32_t size, SizedSpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
-  auto &cache_list = thread_cache_[write_thread.id].active_entries;
+  auto &cache_list = thread_cache_[write_thread.id].active_entry_offsets;
   for (uint32_t i = 1; i < max_classified_b_size_; i++) {
     size_t j = 0;
     while (j < cache_list[i].size()) {
-      assert(cache_list[i][j].offset % block_size_ == 0);
-      auto b_offset = cache_list[i][j].offset / block_size_;
+      assert(cache_list[i][j] % block_size_ == 0);
+      auto b_offset = cache_list[i][j] / block_size_;
       uint64_t merged_blocks = MergeSpace(
           b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
           b_size);
       if (merged_blocks >= b_size) {
-        space_entry->space_entry = cache_list[i][j];
+        space_entry->offset = cache_list[i][j];
         std::swap(cache_list[i][j], cache_list[i].back());
         cache_list[i].pop_back();
         if (space_map_.TestAndUnset(b_offset, merged_blocks) == merged_blocks) {

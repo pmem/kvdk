@@ -158,7 +158,7 @@ bool PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
           return false;
         }
         Free(*segment_entry);
-        *segment_entry = SizedSpaceEntry{offset, segment_size_, 0};
+        *segment_entry = SizedSpaceEntry{offset, segment_size_};
         return true;
       }
       continue;
@@ -234,8 +234,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
           DataEntry padding(0, static_cast<uint32_t>(extra_space), 0,
                             RecordType::Padding, 0, 0);
           pmem_memcpy_persist(
-              offset2addr(thread_cache.free_entry.space_entry.offset +
-                          aligned_size),
+              offset2addr(thread_cache.free_entry.offset + aligned_size),
               &padding, sizeof(DataEntry));
         } else {
           aligned_size = thread_cache.free_entry.size;
@@ -244,7 +243,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
         space_entry = thread_cache.free_entry;
         space_entry.size = aligned_size;
         thread_cache.free_entry.size -= aligned_size;
-        thread_cache.free_entry.space_entry.offset += aligned_size;
+        thread_cache.free_entry.offset += aligned_size;
         return space_entry;
       }
       if (thread_cache.free_entry.size > 0) {
@@ -268,7 +267,7 @@ SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   }
   space_entry = thread_cache.segment_entry;
   space_entry.size = aligned_size;
-  thread_cache.segment_entry.space_entry.offset += aligned_size;
+  thread_cache.segment_entry.offset += aligned_size;
   thread_cache.segment_entry.size -= aligned_size;
   return space_entry;
 }

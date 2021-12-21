@@ -18,7 +18,7 @@ SizedSpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
     void *addr = malloc(size);
     if (addr != nullptr) {
       entry.size = chunk_size_;
-      entry.space_entry.offset = addr2offset(addr);
+      entry.offset = addr2offset(addr);
       thread_cache_[write_thread.id].allocated_chunks.push_back(addr);
     }
     return entry;
@@ -35,8 +35,7 @@ SizedSpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
   }
 
   entry.size = size;
-  entry.space_entry.offset =
-      addr2offset(thread_cache_[write_thread.id].chunk_addr);
+  entry.offset = addr2offset(thread_cache_[write_thread.id].chunk_addr);
   thread_cache_[write_thread.id].chunk_addr += size;
   thread_cache_[write_thread.id].usable_bytes -= size;
   return entry;

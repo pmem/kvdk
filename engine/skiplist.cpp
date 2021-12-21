@@ -353,9 +353,9 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
-      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
-      next_offset, internal_key, value);
+      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
+      timestamp, SortedDataRecord, prev_offset, next_offset, internal_key,
+      value);
 
   // link new record to PMem
   InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -401,9 +401,9 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
-      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
-      next_offset, internal_key, value);
+      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
+      timestamp, SortedDataRecord, prev_offset, next_offset, internal_key,
+      value);
 
   // link new record
   InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);

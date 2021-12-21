@@ -223,8 +223,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
       fetch = false;
     }
 
-    void *recovering_pmem_record = pmem_allocator_->offset2addr_checked(
-        segment_recovering.space_entry.offset);
+    void *recovering_pmem_record =
+        pmem_allocator_->offset2addr_checked(segment_recovering.offset);
     memcpy(&data_entry_cached, recovering_pmem_record, sizeof(DataEntry));
 
     // reach the of of this segment or the segment is empty
@@ -234,8 +234,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     }
 
     segment_recovering.size -= data_entry_cached.header.record_size;
-    segment_recovering.space_entry.offset +=
-        data_entry_cached.header.record_size;
+    segment_recovering.offset += data_entry_cached.header.record_size;
 
     switch (data_entry_cached.meta.type) {
     case RecordType::SortedDataRecord:
@@ -278,8 +277,7 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     if (data_entry_cached.meta.type == RecordType::Padding) {
       pmem_allocator_->Free(SizedSpaceEntry(
           pmem_allocator_->addr2offset_checked(recovering_pmem_record),
-          data_entry_cached.header.record_size,
-          data_entry_cached.meta.timestamp));
+          data_entry_cached.header.record_size));
       continue;
     }
 
@@ -609,10 +607,9 @@ Status KVEngine::InitCollection(const StringView &collection, Collection **list,
   // PMem level of skiplist is circular, so the next and prev pointers of
   // header point to itself
   DLRecord *pmem_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset),
+      pmem_allocator_->offset2addr(sized_space_entry.offset),
       sized_space_entry.size, get_timestamp(), (RecordType)collection_type,
-      sized_space_entry.space_entry.offset,
-      sized_space_entry.space_entry.offset, collection,
+      sized_space_entry.offset, sized_space_entry.offset, collection,
       StringView((char *)&id, 8));
 
   {
@@ -895,7 +892,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     return Status::PmemOverflow;
   }
   void *new_record_pmem_ptr =
-      pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
+      pmem_allocator_->offset2addr(sized_space_entry.offset);
 
   bool sorted_by_value = false;
   while (1) {
@@ -1122,8 +1119,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
         }
         return s;
       }
-      space_entry_offsets.emplace_back(
-          batch_hints[i].allocated_space.space_entry.offset);
+      space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
     } else {
       kvdk_assert(kv.type == StringDeleteRecord,
                   "only support string type batch write");
@@ -1209,8 +1205,8 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     kvdk_assert(!found || batch_hint.timestamp > data_entry.meta.timestamp,
                 "ts of new data smaller than existing data in batch write");
 
-    void *block_base = pmem_allocator_->offset2addr(
-        batch_hint.allocated_space.space_entry.offset);
+    void *block_base =
+        pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
     // We use if here to avoid compilation warning
     if (kv.type == StringDataRecord) {
@@ -1302,8 +1298,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     }
     bool found = s == Status::Ok;
 
-    void *block_base =
-        pmem_allocator_->offset2addr(sized_space_entry.space_entry.offset);
+    void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
 
     uint64_t new_ts = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);

@@ -280,9 +280,9 @@ private:
   inline void purgeAndFree(void *pmem_record) {
     DataEntry *data_entry = static_cast<DataEntry *>(pmem_record);
     data_entry->Destroy();
-    pmem_allocator_->Free(SizedSpaceEntry(
-        pmem_allocator_->addr2offset_checked(pmem_record),
-        data_entry->header.record_size, data_entry->meta.timestamp));
+    pmem_allocator_->Free(
+        SizedSpaceEntry(pmem_allocator_->addr2offset_checked(pmem_record),
+                        data_entry->header.record_size));
   }
 
   std::vector<ThreadLocalRes> thread_res_;
