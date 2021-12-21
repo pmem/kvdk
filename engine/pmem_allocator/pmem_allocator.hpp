@@ -37,10 +37,10 @@ public:
                    uint32_t num_write_threads, bool use_devdax_mode);
 
   // Allocate a PMem space, return offset and actually allocated space in bytes
-  SizedSpaceEntry Allocate(uint64_t size) override;
+  SpaceEntry Allocate(uint64_t size) override;
 
   // Free a PMem space entry. The entry should be allocated by this allocator
-  void Free(const SizedSpaceEntry &entry) override;
+  void Free(const SpaceEntry &entry) override;
 
   // translate block_offset of allocated space to address
   inline void *offset2addr_checked(PMemOffsetType offset) {
@@ -91,12 +91,12 @@ public:
 
   // Free space_entry and fetch a new segment in space_entry, unless
   // segment_space_entry is a full segment
-  bool FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry);
+  bool FreeAndFetchSegment(SpaceEntry *segment_space_entry);
 
   // Regularly execute by background thread of KVDK
   void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
 
-  void BatchFree(const std::vector<SizedSpaceEntry> &entries) {
+  void BatchFree(const std::vector<SpaceEntry> &entries) {
     free_list_.BatchPush(entries);
   }
 
@@ -107,13 +107,13 @@ private:
   // avoid contention
   struct alignas(64) ThreadCache {
     // Space got from free list, the size is aligned to block_size_
-    SizedSpaceEntry free_entry;
+    SpaceEntry free_entry;
     // Space fetched from head of PMem segments, the size is aligned to
     // block_size_
-    SizedSpaceEntry segment_entry;
+    SpaceEntry segment_entry;
   };
 
-  bool AllocateSegmentSpace(SizedSpaceEntry *segment_entry);
+  bool AllocateSegmentSpace(SpaceEntry *segment_entry);
 
   static bool CheckDevDaxAndGetSize(const char *path, uint64_t *size);
 

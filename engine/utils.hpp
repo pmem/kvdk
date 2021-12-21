@@ -242,7 +242,7 @@ public:
 template <typename T, typename Alloc = AlignedAllocator<T>> class Array {
 public:
   template <typename... Args>
-  explicit Array(uint64_t size, Args &&...args) : size_(size) {
+  explicit Array(uint64_t size, Args &&... args) : size_(size) {
     data_ = alloc_.allocate(size_);
     for (uint64_t i = 0; i < size; i++) {
       new (data_ + i) T{std::forward<Args>(args)...};

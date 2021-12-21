@@ -17,7 +17,7 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
       dlinked_list_.tail_pmmptr_ = nullptr;
       throw std::bad_alloc{};
     }
-    PMemOffsetType offset_list_record = list_record_space.space_entry.offset;
+    PMemOffsetType offset_list_record = list_record_space.offset;
     collection_record_ptr_ = DLRecord::PersistDLRecord(
         dlinked_list_.pmem_allocator_ptr_->offset2addr_checked(
             offset_list_record),
