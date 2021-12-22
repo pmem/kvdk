@@ -119,8 +119,14 @@ def run_benchmark(
     # create report dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
-    report_path = "./results-{}/commit-{}/threads-{}-vs-{}-vs_dist-{}-collections-{}/{}-{}/".format(
-        str(timestamp)[0:8], git_hash, n_thread, value_size, value_size_distribution, num_collection, data_type, timestamp)
+    report_path = "./results-{0}-commit-{1}-threads-{2}-vsize-{3}-vsize_dist-{4}-collections-{5}-{6}/".format(
+        data_type,
+        git_hash, 
+        n_thread, 
+        value_size,
+        value_size_distribution, 
+        num_collection, 
+        timestamp)
     os.system("mkdir -p {}".format(report_path))
 
     # run benchmarks
