@@ -33,26 +33,13 @@ void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
 
 void PMEMAllocator::PopulateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");
-  std::vector<std::thread> ths;
-
-  int pu = get_usable_pu();
-  if (pu <= 0) {
-    pu = 1;
-  } else if (pu > 16) {
-    // 16 is a moderate concurrent number for writing PMem.
-    pu = 16;
+  assert((pmem_ - static_cast<char *>(nullptr)) % 64 == 0);
+  assert(pmem_size_ % 64 == 0);
+  for (size_t i = 0; i < pmem_size_ / 64; i++) {
+    _mm512_stream_si512(reinterpret_cast<__m512i *>(pmem_) + i,
+                        _mm512_set1_epi64(0ULL));
   }
-  for (int i = 0; i < pu; i++) {
-    ths.emplace_back([=]() {
-      uint64_t offset = pmem_size_ * i / pu;
-      // To cover the case that mapped_size_ is not divisible by pu.
-      uint64_t len = std::min(pmem_size_ / pu, pmem_size_ - offset);
-      pmem_memset(pmem_ + offset, 0, len, PMEM_F_MEM_NONTEMPORAL);
-    });
-  }
-  for (auto &t : ths) {
-    t.join();
-  }
+  _mm_mfence();
   GlobalLogger.Info("Populating done\n");
 }
 
