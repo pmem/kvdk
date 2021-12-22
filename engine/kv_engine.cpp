@@ -387,8 +387,14 @@ bool KVEngine::ValidateRecord(void *data_record) {
   }
 }
 
-Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
+Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
+                                     const DataEntry &data_entry_cached) {
   assert(pmem_record->entry.meta.type == SortedHeaderRecord);
+
+  if (data_entry_cached.meta.timestamp > max_recoverable_record_timestamp_) {
+    purgeAndFree(pmem_record);
+  }
+
   std::string name = string_view_2_string(pmem_record->Key());
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;
@@ -479,7 +485,8 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord *record) {
 
 Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
                                        const DataEntry &cached_data_entry) {
-  if (!CheckAndRepairDLRecord(pmem_record)) {
+  bool linked_record = CheckAndRepairDLRecord(pmem_record);
+  if (!linked_record && max_recoverable_record_timestamp_ == kMaxTimestamp /* we do not free unlinked record while recovering a backup instance*/) {
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
@@ -488,6 +495,51 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
          pmem_record->entry.meta.type == SortedDeleteRecord);
   std::string internal_key(pmem_record->Key());
   StringView user_key = Skiplist::ExtractUserKey(internal_key);
+
+  // Repair linkage of backup version
+  if (cached_data_entry.meta.timestamp > max_recoverable_record_timestamp_) {
+    DLRecord *older_version_record =
+        pmem_allocator_->offset2addr<DLRecord>(pmem_record->older_version);
+    if (older_version_record != nullptr &&
+        older_version_record->entry.meta.timestamp <=
+            max_recoverable_record_timestamp_) {
+      if (!ValidateRecord(older_version_record)) {
+        GlobalLogger.Error("Broken backup instance: invalid skiplist record");
+        std::abort();
+      }
+      kvdk_assert(equal_string_view(internal_key, older_version_record->Key()),
+                  "older version key is not same as new version");
+      while (1) {
+        auto hash_hint = hash_table_->GetHint(older_version_record->Key());
+        Splice splice(nullptr);
+        std::unique_lock<SpinMutex> ul(*hash_hint.spin);
+        std::unique_lock<SpinMutex> prev_record_lock;
+        if (!Skiplist::SearchAndLockRecordPos(
+                &splice, older_version_record, hash_hint.spin,
+                &prev_record_lock, pmem_allocator_.get(), hash_table_.get()),
+            false /* we do not check linkage for restore backup as the record is not linked*/) {
+          continue;
+        }
+        Skiplist::LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record,
+                               older_version_record, pmem_allocator_.get());
+        break;
+      }
+    } else if (linked_record) {
+      while (1) {
+        auto hash_hint = hash_table_->GetHint(pmem_record->Key());
+        std::unique_lock<SpinMutex> ul(*hash_hint.spin);
+        if (!Skiplist::Purge(pmem_record, hash_hint.spin, nullptr,
+                             pmem_allocator_.get(), hash_table_.get())) {
+          continue;
+        }
+        break;
+      }
+    }
+    purgeAndFree(pmem_record);
+
+    return Status::Ok;
+  }
+
   DataEntry existing_data_entry;
   HashEntry hash_entry;
   HashEntry *entry_ptr = nullptr;

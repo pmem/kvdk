@@ -87,9 +87,9 @@ void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
   }
 }
 
-// Insert DLRecord "inserting" between "prev" and "next"
-void Skiplist::LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking) {
-  uint64_t inserting_record_offset = pmem_allocator_->addr2offset(linking);
+void Skiplist::LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking,
+                            PMEMAllocator *pmem_allocator) {
+  uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
   next->prev = inserting_record_offset;
@@ -218,10 +218,10 @@ Status Skiplist::CheckConnection(int height) {
   return Status::Ok;
 }
 
-bool Skiplist::searchAndLockRecordPos(
+bool Skiplist::SearchAndLockRecordPos(
     Splice *splice, const DLRecord *searching_record,
     const SpinMutex *record_lock, std::unique_lock<SpinMutex> *prev_record_lock,
-    PMEMAllocator *pmem_allocator, HashTable *hash_table) {
+    PMEMAllocator *pmem_allocator, HashTable *hash_table, bool check_linkage) {
   while (1) {
     StringView user_key = UserKey(searching_record);
     DLRecord *prev =
@@ -247,14 +247,16 @@ bool Skiplist::searchAndLockRecordPos(
     // Check if the list has changed before we successfully acquire lock.
     // As updating searching_record is already locked, so we don't need to
     // check its next
-    if (searching_record->prev != prev_offset ||
-        prev->next != pmem_allocator->addr2offset(searching_record)) {
-      continue;
-    }
+    if (check_linkage) {
+      if (searching_record->prev != prev_offset ||
+          prev->next != pmem_allocator->addr2offset(searching_record)) {
+        continue;
+      }
 
-    assert(searching_record->prev == prev_offset);
-    assert(searching_record->next == next_offset);
-    assert(next->prev == pmem_allocator->addr2offset(searching_record));
+      assert(searching_record->prev == prev_offset);
+      assert(searching_record->next == next_offset);
+      assert(next->prev == pmem_allocator->addr2offset(searching_record));
+    }
     assert(prev->entry.meta.type == SortedHeaderRecord ||
            compare_string_view(Skiplist::UserKey(prev), user_key) < 0);
     assert(next->entry.meta.type == SortedHeaderRecord ||
@@ -451,7 +453,7 @@ bool Skiplist::Purge(DLRecord *purging_record,
                      HashTable *hash_table) {
   Splice splice(nullptr);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!searchAndLockRecordPos(&splice, purging_record, purging_record_lock,
+  if (!SearchAndLockRecordPos(&splice, purging_record, purging_record_lock,
                               &prev_record_lock, pmem_allocator, hash_table)) {
     return false;
   }

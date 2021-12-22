@@ -92,17 +92,10 @@ TEST_F(EngineBasicTest, TestBackup) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
-  // Test empty key
-  std::string key{""}, val{"val"}, got_val;
-  ASSERT_EQ(engine->Set(key, val), Status::Ok);
-  ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-  ASSERT_EQ(val, got_val);
-  ASSERT_EQ(engine->Delete(key), Status::Ok);
-  ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
-  engine->ReleaseWriteThread();
+  std::string sorted_collection("sorted_collection");
 
-  bool snapshot_done{false};
-  std::atomic<int> set_finish_threads{0};
+  bool snapshot_done(false);
+  std::atomic<int> set_finish_threads(0);
   SpinMutex spin;
   std::condition_variable_any cv;
 
@@ -116,6 +109,8 @@ TEST_F(EngineBasicTest, TestBackup) {
       std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
       ASSERT_EQ(engine->Set(key1, key1), Status::Ok);
       ASSERT_EQ(engine->Set(key2, key2), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key1, key1), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key2, key2), Status::Ok);
     }
     // Wait snapshot done
     set_finish_threads.fetch_add(1);
@@ -135,6 +130,10 @@ TEST_F(EngineBasicTest, TestBackup) {
       ASSERT_EQ(engine->Set(key1, "updated " + key1), Status::Ok);
       ASSERT_EQ(engine->Delete(key1), Status::Ok);
       ASSERT_EQ(engine->Set(key3, key3), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key1, "updated " + key1),
+                Status::Ok);
+      ASSERT_EQ(engine->SDelete(sorted_collection, key1), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key3, key3), Status::Ok);
     }
   };
 
@@ -165,7 +164,7 @@ TEST_F(EngineBasicTest, TestBackup) {
   // All changes after snapshot should not be seen in backup
   // Writes on backup should work well
   auto BackupGet = [&](uint32_t id) {
-    int cnt = 100;
+    int cnt = count;
     std::string got_v1, got_v2, got_v3;
     while (cnt--) {
       std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
@@ -175,6 +174,15 @@ TEST_F(EngineBasicTest, TestBackup) {
       ASSERT_EQ(backup_engine->Get(key1, &got_v1), Status::Ok);
       ASSERT_EQ(backup_engine->Get(key2, &got_v2), Status::Ok);
       ASSERT_EQ(backup_engine->Get(key3, &got_v3), Status::NotFound);
+      ASSERT_EQ(got_v1, key1);
+      ASSERT_EQ(got_v2, key2);
+
+      ASSERT_EQ(backup_engine->SGet(sorted_collection, key1, &got_v1),
+                Status::Ok);
+      ASSERT_EQ(backup_engine->SGet(sorted_collection, key2, &got_v2),
+                Status::Ok);
+      ASSERT_EQ(backup_engine->SGet(sorted_collection, key3, &got_v3),
+                Status::NotFound);
       ASSERT_EQ(got_v1, key1);
       ASSERT_EQ(got_v2, key2);
     }
