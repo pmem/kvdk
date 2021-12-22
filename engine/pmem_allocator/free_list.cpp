@@ -154,7 +154,7 @@ void Freelist::MergeAndCheckTSInPool() {
             large_entries_.emplace(offset, merged_blocks * block_size_);
             // move merged entries to merging pool to avoid redundant merging
           } else {
-            merged_entry_list[merged_blocks].emplace_back(std::move(offset));
+            merged_entry_list[merged_blocks].emplace_back(offset);
             if (merged_entry_list[merged_blocks].size() >= kMinMovableEntries) {
               merged_pool_.MoveEntryList(merged_entry_list[merged_blocks],
                                          merged_blocks);
