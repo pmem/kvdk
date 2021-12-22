@@ -60,8 +60,9 @@ private:
 
 struct BackupMark {
   enum class Stage {
-    Processing = 0,
-    Finish = 1,
+    Init = 0,
+    Processing = 1,
+    Finish = 2,
   };
   TimestampType backup_ts;
   Stage stage;

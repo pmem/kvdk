@@ -52,7 +52,7 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Closing instance ... \n");
   GlobalLogger.Info("Waiting bg threads exit ... \n");
   while (!bg_free_thread_closed_) {
-    bg_free_thread_cv_.NotifyAll();
+    bg_free_thread_cv_.notify_all();
     sleep(1);
   }
   for (auto &t : bg_threads_) {
@@ -89,7 +89,7 @@ void KVEngine::backgroundWork() {
       std::max(10.0, configs_.background_work_interval);
   while (!closing_) {
     usleep(configs_.background_work_interval * 1000000);
-    bg_free_thread_cv_.NotifyAll();
+    bg_free_thread_cv_.notify_all();
     version_controller_.UpdatedOldestSnapshot();
     pmem_allocator_->BackgroundWork();
     if ((interval_free_skiplist_node -= configs_.background_work_interval) <=
@@ -425,6 +425,10 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record, const DataEntry &) {
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
+  if (cached_entry.meta.timestamp > max_recoverable_record_timestamp_) {
+    purgeAndFree(pmem_record);
+    return Status::Ok;
+  }
   std::string key(pmem_record->Key());
   DataEntry existing_data_entry;
   HashEntry hash_entry;
@@ -644,13 +648,14 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
   if (s == Status::Ok) {
     configs->PersistImmutableConfigs(configs_);
   }
+  pmem_unmap(configs, len);
   return s;
 }
 
 Status KVEngine::Backup(const pmem::obj::string_view backup_path,
                         const Snapshot *snapshot) {
   // TODO: handle batch write
-  std::string path(backup_path);
+  std::string path = string_view_2_string(backup_path);
   create_dir_if_missing(path);
   // TODO: make sure backup_path is empty
 
@@ -698,7 +703,7 @@ Status KVEngine::RestoreBackupFile() {
   int is_pmem;
   BackupMark *backup_mark = static_cast<BackupMark *>(
       pmem_map_file(backup_mark_file().c_str(), sizeof(BackupMark),
-                    PMEM_FILE_EXCL, 0666, &mapped_len, &is_pmem));
+                    PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem));
   if (backup_mark != nullptr) {
     if (!is_pmem || mapped_len != sizeof(BackupMark)) {
       GlobalLogger.Error("Map persisted backup mark file %s failed\n",
@@ -707,13 +712,16 @@ Status KVEngine::RestoreBackupFile() {
     }
 
     switch (backup_mark->stage) {
+    case BackupMark::Stage::Init: {
+      break;
+    }
     case BackupMark::Stage::Processing: {
       GlobalLogger.Error("Recover from a unfinished backup instance\n");
       return Status::Abort;
     }
     case BackupMark::Stage::Finish: {
       GlobalLogger.Info("Recover from a backup KVDK instance\n");
-      max_timestamp_in_recovery_ = backup_mark->backup_ts;
+      max_recoverable_record_timestamp_ = backup_mark->backup_ts;
       break;
     }
     default:
@@ -721,6 +729,7 @@ Status KVEngine::RestoreBackupFile() {
           "Recover from a backup instance with wrong backup stage\n");
       return Status ::Abort;
     }
+    pmem_unmap(backup_mark, sizeof(BackupMark));
   }
   return Status::Ok;
 }
@@ -2021,7 +2030,7 @@ void KVEngine::handleThreadLocalPendingFreeRecords() {
   if (tc.pending_free_delete_records.size() >
           kMaxLocalPendingFreeDeleteRecord &&
       !bg_free_thread_processing_) {
-    bg_free_thread_cv_.NotifyAll();
+    bg_free_thread_cv_.notify_all();
   }
 }
 
@@ -2211,7 +2220,8 @@ void KVEngine::pendingFreeRecordsHandler() {
       bg_free_thread_closed_ = true;
       return;
     }
-    bg_free_thread_cv_.Wait();
+    std::unique_lock<SpinMutex> ul(bg_free_thread_cv_lock_);
+    bg_free_thread_cv_.wait(bg_free_thread_cv_lock_);
     handlePendingFreeRecords();
   }
 }

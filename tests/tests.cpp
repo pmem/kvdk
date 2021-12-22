@@ -62,58 +62,6 @@ protected:
   }
 };
 
-TEST_F(EngineBasicTest, TestBackup) {
-  int num_threads = 16;
-  configs.max_write_threads = num_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  // Test empty key
-  std::string key{""}, val{"val"}, got_val;
-  ASSERT_EQ(engine->Set(key, val), Status::Ok);
-  ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-  ASSERT_EQ(val, got_val);
-  ASSERT_EQ(engine->Delete(key), Status::Ok);
-  ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
-  engine->ReleaseWriteThread();
-
-  auto Set = [&](uint32_t id) {
-    int cnt = 100;
-    while (cnt--) {
-      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
-      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
-
-      ASSERT_EQ(engine->Set(key1, key1), Status::Ok);
-      ASSERT_EQ(engine->Set(key2, key2), Status::Ok);
-    }
-  };
-
-  LaunchNThreads(num_threads, Set);
-  Snapshot *snapshot = engine->GetSnapshot();
-  engine->Backup(backup_path, snapshot);
-
-  Engine *backup_engine;
-  ASSERT_EQ(Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
-            Status::Ok);
-
-  auto BackupGet = [&](uint32_t id) {
-    int cnt = 100;
-    std::string got_v1, got_v2;
-    while (cnt--) {
-      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
-      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
-
-      ASSERT_EQ(backup_engine->Get(key1, &got_v1), Status::Ok);
-      ASSERT_EQ(backup_engine->Get(key2, &got_v2), Status::Ok);
-      ASSERT_EQ(got_v1, key1);
-      ASSERT_EQ(got_v2, key2);
-    }
-  };
-  LaunchNThreads(num_threads, BackupGet);
-  delete engine;
-  delete backup_engine;
-}
-
 TEST_F(EngineBasicTest, TestThreadManager) {
   int max_write_threads = 1;
   configs.max_write_threads = max_write_threads;
@@ -135,6 +83,105 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   s = std::async(&Engine::Set, engine, key, val);
   ASSERT_EQ(s.get(), Status::Ok);
   delete engine;
+}
+
+TEST_F(EngineBasicTest, TestBackup) {
+  int num_threads = 16;
+  int count = 100;
+  configs.max_write_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  // Test empty key
+  std::string key{""}, val{"val"}, got_val;
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+  ASSERT_EQ(val, got_val);
+  ASSERT_EQ(engine->Delete(key), Status::Ok);
+  ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+  engine->ReleaseWriteThread();
+
+  bool snapshot_done{false};
+  std::atomic<int> set_finish_threads{0};
+  SpinMutex spin;
+  std::condition_variable_any cv;
+
+  // Insert kv, then update/delete them and insert new kv after snapshot
+  auto WriteThread = [&](uint32_t id) {
+    int cnt = count;
+    // Insert
+    while (cnt--) {
+      // Insert
+      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
+      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
+      ASSERT_EQ(engine->Set(key1, key1), Status::Ok);
+      ASSERT_EQ(engine->Set(key2, key2), Status::Ok);
+    }
+    // Wait snapshot done
+    set_finish_threads.fetch_add(1);
+    {
+      std::unique_lock<SpinMutex> ul(spin);
+      while (!snapshot_done) {
+        cv.wait(ul);
+      }
+    }
+
+    cnt = count;
+    // Update / Delete, and insert new
+    while (cnt--) {
+      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
+      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
+      std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
+      ASSERT_EQ(engine->Set(key1, "updated " + key1), Status::Ok);
+      ASSERT_EQ(engine->Delete(key1), Status::Ok);
+      ASSERT_EQ(engine->Set(key3, key3), Status::Ok);
+    }
+  };
+
+  std::vector<std::thread> ths;
+  for (int i = 0; i < num_threads; i++) {
+    ths.emplace_back(std::thread(WriteThread, i));
+  }
+  // wait until all threads insert done
+  while (set_finish_threads.load() != num_threads) {
+    asm volatile("pause");
+  }
+  Snapshot *snapshot = engine->GetSnapshot();
+  {
+    std::lock_guard<SpinMutex> ul(spin);
+    snapshot_done = true;
+    cv.notify_all();
+  }
+  engine->Backup(backup_path, snapshot);
+  for (auto &t : ths) {
+    t.join();
+  }
+
+  Engine *backup_engine;
+  ASSERT_EQ(Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
+            Status::Ok);
+
+  // Test backup instance
+  // All changes after snapshot should not be seen in backup
+  // Writes on backup should work well
+  auto BackupGet = [&](uint32_t id) {
+    int cnt = 100;
+    std::string got_v1, got_v2, got_v3;
+    while (cnt--) {
+      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
+      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
+      std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
+
+      ASSERT_EQ(backup_engine->Get(key1, &got_v1), Status::Ok);
+      ASSERT_EQ(backup_engine->Get(key2, &got_v2), Status::Ok);
+      ASSERT_EQ(backup_engine->Get(key3, &got_v3), Status::NotFound);
+      ASSERT_EQ(got_v1, key1);
+      ASSERT_EQ(got_v2, key2);
+    }
+  };
+  LaunchNThreads(num_threads, BackupGet);
+  delete engine;
+  delete backup_engine;
 }
 
 TEST_F(EngineBasicTest, TestBasicStringOperations) {

@@ -256,7 +256,7 @@ private:
 
   void backgroundWork();
 
-  inline std::string data_file() { return dir_ + "data"; }
+  inline std::string data_file() { return data_file(dir_); }
 
   inline static std::string data_file(const std::string &instance_path) {
     return format_dir_path(instance_path) + "data";
@@ -266,13 +266,13 @@ private:
     return pending_batch_dir_ + std::to_string(thread_id);
   }
 
-  inline std::string backup_mark_file() { return dir_ + "backup_mark"; }
+  inline std::string backup_mark_file() { return backup_mark_file(dir_); }
 
   inline static std::string backup_mark_file(const std::string &instance_path) {
     return format_dir_path(instance_path) + "backup_mark";
   }
 
-  inline std::string config_file() { return dir_ + "configs"; }
+  inline std::string config_file() { return config_file(dir_); }
 
   inline static std::string config_file(const std::string &instance_path) {
     return format_dir_path(instance_path) + "configs";
@@ -362,12 +362,13 @@ private:
   std::vector<std::deque<PendingFreeDeleteRecord>> bg_free_delete_records_;
   bool bg_free_thread_processing_{false};
   bool bg_free_thread_closed_{false};
-  SpinCondvar bg_free_thread_cv_;
+  std::condition_variable_any bg_free_thread_cv_;
+  SpinMutex bg_free_thread_cv_lock_;
 
   // Max timestamp of records that could be restored in recovery, this is used
   // for backup instance, for an instance that is not a backup, this is set to
   // kMaxTimestamp by default
-  TimestampType max_timestamp_in_recovery_{kMaxTimestamp};
+  TimestampType max_recoverable_record_timestamp_{kMaxTimestamp};
 };
 
 } // namespace KVDK_NAMESPACE

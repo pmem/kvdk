@@ -148,24 +148,6 @@ public:
   SpinMutex &operator=(const SpinMutex &s) = delete;
 };
 
-class SpinCondvar {
-private:
-  std::condition_variable_any cv_;
-  SpinMutex lock_;
-
-public:
-  SpinCondvar() : lock_() {}
-
-  void Wait() {
-    std::unique_lock<SpinMutex> ul(lock_);
-    cv_.wait(ul);
-  }
-
-  void Notify() { cv_.notify_one(); }
-
-  void NotifyAll() { cv_.notify_all(); }
-};
-
 /// Caution: AlignedPoolAllocator is not thread-safe
 template <typename T> class AlignedPoolAllocator {
   static_assert(alignof(T) <= 1024,
