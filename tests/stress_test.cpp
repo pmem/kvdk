@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -21,198 +22,193 @@
 
 using kvdk::StringView;
 
+using KeyType = StringView;
+using ValueType = StringView;
+enum class KVState
+{
+  Existing,
+  Deleted
+};
+
+struct ValueState
+{
+  KVState state;
+  ValueType value;
+
+  bool operator==(ValueState other)
+  {
+    return (state == other.state) && ((state == KVState::Deleted) || value == other.value);
+  }
+};
+
+enum class EngineOperation
+{
+  Get,
+  Set,
+  Delete
+};
+struct EngineTask
+{
+  EngineOperation op;
+  KeyType key;
+  ValueType value;  // Empty for Delete, expected for Get
+};
+
+using GlobalEngineState = std::unordered_multimap<KeyType, ValueState>;
+using ThreadLocakEngineState = std::unordered_map<KeyType, ValueState>;
+using EngineTaskQueue = std::deque<EngineTask>;
+
+static void CommitChanges(GlobalEngineState& original, std::vector<ThreadLocakEngineState>& states)
+{
+  size_t done = 0;
+  GlobalEngineState merged_parallel;
+  ProgressBar pbar{std::cout, "", states.size(), 1, true};
+
+  for (auto const& state : states)
+  {
+    for (auto const& s : state)
+    {
+      merged_parallel.emplace(s.first, s.second);
+    }
+    ++done;
+    pbar.Update(done);
+  }
+
+  auto sz = states.size();
+  states.clear();
+  states.resize(sz);
+
+  while (!merged_parallel.empty())
+  {
+    auto key = merged_parallel.begin()->first;
+    original.erase(key);
+    auto range = merged_parallel.equal_range(key);
+    for (auto iter = range.first; iter != range.second; ++iter)
+    {
+      original.emplace(iter->first, iter->second);
+    }
+    merged_parallel.erase(key);
+  }
+}
+
 // Contains functions to iterate through a collection and check its contents
 // It's up to user to maintain an unordered_multimap between keys and values
 // to keep track of the kv-pairs in a certain collection in the engine instance
 namespace kvdk_testing {
-// Check value got by XGet(key) by looking up possible_kv_pairs
-static void CheckKVPair(
-    StringView key, StringView value,
-    std::unordered_multimap<StringView, StringView> const &possible_kv_pairs) {
-  bool match = false;
-  auto range_found = possible_kv_pairs.equal_range(key);
-  ASSERT_NE(range_found.first, range_found.second)
-      << "No key in possible_kv_pairs matching with iterated key:\n"
-      << "Iterated key: " << key;
+// Check if a Key-ValueState is possible
+static void CheckKVState(
+    KeyType key, ValueState vstate,
+    GlobalEngineState const &possible_state) {
+  auto ranges = possible_state.equal_range(key);
 
-  for (auto iter = range_found.first; iter != range_found.second; ++iter) {
-    ASSERT_EQ(key, iter->first)
-        << "Iterated key and key in possible_kv_pairs does not match: \n"
-        << "Iterated key: " << key << "\n"
-        << "Key in possible_kv_pairs: " << iter->first;
-    match = match || (value == iter->second);
+  bool match = false;
+  for (auto iter= ranges.first; iter != ranges.second; ++iter) {
+    match = (match || (vstate == iter->second));
   }
   ASSERT_TRUE(match)
-      << "No kv-pair in possible_kv_pairs matching with iterated kv-pair:\n"
+      << "Key and State supplied is not possible:\n"
       << "Key: " << key << "\n"
-      << "Value: " << value << "\n";
+      << "State: " << (vstate.state == KVState::Deleted ? "Deleted" : "Existing") << "\n"
+      << "Value: " << vstate.value << "\n";
+}
+template<typename Getter>
+static void QueryKeyCheckValue(Getter getter, KeyType key, ValueType value)
+{
+  kvdk::Status status;
+  std::string value_got;
+  status = getter(key, &value_got);
+  ASSERT_EQ(status, kvdk::Status::Ok)
+      << "Key cannot be queried with Get\n"
+      << "Key: " << key << "\n";
+  ASSERT_EQ(value, value_got)
+      << "Value got does not match expected\n"
+      << "Value got:\n"
+      << value_got << "\n"
+      << "Expected:\n"
+      << value << "\n";
+}
+template<typename Getter>
+static void QueryDeletedKey(Getter getter, KeyType key)
+{
+  kvdk::Status status;
+  std::string value_got;
+  status = getter(key, &value_got);
+  ASSERT_EQ(status, kvdk::Status::NotFound)
+      << "Found deleted key\n"
+      << "Key: " << key << "\n";
 }
 
+enum class IteratingDirection
+{
+  Forward,
+  Backward
+};
+template<typename Iterator, typename Getter>
 // possible_kv_pairs is searched to try to find a match with iterated records
 // possible_kv_pairs is copied because HashesIterateThrough erase entries to
 // keep track of records
-static void HashesIterateThrough(
-    kvdk::Engine *engine, std::string collection_name,
-    std::unordered_multimap<StringView, StringView> possible_kv_pairs,
-    bool report_progress) {
-  kvdk::Status status;
+static void IterateThrough(
+    Iterator iterator,
+    Getter getter,
+    GlobalEngineState const& possible_state,
+    IteratingDirection direction,
+    bool enable_progress_bar) {
 
-  std::unordered_multimap<StringView, StringView> possible_kv_pairs_copy{
-      possible_kv_pairs};
+  GlobalEngineState possible_state_copy{possible_state};
 
-  auto u_iter = engine->NewUnorderedIterator(collection_name);
-
-  // Iterating forward then backward.
-  for (size_t i = 0; i < 2; i++) {
-    size_t n_total_possible_kv_pairs = possible_kv_pairs.size();
-    size_t n_removed_possible_kv_pairs = 0;
-    size_t old_progress = 0;
-
-    ASSERT_TRUE(u_iter != nullptr) << "Fail to create UnorderedIterator";
-    if (i == 0) {
-      u_iter->SeekToFirst();
-      std::cout << "[Testing] Iterating forward through Hashes." << std::endl;
-    } else {
-      u_iter->SeekToLast();
-      std::cout << "[Testing] Iterating backward through Hashes." << std::endl;
+  // Iterating forward or backward.
+  {
+    ASSERT_TRUE(iterator != nullptr) << "Invalid Iterator";
+    switch (direction)
+    {
+    case IteratingDirection::Forward:
+      iterator->SeekToLast();
+      std::cout << "[Testing] Iterating forward." << std::endl;
+      break;
+    case IteratingDirection::Backward:
+      iterator->SeekToFirst();
+      std::cout << "[Testing] Iterating forward." << std::endl;
+      break;
     }
 
-    ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs,
-                                   report_progress};
-    while (u_iter->Valid()) {
-      std::string value_got;
-      auto key = u_iter->Key();
-      auto value = u_iter->Value();
-      status = engine->HGet(collection_name, key, &value_got);
-      ASSERT_EQ(status, kvdk::Status::Ok)
-          << "Iteration met kv-pair cannot be got with HGet\n";
-      ASSERT_EQ(value, value_got)
-          << "Iterated value does not match with HGet value\n";
+    ProgressBar progress_iterating{std::cout, "", possible_state.size(),
+                                   1000, enable_progress_bar};
+    while (iterator->Valid()) 
+    {
+      auto key = iterator->Key();
+      auto value = iterator->Value();
 
-      CheckKVPair(key, value_got, possible_kv_pairs);
+      QueryKeyCheckValue(getter, key, value);
+      CheckKVState(key, {KVState::Existing, value}, possible_state_copy);
 
-      possible_kv_pairs.erase(key);
-      n_removed_possible_kv_pairs =
-          n_total_possible_kv_pairs - possible_kv_pairs.size();
-      if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
-          possible_kv_pairs.empty()) {
-        progress_iterating.Update(n_removed_possible_kv_pairs);
-        old_progress = n_removed_possible_kv_pairs;
-      }
+      possible_state_copy.erase(key);
+      progress_iterating.Update(possible_state.size() - possible_state_copy.size());
 
-      if (i == 0) // i == 0 for forward
+      switch (direction)
       {
-        u_iter->Next();
-      } else // i == 1 for backward
-      {
-        u_iter->Prev();
+      case IteratingDirection::Forward:
+        iterator->Next();
+        break;
+      case IteratingDirection::Backward:
+        iterator->Prev();
+        break;
       }
     }
     // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
-    // Here we use a dirty trick to check for their deletion.
-    // HGet set the return string to empty string when the kv-pair is deleted,
-    // else it keeps the string unchanged.
     {
-      for (auto iter = possible_kv_pairs.begin();
-           iter != possible_kv_pairs.end();) {
-        std::string value_got{"Dummy"};
-        status = engine->HGet(collection_name, iter->first, &value_got);
-        ASSERT_EQ(status, kvdk::Status::NotFound)
-            << "Should not have found a key of a entry that cannot be "
-               "iterated.\n";
+      while(!possible_state_copy.empty()) {
+        auto key = possible_state_copy.begin()->first;
 
-        iter = possible_kv_pairs.erase(iter);
-        n_removed_possible_kv_pairs =
-            n_total_possible_kv_pairs - possible_kv_pairs.size();
-
-        if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
-            possible_kv_pairs.empty()) {
-          progress_iterating.Update(n_removed_possible_kv_pairs);
-          old_progress = n_removed_possible_kv_pairs;
-        }
+        QueryDeletedKey(getter, key);
+        CheckKVState(key, {KVState::Deleted, ValueType{}}, possible_state_copy);
+        
+        possible_state_copy.erase(key);
+        progress_iterating.Update(possible_state.size() - possible_state_copy.size());
       }
-      ASSERT_TRUE(possible_kv_pairs.empty())
-          << "There should be no key left in possible_kv_pairs, "
+      ASSERT_TRUE(possible_state.empty())
+          << "There should be no key left in possible_state_copy, "
           << "as they all should have been erased.\n";
     }
-    // Reset possible_kv_pairs for iterating backwards.
-    possible_kv_pairs = std::move(possible_kv_pairs_copy);
-  }
-}
-
-// possible_kv_pairs is searched to try to find a match with iterated records
-// possible_kv_pairs is copied because SortedSetsIterateThrough erase entries to
-// keep track of records
-static void SortedSetsIterateThrough(
-    kvdk::Engine *engine, std::string collection_name,
-    std::unordered_multimap<StringView, StringView> possible_kv_pairs,
-    bool report_progress) {
-  kvdk::Status status;
-
-  size_t n_total_possible_kv_pairs = possible_kv_pairs.size();
-  size_t n_removed_possible_kv_pairs = 0;
-  size_t old_progress = n_removed_possible_kv_pairs;
-
-  auto s_iter = engine->NewSortedIterator(collection_name);
-  ASSERT_TRUE(s_iter != nullptr) << "Fail to create UnorderedIterator";
-
-  std::string old_key;
-  // Set to false after first read, then we can check key ordering
-  bool first_read = true;
-  ProgressBar progress_iterating{std::cout, "", n_total_possible_kv_pairs,
-                                 report_progress};
-  for (s_iter->SeekToFirst(); s_iter->Valid(); s_iter->Next()) {
-    std::string value_got;
-    auto key = s_iter->Key();
-    auto value = s_iter->Value();
-    status = engine->SGet(collection_name, key, &value_got);
-    ASSERT_EQ(status, kvdk::Status::Ok)
-        << "Iteration met kv-pair cannot be got with HGet\n";
-    ASSERT_EQ(value, value_got)
-        << "Iterated value does not match with SGet value\n";
-
-    if (!first_read) {
-      ASSERT_LE(old_key, key) << "Keys in sorted sets should be ordered!\n";
-      old_key = key;
-    } else {
-      first_read = false;
-    }
-
-    CheckKVPair(key, value_got, possible_kv_pairs);
-
-    possible_kv_pairs.erase(key);
-    n_removed_possible_kv_pairs =
-        n_total_possible_kv_pairs - possible_kv_pairs.size();
-    if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
-        possible_kv_pairs.empty()) {
-      progress_iterating.Update(n_removed_possible_kv_pairs);
-      old_progress = n_removed_possible_kv_pairs;
-    }
-  }
-  // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
-  // We just cannot keep track of them
-  {
-    for (auto iter = possible_kv_pairs.begin();
-         iter != possible_kv_pairs.end();) {
-      std::string value_got{"Dummy"};
-      status = engine->SGet(collection_name, iter->first, &value_got);
-      ASSERT_EQ(status, kvdk::Status::NotFound)
-          << "Should not have found a key of a entry that cannot be "
-             "iterated.\n";
-
-      iter = possible_kv_pairs.erase(iter);
-      n_removed_possible_kv_pairs =
-          n_total_possible_kv_pairs - possible_kv_pairs.size();
-
-      if ((n_removed_possible_kv_pairs > old_progress + 1000) ||
-          possible_kv_pairs.empty()) {
-        progress_iterating.Update(n_removed_possible_kv_pairs);
-        old_progress = n_removed_possible_kv_pairs;
-      }
-    }
-    ASSERT_TRUE(possible_kv_pairs.empty())
-        << "There should be no key left in possible_kv_pairs, "
-        << "as they all should have been erased.\n";
   }
 }
 
@@ -223,73 +219,120 @@ static void SortedSetsIterateThrough(
 namespace kvdk_testing {
 namespace // nested anonymous namespace to hide implementation
 {
-void allXSet(
-    std::function<kvdk::Status(StringView, StringView, StringView)> setter,
-    std::string collection_name, std::vector<StringView> const &keys,
-    std::vector<StringView> const &values, bool report_progress) {
-  ASSERT_EQ(keys.size(), values.size())
-      << "Must have same amount of keys and values to form kv-pairs!";
+template<typename Getter, typename Setter, typename Deleter>
+void ExecuteTasks(Getter getter, Setter setter, Deleter deleter, EngineTaskQueue const& tasks,
+  ThreadLocakEngineState* todo, ThreadLocakEngineState* done, bool enable_progress_bar)
+{
   kvdk::Status status;
-
+  std::string value_got;
+  size_t progress = 0;
+  ProgressBar progress_bar{std::cout, "", tasks.size(), 100, enable_progress_bar};
+  for(auto const& task: tasks)
   {
-    ProgressBar progress_xsetting{std::cout, "", keys.size(), report_progress};
-    for (size_t j = 0; j < keys.size(); j++) {
-      status = setter(collection_name, keys[j], values[j]);
+    switch (task.op)
+    {
+    case EngineOperation::Get:
+    {
+      status = getter(task.key, &value_got);
       ASSERT_EQ(status, kvdk::Status::Ok)
-          << "Fail to Set a key " << keys[j] << " in collection "
-          << collection_name;
-
-      if ((j + 1) % 100 == 0 || j + 1 == keys.size()) {
-        progress_xsetting.Update(j + 1);
-      }
+          << "Key cannot be queried with Get\n"
+          << "Key: " << task.key << "\n";
+      ASSERT_EQ(task.value, value_got)
+          << "Value got does not match expected\n"
+          << "Value got:\n"
+          << value_got << "\n"
+          << "Expected:\n"
+          << task.value << "\n";
+      break;
     }
+    case EngineOperation::Set:
+    {
+      if (todo)
+      {
+      (*todo)[task.key] = {KVState::Existing,task.value};
+      }
+      
+
+      status = setter(task.key, task.value);
+      ASSERT_EQ(status, kvdk::Status::Ok)
+          << "Fail to set key\n"
+          << "Key: " << task.key << "\n";
+
+      if (done)
+      {
+      (*done)[task.key] = {KVState::Existing,task.value};
+      }
+      break;
+    }
+    case EngineOperation::Delete:
+    {
+      if (todo)
+      {
+      (*todo)[task.key] = {KVState::Existing,ValueType{}};
+      }
+      
+
+      status = deleter(task.key);
+      ASSERT_EQ(status, kvdk::Status::Ok)
+          << "Fail to delete key\n"
+          << "Key: " << task.key << "\n";
+
+      if (done)
+      {
+      (*done)[task.key] = {KVState::Existing,ValueType{}};
+      }
+      break;
+    }
+    }
+    ++progress;
+    progress_bar.Update(progress);
   }
 }
 
-void evenXSetOddXDelete(
-    std::function<kvdk::Status(StringView, StringView, StringView)> setter,
-    std::function<kvdk::Status(StringView, StringView)> getter,
-    std::string collection_name, std::vector<StringView> const &keys,
-    std::vector<StringView> const &values, bool report_progress) {
-  ASSERT_EQ(keys.size(), values.size())
-      << "Must have same amount of keys and values to form kv-pairs!";
-  kvdk::Status status;
-
-  {
-    ProgressBar progress_xupdating{std::cout, "", keys.size(), report_progress};
-    for (size_t j = 0; j < keys.size(); j++) {
-      if (j % 2 == 0) {
-        // Even HSet
-        status = setter(collection_name, keys[j], values[j]);
-        ASSERT_EQ(status, kvdk::Status::Ok)
-            << "Fail to Set a key " << keys[j] << " in collection "
-            << collection_name;
-      } else {
-        // Odd HDelete
-        status = getter(collection_name, keys[j]);
-        ASSERT_EQ(status, kvdk::Status::Ok)
-            << "Fail to Delete a key " << keys[j] << " in collection "
-            << collection_name;
-      }
-
-      if ((j + 1) % 100 == 0 || j + 1 == keys.size()) {
-        progress_xupdating.Update(j + 1);
-      }
-    }
-  }
-}
 } // namespace
+
+EngineTaskQueue PrepareQueue(
+                      std::vector<KeyType> const &keys,
+                    std::vector<ValueType> const &values,
+                    bool interleaved_set_delete)
+{
+  // ASSERT_EQ(keys.size(), values.size());
+  EngineTaskQueue tasks(keys.size());
+  for (size_t i = 0; i < tasks.size(); i++)
+  {
+    if (i % 2 == 0 || !interleaved_set_delete)
+    {
+      tasks[i] = {EngineOperation::Set, keys[i], values[i]};
+    }
+    else
+    {
+      tasks[i] = {EngineOperation::Delete, keys[i], ValueType{}};
+    }
+  }
+
+  return tasks;
+}
 
 // Calling engine->HSet to put keys and values into collection named after
 // collection_name.
 static void AllHSet(kvdk::Engine *engine, std::string collection_name,
-                    std::vector<StringView> const &keys,
-                    std::vector<StringView> const &values,
-                    bool report_progress) {
-  auto setter = [&](StringView coll_name, StringView key, StringView value) {
-    return engine->HSet(coll_name, key, value);
+                    std::vector<KeyType> const &keys,
+                    std::vector<ValueType> const &values,
+                    ThreadLocakEngineState* todo,
+                    ThreadLocakEngineState* done,
+                    bool enable_progress_bar) {
+  auto getter = [&](KeyType key, std::string* value_got) {
+    return engine->HGet(collection_name, key, value_got);
   };
-  allXSet(setter, collection_name, keys, values, report_progress);
+  auto setter = [&](KeyType key, ValueType value) {
+    return engine->HSet(collection_name, key, value);
+  };
+  auto deleter = [&](KeyType key) {
+    return engine->HDelete(collection_name, key);
+  };
+  
+  EngineTaskQueue tasks{PrepareQueue(keys, values, false)};
+  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
 }
 
 // Calling engine->HSet to put keys and values into collection named after
@@ -297,11 +340,21 @@ static void AllHSet(kvdk::Engine *engine, std::string collection_name,
 static void AllSSetOnly(kvdk::Engine *engine, std::string collection_name,
                         std::vector<StringView> const &keys,
                         std::vector<StringView> const &values,
-                        bool report_progress) {
-  auto setter = [&](StringView coll_name, StringView key, StringView value) {
-    return engine->SSet(coll_name, key, value);
+                    ThreadLocakEngineState* todo,
+                    ThreadLocakEngineState* done,
+                        bool enable_progress_bar) {
+  auto getter = [&](KeyType key, std::string* value_got) {
+    return engine->SGet(collection_name, key, value_got);
   };
-  allXSet(setter, collection_name, keys, values, report_progress);
+  auto setter = [&](KeyType key, ValueType value) {
+    return engine->SSet(collection_name, key, value);
+  };
+  auto deleter = [&](KeyType key) {
+    return engine->SDelete(collection_name, key);
+  };
+  
+  EngineTaskQueue tasks{PrepareQueue(keys, values, false)};
+  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
 }
 
 // Calling engine->HSet to put evenly indexed keys and values into collection
@@ -311,15 +364,22 @@ static void EvenHSetOddHDelete(kvdk::Engine *engine,
                                std::string collection_name,
                                std::vector<StringView> const &keys,
                                std::vector<StringView> const &values,
-                               bool report_progress) {
-  auto setter = [&](StringView coll_name, StringView key, StringView value) {
-    return engine->HSet(coll_name, key, value);
+                    ThreadLocakEngineState* todo,
+                    ThreadLocakEngineState* done,
+                               bool enable_progress_bar) {
+
+  auto getter = [&](KeyType key, std::string* value_got) {
+    return engine->HGet(collection_name, key, value_got);
   };
-  auto deleter = [&](StringView coll_name, StringView key) {
-    return engine->HDelete(coll_name, key);
+  auto setter = [&](KeyType key, ValueType value) {
+    return engine->HSet(collection_name, key, value);
   };
-  evenXSetOddXDelete(setter, deleter, collection_name, keys, values,
-                     report_progress);
+  auto deleter = [&](KeyType key) {
+    return engine->HDelete(collection_name, key);
+  };
+  
+  EngineTaskQueue tasks{PrepareQueue(keys, values, true)};
+  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
 }
 
 // Calling engine->SSet to put evenly indexed keys and values into collection
@@ -329,15 +389,55 @@ static void EvenSSetOddSDelete(kvdk::Engine *engine,
                                std::string collection_name,
                                std::vector<StringView> const &keys,
                                std::vector<StringView> const &values,
-                               bool report_progress) {
-  auto setter = [&](StringView coll_name, StringView key, StringView value) {
-    return engine->SSet(coll_name, key, value);
+                    ThreadLocakEngineState* todo,
+                    ThreadLocakEngineState* done,
+                               bool enable_progress_bar) {
+  auto getter = [&](KeyType key, std::string* value_got) {
+    return engine->SGet(collection_name, key, value_got);
   };
-  auto deleter = [&](StringView coll_name, StringView key) {
-    return engine->SDelete(coll_name, key);
+  auto setter = [&](KeyType key, ValueType value) {
+    return engine->SSet(collection_name, key, value);
   };
-  evenXSetOddXDelete(setter, deleter, collection_name, keys, values,
-                     report_progress);
+  auto deleter = [&](KeyType key) {
+    return engine->SDelete(collection_name, key);
+  };
+  EngineTaskQueue tasks{PrepareQueue(keys, values, true)};
+  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
+}
+
+static void IterateThroughHashes(kvdk::Engine *engine,
+                               std::string collection_name,
+                    GlobalEngineState const& state,
+                               bool enable_progress_bar) {
+  auto getter = [&](KeyType key, std::string* value_got) {
+    return engine->HGet(collection_name, key, value_got);
+  };
+  auto setter = [&](KeyType key, ValueType value) {
+    return engine->HSet(collection_name, key, value);
+  };
+  auto deleter = [&](KeyType key) {
+    return engine->HDelete(collection_name, key);
+  };
+  auto iterator = engine->NewUnorderedIterator(collection_name);
+  IterateThrough(iterator, getter, state, IteratingDirection::Forward, enable_progress_bar);
+  IterateThrough(iterator, getter, state, IteratingDirection::Backward, enable_progress_bar);
+}
+static void IterateThroughSortedSets(kvdk::Engine *engine,
+                               std::string collection_name,
+                    GlobalEngineState const& state,
+                               bool enable_progress_bar) {
+  auto getter = [&](KeyType key, std::string* value_got) {
+    return engine->SGet(collection_name, key, value_got);
+  };
+  auto setter = [&](KeyType key, ValueType value) {
+    return engine->SSet(collection_name, key, value);
+  };
+  auto deleter = [&](KeyType key) {
+    return engine->SDelete(collection_name, key);
+  };
+  auto iterator = engine->NewSortedIterator(collection_name);
+  IterateThrough(iterator, getter, state, IteratingDirection::Forward, enable_progress_bar);
+  IterateThrough(iterator, getter, state, IteratingDirection::Backward, enable_progress_bar);
 }
 
 } // namespace kvdk_testing
@@ -373,13 +473,8 @@ protected:
   std::vector<std::vector<StringView>> grouped_keys;
   std::vector<std::vector<StringView>> grouped_values;
 
-  // unordered_map[collection_name, unordered_multimap[key, value]]
-  std::unordered_map<std::string,
-                     std::unordered_multimap<StringView, StringView>>
-      hashes_possible_kv_pairs;
-  std::unordered_map<std::string,
-                     std::unordered_multimap<StringView, StringView>>
-      sorted_sets_possible_kv_pairs;
+  std::vector<ThreadLocakEngineState> local_states;
+  GlobalEngineState global_state;
 
 private:
   std::vector<std::string> key_pool;
@@ -428,89 +523,87 @@ protected:
   }
 
   void HashesAllHSet(std::string const &collection_name) {
-    updateHashesPossibleKVPairs(collection_name, false);
-
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
         kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], true);
+                              grouped_values[tid], nullptr, &local_states[tid], true);
 
       } else {
         kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], false);
+                              grouped_values[tid], nullptr, &local_states[tid], false);
       }
     };
 
     std::cout << "[Testing] Execute HSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
+    CommitChanges(global_state, local_states);
   }
 
   void HashesEvenHSetOddHDelete(std::string const &collection_name) {
-    updateHashesPossibleKVPairs(collection_name, true);
-
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
-        kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
-                                         grouped_keys[tid], grouped_values[tid],
-                                         true);
+        kvdk_testing::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], nullptr, &local_states[tid], true);
+
       } else {
-        kvdk_testing::EvenHSetOddHDelete(engine, collection_name,
-                                         grouped_keys[tid], grouped_values[tid],
-                                         false);
+        kvdk_testing::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], nullptr, &local_states[tid], false);
       }
     };
-    std::cout << "[Testing] Execute HSet and HDelete in " << collection_name
-              << "." << std::endl;
+
+    std::cout << "[Testing] Execute HSet in " << collection_name << "."
+              << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
+    CommitChanges(global_state, local_states);
   }
 
   void SortedSetsAllSSet(std::string const &collection_name) {
-    updateSortedSetsPossibleKVPairs(collection_name, false);
-
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
         kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
-                                  grouped_values[tid], true);
+                              grouped_values[tid], nullptr, &local_states[tid], true);
+
       } else {
         kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
-                                  grouped_values[tid], false);
+                              grouped_values[tid], nullptr, &local_states[tid], false);
       }
     };
-    std::cout << "[Testing] Execute SSet in " << collection_name << "."
+
+    std::cout << "[Testing] Execute HSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
+    CommitChanges(global_state, local_states);
   }
 
   void SortedSetsEvenSSetOddSDelete(std::string const &collection_name) {
-    updateSortedSetsPossibleKVPairs(collection_name, true);
-
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
-        kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
-                                         grouped_keys[tid], grouped_values[tid],
-                                         true);
+        kvdk_testing::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], nullptr, &local_states[tid], true);
+
       } else {
-        kvdk_testing::EvenSSetOddSDelete(engine, collection_name,
-                                         grouped_keys[tid], grouped_values[tid],
-                                         false);
+        kvdk_testing::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], nullptr, &local_states[tid], false);
       }
     };
-    std::cout << "[Testing] Execute SSet and SDelete in " << collection_name
-              << "." << std::endl;
+
+    std::cout << "[Testing] Execute HSet in " << collection_name << "."
+              << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
+    CommitChanges(global_state, local_states);
   }
 
   void CheckHashesCollection(std::string collection_name) {
     std::cout << "[Testing] Iterate through " << collection_name
               << " to check data." << std::endl;
-    hashesIterateThrough(0, collection_name, true);
+    kvdk_testing::IterateThroughHashes(engine, collection_name, global_state, true);
   }
 
   void CheckSortedSetsCollection(std::string collection_name) {
     std::cout << "[Testing] Iterate through " << collection_name
               << " to check data." << std::endl;
-    sortedSetsIterateThrough(0, collection_name, true);
+    kvdk_testing::IterateThroughSortedSets(engine, collection_name, global_state, true);
   }
 
 private:
@@ -527,103 +620,11 @@ private:
     std::shuffle(grouped_values[tid].begin(), grouped_values[tid].end(), rand);
   }
 
-  void hashesIterateThrough(uint32_t tid, std::string collection_name,
-                            bool report_progress) {
-    if (report_progress) {
-      std::cout << "[Testing] HashesIterateThrough " << collection_name
-                << " with thread " << tid << ". "
-                << "It may take a few seconds to copy possible_kv_pairs."
-                << std::endl;
-    }
-
-    // possible_kv_pairs is copied here
-    kvdk_testing::HashesIterateThrough(
-        engine, collection_name, hashes_possible_kv_pairs[collection_name],
-        report_progress);
-  }
-
-  void sortedSetsIterateThrough(uint32_t tid, std::string collection_name,
-                                bool report_progress) {
-    if (report_progress) {
-      std::cout << "[Testing] SortedSetsIterateThrough " << collection_name
-                << " with thread " << tid << ". "
-                << "It may take a few seconds to copy possible_kv_pairs."
-                << std::endl;
-    }
-
-    // possible_kv_pairs is copied here
-    kvdk_testing::SortedSetsIterateThrough(
-        engine, collection_name, sorted_sets_possible_kv_pairs[collection_name],
-        report_progress);
-  }
-
-  void updateHashesPossibleKVPairs(std::string const &collection_name,
-                                   bool odd_indexed_is_deleted) {
-    std::cout << "[Testing] Updating hashes_possible_kv_pairs." << std::endl;
-
-    auto &possible_kvs = hashes_possible_kv_pairs[collection_name];
-    updatePossibleKVPairs(possible_kvs, odd_indexed_is_deleted);
-  }
-
-  void updateSortedSetsPossibleKVPairs(std::string const &collection_name,
-                                       bool odd_indexed_is_deleted) {
-    std::cout << "[Testing] Updating sorted_sets_possible_kv_pairs."
-              << std::endl;
-
-    auto &possible_kvs = sorted_sets_possible_kv_pairs[collection_name];
-    updatePossibleKVPairs(possible_kvs, odd_indexed_is_deleted);
-  }
-
-  void updatePossibleKVPairs(
-      std::unordered_multimap<StringView, StringView> &possible_kvs,
-      bool odd_indexed_is_deleted) {
-    {
-      // Erase keys that will be overwritten
-      ProgressBar progress_erasing{std::cout, "", grouped_keys.size(), true};
-      for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
-          possible_kvs.erase(grouped_keys[tid][i]);
-        }
-        progress_erasing.Update(tid + 1);
-      }
-    }
-
-    ASSERT_EQ(grouped_keys.size(), grouped_values.size())
-        << "Must have same amount of groups of keys and values!";
-
-    {
-      ProgressBar progress_updating{std::cout, "", grouped_keys.size(), true};
-      for (size_t tid = 0; tid < grouped_keys.size(); tid++) {
-        ASSERT_EQ(grouped_keys[tid].size(), grouped_values[tid].size())
-            << "Must have same amount of keys and values to form kv-pairs!";
-
-        // For every thread, every key has only one possible value or state
-        // We use kvs to track that and then put those into possible_kvs
-        std::unordered_map<StringView, StringView> kvs;
-        for (size_t i = 0; i < grouped_keys[tid].size(); i++) {
-          if ((i % 2 == 0) || !odd_indexed_is_deleted) {
-            kvs[grouped_keys[tid][i]] = grouped_values[tid][i];
-          } else {
-            kvs.erase(grouped_keys[tid][i]);
-          }
-        }
-
-        for (auto iter = kvs.begin(); iter != kvs.end(); ++iter) {
-          possible_kvs.emplace(iter->first, iter->second);
-        }
-
-        progress_updating.Update(tid + 1);
-      }
-    }
-  }
-
   void prepareKVPairs() {
     key_pool.reserve(n_thread * n_kv_per_thread);
     value_pool.reserve(n_kv_per_thread);
     grouped_keys.resize(n_thread);
     grouped_values.resize(n_thread);
-    hashes_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
-    sorted_sets_possible_kv_pairs.reserve(n_thread * n_kv_per_thread * 2);
 
     for (size_t tid = 0; tid < n_thread; tid++) {
       grouped_keys[tid].reserve(n_kv_per_thread);
