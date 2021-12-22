@@ -121,7 +121,7 @@ def run_benchmark(
     git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
     report_path = "./results-{0}-commit-{1}-threads-{2}-vsize-{3}-vsize_dist-{4}-collections-{5}-{6}/".format(
         data_type,
-        git_hash, 
+        git_hash[0:8], 
         n_thread, 
         value_size,
         value_size_distribution, 
