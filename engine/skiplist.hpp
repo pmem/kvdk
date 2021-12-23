@@ -248,7 +248,7 @@ public:
   //
   // Return true on success, return false on fail.
   bool Insert(const StringView &key, const StringView &value,
-              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
+              const SpaceEntry &space_to_write, TimeStampType timestamp,
               SkiplistNode **dram_node, const SpinMutex *inserting_key_lock);
 
   // Update "key" in skiplist
@@ -262,9 +262,9 @@ public:
   //
   // Return true on success, return false on fail.
   bool Update(const StringView &key, const StringView &value,
-              const DLRecord *updated_record,
-              const SizedSpaceEntry &space_to_write, TimeStampType timestamp,
-              SkiplistNode *dram_node, const SpinMutex *updating_key_lock);
+              const DLRecord *updated_record, const SpaceEntry &space_to_write,
+              TimeStampType timestamp, SkiplistNode *dram_node,
+              const SpinMutex *updating_key_lock);
 
   // Delete "key" from skiplist
   //
