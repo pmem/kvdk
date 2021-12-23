@@ -75,7 +75,7 @@ private:
   size_t step_;
   bool enabled_;
 
-  bool finished_{false};
+  bool flush_newline_{false};
 
   static constexpr char symbol_done_{'#'};
   static constexpr char symbol_fill_{'-'};
@@ -106,15 +106,17 @@ public:
   }
 
   void Update(size_t current_progress) {
-    assert(!finished_ && "Trying to update a completed progress!");
+    assert(!flush_newline_ && "Trying to update a completed progress!");
     assert(current_progress_ < current_progress &&
            current_progress <= total_progress_);
 
     current_progress_ = current_progress;
     if (current_progress_ == total_progress_)
-      finished_ = true;
+    {
+      flush_newline_ = true;
+    }
 
-    if (last_report_ + report_interval_ <= current_progress_)
+    if (last_report_ + report_interval_ <= current_progress_ || current_progress_ == total_progress_)
     {
       showProgress();
       last_report_ = current_progress_;
@@ -122,8 +124,8 @@ public:
   }
 
   ~ProgressBar() {
-    if (!finished_) {
-      finished_ = true;
+    if (!flush_newline_) {
+      flush_newline_ = true;
       showProgress();
     }
   }
@@ -150,7 +152,7 @@ private:
 
     out_stream_ << "]" << std::flush;
 
-    if (finished_)
+    if (flush_newline_)
       out_stream_ << std::endl;
   }
 };
