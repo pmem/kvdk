@@ -55,10 +55,20 @@ struct EngineTask
 };
 
 using GlobalEngineState = std::unordered_multimap<KeyType, ValueState>;
-using ThreadLocakEngineState = std::unordered_map<KeyType, ValueState>;
+using ThreadLocalStagedStates = std::unordered_map<KeyType, ValueState>;
+// A thread may exist after it has modify the engine but not update the staged state.
+// This PendingState keeps track of that possible untracked change by StagedStates.
+/// TODO: Actually use this mechanism to check engine after simulated abnormal exit.
+using ThreadLocalPendingState = std::unique_ptr<std::pair<KeyType, ValueState>>;
 using EngineTaskQueue = std::deque<EngineTask>;
 
-static void CommitChanges(GlobalEngineState& original, std::vector<ThreadLocakEngineState>& states)
+// Contains functions to iterate through a collection and check its contents
+// It's up to user to maintain an unordered_multimap between keys and values
+// to keep track of the kv-pairs in a certain collection in the engine instance
+namespace kvdk_testing {
+
+// Commit changes from states to original. Clear() states.
+static void CommitChanges(GlobalEngineState& original, std::vector<ThreadLocalStagedStates>& states)
 {
   size_t done = 0;
   GlobalEngineState merged_parallel;
@@ -91,12 +101,8 @@ static void CommitChanges(GlobalEngineState& original, std::vector<ThreadLocakEn
   }
 }
 
-// Contains functions to iterate through a collection and check its contents
-// It's up to user to maintain an unordered_multimap between keys and values
-// to keep track of the kv-pairs in a certain collection in the engine instance
-namespace kvdk_testing {
 // Check if a Key-ValueState is possible
-static void CheckKVState(
+static void CheckState(
     KeyType key, ValueState vstate,
     GlobalEngineState const &possible_state) {
   auto ranges = possible_state.equal_range(key);
@@ -111,8 +117,9 @@ static void CheckKVState(
       << "State: " << (vstate.state == KVState::Deleted ? "Deleted" : "Existing") << "\n"
       << "Value: " << vstate.value << "\n";
 }
+
 template<typename Getter>
-static void QueryKeyCheckValue(Getter getter, KeyType key, ValueType value)
+static void QueryExistingKey(Getter getter, KeyType key, ValueType value)
 {
   kvdk::Status status;
   std::string value_got;
@@ -127,6 +134,7 @@ static void QueryKeyCheckValue(Getter getter, KeyType key, ValueType value)
       << "Expected:\n"
       << value << "\n";
 }
+
 template<typename Getter>
 static void QueryDeletedKey(Getter getter, KeyType key)
 {
@@ -136,6 +144,35 @@ static void QueryDeletedKey(Getter getter, KeyType key)
   ASSERT_EQ(status, kvdk::Status::NotFound)
       << "Found deleted key\n"
       << "Key: " << key << "\n";
+}
+
+template<typename Getter>
+static void IteratePossibleState(Getter getter, GlobalEngineState const &possible_state, bool enable_progress_bar)
+{
+  GlobalEngineState possible_state_copy{possible_state};
+  ProgressBar pbar{std::cout, "", possible_state.size(),
+                                  1000, enable_progress_bar};
+
+  kvdk::Status status;
+  while (!possible_state_copy.empty())
+  {
+    auto key = possible_state_copy.begin()->first;
+    std::string value_got;
+    status = getter(key, &value_got);
+    ASSERT_TRUE(status == kvdk::Status::NotFound || status == kvdk::Status::Ok);
+    ValueState state = (status == kvdk::Status::Ok) ? ValueState{KVState::Existing, value_got} : ValueState{KVState::Deleted, ValueType{}};
+    auto range = possible_state_copy.equal_range(key);
+    bool match = false;
+    for(auto iter = range.first; iter!=range.second; ++iter)
+    {
+      match = match || (state == iter->second);
+    }
+    ASSERT_TRUE(match) 
+      << "Get returns a result not tracked by GlobalEngineState";
+    possible_state_copy.erase(key);
+    pbar.Update(possible_state.size() - possible_state_copy.size());
+  }
+  
 }
 
 enum class IteratingDirection
@@ -171,18 +208,18 @@ static void IterateThrough(
       break;
     }
 
-    ProgressBar progress_iterating{std::cout, "", possible_state.size(),
+    ProgressBar pbar{std::cout, "", possible_state.size(),
                                    1000, enable_progress_bar};
     while (iterator->Valid()) 
     {
       auto key = iterator->Key();
       auto value = iterator->Value();
 
-      QueryKeyCheckValue(getter, key, value);
-      CheckKVState(key, {KVState::Existing, value}, possible_state_copy);
+      QueryExistingKey(getter, key, value);
+      CheckState(key, {KVState::Existing, value}, possible_state_copy);
 
       possible_state_copy.erase(key);
-      progress_iterating.Update(possible_state.size() - possible_state_copy.size());
+      pbar.Update(possible_state.size() - possible_state_copy.size());
 
       switch (direction)
       {
@@ -200,10 +237,10 @@ static void IterateThrough(
         auto key = possible_state_copy.begin()->first;
 
         QueryDeletedKey(getter, key);
-        CheckKVState(key, {KVState::Deleted, ValueType{}}, possible_state_copy);
+        CheckState(key, {KVState::Deleted, ValueType{}}, possible_state_copy);
         
         possible_state_copy.erase(key);
-        progress_iterating.Update(possible_state.size() - possible_state_copy.size());
+        pbar.Update(possible_state.size() - possible_state_copy.size());
       }
       ASSERT_TRUE(possible_state.empty())
           << "There should be no key left in possible_state_copy, "
@@ -212,16 +249,9 @@ static void IterateThrough(
   }
 }
 
-}; // namespace kvdk_testing
-
-/// Contains functions for putting batches of keys and values into a collection
-/// in an engine instance.
-namespace kvdk_testing {
-namespace // nested anonymous namespace to hide implementation
-{
 template<typename Getter, typename Setter, typename Deleter>
 void ExecuteTasks(Getter getter, Setter setter, Deleter deleter, EngineTaskQueue const& tasks,
-  ThreadLocakEngineState* todo, ThreadLocakEngineState* done, bool enable_progress_bar)
+  ThreadLocalStagedStates* done, ThreadLocalPendingState* pending, bool enable_progress_bar)
 {
   kvdk::Status status;
   std::string value_got;
@@ -247,11 +277,11 @@ void ExecuteTasks(Getter getter, Setter setter, Deleter deleter, EngineTaskQueue
     }
     case EngineOperation::Set:
     {
-      if (todo)
+      if (pending) 
       {
-      (*todo)[task.key] = {KVState::Existing,task.value};
+        ASSERT_EQ(*pending, nullptr);
+        pending->reset(new std::pair<KeyType, ValueState>{task.key, {KVState::Existing, task.value}});
       }
-      
 
       status = setter(task.key, task.value);
       ASSERT_EQ(status, kvdk::Status::Ok)
@@ -260,15 +290,20 @@ void ExecuteTasks(Getter getter, Setter setter, Deleter deleter, EngineTaskQueue
 
       if (done)
       {
-      (*done)[task.key] = {KVState::Existing,task.value};
+      (*done)[task.key] = {KVState::Existing, task.value};
+      }
+      if (pending) 
+      {
+        pending->reset(nullptr);
       }
       break;
     }
     case EngineOperation::Delete:
     {
-      if (todo)
+      if (pending) 
       {
-      (*todo)[task.key] = {KVState::Existing,ValueType{}};
+        ASSERT_EQ(*pending, nullptr);
+        pending->reset(new std::pair<KeyType, ValueState>{task.key, {KVState::Deleted, ValueType{}}});
       }
       
 
@@ -279,7 +314,11 @@ void ExecuteTasks(Getter getter, Setter setter, Deleter deleter, EngineTaskQueue
 
       if (done)
       {
-      (*done)[task.key] = {KVState::Existing,ValueType{}};
+      (*done)[task.key] = {KVState::Deleted, ValueType{}};
+      }
+      if (pending) 
+      {
+        pending->reset(nullptr);
       }
       break;
     }
@@ -288,8 +327,6 @@ void ExecuteTasks(Getter getter, Setter setter, Deleter deleter, EngineTaskQueue
     progress_bar.Update(progress);
   }
 }
-
-} // namespace
 
 EngineTaskQueue PrepareQueue(
                       std::vector<KeyType> const &keys,
@@ -313,49 +350,155 @@ EngineTaskQueue PrepareQueue(
   return tasks;
 }
 
+
+} // namespace kvdk_testing
+
+/// Contains functions for putting batches of keys and values into a collection
+/// in an engine instance.
+namespace kvdk_testing {
+class HGetter
+{
+  kvdk::Engine * engine;
+  KeyType collection_name;
+  public:
+    HGetter(kvdk::Engine*e, KeyType cn) : engine{e}, collection_name{cn} {}
+    kvdk::Status operator()(KeyType key, std::string* value_got)
+    {
+      return engine->HGet(collection_name, key, value_got);
+    }
+};
+class HSetter
+{
+  kvdk::Engine * engine;
+  KeyType collection_name;
+  public:
+    HSetter(kvdk::Engine*e, KeyType cn) : engine{e}, collection_name{cn} {}
+    kvdk::Status operator()(KeyType key, ValueType value)
+    {
+      return engine->HSet(collection_name, key, value);
+    }
+};
+class HDeleter
+{
+  kvdk::Engine * engine;
+  KeyType collection_name;
+  public:
+    HDeleter(kvdk::Engine*e, KeyType cn) : engine{e}, collection_name{cn} {}
+    kvdk::Status operator()(KeyType key)
+    {
+      return engine->HDelete(collection_name, key);
+    }
+};
+
+class SGetter
+{
+  kvdk::Engine * engine;
+  KeyType collection_name;
+  public:
+    SGetter(kvdk::Engine*e, KeyType cn) : engine{e}, collection_name{cn} {}
+    kvdk::Status operator()(KeyType key, std::string* value_got)
+    {
+      return engine->HGet(collection_name, key, value_got);
+    }
+};
+class SSetter
+{
+  kvdk::Engine * engine;
+  KeyType collection_name;
+  public:
+    SSetter(kvdk::Engine*e, KeyType cn) : engine{e}, collection_name{cn} {}
+    kvdk::Status operator()(KeyType key, ValueType value)
+    {
+      return engine->HSet(collection_name, key, value);
+    }
+};
+class SDeleter
+{
+  kvdk::Engine * engine;
+  KeyType collection_name;
+  public:
+    SDeleter(kvdk::Engine*e, KeyType cn) : engine{e}, collection_name{cn} {}
+    kvdk::Status operator()(KeyType key)
+    {
+      return engine->HDelete(collection_name, key);
+    }
+};
+class Getter
+{
+  kvdk::Engine * engine;
+  public:
+    Getter(kvdk::Engine*e) : engine{e} {}
+    kvdk::Status operator()(KeyType key, std::string* value_got)
+    {
+      return engine->Get(key, value_got);
+    }
+};
+class Setter
+{
+  kvdk::Engine * engine;
+  public:
+    Setter(kvdk::Engine*e) : engine{e} {}
+    kvdk::Status operator()(KeyType key, ValueType value)
+    {
+      return engine->Set(key, value);
+    }
+};
+class Deleter
+{
+  kvdk::Engine * engine;
+  public:
+    Deleter(kvdk::Engine*e) : engine{e} {}
+    kvdk::Status operator()(KeyType key)
+    {
+      return engine->Delete(key);
+    }
+};
+
 // Calling engine->HSet to put keys and values into collection named after
 // collection_name.
 static void AllHSet(kvdk::Engine *engine, std::string collection_name,
                     std::vector<KeyType> const &keys,
                     std::vector<ValueType> const &values,
-                    ThreadLocakEngineState* todo,
-                    ThreadLocakEngineState* done,
+                    ThreadLocalStagedStates* done,
+                    ThreadLocalPendingState* pending,
                     bool enable_progress_bar) {
-  auto getter = [&](KeyType key, std::string* value_got) {
-    return engine->HGet(collection_name, key, value_got);
-  };
-  auto setter = [&](KeyType key, ValueType value) {
-    return engine->HSet(collection_name, key, value);
-  };
-  auto deleter = [&](KeyType key) {
-    return engine->HDelete(collection_name, key);
-  };
-  
+
+  HGetter getter{engine, collection_name};
+  HSetter setter{engine, collection_name};
+  HDeleter deleter{engine, collection_name};
   EngineTaskQueue tasks{PrepareQueue(keys, values, false)};
-  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
+  ExecuteTasks(getter, setter, deleter, tasks, done, pending, enable_progress_bar);
 }
 
 // Calling engine->HSet to put keys and values into collection named after
 // collection_name.
-static void AllSSetOnly(kvdk::Engine *engine, std::string collection_name,
+static void AllSSet(kvdk::Engine *engine, std::string collection_name,
                         std::vector<StringView> const &keys,
                         std::vector<StringView> const &values,
-                    ThreadLocakEngineState* todo,
-                    ThreadLocakEngineState* done,
+                    ThreadLocalStagedStates* done,
+                    ThreadLocalPendingState* pending,
                         bool enable_progress_bar) {
-  auto getter = [&](KeyType key, std::string* value_got) {
-    return engine->SGet(collection_name, key, value_got);
-  };
-  auto setter = [&](KeyType key, ValueType value) {
-    return engine->SSet(collection_name, key, value);
-  };
-  auto deleter = [&](KeyType key) {
-    return engine->SDelete(collection_name, key);
-  };
+  SGetter getter{engine, collection_name};
+  SSetter setter{engine, collection_name};
+  SDeleter deleter{engine, collection_name};
+  EngineTaskQueue tasks{PrepareQueue(keys, values, false)};
+  ExecuteTasks(getter, setter, deleter, tasks, done, pending, enable_progress_bar);
+}
+
+static void AllSet(kvdk::Engine *engine,
+                        std::vector<StringView> const &keys,
+                        std::vector<StringView> const &values,
+                    ThreadLocalStagedStates* done,
+                    ThreadLocalPendingState* pending,
+                        bool enable_progress_bar) {
+  Getter getter{engine};
+  Setter setter{engine};
+  Deleter deleter{engine};
   
   EngineTaskQueue tasks{PrepareQueue(keys, values, false)};
-  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
+  ExecuteTasks(getter, setter, deleter, tasks, done, pending, enable_progress_bar);
 }
+
 
 // Calling engine->HSet to put evenly indexed keys and values into collection
 // named after collection_name. Calling engine->HDelete to delete oddly indexed
@@ -364,22 +507,15 @@ static void EvenHSetOddHDelete(kvdk::Engine *engine,
                                std::string collection_name,
                                std::vector<StringView> const &keys,
                                std::vector<StringView> const &values,
-                    ThreadLocakEngineState* todo,
-                    ThreadLocakEngineState* done,
+                    ThreadLocalStagedStates* done,
+                    ThreadLocalPendingState* pending,
                                bool enable_progress_bar) {
 
-  auto getter = [&](KeyType key, std::string* value_got) {
-    return engine->HGet(collection_name, key, value_got);
-  };
-  auto setter = [&](KeyType key, ValueType value) {
-    return engine->HSet(collection_name, key, value);
-  };
-  auto deleter = [&](KeyType key) {
-    return engine->HDelete(collection_name, key);
-  };
-  
+  HGetter getter{engine, collection_name};
+  HSetter setter{engine, collection_name};
+  HDeleter deleter{engine, collection_name};
   EngineTaskQueue tasks{PrepareQueue(keys, values, true)};
-  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
+  ExecuteTasks(getter, setter, deleter, tasks, done, pending, enable_progress_bar);
 }
 
 // Calling engine->SSet to put evenly indexed keys and values into collection
@@ -389,35 +525,36 @@ static void EvenSSetOddSDelete(kvdk::Engine *engine,
                                std::string collection_name,
                                std::vector<StringView> const &keys,
                                std::vector<StringView> const &values,
-                    ThreadLocakEngineState* todo,
-                    ThreadLocakEngineState* done,
+                    ThreadLocalStagedStates* done,
+                    ThreadLocalPendingState* pending,
                                bool enable_progress_bar) {
-  auto getter = [&](KeyType key, std::string* value_got) {
-    return engine->SGet(collection_name, key, value_got);
-  };
-  auto setter = [&](KeyType key, ValueType value) {
-    return engine->SSet(collection_name, key, value);
-  };
-  auto deleter = [&](KeyType key) {
-    return engine->SDelete(collection_name, key);
-  };
+  SGetter getter{engine, collection_name};
+  SSetter setter{engine, collection_name};
+  SDeleter deleter{engine, collection_name};
   EngineTaskQueue tasks{PrepareQueue(keys, values, true)};
-  ExecuteTasks(getter, setter, deleter, tasks, todo, done, enable_progress_bar);
+  ExecuteTasks(getter, setter, deleter, tasks, done, pending, enable_progress_bar);
+}
+
+static void EvenSetOddDelete(kvdk::Engine *engine,
+                               std::vector<StringView> const &keys,
+                               std::vector<StringView> const &values,
+                    ThreadLocalStagedStates* done,
+                    ThreadLocalPendingState* pending,
+                               bool enable_progress_bar) {
+  Getter getter{engine};
+  Setter setter{engine};
+  Deleter deleter{engine};
+  EngineTaskQueue tasks{PrepareQueue(keys, values, true)};
+  ExecuteTasks(getter, setter, deleter, tasks, done, pending, enable_progress_bar);
 }
 
 static void IterateThroughHashes(kvdk::Engine *engine,
                                std::string collection_name,
                     GlobalEngineState const& state,
                                bool enable_progress_bar) {
-  auto getter = [&](KeyType key, std::string* value_got) {
-    return engine->HGet(collection_name, key, value_got);
-  };
-  auto setter = [&](KeyType key, ValueType value) {
-    return engine->HSet(collection_name, key, value);
-  };
-  auto deleter = [&](KeyType key) {
-    return engine->HDelete(collection_name, key);
-  };
+  HGetter getter{engine, collection_name};
+  HSetter setter{engine, collection_name};
+  HDeleter deleter{engine, collection_name};
   auto iterator = engine->NewUnorderedIterator(collection_name);
   IterateThrough(iterator, getter, state, IteratingDirection::Forward, enable_progress_bar);
   IterateThrough(iterator, getter, state, IteratingDirection::Backward, enable_progress_bar);
@@ -426,15 +563,9 @@ static void IterateThroughSortedSets(kvdk::Engine *engine,
                                std::string collection_name,
                     GlobalEngineState const& state,
                                bool enable_progress_bar) {
-  auto getter = [&](KeyType key, std::string* value_got) {
-    return engine->SGet(collection_name, key, value_got);
-  };
-  auto setter = [&](KeyType key, ValueType value) {
-    return engine->SSet(collection_name, key, value);
-  };
-  auto deleter = [&](KeyType key) {
-    return engine->SDelete(collection_name, key);
-  };
+  SGetter getter{engine, collection_name};
+  SSetter setter{engine, collection_name};
+  SDeleter deleter{engine, collection_name};
   auto iterator = engine->NewSortedIterator(collection_name);
   IterateThrough(iterator, getter, state, IteratingDirection::Forward, enable_progress_bar);
   IterateThrough(iterator, getter, state, IteratingDirection::Backward, enable_progress_bar);
@@ -473,8 +604,17 @@ protected:
   std::vector<std::vector<StringView>> grouped_keys;
   std::vector<std::vector<StringView>> grouped_values;
 
-  std::vector<ThreadLocakEngineState> local_states;
-  GlobalEngineState global_state;
+  std::unordered_map<std::string, GlobalEngineState> hashes_states;
+  std::unordered_map<std::string, GlobalEngineState> sorted_states;
+  GlobalEngineState string_states;
+
+  std::unordered_map<std::string, std::vector<ThreadLocalStagedStates>> hashes_staged;
+  std::unordered_map<std::string, std::vector<ThreadLocalStagedStates>> sorted_staged;
+  std::vector<ThreadLocalStagedStates> string_staged;
+
+  std::unordered_map<std::string, std::vector<ThreadLocalPendingState>> hashes_pending;
+  std::unordered_map<std::string, std::vector<ThreadLocalPendingState>> sorted_pending;
+  std::vector<ThreadLocalPendingState> string_pending;
 
 private:
   std::vector<std::string> key_pool;
@@ -526,84 +666,102 @@ protected:
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
         kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], true);
+                              grouped_values[tid], &hashes_staged[collection_name][tid], &hashes_pending[collection_name][tid], true);
 
       } else {
         kvdk_testing::AllHSet(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], false);
+                              grouped_values[tid], &hashes_staged[collection_name][tid], &hashes_pending[collection_name][tid], false);
       }
     };
 
     std::cout << "[Testing] Execute HSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    CommitChanges(global_state, local_states);
+    kvdk_testing::CommitChanges(hashes_states[collection_name], hashes_staged[collection_name]);
   }
 
   void HashesEvenHSetOddHDelete(std::string const &collection_name) {
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
         kvdk_testing::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], true);
+                              grouped_values[tid], &hashes_staged[collection_name][tid], &hashes_pending[collection_name][tid], true);
 
       } else {
         kvdk_testing::EvenHSetOddHDelete(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], false);
+                              grouped_values[tid], &hashes_staged[collection_name][tid], &hashes_pending[collection_name][tid], false);
       }
     };
 
     std::cout << "[Testing] Execute HSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    CommitChanges(global_state, local_states);
+    kvdk_testing::CommitChanges(hashes_states[collection_name], hashes_staged[collection_name]);
   }
 
   void SortedSetsAllSSet(std::string const &collection_name) {
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
-        kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], true);
+        kvdk_testing::AllSSet(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], &sorted_staged[collection_name][tid], &sorted_pending[collection_name][tid], true);
 
       } else {
-        kvdk_testing::AllSSetOnly(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], false);
+        kvdk_testing::AllSSet(engine, collection_name, grouped_keys[tid],
+                              grouped_values[tid], &sorted_staged[collection_name][tid], &sorted_pending[collection_name][tid], false);
       }
     };
 
     std::cout << "[Testing] Execute HSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    CommitChanges(global_state, local_states);
+    kvdk_testing::CommitChanges(sorted_states[collection_name], sorted_staged[collection_name]);
   }
 
   void SortedSetsEvenSSetOddSDelete(std::string const &collection_name) {
     auto ModifyEngine = [&](int tid) {
       if (tid == 0) {
         kvdk_testing::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], true);
+                              grouped_values[tid], &sorted_staged[collection_name][tid], &sorted_pending[collection_name][tid], true);
 
       } else {
         kvdk_testing::EvenSSetOddSDelete(engine, collection_name, grouped_keys[tid],
-                              grouped_values[tid], nullptr, &local_states[tid], false);
+                              grouped_values[tid], &sorted_staged[collection_name][tid], &sorted_pending[collection_name][tid], false);
       }
     };
 
     std::cout << "[Testing] Execute HSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    CommitChanges(global_state, local_states);
+    kvdk_testing::CommitChanges(sorted_states[collection_name], sorted_staged[collection_name]);
   }
 
   void CheckHashesCollection(std::string collection_name) {
     std::cout << "[Testing] Iterate through " << collection_name
               << " to check data." << std::endl;
-    kvdk_testing::IterateThroughHashes(engine, collection_name, global_state, true);
+    kvdk_testing::IterateThroughHashes(engine, collection_name, hashes_states[collection_name], true);
   }
 
   void CheckSortedSetsCollection(std::string collection_name) {
     std::cout << "[Testing] Iterate through " << collection_name
               << " to check data." << std::endl;
-    kvdk_testing::IterateThroughSortedSets(engine, collection_name, global_state, true);
+    kvdk_testing::IterateThroughSortedSets(engine, collection_name, sorted_states[collection_name], true);
+  }
+
+  void InitializeGlobalAnonymousCollection()
+  {
+    string_staged.resize(n_thread);
+    string_pending.resize(n_thread);
+  }
+  void InitializeHashes(std::string const& collection_name)
+  {
+    hashes_states[collection_name];
+    hashes_staged[collection_name].resize(n_thread);
+    hashes_pending[collection_name].resize(n_thread);
+  }
+  void InitializeSorted(std::string const& collection_name)
+  {
+    sorted_states[collection_name];
+    sorted_staged[collection_name].resize(n_thread);
+    sorted_pending[collection_name].resize(n_thread);
   }
 
 private:
@@ -666,7 +824,7 @@ protected:
     /// Default configure parameters
     do_populate_when_initialize = false;
     // 256GB PMem
-    sz_pmem_file = (256ULL << 30);
+    sz_pmem_file = (32ULL << 30);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
     // Smaller buckets to increase hash collisions
@@ -675,9 +833,9 @@ protected:
     t_background_work_interval = 1;
 
     /// Test specific parameters
-    n_thread = 48;
+    n_thread = 1;
     // 2M keys per thread, totaling about 100M records
-    n_kv_per_thread = (2ULL << 20);
+    n_kv_per_thread = (2ULL << 10);
     // These parameters set the range of sizes of keys and values
     sz_key_min = 2;
     sz_key_max = 16;
@@ -691,6 +849,7 @@ protected:
 TEST_F(EngineStressTest, HashesHSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
 
+  InitializeHashes(global_collection_name);
   HashesAllHSet(global_collection_name);
   CheckHashesCollection(global_collection_name);
 
@@ -707,6 +866,8 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
 
 TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"GlobalCollection"};
+
+  InitializeHashes(global_collection_name);
 
   HashesEvenHSetOddHDelete(global_collection_name);
 
@@ -733,9 +894,11 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
 
 TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   std::string global_collection_name{"GlobalCollection"};
-  kvdk::Collection *global_collection_ptr;
+  InitializeSorted(global_collection_name);
+
+  kvdk::Collection *dummy;
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name,
-                                           &global_collection_ptr),
+                                           &dummy),
             kvdk::Status::Ok);
   SortedSetsAllSSet(global_collection_name);
   CheckSortedSetsCollection(global_collection_name);
@@ -754,9 +917,11 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
 
 TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"GlobalCollection"};
-  kvdk::Collection *global_collection_ptr;
+  InitializeSorted(global_collection_name);
+  
+  kvdk::Collection *dummy;
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name,
-                                           &global_collection_ptr),
+                                           &dummy),
             kvdk::Status::Ok);
 
   SortedSetsEvenSSetOddSDelete(global_collection_name);
@@ -812,6 +977,7 @@ private:
 
 TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
   std::string global_collection_name{"GlobalHashesCollection"};
+  InitializeHashes(global_collection_name);
 
   HashesEvenHSetOddHDelete(global_collection_name);
   std::cout << "[Testing] Iterate through collection to check data."
@@ -828,11 +994,14 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
 
 TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
   std::string global_collection_name{"GlobalHashesCollection"};
+    InitializeSorted(global_collection_name);
 
-  kvdk::Collection *global_collection_ptr;
+
+  kvdk::Collection *dummy;
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name,
-                                           &global_collection_ptr),
+                                           &dummy),
             kvdk::Status::Ok);
+
   SortedSetsEvenSSetOddSDelete(global_collection_name);
   std::cout << "[Testing] Iterate through collection to check data."
             << std::endl;
