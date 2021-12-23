@@ -86,7 +86,7 @@ TEST_F(EngineBasicTest, TestThreadManager) {
 }
 
 TEST_F(EngineBasicTest, TestBackup) {
-  int num_threads = 16;
+  uint32_t num_threads = 16;
   int count = 100;
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -163,7 +163,7 @@ TEST_F(EngineBasicTest, TestBackup) {
   // Test backup instance
   // All changes after snapshot should not be seen in backup
   // Writes on backup should work well
-  auto BackupGet = [&](uint32_t id) {
+  for (uint32_t id = 0; id < num_threads; id++) {
     int cnt = count;
     std::string got_v1, got_v2, got_v3;
     while (cnt--) {
@@ -186,8 +186,17 @@ TEST_F(EngineBasicTest, TestBackup) {
       ASSERT_EQ(got_v1, key1);
       ASSERT_EQ(got_v2, key2);
     }
-  };
-  LaunchNThreads(num_threads, BackupGet);
+  }
+  uint64_t iter_cnt = 0;
+  auto iter = backup_engine->NewSortedIterator(sorted_collection);
+  iter->SeekToFirst();
+  while (iter->Valid()) {
+    iter_cnt++;
+    ASSERT_EQ(iter->Key(), iter->Value());
+    iter->Next();
+  }
+  ASSERT_EQ(iter_cnt, num_threads * count * 2);
+
   delete engine;
   delete backup_engine;
 }

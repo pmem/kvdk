@@ -708,6 +708,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_path,
                         const Snapshot *snapshot) {
   // TODO: handle batch write
   std::string path = string_view_2_string(backup_path);
+  GlobalLogger.Info("Backup to %s\n", path.c_str());
   create_dir_if_missing(path);
   // TODO: make sure backup_path is empty
 
