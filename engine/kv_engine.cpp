@@ -2216,8 +2216,9 @@ void KVEngine::maybeUpdateOldestSnapshot() {
 
 void KVEngine::handlePendingFreeRecords() {
   // records that can't be freed this time
-  std::deque<PendingFreeDataRecord> unfreed_data_record;
-  std::deque<PendingFreeDeleteRecord> unfreed_delete_record;
+  std::deque<PendingFreeDataRecord> data_record_refered;
+  std::deque<PendingFreeDeleteRecord> delete_record_refered;
+  PendingFreeSpaceEntries space_pending;
 
   std::vector<SpaceEntry> space_to_free;
   bg_free_thread_processing_ = true;
@@ -2255,7 +2256,7 @@ void KVEngine::handlePendingFreeRecords() {
       if (record.newer_version_timestamp <= oldest_snapshot_ts) {
         space_to_free.emplace_back(handlePendingFreeRecord(record));
       } else {
-        unfreed_data_record.emplace_back(std::move(record));
+        data_record_refered.emplace_back(std::move(record));
       }
     }
   }
@@ -2264,19 +2265,37 @@ void KVEngine::handlePendingFreeRecords() {
   for (auto &delete_records : bg_free_delete_records_) {
     for (auto &record : delete_records) {
       if (record.newer_version_timestamp <= oldest_snapshot_ts) {
-        space_to_free.emplace_back(handlePendingFreeRecord(record));
+        space_pending.entries.emplace_back(handlePendingFreeRecord(record));
       } else {
-        unfreed_delete_record.emplace_back(std::move(record));
+        delete_record_refered.emplace_back(std::move(record));
       }
     }
   }
 
-  pmem_allocator_->BatchFree(space_to_free);
+  if (space_pending.entries.size() > 0) {
+    space_pending.free_ts = version_controller_.GetCurrentTimestamp();
+    bg_free_space_entries_.emplace_back(std::move(space_pending));
+  }
+
+  auto iter = bg_free_space_entries_.begin();
+  for (auto iter = bg_free_space_entries_.begin();
+       iter != bg_free_space_entries_.end(); iter++) {
+    if (iter->free_ts < oldest_snapshot_ts) {
+      pmem_allocator_->BatchFree(iter->entries);
+    } else {
+      break;
+    }
+  }
+  bg_free_space_entries_.erase(bg_free_space_entries_.begin(), iter);
+
+  if (space_to_free.size() > 0) {
+    pmem_allocator_->BatchFree(space_to_free);
+  }
 
   bg_free_data_records_.clear();
-  bg_free_data_records_.emplace_back(std::move(unfreed_data_record));
+  bg_free_data_records_.emplace_back(std::move(data_record_refered));
   bg_free_delete_records_.clear();
-  bg_free_delete_records_.emplace_back(std::move(unfreed_delete_record));
+  bg_free_delete_records_.emplace_back(std::move(delete_record_refered));
 }
 
 void KVEngine::pendingFreeRecordsHandler() {

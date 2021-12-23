@@ -135,6 +135,11 @@ private:
     SpinMutex *hash_entry_lock;
   };
 
+  struct PendingFreeSpaceEntries {
+    std::vector<SpaceEntry> entries;
+    TimestampType free_ts;
+  };
+
   struct ThreadCache {
     ThreadCache() = default;
 
@@ -366,6 +371,7 @@ private:
   // Used for background free space, this is required for MVCC
   std::vector<std::deque<PendingFreeDataRecord>> bg_free_data_records_;
   std::vector<std::deque<PendingFreeDeleteRecord>> bg_free_delete_records_;
+  std::deque<PendingFreeSpaceEntries> bg_free_space_entries_;
   bool bg_free_thread_processing_{false};
   bool bg_free_thread_closed_{false};
   std::condition_variable_any bg_free_thread_cv_;
