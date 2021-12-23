@@ -44,7 +44,7 @@ public:
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
-  Snapshot *GetSnapshot() override { return version_controller_.NewSnapshot(); }
+  Snapshot *GetSnapshot() override;
 
   Status Backup(const pmem::obj::string_view backup_path,
                 const Snapshot *snapshot) override;
@@ -117,7 +117,10 @@ private:
     TimestampType timestamp{0};
     SpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
-    void *pmem_record_to_free = nullptr;
+    HashEntry *hash_entry_ptr = nullptr;
+    void *data_record_to_free = nullptr;
+    void *delete_record_to_free = nullptr;
+    bool space_not_used{false};
   };
 
   struct PendingFreeDataRecord {
@@ -145,6 +148,10 @@ private:
     std::deque<PendingFreeDeleteRecord> pending_free_delete_records{};
     std::deque<PendingFreeDataRecord> pending_free_data_records{};
     SpinMutex pending_free_delete_records_lock;
+
+    // This thread is doing batch write
+    bool batch_writing = false;
+    ;
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }

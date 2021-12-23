@@ -706,7 +706,6 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
 
 Status KVEngine::Backup(const pmem::obj::string_view backup_path,
                         const Snapshot *snapshot) {
-  // TODO: handle batch write
   std::string path = string_view_2_string(backup_path);
   GlobalLogger.Info("Backup to %s\n", path.c_str());
   create_dir_if_missing(path);
@@ -898,6 +897,8 @@ Status KVEngine::Recovery() {
     }
   }
 
+  remove(backup_mark_file().c_str());
+
   version_controller_.Init(latest_version_ts);
 
   handlePendingFreeRecords();
@@ -991,7 +992,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     uint64_t new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
+    SnapshotSetter setter(
+        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
     Status s = hash_table_->SearchForRead(hint, collection_key,
                                           SortedDataRecord | SortedDeleteRecord,
                                           &entry_ptr, &hash_entry, &data_entry);
@@ -1080,7 +1082,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     uint64_t new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
+    SnapshotSetter setter(
+        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
     Status s = hash_table_->SearchForWrite(
         hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
         &hash_entry, &data_entry);
@@ -1273,29 +1276,32 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return s;
   }
 
+  RAII_Setter<bool> holder(thread_cache_[write_thread.id].batch_writing, true,
+                           false);
+
   std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto &kv = write_batch.kvs[i];
+    uint32_t requested_size;
     if (kv.type == StringDataRecord) {
-      // Allocate space for data records
-      uint32_t requested_size =
-          kv.key.size() + kv.value.size() + sizeof(StringRecord);
-      batch_hints[i].allocated_space =
-          pmem_allocator_->Allocate(requested_size);
-      // No enough space for batch write
-      if (batch_hints[i].allocated_space.size == 0) {
-        for (size_t j = 0; j < i; j++) {
-          pmem_allocator_->Free(batch_hints[j].allocated_space);
-        }
-        return s;
-      }
-      space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
+      requested_size = kv.key.size() + kv.value.size() + sizeof(StringRecord);
+    } else if (kv.type == StringDeleteRecord) {
+      requested_size = kv.key.size() + sizeof(StringRecord);
     } else {
-      kvdk_assert(kv.type == StringDeleteRecord,
-                  "only support string type batch write");
+      GlobalLogger.Error("only support string type batch write\n");
+      return Status::NotSupported;
     }
+    batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
+    // No enough space for batch write
+    if (batch_hints[i].allocated_space.size == 0) {
+      for (size_t j = 0; j < i; j++) {
+        pmem_allocator_->Free(batch_hints[j].allocated_space);
+      }
+      return s;
+    }
+    space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
 
     batch_hints[i].hash_hint = hash_table_->GetHint(kv.key);
     spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
@@ -1308,6 +1314,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   TimestampType ts = version_controller_.GetCurrentTimestamp();
+  SnapshotSetter setter(
+      version_controller_.ThreadHoldingSnapshot(write_thread.id), ts);
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
   }
@@ -1341,8 +1349,16 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // Free updated kvs, we should purge all updated kvs before release locks and
   // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
-    if (batch_hints[i].pmem_record_to_free != nullptr) {
-      purgeAndFree(batch_hints[i].pmem_record_to_free);
+    if (batch_hints[i].data_record_to_free != nullptr) {
+      delayFree(PendingFreeDataRecord{batch_hints[i].data_record_to_free, ts});
+    }
+    if (batch_hints[i].delete_record_to_free != nullptr) {
+      delayFree(PendingFreeDeleteRecord{batch_hints[i].delete_record_to_free,
+                                        ts, batch_hints[i].hash_entry_ptr,
+                                        batch_hints[i].hash_hint.spin});
+    }
+    if (batch_hints[i].space_not_used) {
+      pmem_allocator_->Free(batch_hints[i].allocated_space);
     }
   }
   return s;
@@ -1364,13 +1380,12 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     if (s == Status::MemoryOverflow) {
       return s;
     }
+    batch_hint.hash_entry_ptr = entry_ptr;
     bool found = s == Status::Ok;
 
     // Deleting kv is not existing
-    if (kv.type == StringDeleteRecord) {
-      if (found) {
-        batch_hint.pmem_record_to_free = hash_entry.index.string_record;
-      }
+    if (kv.type == StringDeleteRecord && !found) {
+      batch_hint.space_not_used = true;
       return Status::Ok;
     }
 
@@ -1380,27 +1395,24 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     void *block_base =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
-    // We use if here to avoid compilation warning
-    if (kv.type == StringDataRecord) {
-      StringRecord::PersistStringRecord(
-          block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
-          static_cast<RecordType>(kv.type),
-          found ? pmem_allocator_->addr2offset_checked(
-                      hash_entry.index.string_record)
-                : kNullPMemOffset,
-          kv.key, kv.value);
-    } else {
-      // Never reach
-      kvdk_assert(false, "wrong data type in batch write");
-      std::abort();
-    }
+    StringRecord::PersistStringRecord(
+        block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
+        static_cast<RecordType>(kv.type),
+        found ? pmem_allocator_->addr2offset_checked(
+                    hash_entry.index.string_record)
+              : kNullPMemOffset,
+        kv.key, kv.type == StringDataRecord ? kv.value : "");
 
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
                         HashOffsetType::StringRecord);
 
     if (entry_base_status == HashEntryStatus::Updating) {
-      batch_hint.pmem_record_to_free = hash_entry.index.string_record;
+      batch_hint.data_record_to_free = hash_entry.index.string_record;
+    }
+
+    if (kv.type == StringDeleteRecord) {
+      batch_hint.delete_record_to_free = block_base;
     }
   }
 
@@ -1433,7 +1445,8 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
     TimestampType new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
+    SnapshotSetter setter(
+        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
         &hash_entry, &data_entry);
@@ -1494,7 +1507,8 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
     TimestampType new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(version_controller_.ThreadHoldingSnapshot(), new_ts);
+    SnapshotSetter setter(
+        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
 
     // Search position to write index in hash table.
     Status s = hash_table_->SearchForWrite(
@@ -2278,4 +2292,20 @@ void KVEngine::pendingFreeRecordsHandler() {
     handlePendingFreeRecords();
   }
 }
+
+Snapshot *KVEngine::GetSnapshot() {
+  Snapshot *ret = version_controller_.NewSnapshot();
+  TimestampType snapshot_ts = static_cast<SnapshotImpl *>(ret)->GetTimestamp();
+
+  // A snapshot should not contain any ongoing batch write
+  for (auto i = 0; i < configs_.max_write_threads; i++) {
+    while (thread_cache_[i].batch_writing &&
+           snapshot_ts >=
+               version_controller_.ThreadHoldingSnapshot(i).GetTimestamp()) {
+      sleep(1);
+    }
+  }
+  return ret;
+}
+
 } // namespace KVDK_NAMESPACE

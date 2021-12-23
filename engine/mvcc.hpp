@@ -79,9 +79,9 @@ public:
     UpdatedOldestSnapshot();
   }
 
-  inline SnapshotImpl &ThreadHoldingSnapshot() {
-    assert(write_thread.id >= 0);
-    return thread_cache_[write_thread.id].holding_snapshot;
+  inline SnapshotImpl &ThreadHoldingSnapshot(size_t thread_num) {
+    assert(thread_num < thread_cache_.size());
+    return thread_cache_[thread_num].holding_snapshot;
   }
 
   // Create a new global snapshot
