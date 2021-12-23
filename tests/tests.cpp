@@ -339,6 +339,9 @@ TEST_F(EngineBasicTest, TestFreeList) {
   // key2 will be stored in 4th chunk
   ASSERT_EQ(engine->Set(key2, small_value), Status::Ok);
 
+  // wait for updated space be freed
+  sleep(4 * configs.background_work_interval);
+
   // new key 1 and new key 2 will be stored in updated 1st and 2nd chunks
   ASSERT_EQ(engine->Set(key1, small_value), Status::Ok);
 
@@ -348,7 +351,7 @@ TEST_F(EngineBasicTest, TestFreeList) {
   ASSERT_EQ(engine->Set(key3, large_value), Status::PmemOverflow);
 
   // Wait bg thread finish merging space of 3th and 4th chunks
-  sleep(2);
+  sleep(4 * configs.background_work_interval);
 
   // large key3 will be stored in merged 3th and 4th chunks
   ASSERT_EQ(engine->Set(key3, large_value), Status::Ok);
