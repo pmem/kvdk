@@ -36,18 +36,18 @@
 
 namespace KVDK_NAMESPACE {
 
-template <typename T> struct RAII_Setter {
+template <typename T> struct RAIISetter {
 public:
-  RAII_Setter(T &target, T on_set, T on_exit)
-      : target_(target), on_exit_(on_exit) {
+  RAIISetter(T &target, T on_set, T on_destroy)
+      : target_(target), on_destroy_(on_destroy) {
     target_ = on_set;
   }
 
-  ~RAII_Setter() { target_ = on_exit_; }
+  ~RAIISetter() { target_ = on_destroy_; }
 
 private:
   T &target_;
-  T on_exit_;
+  T on_destroy_;
 };
 
 inline uint64_t hash_str(const char *str, uint64_t size) {

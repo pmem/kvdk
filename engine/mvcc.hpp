@@ -139,7 +139,7 @@ private:
   SnapshotImpl oldest_snapshot_;
 
   // These two used to get current timestamp of the instance
-  // version_base_: The latest timestamp on instance start up
+  // version_base_: The newest timestamp on instance closing last time
   // tsc_on_startup_: The CPU tsc on instance start up
   uint64_t version_base_;
   uint64_t tsc_on_startup_;

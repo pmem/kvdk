@@ -48,12 +48,13 @@ void PendingBatch::PersistStage(Stage s) {
 }
 
 KVEngine::~KVEngine() {
-  closing_ = true;
   GlobalLogger.Info("Closing instance ... \n");
   GlobalLogger.Info("Waiting bg threads exit ... \n");
-  while (!bg_free_thread_closed_) {
+  {
+    std::lock_guard<SpinMutex> ul(bg_thread_cv_lock_);
+    closing_ = true;
+    bg_coordinator_cv_.notify_all();
     bg_free_thread_cv_.notify_all();
-    sleep(1);
   }
   for (auto &t : bg_threads_) {
     t.join();
@@ -81,15 +82,22 @@ void KVEngine::FreeSkiplistDramNodes() {
   }
 }
 
-void KVEngine::backgroundWork() {
+void KVEngine::backgroundWorkCoordinator() {
   // To avoid free a referencing skiplist node, we do freeing in at least every
   // 10 seconds
   // TODO: Maybe free skiplist node in another bg thread?
   double interval_free_skiplist_node =
       std::max(10.0, configs_.background_work_interval);
+  std::chrono::milliseconds duration(
+      static_cast<uint64_t>(configs_.background_work_interval * 1000));
   while (!closing_) {
-    usleep(configs_.background_work_interval * 1000000);
-    bg_free_thread_cv_.notify_all();
+    {
+      std::unique_lock<SpinMutex> ul(bg_thread_cv_lock_);
+      if (!closing_) {
+        bg_coordinator_cv_.wait_for(ul, duration);
+      }
+      bg_free_thread_cv_.notify_all();
+    }
     version_controller_.UpdatedOldestSnapshot();
     pmem_allocator_->BackgroundWork();
     if ((interval_free_skiplist_node -= configs_.background_work_interval) <=
@@ -165,7 +173,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
 
   s = Recovery();
   write_thread.id = -1;
-  bg_threads_.emplace_back(&KVEngine::backgroundWork, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundWorkCoordinator, this);
   bg_threads_.emplace_back(&KVEngine::pendingFreeRecordsHandler, this);
 
   return s;
@@ -2221,7 +2229,6 @@ void KVEngine::handlePendingFreeRecords() {
   PendingFreeSpaceEntries space_pending;
 
   std::vector<SpaceEntry> space_to_free;
-  bg_free_thread_processing_ = true;
 
   // Update recorded oldest snapshot up to state so we can know which records
   // can be freed
@@ -2299,15 +2306,15 @@ void KVEngine::handlePendingFreeRecords() {
 }
 
 void KVEngine::pendingFreeRecordsHandler() {
-  bg_free_thread_closed_ = false;
-  while (1) {
+  while (!closing_) {
     bg_free_thread_processing_ = false;
-    if (closing_) {
-      bg_free_thread_closed_ = true;
-      return;
+    {
+      std::unique_lock<SpinMutex> ul(bg_thread_cv_lock_);
+      if (!closing_) {
+        bg_free_thread_cv_.wait(bg_thread_cv_lock_);
+      }
     }
-    std::unique_lock<SpinMutex> ul(bg_free_thread_cv_lock_);
-    bg_free_thread_cv_.wait(bg_free_thread_cv_lock_);
+    bg_free_thread_processing_ = true;
     handlePendingFreeRecords();
   }
 }
@@ -2321,7 +2328,7 @@ Snapshot *KVEngine::GetSnapshot() {
     while (thread_cache_[i].batch_writing &&
            snapshot_ts >=
                version_controller_.ThreadHoldingSnapshot(i).GetTimestamp()) {
-      sleep(1);
+      asm volatile("pause");
     }
   }
   return ret;

@@ -265,7 +265,7 @@ private:
 
   SpaceEntry handlePendingFreeRecord(const PendingFreeDeleteRecord &);
 
-  void backgroundWork();
+  void backgroundWorkCoordinator();
 
   inline std::string data_file() { return data_file(dir_); }
 
@@ -368,14 +368,15 @@ private:
   SortedCollectionRebuilder sorted_rebuilder_;
   VersionController version_controller_;
 
+  std::condition_variable_any bg_coordinator_cv_;
+  SpinMutex bg_thread_cv_lock_;
+
   // Used for background free space, this is required for MVCC
   std::vector<std::deque<PendingFreeDataRecord>> bg_free_data_records_;
   std::vector<std::deque<PendingFreeDeleteRecord>> bg_free_delete_records_;
   std::deque<PendingFreeSpaceEntries> bg_free_space_entries_;
   bool bg_free_thread_processing_{false};
-  bool bg_free_thread_closed_{false};
   std::condition_variable_any bg_free_thread_cv_;
-  SpinMutex bg_free_thread_cv_lock_;
 
   // Max timestamp of records that could be restored in recovery, this is used
   // for backup instance, for an instance that is not a backup, this is set to
