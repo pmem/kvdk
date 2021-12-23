@@ -53,8 +53,6 @@ struct DataHeader {
   DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {}
 
   uint32_t checksum;
-  // Record size on Pmem in the unit of block
-  // TODO jiayu: use actual size
   uint32_t record_size;
 };
 
@@ -175,7 +173,6 @@ private:
 };
 
 // doubly linked record
-// TODO jiayu: use typename for next and prev pointer instead of a number
 struct DLRecord {
 public:
   DataEntry entry;

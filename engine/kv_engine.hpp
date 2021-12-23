@@ -65,7 +65,6 @@ public:
               std::string *value) override;
   Status SSet(const StringView collection, const StringView user_key,
               const StringView value) override;
-  // TODO: Release delete record and deleted nodes
   Status SDelete(const StringView collection,
                  const StringView user_key) override;
   std::shared_ptr<Iterator>
