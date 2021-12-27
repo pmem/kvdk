@@ -128,7 +128,7 @@ public:
         max_classified_b_size_(max_classified_b_size),
         active_pool_(max_classified_b_size),
         merged_pool_(max_classified_b_size), space_map_(num_blocks),
-        thread_cache_(num_threads, max_classified_b_size),
+        flist_thread_cache_(num_threads, max_classified_b_size),
         pmem_allocator_(allocator) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t block_size,
@@ -172,14 +172,14 @@ private:
   // to avoid contention. To balance free space entries among threads, if too
   // many entries cached by a thread, newly freed entries will be stored to
   // backup_entries and move to entry pool which shared by all threads.
-  struct alignas(64) ThreadCache {
-    ThreadCache(uint32_t max_classified_b_size)
+  struct alignas(64) FlistThreadCache {
+    FlistThreadCache(uint32_t max_classified_b_size)
         : active_entry_offsets(max_classified_b_size),
           spins(max_classified_b_size) {}
 
-    ThreadCache() = delete;
-    ThreadCache(ThreadCache &&) = delete;
-    ThreadCache(const ThreadCache &) = delete;
+    FlistThreadCache() = delete;
+    FlistThreadCache(FlistThreadCache &&) = delete;
+    FlistThreadCache(const FlistThreadCache &) = delete;
 
     // Entry size stored in block unit
     Array<std::vector<PMemOffsetType>> active_entry_offsets;
@@ -207,7 +207,7 @@ private:
   const uint32_t block_size_;
   const uint32_t max_classified_b_size_;
   SpaceMap space_map_;
-  Array<ThreadCache> thread_cache_;
+  Array<FlistThreadCache> flist_thread_cache_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;
   // Store all large free space entries that larger than max_classified_b_size_
