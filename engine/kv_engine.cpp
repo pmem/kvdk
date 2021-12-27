@@ -107,7 +107,6 @@ void KVEngine::BackgroundWork() {
 
     std::this_thread::sleep_for(background_interval);
   }
-  std::cout << this << std::endl;
   ReportPMemUsage();
 }
 
