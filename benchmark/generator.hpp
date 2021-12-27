@@ -13,16 +13,16 @@
 #include <x86intrin.h>
 
 inline uint64_t fast_random_64() {
-  thread_local unsigned long long seed = 0;
+  thread_local unsigned long long state = 0;
   static std::atomic_uint64_t seed_gen{1};
-  if (seed == 0) {
-    seed = seed_gen.fetch_add(1);
+  if (state == 0) {
+    state = seed_gen.fetch_add(1);
   }
-  uint64_t x = seed; /* The state must be seeded with a nonzero value. */
+  uint64_t x = state; /* The state must be seeded with a nonzero value. */
   x ^= x >> 12;      // a
   x ^= x << 25;      // b
   x ^= x >> 27;      // c
-  seed = x;
+  state = x;
   return x * 0x2545F4914F6CDD1D;
 }
 
