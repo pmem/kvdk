@@ -262,9 +262,9 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
     // to the free list
     if (!AllocateSegmentSpace(&palloc_thread_cache.segment_entry)) {
       GlobalLogger.Error("PMem OVERFLOW!\n");
-      LogDeallocation(write_thread.id, palloc_thread_cache.segment_entry.size);
       return space_entry;
     }
+    LogDeallocation(write_thread.id, palloc_thread_cache.segment_entry.size);
   }
   space_entry = palloc_thread_cache.segment_entry;
   space_entry.size = aligned_size;
