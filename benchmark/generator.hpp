@@ -14,15 +14,9 @@
 
 inline uint64_t fast_random_64() {
   thread_local unsigned long long seed = 0;
-  while (seed == 0) {
-    // Multithreading rdseed may fail
-    for (size_t n_try = 0; n_try < 10000; n_try++) {
-      if (_rdseed64_step(&seed) == 1) {
-        goto RDSEED_SUCCESS;
-      }
-    }
-    throw std::runtime_error{"Fail to reseed"};
-  RDSEED_SUCCESS : {} // Do nothing, recheck seed
+  static std::atomic_uint64_t seed_gen{1};
+  if (seed == 0) {
+    seed = seed_gen.fetch_add(1);
   }
   uint64_t x = seed; /* The state must be seeded with a nonzero value. */
   x ^= x >> 12;      // a
