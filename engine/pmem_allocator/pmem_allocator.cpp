@@ -138,6 +138,7 @@ bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
   if (segment_space_entry->size == segment_size_) {
     palloc_thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
+    LogDeallocation(write_thread.id, segment_size_);
     return false;
   }
 

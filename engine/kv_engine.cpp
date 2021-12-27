@@ -90,20 +90,24 @@ void KVEngine::BackgroundWork() {
   while (!closing_) {
 
     pmem_allocator_->BackgroundWork();
+
     if (free_skiplist_node_interval < background_interval) {
       FreeSkiplistDramNodes();
       free_skiplist_node_interval = std::chrono::milliseconds{10000};
     } else {
       free_skiplist_node_interval -= background_interval;
     }
+
     if (report_pmem_usage_interval < background_interval) {
       ReportPMemUsage();
       report_pmem_usage_interval = std::chrono::milliseconds{5000};
     } else {
       report_pmem_usage_interval -= background_interval;
     }
+
     std::this_thread::sleep_for(background_interval);
   }
+  std::cout << this << std::endl;
   ReportPMemUsage();
 }
 
