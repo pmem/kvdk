@@ -41,6 +41,8 @@ public:
 
 private:
     result_type s;
+    char padding[64];
+
     static constexpr result_type magic = 0x2545F4914F6CDD1D;
 
     void reseed()

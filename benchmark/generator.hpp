@@ -95,6 +95,7 @@ private:
   std::uint64_t upper_;
   std::uint64_t step_;
   std::uint64_t curr_;
+  char padding[64];
 };
 
 class MultiThreadingRangeIterator : public Generator {
@@ -133,15 +134,17 @@ private:
 
 class ZipfianGenerator : public Generator {
 public:
-  ZipfianGenerator(uint64_t max, double s = 0.99) : zipf_dist{max, s}, engine{42}
+  ZipfianGenerator(size_t n_thread, uint64_t max, double s = 0.99) : zipf_dist{max, s}, engines(n_thread), id_pool_{0}
   {
   }
 
   uint64_t Next() override {
-    return zipf_dist(engine);
+    thread_local std::uint64_t id = id_pool_.fetch_add(1);
+    return zipf_dist(engines[id]);
   }
 
 private:
   extstd::zipfian_distribution<std::uint64_t> const zipf_dist;
-  extstd::fast_u64_random_engine engine;
+  std::vector<extstd::fast_u64_random_engine> engines;
+  std::atomic_uint64_t id_pool_;
 };

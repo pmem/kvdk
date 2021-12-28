@@ -25,7 +25,7 @@ using namespace KVDK_NAMESPACE;
 // Benchmark configs
 DEFINE_string(path, "/mnt/pmem0/kvdk", "Instance path");
 
-DEFINE_uint64(num, 1 << 30, "Number of KVs to place");
+DEFINE_uint64(num, (1 << 30), "Number of KVs to place");
 
 DEFINE_bool(fill, false, "Fill num uniform kv pairs to a new instance");
 
@@ -440,7 +440,7 @@ bool ProcessBenchmarkConfigs() {
   } else if (FLAGS_key_distribution == "random") {
     key_generator.reset(new RandomGenerator(max_key));
   } else if (FLAGS_key_distribution == "zipf") {
-    key_generator.reset(new ZipfianGenerator(max_key));
+    key_generator.reset(new ZipfianGenerator(FLAGS_threads, max_key));
   } else {
     printf("key distribution %s is not supported\n",
            FLAGS_key_distribution.c_str());
