@@ -196,6 +196,10 @@ void DBWrite(int tid) {
     }
     case DataType::Blackhole: {
       s = Status::Ok;
+      if (ops == 0)
+      {
+        s = engine->Set(key, value); // Write something so that blackhole won't re-populate
+      }
       break;
     }
     default: {
@@ -431,10 +435,12 @@ bool ProcessBenchmarkConfigs() {
   if (FLAGS_fill || FLAGS_key_distribution == "uniform") {
     key_generator.reset(
         new MultiThreadingRangeIterator(FLAGS_threads, 0, FLAGS_num));
-  } else if (FLAGS_key_distribution == "zipf") {
-    key_generator.reset(new ZipfianGenerator(max_key));
+  } else if (FLAGS_key_distribution == "constant") {
+    key_generator.reset(new ConstantGenerator(max_key));
   } else if (FLAGS_key_distribution == "random") {
     key_generator.reset(new RandomGenerator(max_key));
+  } else if (FLAGS_key_distribution == "zipf") {
+    key_generator.reset(new ZipfianGenerator(max_key));
   } else {
     printf("key distribution %s is not supported\n",
            FLAGS_key_distribution.c_str());
