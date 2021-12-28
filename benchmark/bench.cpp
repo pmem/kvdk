@@ -195,10 +195,11 @@ void DBWrite(int tid) {
       break;
     }
     case DataType::Blackhole: {
+      s = Status::Ok;
       break;
     }
     default: {
-      throw std::runtime_error{"Unsupported!"};
+      throw std::runtime_error{"Unsupported data type!"};
     }
     }
 
@@ -280,7 +281,7 @@ void DBScan(int tid) {
     case DataType::String:
     case DataType::Queue:
     default: {
-      throw std::runtime_error{"Unsupported!"};
+      throw std::runtime_error{"Unsupported data type!"};
     }
     }
   }
@@ -327,6 +328,7 @@ void DBRead(int tid) {
       break;
     }
     case DataType::Blackhole: {
+      s = Status::Ok;
       break;
     }
     default: {
@@ -376,7 +378,8 @@ bool ProcessBenchmarkConfigs() {
   }
   // Initialize collections and batch parameters
   switch (bench_data_type) {
-  case DataType::String: {
+  case DataType::String: 
+  case DataType::Blackhole: {
     break;
   }
   case DataType::Queue:
@@ -394,7 +397,7 @@ bool ProcessBenchmarkConfigs() {
     break;
   }
   default:
-    throw;
+    throw std::runtime_error{"Unsupported data type!"};
   }
   // Check for scan flag
   switch (bench_data_type) {
@@ -409,11 +412,12 @@ bool ProcessBenchmarkConfigs() {
     break;
   }
   case DataType::Hashes:
-  case DataType::Sorted: {
+  case DataType::Sorted:
+  case DataType::Blackhole: {
     break;
   }
   default:
-    throw;
+    throw std::runtime_error{"Unsupported data type!"};
   }
 
   if (FLAGS_value_size > 102400) {
