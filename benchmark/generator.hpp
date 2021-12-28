@@ -12,8 +12,8 @@
 #include <immintrin.h>
 #include <x86intrin.h>
 
-#include "zipf.hpp"
 #include "rand64.hpp"
+#include "zipf.hpp"
 
 inline uint64_t fast_random_64() {
   thread_local unsigned long long state = 0;
@@ -22,9 +22,9 @@ inline uint64_t fast_random_64() {
     state = seed_gen.fetch_add(1);
   }
   uint64_t x = state; /* The state must be seeded with a nonzero value. */
-  x ^= x >> 12;      // a
-  x ^= x << 25;      // b
-  x ^= x >> 27;      // c
+  x ^= x >> 12;       // a
+  x ^= x << 25;       // b
+  x ^= x >> 27;       // c
   state = x;
   return x * 0x2545F4914F6CDD1D;
 }
@@ -134,9 +134,8 @@ private:
 
 class ZipfianGenerator : public Generator {
 public:
-  ZipfianGenerator(size_t n_thread, uint64_t max, double s = 0.99) : zipf_dist{max, s}, engines(n_thread), id_pool_{0}
-  {
-  }
+  ZipfianGenerator(size_t n_thread, uint64_t max, double s = 0.99)
+      : zipf_dist{max, s}, engines(n_thread), id_pool_{0} {}
 
   uint64_t Next() override {
     thread_local std::uint64_t id = id_pool_.fetch_add(1);

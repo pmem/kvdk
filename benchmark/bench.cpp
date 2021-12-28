@@ -33,11 +33,10 @@ DEFINE_uint64(time, 600, "Time to benchmark, this is valid only if fill=false");
 
 DEFINE_uint64(value_size, 120, "Value size of KV");
 
-DEFINE_string(
-    value_size_distribution, "constant",
-    "Distribution of value size to write, can be constant/random, "
-    "default is constant. If set to random, the max value size "
-    "will be FLAGS_value_size.");
+DEFINE_string(value_size_distribution, "constant",
+              "Distribution of value size to write, can be constant/random, "
+              "default is constant. If set to random, the max value size "
+              "will be FLAGS_value_size.");
 
 DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
 
@@ -51,9 +50,9 @@ DEFINE_double(
 
 DEFINE_bool(latency, false, "Stat operation latencies");
 
-DEFINE_string(
-    type, "string",
-    "Storage engine to benchmark, can be string, sorted, hash, queue or blackhole");
+DEFINE_string(type, "string",
+              "Storage engine to benchmark, can be string, sorted, hash, queue "
+              "or blackhole");
 
 DEFINE_bool(scan, false,
             "If set true, read threads will do scan operations, this is valid "
@@ -115,7 +114,13 @@ std::vector<std::string> collections;
 Engine *engine;
 char *value_pool = nullptr;
 
-enum class DataType { String, Sorted, Hashes, Queue, Blackhole } bench_data_type;
+enum class DataType {
+  String,
+  Sorted,
+  Hashes,
+  Queue,
+  Blackhole
+} bench_data_type;
 
 std::shared_ptr<Generator> key_generator;
 std::shared_ptr<Generator> value_size_generator;
@@ -196,9 +201,9 @@ void DBWrite(int tid) {
     }
     case DataType::Blackhole: {
       s = Status::Ok;
-      if (ops == 0)
-      {
-        s = engine->Set(key, value); // Write something so that blackhole won't re-populate
+      if (ops == 0) {
+        s = engine->Set(
+            key, value); // Write something so that blackhole won't re-populate
       }
       break;
     }
@@ -382,7 +387,7 @@ bool ProcessBenchmarkConfigs() {
   }
   // Initialize collections and batch parameters
   switch (bench_data_type) {
-  case DataType::String: 
+  case DataType::String:
   case DataType::Blackhole: {
     break;
   }
