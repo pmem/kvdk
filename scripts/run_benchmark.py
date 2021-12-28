@@ -12,7 +12,7 @@ value_size = 120
 # constant: value size always be "value_size",
 # random: value size randomly distributed in [1, value_size]
 value_size_distributions = ['constant']
-key_distributions = ['constant', 'zipf']
+key_distributions = ['random', 'zipf']
 test_duration = 10                         # For operations other than fill
 populate_on_fill = 1                    # For fill only
 pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
