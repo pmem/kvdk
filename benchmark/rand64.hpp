@@ -2,6 +2,7 @@
 
 #include <random>
 #include <stdexcept>
+#include <limits>
 
 #include <immintrin.h>
 #include <x86intrin.h>
@@ -28,19 +29,31 @@ public:
         return s * magic;
     }
 
+    constexpr static result_type min()
+    {
+        return std::numeric_limits<result_type>::min();
+    }
+
+    constexpr static result_type max()
+    {
+        return std::numeric_limits<result_type>::max();
+    }
+
 private:
     result_type s;
-    static constexpr magic = 0x2545F4914F6CDD1D;
+    static constexpr result_type magic = 0x2545F4914F6CDD1D;
 
     void reseed()
     {
         size_t failures = 0;
-        while (_rdseed64_step(&s) != 1)
+        unsigned long long sink;
+        while (_rdseed64_step(&sink) != 1 || sink == 0)
         {
             ++failures;
             if (failures > 10000)
                 throw std::runtime_error{"Fail to seed the engine"};
         }
+        s = sink;
     }
 
     void update_state()
@@ -53,5 +66,6 @@ private:
         s ^= (s << 25); 
         s ^= (s >> 27);
     }
-}
+};
+
 }

@@ -34,7 +34,7 @@ private:
     float_type const zeta_n{zeta(N)};   // Last to initialize!
 
 public:
-    inline constexpr zipfian_distribution(result_type n, float_type e = default_s) : 
+    inline zipfian_distribution(result_type n, float_type e = default_s) : 
         N{n}, s{e}
     {
         for (size_t i = 0; i < precalc_n; i++)
