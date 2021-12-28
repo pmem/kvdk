@@ -480,6 +480,19 @@ int main(int argc, char **argv) {
     write_latencies.resize(write_threads, std::vector<uint64_t>(MAX_LAT, 0));
   }
 
+  if (bench_data_type == DataType::Sorted) {
+    printf("Create %ld Sorted Collections\n", FLAGS_collections);
+    for (auto col : collections) {
+      Collection *collection_ptr;
+      s = engine->CreateSortedCollection(col, &collection_ptr);
+      if (s != Status::Ok) {
+        fprintf(stderr, "Create Sorted collection error\n");
+        std::abort();
+      }
+    }
+    engine->ReleaseWriteThread();
+  }
+
   printf("init %d write threads\n", write_threads);
   for (int i = 0; i < write_threads; i++) {
     ts.emplace_back(DBWrite, i);

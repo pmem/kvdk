@@ -49,5 +49,4 @@ int get_usable_pu(void) {
   hwloc_topology_destroy(topology);
   return pu;
 }
-
 } // namespace KVDK_NAMESPACE

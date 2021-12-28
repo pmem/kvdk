@@ -19,8 +19,8 @@ namespace KVDK_NAMESPACE {
 // TODO: optimize, implement free
 class ChunkBasedAllocator : Allocator {
 public:
-  SizedSpaceEntry Allocate(uint64_t size) override;
-  void Free(const SizedSpaceEntry &entry) override;
+  SpaceEntry Allocate(uint64_t size) override;
+  void Free(const SpaceEntry &entry) override;
   inline void *offset2addr(uint64_t offset) { return (void *)offset; }
   template <typename T> inline T *offset2addr(uint64_t offset) {
     return static_cast<T *>(offset);

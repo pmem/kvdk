@@ -17,11 +17,12 @@ StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
 
 uint64_t SkiplistNode::SkiplistID() { return Skiplist::SkiplistID(this); }
 
-void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
-                            uint8_t end_height, Splice *result_splice) {
+void Skiplist::SeekNode(const StringView &key, const StringView &value,
+                        SkiplistNode *start_node, uint8_t start_height,
+                        uint8_t end_height, Splice *result_splice) {
   std::vector<SkiplistNode *> to_delete;
-  assert(height >= start_height && end_height >= 1);
-  SkiplistNode *prev = this;
+  assert(start_node->height >= start_height && end_height >= 1);
+  SkiplistNode *prev = start_node;
   PointerWithTag<SkiplistNode> next;
   for (uint8_t i = start_height; i >= end_height; i--) {
     uint64_t round = 0;
@@ -32,16 +33,16 @@ void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
         if (i < start_height) {
           i++;
           prev = result_splice->prevs[i];
-        } else if (prev != this) {
+        } else if (prev != start_node) {
           // re-seek from this node for start height
           i = start_height;
-          prev = this;
+          prev = start_node;
         } else {
           // this node has been deleted, so seek from header
           kvdk_assert(result_splice->seeking_list != nullptr,
                       "skiplist must be set for seek operation!");
-          return result_splice->seeking_list->header()->SeekNode(
-              key, kMaxHeight, end_height, result_splice);
+          return SeekNode(key, value, result_splice->seeking_list->header(),
+                          kMaxHeight, end_height, result_splice);
         }
         continue;
       }
@@ -66,7 +67,7 @@ void SkiplistNode::SeekNode(const StringView &key, uint8_t start_height,
       }
 
       DLRecord *next_pmem_record = next->record;
-      int cmp = compare_string_view(key, next->UserKey());
+      int cmp = compare(key, next->UserKey(), value, next->record->Value());
       // pmem record maybe updated before comparing string, then the compare
       // result will be invalid, so we need to do double check
       if (next->record != next_pmem_record) {
@@ -136,9 +137,10 @@ Status Skiplist::Rebuild() {
   return Status::Ok;
 }
 
-void Skiplist::Seek(const StringView &key, Splice *result_splice) {
+void Skiplist::Seek(const StringView &key, const StringView &value,
+                    Splice *result_splice) {
   result_splice->seeking_list = this;
-  header_->SeekNode(key, header_->Height(), 1, result_splice);
+  SeekNode(key, value, header_, header_->Height(), 1, result_splice);
   assert(result_splice->prevs[1] != nullptr);
   DLRecord *prev_record = result_splice->prevs[1]->record;
   DLRecord *next_record = nullptr;
@@ -149,13 +151,13 @@ void Skiplist::Seek(const StringView &key, Splice *result_splice) {
     }
 
     if (next_record == nullptr) {
-      return Seek(key, result_splice);
+      return Seek(key, value, result_splice);
     }
-    int cmp = compare_string_view(key, UserKey(next_record));
+    int cmp = compare(key, UserKey(next_record), value, next_record->Value());
     // pmem record maybe updated before comparing string, then the comparing
     // result will be invalid, so we need to do double check
     if (!ValidateDLRecord(next_record)) {
-      return Seek(key, result_splice);
+      return Seek(key, value, result_splice);
     }
 
     if (cmp > 0) {
@@ -220,6 +222,7 @@ Status Skiplist::CheckConnection(int height) {
 }
 
 bool Skiplist::FindUpdatePos(Splice *splice, const StringView &updated_key,
+                             const StringView &updated_value,
                              const SpinMutex *updating_key_lock,
                              const DLRecord *updated_record,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
@@ -256,19 +259,22 @@ bool Skiplist::FindUpdatePos(Splice *splice, const StringView &updated_key,
     assert(updated_record->next == next_offset);
     assert(next->prev == pmem_allocator_->addr2offset(updated_record));
     assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev), updated_key) < 0);
+           compare(Skiplist::UserKey(prev), updated_key, prev->Value(),
+                   updated_value) < 0);
     assert(next == header_->record ||
-           compare_string_view(Skiplist::UserKey(next), updated_key) > 0);
+           compare(Skiplist::UserKey(next), updated_key, next->Value(),
+                   updated_value) > 0);
 
     return true;
   }
 }
 
 bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
+                             const StringView &insert_value,
                              const SpinMutex *inserting_key_lock,
                              std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
-    Seek(insert_key, splice);
+    Seek(insert_key, insert_value, splice);
     DLRecord *prev = splice->prev_pmem_record;
 
     assert(prev != nullptr);
@@ -305,12 +311,15 @@ bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
     auto check_id = [&]() {
       return SkiplistID(next) == ID() && SkiplistID(prev) == ID();
     };
+
     auto check_order = [&]() {
       bool res =
           /*check next*/ (next == header_->record ||
-                          compare_string_view(insert_key, UserKey(next)) < 0) &&
+                          compare(insert_key, UserKey(next), insert_value,
+                                  next->Value()) < 0) &&
           /*check prev*/ (prev == header_->record ||
-                          compare_string_view(insert_key, UserKey(prev)) > 0);
+                          compare(insert_key, UserKey(prev), insert_value,
+                                  prev->Value()) > 0);
       return res;
     };
     if (!check_linkage() || !check_id() || !check_order()) {
@@ -321,21 +330,22 @@ bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
     assert(next->prev == prev_offset);
 
     assert(prev == header_->record ||
-           compare_string_view(Skiplist::UserKey(prev), insert_key) < 0);
+           compare(insert_key, UserKey(prev), insert_value, prev->Value()) > 0);
     assert(next == header_->record ||
-           compare_string_view(Skiplist::UserKey(next), insert_key) > 0);
+           compare(insert_key, UserKey(next), insert_value, next->Value()) < 0);
 
     return true;
   }
 }
 
 bool Skiplist::Insert(const StringView &key, const StringView &value,
-                      const SizedSpaceEntry &space_to_write,
-                      TimeStampType timestamp, SkiplistNode **dram_node,
+                      const SpaceEntry &space_to_write, TimeStampType timestamp,
+                      SkiplistNode **dram_node,
                       const SpinMutex *inserting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindInsertPos(&splice, key, inserting_key_lock, &prev_record_lock)) {
+  if (!FindInsertPos(&splice, key, value, inserting_key_lock,
+                     &prev_record_lock)) {
     return false;
   }
 
@@ -343,9 +353,9 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
-      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
-      next_offset, internal_key, value);
+      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
+      timestamp, SortedDataRecord, prev_offset, next_offset, internal_key,
+      value);
 
   // link new record to PMem
   InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -365,7 +375,7 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
             break;
           }
         } else {
-          splice.Recompute(key, i);
+          splice.Recompute(key, value, i);
         }
       }
     }
@@ -377,12 +387,12 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
 
 bool Skiplist::Update(const StringView &key, const StringView &value,
                       const DLRecord *updated_record,
-                      const SizedSpaceEntry &space_to_write,
-                      TimeStampType timestamp, SkiplistNode *dram_node,
+                      const SpaceEntry &space_to_write, TimeStampType timestamp,
+                      SkiplistNode *dram_node,
                       const SpinMutex *updating_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindUpdatePos(&splice, key, updating_key_lock, updated_record,
+  if (!FindUpdatePos(&splice, key, value, updating_key_lock, updated_record,
                      &prev_record_lock)) {
     return false;
   }
@@ -391,9 +401,9 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.space_entry.offset),
-      space_to_write.size, timestamp, SortedDataRecord, prev_offset,
-      next_offset, internal_key, value);
+      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
+      timestamp, SortedDataRecord, prev_offset, next_offset, internal_key,
+      value);
 
   // link new record
   InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -435,8 +445,14 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
 
 void SortedIterator::Seek(const std::string &key) {
   assert(skiplist_);
+  if (!skiplist_->IsSortedByKey()) {
+    current = nullptr;
+    kvdk_assert(0, "Now seek certain member's iterator only support collection "
+                   "sorted by key\n");
+    return;
+  }
   Splice splice(skiplist_);
-  skiplist_->Seek(key, &splice);
+  skiplist_->Seek(key, "", &splice);
   current = splice.next_pmem_record;
 }
 

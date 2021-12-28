@@ -10,11 +10,13 @@ include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 11)
 option(DEBUG_CHECK "check connection" OFF)
+option(COVERAGE "code coverage" OFF)
+
 if(DEBUG_CHECK)
     add_compile_definitions(DEBUG_CHECK)
 endif()
 
-set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2 -mrdrnd -mrdseed")
+set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2 -mavx512f -mrdrnd -mrdseed")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
@@ -36,6 +38,15 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions(DEBUG_LEVEL=0)
 else ()
     add_compile_definitions(DEBUG_LEVEL=1)
+endif()
+
+# code coverage
+if (COVERAGE)
+    if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug)
+        message(WARNING "Code coverage results with an optimised (non-Debug) build may be misleading" )
+    endif()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
 endif()
 
 # source files

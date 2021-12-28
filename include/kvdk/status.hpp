@@ -8,4 +8,5 @@
 
 namespace KVDK_NAMESPACE {
 using Status = KVDKStatus;
+using SortedBy = KVDKSortedBy;
 } // namespace KVDK_NAMESPACE

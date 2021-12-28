@@ -169,8 +169,8 @@ public:
         throw std::bad_alloc{};
       }
 
-      PMemOffsetType head_offset = head_space_entry.space_entry.offset;
-      PMemOffsetType tail_offset = tail_space_entry.space_entry.offset;
+      PMemOffsetType head_offset = head_space_entry.offset;
+      PMemOffsetType tail_offset = tail_space_entry.offset;
 
       // Persist tail first then head
       // If only tail is persisted then it can be deallocated by caller at
@@ -323,9 +323,8 @@ private:
   void purgeAndFree(DLRecord *record_pmmptr) {
     record_pmmptr->Destroy();
     pmem_allocator_ptr_->Free(
-        SizedSpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
-                        record_pmmptr->entry.header.record_size,
-                        record_pmmptr->entry.meta.timestamp));
+        SpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
+                   record_pmmptr->entry.header.record_size));
   }
 
   /// Emplace between iter_prev and iter_next, linkage not checked
@@ -350,7 +349,7 @@ private:
     if (space.size == 0) {
       throw std::bad_alloc{};
     }
-    std::uint64_t offset = space.space_entry.offset;
+    std::uint64_t offset = space.offset;
     void *pmp = pmem_allocator_ptr_->offset2addr_checked(offset);
 
     DLRecord *record = DLRecord::PersistDLRecord(
@@ -383,8 +382,8 @@ private:
           << "\t"
           << "Prev:\t" << to_hex(record->prev) << "\t"
           << "Next:\t" << to_hex(record->next) << "\t"
-          << "Key: " << to_hex(Collection::ExtractID(internal_key))
-          << Collection::ExtractUserKey(internal_key) << "\t"
+          << "Key: " << to_hex(CollectionUtils::ExtractID(internal_key))
+          << CollectionUtils::ExtractUserKey(internal_key) << "\t"
           << "Value: " << record->Value() << "\n";
     };
 
