@@ -13,6 +13,7 @@
 #include <x86intrin.h>
 
 #include "zipf.hpp"
+#include "rand64.hpp"
 
 inline uint64_t fast_random_64() {
   thread_local unsigned long long state = 0;
@@ -132,29 +133,15 @@ private:
 
 class ZipfianGenerator : public Generator {
 public:
-  ZipfianGenerator(uint64_t max) : ZipfianGenerator(max, kZipfianConst) {}
+  ZipfianGenerator(uint64_t max, double s = 0.99) : zipf_dist{max, s}, engine{42}
+  {
+  }
 
   uint64_t Next() override {
-    //    assert(num >= 2 && num < kMaxNumItems);
-    if (max_ > n_for_zeta_) { // Recompute zeta_n and eta
-      RaiseZeta(max_);
-      eta_ = Eta();
-    }
-
-    double u = fast_random_double();
-    double uz = u * zeta_n_;
-
-    if (uz < 1.0) {
-      last_value_ = 0;
-    } else if (uz < 1.0 + std::pow(0.5, theta_)) {
-      last_value_ = 1;
-    } else {
-      last_value_ = base_ + max_ * std::pow(eta_ * u - eta_ + 1, alpha_);
-    }
-
-    return std::max(base_, last_value_);
+    return zipf_dist(engine);
   }
 
 private:
   extstd::zipfian_distribution<std::uint64_t> const zipf_dist;
+  extstd::fast_u64_random_engine engine;
 };

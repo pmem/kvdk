@@ -35,11 +35,9 @@ DEFINE_uint64(value_size, 120, "Value size of KV");
 
 DEFINE_string(
     value_size_distribution, "constant",
-    "Distribution of value size to write, can be constant/random/zipf, "
-    "default is constant. If set to random or zipf, the max value size "
-    "will be FLAGS_value_size. "
-    "##### Notice: ###### zipf generator is experimental and expensive, so the "
-    "zipf performance is not accurate");
+    "Distribution of value size to write, can be constant/random, "
+    "default is constant. If set to random, the max value size "
+    "will be FLAGS_value_size.");
 
 DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
 
@@ -55,7 +53,7 @@ DEFINE_bool(latency, false, "Stat operation latencies");
 
 DEFINE_string(
     type, "string",
-    "Storage engine to benchmark, can be string, sorted, hash or queue");
+    "Storage engine to benchmark, can be string, sorted, hash, queue or blackhole");
 
 DEFINE_bool(scan, false,
             "If set true, read threads will do scan operations, this is valid "
@@ -117,7 +115,7 @@ std::vector<std::string> collections;
 Engine *engine;
 char *value_pool = nullptr;
 
-enum class DataType { String, Sorted, Hashes, Queue } bench_data_type;
+enum class DataType { String, Sorted, Hashes, Queue, Blackhole } bench_data_type;
 
 std::shared_ptr<Generator> key_generator;
 std::shared_ptr<Generator> value_size_generator;
@@ -196,6 +194,9 @@ void DBWrite(int tid) {
         s = engine->RPush(collections[num % FLAGS_num_collection], value);
       break;
     }
+    case DataType::Blackhole: {
+      break;
+    }
     default: {
       throw std::runtime_error{"Unsupported!"};
     }
@@ -272,6 +273,10 @@ void DBScan(int tid) {
       }
       break;
     }
+    case DataType::Blackhole: {
+      read_ops += 1024;
+      break;
+    }
     case DataType::String:
     case DataType::Queue:
     default: {
@@ -321,6 +326,9 @@ void DBRead(int tid) {
         s = engine->RPop(collections[num % FLAGS_num_collection], &sink);
       break;
     }
+    case DataType::Blackhole: {
+      break;
+    }
     default: {
       throw std::runtime_error{"Unsupported!"};
     }
@@ -361,6 +369,8 @@ bool ProcessBenchmarkConfigs() {
     bench_data_type = DataType::Hashes;
   } else if (FLAGS_type == "queue") {
     bench_data_type = DataType::Queue;
+  } else if (FLAGS_type == "blackhole") {
+    bench_data_type = DataType::Blackhole;
   } else {
     return false;
   }
@@ -418,8 +428,6 @@ bool ProcessBenchmarkConfigs() {
     key_generator.reset(
         new MultiThreadingRangeIterator(FLAGS_threads, 0, FLAGS_num));
   } else if (FLAGS_key_distribution == "zipf") {
-    printf("##### Notice: ###### zipf generator is experimental and expensive, "
-           "so the performance is not accurate\n");
     key_generator.reset(new ZipfianGenerator(max_key));
   } else if (FLAGS_key_distribution == "random") {
     key_generator.reset(new RandomGenerator(max_key));
@@ -431,8 +439,6 @@ bool ProcessBenchmarkConfigs() {
 
   if (FLAGS_value_size_distribution == "constant") {
     value_size_generator.reset(new ConstantGenerator(FLAGS_value_size));
-  } else if (FLAGS_value_size_distribution == "zipf") {
-    value_size_generator.reset(new ZipfianGenerator(FLAGS_value_size));
   } else if (FLAGS_value_size_distribution == "random") {
     value_size_generator.reset(new RandomGenerator(FLAGS_value_size));
   } else {
@@ -481,7 +487,7 @@ int main(int argc, char **argv) {
   }
 
   if (bench_data_type == DataType::Sorted) {
-    printf("Create %ld Sorted Collections\n", FLAGS_collections);
+    printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
     for (auto col : collections) {
       Collection *collection_ptr;
       s = engine->CreateSortedCollection(col, &collection_ptr);
