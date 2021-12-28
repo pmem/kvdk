@@ -50,6 +50,6 @@ if __name__ == "__main__":
     else:
         print(usage)
         exit(1)
-    for [data_type, vsz_dist, k_dist] in itertools.product(data_types, value_size_distributions, key_distributions):
+    for [vsz_dist, k_dist, data_type] in itertools.product(value_size_distributions, key_distributions, data_types):
         benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill, fill_data_size,
                                      num_thread, num_collection, test_duration, k_dist, value_size, vsz_dist, benchmarks)
