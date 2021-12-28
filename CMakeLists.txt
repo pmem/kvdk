@@ -10,24 +10,26 @@ include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 11)
 option(DEBUG_CHECK "check connection" OFF)
+option(COVERAGE "code coverage" OFF)
+
 if(DEBUG_CHECK)
     add_compile_definitions(DEBUG_CHECK)
 endif()
 
-set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2 -mavx512f")
+set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2 -mavx512f -mrdrnd -mrdseed")
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
+elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+elseif (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${KVDK_COMPILE_SHARED_FLAGS}")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${KVDK_COMPILE_SHARED_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
 elseif (CMAKE_BUILD_TYPE STREQUAL "FastDebug")
     set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2")
-elseif (CMAKE_BUILD_TYPE STREQUAL "VTune")
-    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -shared-libgcc")
-elseif (CMAKE_BUILD_TYPE STREQUAL "Asan")
-    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2")
 else ()
     message(FATAL_ERROR "Invalid build type!")
 endif ()
@@ -38,8 +40,14 @@ else ()
     add_compile_definitions(DEBUG_LEVEL=1)
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
+# code coverage
+if (COVERAGE)
+    if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug)
+        message(WARNING "Code coverage results with an optimised (non-Debug) build may be misleading" )
+    endif()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+endif()
 
 # source files
 set(SOURCES
