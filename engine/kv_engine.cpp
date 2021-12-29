@@ -83,6 +83,8 @@ void KVEngine::BackgroundWork() {
   // To avoid free a referencing skiplist node, we do freeing in at least every
   // 10 seconds
   // TODO: Maybe free skiplist node in another bg thread?
+  assert(configs_.background_work_interval >= 0);
+  assert(configs_.report_pmem_usage_interval >= 0);
   auto background_interval = std::chrono::milliseconds{
       static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
   auto free_skiplist_node_interval = std::chrono::milliseconds{0};
@@ -100,7 +102,9 @@ void KVEngine::BackgroundWork() {
 
     if (report_pmem_usage_interval < background_interval) {
       ReportPMemUsage();
-      report_pmem_usage_interval = std::chrono::milliseconds{5000};
+      report_pmem_usage_interval =
+          std::chrono::milliseconds{static_cast<std::uint64_t>(
+              configs_.report_pmem_usage_interval * 1000)};
     } else {
       report_pmem_usage_interval -= background_interval;
     }
