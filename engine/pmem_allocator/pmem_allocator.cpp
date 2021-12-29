@@ -32,13 +32,12 @@ void PMEMAllocator::Free(const SpaceEntry &entry) {
   }
 }
 
-void PMEMAllocator::ReportPMemUsage() {
+size_t PMEMAllocator::PMemUsageInBytes() {
   size_t total = 0;
   for (auto const &ptcache : palloc_thread_cache_) {
     total += ptcache.allocated_sz;
   }
-  GlobalLogger.Info("PMem Usage: %llu B, %llu KB, %llu MB, %llu GB\n", total,
-                    (total >> 10), (total >> 20), (total >> 30));
+  return total;
 }
 
 void PMEMAllocator::PopulateSpace() {

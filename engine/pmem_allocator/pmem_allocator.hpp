@@ -102,7 +102,7 @@ public:
   void LogDeallocation(size_t tid, size_t sz) {
     palloc_thread_cache_[tid].allocated_sz -= sz;
   }
-  void ReportPMemUsage();
+  size_t PMemUsageInBytes();
 
 private:
   PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,

@@ -79,6 +79,12 @@ void KVEngine::FreeSkiplistDramNodes() {
   }
 }
 
+void KVEngine::ReportPMemUsage() {
+  size_t total = pmem_allocator_->PMemUsageInBytes();
+  GlobalLogger.Info("PMem Usage: %llu B, %llu KB, %llu MB, %llu GB\n", total,
+                    (total >> 10), (total >> 20), (total >> 30));
+}
+
 void KVEngine::BackgroundWork() {
   // To avoid free a referencing skiplist node, we do freeing in at least every
   // 10 seconds
