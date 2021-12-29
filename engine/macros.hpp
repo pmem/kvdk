@@ -12,5 +12,6 @@
       throw std::runtime_error{msg};                                           \
   }
 #else
-#define kvdk_assert(cond, msg) assert((cond) && msg);
+#define kvdk_assert(cond, msg)                                                 \
+  {}
 #endif
