@@ -12,8 +12,8 @@
 #include <immintrin.h>
 #include <x86intrin.h>
 
-#include "rand64.hpp"
-#include "zipf.hpp"
+#include "extd/rand64.hpp"
+#include "extd/zipf.hpp"
 
 inline uint64_t fast_random_64() {
   thread_local unsigned long long state = 0;
@@ -139,11 +139,17 @@ public:
 
   uint64_t Next() override {
     thread_local std::uint64_t id = id_pool_.fetch_add(1);
-    return zipf_dist(engines[id]);
+    return zipf_dist(engines[id].engine);
   }
 
 private:
-  extstd::zipfian_distribution<std::uint64_t> const zipf_dist;
-  std::vector<extstd::fast_u64_random_engine> engines;
+  extd::zipfian_distribution<std::uint64_t> const zipf_dist;
+  struct PaddedEngine
+  {
+    extd::xorshift_engine engine;
+    char padding[64];
+  };
+
+  std::vector<PaddedEngine> engines;
   std::atomic_uint64_t id_pool_;
 };
