@@ -999,9 +999,11 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    uint64_t new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(
-        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
+    RAIICaller local_snapshot_holder(
+        [&]() { version_controller_.HoldLocalSnapshot(); },
+        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    TimestampType new_ts =
+        version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForRead(hint, collection_key,
                                           SortedDataRecord | SortedDeleteRecord,
                                           &entry_ptr, &hash_entry, &data_entry);
@@ -1089,9 +1091,11 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
-    uint64_t new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(
-        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
+    RAIICaller local_snapshot_holder(
+        [&]() { version_controller_.HoldLocalSnapshot(); },
+        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    TimestampType new_ts =
+        version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForWrite(
         hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
         &hash_entry, &data_entry);
@@ -1284,8 +1288,9 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return s;
   }
 
-  RAII_Setter<bool> holder(thread_cache_[write_thread.id].batch_writing, true,
-                           false);
+  RAIICaller batch_write_holder(
+      [&]() { thread_cache_[write_thread.id].batch_writing = true; },
+      [&]() { thread_cache_[write_thread.id].batch_writing = false; });
 
   std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
@@ -1321,9 +1326,10 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     ul_locks.emplace_back(const_cast<SpinMutex &>(*l));
   }
 
-  TimestampType ts = version_controller_.GetCurrentTimestamp();
-  SnapshotSetter setter(
-      version_controller_.ThreadHoldingSnapshot(write_thread.id), ts);
+  RAIICaller local_snapshot_holder(
+      [&]() { version_controller_.HoldLocalSnapshot(); },
+      [&]() { version_controller_.ReleaseLocalSnapshot(); });
+  TimestampType ts = version_controller_.GetLocalSnapshot().GetTimestamp();
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
   }
@@ -1452,9 +1458,11 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
-    TimestampType new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(
-        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
+    RAIICaller local_snapshot_holder(
+        [&]() { version_controller_.HoldLocalSnapshot(); },
+        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    TimestampType new_ts =
+        version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
         &hash_entry, &data_entry);
@@ -1514,9 +1522,11 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     auto hint = hash_table_->GetHint(key);
     std::lock_guard<SpinMutex> lg(*hint.spin);
     // Set current snapshot to this thread
-    TimestampType new_ts = version_controller_.GetCurrentTimestamp();
-    SnapshotSetter setter(
-        version_controller_.ThreadHoldingSnapshot(write_thread.id), new_ts);
+    RAIICaller local_snapshot_holder(
+        [&]() { version_controller_.HoldLocalSnapshot(); },
+        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    TimestampType new_ts =
+        version_controller_.GetLocalSnapshot().GetTimestamp();
 
     // Search position to write index in hash table.
     Status s = hash_table_->SearchForWrite(
@@ -2320,14 +2330,14 @@ void KVEngine::pendingFreeRecordsHandler() {
 }
 
 Snapshot *KVEngine::GetSnapshot() {
-  Snapshot *ret = version_controller_.NewSnapshot();
+  Snapshot *ret = version_controller_.NewGlobalSnapshot();
   TimestampType snapshot_ts = static_cast<SnapshotImpl *>(ret)->GetTimestamp();
 
   // A snapshot should not contain any ongoing batch write
   for (auto i = 0; i < configs_.max_write_threads; i++) {
     while (thread_cache_[i].batch_writing &&
            snapshot_ts >=
-               version_controller_.ThreadHoldingSnapshot(i).GetTimestamp()) {
+               version_controller_.GetLocalSnapshot(i).GetTimestamp()) {
       asm volatile("pause");
     }
   }

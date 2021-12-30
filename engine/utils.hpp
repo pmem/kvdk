@@ -11,6 +11,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -36,18 +37,18 @@
 
 namespace KVDK_NAMESPACE {
 
-template <typename T> struct RAIISetter {
+struct RAIICaller {
 public:
-  RAIISetter(T &target, T on_set, T on_destroy)
-      : target_(target), on_destroy_(on_destroy) {
-    target_ = on_set;
+  RAIICaller(std::function<void()> &&call_on_construct,
+             std::function<void()> &&call_on_destroy)
+      : call_on_destroy_(call_on_destroy) {
+    call_on_construct();
   }
 
-  ~RAIISetter() { target_ = on_destroy_; }
+  ~RAIICaller() { call_on_destroy_(); }
 
 private:
-  T &target_;
-  T on_destroy_;
+  std::function<void()> call_on_destroy_;
 };
 
 inline uint64_t hash_str(const char *str, uint64_t size) {
@@ -238,7 +239,7 @@ public:
 template <typename T, typename Alloc = AlignedAllocator<T>> class Array {
 public:
   template <typename... Args>
-  explicit Array(uint64_t size, Args &&...args) : size_(size) {
+  explicit Array(uint64_t size, Args &&... args) : size_(size) {
     data_ = alloc_.allocate(size_);
     for (uint64_t i = 0; i < size; i++) {
       new (data_ + i) T{std::forward<Args>(args)...};

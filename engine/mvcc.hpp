@@ -79,13 +79,33 @@ public:
     UpdatedOldestSnapshot();
   }
 
-  inline SnapshotImpl &ThreadHoldingSnapshot(size_t thread_num) {
-    assert(thread_num < thread_cache_.size());
+  inline void HoldLocalSnapshot() {
+    kvdk_assert(write_thread.id > 0 && write_thread.id < thread_cache_.size(),
+                "Uninitialized thread in NewLocalSnapshot");
+    thread_cache_[write_thread.id].holding_snapshot.timestamp =
+        GetCurrentTimestamp();
+  }
+
+  inline void ReleaseLocalSnapshot() {
+    kvdk_assert(write_thread.id > 0 && write_thread.id < thread_cache_.size(),
+                "Uninitialized thread in ReleaseLocalSnapshot");
+    thread_cache_[write_thread.id].holding_snapshot.timestamp = kMaxTimestamp;
+  }
+
+  inline const SnapshotImpl &GetLocalSnapshot(size_t thread_num) {
+    kvdk_assert(thread_num < thread_cache_.size(),
+                "Wrong thread num in GetLocalSnapshot");
     return thread_cache_[thread_num].holding_snapshot;
   }
 
+  inline const SnapshotImpl &GetLocalSnapshot() {
+    kvdk_assert(write_thread.id > 0 && write_thread.id < thread_cache_.size(),
+                "Uninitialized thread in GetLocalSnapshot");
+    return thread_cache_[write_thread.id].holding_snapshot;
+  }
+
   // Create a new global snapshot
-  SnapshotImpl *NewSnapshot() {
+  SnapshotImpl *NewGlobalSnapshot() {
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
     return global_snapshots_.New(GetCurrentTimestamp());
   }
