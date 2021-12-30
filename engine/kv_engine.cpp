@@ -506,30 +506,34 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
 
   // Repair linkage of backup version
   if (cached_data_entry.meta.timestamp > max_recoverable_record_timestamp_) {
-    DLRecord *older_version_record =
-        pmem_allocator_->offset2addr<DLRecord>(pmem_record->older_version);
-    if (older_version_record != nullptr &&
-        older_version_record->entry.meta.timestamp <=
+    DLRecord *older_version_record_record =
+        pmem_allocator_->offset2addr<DLRecord>(
+            pmem_record->older_version_record);
+    if (older_version_record_record != nullptr &&
+        older_version_record_record->entry.meta.timestamp <=
             max_recoverable_record_timestamp_) {
-      if (!ValidateRecord(older_version_record)) {
+      if (!ValidateRecord(older_version_record_record)) {
         GlobalLogger.Error("Broken backup instance: invalid skiplist record");
         std::abort();
       }
-      kvdk_assert(equal_string_view(internal_key, older_version_record->Key()),
-                  "older version key is not same as new version");
+      kvdk_assert(
+          equal_string_view(internal_key, older_version_record_record->Key()),
+          "older version key is not same as new version");
       while (1) {
-        auto hash_hint = hash_table_->GetHint(older_version_record->Key());
+        auto hash_hint =
+            hash_table_->GetHint(older_version_record_record->Key());
         Splice splice(nullptr);
         std::unique_lock<SpinMutex> ul(*hash_hint.spin);
         std::unique_lock<SpinMutex> prev_record_lock;
         if (!Skiplist::SearchAndLockRecordPos(
-                &splice, older_version_record, hash_hint.spin,
+                &splice, older_version_record_record, hash_hint.spin,
                 &prev_record_lock, pmem_allocator_.get(), hash_table_.get()),
             false /* we do not check linkage for restore backup as the record is not linked*/) {
           continue;
         }
         Skiplist::LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record,
-                               older_version_record, pmem_allocator_.get());
+                               older_version_record_record,
+                               pmem_allocator_.get());
         break;
       }
     } else if (linked_record) {
