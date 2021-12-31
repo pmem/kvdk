@@ -481,7 +481,7 @@ int main(int argc, char **argv) {
   }
 
   if (bench_data_type == DataType::Sorted) {
-    printf("Create %ld Sorted Collections\n", FLAGS_collections);
+    printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
     for (auto col : collections) {
       Collection *collection_ptr;
       s = engine->CreateSortedCollection(col, &collection_ptr);

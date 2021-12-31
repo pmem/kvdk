@@ -241,6 +241,8 @@ TEST_F(EngineBasicTest, TestFreeList) {
             Status::Ok);
   // Still no more space after re-open
   ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
@@ -516,6 +518,8 @@ TEST_F(EngineBasicTest, TestSeek) {
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(iter->Value(), "bar2");
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestStringRestore) {

@@ -210,6 +210,7 @@ public:
   using value_type = T;
 
   inline T *allocate(size_t n) {
+    static_assert(sizeof(T) % alignof(T) == 0);
     T *p = static_cast<T *>(aligned_alloc(alignof(T), n * sizeof(T)));
     if (p == nullptr) {
       throw std::bad_alloc{};

@@ -96,17 +96,26 @@ public:
   // Regularly execute by background thread of KVDK
   void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
 
+  void LogAllocation(size_t tid, size_t sz) {
+    palloc_thread_cache_[tid].allocated_sz += sz;
+  }
+  void LogDeallocation(size_t tid, size_t sz) {
+    palloc_thread_cache_[tid].allocated_sz -= sz;
+  }
+  size_t PMemUsageInBytes();
+
 private:
   PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
                 uint32_t block_size, uint32_t num_write_threads);
   // Write threads cache a dedicated PMem segment and a free space to
   // avoid contention
-  struct alignas(64) ThreadCache {
+  struct alignas(64) PAllocThreadCache {
     // Space got from free list, the size is aligned to block_size_
     SpaceEntry free_entry;
     // Space fetched from head of PMem segments, the size is aligned to
     // block_size_
     SpaceEntry segment_entry;
+    size_t allocated_sz{};
   };
 
   bool AllocateSegmentSpace(SpaceEntry *segment_entry);
@@ -128,7 +137,8 @@ private:
     return data_size / block_size_ + (data_size % block_size_ == 0 ? 0 : 1);
   }
 
-  std::vector<ThreadCache, AlignedAllocator<ThreadCache>> thread_cache_;
+  std::vector<PAllocThreadCache, AlignedAllocator<PAllocThreadCache>>
+      palloc_thread_cache_;
   const uint32_t block_size_;
   const uint64_t segment_size_;
   std::atomic<uint64_t> offset_head_;

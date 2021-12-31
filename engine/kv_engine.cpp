@@ -79,23 +79,45 @@ void KVEngine::FreeSkiplistDramNodes() {
   }
 }
 
+void KVEngine::ReportPMemUsage() {
+  size_t total = pmem_allocator_->PMemUsageInBytes();
+  GlobalLogger.Info("PMem Usage: %llu B, %llu KB, %llu MB, %llu GB\n", total,
+                    (total >> 10), (total >> 20), (total >> 30));
+}
+
 void KVEngine::BackgroundWork() {
   // To avoid free a referencing skiplist node, we do freeing in at least every
   // 10 seconds
   // TODO: Maybe free skiplist node in another bg thread?
-  double interval_free_skiplist_node =
-      std::max(10.0, configs_.background_work_interval);
+  assert(configs_.background_work_interval >= 0);
+  assert(configs_.report_pmem_usage_interval >= 0);
+  auto background_interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
+  auto free_skiplist_node_interval = std::chrono::milliseconds{0};
+  auto report_pmem_usage_interval = std::chrono::milliseconds{0};
   while (!closing_) {
-    usleep(configs_.background_work_interval * 1000000);
-    interval_free_skiplist_node -= configs_.background_work_interval;
+
     pmem_allocator_->BackgroundWork();
-    if ((interval_free_skiplist_node -= configs_.background_work_interval) <=
-        0) {
+
+    if (free_skiplist_node_interval < background_interval) {
       FreeSkiplistDramNodes();
-      interval_free_skiplist_node =
-          std::max(10.0, configs_.background_work_interval);
+      free_skiplist_node_interval = std::chrono::milliseconds{10000};
+    } else {
+      free_skiplist_node_interval -= background_interval;
     }
+
+    if (report_pmem_usage_interval < background_interval) {
+      ReportPMemUsage();
+      report_pmem_usage_interval =
+          std::chrono::milliseconds{static_cast<std::uint64_t>(
+              configs_.report_pmem_usage_interval * 1000)};
+    } else {
+      report_pmem_usage_interval -= background_interval;
+    }
+
+    std::this_thread::sleep_for(background_interval);
   }
+  ReportPMemUsage();
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {

@@ -42,6 +42,8 @@ public:
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
+  void ReportPMemUsage();
+
   // Global Anonymous Collection
   Status Get(const StringView key, std::string *value) override;
   Status Set(const StringView key, const StringView value) override;
