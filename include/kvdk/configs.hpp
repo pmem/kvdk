@@ -40,7 +40,7 @@ struct Configs {
 
   // The minimum allocation unit of PMem space
   //
-  // It should align to 8 bytes.
+  // It should minimum align to 16 bytes, maximum align to 64 bytes.
   uint32_t pmem_block_size = 64;
 
   // The number of blocks in a PMem segment

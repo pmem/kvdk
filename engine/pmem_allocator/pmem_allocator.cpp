@@ -34,7 +34,6 @@ void PMEMAllocator::Free(const SpaceEntry &entry) {
 void PMEMAllocator::PopulateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");
   assert((pmem_ - static_cast<char *>(nullptr)) % 64 == 0);
-  assert(pmem_size_ % 64 == 0);
   for (size_t i = 0; i < pmem_size_ / 64; i++) {
     _mm512_stream_si512(reinterpret_cast<__m512i *>(pmem_) + i,
                         _mm512_set1_epi64(0ULL));
@@ -115,7 +114,8 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
   // No need to worry user modify those parameters so that records may be
   // skipped.
   size_t sz_wasted = pmem_size % (block_size * num_segment_blocks);
-  if (sz_wasted != 0)
+  if (!(pmem_size > block_size * num_segment_blocks * num_write_threads) &&
+      sz_wasted != 0)
     GlobalLogger.Error(
         "Pmem file size not aligned with segment size, %llu space is wasted.\n",
         sz_wasted);
@@ -208,6 +208,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   if (aligned_size > segment_size_) {
     return space_entry;
   }
+
   auto &thread_cache = thread_cache_[write_thread.id];
   while (thread_cache.segment_entry.size < aligned_size) {
     while (1) {
