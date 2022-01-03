@@ -493,63 +493,68 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord *record) {
 
 Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
                                        const DataEntry &cached_data_entry) {
-  bool linked_record = CheckAndRepairDLRecord(pmem_record);
-  if (!linked_record && max_recoverable_record_timestamp_ == kMaxTimestamp /* we do not free unlinked record while recovering a backup instance*/) {
-    purgeAndFree(pmem_record);
-    return Status::Ok;
-  }
+  kvdk_assert(pmem_record->entry.meta.type == SortedDataRecord ||
+                  pmem_record->entry.meta.type == SortedDeleteRecord,
+              "wrong record type in RestoreSkiplistRecord");
 
-  assert(pmem_record->entry.meta.type == SortedDataRecord ||
-         pmem_record->entry.meta.type == SortedDeleteRecord);
+  bool linked_record = CheckAndRepairDLRecord(pmem_record);
   std::string internal_key(pmem_record->Key());
   StringView user_key = Skiplist::ExtractUserKey(internal_key);
 
-  // Repair linkage of backup version
-  if (cached_data_entry.meta.timestamp > max_recoverable_record_timestamp_) {
-    DLRecord *older_version_record_record =
-        pmem_allocator_->offset2addr<DLRecord>(
-            pmem_record->older_version_record);
-    if (older_version_record_record != nullptr &&
-        older_version_record_record->entry.meta.timestamp <=
-            max_recoverable_record_timestamp_) {
-      if (!ValidateRecord(older_version_record_record)) {
-        GlobalLogger.Error("Broken backup instance: invalid skiplist record");
-        std::abort();
-      }
-      kvdk_assert(
-          equal_string_view(internal_key, older_version_record_record->Key()),
-          "older version key is not same as new version");
-      while (1) {
-        auto hash_hint =
-            hash_table_->GetHint(older_version_record_record->Key());
-        Splice splice(nullptr);
-        std::unique_lock<SpinMutex> ul(*hash_hint.spin);
-        std::unique_lock<SpinMutex> prev_record_lock;
-        if (!Skiplist::SearchAndLockRecordPos(
-                &splice, older_version_record_record, hash_hint.spin,
+  if (isBackup()) {
+    // This record is newer than backup version, search the older one it refered
+    if (cached_data_entry.meta.timestamp > max_recoverable_record_timestamp_) {
+      DLRecord *older_version_record = pmem_allocator_->offset2addr<DLRecord>(
+          pmem_record->older_version_offset);
+      if (older_version_record != nullptr &&
+          older_version_record->entry.meta.timestamp <=
+              max_recoverable_record_timestamp_) {
+        if (!ValidateRecord(older_version_record)) {
+          GlobalLogger.Error("Broken backup instance: invalid skiplist record");
+          std::abort();
+        }
+        kvdk_assert(
+            equal_string_view(internal_key, older_version_record->Key()),
+            "older version key is not same as new version");
+        // Repair linkage of backup version
+        while (1) {
+          auto hash_hint = hash_table_->GetHint(older_version_record->Key());
+          Splice splice(nullptr);
+          std::unique_lock<SpinMutex> ul(*hash_hint.spin);
+          std::unique_lock<SpinMutex> prev_record_lock;
+          if (!Skiplist::SearchAndLockRecordPos(
+                &splice, older_version_record, hash_hint.spin,
                 &prev_record_lock, pmem_allocator_.get(), hash_table_.get()),
             false /* we do not check linkage for restore backup as the record is not linked*/) {
-          continue;
+            continue;
+          }
+          Skiplist::LinkDLRecord(splice.prev_pmem_record,
+                                 splice.next_pmem_record, older_version_record,
+                                 pmem_allocator_.get());
+          break;
         }
-        Skiplist::LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record,
-                               older_version_record_record,
-                               pmem_allocator_.get());
-        break;
-      }
-    } else if (linked_record) {
-      while (1) {
-        auto hash_hint = hash_table_->GetHint(pmem_record->Key());
-        std::unique_lock<SpinMutex> ul(*hash_hint.spin);
-        if (!Skiplist::Purge(pmem_record, hash_hint.spin, nullptr,
-                             pmem_allocator_.get(), hash_table_.get())) {
-          continue;
+      } else if (linked_record) {
+        while (1) {
+          auto hash_hint = hash_table_->GetHint(pmem_record->Key());
+          std::unique_lock<SpinMutex> ul(*hash_hint.spin);
+          if (!Skiplist::Purge(pmem_record, hash_hint.spin, nullptr,
+                               pmem_allocator_.get(), hash_table_.get())) {
+            continue;
+          }
+          break;
         }
-        break;
       }
-    }
-    purgeAndFree(pmem_record);
+      purgeAndFree(pmem_record);
 
-    return Status::Ok;
+      return Status::Ok;
+    }
+  } else {
+    // we can directly free unlinked record while recovering instance is not a
+    // backup
+    if (!linked_record) {
+      purgeAndFree(pmem_record);
+      return Status::Ok;
+    }
   }
 
   DataEntry existing_data_entry;
@@ -1011,21 +1016,22 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     Status s = hash_table_->SearchForRead(hint, collection_key,
                                           SortedDataRecord | SortedDeleteRecord,
                                           &entry_ptr, &hash_entry, &data_entry);
+    bool need_write_delete_record = false;
+
     switch (s) {
     case Status::Ok:
-      if (hash_entry.header.data_type == SortedDeleteRecord) {
-        if (sized_space_entry.size > 0) {
-          pmem_allocator_->Free(sized_space_entry);
-        }
-        return s;
+      if (hash_entry.header.data_type != SortedDeleteRecord) {
+        need_write_delete_record = true;
       }
       break;
     case Status::NotFound:
-      if (sized_space_entry.size > 0) {
-        pmem_allocator_->Free(sized_space_entry);
-      }
-      return Status::Ok;
+    case Status::MemoryOverflow:
+      break;
     default:
+      std::abort(); // never reach
+    }
+
+    if (!need_write_delete_record) {
       if (sized_space_entry.size > 0) {
         pmem_allocator_->Free(sized_space_entry);
       }

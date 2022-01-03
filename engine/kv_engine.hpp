@@ -303,6 +303,9 @@ private:
     return pmp_next->prev == offset;
   }
 
+  // If this instance is a backup of another kvdk instance
+  bool isBackup() { return max_recoverable_record_timestamp_ < kMaxTimestamp; }
+
   bool checkLinkage(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
     DLRecord *pmp_prev =

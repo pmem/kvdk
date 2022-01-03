@@ -177,7 +177,7 @@ private:
 struct DLRecord {
 public:
   DataEntry entry;
-  PMemOffsetType older_version_record;
+  PMemOffsetType older_version_offset;
   PMemOffsetType prev;
   PMemOffsetType next;
   char data[0];
@@ -237,7 +237,7 @@ private:
            const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        older_version_record(_older_version_record), prev(_prev), next(_next) {
+        older_version_offset(_older_version_record), prev(_prev), next(_next) {
     assert(_record_type & DLRecordType);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
