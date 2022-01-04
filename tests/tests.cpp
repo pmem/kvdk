@@ -74,7 +74,7 @@ TEST_F(EngineBasicTest, TestThreadManager) {
 
   // Reach max access threads
   auto s = std::async(&Engine::Set, engine, key, val);
-  ASSERT_EQ(s.get(), Status::TooManyWriteThreads);
+  ASSERT_EQ(s.get(), Status::TooManyAccessThreads);
   // Manually release access thread
   engine->ReleaseAccessThread();
   s = std::async(&Engine::Set, engine, key, val);
@@ -1259,10 +1259,10 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
-  LaunchNThreads(num_threads, IteratingThroughGlobal);
-  LaunchNThreads(num_threads, IteratingThroughThreadLocal);
-  LaunchNThreads(num_threads, HGetGlobal);
-  LaunchNThreads(num_threads, HGetThreadLocal);
+  LaunchNThreads(1, IteratingThroughGlobal);
+  LaunchNThreads(1, IteratingThroughThreadLocal);
+  LaunchNThreads(1, HGetGlobal);
+  LaunchNThreads(1, HGetThreadLocal);
 
   delete engine;
 }
@@ -1395,7 +1395,7 @@ TEST_F(EngineBasicTest, TestQueueRestoration) {
 TEST_F(EngineBasicTest, TestStringHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing;
+  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1447,7 +1447,7 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
 TEST_F(EngineBasicTest, TestSortedHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing;
+  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 

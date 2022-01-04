@@ -35,7 +35,7 @@ Status ThreadManager::MaybeInitThread(Thread &t) {
     }
     int id = ids_.fetch_add(1, std::memory_order_relaxed);
     if (id >= max_threads_) {
-      return Status::TooManyWriteThreads;
+      return Status::TooManyAccessThreads;
     }
     t.id = id;
     t.thread_manager = shared_from_this();

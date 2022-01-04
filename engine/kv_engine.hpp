@@ -171,7 +171,7 @@ private:
   Status HashGetImpl(const StringView &key, std::string *value,
                      uint16_t type_mask);
 
-  inline Status MaybeInitWriteThread();
+  inline Status MaybeInitAccessThread();
 
   Status SearchOrInitCollection(const StringView &collection, Collection **list,
                                 bool init, uint16_t collection_type);

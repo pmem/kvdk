@@ -189,12 +189,12 @@ KVEngine::NewSortedIterator(const StringView collection) {
              : nullptr;
 }
 
-Status KVEngine::MaybeInitWriteThread() {
+Status KVEngine::MaybeInitAccessThread() {
   return thread_manager_->MaybeInitThread(access_thread);
 }
 
 Status KVEngine::RestoreData(RecoveryInfo *recovery_info) {
-  RAIICaller restore_thread_init([&]() { MaybeInitWriteThread(); },
+  RAIICaller restore_thread_init([&]() { MaybeInitAccessThread(); },
                                  [&]() { ReleaseAccessThread(); });
 
   SpaceEntry segment_recovering;
@@ -972,6 +972,12 @@ Status KVEngine::HashGetImpl(const StringView &key, std::string *value,
 }
 
 Status KVEngine::Get(const StringView key, std::string *value) {
+  Status s = MaybeInitAccessThread();
+
+  if (s != Status::Ok) {
+    return s;
+  }
+
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
@@ -979,7 +985,7 @@ Status KVEngine::Get(const StringView key, std::string *value) {
 }
 
 Status KVEngine::Delete(const StringView key) {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
@@ -1167,7 +1173,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
 
 Status KVEngine::SSet(const StringView collection, const StringView user_key,
                       const StringView value) {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1246,7 +1252,7 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
 
 Status KVEngine::SDelete(const StringView collection,
                          const StringView user_key) {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1287,7 +1293,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return Status::BatchOverflow;
   }
 
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1444,8 +1450,13 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
 
 Status KVEngine::SGet(const StringView collection, const StringView user_key,
                       std::string *value) {
+  Status s = MaybeInitAccessThread();
+
+  if (s != Status::Ok) {
+    return s;
+  }
   Skiplist *skiplist = nullptr;
-  Status s = SearchOrInitSkiplist(collection, &skiplist, false);
+  s = SearchOrInitSkiplist(collection, &skiplist, false);
   if (s != Status::Ok) {
     return s;
   }
@@ -1572,7 +1583,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
 }
 
 Status KVEngine::Set(const StringView key, const StringView value) {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1621,6 +1632,12 @@ KVEngine::findUnorderedCollection(StringView const collection_name) {
 
 Status KVEngine::HGet(StringView const collection_name, StringView const key,
                       std::string *value) {
+  Status s = MaybeInitAccessThread();
+
+  if (s != Status::Ok) {
+    return s;
+  }
+
   UnorderedCollection *p_uncoll = findUnorderedCollection(collection_name);
   if (!p_uncoll) {
     return Status::NotFound;
@@ -1632,7 +1649,7 @@ Status KVEngine::HGet(StringView const collection_name, StringView const key,
 
 Status KVEngine::HSet(StringView const collection_name, StringView const key,
                       StringView const value) {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1748,7 +1765,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
 
 Status KVEngine::HDelete(StringView const collection_name,
                          StringView const key) {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1952,7 +1969,7 @@ Queue *KVEngine::findQueue(StringView const collection_name) {
 
 Status KVEngine::xPop(StringView const collection_name, std::string *value,
                       KVEngine::QueueOpPosition pop_pos) {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1984,7 +2001,7 @@ Status KVEngine::xPop(StringView const collection_name, std::string *value,
 
 Status KVEngine::xPush(StringView const collection_name, StringView const value,
                        KVEngine::QueueOpPosition push_pos) try {
-  Status s = MaybeInitWriteThread();
+  Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
