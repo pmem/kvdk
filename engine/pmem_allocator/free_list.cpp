@@ -143,9 +143,8 @@ void Freelist::MergeAndCheckTSInPool() {
         if (merged_blocks > 0) {
           // Persist merged free entry on PMem
           if (merged_blocks > b_size) {
-            DataHeader header(0, merged_blocks * block_size_);
-            pmem_memcpy_persist(pmem_allocator_->offset2addr(offset), &header,
-                                sizeof(DataHeader));
+            pmem_allocator_->persistSpaceEntry(offset,
+                                               merged_blocks * block_size_);
           }
 
           // large space entries

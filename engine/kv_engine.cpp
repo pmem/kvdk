@@ -193,8 +193,9 @@ Status KVEngine::MaybeInitWriteThread() {
   return thread_manager_->MaybeInitThread(write_thread);
 }
 
-Status KVEngine::RestoreData(uint64_t thread_id) {
-  write_thread.id = thread_id;
+Status KVEngine::RestoreData(RecoveryInfo *recovery_info) {
+  RAIICaller restore_thread_init([&]() { MaybeInitWriteThread(); },
+                                 [&]() { ReleaseWriteThread(); });
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -274,16 +275,15 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     // Continue to restore the Record
     cnt++;
 
-    thread_cache_[thread_id].newest_restored_ts =
-        std::max(data_entry_cached.meta.timestamp,
-                 thread_cache_[thread_id].newest_restored_ts);
+    recovery_info->newest_restored_ts = std::max(
+        data_entry_cached.meta.timestamp, recovery_info->newest_restored_ts);
 
     Status s(Status::Ok);
     switch (data_entry_cached.meta.type) {
     case RecordType::SortedDataRecord:
     case RecordType::SortedDeleteRecord: {
       s = RestoreSkiplistRecord(static_cast<DLRecord *>(recovering_pmem_record),
-                                data_entry_cached);
+                                data_entry_cached, recovery_info);
       break;
     }
     case RecordType::SortedHeaderRecord: {
@@ -320,11 +320,9 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     }
     }
     if (s != Status::Ok) {
-      write_thread.id = -1;
       return s;
     }
   }
-  write_thread.id = -1;
   restored_.fetch_add(cnt);
   return Status::Ok;
 }
@@ -492,7 +490,8 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord *record) {
 }
 
 Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
-                                       const DataEntry &cached_data_entry) {
+                                       const DataEntry &cached_data_entry,
+                                       RecoveryInfo *recovery_info) {
   kvdk_assert(pmem_record->entry.meta.type == SortedDataRecord ||
                   pmem_record->entry.meta.type == SortedDeleteRecord,
               "wrong record type in RestoreSkiplistRecord");
@@ -588,8 +587,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
         return Status::MemoryOverflow;
       }
       if (configs_.opt_large_sorted_collection_restore &&
-          thread_cache_[write_thread.id]
-                      .visited_skiplist_ids[dram_node->SkiplistID()]++ %
+          recovery_info->visited_skiplist_ids[dram_node->SkiplistID()]++ %
                   kRestoreSkiplistStride ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);
@@ -878,8 +876,9 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   std::vector<std::future<Status>> fs;
+  std::vector<RecoveryInfo> recovery_info_(configs_.max_write_threads);
   for (uint32_t i = 0; i < configs_.max_write_threads; i++) {
-    fs.push_back(std::async(&KVEngine::RestoreData, this, i));
+    fs.push_back(std::async(&KVEngine::RestoreData, this, &recovery_info_[i]));
   }
 
   for (auto &f : fs) {
@@ -907,10 +906,10 @@ Status KVEngine::Recovery() {
       pmem_allocator_->PopulateSpace();
     }
   } else {
-    for (size_t i = 0; i < thread_cache_.size(); i++) {
+    for (size_t i = 0; i < recovery_info_.size(); i++) {
       auto &thread_cache = thread_cache_[i];
       latest_version_ts =
-          std::max(thread_cache.newest_restored_ts, latest_version_ts);
+          std::max(recovery_info_[i].newest_restored_ts, latest_version_ts);
     }
   }
 
@@ -2118,7 +2117,7 @@ void KVEngine::handleThreadLocalPendingFreeRecords() {
              version_controller_.OldestSnapshotTS() &&
          limit_free-- > 0) {
     pmem_allocator_->Free(
-        handlePendingFreeRecord(tc.pending_free_data_records.front()));
+        purgePendingFreeRecord(tc.pending_free_data_records.front()));
     tc.pending_free_data_records.pop_front();
   }
 
@@ -2155,7 +2154,7 @@ void KVEngine::delayFree(PendingFreeDataRecord &&pending_free_data_record) {
   handleThreadLocalPendingFreeRecords();
 }
 
-SpaceEntry KVEngine::handlePendingFreeRecord(
+SpaceEntry KVEngine::purgePendingFreeRecord(
     const PendingFreeDeleteRecord &pending_free_delete_record) {
   DataEntry *data_entry =
       static_cast<DataEntry *>(pending_free_delete_record.pmem_delete_record);
@@ -2216,7 +2215,7 @@ SpaceEntry KVEngine::handlePendingFreeRecord(
   }
 }
 
-SpaceEntry KVEngine::handlePendingFreeRecord(
+SpaceEntry KVEngine::purgePendingFreeRecord(
     const PendingFreeDataRecord &pending_free_data_record) {
   DataEntry *data_entry =
       static_cast<DataEntry *>(pending_free_data_record.pmem_data_record);
@@ -2281,7 +2280,7 @@ void KVEngine::handlePendingFreeRecords() {
   for (auto &data_records : bg_free_data_records_) {
     for (auto &record : data_records) {
       if (record.newer_version_timestamp <= oldest_snapshot_ts) {
-        space_to_free.emplace_back(handlePendingFreeRecord(record));
+        space_to_free.emplace_back(purgePendingFreeRecord(record));
       } else {
         data_record_refered.emplace_back(std::move(record));
       }
@@ -2292,7 +2291,7 @@ void KVEngine::handlePendingFreeRecords() {
   for (auto &delete_records : bg_free_delete_records_) {
     for (auto &record : delete_records) {
       if (record.newer_version_timestamp <= oldest_snapshot_ts) {
-        space_pending.entries.emplace_back(handlePendingFreeRecord(record));
+        space_pending.entries.emplace_back(purgePendingFreeRecord(record));
       } else {
         delete_record_refered.emplace_back(std::move(record));
       }

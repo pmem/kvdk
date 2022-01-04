@@ -140,11 +140,14 @@ private:
     TimestampType free_ts;
   };
 
-  struct ThreadCache {
-    ThreadCache() = default;
-
+  // used in recovery
+  struct RecoveryInfo {
     uint64_t newest_restored_ts = 0;
     std::unordered_map<uint64_t, int> visited_skiplist_ids;
+  };
+
+  struct ThreadCache {
+    ThreadCache() = default;
 
     PendingBatch *persisted_pending_batch = nullptr;
 
@@ -155,7 +158,6 @@ private:
 
     // This thread is doing batch write
     bool batch_writing = false;
-    ;
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
@@ -214,7 +216,7 @@ private:
 
   Status Recovery();
 
-  Status RestoreData(uint64_t thread_id);
+  Status RestoreData(RecoveryInfo *recovery_info);
 
   Status RestoreSkiplistHead(DLRecord *pmem_record,
                              const DataEntry &cached_entry);
@@ -223,7 +225,8 @@ private:
                              const DataEntry &cached_entry);
 
   Status RestoreSkiplistRecord(DLRecord *pmem_record,
-                               const DataEntry &cached_data_entry);
+                               const DataEntry &cached_data_entry,
+                               RecoveryInfo *recovery_info);
 
   // Check if a doubly linked record has been successfully inserted, and try
   // repair un-finished prev pointer
@@ -250,20 +253,21 @@ private:
 
   void maybeUpdateOldestSnapshot();
 
+  // Write thread handle cached pending free records
   void handleThreadLocalPendingFreeRecords();
 
   // Run in background to handle pending free records regularly
   void pendingFreeRecordsHandler();
-
+  // Try to free all pending free records
   void handlePendingFreeRecords();
 
   inline void delayFree(PendingFreeDeleteRecord &&);
 
   inline void delayFree(PendingFreeDataRecord &&);
 
-  SpaceEntry handlePendingFreeRecord(const PendingFreeDataRecord &);
+  SpaceEntry purgePendingFreeRecord(const PendingFreeDataRecord &);
 
-  SpaceEntry handlePendingFreeRecord(const PendingFreeDeleteRecord &);
+  SpaceEntry purgePendingFreeRecord(const PendingFreeDeleteRecord &);
 
   void backgroundWorkCoordinator();
 
@@ -382,7 +386,7 @@ private:
   std::condition_variable_any bg_free_thread_cv_;
 
   // Max timestamp of records that could be restored in recovery, this is used
-  // for backup instance, for an instance that is not a backup, this is set to
+  // for backup instance. For an instance that is not a backup, this is set to
   // kMaxTimestamp by default
   TimestampType max_recoverable_record_timestamp_{kMaxTimestamp};
 };

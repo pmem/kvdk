@@ -80,14 +80,14 @@ public:
   }
 
   inline void HoldLocalSnapshot() {
-    kvdk_assert(write_thread.id > 0 && write_thread.id < thread_cache_.size(),
+    kvdk_assert(write_thread.id >= 0 && write_thread.id < thread_cache_.size(),
                 "Uninitialized thread in NewLocalSnapshot");
     thread_cache_[write_thread.id].holding_snapshot.timestamp =
         GetCurrentTimestamp();
   }
 
   inline void ReleaseLocalSnapshot() {
-    kvdk_assert(write_thread.id > 0 && write_thread.id < thread_cache_.size(),
+    kvdk_assert(write_thread.id >= 0 && write_thread.id < thread_cache_.size(),
                 "Uninitialized thread in ReleaseLocalSnapshot");
     thread_cache_[write_thread.id].holding_snapshot.timestamp = kMaxTimestamp;
   }
@@ -99,7 +99,7 @@ public:
   }
 
   inline const SnapshotImpl &GetLocalSnapshot() {
-    kvdk_assert(write_thread.id > 0 && write_thread.id < thread_cache_.size(),
+    kvdk_assert(write_thread.id >= 0 && write_thread.id < thread_cache_.size(),
                 "Uninitialized thread in GetLocalSnapshot");
     return thread_cache_[write_thread.id].holding_snapshot;
   }

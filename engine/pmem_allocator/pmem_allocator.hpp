@@ -89,8 +89,8 @@ public:
   // Warning! this will zero the entire PMem space
   void PopulateSpace();
 
-  // Free space_entry and fetch a new segment in space_entry, unless
-  // segment_space_entry is a full segment
+  // Free segment_space_entry and fetch an allocated segment to
+  // segment_space_entry, until reach the end of allocated space
   bool FreeAndFetchSegment(SpaceEntry *segment_space_entry);
 
   // Regularly execute by background thread of KVDK
@@ -103,6 +103,8 @@ public:
   Status Backup(const std::string &backup_file);
 
 private:
+  friend Freelist;
+
   PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
                 uint32_t block_size, uint32_t num_write_threads);
   // Write threads cache a dedicated PMem segment and a free space to
@@ -118,6 +120,9 @@ private:
   bool AllocateSegmentSpace(SpaceEntry *segment_entry);
 
   static bool CheckDevDaxAndGetSize(const char *path, uint64_t *size);
+
+  // Mark and persist a space entry on PMem
+  void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
 
   void init_data_size_2_block_size() {
     data_size_2_block_size_.resize(4096);
@@ -137,11 +142,13 @@ private:
   std::vector<ThreadCache, AlignedAllocator<ThreadCache>> thread_cache_;
   const uint32_t block_size_;
   const uint64_t segment_size_;
-  std::atomic<uint64_t> offset_head_;
   char *pmem_;
   uint64_t pmem_size_;
   Freelist free_list_;
   // For quickly get corresponding block size of a requested data size
   std::vector<uint16_t> data_size_2_block_size_;
+
+  SpinMutex offset_head_lock_;
+  uint64_t offset_head_;
 };
 } // namespace KVDK_NAMESPACE
