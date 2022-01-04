@@ -13,10 +13,10 @@ HashTable *
 HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
                         uint32_t num_buckets_per_slot,
                         const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-                        uint32_t write_threads) {
+                        uint32_t max_access_threads) {
   HashTable *table = new (std::nothrow)
       HashTable(hash_bucket_num, hash_bucket_size, num_buckets_per_slot,
-                pmem_allocator, write_threads);
+                pmem_allocator, max_access_threads);
   if (table) {
     auto main_buckets_space =
         table->dram_allocator_.Allocate(hash_bucket_size * hash_bucket_num);
@@ -237,7 +237,7 @@ Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
 
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_ptr,
                        uint16_t type, void *index, HashOffsetType offset_type) {
-  assert(write_thread.id >= 0);
+  assert(access_thread.id >= 0);
 
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index,
                            HashEntryStatus::Normal, offset_type);

@@ -26,7 +26,8 @@ public:
     return static_cast<T *>(offset);
   }
   inline uint64_t addr2offset(void *addr) { return (uint64_t)addr; }
-  ChunkBasedAllocator(uint32_t write_threads) : thread_cache_(write_threads) {}
+  ChunkBasedAllocator(uint32_t access_threads)
+      : thread_cache_(access_threads) {}
   ChunkBasedAllocator(ChunkBasedAllocator const &) = delete;
   ChunkBasedAllocator(ChunkBasedAllocator &&) = delete;
   ~ChunkBasedAllocator() {

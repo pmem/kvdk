@@ -538,10 +538,10 @@ Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
   std::vector<std::future<Status>> fs;
   if (engine->configs_.opt_large_sorted_collection_restore &&
       engine->skiplists_.size() > 0) {
-    thread_cache_node_.resize(engine->configs_.max_write_threads);
+    thread_cache_node_.resize(engine->configs_.max_access_threads);
     UpdateEntriesOffset(engine);
     for (uint8_t h = 1; h <= kMaxHeight; ++h) {
-      for (uint32_t j = 0; j < engine->configs_.max_write_threads; ++j) {
+      for (uint32_t j = 0; j < engine->configs_.max_access_threads; ++j) {
         fs.push_back(
             std::async(std::launch::async, [j, h, this, engine]() -> Status {
               while (true) {

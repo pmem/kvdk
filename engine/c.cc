@@ -43,12 +43,12 @@ static char *CopyStringToChar(const std::string &str) {
 
 KVDKConfigs *KVDKCreateConfigs() { return new KVDKConfigs; }
 
-void KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_write_threads,
+void KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_access_threads,
                      uint64_t pmem_file_size, unsigned char populate_pmem_space,
                      uint32_t pmem_block_size, uint64_t pmem_segment_blocks,
                      uint32_t hash_bucket_size, uint64_t hash_bucket_num,
                      uint32_t num_buckets_per_slot) {
-  kv_config->rep.max_write_threads = max_write_threads;
+  kv_config->rep.max_access_threads = max_access_threads;
   kv_config->rep.hash_bucket_num = hash_bucket_num;
   kv_config->rep.hash_bucket_size = hash_bucket_size;
   kv_config->rep.num_buckets_per_slot = num_buckets_per_slot;
@@ -74,8 +74,8 @@ KVDKStatus KVDKOpen(const char *name, const KVDKConfigs *config, FILE *log_file,
   return s;
 }
 
-void KVDKReleaseWriteThread(KVDKEngine *engine) {
-  engine->rep->ReleaseWriteThread();
+void KVDKReleaseAccessThread(KVDKEngine *engine) {
+  engine->rep->ReleaseAccessThread();
 }
 
 void KVDKCloseEngine(KVDKEngine *engine) {

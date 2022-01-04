@@ -34,7 +34,7 @@ public:
   static PMEMAllocator *
   NewPMEMAllocator(const std::string &pmem_file, uint64_t pmem_size,
                    uint64_t num_segment_blocks, uint32_t block_size,
-                   uint32_t num_write_threads, bool use_devdax_mode);
+                   uint32_t max_access_threads, bool use_devdax_mode);
 
   // Allocate a PMem space, return offset and actually allocated space in bytes
   SpaceEntry Allocate(uint64_t size) override;
@@ -106,8 +106,8 @@ private:
   friend Freelist;
 
   PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
-                uint32_t block_size, uint32_t num_write_threads);
-  // Write threads cache a dedicated PMem segment and a free space to
+                uint32_t block_size, uint32_t max_access_threads);
+  // Access threads cache a dedicated PMem segment and a free space to
   // avoid contention
   struct alignas(64) ThreadCache {
     // Space got from free list, the size is aligned to block_size_

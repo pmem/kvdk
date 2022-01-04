@@ -13,11 +13,11 @@ namespace KVDK_NAMESPACE {
 
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
-                             uint32_t num_write_threads)
-    : pmem_(pmem), thread_cache_(num_write_threads), block_size_(block_size),
+                             uint32_t max_access_threads)
+    : pmem_(pmem), thread_cache_(max_access_threads), block_size_(block_size),
       segment_size_(num_segment_blocks * block_size), offset_head_(0),
       pmem_size_(pmem_size),
-      free_list_(num_segment_blocks, block_size, num_write_threads,
+      free_list_(num_segment_blocks, block_size, max_access_threads,
                  pmem_size / block_size / num_segment_blocks *
                      num_segment_blocks /*num blocks*/,
                  this) {
@@ -62,7 +62,7 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
                                                uint64_t pmem_size,
                                                uint64_t num_segment_blocks,
                                                uint32_t block_size,
-                                               uint32_t num_write_threads,
+                                               uint32_t max_access_threads,
                                                bool use_devdax_mode) {
   int is_pmem;
   uint64_t mapped_size;
@@ -117,7 +117,7 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
   // memory, so we catch exception here
   try {
     allocator = new PMEMAllocator(pmem, pmem_size, num_segment_blocks,
-                                  block_size, num_write_threads);
+                                  block_size, max_access_threads);
   } catch (std::bad_alloc &err) {
     GlobalLogger.Error("Error while initialize PMEMAllocator: %s\n",
                        err.what());
@@ -141,7 +141,7 @@ bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
   if (segment_space_entry->size == segment_size_) {
     persistSpaceEntry(segment_space_entry->offset, segment_size_);
-    thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
+    thread_cache_[access_thread.id].segment_entry = *segment_space_entry;
     return false;
   }
 
@@ -221,7 +221,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   if (aligned_size > segment_size_) {
     return space_entry;
   }
-  auto &thread_cache = thread_cache_[write_thread.id];
+  auto &thread_cache = thread_cache_[access_thread.id];
   while (thread_cache.segment_entry.size < aligned_size) {
     while (1) {
       // allocate from free list space

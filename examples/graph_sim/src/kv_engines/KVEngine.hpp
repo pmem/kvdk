@@ -25,7 +25,7 @@
 
 typedef kvdk::Status Status;
 
-static void SimpleLoger(const std::string& content) {
+static void SimpleLoger(const std::string &content) {
   fprintf(stdout, "[GRAPH-BENCH]%s \n", content.c_str());
 }
 
@@ -34,10 +34,10 @@ static void SimpleLoger(const std::string& content) {
 // Any db engine whole want to connect the graph storage bench
 // should inherent the class and implementation the function.
 class KVEngine {
- public:
+public:
   class Iterator {
-   public:
-    virtual void Seek(const std::string& key) = 0;
+  public:
+    virtual void Seek(const std::string &key) = 0;
     virtual void SeekToFirst() = 0;
     virtual void Next() = 0;
     virtual void Prev() = 0;
@@ -47,54 +47,54 @@ class KVEngine {
     virtual std::string Value() = 0;
   };
 
-  virtual Status Get(const std::string& key, std::string* value) = 0;
-  virtual Status Put(const std::string& key, const std::string& value) = 0;
-  virtual Status Delete(const std::string& key) = 0;
-  virtual Iterator* NewIterator() = 0;
+  virtual Status Get(const std::string &key, std::string *value) = 0;
+  virtual Status Put(const std::string &key, const std::string &value) = 0;
+  virtual Status Delete(const std::string &key) = 0;
+  virtual Iterator *NewIterator() = 0;
   virtual ~KVEngine() = default;
 };
 
 // KVDK engine
 class PMemKVDK : public KVEngine {
- public:
-  PMemKVDK(const std::string& db_path);
+public:
+  PMemKVDK(const std::string &db_path);
   ~PMemKVDK();
-  Status Put(const std::string& key, const std::string& value) override;
-  Status Get(const std::string& key, std::string* value) override;
-  Status Delete(const std::string& key) override;
-  KVEngine::Iterator* NewIterator() override;
+  Status Put(const std::string &key, const std::string &value) override;
+  Status Get(const std::string &key, std::string *value) override;
+  Status Delete(const std::string &key) override;
+  KVEngine::Iterator *NewIterator() override;
 
- private:
-  kvdk::Engine* db_;
-  kvdk::Configs options_;
+private:
+  kvdk::Engine *db_;
+  kvdk::Configs configs_;
   std::string path_;
-  std::string collection_;  // for sorted scan in kvdk
+  std::string collection_; // for sorted scan in kvdk
 };
 
 #if defined(BUILD_ROCKSDB)
 // rocksdb engine implementation
 class RocksEngine : public KVEngine {
- public:
-  explicit RocksEngine(const std::string& db_path);
+public:
+  explicit RocksEngine(const std::string &db_path);
   ~RocksEngine();
 
-  Status Put(const std::string& key, const std::string& value) override;
-  Status Get(const std::string& key, std::string* value) override;
-  Status Delete(const std::string& key) override;
-  KVEngine::Iterator* NewIterator() override;
+  Status Put(const std::string &key, const std::string &value) override;
+  Status Get(const std::string &key, std::string *value) override;
+  Status Delete(const std::string &key) override;
+  KVEngine::Iterator *NewIterator() override;
 
- private:
+private:
   std::string path_;
   // Test for compare with the other engine.
-  rocksdb::DB* db_;
+  rocksdb::DB *db_;
 };
 #endif
 
 // A simple in memory engine with std::map to test in memory workload convenient
 class MemoryEngine : public KVEngine {
- public:
-  explicit MemoryEngine(const std::string& db_path) : path_(db_path) {}
-  Status Get(const std::string& key, std::string* value) override {
+public:
+  explicit MemoryEngine(const std::string &db_path) : path_(db_path) {}
+  Status Get(const std::string &key, std::string *value) override {
     if (memory_db_.find(key) != memory_db_.end()) {
       value->assign(memory_db_[key]);
       return Status::Ok;
@@ -102,24 +102,24 @@ class MemoryEngine : public KVEngine {
     return Status::NotFound;
   }
 
-  Status Put(const std::string& key, const std::string& value) override {
+  Status Put(const std::string &key, const std::string &value) override {
     memory_db_[key] = value;
     return Status::Ok;
   }
 
-  Status Delete(const std::string& key) override {
+  Status Delete(const std::string &key) override {
     memory_db_.erase(key);
     return Status::Ok;
   }
 
   class MemoryIterator : public KVEngine::Iterator {
-   public:
+  public:
     explicit MemoryIterator(std::map<std::string, std::string>::iterator start,
                             std::map<std::string, std::string>::iterator end)
         : iter_(start), end_(end) {}
     ~MemoryIterator() = default;
 
-    void Seek(const std::string& key) override {
+    void Seek(const std::string &key) override {
       while (iter_->first != key) {
         iter_++;
       }
@@ -127,23 +127,24 @@ class MemoryEngine : public KVEngine {
 
     void SeekToFirst() override {}
     void Next() override {
-      if (iter_ != end_) iter_++;
+      if (iter_ != end_)
+        iter_++;
     }
     void Prev() override { iter_--; }
     bool Valid() override { return iter_ != end_; }
     std::string Key() override { return iter_->first; }
     std::string Value() override { return iter_->second; }
 
-   private:
+  private:
     std::map<std::string, std::string>::iterator iter_;
     std::map<std::string, std::string>::iterator end_;
   };
 
-  KVEngine::Iterator* NewIterator() override {
+  KVEngine::Iterator *NewIterator() override {
     return new MemoryIterator(memory_db_.begin(), memory_db_.end());
   }
 
- private:
+private:
   std::string path_;
   std::map<std::string, std::string> memory_db_;
 };
@@ -163,10 +164,10 @@ static void Initial() {
 
 // Create the engine name.
 class CreateEngineByName {
- public:
+public:
   CreateEngineByName() = default;
-  static KVEngine* Create(const std::string& name) {
-    EngineFactory<KVEngine>& engine = EngineFactory<KVEngine>::Instance();
+  static KVEngine *Create(const std::string &name) {
+    EngineFactory<KVEngine> &engine = EngineFactory<KVEngine>::Instance();
     return engine.GetEngine(name);
   }
 };

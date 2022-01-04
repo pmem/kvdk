@@ -126,7 +126,7 @@ def run_benchmark(
     # run benchmarks
     print("Run benchmarks for data type :{}, value size distribution: {}".format(
         data_type, value_size_distribution))
-    shared_para = "-path={} -space={} -populate={} -num={} -threads={} -max_write_threads={} -collections={} -time={} -value_size={} -value_size_distribution={}".format(
+    shared_para = "-path={} -space={} -populate={} -num={} -threads={} -max_access_threads={} -collections={} -time={} -value_size={} -value_size_distribution={}".format(
         pmem_path, pmem_size, populate_on_fill, num_fill_kv, n_thread, n_thread, num_collection, bench_duration, value_size, value_size_distribution)
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)

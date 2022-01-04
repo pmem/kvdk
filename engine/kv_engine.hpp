@@ -101,7 +101,7 @@ public:
     return xPush(collection_name, value, QueueOpPosition::Right);
   }
 
-  void ReleaseWriteThread() override { write_thread.Release(); }
+  void ReleaseAccessThread() override { access_thread.Release(); }
 
   const std::vector<std::shared_ptr<Skiplist>> &GetSkiplists() {
     return skiplists_;
@@ -109,8 +109,8 @@ public:
 
 private:
   KVEngine(const Configs &configs)
-      : thread_cache_(configs.max_write_threads),
-        version_controller_(configs.max_write_threads){};
+      : thread_cache_(configs.max_access_threads),
+        version_controller_(configs.max_access_threads){};
 
   struct BatchWriteHint {
     TimestampType timestamp{0};
@@ -253,7 +253,7 @@ private:
 
   void maybeUpdateOldestSnapshot();
 
-  // Write thread handle cached pending free records
+  // Foreground access thread handle cached pending free records
   void handleThreadLocalPendingFreeRecords();
 
   // Run in background to handle pending free records regularly

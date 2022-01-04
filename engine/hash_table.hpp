@@ -127,7 +127,7 @@ public:
   NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
                uint32_t num_buckets_per_slot,
                const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-               uint32_t write_threads);
+               uint32_t max_access_threads);
 
   KeyHashHint GetHint(const StringView &key) {
     KeyHashHint hint;
@@ -174,11 +174,11 @@ private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
             uint32_t num_buckets_per_slot,
             const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-            uint32_t write_threads)
+            uint32_t max_access_threads)
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
-        hash_bucket_size_(hash_bucket_size), dram_allocator_(write_threads),
-        pmem_allocator_(pmem_allocator),
+        hash_bucket_size_(hash_bucket_size),
+        dram_allocator_(max_access_threads), pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)),
         slots_(hash_bucket_num / num_buckets_per_slot),

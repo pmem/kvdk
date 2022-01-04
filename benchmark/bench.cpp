@@ -79,7 +79,7 @@ DEFINE_bool(
     "Populate pmem space while creating a new instance. This can improve write "
     "performance in runtime, but will take long time to init the instance");
 
-DEFINE_int32(max_write_threads, 32, "Max write threads of the instance");
+DEFINE_int32(max_access_threads, 32, "Max access threads of the instance");
 
 DEFINE_uint64(space, (uint64_t)256 << 30,
               "Max usable PMem space of the instance");
@@ -467,7 +467,7 @@ int main(int argc, char **argv) {
 
   Configs configs;
   configs.populate_pmem_space = FLAGS_populate;
-  configs.max_write_threads = FLAGS_max_write_threads;
+  configs.max_access_threads = FLAGS_max_access_threads;
   configs.pmem_file_size = FLAGS_space;
   configs.opt_large_sorted_collection_restore =
       FLAGS_opt_large_sorted_collection_restore;

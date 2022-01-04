@@ -65,7 +65,7 @@ private:
 // space entry lists (the second level), and each list consists of several
 // free space entries (the third level).
 //
-// For a specific block size, a write thread will move a entry list from the
+// For a specific block size, a access thread will move a entry list from the
 // pool to its thread cache while no usable free space in the cache, and the
 // background thread will move cached entry list to the pool for merge and
 // balance resource
@@ -161,7 +161,7 @@ public:
   void MergeAndCheckTSInPool();
 
   // Move cached free space list to space entry pool to balance usable space
-  // of write threads
+  // of access threads
   //
   // Iterate every active entry lists of thread caches, move the list to
   // active_pool_, and update minimal timestamp of free entries meantime
@@ -172,7 +172,7 @@ public:
   void OrganizeFreeSpace();
 
 private:
-  // Each write threads cache some freed space entries in active_entry_offsets
+  // Each access thread caches some freed space entries in active_entry_offsets
   // to avoid contention. To balance free space entries among threads, if too
   // many entries cached by a thread, newly freed entries will be stored to
   // backup_entries and move to entry pool which shared by all threads.

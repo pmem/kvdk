@@ -110,7 +110,7 @@ void KVEngine::backgroundWorkCoordinator() {
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
-  write_thread.id = 0;
+  access_thread.id = 0;
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
@@ -157,14 +157,14 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
 
   pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
       db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
-      configs_.pmem_block_size, configs_.max_write_threads,
+      configs_.pmem_block_size, configs_.max_access_threads,
       configs_.use_devdax_mode));
   thread_manager_.reset(new (std::nothrow)
-                            ThreadManager(configs_.max_write_threads));
+                            ThreadManager(configs_.max_access_threads));
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.hash_bucket_size,
       configs_.num_buckets_per_slot, pmem_allocator_,
-      configs_.max_write_threads));
+      configs_.max_access_threads));
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
       thread_manager_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
@@ -172,7 +172,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   }
 
   s = Recovery();
-  write_thread.id = -1;
+  access_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::backgroundWorkCoordinator, this);
   bg_threads_.emplace_back(&KVEngine::pendingFreeRecordsHandler, this);
 
@@ -190,12 +190,12 @@ KVEngine::NewSortedIterator(const StringView collection) {
 }
 
 Status KVEngine::MaybeInitWriteThread() {
-  return thread_manager_->MaybeInitThread(write_thread);
+  return thread_manager_->MaybeInitThread(access_thread);
 }
 
 Status KVEngine::RestoreData(RecoveryInfo *recovery_info) {
   RAIICaller restore_thread_init([&]() { MaybeInitWriteThread(); },
-                                 [&]() { ReleaseWriteThread(); });
+                                 [&]() { ReleaseAccessThread(); });
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -844,7 +844,7 @@ Status KVEngine::RestorePendingBatch() {
             pending_batch->PersistStage(PendingBatch::Stage::Finish);
           }
 
-          if (id < configs_.max_write_threads) {
+          if (id < configs_.max_access_threads) {
             thread_cache_[id].persisted_pending_batch = pending_batch;
           } else {
             remove(pending_batch_file.c_str());
@@ -876,8 +876,8 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   std::vector<std::future<Status>> fs;
-  std::vector<RecoveryInfo> recovery_info_(configs_.max_write_threads);
-  for (uint32_t i = 0; i < configs_.max_write_threads; i++) {
+  std::vector<RecoveryInfo> recovery_info_(configs_.max_access_threads);
+  for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
     fs.push_back(std::async(&KVEngine::RestoreData, this, &recovery_info_[i]));
   }
 
@@ -1210,11 +1210,11 @@ Status KVEngine::CheckConfigs(const Configs &configs) {
   }
 
   if (configs.pmem_segment_blocks * configs.pmem_block_size *
-          configs.max_write_threads >
+          configs.max_access_threads >
       configs.pmem_file_size) {
     GlobalLogger.Error(
         "pmem file too small, should larger than pmem_segment_blocks * "
-        "pmem_block_size * max_write_threads\n");
+        "pmem_block_size * max_access_threads\n");
     return Status::InvalidConfiguration;
   }
 
@@ -1261,7 +1261,7 @@ Status KVEngine::SDelete(const StringView collection,
 }
 
 Status KVEngine::MaybeInitPendingBatchFile() {
-  if (thread_cache_[write_thread.id].persisted_pending_batch == nullptr) {
+  if (thread_cache_[access_thread.id].persisted_pending_batch == nullptr) {
     int is_pmem;
     size_t mapped_len;
     uint64_t persisted_pending_file_size =
@@ -1270,9 +1270,9 @@ Status KVEngine::MaybeInitPendingBatchFile() {
         kPMEMMapSizeUnit *
         (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
 
-    if ((thread_cache_[write_thread.id].persisted_pending_batch =
+    if ((thread_cache_[access_thread.id].persisted_pending_batch =
              (PendingBatch *)pmem_map_file(
-                 persisted_pending_block_file(write_thread.id).c_str(),
+                 persisted_pending_block_file(access_thread.id).c_str(),
                  persisted_pending_file_size, PMEM_FILE_CREATE, 0666,
                  &mapped_len, &is_pmem)) == nullptr ||
         !is_pmem || mapped_len != persisted_pending_file_size) {
@@ -1298,8 +1298,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   RAIICaller batch_write_holder(
-      [&]() { thread_cache_[write_thread.id].batch_writing = true; },
-      [&]() { thread_cache_[write_thread.id].batch_writing = false; });
+      [&]() { thread_cache_[access_thread.id].batch_writing = true; },
+      [&]() { thread_cache_[access_thread.id].batch_writing = false; });
 
   std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
@@ -1347,7 +1347,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   PendingBatch pending_batch(PendingBatch::Stage::Processing,
                              space_entry_offsets.size(), ts);
   pending_batch.PersistProcessing(
-      thread_cache_[write_thread.id].persisted_pending_batch,
+      thread_cache_[access_thread.id].persisted_pending_batch,
       space_entry_offsets);
 
   // Do batch writes
@@ -2107,10 +2107,10 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
 
 void KVEngine::handleThreadLocalPendingFreeRecords() {
   constexpr size_t kMaxLocalPendingFreeDeleteRecord = 10000;
-  kvdk_assert(write_thread.id >= 0,
+  kvdk_assert(access_thread.id >= 0,
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
-              "un-initialized write thread");
-  auto &tc = thread_cache_[write_thread.id];
+              "un-initialized access thread");
+  auto &tc = thread_cache_[access_thread.id];
   size_t limit_free = 1;
   while (tc.pending_free_data_records.size() > 0 &&
          tc.pending_free_data_records.front().newer_version_timestamp <
@@ -2133,8 +2133,9 @@ void KVEngine::delayFree(PendingFreeDeleteRecord &&pending_free_delete_record) {
   // regularly
   maybeUpdateOldestSnapshot();
 
-  kvdk_assert(write_thread.id >= 0, "uninitialized write thread in delayFree");
-  auto &tc = thread_cache_[write_thread.id];
+  kvdk_assert(access_thread.id >= 0,
+              "uninitialized access thread in delayFree");
+  auto &tc = thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.pending_free_delete_records_lock);
   tc.pending_free_delete_records.emplace_back(
       std::forward<PendingFreeDeleteRecord>(pending_free_delete_record));
@@ -2146,8 +2147,9 @@ void KVEngine::delayFree(PendingFreeDataRecord &&pending_free_data_record) {
   // regularly
   maybeUpdateOldestSnapshot();
 
-  kvdk_assert(write_thread.id >= 0, "uninitialized write thread in delayFree");
-  auto &tc = thread_cache_[write_thread.id];
+  kvdk_assert(access_thread.id >= 0,
+              "uninitialized access thread in delayFree");
+  auto &tc = thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.pending_free_delete_records_lock);
   tc.pending_free_data_records.emplace_back(
       std::forward<PendingFreeDataRecord>(pending_free_data_record));
@@ -2343,7 +2345,7 @@ Snapshot *KVEngine::GetSnapshot() {
   TimestampType snapshot_ts = static_cast<SnapshotImpl *>(ret)->GetTimestamp();
 
   // A snapshot should not contain any ongoing batch write
-  for (auto i = 0; i < configs_.max_write_threads; i++) {
+  for (auto i = 0; i < configs_.max_access_threads; i++) {
     while (thread_cache_[i].batch_writing &&
            snapshot_ts >=
                version_controller_.GetLocalSnapshot(i).GetTimestamp()) {

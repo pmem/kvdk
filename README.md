@@ -12,7 +12,7 @@
 
 # Limitations
 *  Maximum supported key-value size is 64KB-64MB.
-*  No support of changing the maximum write thread number after start-up.
+*  No support of changing the maximum access thread number after start-up.
 *  No approval of key-value compression.
 *  Users can't expand the persistent memory space in the fly.
 

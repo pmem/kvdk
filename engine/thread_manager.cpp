@@ -49,6 +49,6 @@ void ThreadManager::Release(const Thread &t) {
   usable_id_.insert(t.id);
 }
 
-thread_local Thread write_thread;
+thread_local Thread access_thread;
 
 } // namespace KVDK_NAMESPACE
