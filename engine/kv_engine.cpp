@@ -227,8 +227,11 @@ Status KVEngine::MaybeInitWriteThread() {
   return thread_manager_->MaybeInitThread(write_thread);
 }
 
-Status KVEngine::RestoreData(uint64_t thread_id) {
-  write_thread.id = thread_id;
+Status KVEngine::RestoreData() {
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -308,8 +311,8 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     cnt++;
 
     auto ts_recovering = data_entry_cached.meta.timestamp;
-    if (ts_recovering > thread_res_[thread_id].newest_restored_ts) {
-      thread_res_[thread_id].newest_restored_ts = ts_recovering;
+    if (ts_recovering > thread_res_[write_thread.id].newest_restored_ts) {
+      thread_res_[write_thread.id].newest_restored_ts = ts_recovering;
     }
 
     Status s(Status::Ok);
@@ -353,13 +356,12 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     }
     }
     if (s != Status::Ok) {
-      write_thread.id = -1;
-      return s;
+      break;
     }
   }
-  write_thread.id = -1;
   restored_.fetch_add(cnt);
-  return Status::Ok;
+  ReleaseWriteThread();
+  return s;
 }
 
 bool KVEngine::ValidateRecordAndGetValue(void *data_record,
@@ -750,7 +752,7 @@ Status KVEngine::Recovery() {
 
   std::vector<std::future<Status>> fs;
   for (uint32_t i = 0; i < configs_.max_write_threads; i++) {
-    fs.push_back(std::async(&KVEngine::RestoreData, this, i));
+    fs.push_back(std::async(&KVEngine::RestoreData, this));
   }
 
   for (auto &f : fs) {

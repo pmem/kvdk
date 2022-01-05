@@ -186,7 +186,7 @@ private:
 
   Status Recovery();
 
-  Status RestoreData(uint64_t thread_id);
+  Status RestoreData();
 
   Status RestoreSkiplistHead(DLRecord *pmem_record,
                              const DataEntry &cached_entry);
