@@ -9,9 +9,7 @@
 namespace KVDK_NAMESPACE {
 
 void Thread::Release() {
-  if (id == -1)
-    return;
-  assert(thread_manager != nullptr);
+  assert(id == -1 || thread_manager != nullptr);
   if (thread_manager) {
     thread_manager->Release(*this);
     thread_manager = nullptr;
@@ -44,9 +42,11 @@ Status ThreadManager::MaybeInitThread(Thread &t) {
 }
 
 void ThreadManager::Release(const Thread &t) {
-  assert(t.id >= 0 && t.id < max_threads_);
-  std::lock_guard<SpinMutex> lg(spin_);
-  usable_id_.insert(t.id);
+  if (t.id >= 0) {
+    assert(t.id < max_threads_);
+    std::lock_guard<SpinMutex> lg(spin_);
+    usable_id_.insert(t.id);
+  }
 }
 
 thread_local Thread access_thread;
