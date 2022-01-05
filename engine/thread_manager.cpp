@@ -45,6 +45,7 @@ void ThreadManager::Release(const Thread &t) {
   if (t.id < 0) {
     return;
   }
+  assert(t.id < max_threads_);
   std::lock_guard<SpinMutex> lg(spin_);
   usable_id_.insert(t.id);
 }
