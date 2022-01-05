@@ -397,8 +397,10 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
                                      const DataEntry &data_entry_cached) {
   assert(pmem_record->entry.meta.type == SortedHeaderRecord);
 
-  if (data_entry_cached.meta.timestamp > max_recoverable_record_timestamp_) {
+  if (isBackup() &&
+      data_entry_cached.meta.timestamp > max_recoverable_record_timestamp_) {
     purgeAndFree(pmem_record);
+    return Status::Ok;
   }
 
   std::string name = string_view_2_string(pmem_record->Key());
