@@ -315,7 +315,6 @@ Status KVEngine::RestoreData() {
       thread_res_[write_thread.id].newest_restored_ts = ts_recovering;
     }
 
-    Status s(Status::Ok);
     switch (data_entry_cached.meta.type) {
     case RecordType::SortedDataRecord: {
       s = RestoreSkiplistRecord(static_cast<DLRecord *>(recovering_pmem_record),
