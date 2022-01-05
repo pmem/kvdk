@@ -12,8 +12,8 @@
 #include <immintrin.h>
 #include <x86intrin.h>
 
-#include "extd/rand64.hpp"
-#include "extd/zipf.hpp"
+#include "utils/rand64.hpp"
+#include "utils/zipf.hpp"
 
 inline uint64_t fast_random_64() {
   thread_local unsigned long long state = 0;
@@ -144,8 +144,7 @@ public:
 
 private:
   extd::zipfian_distribution<std::uint64_t> const zipf_dist;
-  struct PaddedEngine
-  {
+  struct PaddedEngine {
     extd::xorshift_engine engine;
     char padding[64];
   };

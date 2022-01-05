@@ -13,7 +13,7 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 
-#include "../engine/alias.hpp"
+#include "engine/alias.hpp"
 
 #include "generator.hpp"
 

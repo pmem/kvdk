@@ -12,8 +12,8 @@ set(CMAKE_CXX_STANDARD 11)
 
 option(COVERAGE "code coverage" OFF)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
 elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
@@ -94,6 +94,7 @@ install(TARGETS engine
 # executables
 add_executable(bench benchmark/bench.cpp)
 target_link_libraries(bench PUBLIC engine)
+target_include_directories(bench PUBLIC ./include ./extern ./)
 
 option(BUILD_TESTING "Build the tests" ON)
 if (BUILD_TESTING)
