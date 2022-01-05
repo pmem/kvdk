@@ -122,12 +122,12 @@ private:
     bool space_not_used{false};
   };
 
-  struct PendingFreeDataRecord {
+  struct OldDataRecord {
     void *pmem_data_record;
     TimestampType newer_version_timestamp;
   };
 
-  struct PendingFreeDeleteRecord {
+  struct OldDeleteRecord {
     void *pmem_delete_record;
     TimestampType newer_version_timestamp;
     // We need ref to hash entry for clear index of delete record
@@ -152,9 +152,9 @@ private:
     PendingBatch *persisted_pending_batch = nullptr;
 
     // Used for background free space, this is required for MVCC
-    std::deque<PendingFreeDeleteRecord> pending_free_delete_records{};
-    std::deque<PendingFreeDataRecord> pending_free_data_records{};
-    SpinMutex pending_free_delete_records_lock;
+    std::deque<OldDeleteRecord> old_delete_records{};
+    std::deque<OldDataRecord> old_data_records{};
+    SpinMutex old_records_lock;
 
     // This thread is doing batch write
     bool batch_writing = false;
@@ -253,21 +253,21 @@ private:
 
   void maybeUpdateOldestSnapshot();
 
-  // Foreground access thread handle cached pending free records
-  void handleThreadLocalPendingFreeRecords();
+  // Foreground access thread handle cached old records
+  void handleCachedOldRecords();
 
-  // Run in background to handle pending free records regularly
-  void pendingFreeRecordsHandler();
-  // Try to free all pending free records
-  void handlePendingFreeRecords();
+  // Run in background to handle old records regularly
+  void BGOldRecordsHandler();
+  // Try to free all old records
+  void handleOldRecords();
 
-  inline void delayFree(PendingFreeDeleteRecord &&);
+  inline void delayFree(OldDeleteRecord &&);
 
-  inline void delayFree(PendingFreeDataRecord &&);
+  inline void delayFree(OldDataRecord &&);
 
-  SpaceEntry purgePendingFreeRecord(const PendingFreeDataRecord &);
+  SpaceEntry purgeOldRecord(const OldDataRecord &);
 
-  SpaceEntry purgePendingFreeRecord(const PendingFreeDeleteRecord &);
+  SpaceEntry purgeOldRecord(const OldDeleteRecord &);
 
   void backgroundWorkCoordinator();
 
@@ -379,8 +379,8 @@ private:
   SpinMutex bg_thread_cv_lock_;
 
   // Used for background free space, this is required for MVCC
-  std::vector<std::deque<PendingFreeDataRecord>> bg_free_data_records_;
-  std::vector<std::deque<PendingFreeDeleteRecord>> bg_free_delete_records_;
+  std::vector<std::deque<OldDataRecord>> bg_free_data_records_;
+  std::vector<std::deque<OldDeleteRecord>> bg_free_delete_records_;
   std::deque<PendingFreeSpaceEntries> bg_free_space_entries_;
   bool bg_free_thread_processing_{false};
   std::condition_variable_any bg_free_thread_cv_;
