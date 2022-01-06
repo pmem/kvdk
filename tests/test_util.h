@@ -4,12 +4,15 @@
 
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <numeric>
 #include <random>
 #include <string>
 #include <vector>
+
+#include "gtest/gtest.h"
 
 /* Create a string that contains 8 bytes from uint64_t. */
 inline std::string uint64_to_string(uint64_t &key) {
@@ -143,3 +146,14 @@ private:
       out_stream_ << std::endl;
   }
 };
+
+template <class T>
+static void PrintRecord(const std::string &key, const T &value) {
+  std::ostringstream tmp_value;
+  tmp_value << value;
+  testing::Test::RecordProperty(key, tmp_value.str());
+  std::ios::fmtflags flags(std::cout.flags());
+  std::cout << key << ": " << std::fixed << std::setprecision(5) << value
+            << std::endl;
+  std::cout.flags(flags);
+}

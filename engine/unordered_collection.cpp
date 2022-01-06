@@ -51,7 +51,13 @@ ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
                                           StringView const key,
                                           StringView const value,
                                           LockType const &lock) {
-  thread_local DLRecord *last_emplacement_pos = nullptr;
+  thread_local PMemOffsetType last_emplacement_offset = kPmemNullOffset;
+  DLRecord *last_emplacement_pos =
+      (last_emplacement_offset == kPmemNullOffset)
+          ? nullptr
+          : static_cast<DLRecord *>(
+                dlinked_list_.pmem_allocator_ptr_->offset2addr_checked(
+                    last_emplacement_offset));
 
   iterator new_record = makeInternalIterator(nullptr);
   LockPair lock_prev_and_next;

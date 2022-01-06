@@ -7,8 +7,6 @@
 #include <thread>
 #include <vector>
 
-#include "gtest/gtest.h"
-
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 
