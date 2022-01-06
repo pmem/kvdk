@@ -55,20 +55,6 @@ private:
   SnapshotImpl head_;
 };
 
-// set snapshot to "new_ts", and set it to kMaxTimestamp on destroy
-struct SnapshotSetter {
-public:
-  explicit SnapshotSetter(SnapshotImpl &snapshot, TimestampType new_ts)
-      : snapshot_(snapshot) {
-    snapshot.timestamp = new_ts;
-  }
-
-  ~SnapshotSetter() { snapshot_.timestamp = kMaxTimestamp; }
-
-private:
-  SnapshotImpl &snapshot_;
-};
-
 class VersionController {
 public:
   VersionController(uint64_t max_access_threads)

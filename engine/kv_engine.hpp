@@ -25,8 +25,6 @@
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
-#include "mvcc/old_records_cleaner.hpp"
-#include "mvcc/version_controller.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
 #include "skiplist.hpp"
@@ -34,6 +32,8 @@
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
 #include "utils.hpp"
+#include "version/old_records_cleaner.hpp"
+#include "version/version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
@@ -235,6 +235,9 @@ private:
 
   inline void delayFree(OldDataRecord &&);
 
+  // Run in background to clean old records regularly
+  void backgroundCleaner();
+
   void backgroundWorkCoordinator();
 
   inline std::string data_file() { return data_file(dir_); }
@@ -343,6 +346,8 @@ private:
   OldRecordsCleaner old_records_cleaner_;
 
   std::condition_variable_any bg_coordinator_cv_;
+  std::condition_variable_any bg_cleaner_cv_;
+  bool bg_cleaner_processing_;
   SpinMutex engine_closing_lock_;
 
   // Max timestamp of records that could be restored in recovery, this is used

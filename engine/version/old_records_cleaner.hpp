@@ -42,14 +42,17 @@ public:
       : kv_engine_(kv_engine), thread_cache_(max_access_threads) {
     assert(kv_engine_ != nullptr);
   }
-  void NotifyBGCleaner() { background_cleaner_cv_.notify_all(); }
+
   void Push(OldDataRecord &&old_data_record);
   void Push(OldDeleteRecord &&old_delete_record);
   // Try to clean all old records
   void TryCleanAll();
-  // Run in background to clean old records regularly
-  void BackgroundCleaner();
-  void CleanCachedOldRecords();
+  void TryCleanCachedOldRecords();
+  uint64_t NumCachedOldRecords() {
+    assert(access_thread.id >= 0);
+    auto &tc = thread_cache_[access_thread.id];
+    return tc.old_delete_records.size() + tc.old_data_records.size();
+  }
 
 private:
   struct ThreadCache {
@@ -65,11 +68,9 @@ private:
   KVEngine *kv_engine_;
 
   Array<ThreadCache> thread_cache_;
-  std::condition_variable_any background_cleaner_cv_;
-  bool bg_free_thread_processing_{false};
 
-  std::vector<std::deque<OldDataRecord>> bg_free_data_records_;
-  std::vector<std::deque<OldDeleteRecord>> bg_free_delete_records_;
-  std::deque<PendingFreeSpaceEntries> bg_free_space_entries_;
+  std::vector<std::deque<OldDataRecord>> global_old_data_records_;
+  std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
+  std::deque<PendingFreeSpaceEntries> pending_free_space_entries_;
 };
 } // namespace KVDK_NAMESPACE

@@ -33,6 +33,7 @@ constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
 // Select a record every 10000 into restored skiplist map for multi-thread
 // restoring large skiplist.
 constexpr uint64_t kRestoreSkiplistStride = 10000;
+constexpr uint64_t kMaxCachedOldRecords = 10000;
 
 void PendingBatch::PersistProcessing(
     void *target, const std::vector<uint64_t> &entry_offsets) {
@@ -54,7 +55,7 @@ KVEngine::~KVEngine() {
     std::lock_guard<SpinMutex> ul(engine_closing_lock_);
     closing_ = true;
     bg_coordinator_cv_.notify_all();
-    old_records_cleaner_.NotifyBGCleaner();
+    bg_cleaner_cv_.notify_all();
   }
   for (auto &t : bg_threads_) {
     t.join();
@@ -96,7 +97,7 @@ void KVEngine::backgroundWorkCoordinator() {
       if (!closing_) {
         bg_coordinator_cv_.wait_for(ul, duration);
       }
-      old_records_cleaner_.NotifyBGCleaner();
+      bg_cleaner_cv_.notify_all();
     }
     version_controller_.UpdatedOldestSnapshot();
     pmem_allocator_->BackgroundWork();
@@ -174,8 +175,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   s = Recovery();
   access_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::backgroundWorkCoordinator, this);
-  bg_threads_.emplace_back(&OldRecordsCleaner::BackgroundCleaner,
-                           &old_records_cleaner_);
+  bg_threads_.emplace_back(&KVEngine::backgroundCleaner, this);
 
   return s;
 }
@@ -195,8 +195,10 @@ Status KVEngine::MaybeInitAccessThread() {
 }
 
 Status KVEngine::RestoreData(RecoveryInfo *recovery_info) {
-  RAIICaller restore_thread_init([&]() { MaybeInitAccessThread(); },
-                                 [&]() { ReleaseAccessThread(); });
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -321,11 +323,12 @@ Status KVEngine::RestoreData(RecoveryInfo *recovery_info) {
     }
     }
     if (s != Status::Ok) {
-      return s;
+      break;
     }
   }
   restored_.fetch_add(cnt);
-  return Status::Ok;
+  ReleaseAccessThread();
+  return s;
 }
 
 bool KVEngine::ValidateRecordAndGetValue(void *data_record,
@@ -1077,8 +1080,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     } else {
       entry_ptr->header.data_type = SortedDeleteRecord;
     }
-    old_records_cleaner_.Push(OldDataRecord{existing_record, new_ts});
-    old_records_cleaner_.Push(
+    delayFree(OldDataRecord{existing_record, new_ts});
+    delayFree(
         OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr, hint.spin});
     break;
   }
@@ -1147,7 +1150,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
         entry_ptr->header.data_type = SortedDataRecord;
       }
       if (updated_type == SortedDataRecord) {
-        old_records_cleaner_.Push(OldDataRecord{existing_record, new_ts});
+        delayFree(OldDataRecord{existing_record, new_ts});
       }
       // purgeAndFree(existing_record);
     } else {
@@ -1163,8 +1166,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                           dram_node ? HashOffsetType::SkiplistNode
                                     : HashOffsetType::DLRecord);
       if (entry_base_status == HashEntryStatus::Updating) {
-        old_records_cleaner_.Push(
-            OldDataRecord{hash_entry.index.dl_record, new_ts});
+        delayFree(OldDataRecord{hash_entry.index.dl_record, new_ts});
         // purgeAndFree(hash_entry.index.dl_record);
       }
     }
@@ -1382,13 +1384,12 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (batch_hints[i].data_record_to_free != nullptr) {
-      old_records_cleaner_.Push(
-          OldDataRecord{batch_hints[i].data_record_to_free, ts});
+      delayFree(OldDataRecord{batch_hints[i].data_record_to_free, ts});
     }
     if (batch_hints[i].delete_record_to_free != nullptr) {
-      old_records_cleaner_.Push(OldDeleteRecord{
-          batch_hints[i].delete_record_to_free, ts,
-          batch_hints[i].hash_entry_ptr, batch_hints[i].hash_hint.spin});
+      delayFree(OldDeleteRecord{batch_hints[i].delete_record_to_free, ts,
+                                batch_hints[i].hash_entry_ptr,
+                                batch_hints[i].hash_hint.spin});
     }
     if (batch_hints[i].space_not_used) {
       pmem_allocator_->Free(batch_hints[i].allocated_space);
@@ -1514,11 +1515,9 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
 
       hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
                           HashOffsetType::StringRecord);
-      old_records_cleaner_.Push(
-          OldDataRecord{hash_entry.index.string_record, new_ts});
+      delayFree(OldDataRecord{hash_entry.index.string_record, new_ts});
       // We also delay free this delete record to recycle PMem and DRAM space
-      old_records_cleaner_.Push(
-          OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
+      delayFree(OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
       return s;
     }
     case Status::NotFound:
@@ -1580,8 +1579,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     if (entry_base_status == HashEntryStatus::Updating &&
         updated_type == StringDataRecord) {
       /* delete record is self-freed, so we don't need to free it here */
-      old_records_cleaner_.Push(
-          OldDataRecord{hash_entry.index.string_record, new_ts});
+      delayFree(OldDataRecord{hash_entry.index.string_record, new_ts});
     }
   }
 
@@ -2141,6 +2139,36 @@ Snapshot *KVEngine::GetSnapshot() {
     }
   }
   return ret;
+}
+
+void KVEngine::delayFree(OldDataRecord &&old_data_record) {
+  old_records_cleaner_.Push(std::move(old_data_record));
+  if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
+      !bg_cleaner_processing_) {
+    bg_cleaner_cv_.notify_all();
+  }
+}
+
+void KVEngine::delayFree(OldDeleteRecord &&old_delete_record) {
+  old_records_cleaner_.Push(std::move(old_delete_record));
+  if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
+      !bg_cleaner_processing_) {
+    bg_cleaner_cv_.notify_all();
+  }
+}
+
+void KVEngine::backgroundCleaner() {
+  while (!closing_) {
+    bg_cleaner_processing_ = false;
+    {
+      std::unique_lock<SpinMutex> ul(engine_closing_lock_);
+      if (!closing_) {
+        bg_cleaner_cv_.wait(engine_closing_lock_);
+      }
+    }
+    bg_cleaner_processing_ = true;
+    old_records_cleaner_.TryCleanAll();
+  }
 }
 
 } // namespace KVDK_NAMESPACE

@@ -58,7 +58,7 @@ set(SOURCES
         engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/queue.cpp
-        engine/mvcc/old_records_cleaner.cpp
+        engine/version/old_records_cleaner.cpp
         )
 
 
