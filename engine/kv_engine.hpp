@@ -25,7 +25,8 @@
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
-#include "mvcc.hpp"
+#include "mvcc/old_records_cleaner.hpp"
+#include "mvcc/version_controller.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
 #include "skiplist.hpp"
@@ -108,9 +109,12 @@ public:
   };
 
 private:
+  friend OldRecordsCleaner;
+
   KVEngine(const Configs &configs)
       : thread_cache_(configs.max_access_threads),
-        version_controller_(configs.max_access_threads){};
+        version_controller_(configs.max_access_threads),
+        old_records_cleaner_(this, configs.max_access_threads){};
 
   struct BatchWriteHint {
     TimestampType timestamp{0};
@@ -120,24 +124,6 @@ private:
     void *data_record_to_free = nullptr;
     void *delete_record_to_free = nullptr;
     bool space_not_used{false};
-  };
-
-  struct OldDataRecord {
-    void *pmem_data_record;
-    TimestampType newer_version_timestamp;
-  };
-
-  struct OldDeleteRecord {
-    void *pmem_delete_record;
-    TimestampType newer_version_timestamp;
-    // We need ref to hash entry for clear index of delete record
-    HashEntry *hash_entry_ref;
-    SpinMutex *hash_entry_lock;
-  };
-
-  struct PendingFreeSpaceEntries {
-    std::vector<SpaceEntry> entries;
-    TimestampType free_ts;
   };
 
   // used in recovery
@@ -150,12 +136,6 @@ private:
     ThreadCache() = default;
 
     PendingBatch *persisted_pending_batch = nullptr;
-
-    // Used for background free space, this is required for MVCC
-    std::deque<OldDeleteRecord> old_delete_records{};
-    std::deque<OldDataRecord> old_data_records{};
-    SpinMutex old_records_lock;
-
     // This thread is doing batch write
     bool batch_writing = false;
   };
@@ -251,23 +231,9 @@ private:
 
   void FreeSkiplistDramNodes();
 
-  void maybeUpdateOldestSnapshot();
-
-  // Foreground access thread handle cached old records
-  void handleCachedOldRecords();
-
-  // Run in background to handle old records regularly
-  void BGOldRecordsHandler();
-  // Try to free all old records
-  void handleOldRecords();
-
   inline void delayFree(OldDeleteRecord &&);
 
   inline void delayFree(OldDataRecord &&);
-
-  SpaceEntry purgeOldRecord(const OldDataRecord &);
-
-  SpaceEntry purgeOldRecord(const OldDeleteRecord &);
 
   void backgroundWorkCoordinator();
 
@@ -374,16 +340,10 @@ private:
   std::vector<std::thread> bg_threads_;
   SortedCollectionRebuilder sorted_rebuilder_;
   VersionController version_controller_;
+  OldRecordsCleaner old_records_cleaner_;
 
   std::condition_variable_any bg_coordinator_cv_;
-  SpinMutex bg_thread_cv_lock_;
-
-  // Used for background free space, this is required for MVCC
-  std::vector<std::deque<OldDataRecord>> bg_free_data_records_;
-  std::vector<std::deque<OldDeleteRecord>> bg_free_delete_records_;
-  std::deque<PendingFreeSpaceEntries> bg_free_space_entries_;
-  bool bg_free_thread_processing_{false};
-  std::condition_variable_any bg_free_thread_cv_;
+  SpinMutex engine_closing_lock_;
 
   // Max timestamp of records that could be restored in recovery, this is used
   // for backup instance. For an instance that is not a backup, this is set to

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
 
 #include "data_record.hpp"
 #include "dram_allocator.hpp"

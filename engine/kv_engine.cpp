@@ -51,10 +51,10 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Closing instance ... \n");
   GlobalLogger.Info("Waiting bg threads exit ... \n");
   {
-    std::lock_guard<SpinMutex> ul(bg_thread_cv_lock_);
+    std::lock_guard<SpinMutex> ul(engine_closing_lock_);
     closing_ = true;
     bg_coordinator_cv_.notify_all();
-    bg_free_thread_cv_.notify_all();
+    old_records_cleaner_.NotifyBGCleaner();
   }
   for (auto &t : bg_threads_) {
     t.join();
@@ -92,11 +92,11 @@ void KVEngine::backgroundWorkCoordinator() {
       static_cast<uint64_t>(configs_.background_work_interval * 1000));
   while (!closing_) {
     {
-      std::unique_lock<SpinMutex> ul(bg_thread_cv_lock_);
+      std::unique_lock<SpinMutex> ul(engine_closing_lock_);
       if (!closing_) {
         bg_coordinator_cv_.wait_for(ul, duration);
       }
-      bg_free_thread_cv_.notify_all();
+      old_records_cleaner_.NotifyBGCleaner();
     }
     version_controller_.UpdatedOldestSnapshot();
     pmem_allocator_->BackgroundWork();
@@ -174,7 +174,8 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   s = Recovery();
   access_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::backgroundWorkCoordinator, this);
-  bg_threads_.emplace_back(&KVEngine::BGOldRecordsHandler, this);
+  bg_threads_.emplace_back(&OldRecordsCleaner::BackgroundCleaner,
+                           &old_records_cleaner_);
 
   return s;
 }
@@ -918,8 +919,7 @@ Status KVEngine::Recovery() {
   remove(backup_mark_file().c_str());
 
   version_controller_.Init(latest_version_ts);
-
-  handleOldRecords();
+  old_records_cleaner_.TryCleanAll();
 
   return Status::Ok;
 }
@@ -1077,8 +1077,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     } else {
       entry_ptr->header.data_type = SortedDeleteRecord;
     }
-    delayFree(OldDataRecord{existing_record, new_ts});
-    delayFree(
+    old_records_cleaner_.Push(OldDataRecord{existing_record, new_ts});
+    old_records_cleaner_.Push(
         OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr, hint.spin});
     break;
   }
@@ -1147,7 +1147,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
         entry_ptr->header.data_type = SortedDataRecord;
       }
       if (updated_type == SortedDataRecord) {
-        delayFree(OldDataRecord{existing_record, new_ts});
+        old_records_cleaner_.Push(OldDataRecord{existing_record, new_ts});
       }
       // purgeAndFree(existing_record);
     } else {
@@ -1163,7 +1163,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                           dram_node ? HashOffsetType::SkiplistNode
                                     : HashOffsetType::DLRecord);
       if (entry_base_status == HashEntryStatus::Updating) {
-        delayFree(OldDataRecord{hash_entry.index.dl_record, new_ts});
+        old_records_cleaner_.Push(
+            OldDataRecord{hash_entry.index.dl_record, new_ts});
         // purgeAndFree(hash_entry.index.dl_record);
       }
     }
@@ -1381,12 +1382,13 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (batch_hints[i].data_record_to_free != nullptr) {
-      delayFree(OldDataRecord{batch_hints[i].data_record_to_free, ts});
+      old_records_cleaner_.Push(
+          OldDataRecord{batch_hints[i].data_record_to_free, ts});
     }
     if (batch_hints[i].delete_record_to_free != nullptr) {
-      delayFree(OldDeleteRecord{batch_hints[i].delete_record_to_free, ts,
-                                batch_hints[i].hash_entry_ptr,
-                                batch_hints[i].hash_hint.spin});
+      old_records_cleaner_.Push(OldDeleteRecord{
+          batch_hints[i].delete_record_to_free, ts,
+          batch_hints[i].hash_entry_ptr, batch_hints[i].hash_hint.spin});
     }
     if (batch_hints[i].space_not_used) {
       pmem_allocator_->Free(batch_hints[i].allocated_space);
@@ -1512,9 +1514,11 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
 
       hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
                           HashOffsetType::StringRecord);
-      delayFree(OldDataRecord{hash_entry.index.string_record, new_ts});
+      old_records_cleaner_.Push(
+          OldDataRecord{hash_entry.index.string_record, new_ts});
       // We also delay free this delete record to recycle PMem and DRAM space
-      delayFree(OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
+      old_records_cleaner_.Push(
+          OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
       return s;
     }
     case Status::NotFound:
@@ -1576,7 +1580,8 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     if (entry_base_status == HashEntryStatus::Updating &&
         updated_type == StringDataRecord) {
       /* delete record is self-freed, so we don't need to free it here */
-      delayFree(OldDataRecord{hash_entry.index.string_record, new_ts});
+      old_records_cleaner_.Push(
+          OldDataRecord{hash_entry.index.string_record, new_ts});
     }
   }
 
@@ -2120,233 +2125,6 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     kvdk_assert(false, "Wrong type in RestoreDlistRecords!\n");
     return Status::Abort;
   }
-  }
-}
-
-void KVEngine::handleCachedOldRecords() {
-  constexpr size_t kMaxCachedOldDeleteRecord = 10000;
-  constexpr size_t kLimitForegroundFree = 1;
-  kvdk_assert(access_thread.id >= 0,
-              "call KVEngine::handleThreadLocalPendingFreeRecords in a "
-              "un-initialized access thread");
-  auto &tc = thread_cache_[access_thread.id];
-  size_t limit_free = kLimitForegroundFree;
-  while (tc.old_data_records.size() > 0 &&
-         tc.old_data_records.front().newer_version_timestamp <
-             version_controller_.OldestSnapshotTS() &&
-         limit_free-- > 0) {
-    pmem_allocator_->Free(purgeOldRecord(tc.old_data_records.front()));
-    tc.old_data_records.pop_front();
-  }
-
-  if (tc.old_delete_records.size() > kMaxCachedOldDeleteRecord &&
-      !bg_free_thread_processing_) {
-    bg_free_thread_cv_.notify_all();
-  }
-}
-
-void KVEngine::delayFree(OldDeleteRecord &&old_delete_record) {
-  // To avoid too many records pending free, we upadte global oldest snapshot
-  // regularly
-  maybeUpdateOldestSnapshot();
-
-  kvdk_assert(access_thread.id >= 0,
-              "uninitialized access thread in delayFree");
-  auto &tc = thread_cache_[access_thread.id];
-  std::lock_guard<SpinMutex> lg(tc.old_records_lock);
-  tc.old_delete_records.emplace_back(
-      std::forward<OldDeleteRecord>(old_delete_record));
-  handleCachedOldRecords();
-}
-
-void KVEngine::delayFree(OldDataRecord &&old_data_record) {
-  // To avoid too many records pending free, we upadte global oldest snapshot
-  // regularly
-  maybeUpdateOldestSnapshot();
-
-  kvdk_assert(access_thread.id >= 0,
-              "uninitialized access thread in delayFree");
-  auto &tc = thread_cache_[access_thread.id];
-  std::lock_guard<SpinMutex> lg(tc.old_records_lock);
-  tc.old_data_records.emplace_back(
-      std::forward<OldDataRecord>(old_data_record));
-  handleCachedOldRecords();
-}
-
-SpaceEntry KVEngine::purgeOldRecord(const OldDeleteRecord &old_delete_record) {
-  DataEntry *data_entry =
-      static_cast<DataEntry *>(old_delete_record.pmem_delete_record);
-  switch (data_entry->meta.type) {
-  case StringDeleteRecord: {
-    if (old_delete_record.hash_entry_ref->index.string_record ==
-        old_delete_record.pmem_delete_record) {
-      std::lock_guard<SpinMutex> lg(*old_delete_record.hash_entry_lock);
-      if (old_delete_record.hash_entry_ref->index.string_record ==
-          old_delete_record.pmem_delete_record) {
-        old_delete_record.hash_entry_ref->Clear();
-      }
-    }
-    // we don't need to purge a delete record
-    return SpaceEntry(pmem_allocator_->addr2offset(data_entry),
-                      data_entry->header.record_size);
-  }
-  case SortedDeleteRecord: {
-    while (1) {
-      HashEntry *hash_entry_ref = old_delete_record.hash_entry_ref;
-      SpinMutex *hash_entry_lock = old_delete_record.hash_entry_lock;
-      std::lock_guard<SpinMutex> lg(*hash_entry_lock);
-      DLRecord *hash_indexed_pmem_record = nullptr;
-      SkiplistNode *dram_node = nullptr;
-      switch (hash_entry_ref->header.offset_type) {
-      case HashOffsetType::DLRecord:
-        hash_indexed_pmem_record = hash_entry_ref->index.dl_record;
-        break;
-      case HashOffsetType::SkiplistNode:
-        dram_node = hash_entry_ref->index.skiplist_node;
-        hash_indexed_pmem_record = dram_node->record;
-        break;
-      default:
-        GlobalLogger.Error(
-            "Wrong time in handle pending free skiplist delete record\n");
-        std::abort();
-      }
-
-      if (hash_indexed_pmem_record == old_delete_record.pmem_delete_record) {
-        if (!Skiplist::Purge(
-                static_cast<DLRecord *>(old_delete_record.pmem_delete_record),
-                hash_entry_lock, dram_node, pmem_allocator_.get(),
-                hash_table_.get())) {
-          continue;
-        }
-        hash_entry_ref->Clear();
-      }
-
-      return SpaceEntry(pmem_allocator_->addr2offset(data_entry),
-                        data_entry->header.record_size);
-    }
-  }
-  default: {
-    std::abort();
-  }
-  }
-}
-
-SpaceEntry KVEngine::purgeOldRecord(const OldDataRecord &old_data_record) {
-  DataEntry *data_entry =
-      static_cast<DataEntry *>(old_data_record.pmem_data_record);
-  switch (data_entry->meta.type) {
-  case StringDataRecord:
-  case SortedDataRecord: {
-    data_entry->Destroy();
-    return SpaceEntry(pmem_allocator_->addr2offset(data_entry),
-                      data_entry->header.record_size);
-  }
-  default:
-    std::abort();
-  }
-}
-
-void KVEngine::maybeUpdateOldestSnapshot() {
-  // To avoid too many records pending free, we upadte global smallest snapshot
-  // regularly. We update it every kUpdateSnapshotRound to mitigate the overhead
-  static size_t kUpdateSnapshotRound = 10000;
-  thread_local size_t round = 0;
-  if ((++round) % kUpdateSnapshotRound == 0) {
-    version_controller_.UpdatedOldestSnapshot();
-  }
-}
-
-void KVEngine::handleOldRecords() {
-  // records that can't be freed this time
-  std::deque<OldDataRecord> data_record_refered;
-  std::deque<OldDeleteRecord> delete_record_refered;
-  PendingFreeSpaceEntries space_pending;
-
-  std::vector<SpaceEntry> space_to_free;
-
-  // Update recorded oldest snapshot up to state so we can know which records
-  // can be freed
-  version_controller_.UpdatedOldestSnapshot();
-  TimestampType oldest_snapshot_ts = version_controller_.OldestSnapshotTS();
-
-  // Fetch thread cached pending free records
-  for (size_t i = 0; i < thread_cache_.size(); i++) {
-    auto &thread_cache = thread_cache_[i];
-    if (thread_cache.old_data_records.size() > 0 ||
-        thread_cache.old_delete_records.size() > 0) {
-      std::lock_guard<SpinMutex> lg(thread_cache.old_records_lock);
-
-      if (thread_cache.old_data_records.size() > 0) {
-        bg_free_data_records_.emplace_back();
-        bg_free_data_records_.back().swap(thread_cache.old_data_records);
-      }
-
-      if (thread_cache.old_delete_records.size() > 0) {
-        bg_free_delete_records_.emplace_back();
-        bg_free_delete_records_.back().swap(thread_cache.old_delete_records);
-      }
-    }
-  }
-
-  // Find free-able data records
-  for (auto &data_records : bg_free_data_records_) {
-    for (auto &record : data_records) {
-      if (record.newer_version_timestamp <= oldest_snapshot_ts) {
-        space_to_free.emplace_back(purgeOldRecord(record));
-      } else {
-        data_record_refered.emplace_back(std::move(record));
-      }
-    }
-  }
-
-  // Find free-able delete records
-  for (auto &delete_records : bg_free_delete_records_) {
-    for (auto &record : delete_records) {
-      if (record.newer_version_timestamp <= oldest_snapshot_ts) {
-        space_pending.entries.emplace_back(purgeOldRecord(record));
-      } else {
-        delete_record_refered.emplace_back(std::move(record));
-      }
-    }
-  }
-
-  if (space_pending.entries.size() > 0) {
-    space_pending.free_ts = version_controller_.GetCurrentTimestamp();
-    bg_free_space_entries_.emplace_back(std::move(space_pending));
-  }
-
-  auto iter = bg_free_space_entries_.begin();
-  for (auto iter = bg_free_space_entries_.begin();
-       iter != bg_free_space_entries_.end(); iter++) {
-    if (iter->free_ts < oldest_snapshot_ts) {
-      pmem_allocator_->BatchFree(iter->entries);
-    } else {
-      break;
-    }
-  }
-  bg_free_space_entries_.erase(bg_free_space_entries_.begin(), iter);
-
-  if (space_to_free.size() > 0) {
-    pmem_allocator_->BatchFree(space_to_free);
-  }
-
-  bg_free_data_records_.clear();
-  bg_free_data_records_.emplace_back(std::move(data_record_refered));
-  bg_free_delete_records_.clear();
-  bg_free_delete_records_.emplace_back(std::move(delete_record_refered));
-}
-
-void KVEngine::BGOldRecordsHandler() {
-  while (!closing_) {
-    bg_free_thread_processing_ = false;
-    {
-      std::unique_lock<SpinMutex> ul(bg_thread_cv_lock_);
-      if (!closing_) {
-        bg_free_thread_cv_.wait(bg_thread_cv_lock_);
-      }
-    }
-    bg_free_thread_processing_ = true;
-    handleOldRecords();
   }
 }
 

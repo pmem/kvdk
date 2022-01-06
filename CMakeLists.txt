@@ -10,9 +10,9 @@ include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 11)
 option(DEBUG_CHECK "check connection" OFF)
-if(DEBUG_CHECK)
+if (DEBUG_CHECK)
     add_compile_definitions(DEBUG_CHECK)
-endif()
+endif ()
 
 set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2")
 
@@ -36,7 +36,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions(DEBUG_LEVEL=0)
 else ()
     add_compile_definitions(DEBUG_LEVEL=1)
-endif()
+endif ()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
@@ -58,7 +58,8 @@ set(SOURCES
         engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/queue.cpp
-    )
+        engine/mvcc/old_records_cleaner.cpp
+        )
 
 
 # .a library
@@ -68,11 +69,11 @@ target_link_libraries(engine PUBLIC pthread pmem gflags hwloc)
 
 configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
-	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 set_target_properties(
-engine PROPERTIES PUBLIC_HEADER 
-"\
+        engine PROPERTIES PUBLIC_HEADER
+        "\
 include/kvdk/configs.hpp;\
 include/kvdk/engine.h;\
 include/kvdk/engine.hpp;\
@@ -84,9 +85,9 @@ include/kvdk/write_batch.hpp")
 
 
 install(TARGETS engine
-		PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
-		LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-		RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # executables
 add_executable(bench benchmark/bench.cpp)

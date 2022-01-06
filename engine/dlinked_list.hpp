@@ -22,6 +22,7 @@
 
 #include "alias.hpp"
 #include "hash_table.hpp"
+#include "kvdk/namespace.hpp"
 #include "macros.hpp"
 #include "structures.hpp"
 #include "utils.hpp"

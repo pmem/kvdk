@@ -8,6 +8,7 @@
 #include "assert.h"
 #include "atomic"
 #include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
 #include "logger.hpp"
 #include "structures.hpp"
 #include <string>

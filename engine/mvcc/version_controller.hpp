@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2021 Intel Corporation
  */
+#pragma once
 
-#include "alias.hpp"
+#include "../alias.hpp"
+#include "../thread_manager.hpp"
 #include "kvdk/configs.hpp"
-#include "thread_manager.hpp"
 
 namespace KVDK_NAMESPACE {
 constexpr TimestampType kMaxTimestamp = UINT64_MAX;
