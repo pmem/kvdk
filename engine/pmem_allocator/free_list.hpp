@@ -66,8 +66,9 @@ private:
 // free space entries (the third level).
 //
 // For a specific block size, a write thread will move a entry list from the
-// pool to its thread cache while no usable free space in the cache, or move a
-// entry list to the pool while too many entries cached.
+// pool to its thread cache while no usable free space in the cache, and the
+// background thread will move cached entry list to the pool for merge and
+// balance resource
 //
 // Organization of the three level vectors:
 //

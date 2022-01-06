@@ -135,34 +135,34 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
 
 bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
+  kvdk_assert(write_thread.id >= 0, "Call PMEMAllocator::FreeAndFetchSegment "
+                                    "with a un-initialized write thread\n");
   if (segment_space_entry->size == segment_size_) {
+    persistSpaceEntry(segment_space_entry->offset, segment_size_);
     palloc_thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
-    LogDeallocation(write_thread.id, segment_size_);
     return false;
   }
 
-  return AllocateSegmentSpace(segment_space_entry);
+  std::lock_guard<SpinMutex> lg(offset_head_lock_);
+  if (offset_head_ <= pmem_size_ - segment_size_) {
+    Free(*segment_space_entry);
+    *segment_space_entry = SpaceEntry{offset_head_, segment_size_};
+    offset_head_ += segment_size_;
+    return true;
+  }
+  return false;
 }
 
 bool PMEMAllocator::AllocateSegmentSpace(SpaceEntry *segment_entry) {
-  uint64_t offset;
-  while (1) {
-    offset = offset_head_.load(std::memory_order_relaxed);
-    if (offset < pmem_size_) {
-      if (offset_head_.compare_exchange_strong(offset,
-                                               offset + segment_size_)) {
-        if (offset > pmem_size_ - segment_size_) {
-          return false;
-        }
-        Free(*segment_entry);
-        *segment_entry = SpaceEntry{offset, segment_size_};
-        LogAllocation(write_thread.id, segment_size_);
-        return true;
-      }
-      continue;
-    }
-    return false;
+  std::lock_guard<SpinMutex> lg(offset_head_lock_);
+  if (offset_head_ <= pmem_size_ - segment_size_) {
+    Free(*segment_entry);
+    *segment_entry = SpaceEntry{offset_head_, segment_size_};
+    persistSpaceEntry(offset_head_, segment_size_);
+    offset_head_ += segment_size_;
+    return true;
   }
+  return false;
 }
 
 bool PMEMAllocator::CheckDevDaxAndGetSize(const char *path, uint64_t *size) {
@@ -271,6 +271,11 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   palloc_thread_cache.segment_entry.size -= aligned_size;
   LogAllocation(write_thread.id, aligned_size);
   return space_entry;
+}
+
+void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
+  DataHeader header(0, size);
+  pmem_memcpy_persist(offset2addr(offset), &header, sizeof(DataHeader));
 }
 
 } // namespace KVDK_NAMESPACE
