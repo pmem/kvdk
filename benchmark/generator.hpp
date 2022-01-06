@@ -12,6 +12,9 @@
 #include <immintrin.h>
 #include <x86intrin.h>
 
+#include "utils/rand64.hpp"
+#include "utils/zipf.hpp"
+
 inline uint64_t fast_random_64() {
   thread_local unsigned long long state = 0;
   static std::atomic_uint64_t seed_gen{1};
@@ -19,9 +22,9 @@ inline uint64_t fast_random_64() {
     state = seed_gen.fetch_add(1);
   }
   uint64_t x = state; /* The state must be seeded with a nonzero value. */
-  x ^= x >> 12;      // a
-  x ^= x << 25;      // b
-  x ^= x >> 27;      // c
+  x ^= x >> 12;       // a
+  x ^= x << 25;       // b
+  x ^= x >> 27;       // c
   state = x;
   return x * 0x2545F4914F6CDD1D;
 }
@@ -92,6 +95,7 @@ private:
   std::uint64_t upper_;
   std::uint64_t step_;
   std::uint64_t curr_;
+  char padding[64];
 };
 
 class MultiThreadingRangeIterator : public Generator {
@@ -130,72 +134,21 @@ private:
 
 class ZipfianGenerator : public Generator {
 public:
-  constexpr static const double kZipfianConst = 0.99;
-  //  static const uint64_t kMaxNumItems = (UINT64_MAX);
-
-  ZipfianGenerator(uint64_t max) : ZipfianGenerator(max, kZipfianConst) {}
+  ZipfianGenerator(size_t n_thread, uint64_t max, double s = 0.99)
+      : zipf_dist{max, s}, engines(n_thread), id_pool_{0} {}
 
   uint64_t Next() override {
-    //    assert(num >= 2 && num < kMaxNumItems);
-    if (max_ > n_for_zeta_) { // Recompute zeta_n and eta
-      RaiseZeta(max_);
-      eta_ = Eta();
-    }
-
-    double u = fast_random_double();
-    double uz = u * zeta_n_;
-
-    if (uz < 1.0) {
-      last_value_ = 0;
-    } else if (uz < 1.0 + std::pow(0.5, theta_)) {
-      last_value_ = 1;
-    } else {
-      last_value_ = base_ + max_ * std::pow(eta_ * u - eta_ + 1, alpha_);
-    }
-
-    return std::max(base_, last_value_);
+    thread_local std::uint64_t id = id_pool_.fetch_add(1);
+    return zipf_dist(engines[id].engine);
   }
 
 private:
-  ZipfianGenerator(uint64_t max, double zipfian_const)
-      : max_(max), base_(1), theta_(zipfian_const), zeta_n_(0), n_for_zeta_(0) {
-    //    assert(max_ >= 2 && max_ < kMaxNumItems);
-    zeta_2_ = Zeta(2, theta_);
-    alpha_ = 1.0 / (1.0 - theta_);
-    RaiseZeta(max_);
-    eta_ = Eta();
+  extd::zipfian_distribution<std::uint64_t> const zipf_dist;
+  struct PaddedEngine {
+    extd::xorshift_engine engine;
+    char padding[64];
+  };
 
-    Next();
-  }
-
-  void RaiseZeta(uint64_t num) {
-    assert(num >= n_for_zeta_);
-    zeta_n_ = Zeta(n_for_zeta_, num, theta_, zeta_n_);
-    n_for_zeta_ = num;
-  }
-
-  double Eta() {
-    return (1 - std::pow(2.0 / max_, 1 - theta_)) / (1 - zeta_2_ / zeta_n_);
-  }
-
-  static double Zeta(uint64_t last_num, uint64_t cur_num, double theta,
-                     double last_zeta) {
-    double zeta = last_zeta;
-    for (uint64_t i = last_num + 1; i <= cur_num; ++i) {
-      zeta += 1 / std::pow(i, theta);
-    }
-    return zeta;
-  }
-
-  static double Zeta(uint64_t num, double theta) {
-    return Zeta(0, num, theta, 0);
-  }
-
-  uint64_t max_;
-  uint64_t base_; /// Min number of items to generate
-
-  // Computed parameters for generating the distribution
-  double theta_, zeta_n_, eta_, alpha_, zeta_2_;
-  uint64_t n_for_zeta_; /// Number of items used to compute zeta_n
-  uint64_t last_value_;
+  std::vector<PaddedEngine> engines;
+  std::atomic_uint64_t id_pool_;
 };
