@@ -237,23 +237,23 @@ static void test_batch_write() {
   return;
 }
 
-static void test_sorted_coll_by_val() {
+static void test_customer_sorted_func() {
   std::string collection = "collection0";
   struct student_info {
-    std::string student;
     std::string score;
+    std::string student;
   };
 
   std::vector<student_info> array = {
-      {"a", "100"}, {"c", "50"}, {"d", "50"}, {"b", "30"}, {"f", "90"}};
+      {"100", "a"}, {"50", "c"}, {"40", "d"}, {"30", "b"}, {"90", "f"}};
 
   std::vector<student_info> expected_array = {
-      {"a", "100"}, {"f", "90"}, {"c", "50"}, {"d", "50"}, {"b", "30"}};
+      {"100", "a"}, {"90", "f"}, {"50", "c"}, {"40", "d"}, {"30", "b"}};
 
   // regitser compare function
   std::string comp_name = "double_comp";
-  auto val_cmp = [](const pmem::obj::string_view &a,
-                    const pmem::obj::string_view &b) -> int {
+  auto score_cmp = [](const pmem::obj::string_view &a,
+                      const pmem::obj::string_view &b) -> int {
     double scorea = std::stod(a.data());
     double scoreb = std::stod(b.data());
     if (scorea == scoreb)
@@ -263,14 +263,14 @@ static void test_sorted_coll_by_val() {
     else
       return -1;
   };
-  engine->SetCompareFunc(comp_name, val_cmp);
+  engine->SetCompareFunc(comp_name, score_cmp);
   // create sorted collection
   kvdk::Collection *collection_ptr;
-  kvdk::Status s = engine->CreateSortedCollection(
-      collection, &collection_ptr, comp_name, kvdk::SortedBy::VALUE);
+  kvdk::Status s =
+      engine->CreateSortedCollection(collection, &collection_ptr, comp_name);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
-    s = engine->SSet(collection, array[i].student, array[i].score);
+    s = engine->SSet(collection, array[i].score, array[i].student);
     assert(s == Ok);
   }
   auto iter = engine->NewSortedIterator(collection);
@@ -282,17 +282,17 @@ static void test_sorted_coll_by_val() {
     size_t key_len, value_len;
     std::string key = iter->Key();
     std::string value = iter->Value();
-    if (key != expected_array[i].student) {
+    if (key != expected_array[i].score) {
       printf("sort key error, current key: %s , but expected key: %s\n",
-             key.c_str(), expected_array[i].student.c_str());
+             key.c_str(), expected_array[i].score.c_str());
     }
-    if (value != expected_array[i].score) {
+    if (value != expected_array[i].student) {
       printf("sort value error, current value: %s , but expected value: %s\n",
-             value.c_str(), expected_array[i].score.c_str());
+             value.c_str(), expected_array[i].student.c_str());
     }
     ++i;
   }
-  printf("Successfully collections sorted by value.\n");
+  printf("Successfully collections sorted by score.\n");
 }
 
 int main() {
@@ -327,8 +327,8 @@ int main() {
   // Iterating a Sorted Named Collection
   test_iterator();
 
-  // Sorted Collection by value.
-  test_sorted_coll_by_val();
+  // Sorted Collection with Customer Sorted Function
+  test_customer_sorted_func();
 
   // BatchWrite on Anonymous Global Collection
   test_batch_write();

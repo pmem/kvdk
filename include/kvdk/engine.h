@@ -63,7 +63,7 @@ KVDKRegisterCompFunc(KVDKEngine *engine, const char *compara_name,
 extern KVDK_LIBRARY_API KVDKStatus KVDKCreateSortedCollection(
     KVDKEngine *engine, KVDKCollection **sorted_collection,
     const char *collection_name, size_t collection_len,
-    const char *compara_name, size_t compara_len, KVDKSortedBy sorted_by);
+    const char *compara_name, size_t compara_len);
 
 extern KVDK_LIBRARY_API void
 KVDKDestorySortedCollection(KVDKCollection *collection);

@@ -191,10 +191,10 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   return s;
 }
 
-Status KVEngine::CreateSortedCollection(const StringView collection_name,
-                                        Collection **collection_ptr,
-                                        const pmem::obj::string_view &comp_name,
-                                        SortedBy sorted_by) {
+Status
+KVEngine::CreateSortedCollection(const StringView collection_name,
+                                 Collection **collection_ptr,
+                                 const pmem::obj::string_view &comp_name) {
   *collection_ptr = nullptr;
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
@@ -207,7 +207,7 @@ Status KVEngine::CreateSortedCollection(const StringView collection_name,
   }
   auto skiplist = (Skiplist *)(*collection_ptr);
   if (!comp_name.empty()) {
-    skiplist->SetComparaInfo(sorted_by, comparator_.GetComparaFunc(comp_name));
+    skiplist->SetCompareFunc(comparator_.GetComparaFunc(comp_name));
   }
   ReleaseWriteThread();
   return s;
@@ -916,7 +916,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
   void *new_record_pmem_ptr =
       pmem_allocator_->offset2addr(sized_space_entry.offset);
 
-  bool sorted_by_value = false;
   while (1) {
     SkiplistNode *dram_node = nullptr;
     HashEntry *entry_ptr = nullptr;
@@ -933,10 +932,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
     bool found = s == Status::Ok;
 
-    if (found && !skiplist->IsSortedByKey()) {
-      sorted_by_value = true;
-      break;
-    }
     uint64_t new_ts = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
@@ -979,14 +974,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
 
     break;
-  }
-  if (sorted_by_value) {
-    Status s = SDeleteImpl(skiplist, user_key);
-    if (s != Status::Ok)
-      return s;
-    s = SSetImpl(skiplist, user_key, value);
-    if (s != Status::Ok)
-      return s;
   }
   return Status::Ok;
 }

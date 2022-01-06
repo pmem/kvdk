@@ -54,8 +54,7 @@ public:
   virtual Status
   CreateSortedCollection(const pmem::obj::string_view collection_name,
                          Collection **sorted_collection,
-                         const pmem::obj::string_view &comp_name = "",
-                         SortedBy sorted_by = SortedBy::KEY) = 0;
+                         const pmem::obj::string_view &comp_name = "") = 0;
 
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return Ok
