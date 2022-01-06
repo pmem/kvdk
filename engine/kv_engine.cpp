@@ -202,12 +202,18 @@ KVEngine::CreateSortedCollection(const StringView collection_name,
   }
   s = InitCollection(collection_name, collection_ptr,
                      RecordType::SortedHeaderRecord);
-  if (s != Status::Ok) {
-    return s;
-  }
-  auto skiplist = (Skiplist *)(*collection_ptr);
-  if (!comp_name.empty()) {
-    skiplist->SetCompareFunc(comparator_.GetComparaFunc(comp_name));
+  if (s == Status::Ok) {
+    auto skiplist = (Skiplist *)(*collection_ptr);
+    if (!comp_name.empty()) {
+      auto compare_func = comparator_.GetComparaFunc(comp_name);
+      if (compare_func != nullptr) {
+        skiplist->SetCompareFunc(compare_func);
+      } else {
+        GlobalLogger.Error("Compare function %s is not registered\n",
+                           comp_name);
+        s = Status::Abort;
+      }
+    }
   }
   ReleaseWriteThread();
   return s;
