@@ -17,6 +17,7 @@ enum class LogLevel : uint8_t {
   Error,
 };
 
+// A snapshot indicates a immutable view of a KVDK engine at a certain time
 struct Snapshot {};
 
 struct Configs {

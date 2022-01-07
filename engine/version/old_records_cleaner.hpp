@@ -35,7 +35,11 @@ struct PendingFreeSpaceEntries {
   TimestampType free_ts;
 };
 
-// Used for freeing old version records, this is required for MVCC
+// OldRecordsCleaner is used to clean old version PMem records of kvdk
+//
+// To support multi-version machenism and consistent backup of kvdk,
+// the updated/deleted records need to be ramained for a while until they are
+// not refered by any snapshot
 class OldRecordsCleaner {
 public:
   OldRecordsCleaner(KVEngine *kv_engine, uint32_t max_access_threads)

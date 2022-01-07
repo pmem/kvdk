@@ -23,6 +23,8 @@ struct SnapshotImpl : public Snapshot {
   SnapshotImpl *next;
 };
 
+// A SnapshotList is a linked-list of global snapshots, new older snapshot is
+// linked at the tail of list
 class SnapshotList {
 public:
   SnapshotList() : head_() {
@@ -55,6 +57,9 @@ private:
   SnapshotImpl head_;
 };
 
+// VersionController manages snapshots and timestamp of a KVDK instance
+// The snapshots include temporal snapshots that cached by each access thread of
+// kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
 public:
   VersionController(uint64_t max_access_threads)
