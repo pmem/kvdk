@@ -144,7 +144,15 @@ bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
     return false;
   }
 
-  return AllocateSegmentSpace(segment_space_entry);
+  std::lock_guard<SpinMutex> lg(offset_head_lock_);
+  if (offset_head_ <= pmem_size_ - segment_size_) {
+    Free(*segment_space_entry);
+    *segment_space_entry = SpaceEntry{offset_head_, segment_size_};
+    offset_head_ += segment_size_;
+    LogAllocation(write_thread.id, segment_size_);
+    return true;
+  }
+  return false;
 }
 
 bool PMEMAllocator::AllocateSegmentSpace(SpaceEntry *segment_entry) {
