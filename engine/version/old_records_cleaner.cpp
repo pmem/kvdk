@@ -7,40 +7,36 @@
 #include "../skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
-void OldRecordsCleaner::Push(OldDataRecord &&old_data_record) {
+void OldRecordsCleaner::Push(const OldDataRecord &old_data_record) {
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
 
   auto &tc = thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
-  tc.old_data_records.emplace_back(
-      std::forward<OldDataRecord>(old_data_record));
+  tc.old_data_records.emplace_back(old_data_record);
   // To avoid too many cached old records pending clean, we try to clean cached
   // records while pushing new one
   TryCleanCachedOldRecords();
 }
 
-void OldRecordsCleaner::Push(OldDeleteRecord &&old_delete_record) {
+void OldRecordsCleaner::Push(const OldDeleteRecord &old_delete_record) {
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
 
   auto &tc = thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
-  tc.old_delete_records.emplace_back(
-      std::forward<OldDeleteRecord>(old_delete_record));
+  tc.old_delete_records.emplace_back(old_delete_record);
   // To avoid too many cached old records pending clean, we try to clean cached
   // records while pushing new one
   TryCleanCachedOldRecords();
 }
 
 void OldRecordsCleaner::TryCleanAll() {
+  std::vector<SpaceEntry> space_to_free;
   // records that can't be freed this time
   std::deque<OldDataRecord> data_record_refered;
   std::deque<OldDeleteRecord> delete_record_refered;
   PendingFreeSpaceEntries space_pending;
-
-  std::vector<SpaceEntry> space_to_free;
-
   // Update recorded oldest snapshot up to state so we can know which records
   // can be freed
   kv_engine_->version_controller_.UpdatedOldestSnapshot();

@@ -47,8 +47,8 @@ public:
     assert(kv_engine_ != nullptr);
   }
 
-  void Push(OldDataRecord &&old_data_record);
-  void Push(OldDeleteRecord &&old_delete_record);
+  void Push(const OldDataRecord &old_data_record);
+  void Push(const OldDeleteRecord &old_delete_record);
   // Try to clean all old records
   void TryCleanAll();
   void TryCleanCachedOldRecords();

@@ -2137,16 +2137,16 @@ Snapshot *KVEngine::GetSnapshot() {
   return ret;
 }
 
-void KVEngine::delayFree(OldDataRecord &&old_data_record) {
-  old_records_cleaner_.Push(std::move(old_data_record));
+void KVEngine::delayFree(const OldDataRecord &old_data_record) {
+  old_records_cleaner_.Push(old_data_record);
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_cleaner_cv_.notify_all();
   }
 }
 
-void KVEngine::delayFree(OldDeleteRecord &&old_delete_record) {
-  old_records_cleaner_.Push(std::move(old_delete_record));
+void KVEngine::delayFree(const OldDeleteRecord &old_delete_record) {
+  old_records_cleaner_.Push(old_delete_record);
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_cleaner_cv_.notify_all();

@@ -231,9 +231,9 @@ private:
 
   void FreeSkiplistDramNodes();
 
-  inline void delayFree(OldDeleteRecord &&);
+  inline void delayFree(const OldDeleteRecord &);
 
-  inline void delayFree(OldDataRecord &&);
+  inline void delayFree(const OldDataRecord &);
 
   // Run in background to clean old records regularly
   void backgroundCleaner();
