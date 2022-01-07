@@ -134,10 +134,10 @@ private:
     comparator_.SetComparaFunc(collection_name, comp_func);
   }
 
-  Status CreateSortedCollection(const StringView collection_name,
-                                Collection **collection_ptr,
-                                const pmem::obj::string_view &comp_name,
-                                SortedBy sorted_by) override;
+  Status
+  CreateSortedCollection(const StringView collection_name,
+                         Collection **collection_ptr,
+                         const pmem::obj::string_view &comp_name) override;
 
 private:
   Status InitCollection(const StringView &collection, Collection **list,

@@ -106,15 +106,17 @@ void KVDKRegisterCompFunc(KVDKEngine *engine, const char *compara_name,
                               comp_func);
 }
 
-KVDKStatus KVDKCreateSortedCollection(
-    KVDKEngine *engine, KVDKCollection **sorted_collection,
-    const char *collection_name, size_t collection_len,
-    const char *compara_name, size_t compara_len, KVDKSortedBy sorted_by) {
+KVDKStatus KVDKCreateSortedCollection(KVDKEngine *engine,
+                                      KVDKCollection **sorted_collection,
+                                      const char *collection_name,
+                                      size_t collection_len,
+                                      const char *compara_name,
+                                      size_t compara_len) {
   Collection *collection_ptr;
 
   KVDKStatus s = engine->rep->CreateSortedCollection(
       pmem::obj::string_view(collection_name, collection_len), &collection_ptr,
-      pmem::obj::string_view(compara_name, compara_len), sorted_by);
+      pmem::obj::string_view(compara_name, compara_len));
   if (s != KVDKStatus::Ok) {
     sorted_collection = nullptr;
     return s;
