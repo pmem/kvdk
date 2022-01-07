@@ -116,7 +116,6 @@ void OldRecordsCleaner::TryCleanAll() {
 }
 
 void OldRecordsCleaner::TryCleanCachedOldRecords() {
-  constexpr size_t kMaxCachedOldDeleteRecord = 10000;
   constexpr size_t kLimitForegroundFree = 1;
   kvdk_assert(access_thread.id >= 0,
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
