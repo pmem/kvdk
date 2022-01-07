@@ -32,8 +32,8 @@ void PMEMAllocator::Free(const SpaceEntry &entry) {
   }
 }
 
-size_t PMEMAllocator::PMemUsageInBytes() {
-  size_t total = 0;
+std::int64_t PMEMAllocator::PMemUsageInBytes() {
+  std::int64_t total = 0;
   for (auto const &ptcache : palloc_thread_cache_) {
     total += ptcache.allocated_sz;
   }
