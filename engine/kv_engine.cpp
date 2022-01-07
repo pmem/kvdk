@@ -428,9 +428,8 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
   // Here key is the collection name
   auto hint = hash_table_->GetHint(name);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s =
-      hash_table_->SearchForWrite(hint, name, SortedHeaderRecord, &entry_ptr,
-                                  &hash_entry, nullptr, true /* in recovery */);
+  Status s = hash_table_->SearchForWrite(hint, name, SortedHeaderRecord,
+                                         &entry_ptr, &hash_entry, nullptr);
   if (s == Status::MemoryOverflow) {
     return s;
   }
@@ -454,9 +453,9 @@ Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
 
   auto hint = hash_table_->GetHint(key);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->SearchForWrite(
-      hint, key, StringRecordType, &entry_ptr, &hash_entry,
-      &existing_data_entry, true /* in recovery */);
+  Status s =
+      hash_table_->SearchForWrite(hint, key, StringRecordType, &entry_ptr,
+                                  &hash_entry, &existing_data_entry);
 
   if (s == Status::MemoryOverflow) {
     return s;
@@ -570,7 +569,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   std::lock_guard<SpinMutex> lg(*hint.spin);
   Status s = hash_table_->SearchForWrite(
       hint, internal_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
-      &hash_entry, &existing_data_entry, true /* in recovery */);
+      &hash_entry, &existing_data_entry);
 
   if (s == Status::MemoryOverflow) {
     return s;
@@ -1851,8 +1850,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     HashEntry *p_hash_entry_collection = nullptr;
     Status s = hash_table_->SearchForWrite(
         hint_collection, collection_name, RecordType::DlistRecord,
-        &p_hash_entry_collection, &hash_entry_collection, nullptr,
-        true /* in recovery */);
+        &p_hash_entry_collection, &hash_entry_collection, nullptr);
     hash_table_->Insert(hint_collection, p_hash_entry_collection,
                         RecordType::DlistRecord, p_collection,
                         HashOffsetType::UnorderedCollection);
@@ -1887,8 +1885,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord *pmp_record) {
     HashEntry *p_hash_entry_record = nullptr;
     Status search_status = hash_table_->SearchForWrite(
         hint_record, internal_key, RecordType::DlistDataRecord,
-        &p_hash_entry_record, &hash_entry_record, nullptr,
-        true /* in recovery */);
+        &p_hash_entry_record, &hash_entry_record, nullptr);
 
     switch (search_status) {
     case Status::NotFound: {
@@ -2089,8 +2086,7 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
     HashEntry *p_hash_entry_collection = nullptr;
     Status s = hash_table_->SearchForWrite(
         hint_collection, collection_name, RecordType::QueueRecord,
-        &p_hash_entry_collection, &hash_entry_collection, nullptr,
-        true /* in recovery */);
+        &p_hash_entry_collection, &hash_entry_collection, nullptr);
     kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
     hash_table_->Insert(hint_collection, p_hash_entry_collection,
                         RecordType::QueueRecord, queue_ptr,

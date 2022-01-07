@@ -138,6 +138,7 @@ private:
     ThreadCache() : holding_snapshot(kMaxTimestamp) {}
 
     SnapshotImpl holding_snapshot;
+    char padding[64 - sizeof(holding_snapshot)];
   };
 
   inline uint64_t get_cpu_tsc() {

@@ -158,12 +158,10 @@ public:
   // new hash entry
   // hash_entry_snap: store a hash entry copy of searching key
   // data_entry_meta: store a copy of data entry metadata part of searching key
-  // in_recovery: whether called during recovery of kvdk instance
   // hint: make sure hint.spin is hold
   Status SearchForWrite(const KeyHashHint &hint, const StringView &key,
                         uint16_t type_mask, HashEntry **entry_ptr,
-                        HashEntry *hash_entry_snap, DataEntry *data_entry_meta,
-                        bool in_recovery = false);
+                        HashEntry *hash_entry_snap, DataEntry *data_entry_meta);
 
   // Insert a hash entry to hash table
   //

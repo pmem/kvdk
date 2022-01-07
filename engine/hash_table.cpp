@@ -102,7 +102,7 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
 Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
                                  uint16_t type_mask, HashEntry **entry_ptr,
                                  HashEntry *hash_entry_snap,
-                                 DataEntry *data_entry_meta, bool in_recovery) {
+                                 DataEntry *data_entry_meta) {
   assert(entry_ptr);
   assert((*entry_ptr) == nullptr);
   HashEntry *reusable_entry = nullptr;
@@ -145,9 +145,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
         break;
       }
 
-      if (!in_recovery /* we don't reused hash entry in
-                                             recovering */
-          && (*entry_ptr)->Reusable()) {
+      if ((*entry_ptr)->Reusable()) {
         reusable_entry = *entry_ptr;
       }
     }
