@@ -277,23 +277,48 @@ void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
   pmem_memcpy_persist(offset2addr(offset), &header, sizeof(DataHeader));
 }
 
-Status PMEMAllocator::Backup(const std::string &backup_file) {
-  size_t mapped_len;
-  void *backup_data_file = pmem_map_file(
-      backup_file.c_str(), pmem_size_, PMEM_FILE_CREATE, 0666, &mapped_len,
-      nullptr /* we do not care if backup path is on PMem*/);
-
-  if (backup_data_file == nullptr || mapped_len != pmem_size_) {
-    GlobalLogger.Error("Map backup file error in PMemAllocator");
+Status PMEMAllocator::Backup(const std::string &backup_file_path) {
+  int fd = open(backup_file_path.c_str(), O_CREAT | O_RDWR, 0666);
+  if (fd < 0) {
+    GlobalLogger.Error("Open backup file %s error in PMemAllocator::Backup\n",
+                       backup_file_path.c_str());
     return Status::IOError;
   }
 
-  uint64_t offset_head;
+  int res = ftruncate64(fd, pmem_size_);
+  if (res != 0) {
+    GlobalLogger.Error("Truncate backup file %s to pmem file size %lu error in "
+                       "PMemAllocator::Backup\n",
+                       backup_file_path.c_str(), pmem_size_);
+    return Status::IOError;
+  }
+
+  void *backup_file =
+      mmap64(nullptr, pmem_size_, PROT_WRITE, MAP_SHARED, fd, 0);
+
+  if (backup_file == nullptr) {
+    GlobalLogger.Error("map backup file %s error in PMemAllocator::Backup\n",
+                       backup_file_path.c_str());
+    return Status::IOError;
+  }
+
+  // During backup, the copying data maybe updated and write to new allocated
+  // segment, we need these updated data for recovery, so we copy data twice
+  uint64_t offset_head_1st;
+  uint64_t offset_head_2nd;
   {
     std::lock_guard<SpinMutex> lg(offset_head_lock_);
-    offset_head = offset_head_;
+    offset_head_1st = offset_head_;
   }
-  pmem_memcpy_persist(backup_data_file, pmem_, offset_head);
+  memcpy(backup_file, pmem_, offset_head_1st);
+  {
+    std::lock_guard<SpinMutex> lg(offset_head_lock_);
+    offset_head_2nd = offset_head_;
+  }
+  memcpy((char *)backup_file + offset_head_1st, pmem_ + offset_head_1st,
+         offset_head_2nd - offset_head_1st);
+  msync(backup_file, offset_head_2nd, MS_SYNC);
+  close(fd);
   return Status::Ok;
 }
 

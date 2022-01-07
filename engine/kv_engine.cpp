@@ -443,7 +443,8 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
-  if (cached_entry.meta.timestamp > max_recoverable_record_timestamp_) {
+  if (isBackup() &&
+      cached_entry.meta.timestamp > max_recoverable_record_timestamp_) {
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
@@ -883,6 +884,7 @@ Status KVEngine::Recovery() {
 
   std::vector<std::future<Status>> fs;
   std::vector<RecoveryInfo> recovery_info_(configs_.max_access_threads);
+  GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
     fs.push_back(std::async(&KVEngine::RestoreData, this, &recovery_info_[i]));
   }
