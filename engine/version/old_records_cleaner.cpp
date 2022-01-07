@@ -14,9 +14,6 @@ void OldRecordsCleaner::Push(const OldDataRecord &old_data_record) {
   auto &tc = thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
   tc.old_data_records.emplace_back(old_data_record);
-  // To avoid too many cached old records pending clean, we try to clean cached
-  // records while pushing new one
-  TryCleanCachedOldRecords();
 }
 
 void OldRecordsCleaner::Push(const OldDeleteRecord &old_delete_record) {
@@ -26,9 +23,6 @@ void OldRecordsCleaner::Push(const OldDeleteRecord &old_delete_record) {
   auto &tc = thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
   tc.old_delete_records.emplace_back(old_delete_record);
-  // To avoid too many cached old records pending clean, we try to clean cached
-  // records while pushing new one
-  TryCleanCachedOldRecords();
 }
 
 void OldRecordsCleaner::TryCleanAll() {
@@ -111,23 +105,24 @@ void OldRecordsCleaner::TryCleanAll() {
   global_old_delete_records_.emplace_back(std::move(delete_record_refered));
 }
 
-void OldRecordsCleaner::TryCleanCachedOldRecords() {
-  constexpr size_t kLimitForegroundFree = 1;
+void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
   kvdk_assert(access_thread.id >= 0,
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
               "un-initialized access thread");
   auto &tc = thread_cache_[access_thread.id];
-  size_t limit_free = kLimitForegroundFree;
-  maybeUpdateOldestSnapshot();
-  TimestampType oldest_refer_ts =
-      kv_engine_->version_controller_.OldestSnapshotTS();
-  while (tc.old_data_records.size() > 0 &&
-         tc.old_data_records.front().newer_version_timestamp <
-             oldest_refer_ts &&
-         limit_free-- > 0) {
-    kv_engine_->pmem_allocator_->Free(
-        purgeOldDataRecord(tc.old_data_records.front()));
-    tc.old_data_records.pop_front();
+  if (tc.old_data_records.size() > 0) {
+    std::lock_guard<SpinMutex> lg(tc.old_records_lock);
+    maybeUpdateOldestSnapshot();
+    TimestampType oldest_refer_ts =
+        kv_engine_->version_controller_.OldestSnapshotTS();
+    while (tc.old_data_records.size() > 0 &&
+           tc.old_data_records.front().newer_version_timestamp <
+               oldest_refer_ts &&
+           num_limit_clean-- > 0) {
+      kv_engine_->pmem_allocator_->Free(
+          purgeOldDataRecord(tc.old_data_records.front()));
+      tc.old_data_records.pop_front();
+    }
   }
 }
 

@@ -51,7 +51,7 @@ public:
   void Push(const OldDeleteRecord &old_delete_record);
   // Try to clean all old records
   void TryCleanAll();
-  void TryCleanCachedOldRecords();
+  void TryCleanCachedOldRecords(size_t num_limit_clean);
   uint64_t NumCachedOldRecords() {
     assert(access_thread.id >= 0);
     auto &tc = thread_cache_[access_thread.id];

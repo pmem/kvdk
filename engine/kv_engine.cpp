@@ -34,6 +34,7 @@ constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
 // restoring large skiplist.
 constexpr uint64_t kRestoreSkiplistStride = 10000;
 constexpr uint64_t kMaxCachedOldRecords = 10000;
+constexpr size_t kLimitForegroundCleanOldRecords = 1;
 
 void PendingBatch::PersistProcessing(
     void *target, const std::vector<uint64_t> &entry_offsets) {
@@ -2139,17 +2140,27 @@ Snapshot *KVEngine::GetSnapshot() {
 
 void KVEngine::delayFree(const OldDataRecord &old_data_record) {
   old_records_cleaner_.Push(old_data_record);
+  // To avoid too many cached old records pending clean, we try to clean cached
+  // records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_cleaner_cv_.notify_all();
+  } else {
+    old_records_cleaner_.TryCleanCachedOldRecords(
+        kLimitForegroundCleanOldRecords);
   }
 }
 
 void KVEngine::delayFree(const OldDeleteRecord &old_delete_record) {
   old_records_cleaner_.Push(old_delete_record);
+  // To avoid too many cached old records pending clean, we try to clean cached
+  // records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_cleaner_cv_.notify_all();
+  } else {
+    old_records_cleaner_.TryCleanCachedOldRecords(
+        kLimitForegroundCleanOldRecords);
   }
 }
 
