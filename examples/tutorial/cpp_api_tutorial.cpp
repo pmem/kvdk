@@ -239,15 +239,15 @@ static void test_batch_write() {
 
 static void test_customer_sorted_func() {
   std::string collection = "collection0";
-  struct student_info {
-    std::string score;
-    std::string student;
+  struct number_kv {
+    std::string number_key;
+    std::string value;
   };
 
-  std::vector<student_info> array = {
+  std::vector<number_kv> array = {
       {"100", "a"}, {"50", "c"}, {"40", "d"}, {"30", "b"}, {"90", "f"}};
 
-  std::vector<student_info> expected_array = {
+  std::vector<number_kv> expected_array = {
       {"100", "a"}, {"90", "f"}, {"50", "c"}, {"40", "d"}, {"30", "b"}};
 
   // regitser compare function
@@ -270,7 +270,7 @@ static void test_customer_sorted_func() {
       engine->CreateSortedCollection(collection, &collection_ptr, comp_name);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
-    s = engine->SSet(collection, array[i].score, array[i].student);
+    s = engine->SSet(collection, array[i].number_key, array[i].value);
     assert(s == Ok);
   }
   auto iter = engine->NewSortedIterator(collection);
@@ -282,17 +282,17 @@ static void test_customer_sorted_func() {
     size_t key_len, value_len;
     std::string key = iter->Key();
     std::string value = iter->Value();
-    if (key != expected_array[i].score) {
+    if (key != expected_array[i].number_key) {
       printf("sort key error, current key: %s , but expected key: %s\n",
-             key.c_str(), expected_array[i].score.c_str());
+             key.c_str(), expected_array[i].number_key.c_str());
     }
-    if (value != expected_array[i].student) {
+    if (value != expected_array[i].value) {
       printf("sort value error, current value: %s , but expected value: %s\n",
-             value.c_str(), expected_array[i].student.c_str());
+             value.c_str(), expected_array[i].value.c_str());
     }
     ++i;
   }
-  printf("Successfully collections sorted by score.\n");
+  printf("Successfully collections sorted by number.\n");
 }
 
 int main() {

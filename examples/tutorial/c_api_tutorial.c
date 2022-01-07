@@ -212,15 +212,15 @@ int score_cmp(const char *a, size_t a_len, const char *b, size_t b_len) {
 
 void CompFuncForSortedCollectionExample(KVDKEngine *kvdk_engine) {
   const char *collection = "collection0";
-  struct student_info {
-    const char *score;
-    const char *student;
+  struct number_kv {
+    const char *number_key;
+    const char *value;
   };
 
-  struct student_info array[5] = {
+  struct number_kv array[5] = {
       {"100", "a"}, {"50", "c"}, {"40", "d"}, {"30", "b"}, {"90", "f"}};
 
-  struct student_info expected_array[5] = {
+  struct number_kv expected_array[5] = {
       {"100", "a"}, {"90", "f"}, {"50", "c"}, {"40", "d"}, {"30", "b"}};
 
   // regitser compare function
@@ -234,8 +234,8 @@ void CompFuncForSortedCollectionExample(KVDKEngine *kvdk_engine) {
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
     s = KVDKSortedSet(kvdk_engine, collection, strlen(collection),
-                      array[i].score, strlen(array[i].score), array[i].student,
-                      strlen(array[i].student));
+                      array[i].number_key, strlen(array[i].number_key),
+                      array[i].value, strlen(array[i].value));
     assert(s == Ok);
   }
   KVDKIterator *iter =
@@ -248,19 +248,19 @@ void CompFuncForSortedCollectionExample(KVDKEngine *kvdk_engine) {
     size_t key_len, value_len;
     const char *key = KVDKIterKey(iter, &key_len);
     const char *value = KVDKIterValue(iter, &value_len);
-    if (CmpCompare(key, key_len, expected_array[i].score,
-                   strlen(expected_array[i].score)) != 0) {
+    if (CmpCompare(key, key_len, expected_array[i].number_key,
+                   strlen(expected_array[i].number_key)) != 0) {
       printf("sort key error, current key: %s , but expected key: %s\n", key,
-             expected_array[i].score);
+             expected_array[i].number_key);
     }
-    if (CmpCompare(value, value_len, expected_array[i].student,
-                   strlen(expected_array[i].student)) != 0) {
+    if (CmpCompare(value, value_len, expected_array[i].value,
+                   strlen(expected_array[i].value)) != 0) {
       printf("sort value error, current value: %s , but expected value: %s\n",
-             value, expected_array[i].student);
+             value, expected_array[i].value);
     }
     ++i;
   }
-  printf("Successfully collections sorted by score.\n");
+  printf("Successfully collections sorted by number.\n");
   KVDKDestorySortedCollection(collecton_ptr);
 }
 
