@@ -39,8 +39,6 @@ extern "C" {
 
 typedef enum { FOREACH_ENUM(GENERATE_ENUM) } KVDKStatus;
 
-typedef enum { KEY, VALUE } KVDKSortedBy;
-
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

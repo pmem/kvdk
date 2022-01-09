@@ -26,7 +26,6 @@ protected:
   Configs configs;
   std::shared_ptr<ThreadManager> thread_manager_;
   std::string pmem_path;
-  std::mutex mtx;
 
   virtual void SetUp() override {
     pmem_path = "/mnt/pmem0/kvdk_pmem_allocator";
@@ -107,9 +106,16 @@ protected:
         }
       }
     }
-    PrintRecord("allcoted size(bytes): ", allocated);
-    PrintRecord("deallcoated size(bytes): ", deallocated);
+
+    PrintRecord("total alloced size: ", allocated + deallocated);
+    PrintRecord("total dealloced size: ", deallocated);
     PrintRecord("alloc_operations_per_thread", mem_operations_num);
+    statistics_perf_time.allocated_ops_per_seconds =
+        (allocated + deallocated) / alloc_size /
+        statistics_perf_time.alloc_total_time;
+    ;
+    statistics_perf_time.deallocated_ops_per_seconds =
+        (deallocated) / alloc_size / statistics_perf_time.free_total_time;
 
     return statistics_perf_time;
   }
@@ -117,10 +123,12 @@ protected:
   void run_test(uint32_t num_thread, uint64_t pmem_size,
                 uint64_t num_segment_blocks, uint32_t block_size,
                 uint64_t alloc_size, unsigned mem_operations_num) {
+    PrintRecord("alloc_operations_per_thread", mem_operations_num);
     perf_time ref_time = run(num_thread, alloc_size, mem_operations_num, 11);
-    PrintRecord("malloc total_time_spend_on_alloc", ref_time.alloc_total_time);
-    PrintRecord("malloc total_time_spend_on_free", ref_time.free_total_time);
-    PrintRecord("malloc total_time_spend_on_merge", ref_time.pmem_merge_time);
+    PrintRecord("malloc spend_on_alloc(ops/ms)",
+                ref_time.allocated_ops_per_seconds);
+    PrintRecord("malloc spend_on_free(ops/ms)",
+                ref_time.deallocated_ops_per_seconds);
 
     // For PMem
     thread_manager_.reset(new (std::nothrow) ThreadManager(num_thread));
@@ -132,10 +140,11 @@ protected:
     perf_time pmem_time =
         run(num_thread, alloc_size, mem_operations_num, 11, pmem_alloc);
 
-    PrintRecord("pmem total_time_spend_on_alloc", pmem_time.alloc_total_time);
-    PrintRecord("pmem total_time_spend_on_free", pmem_time.free_total_time);
-    PrintRecord("pmem total_time_spend_on_merge", pmem_time.pmem_merge_time);
-    PrintRecord("alloc_operations_per_thread", mem_operations_num);
+    PrintRecord("pmem spend_on_alloc(ops/ms)",
+                pmem_time.allocated_ops_per_seconds);
+    PrintRecord("pmem spend_on_free(ops/ms)",
+                pmem_time.deallocated_ops_per_seconds);
+    PrintRecord("pmem spend_on_merge_time", pmem_time.pmem_merge_time);
     float alloc_ref_delta_time_percent =
         ((pmem_time.alloc_total_time / ref_time.alloc_total_time) - 1.0) *
         100.0;
