@@ -42,6 +42,8 @@ public:
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
+  void ReportPMemUsage();
+
   // Global Anonymous Collection
   Status Get(const StringView key, std::string *value) override;
   Status Set(const StringView key, const StringView value) override;
@@ -132,10 +134,10 @@ private:
     comparator_.SetComparaFunc(collection_name, comp_func);
   }
 
-  Status CreateSortedCollection(const StringView collection_name,
-                                Collection **collection_ptr,
-                                const pmem::obj::string_view &comp_name,
-                                SortedBy sorted_by) override;
+  Status
+  CreateSortedCollection(const StringView collection_name,
+                         Collection **collection_ptr,
+                         const pmem::obj::string_view &comp_name) override;
 
 private:
   Status InitCollection(const StringView &collection, Collection **list,
@@ -184,7 +186,7 @@ private:
 
   Status Recovery();
 
-  Status RestoreData(uint64_t thread_id);
+  Status RestoreData();
 
   Status RestoreSkiplistHead(DLRecord *pmem_record,
                              const DataEntry &cached_entry);

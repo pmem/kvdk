@@ -79,23 +79,45 @@ void KVEngine::FreeSkiplistDramNodes() {
   }
 }
 
+void KVEngine::ReportPMemUsage() {
+  size_t total = pmem_allocator_->PMemUsageInBytes();
+  GlobalLogger.Info("PMem Usage: %llu B, %llu KB, %llu MB, %llu GB\n", total,
+                    (total >> 10), (total >> 20), (total >> 30));
+}
+
 void KVEngine::BackgroundWork() {
   // To avoid free a referencing skiplist node, we do freeing in at least every
   // 10 seconds
   // TODO: Maybe free skiplist node in another bg thread?
-  double interval_free_skiplist_node =
-      std::max(10.0, configs_.background_work_interval);
+  assert(configs_.background_work_interval >= 0);
+  assert(configs_.report_pmem_usage_interval >= 0);
+  auto background_interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
+  auto free_skiplist_node_interval = std::chrono::milliseconds{0};
+  auto report_pmem_usage_interval = std::chrono::milliseconds{0};
   while (!closing_) {
-    usleep(configs_.background_work_interval * 1000000);
-    interval_free_skiplist_node -= configs_.background_work_interval;
+
     pmem_allocator_->BackgroundWork();
-    if ((interval_free_skiplist_node -= configs_.background_work_interval) <=
-        0) {
+
+    if (free_skiplist_node_interval < background_interval) {
       FreeSkiplistDramNodes();
-      interval_free_skiplist_node =
-          std::max(10.0, configs_.background_work_interval);
+      free_skiplist_node_interval = std::chrono::milliseconds{10000};
+    } else {
+      free_skiplist_node_interval -= background_interval;
     }
+
+    if (report_pmem_usage_interval < background_interval) {
+      ReportPMemUsage();
+      report_pmem_usage_interval =
+          std::chrono::milliseconds{static_cast<std::uint64_t>(
+              configs_.report_pmem_usage_interval * 1000)};
+    } else {
+      report_pmem_usage_interval -= background_interval;
+    }
+
+    std::this_thread::sleep_for(background_interval);
   }
+  ReportPMemUsage();
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
@@ -169,10 +191,10 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   return s;
 }
 
-Status KVEngine::CreateSortedCollection(const StringView collection_name,
-                                        Collection **collection_ptr,
-                                        const pmem::obj::string_view &comp_name,
-                                        SortedBy sorted_by) {
+Status
+KVEngine::CreateSortedCollection(const StringView collection_name,
+                                 Collection **collection_ptr,
+                                 const pmem::obj::string_view &comp_name) {
   *collection_ptr = nullptr;
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
@@ -180,12 +202,18 @@ Status KVEngine::CreateSortedCollection(const StringView collection_name,
   }
   s = InitCollection(collection_name, collection_ptr,
                      RecordType::SortedHeaderRecord);
-  if (s != Status::Ok) {
-    return s;
-  }
-  auto skiplist = (Skiplist *)(*collection_ptr);
-  if (!comp_name.empty()) {
-    skiplist->SetComparaInfo(sorted_by, comparator_.GetComparaFunc(comp_name));
+  if (s == Status::Ok) {
+    auto skiplist = (Skiplist *)(*collection_ptr);
+    if (!comp_name.empty()) {
+      auto compare_func = comparator_.GetComparaFunc(comp_name);
+      if (compare_func != nullptr) {
+        skiplist->SetCompareFunc(compare_func);
+      } else {
+        GlobalLogger.Error("Compare function %s is not registered\n",
+                           comp_name);
+        s = Status::Abort;
+      }
+    }
   }
   ReleaseWriteThread();
   return s;
@@ -205,8 +233,11 @@ Status KVEngine::MaybeInitWriteThread() {
   return thread_manager_->MaybeInitThread(write_thread);
 }
 
-Status KVEngine::RestoreData(uint64_t thread_id) {
-  write_thread.id = thread_id;
+Status KVEngine::RestoreData() {
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -286,11 +317,10 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     cnt++;
 
     auto ts_recovering = data_entry_cached.meta.timestamp;
-    if (ts_recovering > thread_res_[thread_id].newest_restored_ts) {
-      thread_res_[thread_id].newest_restored_ts = ts_recovering;
+    if (ts_recovering > thread_res_[write_thread.id].newest_restored_ts) {
+      thread_res_[write_thread.id].newest_restored_ts = ts_recovering;
     }
 
-    Status s(Status::Ok);
     switch (data_entry_cached.meta.type) {
     case RecordType::SortedDataRecord: {
       s = RestoreSkiplistRecord(static_cast<DLRecord *>(recovering_pmem_record),
@@ -331,13 +361,12 @@ Status KVEngine::RestoreData(uint64_t thread_id) {
     }
     }
     if (s != Status::Ok) {
-      write_thread.id = -1;
-      return s;
+      break;
     }
   }
-  write_thread.id = -1;
   restored_.fetch_add(cnt);
-  return Status::Ok;
+  ReleaseWriteThread();
+  return s;
 }
 
 bool KVEngine::ValidateRecordAndGetValue(void *data_record,
@@ -728,7 +757,7 @@ Status KVEngine::Recovery() {
 
   std::vector<std::future<Status>> fs;
   for (uint32_t i = 0; i < configs_.max_write_threads; i++) {
-    fs.push_back(std::async(&KVEngine::RestoreData, this, i));
+    fs.push_back(std::async(&KVEngine::RestoreData, this));
   }
 
   for (auto &f : fs) {
@@ -894,7 +923,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
   void *new_record_pmem_ptr =
       pmem_allocator_->offset2addr(sized_space_entry.offset);
 
-  bool sorted_by_value = false;
   while (1) {
     SkiplistNode *dram_node = nullptr;
     HashEntry *entry_ptr = nullptr;
@@ -911,10 +939,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
     bool found = s == Status::Ok;
 
-    if (found && !skiplist->IsSortedByKey()) {
-      sorted_by_value = true;
-      break;
-    }
     uint64_t new_ts = get_timestamp();
     assert(!found || new_ts > data_entry.meta.timestamp);
 
@@ -957,14 +981,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     }
 
     break;
-  }
-  if (sorted_by_value) {
-    Status s = SDeleteImpl(skiplist, user_key);
-    if (s != Status::Ok)
-      return s;
-    s = SSetImpl(skiplist, user_key, value);
-    if (s != Status::Ok)
-      return s;
   }
   return Status::Ok;
 }

@@ -13,66 +13,76 @@ def __fill(exec, shared_para, data_type, report_path):
     report = report_path + "fill"
     print("Fill {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
+    print(cmd)
     os.system(cmd)
 
 
 def read_random(exec, shared_para, data_type, report_path):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=1 -key_distribution=random".format(
+        " -fill=0 -type={} -read_ratio=1".format(
             data_type)
     report = report_path + "read_random"
     print("Read random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
+    print(cmd)
     os.system(cmd)
 
 
 def insert_random(exec, shared_para, data_type, report_path):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0 -key_distribution=random -existing_keys_ratio=0".format(
+        " -fill=0 -type={} -read_ratio=0 -existing_keys_ratio=0".format(
             data_type)
     report = report_path + "insert_random"
     print("Insert random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
+    print(cmd)
     os.system(cmd)
 
 
 def batch_insert_random(exec, shared_para, data_type, report_path):
-    assert data_type == "string"
+    if data_type != "string":
+        return
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0 -batch_size=100 -key_distribution=random -existing_keys_ratio=0".format(
+        " -fill=0 -type={} -read_ratio=0 -batch_size=100 -existing_keys_ratio=0".format(
             data_type)
     report = report_path + "batch_insert_random"
     print("Batch insert random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
+    print(cmd)
     os.system(cmd)
 
 
 def update_random(exec, shared_para, data_type, report_path):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0 -key_distribution=random".format(
+        " -fill=0 -type={} -read_ratio=0".format(
             data_type)
     report = report_path + "update_random"
     print("Update random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
+    print(cmd)
     os.system(cmd)
 
 
 def read_write_random(exec, shared_para, data_type, report_path):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0.9 -key_distribution=random".format(
+        " -fill=0 -type={} -read_ratio=0.9".format(
             data_type)
     report = report_path + "read_write_random"
     print("Read write random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
+    print(cmd)
     os.system(cmd)
 
 
 def range_scan(exec, shared_para, data_type, report_path):
+    if data_type == "string" or data_type == "queue":
+        return
     new_para = shared_para + \
         " -fill=0 -type={} -read_ratio=1 -scan=1".format(data_type)
     report = report_path + "range_scan"
     print("Range scan {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
+    print(cmd)
     os.system(cmd)
 
 
@@ -100,6 +110,7 @@ def run_benchmark(
     n_thread,
     num_collection,
     bench_duration,
+    key_distribution,
     value_size,
     value_size_distribution,
     benchmarks,
@@ -119,21 +130,43 @@ def run_benchmark(
     # create report dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
-    report_path = "./results-{0}-commit-{1}-threads-{2}-vsize-{3}-vsize_dist-{4}-collections-{5}-{6}/".format(
+    report_path = "./results-{0}-commit-{1}-threads-{2}-key_dist-{7}-vsize-{3}-vsize_dist-{4}-collections-{5}-{6}/".format(
         data_type,
         git_hash[0:8], 
         n_thread, 
         value_size,
         value_size_distribution, 
         num_collection, 
-        timestamp)
+        timestamp,
+        key_distribution)
     os.system("mkdir -p {}".format(report_path))
 
     # run benchmarks
     print("Run benchmarks for data type :{}, value size distribution: {}".format(
         data_type, value_size_distribution))
-    shared_para = "-path={} -space={} -populate={} -num={} -threads={} -max_write_threads={} -num_collection={} -time={} -value_size={} -value_size_distribution={}".format(
-        pmem_path, pmem_size, populate_on_fill, num_fill_kv, n_thread, n_thread, num_collection, bench_duration, value_size, value_size_distribution)
+    shared_para = \
+        "-path={} "\
+        "-space={} "\
+        "-populate={} "\
+        "-num={} "\
+        "-threads={} "\
+        "-max_write_threads={} "\
+        "-num_collection={} "\
+        "-time={} "\
+        "-value_size={} "\
+        "-value_size_distribution={} "\
+        "-key_distribution={}".format(
+        pmem_path, 
+        pmem_size, 
+        populate_on_fill, 
+        num_fill_kv, 
+        n_thread, 
+        n_thread, 
+        num_collection, 
+        bench_duration, 
+        value_size, 
+        value_size_distribution,
+        key_distribution)
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
