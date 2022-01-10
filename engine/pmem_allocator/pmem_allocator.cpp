@@ -31,7 +31,7 @@ void PMEMAllocator::Free(const SpaceEntry &entry) {
   }
 }
 
-void PMEMAllocator::PopulateSpace() {
+void PMEMAllocator::populateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");
   std::vector<std::thread> ths;
 
@@ -63,11 +63,13 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
                                                uint64_t num_segment_blocks,
                                                uint32_t block_size,
                                                uint32_t max_access_threads,
+                                               bool populate_pmem_space,
                                                bool use_devdax_mode) {
   int is_pmem;
   uint64_t mapped_size;
   char *pmem;
   // TODO jiayu: Should we clear map failed file?
+  bool pmem_file_exist = file_exist(pmem_file);
   if (!use_devdax_mode) {
     if ((pmem = (char *)pmem_map_file(pmem_file.c_str(), pmem_size,
                                       PMEM_FILE_CREATE, 0666, &mapped_size,
@@ -133,6 +135,10 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
         "Pmem file size not aligned with segment size, %llu space is wasted.\n",
         sz_wasted);
   GlobalLogger.Info("Map pmem space done\n");
+
+  if (!pmem_file_exist && populate_pmem_space) {
+    allocator->populateSpace();
+  }
 
   return allocator;
 }
