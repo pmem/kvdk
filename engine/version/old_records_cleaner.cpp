@@ -57,26 +57,39 @@ void OldRecordsCleaner::TryCleanAll() {
   }
 
   // Find free-able data records
+  uint64_t handled_cnt = 0;
+  uint64_t delayed_cnt = 0;
   for (auto &data_records : global_old_data_records_) {
     for (auto &record : data_records) {
       if (record.newer_version_timestamp <= oldest_snapshot_ts) {
         space_to_free.emplace_back(purgeOldDataRecord(record));
+        handled_cnt++;
       } else {
         data_record_refered.emplace_back(std::move(record));
+        delayed_cnt++;
       }
     }
   }
+  GlobalLogger.Info("Cleaned %lu data records, delayed %lu data records\n",
+                    handled_cnt, delayed_cnt);
 
   // Find free-able delete records
+  handled_cnt = 0;
+  delayed_cnt = 0;
   for (auto &delete_records : global_old_delete_records_) {
     for (auto &record : delete_records) {
       if (record.newer_version_timestamp <= oldest_snapshot_ts) {
         space_pending.entries.emplace_back(purgeOldDeleteRecord(record));
+        handled_cnt++;
+
       } else {
         delete_record_refered.emplace_back(std::move(record));
+        delayed_cnt++;
       }
     }
   }
+  GlobalLogger.Info("Cleaned %lu delete records, delayed %lu delete records\n",
+                    handled_cnt, delayed_cnt);
 
   if (space_pending.entries.size() > 0) {
     space_pending.free_ts =
@@ -84,16 +97,27 @@ void OldRecordsCleaner::TryCleanAll() {
     pending_free_space_entries_.emplace_back(std::move(space_pending));
   }
 
+  handled_cnt = 0;
+  delayed_cnt = 0;
   auto iter = pending_free_space_entries_.begin();
-  for (auto iter = pending_free_space_entries_.begin();
-       iter != pending_free_space_entries_.end(); iter++) {
+  while (iter != pending_free_space_entries_.end()) {
     if (iter->free_ts < oldest_snapshot_ts) {
+      handled_cnt += iter->entries.size();
       kv_engine_->pmem_allocator_->BatchFree(iter->entries);
+      iter++;
     } else {
       break;
     }
   }
+  GlobalLogger.Info("erase %lu\n", iter - pending_free_space_entries_.begin());
   pending_free_space_entries_.erase(pending_free_space_entries_.begin(), iter);
+  iter = pending_free_space_entries_.begin();
+  while (iter != pending_free_space_entries_.end()) {
+    delayed_cnt += iter->entries.size();
+    iter++;
+  }
+  GlobalLogger.Info("cleaned %lu space entries, delayed %lu space entries\n",
+                    handled_cnt, delayed_cnt);
 
   if (space_to_free.size() > 0) {
     kv_engine_->pmem_allocator_->BatchFree(space_to_free);

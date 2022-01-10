@@ -179,7 +179,21 @@ void DBWrite(int tid) {
     switch (bench_data_type) {
     case DataType::String: {
       if (batch_num == 0) {
+        /*
         s = engine->Set(key, value);
+        */
+        // /*
+        if (fill || existing_keys_ratio == 0) {
+          s = engine->Set(key, value);
+        } else {
+          // todo: restore
+          if (fast_random_64() % 2 == 0) {
+            s = engine->Set(key, value);
+          } else {
+            s = engine->Delete(key);
+          }
+        }
+        // */
       } else {
         batch.Put(key, std::string(value.data(), value.size()));
         if (batch.Size() == batch_num) {
@@ -503,6 +517,18 @@ int main(int argc, char **argv) {
   for (int i = 0; i < read_threads; i++) {
     ts.emplace_back(FLAGS_scan ? DBScan : DBRead, i);
   }
+  /*
+    std::string backup_path("/mnt/pmem1/backup");
+
+    ts.emplace_back([&]() {
+      while (!done) {
+        system(std::string("rm -rf " + backup_path).c_str());
+        auto snapshot = engine->GetSnapshot();
+        engine->Backup(backup_path, snapshot);
+        engine->ReleaseSnapshot(snapshot);
+        sleep(5);
+      }
+    });*/
 
   uint64_t last_read_ops = 0;
   uint64_t last_read_notfound = 0;
