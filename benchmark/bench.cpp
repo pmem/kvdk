@@ -27,8 +27,9 @@ DEFINE_string(path, "/mnt/pmem0/kvdk", "Instance path");
 
 DEFINE_uint64(num, (1 << 30), "Number of KVs to place");
 
-DEFINE_uint64(num_operations, (1 << 30), 
-"Number of total operations. Asserted to be equal to num if (fill == true).");
+DEFINE_uint64(num_operations, (1 << 30),
+              "Number of total operations. Asserted to be equal to num if "
+              "(fill == true).");
 
 DEFINE_bool(fill, false, "Fill num uniform kv pairs to a new instance");
 
@@ -117,7 +118,7 @@ Engine *engine;
 std::string value_pool;
 size_t operations_per_thread;
 bool has_timed_out;
-std::vector<int> has_finished;  // std::vector<bool> is a trap!
+std::vector<int> has_finished; // std::vector<bool> is a trap!
 
 std::vector<PaddedEngine> engines;
 std::vector<PaddedRangeIterators> ranges;
@@ -130,60 +131,40 @@ enum class DataType {
   Blackhole
 } bench_data_type;
 
-enum class KeyDistribution
-{
-  Range,
-  Random,
-  Zipf
-} key_dist;
+enum class KeyDistribution { Range, Random, Zipf } key_dist;
 
-enum class ValueSizeDistribution
-{
-  Constant,
-  Random
-} vsz_dist;
+enum class ValueSizeDistribution { Constant, Random } vsz_dist;
 
-std::uint64_t generate_key(size_t tid) 
-{ 
+std::uint64_t generate_key(size_t tid) {
   static std::uint64_t max_key = FLAGS_existing_keys_ratio == 0
-                         ? UINT64_MAX
-                         : FLAGS_num / FLAGS_existing_keys_ratio;
+                                     ? UINT64_MAX
+                                     : FLAGS_num / FLAGS_existing_keys_ratio;
   static extd::zipfian_distribution<std::uint64_t> zipf{max_key, 0.99};
-  switch (key_dist)
-  {
-  case KeyDistribution::Range:
-  {
+  switch (key_dist) {
+  case KeyDistribution::Range: {
     return ranges[tid].gen();
   }
-  case KeyDistribution::Random:
-  {
+  case KeyDistribution::Random: {
     return engines[tid].gen() % max_key;
   }
-  case KeyDistribution::Zipf:
-  {
+  case KeyDistribution::Zipf: {
     return zipf(engines[tid].gen);
   }
-  default:
-  {
+  default: {
     throw;
   }
   }
 }
 
-size_t generate_vsz(size_t tid)
-{
-  switch (vsz_dist)
-  {
-  case ValueSizeDistribution::Constant:
-  {
+size_t generate_vsz(size_t tid) {
+  switch (vsz_dist) {
+  case ValueSizeDistribution::Constant: {
     return FLAGS_value_size;
   }
-  case ValueSizeDistribution::Random:
-  {
+  case ValueSizeDistribution::Random: {
     return engines[tid].gen() % FLAGS_value_size + 1;
   }
-  default:
-  {
+  default: {
     throw;
   }
   }
@@ -197,13 +178,12 @@ void DBWrite(int tid) {
   Status s;
   std::string key;
   key.resize(8);
-  for (size_t operations = 0; operations < operations_per_thread; ++operations)
-  {
-    if (has_timed_out)
-    {
+  for (size_t operations = 0; operations < operations_per_thread;
+       ++operations) {
+    if (has_timed_out) {
       break;
     }
-    
+
     // generate key
     std::uint64_t num = generate_key(tid);
     memcpy(&key[0], &num, 8);
@@ -278,13 +258,11 @@ void DBScan(int tid) {
   std::string value;
   key.resize(8);
   int scan_length = 100;
-  for (size_t operations = 0; operations < operations_per_thread;)
-  {
-    if (has_timed_out)
-    {
+  for (size_t operations = 0; operations < operations_per_thread;) {
+    if (has_timed_out) {
       break;
     }
-    
+
     uint64_t num = generate_key(tid);
     memcpy(&key[0], &num, 8);
     switch (bench_data_type) {
@@ -351,13 +329,12 @@ void DBRead(int tid) {
   Status s;
 
   uint64_t not_found = 0;
-  for (size_t operations = 0; operations < operations_per_thread; ++operations)
-  {
-    if (has_timed_out)
-    {
+  for (size_t operations = 0; operations < operations_per_thread;
+       ++operations) {
+    if (has_timed_out) {
       break;
     }
-    
+
     std::uint64_t num = generate_key(tid);
     memcpy(&key[0], &num, 8);
     if (FLAGS_latency)
@@ -376,7 +353,7 @@ void DBRead(int tid) {
       break;
     }
     case DataType::Queue: {
-        s = engine->RPop(collections[num % FLAGS_num_collection], &value);
+      s = engine->RPop(collections[num % FLAGS_num_collection], &value);
       break;
     }
     case DataType::Blackhole: {
@@ -458,7 +435,8 @@ bool ProcessBenchmarkConfigs() {
   case DataType::String:
   case DataType::Queue: {
     if (FLAGS_scan) {
-      throw std::runtime_error{R"(Scan is not supported for "String" and "Que" type data.)"};
+      throw std::runtime_error{
+          R"(Scan is not supported for "String" and "Que" type data.)"};
     }
     break;
   }
@@ -479,24 +457,20 @@ bool ProcessBenchmarkConfigs() {
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
     operations_per_thread = FLAGS_num / FLAGS_max_write_threads + 1;
-    for (size_t i = 0; i < FLAGS_max_write_threads; i++)
-    {
-      ranges.emplace_back(i * operations_per_thread, (i+1) * operations_per_thread);
+    for (size_t i = 0; i < FLAGS_max_write_threads; i++) {
+      ranges.emplace_back(i * operations_per_thread,
+                          (i + 1) * operations_per_thread);
     }
-  } 
-  else
-  {
+  } else {
     operations_per_thread = FLAGS_num_operations / FLAGS_threads;
     engines.resize(FLAGS_threads);
     if (FLAGS_key_distribution == "random") {
       key_dist = KeyDistribution::Random;
-    }
-    else if (FLAGS_key_distribution == "zipf") {
+    } else if (FLAGS_key_distribution == "zipf") {
       key_dist = KeyDistribution::Zipf;
-    }
-    else
-    {
-      throw std::runtime_error{"key distribution " + FLAGS_key_distribution + " is not supported"};
+    } else {
+      throw std::runtime_error{"key distribution " + FLAGS_key_distribution +
+                               " is not supported"};
     }
   }
 
@@ -505,7 +479,9 @@ bool ProcessBenchmarkConfigs() {
   } else if (FLAGS_value_size_distribution == "random") {
     vsz_dist = ValueSizeDistribution::Random;
   } else {
-      throw std::runtime_error{"value size distribution " + FLAGS_value_size_distribution + " is not supported"};
+    throw std::runtime_error{"value size distribution " +
+                             FLAGS_value_size_distribution +
+                             " is not supported"};
   }
 
   return true;
@@ -515,7 +491,7 @@ int main(int argc, char **argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
   if (!ProcessBenchmarkConfigs()) {
-      throw std::runtime_error{"Fail To Process Benchmark config parameters"};
+    throw std::runtime_error{"Fail To Process Benchmark config parameters"};
   }
 
   Configs configs;
@@ -536,11 +512,10 @@ int main(int argc, char **argv) {
   value_pool.clear();
   value_pool.reserve(1ULL << 20);
   std::default_random_engine rand_engine{42};
-  for (size_t i = 0; i < (1ULL << 20); i++)
-  {
+  for (size_t i = 0; i < (1ULL << 20); i++) {
     value_pool.push_back('a' + rand_engine() % 26);
   }
-  
+
   int write_threads =
       FLAGS_fill ? FLAGS_threads
                  : FLAGS_threads - FLAGS_read_ratio * 100 * FLAGS_threads / 100;
@@ -598,7 +573,6 @@ int main(int argc, char **argv) {
   size_t effective_runtime = 0;
   bool stop_counting = false;
   while (true) {
-    sleep(1);
     if (!FLAGS_fill && run_time >= FLAGS_time) {
       // Read, scan, update and insert
       has_timed_out = true;
@@ -606,43 +580,41 @@ int main(int argc, char **argv) {
       // Fill will never timeout
       has_timed_out = false;
     }
+    std::this_thread::sleep_for(std::chrono::seconds{1});
 
-      // for latency, the last second may not accurate
-      run_time++;
-      total_read = read_ops.load();
-      total_write = write_ops.load();
-      total_not_found = read_not_found.load();
+    // for latency, the last second may not accurate
+    run_time++;
+    total_read = read_ops.load();
+    total_write = write_ops.load();
+    total_not_found = read_not_found.load();
 
-      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now() - start_ts);
-      printf("%-10lu  %-10lu  %-10lu  %-10lu  %-11lu  %-10lu\n",
-             duration.count(), total_read - last_read_ops,
-             read_not_found - last_read_notfound, total_write - last_write_ops,
-             total_read, total_write);
-      fflush(stdout);
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now() - start_ts);
+    printf("%-10lu  %-10lu  %-10lu  %-10lu  %-11lu  %-10lu\n", duration.count(),
+           total_read - last_read_ops, read_not_found - last_read_notfound,
+           total_write - last_write_ops, total_read, total_write);
+    fflush(stdout);
 
-      last_read_ops = total_read;
-      last_write_ops = total_write;
-      last_read_notfound = total_not_found;
+    last_read_ops = total_read;
+    last_write_ops = total_write;
+    last_read_notfound = total_not_found;
 
-    int num_finished = std::accumulate(has_finished.begin(), has_finished.end(), 0);
-    
-    if (run_time == 2)
-    {
+    int num_finished =
+        std::accumulate(has_finished.begin(), has_finished.end(), 0);
+
+    if (run_time == 2) {
       total_read_head = total_read;
       total_write_head = total_write;
     }
-    if (num_finished > 0 && !stop_counting)
-    {
+    if (num_finished > 0 && !stop_counting) {
       total_read_tail = total_read;
       total_write_tail = total_write;
       effective_runtime = run_time - 2;
       stop_counting = true;
     }
-    if (num_finished == FLAGS_threads)
-    {
+    if (num_finished == FLAGS_threads) {
       break;
-    }     
+    }
   }
 
   printf("finish bench\n");
@@ -651,7 +623,8 @@ int main(int argc, char **argv) {
     t.join();
 
   uint64_t read_thpt = (total_read_tail - total_read_head) / effective_runtime;
-  uint64_t write_thpt = (total_write_tail - total_write_head) / effective_runtime;
+  uint64_t write_thpt =
+      (total_write_tail - total_write_head) / effective_runtime;
 
   printf(" ------------ statistics ------------\n");
   printf("read ops %lu, write ops %lu\n", read_thpt, write_thpt);

@@ -1,26 +1,26 @@
 #ifndef EXTD_RANGE_ITERATOR_HPP
 #define EXTD_RANGE_ITERATOR_HPP
 
-#include <cstdint>
 #include <cassert>
+#include <cstdint>
 
 #include <type_traits>
 
-namespace extd
-{
-template<typename IntType, typename std::enable_if<std::is_integral<IntType>::value, bool>::type = true>
+namespace extd {
+template <typename IntType,
+          typename std::enable_if<std::is_integral<IntType>::value,
+                                  bool>::type = true>
 // Yield Number in range [lower, upper), by step.
 class range_iterator {
 public:
   range_iterator(IntType lo, IntType hi, IntType s = 1)
       : lower{lo}, upper{hi}, step{s}, curr{lower} {}
 
-  IntType operator()() 
-  {
+  IntType operator()() {
     IntType old = curr;
     curr += step;
     assert(old < upper);
-    return old;    
+    return old;
   }
 
 private:
@@ -30,6 +30,6 @@ private:
   IntType curr;
 };
 
-}
+} // namespace extd
 
 #endif // EXTD_RANGE_ITERATOR_HPP
