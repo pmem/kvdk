@@ -14,6 +14,7 @@
 
 #include "../engine/kv_engine.hpp"
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
+#include "../engine/utils/sync_point.hpp"
 
 #include "test_util.h"
 
@@ -1521,6 +1522,201 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   ASSERT_EQ(engine->SDelete("collection0", "a"), Status::Ok);
   delete engine;
 }
+
+// ========================= Sync Point ======================================
+
+TEST_F(EngineBasicTest, TestStringRecordPurgeFree) {
+  int threads = 16;
+  configs.max_write_threads = threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  engine->Set("key", "val2");
+  engine->ReleaseWriteThread();
+
+  auto StringRecordPurgeFree = [&](uint64_t id) {
+    if (id % 2 == 0) {
+      auto s = engine->Set("key", "val1");
+      ASSERT_EQ(s, Status::Ok);
+    } else {
+      auto s = engine->Delete("key");
+      ASSERT_EQ(s, Status::Ok);
+    }
+  };
+  LaunchNThreads(2, StringRecordPurgeFree);
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
+  // SyncPoint
+  {
+    Configs test_config = configs;
+    test_config.max_write_threads = 16;
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+              Status::Ok);
+
+    int cnt = 20;
+    std::atomic<bool> write_batch{false};
+
+    SyncPoint::GetInstance()->LoadDependency(
+        {{"Test::Set::Finish::1",
+          "KVEngine::BatchWrite::AllocateRecord::After"}});
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEngine::BatchWrite::AllocateRecord::After", [&](void *size) {
+          size_t bsize = *((size_t *)size);
+          ASSERT_EQ(cnt, bsize);
+        });
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEngine::BatchWrite::Pesistent::0",
+        [&](void *) { write_batch.store(true); });
+
+    SyncPoint::GetInstance()->SetCallBack("Test::Set::Start::0", [&](void *) {
+      while (!write_batch.load())
+        ;
+    });
+
+    SyncPoint::GetInstance()->SetCallBack("Test::Delete::Start::0",
+                                          [&](void *) {
+                                            while (!write_batch.load())
+                                              ;
+                                          });
+
+    SyncPoint::GetInstance()->EnableProcessing();
+
+    std::vector<std::thread> ts;
+
+    ts.emplace_back([&]() {
+      WriteBatch wb;
+      for (int i = 0; i < cnt; ++i) {
+        std::string key = "key" + std::to_string(i);
+        std::string val = "val" + std::to_string(i);
+        wb.Put(key, val);
+      }
+      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
+    });
+
+    ts.emplace_back([&]() {
+      TEST_SYNC_POINT("Test::Set::Start::0");
+      std::string key = "key10";
+      std::string val = "val17";
+      ASSERT_EQ(engine->Set(key, val), Status::Ok);
+    });
+
+    ts.emplace_back([&]() {
+      std::string key = "key8";
+      std::string val = "val15";
+      ASSERT_EQ(engine->Set(key, val), Status::Ok);
+      TEST_SYNC_POINT("Test::Set::Finish::1");
+    });
+
+    ts.emplace_back([&]() {
+      TEST_SYNC_POINT("Test::Delete::Start::0");
+      for (int i = 0; i < cnt; i += 3) {
+        std::string key = "key" + std::to_string(i);
+        ASSERT_EQ(engine->Delete(key), Status::Ok);
+      }
+    });
+
+    for (auto &t : ts) {
+      t.join();
+    }
+
+    for (auto i = 0; i < cnt; ++i) {
+      std::string key = "key" + std::to_string(i);
+      std::string val;
+      auto s = engine->Get(key, &val);
+      if (i % 3 == 0) {
+        ASSERT_EQ(s, Status::NotFound);
+      } else {
+        if (i == 10) {
+          ASSERT_EQ(val, "val17");
+        } else {
+          ASSERT_EQ(val, "val" + std::to_string(i));
+        }
+      }
+    }
+  }
+
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
+  Configs test_config = configs;
+  test_config.max_write_threads = 16;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+            Status::Ok);
+
+  int cnt = 10;
+  {
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEnigne::BatchWrite::BatchWriteRecord", [&](void *index) {
+          size_t idx = *(size_t *)(index);
+          if (idx == (cnt / 2)) {
+            throw 1;
+          }
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    WriteBatch wb;
+    for (int i = 0; i < cnt; ++i) {
+      std::string key = "key" + std::to_string(i);
+      std::string val = "val" + std::to_string(i);
+      wb.Put(key, val);
+    }
+    try {
+      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
+    } catch (...) {
+      delete engine;
+      // reopen engine
+      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+                Status::Ok);
+      for (int i = 0; i < cnt; ++i) {
+        std::string got_val;
+        std::string key = "key" + std::to_string(i);
+        ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+      }
+    }
+  }
+
+  // Again write batch, corrupted before hash insert (After persist record)
+  {
+    std::atomic<int> write_num(1);
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Init();
+
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEnigne::BatchWrite::BatchWriteRecord",
+        [&](void *index) { write_num.fetch_add(1); });
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEngine::StringBatchWriteImpl::HashInsertBefore", [&](void *index) {
+          if (write_num % 4 == 0)
+            throw 1;
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    WriteBatch wb;
+    for (int i = 0; i < cnt; i += 2) {
+      std::string key = "key" + std::to_string(i);
+      std::string val = "val*" + std::to_string(i);
+      wb.Put(key, val);
+    }
+    try {
+      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
+    } catch (...) {
+      delete engine; // reopen engine;
+      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+                Status::Ok);
+      for (int i = 0; i < cnt; ++i) {
+        std::string got_val;
+        std::string key = "key" + std::to_string(i);
+        ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+      }
+    }
+  }
+}
+
+TEST_F(EngineBasicTest, TestSortedSyncPoint) {}
+
+TEST_F(EngineBasicTest, TestSortedRecoverySyncPoint) {}
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
