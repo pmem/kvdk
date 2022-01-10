@@ -565,21 +565,23 @@ int main(int argc, char **argv) {
   size_t total_not_found = 0;
 
   // To ignore warm up time and thread join time
-  // Ignore first 2 seconds and last few seconds when a thread has joined.
+  // Ignore first 2 seconds and last few seconds when a thread has joined or
+  // time limit has been reached.
   size_t total_read_head = 0;
   size_t total_read_tail = 0;
   size_t total_write_head = 0;
   size_t total_write_tail = 0;
   size_t effective_runtime = 0;
-  bool stop_counting = false;
   while (true) {
     if (!FLAGS_fill && run_time >= FLAGS_time) {
       // Read, scan, update and insert
-      has_timed_out = true;
-    } else {
       // Fill will never timeout
-      has_timed_out = false;
-    }
+      has_timed_out = true;
+      total_read_tail = total_read;
+      total_write_tail = total_write;
+      effective_runtime = run_time - 2;
+      break;
+    } 
     std::this_thread::sleep_for(std::chrono::seconds{1});
 
     // for latency, the last second may not accurate
@@ -606,11 +608,10 @@ int main(int argc, char **argv) {
       total_read_head = total_read;
       total_write_head = total_write;
     }
-    if (num_finished > 0 && !stop_counting) {
+    if (num_finished == 0) {
       total_read_tail = total_read;
       total_write_tail = total_write;
       effective_runtime = run_time - 2;
-      stop_counting = true;
     }
     if (num_finished == FLAGS_threads) {
       break;
