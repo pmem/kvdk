@@ -27,6 +27,9 @@ DEFINE_string(path, "/mnt/pmem0/kvdk", "Instance path");
 
 DEFINE_uint64(num, (1 << 30), "Number of KVs to place");
 
+DEFINE_uint64(num_operations, (1 << 30), 
+"Number of total operations. Asserted to be equal to num if (fill == true).");
+
 DEFINE_bool(fill, false, "Fill num uniform kv pairs to a new instance");
 
 DEFINE_uint64(time, 600, "Time to benchmark, this is valid only if fill=false");
@@ -114,6 +117,9 @@ std::vector<std::string> collections;
 Engine *engine;
 char *value_pool = nullptr;
 
+std::vector<PaddedEngine> engines;
+std::vector<PaddedRangeIterators> ranges;
+
 enum class DataType {
   String,
   Sorted,
@@ -122,8 +128,18 @@ enum class DataType {
   Blackhole
 } bench_data_type;
 
-std::shared_ptr<Generator> key_generator;
-std::shared_ptr<Generator> value_size_generator;
+enum class KeyDistribution
+{
+  Range,
+  Random,
+  Zipf
+} key_dist;
+
+enum class ValueSizeDistribution
+{
+  Constant,
+  Random
+} vsz_dist;
 
 char *random_str(unsigned int size) {
   char *str = (char *)malloc(size + 1);
@@ -147,7 +163,51 @@ char *random_str(unsigned int size) {
   return str;
 }
 
-uint64_t generate_key() { return key_generator->Next(); }
+std::uint64_t generate_key(size_t tid) 
+{ 
+  static std::uint64_t max_key = FLAGS_existing_keys_ratio == 0
+                         ? UINT64_MAX
+                         : FLAGS_num / FLAGS_existing_keys_ratio;
+  static extd::zipfian_distribution<std::uint64_t> zipf{max_key, 0.99};
+  switch (key_dist)
+  {
+  case KeyDistribution::Range:
+  {
+    return ranges[tid].gen();
+  }
+  case KeyDistribution::Random:
+  {
+    return engines[tid].gen();
+  }
+  case KeyDistribution::Zipf:
+  {
+    return zipf(engines[tid].gen);
+  }
+  default:
+  {
+    throw;
+  }
+  }
+}
+
+size_t generate_vsz(size_t tid)
+{
+  switch (vsz_dist)
+  {
+  case ValueSizeDistribution::Constant:
+  {
+    return FLAGS_value_size;
+  }
+  case ValueSizeDistribution::Random:
+  {
+    return engines[tid].gen() % FLAGS_value_size + 1;
+  }
+  default:
+  {
+    throw;
+  }
+  }
+}
 
 void DBWrite(int tid) {
   std::string key;
@@ -164,10 +224,10 @@ void DBWrite(int tid) {
       return;
 
     // generate key
-    num = generate_key();
+    num = generate_key(tid);
     memcpy(&key[0], &num, 8);
 
-    StringView value = StringView(value_pool, value_size_generator->Next());
+    StringView value = StringView(value_pool, generate_vsz(tid));
 
     if (FLAGS_latency)
       timer.Start();
@@ -240,7 +300,7 @@ void DBScan(int tid) {
   key.resize(8);
   int scan_length = 100;
   while (!done) {
-    uint64_t num = generate_key();
+    uint64_t num = generate_key(tid);
     memcpy(&key[0], &num, 8);
     switch (bench_data_type) {
     case DataType::Sorted: {
@@ -310,7 +370,7 @@ void DBRead(int tid) {
     if (done) {
       return;
     }
-    num = generate_key();
+    num = generate_key(tid);
     memcpy(&key[0], &num, 8);
     if (FLAGS_latency)
       timer.Start();
@@ -434,16 +494,24 @@ bool ProcessBenchmarkConfigs() {
     return false;
   }
 
-  uint64_t max_key = FLAGS_existing_keys_ratio == 0
-                         ? UINT64_MAX
-                         : FLAGS_num / FLAGS_existing_keys_ratio;
-  if (FLAGS_fill || FLAGS_key_distribution == "uniform") {
-    key_generator.reset(
-        new MultiThreadingRangeIterator(FLAGS_threads, 0, FLAGS_num));
+  if (FLAGS_key_distribution == "uniform") {
+    assert(FLAGS_num_operations == FLAGS_num);
+    assert(FLAGS_num % FLAGS_max_write_threads == 0);
+    assert(FLAGS_read_ratio == 0);
+    key_dist = KeyDistribution::Range;
+    size_t nkey_per_thread = FLAGS_num / FLAGS_max_write_threads;
+    for (size_t i = 0; i < FLAGS_max_write_threads; i++)
+    {
+      ranges.emplace_back(i * FLAGS_max_write_threads, (i+1) * FLAGS_max_write_threads);
+    }
   } else if (FLAGS_key_distribution == "random") {
-    key_generator.reset(new RandomGenerator(max_key));
+    assert(!FLAGS_fill);
+    key_dist = KeyDistribution::Random;
+    engines.resize(FLAGS_threads);
   } else if (FLAGS_key_distribution == "zipf") {
-    key_generator.reset(new ZipfianGenerator(FLAGS_threads, max_key));
+    assert(!FLAGS_fill);
+    key_dist = KeyDistribution::Zipf;
+    engines.resize(FLAGS_threads);
   } else {
     printf("key distribution %s is not supported\n",
            FLAGS_key_distribution.c_str());
@@ -451,9 +519,9 @@ bool ProcessBenchmarkConfigs() {
   }
 
   if (FLAGS_value_size_distribution == "constant") {
-    value_size_generator.reset(new ConstantGenerator(FLAGS_value_size));
+    vsz_dist = ValueSizeDistribution::Constant;
   } else if (FLAGS_value_size_distribution == "random") {
-    value_size_generator.reset(new RandomGenerator(FLAGS_value_size));
+    vsz_dist = ValueSizeDistribution::Random;
   } else {
     printf("value size distribution %s is not supported\n",
            FLAGS_value_size_distribution.c_str());
