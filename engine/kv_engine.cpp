@@ -769,6 +769,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_path,
 
   backup_mark->stage = BackupMark::Stage::Finish;
   pmem_persist(backup_mark, sizeof(BackupMark));
+  GlobalLogger.Info("Backup to %s finished\n", path.c_str());
   return Status::Ok;
 }
 

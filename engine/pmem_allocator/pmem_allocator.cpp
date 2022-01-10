@@ -335,14 +335,21 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
     std::lock_guard<SpinMutex> lg(offset_head_lock_);
     offset_head_1st = offset_head_;
   }
-  memcpy(backup_file, pmem_, offset_head_1st);
+  // memcpy(backup_file, pmem_, offset_head_1st);
+  multi_thread_memcpy((char *)backup_file, pmem_, offset_head_1st, 4);
   {
     std::lock_guard<SpinMutex> lg(offset_head_lock_);
     offset_head_2nd = offset_head_;
   }
-  memcpy((char *)backup_file + offset_head_1st, pmem_ + offset_head_1st,
-         offset_head_2nd - offset_head_1st);
+  // memcpy((char *)backup_file + offset_head_1st, pmem_ + offset_head_1st,
+  //  offset_head_2nd - offset_head_1st);
+  multi_thread_memcpy((char *)backup_file + offset_head_1st,
+                      pmem_ + offset_head_1st,
+                      offset_head_2nd - offset_head_1st, 4);
+
+  GlobalLogger.Info("msync\n");
   msync(backup_file, offset_head_2nd, MS_SYNC);
+  GlobalLogger.Info("msync done\n");
   close(fd);
   return Status::Ok;
 }
