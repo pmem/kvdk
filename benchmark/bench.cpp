@@ -106,7 +106,6 @@ private:
   struct timespec start;
 };
 
-bool done{false};
 std::atomic<uint64_t> read_ops{0};
 std::atomic<uint64_t> write_ops{0};
 std::atomic<uint64_t> read_not_found{0};
@@ -115,7 +114,10 @@ std::vector<std::vector<uint64_t>> read_latencies;
 std::vector<std::vector<uint64_t>> write_latencies;
 std::vector<std::string> collections;
 Engine *engine;
-char *value_pool = nullptr;
+std::string value_pool;
+size_t operations_per_thread;
+bool has_timed_out;
+std::vector<int> has_finished;  // std::vector<bool> is a trap!
 
 std::vector<PaddedEngine> engines;
 std::vector<PaddedRangeIterators> ranges;
@@ -141,28 +143,6 @@ enum class ValueSizeDistribution
   Random
 } vsz_dist;
 
-char *random_str(unsigned int size) {
-  char *str = (char *)malloc(size + 1);
-  for (unsigned int i = 0; i < size; i++) {
-    switch (rand() % 3) {
-    case 0:
-      str[i] = rand() % 10 + '0';
-      break;
-    case 1:
-      str[i] = rand() % 26 + 'A';
-      break;
-    case 2:
-      str[i] = rand() % 26 + 'a';
-      break;
-    default:
-      break;
-    }
-  }
-  str[size] = 0;
-
-  return str;
-}
-
 std::uint64_t generate_key(size_t tid) 
 { 
   static std::uint64_t max_key = FLAGS_existing_keys_ratio == 0
@@ -177,7 +157,7 @@ std::uint64_t generate_key(size_t tid)
   }
   case KeyDistribution::Random:
   {
-    return engines[tid].gen();
+    return engines[tid].gen() % max_key;
   }
   case KeyDistribution::Zipf:
   {
@@ -210,24 +190,25 @@ size_t generate_vsz(size_t tid)
 }
 
 void DBWrite(int tid) {
-  std::string key;
-  key.resize(8);
-  uint64_t num;
-  uint64_t ops = 0;
   Timer timer;
   uint64_t lat = 0;
   WriteBatch batch;
+
   Status s;
-
-  while (true) {
-    if (done)
-      return;
-
+  std::string key;
+  key.resize(8);
+  for (size_t operations = 0; operations < operations_per_thread; ++operations)
+  {
+    if (has_timed_out)
+    {
+      break;
+    }
+    
     // generate key
-    num = generate_key(tid);
+    std::uint64_t num = generate_key(tid);
     memcpy(&key[0], &num, 8);
 
-    StringView value = StringView(value_pool, generate_vsz(tid));
+    StringView value = StringView(value_pool.data(), generate_vsz(tid));
 
     if (FLAGS_latency)
       timer.Start();
@@ -255,13 +236,11 @@ void DBWrite(int tid) {
     case DataType::Queue: {
       if ((num / FLAGS_num_collection) % 2 == 0)
         s = engine->LPush(collections[num % FLAGS_num_collection], value);
-      else
-        s = engine->RPush(collections[num % FLAGS_num_collection], value);
       break;
     }
     case DataType::Blackhole: {
       s = Status::Ok;
-      if (ops == 0) {
+      if (operations == 0) {
         s = engine->Set(
             key, value); // Write something so that blackhole won't re-populate
       }
@@ -275,21 +254,21 @@ void DBWrite(int tid) {
     if (FLAGS_latency) {
       lat = timer.End();
       if (lat / 100 >= MAX_LAT) {
-        fprintf(stderr, "Write latency overflow: %ld us\n", lat / 100);
-        std::abort();
+        throw std::runtime_error{"Write latency overflow"};
       }
       write_latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {
-      fprintf(stderr, "Set error\n");
-      std::abort();
+      throw std::runtime_error{"Set error"};
     }
 
-    if ((++ops % 1000) == 0) {
-      write_ops += 1000;
+    if ((operations + 1) % 1000 == 0) {
+      write_ops.fetch_add(1000);
     };
   }
+  has_finished[tid] = 1;
+  return;
 }
 
 void DBScan(int tid) {
@@ -299,7 +278,13 @@ void DBScan(int tid) {
   std::string value;
   key.resize(8);
   int scan_length = 100;
-  while (!done) {
+  for (size_t operations = 0; operations < operations_per_thread;)
+  {
+    if (has_timed_out)
+    {
+      break;
+    }
+    
     uint64_t num = generate_key(tid);
     memcpy(&key[0], &num, 8);
     switch (bench_data_type) {
@@ -314,13 +299,12 @@ void DBScan(int tid) {
           value = iter->Value();
           ++operations;
           if (operations > operations_counted + 1000) {
-            read_ops += (operations - operations_counted);
+            read_ops.fetch_add(operations - operations_counted);
             operations_counted = operations;
           }
         }
       } else {
-        fprintf(stderr, "Error creating SortedIterator\n");
-        std::abort();
+        throw std::runtime_error{"Error creating SortedIterator"};
       }
       break;
     }
@@ -338,13 +322,12 @@ void DBScan(int tid) {
           }
         }
       } else {
-        fprintf(stderr, "Error creating UnorderedIterator\n");
-        std::abort();
+        throw std::runtime_error{"Error creating UnorderedIterator"};
       }
       break;
     }
     case DataType::Blackhole: {
-      read_ops += 1024;
+      read_ops.fetch_add(1024);
       break;
     }
     case DataType::String:
@@ -354,27 +337,31 @@ void DBScan(int tid) {
     }
     }
   }
+
+  has_finished[tid] = 1;
+  return;
 }
 
 void DBRead(int tid) {
   std::string value;
   std::string key;
   key.resize(8);
-  uint64_t num;
-  uint64_t ops = 0;
-  uint64_t not_found = 0;
   Timer timer;
   uint64_t lat = 0;
+  Status s;
 
-  while (true) {
-    if (done) {
-      return;
+  uint64_t not_found = 0;
+  for (size_t operations = 0; operations < operations_per_thread; ++operations)
+  {
+    if (has_timed_out)
+    {
+      break;
     }
-    num = generate_key(tid);
+    
+    std::uint64_t num = generate_key(tid);
     memcpy(&key[0], &num, 8);
     if (FLAGS_latency)
       timer.Start();
-    Status s;
     switch (bench_data_type) {
     case DataType::String: {
       s = engine->Get(key, &value);
@@ -389,11 +376,7 @@ void DBRead(int tid) {
       break;
     }
     case DataType::Queue: {
-      std::string sink;
-      if ((num / FLAGS_num_collection) % 2 == 0)
-        s = engine->LPop(collections[num % FLAGS_num_collection], &sink);
-      else
-        s = engine->RPop(collections[num % FLAGS_num_collection], &sink);
+        s = engine->RPop(collections[num % FLAGS_num_collection], &value);
       break;
     }
     case DataType::Blackhole: {
@@ -416,19 +399,21 @@ void DBRead(int tid) {
 
     if (s != Status::Ok) {
       if (s != Status::NotFound) {
-        fprintf(stderr, "get error\n");
-        std::abort();
+        throw std::runtime_error{"Fail to Read"};
       } else {
         if (++not_found % 1000 == 0) {
-          read_not_found += 1000;
+          read_not_found.fetch_add(1000);
         }
       }
     }
 
-    if (++ops % 1000 == 0) {
-      read_ops += 1000;
+    if ((operations + 1) % 1000 == 0) {
+      read_ops.fetch_add(1000);
     }
   }
+
+  has_finished[tid] = 1;
+  return;
 }
 
 bool ProcessBenchmarkConfigs() {
@@ -473,10 +458,7 @@ bool ProcessBenchmarkConfigs() {
   case DataType::String:
   case DataType::Queue: {
     if (FLAGS_scan) {
-      std::cerr
-          << R"(Scan is only supported for "hash" and "sorted" type data.)"
-          << std::endl;
-      return false;
+      throw std::runtime_error{R"(Scan is not supported for "String" and "Que" type data.)"};
     }
     break;
   }
@@ -490,32 +472,32 @@ bool ProcessBenchmarkConfigs() {
   }
 
   if (FLAGS_value_size > 102400) {
-    printf("value size too large\n");
-    return false;
+    throw std::runtime_error{"value size too large"};
   }
 
-  if (FLAGS_key_distribution == "uniform") {
-    assert(FLAGS_num_operations == FLAGS_num);
-    assert(FLAGS_num % FLAGS_max_write_threads == 0);
+  if (FLAGS_fill || FLAGS_key_distribution == "uniform") {
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
-    size_t nkey_per_thread = FLAGS_num / FLAGS_max_write_threads;
+    operations_per_thread = FLAGS_num / FLAGS_max_write_threads + 1;
     for (size_t i = 0; i < FLAGS_max_write_threads; i++)
     {
-      ranges.emplace_back(i * FLAGS_max_write_threads, (i+1) * FLAGS_max_write_threads);
+      ranges.emplace_back(i * operations_per_thread, (i+1) * operations_per_thread);
     }
-  } else if (FLAGS_key_distribution == "random") {
-    assert(!FLAGS_fill);
-    key_dist = KeyDistribution::Random;
+  } 
+  else
+  {
+    operations_per_thread = FLAGS_num_operations / FLAGS_threads;
     engines.resize(FLAGS_threads);
-  } else if (FLAGS_key_distribution == "zipf") {
-    assert(!FLAGS_fill);
-    key_dist = KeyDistribution::Zipf;
-    engines.resize(FLAGS_threads);
-  } else {
-    printf("key distribution %s is not supported\n",
-           FLAGS_key_distribution.c_str());
-    return false;
+    if (FLAGS_key_distribution == "random") {
+      key_dist = KeyDistribution::Random;
+    }
+    else if (FLAGS_key_distribution == "zipf") {
+      key_dist = KeyDistribution::Zipf;
+    }
+    else
+    {
+      throw std::runtime_error{"key distribution " + FLAGS_key_distribution + " is not supported"};
+    }
   }
 
   if (FLAGS_value_size_distribution == "constant") {
@@ -523,9 +505,7 @@ bool ProcessBenchmarkConfigs() {
   } else if (FLAGS_value_size_distribution == "random") {
     vsz_dist = ValueSizeDistribution::Random;
   } else {
-    printf("value size distribution %s is not supported\n",
-           FLAGS_value_size_distribution.c_str());
-    return false;
+      throw std::runtime_error{"value size distribution " + FLAGS_value_size_distribution + " is not supported"};
   }
 
   return true;
@@ -535,7 +515,7 @@ int main(int argc, char **argv) {
   ParseCommandLineFlags(&argc, &argv, true);
 
   if (!ProcessBenchmarkConfigs()) {
-    std::abort();
+      throw std::runtime_error{"Fail To Process Benchmark config parameters"};
   }
 
   Configs configs;
@@ -553,8 +533,14 @@ int main(int argc, char **argv) {
     std::abort();
   }
 
-  value_pool = random_str(102400);
-
+  value_pool.clear();
+  value_pool.reserve(1ULL << 20);
+  std::default_random_engine rand_engine{42};
+  for (size_t i = 0; i < (1ULL << 20); i++)
+  {
+    value_pool.push_back('a' + rand_engine() % 26);
+  }
+  
   int write_threads =
       FLAGS_fill ? FLAGS_threads
                  : FLAGS_threads - FLAGS_read_ratio * 100 * FLAGS_threads / 100;
@@ -573,12 +559,13 @@ int main(int argc, char **argv) {
       Collection *collection_ptr;
       s = engine->CreateSortedCollection(col, &collection_ptr);
       if (s != Status::Ok) {
-        fprintf(stderr, "Create Sorted collection error\n");
-        std::abort();
+        throw std::runtime_error{"Fail to create Sorted collection"};
       }
     }
     engine->ReleaseWriteThread();
   }
+
+  has_finished.resize(FLAGS_threads, 0);
 
   printf("init %d write threads\n", write_threads);
   for (int i = 0; i < write_threads; i++) {
@@ -586,24 +573,40 @@ int main(int argc, char **argv) {
   }
 
   printf("init %d read threads\n", read_threads);
-  for (int i = 0; i < read_threads; i++) {
+  for (int i = write_threads; i < FLAGS_threads; i++) {
     ts.emplace_back(FLAGS_scan ? DBScan : DBRead, i);
   }
 
-  uint64_t last_read_ops = 0;
-  uint64_t last_read_notfound = 0;
-  uint64_t last_write_ops = 0;
-  uint64_t run_time = 0;
+  size_t last_read_ops = 0;
+  size_t last_read_notfound = 0;
+  size_t last_write_ops = 0;
+  size_t run_time = 0;
   auto start_ts = std::chrono::system_clock::now();
   printf("------- ops in seconds -----------\n");
   printf("time (ms),   read ops,   not found,  write ops,  total read,  total "
          "write\n");
-  uint64_t total_read = 0;
-  uint64_t total_write = 0;
-  uint64_t total_not_found = 0;
-  while (!done) {
+  size_t total_read = 0;
+  size_t total_write = 0;
+  size_t total_not_found = 0;
+
+  // To ignore warm up time and thread join time
+  // Ignore first 2 seconds and last few seconds when a thread has joined.
+  size_t total_read_head = 0;
+  size_t total_read_tail = 0;
+  size_t total_write_head = 0;
+  size_t total_write_tail = 0;
+  size_t effective_runtime = 0;
+  bool stop_counting = false;
+  while (true) {
     sleep(1);
-    {
+    if (!FLAGS_fill && run_time >= FLAGS_time) {
+      // Read, scan, update and insert
+      has_timed_out = true;
+    } else {
+      // Fill will never timeout
+      has_timed_out = false;
+    }
+
       // for latency, the last second may not accurate
       run_time++;
       total_read = read_ops.load();
@@ -622,31 +625,33 @@ int main(int argc, char **argv) {
       last_write_ops = total_write;
       last_read_notfound = total_not_found;
 
-      if (FLAGS_fill && total_write >= FLAGS_num * 99 / 100) {
-        // Fill
-        /// TODO: Introduce mechanism to signal that every thread has done
-        /// filling.
-        done = true;
-      } else if (!FLAGS_fill && run_time >= FLAGS_time) {
-        // Read, scan, update and insert
-        done = true;
-      } else {
-        done = false;
-      }
+    int num_finished = std::accumulate(has_finished.begin(), has_finished.end(), 0);
+    
+    if (run_time == 2)
+    {
+      total_read_head = total_read;
+      total_write_head = total_write;
     }
+    if (num_finished > 0 && !stop_counting)
+    {
+      total_read_tail = total_read;
+      total_write_tail = total_write;
+      effective_runtime = run_time - 2;
+      stop_counting = true;
+    }
+    if (num_finished == FLAGS_threads)
+    {
+      break;
+    }     
   }
 
   printf("finish bench\n");
-  if (FLAGS_fill) {
-    // Make sure every thread has done its job.
-    sleep(30);
-  }
 
   for (auto &t : ts)
     t.join();
 
-  uint64_t read_thpt = total_read / run_time;
-  uint64_t write_thpt = total_write / run_time;
+  uint64_t read_thpt = (total_read_tail - total_read_head) / effective_runtime;
+  uint64_t write_thpt = (total_write_tail - total_write_head) / effective_runtime;
 
   printf(" ------------ statistics ------------\n");
   printf("read ops %lu, write ops %lu\n", read_thpt, write_thpt);
