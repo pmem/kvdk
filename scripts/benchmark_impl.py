@@ -17,10 +17,9 @@ def __fill(exec, shared_para, data_type, report_path):
     os.system(cmd)
 
 
-def read_random(exec, shared_para, data_type, report_path):
+def read_random(exec, shared_para, data_type, report_path, num_operations):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=1".format(
-            data_type)
+        " -fill=0 -type={} -read_ratio=1 -num_operations={}".format(data_type, num_operations)
     report = report_path + "read_random"
     print("Read random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
@@ -28,10 +27,9 @@ def read_random(exec, shared_para, data_type, report_path):
     os.system(cmd)
 
 
-def insert_random(exec, shared_para, data_type, report_path):
+def insert_random(exec, shared_para, data_type, report_path, num_operations):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0 -existing_keys_ratio=0".format(
-            data_type)
+        " -fill=0 -type={} -read_ratio=0 -existing_keys_ratio=0 -num_operations={}".format(data_type, num_operations)
     report = report_path + "insert_random"
     print("Insert random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
@@ -39,12 +37,12 @@ def insert_random(exec, shared_para, data_type, report_path):
     os.system(cmd)
 
 
-def batch_insert_random(exec, shared_para, data_type, report_path):
+def batch_insert_random(exec, shared_para, data_type, report_path, num_operations):
     if data_type != "string":
         return
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0 -batch_size=100 -existing_keys_ratio=0".format(
-            data_type)
+        " -fill=0 -type={} -read_ratio=0 -batch_size=100"\
+        " -existing_keys_ratio=0 -num_operations={}".format(data_type, num_operations)
     report = report_path + "batch_insert_random"
     print("Batch insert random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
@@ -52,10 +50,9 @@ def batch_insert_random(exec, shared_para, data_type, report_path):
     os.system(cmd)
 
 
-def update_random(exec, shared_para, data_type, report_path):
+def update_random(exec, shared_para, data_type, report_path, num_operations):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0".format(
-            data_type)
+        " -fill=0 -type={} -read_ratio=0 -num_operations={}".format(data_type, num_operations)
     report = report_path + "update_random"
     print("Update random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
@@ -63,10 +60,9 @@ def update_random(exec, shared_para, data_type, report_path):
     os.system(cmd)
 
 
-def read_write_random(exec, shared_para, data_type, report_path):
+def read_write_random(exec, shared_para, data_type, report_path, num_operations):
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0.9".format(
-            data_type)
+        " -fill=0 -type={} -read_ratio=0.9 -num_operations={}".format(data_type, num_operations)
     report = report_path + "read_write_random"
     print("Read write random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
@@ -74,11 +70,11 @@ def read_write_random(exec, shared_para, data_type, report_path):
     os.system(cmd)
 
 
-def range_scan(exec, shared_para, data_type, report_path):
+def range_scan(exec, shared_para, data_type, report_path, num_operations):
     if data_type == "string" or data_type == "queue":
         return
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=1 -scan=1".format(data_type)
+        " -fill=0 -type={} -read_ratio=1 -scan=1 -num_operations={}".format(data_type, num_operations)
     report = report_path + "range_scan"
     print("Range scan {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
@@ -155,8 +151,7 @@ def run_benchmark(
         "-timeout={7} "\
         "-value_size={8} "\
         "-value_size_distribution={9} "\
-        "-key_distribution={10} "\
-        "-num_operations={11}".format(
+        "-key_distribution={10} ".format(
         pmem_path, 
         pmem_size, 
         populate_on_fill, 
@@ -172,6 +167,7 @@ def run_benchmark(
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
+        num_operations = num_operations if (benchmark == insert_random or benchmark == batch_insert_random) else 1024 * 1024 * 1024 * 10
         benchmark(exec, shared_para, data_type, report_path)
 
     os.system("rm -rf {0}".format(pmem_path))
