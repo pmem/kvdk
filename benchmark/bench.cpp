@@ -243,7 +243,7 @@ void DBWrite(int tid) {
     }
 
     if (s != Status::Ok) {
-      fprintf(stderr, "Set error\n");
+      fprintf(stderr, "Set error %d\n", s);
       std::abort();
     }
 

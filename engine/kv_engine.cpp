@@ -1034,6 +1034,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
       }
       break;
     case Status::NotFound:
+      s = Status::Ok;
+      break;
     case Status::MemoryOverflow:
       break;
     default:
@@ -1044,7 +1046,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
       if (sized_space_entry.size > 0) {
         pmem_allocator_->Free(sized_space_entry);
       }
-      return s;
+      return s == Status::NotFound ? Status::Ok : s;
     }
 
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
