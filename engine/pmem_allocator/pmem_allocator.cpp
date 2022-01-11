@@ -40,7 +40,7 @@ size_t PMEMAllocator::PMemUsageInBytes() {
   return total;
 }
 
-void PMEMAllocator::PopulateSpace() {
+void PMEMAllocator::populateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");
   assert((pmem_ - static_cast<char *>(nullptr)) % 64 == 0);
   assert(pmem_size_ % 64 == 0);
@@ -59,11 +59,13 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
                                                uint64_t num_segment_blocks,
                                                uint32_t block_size,
                                                uint32_t num_write_threads,
+                                               bool populate_space_on_new_file,
                                                bool use_devdax_mode) {
   int is_pmem;
   uint64_t mapped_size;
   char *pmem;
   // TODO jiayu: Should we clear map failed file?
+  bool pmem_file_exist = file_exist(pmem_file);
   if (!use_devdax_mode) {
     if ((pmem = (char *)pmem_map_file(pmem_file.c_str(), pmem_size,
                                       PMEM_FILE_CREATE, 0666, &mapped_size,
@@ -78,9 +80,9 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
       return nullptr;
     }
   } else {
-    if (!CheckDevDaxAndGetSize(pmem_file.c_str(), &mapped_size)) {
+    if (!checkDevDaxAndGetSize(pmem_file.c_str(), &mapped_size)) {
       GlobalLogger.Error(
-          "CheckDevDaxAndGetSize %s failed device %s faild: %s\n",
+          "checkDevDaxAndGetSize %s failed device %s faild: %s\n",
           pmem_file.c_str(), strerror(errno));
       return nullptr;
     }
@@ -130,6 +132,10 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
         sz_wasted);
   GlobalLogger.Info("Map pmem space done\n");
 
+  if (!pmem_file_exist && populate_space_on_new_file) {
+    allocator->populateSpace();
+  }
+
   return allocator;
 }
 
@@ -153,7 +159,7 @@ bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
   return false;
 }
 
-bool PMEMAllocator::AllocateSegmentSpace(SpaceEntry *segment_entry) {
+bool PMEMAllocator::allocateSegmentSpace(SpaceEntry *segment_entry) {
   std::lock_guard<SpinMutex> lg(offset_head_lock_);
   if (offset_head_ <= pmem_size_ - segment_size_) {
     Free(*segment_entry);
@@ -165,7 +171,7 @@ bool PMEMAllocator::AllocateSegmentSpace(SpaceEntry *segment_entry) {
   return false;
 }
 
-bool PMEMAllocator::CheckDevDaxAndGetSize(const char *path, uint64_t *size) {
+bool PMEMAllocator::checkDevDaxAndGetSize(const char *path, uint64_t *size) {
   char spath[PATH_MAX];
   char npath[PATH_MAX];
   char *rpath;
@@ -259,7 +265,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 
     // allocate a new segment, add remainning space of the old one
     // to the free list
-    if (!AllocateSegmentSpace(&palloc_thread_cache.segment_entry)) {
+    if (!allocateSegmentSpace(&palloc_thread_cache.segment_entry)) {
       GlobalLogger.Error("PMem OVERFLOW!\n");
       return space_entry;
     }

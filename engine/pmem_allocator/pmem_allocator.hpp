@@ -34,7 +34,8 @@ public:
   static PMEMAllocator *
   NewPMEMAllocator(const std::string &pmem_file, uint64_t pmem_size,
                    uint64_t num_segment_blocks, uint32_t block_size,
-                   uint32_t num_write_threads, bool use_devdax_mode);
+                   uint32_t num_write_threads, bool populate_space_on_new_file,
+                   bool use_devdax_mode);
 
   // Allocate a PMem space, return offset and actually allocated space in bytes
   SpaceEntry Allocate(uint64_t size) override;
@@ -85,10 +86,6 @@ public:
     return offset < pmem_size_ && offset != kPmemNullOffset;
   }
 
-  // Populate PMem space so the following access can be faster
-  // Warning! this will zero the entire PMem space
-  void PopulateSpace();
-
   // Free segment_space_entry and fetch an allocated segment to
   // segment_space_entry, until reach the end of allocated space
   bool FreeAndFetchSegment(SpaceEntry *segment_space_entry);
@@ -120,9 +117,13 @@ private:
     size_t allocated_sz{};
   };
 
-  bool AllocateSegmentSpace(SpaceEntry *segment_entry);
+  // Populate PMem space so the following access can be faster
+  // Warning! this will zero the entire PMem space
+  void populateSpace();
 
-  static bool CheckDevDaxAndGetSize(const char *path, uint64_t *size);
+  bool allocateSegmentSpace(SpaceEntry *segment_entry);
+
+  static bool checkDevDaxAndGetSize(const char *path, uint64_t *size);
 
   // Mark and persist a space entry on PMem
   void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
