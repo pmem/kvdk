@@ -179,10 +179,10 @@ void DBWrite(int tid) {
     switch (bench_data_type) {
     case DataType::String: {
       if (batch_num == 0) {
-        // /*
-        s = engine->Set(key, value);
-        // * /
         /*
+        s = engine->Set(key, value);
+        */
+        // /*
         if (fill || existing_keys_ratio == 0) {
           s = engine->Set(key, value);
         } else {
@@ -193,7 +193,7 @@ void DBWrite(int tid) {
             s = engine->Delete(key);
           }
         }
-        */
+        // */
       } else {
         batch.Put(key, std::string(value.data(), value.size()));
         if (batch.Size() == batch_num) {
@@ -204,7 +204,17 @@ void DBWrite(int tid) {
       break;
     }
     case DataType::Sorted: {
-      s = engine->SSet(collections[num % num_collections], key, value);
+      if (fill || existing_keys_ratio == 0) {
+        s = engine->SSet(collections[num % num_collections], key, value);
+      } else {
+        // todo: restore
+        if (fast_random_64() % 2 == 0) {
+          s = engine->SSet(collections[num % num_collections], key, value);
+        } else {
+          s = engine->SDelete(collections[num % num_collections], key);
+        }
+      }
+      // s = engine->SSet(collections[num % num_collections], key, value);
       break;
     }
     case DataType::Hashes: {
@@ -517,7 +527,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < read_threads; i++) {
     ts.emplace_back(FLAGS_scan ? DBScan : DBRead, i);
   }
-  // /*
+  /*
   std::string backup_path("/mnt/pmem1/backup");
 
   ts.emplace_back([&]() {
@@ -529,7 +539,7 @@ int main(int argc, char **argv) {
       sleep(5);
     }
   });
-  // */
+  */
 
   uint64_t last_read_ops = 0;
   uint64_t last_read_notfound = 0;

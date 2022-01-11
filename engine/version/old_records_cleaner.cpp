@@ -26,6 +26,7 @@ void OldRecordsCleaner::Push(const OldDeleteRecord &old_delete_record) {
 }
 
 void OldRecordsCleaner::TryCleanAll() {
+  TimestampType ts = kv_engine_->version_controller_.GetCurrentTimestamp();
   std::vector<SpaceEntry> space_to_free;
   // records that can't be freed this time
   std::deque<OldDataRecord> data_record_refered;
@@ -41,7 +42,7 @@ void OldRecordsCleaner::TryCleanAll() {
   for (size_t i = 0; i < thread_cache_.size(); i++) {
     auto &thread_cache = thread_cache_[i];
     if (thread_cache.old_data_records.size() > 0 ||
-        thread_cache.old_delete_records.size() > 0) {
+        thread_cache.old_delete_records.size() > 10000000) {
       std::lock_guard<SpinMutex> lg(thread_cache.old_records_lock);
 
       if (thread_cache.old_data_records.size() > 0) {
@@ -49,7 +50,7 @@ void OldRecordsCleaner::TryCleanAll() {
         global_old_data_records_.back().swap(thread_cache.old_data_records);
       }
 
-      if (thread_cache.old_delete_records.size() > 0) {
+      if (thread_cache.old_delete_records.size() > 10000000) {
         global_old_delete_records_.emplace_back();
         global_old_delete_records_.back().swap(thread_cache.old_delete_records);
       }
@@ -70,8 +71,8 @@ void OldRecordsCleaner::TryCleanAll() {
       }
     }
   }
-  GlobalLogger.Info("Cleaned %lu data records, delayed %lu data records\n",
-                    handled_cnt, delayed_cnt);
+  // GlobalLogger.Info("Cleaned %lu data records, delayed %lu data records\n",
+  // handled_cnt, delayed_cnt);
 
   // Find free-able delete records
   handled_cnt = 0;
@@ -88,8 +89,10 @@ void OldRecordsCleaner::TryCleanAll() {
       }
     }
   }
-  GlobalLogger.Info("Cleaned %lu delete records, delayed %lu delete records\n",
-                    handled_cnt, delayed_cnt);
+
+  last_clean_all_ts_ = ts;
+  // GlobalLogger.Info("Cleaned %lu delete records, delayed %lu delete
+  // records\n", handled_cnt, delayed_cnt);
 
   if (space_pending.entries.size() > 0) {
     space_pending.free_ts =
@@ -109,19 +112,21 @@ void OldRecordsCleaner::TryCleanAll() {
       break;
     }
   }
-  GlobalLogger.Info("erase %lu\n", iter - pending_free_space_entries_.begin());
+  // GlobalLogger.Info("erase %lu\n", iter -
+  // pending_free_space_entries_.begin());
   pending_free_space_entries_.erase(pending_free_space_entries_.begin(), iter);
   iter = pending_free_space_entries_.begin();
   while (iter != pending_free_space_entries_.end()) {
     delayed_cnt += iter->entries.size();
     iter++;
   }
-  GlobalLogger.Info("cleaned %lu space entries, delayed %lu space entries\n",
-                    handled_cnt, delayed_cnt);
+  // GlobalLogger.Info("cleaned %lu space entries, delayed %lu space entries\n",
+  // handled_cnt, delayed_cnt);
 
   if (space_to_free.size() > 0) {
     kv_engine_->pmem_allocator_->BatchFree(space_to_free);
   }
+  // GlobalLogger.Info("batch freed %lu space entries\n", space_to_free.size());
 
   global_old_data_records_.clear();
   global_old_data_records_.emplace_back(std::move(data_record_refered));
@@ -134,15 +139,28 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
               "un-initialized access thread");
   auto &tc = thread_cache_[access_thread.id];
-  if (tc.old_data_records.size() > 0) {
-    std::lock_guard<SpinMutex> lg(tc.old_records_lock);
+  if (tc.old_data_records.size() > 0 || tc.old_delete_records.size() > 0) {
     maybeUpdateOldestSnapshot();
+    std::unique_lock<SpinMutex> ul(tc.old_records_lock);
+    for (int limit = num_limit_clean;
+         tc.old_delete_records.size() > 0 &&
+         tc.old_delete_records.front().newer_version_timestamp <
+             last_clean_all_ts_ &&
+         limit > 0;
+         limit--) {
+      kv_engine_->pmem_allocator_->Free(
+          purgeOldDeleteRecord(tc.old_delete_records.front()));
+      tc.old_delete_records.pop_front();
+    }
+
     TimestampType oldest_refer_ts =
         kv_engine_->version_controller_.OldestSnapshotTS();
-    while (tc.old_data_records.size() > 0 &&
-           tc.old_data_records.front().newer_version_timestamp <
-               oldest_refer_ts &&
-           num_limit_clean-- > 0) {
+    for (int limit = num_limit_clean;
+         tc.old_data_records.size() > 0 &&
+         tc.old_data_records.front().newer_version_timestamp <
+             oldest_refer_ts &&
+         limit > 0;
+         limit--) {
       kv_engine_->pmem_allocator_->Free(
           purgeOldDataRecord(tc.old_data_records.front()));
       tc.old_data_records.pop_front();

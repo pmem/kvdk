@@ -1016,7 +1016,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     HashEntry hash_entry;
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
-    std::lock_guard<SpinMutex> lg(*hint.spin);
+    std::unique_lock<SpinMutex> ul(*hint.spin);
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
         [&]() { version_controller_.ReleaseLocalSnapshot(); });
@@ -1079,6 +1079,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     } else {
       entry_ptr->header.data_type = SortedDeleteRecord;
     }
+    ul.unlock();
     delayFree(OldDataRecord{existing_record, new_ts});
     delayFree(
         OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr, hint.spin});
@@ -1109,7 +1110,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     HashEntry hash_entry;
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
-    std::lock_guard<SpinMutex> lg(*hint.spin);
+    std::unique_lock<SpinMutex> ul(*hint.spin);
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
         [&]() { version_controller_.ReleaseLocalSnapshot(); });
@@ -1148,10 +1149,10 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
       } else {
         entry_ptr->header.data_type = SortedDataRecord;
       }
+      ul.unlock();
       if (updated_type == SortedDataRecord) {
         delayFree(OldDataRecord{existing_record, new_ts});
       }
-      // purgeAndFree(existing_record);
     } else {
       if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
                             sized_space_entry)) {
@@ -1480,7 +1481,7 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
 
   {
     auto hint = hash_table_->GetHint(key);
-    std::lock_guard<SpinMutex> lg(*hint.spin);
+    std::unique_lock<SpinMutex> ul(*hint.spin);
     // Set current snapshot to this thread
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
@@ -1514,9 +1515,11 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
 
       hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
                           HashOffsetType::StringRecord);
+      ul.unlock();
       delayFree(OldDataRecord{hash_entry.index.string_record, new_ts});
       // We also delay free this delete record to recycle PMem and DRAM space
       delayFree(OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
+
       return s;
     }
     case Status::NotFound:
@@ -1543,7 +1546,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
 
   {
     auto hint = hash_table_->GetHint(key);
-    std::lock_guard<SpinMutex> lg(*hint.spin);
+    std::unique_lock<SpinMutex> ul(*hint.spin);
     // Set current snapshot to this thread
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
@@ -1578,6 +1581,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     if (entry_base_status == HashEntryStatus::Updating &&
         updated_type == StringDataRecord) {
       /* delete record is self-freed, so we don't need to free it here */
+      ul.unlock();
       delayFree(OldDataRecord{hash_entry.index.string_record, new_ts});
     }
   }

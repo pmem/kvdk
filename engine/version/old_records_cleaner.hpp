@@ -62,6 +62,7 @@ private:
   struct ThreadCache {
     std::deque<OldDeleteRecord> old_delete_records{};
     std::deque<OldDataRecord> old_data_records{};
+    std::vector<SpaceEntry> pending_free_entries{};
     SpinMutex old_records_lock;
   };
 
@@ -76,5 +77,6 @@ private:
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
   std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
   std::deque<PendingFreeSpaceEntries> pending_free_space_entries_;
+  TimestampType last_clean_all_ts_{0};
 };
 } // namespace KVDK_NAMESPACE
