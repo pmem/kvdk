@@ -99,7 +99,7 @@ public:
   void LogDeallocation(size_t tid, size_t sz) {
     palloc_thread_cache_[tid].allocated_sz -= sz;
   }
-  size_t PMemUsageInBytes();
+  std::int64_t PMemUsageInBytes();
 
 private:
   friend Freelist;
@@ -114,7 +114,7 @@ private:
     // Space fetched from head of PMem segments, the size is aligned to
     // block_size_
     SpaceEntry segment_entry;
-    size_t allocated_sz{};
+    std::int64_t allocated_sz{};
   };
 
   // Populate PMem space so the following access can be faster

@@ -80,9 +80,9 @@ void KVEngine::FreeSkiplistDramNodes() {
 }
 
 void KVEngine::ReportPMemUsage() {
-  size_t total = pmem_allocator_->PMemUsageInBytes();
-  GlobalLogger.Info("PMem Usage: %llu B, %llu KB, %llu MB, %llu GB\n", total,
-                    (total >> 10), (total >> 20), (total >> 30));
+  auto total = pmem_allocator_->PMemUsageInBytes();
+  GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
+                    (total / (1ULL << 10)), (total / (1ULL << 20)), (total / (1ULL << 30)));
 }
 
 void KVEngine::BackgroundWork() {

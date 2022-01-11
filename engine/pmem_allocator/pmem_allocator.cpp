@@ -32,8 +32,8 @@ void PMEMAllocator::Free(const SpaceEntry &entry) {
   }
 }
 
-size_t PMEMAllocator::PMemUsageInBytes() {
-  size_t total = 0;
+std::int64_t PMEMAllocator::PMemUsageInBytes() {
+  std::int64_t total = 0;
   for (auto const &ptcache : palloc_thread_cache_) {
     total += ptcache.allocated_sz;
   }
@@ -146,6 +146,7 @@ bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
   if (segment_space_entry->size == segment_size_) {
     persistSpaceEntry(segment_space_entry->offset, segment_size_);
     palloc_thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
+    LogDeallocation(write_thread.id, segment_size_);
     return false;
   }
 
@@ -154,6 +155,7 @@ bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
     Free(*segment_space_entry);
     *segment_space_entry = SpaceEntry{offset_head_, segment_size_};
     offset_head_ += segment_size_;
+    LogAllocation(write_thread.id, segment_size_);
     return true;
   }
   return false;
@@ -269,7 +271,6 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       GlobalLogger.Error("PMem OVERFLOW!\n");
       return space_entry;
     }
-    LogDeallocation(write_thread.id, palloc_thread_cache.segment_entry.size);
   }
   space_entry = palloc_thread_cache.segment_entry;
   space_entry.size = aligned_size;
