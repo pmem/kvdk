@@ -106,10 +106,9 @@ def run_benchmark(
     pmem_path,
     pmem_size,
     populate_on_fill,
-    sz_fill_data,
     n_thread,
     num_collection,
-    bench_duration,
+    timeout,
     key_distribution,
     value_size,
     value_size_distribution,
@@ -119,13 +118,14 @@ def run_benchmark(
     os.system("rm -rf {0}".format(pmem_path))
 
     # calculate num kv to fill
-    num_fill_kv = 0
-    if value_size_distribution == 'constant':
-        num_fill_kv = sz_fill_data//(value_size+8)
-    elif value_size_distribution == 'random':
-        num_fill_kv = sz_fill_data//(value_size + 8) // 2
-    else:
-        assert False
+    header_sz = 24 if (key_distribution == 'string') else 40
+    k_sz = 8
+    avg_v_sz = value_size if (value_size_distribution == 'constant') else (value_size / 2)
+    avg_kv_size = (header_sz + k_sz + avg_v_sz + 63) // 64 * 64
+
+    # 1/4 for fill, 1/4 for insert, 1/4 for batch_write
+    num_kv = pmem_size // 4 // avg_kv_size
+    num_operations = 1024 * 1024 * 1024 * 4
 
     # create report dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -145,28 +145,30 @@ def run_benchmark(
     print("Run benchmarks for data type :{}, value size distribution: {}".format(
         data_type, value_size_distribution))
     shared_para = \
-        "-path={} "\
-        "-space={} "\
-        "-populate={} "\
-        "-num={} "\
-        "-threads={} "\
-        "-max_write_threads={} "\
-        "-num_collection={} "\
-        "-time={} "\
-        "-value_size={} "\
-        "-value_size_distribution={} "\
-        "-key_distribution={}".format(
+        "-path={0} "\
+        "-space={1} "\
+        "-populate={2} "\
+        "-num_kv={3} "\
+        "-threads={4} "\
+        "-max_write_threads={5} "\
+        "-num_collection={6} "\
+        "-timeout={7} "\
+        "-value_size={8} "\
+        "-value_size_distribution={9} "\
+        "-key_distribution={10} "\
+        "-num_operations={11}".format(
         pmem_path, 
         pmem_size, 
         populate_on_fill, 
-        num_fill_kv, 
+        num_kv, 
         n_thread, 
         n_thread, 
         num_collection, 
-        bench_duration, 
+        timeout, 
         value_size, 
         value_size_distribution,
-        key_distribution)
+        key_distribution,
+        num_operations)
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
