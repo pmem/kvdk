@@ -162,7 +162,6 @@ bool PMEMAllocator::AllocateSegmentSpace(SpaceEntry *segment_entry) {
     *segment_entry = SpaceEntry{offset_head_, segment_size_};
     persistSpaceEntry(offset_head_, segment_size_);
     offset_head_ += segment_size_;
-    LogAllocation(write_thread.id, segment_size_);
     return true;
   }
   return false;
@@ -266,7 +265,6 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       GlobalLogger.Error("PMem OVERFLOW!\n");
       return space_entry;
     }
-    LogDeallocation(write_thread.id, palloc_thread_cache.segment_entry.size);
   }
   space_entry = palloc_thread_cache.segment_entry;
   space_entry.size = aligned_size;
