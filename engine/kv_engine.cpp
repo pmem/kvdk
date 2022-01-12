@@ -195,11 +195,12 @@ Status KVEngine::MaybeInitAccessThread() {
   return thread_manager_->MaybeInitThread(access_thread);
 }
 
-Status KVEngine::RestoreData(RecoveryInfo *recovery_info) {
+Status KVEngine::RestoreData() {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
+  ThreadCache &thread_cache = thread_cache_[access_thread.id];
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -279,15 +280,15 @@ Status KVEngine::RestoreData(RecoveryInfo *recovery_info) {
     // Continue to restore the Record
     cnt++;
 
-    recovery_info->newest_restored_ts = std::max(
-        data_entry_cached.meta.timestamp, recovery_info->newest_restored_ts);
+    thread_cache.newest_restored_ts = std::max(data_entry_cached.meta.timestamp,
+                                               thread_cache.newest_restored_ts);
 
     Status s(Status::Ok);
     switch (data_entry_cached.meta.type) {
     case RecordType::SortedDataRecord:
     case RecordType::SortedDeleteRecord: {
       s = RestoreSkiplistRecord(static_cast<DLRecord *>(recovering_pmem_record),
-                                data_entry_cached, recovery_info);
+                                data_entry_cached);
       break;
     }
     case RecordType::SortedHeaderRecord: {
@@ -498,8 +499,7 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord *record) {
 }
 
 Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
-                                       const DataEntry &cached_data_entry,
-                                       RecoveryInfo *recovery_info) {
+                                       const DataEntry &cached_data_entry) {
   kvdk_assert(pmem_record->entry.meta.type == SortedDataRecord ||
                   pmem_record->entry.meta.type == SortedDeleteRecord,
               "wrong record type in RestoreSkiplistRecord");
@@ -595,7 +595,8 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
         return Status::MemoryOverflow;
       }
       if (configs_.opt_large_sorted_collection_restore &&
-          recovery_info->visited_skiplist_ids[dram_node->SkiplistID()]++ %
+          thread_cache_[access_thread.id]
+                      .visited_skiplist_ids[dram_node->SkiplistID()]++ %
                   kRestoreSkiplistStride ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);
@@ -885,10 +886,9 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   std::vector<std::future<Status>> fs;
-  std::vector<RecoveryInfo> recovery_info_(configs_.max_access_threads);
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
-    fs.push_back(std::async(&KVEngine::RestoreData, this, &recovery_info_[i]));
+    fs.push_back(std::async(&KVEngine::RestoreData, this));
   }
 
   for (auto &f : fs) {
@@ -912,10 +912,10 @@ Status KVEngine::Recovery() {
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
-    for (size_t i = 0; i < recovery_info_.size(); i++) {
+    for (size_t i = 0; i < thread_cache_.size(); i++) {
       auto &thread_cache = thread_cache_[i];
       latest_version_ts =
-          std::max(recovery_info_[i].newest_restored_ts, latest_version_ts);
+          std::max(thread_cache.newest_restored_ts, latest_version_ts);
     }
   }
 

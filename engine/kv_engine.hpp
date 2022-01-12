@@ -126,18 +126,16 @@ private:
     bool space_not_used{false};
   };
 
-  // used in recovery
-  struct RecoveryInfo {
-    uint64_t newest_restored_ts = 0;
-    std::unordered_map<uint64_t, int> visited_skiplist_ids;
-  };
-
   struct ThreadCache {
     ThreadCache() = default;
 
     PendingBatch *persisted_pending_batch = nullptr;
     // This thread is doing batch write
     bool batch_writing = false;
+
+    // Info used in recovery
+    uint64_t newest_restored_ts = 0;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids{};
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
@@ -196,7 +194,7 @@ private:
 
   Status Recovery();
 
-  Status RestoreData(RecoveryInfo *recovery_info);
+  Status RestoreData();
 
   Status RestoreSkiplistHead(DLRecord *pmem_record,
                              const DataEntry &cached_entry);
@@ -205,8 +203,7 @@ private:
                              const DataEntry &cached_entry);
 
   Status RestoreSkiplistRecord(DLRecord *pmem_record,
-                               const DataEntry &cached_data_entry,
-                               RecoveryInfo *recovery_info);
+                               const DataEntry &cached_data_entry);
 
   // Check if a doubly linked record has been successfully inserted, and try
   // repair un-finished prev pointer
