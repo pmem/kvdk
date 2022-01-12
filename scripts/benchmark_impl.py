@@ -121,7 +121,6 @@ def run_benchmark(
 
     # 1/4 for fill, 1/4 for insert, 1/4 for batch_write
     num_kv = pmem_size // 4 // avg_kv_size
-    num_operations = 1024 * 1024 * 1024 * 4
 
     # create report dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -162,12 +161,11 @@ def run_benchmark(
         timeout, 
         value_size, 
         value_size_distribution,
-        key_distribution,
-        num_operations)
+        key_distribution)
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
-        num_operations = num_operations if (benchmark == insert_random or benchmark == batch_insert_random) else 1024 * 1024 * 1024 * 10
-        benchmark(exec, shared_para, data_type, report_path)
+        num_operations = num_kv if (benchmark == insert_random or benchmark == batch_insert_random) else 1024 * 1024 * 1024 * 10
+        benchmark(exec, shared_para, data_type, report_path, num_operations)
 
     os.system("rm -rf {0}".format(pmem_path))

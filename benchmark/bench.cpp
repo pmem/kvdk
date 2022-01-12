@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -529,6 +530,7 @@ int main(int argc, char **argv) {
 
   std::cout << "Init " << read_threads << " readers "
             << "and " << write_threads << " writers." << std::endl;
+
   for (int i = 0; i < write_threads; i++) {
     ts.emplace_back(DBWrite, i);
   }
@@ -536,86 +538,81 @@ int main(int argc, char **argv) {
     ts.emplace_back(FLAGS_scan ? DBScan : DBRead, i);
   }
 
-  size_t last_read_ops = 0;
-  size_t last_read_notfound = 0;
-  size_t last_write_ops = 0;
-  size_t run_time = 0;
+  size_t const field_width = 15;
+  std::cout << "------- ops in seconds -----------\n"
+            << std::setw(field_width) << "Time(ms)" << std::setw(field_width)
+            << "Read Ops" << std::setw(field_width) << "Write Ops"
+            << std::setw(field_width) << "Not Found" << std::setw(field_width)
+            << "Total Read" << std::setw(field_width) << "Total Write"
+            << std::endl;
+
+  std::vector<size_t> read_cnt{0};
+  std::vector<size_t> write_cnt{0};
+  std::vector<size_t> notfound_cnt{0};
+  size_t last_effective_idx = read_cnt.size();
   auto start_ts = std::chrono::system_clock::now();
-  printf("------- ops in seconds -----------\n");
-  printf("time (ms),   read ops,   not found,  write ops,  total read,  total "
-         "write\n");
-  size_t total_read = 0;
-  size_t total_write = 0;
-  size_t total_not_found = 0;
-
-  // To ignore warm up time and thread join time
-  // Ignore first 2 seconds and last few seconds when a thread has joined or
-  // time limit has been reached.
-  size_t total_read_head = 0;
-  size_t total_read_tail = 0;
-  size_t total_write_head = 0;
-  size_t total_write_tail = 0;
-  size_t effective_runtime = 0;
-  size_t ignored_time = 0;
   while (true) {
-    if (!FLAGS_fill && run_time >= FLAGS_timeout) {
-      // Read, scan, update and insert
-      // Fill will never timeout
-      has_timed_out = true;
-      total_read_tail = total_read;
-      total_write_tail = total_write;
-      effective_runtime = run_time - ignored_time;
-      break;
-    }
     std::this_thread::sleep_for(std::chrono::seconds{1});
-
-    // for latency, the last second may not accurate
-    ++run_time;
-    total_read = read_ops.load();
-    total_write = write_ops.load();
-    total_not_found = read_not_found.load();
-
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now() - start_ts);
-    printf("%-10lu  %-10lu  %-10lu  %-10lu  %-11lu  %-10lu\n", duration.count(),
-           total_read - last_read_ops, read_not_found - last_read_notfound,
-           total_write - last_write_ops, total_read, total_write);
-    fflush(stdout);
 
-    last_read_ops = total_read;
-    last_write_ops = total_write;
-    last_read_notfound = total_not_found;
+    read_cnt.push_back(read_ops.load());
+    write_cnt.push_back(write_ops.load());
+    notfound_cnt.push_back(read_not_found.load());
+
+    size_t idx = read_cnt.size() - 1;
+    std::cout << std::setw(field_width) << duration.count()
+              << std::setw(field_width) << read_cnt[idx] - read_cnt[idx - 1]
+              << std::setw(field_width) << write_cnt[idx] - write_cnt[idx - 1]
+              << std::setw(field_width)
+              << notfound_cnt[idx] - notfound_cnt[idx - 1]
+              << std::setw(field_width) << read_cnt[idx]
+              << std::setw(field_width) << write_cnt[idx] << std::endl;
 
     int num_finished =
         std::accumulate(has_finished.begin(), has_finished.end(), 0);
 
-    // ignore first 2 seconds if we have more than 2 seconds
-    // of data to calculate average performance
-    if (num_finished == 0 || run_time <= 2) {
-      if (ignored_time <= 2 && effective_runtime >= 2) {
-        total_read_head = total_read;
-        total_write_head = total_write;
-        ++ignored_time;
-      }
-      total_read_tail = total_read;
-      total_write_tail = total_write;
-      effective_runtime = run_time - ignored_time;
+    if (num_finished == 0 || idx < 2) {
+      last_effective_idx = idx;
     }
     if (num_finished == FLAGS_threads) {
       break;
     }
+    if (!FLAGS_fill && (duration.count() >= FLAGS_timeout * 1000)) {
+      // Signal a timeout for read, scan, update and insert
+      // Fill will never timeout
+      has_timed_out = true;
+      break;
+    }
   }
 
+  std::cout << "Benchmark finished." << std::endl;
   printf("finish bench\n");
 
-  for (auto &t : ts)
-    t.join();
+  for (int i = 0; i < FLAGS_threads; i++) {
+    ts[i].join();
+  }
 
-  auto read_thpt = (total_read_tail - total_read_head) / effective_runtime;
-  auto write_thpt = (total_write_tail - total_write_head) / effective_runtime;
+  size_t time_elapsed;
+  size_t total_effective_read;
+  size_t total_effective_write;
+  size_t const warmup_time = 2;
+  if (last_effective_idx <= warmup_time) {
+    time_elapsed = last_effective_idx;
+    total_effective_read = read_cnt[last_effective_idx];
+    total_effective_write = write_cnt[last_effective_idx];
+  } else {
+    time_elapsed = last_effective_idx - warmup_time;
+    total_effective_read = read_cnt[last_effective_idx] - read_cnt[warmup_time];
+    total_effective_write =
+        write_cnt[last_effective_idx] - write_cnt[warmup_time];
+  }
 
-  printf(" ------------ statistics ------------\n");
-  printf("read ops %lu, write ops %lu\n", read_thpt, write_thpt);
+  std::cout << "------------ statistics ------------\n"
+            << "Average Read Ops:\t" << total_effective_read / time_elapsed
+            << ". "
+            << "Average Write Ops:\t" << total_effective_write / time_elapsed
+            << std::endl;
 
   if (FLAGS_latency) {
     auto ro = read_ops.load();
