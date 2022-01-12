@@ -336,7 +336,7 @@ bool Skiplist::searchAndLockInsertPos(
 
 bool Skiplist::Insert(const StringView &key, const StringView &value,
                       const SpinMutex *inserting_key_lock,
-                      TimestampType timestamp, SkiplistNode **dram_node,
+                      TimeStampType timestamp, SkiplistNode **dram_node,
                       const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
@@ -384,7 +384,7 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
 bool Skiplist::Update(const StringView &key, const StringView &value,
                       const DLRecord *updating_record,
                       const SpinMutex *updating_record_lock,
-                      TimestampType timestamp, SkiplistNode *dram_node,
+                      TimeStampType timestamp, SkiplistNode *dram_node,
                       const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
@@ -415,7 +415,7 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
 
 bool Skiplist::Delete(const StringView &key, DLRecord *deleting_record,
                       const SpinMutex *deleting_record_lock,
-                      TimestampType timestamp, SkiplistNode *dram_node,
+                      TimeStampType timestamp, SkiplistNode *dram_node,
                       const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;

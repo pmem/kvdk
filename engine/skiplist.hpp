@@ -248,7 +248,7 @@ public:
   //
   // Return true on success, return false on fail.
   bool Insert(const StringView &key, const StringView &value,
-              const SpinMutex *inserting_key_lock, TimestampType timestamp,
+              const SpinMutex *inserting_key_lock, TimeStampType timestamp,
               SkiplistNode **dram_node, const SpaceEntry &space_to_write);
 
   // Update "key" in the skiplist
@@ -263,7 +263,7 @@ public:
   // Return true on success, return false on fail.
   bool Update(const StringView &key, const StringView &value,
               const DLRecord *updating_record,
-              const SpinMutex *updating_record_lock, TimestampType timestamp,
+              const SpinMutex *updating_record_lock, TimeStampType timestamp,
               SkiplistNode *dram_node, const SpaceEntry &space_to_write);
 
   // Delete "key" from the skiplist by replace it with a delete record
@@ -276,7 +276,7 @@ public:
   //
   // Return true on success, return false on fail.
   bool Delete(const StringView &key, DLRecord *deleting_record,
-              const SpinMutex *deleting_record_lock, TimestampType timestamp,
+              const SpinMutex *deleting_record_lock, TimeStampType timestamp,
               SkiplistNode *dram_node, const SpaceEntry &space_to_write);
 
   // Purge a dl record from its skiplist by remove it from linkage

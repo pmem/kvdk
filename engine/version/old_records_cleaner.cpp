@@ -34,7 +34,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   // Update recorded oldest snapshot up to state so we can know which records
   // can be freed
   kv_engine_->version_controller_.UpdatedOldestSnapshot();
-  TimestampType oldest_snapshot_ts =
+  TimeStampType oldest_snapshot_ts =
       kv_engine_->version_controller_.OldestSnapshotTS();
 
   // Fetch thread cached old records
@@ -155,7 +155,7 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
       tc.old_delete_records.pop_front();
     }
 
-    TimestampType oldest_refer_ts =
+    TimeStampType oldest_refer_ts =
         kv_engine_->version_controller_.OldestSnapshotTS();
     for (int limit = num_limit_clean;
          tc.old_data_records.size() > 0 &&

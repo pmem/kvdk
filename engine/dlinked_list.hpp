@@ -152,7 +152,7 @@ private:
 public:
   /// Create DLinkedList and construct head and tail node on PMem.
   /// Caller supplied key and value are stored in head and tail nodes
-  DLinkedList(PMEMAllocator *pmem_allocator_p, TimestampType timestamp,
+  DLinkedList(PMEMAllocator *pmem_allocator_p, TimeStampType timestamp,
               StringView const key, StringView const value)
       : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{nullptr},
         tail_pmmptr_{nullptr} {
@@ -279,17 +279,17 @@ public:
 
   inline void PopBack() { Erase(Last()); }
 
-  inline iterator EmplaceFront(TimestampType timestamp, StringView const key,
+  inline iterator EmplaceFront(TimeStampType timestamp, StringView const key,
                                StringView const value) {
     return EmplaceAfter(Head(), timestamp, key, value);
   }
 
-  inline iterator EmplaceBack(TimestampType timestamp, StringView const key,
+  inline iterator EmplaceBack(TimeStampType timestamp, StringView const key,
                               StringView const value) {
     return EmplaceBefore(Tail(), timestamp, key, value);
   }
 
-  inline iterator EmplaceBefore(iterator pos, TimestampType timestamp,
+  inline iterator EmplaceBefore(iterator pos, TimeStampType timestamp,
                                 StringView const key, StringView const value) {
     iterator iter_prev{pos};
     --iter_prev;
@@ -297,7 +297,7 @@ public:
     return emplaceBetween(iter_prev, iter_next, timestamp, key, value);
   }
 
-  inline iterator EmplaceAfter(iterator pos, TimestampType timestamp,
+  inline iterator EmplaceAfter(iterator pos, TimeStampType timestamp,
                                StringView const key, StringView const value) {
     iterator iter_prev{pos};
     iterator iter_next{pos};
@@ -305,7 +305,7 @@ public:
     return emplaceBetween(iter_prev, iter_next, timestamp, key, value);
   }
 
-  inline iterator Replace(iterator pos, TimestampType timestamp,
+  inline iterator Replace(iterator pos, TimeStampType timestamp,
                           StringView const key, StringView const value) {
     iterator iter_prev{pos};
     --iter_prev;
@@ -341,7 +341,7 @@ private:
   ///     4) node emplaced and linked in both directions
   /// Return iterator at newly emplace node
   inline iterator emplaceBetween(iterator iter_prev, iterator iter_next,
-                                 TimestampType timestamp, StringView const key,
+                                 TimeStampType timestamp, StringView const key,
                                  StringView const value) {
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
 

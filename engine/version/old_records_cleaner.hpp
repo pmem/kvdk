@@ -19,12 +19,12 @@ class KVEngine;
 
 struct OldDataRecord {
   void *pmem_data_record;
-  TimestampType newer_version_timestamp;
+  TimeStampType newer_version_timestamp;
 };
 
 struct OldDeleteRecord {
   void *pmem_delete_record;
-  TimestampType newer_version_timestamp;
+  TimeStampType newer_version_timestamp;
   // We need ref to hash entry for clear index of delete record
   HashEntry *hash_entry_ref;
   SpinMutex *hash_entry_lock;
@@ -32,7 +32,7 @@ struct OldDeleteRecord {
 
 struct PendingFreeSpaceEntries {
   std::vector<SpaceEntry> entries;
-  TimestampType free_ts;
+  TimeStampType free_ts;
 };
 
 // OldRecordsCleaner is used to clean old version PMem records of kvdk
@@ -77,6 +77,6 @@ private:
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
   std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
   std::deque<PendingFreeSpaceEntries> pending_free_space_entries_;
-  TimestampType clean_all_data_record_ts_{0};
+  TimeStampType clean_all_data_record_ts_{0};
 };
 } // namespace KVDK_NAMESPACE

@@ -1020,7 +1020,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
         [&]() { version_controller_.ReleaseLocalSnapshot(); });
-    TimestampType new_ts =
+    TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForRead(hint, collection_key,
                                           SortedDataRecord | SortedDeleteRecord,
@@ -1116,7 +1116,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
         [&]() { version_controller_.ReleaseLocalSnapshot(); });
-    TimestampType new_ts =
+    TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForWrite(
         hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
@@ -1351,7 +1351,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   RAIICaller local_snapshot_holder(
       [&]() { version_controller_.HoldLocalSnapshot(); },
       [&]() { version_controller_.ReleaseLocalSnapshot(); });
-  TimestampType ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  TimeStampType ts = version_controller_.GetLocalSnapshot().GetTimestamp();
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
   }
@@ -1488,7 +1488,7 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
         [&]() { version_controller_.ReleaseLocalSnapshot(); });
-    TimestampType new_ts =
+    TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
@@ -1553,7 +1553,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     RAIICaller local_snapshot_holder(
         [&]() { version_controller_.HoldLocalSnapshot(); },
         [&]() { version_controller_.ReleaseLocalSnapshot(); });
-    TimestampType new_ts =
+    TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
 
     // Search position to write index in hash table.
@@ -1608,7 +1608,7 @@ Status KVEngine::Set(const StringView key, const StringView value) {
 namespace KVDK_NAMESPACE {
 std::shared_ptr<UnorderedCollection>
 KVEngine::createUnorderedCollection(StringView const collection_name) {
-  TimestampType ts = version_controller_.GetCurrentTimestamp();
+  TimeStampType ts = version_controller_.GetCurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   std::string name(collection_name.data(), collection_name.size());
   std::shared_ptr<UnorderedCollection> sp_uncoll =
@@ -1713,7 +1713,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
 
       std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
 
-      TimestampType ts = version_controller_.GetCurrentTimestamp();
+      TimeStampType ts = version_controller_.GetCurrentTimestamp();
 
       HashEntry hash_entry_record;
       HashEntry *p_hash_entry_record = nullptr;
@@ -2052,7 +2052,7 @@ Status KVEngine::xPush(StringView const collection_name, StringView const value,
 
   // Push
   {
-    TimestampType ts = version_controller_.GetCurrentTimestamp();
+    TimeStampType ts = version_controller_.GetCurrentTimestamp();
     switch (push_pos) {
     case QueueOpPosition::Left: {
       queue_ptr->PushFront(ts, value);
@@ -2130,7 +2130,7 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
 
 Snapshot *KVEngine::GetSnapshot() {
   Snapshot *ret = version_controller_.NewGlobalSnapshot();
-  TimestampType snapshot_ts = static_cast<SnapshotImpl *>(ret)->GetTimestamp();
+  TimeStampType snapshot_ts = static_cast<SnapshotImpl *>(ret)->GetTimestamp();
 
   // A snapshot should not contain any ongoing batch write
   for (auto i = 0; i < configs_.max_access_threads; i++) {

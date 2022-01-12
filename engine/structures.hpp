@@ -64,7 +64,7 @@ struct BackupMark {
     Processing = 1,
     Finish = 2,
   };
-  TimestampType backup_ts;
+  TimeStampType backup_ts;
   Stage stage;
 };
 
@@ -74,7 +74,7 @@ struct PendingBatch {
     Processing = 1,
   };
 
-  PendingBatch(Stage s, uint32_t nkv, TimestampType ts)
+  PendingBatch(Stage s, uint32_t nkv, TimeStampType ts)
       : stage(s), num_kv(nkv), timestamp(ts) {}
 
   void PersistProcessing(void *target,
@@ -88,6 +88,6 @@ struct PendingBatch {
 
   Stage stage;
   uint32_t num_kv;
-  TimestampType timestamp;
+  TimeStampType timestamp;
 };
 } // namespace KVDK_NAMESPACE

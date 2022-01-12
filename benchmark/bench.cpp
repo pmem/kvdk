@@ -179,21 +179,7 @@ void DBWrite(int tid) {
     switch (bench_data_type) {
     case DataType::String: {
       if (batch_num == 0) {
-        /*
         s = engine->Set(key, value);
-        */
-        // /*
-        if (fill || existing_keys_ratio == 0) {
-          s = engine->Set(key, value);
-        } else {
-          // todo: restore
-          if (fast_random_64() % 2 == 0) {
-            s = engine->Set(key, value);
-          } else {
-            s = engine->Delete(key);
-          }
-        }
-        // */
       } else {
         batch.Put(key, std::string(value.data(), value.size()));
         if (batch.Size() == batch_num) {
@@ -204,17 +190,7 @@ void DBWrite(int tid) {
       break;
     }
     case DataType::Sorted: {
-      if (fill || existing_keys_ratio == 0) {
-        s = engine->SSet(collections[num % num_collections], key, value);
-      } else {
-        // todo: restore
-        if (fast_random_64() % 2 == 0) {
-          s = engine->SSet(collections[num % num_collections], key, value);
-        } else {
-          s = engine->SDelete(collections[num % num_collections], key);
-        }
-      }
-      // s = engine->SSet(collections[num % num_collections], key, value);
+      s = engine->SSet(collections[num % num_collections], key, value);
       break;
     }
     case DataType::Hashes: {

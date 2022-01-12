@@ -8,17 +8,17 @@
 #include "kvdk/configs.hpp"
 
 namespace KVDK_NAMESPACE {
-constexpr TimestampType kMaxTimestamp = UINT64_MAX;
+constexpr TimeStampType kMaxTimestamp = UINT64_MAX;
 
 struct SnapshotImpl : public Snapshot {
-  explicit SnapshotImpl(const TimestampType &t)
+  explicit SnapshotImpl(const TimeStampType &t)
       : timestamp(t), next(nullptr), prev(nullptr) {}
 
   SnapshotImpl() : SnapshotImpl(kMaxTimestamp) {}
 
-  TimestampType GetTimestamp() const { return timestamp; }
+  TimeStampType GetTimestamp() const { return timestamp; }
 
-  TimestampType timestamp;
+  TimeStampType timestamp;
   SnapshotImpl *prev;
   SnapshotImpl *next;
 };
@@ -32,7 +32,7 @@ public:
     head_.next = &head_;
   }
 
-  SnapshotImpl *New(TimestampType ts) {
+  SnapshotImpl *New(TimeStampType ts) {
     SnapshotImpl *impl = new SnapshotImpl(ts);
     impl->prev = &head_;
     impl->next = head_.next;
@@ -47,7 +47,7 @@ public:
     delete impl;
   }
 
-  TimestampType OldestSnapshotTS() {
+  TimeStampType OldestSnapshotTS() {
     return empty() ? kMaxTimestamp : head_.prev->GetTimestamp();
   }
 
@@ -111,17 +111,17 @@ public:
     global_snapshots_.Delete(impl);
   }
 
-  inline TimestampType GetCurrentTimestamp() {
+  inline TimeStampType GetCurrentTimestamp() {
     auto res = get_cpu_tsc() - tsc_on_startup_ + version_base_;
     return res;
   }
 
-  TimestampType OldestSnapshotTS() { return oldest_snapshot_.GetTimestamp(); }
+  TimeStampType OldestSnapshotTS() { return oldest_snapshot_.GetTimestamp(); }
 
   // Update recorded oldest snapshot up to state by iterating every thread
   // holding snapshot
   void UpdatedOldestSnapshot() {
-    TimestampType ts = GetCurrentTimestamp();
+    TimeStampType ts = GetCurrentTimestamp();
     for (size_t i = 0; i < thread_cache_.size(); i++) {
       auto &tc = thread_cache_[i];
       ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);

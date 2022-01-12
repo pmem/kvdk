@@ -2,7 +2,7 @@
 
 namespace KVDK_NAMESPACE {
 Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
-             CollectionIDType id, TimestampType timestamp)
+             CollectionIDType id, TimeStampType timestamp)
     : Collection{name, id}, collection_record_ptr_{nullptr},
       dlinked_list_{pmem_allocator_ptr, timestamp, ID2String(id),
                     StringView{""}},
@@ -45,13 +45,13 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
     ++sz_;
 }
 
-void Queue::PushFront(TimestampType timestamp, StringView const value) {
+void Queue::PushFront(TimeStampType timestamp, StringView const value) {
   LockType lock_queue{queue_lock_};
   dlinked_list_.EmplaceFront(timestamp, InternalKey(""), value);
   ++sz_;
 }
 
-void Queue::PushBack(TimestampType timestamp, StringView const value) {
+void Queue::PushBack(TimeStampType timestamp, StringView const value) {
   LockType lock_queue{queue_lock_};
   dlinked_list_.EmplaceBack(timestamp, InternalKey(""), value);
   ++sz_;

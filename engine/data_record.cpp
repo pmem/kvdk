@@ -12,7 +12,7 @@ thread_local std::string thread_data_buffer;
 static constexpr int kDataBufferSize = 1024 * 1024;
 
 StringRecord *StringRecord::PersistStringRecord(
-    void *addr, uint32_t record_size, TimestampType timestamp, RecordType type,
+    void *addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
     PMemOffsetType older_version_record, const StringView &key,
     const StringView &value) {
   void *data_cpy_target;
@@ -40,7 +40,7 @@ StringRecord *StringRecord::PersistStringRecord(
 }
 
 DLRecord *DLRecord::PersistDLRecord(void *addr, uint32_t record_size,
-                                    TimestampType timestamp, RecordType type,
+                                    TimeStampType timestamp, RecordType type,
                                     PMemOffsetType older_version_record,
                                     PMemOffsetType prev, PMemOffsetType next,
                                     const StringView &key,

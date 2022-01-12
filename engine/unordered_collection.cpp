@@ -5,7 +5,7 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
                                          PMEMAllocator *pmem_allocator_p,
                                          std::string const name,
                                          CollectionIDType id,
-                                         TimestampType timestamp)
+                                         TimeStampType timestamp)
     : Collection(name, id), hash_table_ptr_{hash_table_ptr},
       collection_record_ptr_{nullptr}, dlinked_list_{pmem_allocator_p,
                                                      timestamp, ID2String(id),
@@ -46,7 +46,7 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
       },
       timestamp_{pmp_dlist_record->entry.meta.timestamp} {}
 
-ModifyReturn UnorderedCollection::Emplace(TimestampType timestamp,
+ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
                                           StringView const key,
                                           StringView const value,
                                           LockType const &lock) {
@@ -105,7 +105,7 @@ ModifyReturn UnorderedCollection::Emplace(TimestampType timestamp,
 }
 
 ModifyReturn UnorderedCollection::Replace(DLRecord *pos,
-                                          TimestampType timestamp,
+                                          TimeStampType timestamp,
                                           StringView const key,
                                           StringView const value,
                                           LockType const &lock) {

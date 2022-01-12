@@ -117,7 +117,7 @@ private:
         old_records_cleaner_(this, configs.max_access_threads){};
 
   struct BatchWriteHint {
-    TimestampType timestamp{0};
+    TimeStampType timestamp{0};
     SpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
     HashEntry *hash_entry_ptr = nullptr;
@@ -353,7 +353,7 @@ private:
   // Max timestamp of records that could be restored in recovery, this is used
   // for backup instance. For an instance that is not a backup, this is set to
   // kMaxTimestamp by default
-  TimestampType max_recoverable_record_timestamp_{kMaxTimestamp};
+  TimeStampType max_recoverable_record_timestamp_{kMaxTimestamp};
 };
 
 } // namespace KVDK_NAMESPACE
