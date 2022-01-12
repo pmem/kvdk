@@ -165,7 +165,11 @@ def run_benchmark(
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
-        num_operations = num_kv if (benchmark == insert_random or benchmark == batch_insert_random) else 1024 * 1024 * 1024 * 10
+        num_operations = num_kv 
+        num_operations = 1024 * 1024 * 1024 * 10 if (benchmark == read_random) else num_operations
+        num_operations = 1024 * 1024 * 1024 * 10 if (benchmark == update_random) else num_operations
+        num_operations = 1024 * 1024 * 1024 * 10 if (benchmark == range_scan) else num_operations
+        num_operations = num_operations * 5 if (benchmark == read_write_random) else num_operations
         benchmark(exec, shared_para, data_type, report_path, num_operations)
 
     os.system("rm -rf {0}".format(pmem_path))
