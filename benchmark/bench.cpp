@@ -539,7 +539,7 @@ int main(int argc, char **argv) {
   }
 
   size_t const field_width = 15;
-  std::cout << "------- ops in seconds -----------\n"
+  std::cout << "----------------------------------------------------------\n"
             << std::setw(field_width) << "Time(ms)" << std::setw(field_width)
             << "Read Ops" << std::setw(field_width) << "Write Ops"
             << std::setw(field_width) << "Not Found" << std::setw(field_width)
@@ -608,7 +608,7 @@ int main(int argc, char **argv) {
         write_cnt[last_effective_idx] - write_cnt[warmup_time];
   }
 
-  std::cout << "------------ statistics ------------\n"
+  std::cout << "----------------------------------------------------------\n"
             << "Average Read Ops:\t" << total_effective_read / time_elapsed
             << ". "
             << "Average Write Ops:\t" << total_effective_write / time_elapsed
