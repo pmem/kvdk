@@ -82,7 +82,8 @@ void KVEngine::FreeSkiplistDramNodes() {
 void KVEngine::ReportPMemUsage() {
   auto total = pmem_allocator_->PMemUsageInBytes();
   GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
-                    (total / (1ULL << 10)), (total / (1ULL << 20)), (total / (1ULL << 30)));
+                    (total / (1ULL << 10)), (total / (1ULL << 20)),
+                    (total / (1ULL << 30)));
 }
 
 void KVEngine::BackgroundWork() {
@@ -1129,7 +1130,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
         for (size_t j = 0; j < i; j++) {
           pmem_allocator_->Free(batch_hints[j].allocated_space);
         }
-        return s;
+        return Status::PmemOverflow;
       }
       space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
     } else {
