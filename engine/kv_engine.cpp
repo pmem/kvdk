@@ -350,6 +350,7 @@ bool KVEngine::ValidateRecordAndGetValue(void *data_record,
     return false;
   }
   case RecordType::SortedDataRecord:
+  case RecordType::SortedDeleteRecord:
   case RecordType::SortedHeaderRecord:
   case RecordType::DlistDataRecord:
   case RecordType::DlistRecord: {
@@ -964,8 +965,7 @@ Status KVEngine::HashGetImpl(const StringView &key, std::string *value,
     }
     char data_buffer[record_size];
     memcpy(data_buffer, pmem_record, record_size);
-    // If the pmem data record is corrupted or been reused by
-    // another key, redo search
+    // If the pmem data record is corrupted or modified during get, redo search
     if (ValidateRecordAndGetValue(data_buffer, data_entry.header.checksum,
                                   value)) {
       break;
