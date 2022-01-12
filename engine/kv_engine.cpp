@@ -1046,7 +1046,7 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
       if (sized_space_entry.size > 0) {
         pmem_allocator_->Free(sized_space_entry);
       }
-      return s == Status::NotFound ? Status::Ok : s;
+      return s;
     }
 
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
