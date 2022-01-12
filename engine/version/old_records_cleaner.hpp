@@ -49,8 +49,8 @@ public:
 
   void Push(const OldDataRecord &old_data_record);
   void Push(const OldDeleteRecord &old_delete_record);
-  // Try to clean all old records
-  void TryCleanAll();
+  // Try to clean global old records
+  void TryGlobalClean();
   void TryCleanCachedOldRecords(size_t num_limit_clean);
   uint64_t NumCachedOldRecords() {
     assert(access_thread.id >= 0);
@@ -62,9 +62,9 @@ private:
   struct ThreadCache {
     std::deque<OldDeleteRecord> old_delete_records{};
     std::deque<OldDataRecord> old_data_records{};
-    std::vector<SpaceEntry> pending_free_entries{};
     SpinMutex old_records_lock;
   };
+  const uint64_t kLimitCachedDeleteRecords = 1000000;
 
   void maybeUpdateOldestSnapshot();
   SpaceEntry purgeOldDataRecord(const OldDataRecord &old_data_record);
@@ -77,6 +77,6 @@ private:
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
   std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
   std::deque<PendingFreeSpaceEntries> pending_free_space_entries_;
-  TimestampType last_clean_all_ts_{0};
+  TimestampType clean_all_data_record_ts_{0};
 };
 } // namespace KVDK_NAMESPACE

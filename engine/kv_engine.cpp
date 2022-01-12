@@ -922,7 +922,7 @@ Status KVEngine::Recovery() {
   remove(backup_mark_file().c_str());
 
   version_controller_.Init(latest_version_ts);
-  old_records_cleaner_.TryCleanAll();
+  old_records_cleaner_.TryGlobalClean();
 
   return Status::Ok;
 }
@@ -2179,7 +2179,7 @@ void KVEngine::backgroundCleaner() {
       }
     }
     bg_cleaner_processing_ = true;
-    old_records_cleaner_.TryCleanAll();
+    old_records_cleaner_.TryGlobalClean();
   }
 }
 
