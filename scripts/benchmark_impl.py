@@ -10,7 +10,7 @@ from git import repo
 
 def __fill(exec, shared_para, data_type, report_path):
     new_para = shared_para + " -fill=1 -type={}".format(data_type)
-    report = report_path + "fill"
+    report = report_path + "_fill"
     print("Fill {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
     print(cmd)
@@ -125,15 +125,15 @@ def run_benchmark(
     # create report dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
-    report_path = "./results-{0}-commit-{1}-threads-{2}-key_dist-{7}-vsize-{3}-vsize_dist-{4}-collections-{5}-{6}/".format(
+    report_path = "./results/{0}-key_dist-{1}-vsize-{2}-vsize_dist-threads-{3}-threads-{4}-collections-{5}-commit-{6}-time-{7}/".format(
         data_type,
-        git_hash[0:8], 
-        n_thread, 
+        key_distribution,
         value_size,
         value_size_distribution, 
+        n_thread, 
         num_collection, 
-        timestamp,
-        key_distribution)
+        git_hash[0:8], 
+        timestamp)
     os.system("mkdir -p {}".format(report_path))
 
     # run benchmarks
@@ -165,11 +165,15 @@ def run_benchmark(
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
-        num_operations = num_kv 
-        num_operations = 1024 * 1024 * 1024 * 10 if (benchmark == read_random) else num_operations
-        num_operations = 1024 * 1024 * 1024 * 10 if (benchmark == update_random) else num_operations
-        num_operations = 1024 * 1024 * 1024 * 10 if (benchmark == range_scan) else num_operations
-        num_operations = num_operations * 5 if (benchmark == read_write_random) else num_operations
+        if (benchmark == read_random) \
+        or (benchmark == update_random) \
+        or (benchmark == range_scan) \
+        or (data_type == "blackhole") :
+                num_operations = 1024 * 1024 * 1024 * 10
+        else:
+            # __fill, insert_random, batch_insert_random, read_write_random
+            num_operations = num_kv 
+
         benchmark(exec, shared_para, data_type, report_path, num_operations)
 
     os.system("rm -rf {0}".format(pmem_path))
