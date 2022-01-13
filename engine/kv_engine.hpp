@@ -249,11 +249,6 @@ private:
 
   inline void delayFree(const OldDataRecord &);
 
-  // Run in background to clean old records regularly
-  void backgroundCleaner();
-
-  void backgroundWorkCoordinator();
-
   inline std::string data_file() { return data_file(dir_); }
 
   inline static std::string data_file(const std::string &instance_path) {
@@ -333,6 +328,24 @@ private:
                    data_entry->header.record_size));
   }
 
+  // Run in background to clean old records regularly
+  void backgroundOldRecordCleaner();
+
+  // Run in background to report PMem usage regularly
+  void backgroundPMemUsageReporter();
+
+  // Run in background to merge and balance free space of PMem Allocator
+  void backgroundPMemAllocatorOrgnizer();
+
+  // Run in background to free obsolete DRAM space
+  void backgroundDramCleaner();
+
+  // void backgroundWorkCoordinator();
+
+  void startBackgroundWorks();
+
+  void terminateBackgroundWorks();
+
   Array<ThreadCache> thread_cache_;
 
   // restored kvs in reopen
@@ -360,7 +373,6 @@ private:
   OldRecordsCleaner old_records_cleaner_;
 
   std::condition_variable_any bg_coordinator_cv_;
-  std::condition_variable_any bg_cleaner_cv_;
   bool bg_cleaner_processing_;
   SpinMutex engine_closing_lock_;
 
@@ -369,6 +381,22 @@ private:
   // kMaxTimestamp by default
   TimeStampType max_recoverable_record_timestamp_{kMaxTimestamp};
   Comparator comparator_;
+
+  struct BackgroundWorkSignals {
+    BackgroundWorkSignals() = default;
+    BackgroundWorkSignals(const BackgroundWorkSignals &) = delete;
+
+    std::condition_variable_any coordinator_cv;
+    std::condition_variable_any old_records_cleaner_cv;
+    std::condition_variable_any pmem_usage_reporter_cv;
+    std::condition_variable_any pmem_allocator_organizer_cv;
+    std::condition_variable_any dram_cleaner_cv;
+
+    SpinMutex terminating_lock;
+    bool terminating = false;
+  };
+
+  BackgroundWorkSignals bg_work_signals_;
 };
 
 } // namespace KVDK_NAMESPACE

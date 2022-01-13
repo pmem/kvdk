@@ -52,15 +52,8 @@ void PendingBatch::PersistStage(Stage s) {
 KVEngine::~KVEngine() {
   GlobalLogger.Info("Closing instance ... \n");
   GlobalLogger.Info("Waiting bg threads exit ... \n");
-  {
-    std::lock_guard<SpinMutex> ul(engine_closing_lock_);
-    closing_ = true;
-    bg_coordinator_cv_.notify_all();
-    bg_cleaner_cv_.notify_all();
-  }
-  for (auto &t : bg_threads_) {
-    t.join();
-  }
+  closing_ = true;
+  terminateBackgroundWorks();
 
   GlobalLogger.Info("Instance closed\n");
 }
@@ -91,6 +84,29 @@ void KVEngine::ReportPMemUsage() {
                     (total / (1ULL << 30)));
 }
 
+void KVEngine::startBackgroundWorks() {
+  std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+  bg_work_signals_.terminating = false;
+  bg_threads_.emplace_back(&KVEngine::backgroundPMemAllocatorOrgnizer, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundOldRecordCleaner, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
+}
+
+void KVEngine::terminateBackgroundWorks() {
+  {
+    std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+    bg_work_signals_.terminating = true;
+    bg_work_signals_.old_records_cleaner_cv.notify_all();
+    bg_work_signals_.dram_cleaner_cv.notify_all();
+    bg_work_signals_.pmem_allocator_organizer_cv.notify_all();
+    bg_work_signals_.pmem_usage_reporter_cv.notify_all();
+  }
+  for (auto &t : bg_threads_) {
+    t.join();
+  }
+}
+/*
 void KVEngine::backgroundWorkCoordinator() {
   // To avoid free a referencing skiplist node, we do freeing in at least every
   // 10 seconds
@@ -107,32 +123,29 @@ void KVEngine::backgroundWorkCoordinator() {
       if (!closing_) {
         bg_coordinator_cv_.wait_for(ul, background_interval);
       }
-      bg_cleaner_cv_.notify_all();
+      version_controller_.UpdatedOldestSnapshot();
+      bg_work_signals_.old_records_cleaner_cv.notify_all();
+      bg_work_signals_.pmem_allocator_organizer_cv.notify_all();
     }
-    version_controller_.UpdatedOldestSnapshot();
-
-    pmem_allocator_->BackgroundWork();
 
     if (free_skiplist_node_interval < background_interval) {
-      FreeSkiplistDramNodes();
+      bg_work_signals_.dram_cleaner_cv.notify_all();
       free_skiplist_node_interval = std::chrono::milliseconds{10000};
     } else {
       free_skiplist_node_interval -= background_interval;
     }
 
     if (report_pmem_usage_interval < background_interval) {
-      ReportPMemUsage();
+      bg_work_signals_.pmem_usage_reporter_cv.notify_all();
       report_pmem_usage_interval =
           std::chrono::milliseconds{static_cast<std::uint64_t>(
               configs_.report_pmem_usage_interval * 1000)};
     } else {
       report_pmem_usage_interval -= background_interval;
     }
-
-    std::this_thread::sleep_for(background_interval);
   }
 }
-
+*/
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
   access_thread.id = 0;
   Status s;
@@ -197,8 +210,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
 
   s = Recovery();
   access_thread.id = -1;
-  bg_threads_.emplace_back(&KVEngine::backgroundWorkCoordinator, this);
-  bg_threads_.emplace_back(&KVEngine::backgroundCleaner, this);
+  startBackgroundWorks();
 
   return s;
 }
@@ -2163,7 +2175,7 @@ void KVEngine::delayFree(const OldDataRecord &old_data_record) {
   // records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
-    bg_cleaner_cv_.notify_all();
+    bg_work_signals_.old_records_cleaner_cv.notify_all();
   } else {
     old_records_cleaner_.TryCleanCachedOldRecords(
         kLimitForegroundCleanOldRecords);
@@ -2176,24 +2188,67 @@ void KVEngine::delayFree(const OldDeleteRecord &old_delete_record) {
   // records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
-    bg_cleaner_cv_.notify_all();
+    bg_work_signals_.old_records_cleaner_cv.notify_all();
   } else {
     old_records_cleaner_.TryCleanCachedOldRecords(
         kLimitForegroundCleanOldRecords);
   }
 }
 
-void KVEngine::backgroundCleaner() {
-  while (!closing_) {
+void KVEngine::backgroundOldRecordCleaner() {
+  auto interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
+  while (!bg_work_signals_.terminating) {
     bg_cleaner_processing_ = false;
     {
-      std::unique_lock<SpinMutex> ul(engine_closing_lock_);
-      if (!closing_) {
-        bg_cleaner_cv_.wait(engine_closing_lock_);
+      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+      if (!bg_work_signals_.terminating) {
+        bg_work_signals_.old_records_cleaner_cv.wait_for(ul, interval);
       }
     }
     bg_cleaner_processing_ = true;
     old_records_cleaner_.TryGlobalClean();
+  }
+}
+
+void KVEngine::backgroundPMemUsageReporter() {
+  auto interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.report_pmem_usage_interval * 1000)};
+  while (!bg_work_signals_.terminating) {
+    {
+      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+      if (!bg_work_signals_.terminating) {
+        bg_work_signals_.pmem_usage_reporter_cv.wait_for(ul, interval);
+      }
+    }
+    ReportPMemUsage();
+  }
+}
+
+void KVEngine::backgroundPMemAllocatorOrgnizer() {
+  auto interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
+  while (!bg_work_signals_.terminating) {
+    {
+      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+      if (!bg_work_signals_.terminating) {
+        bg_work_signals_.pmem_allocator_organizer_cv.wait_for(ul, interval);
+      }
+    }
+    pmem_allocator_->BackgroundWork();
+  }
+}
+
+void KVEngine::backgroundDramCleaner() {
+  auto interval = std::chrono::milliseconds{1000};
+  while (!bg_work_signals_.terminating) {
+    {
+      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+      if (!bg_work_signals_.terminating) {
+        bg_work_signals_.dram_cleaner_cv.wait_for(ul, interval);
+      }
+    }
+    FreeSkiplistDramNodes();
   }
 }
 

@@ -144,7 +144,7 @@ def run_benchmark(
         "-populate={} "\
         "-num={} "\
         "-threads={} "\
-        "--max_access_threads=={} "\
+        "-max_access_threads={} "\
         "-num_collection={} "\
         "-time={} "\
         "-value_size={} "\
