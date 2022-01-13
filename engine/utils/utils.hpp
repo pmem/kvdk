@@ -14,6 +14,7 @@
 #include <mutex>
 #include <random>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 #include <sys/stat.h>
@@ -80,6 +81,11 @@ inline void memcpy_1(void *dst, const void *src) {
 
 inline std::string format_dir_path(const std::string &dir) {
   return dir.back() == '/' ? dir : dir + "/";
+}
+
+inline bool file_exist(const std::string &name) {
+  bool exist = access(name.c_str(), 0) == 0;
+  return exist;
 }
 
 inline int create_dir_if_missing(const std::string &name) {
