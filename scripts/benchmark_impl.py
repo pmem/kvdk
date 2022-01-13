@@ -125,7 +125,7 @@ def run_benchmark(
     # create report dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     git_hash = git.Repo(search_parent_directories=True).head.object.hexsha
-    report_path = "./results/{0}-key_dist-{1}-vsize-{2}-vsize_dist-threads-{3}-threads-{4}-collections-{5}-commit-{6}-time-{7}/".format(
+    report_path = "./results/{0}-key_dist-{1}-vsize-{2}-vsize_dist-{3}-threads-{4}-collections-{5}-commit-{6}-time-{7}/".format(
         data_type,
         key_distribution,
         value_size,
