@@ -153,7 +153,7 @@ void Freelist::MergeAndCheckTSInPool() {
             large_entries_.emplace(offset, merged_blocks * block_size_);
             // move merged entries to merging pool to avoid redundant merging
           } else {
-            merged_entry_list[merged_blocks].emplace_back(std::move(offset));
+            merged_entry_list[merged_blocks].emplace_back(offset);
             if (merged_entry_list[merged_blocks].size() >= kMinMovableEntries) {
               merged_pool_.MoveEntryList(merged_entry_list[merged_blocks],
                                          merged_blocks);
@@ -183,7 +183,7 @@ void Freelist::Push(const SpaceEntry &entry) {
   auto b_size = entry.size / block_size_;
   auto b_offset = entry.offset / block_size_;
   space_map_.Set(b_offset, b_size);
-  auto &thread_cache = thread_cache_[access_thread.id];
+  auto &thread_cache = flist_thread_cache_[access_thread.id];
   if (b_size >= thread_cache.active_entry_offsets.size()) {
     std::lock_guard<SpinMutex> lg(large_entries_spin_);
     large_entries_.emplace(entry);
@@ -222,7 +222,7 @@ void Freelist::BatchPush(const std::vector<SpaceEntry> &entries) {
 bool Freelist::Get(uint32_t size, SpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
-  auto &thread_cache = thread_cache_[access_thread.id];
+  auto &thread_cache = flist_thread_cache_[access_thread.id];
   for (uint32_t i = b_size; i < thread_cache.active_entry_offsets.size(); i++) {
     bool found = false;
   search_entry : {
@@ -283,8 +283,8 @@ bool Freelist::Get(uint32_t size, SpaceEntry *space_entry) {
 
 void Freelist::MoveCachedListsToPool() {
   std::vector<PMemOffsetType> moving_list;
-  for (uint64_t i = 0; i < thread_cache_.size(); i++) {
-    auto &tc = thread_cache_[i];
+  for (uint64_t i = 0; i < flist_thread_cache_.size(); i++) {
+    auto &tc = flist_thread_cache_[i];
 
     for (size_t b_size = 1; b_size < tc.active_entry_offsets.size(); b_size++) {
       moving_list.clear();
@@ -305,7 +305,7 @@ void Freelist::MoveCachedListsToPool() {
 bool Freelist::MergeGet(uint32_t size, SpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
-  auto &cache_list = thread_cache_[access_thread.id].active_entry_offsets;
+  auto &cache_list = flist_thread_cache_[access_thread.id].active_entry_offsets;
   for (uint32_t i = 1; i < max_classified_b_size_; i++) {
     size_t j = 0;
     while (j < cache_list[i].size()) {

@@ -6,9 +6,12 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 
+#include "collection.hpp"
+#include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
 #include "libpmemobj++/string_view.hpp"
@@ -47,6 +50,11 @@ public:
   // Return Ok on success or the "key" did not exist, return non-Ok on any
   // error.
   virtual Status Delete(const pmem::obj::string_view key) = 0;
+
+  virtual Status
+  CreateSortedCollection(const pmem::obj::string_view collection_name,
+                         Collection **sorted_collection,
+                         const pmem::obj::string_view &comp_name = "") = 0;
 
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return Ok
@@ -111,6 +119,11 @@ public:
   // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.
   virtual void ReleaseAccessThread() = 0;
+
+  virtual void
+  SetCompareFunc(const pmem::obj::string_view &collection_name,
+                 std::function<int(const pmem::obj::string_view &src,
+                                   const pmem::obj::string_view &target)>) = 0;
 
   // Close the instance on exit.
   virtual ~Engine() = 0;

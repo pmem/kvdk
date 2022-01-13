@@ -81,7 +81,12 @@ struct Configs {
   // In KVDK, a background thread will regularly organize PMem free space,
   // frequent execution will lead to better space utilization, but more
   // influence to foreground performance
-  double background_work_interval = 5;
+  double background_work_interval = 5.0;
+
+  // Time interval that the background thread report PMem usage by GlobalLogger.
+  // report_pmem_usage_interval less than background_work_interval will be
+  // ignored.
+  double report_pmem_usage_interval = 1000000.0;
 
   // Support the devdax model with PMem
   //

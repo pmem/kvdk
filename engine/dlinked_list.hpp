@@ -194,7 +194,7 @@ public:
       : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{head_pmmptr},
         tail_pmmptr_{tail_pmmptr} {
 
-#if DEBUG_LEVEL >= 0
+#if DEBUG_LEVEL > 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
                   "Cannot rebuild a DlinkedList from given PMem pointer "
@@ -383,8 +383,8 @@ private:
           << "\t"
           << "Prev:\t" << to_hex(record->prev) << "\t"
           << "Next:\t" << to_hex(record->next) << "\t"
-          << "Key: " << to_hex(Collection::ExtractID(internal_key))
-          << Collection::ExtractUserKey(internal_key) << "\t"
+          << "Key: " << to_hex(CollectionUtils::ExtractID(internal_key))
+          << CollectionUtils::ExtractUserKey(internal_key) << "\t"
           << "Value: " << record->Value() << "\n";
     };
 

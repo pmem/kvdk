@@ -12,7 +12,6 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
 
-#include "collection.hpp"
 #include "dlinked_list.hpp"
 #include "macros.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
@@ -78,7 +77,8 @@ private:
   }
 
   inline bool checkID(DLRecord *record_pmmptr) {
-    if (!record_pmmptr || ExtractID(record_pmmptr->Key()) != ID())
+    if (!record_pmmptr ||
+        CollectionUtils::ExtractID(record_pmmptr->Key()) != ID())
       return false;
     return true;
   }

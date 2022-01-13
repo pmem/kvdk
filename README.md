@@ -70,4 +70,6 @@ Please refer to [User guide](./doc/user_doc.md) for API introductions of KVDK.
 Welcome to join the wechat group for KVDK tech discussion.
 
 <img src="pic/kvdk-qrcode.png" width="300">
+If this QR code is expired, please get the new one from
+https://github.com/pmem/kvdk/issues/143
 

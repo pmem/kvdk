@@ -71,7 +71,13 @@ static void test_named_coll() {
   std::string value1{"value1"};
   std::string value2{"value2"};
   std::string v;
+  kvdk::Collection *collection1_ptr;
+  kvdk::Collection *collection2_ptr;
+  status = engine->CreateSortedCollection(collection1, &collection1_ptr);
+  assert(status == kvdk::Status::Ok);
 
+  status = engine->CreateSortedCollection(collection2, &collection2_ptr);
+  assert(status == kvdk::Status::Ok);
   // Insert key1-value1 into "my_collection_1".
   // Implicitly create a collection named "my_collection_1" in which
   // key1-value1 is stored.
@@ -121,6 +127,10 @@ static void test_named_coll() {
 
 static void test_iterator() {
   std::string sorted_collection{"my_sorted_collection"};
+  kvdk::Collection *collection_ptr;
+  // Create Sorted Collection
+  status = engine->CreateSortedCollection(sorted_collection, &collection_ptr);
+  assert(status == kvdk::Status::Ok);
   // Create toy keys and values.
   std::vector<std::pair<std::string, std::string>> kv_pairs;
   for (int i = 0; i < 10; ++i) {
@@ -227,6 +237,64 @@ static void test_batch_write() {
   return;
 }
 
+static void test_customer_sorted_func() {
+  std::string collection = "collection0";
+  struct number_kv {
+    std::string number_key;
+    std::string value;
+  };
+
+  std::vector<number_kv> array = {
+      {"100", "a"}, {"50", "c"}, {"40", "d"}, {"30", "b"}, {"90", "f"}};
+
+  std::vector<number_kv> expected_array = {
+      {"100", "a"}, {"90", "f"}, {"50", "c"}, {"40", "d"}, {"30", "b"}};
+
+  // regitser compare function
+  std::string comp_name = "double_comp";
+  auto score_cmp = [](const pmem::obj::string_view &a,
+                      const pmem::obj::string_view &b) -> int {
+    double scorea = std::stod(a.data());
+    double scoreb = std::stod(b.data());
+    if (scorea == scoreb)
+      return 0;
+    else if (scorea < scoreb)
+      return 1;
+    else
+      return -1;
+  };
+  engine->SetCompareFunc(comp_name, score_cmp);
+  // create sorted collection
+  kvdk::Collection *collection_ptr;
+  kvdk::Status s =
+      engine->CreateSortedCollection(collection, &collection_ptr, comp_name);
+  assert(s == Ok);
+  for (int i = 0; i < 5; ++i) {
+    s = engine->SSet(collection, array[i].number_key, array[i].value);
+    assert(s == Ok);
+  }
+  auto iter = engine->NewSortedIterator(collection);
+
+  assert(iter != nullptr);
+
+  int i = 0;
+  for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+    size_t key_len, value_len;
+    std::string key = iter->Key();
+    std::string value = iter->Value();
+    if (key != expected_array[i].number_key) {
+      printf("sort key error, current key: %s , but expected key: %s\n",
+             key.c_str(), expected_array[i].number_key.c_str());
+    }
+    if (value != expected_array[i].value) {
+      printf("sort value error, current value: %s , but expected value: %s\n",
+             value.c_str(), expected_array[i].value.c_str());
+    }
+    ++i;
+  }
+  printf("Successfully collections sorted by number.\n");
+}
+
 int main() {
 
   // Initialize a KVDK instance.
@@ -258,6 +326,9 @@ int main() {
 
   // Iterating a Sorted Named Collection
   test_iterator();
+
+  // Sorted Collection with Customer Sorted Function
+  test_customer_sorted_func();
 
   // BatchWrite on Anonymous Global Collection
   test_batch_write();

@@ -69,6 +69,7 @@ private:
   kvdk::Configs configs_;
   std::string path_;
   std::string collection_; // for sorted scan in kvdk
+  kvdk::Collection *collection_ptr_;
 };
 
 #if defined(BUILD_ROCKSDB)

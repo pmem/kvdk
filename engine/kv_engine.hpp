@@ -54,6 +54,7 @@ public:
     version_controller_.ReleaseSnapshot(
         static_cast<const SnapshotImpl *>(snapshot));
   }
+  void ReportPMemUsage();
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string *value) override;
@@ -151,25 +152,41 @@ private:
 
   inline Status MaybeInitAccessThread();
 
-  Status SearchOrInitCollection(const StringView &collection, Collection **list,
-                                bool init, uint16_t collection_type);
-
-  Status SearchOrInitSkiplist(const StringView &collection, Skiplist **skiplist,
-                              bool init) {
-    if (!CheckKeySize(collection)) {
-      return Status::InvalidDataSize;
-    }
-    return SearchOrInitCollection(collection, (Collection **)skiplist, init,
-                                  SortedHeaderRecord);
+  void SetCompareFunc(const pmem::obj::string_view &collection_name,
+                      std::function<int(const pmem::obj::string_view &src,
+                                        const pmem::obj::string_view &target)>
+                          comp_func) {
+    comparator_.SetComparaFunc(collection_name, comp_func);
   }
 
+  Status
+  CreateSortedCollection(const StringView collection_name,
+                         Collection **collection_ptr,
+                         const pmem::obj::string_view &comp_name) override;
+
 private:
+  Status InitCollection(const StringView &collection, Collection **list,
+                        uint16_t collection_type);
   std::shared_ptr<UnorderedCollection>
   createUnorderedCollection(StringView const collection_name);
-  UnorderedCollection *findUnorderedCollection(StringView collection_name);
-
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
-  Queue *findQueue(StringView const collection_name);
+
+  template <typename CollectionType>
+  Status FindCollection(const StringView collection_name,
+                        CollectionType **collection_ptr, uint64_t record_type) {
+    HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
+    HashEntry hash_entry;
+    HashEntry *entry_ptr = nullptr;
+    Status s = hash_table_->SearchForRead(hint, collection_name, record_type,
+                                          &entry_ptr, &hash_entry, nullptr);
+
+    *collection_ptr = nullptr;
+    if (s != Status::Ok) {
+      return s;
+    }
+    *collection_ptr = (CollectionType *)hash_entry.index.ptr;
+    return s;
+  }
 
   enum class QueueOpPosition { Left, Right };
   Status xPush(StringView const collection_name, StringView const value,
@@ -351,6 +368,7 @@ private:
   // for backup instance. For an instance that is not a backup, this is set to
   // kMaxTimestamp by default
   TimeStampType max_recoverable_record_timestamp_{kMaxTimestamp};
+  Comparator comparator_;
 };
 
 } // namespace KVDK_NAMESPACE

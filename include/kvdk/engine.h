@@ -32,6 +32,7 @@ typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
+typedef struct KVDKCollection KVDKCollection;
 
 typedef enum { SORTED, HASH } KVDKIterType;
 
@@ -51,6 +52,22 @@ extern KVDK_LIBRARY_API KVDKStatus KVDKOpen(const char *name,
 extern KVDK_LIBRARY_API void KVDKReleaseAccessThread(KVDKEngine *engine);
 extern KVDK_LIBRARY_API void KVDKCloseEngine(KVDKEngine *engine);
 extern KVDK_LIBRARY_API void KVDKRemovePMemContents(const char *name);
+
+extern KVDK_LIBRARY_API void
+KVDKRegisterCompFunc(KVDKEngine *engine, const char *compara_name,
+                     size_t compara_len,
+                     int (*compare)(const char *src, size_t src_len,
+                                    const char *target, size_t target_len));
+
+// Create Sorted Collection
+extern KVDK_LIBRARY_API KVDKStatus KVDKCreateSortedCollection(
+    KVDKEngine *engine, KVDKCollection **sorted_collection,
+    const char *collection_name, size_t collection_len,
+    const char *compara_name, size_t compara_len);
+
+extern KVDK_LIBRARY_API void
+KVDKDestorySortedCollection(KVDKCollection *collection);
+
 // For BatchWrite
 extern KVDK_LIBRARY_API KVDKWriteBatch *KVDKWriteBatchCreate(void);
 extern KVDK_LIBRARY_API void KVDKWriteBatchDestory(KVDKWriteBatch *);
@@ -124,7 +141,7 @@ extern KVDK_LIBRARY_API KVDKStatus KVDKRPop(KVDKEngine *engine,
 
 extern KVDK_LIBRARY_API KVDKIterator *
 KVDKCreateIterator(KVDKEngine *engine, const char *collection,
-                   KVDKIterType iter_type);
+                   size_t collection_len, KVDKIterType iter_type);
 extern KVDK_LIBRARY_API void KVDKIterDestory(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToFirst(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToLast(KVDKIterator *iter);

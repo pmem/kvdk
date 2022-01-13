@@ -93,6 +93,10 @@ TEST_F(EngineBasicTest, TestBackup) {
             Status::Ok);
 
   std::string sorted_collection("sorted_collection");
+  Collection *sorted_collection_ptr;
+  ASSERT_EQ(
+      engine->CreateSortedCollection(sorted_collection, &sorted_collection_ptr),
+      Status::Ok);
 
   bool snapshot_done(false);
   std::atomic<int> set_finish_threads(0);
@@ -255,7 +259,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  int batch_num = 10;
+  int batch_size = 10;
   int count = 500;
   auto BatchSetDelete = [&](uint32_t id) {
     std::string key_prefix(std::string(id, 'a'));
@@ -263,14 +267,14 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     WriteBatch batch;
     int cnt = count;
     while (cnt--) {
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
         auto val = std::to_string(i * id);
         batch.Put(key, val);
       }
       ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
       batch.Clear();
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         if ((i * cnt) % 2 == 1) {
           auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
           auto val = std::to_string(i * id);
@@ -295,7 +299,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     std::string got_val;
     int cnt = count;
     while (cnt--) {
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
         if ((i * cnt) % 2 == 1) {
           ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
@@ -364,6 +368,8 @@ TEST_F(EngineBasicTest, TestFreeList) {
             Status::Ok);
   // Still no more space after re-open
   ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
@@ -378,6 +384,10 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
     std::string key1, key2, val1, val2;
     std::string got_val1, got_val2;
 
+    Collection *thread_collection_ptr;
+    Status s = engine->CreateSortedCollection(thread_local_skiplist,
+                                              &thread_collection_ptr);
+    ASSERT_EQ(s, Status::Ok);
     AssignData(val1, 10);
 
     // Test Empty Key
@@ -486,6 +496,10 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
             Status::Ok);
   std::atomic<int> n_global_entries{0};
 
+  Collection *global_collection_ptr;
+  ASSERT_EQ(
+      engine->CreateSortedCollection(global_skiplist, &global_collection_ptr),
+      Status::Ok);
   // Test empty key
   std::string key{""}, val{"val"}, got_val;
   ASSERT_EQ(engine->SSet(global_skiplist, key, val), Status::Ok);
@@ -603,8 +617,12 @@ TEST_F(EngineBasicTest, TestSeek) {
 
   // Test Seek
   std::string collection = "col1";
+  Collection *collection_ptr;
+  ASSERT_EQ(engine->CreateSortedCollection(collection, &collection_ptr),
+            Status::Ok);
   uint64_t z = 0;
   auto zero_filled_str = uint64_to_string(z);
+  printf("%s\n", zero_filled_str.c_str());
   ASSERT_EQ(engine->SSet(collection, zero_filled_str, zero_filled_str),
             Status::Ok);
   ASSERT_EQ(engine->SGet(collection, zero_filled_str, &val), Status::Ok);
@@ -615,6 +633,8 @@ TEST_F(EngineBasicTest, TestSeek) {
 
   // Test SeekToFirst
   collection.assign("col2");
+  ASSERT_EQ(engine->CreateSortedCollection(collection, &collection_ptr),
+            Status::Ok);
   ASSERT_EQ(engine->SSet(collection, "foo", "bar"), Status::Ok);
   ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::Ok);
   ASSERT_EQ(engine->SDelete(collection, "foo"), Status::Ok);
@@ -625,6 +645,8 @@ TEST_F(EngineBasicTest, TestSeek) {
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(iter->Value(), "bar2");
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestStringRestore) {
@@ -696,11 +718,19 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   // insert and delete some keys, then re-insert some deleted keys
   int count = 100;
   std::string overall_skiplist = "skiplist";
+  Collection *overall_collection_ptr;
+  ASSERT_EQ(
+      engine->CreateSortedCollection(overall_skiplist, &overall_collection_ptr),
+      Status::Ok);
   std::string thread_skiplist = "t_skiplist";
   auto SetupEngine = [&](uint32_t id) {
     std::string key_prefix(id, 'a');
     std::string got_val;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
+    Collection *thread_collection_ptr;
+    ASSERT_EQ(
+        engine->CreateSortedCollection(t_skiplist, &thread_collection_ptr),
+        Status::Ok);
     for (int i = 1; i <= count; i++) {
       auto key = key_prefix + std::to_string(i);
       auto overall_val = std::to_string(i);
@@ -838,23 +868,38 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   // insert and delete some keys, then re-insert some deleted keys
   uint64_t count = 1024;
 
+  std::set<std::string> avg_nums, random_nums;
+  for (uint64_t i = 1; i <= count; ++i) {
+    std::string average_skiplist("a_skiplist" +
+                                 std::to_string(i % num_collections));
+    Collection *avg_collection_ptr;
+    ASSERT_EQ(
+        engine->CreateSortedCollection(average_skiplist, &avg_collection_ptr),
+        Status::Ok);
+  }
+  for (uint32_t i = 0; i < num_threads; ++i) {
+    std::string r_skiplist("r_skiplist" + std::to_string(i));
+    Collection *r_collection_ptr;
+    ASSERT_EQ(engine->CreateSortedCollection(r_skiplist, &r_collection_ptr),
+              Status::Ok);
+  }
   auto SetupEngine = [&](uint32_t id) {
     std::string key_prefix(id, 'a');
     std::string got_val;
-    for (uint64_t i = 1; i <= count; i++) {
-      auto key = key_prefix + std::to_string(i);
-
+    for (uint64_t i = 1; i <= count; ++i) {
       std::string average_skiplist("a_skiplist" +
                                    std::to_string(i % num_collections));
-      auto average_val = std::to_string(i);
 
       std::string r_skiplist("r_skiplist" +
                              std::to_string(rand() % num_threads));
-      auto r_val = std::to_string(i * 2);
+
+      auto key = key_prefix + std::to_string(i);
+      auto average_val = std::to_string(i);
       ASSERT_EQ(engine->SSet(average_skiplist, key, average_val), Status::Ok);
-      ASSERT_EQ(engine->SSet(r_skiplist, key, r_val), Status::Ok);
       ASSERT_EQ(engine->SGet(average_skiplist, key, &got_val), Status::Ok);
       ASSERT_EQ(got_val, average_val);
+      auto r_val = std::to_string(i * 2);
+      ASSERT_EQ(engine->SSet(r_skiplist, key, r_val), Status::Ok);
       ASSERT_EQ(engine->SGet(r_skiplist, key, &got_val), Status::Ok);
       ASSERT_EQ(got_val, r_val);
       if ((rand() % i) == 0) {
@@ -1452,14 +1497,17 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
             Status::Ok);
 
   int count = 100000;
-  std::string collection{"collection"};
+  std::string collection_name{"collection"};
   std::vector<std::string> keys{"SuperHotSpot0", "SuperHotSpot2",
                                 "SuperHotSpot1"};
   std::string val1(1024, 'a');
   std::string val2(1024, 'b');
+  Collection *collection_ptr;
+  ASSERT_EQ(engine->CreateSortedCollection(collection_name, &collection_ptr),
+            Status::Ok);
 
   for (const std::string &key : keys) {
-    ASSERT_EQ(engine->SSet(collection, key, val1), Status::Ok);
+    ASSERT_EQ(engine->SSet(collection_name, key, val1), Status::Ok);
     engine->ReleaseAccessThread();
 
     auto EvenWriteOddRead = [&](uint32_t id) {
@@ -1467,14 +1515,14 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
         if (id % 2 == 0) {
           // Even Write
           if (id % 4 == 0) {
-            ASSERT_EQ(engine->SSet(collection, key, val1), Status::Ok);
+            ASSERT_EQ(engine->SSet(collection_name, key, val1), Status::Ok);
           } else {
-            ASSERT_EQ(engine->SSet(collection, key, val2), Status::Ok);
+            ASSERT_EQ(engine->SSet(collection_name, key, val2), Status::Ok);
           }
         } else {
           // Odd Read
           std::string got_val;
-          ASSERT_EQ(engine->SGet(collection, key, &got_val), Status::Ok);
+          ASSERT_EQ(engine->SGet(collection_name, key, &got_val), Status::Ok);
           bool match = false;
           match = match || (got_val == val1);
           match = match || (got_val == val2);
@@ -1497,6 +1545,107 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
     LaunchNThreads(n_thread_reading + n_thread_writing, EvenWriteOddRead);
   }
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
+  using kvpair = std::pair<std::string, std::string>;
+  int threads = 16;
+  configs.max_access_threads = threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::vector<std::string> collections{"collection0", "collection1",
+                                       "collection2"};
+
+  auto cmp0 = [](const pmem::obj::string_view &a,
+                 const pmem::obj::string_view &b) -> int {
+    double scorea = std::stod(a.data());
+    double scoreb = std::stod(b.data());
+    if (scorea == scoreb)
+      return 0;
+    else if (scorea < scoreb)
+      return 1;
+    else
+      return -1;
+  };
+
+  auto cmp1 = [](const pmem::obj::string_view &a,
+                 const pmem::obj::string_view &b) -> int {
+    double scorea = std::stod(a.data());
+    double scoreb = std::stod(b.data());
+    if (scorea == scoreb)
+      return 0;
+    else if (scorea > scoreb)
+      return 1;
+    else
+      return -1;
+  };
+
+  int count = 10;
+  std::vector<kvpair> key_values(count);
+  std::map<std::string, std::string> dedup_kvs;
+  std::generate(key_values.begin(), key_values.end(), [&]() {
+    const char v = rand() % (90 - 65 + 1) + 65;
+    std::string k = std::to_string(rand() % 100);
+    dedup_kvs[k] = v;
+    return std::make_pair(k, std::string(1, v));
+  });
+
+  // registed compare function
+  engine->SetCompareFunc("collection0_cmp", cmp0);
+  engine->SetCompareFunc("collection1_cmp", cmp1);
+  for (size_t i = 0; i < collections.size(); ++i) {
+    Collection *collection_ptr;
+    Status s;
+    if (i < 2) {
+      std::string comp_name = "collection" + std::to_string(i) + "_cmp";
+      s = engine->CreateSortedCollection(collections[i], &collection_ptr,
+                                         comp_name);
+    } else {
+      s = engine->CreateSortedCollection(collections[i], &collection_ptr);
+    }
+    ASSERT_EQ(s, Status::Ok);
+  }
+  for (size_t i = 0; i < collections.size(); ++i) {
+    auto Write = [&](uint32_t id) {
+      for (size_t j = 0; j < count; j++) {
+        ASSERT_EQ(engine->SSet(collections[i], key_values[j].first,
+                               key_values[j].second),
+                  Status::Ok);
+      }
+    };
+    LaunchNThreads(threads, Write);
+  }
+
+  for (size_t i = 0; i < collections.size(); ++i) {
+    std::vector<kvpair> expected_res(dedup_kvs.begin(), dedup_kvs.end());
+    if (i == 0) {
+      std::sort(expected_res.begin(), expected_res.end(),
+                [&](const kvpair &a, const kvpair &b) -> bool {
+                  return cmp0(a.first, b.first) <= 0;
+                });
+
+    } else if (i == 1) {
+      std::sort(expected_res.begin(), expected_res.end(),
+                [&](const kvpair &a, const kvpair &b) -> bool {
+                  return cmp1(a.first, b.first) <= 0;
+                });
+    }
+    auto iter = engine->NewSortedIterator(collections[i]);
+    ASSERT_TRUE(iter != nullptr);
+    iter->SeekToFirst();
+    int cnt = 0;
+    while (iter->Valid()) {
+      std::string key = iter->Key();
+      std::string val = iter->Value();
+      ASSERT_EQ(key, expected_res[cnt].first);
+      ASSERT_EQ(val, expected_res[cnt].second);
+      iter->Next();
+      cnt++;
+    }
+  }
+  ASSERT_EQ(engine->SDelete("collection0", "a"), Status::Ok);
   delete engine;
 }
 

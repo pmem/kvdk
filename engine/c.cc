@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "kvdk/collection.hpp"
 #include "kvdk/configs.hpp"
 #include "kvdk/engine.h"
 #include "kvdk/engine.hpp"
@@ -16,6 +17,7 @@
 #include "alias.hpp"
 using kvdk::StringView;
 
+using kvdk::Collection;
 using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::Iterator;
@@ -33,6 +35,9 @@ struct KVDKWriteBatch {
 };
 struct KVDKIterator {
   Iterator *rep;
+};
+struct KVDKCollection {
+  Collection *rep;
 };
 
 static char *CopyStringToChar(const std::string &str) {
@@ -86,6 +91,43 @@ void KVDKCloseEngine(KVDKEngine *engine) {
 void KVDKRemovePMemContents(const char *name) {
   std::string res = "rm -rf " + std::string(name) + "\n";
   int ret __attribute__((unused)) = system(res.c_str());
+}
+
+void KVDKRegisterCompFunc(KVDKEngine *engine, const char *compara_name,
+                          size_t compara_len,
+                          int (*compare)(const char *src, size_t src_len,
+                                         const char *target,
+                                         size_t target_len)) {
+  auto comp_func = [compare](const pmem::obj::string_view &src,
+                             const pmem::obj::string_view &target) -> int {
+    return compare(src.data(), src.size(), target.data(), target.size());
+  };
+  engine->rep->SetCompareFunc(pmem::obj::string_view(compara_name, compara_len),
+                              comp_func);
+}
+
+KVDKStatus KVDKCreateSortedCollection(KVDKEngine *engine,
+                                      KVDKCollection **sorted_collection,
+                                      const char *collection_name,
+                                      size_t collection_len,
+                                      const char *compara_name,
+                                      size_t compara_len) {
+  Collection *collection_ptr;
+
+  KVDKStatus s = engine->rep->CreateSortedCollection(
+      pmem::obj::string_view(collection_name, collection_len), &collection_ptr,
+      pmem::obj::string_view(compara_name, compara_len));
+  if (s != KVDKStatus::Ok) {
+    sorted_collection = nullptr;
+    return s;
+  }
+  *sorted_collection = new KVDKCollection;
+  (*sorted_collection)->rep = collection_ptr;
+  return s;
+}
+
+void KVDKDestorySortedCollection(KVDKCollection *collection) {
+  delete collection;
 }
 
 KVDKWriteBatch *KVDKWriteBatchCreate(void) { return new KVDKWriteBatch; }
@@ -233,6 +275,7 @@ KVDKStatus KVDKRPop(KVDKEngine *engine, const char *collection,
 }
 
 KVDKIterator *KVDKCreateIterator(KVDKEngine *engine, const char *collection,
+                                 size_t collection_len,
                                  KVDKIterType iter_type) {
   KVDKIterator *result = new KVDKIterator;
   if (iter_type == SORTED) {
