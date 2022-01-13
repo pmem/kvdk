@@ -18,11 +18,11 @@ pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 num_collection = 16
 
 benchmarks = [
-    benchmark_impl.read_random, 
-    benchmark_impl.range_scan, 
     benchmark_impl.insert_random,
     benchmark_impl.batch_insert_random, 
     benchmark_impl.update_random, 
+    benchmark_impl.range_scan, 
+    benchmark_impl.read_random, 
     benchmark_impl.read_write_random]
 
 data_types = []
