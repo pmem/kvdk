@@ -45,12 +45,17 @@ public:
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
-  Snapshot *GetSnapshot() override;
+  Snapshot *GetSnapshot(bool make_checkpoint) override;
 
   Status Backup(const pmem::obj::string_view backup_path,
                 const Snapshot *snapshot) override;
 
   void ReleaseSnapshot(const Snapshot *snapshot) override {
+    {
+      std::lock_guard<std::mutex> lg(checkpoint_lock_);
+      persist_checkpoint_->MaybeRelease(
+          static_cast<const SnapshotImpl *>(snapshot));
+    }
     version_controller_.ReleaseSnapshot(
         static_cast<const SnapshotImpl *>(snapshot));
   }
@@ -233,7 +238,9 @@ private:
 
   Status RestorePendingBatch();
 
-  Status RestoreBackupFile();
+  Status MaybeRestoreBackup();
+
+  Status RestoreCheckpoint();
 
   Status PersistOrRecoverImmutableConfigs();
 
@@ -261,6 +268,12 @@ private:
 
   inline std::string backup_mark_file() { return backup_mark_file(dir_); }
 
+  inline std::string checkpoint_file() { return checkpoint_file(dir_); }
+
+  inline static std::string checkpoint_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "checkpoint";
+  }
+
   inline static std::string backup_mark_file(const std::string &instance_path) {
     return format_dir_path(instance_path) + "backup_mark";
   }
@@ -286,7 +299,9 @@ private:
   }
 
   // If this instance is a backup of another kvdk instance
-  bool isBackup() { return max_recoverable_record_timestamp_ < kMaxTimestamp; }
+  bool RecoverToCheckpoint() {
+    return configs_.recover_to_checkpoint && persist_checkpoint_->Valid();
+  }
 
   bool checkLinkage(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
@@ -376,10 +391,6 @@ private:
   bool bg_cleaner_processing_;
   SpinMutex engine_closing_lock_;
 
-  // Max timestamp of records that could be restored in recovery, this is used
-  // for backup instance. For an instance that is not a backup, this is set to
-  // kMaxTimestamp by default
-  TimeStampType max_recoverable_record_timestamp_{kMaxTimestamp};
   Comparator comparator_;
 
   struct BackgroundWorkSignals {
@@ -395,6 +406,33 @@ private:
     SpinMutex terminating_lock;
     bool terminating = false;
   };
+
+  class CheckPoint {
+  public:
+    void MakeCheckpoint(const Snapshot *snapshot) {
+      checkpoint_ts =
+          static_cast<const SnapshotImpl *>(snapshot)->GetTimestamp();
+    }
+
+    void MaybeRelease(const Snapshot *releasing_snapshot) {
+      if (static_cast<const SnapshotImpl *>(releasing_snapshot)
+              ->GetTimestamp() == checkpoint_ts) {
+        Release();
+      }
+    }
+
+    void Release() { checkpoint_ts = 0; }
+
+    TimeStampType CheckpointTS() { return checkpoint_ts; }
+
+    bool Valid() { return checkpoint_ts > 0; }
+
+  private:
+    TimeStampType checkpoint_ts;
+  };
+
+  CheckPoint *persist_checkpoint_;
+  std::mutex checkpoint_lock_;
 
   BackgroundWorkSignals bg_work_signals_;
 };

@@ -98,8 +98,13 @@ public:
   virtual Status RPush(pmem::obj::string_view const collection_name,
                        pmem::obj::string_view const value) = 0;
 
-  // Get a snapshot of the instance at this moment
-  virtual Snapshot *GetSnapshot() = 0;
+  // Get a snapshot of the instance at this moment.
+  // If set make_checkpoint to true, a persistent checkpoint will be made until
+  // this snapshot is released. You can recover KVDK instance to the checkpoint
+  // version during recovery, then the checkpoint will be removed.
+  //
+  // Notice: you can maintain multiple snapshot but only the last checkpoint.
+  virtual Snapshot *GetSnapshot(bool make_checkpoint) = 0;
 
   // Make a backup on "snapshot" to "backup_path"
   virtual Status Backup(const pmem::obj::string_view backup_path,

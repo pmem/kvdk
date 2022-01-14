@@ -116,6 +116,13 @@ struct Configs {
   // recovery a skiplist. The optimization can get better performance when
   // having few large skiplists. Default is to close optimization.
   bool opt_large_sorted_collection_restore = false;
+
+  // If a checkpoint is made in last open, recover the instance to the
+  // checkpoint version if this true
+  //
+  // Notice: If opening a backup instance, this will always be set to true
+  // during recovery.
+  bool recover_to_checkpoint = false;
 };
 
 } // namespace KVDK_NAMESPACE

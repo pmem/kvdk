@@ -85,7 +85,7 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBackup) {
+TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
   uint32_t num_threads = 16;
   int count = 100;
   configs.max_access_threads = num_threads;
@@ -149,7 +149,7 @@ TEST_F(EngineBasicTest, TestBackup) {
   while (set_finish_threads.load() != num_threads) {
     asm volatile("pause");
   }
-  Snapshot *snapshot = engine->GetSnapshot();
+  Snapshot *snapshot = engine->GetSnapshot(true);
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
@@ -159,13 +159,17 @@ TEST_F(EngineBasicTest, TestBackup) {
   for (auto &t : ths) {
     t.join();
   }
+  delete engine;
 
   Engine *backup_engine;
   ASSERT_EQ(Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
             Status::Ok);
+  configs.recover_to_checkpoint = true;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
 
-  // Test backup instance
-  // All changes after snapshot should not be seen in backup
+  // Test backup and checkpoint instance
+  // All changes after snapshot should not be seen in backup and checkpoint
   // Writes on backup should work well
   for (uint32_t id = 0; id < num_threads; id++) {
     int cnt = count;
@@ -180,6 +184,11 @@ TEST_F(EngineBasicTest, TestBackup) {
       ASSERT_EQ(backup_engine->Get(key3, &got_v3), Status::NotFound);
       ASSERT_EQ(got_v1, key1);
       ASSERT_EQ(got_v2, key2);
+      ASSERT_EQ(engine->Get(key1, &got_v1), Status::Ok);
+      ASSERT_EQ(engine->Get(key2, &got_v2), Status::Ok);
+      ASSERT_EQ(engine->Get(key3, &got_v3), Status::NotFound);
+      ASSERT_EQ(got_v1, key1);
+      ASSERT_EQ(got_v2, key2);
 
       ASSERT_EQ(backup_engine->SGet(sorted_collection, key1, &got_v1),
                 Status::Ok);
@@ -189,17 +198,32 @@ TEST_F(EngineBasicTest, TestBackup) {
                 Status::NotFound);
       ASSERT_EQ(got_v1, key1);
       ASSERT_EQ(got_v2, key2);
+      ASSERT_EQ(engine->SGet(sorted_collection, key1, &got_v1), Status::Ok);
+      ASSERT_EQ(engine->SGet(sorted_collection, key2, &got_v2), Status::Ok);
+      ASSERT_EQ(engine->SGet(sorted_collection, key3, &got_v3),
+                Status::NotFound);
+      ASSERT_EQ(got_v1, key1);
+      ASSERT_EQ(got_v2, key2);
     }
   }
-  uint64_t iter_cnt = 0;
-  auto iter = backup_engine->NewSortedIterator(sorted_collection);
-  iter->SeekToFirst();
-  while (iter->Valid()) {
-    iter_cnt++;
-    ASSERT_EQ(iter->Key(), iter->Value());
-    iter->Next();
+
+  uint64_t backup_iter_cnt = 0;
+  uint64_t checkpoint_iter_cnt = 0;
+  auto backup_iter = backup_engine->NewSortedIterator(sorted_collection);
+  auto checkpoint_iter = engine->NewSortedIterator(sorted_collection);
+  backup_iter->SeekToFirst();
+  checkpoint_iter->SeekToFirst();
+  while (backup_iter->Valid()) {
+    ASSERT_TRUE(checkpoint_iter->Valid());
+    backup_iter_cnt++;
+    checkpoint_iter_cnt++;
+    ASSERT_EQ(backup_iter->Key(), backup_iter->Value());
+    ASSERT_EQ(checkpoint_iter->Key(), checkpoint_iter->Value());
+    ASSERT_EQ(checkpoint_iter->Key(), backup_iter->Key());
+    backup_iter->Next();
+    checkpoint_iter->Next();
   }
-  ASSERT_EQ(iter_cnt, num_threads * count * 2);
+  ASSERT_EQ(backup_iter_cnt, num_threads * count * 2);
 
   delete engine;
   delete backup_engine;

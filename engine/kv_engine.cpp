@@ -465,8 +465,8 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
                                      const DataEntry &data_entry_cached) {
   assert(pmem_record->entry.meta.type == SortedHeaderRecord);
 
-  if (isBackup() &&
-      data_entry_cached.meta.timestamp > max_recoverable_record_timestamp_) {
+  if (RecoverToCheckpoint() &&
+      data_entry_cached.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
@@ -506,8 +506,8 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
-  if (isBackup() &&
-      cached_entry.meta.timestamp > max_recoverable_record_timestamp_) {
+  if (RecoverToCheckpoint() &&
+      cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
@@ -569,14 +569,15 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   std::string internal_key(pmem_record->Key());
   StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
 
-  if (isBackup()) {
+  if (RecoverToCheckpoint()) {
     // This record is newer than backup version, search the older one it refered
-    if (cached_data_entry.meta.timestamp > max_recoverable_record_timestamp_) {
+    if (cached_data_entry.meta.timestamp >
+        persist_checkpoint_->CheckpointTS()) {
       DLRecord *older_version_record = pmem_allocator_->offset2addr<DLRecord>(
           pmem_record->older_version_offset);
       if (older_version_record != nullptr &&
           older_version_record->entry.meta.timestamp <=
-              max_recoverable_record_timestamp_) {
+              persist_checkpoint_->CheckpointTS()) {
         if (!ValidateRecord(older_version_record)) {
           GlobalLogger.Error("Broken backup instance: invalid skiplist record");
           std::abort();
@@ -810,12 +811,16 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_path,
     return Status::IOError;
   }
 
+  CheckPoint *persistent_checkpoint = static_cast<CheckPoint *>(pmem_map_file(
+      checkpoint_file(path).c_str(), sizeof(CheckPoint), PMEM_FILE_CREATE, 0666,
+      &mapped_len, nullptr /* we do not care if checkpoint path is on PMem*/));
+
   backup_mark->stage = BackupMark::Stage::Processing;
-  backup_mark->backup_ts =
-      static_cast<const SnapshotImpl *>(snapshot)->GetTimestamp();
-  pmem_persist(backup_mark, sizeof(BackupMark));
+  msync(backup_mark, sizeof(BackupMark), MS_SYNC);
 
   imm_configs->PersistImmutableConfigs(configs_);
+  persistent_checkpoint->MakeCheckpoint(snapshot);
+  msync(persistent_checkpoint, sizeof(CheckPoint), MS_SYNC);
 
   Status s = pmem_allocator_->Backup(data_file(path));
   if (s != Status::Ok) {
@@ -823,12 +828,27 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_path,
   }
 
   backup_mark->stage = BackupMark::Stage::Finish;
-  pmem_persist(backup_mark, sizeof(BackupMark));
+  msync(backup_mark, sizeof(BackupMark), MS_SYNC);
   GlobalLogger.Info("Backup to %s finished\n", path.c_str());
   return Status::Ok;
 }
 
-Status KVEngine::RestoreBackupFile() {
+Status KVEngine::RestoreCheckpoint() {
+  size_t mapped_len;
+  int is_pmem;
+  persist_checkpoint_ = static_cast<CheckPoint *>(
+      pmem_map_file(checkpoint_file().c_str(), sizeof(CheckPoint),
+                    PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem));
+  if (persist_checkpoint_ == nullptr || !is_pmem ||
+      mapped_len != sizeof(CheckPoint)) {
+    GlobalLogger.Error("Map persistent checkpoint file %s failed\n",
+                       checkpoint_file().c_str());
+    return Status::IOError;
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::MaybeRestoreBackup() {
   size_t mapped_len;
   int is_pmem;
   BackupMark *backup_mark = static_cast<BackupMark *>(
@@ -851,7 +871,9 @@ Status KVEngine::RestoreBackupFile() {
     }
     case BackupMark::Stage::Finish: {
       GlobalLogger.Info("Recover from a backup KVDK instance\n");
-      max_recoverable_record_timestamp_ = backup_mark->backup_ts;
+      kvdk_assert(persist_checkpoint_->Valid(),
+                  "No valid checkpoint for a backup instance");
+      configs_.recover_to_checkpoint = true;
       break;
     }
     default:
@@ -926,11 +948,15 @@ Status KVEngine::RestorePendingBatch() {
 
 Status KVEngine::Recovery() {
   auto s = RestorePendingBatch();
-  if (s != Status::Ok) {
-    return s;
+
+  if (s == Status::Ok) {
+    s = RestoreCheckpoint();
   }
 
-  s = RestoreBackupFile();
+  if (s == Status::Ok) {
+    s = MaybeRestoreBackup();
+  }
+
   if (s != Status::Ok) {
     return s;
   }
@@ -951,6 +977,8 @@ Status KVEngine::Recovery() {
     }
   }
   fs.clear();
+  persist_checkpoint_->Release();
+  pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
 
   GlobalLogger.Info("RestoreData done: iterated %lu records\n",
                     restored_.load());
@@ -2154,7 +2182,7 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
   }
 }
 
-Snapshot *KVEngine::GetSnapshot() {
+Snapshot *KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot *ret = version_controller_.NewGlobalSnapshot();
   TimeStampType snapshot_ts = static_cast<SnapshotImpl *>(ret)->GetTimestamp();
 
@@ -2166,6 +2194,13 @@ Snapshot *KVEngine::GetSnapshot() {
       asm volatile("pause");
     }
   }
+
+  if (make_checkpoint) {
+    std::lock_guard<std::mutex> lg(checkpoint_lock_);
+    persist_checkpoint_->MakeCheckpoint(ret);
+    pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
+  }
+
   return ret;
 }
 
