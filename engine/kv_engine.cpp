@@ -80,9 +80,10 @@ void KVEngine::FreeSkiplistDramNodes() {
 }
 
 void KVEngine::ReportPMemUsage() {
-  size_t total = pmem_allocator_->PMemUsageInBytes();
-  GlobalLogger.Info("PMem Usage: %llu B, %llu KB, %llu MB, %llu GB\n", total,
-                    (total >> 10), (total >> 20), (total >> 30));
+  auto total = pmem_allocator_->PMemUsageInBytes();
+  GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
+                    (total / (1ULL << 10)), (total / (1ULL << 20)),
+                    (total / (1ULL << 30)));
 }
 
 void KVEngine::BackgroundWork() {
@@ -170,7 +171,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
       db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
       configs_.pmem_block_size, configs_.max_write_threads,
-      configs_.use_devdax_mode));
+      configs_.populate_pmem_space, configs_.use_devdax_mode));
   thread_manager_.reset(new (std::nothrow)
                             ThreadManager(configs_.max_write_threads));
   hash_table_.reset(HashTable::NewHashTable(
@@ -780,10 +781,6 @@ Status KVEngine::Recovery() {
   GlobalLogger.Info("Rebuild skiplist done\n");
 
   if (restored_.load() == 0) {
-    if (configs_.populate_pmem_space) {
-      pmem_allocator_->PopulateSpace();
-    }
-  } else {
     for (auto &ts : thread_res_) {
       if (ts.newest_restored_ts > newest_version_on_startup_) {
         newest_version_on_startup_ = ts.newest_restored_ts;
@@ -1133,7 +1130,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
         for (size_t j = 0; j < i; j++) {
           pmem_allocator_->Free(batch_hints[j].allocated_space);
         }
-        return s;
+        return Status::PmemOverflow;
       }
       space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
     } else {
