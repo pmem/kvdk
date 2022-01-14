@@ -1314,7 +1314,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
 
     uint64_t new_ts = get_timestamp();
-    assert(!found || new_ts > data_entry.meta.timestamp);
+    kvdk_assert(!found || new_ts > data_entry.meta.timestamp, "old record has newer timestamp!");
 
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
                                       new_ts, StringDataRecord, key, value);
