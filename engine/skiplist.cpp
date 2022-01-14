@@ -11,6 +11,8 @@
 #include "kv_engine.hpp"
 #include "skiplist.hpp"
 
+#include "utils/sync_point.hpp"
+
 namespace KVDK_NAMESPACE {
 
 StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
@@ -94,6 +96,7 @@ void Skiplist::InsertDLRecord(DLRecord *prev, DLRecord *next,
   uint64_t inserting_record_offset = pmem_allocator_->addr2offset(inserting);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
+  TEST_SYNC_POINT("KVEngine::Skiplist::InsertDLRecord::UpdatePrev");
   next->prev = inserting_record_offset;
   pmem_persist(&next->prev, 8);
 }
@@ -353,6 +356,8 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
   // create dram node for new record
   auto height = Skiplist::RandomHeight();
   if (height > 0) {
+    TEST_SYNC_POINT("KVEngine::Skiplist::Insert::CreateNode::Before" +
+                    std::to_string(write_thread.id));
     *dram_node = SkiplistNode::NewNode(key, new_record, height);
     for (int i = 1; i <= height; i++) {
       while (1) {
@@ -397,6 +402,7 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
 
   // link new record
   InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
+  TEST_SYNC_POINT("KVEnigne::Skiplist::Update::InsertAfter");
   if (dram_node != nullptr) {
     dram_node->record = new_record;
   }

@@ -25,6 +25,7 @@
 #include "macros.hpp"
 #include "structures.hpp"
 #include "utils/utils.hpp"
+#include "utils/sync_point.hpp"
 
 namespace KVDK_NAMESPACE {
 /// DLinkedList is a helper class to access PMem
@@ -358,6 +359,7 @@ private:
 
     iter_prev->next = offset;
     pmem_persist(&iter_prev->next, sizeof(PMemOffsetType));
+    TEST_SYNC_POINT("KVEngine::DLinkedList::emplaceBetween::PersistPrev");
     iter_next->prev = offset;
     pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
 

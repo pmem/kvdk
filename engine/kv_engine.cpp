@@ -512,7 +512,7 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord *record) {
   uint64_t offset = pmem_allocator_->addr2offset(record);
   DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
   DLRecord *next = pmem_allocator_->offset2addr<DLRecord>(record->next);
-  if (prev->next != offset) {
+  if (prev->next != offset && next->prev != offset) {
     return false;
   }
   // Repair un-finished write
@@ -754,6 +754,7 @@ Status KVEngine::Recovery() {
   if (s != Status::Ok) {
     return s;
   }
+
   GlobalLogger.Info("RestorePendingBatch done: iterated %lu records\n",
                     restored_.load());
 
@@ -962,6 +963,7 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                             new_record_pmem_ptr, HashOffsetType::DLRecord);
       }
       purgeAndFree(existing_record);
+      TEST_SYNC_POINT("KVEngine::SSetImpl::Update::Finish");
     } else {
       if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
                             &dram_node, hint.spin)) {
@@ -1229,6 +1231,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     void *block_base =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
+    TEST_SYNC_POINT("KVEngine::BatchWrite::Pesistent::0");
     // We use if here to avoid compilation warning
     if (kv.type == StringDataRecord) {
       StringRecord::PersistStringRecord(
@@ -1491,6 +1494,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
         DLRecord *pmp_new_record =
             pmem_allocator_->offset2addr_checked<DLRecord>(
                 emplace_result.offset_new);
+        TEST_SYNC_POINT("KVEngine::HSet::HashInsert::Before");
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             RecordType::DlistDataRecord, pmp_new_record,
                             HashOffsetType::UnorderedCollectionElement);

@@ -47,6 +47,7 @@ endif()
 # source files
 set(SOURCES
         engine/utils/utils.cpp
+        engine/utils/sync_point.cpp
         engine/engine.cpp
         engine/kv_engine.cpp
         engine/logger.cpp
@@ -142,6 +143,8 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/examples/tutorial/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*

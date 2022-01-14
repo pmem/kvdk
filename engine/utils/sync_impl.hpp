@@ -11,6 +11,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include "kvdk/namespace.hpp"
+
+#if DEBUG_LEVEL > 0
 namespace KVDK_NAMESPACE {
 
 struct SyncPointPair {
@@ -104,7 +107,7 @@ struct SyncImpl {
     num_callbacks_running_ = 0;
   }
 
-  ~SyncImpl() {}
+  virtual ~SyncImpl() {}
 
 private:
   std::mutex mutex_;
@@ -121,3 +124,5 @@ private:
 };
 
 } // namespace KVDK_NAMESPACE
+
+#endif

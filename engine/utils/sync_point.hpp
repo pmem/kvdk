@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
+
 #pragma once
 
 #include <assert.h>
@@ -13,8 +17,9 @@
 
 #include "sync_impl.hpp"
 
-namespace KVDK_NAMESPACE {
+#if DEBUG_LEVEL > 0
 
+namespace KVDK_NAMESPACE {
 class SyncPoint {
 public:
   static SyncPoint *GetInstance();
@@ -23,46 +28,33 @@ public:
 
   ~SyncPoint();
 
-  void LoadDependency(const std::vector<SyncPointPair> &dependencies) {
-    sync_impl_->LoadDependency(dependencies);
-  }
-
-  void EnableProcessing() { sync_impl_->EnableProcessing(); }
-
-  void DisableProcessing() { sync_impl_->DisableProcessing(); }
+  void LoadDependency(const std::vector<SyncPointPair> &dependencies);
+  void EnableProcessing();
+  void DisableProcessing();
 
   void SetCallBack(const std::string &point,
-                   const std::function<void(void *)> &callback) {
-    sync_impl_->SetCallBack(point, callback);
-  }
+                   const std::function<void(void *)> &callback);
 
-  void ClearAllCallBacks() { sync_impl_->ClearAllCallBacks(); }
+  void ClearAllCallBacks();
 
-  void ClearDependTrace() { sync_impl_->ClearDependTrace(); }
+  void ClearDependTrace();
 
   void Process(const std::string &point, void *func_arg = nullptr);
 
-  void Init() { sync_impl_->Init(); }
+  void Init();
 
 private:
   SyncPoint();
   SyncImpl *sync_impl_;
 };
 
-SyncPoint *SyncPoint::GetInstance() {
-  static SyncPoint sync_point;
-  return &sync_point;
-}
-SyncPoint::SyncPoint() : sync_impl_(new SyncImpl){};
-
-SyncPoint::~SyncPoint() { delete sync_impl_; }
-
-void SyncPoint::Process(const std::string &point, void *func_arg) {
-  sync_impl_->Process(point, func_arg);
-}
-
 } // namespace KVDK_NAMESPACE
 
 #define TEST_SYNC_POINT(x) KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x)
 #define TEST_SYNC_POINT_CALLBACK(x, y)                                         \
   KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x, y)
+
+#else
+#define TEST_SYNC_POINT(x)
+#define TEST_SYNC_POINT_CALLBACK(x, y)
+#endif
