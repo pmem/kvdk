@@ -333,17 +333,21 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
   std::lock_guard<std::mutex> lg(backup_lock);
   RAIICaller set_backup_processing([&]() { backup_processing = true; },
                                    [&]() { backup_processing = false; });
-  // During backup, the copying data maybe updated and write to new allocated
-  // segment, we need these updated data for recovery, so we copy data twice
-  uint64_t offset_head_1st = UINT64_MAX;
-  uint64_t offset_head_2nd;
+  // We prohibit allocate space from free space entry during backup, meanwhile,
+  // the copying data maybe updated and write to new allocated segment, we need
+  // these updated data for recovery, so we copy data twice
+  //
+  // There may be ongoing writing to just allocated space while we start backup,
+  // so we also wait for holding snapshot of access threads changed
+  uint64_t copy_offset_1st = pmem_size_;
+  uint64_t copy_offset_2nd = pmem_size_;
   std::vector<TimeStampType> thread_holding_snapshot_ts(
       palloc_thread_cache_.size());
   for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
     thread_holding_snapshot_ts[i] =
         version_controller_->GetLocalSnapshot(i).GetTimestamp();
-    offset_head_1st =
-        std::min(offset_head_1st, palloc_thread_cache_[i].segment_entry.offset);
+    copy_offset_1st =
+        std::min(copy_offset_1st, palloc_thread_cache_[i].segment_entry.offset);
   }
 
   for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
@@ -354,19 +358,19 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
     }
   }
 
-  memcpy(backup_file, pmem_, offset_head_1st);
-  //  multi_thread_memcpy((char *)backup_file, pmem_, offset_head_1st, 4);
+  memcpy(backup_file, pmem_, copy_offset_1st);
+  //  multi_thread_memcpy((char *)backup_file, pmem_, copy_offset_1st, 4);
   {
     std::lock_guard<SpinMutex> lg(offset_head_lock_);
-    offset_head_2nd = offset_head_;
+    copy_offset_2nd = offset_head_;
   }
-  memcpy((char *)backup_file + offset_head_1st, pmem_ + offset_head_1st,
-         offset_head_2nd - offset_head_1st);
-  //  multi_thread_memcpy((char *)backup_file + offset_head_1st,
-  //                      pmem_ + offset_head_1st,
-  //                      offset_head_2nd - offset_head_1st, 4);
+  memcpy((char *)backup_file + copy_offset_1st, pmem_ + copy_offset_1st,
+         copy_offset_2nd - copy_offset_1st);
+  //  multi_thread_memcpy((char *)backup_file + copy_offset_1st,
+  //                      pmem_ + copy_offset_1st,
+  //                      copy_offset_2nd - copy_offset_1st, 4);
 
-  msync(backup_file, offset_head_2nd, MS_SYNC);
+  msync(backup_file, copy_offset_2nd, MS_SYNC);
   close(fd);
   return Status::Ok;
 }
