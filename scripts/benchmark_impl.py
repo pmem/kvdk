@@ -7,7 +7,7 @@ from select import select
 
 from git import repo
 
-use_experimental_hashmap = True
+use_experimental_hashmap = False
 
 def __fill(exec, shared_para, data_type, report_path):
     new_para = shared_para + " -fill=1 -type={}".format(data_type)  

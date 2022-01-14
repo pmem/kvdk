@@ -16,7 +16,7 @@
 
 #include <immintrin.h>
 
-template <typename HashType, typename Pointer, size_t NSlot = 16, typename Alloc = std::allocator<Pointer>>
+template <typename HashType, typename Pointer, size_t NSlot = 8, typename Alloc = std::allocator<Pointer>>
 class HashPointerMultimap
 {
   public:

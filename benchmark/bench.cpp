@@ -389,7 +389,7 @@ bool ProcessBenchmarkConfigs() {
   }
   if (FLAGS_use_experimental_hashmap)
   {
-    if (bench_data_type != DataType::String || bench_data_type != DataType::Blackhole)
+    if (bench_data_type != DataType::String && bench_data_type != DataType::Blackhole)
     {
       throw std::invalid_argument{"Data type must be string or blackhole for experimental hashmap"};
     }
