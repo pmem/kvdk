@@ -195,7 +195,8 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
       db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
       configs_.pmem_block_size, configs_.max_access_threads,
-      configs_.populate_pmem_space, configs_.use_devdax_mode));
+      configs_.populate_pmem_space, configs_.use_devdax_mode,
+      &version_controller_));
   thread_manager_.reset(new (std::nothrow)
                             ThreadManager(configs_.max_access_threads));
   hash_table_.reset(HashTable::NewHashTable(

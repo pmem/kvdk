@@ -14,6 +14,7 @@
 #include "../allocator.hpp"
 #include "../data_record.hpp"
 #include "../structures.hpp"
+#include "../version/version_controller.hpp"
 #include "free_list.hpp"
 #include "kvdk/namespace.hpp"
 
@@ -35,7 +36,8 @@ public:
   NewPMEMAllocator(const std::string &pmem_file, uint64_t pmem_size,
                    uint64_t num_segment_blocks, uint32_t block_size,
                    uint32_t max_access_threads,
-                   bool populate_pmem_space_on_new_file, bool use_devdax_mode);
+                   bool populate_pmem_space_on_new_file, bool use_devdax_mode,
+                   VersionController *version_controller);
 
   // Allocate a PMem space, return offset and actually allocated space in bytes
   SpaceEntry Allocate(uint64_t size) override;
@@ -112,7 +114,8 @@ private:
   friend Freelist;
 
   PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
-                uint32_t block_size, uint32_t max_access_threads);
+                uint32_t block_size, uint32_t max_access_threads,
+                VersionController *version_controller);
   // Access threads cache a dedicated PMem segment and a free space to
   // avoid contention
   struct alignas(64) PAllocThreadCache {
@@ -162,5 +165,9 @@ private:
   Freelist free_list_;
   // For quickly get corresponding block size of a requested data size
   std::vector<uint16_t> data_size_2_block_size_;
+  VersionController *version_controller_;
+
+  std::mutex backup_lock;
+  bool backup_processing;
 };
 } // namespace KVDK_NAMESPACE

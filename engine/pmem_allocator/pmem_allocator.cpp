@@ -13,14 +13,16 @@ namespace KVDK_NAMESPACE {
 
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
-                             uint32_t max_access_threads)
+                             uint32_t max_access_threads,
+                             VersionController *version_controller)
     : pmem_(pmem), palloc_thread_cache_(max_access_threads),
       block_size_(block_size), segment_size_(num_segment_blocks * block_size),
       offset_head_(0), pmem_size_(pmem_size),
       free_list_(num_segment_blocks, block_size, max_access_threads,
                  pmem_size / block_size / num_segment_blocks *
                      num_segment_blocks /*num blocks*/,
-                 this) {
+                 this),
+      version_controller_(version_controller) {
   init_data_size_2_block_size();
 }
 
@@ -54,13 +56,11 @@ void PMEMAllocator::populateSpace() {
 
 PMEMAllocator::~PMEMAllocator() { pmem_unmap(pmem_, pmem_size_); }
 
-PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
-                                               uint64_t pmem_size,
-                                               uint64_t num_segment_blocks,
-                                               uint32_t block_size,
-                                               uint32_t max_access_threads,
-                                               bool populate_space_on_new_file,
-                                               bool use_devdax_mode) {
+PMEMAllocator *PMEMAllocator::NewPMEMAllocator(
+    const std::string &pmem_file, uint64_t pmem_size,
+    uint64_t num_segment_blocks, uint32_t block_size,
+    uint32_t max_access_threads, bool populate_space_on_new_file,
+    bool use_devdax_mode, VersionController *version_controller) {
   int is_pmem;
   uint64_t mapped_size;
   char *pmem;
@@ -114,8 +114,9 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
   // We need to allocate a byte map in pmem allocator which require a large
   // memory, so we catch exception here
   try {
-    allocator = new PMEMAllocator(pmem, pmem_size, num_segment_blocks,
-                                  block_size, max_access_threads);
+    allocator =
+        new PMEMAllocator(pmem, pmem_size, num_segment_blocks, block_size,
+                          max_access_threads, version_controller);
   } catch (std::bad_alloc &err) {
     GlobalLogger.Error("Error while initialize PMEMAllocator: %s\n",
                        err.what());
@@ -229,7 +230,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   }
   auto &palloc_thread_cache = palloc_thread_cache_[access_thread.id];
   while (palloc_thread_cache.segment_entry.size < aligned_size) {
-    while (1) {
+    while (!backup_processing /* we do not allocate space from free space entry if there is a backup thread processing */) {
       // allocate from free list space
       if (palloc_thread_cache.free_entry.size >= aligned_size) {
         // Padding remaining space
@@ -329,14 +330,30 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
     GlobalLogger.Info("%lu threads memcpy done\n", ths.size());
   };
 
+  std::lock_guard<std::mutex> lg(backup_lock);
+  RAIICaller set_backup_processing([&]() { backup_processing = true; },
+                                   [&]() { backup_processing = false; });
   // During backup, the copying data maybe updated and write to new allocated
   // segment, we need these updated data for recovery, so we copy data twice
-  uint64_t offset_head_1st;
+  uint64_t offset_head_1st = UINT64_MAX;
   uint64_t offset_head_2nd;
-  {
-    std::lock_guard<SpinMutex> lg(offset_head_lock_);
-    offset_head_1st = offset_head_;
+  std::vector<TimeStampType> thread_holding_snapshot_ts(
+      palloc_thread_cache_.size());
+  for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
+    thread_holding_snapshot_ts[i] =
+        version_controller_->GetLocalSnapshot(i).GetTimestamp();
+    offset_head_1st =
+        std::min(offset_head_1st, palloc_thread_cache_[i].segment_entry.offset);
   }
+
+  for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
+    if (thread_holding_snapshot_ts[i] != kMaxTimestamp &&
+        thread_holding_snapshot_ts[i] ==
+            version_controller_->GetLocalSnapshot(i).GetTimestamp()) {
+      sleep(1);
+    }
+  }
+
   memcpy(backup_file, pmem_, offset_head_1st);
   //  multi_thread_memcpy((char *)backup_file, pmem_, offset_head_1st, 4);
   {
@@ -349,9 +366,7 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
   //                      pmem_ + offset_head_1st,
   //                      offset_head_2nd - offset_head_1st, 4);
 
-  GlobalLogger.Info("msync\n");
   msync(backup_file, offset_head_2nd, MS_SYNC);
-  GlobalLogger.Info("msync done\n");
   close(fd);
   return Status::Ok;
 }
