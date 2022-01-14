@@ -5,14 +5,16 @@ import itertools
 numanode = 0
 pmem_path = "/mnt/pmem{}/kvdk_benchmark".format(numanode)
 bin = "../build/bench"
-exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
+env = "MIMALLOC_SHOW_STATS=1 LD_PRELOAD=/usr/local/lib/libmimalloc.so"
+# env = ""
+exec = "{2} numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin, env)
 
 num_thread = 64
 value_size = 120
 # constant: value size always be "value_size",
 # random: value size randomly distributed in [1, value_size]
 value_size_distributions = ['constant']
-key_distributions = ['random', 'zipf']
+key_distributions = ['random']
 test_duration = 10                         # For operations other than fill
 populate_on_fill = 1                    # For fill only
 pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
@@ -20,11 +22,11 @@ fill_data_size = 96 * 1024 * 1024 * 1024
 num_collection = 16
 
 benchmarks = [
-    benchmark_impl.read_random, 
-    benchmark_impl.range_scan, 
-    benchmark_impl.insert_random,
-    benchmark_impl.batch_insert_random, 
-    benchmark_impl.update_random, 
+    # benchmark_impl.read_random, 
+    # benchmark_impl.range_scan, 
+    # benchmark_impl.insert_random,
+    # benchmark_impl.batch_insert_random, 
+    # benchmark_impl.update_random, 
     benchmark_impl.read_write_random]
 
 data_types = []

@@ -1354,10 +1354,29 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
 
     uint64_t new_ts = get_timestamp();
+
     assert(!found || new_ts > data_entry.meta.timestamp);
 
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
                                       new_ts, StringDataRecord, key, value);
+    StringRecord* pmem_record = static_cast<StringRecord*>(block_base);
+    StringRecord* old = hash_entry.index.string_record;
+    if (found && (old->entry.meta.timestamp > new_ts))
+    {
+      std::lock_guard<std::mutex> guard{list_mu_};
+      
+      std::cerr << old->entry.meta.timestamp << std::endl;
+      std::cerr << pmem_record->entry.meta.timestamp << std::endl;
+      auto old_key = old->Key();
+      auto new_key = pmem_record->Key();
+      size_t sink;
+      memcpy(&sink, old_key.data(), 8);
+      std::cerr << sink << std::endl;
+      memcpy(&sink, new_key.data(), 8);
+      std::cerr << sink << std::endl;
+
+      throw std::runtime_error{"Old record has newer timestamp!"};
+    }
 
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
@@ -1941,10 +1960,23 @@ Status KVEngine::StringSetImpl2(const StringView &key, const StringView &value)
                                       new_ts, StringDataRecord, key, value);
 
   StringRecord *old = hmap_->insert(key, static_cast<StringRecord*>(block_base), StringExtractKey);
+  StringRecord *pmem_record = static_cast<StringRecord*>(block_base);
   if (old != nullptr)
   {
     if (old->entry.meta.timestamp > new_ts)
     {
+      std::lock_guard<std::mutex> guard{list_mu_};
+
+      std::cerr << old->entry.meta.timestamp << std::endl;
+      std::cerr << pmem_record->entry.meta.timestamp << std::endl;
+      auto old_key = old->Key();
+      auto new_key = pmem_record->Key();
+      size_t sink;
+      memcpy(&sink, old_key.data(), 8);
+      std::cerr << sink << std::endl;
+      memcpy(&sink, new_key.data(), 8);
+      std::cerr << sink << std::endl;
+
       throw std::runtime_error{"Old record has newer timestamp!"};
     }
     purgeAndFree(old);
@@ -2095,6 +2127,15 @@ Status KVEngine::StringRecordRestoreImpl2(StringRecord *pmem_record) {
   if (old != nullptr)
   {
     GlobalLogger.Error("Found duplicate string record. Older one is purged!\n");
+    std::cerr << old->entry.meta.timestamp << std::endl;
+    std::cerr << pmem_record->entry.meta.timestamp << std::endl;
+    auto old_key = old->Key();
+    auto new_key = pmem_record->Key();
+    size_t sink;
+    memcpy(&sink, old_key.data(), 8);
+    std::cerr << sink << std::endl;
+    memcpy(&sink, new_key.data(), 8);
+    std::cerr << sink << std::endl;
     if (pmem_record->entry.meta.timestamp > old->entry.meta.timestamp)
     {
       purgeAndFree(old);
