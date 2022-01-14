@@ -215,6 +215,11 @@ template <typename T> class AlignedAllocator {
 public:
   using value_type = T;
 
+  AlignedAllocator() = default;
+  
+  template<typename U>
+  AlignedAllocator(AlignedAllocator<U> const& other) {};
+
   inline T *allocate(size_t n) {
     static_assert(sizeof(T) % alignof(T) == 0);
     T *p = static_cast<T *>(aligned_alloc(alignof(T), n * sizeof(T)));

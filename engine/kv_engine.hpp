@@ -21,6 +21,7 @@
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "hash_table.hpp"
+#include "hashmap/hashmap.hpp"
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
@@ -179,6 +180,21 @@ private:
   Status StringBatchWriteImpl(const WriteBatch::KV &kv,
                               BatchWriteHint &batch_hint);
 
+  Status StringGetImpl2(const StringView &key, std::string *value);
+
+  Status StringSetImpl2(const StringView &key, const StringView &value);
+
+  Status StringDeleteImpl2(const StringView &key);
+
+  Status StringBatchWriteImpl2(const WriteBatch::KV &kv,
+                              BatchWriteHint &batch_hint);
+
+  Status StringRecordRestoreImpl2(StringRecord *pmem_record);
+
+
+  Status BatchWriteImpl2(const WriteBatch &write_batch);
+
+
   Status SSetImpl(Skiplist *skiplist, const StringView &user_key,
                   const StringView &value);
 
@@ -296,6 +312,9 @@ private:
   uint64_t ts_on_startup_ = 0;
   uint64_t newest_version_on_startup_ = 0;
   std::shared_ptr<HashTable> hash_table_;
+  
+  using HMap = HashMap<StringView, StringRecord*, std::hash<StringView>, std::equal_to<StringView>, AlignedAllocator<StringRecord*>>;
+  std::unique_ptr<HMap> hmap_;
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>

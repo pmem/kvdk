@@ -73,6 +73,10 @@ struct Configs {
   // contentions and more memory consumption
   uint32_t num_buckets_per_slot = 1;
 
+  // Experimental hashmap. Occupies less DRAM than HashTable
+  // When enabled, only String data type is supported.
+  bool use_experimental_hashmap = false;
+
   // Time interval to do background work in seconds
   //
   // In KVDK, a background thread will regularly organize PMem free space,

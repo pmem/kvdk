@@ -7,9 +7,10 @@ from select import select
 
 from git import repo
 
+use_experimental_hashmap = True
 
 def __fill(exec, shared_para, data_type, report_path):
-    new_para = shared_para + " -fill=1 -type={}".format(data_type)
+    new_para = shared_para + " -fill=1 -type={}".format(data_type)  
     report = report_path + "fill"
     print("Fill {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
@@ -167,6 +168,8 @@ def run_benchmark(
         value_size, 
         value_size_distribution,
         key_distribution)
+
+    shared_para = shared_para if (not use_experimental_hashmap or data_type != "string") else (shared_para + " -use_experimental_hashmap=1")
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:

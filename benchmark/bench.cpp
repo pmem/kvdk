@@ -86,6 +86,8 @@ DEFINE_bool(opt_large_sorted_collection_restore, false,
             "skiplist. When having few large skiplists, the optimization can "
             "get better performance");
 
+DEFINE_bool(use_experimental_hashmap, false, "Enable experimental hashmap. Only string data type is supported");
+
 DEFINE_bool(use_devdax_mode, false, "Use devdax device for kvdk");
 
 class Timer {
@@ -385,6 +387,14 @@ bool ProcessBenchmarkConfigs() {
   } else {
     return false;
   }
+  if (FLAGS_use_experimental_hashmap)
+  {
+    if (bench_data_type != DataType::String || bench_data_type != DataType::Blackhole)
+    {
+      throw std::invalid_argument{"Data type must be string or blackhole for experimental hashmap"};
+    }
+  }
+  
   // Initialize collections and batch parameters
   switch (bench_data_type) {
   case DataType::String:
@@ -477,6 +487,7 @@ int main(int argc, char **argv) {
   configs.opt_large_sorted_collection_restore =
       FLAGS_opt_large_sorted_collection_restore;
   configs.use_devdax_mode = FLAGS_use_devdax_mode;
+  configs.use_experimental_hashmap = FLAGS_use_experimental_hashmap;
 
   Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
 

@@ -11,6 +11,7 @@
 #include <atomic>
 #include <future>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <thread>
 
@@ -174,11 +175,19 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
       configs_.populate_pmem_space, configs_.use_devdax_mode));
   thread_manager_.reset(new (std::nothrow)
                             ThreadManager(configs_.max_write_threads));
-  hash_table_.reset(HashTable::NewHashTable(
-      configs_.hash_bucket_num, configs_.hash_bucket_size,
-      configs_.num_buckets_per_slot, pmem_allocator_,
-      configs_.max_write_threads));
-  if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
+  if (!configs_.use_experimental_hashmap)
+  {
+    hash_table_.reset(HashTable::NewHashTable(
+        configs_.hash_bucket_num, configs_.hash_bucket_size,
+        configs_.num_buckets_per_slot, pmem_allocator_,
+        configs_.max_write_threads));
+  }
+  else
+  {
+    hmap_.reset(new HMap{configs_.hash_bucket_num * configs_.hash_bucket_size / 16});
+  }
+  
+  if (pmem_allocator_ == nullptr || (hash_table_ == nullptr && !configs_.use_experimental_hashmap) ||
       thread_manager_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
@@ -335,10 +344,19 @@ Status KVEngine::RestoreData() {
     }
     case RecordType::StringDataRecord:
     case RecordType::StringDeleteRecord: {
-      s = RestoreStringRecord(
-          static_cast<StringRecord *>(recovering_pmem_record),
-          data_entry_cached);
-      break;
+      if (configs_.use_experimental_hashmap)
+      {
+        s = StringRecordRestoreImpl2(static_cast<StringRecord *>(recovering_pmem_record));
+      }
+      else
+      {
+        s = RestoreStringRecord(
+            static_cast<StringRecord *>(recovering_pmem_record),
+            data_entry_cached);
+
+      }
+        break;
+      
     }
     case RecordType::DlistRecord:
     case RecordType::DlistHeadRecord:
@@ -844,7 +862,16 @@ Status KVEngine::Get(const StringView key, std::string *value) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return HashGetImpl(key, value, StringRecordType);
+  if (configs_.use_experimental_hashmap)
+  {
+    return StringGetImpl2(key, value);
+  }
+  else
+  {
+
+    return HashGetImpl(key, value, StringRecordType);
+  }
+  
 }
 
 Status KVEngine::Delete(const StringView key) {
@@ -857,7 +884,15 @@ Status KVEngine::Delete(const StringView key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return StringDeleteImpl(key);
+  
+  if (configs_.use_experimental_hashmap)
+  {
+    return StringDeleteImpl2(key);
+  }
+  else
+  {
+    return StringDeleteImpl(key);
+  }
 }
 
 Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
@@ -1100,6 +1135,11 @@ Status KVEngine::MaybeInitPendingBatchFile() {
 }
 
 Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
+  if (configs_.use_experimental_hashmap)
+  {
+    return BatchWriteImpl2(write_batch);
+  }
+
   if (write_batch.Size() > kMaxWriteBatchSize) {
     return Status::BatchOverflow;
   }
@@ -1339,7 +1379,16 @@ Status KVEngine::Set(const StringView key, const StringView value) {
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
-  return StringSetImpl(key, value);
+  
+  if (configs_.use_experimental_hashmap)
+  {
+    return StringSetImpl2(key, value);
+  }
+  else
+  {
+    return StringSetImpl(key, value);
+
+  }
 }
 
 } // namespace KVDK_NAMESPACE
@@ -1840,3 +1889,224 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
 }
 
 } // namespace KVDK_NAMESPACE
+
+namespace KVDK_NAMESPACE {
+inline StringView StringExtractKey(StringRecord* p)
+{
+  return p->Key();
+}
+
+Status KVEngine::StringGetImpl2(const StringView &key, std::string *value)
+{
+
+  while (true) {
+    StringRecord* p = hmap_->find(key, StringExtractKey);
+
+    if (p == nullptr) {
+      return Status::NotFound;
+    }
+
+    // Copy PMem data record to dram buffer
+    auto record_size = p->entry.header.record_size;
+    // PMem region overwritten by other contents
+    if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
+      continue;
+    }
+    char data_buffer[record_size];
+    memcpy(data_buffer, p, record_size);
+    // If the pmem data record is corrupted or been reused by
+    // another key, redo search
+    if (ValidateRecordAndGetValue(data_buffer, p->entry.header.checksum,
+                                  value)) {
+      break;
+    }
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::StringSetImpl2(const StringView &key, const StringView &value)
+{
+  auto record_size = sizeof(StringRecord) + key.size() + value.size();
+
+  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(record_size);
+  if (sized_space_entry.size == 0) {
+    return Status::PmemOverflow;
+  }
+
+  auto guard = hmap_->acquire_lock(key);
+
+  uint64_t new_ts = get_timestamp();
+  void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
+    StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
+                                      new_ts, StringDataRecord, key, value);
+
+  StringRecord *old = hmap_->insert(key, static_cast<StringRecord*>(block_base), StringExtractKey);
+  if (old != nullptr)
+  {
+    if (old->entry.meta.timestamp > new_ts)
+    {
+      throw std::runtime_error{"Old record has newer timestamp!"};
+    }
+    purgeAndFree(old);
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::StringDeleteImpl2(const StringView &key)
+{
+    auto guard = hmap_->acquire_lock(key);
+    StringRecord* p = hmap_->erase(key, StringExtractKey);
+
+    if (p != nullptr) {
+      purgeAndFree(p);
+    }
+    return Status::Ok;
+}
+
+Status KVEngine::StringBatchWriteImpl2(const WriteBatch::KV &kv,
+                            BatchWriteHint &batch_hint)
+{
+  switch (kv.type)
+  {
+  case RecordType::StringDeleteRecord:
+  {
+    StringRecord* old = hmap_->erase(kv.key, StringExtractKey);
+    batch_hint.pmem_record_to_free = old;
+    return Status::Ok;
+  }
+  case RecordType::StringDataRecord:
+  {
+    void *block_base =
+        pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
+    StringRecord::PersistStringRecord(
+        block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
+        static_cast<RecordType>(kv.type), kv.key, kv.value);
+
+    StringRecord* old = hmap_->insert(kv.key, static_cast<StringRecord*>(block_base), StringExtractKey);
+    assert (old == nullptr || (batch_hint.timestamp > old->entry.meta.timestamp));
+    batch_hint.pmem_record_to_free = old;
+    return Status::Ok;
+  }
+  default:
+  {
+    throw std::runtime_error{"Invalid record type in StringBatchWriteImpl2!"};
+  }
+  }
+}
+
+Status KVEngine::BatchWriteImpl2(const WriteBatch &write_batch) {
+  if (write_batch.Size() > kMaxWriteBatchSize) {
+    return Status::BatchOverflow;
+  }
+
+  Status s = MaybeInitWriteThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  s = MaybeInitPendingBatchFile();
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  using lock_type = typename HMap::lock_type;
+
+  std::map<lock_type*, lock_type*> mutexes;
+  
+  std::vector<BatchWriteHint> batch_hints(write_batch.Size());
+  std::vector<uint64_t> space_entry_offsets;
+  for (size_t i = 0; i < write_batch.Size(); i++) {
+    auto &kv = write_batch.kvs[i];
+    if (kv.type == StringDataRecord) {
+      // Allocate space for data records
+      uint32_t requested_size =
+          kv.key.size() + kv.value.size() + sizeof(StringRecord);
+      batch_hints[i].allocated_space =
+          pmem_allocator_->Allocate(requested_size);
+      // No enough space for batch write
+      if (batch_hints[i].allocated_space.size == 0) {
+        for (size_t j = 0; j < i; j++) {
+          pmem_allocator_->Free(batch_hints[j].allocated_space);
+        }
+        return Status::PmemOverflow;
+      }
+      space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
+    } else {
+      kvdk_assert(kv.type == StringDeleteRecord,
+                  "only support string type batch write");
+    }
+    mutexes.emplace(hmap_->mutex(kv.key), hmap_->mutex(kv.key));
+  }
+
+  // lock spin mutex with order to avoid deadlock
+  std::vector<std::unique_lock<lock_type>> guards;
+  for(auto pair : mutexes)
+  {
+    guards.emplace_back(*pair.second);
+  }
+    
+  TimeStampType ts = get_timestamp();
+  for (size_t i = 0; i < write_batch.Size(); i++) {
+    batch_hints[i].timestamp = ts;
+  }
+
+  // Persist batch write status as processing
+  PendingBatch pending_batch(PendingBatch::Stage::Processing,
+                             space_entry_offsets.size(), ts);
+  pending_batch.PersistProcessing(
+      thread_res_[write_thread.id].persisted_pending_batch,
+      space_entry_offsets);
+
+  // Do batch writes
+  for (size_t i = 0; i < write_batch.Size(); i++) {
+    if (write_batch.kvs[i].type == StringDataRecord ||
+        write_batch.kvs[i].type == StringDeleteRecord) {
+      s = StringBatchWriteImpl2(write_batch.kvs[i], batch_hints[i]);
+    } else {
+      return Status::NotSupported;
+    }
+
+    // Something wrong
+    // TODO: roll back finished writes (hard to roll back hash table now)
+    if (s != Status::Ok) {
+      assert(s == Status::MemoryOverflow);
+      std::abort();
+    }
+  }
+
+  pending_batch.PersistStage(PendingBatch::Stage::Finish);
+
+  // Free updated kvs, we should purge all updated kvs before release locks and
+  // after persist write stage
+  for (size_t i = 0; i < write_batch.Size(); i++) {
+    if (batch_hints[i].pmem_record_to_free != nullptr) {
+      purgeAndFree(batch_hints[i].pmem_record_to_free);
+    }
+  }
+  return s;
+}
+
+Status KVEngine::StringRecordRestoreImpl2(StringRecord *pmem_record) {
+  assert(pmem_record->entry.meta.type & StringRecordType);
+  std::string key{pmem_record->Key()};
+
+  auto guard = hmap_->acquire_lock(key);
+  StringRecord* old = hmap_->insert(key, pmem_record, StringExtractKey);
+  if (old != nullptr)
+  {
+    GlobalLogger.Error("Found duplicate string record. Older one is purged!\n");
+    if (pmem_record->entry.meta.timestamp > old->entry.meta.timestamp)
+    {
+      purgeAndFree(old);
+    }
+    else
+    {
+      StringRecord* actual_old = hmap_->insert(key, old, StringExtractKey); 
+      assert(actual_old == pmem_record);
+      purgeAndFree(actual_old);
+    }
+  }
+  return Status::Ok;
+}
+
+}
