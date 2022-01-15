@@ -7,8 +7,6 @@ from select import select
 
 from git import repo
 
-use_experimental_hashmap = False
-
 def __fill(exec, shared_para, data_type, report_path):
     new_para = shared_para + " -fill=1 -type={}".format(data_type)  
     report = report_path + "fill"
@@ -169,10 +167,19 @@ def run_benchmark(
         value_size_distribution,
         key_distribution)
 
-    shared_para = shared_para if (not use_experimental_hashmap or data_type != "string") else (shared_para + " -use_experimental_hashmap=1")
     # we always fill data before run benchmarks
     __fill(exec, shared_para, data_type, report_path)
     for benchmark in benchmarks:
         benchmark(exec, shared_para, data_type, report_path)
 
     os.system("rm -rf {0}".format(pmem_path))
+
+    if (data_type == "string"):
+        shared_para = shared_para + " -use_experimental_hashmap=1"
+        report_path2 = report_path + "experimental/"
+        os.system("mkdir -p {}".format(report_path2))
+        __fill(exec, shared_para, data_type, report_path2)
+        for benchmark in benchmarks:
+            benchmark(exec, shared_para, data_type, report_path2)
+        
+        os.system("rm -rf {0}".format(pmem_path))
