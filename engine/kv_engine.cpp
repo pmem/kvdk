@@ -798,11 +798,9 @@ Status KVEngine::Recovery() {
 
   GlobalLogger.Info("Rebuild skiplist done\n");
 
-  if (restored_.load() == 0) {
-    for (auto &ts : thread_res_) {
-      if (ts.newest_restored_ts > newest_version_on_startup_) {
-        newest_version_on_startup_ = ts.newest_restored_ts;
-      }
+  for (auto &ts : thread_res_) {
+    if (ts.newest_restored_ts > newest_version_on_startup_) {
+      newest_version_on_startup_ = ts.newest_restored_ts;
     }
   }
 
