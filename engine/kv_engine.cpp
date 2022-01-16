@@ -593,9 +593,8 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
           std::unique_lock<SpinMutex> ul(*hash_hint.spin);
           std::unique_lock<SpinMutex> prev_record_lock;
           if (!Skiplist::SearchAndLockRecordPos(
-                &splice, older_version_record, hash_hint.spin,
-                &prev_record_lock, pmem_allocator_.get(), hash_table_.get()),
-            false /* we do not check linkage for restore backup as the record is not linked*/) {
+                  &splice, older_version_record, hash_hint.spin,
+                  &prev_record_lock, pmem_allocator_.get(), hash_table_.get(), false /* we do not check linkage for restore backup as the record is not linked*/)) {
             continue;
           }
           Skiplist::LinkDLRecord(splice.prev_pmem_record,
