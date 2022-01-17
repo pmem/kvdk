@@ -1,3 +1,13 @@
+/* Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+ * This source code is licensed under both the GPLv2 (found in the
+ * COPYING file in the root directory) and Apache 2.0 License
+ * (found in the LICENSE.Apache file in the root directory).
+ */
+
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
+
 #include "sync_point.hpp"
 
 #if DEBUG_LEVEL > 0
@@ -32,7 +42,7 @@ void SyncPoint::ClearAllCallBacks() { sync_impl_->ClearAllCallBacks(); }
 
 void SyncPoint::ClearDependTrace() { sync_impl_->ClearDependTrace(); }
 
-void SyncPoint::Init() { sync_impl_->Init(); }
+void SyncPoint::Reset() { sync_impl_->Reset(); }
 
 } // namespace KVDK_NAMESPACE
 

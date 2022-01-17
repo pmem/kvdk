@@ -1414,12 +1414,15 @@ std::ostream& operator<<(std::ostream& out, basic_string_view<CharT, Traits> con
 
 #if !USE_STL_STRING_VIEW
 #include<bits/functional_hash.h>
+namespace std
+{
 template<>
-struct std::hash<pmem::obj::string_view>
+struct hash<pmem::obj::string_view>
 {
 	size_t operator()(pmem::obj::string_view const& sv) const noexcept
-	{ return std::_Hash_impl::hash(sv.data(), sv.size()); }
+	{ return _Hash_impl::hash(sv.data(), sv.size()); }
 };
+}
 #endif /* !USE_STL_STRING_VIEW */
 
 #endif /* LIBPMEMOBJ_CPP_STRING_VIEW */

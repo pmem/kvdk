@@ -1432,8 +1432,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   std::vector<std::string> collections{"collection0", "collection1",
                                        "collection2"};
 
-  auto cmp0 = [](const pmem::obj::string_view &a,
-                 const pmem::obj::string_view &b) -> int {
+  auto cmp0 = [](const StringView &a,
+                 const StringView &b) -> int {
     double scorea = std::stod(a.data());
     double scoreb = std::stod(b.data());
     if (scorea == scoreb)
@@ -1444,8 +1444,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       return -1;
   };
 
-  auto cmp1 = [](const pmem::obj::string_view &a,
-                 const pmem::obj::string_view &b) -> int {
+  auto cmp1 = [](const StringView &a,
+                 const StringView &b) -> int {
     double scorea = std::stod(a.data());
     double scoreb = std::stod(b.data());
     if (scorea == scoreb)
@@ -1628,7 +1628,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
   int cnt = 10;
   {
     SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Init();
+    SyncPoint::GetInstance()->Reset();
     SyncPoint::GetInstance()->SetCallBack(
         "KVEnigne::BatchWrite::BatchWriteRecord", [&](void *index) {
           size_t idx = *(size_t *)(index);
@@ -1662,7 +1662,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
   {
     std::atomic<int> write_num(1);
     SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Init();
+    SyncPoint::GetInstance()->Reset();
 
     SyncPoint::GetInstance()->SetCallBack(
         "KVEnigne::BatchWrite::BatchWriteRecord",
@@ -1709,7 +1709,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPoint) {
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
               Status::Ok);
     SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Init();
+    SyncPoint::GetInstance()->Reset();
     SyncPoint::GetInstance()->SetCallBack(
         "KVEngine::Skiplist::InsertDLRecord::UpdatePrev", [&](void *) {
           if (update_num % 8 == 0) {
@@ -1784,7 +1784,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
 
     std::atomic<bool> first_record(false);
     SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Init();
+    SyncPoint::GetInstance()->Reset();
     SyncPoint::GetInstance()->LoadDependency(
         {{"KVEngine::Skiplist::InsertDLRecord::UpdatePrev",
           "Test::Iter::key0"}});

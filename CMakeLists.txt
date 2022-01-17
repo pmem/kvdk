@@ -73,18 +73,21 @@ configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
 	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
-set_target_properties(
-engine PROPERTIES PUBLIC_HEADER 
-"\
-include/kvdk/configs.hpp;\
-include/kvdk/engine.h;\
-include/kvdk/engine.hpp;\
-include/kvdk/iterator.hpp;\
-include/kvdk/namespace.hpp;\
-include/kvdk/status.h;\
-include/kvdk/status.hpp;\
-include/kvdk/write_batch.hpp")
+set(KVDK_PUBLIC_HEADERS
+    ${PROJECT_SOURCE_DIR}/include/kvdk/collection.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/comparator.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/configs.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/engine.h
+    ${PROJECT_SOURCE_DIR}/include/kvdk/engine.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/iterator.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/namespace.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/status.h
+    ${PROJECT_SOURCE_DIR}/include/kvdk/status.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/write_batch.hpp
+    ${PROJECT_SOURCE_DIR}/extern/libpmemobj++/string_view.hpp
+)
 
+set_target_properties(engine PROPERTIES PUBLIC_HEADER "${KVDK_PUBLIC_HEADERS}")
 
 install(TARGETS engine
 		PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
@@ -149,6 +152,4 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c*
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*
-        ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.h*
-        ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.c*)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*)

@@ -26,6 +26,7 @@
 #include "structures.hpp"
 
 #include "utils/sync_point.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
@@ -194,10 +195,9 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   return s;
 }
 
-Status
-KVEngine::CreateSortedCollection(const StringView collection_name,
-                                 Collection **collection_ptr,
-                                 const pmem::obj::string_view &comp_name) {
+Status KVEngine::CreateSortedCollection(const StringView collection_name,
+                                        Collection **collection_ptr,
+                                        const StringView &comp_name) {
   *collection_ptr = nullptr;
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
@@ -754,9 +754,7 @@ Status KVEngine::Recovery() {
   if (s != Status::Ok) {
     return s;
   }
-
-  GlobalLogger.Info("RestorePendingBatch done: iterated %lu records\n",
-                    restored_.load());
+  GlobalLogger.Info("RestorePendingBatch done.\n");
 
   std::vector<std::future<Status>> fs;
   for (uint32_t i = 0; i < configs_.max_write_threads; i++) {
@@ -774,6 +772,12 @@ Status KVEngine::Recovery() {
   GlobalLogger.Info("RestoreData done: iterated %lu records\n",
                     restored_.load());
 
+  for (auto &ts : thread_res_) {
+    if (ts.newest_restored_ts > newest_version_on_startup_) {
+      newest_version_on_startup_ = ts.newest_restored_ts;
+    }
+  }
+
   // restore skiplist by two optimization strategy
   s = sorted_rebuilder_.Rebuild(this);
   if (s != Status::Ok) {
@@ -781,14 +785,6 @@ Status KVEngine::Recovery() {
   }
 
   GlobalLogger.Info("Rebuild skiplist done\n");
-
-  if (restored_.load() == 0) {
-    for (auto &ts : thread_res_) {
-      if (ts.newest_restored_ts > newest_version_on_startup_) {
-        newest_version_on_startup_ = ts.newest_restored_ts;
-      }
-    }
-  }
 
   return Status::Ok;
 }
@@ -1328,7 +1324,9 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
 
     uint64_t new_ts = get_timestamp();
-    assert(!found || new_ts > data_entry.meta.timestamp);
+
+    kvdk_assert(!found || new_ts > data_entry.meta.timestamp,
+                "old record has newer timestamp!");
 
     TEST_SYNC_POINT("KVEngine::StringSetImpl::PersistBefore");
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,

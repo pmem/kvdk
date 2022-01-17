@@ -1,3 +1,13 @@
+/* Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+ * This source code is licensed under both the GPLv2 (found in the
+ * COPYING file in the root directory) and Apache 2.0 License
+ * (found in the LICENSE.Apache file in the root directory).
+ */
+
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
+
 #pragma one
 
 #include <assert.h>
@@ -17,22 +27,22 @@
 namespace KVDK_NAMESPACE {
 
 struct SyncPointPair {
-  std::string predecessor;
-  std::string successor;
+  std::string producer;
+  std::string consumer;
 };
 
 struct SyncImpl {
   SyncImpl() : ready_(false) {}
   void LoadDependency(const std::vector<SyncPointPair> &dependencies) {
     std::lock_guard<std::mutex> lock(mutex_);
-    successors_.clear();
-    predecessors_.clear();
+    consumers_.clear();
+    producers_.clear();
     cleared_points_.clear();
     for (const auto &dependency : dependencies) {
-      successors_[dependency.predecessor].push_back(dependency.successor);
-      predecessors_[dependency.successor].push_back(dependency.predecessor);
-      point_table_.insert(dependency.successor);
-      point_table_.insert(dependency.predecessor);
+      consumers_[dependency.producer].push_back(dependency.consumer);
+      producers_[dependency.consumer].push_back(dependency.producer);
+      point_table_.insert(dependency.consumer);
+      point_table_.insert(dependency.producer);
     }
     cv_.notify_all();
   }
@@ -52,7 +62,7 @@ struct SyncImpl {
 
     std::unique_lock<std::mutex> lock(mutex_);
 
-    while (!IsClearedAllPredecessors(point)) {
+    while (!IsClearedAllproducers(point)) {
       cv_.wait(lock);
     }
 
@@ -84,9 +94,9 @@ struct SyncImpl {
     callbacks_.clear();
   }
 
-  bool IsClearedAllPredecessors(const std::string &point) {
-    for (const std::string &predecessor : predecessors_[point]) {
-      if (cleared_points_.find(predecessor) == cleared_points_.end())
+  bool IsClearedAllproducers(const std::string &point) {
+    for (const std::string &producer : producers_[point]) {
+      if (cleared_points_.find(producer) == cleared_points_.end())
         return false;
     }
     return true;
@@ -97,11 +107,11 @@ struct SyncImpl {
     cleared_points_.clear();
   }
 
-  void Init() {
+  void Reset() {
     std::lock_guard<std::mutex> lock(mutex_);
     cleared_points_.clear();
-    successors_.clear();
-    predecessors_.clear();
+    consumers_.clear();
+    producers_.clear();
     callbacks_.clear();
     point_table_.clear();
     num_callbacks_running_ = 0;
@@ -116,9 +126,8 @@ private:
   std::unordered_set<std::string> point_table_;
   int num_callbacks_running_ = 0;
 
-  std::unordered_map<std::string, std::vector<std::string>> successors_;
-  std::unordered_map<std::string, std::vector<std::string>> predecessors_;
-  // sync points that have been passed through
+  std::unordered_map<std::string, std::vector<std::string>> consumers_;
+  std::unordered_map<std::string, std::vector<std::string>> producers_;
   std::unordered_set<std::string> cleared_points_;
   std::unordered_map<std::string, std::function<void(void *)>> callbacks_;
 };
