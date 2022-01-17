@@ -521,19 +521,6 @@ int main(int argc, char **argv) {
   for (int i = 0; i < read_threads; i++) {
     ts.emplace_back(FLAGS_scan ? DBScan : DBRead, i);
   }
-  /*
-  std::string backup_path("/mnt/pmem1/backup");
-
-  ts.emplace_back([&]() {
-    while (!done) {
-      system(std::string("rm -rf " + backup_path).c_str());
-      auto snapshot = engine->GetSnapshot();
-      engine->Backup(backup_path, snapshot);
-      engine->ReleaseSnapshot(snapshot);
-      sleep(5);
-    }
-  });
-  */
 
   uint64_t last_read_ops = 0;
   uint64_t last_read_notfound = 0;

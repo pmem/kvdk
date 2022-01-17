@@ -93,9 +93,6 @@ void OldRecordsCleaner::TryGlobalClean() {
     }
   }
 
-  // GlobalLogger.Info("Cleaned %lu delete records, delayed %lu delete
-  // records\n", handled_cnt, delayed_cnt);
-
   if (space_pending.entries.size() > 0) {
     space_pending.free_ts =
         kv_engine_->version_controller_.GetCurrentTimestamp();
@@ -114,21 +111,16 @@ void OldRecordsCleaner::TryGlobalClean() {
       break;
     }
   }
-  // GlobalLogger.Info("erase %lu\n", iter -
-  // pending_free_space_entries_.begin());
   pending_free_space_entries_.erase(pending_free_space_entries_.begin(), iter);
   iter = pending_free_space_entries_.begin();
   while (iter != pending_free_space_entries_.end()) {
     delayed_cnt += iter->entries.size();
     iter++;
   }
-  // GlobalLogger.Info("cleaned %lu space entries, delayed %lu space entries\n",
-  // handled_cnt, delayed_cnt);
 
   if (space_to_free.size() > 0) {
     kv_engine_->pmem_allocator_->BatchFree(space_to_free);
   }
-  // GlobalLogger.Info("batch freed %lu space entries\n", space_to_free.size());
 
   global_old_data_records_.clear();
   global_old_data_records_.emplace_back(std::move(data_record_refered));
