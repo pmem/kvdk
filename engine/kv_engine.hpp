@@ -29,7 +29,7 @@
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
@@ -109,9 +109,9 @@ private:
   struct ThreadLocalRes {
     ThreadLocalRes() = default;
 
-    std::uint64_t newest_restored_ts = 0;
+    uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
-    std::unordered_map<std::uint64_t, int> visited_skiplist_ids;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids;
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
