@@ -496,6 +496,7 @@ int main(int argc, char **argv) {
     configs.opt_large_sorted_collection_restore =
         FLAGS_opt_large_sorted_collection_restore;
     configs.use_devdax_mode = FLAGS_use_devdax_mode;
+    configs.use_experimental_hashmap = FLAGS_use_experimental_hashmap;
     Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
     if (s != Status::Ok) {
       throw std::runtime_error{"Fail to open KVDK instance."};

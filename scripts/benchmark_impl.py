@@ -184,6 +184,6 @@ def run_benchmark(
         os.system("mkdir -p {}".format(report_path2))
         __fill(exec, shared_para, data_type, report_path2)
         for benchmark in benchmarks:
-            benchmark(exec, shared_para, data_type, report_path2)
+            benchmark(exec, shared_para, data_type, report_path2, num_operations)
         
         os.system("rm -rf {0}".format(pmem_path))
