@@ -433,7 +433,7 @@ void ProcessBenchmarkConfigs() {
   case DataType::Queue: {
     if (FLAGS_scan) {
       throw std::invalid_argument{
-          R"(Scan is not supported for "String" and "Que" type data.)"};
+          R"(Scan is not supported for "String" and "Queue" type data.)"};
     }
   }
   default: {
