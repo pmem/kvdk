@@ -1910,16 +1910,20 @@ Status KVEngine::StringSetImpl2(const StringView &key,
     return Status::PmemOverflow;
   }
 
+  void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
+
+StringRecord* old = nullptr;
+std::uint64_t new_ts = 0;
+{
   auto guard = hmap_->acquire_lock(key);
 
-  uint64_t new_ts = get_timestamp();
-  void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
+  new_ts = get_timestamp();
   StringRecord::PersistStringRecord(block_base, sized_space_entry.size, new_ts,
                                     StringDataRecord, key, value);
 
-  StringRecord *old =
+  old =
       hmap_->insert(key, static_cast<StringRecord *>(block_base));
-  StringRecord *pmem_record = static_cast<StringRecord *>(block_base);
+}
   if (old != nullptr) {
     if (old->entry.meta.timestamp > new_ts) {
       throw std::runtime_error{"Old record has newer timestamp!"};
@@ -1930,11 +1934,15 @@ Status KVEngine::StringSetImpl2(const StringView &key,
 }
 
 Status KVEngine::StringDeleteImpl2(const StringView &key) {
-  auto guard = hmap_->acquire_lock(key);
-  StringRecord *p = hmap_->erase(key);
+  StringRecord *erased = nullptr;
+  {
+    auto guard = hmap_->acquire_lock(key);
+    erased = hmap_->erase(key);
 
-  if (p != nullptr) {
-    purgeAndFree(p);
+  }
+
+  if (erased != nullptr) {
+    purgeAndFree(erased);
   }
   return Status::Ok;
 }
@@ -2046,6 +2054,8 @@ Status KVEngine::BatchWriteImpl2(const WriteBatch &write_batch) {
     }
   }
 
+  guards.clear();
+
   pending_batch.PersistStage(PendingBatch::Stage::Finish);
 
   // Free updated kvs, we should purge all updated kvs before release locks and
@@ -2063,7 +2073,8 @@ Status KVEngine::StringRecordRestoreImpl2(StringRecord *pmem_record) {
   std::string key{pmem_record->Key()};
 
   auto guard = hmap_->acquire_lock(key);
-  StringRecord *old = hmap_->insert(key, pmem_record);
+  StringRecord *old = nullptr;
+  old = hmap_->insert(key, pmem_record);
   if (old != nullptr) {
     GlobalLogger.Error("Found duplicate string record. Older one is purged!\n");
     if (pmem_record->entry.meta.timestamp > old->entry.meta.timestamp) {
