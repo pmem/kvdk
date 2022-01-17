@@ -135,9 +135,9 @@ private:
     SpinMutex *spin1 = getMutex(pos1->Key());
     SpinMutex *spin2 = getMutex(pos2->Key());
 
-    kvdk_assert(lock.owns_lock(), "User supplied lock not acquired!")
+    kvdk_assert(lock.owns_lock(), "User supplied lock not acquired!");
 
-        if (spin1 != spin) {
+    if (spin1 != spin) {
       lock_holder.first = LockType{*spin1, std::defer_lock};
       if (!lock_holder.first.try_lock())
         return false;
