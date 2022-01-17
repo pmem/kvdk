@@ -184,6 +184,14 @@ def run_benchmark(
         os.system("mkdir -p {}".format(report_path2))
         __fill(exec, shared_para, data_type, report_path2)
         for benchmark in benchmarks:
+            if (benchmark == read_random) \
+            or (benchmark == update_random) \
+            or (benchmark == range_scan) :
+                    num_operations = 1024 * 1024 * 1024 * 10
+            else:
+                # __fill, insert_random, batch_insert_random, read_write_random
+                num_operations = num_kv 
+
             benchmark(exec, shared_para, data_type, report_path2, num_operations)
         
         os.system("rm -rf {0}".format(pmem_path))

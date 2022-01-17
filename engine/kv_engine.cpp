@@ -175,19 +175,19 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
       configs_.populate_pmem_space, configs_.use_devdax_mode));
   thread_manager_.reset(new (std::nothrow)
                             ThreadManager(configs_.max_write_threads));
-  if (!configs_.use_experimental_hashmap)
-  {
+  if (!configs_.use_experimental_hashmap) {
     hash_table_.reset(HashTable::NewHashTable(
         configs_.hash_bucket_num, configs_.hash_bucket_size,
         configs_.num_buckets_per_slot, pmem_allocator_,
         configs_.max_write_threads));
+  } else {
+    hmap_.reset(
+        new HMap{configs_.hash_bucket_num * (configs_.hash_bucket_size / 16),
+                 StringRecordExtractKey});
   }
-  else
-  {
-    hmap_.reset(new HMap{configs_.hash_bucket_num * (configs_.hash_bucket_size / 16), StringRecordExtractKey});
-  }
-  
-  if (pmem_allocator_ == nullptr || (hash_table_ == nullptr && !configs_.use_experimental_hashmap) ||
+
+  if (pmem_allocator_ == nullptr ||
+      (hash_table_ == nullptr && !configs_.use_experimental_hashmap) ||
       thread_manager_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
@@ -343,19 +343,15 @@ Status KVEngine::RestoreData() {
     }
     case RecordType::StringDataRecord:
     case RecordType::StringDeleteRecord: {
-      if (configs_.use_experimental_hashmap)
-      {
-        s = StringRecordRestoreImpl2(static_cast<StringRecord *>(recovering_pmem_record));
-      }
-      else
-      {
+      if (configs_.use_experimental_hashmap) {
+        s = StringRecordRestoreImpl2(
+            static_cast<StringRecord *>(recovering_pmem_record));
+      } else {
         s = RestoreStringRecord(
             static_cast<StringRecord *>(recovering_pmem_record),
             data_entry_cached);
-
       }
-        break;
-      
+      break;
     }
     case RecordType::DlistRecord:
     case RecordType::DlistHeadRecord:
@@ -858,16 +854,12 @@ Status KVEngine::Get(const StringView key, std::string *value) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  if (configs_.use_experimental_hashmap)
-  {
+  if (configs_.use_experimental_hashmap) {
     return StringGetImpl2(key, value);
-  }
-  else
-  {
+  } else {
 
     return HashGetImpl(key, value, StringRecordType);
   }
-  
 }
 
 Status KVEngine::Delete(const StringView key) {
@@ -880,13 +872,10 @@ Status KVEngine::Delete(const StringView key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  
-  if (configs_.use_experimental_hashmap)
-  {
+
+  if (configs_.use_experimental_hashmap) {
     return StringDeleteImpl2(key);
-  }
-  else
-  {
+  } else {
     return StringDeleteImpl(key);
   }
 }
@@ -1131,8 +1120,7 @@ Status KVEngine::MaybeInitPendingBatchFile() {
 }
 
 Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
-  if (configs_.use_experimental_hashmap)
-  {
+  if (configs_.use_experimental_hashmap) {
     return BatchWriteImpl2(write_batch);
   }
 
@@ -1355,8 +1343,8 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
                 "old record has newer timestamp!");
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
                                       new_ts, StringDataRecord, key, value);
-    StringRecord* pmem_record = static_cast<StringRecord*>(block_base);
-    StringRecord* old = hash_entry.index.string_record;
+    StringRecord *pmem_record = static_cast<StringRecord *>(block_base);
+    StringRecord *old = hash_entry.index.string_record;
 
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
@@ -1378,15 +1366,11 @@ Status KVEngine::Set(const StringView key, const StringView value) {
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
-  
-  if (configs_.use_experimental_hashmap)
-  {
-    return StringSetImpl2(key, value);
-  }
-  else
-  {
-    return StringSetImpl(key, value);
 
+  if (configs_.use_experimental_hashmap) {
+    return StringSetImpl2(key, value);
+  } else {
+    return StringSetImpl(key, value);
   }
 }
 
@@ -1890,11 +1874,10 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
 } // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
-Status KVEngine::StringGetImpl2(const StringView &key, std::string *value)
-{
+Status KVEngine::StringGetImpl2(const StringView &key, std::string *value) {
 
   while (true) {
-    StringRecord* p = hmap_->find(key);
+    StringRecord *p = hmap_->find(key);
 
     if (p == nullptr) {
       return Status::NotFound;
@@ -1918,8 +1901,8 @@ Status KVEngine::StringGetImpl2(const StringView &key, std::string *value)
   return Status::Ok;
 }
 
-Status KVEngine::StringSetImpl2(const StringView &key, const StringView &value)
-{
+Status KVEngine::StringSetImpl2(const StringView &key,
+                                const StringView &value) {
   auto record_size = sizeof(StringRecord) + key.size() + value.size();
 
   SpaceEntry sized_space_entry = pmem_allocator_->Allocate(record_size);
@@ -1931,15 +1914,14 @@ Status KVEngine::StringSetImpl2(const StringView &key, const StringView &value)
 
   uint64_t new_ts = get_timestamp();
   void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
-    StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
-                                      new_ts, StringDataRecord, key, value);
+  StringRecord::PersistStringRecord(block_base, sized_space_entry.size, new_ts,
+                                    StringDataRecord, key, value);
 
-  StringRecord *old = hmap_->insert(key, static_cast<StringRecord*>(block_base));
-  StringRecord *pmem_record = static_cast<StringRecord*>(block_base);
-  if (old != nullptr)
-  {
-    if (old->entry.meta.timestamp > new_ts)
-    {
+  StringRecord *old =
+      hmap_->insert(key, static_cast<StringRecord *>(block_base));
+  StringRecord *pmem_record = static_cast<StringRecord *>(block_base);
+  if (old != nullptr) {
+    if (old->entry.meta.timestamp > new_ts) {
       throw std::runtime_error{"Old record has newer timestamp!"};
     }
     purgeAndFree(old);
@@ -1947,43 +1929,39 @@ Status KVEngine::StringSetImpl2(const StringView &key, const StringView &value)
   return Status::Ok;
 }
 
-Status KVEngine::StringDeleteImpl2(const StringView &key)
-{
-    auto guard = hmap_->acquire_lock(key);
-    StringRecord* p = hmap_->erase(key);
+Status KVEngine::StringDeleteImpl2(const StringView &key) {
+  auto guard = hmap_->acquire_lock(key);
+  StringRecord *p = hmap_->erase(key);
 
-    if (p != nullptr) {
-      purgeAndFree(p);
-    }
-    return Status::Ok;
+  if (p != nullptr) {
+    purgeAndFree(p);
+  }
+  return Status::Ok;
 }
 
 Status KVEngine::StringBatchWriteImpl2(const WriteBatch::KV &kv,
-                            BatchWriteHint &batch_hint)
-{
-  switch (kv.type)
-  {
-  case RecordType::StringDeleteRecord:
-  {
-    StringRecord* old = hmap_->erase(kv.key);
+                                       BatchWriteHint &batch_hint) {
+  switch (kv.type) {
+  case RecordType::StringDeleteRecord: {
+    StringRecord *old = hmap_->erase(kv.key);
     batch_hint.pmem_record_to_free = old;
     return Status::Ok;
   }
-  case RecordType::StringDataRecord:
-  {
+  case RecordType::StringDataRecord: {
     void *block_base =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
     StringRecord::PersistStringRecord(
         block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
         static_cast<RecordType>(kv.type), kv.key, kv.value);
 
-    StringRecord* old = hmap_->insert(kv.key, static_cast<StringRecord*>(block_base));
-    assert (old == nullptr || (batch_hint.timestamp > old->entry.meta.timestamp));
+    StringRecord *old =
+        hmap_->insert(kv.key, static_cast<StringRecord *>(block_base));
+    assert(old == nullptr ||
+           (batch_hint.timestamp > old->entry.meta.timestamp));
     batch_hint.pmem_record_to_free = old;
     return Status::Ok;
   }
-  default:
-  {
+  default: {
     throw std::runtime_error{"Invalid record type in StringBatchWriteImpl2!"};
   }
   }
@@ -2006,8 +1984,8 @@ Status KVEngine::BatchWriteImpl2(const WriteBatch &write_batch) {
 
   using lock_type = typename HMap::lock_type;
 
-  std::map<lock_type*, lock_type*> mutexes;
-  
+  std::map<lock_type *, lock_type *> mutexes;
+
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
   for (size_t i = 0; i < write_batch.Size(); i++) {
@@ -2035,11 +2013,10 @@ Status KVEngine::BatchWriteImpl2(const WriteBatch &write_batch) {
 
   // lock spin mutex with order to avoid deadlock
   std::vector<std::unique_lock<lock_type>> guards;
-  for(auto pair : mutexes)
-  {
+  for (auto pair : mutexes) {
     guards.emplace_back(*pair.second);
   }
-    
+
   TimeStampType ts = get_timestamp();
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
@@ -2086,17 +2063,13 @@ Status KVEngine::StringRecordRestoreImpl2(StringRecord *pmem_record) {
   std::string key{pmem_record->Key()};
 
   auto guard = hmap_->acquire_lock(key);
-  StringRecord* old = hmap_->insert(key, pmem_record);
-  if (old != nullptr)
-  {
+  StringRecord *old = hmap_->insert(key, pmem_record);
+  if (old != nullptr) {
     GlobalLogger.Error("Found duplicate string record. Older one is purged!\n");
-    if (pmem_record->entry.meta.timestamp > old->entry.meta.timestamp)
-    {
+    if (pmem_record->entry.meta.timestamp > old->entry.meta.timestamp) {
       purgeAndFree(old);
-    }
-    else
-    {
-      StringRecord* actual_old = hmap_->insert(key, old); 
+    } else {
+      StringRecord *actual_old = hmap_->insert(key, old);
       kvdk_assert(actual_old == pmem_record, "StringRecordRestoreImpl2 error!");
       purgeAndFree(actual_old);
     }
@@ -2104,4 +2077,4 @@ Status KVEngine::StringRecordRestoreImpl2(StringRecord *pmem_record) {
   return Status::Ok;
 }
 
-}
+} // namespace KVDK_NAMESPACE
