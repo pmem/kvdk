@@ -313,8 +313,12 @@ private:
   uint64_t newest_version_on_startup_ = 0;
   std::shared_ptr<HashTable> hash_table_;
   
-  using HMap = decltype(construct_hashmap(0, ))
-  using HMap = HashMap<StringView, StringRecord*, std::hash<StringView>, std::equal_to<StringView>, AlignedAllocator<StringRecord*>>;
+  inline static StringView StringRecordExtractKey(StringRecord* p)
+  {
+    return p->Key();
+  }
+
+  using HMap = decltype(construct_hashmap<StringView, StringRecord*>(0, StringRecordExtractKey, std::hash<StringView>{}, std::equal_to<StringView>{}, AlignedAllocator<StringRecord*>{}));
   std::unique_ptr<HMap> hmap_;
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;

@@ -184,7 +184,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   }
   else
   {
-    hmap_.reset(new HMap{configs_.hash_bucket_num * configs_.hash_bucket_size / 16});
+    hmap_.reset(new HMap{configs_.hash_bucket_num * (configs_.hash_bucket_size / 16), StringRecordExtractKey});
   }
   
   if (pmem_allocator_ == nullptr || (hash_table_ == nullptr && !configs_.use_experimental_hashmap) ||
@@ -1892,16 +1892,11 @@ Status KVEngine::RestoreQueueRecords(DLRecord *pmp_record) {
 } // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
-inline StringView StringExtractKey(StringRecord* p)
-{
-  return p->Key();
-}
-
 Status KVEngine::StringGetImpl2(const StringView &key, std::string *value)
 {
 
   while (true) {
-    StringRecord* p = hmap_->find(key, StringExtractKey);
+    StringRecord* p = hmap_->find(key);
 
     if (p == nullptr) {
       return Status::NotFound;
@@ -1941,7 +1936,7 @@ Status KVEngine::StringSetImpl2(const StringView &key, const StringView &value)
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
                                       new_ts, StringDataRecord, key, value);
 
-  StringRecord *old = hmap_->insert(key, static_cast<StringRecord*>(block_base), StringExtractKey);
+  StringRecord *old = hmap_->insert(key, static_cast<StringRecord*>(block_base));
   StringRecord *pmem_record = static_cast<StringRecord*>(block_base);
   if (old != nullptr)
   {
@@ -1957,7 +1952,7 @@ Status KVEngine::StringSetImpl2(const StringView &key, const StringView &value)
 Status KVEngine::StringDeleteImpl2(const StringView &key)
 {
     auto guard = hmap_->acquire_lock(key);
-    StringRecord* p = hmap_->erase(key, StringExtractKey);
+    StringRecord* p = hmap_->erase(key);
 
     if (p != nullptr) {
       purgeAndFree(p);
@@ -1972,7 +1967,7 @@ Status KVEngine::StringBatchWriteImpl2(const WriteBatch::KV &kv,
   {
   case RecordType::StringDeleteRecord:
   {
-    StringRecord* old = hmap_->erase(kv.key, StringExtractKey);
+    StringRecord* old = hmap_->erase(kv.key);
     batch_hint.pmem_record_to_free = old;
     return Status::Ok;
   }
@@ -1984,7 +1979,7 @@ Status KVEngine::StringBatchWriteImpl2(const WriteBatch::KV &kv,
         block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
         static_cast<RecordType>(kv.type), kv.key, kv.value);
 
-    StringRecord* old = hmap_->insert(kv.key, static_cast<StringRecord*>(block_base), StringExtractKey);
+    StringRecord* old = hmap_->insert(kv.key, static_cast<StringRecord*>(block_base));
     assert (old == nullptr || (batch_hint.timestamp > old->entry.meta.timestamp));
     batch_hint.pmem_record_to_free = old;
     return Status::Ok;
@@ -2093,7 +2088,7 @@ Status KVEngine::StringRecordRestoreImpl2(StringRecord *pmem_record) {
   std::string key{pmem_record->Key()};
 
   auto guard = hmap_->acquire_lock(key);
-  StringRecord* old = hmap_->insert(key, pmem_record, StringExtractKey);
+  StringRecord* old = hmap_->insert(key, pmem_record);
   if (old != nullptr)
   {
     GlobalLogger.Error("Found duplicate string record. Older one is purged!\n");
@@ -2103,7 +2098,7 @@ Status KVEngine::StringRecordRestoreImpl2(StringRecord *pmem_record) {
     }
     else
     {
-      StringRecord* actual_old = hmap_->insert(key, old, StringExtractKey); 
+      StringRecord* actual_old = hmap_->insert(key, old); 
       kvdk_assert(actual_old == pmem_record, "StringRecordRestoreImpl2 error!");
       purgeAndFree(actual_old);
     }

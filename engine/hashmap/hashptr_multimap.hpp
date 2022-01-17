@@ -6,6 +6,7 @@
 #include <bitset>
 #include <exception>
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -189,7 +190,6 @@ class HashPointerMultimap
             u64 = u64_new;
         }
     };
-
 
     class Bucket
     {
@@ -469,10 +469,12 @@ class HashPointerMultimap
     BucketAllocatorType alloc;
     Bucket *const bucket_base;
 
+private:
+
   public:
     using lock_type = BucketMeta;
 
-    HashPointerMultimap() = delete;
+    explicit HashPointerMultimap() : n_bucket{0}, alloc{Alloc{}}, bucket_base{nullptr} {}
 
     explicit HashPointerMultimap(size_t n, Alloc const &a = Alloc{})
         : n_bucket{n}, alloc{a}, bucket_base{BucketAllocatorTraits::allocate(alloc, n_bucket)}
@@ -488,6 +490,14 @@ class HashPointerMultimap
     }
 
     HashPointerMultimap(HashPointerMultimap const &) = delete;
+
+    HashPointerMultimap(HashPointerMultimap&& other) : HashPointerMultimap{}
+    {
+        using std::swap;
+        swap(n_bucket, other.n_bucket);
+        swap(alloc, other.alloc);
+        swap(bucket_base, other.bucket_base);
+    }
 
     ~HashPointerMultimap()
     {
