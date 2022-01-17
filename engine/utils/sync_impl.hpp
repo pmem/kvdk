@@ -107,7 +107,7 @@ struct SyncImpl {
     cleared_points_.clear();
   }
 
-  void Init() {
+  void Reset() {
     std::lock_guard<std::mutex> lock(mutex_);
     cleared_points_.clear();
     consumers_.clear();

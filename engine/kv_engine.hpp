@@ -109,9 +109,9 @@ private:
   struct ThreadLocalRes {
     ThreadLocalRes() = default;
 
-    uint64_t newest_restored_ts = 0;
+    std::uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
-    std::unordered_map<uint64_t, int> visited_skiplist_ids;
+    std::unordered_map<std::uint64_t, int> visited_skiplist_ids;
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }

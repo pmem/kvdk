@@ -42,7 +42,7 @@ void SyncPoint::ClearAllCallBacks() { sync_impl_->ClearAllCallBacks(); }
 
 void SyncPoint::ClearDependTrace() { sync_impl_->ClearDependTrace(); }
 
-void SyncPoint::Init() { sync_impl_->Init(); }
+void SyncPoint::Reset() { sync_impl_->Reset(); }
 
 } // namespace KVDK_NAMESPACE
 
