@@ -192,10 +192,9 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   return s;
 }
 
-Status
-KVEngine::CreateSortedCollection(const StringView collection_name,
-                                 Collection **collection_ptr,
-                                 const pmem::obj::string_view &comp_name) {
+Status KVEngine::CreateSortedCollection(const StringView collection_name,
+                                        Collection **collection_ptr,
+                                        const StringView &comp_name) {
   *collection_ptr = nullptr;
   Status s = MaybeInitWriteThread();
   if (s != Status::Ok) {
