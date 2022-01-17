@@ -216,10 +216,9 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   return s;
 }
 
-Status
-KVEngine::CreateSortedCollection(const StringView collection_name,
-                                 Collection **collection_ptr,
-                                 const pmem::obj::string_view &comp_name) {
+Status KVEngine::CreateSortedCollection(const StringView collection_name,
+                                        Collection **collection_ptr,
+                                        const StringView &comp_name) {
   *collection_ptr = nullptr;
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
@@ -960,9 +959,7 @@ Status KVEngine::Recovery() {
   if (s != Status::Ok) {
     return s;
   }
-
-  GlobalLogger.Info("RestorePendingBatch done: iterated %lu records\n",
-                    restored_.load());
+  GlobalLogger.Info("RestorePendingBatch done.\n");
 
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
@@ -1648,6 +1645,8 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
 
     void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
 
+    kvdk_assert(!found || new_ts > data_entry.meta.timestamp,
+                "old record has newer timestamp!");
     // Persist key-value pair to PMem
     StringRecord::PersistStringRecord(
         block_base, sized_space_entry.size, new_ts, StringDataRecord,

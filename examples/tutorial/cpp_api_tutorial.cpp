@@ -13,6 +13,8 @@
 
 #define DEBUG // For assert
 
+using StringView = pmem::obj::string_view;
+
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.
 // Modify this path if necessary.
@@ -252,8 +254,7 @@ static void test_customer_sorted_func() {
 
   // regitser compare function
   std::string comp_name = "double_comp";
-  auto score_cmp = [](const pmem::obj::string_view &a,
-                      const pmem::obj::string_view &b) -> int {
+  auto score_cmp = [](const StringView &a, const StringView &b) -> int {
     double scorea = std::stod(a.data());
     double scoreb = std::stod(b.data());
     if (scorea == scoreb)
