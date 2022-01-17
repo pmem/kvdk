@@ -46,6 +46,8 @@ endif()
 
 # source files
 set(SOURCES
+        engine/utils/utils.cpp
+        engine/utils/sync_point.cpp
         engine/engine.cpp
         engine/kv_engine.cpp
         engine/logger.cpp
@@ -55,14 +57,12 @@ set(SOURCES
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
-        engine/utils.cpp
         engine/pmem_allocator/free_list.cpp
         engine/c.cc
         engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/queue.cpp
     )
-
 
 # .a library
 add_library(engine SHARED ${SOURCES})
@@ -73,18 +73,21 @@ configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
 	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
-set_target_properties(
-engine PROPERTIES PUBLIC_HEADER 
-"\
-include/kvdk/configs.hpp;\
-include/kvdk/engine.h;\
-include/kvdk/engine.hpp;\
-include/kvdk/iterator.hpp;\
-include/kvdk/namespace.hpp;\
-include/kvdk/status.h;\
-include/kvdk/status.hpp;\
-include/kvdk/write_batch.hpp")
+set(KVDK_PUBLIC_HEADERS
+    ${PROJECT_SOURCE_DIR}/include/kvdk/collection.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/comparator.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/configs.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/engine.h
+    ${PROJECT_SOURCE_DIR}/include/kvdk/engine.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/iterator.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/namespace.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/status.h
+    ${PROJECT_SOURCE_DIR}/include/kvdk/status.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/write_batch.hpp
+    ${PROJECT_SOURCE_DIR}/extern/libpmemobj++/string_view.hpp
+)
 
+set_target_properties(engine PROPERTIES PUBLIC_HEADER "${KVDK_PUBLIC_HEADERS}")
 
 install(TARGETS engine
 		PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
@@ -108,6 +111,7 @@ if (BUILD_TESTING)
     add_executable(dbstress_test ${TEST_SOURCES2})
     target_link_libraries(dbstress_test PUBLIC engine gtest gmock gtest_main)
 endif ()
+
 
 option(BUILD_TUTORIAL "Build the tutorial" ON)
 add_subdirectory(examples/tutorial)
@@ -142,6 +146,8 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/examples/tutorial/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*

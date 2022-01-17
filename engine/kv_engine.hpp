@@ -30,7 +30,7 @@
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
@@ -110,9 +110,9 @@ private:
   struct ThreadLocalRes {
     ThreadLocalRes() = default;
 
-    uint64_t newest_restored_ts = 0;
+    std::uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
-    std::unordered_map<uint64_t, int> visited_skiplist_ids;
+    std::unordered_map<std::uint64_t, int> visited_skiplist_ids;
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
@@ -128,17 +128,16 @@ private:
 
   inline Status MaybeInitWriteThread();
 
-  void SetCompareFunc(const pmem::obj::string_view &collection_name,
-                      std::function<int(const pmem::obj::string_view &src,
-                                        const pmem::obj::string_view &target)>
-                          comp_func) {
+  void SetCompareFunc(
+      const StringView &collection_name,
+      std::function<int(const StringView &src, const StringView &target)>
+          comp_func) {
     comparator_.SetComparaFunc(collection_name, comp_func);
   }
 
-  Status
-  CreateSortedCollection(const StringView collection_name,
-                         Collection **collection_ptr,
-                         const pmem::obj::string_view &comp_name) override;
+  Status CreateSortedCollection(const StringView collection_name,
+                                Collection **collection_ptr,
+                                const StringView &comp_name) override;
 
 private:
   Status InitCollection(const StringView &collection, Collection **list,

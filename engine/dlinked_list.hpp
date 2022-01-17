@@ -24,7 +24,8 @@
 #include "hash_table.hpp"
 #include "macros.hpp"
 #include "structures.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
+#include "utils/sync_point.hpp"
 
 namespace KVDK_NAMESPACE {
 /// DLinkedList is a helper class to access PMem

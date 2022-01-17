@@ -10,6 +10,7 @@
 #include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
+using StringView = pmem::obj::string_view;
 
 // A collection of key-value pairs
 class Collection {
@@ -24,13 +25,13 @@ public:
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id
-  std::string InternalKey(const pmem::obj::string_view &key) {
+  std::string InternalKey(const StringView &key) {
     return makeInternalKey(key, ID());
   }
 
 protected:
-  inline static std::string
-  makeInternalKey(const pmem::obj::string_view &user_key, uint64_t list_id) {
+  inline static std::string makeInternalKey(const StringView &user_key,
+                                            uint64_t list_id) {
     return std::string((char *)&list_id, 8)
         .append(user_key.data(), user_key.size());
   }

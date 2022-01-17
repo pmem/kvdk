@@ -9,7 +9,7 @@
 
 #include "kvdk/namespace.hpp"
 #include "logger.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 

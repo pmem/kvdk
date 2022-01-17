@@ -4,7 +4,7 @@
 
 #include <hwloc.h>
 
-#include "logger.hpp"
+#include "../logger.hpp"
 #include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
