@@ -1912,22 +1912,20 @@ Status KVEngine::StringSetImpl2(const StringView &key,
 
   void *block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
 
-StringRecord* old = nullptr;
-std::uint64_t new_ts = 0;
-{
-  auto guard = hmap_->acquire_lock(key);
+  StringRecord *old = nullptr;
+  std::uint64_t new_ts = 0;
+  {
+    auto guard = hmap_->acquire_lock(key);
 
-  new_ts = get_timestamp();
-  StringRecord::PersistStringRecord(block_base, sized_space_entry.size, new_ts,
-                                    StringDataRecord, key, value);
+    new_ts = get_timestamp();
+    StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
+                                      new_ts, StringDataRecord, key, value);
 
-  old =
-      hmap_->insert(key, static_cast<StringRecord *>(block_base));
-}
+    old = hmap_->insert(key, static_cast<StringRecord *>(block_base));
+  }
   if (old != nullptr) {
-    if (old->entry.meta.timestamp > new_ts) {
-      throw std::runtime_error{"Old record has newer timestamp!"};
-    }
+    kvdk_assert(old->entry.meta.timestamp < new_ts,
+                "Old record has newer timestamp!");
     purgeAndFree(old);
   }
   return Status::Ok;
@@ -1938,7 +1936,6 @@ Status KVEngine::StringDeleteImpl2(const StringView &key) {
   {
     auto guard = hmap_->acquire_lock(key);
     erased = hmap_->erase(key);
-
   }
 
   if (erased != nullptr) {
