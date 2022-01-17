@@ -1,9 +1,8 @@
 #include <cinttypes>
 #include <new>
-
 #include "hashptr_multimap.hpp"
 
-template <typename Key, typename Pointer, typename HashF = std::hash<Key>, typename KeyEqual = std::equal_to<Key>,
+template <typename Key, typename Pointer, typename ExtractKey, typename HashF = std::hash<Key>, typename KeyEqual = std::equal_to<Key>,
           typename PtrAlloc = std::allocator<Pointer>, size_t NSlot = 8>
 class HashMap
 {
@@ -12,21 +11,32 @@ class HashMap
     using hashptr_map_type = HashPointerMultimap<HashType, Pointer, NSlot, PtrAlloc>;
 
     hashptr_map_type hpmap;
-    HashF hash;
-    KeyEqual equal;
+    typename std::conditional<std::is_function<ExtractKey>::value, typename std::add_pointer<ExtractKey>::type, ExtractKey>::type extract_key;
+    typename std::conditional<std::is_function<HashF>::value, typename std::add_pointer<HashF>::type, HashF>::type hash;
+    typename std::conditional<std::is_function<KeyEqual>::value, typename std::add_pointer<KeyEqual>::type, KeyEqual>::type equal;
 
   public:
     using lock_type = typename hashptr_map_type::lock_type;
     using size_type = size_t;
 
-    explicit HashMap(size_type bucket_cnt, HashF const &ha = HashF{}, KeyEqual const &ke = KeyEqual{},
+    explicit HashMap() : hpmap{} {}
+
+    explicit HashMap(size_type bucket_cnt, ExtractKey const& e = ExtractKey{}, HashF const &ha = HashF{}, KeyEqual const &ke = KeyEqual{},
                      PtrAlloc const &pa = PtrAlloc{})
-        : hpmap{bucket_cnt / (NSlot - 1), pa}, hash{ha}, equal{ke}
+        : hpmap{bucket_cnt / (NSlot - 1), pa}, extract_key{e}, hash{ha}, equal{ke}
     {
     }
 
-    template<typename KeyExtractor>
-    Pointer find(Key const& key, KeyExtractor extract_key)
+    HashMap(HashMap&& other) : HashMap{}
+    {
+      using std::swap;
+      swap(hpmap, other.hpmap);
+      swap(extract_key, other.extract_key);
+      swap(hash, other.hash);
+      swap(equal, other.equal);
+    }
+
+    Pointer find(Key const& key) 
     {
       HashType h = hash(key);
       auto range = hpmap.equal_range(h);
@@ -41,8 +51,7 @@ class HashMap
       return nullptr;
     }
 
-    template<typename KeyExtractor>
-    Pointer insert(Key const& key, Pointer p, KeyExtractor extract_key)
+    Pointer insert(Key const& key, Pointer p)
     {
       HashType h = hash(key);
       auto range = hpmap.equal_range(h);
@@ -59,8 +68,7 @@ class HashMap
       return nullptr;
     }
 
-    template<typename KeyExtractor>
-    Pointer erase(Key const& key, KeyExtractor extract_key)
+    Pointer erase(Key const& key)
     {
       HashType h = hash(key);
       auto range = hpmap.equal_range(h);
@@ -87,4 +95,14 @@ class HashMap
       HashType h = hash(key);
       return hpmap.mutex(h);
     }
+
 };
+
+template <typename Key, typename Pointer, typename ExtractKey, typename HashF, typename KeyEqual,
+          typename PtrAlloc>
+HashMap<Key, Pointer, ExtractKey, HashF, KeyEqual, PtrAlloc, 8> 
+construct_hashmap(size_t bucket_cnt, ExtractKey const& e, HashF const &ha = HashF{}, KeyEqual const &ke = KeyEqual{},
+PtrAlloc const &pa = PtrAlloc{})
+{
+  return HashMap<Key, Pointer, ExtractKey, HashF, KeyEqual, PtrAlloc, 8>{bucket_cnt, e, ha, ke, pa};
+}

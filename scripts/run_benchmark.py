@@ -5,8 +5,8 @@ import itertools
 numanode = 0
 pmem_path = "/mnt/pmem{}/kvdk_benchmark".format(numanode)
 bin = "../build/bench"
-env = "MIMALLOC_SHOW_STATS=1 LD_PRELOAD=/usr/local/lib/libmimalloc.so"
-# env = ""
+# env = "MIMALiLOC_SHOW_STATS=1 LD_PRELOAD=/usr/local/lib/libmimalloc.so"
+env = "LD_PRELOAD=/usr/lib/gcc/x86_64-linux-gnu/8/libasan.so"
 exec = "{2} numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin, env)
 
 num_thread = 64
