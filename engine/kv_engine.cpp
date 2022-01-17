@@ -24,7 +24,7 @@
 #include "dram_allocator.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);

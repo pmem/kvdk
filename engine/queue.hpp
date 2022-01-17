@@ -16,7 +16,7 @@
 #include "macros.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 
