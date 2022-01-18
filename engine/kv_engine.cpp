@@ -1211,7 +1211,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
       return Status::Ok;
     }
 
-    kvdk_assert(!found || batch_hint.timestamp > data_entry.meta.timestamp,
+    kvdk_assert(!found || batch_hint.timestamp >= data_entry.meta.timestamp,
                 "ts of new data smaller than existing data in batch write");
 
     void *block_base =
