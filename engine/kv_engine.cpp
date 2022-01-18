@@ -182,7 +182,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
         configs_.max_write_threads));
   } else {
     hmap_.reset(
-        new HMap{configs_.hash_bucket_num * (configs_.hash_bucket_size / 8),
+        new HMap{configs_.hash_bucket_num * (configs_.hash_bucket_size / 16),
                  StringRecordExtractKey});
   }
 
@@ -1915,7 +1915,7 @@ Status KVEngine::StringSetImpl2(const StringView &key,
   StringRecord *old = nullptr;
   std::uint64_t new_ts = 0;
   {
-    auto guard = hmap_->acquire_lock(key);  // Cache line flushed? Why?
+    auto guard = hmap_->acquire_lock(key); // Cache line flushed? Why?
 
     new_ts = get_timestamp();
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
