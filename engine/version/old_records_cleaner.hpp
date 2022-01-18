@@ -19,12 +19,13 @@ class KVEngine;
 
 struct OldDataRecord {
   void *pmem_data_record;
-  TimeStampType newer_version_timestamp;
+  // TODO comment what is this
+  TimeStampType release_time;
 };
 
 struct OldDeleteRecord {
   void *pmem_delete_record;
-  TimeStampType newer_version_timestamp;
+  TimeStampType release_time;
   // We need ref to hash entry for clear index of delete record
   HashEntry *hash_entry_ref;
   SpinMutex *hash_entry_lock;
@@ -32,7 +33,7 @@ struct OldDeleteRecord {
 
 struct PendingFreeSpaceEntries {
   std::vector<SpaceEntry> entries;
-  TimeStampType free_ts;
+  TimeStampType release_time;
 };
 
 // OldRecordsCleaner is used to clean old version PMem records of kvdk

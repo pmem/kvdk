@@ -65,7 +65,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   uint64_t delayed_cnt = 0;
   for (auto &data_records : global_old_data_records_) {
     for (auto &record : data_records) {
-      if (record.newer_version_timestamp <= oldest_snapshot_ts) {
+      if (record.release_time <= oldest_snapshot_ts) {
         space_to_free.emplace_back(purgeOldDataRecord(record));
         handled_cnt++;
       } else {
@@ -82,7 +82,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   delayed_cnt = 0;
   for (auto &delete_records : global_old_delete_records_) {
     for (auto &record : delete_records) {
-      if (record.newer_version_timestamp <= oldest_snapshot_ts) {
+      if (record.release_time <= oldest_snapshot_ts) {
         space_pending.entries.emplace_back(purgeOldDeleteRecord(record));
         handled_cnt++;
 
@@ -94,7 +94,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   }
 
   if (space_pending.entries.size() > 0) {
-    space_pending.free_ts =
+    space_pending.release_time =
         kv_engine_->version_controller_.GetCurrentTimestamp();
     pending_free_space_entries_.emplace_back(std::move(space_pending));
   }
@@ -103,7 +103,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   delayed_cnt = 0;
   auto iter = pending_free_space_entries_.begin();
   while (iter != pending_free_space_entries_.end()) {
-    if (iter->free_ts < oldest_snapshot_ts) {
+    if (iter->release_time < oldest_snapshot_ts) {
       handled_cnt += iter->entries.size();
       kv_engine_->pmem_allocator_->BatchFree(iter->entries);
       iter++;
@@ -138,7 +138,7 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
     std::unique_lock<SpinMutex> ul(tc.old_records_lock);
     for (int limit = num_limit_clean;
          tc.old_delete_records.size() > 0 &&
-         tc.old_delete_records.front().newer_version_timestamp <
+         tc.old_delete_records.front().release_time <
              clean_all_data_record_ts_ &&
          limit > 0;
          limit--) {
@@ -151,8 +151,7 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
         kv_engine_->version_controller_.OldestSnapshotTS();
     for (int limit = num_limit_clean;
          tc.old_data_records.size() > 0 &&
-         tc.old_data_records.front().newer_version_timestamp <
-             oldest_refer_ts &&
+         tc.old_data_records.front().release_time < oldest_refer_ts &&
          limit > 0;
          limit--) {
       kv_engine_->pmem_allocator_->Free(
@@ -166,7 +165,7 @@ void OldRecordsCleaner::maybeUpdateOldestSnapshot() {
   // To avoid too many records pending free, we upadte global smallest
   // snapshot regularly. We update it every kUpdateSnapshotRound to mitigate
   // the overhead
-  static size_t kUpdateSnapshotRound = 10000;
+  constexpr size_t kUpdateSnapshotRound = 10000;
   thread_local size_t round = 0;
   if ((++round) % kUpdateSnapshotRound == 0) {
     kv_engine_->version_controller_.UpdatedOldestSnapshot();

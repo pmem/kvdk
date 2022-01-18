@@ -78,6 +78,12 @@ inline uint64_t fast_random_64() {
   return x * 0x2545F4914F6CDD1D;
 }
 
+inline static uint64_t rdtsc() {
+  uint32_t lo, hi;
+  __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+  return ((uint64_t)lo) | (((uint64_t)hi) << 32);
+}
+
 inline void memcpy_16(void *dst, const void *src) {
   __m128i m0 = _mm_loadu_si128(((const __m128i *)src) + 0);
   _mm_storeu_si128(((__m128i *)dst) + 0, m0);

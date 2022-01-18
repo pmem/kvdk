@@ -5,6 +5,7 @@
 
 #include "../alias.hpp"
 #include "../thread_manager.hpp"
+#include "../utils.hpp"
 #include "kvdk/configs.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -65,9 +66,9 @@ public:
   VersionController(uint64_t max_access_threads)
       : thread_cache_(max_access_threads) {}
 
-  void Init(uint64_t version_base) {
-    tsc_on_startup_ = get_cpu_tsc();
-    version_base_ = version_base;
+  void Init(uint64_t base_timestamp) {
+    tsc_on_startup_ = rdtsc();
+    base_timestamp_ = base_timestamp;
     UpdatedOldestSnapshot();
   }
 
@@ -112,7 +113,7 @@ public:
   }
 
   inline TimeStampType GetCurrentTimestamp() {
-    auto res = get_cpu_tsc() - tsc_on_startup_ + version_base_;
+    auto res = rdtsc() - tsc_on_startup_ + base_timestamp_;
     return res;
   }
 
@@ -141,12 +142,6 @@ private:
     char padding[64 - sizeof(holding_snapshot)];
   };
 
-  inline uint64_t get_cpu_tsc() {
-    uint32_t lo, hi;
-    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)lo) | (((uint64_t)hi) << 32);
-  }
-
   Array<ThreadCache> thread_cache_;
   SnapshotList global_snapshots_;
   SpinMutex global_snapshots_lock_;
@@ -157,7 +152,7 @@ private:
   // These two used to get current timestamp of the instance
   // version_base_: The newest timestamp on instance closing last time
   // tsc_on_startup_: The CPU tsc on instance start up
-  uint64_t version_base_;
+  uint64_t base_timestamp_;
   uint64_t tsc_on_startup_;
 };
 
