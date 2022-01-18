@@ -182,7 +182,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
         configs_.max_write_threads));
   } else {
     hmap_.reset(
-        new HMap{configs_.hash_bucket_num * (configs_.hash_bucket_size / 16),
+        new HMap{configs_.hash_bucket_num * (configs_.hash_bucket_size / 8),
                  StringRecordExtractKey});
   }
 
