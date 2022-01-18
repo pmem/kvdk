@@ -1915,7 +1915,7 @@ Status KVEngine::StringSetImpl2(const StringView &key,
   StringRecord *old = nullptr;
   std::uint64_t new_ts = 0;
   {
-    auto guard = hmap_->acquire_lock(key);
+    auto guard = hmap_->acquire_lock(key);  // Cache line flushed? Why?
 
     new_ts = get_timestamp();
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
