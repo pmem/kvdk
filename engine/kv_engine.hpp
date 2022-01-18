@@ -311,6 +311,13 @@ private:
   std::shared_ptr<HashTable> hash_table_;
 
   inline static StringView StringRecordExtractKey(StringRecord *p) {
+    auto sz = p->entry.header.record_size;
+    char* addr = reinterpret_cast<char*>(p);
+    for (size_t i = 0; i < (sz + 63) / 64; i++)
+    {
+      _mm_prefetch(addr + i * 64, _MM_HINT_T0);
+    }
+    
     return p->Key();
   }
 
