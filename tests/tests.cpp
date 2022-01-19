@@ -1522,6 +1522,86 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestSortedCustomCompareFunction2) {
+  int n_thread = 16;
+  configs.max_write_threads = n_thread;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::string collection_name{"Coll"};
+
+  auto cmp = [](StringView const& lhs, StringView const& rhs) -> int
+  {
+    ASSERT_EQ(lhs.size(), 8);
+    ASSERT_EQ(rhs.size(), 8);
+
+    std::uint64_t u64l;
+    std::uint64_t u64r;
+    memcpy(&u64l, lhs.data(), 8);
+    memcpy(&u64r, rhs.data(), 8);
+    return (u64l < u64r) ? -1 : ((u64l > u64r) ? 1 : 0);
+  };
+
+  std::vector<std::uint64_t> vals
+
+
+  // registed compare function
+  engine->SetCompareFunc("collection0_cmp", cmp0);
+  engine->SetCompareFunc("collection1_cmp", cmp1);
+  for (size_t i = 0; i < collections.size(); ++i) {
+    Collection *collection_ptr;
+    Status s;
+    if (i < 2) {
+      std::string comp_name = "collection" + std::to_string(i) + "_cmp";
+      s = engine->CreateSortedCollection(collections[i], &collection_ptr,
+                                         comp_name);
+    } else {
+      s = engine->CreateSortedCollection(collections[i], &collection_ptr);
+    }
+    ASSERT_EQ(s, Status::Ok);
+  }
+  for (size_t i = 0; i < collections.size(); ++i) {
+    auto Write = [&](uint32_t id) {
+      for (size_t j = 0; j < count; j++) {
+        ASSERT_EQ(engine->SSet(collections[i], key_values[j].first,
+                               key_values[j].second),
+                  Status::Ok);
+      }
+    };
+    LaunchNThreads(n_thread, Write);
+  }
+
+  for (size_t i = 0; i < collections.size(); ++i) {
+    std::vector<kvpair> expected_res(dedup_kvs.begin(), dedup_kvs.end());
+    if (i == 0) {
+      std::sort(expected_res.begin(), expected_res.end(),
+                [&](const kvpair &a, const kvpair &b) -> bool {
+                  return cmp0(a.first, b.first) <= 0;
+                });
+
+    } else if (i == 1) {
+      std::sort(expected_res.begin(), expected_res.end(),
+                [&](const kvpair &a, const kvpair &b) -> bool {
+                  return cmp1(a.first, b.first) <= 0;
+                });
+    }
+    auto iter = engine->NewSortedIterator(collections[i]);
+    ASSERT_TRUE(iter != nullptr);
+    iter->SeekToFirst();
+    int cnt = 0;
+    while (iter->Valid()) {
+      std::string key = iter->Key();
+      std::string val = iter->Value();
+      ASSERT_EQ(key, expected_res[cnt].first);
+      ASSERT_EQ(val, expected_res[cnt].second);
+      iter->Next();
+      cnt++;
+    }
+  }
+  ASSERT_EQ(engine->SDelete("collection0", "a"), Status::Ok);
+  delete engine;
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
