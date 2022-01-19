@@ -146,14 +146,3 @@ private:
       out_stream_ << std::endl;
   }
 };
-
-template <class T>
-static void PrintRecord(const std::string &key, const T &value) {
-  std::ostringstream tmp_value;
-  tmp_value << value;
-  testing::Test::RecordProperty(key, tmp_value.str());
-  std::ios::fmtflags flags(std::cout.flags());
-  std::cout << key << ": " << std::fixed << std::setprecision(5) << value
-            << std::endl;
-  std::cout.flags(flags);
-}
