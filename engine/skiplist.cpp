@@ -530,33 +530,76 @@ std::string SortedIterator::Value() {
   return string_view_2_string(current->Value());
 }
 
-Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
+Status SortedCollectionRebuilder::RepairSkiplistLinkage(Skiplist *skiplist) {
+  Splice splice(skiplist);
+  HashEntry hash_entry;
+  for (uint8_t i = 1; i <= kMaxHeight; i++) {
+    splice.prevs[i] = skiplist->header();
+    splice.prev_pmem_record = skiplist->header()->record;
+  }
+
+  while (1) {
+    HashEntry *entry_ptr = nullptr;
+    uint64_t next_offset = splice.prev_pmem_record->next;
+    DLRecord *next_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+    if (next_record == skiplist->header()->record) {
+      break;
+    }
+
+    StringView key = next_record->Key();
+    auto hash_hint = hash_table_->GetHint(key);
+    if (true || checkpoint_ == kMaxTimestamp) {
+      Status s = hash_table_->SearchForRead(
+          hash_table_->GetHint(key), key, SortedDataRecord | SortedDeleteRecord,
+          &entry_ptr, &hash_entry, nullptr);
+      if (s != Status::Ok) {
+        GlobalLogger.Error("Rebuild skiplist error, hash entry should be "
+                           "insert first before repair linkage");
+        return Status::Abort;
+      }
+      if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
+        SkiplistNode *dram_node = hash_entry.index.skiplist_node;
+        int height = dram_node->Height();
+        for (int i = 1; i <= height; i++) {
+          splice.prevs[i]->RelaxedSetNext(i, dram_node);
+          dram_node->RelaxedSetNext(i, nullptr);
+          splice.prevs[i] = dram_node;
+        }
+      }
+      splice.prev_pmem_record = next_record;
+    } else {
+    }
+  }
+  return Status::Ok;
+}
+
+Status SortedCollectionRebuilder::Rebuild(
+    const std::vector<std::shared_ptr<Skiplist>> &skiplists) {
   std::vector<std::future<Status>> fs;
-  if (engine->configs_.opt_large_sorted_collection_restore &&
-      engine->skiplists_.size() > 0) {
-    thread_cache_node_.resize(engine->configs_.max_access_threads);
-    UpdateEntriesOffset(engine);
+  if (opt_parallel_rebuild_ && skiplists.size() > 0) {
+    thread_cache_node_.resize(num_rebuild_threads_);
+    UpdateEntriesOffset();
     for (uint8_t h = 1; h <= kMaxHeight; ++h) {
-      for (uint32_t j = 0; j < engine->configs_.max_access_threads; ++j) {
-        fs.push_back(
-            std::async(std::launch::async, [j, h, this, engine]() -> Status {
-              while (true) {
-                SkiplistNode *cur_node = GetSortedOffset(h);
-                if (!cur_node) {
-                  break;
-                }
-                if (h == 1) {
-                  Status s = DealWithFirstHeight(j, cur_node, engine);
-                  if (s != Status::Ok) {
-                    return s;
-                  }
-                } else {
-                  DealWithOtherHeight(j, cur_node, h, engine->pmem_allocator_);
-                }
+      for (uint32_t j = 0; j < num_rebuild_threads_; ++j) {
+        fs.push_back(std::async(std::launch::async, [j, h, this]() -> Status {
+          while (true) {
+            SkiplistNode *cur_node = GetSortedOffset(h);
+            if (!cur_node) {
+              break;
+            }
+            if (h == 1) {
+              Status s = DealWithFirstHeight(j, cur_node);
+              if (s != Status::Ok) {
+                return s;
               }
-              LinkedNode(j, h, engine);
-              return Status::Ok;
-            }));
+            } else {
+              DealWithOtherHeight(j, cur_node, h);
+            }
+          }
+          LinkedNode(j, h);
+          return Status::Ok;
+        }));
       }
       for (auto &f : fs) {
         Status s = f.get();
@@ -580,8 +623,9 @@ Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
 #endif
     }
   } else {
-    for (auto s : engine->skiplists_) {
-      fs.push_back(std::async(&Skiplist::Rebuild, s));
+    for (auto s : skiplists) {
+      fs.push_back(std::async(&SortedCollectionRebuilder::RepairSkiplistLinkage,
+                              this, s.get()));
     }
     for (auto &f : fs) {
       Status s = f.get();
@@ -593,15 +637,13 @@ Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
   return Status::Ok;
 }
 
-void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
-                                           const KVEngine *engine) {
+void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height) {
   for (auto v : thread_cache_node_[thread_id]) {
     if (v->Height() < height) {
       continue;
     }
     uint64_t next_offset = v->record->next;
-    DLRecord *next_record =
-        engine->pmem_allocator_->offset2addr<DLRecord>(next_offset);
+    DLRecord *next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
     assert(next_record != nullptr);
     // TODO jiayu: maybe cache data entry
     if (next_record->entry.meta.type != SortedHeaderRecord &&
@@ -614,14 +656,13 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
           DataEntry data_entry;
           HashEntry *entry_ptr = nullptr;
           StringView key = next_record->Key();
-          Status s = engine->hash_table_->SearchForRead(
-              engine->hash_table_->GetHint(key), key, SortedRecordType,
-              &entry_ptr, &hash_entry, &data_entry);
+          Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                                SortedRecordType, &entry_ptr,
+                                                &hash_entry, &data_entry);
           assert(s == Status::Ok &&
                  "It should be in hash_table when reseting entries_offset map");
           next_offset = next_record->next;
-          next_record =
-              engine->pmem_allocator_->offset2addr<DLRecord>(next_offset);
+          next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
 
           if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
             next_node = hash_entry.index.skiplist->header();
@@ -666,13 +707,11 @@ SkiplistNode *SortedCollectionRebuilder::GetSortedOffset(int height) {
 }
 
 Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
-                                                      SkiplistNode *cur_node,
-                                                      const KVEngine *engine) {
+                                                      SkiplistNode *cur_node) {
   DLRecord *vesiting_record = cur_node->record;
   while (true) {
     uint64_t next_offset = vesiting_record->next;
-    DLRecord *next_record =
-        engine->pmem_allocator_->offset2addr<DLRecord>(next_offset);
+    DLRecord *next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
     assert(next_record != nullptr);
     if (next_record->entry.meta.type == SortedHeaderRecord) {
       cur_node->RelaxedSetNext(1, nullptr);
@@ -684,9 +723,9 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
       DataEntry data_entry;
       HashEntry *entry_ptr = nullptr;
       StringView key = next_record->Key();
-      Status s = engine->hash_table_->SearchForRead(
-          engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,
-          &hash_entry, &data_entry);
+      Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                            SortedRecordType, &entry_ptr,
+                                            &hash_entry, &data_entry);
       if (s != Status::Ok) {
         GlobalLogger.Error(
             "the node should be already created during data restoring\n");
@@ -718,9 +757,9 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
   return Status::Ok;
 }
 
-void SortedCollectionRebuilder::DealWithOtherHeight(
-    uint64_t thread_id, SkiplistNode *cur_node, int height,
-    const std::shared_ptr<PMEMAllocator> &pmem_allocator) {
+void SortedCollectionRebuilder::DealWithOtherHeight(uint64_t thread_id,
+                                                    SkiplistNode *cur_node,
+                                                    int height) {
   SkiplistNode *visited_node = cur_node;
   bool first_visited = true;
   while (true) {
@@ -748,7 +787,7 @@ void SortedCollectionRebuilder::DealWithOtherHeight(
       break;
     }
     // continue to find next
-    uint64_t next_offset = pmem_allocator->addr2offset(next_node->record);
+    uint64_t next_offset = pmem_allocator_->addr2offset(next_node->record);
     if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
       visited_node = next_node;
     } else {
@@ -761,7 +800,7 @@ void SortedCollectionRebuilder::DealWithOtherHeight(
   }
 }
 
-void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
+void SortedCollectionRebuilder::UpdateEntriesOffset() {
   std::unordered_map<uint64_t, SkiplistNodeInfo> new_kvs;
   std::unordered_map<uint64_t, SkiplistNodeInfo>::iterator it =
       entries_offsets_.begin();
@@ -770,13 +809,12 @@ void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
     HashEntry *entry_ptr = nullptr;
     HashEntry hash_entry;
     SkiplistNode *node = nullptr;
-    DLRecord *cur_record =
-        engine->pmem_allocator_->offset2addr<DLRecord>(it->first);
+    DLRecord *cur_record = pmem_allocator_->offset2addr<DLRecord>(it->first);
     StringView key = cur_record->Key();
 
-    Status s = engine->hash_table_->SearchForRead(
-        engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,
-        &hash_entry, &data_entry);
+    Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                          SortedRecordType, &entry_ptr,
+                                          &hash_entry, &data_entry);
     assert(s == Status::Ok || s == Status::NotFound);
     if (s == Status::NotFound ||
         hash_entry.header.offset_type == HashOffsetType::DLRecord) {
@@ -794,7 +832,7 @@ void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
     if (data_entry.meta.timestamp > cur_record->entry.meta.timestamp) {
       it = entries_offsets_.erase(it);
       new_kvs.insert(
-          {engine->pmem_allocator_->addr2offset(node->record), {false, node}});
+          {pmem_allocator_->addr2offset(node->record), {false, node}});
     } else {
       it->second.visited_node = node;
       it++;

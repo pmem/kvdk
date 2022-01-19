@@ -483,7 +483,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
         pmem_record, name, id, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
     if (configs_.opt_large_sorted_collection_restore) {
-      sorted_rebuilder_.SetEntriesOffsets(
+      sorted_rebuilder_->SetEntriesOffsets(
           pmem_allocator_->addr2offset(pmem_record), false, nullptr);
     }
   }
@@ -661,7 +661,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
                   kRestoreSkiplistStride ==
               0) {
         std::lock_guard<std::mutex> lg(list_mu_);
-        sorted_rebuilder_.SetEntriesOffsets(
+        sorted_rebuilder_->SetEntriesOffsets(
             pmem_allocator_->addr2offset(pmem_record), false, nullptr);
       }
     }
@@ -961,6 +961,10 @@ Status KVEngine::Recovery() {
   }
   GlobalLogger.Info("RestorePendingBatch done.\n");
 
+  sorted_rebuilder_.reset(new SortedCollectionRebuilder(
+      pmem_allocator_.get(), hash_table_.get(),
+      configs_.opt_large_sorted_collection_restore, configs_.max_access_threads,
+      persist_checkpoint_->CheckpointTS()));
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
@@ -981,7 +985,7 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  s = sorted_rebuilder_.Rebuild(this);
+  s = sorted_rebuilder_->Rebuild(GetSkiplists());
   if (s != Status::Ok) {
     return s;
   }

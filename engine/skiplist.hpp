@@ -459,26 +459,31 @@ struct Splice {
 class KVEngine;
 class SortedCollectionRebuilder {
 public:
-  SortedCollectionRebuilder() = default;
-  Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
-                             const KVEngine *engine);
+  SortedCollectionRebuilder(PMEMAllocator *pmem_allocator,
+                            HashTable *hash_table, bool opt_parallel_rebuild,
+                            uint64_t num_rebuild_threads,
+                            TimeStampType checkpoint)
+      : pmem_allocator_(pmem_allocator), hash_table_(hash_table),
+        checkpoint_(checkpoint){};
+  Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node);
 
-  void
-  DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node, int heightm,
-                      const std::shared_ptr<PMEMAllocator> &pmem_allocator);
+  void DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                           int heightm);
 
   SkiplistNode *GetSortedOffset(int height);
 
-  void LinkedNode(uint64_t thread_id, int height, const KVEngine *engine);
+  void LinkedNode(uint64_t thread_id, int height);
 
-  Status Rebuild(const KVEngine *engine);
+  Status Rebuild(const std::vector<std::shared_ptr<Skiplist>> &skiplists);
 
-  void UpdateEntriesOffset(const KVEngine *engine);
+  void UpdateEntriesOffset();
 
   void SetEntriesOffsets(uint64_t entry_offset, bool is_visited,
                          SkiplistNode *node) {
     entries_offsets_.insert({entry_offset, {is_visited, node}});
   }
+
+  Status RepairSkiplistLinkage(Skiplist *skiplist);
 
 private:
   struct SkiplistNodeInfo {
@@ -488,6 +493,11 @@ private:
   SpinMutex map_mu_;
   std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
   std::unordered_map<uint64_t, SkiplistNodeInfo> entries_offsets_;
+  TimeStampType checkpoint_;
+  PMEMAllocator *pmem_allocator_;
+  HashTable *hash_table_;
+  uint64_t num_rebuild_threads_;
+  bool opt_parallel_rebuild_;
 };
 
 } // namespace KVDK_NAMESPACE
