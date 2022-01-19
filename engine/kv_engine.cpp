@@ -147,7 +147,8 @@ void KVEngine::backgroundWorkCoordinator() {
 }
 */
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
-  access_thread.id = 0;
+  RAIICaller fake_thread([&]() { access_thread.id = 0; },
+                         [&]() { access_thread.id = -1; });
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
@@ -210,7 +211,6 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   }
 
   s = Recovery();
-  access_thread.id = -1;
   startBackgroundWorks();
 
   return s;
@@ -570,55 +570,11 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
 
   if (RecoverToCheckpoint()) {
-    // This record is newer than backup version, search the older one it refered
     if (cached_data_entry.meta.timestamp >
         persist_checkpoint_->CheckpointTS()) {
-      DLRecord *older_version_record = pmem_allocator_->offset2addr<DLRecord>(
-          pmem_record->older_version_offset);
-      if (older_version_record != nullptr &&
-          older_version_record->entry.meta.timestamp <=
-              persist_checkpoint_->CheckpointTS()) {
-        if (!ValidateRecord(older_version_record)) {
-          GlobalLogger.Error("Broken backup instance: invalid skiplist record");
-          std::abort();
-        }
-        kvdk_assert(
-            equal_string_view(internal_key, older_version_record->Key()),
-            "older version key is not same as new version");
-        // Repair linkage of backup version
-        while (1) {
-          auto hash_hint = hash_table_->GetHint(older_version_record->Key());
-          Splice splice(nullptr);
-          std::unique_lock<SpinMutex> ul(*hash_hint.spin);
-          std::unique_lock<SpinMutex> prev_record_lock;
-          if (!Skiplist::SearchAndLockRecordPos(
-                  &splice, older_version_record, hash_hint.spin,
-                  &prev_record_lock, pmem_allocator_.get(), hash_table_.get(), false /* we do not check linkage for restore backup as the record is not linked*/)) {
-            continue;
-          }
-          Skiplist::LinkDLRecord(splice.prev_pmem_record,
-                                 splice.next_pmem_record, older_version_record,
-                                 pmem_allocator_.get());
-          break;
-        }
-      } else if (linked_record) {
-        while (1) {
-          auto hash_hint = hash_table_->GetHint(pmem_record->Key());
-          std::unique_lock<SpinMutex> ul(*hash_hint.spin);
-          if (!Skiplist::Purge(pmem_record, hash_hint.spin, nullptr,
-                               pmem_allocator_.get(), hash_table_.get())) {
-            continue;
-          }
-          break;
-        }
-      }
-      purgeAndFree(pmem_record);
-
       return Status::Ok;
     }
   } else {
-    // we can directly free unlinked record while recovering instance is not a
-    // backup
     if (!linked_record) {
       purgeAndFree(pmem_record);
       return Status::Ok;

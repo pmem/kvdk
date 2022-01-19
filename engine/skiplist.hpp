@@ -464,7 +464,8 @@ public:
                             uint64_t num_rebuild_threads,
                             TimeStampType checkpoint)
       : pmem_allocator_(pmem_allocator), hash_table_(hash_table),
-        checkpoint_(checkpoint){};
+        checkpoint_(checkpoint), opt_parallel_rebuild_(opt_parallel_rebuild),
+        num_rebuild_threads_(num_rebuild_threads){};
   Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node);
 
   void DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node,
@@ -484,6 +485,16 @@ public:
   }
 
   Status RepairSkiplistLinkage(Skiplist *skiplist);
+
+  void purgeAndFree(std::vector<DLRecord *> &pmem_records) {
+    std::vector<SpaceEntry> to_free;
+    for (DLRecord *pmem_record : pmem_records) {
+      pmem_record->Destroy();
+      to_free.emplace_back(pmem_allocator_->addr2offset_checked(pmem_record),
+                           pmem_record->entry.header.record_size);
+    }
+    pmem_allocator_->BatchFree(to_free);
+  }
 
 private:
   struct SkiplistNodeInfo {
