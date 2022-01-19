@@ -738,6 +738,7 @@ Status KVEngine::RestorePendingBatch() {
         }
       }
     }
+    closedir(dir);
   } else {
     GlobalLogger.Error("Open persisted pending batch dir %s failed\n",
                        pending_batch_dir_.c_str());
