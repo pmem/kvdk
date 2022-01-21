@@ -14,8 +14,10 @@
 #include "../engine/kv_engine.hpp"
 #include "../engine/logger.hpp"
 #include "../engine/thread_manager.hpp"
-#include "allocator.hpp"
+
 #include "kvdk/engine.hpp"
+#include "pmem_allocator/free_list.hpp"
+#include "pmem_allocator/pmem_allocator.hpp"
 #include "test_util.h"
 
 using namespace KVDK_NAMESPACE;
@@ -61,7 +63,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         thread_manager_->MaybeInitThread(write_thread);
         PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
             pmem_path, pmem_size, num_segment_blocks[i], block_sizes[i],
-            num_thread, false);
+            num_thread, true, false);
         ASSERT_NE(pmem_alloc, nullptr);
 
         uint64_t kvpairs = pmem_size / block_sizes[i];
@@ -91,30 +93,6 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
   }
 }
 
-TEST_F(EnginePMemAllocatorTest, TestPMemPopulateSpace) {
-  // pmem size can't less than 64?
-  std::vector<uint64_t> pmem_sizes{16ULL << 30, 16ULL << 20, 16ULL << 10};
-  uint64_t num_segment_block = 2 * 1024;
-  uint32_t block_size = 16;
-  std::vector<uint32_t> num_threads = {1, 16};
-  std::vector<bool> use_devdax_modes = {false};
-  for (auto pmem_size : pmem_sizes) {
-    for (auto num_thread : num_threads) {
-      thread_manager_.reset(new (std::nothrow) ThreadManager(num_thread));
-      auto TestPmemPopulate = [&](uint64_t id) {
-        thread_manager_->MaybeInitThread(write_thread);
-        PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
-            pmem_path, pmem_size, num_segment_block, block_size, num_thread,
-            false);
-        ASSERT_NE(pmem_alloc, nullptr);
-        pmem_alloc->PopulateSpace();
-        delete pmem_alloc;
-      };
-      LaunchNThreads(num_thread, TestPmemPopulate);
-    }
-  }
-}
-
 TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   uint32_t num_thread = 16;
   uint64_t pmem_size = 64ULL << 10;
@@ -122,8 +100,9 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   uint64_t block_size = 64;
   std::vector<uint64_t> alloc_size{8 * 64, 8 * 64, 16 * 64, 32 * 64};
   thread_manager_.reset(new (std::nothrow) ThreadManager(num_thread));
-  PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
-      pmem_path, pmem_size, num_segment_block, block_size, num_thread, false);
+  PMEMAllocator *pmem_alloc =
+      PMEMAllocator::NewPMEMAllocator(pmem_path, pmem_size, num_segment_block,
+                                      block_size, num_thread, true, false);
   ASSERT_NE(pmem_alloc, nullptr);
 
   /* Allocated pmem status (block nums):
@@ -163,4 +142,3 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   // TODO: add check pmem usage.
   delete pmem_alloc;
 }
-

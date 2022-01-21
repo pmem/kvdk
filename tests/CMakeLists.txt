@@ -19,8 +19,9 @@ target_include_directories(dbtest_pmem_allocator
 target_link_libraries(dbtest_pmem_allocator PUBLIC engine gtest gmock gtest_main)
 
 
+message( ${PROJECT_SOURCE_DIR})
 # For pmem allocator performance bench
-add_executable(dbbench_pmem_allocatorpmem_allocator_bench.cpp)
+add_executable(dbbench_pmem_allocator pmem_allocator_bench.cpp)
 target_include_directories(dbbench_pmem_allocator 
     PRIVATE 
     ${PROJECT_SOURCE_DIR}/engine 
