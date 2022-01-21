@@ -25,7 +25,6 @@
 #include "skiplist.hpp"
 #include "structures.hpp"
 
-#include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -856,7 +855,6 @@ Status KVEngine::Delete(const StringView key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-
   return StringDeleteImpl(key);
 }
 
@@ -960,7 +958,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                             new_record_pmem_ptr, HashOffsetType::DLRecord);
       }
       purgeAndFree(existing_record);
-      TEST_SYNC_POINT("KVEngine::SSetImpl::Update::Finish");
     } else {
       if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
                             &dram_node, hint.spin)) {
@@ -1118,7 +1115,6 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
-
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto &kv = write_batch.kvs[i];
     if (kv.type == StringDataRecord) {
@@ -1145,8 +1141,6 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   size_t batch_size = write_batch.Size();
-  TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::AllocateRecord::After",
-                           &batch_size);
   // lock spin mutex with order to avoid deadlock
   std::vector<std::unique_lock<SpinMutex>> ul_locks;
   for (const SpinMutex *l : spins_to_lock) {
@@ -1165,13 +1159,11 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
       thread_res_[write_thread.id].persisted_pending_batch,
       space_entry_offsets);
 
-  std::vector<Status> statuss(write_batch.Size());
   // Do batch writes
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (write_batch.kvs[i].type == StringDataRecord ||
         write_batch.kvs[i].type == StringDeleteRecord) {
       s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
-      TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
     } else {
       return Status::NotSupported;
     }
@@ -1228,7 +1220,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     void *block_base =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
-    TEST_SYNC_POINT("KVEngine::BatchWrite::Pesistent::0");
     // We use if here to avoid compilation warning
     if (kv.type == StringDataRecord) {
       StringRecord::PersistStringRecord(
@@ -1240,7 +1231,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
       std::abort();
     }
 
-    TEST_SYNC_POINT("KVEngine::StringBatchWriteImpl::HashInsertBefore");
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
                         HashOffsetType::StringRecord);
@@ -1286,7 +1276,6 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     case Status::Ok:
       assert(entry_ptr->header.status == HashEntryStatus::Updating);
       purgeAndFree(hash_entry.index.string_record);
-      TEST_SYNC_POINT("DataEntry::StringDeleteImpl::purgeAndFree");
       entry_ptr->Clear();
       return s;
     case Status::NotFound:
@@ -1329,11 +1318,9 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     kvdk_assert(!found || new_ts > data_entry.meta.timestamp,
                 "old record has newer timestamp!");
 
-    TEST_SYNC_POINT("KVEngine::StringSetImpl::PersistBefore");
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
                                       new_ts, StringDataRecord, key, value);
 
-    TEST_SYNC_POINT("KVEngine::StringSetImpl::HashInsertBefore");
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
                         HashOffsetType::StringRecord);
@@ -1493,7 +1480,6 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
         DLRecord *pmp_new_record =
             pmem_allocator_->offset2addr_checked<DLRecord>(
                 emplace_result.offset_new);
-        TEST_SYNC_POINT("KVEngine::HSet::HashInsert::Before");
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             RecordType::DlistDataRecord, pmp_new_record,
                             HashOffsetType::UnorderedCollectionElement);
