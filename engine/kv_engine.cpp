@@ -96,27 +96,28 @@ void KVEngine::BackgroundWork() {
   assert(configs_.report_pmem_usage_interval >= 0);
   auto background_interval = std::chrono::milliseconds{
       static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
-  auto free_skiplist_node_interval = std::chrono::milliseconds{0};
-  auto report_pmem_usage_interval = std::chrono::milliseconds{0};
+  auto const free_skiplist_node_interval = std::chrono::milliseconds{10000};
+  auto const report_pmem_usage_interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.report_pmem_usage_interval * 1000)};
+  auto count_down1 = free_skiplist_node_interval;
+  auto count_down2 = report_pmem_usage_interval;
   while (!closing_) {
     std::this_thread::sleep_for(background_interval);
 
     pmem_allocator_->BackgroundWork();
 
-    if (free_skiplist_node_interval < background_interval) {
+    if (count_down1 < background_interval) {
       FreeSkiplistDramNodes();
-      free_skiplist_node_interval = std::chrono::milliseconds{10000};
+      count_down1 = free_skiplist_node_interval;
     } else {
-      free_skiplist_node_interval -= background_interval;
+      count_down1 -= background_interval;
     }
 
-    if (report_pmem_usage_interval < background_interval) {
+    if (count_down2 < background_interval) {
       ReportPMemUsage();
-      report_pmem_usage_interval =
-          std::chrono::milliseconds{static_cast<std::uint64_t>(
-              configs_.report_pmem_usage_interval * 1000)};
+      count_down2 = report_pmem_usage_interval;
     } else {
-      report_pmem_usage_interval -= background_interval;
+      count_down2 -= background_interval;
     }
   }
 }
