@@ -740,6 +740,7 @@ Status KVEngine::RestorePendingBatch() {
         }
       }
     }
+    closedir(dir);
   } else {
     GlobalLogger.Error("Open persisted pending batch dir %s failed\n",
                        pending_batch_dir_.c_str());
@@ -1221,7 +1222,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
       return Status::Ok;
     }
 
-    kvdk_assert(!found || batch_hint.timestamp > data_entry.meta.timestamp,
+    kvdk_assert(!found || batch_hint.timestamp >= data_entry.meta.timestamp,
                 "ts of new data smaller than existing data in batch write");
 
     void *block_base =
