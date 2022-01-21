@@ -57,6 +57,8 @@ KVEngine::~KVEngine() {
     t.join();
   }
 
+  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
+  ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
 }
 
@@ -82,8 +84,8 @@ void KVEngine::FreeSkiplistDramNodes() {
 void KVEngine::ReportPMemUsage() {
   auto total = pmem_allocator_->PMemUsageInBytes();
   GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
-                    (total / (1ULL << 10)), (total / (1ULL << 20)),
-                    (total / (1ULL << 30)));
+                    (total / (1LL << 10)), (total / (1LL << 20)),
+                    (total / (1LL << 30)));
 }
 
 void KVEngine::BackgroundWork() {
@@ -97,6 +99,7 @@ void KVEngine::BackgroundWork() {
   auto free_skiplist_node_interval = std::chrono::milliseconds{0};
   auto report_pmem_usage_interval = std::chrono::milliseconds{0};
   while (!closing_) {
+    std::this_thread::sleep_for(background_interval);
 
     pmem_allocator_->BackgroundWork();
 
@@ -115,10 +118,7 @@ void KVEngine::BackgroundWork() {
     } else {
       report_pmem_usage_interval -= background_interval;
     }
-
-    std::this_thread::sleep_for(background_interval);
   }
-  ReportPMemUsage();
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
@@ -189,6 +189,8 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   write_thread.id = -1;
   bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
 
+  ReportPMemUsage();
+  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
   return s;
 }
 
