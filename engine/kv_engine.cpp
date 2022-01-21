@@ -1181,8 +1181,15 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // Free updated kvs, we should purge all updated kvs before release locks and
   // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
-    if (batch_hints[i].pmem_record_to_free != nullptr) {
-      purgeAndFree(batch_hints[i].pmem_record_to_free);
+    if (batch_hints[i].hash_entry_ptr &&
+        (batch_hints[i].hash_entry_ptr->header.status ==
+             HashEntryStatus::Updating ||
+         write_batch.kvs[i].type == StringDeleteRecord)) {
+      purgeAndFree(batch_hints[i].hash_entry_ptr->index.string_record);
+      // For delete kvs, we should clear hash entry
+      if (write_batch.kvs[i].type == StringDeleteRecord) {
+        batch_hints[i].hash_entry_ptr->Clear();
+      }
     }
   }
   return Status::Ok;
@@ -1192,15 +1199,14 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
                                       BatchWriteHint &batch_hint) {
   DataEntry data_entry;
   HashEntry hash_entry;
-  HashEntry *entry_ptr = nullptr;
 
   {
     auto &hash_hint = batch_hint.hash_hint;
     // hash table for the hint should be alread locked, so we do not lock it
     // here
-    Status s =
-        hash_table_->SearchForWrite(hash_hint, kv.key, StringRecordType,
-                                    &entry_ptr, &hash_entry, &data_entry);
+    Status s = hash_table_->SearchForWrite(hash_hint, kv.key, StringRecordType,
+                                           &batch_hint.hash_entry_ptr,
+                                           &hash_entry, &data_entry);
     if (s == Status::MemoryOverflow) {
       return s;
     }
@@ -1208,9 +1214,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
 
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord) {
-      if (found) {
-        batch_hint.pmem_record_to_free = hash_entry.index.string_record;
-      }
       return Status::Ok;
     }
 
@@ -1231,13 +1234,8 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
       std::abort();
     }
 
-    auto entry_base_status = entry_ptr->header.status;
-    hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
-                        HashOffsetType::StringRecord);
-
-    if (entry_base_status == HashEntryStatus::Updating) {
-      batch_hint.pmem_record_to_free = hash_entry.index.string_record;
-    }
+    hash_table_->Insert(hash_hint, batch_hint.hash_entry_ptr, kv.type,
+                        block_base, HashOffsetType::StringRecord);
   }
 
   return Status::Ok;
