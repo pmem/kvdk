@@ -569,16 +569,11 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   std::string internal_key(pmem_record->Key());
   StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
 
-  if (RecoverToCheckpoint()) {
-    if (cached_data_entry.meta.timestamp >
-        persist_checkpoint_->CheckpointTS()) {
-      return Status::Ok;
-    }
-  } else {
-    if (!linked_record) {
+  if (!linked_record) {
+    if (!RecoverToCheckpoint()) {
       purgeAndFree(pmem_record);
-      return Status::Ok;
     }
+    return Status::Ok;
   }
 
   DataEntry existing_data_entry;
@@ -598,55 +593,31 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   bool found = s == Status::Ok;
   if (found &&
       existing_data_entry.meta.timestamp >= cached_data_entry.meta.timestamp) {
-    purgeAndFree(pmem_record);
+    if (existing_data_entry.meta.timestamp <= persist_checkpoint_->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
+      purgeAndFree(pmem_record);
+    }
     return Status::Ok;
   }
 
   SkiplistNode *dram_node = nullptr;
   if (!found) {
-    auto height = Skiplist::RandomHeight();
-    if (height > 0) {
-      dram_node = SkiplistNode::NewNode(user_key, pmem_record, height);
-      if (dram_node == nullptr) {
-        GlobalLogger.Error("Memory overflow in recovery\n");
-        return Status::MemoryOverflow;
-      }
-      if (configs_.opt_large_sorted_collection_restore &&
-          thread_cache_[access_thread.id]
-                      .visited_skiplist_ids[dram_node->SkiplistID()]++ %
-                  kRestoreSkiplistStride ==
-              0) {
-        std::lock_guard<std::mutex> lg(list_mu_);
-        sorted_rebuilder_->SetEntriesOffsets(
-            pmem_allocator_->addr2offset(pmem_record), false, nullptr);
-      }
-    }
-
     // Hash entry won't be reused during data recovering so we don't
     // neet to check status here
     hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
-                        dram_node == nullptr ? (void *)pmem_record
-                                             : (void *)dram_node,
-                        dram_node == nullptr ? HashOffsetType::DLRecord
-                                             : HashOffsetType::SkiplistNode);
+                        (void *)pmem_record, HashOffsetType::DLRecord);
   } else {
     DLRecord *old_pmem_record;
-    if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      dram_node = hash_entry.index.skiplist_node;
-      old_pmem_record = dram_node->record;
-      dram_node->record = pmem_record;
-      entry_ptr->header.data_type = cached_data_entry.meta.type;
-    } else {
-      assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
-      old_pmem_record = hash_entry.index.dl_record;
-      hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
-                          pmem_record, HashOffsetType::DLRecord);
-    }
+    assert(hash_entry.header.offset_type == HashOffsetType::DLRecord);
+    old_pmem_record = hash_entry.index.dl_record;
+    hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
+                        pmem_record, HashOffsetType::DLRecord);
     kvdk_assert(old_pmem_record->entry.meta.timestamp <
                     pmem_record->entry.meta.timestamp,
                 "old pmem record has larger ts than new restored one in "
                 "restore skiplist record");
-    purgeAndFree(old_pmem_record);
+    if (cached_data_entry.meta.timestamp <= persist_checkpoint_->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
+      purgeAndFree(old_pmem_record);
+    }
   }
 
   return Status::Ok;

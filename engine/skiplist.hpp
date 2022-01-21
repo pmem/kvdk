@@ -496,6 +496,10 @@ public:
     pmem_allocator_->BatchFree(to_free);
   }
 
+  DLRecord *
+  findCheckpointVersion(DLRecord *pmem_record,
+                        std::vector<DLRecord *> *invalid_version_records);
+
 private:
   struct SkiplistNodeInfo {
     bool is_visited;
