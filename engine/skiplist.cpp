@@ -414,6 +414,7 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
                       const SpinMutex *deleting_key_lock) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
+  
   if (!FindDeletePos(&splice, key, deleting_key_lock, deleted_record,
                      &prev_record_lock)) {
     return false;
@@ -426,11 +427,12 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
   assert(prev->next == deleting_offset);
   assert(next->prev == deleting_offset);
   // For repair in recovery due to crashes during pointers changing, we should
-  // first unlink deleting entry from prev's next
-  prev->next = pmem_allocator_->addr2offset(next);
-  pmem_persist(&prev->next, 8);
+  // first unlink deleting entry from next's prev
   next->prev = pmem_allocator_->addr2offset(prev);
   pmem_persist(&next->prev, 8);
+  TEST_SYNC_POINT("KVEngine::Skiplist::Delete::PersistNext'sPrev");
+  prev->next = pmem_allocator_->addr2offset(next);
+  pmem_persist(&prev->next, 8);
   deleted_record->Destroy();
 
   if (dram_node) {
