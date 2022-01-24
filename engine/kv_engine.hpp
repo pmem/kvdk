@@ -103,7 +103,7 @@ private:
     TimeStampType timestamp{0};
     SpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
-    HashEntry *hash_entry_ptr = nullptr;
+    void *pmem_record_to_free = nullptr;
   };
 
   struct ThreadLocalRes {
