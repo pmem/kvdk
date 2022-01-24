@@ -30,12 +30,12 @@ using ValueType = StringView;
 using CollectionNameType = StringView;
 
 class HashesOperator {
-  kvdk::Engine *engine;
+  kvdk::Engine *&engine;
   CollectionNameType collection_name;
 
 public:
   HashesOperator() = delete;
-  HashesOperator(kvdk::Engine *e, CollectionNameType cn)
+  HashesOperator(kvdk::Engine *&e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
   kvdk::Status operator()(KeyType key, std::string *value_got) {
     return engine->HGet(collection_name, key, value_got);
@@ -49,12 +49,12 @@ public:
 };
 
 class SortedOperator {
-  kvdk::Engine *engine;
+  kvdk::Engine *&engine;
   CollectionNameType collection_name;
 
 public:
   SortedOperator() = delete;
-  SortedOperator(kvdk::Engine *e, CollectionNameType cn)
+  SortedOperator(kvdk::Engine *&e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
   kvdk::Status operator()(KeyType key, std::string *value_got) {
     return engine->SGet(collection_name, key, value_got);
@@ -68,14 +68,14 @@ public:
 };
 
 class StringOperator {
-  kvdk::Engine *engine;
+  kvdk::Engine *&engine;
   CollectionNameType collection_name;
 
 public:
   StringOperator() = delete;
   // For convenince, introducing empty collection_name for global anonymous
   // collection
-  StringOperator(kvdk::Engine *e, CollectionNameType cn)
+  StringOperator(kvdk::Engine *&e, CollectionNameType cn)
       : engine{e}, collection_name{} {
     if (cn != collection_name)
       throw;
@@ -128,58 +128,28 @@ public:
   using StagedChanges = std::unordered_map<KeyType, VState>;
 
 private:
-  kvdk::Engine *engine;
+  kvdk::Engine *&engine;
   CollectionNameType collection_name;
   EngineOperator oper;
   size_t const n_thread;
   PossibleStates possible_state;
-  PossibleStates possible_untracked_state;
   std::vector<OperationQueue> task_queues;
-  std::vector<size_t> executed_task_pos;
-  std::vector<size_t> next_task_pos;
 
 public:
   DataBaseStateTracker() = delete;
-  DataBaseStateTracker(kvdk::Engine *e, CollectionNameType cn, size_t nt)
+  DataBaseStateTracker(kvdk::Engine *&e, CollectionNameType cn, size_t nt)
       : engine{e}, collection_name{cn}, oper{engine, collection_name},
-        n_thread{nt}, possible_state{}, task_queues(n_thread),
-        executed_task_pos(n_thread), next_task_pos(n_thread) {}
+        n_thread{nt}, possible_state{}, task_queues(n_thread) {}
 
   void CommitChanges() {
     std::cout << "[Testing] Updating Engine State" << std::endl;
-
-    for (size_t tid = 0; tid < n_thread; tid++) {
-      if (executed_task_pos[tid] != next_task_pos[tid]) {
-        auto untracked = task_queues[tid][next_task_pos[tid]];
-        std::cout << "Thread " << tid
-                  << " is interrupted when trying to execute operation: "
-                  << "\n"
-                  << untracked;
-        auto sop = task_queues[tid][next_task_pos[tid]];
-        switch (sop.op) {
-        case SingleOp::OpType::Get: {
-          continue;
-        }
-        case SingleOp::OpType::Set: {
-          possible_state.emplace(sop.key,
-                                 VState{VState::State::Existing, sop.value});
-          break;
-        }
-        case SingleOp::OpType::Delete: {
-          possible_state.emplace(sop.key,
-                                 VState{VState::State::Deleted, ValueType{}});
-          break;
-        }
-        }
-      }
-    }
 
     // Remove overwritten kvs
     {
       ProgressBar pbar{std::cout, "", n_thread, 1, true};
       for (size_t tid = 0; tid < n_thread; tid++) {
-        for (size_t i = 0; i < executed_task_pos[tid]; i++) {
-          possible_state.erase(task_queues[tid][i].key);
+        for (auto const &sop : task_queues[tid]) {
+          possible_state.erase(sop.key);
         }
         pbar.Update(tid + 1);
       }
@@ -189,9 +159,8 @@ public:
     {
       ProgressBar pbar{std::cout, "", n_thread, 1, true};
       for (size_t tid = 0; tid < n_thread; tid++) {
-        StagedChanges squashed_changes{executed_task_pos[tid] * 2};
-        for (size_t i = 0; i < executed_task_pos[tid]; i++) {
-          auto sop = task_queues[tid][i];
+        StagedChanges squashed_changes{task_queues[tid].size() * 2};
+        for (auto const &sop : task_queues[tid]) {
           switch (sop.op) {
           case SingleOp::OpType::Get: {
             continue;
@@ -216,10 +185,6 @@ public:
     }
     task_queues.clear();
     task_queues.resize(n_thread);
-    executed_task_pos.clear();
-    executed_task_pos.resize(n_thread, 0);
-    next_task_pos.clear();
-    next_task_pos.resize(n_thread, 0);
   }
 
   void CheckState(KeyType key, VState vstate) {
@@ -247,12 +212,11 @@ public:
     size_t progress = 0;
     ProgressBar progress_bar{std::cout, "", tasks.size(), 100,
                              enable_progress_bar};
+    /// TODO: Catch kill point and clean up tasks
     for (auto const &task : tasks) {
       switch (task.op) {
       case SingleOp::OpType::Get: {
-        ++next_task_pos[tid];
         status = oper(task.key, &value_got);
-        ++executed_task_pos[tid];
         ASSERT_EQ(status, kvdk::Status::Ok)
             << "Key cannot be queried with Get\n"
             << "Key: " << task.key << "\n";
@@ -265,17 +229,13 @@ public:
         break;
       }
       case SingleOp::OpType::Set: {
-        ++next_task_pos[tid];
         status = oper(task.key, task.value);
-        ++executed_task_pos[tid];
         ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to set key\n"
                                             << "Key: " << task.key << "\n";
         break;
       }
       case SingleOp::OpType::Delete: {
-        ++next_task_pos[tid];
         status = oper(task.key);
-        ++executed_task_pos[tid];
         ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to delete key\n"
                                             << "Key: " << task.key << "\n";
         break;
@@ -364,7 +324,6 @@ public:
           pbar.Update(possible_state.size() - possible_state_copy.size());
         }
       }
-      /// TODO: Check untracked
     }
   }
 
@@ -699,7 +658,7 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -716,7 +675,7 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -737,7 +696,7 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -758,7 +717,7 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -774,7 +733,7 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
 TEST_F(EngineStressTest, StringSetOnly) {
   InitializeStrings();
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -790,7 +749,7 @@ TEST_F(EngineStressTest, StringSetOnly) {
 TEST_F(EngineStressTest, StringSetAndDelete) {
   InitializeStrings();
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -838,7 +797,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -862,7 +821,7 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
@@ -881,7 +840,7 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
 TEST_F(EngineHotspotTest, StringMultipleHotspot) {
   InitializeStrings();
 
-  std::cout << "[Testing] Modify, check, reboot check engine for " << n_reboot
+  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
             << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
