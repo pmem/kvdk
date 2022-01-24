@@ -399,30 +399,6 @@ private:
     bool terminating = false;
   };
 
-  class CheckPoint {
-  public:
-    void MakeCheckpoint(const Snapshot *snapshot) {
-      checkpoint_ts =
-          static_cast<const SnapshotImpl *>(snapshot)->GetTimestamp();
-    }
-
-    void MaybeRelease(const Snapshot *releasing_snapshot) {
-      if (static_cast<const SnapshotImpl *>(releasing_snapshot)
-              ->GetTimestamp() == checkpoint_ts) {
-        Release();
-      }
-    }
-
-    void Release() { checkpoint_ts = 0; }
-
-    TimeStampType CheckpointTS() { return checkpoint_ts; }
-
-    bool Valid() { return checkpoint_ts > 0; }
-
-  private:
-    TimeStampType checkpoint_ts;
-  };
-
   CheckPoint *persist_checkpoint_;
   std::mutex checkpoint_lock_;
 

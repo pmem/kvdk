@@ -496,11 +496,12 @@ DLRecord *SortedCollectionRebuilder::findValidVersion(
   if (invalid_version_records) {
     invalid_version_records->clear();
   }
-  if (checkpoint_ == 0) {
+  if (!checkpoint_.Valid()) {
     return pmem_record;
   }
   DLRecord *curr = pmem_record;
-  while (curr != nullptr && curr->entry.meta.timestamp > checkpoint_) {
+  while (curr != nullptr &&
+         curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
     if (invalid_version_records) {
       invalid_version_records->push_back(curr);
     }
@@ -603,7 +604,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
         break;
       }
       entry_ptr->Clear();
-      purgeAndFree(invalid_records);
+      batchPurgeAndFree(invalid_records);
       continue;
     } else if (valid_version_record != next_record) {
       // repair linkage of checkpoint version
@@ -628,7 +629,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
                                valid_version_record, pmem_allocator_);
         break;
       }
-      purgeAndFree(invalid_records);
+      batchPurgeAndFree(invalid_records);
     }
 
     assert(valid_version_record != nullptr);
@@ -809,7 +810,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
           break;
         }
         entry_ptr->Clear();
-        purgeAndFree(invalid_records);
+        batchPurgeAndFree(invalid_records);
         continue;
       } else if (valid_version_record != next_record) {
         // repair linkage of checkpoint version
@@ -834,7 +835,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
                                  valid_version_record, pmem_allocator_);
           break;
         }
-        purgeAndFree(invalid_records);
+        batchPurgeAndFree(invalid_records);
       }
 
       assert(valid_version_record != nullptr);
@@ -959,7 +960,7 @@ Status SortedCollectionRebuilder::updateEntriesOffset() {
           break;
         }
         entry_ptr->Clear();
-        purgeAndFree(invalid_version_records);
+        batchPurgeAndFree(invalid_version_records);
         continue;
       } else if (valid_version_record != hash_entry.index.dl_record) {
         // repair linkage of checkpoint version
@@ -982,7 +983,7 @@ Status SortedCollectionRebuilder::updateEntriesOffset() {
                                  valid_version_record, pmem_allocator_);
           break;
         }
-        purgeAndFree(invalid_version_records);
+        batchPurgeAndFree(invalid_version_records);
       }
 
       assert(valid_version_record != nullptr);
