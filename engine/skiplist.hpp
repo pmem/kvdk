@@ -464,11 +464,13 @@ public:
       : pmem_allocator_(pmem_allocator), hash_table_(hash_table),
         checkpoint_(checkpoint), opt_parallel_rebuild_(opt_parallel_rebuild),
         num_rebuild_threads_(num_rebuild_threads){};
-  Status Rebuild(const std::vector<std::shared_ptr<Skiplist>> &skiplists);
 
-  void SetEntriesOffsets(uint64_t entry_offset, bool is_visited,
-                         SkiplistNode *node) {
-    entries_offsets_.insert({entry_offset, {is_visited, node}});
+  Status
+  RebuildLinkage(const std::vector<std::shared_ptr<Skiplist>> &skiplists);
+
+  void AddRecordForParallelRebuild(uint64_t record_offset, bool is_visited,
+                                   SkiplistNode *node) {
+    record_offsets_.insert({record_offset, {is_visited, node}});
   }
 
 private:
@@ -506,7 +508,7 @@ private:
   };
   SpinMutex map_mu_;
   std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
-  std::unordered_map<uint64_t, SkiplistNodeInfo> entries_offsets_;
+  std::unordered_map<uint64_t, SkiplistNodeInfo> record_offsets_;
   TimeStampType checkpoint_;
   PMEMAllocator *pmem_allocator_;
   HashTable *hash_table_;

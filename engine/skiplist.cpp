@@ -552,7 +552,7 @@ Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
       }
     }
     fs.clear();
-    for (auto &kv : entries_offsets_) {
+    for (auto &kv : record_offsets_) {
       kv.second.visited = false;
     }
   }
@@ -658,10 +658,14 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
   return Status::Ok;
 }
 
-Status SortedCollectionRebuilder::Rebuild(
+Status SortedCollectionRebuilder::RebuildLinkage(
     const std::vector<std::shared_ptr<Skiplist>> &skiplists) {
   Status s = Status::Ok;
-  if (opt_parallel_rebuild_ && skiplists.size() > 0) {
+  if (skiplists.size() == 0) {
+    return s;
+  }
+
+  if (opt_parallel_rebuild_) {
     s = parallelRepairSkiplistLinkage();
   } else {
     std::vector<std::future<Status>> fs;
@@ -749,7 +753,7 @@ void SortedCollectionRebuilder::linkedNode(uint64_t thread_id, int height) {
 
 SkiplistNode *SortedCollectionRebuilder::getSortedOffset(int height) {
   std::lock_guard<SpinMutex> kv_mux(map_mu_);
-  for (auto &kv : entries_offsets_) {
+  for (auto &kv : record_offsets_) {
     if (!kv.second.visited && kv.second.node->Height() >= height - 1) {
       kv.second.visited = true;
       return kv.second.node;
@@ -771,7 +775,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
       break;
     }
     // continue to build connention
-    if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
+    if (record_offsets_.find(next_offset) == record_offsets_.end()) {
       HashEntry hash_entry;
       DataEntry data_entry;
       HashEntry *entry_ptr = nullptr;
@@ -894,7 +898,7 @@ void SortedCollectionRebuilder::dealWithOtherHeight(uint64_t thread_id,
     }
     // continue to find next
     uint64_t next_offset = pmem_allocator_->addr2offset(next_node->record);
-    if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
+    if (record_offsets_.find(next_offset) == record_offsets_.end()) {
       visited_node = next_node;
     } else {
       if (cur_node->Height() >= height) {
@@ -910,8 +914,8 @@ void SortedCollectionRebuilder::dealWithOtherHeight(uint64_t thread_id,
 Status SortedCollectionRebuilder::updateEntriesOffset() {
   std::unordered_map<uint64_t, SkiplistNodeInfo> new_kvs;
   std::unordered_map<uint64_t, SkiplistNodeInfo>::iterator it =
-      entries_offsets_.begin();
-  while (it != entries_offsets_.end()) {
+      record_offsets_.begin();
+  while (it != record_offsets_.end()) {
     DataEntry data_entry;
     HashEntry *entry_ptr = nullptr;
     HashEntry hash_entry;
@@ -924,7 +928,7 @@ Status SortedCollectionRebuilder::updateEntriesOffset() {
         hash_table_->SearchForRead(hash_hint, internal_key, SortedRecordType,
                                    &entry_ptr, &hash_entry, &data_entry);
     if (s == Status::NotFound) {
-      it = entries_offsets_.erase(it);
+      it = record_offsets_.erase(it);
       continue;
     }
 
@@ -939,7 +943,7 @@ Status SortedCollectionRebuilder::updateEntriesOffset() {
     } else {
       kvdk_assert(hash_entry.header.offset_type == HashOffsetType::DLRecord,
                   "wrong hash offset type in repair skiplist linkage");
-      it = entries_offsets_.erase(it);
+      it = record_offsets_.erase(it);
       cur_record = hash_entry.index.dl_record;
       std::vector<DLRecord *> invalid_version_records;
       DLRecord *valid_version_record = findValidVersion(
@@ -1002,7 +1006,7 @@ Status SortedCollectionRebuilder::updateEntriesOffset() {
     }
     assert(node && "should be not empty!");
   }
-  entries_offsets_.insert(new_kvs.begin(), new_kvs.end());
+  record_offsets_.insert(new_kvs.begin(), new_kvs.end());
   return Status::Ok;
 }
 
