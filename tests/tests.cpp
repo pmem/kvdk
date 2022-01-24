@@ -1433,8 +1433,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
                                        "collection2"};
 
   auto cmp0 = [](const StringView &a, const StringView &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea < scoreb)
@@ -1444,8 +1444,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   };
 
   auto cmp1 = [](const StringView &a, const StringView &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea > scoreb)
@@ -1526,6 +1526,10 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
 #if DEBUG_LEVEL > 0
 TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
   // SyncPoint
+  // thread1: insert {"key8", "val15"}
+  // thread2: batch write: {"key0", "val0"}, ....{"key20",""val20}
+  // thread3: insert {"key10", "val17"}
+  // thread4: delete {"key0", "val0"} {"key3", "val3"} ... {"key15", "val15"}
   {
     Configs test_config = configs;
     test_config.max_write_threads = 16;
@@ -1623,6 +1627,9 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
           }
         });
     SyncPoint::GetInstance()->EnableProcessing();
+
+    engine->Set("key2", "val2*2");
+    engine->Set("key6", "val6*2");
     WriteBatch wb;
     for (int i = 0; i < cnt; ++i) {
       std::string key = "key" + std::to_string(i);
@@ -1639,7 +1646,15 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
       for (int i = 0; i < cnt; ++i) {
         std::string got_val;
         std::string key = "key" + std::to_string(i);
-        ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+        if (key == "key2") {
+          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+          ASSERT_EQ(got_val, "val2*2");
+        } else if (key == "key6") {
+          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+          ASSERT_EQ(got_val, "val6*2");
+        } else {
+          ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+        }
       }
     }
   }
@@ -1654,16 +1669,20 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
         "KVEnigne::BatchWrite::BatchWriteRecord",
         [&](void *index) { write_num.fetch_add(1); });
     SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::StringBatchWriteImpl::HashInsertBefore", [&](void *index) {
-          if (write_num % 4 == 0)
+        "KVEngine::BatchWrite::purgeAndFree::Before", [&](void *index) {
+          size_t idx = *(size_t *)(index);
+          if (idx == 5)
             throw 1;
         });
     SyncPoint::GetInstance()->EnableProcessing();
     WriteBatch wb;
-    for (int i = 0; i < cnt; i += 2) {
+    for (int i = 0; i < cnt; ++i) {
       std::string key = "key" + std::to_string(i);
       std::string val = "val*" + std::to_string(i);
       wb.Put(key, val);
+      if (i % 4 == 0) {
+        wb.Delete(key);
+      }
     }
     try {
       ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
@@ -1680,7 +1699,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
   }
 }
 
-// Example One:
+// Example Case One:
 //         A <-> C <-> D
 // Insert: A <------ C <-> D
 //         A <-> B ->C
@@ -1702,8 +1721,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
         }
       });
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::SSetImpl::Update::Finish",
-      [&](void *) { update_num.fetch_add(1); });
+      "Test::SSet::Update::Finish", [&](void *) { update_num.fetch_add(1); });
   SyncPoint::GetInstance()->EnableProcessing();
 
   Collection *collection_ptr;
@@ -1719,6 +1737,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
       } else {
         std::string new_val = "val*" + std::to_string(i);
         engine->SSet(collection_name, "key" + std::to_string(i - 1), new_val);
+        TEST_SYNC_POINT("Test::SSet::Update::Finish");
       }
     }
   } catch (...) {
@@ -1747,7 +1766,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   }
 }
 
-// Example Two:
+// Example Case Two:
 //         A <-> C <-> D
 // Insert order: A, D, C
 // Delete:  A ----------> D
@@ -1818,7 +1837,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
 
 // Example:
 //   {key0, val0} <-> {key2, val2}
-//   thread1: {key0, val0} <-> {key1, val1} <-> {key2, val2}
+//   thread1 insert : {key0, val0} <-> {key1, val1} <-> {key2, val2}
 //   thread2: iter
 TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   Configs test_config = configs;

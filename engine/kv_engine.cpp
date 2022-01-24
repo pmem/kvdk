@@ -59,6 +59,8 @@ KVEngine::~KVEngine() {
     t.join();
   }
 
+  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
+  ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
 }
 
@@ -84,8 +86,8 @@ void KVEngine::FreeSkiplistDramNodes() {
 void KVEngine::ReportPMemUsage() {
   auto total = pmem_allocator_->PMemUsageInBytes();
   GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
-                    (total / (1ULL << 10)), (total / (1ULL << 20)),
-                    (total / (1ULL << 30)));
+                    (total / (1LL << 10)), (total / (1LL << 20)),
+                    (total / (1LL << 30)));
 }
 
 void KVEngine::BackgroundWork() {
@@ -96,31 +98,30 @@ void KVEngine::BackgroundWork() {
   assert(configs_.report_pmem_usage_interval >= 0);
   auto background_interval = std::chrono::milliseconds{
       static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
-  auto free_skiplist_node_interval = std::chrono::milliseconds{0};
-  auto report_pmem_usage_interval = std::chrono::milliseconds{0};
+  auto const free_skiplist_node_interval = std::chrono::milliseconds{10000};
+  auto const report_pmem_usage_interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.report_pmem_usage_interval * 1000)};
+  auto count_down1 = free_skiplist_node_interval;
+  auto count_down2 = report_pmem_usage_interval;
   while (!closing_) {
+    std::this_thread::sleep_for(background_interval);
 
     pmem_allocator_->BackgroundWork();
 
-    if (free_skiplist_node_interval < background_interval) {
+    if (count_down1 < background_interval) {
       FreeSkiplistDramNodes();
-      free_skiplist_node_interval = std::chrono::milliseconds{10000};
+      count_down1 = free_skiplist_node_interval;
     } else {
-      free_skiplist_node_interval -= background_interval;
+      count_down1 -= background_interval;
     }
 
-    if (report_pmem_usage_interval < background_interval) {
+    if (count_down2 < background_interval) {
       ReportPMemUsage();
-      report_pmem_usage_interval =
-          std::chrono::milliseconds{static_cast<std::uint64_t>(
-              configs_.report_pmem_usage_interval * 1000)};
+      count_down2 = report_pmem_usage_interval;
     } else {
-      report_pmem_usage_interval -= background_interval;
+      count_down2 -= background_interval;
     }
-
-    std::this_thread::sleep_for(background_interval);
   }
-  ReportPMemUsage();
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
@@ -192,6 +193,8 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
 
   bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
 
+  ReportPMemUsage();
+  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
   return s;
 }
 
@@ -740,6 +743,7 @@ Status KVEngine::RestorePendingBatch() {
         }
       }
     }
+    closedir(dir);
   } else {
     GlobalLogger.Error("Open persisted pending batch dir %s failed\n",
                        pending_batch_dir_.c_str());
@@ -959,7 +963,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                             new_record_pmem_ptr, HashOffsetType::DLRecord);
       }
       purgeAndFree(existing_record);
-      TEST_SYNC_POINT("KVEngine::SSetImpl::Update::Finish");
     } else {
       if (!skiplist->Insert(user_key, value, sized_space_entry, new_ts,
                             &dram_node, hint.spin)) {
@@ -1164,7 +1167,6 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
       thread_res_[write_thread.id].persisted_pending_batch,
       space_entry_offsets);
 
-  std::vector<Status> statuss(write_batch.Size());
   // Do batch writes
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (write_batch.kvs[i].type == StringDataRecord ||
@@ -1189,6 +1191,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (batch_hints[i].pmem_record_to_free != nullptr) {
+      TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before",
+                               &i);
       purgeAndFree(batch_hints[i].pmem_record_to_free);
     }
   }
@@ -1217,11 +1221,12 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     if (kv.type == StringDeleteRecord) {
       if (found) {
         batch_hint.pmem_record_to_free = hash_entry.index.string_record;
+        entry_ptr->Clear();
       }
       return Status::Ok;
     }
 
-    kvdk_assert(!found || batch_hint.timestamp > data_entry.meta.timestamp,
+    kvdk_assert(!found || batch_hint.timestamp >= data_entry.meta.timestamp,
                 "ts of new data smaller than existing data in batch write");
 
     void *block_base =
@@ -1238,8 +1243,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
       kvdk_assert(false, "wrong data type in batch write");
       std::abort();
     }
-
-    TEST_SYNC_POINT("KVEngine::StringBatchWriteImpl::HashInsertBefore");
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
                         HashOffsetType::StringRecord);
@@ -1285,7 +1288,6 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     case Status::Ok:
       assert(entry_ptr->header.status == HashEntryStatus::Updating);
       purgeAndFree(hash_entry.index.string_record);
-      TEST_SYNC_POINT("DataEntry::StringDeleteImpl::purgeAndFree");
       entry_ptr->Clear();
       return s;
     case Status::NotFound:
@@ -1328,11 +1330,9 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     kvdk_assert(!found || new_ts > data_entry.meta.timestamp,
                 "old record has newer timestamp!");
 
-    TEST_SYNC_POINT("KVEngine::StringSetImpl::PersistBefore");
     StringRecord::PersistStringRecord(block_base, sized_space_entry.size,
                                       new_ts, StringDataRecord, key, value);
 
-    TEST_SYNC_POINT("KVEngine::StringSetImpl::HashInsertBefore");
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
                         HashOffsetType::StringRecord);
@@ -1492,7 +1492,6 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
         DLRecord *pmp_new_record =
             pmem_allocator_->offset2addr_checked<DLRecord>(
                 emplace_result.offset_new);
-        TEST_SYNC_POINT("KVEngine::HSet::HashInsert::Before");
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             RecordType::DlistDataRecord, pmp_new_record,
                             HashOffsetType::UnorderedCollectionElement);

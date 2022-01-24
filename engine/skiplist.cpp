@@ -356,8 +356,6 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
   // create dram node for new record
   auto height = Skiplist::RandomHeight();
   if (height > 0) {
-    TEST_SYNC_POINT("KVEngine::Skiplist::Insert::CreateNode::Before" +
-                    std::to_string(write_thread.id));
     *dram_node = SkiplistNode::NewNode(key, new_record, height);
     for (int i = 1; i <= height; i++) {
       while (1) {
@@ -402,7 +400,6 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
 
   // link new record
   InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
-  TEST_SYNC_POINT("KVEnigne::Skiplist::Update::InsertAfter");
   if (dram_node != nullptr) {
     dram_node->record = new_record;
   }
@@ -427,10 +424,10 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
   assert(prev->next == deleting_offset);
   assert(next->prev == deleting_offset);
   // For repair in recovery due to crashes during pointers changing, we should
-  // first unlink deleting entry from next's prev
+  // first unlink deleting entry from next's prev.(It is the reverse process
+  // of insertion)
   next->prev = pmem_allocator_->addr2offset(prev);
   pmem_persist(&next->prev, 8);
-  TEST_SYNC_POINT("KVEngine::Skiplist::Delete::PersistNext'sPrev");
   prev->next = pmem_allocator_->addr2offset(next);
   pmem_persist(&prev->next, 8);
   deleted_record->Destroy();
