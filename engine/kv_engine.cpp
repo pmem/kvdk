@@ -42,10 +42,11 @@ void PendingBatch::PersistFinish() {
 }
 
 void PendingBatch::PersistProcessing(
-    const std::vector<uint64_t> &record_offsets) {
+    const std::vector<uint64_t> &record_offsets, TimeStampType ts) {
   pmem_memcpy_persist(this + 1, record_offsets.data(),
                       record_offsets.size() * 8);
   num_kv = record_offsets.size();
+  timestamp = ts;
   stage = Stage::Processing;
   pmem_persist(this, sizeof(PendingBatch));
 }
@@ -1158,7 +1159,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   thread_res_[write_thread.id].persisted_pending_batch->PersistProcessing(
-      space_entry_offsets);
+      space_entry_offsets, ts);
 
   // Do batch writes
   for (size_t i = 0; i < write_batch.Size(); i++) {
