@@ -1526,10 +1526,11 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
 #if DEBUG_LEVEL > 0
 TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
   // SyncPoint
-  // thread1: insert {"key8", "val15"}
-  // thread2: batch write: {"key0", "val0"}, ....{"key20",""val20}
-  // thread3: insert {"key10", "val17"}
-  // thread4: delete {"key0", "val0"} {"key3", "val3"} ... {"key15", "val15"}
+  // The dependency is, T1->T2->T3/T4
+  // T1: insert {"key8", "val15"}
+  // T2: batch write: {"key0", "val0"}, ....{"key20",""val20}
+  // T3: insert {"key10", "val17"}
+  // T4: delete {"key0", "val0"} {"key3", "val3"} ... {"key15", "val15"}
   {
     Configs test_config = configs;
     test_config.max_write_threads = 16;
@@ -1537,13 +1538,14 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
               Status::Ok);
 
     int cnt = 20;
-    std::atomic<bool> write_batch{false};
 
     SyncPoint::GetInstance()->LoadDependency(
         {{"Test::Set::Finish::1",
           "KVEngine::BatchWrite::AllocateRecord::After"},
-         {"KVEngine::BatchWrite::Pesistent::0", "Test::Set::Start::0"},
-         {"KVEngine::BatchWrite::Pesistent::0", "Test::Delete::Start::0"}});
+         {"KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before",
+          "Test::Set::Start::0"},
+         {"KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before",
+          "Test::Delete::Start::0"}});
     SyncPoint::GetInstance()->SetCallBack(
         "KVEngine::BatchWrite::AllocateRecord::After", [&](void *size) {
           size_t bsize = *((size_t *)size);
@@ -1554,6 +1556,15 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
 
     std::vector<std::thread> ts;
 
+    // thread 1
+    ts.emplace_back([&]() {
+      std::string key = "key8";
+      std::string val = "val15";
+      ASSERT_EQ(engine->Set(key, val), Status::Ok);
+      TEST_SYNC_POINT("Test::Set::Finish::1");
+    });
+
+    // thread 2
     ts.emplace_back([&]() {
       WriteBatch wb;
       for (int i = 0; i < cnt; ++i) {
@@ -1564,6 +1575,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
       ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
     });
 
+    // thread 3
     ts.emplace_back([&]() {
       TEST_SYNC_POINT("Test::Set::Start::0");
       std::string key = "key10";
@@ -1571,13 +1583,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
       ASSERT_EQ(engine->Set(key, val), Status::Ok);
     });
 
-    ts.emplace_back([&]() {
-      std::string key = "key8";
-      std::string val = "val15";
-      ASSERT_EQ(engine->Set(key, val), Status::Ok);
-      TEST_SYNC_POINT("Test::Set::Finish::1");
-    });
-
+   // thread 4
     ts.emplace_back([&]() {
       TEST_SYNC_POINT("Test::Delete::Start::0");
       for (int i = 0; i < cnt; i += 3) {
@@ -1659,7 +1665,8 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     }
   }
 
-  // Again write batch (the same key, the different value)
+  // Again write batch (the same key, the different value). Crash before
+  // purgeAndFree
   {
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->Reset();
@@ -1703,7 +1710,8 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
 
 // Example Case One:
 //         A <-> C <-> D
-// Insert: A <------ C <-> D
+// Insert B, but crashes half way, Now the state is:
+//         A <------ C <-> D
 //         A <-> B ->C
 // Then Repair
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
@@ -1771,8 +1779,9 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
 // Example Case Two:
 //         A <-> C <-> D
 // Insert order: A, D, C
-// Delete:  A ----------> D
-//          A <- C <->D
+// Delete C, crash half way, now the state is:
+//           A ----------> D
+//           A<==>C-->D
 // Then Repair
 
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
@@ -1780,13 +1789,15 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
   test_config.max_write_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
+
+  std::atomic<bool> first_visited{false};
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
-  std::atomic<bool> visited(false);
+  // only throw when the first call `SDelete`
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::Delete::PersistNext'sPrev", [&](void *) {
-        if (!visited.load()) {
-          visited.store(true);
+      "KVEngine::Skiplist::Delete::PersistNext'sPrev::After", [&](void *) {
+        if (!first_visited.load()) {
+          first_visited.store(true);
           throw 1;
         }
       });
