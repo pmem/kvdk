@@ -58,6 +58,14 @@ private:
   uint64_t tagged_pointer;
 };
 
+// Used to record batch write stage and related records address, this should be
+// persisted on PMem
+//
+// The stage of a processing batch write will be Processing, the stage of a
+// initialized pending batch file or a finished batch write will be Finish
+//
+// Layout: batch write stage | num_kv in writing | timestamp of this batch write
+// | record address
 struct PendingBatch {
   enum class Stage {
     Finish = 0,
@@ -70,7 +78,8 @@ struct PendingBatch {
   // Mark batch write as process and record writing offsets.
   // Make sure the struct is on PMem and there is enough space followed the
   // struct to store record
-  void PersistProcessing(const std::vector<uint64_t> &record);
+  void PersistProcessing(const std::vector<PMemOffsetType> &record,
+                         TimeStampType ts);
 
   // Mark batch write as finished.
   void PersistFinish();
@@ -80,5 +89,6 @@ struct PendingBatch {
   Stage stage;
   uint32_t num_kv;
   TimeStampType timestamp;
+  PMemOffsetType record_offsets[0];
 };
 } // namespace KVDK_NAMESPACE
