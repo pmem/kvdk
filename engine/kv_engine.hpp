@@ -335,13 +335,6 @@ private:
                    data_entry->header.record_size));
   }
 
-  inline void free(void *pmem_record) {
-    DataEntry *data_entry = static_cast<DataEntry *>(pmem_record);
-    pmem_allocator_->Free(
-        SpaceEntry(pmem_allocator_->addr2offset_checked(pmem_record),
-                   data_entry->header.record_size));
-  }
-
   // Run in background to clean old records regularly
   void backgroundOldRecordCleaner();
 

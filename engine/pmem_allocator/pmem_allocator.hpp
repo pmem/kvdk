@@ -96,7 +96,9 @@ public:
   void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
 
   void BatchFree(const std::vector<SpaceEntry> &entries) {
-    free_list_.BatchPush(entries);
+    if (entries.size() > 0) {
+      free_list_.BatchPush(entries);
+    }
   }
 
   Status Backup(const std::string &backup_file);

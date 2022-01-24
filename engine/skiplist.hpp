@@ -236,8 +236,6 @@ public:
   // splice point to node of "key"
   void Seek(const StringView &key, Splice *result_splice);
 
-  Status Rebuild();
-
   // Insert a new key "key" to the skiplist,
   //
   // space_to_write: PMem space entry to store new record.
@@ -466,25 +464,28 @@ public:
       : pmem_allocator_(pmem_allocator), hash_table_(hash_table),
         checkpoint_(checkpoint), opt_parallel_rebuild_(opt_parallel_rebuild),
         num_rebuild_threads_(num_rebuild_threads){};
-  Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node);
-
-  void DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node,
-                           int heightm);
-
-  SkiplistNode *GetSortedOffset(int height);
-
-  void LinkedNode(uint64_t thread_id, int height);
-
   Status Rebuild(const std::vector<std::shared_ptr<Skiplist>> &skiplists);
-
-  void UpdateEntriesOffset();
 
   void SetEntriesOffsets(uint64_t entry_offset, bool is_visited,
                          SkiplistNode *node) {
     entries_offsets_.insert({entry_offset, {is_visited, node}});
   }
 
-  Status RepairSkiplistLinkage(Skiplist *skiplist);
+private:
+  Status repairSkiplistLinkage(Skiplist *skiplist);
+
+  Status parallelRepairSkiplistLinkage();
+
+  Status updateEntriesOffset();
+
+  SkiplistNode *getSortedOffset(int height);
+
+  void linkedNode(uint64_t thread_id, int height);
+
+  Status dealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node);
+
+  void dealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                           int heightm);
 
   void purgeAndFree(std::vector<DLRecord *> &pmem_records) {
     std::vector<SpaceEntry> to_free;
@@ -496,14 +497,12 @@ public:
     pmem_allocator_->BatchFree(to_free);
   }
 
-  DLRecord *
-  findCheckpointVersion(DLRecord *pmem_record,
-                        std::vector<DLRecord *> *invalid_version_records);
+  DLRecord *findValidVersion(DLRecord *pmem_record,
+                             std::vector<DLRecord *> *invalid_version_records);
 
-private:
   struct SkiplistNodeInfo {
-    bool is_visited;
-    SkiplistNode *visited_node;
+    bool visited;
+    SkiplistNode *node;
   };
   SpinMutex map_mu_;
   std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
