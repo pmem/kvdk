@@ -106,46 +106,7 @@ void KVEngine::terminateBackgroundWorks() {
     t.join();
   }
 }
-/*
-void KVEngine::backgroundWorkCoordinator() {
-  // To avoid free a referencing skiplist node, we do freeing in at least every
-  // 10 seconds
-  // TODO: Maybe free skiplist node in another bg thread?
-  assert(configs_.background_work_interval >= 0);
-  assert(configs_.report_pmem_usage_interval >= 0);
-  auto background_interval = std::chrono::milliseconds{
-      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
-  auto free_skiplist_node_interval = std::chrono::milliseconds{0};
-  auto report_pmem_usage_interval = std::chrono::milliseconds{0};
-  while (!closing_) {
-    {
-      std::unique_lock<SpinMutex> ul(engine_closing_lock_);
-      if (!closing_) {
-        bg_coordinator_cv_.wait_for(ul, background_interval);
-      }
-      version_controller_.UpdatedOldestSnapshot();
-      bg_work_signals_.old_records_cleaner_cv.notify_all();
-      bg_work_signals_.pmem_allocator_organizer_cv.notify_all();
-    }
 
-    if (free_skiplist_node_interval < background_interval) {
-      bg_work_signals_.dram_cleaner_cv.notify_all();
-      free_skiplist_node_interval = std::chrono::milliseconds{10000};
-    } else {
-      free_skiplist_node_interval -= background_interval;
-    }
-
-    if (report_pmem_usage_interval < background_interval) {
-      bg_work_signals_.pmem_usage_reporter_cv.notify_all();
-      report_pmem_usage_interval =
-          std::chrono::milliseconds{static_cast<std::uint64_t>(
-              configs_.report_pmem_usage_interval * 1000)};
-    } else {
-      report_pmem_usage_interval -= background_interval;
-    }
-  }
-}
-*/
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
   RAIICaller fake_thread([&]() { access_thread.id = 0; },
                          [&]() { access_thread.id = -1; });
