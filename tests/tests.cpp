@@ -1659,20 +1659,16 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     }
   }
 
-  // Again write batch, corrupted before hash insert (After persist record)
+  // Again write batch (the same key, the different value)
   {
-    std::atomic<int> write_num(1);
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->Reset();
-
-    SyncPoint::GetInstance()->SetCallBack(
-        "KVEnigne::BatchWrite::BatchWriteRecord",
-        [&](void *index) { write_num.fetch_add(1); });
     SyncPoint::GetInstance()->SetCallBack(
         "KVEngine::BatchWrite::purgeAndFree::Before", [&](void *index) {
           size_t idx = *(size_t *)(index);
-          if (idx == 5)
+          if (idx == 6) {
             throw 1;
+          }
         });
     SyncPoint::GetInstance()->EnableProcessing();
     WriteBatch wb;
@@ -1693,7 +1689,13 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
       for (int i = 0; i < cnt; ++i) {
         std::string got_val;
         std::string key = "key" + std::to_string(i);
-        ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+        Status s = engine->Get(key, &got_val);
+        if (i == 0) {
+          ASSERT_EQ(s, Status::NotFound);
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+          ASSERT_EQ(got_val, "val*" + std::to_string(i));
+        }
       }
     }
   }

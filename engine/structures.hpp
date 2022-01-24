@@ -70,7 +70,7 @@ struct PendingBatch {
   // Mark batch write as process and record writing offsets.
   // Make sure the struct is on PMem and there is enough space followed the
   // struct to store record
-  void PersistProcessing(const std::vector<uint64_t> &record);
+  void PersistProcessing(const std::vector<uint64_t> &record, TimeStampType ts);
 
   // Mark batch write as finished.
   void PersistFinish();
