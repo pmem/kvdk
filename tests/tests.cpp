@@ -1431,10 +1431,9 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   std::vector<std::string> collections{"collection0", "collection1",
                                        "collection2"};
 
-  auto cmp0 = [](const StringView &a,
-                 const StringView &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+  auto cmp0 = [](const StringView &a, const StringView &b) -> int {
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea < scoreb)
@@ -1443,10 +1442,9 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       return -1;
   };
 
-  auto cmp1 = [](const StringView &a,
-                 const StringView &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+  auto cmp1 = [](const StringView &a, const StringView &b) -> int {
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea > scoreb)

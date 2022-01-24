@@ -24,6 +24,7 @@
 #include "dram_allocator.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
+
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -188,6 +189,7 @@ Status KVEngine::Init(const std::string &name, const Configs &configs) {
   ts_on_startup_ = get_cpu_tsc();
   s = Recovery();
   write_thread.id = -1;
+
   bg_threads_.emplace_back(&KVEngine::BackgroundWork, this);
 
   ReportPMemUsage();
@@ -512,7 +514,7 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord *record) {
   uint64_t offset = pmem_allocator_->addr2offset(record);
   DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
   DLRecord *next = pmem_allocator_->offset2addr<DLRecord>(record->next);
-  if (prev->next != offset) {
+  if (prev->next != offset && next->prev != offset) {
     return false;
   }
   // Repair un-finished write
@@ -711,7 +713,7 @@ Status KVEngine::RestorePendingBatch() {
 
         PendingBatch *pending_batch = (PendingBatch *)pmem_map_file(
             pending_batch_file.c_str(), persisted_pending_file_size,
-            PMEM_FILE_EXCL, 0666, &mapped_len, &is_pmem);
+            PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
 
         if (pending_batch != nullptr) {
           if (!is_pmem || mapped_len != persisted_pending_file_size) {
@@ -719,7 +721,6 @@ Status KVEngine::RestorePendingBatch() {
                                pending_batch_file.c_str());
             return Status::IOError;
           }
-
           if (pending_batch->Unfinished()) {
             uint64_t *invalid_offsets = (uint64_t *)(pending_batch + 1);
             for (uint32_t i = 0; i < pending_batch->num_kv; i++) {
@@ -1142,6 +1143,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
   }
 
+  size_t batch_size = write_batch.Size();
   // lock spin mutex with order to avoid deadlock
   std::vector<std::unique_lock<SpinMutex>> ul_locks;
   for (const SpinMutex *l : spins_to_lock) {
@@ -1149,7 +1151,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   TimeStampType ts = get_timestamp();
-  for (size_t i = 0; i < write_batch.Size(); i++) {
+  for (size_t i = 0; i < batch_size; i++) {
     batch_hints[i].timestamp = ts;
   }
 
@@ -1186,7 +1188,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
       purgeAndFree(batch_hints[i].pmem_record_to_free);
     }
   }
-  return s;
+  return Status::Ok;
 }
 
 Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
@@ -1211,6 +1213,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     if (kv.type == StringDeleteRecord) {
       if (found) {
         batch_hint.pmem_record_to_free = hash_entry.index.string_record;
+        entry_ptr->Clear();
       }
       return Status::Ok;
     }
@@ -1267,6 +1270,7 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
 
   {
     auto hint = hash_table_->GetHint(key);
+
     std::lock_guard<SpinMutex> lg(*hint.spin);
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
@@ -1324,6 +1328,7 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hint, entry_ptr, StringDataRecord, block_base,
                         HashOffsetType::StringRecord);
+
     if (entry_base_status == HashEntryStatus::Updating) {
       purgeAndFree(hash_entry.index.string_record);
     }
