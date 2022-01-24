@@ -24,7 +24,8 @@
 #include "hash_table.hpp"
 #include "macros.hpp"
 #include "structures.hpp"
-#include "utils.hpp"
+#include "utils/sync_point.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 /// DLinkedList is a helper class to access PMem
@@ -169,8 +170,8 @@ public:
         throw std::bad_alloc{};
       }
 
-      PMemOffsetType head_offset = head_space_entry.space_entry.offset;
-      PMemOffsetType tail_offset = tail_space_entry.space_entry.offset;
+      PMemOffsetType head_offset = head_space_entry.offset;
+      PMemOffsetType tail_offset = tail_space_entry.offset;
 
       // Persist tail first then head
       // If only tail is persisted then it can be deallocated by caller at
@@ -193,7 +194,7 @@ public:
       : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{head_pmmptr},
         tail_pmmptr_{tail_pmmptr} {
 
-#if DEBUG_LEVEL >= 0
+#if DEBUG_LEVEL > 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
                   "Cannot rebuild a DlinkedList from given PMem pointer "
@@ -323,9 +324,8 @@ private:
   void purgeAndFree(DLRecord *record_pmmptr) {
     record_pmmptr->Destroy();
     pmem_allocator_ptr_->Free(
-        SizedSpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
-                        record_pmmptr->entry.header.record_size,
-                        record_pmmptr->entry.meta.timestamp));
+        SpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
+                   record_pmmptr->entry.header.record_size));
   }
 
   /// Emplace between iter_prev and iter_next, linkage not checked
@@ -350,7 +350,7 @@ private:
     if (space.size == 0) {
       throw std::bad_alloc{};
     }
-    std::uint64_t offset = space.space_entry.offset;
+    std::uint64_t offset = space.offset;
     void *pmp = pmem_allocator_ptr_->offset2addr_checked(offset);
 
     DLRecord *record = DLRecord::PersistDLRecord(

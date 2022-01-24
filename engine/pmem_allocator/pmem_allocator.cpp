@@ -14,9 +14,9 @@ namespace KVDK_NAMESPACE {
 PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t num_write_threads)
-    : pmem_(pmem), thread_cache_(num_write_threads), block_size_(block_size),
-      segment_size_(num_segment_blocks * block_size), offset_head_(0),
-      pmem_size_(pmem_size),
+    : pmem_(pmem), palloc_thread_cache_(num_write_threads),
+      block_size_(block_size), segment_size_(num_segment_blocks * block_size),
+      offset_head_(0), pmem_size_(pmem_size),
       free_list_(num_segment_blocks, block_size, num_write_threads,
                  pmem_size / block_size / num_segment_blocks *
                      num_segment_blocks /*num blocks*/,
@@ -24,14 +24,23 @@ PMEMAllocator::PMEMAllocator(char *pmem, uint64_t pmem_size,
   init_data_size_2_block_size();
 }
 
-void PMEMAllocator::Free(const SizedSpaceEntry &entry) {
+void PMEMAllocator::Free(const SpaceEntry &entry) {
   if (entry.size > 0) {
     assert(entry.size % block_size_ == 0);
     free_list_.Push(entry);
+    LogDeallocation(write_thread.id, entry.size);
   }
 }
 
-void PMEMAllocator::PopulateSpace() {
+std::int64_t PMEMAllocator::PMemUsageInBytes() {
+  std::int64_t total = 0;
+  for (auto const &ptcache : palloc_thread_cache_) {
+    total += ptcache.allocated_sz;
+  }
+  return total;
+}
+
+void PMEMAllocator::populateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");
   assert((pmem_ - static_cast<char *>(nullptr)) % 64 == 0);
   assert(pmem_size_ % 64 == 0);
@@ -50,11 +59,13 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
                                                uint64_t num_segment_blocks,
                                                uint32_t block_size,
                                                uint32_t num_write_threads,
+                                               bool populate_space_on_new_file,
                                                bool use_devdax_mode) {
   int is_pmem;
   uint64_t mapped_size;
   char *pmem;
   // TODO jiayu: Should we clear map failed file?
+  bool pmem_file_exist = file_exist(pmem_file);
   if (!use_devdax_mode) {
     if ((pmem = (char *)pmem_map_file(pmem_file.c_str(), pmem_size,
                                       PMEM_FILE_CREATE, 0666, &mapped_size,
@@ -69,9 +80,9 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
       return nullptr;
     }
   } else {
-    if (!CheckDevDaxAndGetSize(pmem_file.c_str(), &mapped_size)) {
+    if (!checkDevDaxAndGetSize(pmem_file.c_str(), &mapped_size)) {
       GlobalLogger.Error(
-          "CheckDevDaxAndGetSize %s failed device %s faild: %s\n",
+          "checkDevDaxAndGetSize %s failed device %s faild: %s\n",
           pmem_file.c_str(), strerror(errno));
       return nullptr;
     }
@@ -121,40 +132,47 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(const std::string &pmem_file,
         sz_wasted);
   GlobalLogger.Info("Map pmem space done\n");
 
+  if (!pmem_file_exist && populate_space_on_new_file) {
+    allocator->populateSpace();
+  }
+
   return allocator;
 }
 
-bool PMEMAllocator::FreeAndFetchSegment(SizedSpaceEntry *segment_space_entry) {
+bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
   assert(segment_space_entry);
+  kvdk_assert(write_thread.id >= 0, "Call PMEMAllocator::FreeAndFetchSegment "
+                                    "with a un-initialized write thread\n");
   if (segment_space_entry->size == segment_size_) {
-    thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
+    persistSpaceEntry(segment_space_entry->offset, segment_size_);
+    palloc_thread_cache_[write_thread.id].segment_entry = *segment_space_entry;
+    LogDeallocation(write_thread.id, segment_size_);
     return false;
   }
 
-  return AllocateSegmentSpace(segment_space_entry);
-}
-
-bool PMEMAllocator::AllocateSegmentSpace(SizedSpaceEntry *segment_entry) {
-  uint64_t offset;
-  while (1) {
-    offset = offset_head_.load(std::memory_order_relaxed);
-    if (offset < pmem_size_) {
-      if (offset_head_.compare_exchange_strong(offset,
-                                               offset + segment_size_)) {
-        if (offset > pmem_size_ - segment_size_) {
-          return false;
-        }
-        Free(*segment_entry);
-        *segment_entry = SizedSpaceEntry{offset, segment_size_, 0};
-        return true;
-      }
-      continue;
-    }
-    return false;
+  std::lock_guard<SpinMutex> lg(offset_head_lock_);
+  if (offset_head_ <= pmem_size_ - segment_size_) {
+    Free(*segment_space_entry);
+    *segment_space_entry = SpaceEntry{offset_head_, segment_size_};
+    offset_head_ += segment_size_;
+    LogAllocation(write_thread.id, segment_size_);
+    return true;
   }
+  return false;
 }
 
-bool PMEMAllocator::CheckDevDaxAndGetSize(const char *path, uint64_t *size) {
+bool PMEMAllocator::allocateSegmentSpace(SpaceEntry *segment_entry) {
+  std::lock_guard<SpinMutex> lg(offset_head_lock_);
+  if (offset_head_ <= pmem_size_ - segment_size_) {
+    *segment_entry = SpaceEntry{offset_head_, segment_size_};
+    persistSpaceEntry(offset_head_, segment_size_);
+    offset_head_ += segment_size_;
+    return true;
+  }
+  return false;
+}
+
+bool PMEMAllocator::checkDevDaxAndGetSize(const char *path, uint64_t *size) {
   char spath[PATH_MAX];
   char npath[PATH_MAX];
   char *rpath;
@@ -199,8 +217,8 @@ bool PMEMAllocator::CheckDevDaxAndGetSize(const char *path, uint64_t *size) {
   return true;
 }
 
-SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
-  SizedSpaceEntry space_entry;
+SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
+  SpaceEntry space_entry;
   uint32_t b_size = size_2_block_size(size);
   uint32_t aligned_size = b_size * block_size_;
   // Now the requested block size should smaller than segment size
@@ -208,56 +226,66 @@ SizedSpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   if (aligned_size > segment_size_) {
     return space_entry;
   }
-  auto &thread_cache = thread_cache_[write_thread.id];
-  while (thread_cache.segment_entry.size < aligned_size) {
+  auto &palloc_thread_cache = palloc_thread_cache_[write_thread.id];
+  while (palloc_thread_cache.segment_entry.size < aligned_size) {
     while (1) {
       // allocate from free list space
-      if (thread_cache.free_entry.size >= aligned_size) {
+      if (palloc_thread_cache.free_entry.size >= aligned_size) {
         // Padding remaining space
-        auto extra_space = thread_cache.free_entry.size - aligned_size;
+        auto extra_space = palloc_thread_cache.free_entry.size - aligned_size;
         // TODO optimize, do not write PMem
         if (extra_space >= kMinPaddingBlocks * block_size_) {
           assert(extra_space % block_size_ == 0);
           DataEntry padding(0, static_cast<uint32_t>(extra_space), 0,
                             RecordType::Padding, 0, 0);
           pmem_memcpy_persist(
-              offset2addr(thread_cache.free_entry.space_entry.offset +
-                          aligned_size),
+              offset2addr(palloc_thread_cache.free_entry.offset + aligned_size),
               &padding, sizeof(DataEntry));
         } else {
-          aligned_size = thread_cache.free_entry.size;
+          aligned_size = palloc_thread_cache.free_entry.size;
         }
 
-        space_entry = thread_cache.free_entry;
+        space_entry = palloc_thread_cache.free_entry;
         space_entry.size = aligned_size;
-        thread_cache.free_entry.size -= aligned_size;
-        thread_cache.free_entry.space_entry.offset += aligned_size;
+        palloc_thread_cache.free_entry.size -= aligned_size;
+        palloc_thread_cache.free_entry.offset += aligned_size;
+        LogAllocation(write_thread.id, aligned_size);
         return space_entry;
       }
-      if (thread_cache.free_entry.size > 0) {
-        Free(thread_cache.free_entry);
-        thread_cache.free_entry.size = 0;
+      if (palloc_thread_cache.free_entry.size > 0) {
+        // Not a true free
+        LogAllocation(write_thread.id, palloc_thread_cache.free_entry.size);
+        Free(palloc_thread_cache.free_entry);
+        palloc_thread_cache.free_entry.size = 0;
       }
 
       // allocate from free list
-      if (free_list_.Get(aligned_size, &thread_cache.free_entry)) {
+      if (free_list_.Get(aligned_size, &palloc_thread_cache.free_entry)) {
         continue;
       }
       break;
     }
 
+    LogAllocation(write_thread.id, palloc_thread_cache.segment_entry.size);
+    Free(palloc_thread_cache.segment_entry);
     // allocate a new segment, add remainning space of the old one
     // to the free list
-    if (!AllocateSegmentSpace(&thread_cache.segment_entry)) {
+    if (!allocateSegmentSpace(&palloc_thread_cache.segment_entry)) {
       GlobalLogger.Error("PMem OVERFLOW!\n");
       return space_entry;
     }
   }
-  space_entry = thread_cache.segment_entry;
+  space_entry = palloc_thread_cache.segment_entry;
   space_entry.size = aligned_size;
-  thread_cache.segment_entry.space_entry.offset += aligned_size;
-  thread_cache.segment_entry.size -= aligned_size;
+  palloc_thread_cache.segment_entry.offset += aligned_size;
+  palloc_thread_cache.segment_entry.size -= aligned_size;
+  LogAllocation(write_thread.id, aligned_size);
   return space_entry;
+}
+
+void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
+  DataHeader header(0, size);
+  pmem_memcpy_persist(offset2addr(offset), &header, sizeof(DataHeader));
 }
 
 } // namespace KVDK_NAMESPACE

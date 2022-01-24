@@ -29,7 +29,7 @@
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
@@ -41,6 +41,8 @@ public:
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
+
+  void ReportPMemUsage();
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string *value) override;
@@ -99,7 +101,7 @@ public:
 private:
   struct BatchWriteHint {
     TimeStampType timestamp{0};
-    SizedSpaceEntry allocated_space{};
+    SpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
     void *pmem_record_to_free = nullptr;
   };
@@ -107,9 +109,9 @@ private:
   struct ThreadLocalRes {
     ThreadLocalRes() = default;
 
-    uint64_t newest_restored_ts = 0;
+    std::uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
-    std::unordered_map<uint64_t, int> visited_skiplist_ids;
+    std::unordered_map<std::uint64_t, int> visited_skiplist_ids;
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
@@ -125,17 +127,16 @@ private:
 
   inline Status MaybeInitWriteThread();
 
-  void SetCompareFunc(const pmem::obj::string_view &collection_name,
-                      std::function<int(const pmem::obj::string_view &src,
-                                        const pmem::obj::string_view &target)>
-                          comp_func) {
+  void SetCompareFunc(
+      const StringView &collection_name,
+      std::function<int(const StringView &src, const StringView &target)>
+          comp_func) {
     comparator_.SetComparaFunc(collection_name, comp_func);
   }
 
   Status CreateSortedCollection(const StringView collection_name,
                                 Collection **collection_ptr,
-                                const pmem::obj::string_view &comp_name,
-                                SortedBy sorted_by) override;
+                                const StringView &comp_name) override;
 
 private:
   Status InitCollection(const StringView &collection, Collection **list,
@@ -184,7 +185,7 @@ private:
 
   Status Recovery();
 
-  Status RestoreData(uint64_t thread_id);
+  Status RestoreData();
 
   Status RestoreSkiplistHead(DLRecord *pmem_record,
                              const DataEntry &cached_entry);
@@ -280,9 +281,9 @@ private:
   inline void purgeAndFree(void *pmem_record) {
     DataEntry *data_entry = static_cast<DataEntry *>(pmem_record);
     data_entry->Destroy();
-    pmem_allocator_->Free(SizedSpaceEntry(
-        pmem_allocator_->addr2offset_checked(pmem_record),
-        data_entry->header.record_size, data_entry->meta.timestamp));
+    pmem_allocator_->Free(
+        SpaceEntry(pmem_allocator_->addr2offset_checked(pmem_record),
+                   data_entry->header.record_size));
   }
 
   std::vector<ThreadLocalRes> thread_res_;

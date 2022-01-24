@@ -25,8 +25,8 @@ HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
       delete table;
       table = nullptr;
     } else {
-      table->main_buckets_ = table->dram_allocator_.offset2addr(
-          main_buckets_space.space_entry.offset);
+      table->main_buckets_ =
+          table->dram_allocator_.offset2addr(main_buckets_space.offset);
     }
   }
   return table;
@@ -163,8 +163,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
             GlobalLogger.Error("Memory overflow!\n");
             return Status::MemoryOverflow;
           }
-          void *next_off =
-              dram_allocator_.offset2addr(space.space_entry.offset);
+          void *next_off = dram_allocator_.offset2addr(space.offset);
           memset(next_off, 0, space.size);
           memcpy_8(bucket_ptr + hash_bucket_size_ - 8, &next_off);
           *entry_ptr = (HashEntry *)next_off;

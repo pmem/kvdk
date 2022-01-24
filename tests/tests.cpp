@@ -135,7 +135,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   configs.max_write_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  int batch_num = 10;
+  int batch_size = 10;
   int count = 500;
   auto BatchSetDelete = [&](uint32_t id) {
     std::string key_prefix(std::string(id, 'a'));
@@ -143,14 +143,14 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     WriteBatch batch;
     int cnt = count;
     while (cnt--) {
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
         auto val = std::to_string(i * id);
         batch.Put(key, val);
       }
       ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
       batch.Clear();
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         if ((i * cnt) % 2 == 1) {
           auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
           auto val = std::to_string(i * id);
@@ -175,7 +175,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     std::string got_val;
     int cnt = count;
     while (cnt--) {
-      for (size_t i = 0; i < batch_num; i++) {
+      for (size_t i = 0; i < batch_size; i++) {
         auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
         if ((i * cnt) % 2 == 1) {
           ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
@@ -241,6 +241,8 @@ TEST_F(EngineBasicTest, TestFreeList) {
             Status::Ok);
   // Still no more space after re-open
   ASSERT_EQ(engine->Set(key4, small_value), Status::PmemOverflow);
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
@@ -516,6 +518,8 @@ TEST_F(EngineBasicTest, TestSeek) {
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(iter->Value(), "bar2");
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestStringRestore) {
@@ -1427,10 +1431,9 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   std::vector<std::string> collections{"collection0", "collection1",
                                        "collection2"};
 
-  auto val_cmp0 = [](const pmem::obj::string_view &a,
-                     const pmem::obj::string_view &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+  auto cmp0 = [](const StringView &a, const StringView &b) -> int {
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea < scoreb)
@@ -1439,10 +1442,9 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       return -1;
   };
 
-  auto val_cmp1 = [](const pmem::obj::string_view &a,
-                     const pmem::obj::string_view &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+  auto cmp1 = [](const StringView &a, const StringView &b) -> int {
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea > scoreb)
@@ -1455,22 +1457,22 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   std::vector<kvpair> key_values(count);
   std::map<std::string, std::string> dedup_kvs;
   std::generate(key_values.begin(), key_values.end(), [&]() {
-    const char k = rand() % (90 - 65 + 1) + 65;
-    std::string v = std::to_string(rand() % 100);
-    dedup_kvs[std::string(1, k)] = v;
-    return std::make_pair(std::string(1, k), v);
+    const char v = rand() % (90 - 65 + 1) + 65;
+    std::string k = std::to_string(rand() % 100);
+    dedup_kvs[k] = v;
+    return std::make_pair(k, std::string(1, v));
   });
 
   // registed compare function
-  engine->SetCompareFunc("collection0_cmp", val_cmp0);
-  engine->SetCompareFunc("collection1_cmp", val_cmp1);
+  engine->SetCompareFunc("collection0_cmp", cmp0);
+  engine->SetCompareFunc("collection1_cmp", cmp1);
   for (size_t i = 0; i < collections.size(); ++i) {
     Collection *collection_ptr;
     Status s;
     if (i < 2) {
       std::string comp_name = "collection" + std::to_string(i) + "_cmp";
       s = engine->CreateSortedCollection(collections[i], &collection_ptr,
-                                         comp_name, SortedBy::VALUE);
+                                         comp_name);
     } else {
       s = engine->CreateSortedCollection(collections[i], &collection_ptr);
     }
@@ -1492,19 +1494,13 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     if (i == 0) {
       std::sort(expected_res.begin(), expected_res.end(),
                 [&](const kvpair &a, const kvpair &b) -> bool {
-                  int cmp = val_cmp0(a.second, b.second);
-                  if (cmp == 0)
-                    return a.first < b.first;
-                  return cmp > 0 ? false : true;
+                  return cmp0(a.first, b.first) <= 0;
                 });
 
     } else if (i == 1) {
       std::sort(expected_res.begin(), expected_res.end(),
                 [&](const kvpair &a, const kvpair &b) -> bool {
-                  int cmp = val_cmp1(a.second, b.second);
-                  if (cmp == 0)
-                    return a.first < b.first;
-                  return cmp > 0 ? false : true;
+                  return cmp1(a.first, b.first) <= 0;
                 });
     }
     auto iter = engine->NewSortedIterator(collections[i]);

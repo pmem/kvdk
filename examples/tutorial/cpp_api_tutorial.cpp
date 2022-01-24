@@ -13,6 +13,8 @@
 
 #define DEBUG // For assert
 
+using StringView = pmem::obj::string_view;
+
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.
 // Modify this path if necessary.
@@ -237,25 +239,26 @@ static void test_batch_write() {
   return;
 }
 
-static void test_sorted_coll_by_val() {
+static void test_customer_sorted_func() {
   std::string collection = "collection0";
-  struct student_info {
-    std::string student;
-    std::string score;
+  struct number_kv {
+    std::string number_key;
+    std::string value;
   };
 
-  std::vector<student_info> array = {
-      {"a", "100"}, {"c", "50"}, {"d", "50"}, {"b", "30"}, {"f", "90"}};
+  std::vector<number_kv> array = {
+      {"100", "a"}, {"50", "c"}, {"40", "d"}, {"30", "b"}, {"90", "f"}};
 
-  std::vector<student_info> expected_array = {
-      {"a", "100"}, {"f", "90"}, {"c", "50"}, {"d", "50"}, {"b", "30"}};
+  std::vector<number_kv> expected_array = {
+      {"100", "a"}, {"90", "f"}, {"50", "c"}, {"40", "d"}, {"30", "b"}};
 
   // regitser compare function
   std::string comp_name = "double_comp";
-  auto val_cmp = [](const pmem::obj::string_view &a,
-                    const pmem::obj::string_view &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+  auto score_cmp = [](const StringView &a, const StringView &b) -> int {
+    std::string str_a(a.data(), a.size());
+    std::string str_b(b.data(), b.size());
+    double scorea = std::stod(str_a);
+    double scoreb = std::stod(str_b);
     if (scorea == scoreb)
       return 0;
     else if (scorea < scoreb)
@@ -263,14 +266,14 @@ static void test_sorted_coll_by_val() {
     else
       return -1;
   };
-  engine->SetCompareFunc(comp_name, val_cmp);
+  engine->SetCompareFunc(comp_name, score_cmp);
   // create sorted collection
   kvdk::Collection *collection_ptr;
-  kvdk::Status s = engine->CreateSortedCollection(
-      collection, &collection_ptr, comp_name, kvdk::SortedBy::VALUE);
+  kvdk::Status s =
+      engine->CreateSortedCollection(collection, &collection_ptr, comp_name);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
-    s = engine->SSet(collection, array[i].student, array[i].score);
+    s = engine->SSet(collection, array[i].number_key, array[i].value);
     assert(s == Ok);
   }
   auto iter = engine->NewSortedIterator(collection);
@@ -282,17 +285,17 @@ static void test_sorted_coll_by_val() {
     size_t key_len, value_len;
     std::string key = iter->Key();
     std::string value = iter->Value();
-    if (key != expected_array[i].student) {
+    if (key != expected_array[i].number_key) {
       printf("sort key error, current key: %s , but expected key: %s\n",
-             key.c_str(), expected_array[i].student.c_str());
+             key.c_str(), expected_array[i].number_key.c_str());
     }
-    if (value != expected_array[i].score) {
+    if (value != expected_array[i].value) {
       printf("sort value error, current value: %s , but expected value: %s\n",
-             value.c_str(), expected_array[i].score.c_str());
+             value.c_str(), expected_array[i].value.c_str());
     }
     ++i;
   }
-  printf("Successfully collections sorted by value.\n");
+  printf("Successfully collections sorted by number.\n");
 }
 
 int main() {
@@ -327,8 +330,8 @@ int main() {
   // Iterating a Sorted Named Collection
   test_iterator();
 
-  // Sorted Collection by value.
-  test_sorted_coll_by_val();
+  // Sorted Collection with Customer Sorted Function
+  test_customer_sorted_func();
 
   // BatchWrite on Anonymous Global Collection
   test_batch_write();

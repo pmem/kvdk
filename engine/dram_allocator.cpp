@@ -8,37 +8,36 @@
 
 namespace KVDK_NAMESPACE {
 
-void ChunkBasedAllocator::Free(const SizedSpaceEntry &entry) {
+void ChunkBasedAllocator::Free(const SpaceEntry &entry) {
   // Not supported yet
 }
 
-SizedSpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
-  SizedSpaceEntry entry;
+SpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
+  SpaceEntry entry;
   if (size > chunk_size_) {
     void *addr = malloc(size);
     if (addr != nullptr) {
       entry.size = chunk_size_;
-      entry.space_entry.offset = addr2offset(addr);
-      thread_cache_[write_thread.id].allocated_chunks.push_back(addr);
+      entry.offset = addr2offset(addr);
+      dalloc_thread_cache_[write_thread.id].allocated_chunks.push_back(addr);
     }
     return entry;
   }
 
-  if (thread_cache_[write_thread.id].usable_bytes < size) {
+  if (dalloc_thread_cache_[write_thread.id].usable_bytes < size) {
     void *addr = malloc(chunk_size_);
     if (addr == nullptr) {
       return entry;
     }
-    thread_cache_[write_thread.id].chunk_addr = (char *)addr;
-    thread_cache_[write_thread.id].usable_bytes = chunk_size_;
-    thread_cache_[write_thread.id].allocated_chunks.push_back(addr);
+    dalloc_thread_cache_[write_thread.id].chunk_addr = (char *)addr;
+    dalloc_thread_cache_[write_thread.id].usable_bytes = chunk_size_;
+    dalloc_thread_cache_[write_thread.id].allocated_chunks.push_back(addr);
   }
 
   entry.size = size;
-  entry.space_entry.offset =
-      addr2offset(thread_cache_[write_thread.id].chunk_addr);
-  thread_cache_[write_thread.id].chunk_addr += size;
-  thread_cache_[write_thread.id].usable_bytes -= size;
+  entry.offset = addr2offset(dalloc_thread_cache_[write_thread.id].chunk_addr);
+  dalloc_thread_cache_[write_thread.id].chunk_addr += size;
+  dalloc_thread_cache_[write_thread.id].usable_bytes -= size;
   return entry;
 }
 } // namespace KVDK_NAMESPACE

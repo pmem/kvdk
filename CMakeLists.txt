@@ -9,25 +9,21 @@ include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 11)
-option(DEBUG_CHECK "check connection" OFF)
-if(DEBUG_CHECK)
-    add_compile_definitions(DEBUG_CHECK)
-endif()
 
-set(KVDK_COMPILE_SHARED_FLAGS "-mavx -mavx2 -mavx512f")
+option(COVERAGE "code coverage" OFF)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
+elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+elseif (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${KVDK_COMPILE_SHARED_FLAGS}")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${KVDK_COMPILE_SHARED_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
 elseif (CMAKE_BUILD_TYPE STREQUAL "FastDebug")
-    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -g -O2")
-elseif (CMAKE_BUILD_TYPE STREQUAL "VTune")
-    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -shared-libgcc")
-elseif (CMAKE_BUILD_TYPE STREQUAL "Asan")
-    set(CMAKE_CXX_FLAGS "${KVDK_COMPILE_SHARED_FLAGS} -Og -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
+    set(CMAKE_CXX_FLAGS "-g -O2 -march=native")
+    set(CMAKE_C_FLAGS "-g -O2 -march=native")
 else ()
     message(FATAL_ERROR "Invalid build type!")
 endif ()
@@ -35,14 +31,23 @@ endif ()
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions(DEBUG_LEVEL=0)
 else ()
+    add_compile_definitions(DEBUG_CHECK)
     add_compile_definitions(DEBUG_LEVEL=1)
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVDK_COMPILE_SHARED_FLAGS}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${KVDK_COMPILE_SHARED_FLAGS}")
+# code coverage
+if (COVERAGE)
+    if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug)
+        message(WARNING "Code coverage results with an optimised (non-Debug) build may be misleading" )
+    endif()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+endif()
 
 # source files
 set(SOURCES
+        engine/utils/utils.cpp
+        engine/utils/sync_point.cpp
         engine/engine.cpp
         engine/kv_engine.cpp
         engine/logger.cpp
@@ -52,14 +57,12 @@ set(SOURCES
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
-        engine/utils.cpp
         engine/pmem_allocator/free_list.cpp
         engine/c.cc
         engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/queue.cpp
     )
-
 
 # .a library
 add_library(engine SHARED ${SOURCES})
@@ -70,18 +73,21 @@ configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
 	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
-set_target_properties(
-engine PROPERTIES PUBLIC_HEADER 
-"\
-include/kvdk/configs.hpp;\
-include/kvdk/engine.h;\
-include/kvdk/engine.hpp;\
-include/kvdk/iterator.hpp;\
-include/kvdk/namespace.hpp;\
-include/kvdk/status.h;\
-include/kvdk/status.hpp;\
-include/kvdk/write_batch.hpp")
+set(KVDK_PUBLIC_HEADERS
+    ${PROJECT_SOURCE_DIR}/include/kvdk/collection.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/comparator.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/configs.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/engine.h
+    ${PROJECT_SOURCE_DIR}/include/kvdk/engine.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/iterator.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/namespace.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/status.h
+    ${PROJECT_SOURCE_DIR}/include/kvdk/status.hpp
+    ${PROJECT_SOURCE_DIR}/include/kvdk/write_batch.hpp
+    ${PROJECT_SOURCE_DIR}/extern/libpmemobj++/string_view.hpp
+)
 
+set_target_properties(engine PROPERTIES PUBLIC_HEADER "${KVDK_PUBLIC_HEADERS}")
 
 install(TARGETS engine
 		PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
@@ -91,6 +97,7 @@ install(TARGETS engine
 # executables
 add_executable(bench benchmark/bench.cpp)
 target_link_libraries(bench PUBLIC engine)
+target_include_directories(bench PUBLIC ./include ./extern ./)
 
 option(BUILD_TESTING "Build the tests" ON)
 if (BUILD_TESTING)
@@ -104,6 +111,7 @@ if (BUILD_TESTING)
     add_executable(dbstress_test ${TEST_SOURCES2})
     target_link_libraries(dbstress_test PUBLIC engine gtest gmock gtest_main)
 endif ()
+
 
 option(BUILD_TUTORIAL "Build the tutorial" ON)
 add_subdirectory(examples/tutorial)
@@ -138,6 +146,8 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/examples/tutorial/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*

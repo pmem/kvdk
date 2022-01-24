@@ -98,23 +98,24 @@ void KVDKRegisterCompFunc(KVDKEngine *engine, const char *compara_name,
                           int (*compare)(const char *src, size_t src_len,
                                          const char *target,
                                          size_t target_len)) {
-  auto comp_func = [compare](const pmem::obj::string_view &src,
-                             const pmem::obj::string_view &target) -> int {
+  auto comp_func = [compare](const StringView &src,
+                             const StringView &target) -> int {
     return compare(src.data(), src.size(), target.data(), target.size());
   };
-  engine->rep->SetCompareFunc(pmem::obj::string_view(compara_name, compara_len),
-                              comp_func);
+  engine->rep->SetCompareFunc(StringView(compara_name, compara_len), comp_func);
 }
 
-KVDKStatus KVDKCreateSortedCollection(
-    KVDKEngine *engine, KVDKCollection **sorted_collection,
-    const char *collection_name, size_t collection_len,
-    const char *compara_name, size_t compara_len, KVDKSortedBy sorted_by) {
+KVDKStatus KVDKCreateSortedCollection(KVDKEngine *engine,
+                                      KVDKCollection **sorted_collection,
+                                      const char *collection_name,
+                                      size_t collection_len,
+                                      const char *compara_name,
+                                      size_t compara_len) {
   Collection *collection_ptr;
 
   KVDKStatus s = engine->rep->CreateSortedCollection(
-      pmem::obj::string_view(collection_name, collection_len), &collection_ptr,
-      pmem::obj::string_view(compara_name, compara_len), sorted_by);
+      StringView(collection_name, collection_len), &collection_ptr,
+      StringView(compara_name, compara_len));
   if (s != KVDKStatus::Ok) {
     sorted_collection = nullptr;
     return s;

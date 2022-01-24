@@ -19,19 +19,20 @@ namespace KVDK_NAMESPACE {
 // TODO: optimize, implement free
 class ChunkBasedAllocator : Allocator {
 public:
-  SizedSpaceEntry Allocate(uint64_t size) override;
-  void Free(const SizedSpaceEntry &entry) override;
+  SpaceEntry Allocate(uint64_t size) override;
+  void Free(const SpaceEntry &entry) override;
   inline void *offset2addr(uint64_t offset) { return (void *)offset; }
   template <typename T> inline T *offset2addr(uint64_t offset) {
     return static_cast<T *>(offset);
   }
   inline uint64_t addr2offset(void *addr) { return (uint64_t)addr; }
-  ChunkBasedAllocator(uint32_t write_threads) : thread_cache_(write_threads) {}
+  ChunkBasedAllocator(uint32_t write_threads)
+      : dalloc_thread_cache_(write_threads) {}
   ChunkBasedAllocator(ChunkBasedAllocator const &) = delete;
   ChunkBasedAllocator(ChunkBasedAllocator &&) = delete;
   ~ChunkBasedAllocator() {
-    for (uint64_t i = 0; i < thread_cache_.size(); i++) {
-      auto &tc = thread_cache_[i];
+    for (uint64_t i = 0; i < dalloc_thread_cache_.size(); i++) {
+      auto &tc = dalloc_thread_cache_[i];
       for (void *chunk : tc.allocated_chunks) {
         free(chunk);
       }
@@ -39,17 +40,17 @@ public:
   }
 
 private:
-  struct alignas(64) ThreadCache {
+  struct alignas(64) DAllocThreadCache {
     char *chunk_addr = nullptr;
     uint64_t usable_bytes = 0;
     std::vector<void *> allocated_chunks;
 
-    ThreadCache() = default;
-    ThreadCache(const ThreadCache &) = delete;
-    ThreadCache(ThreadCache &&) = delete;
+    DAllocThreadCache() = default;
+    DAllocThreadCache(const DAllocThreadCache &) = delete;
+    DAllocThreadCache(DAllocThreadCache &&) = delete;
   };
 
   const uint32_t chunk_size_ = (1 << 20);
-  Array<ThreadCache> thread_cache_;
+  Array<DAllocThreadCache> dalloc_thread_cache_;
 };
 } // namespace KVDK_NAMESPACE

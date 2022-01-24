@@ -14,6 +14,7 @@
 #include <mutex>
 #include <random>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 #include <sys/stat.h>
@@ -30,8 +31,8 @@
 
 #include "kvdk/namespace.hpp"
 
-#include "alias.hpp"
-#include "macros.hpp"
+#include "../alias.hpp"
+#include "../macros.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -80,6 +81,11 @@ inline void memcpy_1(void *dst, const void *src) {
 
 inline std::string format_dir_path(const std::string &dir) {
   return dir.back() == '/' ? dir : dir + "/";
+}
+
+inline bool file_exist(const std::string &name) {
+  bool exist = access(name.c_str(), 0) == 0;
+  return exist;
 }
 
 inline int create_dir_if_missing(const std::string &name) {
@@ -210,6 +216,7 @@ public:
   using value_type = T;
 
   inline T *allocate(size_t n) {
+    static_assert(sizeof(T) % alignof(T) == 0);
     T *p = static_cast<T *>(aligned_alloc(alignof(T), n * sizeof(T)));
     if (p == nullptr) {
       throw std::bad_alloc{};
@@ -223,7 +230,7 @@ public:
 template <typename T, typename Alloc = AlignedAllocator<T>> class Array {
 public:
   template <typename... Args>
-  explicit Array(uint64_t size, Args &&...args) : size_(size) {
+  explicit Array(uint64_t size, Args &&... args) : size_(size) {
     data_ = alloc_.allocate(size_);
     for (uint64_t i = 0; i < size; i++) {
       new (data_ + i) T{std::forward<Args>(args)...};
