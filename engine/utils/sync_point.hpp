@@ -30,9 +30,9 @@ namespace KVDK_NAMESPACE {
 /* SyncPoint Guide:
  * Developer could specify sync points in the codebase by TEST_SYNC_POINT.
  * Each sync point represents a position in the execution stream of a thread.
- * In the uint test, developer can set the relationship between the sync point 
+ * In the uint test, developer can set the relationship between the sync point
  * by LoadDependency to reproduce a desired interleave of threads execution.
- * Also can set the execution of the sync point by SetCallBack. Please see the 
+ * Also can set the execution of the sync point by SetCallBack. Please see the
  * example in the unit tests.
  */
 class SyncPoint {

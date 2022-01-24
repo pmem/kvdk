@@ -67,12 +67,13 @@ struct PendingBatch {
   PendingBatch(Stage s, uint32_t nkv, TimeStampType ts)
       : stage(s), num_kv(nkv), timestamp(ts) {}
 
-  void PersistProcessing(void *target,
-                         const std::vector<uint64_t> &entry_offsets);
+  // Mark batch write as process and record writing offsets.
+  // Make sure the struct is on PMem and there is enough space followed the
+  // struct to store record
+  void PersistProcessing(const std::vector<uint64_t> &record);
 
-  void Restore(char *target, std::vector<uint64_t> *entry_offsets);
-
-  void PersistStage(Stage s);
+  // Mark batch write as finished.
+  void PersistFinish();
 
   bool Unfinished() { return stage == Stage::Processing; }
 

@@ -36,17 +36,19 @@ constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
 // restoring large skiplist.
 constexpr uint64_t kRestoreSkiplistStride = 10000;
 
-void PendingBatch::PersistProcessing(
-    void *target, const std::vector<uint64_t> &entry_offsets) {
-  pmem_memcpy_persist((char *)target + sizeof(PendingBatch),
-                      entry_offsets.data(), entry_offsets.size() * 8);
-  stage = Stage::Processing;
-  num_kv = entry_offsets.size();
-  pmem_memcpy_persist(target, this, sizeof(PendingBatch));
+void PendingBatch::PersistFinish() {
+  num_kv = 0;
+  stage = Stage::Finish;
+  pmem_persist(this, sizeof(PendingBatch));
 }
 
-void PendingBatch::PersistStage(Stage s) {
-  pmem_memcpy_persist(&stage, &s, sizeof(Stage));
+void PendingBatch::PersistProcessing(
+    const std::vector<uint64_t> &record_offsets) {
+  pmem_memcpy_persist(this + 1, record_offsets.data(),
+                      record_offsets.size() * 8);
+  num_kv = record_offsets.size();
+  stage = Stage::Processing;
+  pmem_persist(this, sizeof(PendingBatch));
 }
 
 KVEngine::KVEngine() {}
@@ -732,7 +734,7 @@ Status KVEngine::RestorePendingBatch() {
                 pmem_persist(&data_entry->meta.type, 8);
               }
             }
-            pending_batch->PersistStage(PendingBatch::Stage::Finish);
+            pending_batch->PersistFinish();
           }
 
           if (id < configs_.max_write_threads) {
@@ -1160,11 +1162,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     batch_hints[i].timestamp = ts;
   }
 
-  // Persist batch write status as processing
-  PendingBatch pending_batch(PendingBatch::Stage::Processing,
-                             space_entry_offsets.size(), ts);
-  pending_batch.PersistProcessing(
-      thread_res_[write_thread.id].persisted_pending_batch,
+  thread_res_[write_thread.id].persisted_pending_batch->PersistProcessing(
       space_entry_offsets);
 
   // Do batch writes
@@ -1185,7 +1183,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     }
   }
 
-  pending_batch.PersistStage(PendingBatch::Stage::Finish);
+  thread_res_[write_thread.id].persisted_pending_batch->PersistFinish();
 
   // Free updated kvs, we should purge all updated kvs before release locks and
   // after persist write stage
