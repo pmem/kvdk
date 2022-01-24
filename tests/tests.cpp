@@ -1530,14 +1530,14 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
   // T1: insert {"key8", "val15"}
   // T2: batch write: {"key0", "val0"}, ....{"key20",""val20}
   // T3: insert {"key10", "val17"}
-  // T4: delete {"key0", "val0"} {"key3", "val3"} ... {"key15", "val15"}
+  // T4: delete {"key0", "val0"} {"key3", "val3"} ... {"key18", "val18"}
   {
     Configs test_config = configs;
     test_config.max_write_threads = 16;
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
               Status::Ok);
 
-    int cnt = 20;
+    int batch_size = 20;
 
     SyncPoint::GetInstance()->LoadDependency(
         {{"Test::Set::Finish::1",
@@ -1549,7 +1549,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
     SyncPoint::GetInstance()->SetCallBack(
         "KVEngine::BatchWrite::AllocateRecord::After", [&](void *size) {
           size_t bsize = *((size_t *)size);
-          ASSERT_EQ(cnt, bsize);
+          ASSERT_EQ(batch_size, bsize);
         });
 
     SyncPoint::GetInstance()->EnableProcessing();
@@ -1567,7 +1567,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
     // thread 2
     ts.emplace_back([&]() {
       WriteBatch wb;
-      for (int i = 0; i < cnt; ++i) {
+      for (int i = 0; i < batch_size; ++i) {
         std::string key = "key" + std::to_string(i);
         std::string val = "val" + std::to_string(i);
         wb.Put(key, val);
@@ -1586,7 +1586,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
    // thread 4
     ts.emplace_back([&]() {
       TEST_SYNC_POINT("Test::Delete::Start::0");
-      for (int i = 0; i < cnt; i += 3) {
+      for (int i = 0; i < batch_size; i += 3) {
         std::string key = "key" + std::to_string(i);
         ASSERT_EQ(engine->Delete(key), Status::Ok);
       }
@@ -1596,7 +1596,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
       t.join();
     }
 
-    for (auto i = 0; i < cnt; ++i) {
+    for (auto i = 0; i < batch_size; ++i) {
       std::string key = "key" + std::to_string(i);
       std::string val;
       auto s = engine->Get(key, &val);
@@ -1621,14 +1621,14 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
 
-  int cnt = 10;
+  int batch_size = 10;
   {
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->Reset();
     SyncPoint::GetInstance()->SetCallBack(
         "KVEnigne::BatchWrite::BatchWriteRecord", [&](void *index) {
           size_t idx = *(size_t *)(index);
-          if (idx == (cnt / 2)) {
+          if (idx == (batch_size / 2)) {
             throw 1;
           }
         });
@@ -1637,7 +1637,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     engine->Set("key2", "val2*2");
     engine->Set("key6", "val6*2");
     WriteBatch wb;
-    for (int i = 0; i < cnt; ++i) {
+    for (int i = 0; i < batch_size; ++i) {
       std::string key = "key" + std::to_string(i);
       std::string val = "val" + std::to_string(i);
       wb.Put(key, val);
@@ -1649,7 +1649,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
       // reopen engine
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
                 Status::Ok);
-      for (int i = 0; i < cnt; ++i) {
+      for (int i = 0; i < batch_size; ++i) {
         std::string got_val;
         std::string key = "key" + std::to_string(i);
         if (key == "key2") {
@@ -1679,7 +1679,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
         });
     SyncPoint::GetInstance()->EnableProcessing();
     WriteBatch wb;
-    for (int i = 0; i < cnt; ++i) {
+    for (int i = 0; i < batch_size; ++i) {
       std::string key = "key" + std::to_string(i);
       std::string val = "val*" + std::to_string(i);
       wb.Put(key, val);
@@ -1693,7 +1693,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
       delete engine; // reopen engine;
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
                 Status::Ok);
-      for (int i = 0; i < cnt; ++i) {
+      for (int i = 0; i < batch_size; ++i) {
         std::string got_val;
         std::string key = "key" + std::to_string(i);
         Status s = engine->Get(key, &got_val);

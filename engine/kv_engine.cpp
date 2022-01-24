@@ -42,12 +42,11 @@ void PendingBatch::PersistFinish() {
   pmem_persist(this, sizeof(PendingBatch));
 }
 
-void PendingBatch::PersistProcessing(
-    const std::vector<uint64_t> &record_offsets, TimeStampType ts) {
-  pmem_memcpy_persist(this + 1, record_offsets.data(),
-                      record_offsets.size() * 8);
-  num_kv = record_offsets.size();
+void PendingBatch::PersistProcessing(const std::vector<PMemOffsetType> &records,
+                                     TimeStampType ts) {
+  pmem_memcpy_persist(record_offsets, records.data(), records.size() * 8);
   timestamp = ts;
+  num_kv = records.size();
   stage = Stage::Processing;
   pmem_persist(this, sizeof(PendingBatch));
 }
@@ -726,7 +725,7 @@ Status KVEngine::RestorePendingBatch() {
             return Status::IOError;
           }
           if (pending_batch->Unfinished()) {
-            uint64_t *invalid_offsets = (uint64_t *)(pending_batch + 1);
+            uint64_t *invalid_offsets = pending_batch->record_offsets;
             for (uint32_t i = 0; i < pending_batch->num_kv; i++) {
               DataEntry *data_entry =
                   pmem_allocator_->offset2addr<DataEntry>(invalid_offsets[i]);
