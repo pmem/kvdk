@@ -138,7 +138,7 @@ public:
 private:
   kvdk::Engine *&engine;
   CollectionNameType collection_name;
-  EngineOperator oper;
+  EngineOperator engine_operator;
   size_t const n_thread;
   // A Key may have multiple possible StateAndValue.
   // possible_state keep track of these StateAndValues
@@ -148,15 +148,19 @@ private:
 public:
   ShadowKVEngine() = delete;
   ShadowKVEngine(kvdk::Engine *&e, CollectionNameType cn, size_t nt)
-      : engine{e}, collection_name{cn}, oper{engine, collection_name},
+      : engine{e}, collection_name{cn}, engine_operator{engine, collection_name},
         n_thread{nt}, possible_state{}, task_queues(n_thread) {}
 
   // Execute task_queues in ShadowKVEngine
   // Update possible_state
+  /// TODO: make this private, put it in operateKVEngine(), which should
+  /// run multiple threads.
   void UpdatePossibleStates() {
     std::cout << "[Testing] Updating Engine State" << std::endl;
 
-    // Remove overwritten kvs
+    // Some keys are overwritten by operations in operateKVEngine(), 
+    // states and values before calling operateKVEngine() are
+    // no longer possible.
     {
       ProgressBar pbar{std::cout, "", n_thread, 1, true};
       for (size_t tid = 0; tid < n_thread; tid++) {
@@ -175,17 +179,18 @@ public:
         for (auto const &sop : task_queues[tid]) {
           switch (sop.op) {
           case SingleOp::OpType::Get: {
+            // Get will not change the state of any KV
             continue;
           }
           case SingleOp::OpType::Set: {
             squashed_changes[sop.key] =
                 StateAndValue{StateAndValue::State::Existing, sop.value};
-            break;
+            continue;
           }
           case SingleOp::OpType::Delete: {
             squashed_changes[sop.key] =
                 StateAndValue{StateAndValue::State::Deleted, ValueType{}};
-            break;
+            continue;
           }
           }
         }
@@ -203,14 +208,14 @@ public:
   void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const &keys,
                        std::vector<ValueType> const &values) {
     task_queues[tid] = generateOperations(keys, values, false);
-    modifyKVEngine(tid, (tid == 0));
+    operateKVEngine(tid, (tid == 0));
   }
 
   // Modify KVEngine by Set and Delete
   void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const &keys,
                           std::vector<ValueType> const &values) {
     task_queues[tid] = generateOperations(keys, values, true);
-    modifyKVEngine(tid, (tid == 0));
+    operateKVEngine(tid, (tid == 0));
   }
 
   // Check KVEngine by iterating through it.
@@ -278,10 +283,11 @@ public:
     {
       std::cout << "[Testing] Checking by Get" << std::endl;
       ProgressBar pbar{std::cout, "", possible_state.size(), 1000, true};
+      size_t progress = 0;
       while (!possible_state_copy.empty()) {
         auto key = possible_state_copy.begin()->first;
 
-        status = oper(key, &value_got);
+        status = engine_operator(key, &value_got);
         switch (status) {
         case kvdk::Status::Ok: {
           checkState(key, {StateAndValue::State::Existing, value_got});
@@ -306,7 +312,7 @@ public:
 private:
   // Excecute task_queues in KVEngine by calling EngineOperator
   // ShadowKVEngine remains unchanged
-  void modifyKVEngine(size_t tid, bool enable_progress_bar) {
+  void operateKVEngine(size_t tid, bool enable_progress_bar) {
     OperationQueue const &tasks = task_queues[tid];
 
     kvdk::Status status;
@@ -318,7 +324,7 @@ private:
     for (auto const &task : tasks) {
       switch (task.op) {
       case SingleOp::OpType::Get: {
-        status = oper(task.key, &value_got);
+        status = engine_operator(task.key, &value_got);
         ASSERT_EQ(status, kvdk::Status::Ok)
             << "Key cannot be queried with Get\n"
             << "Key: " << task.key << "\n";
@@ -331,13 +337,13 @@ private:
         break;
       }
       case SingleOp::OpType::Set: {
-        status = oper(task.key, task.value);
+        status = engine_operator(task.key, task.value);
         ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to set key\n"
                                             << "Key: " << task.key << "\n";
         break;
       }
       case SingleOp::OpType::Delete: {
-        status = oper(task.key);
+        status = engine_operator(task.key);
         ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to delete key\n"
                                             << "Key: " << task.key << "\n";
         break;
@@ -378,12 +384,10 @@ private:
         queue[i] = {SingleOp::OpType::Delete, keys[i], ValueType{}};
       }
     }
-
     return queue;
   }
 };
 } // namespace kvdk_testing
-/// in an engine instance.
 
 class EngineTestBase : public testing::Test {
 
