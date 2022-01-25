@@ -146,7 +146,7 @@ public:
 
   // Execute task_queues in ShadowKVEngine
   // Update possible_state
-  void CommitChanges() {
+  void RunShadowKVEngine() {
     std::cout << "[Testing] Updating Engine State" << std::endl;
 
     // Remove overwritten kvs
@@ -194,7 +194,7 @@ public:
 
   // Excecute task_queues in KVEngine by calling EngineOperator
   // ShadowKVEngine remains unchanged
-  void ExecuteTasks(size_t tid, bool enable_progress_bar) {
+  void RunKVEngine(size_t tid, bool enable_progress_bar) {
     OperationQueue const &tasks = task_queues[tid];
 
     kvdk::Status status;
@@ -239,13 +239,13 @@ public:
   void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const &keys,
                        std::vector<ValueType> const &values) {
     task_queues[tid] = generateOperations(keys, values, false);
-    ExecuteTasks(tid, (tid == 0));
+    RunKVEngine(tid, (tid == 0));
   }
 
   void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const &keys,
                           std::vector<ValueType> const &values) {
     task_queues[tid] = generateOperations(keys, values, true);
-    ExecuteTasks(tid, (tid == 0));
+    RunKVEngine(tid, (tid == 0));
   }
 
   // Check KVEngine by iterating through it.
@@ -476,7 +476,7 @@ protected:
     std::cout << "[Testing] Execute HashesAllHSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    hashes_trackers[collection_name]->CommitChanges();
+    hashes_trackers[collection_name]->RunShadowKVEngine();
   }
 
   void HashesEvenHSetOddHDelete(std::string const &collection_name) {
@@ -489,7 +489,7 @@ protected:
     std::cout << "[Testing] Execute HashesEvenHSetOddHDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    hashes_trackers[collection_name]->CommitChanges();
+    hashes_trackers[collection_name]->RunShadowKVEngine();
   }
 
   void SortedSetsAllSSet(std::string const &collection_name) {
@@ -502,7 +502,7 @@ protected:
     std::cout << "[Testing] Execute SortedSetsAllSSet in " << collection_name
               << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    sorted_trackers[collection_name]->CommitChanges();
+    sorted_trackers[collection_name]->RunShadowKVEngine();
   }
 
   void SortedSetsEvenSSetOddSDelete(std::string const &collection_name) {
@@ -515,7 +515,7 @@ protected:
     std::cout << "[Testing] Execute SortedSetsEvenSSetOddSDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    sorted_trackers[collection_name]->CommitChanges();
+    sorted_trackers[collection_name]->RunShadowKVEngine();
   }
 
   void StringAllSet() {
@@ -527,7 +527,7 @@ protected:
 
     std::cout << "[Testing] Execute StringAllSet " << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    string_tracker->CommitChanges();
+    string_tracker->RunShadowKVEngine();
   }
 
   void StringEvenSetOddDelete() {
@@ -539,7 +539,7 @@ protected:
 
     std::cout << "[Testing] Execute StringEvenSetOddDelete " << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    string_tracker->CommitChanges();
+    string_tracker->RunShadowKVEngine();
   }
 
   void CheckHashesCollection(std::string collection_name) {
@@ -781,7 +781,7 @@ protected:
   virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
-    // 16GB PMem
+    // 64GB PMem
     sz_pmem_file = (64ULL << 30);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
