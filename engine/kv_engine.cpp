@@ -25,6 +25,7 @@
 #include "skiplist.hpp"
 #include "structures.hpp"
 
+#include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -860,6 +861,7 @@ Status KVEngine::Delete(const StringView key) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
+
   return StringDeleteImpl(key);
 }
 
@@ -1120,6 +1122,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
+
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto &kv = write_batch.kvs[i];
     if (kv.type == StringDataRecord) {
@@ -1146,6 +1149,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   size_t batch_size = write_batch.Size();
+  TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::AllocateRecord::After",
+                           &batch_size);
   // lock spin mutex with order to avoid deadlock
   std::vector<std::unique_lock<SpinMutex>> ul_locks;
   for (const SpinMutex *l : spins_to_lock) {
@@ -1165,6 +1170,7 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     if (write_batch.kvs[i].type == StringDataRecord ||
         write_batch.kvs[i].type == StringDeleteRecord) {
       s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
+      TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
     } else {
       return Status::NotSupported;
     }
@@ -1183,6 +1189,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
     if (batch_hints[i].pmem_record_to_free != nullptr) {
+      TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before",
+                               &i);
       purgeAndFree(batch_hints[i].pmem_record_to_free);
     }
   }
@@ -1222,6 +1230,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     void *block_base =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
+    TEST_SYNC_POINT("KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
     // We use if here to avoid compilation warning
     if (kv.type == StringDataRecord) {
       StringRecord::PersistStringRecord(
@@ -1232,7 +1241,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
       kvdk_assert(false, "wrong data type in batch write");
       std::abort();
     }
-
     auto entry_base_status = entry_ptr->header.status;
     hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
                         HashOffsetType::StringRecord);
