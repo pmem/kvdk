@@ -188,7 +188,6 @@ bool Skiplist::SearchAndLockRecordPos(
     const SpinMutex *record_lock, std::unique_lock<SpinMutex> *prev_record_lock,
     PMEMAllocator *pmem_allocator, HashTable *hash_table) {
   while (1) {
-    StringView user_key = UserKey(searching_record);
     DLRecord *prev =
         pmem_allocator->offset2addr<DLRecord>(searching_record->prev);
     DLRecord *next =
@@ -313,11 +312,10 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
 
   // link new record to PMem
   LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
-
   // create dram node for new record
-  auto height = Skiplist::RandomHeight();
-  if (height > 0) {
-    *dram_node = SkiplistNode::NewNode(key, new_record, height);
+  *dram_node = Skiplist::NewNodeBuild(new_record);
+  if (*dram_node != nullptr) {
+    auto height = (*dram_node)->Height();
     for (int i = 1; i <= height; i++) {
       while (1) {
         auto now_next = splice.prevs[i]->Next(i);
@@ -333,8 +331,6 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
         }
       }
     }
-  } else {
-    *dram_node = nullptr;
   }
   return true;
 }
@@ -612,7 +608,6 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
     }
 
     StringView internal_key = next_record->Key();
-    StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
     auto hash_hint = hash_table_->GetHint(internal_key);
 
     std::lock_guard<SpinMutex> lg(*hash_hint.spin);
@@ -656,16 +651,12 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
     kvdk_assert(hash_entry.header.offset_type == HashOffsetType::DLRecord,
                 "wrong hash offset type in repair skiplist linkage");
     entry_ptr->header.data_type = valid_version_record->entry.meta.type;
-    auto height = Skiplist::RandomHeight();
-    if (height > 0) {
-      SkiplistNode *dram_node =
-          SkiplistNode::NewNode(user_key, valid_version_record, height);
-      if (dram_node == nullptr) {
-        GlobalLogger.Error("Memory overflow in repair skiplist linkage\n");
-        return Status::MemoryOverflow;
-      }
+    SkiplistNode *dram_node = Skiplist::NewNodeBuild(valid_version_record);
+
+    if (dram_node != nullptr) {
       entry_ptr->index.skiplist_node = dram_node;
       entry_ptr->header.offset_type = HashOffsetType::SkiplistNode;
+      auto height = dram_node->Height();
       for (uint8_t i = 1; i <= height; i++) {
         splice.prevs[i]->RelaxedSetNext(i, dram_node);
         dram_node->RelaxedSetNext(i, nullptr);
@@ -801,7 +792,6 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
       DataEntry data_entry;
       HashEntry *entry_ptr = nullptr;
       StringView internal_key = next_record->Key();
-      StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
 
       auto hash_hint = hash_table_->GetHint(internal_key);
 
@@ -850,14 +840,8 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
       kvdk_assert(hash_entry.header.offset_type == HashOffsetType::DLRecord,
                   "wrong hash offset type in repair skiplist linkage");
       entry_ptr->header.data_type = valid_version_record->entry.meta.type;
-      auto height = Skiplist::RandomHeight();
-      if (height > 0) {
-        SkiplistNode *dram_node =
-            SkiplistNode::NewNode(user_key, valid_version_record, height);
-        if (dram_node == nullptr) {
-          GlobalLogger.Error("Memory overflow in repair skiplist linkage\n");
-          return Status::MemoryOverflow;
-        }
+      SkiplistNode *dram_node = Skiplist::NewNodeBuild(valid_version_record);
+      if (dram_node != nullptr) {
         entry_ptr->index.skiplist_node = dram_node;
         entry_ptr->header.offset_type = HashOffsetType::SkiplistNode;
         cur_node->RelaxedSetNext(1, dram_node);
@@ -987,14 +971,9 @@ Status SortedCollectionRebuilder::updateEntriesOffset() {
 
       assert(valid_version_record != nullptr);
       entry_ptr->header.data_type = valid_version_record->entry.meta.type;
-      auto height = Skiplist::RandomHeight();
-      if (height > 0) {
-        StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
-        node = SkiplistNode::NewNode(user_key, valid_version_record, height);
-        if (node == nullptr) {
-          GlobalLogger.Error("Memory overflow in repair skiplist linkage\n");
-          return Status::MemoryOverflow;
-        }
+      node = Skiplist::NewNodeBuild(valid_version_record);
+
+      if (node != nullptr) {
         entry_ptr->index.skiplist_node = node;
         entry_ptr->header.offset_type = HashOffsetType::SkiplistNode;
         new_kvs.insert({pmem_allocator_->addr2offset(valid_version_record),
@@ -1008,6 +987,19 @@ Status SortedCollectionRebuilder::updateEntriesOffset() {
   }
   record_offsets_.insert(new_kvs.begin(), new_kvs.end());
   return Status::Ok;
+}
+
+SkiplistNode *Skiplist::NewNodeBuild(DLRecord *pmem_record) {
+  SkiplistNode *dram_node = nullptr;
+  auto height = Skiplist::RandomHeight();
+  if (height > 0) {
+    StringView user_key = UserKey(pmem_record);
+    dram_node = SkiplistNode::NewNode(user_key, pmem_record, height);
+    if (dram_node == nullptr) {
+      GlobalLogger.Error("Memory overflow in Skiplist::NewNodeBuild\n");
+    }
+  }
+  return dram_node;
 }
 
 } // namespace KVDK_NAMESPACE

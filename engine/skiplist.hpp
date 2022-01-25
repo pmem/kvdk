@@ -349,6 +349,9 @@ public:
 
   void SetCompareFunc(CompFunc comp_func) { compare_func_ = comp_func; }
 
+  // Build a skiplist node for "pmem_record"
+  static SkiplistNode *NewNodeBuild(DLRecord *pmem_record);
+
 private:
   inline void LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking) {
     return LinkDLRecord(prev, next, linking, pmem_allocator_.get());
