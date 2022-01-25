@@ -291,6 +291,21 @@ public:
                     SkiplistNode *dram_node, PMEMAllocator *pmem_allocator,
                     HashTable *hash_table);
 
+  // Replace "old_record" from its skiplist with "replacing_record", please make
+  // sure the key order is correct after replace
+  //
+  // old_record: existing record to be replaced
+  // replacing_record: new reocrd to replace the older one
+  // dram_node:dram node of old record, if it's a height 0 record, then
+  // pass nullptr
+  // old_record_lock: lock of old_record, should be locked before call
+  // this function
+  //
+  // Return true on success, return false on fail.
+  static bool Replace(DLRecord *old_record, DLRecord *replacing_record,
+                      const SpinMutex *old_record_lock, SkiplistNode *dram_node,
+                      PMEMAllocator *pmem_allocator, HashTable *hash_table);
+
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
     for (SkiplistNode *node : nodes) {
@@ -319,12 +334,18 @@ public:
 
   // Find position of "searching_record" in its skiplist and lock its previous
   // node
+  //
+  // dram_node: dram node of searching_record, if it's a height 0 record, then
+  // pass nullptr
+  // searching_record_lock: lock of searching record, should be locked before
+  // call this function
+  //
+  // Return true on success, return false on fail.
   static bool
   SearchAndLockRecordPos(Splice *splice, const DLRecord *searching_record,
-                         const SpinMutex *record_lock,
+                         const SpinMutex *searching_record_lock,
                          std::unique_lock<SpinMutex> *prev_record_lock,
-                         PMEMAllocator *pmem_allocator, HashTable *hash_table,
-                         bool check_linkage = true);
+                         PMEMAllocator *pmem_allocator, HashTable *hash_table);
 
   void SetCompareFunc(CompFunc comp_func) { compare_func_ = comp_func; }
 
@@ -360,8 +381,9 @@ private:
   bool searchAndLockDeletePos(Splice *splice, const DLRecord *deleting_record,
                               const SpinMutex *deleting_record_lock,
                               std::unique_lock<SpinMutex> *prev_record_lock) {
-    return searchAndLockUpdatePos(splice, deleting_record, deleting_record_lock,
-                                  prev_record_lock);
+    return SearchAndLockRecordPos(splice, deleting_record, deleting_record_lock,
+                                  prev_record_lock, pmem_allocator_.get(),
+                                  hash_table_.get());
   }
 
   bool ValidateDLRecord(const DLRecord *record) {
