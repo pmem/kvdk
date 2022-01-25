@@ -93,6 +93,11 @@ public:
 
 enum class IteratingDirection { Forward, Backward };
 
+// A ShadowKVEngine operates on one KVEngine collection,
+// including the global anonymous collection(string).
+// User should call EvenXSetOddXSet() first to modify KVEngine,
+// then call UpdatePossibleStates() to update possible_state to
+// keep track of the state of the KVEngine.
 template <typename EngineOperator> class ShadowKVEngine {
 public:
   struct StateAndValue {
@@ -135,6 +140,8 @@ private:
   CollectionNameType collection_name;
   EngineOperator oper;
   size_t const n_thread;
+  // A Key may have multiple possible StateAndValue.
+  // possible_state keep track of these StateAndValues
   PossibleStates possible_state;
   std::vector<OperationQueue> task_queues;
 
@@ -146,7 +153,7 @@ public:
 
   // Execute task_queues in ShadowKVEngine
   // Update possible_state
-  void RunShadowKVEngine() {
+  void UpdatePossibleStates() {
     std::cout << "[Testing] Updating Engine State" << std::endl;
 
     // Remove overwritten kvs
@@ -192,60 +199,18 @@ public:
     task_queues.resize(n_thread);
   }
 
-  // Excecute task_queues in KVEngine by calling EngineOperator
-  // ShadowKVEngine remains unchanged
-  void RunKVEngine(size_t tid, bool enable_progress_bar) {
-    OperationQueue const &tasks = task_queues[tid];
-
-    kvdk::Status status;
-    std::string value_got;
-    size_t progress = 0;
-    ProgressBar progress_bar{std::cout, "", tasks.size(), 100,
-                             enable_progress_bar};
-    /// TODO: Catch kill point and clean up tasks
-    for (auto const &task : tasks) {
-      switch (task.op) {
-      case SingleOp::OpType::Get: {
-        status = oper(task.key, &value_got);
-        ASSERT_EQ(status, kvdk::Status::Ok)
-            << "Key cannot be queried with Get\n"
-            << "Key: " << task.key << "\n";
-        ASSERT_EQ(task.value, value_got)
-            << "Value got does not match expected\n"
-            << "Value got:\n"
-            << value_got << "\n"
-            << "Expected:\n"
-            << task.value << "\n";
-        break;
-      }
-      case SingleOp::OpType::Set: {
-        status = oper(task.key, task.value);
-        ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to set key\n"
-                                            << "Key: " << task.key << "\n";
-        break;
-      }
-      case SingleOp::OpType::Delete: {
-        status = oper(task.key);
-        ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to delete key\n"
-                                            << "Key: " << task.key << "\n";
-        break;
-      }
-      }
-      ++progress;
-      progress_bar.Update(progress);
-    }
-  }
-
+  // Modify KVEngine by Set
   void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const &keys,
                        std::vector<ValueType> const &values) {
     task_queues[tid] = generateOperations(keys, values, false);
-    RunKVEngine(tid, (tid == 0));
+    modifyKVEngine(tid, (tid == 0));
   }
 
+  // Modify KVEngine by Set and Delete
   void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const &keys,
                           std::vector<ValueType> const &values) {
     task_queues[tid] = generateOperations(keys, values, true);
-    RunKVEngine(tid, (tid == 0));
+    modifyKVEngine(tid, (tid == 0));
   }
 
   // Check KVEngine by iterating through it.
@@ -339,6 +304,50 @@ public:
   }
 
 private:
+  // Excecute task_queues in KVEngine by calling EngineOperator
+  // ShadowKVEngine remains unchanged
+  void modifyKVEngine(size_t tid, bool enable_progress_bar) {
+    OperationQueue const &tasks = task_queues[tid];
+
+    kvdk::Status status;
+    std::string value_got;
+    size_t progress = 0;
+    ProgressBar progress_bar{std::cout, "", tasks.size(), 100,
+                             enable_progress_bar};
+    /// TODO: Catch kill point and clean up tasks
+    for (auto const &task : tasks) {
+      switch (task.op) {
+      case SingleOp::OpType::Get: {
+        status = oper(task.key, &value_got);
+        ASSERT_EQ(status, kvdk::Status::Ok)
+            << "Key cannot be queried with Get\n"
+            << "Key: " << task.key << "\n";
+        ASSERT_EQ(task.value, value_got)
+            << "Value got does not match expected\n"
+            << "Value got:\n"
+            << value_got << "\n"
+            << "Expected:\n"
+            << task.value << "\n";
+        break;
+      }
+      case SingleOp::OpType::Set: {
+        status = oper(task.key, task.value);
+        ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to set key\n"
+                                            << "Key: " << task.key << "\n";
+        break;
+      }
+      case SingleOp::OpType::Delete: {
+        status = oper(task.key);
+        ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to delete key\n"
+                                            << "Key: " << task.key << "\n";
+        break;
+      }
+      }
+      ++progress;
+      progress_bar.Update(progress);
+    }
+  }
+
   // Check whether a key and corresponding state is in possible_state
   void checkState(KeyType key, StateAndValue vstate) {
     auto ranges = possible_state.equal_range(key);
@@ -477,7 +486,7 @@ protected:
     std::cout << "[Testing] Execute HashesAllHSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    shadow_hashes_engines[collection_name]->RunShadowKVEngine();
+    shadow_hashes_engines[collection_name]->UpdatePossibleStates();
   }
 
   void HashesEvenHSetOddHDelete(std::string const &collection_name) {
@@ -490,7 +499,7 @@ protected:
     std::cout << "[Testing] Execute HashesEvenHSetOddHDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    shadow_hashes_engines[collection_name]->RunShadowKVEngine();
+    shadow_hashes_engines[collection_name]->UpdatePossibleStates();
   }
 
   void SortedSetsAllSSet(std::string const &collection_name) {
@@ -503,7 +512,7 @@ protected:
     std::cout << "[Testing] Execute SortedSetsAllSSet in " << collection_name
               << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    shadow_sorted_engines[collection_name]->RunShadowKVEngine();
+    shadow_sorted_engines[collection_name]->UpdatePossibleStates();
   }
 
   void SortedSetsEvenSSetOddSDelete(std::string const &collection_name) {
@@ -516,7 +525,7 @@ protected:
     std::cout << "[Testing] Execute SortedSetsEvenSSetOddSDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    shadow_sorted_engines[collection_name]->RunShadowKVEngine();
+    shadow_sorted_engines[collection_name]->UpdatePossibleStates();
   }
 
   void StringAllSet() {
@@ -528,7 +537,7 @@ protected:
 
     std::cout << "[Testing] Execute StringAllSet " << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    shadow_string_engine->RunShadowKVEngine();
+    shadow_string_engine->UpdatePossibleStates();
   }
 
   void StringEvenSetOddDelete() {
@@ -540,7 +549,7 @@ protected:
 
     std::cout << "[Testing] Execute StringEvenSetOddDelete " << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    shadow_string_engine->RunShadowKVEngine();
+    shadow_string_engine->UpdatePossibleStates();
   }
 
   void CheckHashesCollection(std::string collection_name) {
