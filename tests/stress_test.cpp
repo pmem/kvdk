@@ -351,8 +351,9 @@ private:
                        << "Supplied Key, State and Value is:\n"
                        << "Key: " << key << "\n"
                        << "State: "
-                       << (vstate.state == StateAndValue::State::Deleted ? "Deleted"
-                                                                  : "Existing")
+                       << (vstate.state == StateAndValue::State::Deleted
+                               ? "Deleted"
+                               : "Existing")
                        << "\n"
                        << "Value: " << vstate.value << "\n";
   }
@@ -407,18 +408,18 @@ protected:
   std::vector<std::vector<StringView>> grouped_keys;
   std::vector<std::vector<StringView>> grouped_values;
 
-  using HashesTracker =
+  using ShadowHashes =
       kvdk_testing::ShadowKVEngine<kvdk_testing::HashesOperator>;
-  using SortedTracker =
+  using ShadowSorted =
       kvdk_testing::ShadowKVEngine<kvdk_testing::SortedOperator>;
-  using StringTracker =
+  using ShadowString =
       kvdk_testing::ShadowKVEngine<kvdk_testing::StringOperator>;
-      
-  std::unordered_map<std::string, std::unique_ptr<HashesTracker>>
-      hashes_trackers;
-  std::unordered_map<std::string, std::unique_ptr<SortedTracker>>
-      sorted_trackers;
-  std::unique_ptr<StringTracker> string_tracker;
+
+  std::unordered_map<std::string, std::unique_ptr<ShadowHashes>>
+      shadow_hashes_engines;
+  std::unordered_map<std::string, std::unique_ptr<ShadowSorted>>
+      shadow_sorted_engines;
+  std::unique_ptr<ShadowString> shadow_string_engine;
 
 private:
   std::vector<std::string> key_pool;
@@ -469,87 +470,87 @@ protected:
   void HashesAllHSet(std::string const &collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
-      hashes_trackers[collection_name]->EvenXSetOddXSet(tid, grouped_keys[tid],
-                                                        grouped_values[tid]);
+      shadow_hashes_engines[collection_name]->EvenXSetOddXSet(
+          tid, grouped_keys[tid], grouped_values[tid]);
     };
 
     std::cout << "[Testing] Execute HashesAllHSet in " << collection_name << "."
               << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    hashes_trackers[collection_name]->RunShadowKVEngine();
+    shadow_hashes_engines[collection_name]->RunShadowKVEngine();
   }
 
   void HashesEvenHSetOddHDelete(std::string const &collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
-      hashes_trackers[collection_name]->EvenXSetOddXDelete(
+      shadow_hashes_engines[collection_name]->EvenXSetOddXDelete(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
 
     std::cout << "[Testing] Execute HashesEvenHSetOddHDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    hashes_trackers[collection_name]->RunShadowKVEngine();
+    shadow_hashes_engines[collection_name]->RunShadowKVEngine();
   }
 
   void SortedSetsAllSSet(std::string const &collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
-      sorted_trackers[collection_name]->EvenXSetOddXSet(tid, grouped_keys[tid],
-                                                        grouped_values[tid]);
+      shadow_sorted_engines[collection_name]->EvenXSetOddXSet(
+          tid, grouped_keys[tid], grouped_values[tid]);
     };
 
     std::cout << "[Testing] Execute SortedSetsAllSSet in " << collection_name
               << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    sorted_trackers[collection_name]->RunShadowKVEngine();
+    shadow_sorted_engines[collection_name]->RunShadowKVEngine();
   }
 
   void SortedSetsEvenSSetOddSDelete(std::string const &collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
-      sorted_trackers[collection_name]->EvenXSetOddXDelete(
+      shadow_sorted_engines[collection_name]->EvenXSetOddXDelete(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
 
     std::cout << "[Testing] Execute SortedSetsEvenSSetOddSDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    sorted_trackers[collection_name]->RunShadowKVEngine();
+    shadow_sorted_engines[collection_name]->RunShadowKVEngine();
   }
 
   void StringAllSet() {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
-      string_tracker->EvenXSetOddXSet(tid, grouped_keys[tid],
-                                      grouped_values[tid]);
+      shadow_string_engine->EvenXSetOddXSet(tid, grouped_keys[tid],
+                                            grouped_values[tid]);
     };
 
     std::cout << "[Testing] Execute StringAllSet " << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    string_tracker->RunShadowKVEngine();
+    shadow_string_engine->RunShadowKVEngine();
   }
 
   void StringEvenSetOddDelete() {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
-      string_tracker->EvenXSetOddXDelete(tid, grouped_keys[tid],
-                                         grouped_values[tid]);
+      shadow_string_engine->EvenXSetOddXDelete(tid, grouped_keys[tid],
+                                               grouped_values[tid]);
     };
 
     std::cout << "[Testing] Execute StringEvenSetOddDelete " << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
-    string_tracker->RunShadowKVEngine();
+    shadow_string_engine->RunShadowKVEngine();
   }
 
   void CheckHashesCollection(std::string collection_name) {
     std::cout << "[Testing] Checking Hashes Collection: " << collection_name
               << std::endl;
-    hashes_trackers[collection_name]->CheckGetter();
-    hashes_trackers[collection_name]->CheckIterator(
+    shadow_hashes_engines[collection_name]->CheckGetter();
+    shadow_hashes_engines[collection_name]->CheckIterator(
         engine->NewUnorderedIterator(collection_name),
         kvdk_testing::IteratingDirection::Forward);
-    hashes_trackers[collection_name]->CheckIterator(
+    shadow_hashes_engines[collection_name]->CheckIterator(
         engine->NewUnorderedIterator(collection_name),
         kvdk_testing::IteratingDirection::Backward);
   }
@@ -557,33 +558,33 @@ protected:
   void CheckSortedSetsCollection(std::string collection_name) {
     std::cout << "[Testing] Checking Sorted Collection: " << collection_name
               << std::endl;
-    sorted_trackers[collection_name]->CheckGetter();
-    sorted_trackers[collection_name]->CheckIterator(
+    shadow_sorted_engines[collection_name]->CheckGetter();
+    shadow_sorted_engines[collection_name]->CheckIterator(
         engine->NewSortedIterator(collection_name),
         kvdk_testing::IteratingDirection::Forward);
-    sorted_trackers[collection_name]->CheckIterator(
+    shadow_sorted_engines[collection_name]->CheckIterator(
         engine->NewSortedIterator(collection_name),
         kvdk_testing::IteratingDirection::Backward);
   }
 
   void CheckStrings() {
     std::cout << "[Testing] Checking strings." << std::endl;
-    string_tracker->CheckGetter();
+    shadow_string_engine->CheckGetter();
   }
 
   void InitializeStrings() {
-    string_tracker.reset(new StringTracker{
-        engine, kvdk_testing::CollectionNameType{}, n_thread});
+    shadow_string_engine.reset(
+        new ShadowString{engine, kvdk_testing::CollectionNameType{}, n_thread});
   }
 
   void InitializeHashes(std::string const &collection_name) {
-    hashes_trackers[collection_name].reset(
-        new HashesTracker{engine, collection_name, n_thread});
+    shadow_hashes_engines[collection_name].reset(
+        new ShadowHashes{engine, collection_name, n_thread});
   }
 
   void InitializeSorted(std::string const &collection_name) {
-    sorted_trackers[collection_name].reset(
-        new SortedTracker{engine, collection_name, n_thread});
+    shadow_sorted_engines[collection_name].reset(
+        new ShadowSorted{engine, collection_name, n_thread});
   }
 
 private:
@@ -672,8 +673,8 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -689,8 +690,8 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -710,8 +711,8 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -731,8 +732,8 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -747,8 +748,8 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
 TEST_F(EngineStressTest, StringSetOnly) {
   InitializeStrings();
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -763,8 +764,8 @@ TEST_F(EngineStressTest, StringSetOnly) {
 TEST_F(EngineStressTest, StringSetAndDelete) {
   InitializeStrings();
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -811,8 +812,8 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -835,8 +836,8 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
@@ -854,8 +855,8 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
 TEST_F(EngineHotspotTest, StringMultipleHotspot) {
   InitializeStrings();
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for " << n_reboot
-            << " times." << std::endl;
+  std::cout << "[Testing] Modify, check, reboot and check engine for "
+            << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
