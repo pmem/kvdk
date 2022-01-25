@@ -1583,7 +1583,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
       ASSERT_EQ(engine->Set(key, val), Status::Ok);
     });
 
-   // thread 4
+    // thread 4
     ts.emplace_back([&]() {
       TEST_SYNC_POINT("Test::Delete::Start::0");
       for (int i = 0; i < batch_size; i += 3) {

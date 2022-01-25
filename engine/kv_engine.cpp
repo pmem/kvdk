@@ -1230,7 +1230,8 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     void *block_base =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
-    TEST_SYNC_POINT("KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
+    TEST_SYNC_POINT(
+        "KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
     // We use if here to avoid compilation warning
     if (kv.type == StringDataRecord) {
       StringRecord::PersistStringRecord(
