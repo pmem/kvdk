@@ -8,7 +8,7 @@
 #include <set>
 
 #include "../allocator.hpp"
-#include "../utils.hpp"
+#include "../utils/utils.hpp"
 #include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {

@@ -5,7 +5,7 @@
 
 #include "../alias.hpp"
 #include "../thread_manager.hpp"
-#include "../utils.hpp"
+#include "../utils/utils.hpp"
 #include "kvdk/configs.hpp"
 
 namespace KVDK_NAMESPACE {

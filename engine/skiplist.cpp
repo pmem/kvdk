@@ -11,6 +11,8 @@
 #include "kv_engine.hpp"
 #include "skiplist.hpp"
 
+#include "utils/sync_point.hpp"
+
 namespace KVDK_NAMESPACE {
 
 StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
@@ -93,6 +95,7 @@ void Skiplist::LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking,
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
+  TEST_SYNC_POINT("KVEngine::Skiplist::InsertDLRecord::UpdatePrev");
   next->prev = inserting_record_offset;
   pmem_persist(&next->prev, 8);
 }
@@ -422,11 +425,13 @@ bool Skiplist::Purge(DLRecord *purging_record,
   assert(prev->next == purging_offset);
   assert(next->prev == purging_offset);
   // For repair in recovery due to crashes during pointers changing, we should
-  // first unlink deleting entry from prev's next
-  prev->next = pmem_allocator->addr2offset(next);
-  pmem_persist(&prev->next, 8);
+  // first unlink deleting entry from next's prev.(It is the reverse process
+  // of insertion)
   next->prev = pmem_allocator->addr2offset(prev);
   pmem_persist(&next->prev, 8);
+  TEST_SYNC_POINT("KVEngine::Skiplist::Delete::PersistNext'sPrev::After");
+  prev->next = pmem_allocator->addr2offset(next);
+  pmem_persist(&prev->next, 8);
   purging_record->Destroy();
 
   if (dram_node) {

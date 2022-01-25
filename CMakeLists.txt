@@ -46,6 +46,8 @@ endif()
 
 # source files
 set(SOURCES
+        engine/utils/utils.cpp
+        engine/utils/sync_point.cpp
         engine/engine.cpp
         engine/kv_engine.cpp
         engine/logger.cpp
@@ -55,7 +57,6 @@ set(SOURCES
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
-        engine/utils.cpp
         engine/pmem_allocator/free_list.cpp
         engine/c.cc
         engine/unordered_collection.cpp
@@ -63,7 +64,6 @@ set(SOURCES
         engine/queue.cpp
         engine/version/old_records_cleaner.cpp
         )
-
 
 # .a library
 add_library(engine SHARED ${SOURCES})
@@ -113,6 +113,7 @@ if (BUILD_TESTING)
     target_link_libraries(dbstress_test PUBLIC engine gtest gmock gtest_main)
 endif ()
 
+
 option(BUILD_TUTORIAL "Build the tutorial" ON)
 add_subdirectory(examples/tutorial)
 
@@ -146,6 +147,8 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/pmem_allocator/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/examples/tutorial/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*

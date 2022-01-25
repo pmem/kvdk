@@ -16,7 +16,7 @@
 
 #include "hash_table.hpp"
 #include "structures.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 static const uint8_t kMaxHeight = 32;

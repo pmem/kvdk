@@ -31,7 +31,7 @@
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
-#include "utils.hpp"
+#include "utils/utils.hpp"
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
 

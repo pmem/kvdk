@@ -14,6 +14,7 @@
 
 #include "../engine/kv_engine.hpp"
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
+#include "../engine/utils/sync_point.hpp"
 
 #include "test_util.h"
 
@@ -1587,8 +1588,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
                                        "collection2"};
 
   auto cmp0 = [](const StringView &a, const StringView &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea < scoreb)
@@ -1598,8 +1599,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   };
 
   auto cmp1 = [](const StringView &a, const StringView &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+    double scorea = std::stod(string_view_2_string(a));
+    double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
       return 0;
     else if (scorea > scoreb)
@@ -1674,6 +1675,395 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   ASSERT_EQ(engine->SDelete("collection0", "a"), Status::Ok);
   delete engine;
 }
+
+// ========================= Sync Point ======================================
+
+#if DEBUG_LEVEL > 0
+TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
+  // SyncPoint
+  // The dependency is, T1->T2->T3/T4
+  // T1: insert {"key8", "val15"}
+  // T2: batch write: {"key0", "val0"}, ....{"key20",""val20}
+  // T3: insert {"key10", "val17"}
+  // T4: delete {"key0", "val0"} {"key3", "val3"} ... {"key18", "val18"}
+  {
+    Configs test_config = configs;
+    test_config.max_access_threads = 16;
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+              Status::Ok);
+
+    int batch_size = 20;
+
+    SyncPoint::GetInstance()->LoadDependency(
+        {{"Test::Set::Finish::1",
+          "KVEngine::BatchWrite::AllocateRecord::After"},
+         {"KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before",
+          "Test::Set::Start::0"},
+         {"KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before",
+          "Test::Delete::Start::0"}});
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEngine::BatchWrite::AllocateRecord::After", [&](void *size) {
+          size_t bsize = *((size_t *)size);
+          ASSERT_EQ(batch_size, bsize);
+        });
+
+    SyncPoint::GetInstance()->EnableProcessing();
+
+    std::vector<std::thread> ts;
+
+    // thread 1
+    ts.emplace_back([&]() {
+      std::string key = "key8";
+      std::string val = "val15";
+      ASSERT_EQ(engine->Set(key, val), Status::Ok);
+      TEST_SYNC_POINT("Test::Set::Finish::1");
+    });
+
+    // thread 2
+    ts.emplace_back([&]() {
+      WriteBatch wb;
+      for (int i = 0; i < batch_size; ++i) {
+        std::string key = "key" + std::to_string(i);
+        std::string val = "val" + std::to_string(i);
+        wb.Put(key, val);
+      }
+      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
+    });
+
+    // thread 3
+    ts.emplace_back([&]() {
+      TEST_SYNC_POINT("Test::Set::Start::0");
+      std::string key = "key10";
+      std::string val = "val17";
+      ASSERT_EQ(engine->Set(key, val), Status::Ok);
+    });
+
+    // thread 4
+    ts.emplace_back([&]() {
+      TEST_SYNC_POINT("Test::Delete::Start::0");
+      for (int i = 0; i < batch_size; i += 3) {
+        std::string key = "key" + std::to_string(i);
+        ASSERT_EQ(engine->Delete(key), Status::Ok);
+      }
+    });
+
+    for (auto &t : ts) {
+      t.join();
+    }
+
+    for (auto i = 0; i < batch_size; ++i) {
+      std::string key = "key" + std::to_string(i);
+      std::string val;
+      auto s = engine->Get(key, &val);
+      if (i % 3 == 0) {
+        ASSERT_EQ(s, Status::NotFound);
+      } else {
+        if (i == 10) {
+          ASSERT_EQ(val, "val17");
+        } else {
+          ASSERT_EQ(val, "val" + std::to_string(i));
+        }
+      }
+    }
+  }
+
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
+  Configs test_config = configs;
+  test_config.max_access_threads = 16;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+            Status::Ok);
+
+  int batch_size = 10;
+  {
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Reset();
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEnigne::BatchWrite::BatchWriteRecord", [&](void *index) {
+          size_t idx = *(size_t *)(index);
+          if (idx == (batch_size / 2)) {
+            throw 1;
+          }
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+
+    engine->Set("key2", "val2*2");
+    engine->Set("key6", "val6*2");
+    WriteBatch wb;
+    for (int i = 0; i < batch_size; ++i) {
+      std::string key = "key" + std::to_string(i);
+      std::string val = "val" + std::to_string(i);
+      wb.Put(key, val);
+    }
+    try {
+      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
+    } catch (...) {
+      delete engine;
+      // reopen engine
+      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+                Status::Ok);
+      for (int i = 0; i < batch_size; ++i) {
+        std::string got_val;
+        std::string key = "key" + std::to_string(i);
+        if (key == "key2") {
+          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+          ASSERT_EQ(got_val, "val2*2");
+        } else if (key == "key6") {
+          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+          ASSERT_EQ(got_val, "val6*2");
+        } else {
+          ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+        }
+      }
+    }
+  }
+
+  // Again write batch (the same key, the different value). Crash before
+  // purgeAndFree
+  {
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Reset();
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEngine::BatchWrite::purgeAndFree::Before", [&](void *index) {
+          size_t idx = *(size_t *)(index);
+          if (idx == 6) {
+            throw 1;
+          }
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    WriteBatch wb;
+    for (int i = 0; i < batch_size; ++i) {
+      std::string key = "key" + std::to_string(i);
+      std::string val = "val*" + std::to_string(i);
+      wb.Put(key, val);
+      if (i % 4 == 0) {
+        wb.Delete(key);
+      }
+    }
+    try {
+      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
+    } catch (...) {
+      delete engine; // reopen engine;
+      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+                Status::Ok);
+      for (int i = 0; i < batch_size; ++i) {
+        std::string got_val;
+        std::string key = "key" + std::to_string(i);
+        Status s = engine->Get(key, &got_val);
+        if (i == 0) {
+          ASSERT_EQ(s, Status::NotFound);
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+          ASSERT_EQ(got_val, "val*" + std::to_string(i));
+        }
+      }
+    }
+  }
+}
+
+// Example Case One:
+//         A <-> C <-> D
+// Insert B, but crashes half way, Now the state is:
+//         A <------ C <-> D
+//         A <-> B ->C
+// Then Repair
+TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
+  Configs test_config = configs;
+  test_config.max_access_threads = 16;
+
+  std::atomic<int> update_num(1);
+  int cnt = 20;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+            Status::Ok);
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+  SyncPoint::GetInstance()->SetCallBack(
+      "KVEngine::Skiplist::InsertDLRecord::UpdatePrev", [&](void *) {
+        if (update_num % 8 == 0) {
+          throw 1;
+        }
+      });
+  SyncPoint::GetInstance()->SetCallBack(
+      "Test::SSet::Update::Finish", [&](void *) { update_num.fetch_add(1); });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  Collection *collection_ptr;
+  std::string collection_name = "SortedRecoverySyncPoint";
+  Status s = engine->CreateSortedCollection(collection_name, &collection_ptr);
+  ASSERT_EQ(s, Status::Ok);
+
+  try {
+    for (int i = 0; i < cnt; ++i) {
+      if (i % 2 == 0) {
+        engine->SSet(collection_name, "key" + std::to_string(i),
+                     "val" + std::to_string(i));
+      } else {
+        std::string new_val = "val*" + std::to_string(i);
+        engine->SSet(collection_name, "key" + std::to_string(i - 1), new_val);
+        TEST_SYNC_POINT("Test::SSet::Update::Finish");
+      }
+    }
+  } catch (...) {
+    delete engine;
+    // reopen engine
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+              Status::Ok);
+    for (int i = 0; i < cnt; ++i) {
+      std::string key = "key" + std::to_string(i);
+      std::string got_val;
+      Status s = engine->SGet(collection_name, key, &got_val);
+      if (i % 2 != 0) {
+        ASSERT_EQ(s, Status::NotFound);
+      } else {
+        if (i <= 14) {
+          ASSERT_EQ(s, Status::Ok);
+          if (i != 14) {
+            ASSERT_EQ(got_val, "val*" + std::to_string(i + 1));
+          } else
+            ASSERT_EQ(got_val, "val" + std::to_string(i));
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+        }
+      }
+    }
+  }
+}
+
+// Example Case Two:
+//         A <-> C <-> D
+// Insert order: A, D, C
+// Delete C, crash half way, now the state is:
+//           A ----------> D
+//           A<==>C-->D
+// Then Repair
+
+TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
+  Configs test_config = configs;
+  test_config.max_access_threads = 16;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+            Status::Ok);
+
+  std::atomic<bool> first_visited{false};
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+  // only throw when the first call `SDelete`
+  SyncPoint::GetInstance()->SetCallBack(
+      "KVEngine::Skiplist::Delete::PersistNext'sPrev::After", [&](void *) {
+        if (!first_visited.load()) {
+          first_visited.store(true);
+          throw 1;
+        }
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  Collection *collection_ptr;
+  std::string collection_name = "SortedDeleteRecoverySyncPoint";
+  Status s = engine->CreateSortedCollection(collection_name, &collection_ptr);
+  ASSERT_EQ(s, Status::Ok);
+
+  std::vector<std::string> keylists{"C", "A", "D"};
+  try {
+    engine->SSet(collection_name, keylists[0], "val" + keylists[0]);
+    engine->SSet(collection_name, keylists[1], "val" + keylists[1]);
+    engine->SSet(collection_name, keylists[2], "val" + keylists[2]);
+    engine->SDelete(collection_name, keylists[0]);
+  } catch (...) {
+    delete engine;
+    // reopen engine
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+              Status::Ok);
+    // Check skiplist integrity.
+    int forward_num = 0, backward_num = 0;
+    auto sorted_iter = engine->NewSortedIterator(collection_name);
+    // Forward traversal.
+    sorted_iter->SeekToFirst();
+    while (sorted_iter->Valid()) {
+      forward_num++;
+      sorted_iter->Next();
+    }
+    // Backward traversal.
+    sorted_iter->SeekToLast();
+    while (sorted_iter->Valid()) {
+      backward_num++;
+      sorted_iter->Prev();
+    }
+    ASSERT_EQ(forward_num, backward_num);
+
+    std::string got_val;
+    ASSERT_EQ(engine->SGet(collection_name, keylists[0], &got_val), Status::Ok);
+    ASSERT_EQ(engine->SGet(collection_name, keylists[2], &got_val), Status::Ok);
+    ASSERT_EQ(got_val, "val" + keylists[2]);
+    ASSERT_EQ(engine->SGet(collection_name, keylists[1], &got_val), Status::Ok);
+    ASSERT_EQ(got_val, "val" + keylists[1]);
+
+    // Again delete "C".
+    ASSERT_EQ(engine->SDelete(collection_name, keylists[0]), Status::Ok);
+  }
+}
+
+// Example:
+//   {key0, val0} <-> {key2, val2}
+//   thread1 insert : {key0, val0} <-> {key1, val1} <-> {key2, val2}
+//   thread2: iter
+TEST_F(EngineBasicTest, TestSortedSyncPoint) {
+  Configs test_config = configs;
+  test_config.max_access_threads = 16;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
+            Status::Ok);
+  std::vector<std::thread> ths;
+  std::string collection_name = "skiplist";
+  Collection *collection_ptr;
+  ASSERT_EQ(engine->CreateSortedCollection(collection_name, &collection_ptr),
+            Status::Ok);
+
+  engine->SSet(collection_name, "key0", "val0");
+  engine->SSet(collection_name, "key2", "val2");
+
+  std::atomic<bool> first_record(false);
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+  SyncPoint::GetInstance()->LoadDependency(
+      {{"KVEngine::Skiplist::InsertDLRecord::UpdatePrev", "Test::Iter::key0"}});
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  // insert
+  ths.emplace_back(std::thread([&]() {
+    engine->SSet(collection_name, "key1", "val1");
+    std::string got_val;
+    ASSERT_EQ(engine->SGet(collection_name, "key1", &got_val), Status::Ok);
+  }));
+
+  // Iter
+  ths.emplace_back(std::thread([&]() {
+    auto sorted_iter = engine->NewSortedIterator(collection_name);
+    sorted_iter->SeekToLast();
+    int iter_num = 0;
+    if (sorted_iter->Valid()) {
+      std::string next = sorted_iter->Key();
+      ASSERT_EQ(next, "key2");
+      sorted_iter->Prev();
+      while (sorted_iter->Valid()) {
+        std::string k = sorted_iter->Key();
+        TEST_SYNC_POINT("Test::Iter::" + k);
+        if (k == "key0") {
+          sorted_iter->Next();
+          ASSERT_EQ(sorted_iter->Key(), "key1");
+          sorted_iter->Prev();
+        }
+        sorted_iter->Prev();
+        ASSERT_EQ(true, k.compare(next) < 0);
+        next = k;
+      }
+    }
+  }));
+  for (auto &thread : ths) {
+    thread.join();
+  }
+}
+
+#endif
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);

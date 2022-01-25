@@ -165,7 +165,6 @@ bool PMEMAllocator::FreeAndFetchSegment(SpaceEntry *segment_space_entry) {
 bool PMEMAllocator::allocateSegmentSpace(SpaceEntry *segment_entry) {
   std::lock_guard<SpinMutex> lg(offset_head_lock_);
   if (offset_head_ <= pmem_size_ - segment_size_) {
-    Free(*segment_entry);
     *segment_entry = SpaceEntry{offset_head_, segment_size_};
     persistSpaceEntry(offset_head_, segment_size_);
     offset_head_ += segment_size_;
@@ -255,6 +254,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
         return space_entry;
       }
       if (palloc_thread_cache.free_entry.size > 0) {
+        // Not a true free
+        LogAllocation(access_thread.id, palloc_thread_cache.free_entry.size);
         Free(palloc_thread_cache.free_entry);
         palloc_thread_cache.free_entry.size = 0;
       }
@@ -266,6 +267,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       break;
     }
 
+    LogAllocation(access_thread.id, palloc_thread_cache.segment_entry.size);
+    Free(palloc_thread_cache.segment_entry);
     // allocate a new segment, add remainning space of the old one
     // to the free list
     if (!allocateSegmentSpace(&palloc_thread_cache.segment_entry)) {

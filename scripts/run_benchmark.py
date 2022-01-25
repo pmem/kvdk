@@ -8,31 +8,30 @@ bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 num_thread = 64
+value_sizes = [120]
 # constant: value size always be "value_size",
-# random: value size randomly distributed in [1, value_size]
-value_sizes = [120, 500, 1000]
+# random: value size uniformly distributed in [1, value_size]
 value_size_distributions = ['constant']
-key_distributions = ['random', 'zipf']
-test_duration = 10                         # For operations other than fill
-populate_on_fill = 1                    # For fill only
-pmem_size = 512 * 1024 * 1024 * 1024  # we need enough space to test insert
-fill_data_size = 96 * 1024 * 1024 * 1024
+timeout = 30                          # For operations other than fill
+populate_on_fill = 1                  # For fill only
+pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 num_collection = 16
 
 benchmarks = [
-    benchmark_impl.read_random,
-    benchmark_impl.range_scan,
+    benchmark_impl.batch_insert_random, 
     benchmark_impl.insert_random,
-    benchmark_impl.batch_insert_random,
-    benchmark_impl.update_random,
-    benchmark_impl.read_write_random]
+    benchmark_impl.range_scan, 
+    benchmark_impl.read_random, 
+    benchmark_impl.read_write_random,
+    benchmark_impl.update_random]
 
 data_types = []
 
 if __name__ == "__main__":
-    usage = 'usage: run_benchmark.py [data type]\n\
-        data type can be "string", "sorted", "hash", "queue", or "all" to bench them all'
-    if len(sys.argv) != 2:
+    usage = 'usage: run_benchmark.py [data type] [key distribution]\n\
+        data type can be "string", "sorted", "hash", "queue", or "all"\n\
+        key distribution can be "random" or "zipf" or "all".'
+    if len(sys.argv) != 3:
         print(usage)
         exit(1)
     if sys.argv[1] == 'string':
@@ -50,6 +49,16 @@ if __name__ == "__main__":
     else:
         print(usage)
         exit(1)
-    for [value_size, data_type, vsz_dist, k_dist] in itertools.product(value_sizes, data_types, value_size_distributions, key_distributions):
-        benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill, fill_data_size,
-                                     num_thread, num_collection, test_duration, k_dist, value_size, vsz_dist, benchmarks)
+    if sys.argv[2] == 'random':
+        key_distributions = ['random']
+    elif sys.argv[2] == 'zipf':
+        key_distributions = ['zipf']
+    elif sys.argv[2] == 'all':
+        key_distributions = ['random','zipf']
+    else:
+        print(usage)
+        exit(1)
+    
+    for [data_type, value_size, vsz_dist, k_dist] in itertools.product(data_types, value_sizes, value_size_distributions, key_distributions):
+        benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill,
+                                     num_thread, num_collection, timeout, k_dist, value_size, vsz_dist, benchmarks)
