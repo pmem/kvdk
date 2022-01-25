@@ -29,6 +29,8 @@ using KeyType = StringView;
 using ValueType = StringView;
 using CollectionNameType = StringView;
 
+// Operators are just wrappers of the engine and collection name
+// They offer an universal interface for calling KVEngine APIs
 class HashesOperator {
   kvdk::Engine *&engine;
   CollectionNameType collection_name;
@@ -91,13 +93,13 @@ public:
 
 enum class IteratingDirection { Forward, Backward };
 
-template <typename EngineOperator> class DataBaseStateTracker {
+template <typename EngineOperator> class ShadowKVEngine {
 public:
-  struct VState {
+  struct StateAndValue {
     enum class State { Existing, Deleted } state;
     ValueType value;
 
-    bool operator==(VState other) {
+    bool operator==(StateAndValue other) {
       bool match_state = (state == other.state);
       bool match_value =
           ((state == State::Existing) && (value == other.value)) ||
@@ -111,6 +113,7 @@ public:
     KeyType key;
     ValueType value; // Empty for Delete, expected for Get
 
+    // For printing error message
     friend std::ostream &operator<<(std::ostream &out, SingleOp const &sop) {
       out << "Op: "
           << (sop.op == OpType::Get
@@ -124,8 +127,8 @@ public:
   };
 
   using OperationQueue = std::deque<SingleOp>;
-  using PossibleStates = std::unordered_multimap<KeyType, VState>;
-  using StagedChanges = std::unordered_map<KeyType, VState>;
+  using PossibleStates = std::unordered_multimap<KeyType, StateAndValue>;
+  using StagedChanges = std::unordered_map<KeyType, StateAndValue>;
 
 private:
   kvdk::Engine *&engine;
@@ -136,11 +139,13 @@ private:
   std::vector<OperationQueue> task_queues;
 
 public:
-  DataBaseStateTracker() = delete;
-  DataBaseStateTracker(kvdk::Engine *&e, CollectionNameType cn, size_t nt)
+  ShadowKVEngine() = delete;
+  ShadowKVEngine(kvdk::Engine *&e, CollectionNameType cn, size_t nt)
       : engine{e}, collection_name{cn}, oper{engine, collection_name},
         n_thread{nt}, possible_state{}, task_queues(n_thread) {}
 
+  // Execute task_queues in ShadowKVEngine
+  // Update possible_state
   void CommitChanges() {
     std::cout << "[Testing] Updating Engine State" << std::endl;
 
@@ -167,12 +172,12 @@ public:
           }
           case SingleOp::OpType::Set: {
             squashed_changes[sop.key] =
-                VState{VState::State::Existing, sop.value};
+                StateAndValue{StateAndValue::State::Existing, sop.value};
             break;
           }
           case SingleOp::OpType::Delete: {
             squashed_changes[sop.key] =
-                VState{VState::State::Deleted, ValueType{}};
+                StateAndValue{StateAndValue::State::Deleted, ValueType{}};
             break;
           }
           }
@@ -187,23 +192,8 @@ public:
     task_queues.resize(n_thread);
   }
 
-  void CheckState(KeyType key, VState vstate) {
-    auto ranges = possible_state.equal_range(key);
-
-    bool match = false;
-    for (auto iter = ranges.first; iter != ranges.second; ++iter) {
-      match = (match || (vstate == iter->second));
-    }
-    ASSERT_TRUE(match) << "Key and State supplied is not possible:\n"
-                       << "Supplied Key, State and Value is:\n"
-                       << "Key: " << key << "\n"
-                       << "State: "
-                       << (vstate.state == VState::State::Deleted ? "Deleted"
-                                                                  : "Existing")
-                       << "\n"
-                       << "Value: " << vstate.value << "\n";
-  }
-
+  // Excecute task_queues in KVEngine by calling EngineOperator
+  // ShadowKVEngine remains unchanged
   void ExecuteTasks(size_t tid, bool enable_progress_bar) {
     OperationQueue const &tasks = task_queues[tid];
 
@@ -248,31 +238,18 @@ public:
 
   void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const &keys,
                        std::vector<ValueType> const &values) {
-    task_queues[tid] = GenerateOperations(keys, values, false);
+    task_queues[tid] = generateOperations(keys, values, false);
     ExecuteTasks(tid, (tid == 0));
   }
 
   void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const &keys,
                           std::vector<ValueType> const &values) {
-    task_queues[tid] = GenerateOperations(keys, values, true);
+    task_queues[tid] = generateOperations(keys, values, true);
     ExecuteTasks(tid, (tid == 0));
   }
 
-  static OperationQueue GenerateOperations(std::vector<KeyType> const &keys,
-                                           std::vector<ValueType> const &values,
-                                           bool interleaved_set_delete) {
-    OperationQueue queue(keys.size());
-    for (size_t i = 0; i < queue.size(); i++) {
-      if (i % 2 == 0 || !interleaved_set_delete) {
-        queue[i] = {SingleOp::OpType::Set, keys[i], values[i]};
-      } else {
-        queue[i] = {SingleOp::OpType::Delete, keys[i], ValueType{}};
-      }
-    }
-
-    return queue;
-  }
-
+  // Check KVEngine by iterating through it.
+  // Iterated KVs are looked up in possible_state.
   void CheckIterator(std::shared_ptr<kvdk::Iterator> iterator,
                      IteratingDirection direction) {
 
@@ -299,7 +276,7 @@ public:
         auto key = iterator->Key();
         auto value = iterator->Value();
 
-        CheckState(key, {VState::State::Existing, value});
+        checkState(key, {StateAndValue::State::Existing, value});
 
         possible_state_copy.erase(key);
         pbar.Update(possible_state.size() - possible_state_copy.size());
@@ -318,7 +295,7 @@ public:
         while (!possible_state_copy.empty()) {
           auto key = possible_state_copy.begin()->first;
 
-          CheckState(key, {VState::State::Deleted, ValueType{}});
+          checkState(key, {StateAndValue::State::Deleted, ValueType{}});
 
           possible_state_copy.erase(key);
           pbar.Update(possible_state.size() - possible_state_copy.size());
@@ -327,6 +304,8 @@ public:
     }
   }
 
+  // Check KVEngine by get every key in possible_state
+  // and check its value and state.
   void CheckGetter() {
     kvdk::Status status;
     std::string value_got;
@@ -340,11 +319,11 @@ public:
         status = oper(key, &value_got);
         switch (status) {
         case kvdk::Status::Ok: {
-          CheckState(key, {VState::State::Existing, value_got});
+          checkState(key, {StateAndValue::State::Existing, value_got});
           break;
         }
         case kvdk::Status::NotFound: {
-          CheckState(key, {VState::State::Deleted, ValueType{}});
+          checkState(key, {StateAndValue::State::Deleted, ValueType{}});
           break;
         }
         default: {
@@ -357,6 +336,40 @@ public:
         pbar.Update(possible_state.size() - possible_state_copy.size());
       }
     }
+  }
+
+private:
+  // Check whether a key and corresponding state is in possible_state
+  void checkState(KeyType key, StateAndValue vstate) {
+    auto ranges = possible_state.equal_range(key);
+
+    bool match = false;
+    for (auto iter = ranges.first; iter != ranges.second; ++iter) {
+      match = (match || (vstate == iter->second));
+    }
+    ASSERT_TRUE(match) << "Key and State supplied is not possible:\n"
+                       << "Supplied Key, State and Value is:\n"
+                       << "Key: " << key << "\n"
+                       << "State: "
+                       << (vstate.state == StateAndValue::State::Deleted ? "Deleted"
+                                                                  : "Existing")
+                       << "\n"
+                       << "Value: " << vstate.value << "\n";
+  }
+
+  static OperationQueue generateOperations(std::vector<KeyType> const &keys,
+                                           std::vector<ValueType> const &values,
+                                           bool interleaved_set_delete) {
+    OperationQueue queue(keys.size());
+    for (size_t i = 0; i < queue.size(); i++) {
+      if (i % 2 == 0 || !interleaved_set_delete) {
+        queue[i] = {SingleOp::OpType::Set, keys[i], values[i]};
+      } else {
+        queue[i] = {SingleOp::OpType::Delete, keys[i], ValueType{}};
+      }
+    }
+
+    return queue;
   }
 };
 } // namespace kvdk_testing
@@ -395,11 +408,12 @@ protected:
   std::vector<std::vector<StringView>> grouped_values;
 
   using HashesTracker =
-      kvdk_testing::DataBaseStateTracker<kvdk_testing::HashesOperator>;
+      kvdk_testing::ShadowKVEngine<kvdk_testing::HashesOperator>;
   using SortedTracker =
-      kvdk_testing::DataBaseStateTracker<kvdk_testing::SortedOperator>;
+      kvdk_testing::ShadowKVEngine<kvdk_testing::SortedOperator>;
   using StringTracker =
-      kvdk_testing::DataBaseStateTracker<kvdk_testing::StringOperator>;
+      kvdk_testing::ShadowKVEngine<kvdk_testing::StringOperator>;
+      
   std::unordered_map<std::string, std::unique_ptr<HashesTracker>>
       hashes_trackers;
   std::unordered_map<std::string, std::unique_ptr<SortedTracker>>
@@ -631,7 +645,7 @@ protected:
   virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
-    // 256GB PMem
+    // 64GB PMem
     sz_pmem_file = (64ULL << 30);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
