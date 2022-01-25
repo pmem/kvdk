@@ -475,6 +475,10 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
+  if (string_view_2_string(pmem_record->Key()) == "key1") {
+    GlobalLogger.Error("restore key1 type %d ts %lu\n", cached_entry.meta.type,
+                       cached_entry.meta.timestamp);
+  }
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     purgeAndFree(pmem_record);
@@ -949,7 +953,6 @@ Status KVEngine::HashGetImpl(const StringView &key, std::string *value,
       break;
     }
   }
-
   return Status::Ok;
 }
 
@@ -1363,6 +1366,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
 
   thread_cache_[access_thread.id].persisted_pending_batch->PersistFinish();
 
+  std::string val;
+
   // Free updated kvs, we should purge all updated kvs before release locks and
   // after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
@@ -1404,6 +1409,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord && !found) {
       batch_hint.space_not_used = true;
+      persistSpaceEntry(batch_hint.allocated_space);
       return Status::Ok;
     }
 
@@ -1415,6 +1421,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
 
     TEST_SYNC_POINT(
         "KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
+
     StringRecord::PersistStringRecord(
         block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
         static_cast<RecordType>(kv.type),

@@ -1837,9 +1837,12 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     for (int i = 0; i < batch_size; ++i) {
       std::string key = "key" + std::to_string(i);
       std::string val = "val*" + std::to_string(i);
-      wb.Put(key, val);
+
       if (i % 4 == 0) {
+        ASSERT_EQ(engine->Set(key, val), Status::Ok);
         wb.Delete(key);
+      } else {
+        wb.Put(key, val);
       }
     }
     try {
@@ -1852,7 +1855,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
         std::string got_val;
         std::string key = "key" + std::to_string(i);
         Status s = engine->Get(key, &got_val);
-        if (i == 0) {
+        if (i % 4 == 0) {
           ASSERT_EQ(s, Status::NotFound);
         } else {
           ASSERT_EQ(s, Status::Ok);
