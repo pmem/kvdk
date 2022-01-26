@@ -548,7 +548,7 @@ DLRecord *SortedCollectionRebuilder::findValidVersion(
 
 Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
   thread_cache_node_.resize(num_rebuild_threads_);
-  Status s = updateEntriesOffset();
+  Status s = updateRecordOffsets();
   if (s != Status::Ok) {
     return s;
   }
@@ -806,7 +806,6 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
         return Status::Abort;
       }
       assert(entry_ptr->header.offset_type == HashOffsetType::DLRecord);
-      // TODO continue
       DLRecord *valid_version_record =
           findValidVersion(next_record, &invalid_records);
       if (valid_version_record == nullptr) {
@@ -903,8 +902,7 @@ void SortedCollectionRebuilder::dealWithOtherHeight(uint64_t thread_id,
   }
 }
 
-// TODO: jiayu modify it offset
-Status SortedCollectionRebuilder::updateEntriesOffset() {
+Status SortedCollectionRebuilder::updateRecordOffsets() {
   std::unordered_map<uint64_t, SkiplistNodeInfo> new_kvs;
   std::unordered_map<uint64_t, SkiplistNodeInfo>::iterator it =
       record_offsets_.begin();

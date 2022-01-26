@@ -71,7 +71,6 @@ struct DataMeta {
 
 // Header and metadata of a data record
 struct DataEntry {
-  // TODO jiayu: use typename for timestamp and record type instead of a number
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
             TimeStampType _timestamp, RecordType _record_type,
             uint16_t _key_size, uint32_t _value_size)
@@ -161,9 +160,7 @@ private:
   // check validation of k_size and v_size, as record may be left corrupted
   bool ValidateRecordSize() {
     return entry.meta.k_size + entry.meta.v_size + sizeof(StringRecord) <=
-           entry.header.record_size * 64 /* TODO jiayu: 64 is default block
-                                            size. use actual size instead. */
-        ;
+           entry.header.record_size;
   }
 
   uint32_t Checksum() {

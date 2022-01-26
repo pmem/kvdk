@@ -19,12 +19,16 @@ class KVEngine;
 
 struct OldDataRecord {
   void *pmem_data_record;
-  // TODO comment what is this
+  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
+  // could safely clear index of this OldDataRecord, and free its space
   TimeStampType release_time;
 };
 
 struct OldDeleteRecord {
   void *pmem_delete_record;
+  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
+  // could safely clear index of this OldDeleteRecord, and transfer it to
+  // PendingFreeSpaceEntries
   TimeStampType release_time;
   // We need ref to hash entry for clear index of delete record
   HashEntry *hash_entry_ref;
@@ -33,6 +37,8 @@ struct OldDeleteRecord {
 
 struct PendingFreeSpaceEntries {
   std::vector<SpaceEntry> entries;
+  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
+  // could safely free these entries
   TimeStampType release_time;
 };
 

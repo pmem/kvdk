@@ -503,7 +503,7 @@ private:
 
   Status parallelRepairSkiplistLinkage();
 
-  Status updateEntriesOffset();
+  Status updateRecordOffsets();
 
   SkiplistNode *getSortedOffset(int height);
 
