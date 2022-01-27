@@ -108,10 +108,6 @@ void OldRecordsCleaner::TryGlobalClean() {
     }
   }
   pending_free_space_entries_.erase(pending_free_space_entries_.begin(), iter);
-  iter = pending_free_space_entries_.begin();
-  while (iter != pending_free_space_entries_.end()) {
-    iter++;
-  }
 
   if (space_to_free.size() > 0) {
     kv_engine_->pmem_allocator_->BatchFree(space_to_free);
