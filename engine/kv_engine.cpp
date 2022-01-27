@@ -114,8 +114,8 @@ void KVEngine::terminateBackgroundWorks() {
 }
 
 Status KVEngine::Init(const std::string &name, const Configs &configs) {
-  RAIICaller fake_thread([&]() { access_thread.id = 0; },
-                         [&]() { access_thread.id = -1; });
+  access_thread.id = 0;
+  defer(access_thread.id = -1);
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
@@ -1004,9 +1004,8 @@ Status KVEngine::SDeleteImpl(Skiplist *skiplist, const StringView &user_key) {
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
-    RAIICaller local_snapshot_holder(
-        [&]() { version_controller_.HoldLocalSnapshot(); },
-        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    version_controller_.HoldLocalSnapshot();
+    defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForRead(hint, collection_key,
@@ -1100,9 +1099,8 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
     DataEntry data_entry;
     auto hint = hash_table_->GetHint(collection_key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
-    RAIICaller local_snapshot_holder(
-        [&]() { version_controller_.HoldLocalSnapshot(); },
-        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    version_controller_.HoldLocalSnapshot();
+    defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForWrite(
@@ -1298,9 +1296,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     return s;
   }
 
-  RAIICaller batch_write_holder(
-      [&]() { engine_thread_cache_[access_thread.id].batch_writing = true; },
-      [&]() { engine_thread_cache_[access_thread.id].batch_writing = false; });
+  engine_thread_cache_[access_thread.id].batch_writing = true;
+  defer(engine_thread_cache_[access_thread.id].batch_writing = false;);
 
   std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
@@ -1340,9 +1337,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     ul_locks.emplace_back(const_cast<SpinMutex &>(*l));
   }
 
-  RAIICaller local_snapshot_holder(
-      [&]() { version_controller_.HoldLocalSnapshot(); },
-      [&]() { version_controller_.ReleaseLocalSnapshot(); });
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
   TimeStampType ts = version_controller_.GetLocalSnapshot().GetTimestamp();
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
@@ -1483,9 +1479,8 @@ Status KVEngine::StringDeleteImpl(const StringView &key) {
     auto hint = hash_table_->GetHint(key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
     // Set current snapshot to this thread
-    RAIICaller local_snapshot_holder(
-        [&]() { version_controller_.HoldLocalSnapshot(); },
-        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    version_controller_.HoldLocalSnapshot();
+    defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
     Status s = hash_table_->SearchForWrite(
@@ -1548,9 +1543,8 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
     auto hint = hash_table_->GetHint(key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
     // Set current snapshot to this thread
-    RAIICaller local_snapshot_holder(
-        [&]() { version_controller_.HoldLocalSnapshot(); },
-        [&]() { version_controller_.ReleaseLocalSnapshot(); });
+    version_controller_.HoldLocalSnapshot();
+    defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
 
