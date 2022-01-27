@@ -522,9 +522,6 @@ std::string SortedIterator::Value() {
 
 DLRecord *SortedCollectionRebuilder::FindValidVersion(
     DLRecord *pmem_record, std::vector<DLRecord *> *invalid_version_records) {
-  if (invalid_version_records) {
-    invalid_version_records->clear();
-  }
   if (!checkpoint_.Valid()) {
     return pmem_record;
   }
@@ -603,6 +600,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
   std::vector<DLRecord *> invalid_records;
 
   while (1) {
+    invalid_records.clear();
     HashEntry *entry_ptr = nullptr;
     uint64_t next_offset = splice.prev_pmem_record->next;
     DLRecord *next_record =
@@ -783,6 +781,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
   DLRecord *visiting_record = cur_node->record;
   std::vector<DLRecord *> invalid_records;
   while (true) {
+    invalid_records.clear();
     uint64_t next_offset = visiting_record->next;
     DLRecord *next_record =
         pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
