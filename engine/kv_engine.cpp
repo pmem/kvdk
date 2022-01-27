@@ -568,10 +568,16 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   bool found = s == Status::Ok;
   if (found &&
       existing_data_entry.meta.timestamp >= cached_data_entry.meta.timestamp) {
-    if (!RecoverToCheckpoint() || existing_data_entry.meta
-                                          .timestamp <= persist_checkpoint_
-                                                            ->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
+    // avoid freeing a valid checkpoint version record
+    if (!RecoverToCheckpoint() || existing_data_entry.meta.timestamp <=
+                                      persist_checkpoint_->CheckpointTS()) {
       purgeAndFree(pmem_record);
+    } else {
+      DLRecord *valid_version_record = sorted_rebuilder_->FindValidVersion(
+          hash_entry.index.dl_record, nullptr);
+      if (valid_version_record != pmem_record) {
+        purgeAndFree(pmem_record);
+      }
     }
     return Status::Ok;
   }

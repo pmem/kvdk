@@ -498,6 +498,9 @@ public:
     record_offsets_.insert({record_offset, {is_visited, node}});
   }
 
+  DLRecord *FindValidVersion(DLRecord *pmem_record,
+                             std::vector<DLRecord *> *invalid_version_records);
+
 private:
   Status repairSkiplistLinkage(Skiplist *skiplist);
 
@@ -523,9 +526,6 @@ private:
     }
     pmem_allocator_->BatchFree(to_free);
   }
-
-  DLRecord *findValidVersion(DLRecord *pmem_record,
-                             std::vector<DLRecord *> *invalid_version_records);
 
   struct SkiplistNodeInfo {
     bool visited;

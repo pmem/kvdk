@@ -520,7 +520,7 @@ std::string SortedIterator::Value() {
   return string_view_2_string(current->Value());
 }
 
-DLRecord *SortedCollectionRebuilder::findValidVersion(
+DLRecord *SortedCollectionRebuilder::FindValidVersion(
     DLRecord *pmem_record, std::vector<DLRecord *> *invalid_version_records) {
   if (invalid_version_records) {
     invalid_version_records->clear();
@@ -620,7 +620,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
       return Status::Abort;
     }
     DLRecord *valid_version_record =
-        findValidVersion(next_record, &invalid_records);
+        FindValidVersion(next_record, &invalid_records);
     if (valid_version_record == nullptr) {
       // purge invalid version record from list
       while (1) {
@@ -807,7 +807,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
       }
       assert(entry_ptr->header.offset_type == HashOffsetType::DLRecord);
       DLRecord *valid_version_record =
-          findValidVersion(next_record, &invalid_records);
+          FindValidVersion(next_record, &invalid_records);
       if (valid_version_record == nullptr) {
         // purge invalid version record from list
         while (1) {
@@ -937,7 +937,7 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
       it = record_offsets_.erase(it);
       cur_record = hash_entry.index.dl_record;
       std::vector<DLRecord *> invalid_version_records;
-      DLRecord *valid_version_record = findValidVersion(
+      DLRecord *valid_version_record = FindValidVersion(
           hash_entry.index.dl_record, &invalid_version_records);
       if (valid_version_record == nullptr) {
         // purge invalid version record from list
