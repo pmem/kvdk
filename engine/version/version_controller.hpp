@@ -52,6 +52,15 @@ public:
     return empty() ? kMaxTimestamp : head_.prev->GetTimestamp();
   }
 
+  ~SnapshotList() {
+    SnapshotImpl *curr = head_.next;
+    while (curr != &head_) {
+      SnapshotImpl *tmp = curr->next;
+      delete curr;
+      curr = tmp;
+    }
+  }
+
 private:
   bool empty() { return head_.prev == &head_; }
 
