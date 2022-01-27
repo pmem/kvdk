@@ -6,8 +6,10 @@
 
 #if DEBUG_LEVEL > 0
 #define kvdk_assert(cond, msg)                                                 \
-  { assert((cond) && msg); }
+  {                                                                            \
+    if (!(cond))                                                               \
+      throw std::runtime_error{msg};                                           \
+  }
 #else
 #define kvdk_assert(cond, msg)                                                 \
   {}
-#endif
