@@ -150,7 +150,8 @@ KVDKCreateUnorderedIterator(KVDKEngine *engine, const char *collection,
 extern KVDK_LIBRARY_API KVDKIterator *
 KVDKCreateSortedIterator(KVDKEngine *engine, const char *collection,
                          size_t collection_len, KVDKSnapshot *snapshot);
-extern KVDK_LIBRARY_API void KVDKIterDestory(KVDKIterator *iter);
+extern KVDK_LIBRARY_API void KVDKDestroyIterator(KVDKEngine *engine,
+                                                 KVDKIterator *iterator);
 extern KVDK_LIBRARY_API void KVDKIterSeekToFirst(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToLast(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeek(KVDKIterator *iter, const char *str,

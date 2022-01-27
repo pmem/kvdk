@@ -144,8 +144,8 @@ void SortedCollectinIterExample(KVDKEngine *kvdk_engine) {
     assert(s == Ok);
   }
   // create sorted iterator
-  KVDKIterator *kvdk_iter = KVDKCreateUnorderedIterator(
-      kvdk_engine, sorted_collection, strlen(sorted_collection));
+  KVDKIterator *kvdk_iter = KVDKCreateSortedIterator(
+      kvdk_engine, sorted_collection, strlen(sorted_collection), NULL);
   KVDKIterSeekToFirst(kvdk_iter);
   // Iterate through range ["key1", "key8").
   const char *beg = "key1";
@@ -195,8 +195,8 @@ void SortedCollectinIterExample(KVDKEngine *kvdk_engine) {
   }
   assert(i == 0);
   printf("Successfully iterated through a sorted named collections.\n");
+  KVDKDestroyIterator(kvdk_engine, kvdk_iter);
   KVDKDestorySortedCollection(collecton_ptr);
-  KVDKIterDestory(kvdk_iter);
 }
 
 int score_cmp(const char *a, size_t a_len, const char *b, size_t b_len) {
@@ -238,8 +238,8 @@ void CompFuncForSortedCollectionExample(KVDKEngine *kvdk_engine) {
                       array[i].value, strlen(array[i].value));
     assert(s == Ok);
   }
-  KVDKIterator *iter =
-      KVDKCreateUnorderedIterator(kvdk_engine, collection, strlen(collection));
+  KVDKIterator *iter = KVDKCreateSortedIterator(kvdk_engine, collection,
+                                                strlen(collection), NULL);
 
   assert(iter != NULL);
 
@@ -260,6 +260,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine *kvdk_engine) {
     }
     ++i;
   }
+  KVDKDestroyIterator(kvdk_engine, iter);
   printf("Successfully collections sorted by number.\n");
   KVDKDestorySortedCollection(collecton_ptr);
 }
@@ -318,8 +319,8 @@ void HashesCollectionExample(KVDKEngine *kvdk_engine) {
                      "key8", strlen("key8"));
   assert(s == Ok);
   // create sorted iterator
-  KVDKIterator *kvdk_iter = KVDKCreateUnorderedIterator(
-      kvdk_engine, hash_collection, strlen(hash_collection));
+  KVDKIterator *kvdk_iter = KVDKCreateSortedIterator(
+      kvdk_engine, hash_collection, strlen(hash_collection), NULL);
   int cnt = 0;
   for (KVDKIterSeekToFirst(kvdk_iter); KVDKIterValid(kvdk_iter);
        KVDKIterNext(kvdk_iter)) {
@@ -334,7 +335,7 @@ void HashesCollectionExample(KVDKEngine *kvdk_engine) {
   }
   printf("Successfully performed Get Set Delete Iterate on HashList.\n");
   assert(cnt == 9);
-  KVDKIterDestory(kvdk_iter);
+  KVDKDestroyIterator(kvdk_engine, kvdk_iter);
 }
 
 void ListsCollectionExample(KVDKEngine *kvdk_engine) {
