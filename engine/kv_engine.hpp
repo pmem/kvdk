@@ -118,7 +118,7 @@ private:
   friend OldRecordsCleaner;
 
   KVEngine(const Configs &configs)
-      : thread_cache_(configs.max_access_threads),
+      : engine_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads){};
 
@@ -132,8 +132,8 @@ private:
     bool space_not_used{false};
   };
 
-  struct ThreadCache {
-    ThreadCache() = default;
+  struct EngineThreadCache {
+    EngineThreadCache() = default;
 
     PendingBatch *persisted_pending_batch = nullptr;
     // This thread is doing batch write
@@ -360,7 +360,7 @@ private:
 
   void terminateBackgroundWorks();
 
-  Array<ThreadCache> thread_cache_;
+  Array<EngineThreadCache> engine_thread_cache_;
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};

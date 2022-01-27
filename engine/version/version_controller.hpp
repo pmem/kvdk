@@ -64,7 +64,7 @@ private:
 class VersionController {
 public:
   VersionController(uint64_t max_access_threads)
-      : thread_cache_(max_access_threads) {}
+      : version_thread_cache_(max_access_threads) {}
 
   void Init(uint64_t base_timestamp) {
     tsc_on_startup_ = rdtsc();
@@ -74,30 +74,31 @@ public:
 
   inline void HoldLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 &&
-                    access_thread.id < thread_cache_.size(),
+                    access_thread.id < version_thread_cache_.size(),
                 "Uninitialized thread in NewLocalSnapshot");
-    thread_cache_[access_thread.id].holding_snapshot.timestamp =
+    version_thread_cache_[access_thread.id].holding_snapshot.timestamp =
         GetCurrentTimestamp();
   }
 
   inline void ReleaseLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 &&
-                    access_thread.id < thread_cache_.size(),
+                    access_thread.id < version_thread_cache_.size(),
                 "Uninitialized thread in ReleaseLocalSnapshot");
-    thread_cache_[access_thread.id].holding_snapshot.timestamp = kMaxTimestamp;
+    version_thread_cache_[access_thread.id].holding_snapshot.timestamp =
+        kMaxTimestamp;
   }
 
   inline const SnapshotImpl &GetLocalSnapshot(size_t thread_num) {
-    kvdk_assert(thread_num < thread_cache_.size(),
+    kvdk_assert(thread_num < version_thread_cache_.size(),
                 "Wrong thread num in GetLocalSnapshot");
-    return thread_cache_[thread_num].holding_snapshot;
+    return version_thread_cache_[thread_num].holding_snapshot;
   }
 
   inline const SnapshotImpl &GetLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 &&
-                    access_thread.id < thread_cache_.size(),
+                    access_thread.id < version_thread_cache_.size(),
                 "Uninitialized thread in GetLocalSnapshot");
-    return thread_cache_[access_thread.id].holding_snapshot;
+    return version_thread_cache_[access_thread.id].holding_snapshot;
   }
 
   // Create a new global snapshot
@@ -123,8 +124,8 @@ public:
   // holding snapshot
   void UpdatedOldestSnapshot() {
     TimeStampType ts = GetCurrentTimestamp();
-    for (size_t i = 0; i < thread_cache_.size(); i++) {
-      auto &tc = thread_cache_[i];
+    for (size_t i = 0; i < version_thread_cache_.size(); i++) {
+      auto &tc = version_thread_cache_[i];
       ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
     }
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
@@ -135,14 +136,14 @@ public:
 private:
   // Each access thread of the instance hold its own local snapshot in thread
   // cache to avoid thread contention
-  struct alignas(64) ThreadCache {
-    ThreadCache() : holding_snapshot(kMaxTimestamp) {}
+  struct alignas(64) VersionThreadCache {
+    VersionThreadCache() : holding_snapshot(kMaxTimestamp) {}
 
     SnapshotImpl holding_snapshot;
     char padding[64 - sizeof(holding_snapshot)];
   };
 
-  Array<ThreadCache> thread_cache_;
+  Array<VersionThreadCache> version_thread_cache_;
   SnapshotList global_snapshots_;
   SpinMutex global_snapshots_lock_;
   // Known oldest snapshot of the instance, there is delay with the actual

@@ -11,7 +11,7 @@ void OldRecordsCleaner::Push(const OldDataRecord &old_data_record) {
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
 
-  auto &tc = thread_cache_[access_thread.id];
+  auto &tc = cleaner_thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
   tc.old_data_records.emplace_back(old_data_record);
 }
@@ -20,7 +20,7 @@ void OldRecordsCleaner::Push(const OldDeleteRecord &old_delete_record) {
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
 
-  auto &tc = thread_cache_[access_thread.id];
+  auto &tc = cleaner_thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
   tc.old_delete_records.emplace_back(old_delete_record);
 }
@@ -42,21 +42,24 @@ void OldRecordsCleaner::TryGlobalClean() {
   // records are purged for recovery, so we must fetch cached old delete records
   // before cached old data records, and purge old data records before purge old
   // delete records here
-  for (size_t i = 0; i < thread_cache_.size(); i++) {
-    auto &thread_cache = thread_cache_[i];
-    if (thread_cache.old_delete_records.size() > kLimitCachedDeleteRecords) {
-      std::lock_guard<SpinMutex> lg(thread_cache.old_records_lock);
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto &cleaner_thread_cache = cleaner_thread_cache_[i];
+    if (cleaner_thread_cache.old_delete_records.size() >
+        kLimitCachedDeleteRecords) {
+      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
       global_old_delete_records_.emplace_back();
-      global_old_delete_records_.back().swap(thread_cache.old_delete_records);
+      global_old_delete_records_.back().swap(
+          cleaner_thread_cache.old_delete_records);
     }
   }
 
-  for (size_t i = 0; i < thread_cache_.size(); i++) {
-    auto &thread_cache = thread_cache_[i];
-    if (thread_cache.old_data_records.size() > 0) {
-      std::lock_guard<SpinMutex> lg(thread_cache.old_records_lock);
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto &cleaner_thread_cache = cleaner_thread_cache_[i];
+    if (cleaner_thread_cache.old_data_records.size() > 0) {
+      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
       global_old_data_records_.emplace_back();
-      global_old_data_records_.back().swap(thread_cache.old_data_records);
+      global_old_data_records_.back().swap(
+          cleaner_thread_cache.old_data_records);
     }
   }
 
@@ -132,7 +135,7 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
   kvdk_assert(access_thread.id >= 0,
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
               "un-initialized access thread");
-  auto &tc = thread_cache_[access_thread.id];
+  auto &tc = cleaner_thread_cache_[access_thread.id];
   if (tc.old_data_records.size() > 0 || tc.old_delete_records.size() > 0) {
     maybeUpdateOldestSnapshot();
     std::unique_lock<SpinMutex> ul(tc.old_records_lock);

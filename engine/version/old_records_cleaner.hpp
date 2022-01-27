@@ -50,7 +50,7 @@ struct PendingFreeSpaceEntries {
 class OldRecordsCleaner {
 public:
   OldRecordsCleaner(KVEngine *kv_engine, uint32_t max_access_threads)
-      : kv_engine_(kv_engine), thread_cache_(max_access_threads) {
+      : kv_engine_(kv_engine), cleaner_thread_cache_(max_access_threads) {
     assert(kv_engine_ != nullptr);
   }
 
@@ -61,12 +61,12 @@ public:
   void TryCleanCachedOldRecords(size_t num_limit_clean);
   uint64_t NumCachedOldRecords() {
     assert(access_thread.id >= 0);
-    auto &tc = thread_cache_[access_thread.id];
+    auto &tc = cleaner_thread_cache_[access_thread.id];
     return tc.old_delete_records.size() + tc.old_data_records.size();
   }
 
 private:
-  struct ThreadCache {
+  struct CleanerThreadCache {
     std::deque<OldDeleteRecord> old_delete_records{};
     std::deque<OldDataRecord> old_data_records{};
     SpinMutex old_records_lock;
@@ -79,7 +79,7 @@ private:
 
   KVEngine *kv_engine_;
 
-  Array<ThreadCache> thread_cache_;
+  Array<CleanerThreadCache> cleaner_thread_cache_;
 
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
   std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;

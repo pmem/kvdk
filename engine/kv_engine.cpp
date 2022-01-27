@@ -231,7 +231,8 @@ Status KVEngine::RestoreData() {
   if (s != Status::Ok) {
     return s;
   }
-  ThreadCache &thread_cache = thread_cache_[access_thread.id];
+  EngineThreadCache &engine_thread_cache =
+      engine_thread_cache_[access_thread.id];
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -311,8 +312,9 @@ Status KVEngine::RestoreData() {
     // Continue to restore the Record
     cnt++;
 
-    thread_cache.newest_restored_ts = std::max(data_entry_cached.meta.timestamp,
-                                               thread_cache.newest_restored_ts);
+    engine_thread_cache.newest_restored_ts =
+        std::max(data_entry_cached.meta.timestamp,
+                 engine_thread_cache.newest_restored_ts);
 
     switch (data_entry_cached.meta.type) {
     case RecordType::SortedDataRecord:
@@ -828,7 +830,7 @@ Status KVEngine::RestorePendingBatch() {
           }
 
           if (id < configs_.max_access_threads) {
-            thread_cache_[id].persisted_pending_batch = pending_batch;
+            engine_thread_cache_[id].persisted_pending_batch = pending_batch;
           } else {
             remove(pending_batch_file.c_str());
           }
@@ -894,10 +896,10 @@ Status KVEngine::Recovery() {
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
-    for (size_t i = 0; i < thread_cache_.size(); i++) {
-      auto &thread_cache = thread_cache_[i];
+    for (size_t i = 0; i < engine_thread_cache_.size(); i++) {
+      auto &engine_thread_cache = engine_thread_cache_[i];
       latest_version_ts =
-          std::max(thread_cache.newest_restored_ts, latest_version_ts);
+          std::max(engine_thread_cache.newest_restored_ts, latest_version_ts);
     }
   }
 
@@ -1256,7 +1258,8 @@ Status KVEngine::SDelete(const StringView collection,
 }
 
 Status KVEngine::MaybeInitPendingBatchFile() {
-  if (thread_cache_[access_thread.id].persisted_pending_batch == nullptr) {
+  if (engine_thread_cache_[access_thread.id].persisted_pending_batch ==
+      nullptr) {
     int is_pmem;
     size_t mapped_len;
     uint64_t persisted_pending_file_size =
@@ -1265,7 +1268,7 @@ Status KVEngine::MaybeInitPendingBatchFile() {
         kPMEMMapSizeUnit *
         (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
 
-    if ((thread_cache_[access_thread.id].persisted_pending_batch =
+    if ((engine_thread_cache_[access_thread.id].persisted_pending_batch =
              (PendingBatch *)pmem_map_file(
                  persisted_pending_block_file(access_thread.id).c_str(),
                  persisted_pending_file_size, PMEM_FILE_CREATE, 0666,
@@ -1293,8 +1296,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   RAIICaller batch_write_holder(
-      [&]() { thread_cache_[access_thread.id].batch_writing = true; },
-      [&]() { thread_cache_[access_thread.id].batch_writing = false; });
+      [&]() { engine_thread_cache_[access_thread.id].batch_writing = true; },
+      [&]() { engine_thread_cache_[access_thread.id].batch_writing = false; });
 
   std::set<SpinMutex *> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
@@ -1343,8 +1346,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
   }
 
   // Persist batch write status as processing
-  thread_cache_[access_thread.id].persisted_pending_batch->PersistProcessing(
-      space_entry_offsets, ts);
+  engine_thread_cache_[access_thread.id]
+      .persisted_pending_batch->PersistProcessing(space_entry_offsets, ts);
 
   // Do batch writes
   for (size_t i = 0; i < write_batch.Size(); i++) {
@@ -1364,7 +1367,8 @@ Status KVEngine::BatchWrite(const WriteBatch &write_batch) {
     }
   }
 
-  thread_cache_[access_thread.id].persisted_pending_batch->PersistFinish();
+  engine_thread_cache_[access_thread.id]
+      .persisted_pending_batch->PersistFinish();
 
   std::string val;
 
@@ -2099,7 +2103,7 @@ Snapshot *KVEngine::GetSnapshot(bool make_checkpoint) {
 
   // A snapshot should not contain any ongoing batch write
   for (auto i = 0; i < configs_.max_access_threads; i++) {
-    while (thread_cache_[i].batch_writing &&
+    while (engine_thread_cache_[i].batch_writing &&
            snapshot_ts >=
                version_controller_.GetLocalSnapshot(i).GetTimestamp()) {
       asm volatile("pause");

@@ -15,8 +15,6 @@ namespace KVDK_NAMESPACE {
 enum RecordType : uint16_t {
   Empty = 0,
   StringDataRecord = (1 << 0),
-  // Notice: StringDeleteReocrd is unused now, but will be used while
-  // implementing version, so we do not remove it now
   StringDeleteRecord = (1 << 1),
 
   SortedDataRecord = (1 << 2),

@@ -183,13 +183,13 @@ void Freelist::Push(const SpaceEntry &entry) {
   auto b_size = entry.size / block_size_;
   auto b_offset = entry.offset / block_size_;
   space_map_.Set(b_offset, b_size);
-  auto &thread_cache = flist_thread_cache_[access_thread.id];
-  if (b_size >= thread_cache.active_entry_offsets.size()) {
+  auto &flist_thread_cache = flist_thread_cache_[access_thread.id];
+  if (b_size >= flist_thread_cache.active_entry_offsets.size()) {
     std::lock_guard<SpinMutex> lg(large_entries_spin_);
     large_entries_.emplace(entry);
   } else {
-    std::lock_guard<SpinMutex> lg(thread_cache.spins[b_size]);
-    thread_cache.active_entry_offsets[b_size].emplace_back(entry.offset);
+    std::lock_guard<SpinMutex> lg(flist_thread_cache.spins[b_size]);
+    flist_thread_cache.active_entry_offsets[b_size].emplace_back(entry.offset);
   }
 }
 
@@ -222,24 +222,25 @@ void Freelist::BatchPush(const std::vector<SpaceEntry> &entries) {
 bool Freelist::Get(uint32_t size, SpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
-  auto &thread_cache = flist_thread_cache_[access_thread.id];
-  for (uint32_t i = b_size; i < thread_cache.active_entry_offsets.size(); i++) {
+  auto &flist_thread_cache = flist_thread_cache_[access_thread.id];
+  for (uint32_t i = b_size; i < flist_thread_cache.active_entry_offsets.size();
+       i++) {
     bool found = false;
   search_entry : {
-    std::lock_guard<SpinMutex> lg(thread_cache.spins[i]);
-    if (thread_cache.active_entry_offsets[i].size() == 0) {
-      if (!active_pool_.TryFetchEntryList(thread_cache.active_entry_offsets[i],
-                                          i) &&
-          !merged_pool_.TryFetchEntryList(thread_cache.active_entry_offsets[i],
-                                          i)) {
+    std::lock_guard<SpinMutex> lg(flist_thread_cache.spins[i]);
+    if (flist_thread_cache.active_entry_offsets[i].size() == 0) {
+      if (!active_pool_.TryFetchEntryList(
+              flist_thread_cache.active_entry_offsets[i], i) &&
+          !merged_pool_.TryFetchEntryList(
+              flist_thread_cache.active_entry_offsets[i], i)) {
         // no usable b_size free space entry
         continue;
       }
     }
 
-    if (thread_cache.active_entry_offsets[i].size() != 0) {
-      space_entry->offset = thread_cache.active_entry_offsets[i].back();
-      thread_cache.active_entry_offsets[i].pop_back();
+    if (flist_thread_cache.active_entry_offsets[i].size() != 0) {
+      space_entry->offset = flist_thread_cache.active_entry_offsets[i].back();
+      flist_thread_cache.active_entry_offsets[i].pop_back();
       found = true;
     }
   }

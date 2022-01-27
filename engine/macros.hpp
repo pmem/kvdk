@@ -13,3 +13,4 @@
 #else
 #define kvdk_assert(cond, msg)                                                 \
   {}
+#endif
