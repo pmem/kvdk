@@ -21,6 +21,7 @@ using kvdk::Collection;
 using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::Iterator;
+using kvdk::Snapshot;
 using kvdk::WriteBatch;
 
 extern "C" {
@@ -38,6 +39,9 @@ struct KVDKIterator {
 };
 struct KVDKCollection {
   Collection *rep;
+};
+struct KVDKSnapshot {
+  Snapshot *rep;
 };
 
 static char *CopyStringToChar(const std::string &str) {
@@ -81,6 +85,17 @@ KVDKStatus KVDKOpen(const char *name, const KVDKConfigs *config, FILE *log_file,
 
 void KVDKReleaseAccessThread(KVDKEngine *engine) {
   engine->rep->ReleaseAccessThread();
+}
+
+KVDKSnapshot *KVDKGetSnapshot(KVDKEngine *engine, int make_checkpoint) {
+  KVDKSnapshot *snapshot = new KVDKSnapshot;
+  snapshot->rep = engine->rep->GetSnapshot(make_checkpoint);
+  return snapshot;
+}
+
+void KVDKReleaseSnapshot(KVDKEngine *engine, KVDKSnapshot *snapshot) {
+  engine->rep->ReleaseSnapshot(snapshot->rep);
+  delete snapshot;
 }
 
 void KVDKCloseEngine(KVDKEngine *engine) {

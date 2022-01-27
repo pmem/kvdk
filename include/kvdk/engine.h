@@ -33,6 +33,7 @@ typedef struct KVDKConfigs KVDKConfigs;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
 typedef struct KVDKCollection KVDKCollection;
+typedef struct KVDKSnapshot KVDKSnapshot;
 
 typedef enum { SORTED, HASH } KVDKIterType;
 
@@ -52,6 +53,10 @@ extern KVDK_LIBRARY_API KVDKStatus KVDKOpen(const char *name,
 extern KVDK_LIBRARY_API void KVDKReleaseAccessThread(KVDKEngine *engine);
 extern KVDK_LIBRARY_API void KVDKCloseEngine(KVDKEngine *engine);
 extern KVDK_LIBRARY_API void KVDKRemovePMemContents(const char *name);
+extern KVDK_LIBRARY_API KVDKSnapshot *KVDKGetSnapshot(KVDKEngine *engine,
+                                                      int make_checkpoint);
+extern KVDK_LIBRARY_API void KVDKReleaseSnapshot(KVDKEngine *engine,
+                                                 KVDKSnapshot *snapshot);
 
 extern KVDK_LIBRARY_API void
 KVDKRegisterCompFunc(KVDKEngine *engine, const char *compara_name,
