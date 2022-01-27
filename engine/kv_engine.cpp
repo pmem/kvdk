@@ -568,7 +568,9 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   bool found = s == Status::Ok;
   if (found &&
       existing_data_entry.meta.timestamp >= cached_data_entry.meta.timestamp) {
-    if (existing_data_entry.meta.timestamp <= persist_checkpoint_->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
+    if (!RecoverToCheckpoint() || existing_data_entry.meta
+                                          .timestamp <= persist_checkpoint_
+                                                            ->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
       purgeAndFree(pmem_record);
     }
     return Status::Ok;
