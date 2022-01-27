@@ -342,15 +342,21 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
   //
   // There may be ongoing writing to just allocated space while we start backup,
   // so we also wait for holding snapshot of access threads changed
-  uint64_t copy_offset_1st = pmem_size_;
-  uint64_t copy_offset_2nd = pmem_size_;
+  uint64_t copy_offset_1st_end = 0;
+  uint64_t copy_offset_2nd_start = 0;
+  uint64_t copy_offset_2nd_end = 0;
   std::vector<TimeStampType> thread_holding_snapshot_ts(
       palloc_thread_cache_.size());
   for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
     thread_holding_snapshot_ts[i] =
         version_controller_->GetLocalSnapshot(i).GetTimestamp();
-    copy_offset_1st =
-        std::min(copy_offset_1st, palloc_thread_cache_[i].segment_entry.offset);
+    copy_offset_1st_end = std::max(
+        copy_offset_1st_end,
+        palloc_thread_cache_[i].segment_entry.offset +
+            (segment_size_ -
+             palloc_thread_cache_[i].segment_entry.offset % segment_size_));
+    copy_offset_2nd_start = std::min(
+        copy_offset_2nd_start, palloc_thread_cache_[i].segment_entry.offset);
   }
 
   for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
@@ -361,19 +367,20 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
     }
   }
 
-  memcpy(backup_file, pmem_, copy_offset_1st);
+  memcpy(backup_file, pmem_, copy_offset_1st_end);
   //  multi_thread_memcpy((char *)backup_file, pmem_, copy_offset_1st, 4);
   {
     std::lock_guard<SpinMutex> lg(offset_head_lock_);
-    copy_offset_2nd = offset_head_;
+    copy_offset_2nd_end = offset_head_;
   }
-  memcpy((char *)backup_file + copy_offset_1st, pmem_ + copy_offset_1st,
-         copy_offset_2nd - copy_offset_1st);
+  memcpy((char *)backup_file + copy_offset_2nd_start,
+         pmem_ + copy_offset_2nd_start,
+         copy_offset_2nd_end - copy_offset_2nd_start);
   //  multi_thread_memcpy((char *)backup_file + copy_offset_1st,
   //                      pmem_ + copy_offset_1st,
   //                      copy_offset_2nd - copy_offset_1st, 4);
 
-  msync(backup_file, copy_offset_2nd, MS_SYNC);
+  msync(backup_file, copy_offset_2nd_end, MS_SYNC);
   close(fd);
   return Status::Ok;
 }
