@@ -44,12 +44,17 @@ void OldRecordsCleaner::TryGlobalClean() {
   // delete records here
   for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
     auto &cleaner_thread_cache = cleaner_thread_cache_[i];
+    // As clean delete record is costly, we prefer to amortize the overhead to
+    // TryCleanCachedOldRecords(), otherwise this procedure will cost a longn
+    // time. Only if there is to delete records waiting to be cleaned in a
+    // thread cache, then we help to clean them here
     if (cleaner_thread_cache.old_delete_records.size() >
         kLimitCachedDeleteRecords) {
       std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
       global_old_delete_records_.emplace_back();
       global_old_delete_records_.back().swap(
           cleaner_thread_cache.old_delete_records);
+      break;
     }
   }
 
