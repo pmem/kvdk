@@ -880,8 +880,6 @@ Status KVEngine::Recovery() {
     }
   }
   fs.clear();
-  persist_checkpoint_->Release();
-  pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
 
   GlobalLogger.Info("RestoreData done: iterated %lu records\n",
                     restored_.load());
@@ -903,6 +901,8 @@ Status KVEngine::Recovery() {
     }
   }
 
+  persist_checkpoint_->Release();
+  pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
   remove(backup_mark_file().c_str());
 
   version_controller_.Init(latest_version_ts);
