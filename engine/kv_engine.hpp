@@ -386,9 +386,7 @@ private:
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
 
-  std::condition_variable_any bg_coordinator_cv_;
   bool bg_cleaner_processing_;
-  SpinMutex engine_closing_lock_;
 
   Comparator comparator_;
 
@@ -396,7 +394,6 @@ private:
     BackgroundWorkSignals() = default;
     BackgroundWorkSignals(const BackgroundWorkSignals &) = delete;
 
-    std::condition_variable_any coordinator_cv;
     std::condition_variable_any old_records_cleaner_cv;
     std::condition_variable_any pmem_usage_reporter_cv;
     std::condition_variable_any pmem_allocator_organizer_cv;
