@@ -69,16 +69,12 @@ void OldRecordsCleaner::TryGlobalClean() {
   }
 
   // Find free-able data records
-  uint64_t handled_cnt = 0;
-  uint64_t delayed_cnt = 0;
   for (auto &data_records : global_old_data_records_) {
     for (auto &record : data_records) {
       if (record.release_time <= oldest_snapshot_ts) {
         space_to_free.emplace_back(purgeOldDataRecord(record));
-        handled_cnt++;
       } else {
         data_record_refered.emplace_back(std::move(record));
-        delayed_cnt++;
       }
     }
   }
@@ -86,17 +82,12 @@ void OldRecordsCleaner::TryGlobalClean() {
   clean_all_data_record_ts_ = oldest_snapshot_ts;
 
   // Find free-able delete records
-  handled_cnt = 0;
-  delayed_cnt = 0;
   for (auto &delete_records : global_old_delete_records_) {
     for (auto &record : delete_records) {
-      if (record.release_time <= oldest_snapshot_ts) {
+      if (record.release_time <= clean_all_data_record_ts_) {
         space_pending.entries.emplace_back(purgeOldDeleteRecord(record));
-        handled_cnt++;
-
       } else {
         delete_record_refered.emplace_back(std::move(record));
-        delayed_cnt++;
       }
     }
   }
@@ -107,12 +98,9 @@ void OldRecordsCleaner::TryGlobalClean() {
     pending_free_space_entries_.emplace_back(std::move(space_pending));
   }
 
-  handled_cnt = 0;
-  delayed_cnt = 0;
   auto iter = pending_free_space_entries_.begin();
   while (iter != pending_free_space_entries_.end()) {
     if (iter->release_time < oldest_snapshot_ts) {
-      handled_cnt += iter->entries.size();
       kv_engine_->pmem_allocator_->BatchFree(iter->entries);
       iter++;
     } else {
@@ -122,7 +110,6 @@ void OldRecordsCleaner::TryGlobalClean() {
   pending_free_space_entries_.erase(pending_free_space_entries_.begin(), iter);
   iter = pending_free_space_entries_.begin();
   while (iter != pending_free_space_entries_.end()) {
-    delayed_cnt += iter->entries.size();
     iter++;
   }
 

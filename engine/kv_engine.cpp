@@ -477,10 +477,6 @@ Status KVEngine::RestoreSkiplistHead(DLRecord *pmem_record,
 Status KVEngine::RestoreStringRecord(StringRecord *pmem_record,
                                      const DataEntry &cached_entry) {
   assert(pmem_record->entry.meta.type & StringRecordType);
-  if (string_view_2_string(pmem_record->Key()) == "key1") {
-    GlobalLogger.Error("restore key1 type %d ts %lu\n", cached_entry.meta.type,
-                       cached_entry.meta.timestamp);
-  }
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     purgeAndFree(pmem_record);
@@ -869,7 +865,6 @@ Status KVEngine::Recovery() {
   if (s != Status::Ok) {
     return s;
   }
-  GlobalLogger.Info("RestorePendingBatch done.\n");
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       pmem_allocator_.get(), hash_table_.get(),
@@ -1421,7 +1416,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord && !found) {
       batch_hint.space_not_used = true;
-      persistSpaceEntry(batch_hint.allocated_space);
+      markEmptySpace(batch_hint.allocated_space);
       return Status::Ok;
     }
 

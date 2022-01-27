@@ -335,7 +335,7 @@ private:
                    data_entry->header.record_size));
   }
 
-  inline void persistSpaceEntry(const SpaceEntry &space_entry) {
+  inline void markEmptySpace(const SpaceEntry &space_entry) {
     DataHeader header(0, space_entry.size);
     pmem_memcpy_persist(
         pmem_allocator_->offset2addr_checked(space_entry.offset), &header,

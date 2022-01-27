@@ -554,26 +554,30 @@ Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
   }
   std::vector<std::future<Status>> fs;
 
-  for (uint8_t h = 1; h <= kMaxHeight; ++h) {
-    for (uint32_t j = 0; j < num_rebuild_threads_; ++j) {
-      fs.push_back(std::async(std::launch::async, [j, h, this]() -> Status {
-        while (true) {
-          SkiplistNode *cur_node = getSortedOffset(h);
-          if (!cur_node) {
-            break;
-          }
-          if (h == 1) {
-            Status s = dealWithFirstHeight(j, cur_node);
-            if (s != Status::Ok) {
-              return s;
-            }
-          } else {
-            dealWithOtherHeight(j, cur_node, h);
-          }
+  auto repair_linkage_at_height_n = [this](uint32_t thread_num,
+                                           uint8_t height) -> Status {
+    while (true) {
+      SkiplistNode *cur_node = getSortedOffset(height);
+      if (!cur_node) {
+        break;
+      }
+      if (height == 1) {
+        Status s = dealWithFirstHeight(thread_num, cur_node);
+        if (s != Status::Ok) {
+          return s;
         }
-        linkedNode(j, h);
-        return Status::Ok;
-      }));
+      } else {
+        dealWithOtherHeight(thread_num, cur_node, height);
+      }
+    }
+    linkedNode(thread_num, height);
+    return Status::Ok;
+  };
+
+  for (uint8_t height = 1; height <= kMaxHeight; ++height) {
+    for (uint32_t thread_num = 0; thread_num < num_rebuild_threads_;
+         ++thread_num) {
+      fs.push_back(std::async(repair_linkage_at_height_n, thread_num, height));
     }
     for (auto &f : fs) {
       Status s = f.get();
@@ -955,7 +959,6 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
       } else if (valid_version_record != hash_entry.index.dl_record) {
         // repair linkage of checkpoint version
         while (1) {
-          Splice tmp_splice(nullptr);
           std::unique_lock<SpinMutex> prev_record_lock;
           if (!Skiplist::Replace(hash_entry.index.dl_record,
                                  valid_version_record, hash_hint.spin, nullptr,
