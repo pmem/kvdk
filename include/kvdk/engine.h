@@ -145,8 +145,11 @@ extern KVDK_LIBRARY_API KVDKStatus KVDKRPop(KVDKEngine *engine,
                                             size_t *key_len);
 
 extern KVDK_LIBRARY_API KVDKIterator *
-KVDKCreateIterator(KVDKEngine *engine, const char *collection,
-                   size_t collection_len, KVDKIterType iter_type);
+KVDKCreateUnorderedIterator(KVDKEngine *engine, const char *collection,
+                            size_t collection_len);
+extern KVDK_LIBRARY_API KVDKIterator *
+KVDKCreateSortedIterator(KVDKEngine *engine, const char *collection,
+                         size_t collection_len, KVDKSnapshot *snapshot);
 extern KVDK_LIBRARY_API void KVDKIterDestory(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToFirst(KVDKIterator *iter);
 extern KVDK_LIBRARY_API void KVDKIterSeekToLast(KVDKIterator *iter);

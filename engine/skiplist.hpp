@@ -19,6 +19,7 @@
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
+class KVEngine;
 static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
 
@@ -367,28 +368,6 @@ private:
                               const SpinMutex *inserting_key_lock,
                               std::unique_lock<SpinMutex> *prev_record_lock);
 
-  // Search and lock skiplist position to update"key".
-  //
-  // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and manage
-  // the lock with "prev_record_lock".
-  //
-  //  The "updated_key" should be already locked before call this function
-  bool searchAndLockUpdatePos(Splice *splice, const DLRecord *updating_record,
-                              const SpinMutex *updating_record_lock,
-                              std::unique_lock<SpinMutex> *prev_record_lock) {
-    return SearchAndLockRecordPos(splice, updating_record, updating_record_lock,
-                                  prev_record_lock, pmem_allocator_.get(),
-                                  hash_table_.get());
-  }
-
-  bool searchAndLockDeletePos(Splice *splice, const DLRecord *deleting_record,
-                              const SpinMutex *deleting_record_lock,
-                              std::unique_lock<SpinMutex> *prev_record_lock) {
-    return SearchAndLockRecordPos(splice, deleting_record, deleting_record_lock,
-                                  prev_record_lock, pmem_allocator_.get(),
-                                  hash_table_.get());
-  }
-
   bool ValidateDLRecord(const DLRecord *record) {
     DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
     return prev != nullptr &&
@@ -420,9 +399,10 @@ private:
 class SortedIterator : public Iterator {
 public:
   SortedIterator(Skiplist *skiplist,
-                 const std::shared_ptr<PMEMAllocator> &pmem_allocator)
-      : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current(nullptr) {
-  }
+                 const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+                 SnapshotImpl *snapshot, bool own_snapshot)
+      : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current_(nullptr),
+        snapshot_(snapshot), own_snapshot_(own_snapshot) {}
 
   virtual void Seek(const std::string &key) override;
 
@@ -431,7 +411,7 @@ public:
   virtual void SeekToLast() override;
 
   virtual bool Valid() override {
-    return (current != nullptr && current != skiplist_->header()->record);
+    return (current_ != nullptr && current_ != skiplist_->header()->record);
   }
 
   virtual void Next() override;
@@ -443,9 +423,14 @@ public:
   virtual std::string Value() override;
 
 private:
+  friend KVEngine;
+  DLRecord *findValidVersion(DLRecord *pmem_record);
+
   Skiplist *skiplist_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  DLRecord *current;
+  DLRecord *current_;
+  SnapshotImpl *snapshot_;
+  bool own_snapshot_;
 };
 
 // A helper struct for seeking skiplist

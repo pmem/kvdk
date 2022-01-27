@@ -288,19 +288,25 @@ KVDKStatus KVDKRPop(KVDKEngine *engine, const char *collection,
   return s;
 }
 
-KVDKIterator *KVDKCreateIterator(KVDKEngine *engine, const char *collection,
-                                 size_t collection_len,
-                                 KVDKIterType iter_type) {
+KVDKIterator *KVDKCreateUnorderedIterator(KVDKEngine *engine,
+                                          const char *collection,
+                                          size_t collection_len) {
   KVDKIterator *result = new KVDKIterator;
-  if (iter_type == SORTED) {
-    result->rep =
-        (engine->rep->NewSortedIterator(std::string(collection))).get();
-  } else if (iter_type == HASH) {
-    result->rep =
-        (engine->rep->NewUnorderedIterator(std::string(collection))).get();
-  } else {
+  result->rep =
+      (engine->rep->NewUnorderedIterator(std::string(collection))).get();
+  if (!result->rep) {
     return nullptr;
   }
+  return result;
+}
+
+KVDKIterator *KVDKCreateSortedIterator(KVDKEngine *engine,
+                                       const char *collection,
+                                       size_t collection_len,
+                                       KVDKSnapshot *snapshot) {
+  KVDKIterator *result = new KVDKIterator;
+  result->rep = (engine->rep->NewSortedIterator(
+      std::string(collection), snapshot ? snapshot->rep : nullptr));
   if (!result->rep) {
     return nullptr;
   }

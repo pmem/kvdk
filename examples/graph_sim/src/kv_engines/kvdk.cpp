@@ -83,8 +83,9 @@ private:
 
 KVEngine::Iterator *PMemKVDK::NewIterator() {
   if (!collection_.empty()) {
+    // TODO fix snapshot
     auto it = db_->NewSortedIterator(collection_);
-    return new PMemKVDKIterator(it.get());
+    return new PMemKVDKIterator(it);
   }
   return nullptr;
 }

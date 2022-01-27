@@ -263,8 +263,9 @@ void DBScan(int tid) {
 
     switch (bench_data_type) {
     case DataType::Sorted: {
-      auto iter =
-          engine->NewSortedIterator(collections[num % FLAGS_num_collection]);
+      Snapshot *snapshot = engine->GetSnapshot(false);
+      auto iter = engine->NewSortedIterator(
+          collections[num % FLAGS_num_collection], snapshot);
       if (iter) {
         iter->Seek(key);
         for (size_t i = 0; (i < scan_length) && (iter->Valid());
@@ -280,6 +281,7 @@ void DBScan(int tid) {
       } else {
         throw std::runtime_error{"Error creating SortedIterator"};
       }
+      engine->ReleaseSnapshot(snapshot);
       break;
     }
     case DataType::Hashes: {

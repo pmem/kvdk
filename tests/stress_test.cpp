@@ -153,7 +153,8 @@ static void SortedSetsIterateThrough(
   size_t n_removed_possible_kv_pairs = 0;
   size_t old_progress = n_removed_possible_kv_pairs;
 
-  auto s_iter = engine->NewSortedIterator(collection_name);
+  kvdk::Snapshot *snapshot = engine->GetSnapshot(false);
+  auto s_iter = engine->NewSortedIterator(collection_name, snapshot);
   ASSERT_TRUE(s_iter != nullptr) << "Fail to create UnorderedIterator";
 
   std::string old_key;
@@ -214,6 +215,7 @@ static void SortedSetsIterateThrough(
         << "There should be no key left in possible_kv_pairs, "
         << "as they all should have been erased.\n";
   }
+  engine->ReleaseSnapshot(snapshot);
 }
 
 }; // namespace kvdk_testing

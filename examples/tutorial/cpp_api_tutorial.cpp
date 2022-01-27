@@ -14,6 +14,7 @@
 #define DEBUG // For assert
 
 using StringView = pmem::obj::string_view;
+using kvdk::Snapshot;
 
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.
@@ -159,7 +160,8 @@ static void test_iterator() {
   std::sort(kv_pairs.begin(), kv_pairs.end());
 
   // Iterate through collection "my_sorted_collection"
-  auto iter = engine->NewSortedIterator(sorted_collection);
+  Snapshot *snapshot = engine->GetSnapshot(false);
+  auto iter = engine->NewSortedIterator(sorted_collection, snapshot);
   if (!iter) {
     fprintf(stderr, "Seek error\n");
     return;
@@ -201,6 +203,7 @@ static void test_iterator() {
   }
 
   printf("Successfully iterated through a sorted named collections.\n");
+  engine->ReleaseSnapshot(snapshot);
   return;
 }
 
@@ -276,7 +279,8 @@ static void test_customer_sorted_func() {
     s = engine->SSet(collection, array[i].number_key, array[i].value);
     assert(s == Ok);
   }
-  auto iter = engine->NewSortedIterator(collection);
+  Snapshot *snapshot = engine->GetSnapshot(false);
+  auto iter = engine->NewSortedIterator(collection, snapshot);
 
   assert(iter != nullptr);
 
@@ -296,6 +300,7 @@ static void test_customer_sorted_func() {
     ++i;
   }
   printf("Successfully collections sorted by number.\n");
+  engine->ReleaseSnapshot(snapshot);
 }
 
 int main() {

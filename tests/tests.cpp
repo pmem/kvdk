@@ -86,7 +86,8 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
+// Test iterator/backup/checkpoint on a snapshot
+TEST_F(EngineBasicTest, TestBasicSnapshot) {
   uint32_t num_threads = 16;
   int count = 100;
   configs.max_access_threads = num_threads;
@@ -160,6 +161,18 @@ TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
   for (auto &t : ths) {
     t.join();
   }
+  Iterator *snapshot_iter =
+      engine->NewSortedIterator(sorted_collection, snapshot);
+  uint64_t snapshot_iter_cnt = 0;
+  snapshot_iter->SeekToFirst();
+  while (snapshot_iter->Valid()) {
+    ASSERT_TRUE(snapshot_iter->Valid());
+    snapshot_iter_cnt++;
+    ASSERT_EQ(snapshot_iter->Key(), snapshot_iter->Value());
+    snapshot_iter->Next();
+  }
+  ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+  engine->ReleaseSortedIterator(snapshot_iter);
   delete engine;
 
   std::vector<int> opt_restore_skiplists{0, 1};
@@ -229,6 +242,10 @@ TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
       checkpoint_iter->Next();
     }
     ASSERT_EQ(backup_iter_cnt, num_threads * count * 2);
+    ASSERT_EQ(checkpoint_iter_cnt, num_threads * count * 2);
+    backup_engine->ReleaseSortedIterator(backup_iter);
+    engine->ReleaseSortedIterator(checkpoint_iter);
+
     delete engine;
     delete backup_engine;
   }
@@ -478,7 +495,8 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
     std::string thread_local_skiplist("t_skiplist" + std::to_string(id));
     std::vector<int> n_entries_scan(num_threads, 0);
 
-    auto t_iter = engine->NewSortedIterator(thread_local_skiplist);
+    kvdk::Snapshot *snapshot = engine->GetSnapshot(false);
+    auto t_iter = engine->NewSortedIterator(thread_local_skiplist, snapshot);
     ASSERT_TRUE(t_iter != nullptr);
     t_iter->SeekToFirst();
     if (t_iter->Valid()) {
@@ -509,6 +527,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
       }
     }
     ASSERT_EQ(n_entries_scan[id], 0);
+    engine->ReleaseSnapshot(snapshot);
   };
 
   LaunchNThreads(num_threads, SSetSGetSDelete);
@@ -2040,7 +2059,8 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
 
   // Iter
   ths.emplace_back(std::thread([&]() {
-    auto sorted_iter = engine->NewSortedIterator(collection_name);
+    Snapshot *snapshot = engine->GetSnapshot(false);
+    auto sorted_iter = engine->NewSortedIterator(collection_name, snapshot);
     sorted_iter->SeekToLast();
     int iter_num = 0;
     if (sorted_iter->Valid()) {
@@ -2060,6 +2080,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
         next = k;
       }
     }
+    engine->ReleaseSnapshot(snapshot);
   }));
   for (auto &thread : ths) {
     thread.join();

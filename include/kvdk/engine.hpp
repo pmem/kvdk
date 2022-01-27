@@ -96,7 +96,10 @@ public:
   // this snapshot is released. You can recover KVDK instance to the checkpoint
   // version during recovery, then the checkpoint will be removed.
   //
-  // Notice: you can maintain multiple snapshot but only the last checkpoint.
+  // Notice:
+  // 1. You can maintain multiple snapshot but only the last checkpoint.
+  // 2. Please release the snapshot as soon as it is not needed, as it will
+  // forbid newer data being freed
   virtual Snapshot *GetSnapshot(bool make_checkpoint) = 0;
 
   // Make a backup on "snapshot" to "backup_path"
@@ -107,9 +110,19 @@ public:
   virtual void ReleaseSnapshot(const Snapshot *) = 0;
 
   // Create a KV iterator on sorted collection "collection", which is able to
-  // sequentially iterate all KVs in the "collection".
-  virtual std::shared_ptr<Iterator>
-  NewSortedIterator(const StringView collection) = 0;
+  // sequentially iterate all KVs in the "collection" at "snapshot" version, if
+  // snapshot is nullptr, then a internal snapshot will be created at current
+  // version and the iterator will be created on it
+  //
+  // Notice:
+  // 1. Iterator will be invalid after the passed snapshot is released
+  // 2. Please release the iterator as soon as it is not needed, as the holding
+  // snapshot will forbid newer data being freed
+  virtual Iterator *NewSortedIterator(const StringView collection,
+                                      Snapshot *snapshot = nullptr) = 0;
+
+  // Release a sorted iterator
+  virtual void ReleaseSortedIterator(Iterator *) = 0;
 
   virtual std::shared_ptr<Iterator>
   NewUnorderedIterator(StringView const collection_name) = 0;
