@@ -1154,7 +1154,6 @@ Status KVEngine::SSetImpl(Skiplist *skiplist, const StringView &user_key,
                                     : HashOffsetType::DLRecord);
       if (entry_base_status == HashEntryStatus::Updating) {
         delayFree(OldDataRecord{hash_entry.index.dl_record, new_ts});
-        // purgeAndFree(hash_entry.index.dl_record);
       }
     }
 
@@ -1440,7 +1439,8 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV &kv,
     if (entry_base_status == HashEntryStatus::Updating) {
       if (kv.type == StringDeleteRecord) {
         batch_hint.delete_record_to_free = block_base;
-      } else {
+      }
+      if (hash_entry.header.data_type == StringDataRecord) {
         batch_hint.data_record_to_free = hash_entry.index.string_record;
       }
     }
