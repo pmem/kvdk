@@ -18,44 +18,31 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class HashEntryStatus : uint8_t {
-  // Hash entry in hash table should always being initialized, it should never
-  // be 0
-  Invalid = 0,
-  Normal = 1,
-  // New created hash entry for inserting a new key
-  Initializing = 1 << 1,
-  // A entry being updated by the same key, or a CleanReusable hash entry being
-  // updated by a new key
-  Updating = 1 << 2,
-  // A empty hash entry that points to nothing
-  Empty = 1 << 3
-};
-
-enum class HashOffsetType : uint8_t {
+enum class HashIndexType : uint16_t {
   // Value initialized considered as Invalid
   Invalid = 0,
-  // Offset is PMem offset of a string record
+  // Index is PMem offset of a string record
   StringRecord = 1,
-  // Offset is PMem offset of a doubly linked record
+  // Index is PMem offset of a doubly linked record
   DLRecord = 2,
-  // Offset is pointer to a dram skiplist node
+  // Index is pointer to a dram skiplist node
   SkiplistNode = 3,
-  // Offset is pointer to a dram skiplist struct
+  // Index is pointer to a dram skiplist struct
   Skiplist = 4,
-  // Offset field contains pointer to UnorderedCollection object on DRAM
+  // Index field contains pointer to UnorderedCollection object on DRAM
   UnorderedCollection = 5,
-  // Offset field contains PMem pointer to element of UnorderedCollection
+  // Index field contains PMem pointer to element of UnorderedCollection
   UnorderedCollectionElement = 6,
-  //
-  Queue = 7
+  // Index field contains pointer to Queue object on DRAM
+  Queue = 7,
+  // Index is empty which point to nothing
+  Empty = 8,
 };
 
 struct HashHeader {
   uint32_t key_prefix;
   uint16_t data_type;
-  HashOffsetType offset_type;
-  HashEntryStatus status;
+  HashIndexType index_type;
 };
 
 class Skiplist;
@@ -81,14 +68,8 @@ public:
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void *_index,
-            HashOffsetType offset_type)
-      : header({key_hash_prefix, data_entry_type, offset_type,
-                HashEntryStatus::Normal}),
-        index(_index) {}
-
-  HashEntry(uint32_t kp, uint16_t t, void *_index, HashEntryStatus status,
-            HashOffsetType offset_type)
-      : header({kp, t, offset_type, status}), index(_index) {}
+            HashIndexType index_type)
+      : header({key_hash_prefix, data_entry_type, index_type}), index(_index) {}
 
   HashHeader header;
   Index index;
@@ -98,12 +79,10 @@ public:
     dst->index = src->index;
   }
 
-  bool Reusable() { return header.status == HashEntryStatus::Empty; }
-
-  bool Empty() { return header.status == HashEntryStatus::Empty; }
+  bool Reusable() { return header.index_type == HashIndexType::Empty; }
 
   // Make this hash entry reusable while its content been deleted
-  void Clear() { header.status = HashEntryStatus::Empty; }
+  void Clear() { header.index_type = HashIndexType::Empty; }
 };
 
 struct HashCache {
@@ -167,7 +146,7 @@ public:
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
   void Insert(const KeyHashHint &hint, HashEntry *entry_ptr, uint16_t type,
-              void *index, HashOffsetType offset_type);
+              void *index, HashIndexType index_type);
 
 private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
