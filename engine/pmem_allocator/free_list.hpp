@@ -158,7 +158,7 @@ public:
   // active_pool_ for next run. Calculate the minimal timestamp of free entries
   // in the pool meantime
   // TODO: set a condition to decide if we need to do merging
-  void MergeAndCheckTSInPool();
+  void MergeSpaceInPool();
 
   // Move cached free space list to space entry pool to balance usable space
   // of access threads

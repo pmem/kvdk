@@ -134,7 +134,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
       pmem_alloc->Free(records[id]);
     }
   };
-     pmem_alloc->BackgroundWork();
+  pmem_alloc->BackgroundWork();
   // Test merge free memory
   auto TestPmemFrag = [&](uint64_t id) {
     thread_manager_->MaybeInitThread(access_thread);
@@ -150,7 +150,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
 }
 
 // TODO: Add more cases
-TEST_F(EnginePMemAllocatorTest, TestPMemAlocFreeList) {
+TEST_F(EnginePMemAllocatorTest, TestPMemAllocFreeList) {
   uint32_t num_thread = 1;
   uint64_t num_segment_block = 4 * kMinPaddingBlocks;
   uint64_t block_size = 64;
@@ -186,13 +186,10 @@ TEST_F(EnginePMemAllocatorTest, TestPMemAlocFreeList) {
   records.push_back(pmem_alloc->Allocate(alloc_size[1]));
   ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), pmem_size);
 
-  // free 512 bytes and again free 512 bytes
-  std::vector<SpaceEntry> frees;
-  frees.push_back(records.back());
+  pmem_alloc->Free(records.back());
   records.pop_back();
-  frees.push_back(records.front());
+  pmem_alloc->Free(records.front());
   records.pop_front();
-  pmem_alloc->BatchFree(frees);
 
   // need to merge
   pmem_alloc->BackgroundWork();
