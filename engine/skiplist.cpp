@@ -490,6 +490,15 @@ void SortedIterator::Seek(const std::string &key) {
 void SortedIterator::SeekToFirst() {
   uint64_t first = skiplist_->header()->record->next;
   current_ = pmem_allocator_->offset2addr<DLRecord>(first);
+  while (Valid()) {
+    DLRecord *valid_version_record = findValidVersion(current_);
+    if (valid_version_record == nullptr) {
+      current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
+    } else {
+      current_ = valid_version_record;
+      break;
+    }
+  }
   while (current_->entry.meta.type == SortedDeleteRecord) {
     current_ = pmem_allocator_->offset2addr<DLRecord>(current_->next);
   }
@@ -498,6 +507,15 @@ void SortedIterator::SeekToFirst() {
 void SortedIterator::SeekToLast() {
   uint64_t last = skiplist_->header()->record->prev;
   current_ = pmem_allocator_->offset2addr<DLRecord>(last);
+  while (Valid()) {
+    DLRecord *valid_version_record = findValidVersion(current_);
+    if (valid_version_record == nullptr) {
+      current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->prev);
+    } else {
+      current_ = valid_version_record;
+      break;
+    }
+  }
   while (current_->entry.meta.type == SortedDeleteRecord) {
     current_ = pmem_allocator_->offset2addr<DLRecord>(current_->prev);
   }
