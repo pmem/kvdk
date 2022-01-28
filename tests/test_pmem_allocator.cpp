@@ -115,7 +115,6 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   /* Allocated pmem status (block nums):
    * | 8 | 8 | 16 | 32 | 8 | 8 | 16 | 32 | 8 | 8 | 16 | 32 | 8 | 8 | 16 | 32 |
    */
-
   std::vector<SpaceEntry> records(num_thread);
   thread_manager_->MaybeInitThread(access_thread);
   for (uint32_t i = 0; i < records.size(); ++i) {
@@ -123,6 +122,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
     records[i] = space_entry;
     ASSERT_NE(space_entry.size, 0);
   }
+  access_thread.Release();
 
   /* Allocated pmem status:
    * | null | null | null | 32 | null | null | null | 32 | null | null | null
@@ -134,17 +134,16 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
       pmem_alloc->Free(records[id]);
     }
   };
+  access_thread.Release();
+
+  LaunchNThreads(num_thread, TestPmemFree);
   pmem_alloc->BackgroundWork();
   // Test merge free memory
-  auto TestPmemFrag = [&](uint64_t id) {
-    thread_manager_->MaybeInitThread(access_thread);
-    if ((id + 1) % 4 == 0) {
-      SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[id % 4]);
-      ASSERT_NE(space_entry.size, 0);
-    }
-  };
-  LaunchNThreads(num_thread, TestPmemFree);
-  LaunchNThreads(num_thread, TestPmemFrag);
+  thread_manager_->MaybeInitThread(access_thread);
+  for (uint32_t id = 0; id < num_thread / 4; ++id) {
+    SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[3]);
+    ASSERT_NE(space_entry.size, 0);
+  }
 
   delete pmem_alloc;
 }

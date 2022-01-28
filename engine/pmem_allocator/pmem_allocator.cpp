@@ -126,11 +126,12 @@ PMEMAllocator *PMEMAllocator::NewPMEMAllocator(
   // No need to worry user modify those parameters so that records may be
   // skipped.
   size_t sz_wasted = pmem_size % (block_size * num_segment_blocks);
-  if (!(pmem_size > block_size * num_segment_blocks * max_access_threads) &&
-      sz_wasted != 0)
+  if ((pmem_size > block_size * num_segment_blocks * max_access_threads) ||
+      sz_wasted != 0) {
     GlobalLogger.Error(
         "Pmem file size not aligned with segment size, %llu space is wasted.\n",
         sz_wasted);
+  }
   GlobalLogger.Info("Map pmem space done\n");
 
   if (!pmem_file_exist && populate_space_on_new_file) {

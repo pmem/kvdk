@@ -1585,7 +1585,6 @@ Status KVEngine::StringSetImpl(const StringView &key, const StringView &value) {
 }
 
 Status KVEngine::Set(const StringView key, const StringView value) {
-  ReportPMemUsage();
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;

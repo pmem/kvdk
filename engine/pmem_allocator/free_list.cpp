@@ -130,7 +130,7 @@ void Freelist::MergeSpaceInPool() {
       max_classified_b_size_);
 
   for (uint32_t b_size = 1; b_size < max_classified_b_size_; b_size++) {
-    if (active_pool_.TryFetchEntryList(merging_list, b_size)) {
+    while (active_pool_.TryFetchEntryList(merging_list, b_size)) {
       for (PMemOffsetType &offset : merging_list) {
         assert(offset % block_size_ == 0);
         auto b_offset = offset / block_size_;
