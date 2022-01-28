@@ -280,6 +280,7 @@ void DBScan(int tid) {
       } else {
         throw std::runtime_error{"Error creating SortedIterator"};
       }
+      engine->ReleaseSortedIterator(iter);
       break;
     }
     case DataType::Hashes: {

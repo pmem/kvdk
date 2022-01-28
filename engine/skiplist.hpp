@@ -19,6 +19,7 @@
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
+class KVEngine;
 static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
 
@@ -420,9 +421,10 @@ private:
 class SortedIterator : public Iterator {
 public:
   SortedIterator(Skiplist *skiplist,
-                 const std::shared_ptr<PMEMAllocator> &pmem_allocator)
-      : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current(nullptr) {
-  }
+                 const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+                 SnapshotImpl *snapshot, bool own_snapshot)
+      : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current_(nullptr),
+        snapshot_(snapshot), own_snapshot_(own_snapshot) {}
 
   virtual void Seek(const std::string &key) override;
 
@@ -431,7 +433,7 @@ public:
   virtual void SeekToLast() override;
 
   virtual bool Valid() override {
-    return (current != nullptr && current != skiplist_->header()->record);
+    return (current_ != nullptr && current_ != skiplist_->header()->record);
   }
 
   virtual void Next() override;
@@ -443,9 +445,14 @@ public:
   virtual std::string Value() override;
 
 private:
+  friend KVEngine;
+  DLRecord *findValidVersion(DLRecord *pmem_record);
+
   Skiplist *skiplist_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  DLRecord *current;
+  DLRecord *current_;
+  SnapshotImpl *snapshot_;
+  bool own_snapshot_;
 };
 
 // A helper struct for seeking skiplist

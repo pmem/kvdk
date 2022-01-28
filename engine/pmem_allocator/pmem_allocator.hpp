@@ -98,9 +98,6 @@ public:
   void BatchFree(const std::vector<SpaceEntry> &entries) {
     if (entries.size() > 0) {
       free_list_.BatchPush(entries);
-      for (auto &entry : entries) {
-        LogDeallocation(access_thread.id, entry.size);
-      }
     }
   }
 

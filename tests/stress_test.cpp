@@ -148,7 +148,8 @@ private:
 public:
   ShadowKVEngine() = delete;
   ShadowKVEngine(kvdk::Engine *&e, CollectionNameType cn, size_t nt)
-      : engine{e}, collection_name{cn}, engine_operator{engine, collection_name},
+      : engine{e}, collection_name{cn}, engine_operator{engine,
+                                                        collection_name},
         n_thread{nt}, possible_state{}, task_queues(n_thread) {}
 
   // Execute task_queues in ShadowKVEngine
@@ -158,7 +159,7 @@ public:
   void UpdatePossibleStates() {
     std::cout << "[Testing] Updating Engine State" << std::endl;
 
-    // Some keys are overwritten by operations in operateKVEngine(), 
+    // Some keys are overwritten by operations in operateKVEngine(),
     // states and values before calling operateKVEngine() are
     // no longer possible.
     {
@@ -220,8 +221,7 @@ public:
 
   // Check KVEngine by iterating through it.
   // Iterated KVs are looked up in possible_state.
-  void CheckIterator(std::shared_ptr<kvdk::Iterator> iterator,
-                     IteratingDirection direction) {
+  void CheckIterator(kvdk::Iterator *iterator, IteratingDirection direction) {
 
     PossibleStates possible_state_copy{possible_state};
 
@@ -561,10 +561,10 @@ protected:
               << std::endl;
     shadow_hashes_engines[collection_name]->CheckGetter();
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->NewUnorderedIterator(collection_name),
+        engine->NewUnorderedIterator(collection_name).get(),
         kvdk_testing::IteratingDirection::Forward);
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->NewUnorderedIterator(collection_name),
+        engine->NewUnorderedIterator(collection_name).get(),
         kvdk_testing::IteratingDirection::Backward);
   }
 
@@ -572,12 +572,12 @@ protected:
     std::cout << "[Testing] Checking Sorted Collection: " << collection_name
               << std::endl;
     shadow_sorted_engines[collection_name]->CheckGetter();
+    auto iter = engine->NewSortedIterator(collection_name);
     shadow_sorted_engines[collection_name]->CheckIterator(
-        engine->NewSortedIterator(collection_name),
-        kvdk_testing::IteratingDirection::Forward);
+        iter, kvdk_testing::IteratingDirection::Forward);
     shadow_sorted_engines[collection_name]->CheckIterator(
-        engine->NewSortedIterator(collection_name),
-        kvdk_testing::IteratingDirection::Backward);
+        iter, kvdk_testing::IteratingDirection::Backward);
+    engine->ReleaseSortedIterator(iter);
   }
 
   void CheckStrings() {
