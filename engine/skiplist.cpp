@@ -343,9 +343,8 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
 
-  if (!SearchAndLockRecordPos(&splice, updating_record, updating_record_lock,
-                              &prev_record_lock, pmem_allocator_.get(),
-                              hash_table_.get())) {
+  if (!searchAndLockUpdatePos(&splice, updating_record, updating_record_lock,
+                              &prev_record_lock)) {
     return false;
   }
 
@@ -376,9 +375,8 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleting_record,
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
 
-  if (!SearchAndLockRecordPos(&splice, deleting_record, deleting_record_lock,
-                              &prev_record_lock, pmem_allocator_.get(),
-                              hash_table_.get())) {
+  if (!searchAndLockDeletePos(&splice, deleting_record, deleting_record_lock,
+                              &prev_record_lock)) {
     return false;
   }
 

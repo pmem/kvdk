@@ -368,6 +368,28 @@ private:
                               const SpinMutex *inserting_key_lock,
                               std::unique_lock<SpinMutex> *prev_record_lock);
 
+  // Search and lock skiplist position to update"key".
+  //
+  // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and manage
+  // the lock with "prev_record_lock".
+  //
+  //  The "updated_key" should be already locked before call this function
+  bool searchAndLockUpdatePos(Splice *splice, const DLRecord *updating_record,
+                              const SpinMutex *updating_record_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock) {
+    return SearchAndLockRecordPos(splice, updating_record, updating_record_lock,
+                                  prev_record_lock, pmem_allocator_.get(),
+                                  hash_table_.get());
+  }
+
+  bool searchAndLockDeletePos(Splice *splice, const DLRecord *deleting_record,
+                              const SpinMutex *deleting_record_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock) {
+    return SearchAndLockRecordPos(splice, deleting_record, deleting_record_lock,
+                                  prev_record_lock, pmem_allocator_.get(),
+                                  hash_table_.get());
+  }
+
   bool ValidateDLRecord(const DLRecord *record) {
     DLRecord *prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
     return prev != nullptr &&
