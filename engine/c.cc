@@ -325,6 +325,7 @@ void KVDKDestroyIterator(KVDKEngine *engine, KVDKIterator *iterator) {
     break;
   }
   case HASH: {
+    break;
   }
 
   default:
