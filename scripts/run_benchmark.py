@@ -8,7 +8,7 @@ bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 num_thread = 64
-value_size = 120
+value_sizes = [120]
 # constant: value size always be "value_size",
 # random: value size uniformly distributed in [1, value_size]
 value_size_distributions = ['constant']
@@ -59,6 +59,6 @@ if __name__ == "__main__":
         print(usage)
         exit(1)
     
-    for [data_type, vsz_dist, k_dist] in itertools.product(data_types, value_size_distributions, key_distributions):
+    for [data_type, value_size, vsz_dist, k_dist] in itertools.product(data_types, value_sizes, value_size_distributions, key_distributions):
         benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill,
                                      num_thread, num_collection, timeout, k_dist, value_size, vsz_dist, benchmarks)

@@ -90,54 +90,14 @@ void Skiplist::SeekNode(const StringView &key, SkiplistNode *start_node,
   }
 }
 
-// Insert DLRecord "inserting" between "prev" and "next"
-void Skiplist::InsertDLRecord(DLRecord *prev, DLRecord *next,
-                              DLRecord *inserting) {
-  uint64_t inserting_record_offset = pmem_allocator_->addr2offset(inserting);
+void Skiplist::LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking,
+                            PMEMAllocator *pmem_allocator) {
+  uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
   TEST_SYNC_POINT("KVEngine::Skiplist::InsertDLRecord::UpdatePrev");
   next->prev = inserting_record_offset;
   pmem_persist(&next->prev, 8);
-}
-
-Status Skiplist::Rebuild() {
-  Splice splice(this);
-  HashEntry hash_entry;
-  for (uint8_t i = 1; i <= kMaxHeight; i++) {
-    splice.prevs[i] = header_;
-    splice.prev_pmem_record = header_->record;
-  }
-  while (1) {
-    HashEntry *entry_ptr = nullptr;
-    uint64_t next_offset = splice.prev_pmem_record->next;
-    DLRecord *next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
-    assert(next_record != nullptr);
-    if (next_record == header()->record) {
-      break;
-    }
-
-    StringView key = next_record->Key();
-    Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
-                                          SortedDataRecord, &entry_ptr,
-                                          &hash_entry, nullptr);
-    // these nodes should be already created during data restoring
-    if (s != Status::Ok) {
-      GlobalLogger.Error("Rebuild skiplist error\n");
-      return s;
-    }
-    if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      SkiplistNode *dram_node = hash_entry.index.skiplist_node;
-      int height = dram_node->Height();
-      for (int i = 1; i <= height; i++) {
-        splice.prevs[i]->RelaxedSetNext(i, dram_node);
-        dram_node->RelaxedSetNext(i, nullptr);
-        splice.prevs[i] = dram_node;
-      }
-    }
-    splice.prev_pmem_record = next_record;
-  }
-  return Status::Ok;
 }
 
 void Skiplist::Seek(const StringView &key, Splice *result_splice) {
@@ -193,8 +153,8 @@ Status Skiplist::CheckConnection(int height) {
     HashEntry *entry_ptr = nullptr;
     StringView key = next_record->Key();
     Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
-                                          SortedDataRecord, &entry_ptr,
-                                          &hash_entry, &data_entry);
+                                          next_record->entry.meta.type,
+                                          &entry_ptr, &hash_entry, &data_entry);
     assert(s == Status::Ok && "search node fail!");
 
     if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
@@ -223,24 +183,24 @@ Status Skiplist::CheckConnection(int height) {
   return Status::Ok;
 }
 
-bool Skiplist::FindUpdatePos(Splice *splice, const StringView &updated_key,
-                             const SpinMutex *updating_key_lock,
-                             const DLRecord *updated_record,
-                             std::unique_lock<SpinMutex> *prev_record_lock) {
+bool Skiplist::SearchAndLockRecordPos(
+    Splice *splice, const DLRecord *searching_record,
+    const SpinMutex *record_lock, std::unique_lock<SpinMutex> *prev_record_lock,
+    PMEMAllocator *pmem_allocator, HashTable *hash_table) {
   while (1) {
     DLRecord *prev =
-        pmem_allocator_->offset2addr<DLRecord>(updated_record->prev);
+        pmem_allocator->offset2addr<DLRecord>(searching_record->prev);
     DLRecord *next =
-        pmem_allocator_->offset2addr<DLRecord>(updated_record->next);
+        pmem_allocator->offset2addr<DLRecord>(searching_record->next);
     assert(prev != nullptr);
     assert(next != nullptr);
     splice->prev_pmem_record = prev;
     splice->next_pmem_record = next;
-    uint64_t prev_offset = pmem_allocator_->addr2offset(prev);
-    uint64_t next_offset = pmem_allocator_->addr2offset(next);
+    uint64_t prev_offset = pmem_allocator->addr2offset(prev);
+    uint64_t next_offset = pmem_allocator->addr2offset(next);
 
-    auto prev_hint = hash_table_->GetHint(prev->Key());
-    if (prev_hint.spin != updating_key_lock) {
+    auto prev_hint = hash_table->GetHint(prev->Key());
+    if (prev_hint.spin != record_lock) {
       if (!prev_hint.spin->try_lock()) {
         return false;
       }
@@ -249,30 +209,27 @@ bool Skiplist::FindUpdatePos(Splice *splice, const StringView &updated_key,
     }
 
     // Check if the list has changed before we successfully acquire lock.
-    // As updating record is already locked, so we don't need to
+    // As updating searching_record is already locked, so we don't need to
     // check its next
-    if (updated_record->prev != prev_offset ||
-        prev->next != pmem_allocator_->addr2offset(updated_record)) {
+    if (searching_record->prev != prev_offset ||
+        prev->next != pmem_allocator->addr2offset(searching_record)) {
       continue;
     }
 
-    assert(updated_record->prev == prev_offset);
-    assert(updated_record->next == next_offset);
-    assert(next->prev == pmem_allocator_->addr2offset(updated_record));
-    assert(prev == header_->record ||
-           compare(Skiplist::UserKey(prev), updated_key) < 0);
-    assert(next == header_->record ||
-           compare(Skiplist::UserKey(next), updated_key) > 0);
+    assert(searching_record->prev == prev_offset);
+    assert(searching_record->next == next_offset);
+    assert(next->prev == pmem_allocator->addr2offset(searching_record));
 
     return true;
   }
 }
 
-bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
-                             const SpinMutex *inserting_key_lock,
-                             std::unique_lock<SpinMutex> *prev_record_lock) {
+bool Skiplist::searchAndLockInsertPos(
+    Splice *splice, const StringView &inserting_key,
+    const SpinMutex *inserting_key_lock,
+    std::unique_lock<SpinMutex> *prev_record_lock) {
   while (1) {
-    Seek(insert_key, splice);
+    Seek(inserting_key, splice);
     DLRecord *prev = splice->prev_pmem_record;
 
     assert(prev != nullptr);
@@ -313,9 +270,9 @@ bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
     auto check_order = [&]() {
       bool res =
           /*check next*/ (next == header_->record ||
-                          compare(insert_key, UserKey(next)) < 0) &&
+                          compare(inserting_key, UserKey(next)) < 0) &&
           /*check prev*/ (prev == header_->record ||
-                          compare(insert_key, UserKey(prev)) > 0);
+                          compare(inserting_key, UserKey(prev)) > 0);
       return res;
     };
     if (!check_linkage() || !check_id() || !check_order()) {
@@ -325,20 +282,23 @@ bool Skiplist::FindInsertPos(Splice *splice, const StringView &insert_key,
     assert(prev->next == next_offset);
     assert(next->prev == prev_offset);
 
-    assert(prev == header_->record || compare(insert_key, UserKey(prev)) > 0);
-    assert(next == header_->record || compare(insert_key, UserKey(next)) < 0);
+    assert(prev == header_->record ||
+           compare(Skiplist::UserKey(prev), inserting_key) < 0);
+    assert(next == header_->record ||
+           compare(Skiplist::UserKey(next), inserting_key) > 0);
 
     return true;
   }
 }
 
 bool Skiplist::Insert(const StringView &key, const StringView &value,
-                      const SpaceEntry &space_to_write, TimeStampType timestamp,
-                      SkiplistNode **dram_node,
-                      const SpinMutex *inserting_key_lock) {
+                      const SpinMutex *inserting_key_lock,
+                      TimeStampType timestamp, SkiplistNode **dram_node,
+                      const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindInsertPos(&splice, key, inserting_key_lock, &prev_record_lock)) {
+  if (!searchAndLockInsertPos(&splice, key, inserting_key_lock,
+                              &prev_record_lock)) {
     return false;
   }
 
@@ -347,16 +307,15 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedDataRecord, prev_offset, next_offset, internal_key,
-      value);
+      timestamp, SortedDataRecord, kNullPMemOffset, prev_offset, next_offset,
+      internal_key, value);
 
   // link new record to PMem
-  InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
-
+  LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
   // create dram node for new record
-  auto height = Skiplist::RandomHeight();
-  if (height > 0) {
-    *dram_node = SkiplistNode::NewNode(key, new_record, height);
+  *dram_node = Skiplist::NewNodeBuild(new_record);
+  if (*dram_node != nullptr) {
+    auto height = (*dram_node)->Height();
     for (int i = 1; i <= height; i++) {
       while (1) {
         auto now_next = splice.prevs[i]->Next(i);
@@ -372,66 +331,132 @@ bool Skiplist::Insert(const StringView &key, const StringView &value,
         }
       }
     }
-  } else {
-    *dram_node = nullptr;
   }
   return true;
 }
 
 bool Skiplist::Update(const StringView &key, const StringView &value,
-                      const DLRecord *updated_record,
-                      const SpaceEntry &space_to_write, TimeStampType timestamp,
-                      SkiplistNode *dram_node,
-                      const SpinMutex *updating_key_lock) {
+                      const DLRecord *updating_record,
+                      const SpinMutex *updating_record_lock,
+                      TimeStampType timestamp, SkiplistNode *dram_node,
+                      const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!FindUpdatePos(&splice, key, updating_key_lock, updated_record,
-                     &prev_record_lock)) {
+  if (!searchAndLockUpdatePos(&splice, updating_record, updating_record_lock,
+                              &prev_record_lock)) {
     return false;
   }
 
   std::string internal_key(InternalKey(key));
-  uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
-  uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
+  PMemOffsetType updated_offset =
+      pmem_allocator_->addr2offset_checked(updating_record);
+  PMemOffsetType prev_offset =
+      pmem_allocator_->addr2offset_checked(splice.prev_pmem_record);
+  PMemOffsetType next_offset =
+      pmem_allocator_->addr2offset_checked(splice.next_pmem_record);
   DLRecord *new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedDataRecord, prev_offset, next_offset, internal_key,
-      value);
+      timestamp, SortedDataRecord, updated_offset, prev_offset, next_offset,
+      internal_key, value);
 
   // link new record
-  InsertDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
+  LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
   if (dram_node != nullptr) {
     dram_node->record = new_record;
   }
   return true;
 }
 
-bool Skiplist::Delete(const StringView &key, DLRecord *deleted_record,
-                      SkiplistNode *dram_node,
-                      const SpinMutex *deleting_key_lock) {
+bool Skiplist::Delete(const StringView &key, DLRecord *deleting_record,
+                      const SpinMutex *deleting_record_lock,
+                      TimeStampType timestamp, SkiplistNode *dram_node,
+                      const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
+  if (!searchAndLockDeletePos(&splice, deleting_record, deleting_record_lock,
+                              &prev_record_lock)) {
+    return false;
+  }
 
-  if (!FindDeletePos(&splice, key, deleting_key_lock, deleted_record,
-                     &prev_record_lock)) {
+  std::string internal_key(InternalKey(key));
+  PMemOffsetType prev_offset =
+      pmem_allocator_->addr2offset_checked(splice.prev_pmem_record);
+  PMemOffsetType next_offset =
+      pmem_allocator_->addr2offset_checked(splice.next_pmem_record);
+  PMemOffsetType deleted_offset =
+      pmem_allocator_->addr2offset_checked(deleting_record);
+  DLRecord *delete_record = DLRecord::PersistDLRecord(
+      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
+      timestamp, SortedDeleteRecord, deleted_offset, prev_offset, next_offset,
+      internal_key, "");
+
+  assert(splice.prev_pmem_record->next == deleted_offset);
+  assert(splice.next_pmem_record->prev == deleted_offset);
+
+  // link delete record
+  LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, delete_record);
+  if (dram_node != nullptr) {
+    dram_node->record = delete_record;
+  }
+  return true;
+}
+
+bool Skiplist::Replace(DLRecord *old_record, DLRecord *replacing_record,
+                       const SpinMutex *old_record_lock,
+                       SkiplistNode *dram_node, PMEMAllocator *pmem_allocator,
+                       HashTable *hash_table) {
+  Splice splice(nullptr);
+  std::unique_lock<SpinMutex> prev_record_lock;
+  if (!SearchAndLockRecordPos(&splice, old_record, old_record_lock,
+                              &prev_record_lock, pmem_allocator, hash_table)) {
+    return false;
+  }
+  kvdk_assert(splice.prev_pmem_record->next ==
+                  pmem_allocator->addr2offset(old_record),
+              "Bad prev linkage in Skiplist::Replace");
+  kvdk_assert(splice.prev_pmem_record->next ==
+                  pmem_allocator->addr2offset(old_record),
+              "Bad next linkage in Skiplist::Replace");
+  replacing_record->prev = pmem_allocator->addr2offset(splice.prev_pmem_record);
+  pmem_persist(&replacing_record->prev, sizeof(PMemOffsetType));
+  replacing_record->next = pmem_allocator->addr2offset(splice.next_pmem_record);
+  pmem_persist(&replacing_record->next, sizeof(PMemOffsetType));
+  Skiplist::LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record,
+                         replacing_record, pmem_allocator);
+  if (dram_node != nullptr) {
+    kvdk_assert(dram_node->record == old_record,
+                "Dram node not belong to old record in Skiplist::Replace");
+    dram_node->record = replacing_record;
+  }
+  return true;
+}
+
+bool Skiplist::Purge(DLRecord *purging_record,
+                     const SpinMutex *purging_record_lock,
+                     SkiplistNode *dram_node, PMEMAllocator *pmem_allocator,
+                     HashTable *hash_table) {
+  Splice splice(nullptr);
+  std::unique_lock<SpinMutex> prev_record_lock;
+  if (!SearchAndLockRecordPos(&splice, purging_record, purging_record_lock,
+                              &prev_record_lock, pmem_allocator, hash_table)) {
     return false;
   }
 
   // Modify linkage to drop deleted record
-  uint64_t deleting_offset = pmem_allocator_->addr2offset(deleted_record);
+  uint64_t purging_offset = pmem_allocator->addr2offset(purging_record);
   DLRecord *prev = splice.prev_pmem_record;
   DLRecord *next = splice.next_pmem_record;
-  assert(prev->next == deleting_offset);
-  assert(next->prev == deleting_offset);
+  assert(prev->next == purging_offset);
+  assert(next->prev == purging_offset);
   // For repair in recovery due to crashes during pointers changing, we should
   // first unlink deleting entry from next's prev.(It is the reverse process
   // of insertion)
-  next->prev = pmem_allocator_->addr2offset(prev);
+  next->prev = pmem_allocator->addr2offset(prev);
   pmem_persist(&next->prev, 8);
   TEST_SYNC_POINT("KVEngine::Skiplist::Delete::PersistNext'sPrev::After");
-  prev->next = pmem_allocator_->addr2offset(next);
+  prev->next = pmem_allocator->addr2offset(next);
   pmem_persist(&prev->next, 8);
-  deleted_record->Destroy();
+  purging_record->Destroy();
 
   if (dram_node) {
     dram_node->MarkAsRemoved();
@@ -444,30 +469,43 @@ void SortedIterator::Seek(const std::string &key) {
   Splice splice(skiplist_);
   skiplist_->Seek(key, &splice);
   current = splice.next_pmem_record;
+  while (current->entry.meta.type == SortedDeleteRecord) {
+    current = pmem_allocator_->offset2addr<DLRecord>(current->next);
+  }
 }
 
 void SortedIterator::SeekToFirst() {
   uint64_t first = skiplist_->header()->record->next;
   current = pmem_allocator_->offset2addr<DLRecord>(first);
+  while (current->entry.meta.type == SortedDeleteRecord) {
+    current = pmem_allocator_->offset2addr<DLRecord>(current->next);
+  }
 }
 
 void SortedIterator::SeekToLast() {
   uint64_t last = skiplist_->header()->record->prev;
   current = pmem_allocator_->offset2addr<DLRecord>(last);
+  while (current->entry.meta.type == SortedDeleteRecord) {
+    current = pmem_allocator_->offset2addr<DLRecord>(current->prev);
+  }
 }
 
 void SortedIterator::Next() {
   if (!Valid()) {
     return;
   }
-  current = pmem_allocator_->offset2addr<DLRecord>(current->next);
+  do {
+    current = pmem_allocator_->offset2addr<DLRecord>(current->next);
+  } while (current->entry.meta.type == SortedDeleteRecord);
 }
 
 void SortedIterator::Prev() {
   if (!Valid()) {
     return;
   }
-  current = (pmem_allocator_->offset2addr<DLRecord>(current->prev));
+  do {
+    current = (pmem_allocator_->offset2addr<DLRecord>(current->prev));
+  } while (current->entry.meta.type == SortedDeleteRecord);
 }
 
 std::string SortedIterator::Key() {
@@ -482,58 +520,61 @@ std::string SortedIterator::Value() {
   return string_view_2_string(current->Value());
 }
 
-Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
-  std::vector<std::future<Status>> fs;
-  if (engine->configs_.opt_large_sorted_collection_restore &&
-      engine->skiplists_.size() > 0) {
-    thread_cache_node_.resize(engine->configs_.max_write_threads);
-    UpdateEntriesOffset(engine);
-    for (uint8_t h = 1; h <= kMaxHeight; ++h) {
-      for (uint32_t j = 0; j < engine->configs_.max_write_threads; ++j) {
-        fs.push_back(
-            std::async(std::launch::async, [j, h, this, engine]() -> Status {
-              while (true) {
-                SkiplistNode *cur_node = GetSortedOffset(h);
-                if (!cur_node) {
-                  break;
-                }
-                if (h == 1) {
-                  Status s = DealWithFirstHeight(j, cur_node, engine);
-                  if (s != Status::Ok) {
-                    return s;
-                  }
-                } else {
-                  DealWithOtherHeight(j, cur_node, h, engine->pmem_allocator_);
-                }
-              }
-              LinkedNode(j, h, engine);
-              return Status::Ok;
-            }));
-      }
-      for (auto &f : fs) {
-        Status s = f.get();
-        if (s != Status::Ok) {
-          return s;
-        }
-      }
-      fs.clear();
-      for (auto &kv : entries_offsets_) {
-        kv.second.is_visited = false;
-      }
-#ifdef DEBUG_CHECK
-      GlobalLogger.Info("Restoring skiplist height %d\n", h);
-      GlobalLogger.Info("Check skiplist connecton\n");
-      for (auto skiplist : engine->skiplists_) {
-        Status s = skiplist->CheckConnection(h);
-        if (s != Status::Ok) {
-          return s;
-        }
-      }
-#endif
+DLRecord *SortedCollectionRebuilder::FindValidVersion(
+    DLRecord *pmem_record, std::vector<DLRecord *> *invalid_version_records) {
+  if (!checkpoint_.Valid()) {
+    return pmem_record;
+  }
+  DLRecord *curr = pmem_record;
+  while (curr != nullptr &&
+         curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
+    if (invalid_version_records) {
+      invalid_version_records->push_back(curr);
     }
-  } else {
-    for (auto s : engine->skiplists_) {
-      fs.push_back(std::async(&Skiplist::Rebuild, s));
+    curr = pmem_allocator_->offset2addr<DLRecord>(curr->older_version_offset);
+    kvdk_assert(curr == nullptr || curr->Validate(),
+                "Broken checkpoint: invalid older version sorted record");
+    kvdk_assert(curr == nullptr ||
+                    equal_string_view(curr->Key(), pmem_record->Key()),
+                "Broken checkpoint: key of older version sorted data is "
+                "not same as new "
+                "version");
+  }
+  return curr;
+}
+
+Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
+  thread_cache_node_.resize(num_rebuild_threads_);
+  Status s = updateRecordOffsets();
+  if (s != Status::Ok) {
+    return s;
+  }
+  std::vector<std::future<Status>> fs;
+
+  auto repair_linkage_at_height_n = [this](uint32_t thread_num,
+                                           uint8_t height) -> Status {
+    while (true) {
+      SkiplistNode *cur_node = getSortedOffset(height);
+      if (!cur_node) {
+        break;
+      }
+      if (height == 1) {
+        Status s = dealWithFirstHeight(thread_num, cur_node);
+        if (s != Status::Ok) {
+          return s;
+        }
+      } else {
+        dealWithOtherHeight(thread_num, cur_node, height);
+      }
+    }
+    linkedNode(thread_num, height);
+    return Status::Ok;
+  };
+
+  for (uint8_t height = 1; height <= kMaxHeight; ++height) {
+    for (uint32_t thread_num = 0; thread_num < num_rebuild_threads_;
+         ++thread_num) {
+      fs.push_back(std::async(repair_linkage_at_height_n, thread_num, height));
     }
     for (auto &f : fs) {
       Status s = f.get();
@@ -541,19 +582,134 @@ Status SortedCollectionRebuilder::Rebuild(const KVEngine *engine) {
         return s;
       }
     }
+    fs.clear();
+    for (auto &kv : record_offsets_) {
+      kv.second.visited = false;
+    }
   }
   return Status::Ok;
 }
 
-void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
-                                           const KVEngine *engine) {
+Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
+  Splice splice(skiplist);
+  HashEntry hash_entry;
+  for (uint8_t i = 1; i <= kMaxHeight; i++) {
+    splice.prevs[i] = skiplist->header();
+    splice.prev_pmem_record = skiplist->header()->record;
+  }
+  std::vector<DLRecord *> invalid_records;
+
+  while (true) {
+    HashEntry *entry_ptr = nullptr;
+    uint64_t next_offset = splice.prev_pmem_record->next;
+    DLRecord *next_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+    if (next_record == skiplist->header()->record) {
+      break;
+    }
+
+    StringView internal_key = next_record->Key();
+    auto hash_hint = hash_table_->GetHint(internal_key);
+    while (true) {
+      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+      Status s = hash_table_->SearchForRead(
+          hash_hint, internal_key, SortedDataRecord | SortedDeleteRecord,
+          &entry_ptr, &hash_entry, nullptr);
+      if (s != Status::Ok) {
+        GlobalLogger.Error("Rebuild skiplist error, hash entry should be "
+                           "insert first before repair linkage");
+        return Status::Abort;
+      }
+      invalid_records.clear();
+      DLRecord *valid_version_record =
+          FindValidVersion(next_record, &invalid_records);
+      if (valid_version_record == nullptr) {
+        // purge invalid version record from list
+        if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
+                             pmem_allocator_, hash_table_)) {
+          asm volatile("pause");
+          continue;
+        }
+        entry_ptr->Clear();
+      } else {
+        if (valid_version_record != next_record) {
+          // repair linkage of checkpoint version
+          if (!Skiplist::Replace(next_record, valid_version_record,
+                                 hash_hint.spin, nullptr, pmem_allocator_,
+                                 hash_table_)) {
+            continue;
+          }
+        }
+        assert(valid_version_record != nullptr);
+        kvdk_assert(hash_entry.header.offset_type == HashOffsetType::DLRecord,
+                    "wrong hash offset type in repair skiplist linkage");
+        entry_ptr->header.data_type = valid_version_record->entry.meta.type;
+        SkiplistNode *dram_node = Skiplist::NewNodeBuild(valid_version_record);
+
+        if (dram_node != nullptr) {
+          entry_ptr->index.skiplist_node = dram_node;
+          entry_ptr->header.offset_type = HashOffsetType::SkiplistNode;
+          auto height = dram_node->Height();
+          for (uint8_t i = 1; i <= height; i++) {
+            splice.prevs[i]->RelaxedSetNext(i, dram_node);
+            dram_node->RelaxedSetNext(i, nullptr);
+            splice.prevs[i] = dram_node;
+          }
+        } else {
+          entry_ptr->index.dl_record = valid_version_record;
+        }
+        splice.prev_pmem_record = valid_version_record;
+      }
+      batchPurgeAndFree(invalid_records);
+      break;
+    }
+  }
+  return Status::Ok;
+}
+
+Status SortedCollectionRebuilder::RebuildLinkage(
+    const std::vector<std::shared_ptr<Skiplist>> &skiplists) {
+  Status s = Status::Ok;
+  if (skiplists.size() == 0) {
+    return s;
+  }
+
+  if (opt_parallel_rebuild_) {
+    s = parallelRepairSkiplistLinkage();
+  } else {
+    std::vector<std::future<Status>> fs;
+    for (auto s : skiplists) {
+      fs.push_back(std::async(&SortedCollectionRebuilder::repairSkiplistLinkage,
+                              this, s.get()));
+    }
+    for (auto &f : fs) {
+      s = f.get();
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+  }
+#ifdef DEBUG_CHECK
+  for (uint8_t h = 1; h <= kMaxHeight; h++) {
+    for (auto skiplist : skiplists) {
+      Status s = skiplist->CheckConnection(h);
+      if (s != Status::Ok) {
+        GlobalLogger.Info("Check skiplist connecton at height %u error\n", h);
+        return s;
+      }
+    }
+  }
+#endif
+  return s;
+}
+
+void SortedCollectionRebuilder::linkedNode(uint64_t thread_id, int height) {
   for (auto v : thread_cache_node_[thread_id]) {
     if (v->Height() < height) {
       continue;
     }
     uint64_t next_offset = v->record->next;
-    DLRecord *next_record =
-        engine->pmem_allocator_->offset2addr<DLRecord>(next_offset);
+    DLRecord *next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
     assert(next_record != nullptr);
     // TODO jiayu: maybe cache data entry
     if (next_record->entry.meta.type != SortedHeaderRecord &&
@@ -566,14 +722,13 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
           DataEntry data_entry;
           HashEntry *entry_ptr = nullptr;
           StringView key = next_record->Key();
-          Status s = engine->hash_table_->SearchForRead(
-              engine->hash_table_->GetHint(key), key, SortedRecordType,
-              &entry_ptr, &hash_entry, &data_entry);
+          Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                                SortedRecordType, &entry_ptr,
+                                                &hash_entry, &data_entry);
           assert(s == Status::Ok &&
                  "It should be in hash_table when reseting entries_offset map");
           next_offset = next_record->next;
-          next_record =
-              engine->pmem_allocator_->offset2addr<DLRecord>(next_offset);
+          next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
 
           if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
             next_node = hash_entry.index.skiplist->header();
@@ -605,61 +760,89 @@ void SortedCollectionRebuilder::LinkedNode(uint64_t thread_id, int height,
   thread_cache_node_[thread_id].clear();
 }
 
-SkiplistNode *SortedCollectionRebuilder::GetSortedOffset(int height) {
+SkiplistNode *SortedCollectionRebuilder::getSortedOffset(int height) {
   std::lock_guard<SpinMutex> kv_mux(map_mu_);
-  for (auto &kv : entries_offsets_) {
-    if (!kv.second.is_visited &&
-        kv.second.visited_node->Height() >= height - 1) {
-      kv.second.is_visited = true;
-      return kv.second.visited_node;
+  for (auto &kv : record_offsets_) {
+    if (!kv.second.visited && kv.second.node->Height() >= height - 1) {
+      kv.second.visited = true;
+      return kv.second.node;
     }
   }
   return nullptr;
 }
 
-Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
-                                                      SkiplistNode *cur_node,
-                                                      const KVEngine *engine) {
-  DLRecord *vesiting_record = cur_node->record;
+Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
+                                                      SkiplistNode *cur_node) {
+  DLRecord *visiting_record = cur_node->record;
+  std::vector<DLRecord *> invalid_records;
   while (true) {
-    uint64_t next_offset = vesiting_record->next;
+    invalid_records.clear();
+    uint64_t next_offset = visiting_record->next;
     DLRecord *next_record =
-        engine->pmem_allocator_->offset2addr<DLRecord>(next_offset);
-    assert(next_record != nullptr);
+        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
     if (next_record->entry.meta.type == SortedHeaderRecord) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
     }
     // continue to build connention
-    if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
+    if (record_offsets_.find(next_offset) == record_offsets_.end()) {
       HashEntry hash_entry;
       DataEntry data_entry;
       HashEntry *entry_ptr = nullptr;
-      StringView key = next_record->Key();
-      Status s = engine->hash_table_->SearchForRead(
-          engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,
-          &hash_entry, &data_entry);
-      if (s != Status::Ok) {
-        GlobalLogger.Error(
-            "the node should be already created during data restoring\n");
-        return Status::Abort;
-      }
-      vesiting_record = next_record;
+      StringView internal_key = next_record->Key();
 
-      SkiplistNode *next_node = nullptr;
-      assert(hash_entry.header.offset_type == HashOffsetType::SkiplistNode ||
-             hash_entry.header.offset_type == HashOffsetType::DLRecord &&
-                 "next entry should be skiplistnode type or data_entry type!");
-      if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-        next_node = hash_entry.index.skiplist_node;
-      }
-      // excepte data_entry node (height = 0)
-      if (next_node) {
-        if (next_node->Height() >= 1) {
-          cur_node->RelaxedSetNext(1, next_node);
-          next_node->RelaxedSetNext(1, nullptr);
-          cur_node = next_node;
+      auto hash_hint = hash_table_->GetHint(internal_key);
+      while (true) {
+        std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+        Status s = hash_table_->SearchForRead(hash_hint, internal_key,
+                                              SortedRecordType, &entry_ptr,
+                                              &hash_entry, &data_entry);
+        if (s != Status::Ok) {
+          GlobalLogger.Error(
+              "Parallel rebuild skiplist error, hash entry should be "
+              "insert first before repair linkage");
+          return Status::Abort;
         }
+        assert(entry_ptr->header.offset_type == HashOffsetType::DLRecord);
+        DLRecord *valid_version_record =
+            FindValidVersion(next_record, &invalid_records);
+        if (valid_version_record == nullptr) {
+          // purge invalid version record from list
+          if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
+                               pmem_allocator_, hash_table_)) {
+            asm volatile("pause");
+            continue;
+          }
+          entry_ptr->Clear();
+        } else {
+          // repair linkage of checkpoint version
+          if (valid_version_record != next_record) {
+            if (!Skiplist::Replace(next_record, valid_version_record,
+                                   hash_hint.spin, nullptr, pmem_allocator_,
+                                   hash_table_)) {
+              continue;
+            }
+          }
+
+          assert(valid_version_record != nullptr);
+          kvdk_assert(hash_entry.header.offset_type == HashOffsetType::DLRecord,
+                      "wrong hash offset type in repair skiplist linkage");
+          entry_ptr->header.data_type = valid_version_record->entry.meta.type;
+          SkiplistNode *dram_node =
+              Skiplist::NewNodeBuild(valid_version_record);
+          if (dram_node != nullptr) {
+            entry_ptr->index.skiplist_node = dram_node;
+            entry_ptr->header.offset_type = HashOffsetType::SkiplistNode;
+            cur_node->RelaxedSetNext(1, dram_node);
+            dram_node->RelaxedSetNext(1, nullptr);
+            cur_node = dram_node;
+          } else {
+            entry_ptr->index.dl_record = valid_version_record;
+          }
+          visiting_record = valid_version_record;
+        }
+        batchPurgeAndFree(invalid_records);
+        break;
       }
     } else {
       cur_node->RelaxedSetNext(1, nullptr);
@@ -670,9 +853,9 @@ Status SortedCollectionRebuilder::DealWithFirstHeight(uint64_t thread_id,
   return Status::Ok;
 }
 
-void SortedCollectionRebuilder::DealWithOtherHeight(
-    uint64_t thread_id, SkiplistNode *cur_node, int height,
-    const std::shared_ptr<PMEMAllocator> &pmem_allocator) {
+void SortedCollectionRebuilder::dealWithOtherHeight(uint64_t thread_id,
+                                                    SkiplistNode *cur_node,
+                                                    int height) {
   SkiplistNode *visited_node = cur_node;
   bool first_visited = true;
   while (true) {
@@ -700,8 +883,8 @@ void SortedCollectionRebuilder::DealWithOtherHeight(
       break;
     }
     // continue to find next
-    uint64_t next_offset = pmem_allocator->addr2offset(next_node->record);
-    if (entries_offsets_.find(next_offset) == entries_offsets_.end()) {
+    uint64_t next_offset = pmem_allocator_->addr2offset(next_node->record);
+    if (record_offsets_.find(next_offset) == record_offsets_.end()) {
       visited_node = next_node;
     } else {
       if (cur_node->Height() >= height) {
@@ -713,46 +896,94 @@ void SortedCollectionRebuilder::DealWithOtherHeight(
   }
 }
 
-void SortedCollectionRebuilder::UpdateEntriesOffset(const KVEngine *engine) {
+Status SortedCollectionRebuilder::updateRecordOffsets() {
   std::unordered_map<uint64_t, SkiplistNodeInfo> new_kvs;
   std::unordered_map<uint64_t, SkiplistNodeInfo>::iterator it =
-      entries_offsets_.begin();
-  while (it != entries_offsets_.end()) {
+      record_offsets_.begin();
+  while (it != record_offsets_.end()) {
     DataEntry data_entry;
     HashEntry *entry_ptr = nullptr;
     HashEntry hash_entry;
     SkiplistNode *node = nullptr;
-    DLRecord *cur_record =
-        engine->pmem_allocator_->offset2addr<DLRecord>(it->first);
-    StringView key = cur_record->Key();
+    DLRecord *cur_record = pmem_allocator_->offset2addr<DLRecord>(it->first);
+    StringView internal_key = cur_record->Key();
+    auto hash_hint = hash_table_->GetHint(internal_key);
+    while (true) {
+      std::vector<DLRecord *> invalid_version_records;
+      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+      Status s =
+          hash_table_->SearchForRead(hash_hint, internal_key, SortedRecordType,
+                                     &entry_ptr, &hash_entry, &data_entry);
+      if (s == Status::NotFound) {
+        it = record_offsets_.erase(it);
+        continue;
+      }
 
-    Status s = engine->hash_table_->SearchForRead(
-        engine->hash_table_->GetHint(key), key, SortedRecordType, &entry_ptr,
-        &hash_entry, &data_entry);
-    assert(s == Status::Ok || s == Status::NotFound);
-    if (s == Status::NotFound ||
-        hash_entry.header.offset_type == HashOffsetType::DLRecord) {
-      it = entries_offsets_.erase(it);
-      continue;
-    }
-    if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
-      node = hash_entry.index.skiplist->header();
-    } else if (hash_entry.header.offset_type == HashOffsetType::SkiplistNode) {
-      node = hash_entry.index.skiplist_node;
-    }
-    assert(node && "should be not empty!");
+      if (s != Status::Ok) {
+        return Status::Abort;
+      }
 
-    // remove old kv;
-    if (data_entry.meta.timestamp > cur_record->entry.meta.timestamp) {
-      it = entries_offsets_.erase(it);
-      new_kvs.insert(
-          {engine->pmem_allocator_->addr2offset(node->record), {false, node}});
-    } else {
-      it->second.visited_node = node;
-      it++;
+      if (hash_entry.header.offset_type == HashOffsetType::Skiplist) {
+        node = hash_entry.index.skiplist->header();
+        it->second.node = node;
+        it++;
+      } else {
+        kvdk_assert(hash_entry.header.offset_type == HashOffsetType::DLRecord,
+                    "wrong hash offset type in repair skiplist linkage");
+        it = record_offsets_.erase(it);
+        cur_record = hash_entry.index.dl_record;
+        DLRecord *valid_version_record = FindValidVersion(
+            hash_entry.index.dl_record, &invalid_version_records);
+        if (valid_version_record == nullptr) {
+          // purge invalid version record from list
+          if (!Skiplist::Purge(hash_entry.index.dl_record, hash_hint.spin,
+                               nullptr, pmem_allocator_, hash_table_)) {
+            continue;
+          }
+          entry_ptr->Clear();
+        } else {
+          // repair linkage of checkpoint version
+          if (valid_version_record != hash_entry.index.dl_record) {
+            if (!Skiplist::Replace(hash_entry.index.dl_record,
+                                   valid_version_record, hash_hint.spin,
+                                   nullptr, pmem_allocator_, hash_table_)) {
+              continue;
+            }
+          }
+          assert(valid_version_record != nullptr);
+          entry_ptr->header.data_type = valid_version_record->entry.meta.type;
+          node = Skiplist::NewNodeBuild(valid_version_record);
+
+          if (node != nullptr) {
+            entry_ptr->index.skiplist_node = node;
+            entry_ptr->header.offset_type = HashOffsetType::SkiplistNode;
+            new_kvs.insert({pmem_allocator_->addr2offset(valid_version_record),
+                            {false, node}});
+          } else {
+            entry_ptr->index.dl_record = valid_version_record;
+            continue;
+          }
+        }
+      }
+      batchPurgeAndFree(invalid_version_records);
+      break;
     }
   }
-  entries_offsets_.insert(new_kvs.begin(), new_kvs.end());
+  record_offsets_.insert(new_kvs.begin(), new_kvs.end());
+  return Status::Ok;
+}
+
+SkiplistNode *Skiplist::NewNodeBuild(DLRecord *pmem_record) {
+  SkiplistNode *dram_node = nullptr;
+  auto height = Skiplist::RandomHeight();
+  if (height > 0) {
+    StringView user_key = UserKey(pmem_record);
+    dram_node = SkiplistNode::NewNode(user_key, pmem_record, height);
+    if (dram_node == nullptr) {
+      GlobalLogger.Error("Memory overflow in Skiplist::NewNodeBuild\n");
+    }
+  }
+  return dram_node;
 }
 
 } // namespace KVDK_NAMESPACE

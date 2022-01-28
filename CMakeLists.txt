@@ -33,7 +33,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
 else ()
     add_compile_definitions(DEBUG_CHECK)
     add_compile_definitions(DEBUG_LEVEL=1)
-endif()
+endif ()
 
 # code coverage
 if (COVERAGE)
@@ -62,7 +62,8 @@ set(SOURCES
         engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/queue.cpp
-    )
+        engine/version/old_records_cleaner.cpp
+        )
 
 # .a library
 add_library(engine SHARED ${SOURCES})
@@ -71,7 +72,7 @@ target_link_libraries(engine PUBLIC pthread pmem gflags hwloc)
 
 configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
-	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 set(KVDK_PUBLIC_HEADERS
     ${PROJECT_SOURCE_DIR}/include/kvdk/collection.hpp
@@ -90,9 +91,9 @@ set(KVDK_PUBLIC_HEADERS
 set_target_properties(engine PROPERTIES PUBLIC_HEADER "${KVDK_PUBLIC_HEADERS}")
 
 install(TARGETS engine
-		PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
-		LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-		RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kvdk
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # executables
 add_executable(bench benchmark/bench.cpp)

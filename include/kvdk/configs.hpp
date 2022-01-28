@@ -17,17 +17,20 @@ enum class LogLevel : uint8_t {
   Error,
 };
 
+// A snapshot indicates a immutable view of a KVDK engine at a certain time
+struct Snapshot {};
+
 struct Configs {
-  // Max number of write threads.
+  // Max number of access threads to read/write data to kvdk instance.
   //
-  // Notice that the allocated resources of a write thread would be released
-  // only if the thread exited.
-  uint64_t max_write_threads = 48;
+  // Notice that the allocated resources of a access thread would be released
+  // only if the thread exited or call KVEngine::ReleaseAccessThread().
+  uint64_t max_access_threads = 48;
 
   // Size of PMem space to store KV data, this is not scalable in current
   // edition.
   //
-  // Notice that it should be larger than (max_write_threads *
+  // Notice that it should be larger than (max_access_threads *
   // pmem_segment_blocks  * pmem_block_size)
   // TODO: sacle out
   uint64_t pmem_file_size = (256ULL << 30);
@@ -45,7 +48,7 @@ struct Configs {
 
   // The number of blocks in a PMem segment
   //
-  // A PMem segment is a piece of private space of a write thread, so each
+  // A PMem segment is a piece of private space of a access thread, so each
   // thread can allocate space without contention. It also decides the max size
   // of (key + value), which is slightly smaller than
   // (pmem_block_size * pmem_segment_blocks)
@@ -113,6 +116,13 @@ struct Configs {
   // recovery a skiplist. The optimization can get better performance when
   // having few large skiplists. Default is to close optimization.
   bool opt_large_sorted_collection_restore = false;
+
+  // If a checkpoint is made in last open, recover the instance to the
+  // checkpoint version if this true
+  //
+  // Notice: If opening a backup instance, this will always be set to true
+  // during recovery.
+  bool recover_to_checkpoint = false;
 };
 
 } // namespace KVDK_NAMESPACE

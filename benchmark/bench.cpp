@@ -82,7 +82,7 @@ DEFINE_bool(
     "Populate pmem space while creating a new instance. This can improve write "
     "performance in runtime, but will take long time to init the instance");
 
-DEFINE_int32(max_write_threads, 32, "Max write threads of the instance");
+DEFINE_int32(max_access_threads, 32, "Max access threads of the instance");
 
 DEFINE_uint64(space, (256ULL << 30), "Max usable PMem space of the instance");
 
@@ -448,8 +448,8 @@ void ProcessBenchmarkConfigs() {
   if (FLAGS_fill || FLAGS_key_distribution == "uniform") {
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
-    operations_per_thread = FLAGS_num_kv / FLAGS_max_write_threads + 1;
-    for (size_t i = 0; i < FLAGS_max_write_threads; i++) {
+    operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
+    for (size_t i = 0; i < FLAGS_max_access_threads; i++) {
       ranges.emplace_back(i * operations_per_thread,
                           (i + 1) * operations_per_thread);
     }
@@ -481,7 +481,7 @@ int main(int argc, char **argv) {
   if (bench_data_type != DataType::Blackhole) {
     Configs configs;
     configs.populate_pmem_space = FLAGS_populate;
-    configs.max_write_threads = FLAGS_max_write_threads;
+    configs.max_access_threads = FLAGS_max_access_threads;
     configs.pmem_file_size = FLAGS_space;
     configs.opt_large_sorted_collection_restore =
         FLAGS_opt_large_sorted_collection_restore;
@@ -523,7 +523,7 @@ int main(int argc, char **argv) {
         throw std::runtime_error{"Fail to create Sorted collection"};
       }
     }
-    engine->ReleaseWriteThread();
+    engine->ReleaseAccessThread();
   }
 
   has_finished.resize(FLAGS_threads, 0);

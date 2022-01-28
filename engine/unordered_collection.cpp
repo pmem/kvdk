@@ -26,7 +26,7 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
         dlinked_list_.pmem_allocator_ptr_->offset2addr_checked(
             offset_list_record),
         list_record_space.size, timestamp, RecordType::DlistRecord,
-        dlinked_list_.Head().GetCurrentOffset(),
+        kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
         CollectionUtils::ID2String(ID()));
   }

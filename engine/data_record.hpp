@@ -15,34 +15,34 @@ namespace KVDK_NAMESPACE {
 enum RecordType : uint16_t {
   Empty = 0,
   StringDataRecord = (1 << 0),
-  // Notice: StringDeleteReocrd is unused now, but will be used while
-  // implementing mvcc, so we do not remove it now
   StringDeleteRecord = (1 << 1),
 
   SortedDataRecord = (1 << 2),
-  SortedHeaderRecord = (1 << 3),
+  SortedDeleteRecord = (1 << 3),
+  SortedHeaderRecord = (1 << 4),
 
-  DlistDataRecord = (1 << 4),
-  DlistHeadRecord = (1 << 5),
-  DlistTailRecord = (1 << 6),
-  DlistRecord = (1 << 7),
+  DlistDataRecord = (1 << 5),
+  DlistHeadRecord = (1 << 6),
+  DlistTailRecord = (1 << 7),
+  DlistRecord = (1 << 8),
 
-  QueueDataRecord = (1 << 8),
-  QueueHeadRecord = (1 << 9),
-  QueueTailRecord = (1 << 10),
-  QueueRecord = (1 << 11),
+  QueueDataRecord = (1 << 9),
+  QueueHeadRecord = (1 << 10),
+  QueueTailRecord = (1 << 11),
+  QueueRecord = (1 << 12),
 
   Padding = 1 << 15,
 };
 
-const uint16_t SortedRecordType = (SortedDataRecord | SortedHeaderRecord);
+const uint16_t SortedRecordType =
+    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);
 
 const uint16_t DLRecordType =
-    (SortedDataRecord | SortedHeaderRecord | DlistDataRecord | DlistHeadRecord |
-     DlistTailRecord | DlistRecord | QueueDataRecord | QueueHeadRecord |
-     QueueTailRecord | QueueRecord);
+    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
+     DlistDataRecord | DlistHeadRecord | DlistTailRecord | DlistRecord |
+     QueueDataRecord | QueueHeadRecord | QueueTailRecord | QueueRecord);
 
-const uint16_t DeleteRecordType = (StringDeleteRecord);
+const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
 
 const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
@@ -51,8 +51,6 @@ struct DataHeader {
   DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {}
 
   uint32_t checksum;
-  // Record size on Pmem in the unit of block
-  // TODO jiayu: use actual size
   uint32_t record_size;
 };
 
@@ -71,7 +69,6 @@ struct DataMeta {
 
 // Header and metadata of a data record
 struct DataEntry {
-  // TODO jiayu: use typename for timestamp and record type instead of a number
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
             TimeStampType _timestamp, RecordType _record_type,
             uint16_t _key_size, uint32_t _value_size)
@@ -93,6 +90,7 @@ struct DataEntry {
 struct StringRecord {
 public:
   DataEntry entry;
+  PMemOffsetType older_version_record;
   char data[0];
 
   // Construct a StringRecord instance at target_address. As the record need
@@ -103,18 +101,19 @@ public:
   static StringRecord *
   ConstructStringRecord(void *target_address, uint32_t _record_size,
                         TimeStampType _timestamp, RecordType _record_type,
+                        PMemOffsetType _older_version_record,
                         const StringView &_key, const StringView &_value) {
     StringRecord *record = new (target_address)
-        StringRecord(_record_size, _timestamp, _record_type, _key, _value);
+        StringRecord(_record_size, _timestamp, _record_type,
+                     _older_version_record, _key, _value);
     return record;
   }
 
   // Construct and persist a string record at pmem address "addr"
-  static StringRecord *PersistStringRecord(void *addr, uint32_t record_size,
-                                           TimeStampType timestamp,
-                                           RecordType type,
-                                           const StringView &key,
-                                           const StringView &value);
+  static StringRecord *
+  PersistStringRecord(void *addr, uint32_t record_size, TimeStampType timestamp,
+                      RecordType type, PMemOffsetType older_version_record,
+                      const StringView &key, const StringView &value);
 
   void Destroy() { entry.Destroy(); }
 
@@ -144,10 +143,11 @@ public:
 
 private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
-               RecordType _record_type, const StringView &_key,
-               const StringView &_value)
+               RecordType _record_type, PMemOffsetType _older_version_record,
+               const StringView &_key, const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
-              _value.size()) {
+              _value.size()),
+        older_version_record(_older_version_record) {
     assert(_record_type == StringDataRecord ||
            _record_type == StringDeleteRecord);
     memcpy(data, _key.data(), _key.size());
@@ -158,9 +158,7 @@ private:
   // check validation of k_size and v_size, as record may be left corrupted
   bool ValidateRecordSize() {
     return entry.meta.k_size + entry.meta.v_size + sizeof(StringRecord) <=
-           entry.header.record_size * 64 /* TODO jiayu: 64 is default block
-                                            size. use actual size instead. */
-        ;
+           entry.header.record_size;
   }
 
   uint32_t Checksum() {
@@ -171,12 +169,12 @@ private:
 };
 
 // doubly linked record
-// TODO jiayu: use typename for next and prev pointer instead of a number
 struct DLRecord {
 public:
   DataEntry entry;
-  uint64_t prev;
-  uint64_t next;
+  PMemOffsetType older_version_offset;
+  PMemOffsetType prev;
+  PMemOffsetType next;
   char data[0];
 
   // Construct a DLRecord instance at "target_address". As the record need
@@ -186,11 +184,14 @@ public:
   // should no smaller than sizeof(DLRecord) + key size + value size
   static DLRecord *ConstructDLRecord(void *target_address, uint32_t record_size,
                                      TimeStampType timestamp,
-                                     RecordType record_type, uint64_t prev,
-                                     uint64_t next, const StringView &key,
+                                     RecordType record_type,
+                                     PMemOffsetType older_version_record,
+                                     uint64_t prev, uint64_t next,
+                                     const StringView &key,
                                      const StringView &value) {
     DLRecord *record = new (target_address)
-        DLRecord(record_size, timestamp, record_type, prev, next, key, value);
+        DLRecord(record_size, timestamp, record_type, older_version_record,
+                 prev, next, key, value);
     return record;
   }
 
@@ -219,17 +220,19 @@ public:
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord *PersistDLRecord(void *addr, uint32_t record_size,
                                    TimeStampType timestamp, RecordType type,
-                                   uint64_t prev, uint64_t next,
+                                   PMemOffsetType older_version_record,
+                                   PMemOffsetType prev, PMemOffsetType next,
                                    const StringView &key,
                                    const StringView &value);
 
 private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,
-           RecordType _record_type, uint64_t _prev, uint64_t _next,
-           const StringView &_key, const StringView &_value)
+           RecordType _record_type, PMemOffsetType _older_version_record,
+           PMemOffsetType _prev, PMemOffsetType _next, const StringView &_key,
+           const StringView &_value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        prev(_prev), next(_next) {
+        older_version_offset(_older_version_record), prev(_prev), next(_next) {
     assert(_record_type & DLRecordType);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());

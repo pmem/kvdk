@@ -29,7 +29,7 @@ extern "C" {
   GEN(NotSupported)                                                            \
   GEN(MapError)                                                                \
   GEN(BatchOverflow)                                                           \
-  GEN(TooManyWriteThreads)                                                     \
+  GEN(TooManyAccessThreads)                                                    \
   GEN(InvalidDataSize)                                                         \
   GEN(IOError)                                                                 \
   GEN(InvalidConfiguration)                                                    \

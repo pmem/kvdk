@@ -26,6 +26,7 @@ protected:
   Engine *engine = nullptr;
   Configs configs;
   std::string db_path;
+  std::string backup_path;
   std::string str_pool;
 
   virtual void SetUp() override {
@@ -39,9 +40,11 @@ protected:
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
     configs.log_level = LogLevel::All;
-    db_path = "/mnt/pmem0/data";
+    db_path = "/mnt/pmem0/kvdk-test";
+    backup_path = "/mnt/pmem0/kvdk-test-backup";
     char cmd[1024];
-    sprintf(cmd, "rm -rf %s\n", db_path.c_str());
+    sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
+            backup_path.c_str());
     int res __attribute__((unused)) = system(cmd);
   }
 
@@ -54,14 +57,15 @@ protected:
   void Destroy() {
     // delete db_path
     char cmd[1024];
-    sprintf(cmd, "rm -rf %s\n", db_path.c_str());
+    sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
+            backup_path.c_str());
     int res __attribute__((unused)) = system(cmd);
   }
 };
 
 TEST_F(EngineBasicTest, TestThreadManager) {
-  int max_write_threads = 1;
-  configs.max_write_threads = max_write_threads;
+  int max_access_threads = 1;
+  configs.max_access_threads = max_access_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key("k");
@@ -69,22 +73,170 @@ TEST_F(EngineBasicTest, TestThreadManager) {
 
   ASSERT_EQ(engine->Set(key, val), Status::Ok);
 
-  // Reach max write threads
+  // Reach max access threads
   auto s = std::async(&Engine::Set, engine, key, val);
-  ASSERT_EQ(s.get(), Status::TooManyWriteThreads);
-  // Manually release write thread
-  engine->ReleaseWriteThread();
+  ASSERT_EQ(s.get(), Status::TooManyAccessThreads);
+  // Manually release access thread
+  engine->ReleaseAccessThread();
   s = std::async(&Engine::Set, engine, key, val);
   ASSERT_EQ(s.get(), Status::Ok);
-  // Release write thread on thread exits
+  // Release access thread on thread exits
   s = std::async(&Engine::Set, engine, key, val);
   ASSERT_EQ(s.get(), Status::Ok);
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
+  uint32_t num_threads = 16;
+  int count = 100;
+  configs.max_access_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::string sorted_collection("sorted_collection");
+  Collection *sorted_collection_ptr;
+  ASSERT_EQ(
+      engine->CreateSortedCollection(sorted_collection, &sorted_collection_ptr),
+      Status::Ok);
+
+  bool snapshot_done(false);
+  std::atomic<int> set_finish_threads(0);
+  SpinMutex spin;
+  std::condition_variable_any cv;
+
+  // Insert kv, then update/delete them and insert new kv after snapshot
+  auto WriteThread = [&](uint32_t id) {
+    int cnt = count;
+    // Insert
+    while (cnt--) {
+      // Insert
+      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
+      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
+      ASSERT_EQ(engine->Set(key1, key1), Status::Ok);
+      ASSERT_EQ(engine->Set(key2, key2), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key1, key1), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key2, key2), Status::Ok);
+    }
+    // Wait snapshot done
+    set_finish_threads.fetch_add(1);
+    {
+      std::unique_lock<SpinMutex> ul(spin);
+      while (!snapshot_done) {
+        cv.wait(ul);
+      }
+    }
+
+    cnt = count;
+    // Update / Delete, and insert new
+    while (cnt--) {
+      std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
+      std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
+      std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
+      ASSERT_EQ(engine->Set(key1, "updated " + key1), Status::Ok);
+      ASSERT_EQ(engine->Delete(key1), Status::Ok);
+      ASSERT_EQ(engine->Set(key3, key3), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key1, "updated " + key1),
+                Status::Ok);
+      ASSERT_EQ(engine->SDelete(sorted_collection, key1), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection, key3, key3), Status::Ok);
+    }
+  };
+
+  std::vector<std::thread> ths;
+  for (int i = 0; i < num_threads; i++) {
+    ths.emplace_back(std::thread(WriteThread, i));
+  }
+  // wait until all threads insert done
+  while (set_finish_threads.load() != num_threads) {
+    asm volatile("pause");
+  }
+  Snapshot *snapshot = engine->GetSnapshot(true);
+  {
+    std::lock_guard<SpinMutex> ul(spin);
+    snapshot_done = true;
+    cv.notify_all();
+  }
+  engine->Backup(backup_path, snapshot);
+  for (auto &t : ths) {
+    t.join();
+  }
+  delete engine;
+
+  std::vector<int> opt_restore_skiplists{0, 1};
+  for (auto is_opt : opt_restore_skiplists) {
+    configs.opt_large_sorted_collection_restore = is_opt;
+    Engine *backup_engine;
+    ASSERT_EQ(
+        Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
+        Status::Ok);
+    configs.recover_to_checkpoint = true;
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+              Status::Ok);
+
+    // Test backup and checkpoint instance
+    // All changes after snapshot should not be seen in backup and checkpoint
+    // Writes on backup should work well
+    for (uint32_t id = 0; id < num_threads; id++) {
+      int cnt = count;
+      std::string got_v1, got_v2, got_v3;
+      while (cnt--) {
+        std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
+        std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
+        std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
+
+        ASSERT_EQ(backup_engine->Get(key1, &got_v1), Status::Ok);
+        ASSERT_EQ(backup_engine->Get(key2, &got_v2), Status::Ok);
+        ASSERT_EQ(backup_engine->Get(key3, &got_v3), Status::NotFound);
+        ASSERT_EQ(got_v1, key1);
+        ASSERT_EQ(got_v2, key2);
+        ASSERT_EQ(engine->Get(key1, &got_v1), Status::Ok);
+        ASSERT_EQ(engine->Get(key2, &got_v2), Status::Ok);
+        ASSERT_EQ(engine->Get(key3, &got_v3), Status::NotFound);
+        ASSERT_EQ(got_v1, key1);
+        ASSERT_EQ(got_v2, key2);
+
+        ASSERT_EQ(backup_engine->SGet(sorted_collection, key1, &got_v1),
+                  Status::Ok);
+        ASSERT_EQ(backup_engine->SGet(sorted_collection, key2, &got_v2),
+                  Status::Ok);
+        ASSERT_EQ(backup_engine->SGet(sorted_collection, key3, &got_v3),
+                  Status::NotFound);
+        ASSERT_EQ(got_v1, key1);
+        ASSERT_EQ(got_v2, key2);
+        ASSERT_EQ(engine->SGet(sorted_collection, key1, &got_v1), Status::Ok);
+        ASSERT_EQ(engine->SGet(sorted_collection, key2, &got_v2), Status::Ok);
+        ASSERT_EQ(engine->SGet(sorted_collection, key3, &got_v3),
+                  Status::NotFound);
+        ASSERT_EQ(got_v1, key1);
+        ASSERT_EQ(got_v2, key2);
+      }
+    }
+
+    uint64_t backup_iter_cnt = 0;
+    uint64_t checkpoint_iter_cnt = 0;
+    auto backup_iter = backup_engine->NewSortedIterator(sorted_collection);
+    auto checkpoint_iter = engine->NewSortedIterator(sorted_collection);
+    backup_iter->SeekToFirst();
+    checkpoint_iter->SeekToFirst();
+    while (backup_iter->Valid()) {
+      ASSERT_TRUE(checkpoint_iter->Valid());
+      backup_iter_cnt++;
+      checkpoint_iter_cnt++;
+      ASSERT_EQ(backup_iter->Key(), backup_iter->Value());
+      ASSERT_EQ(checkpoint_iter->Key(), checkpoint_iter->Value());
+      ASSERT_EQ(checkpoint_iter->Key(), backup_iter->Key());
+      backup_iter->Next();
+      checkpoint_iter->Next();
+    }
+    ASSERT_EQ(backup_iter_cnt, num_threads * count * 2);
+    delete engine;
+    delete backup_engine;
+  }
+}
+
 TEST_F(EngineBasicTest, TestBasicStringOperations) {
   int num_threads = 16;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -95,7 +247,7 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
   ASSERT_EQ(val, got_val);
   ASSERT_EQ(engine->Delete(key), Status::Ok);
   ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
-  engine->ReleaseWriteThread();
+  engine->ReleaseAccessThread();
 
   auto SetGetDelete = [&](uint32_t id) {
     std::string val1, val2, got_val1, got_val2;
@@ -133,7 +285,7 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
 
 TEST_F(EngineBasicTest, TestBatchWrite) {
   int num_threads = 16;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   int batch_size = 10;
@@ -194,7 +346,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
 TEST_F(EngineBasicTest, TestFreeList) {
   // TODO: Add more cases
   configs.pmem_segment_blocks = 4 * kMinPaddingBlocks;
-  configs.max_write_threads = 1;
+  configs.max_access_threads = 1;
   configs.pmem_block_size = 64;
   configs.pmem_file_size =
       configs.pmem_segment_blocks * configs.pmem_block_size;
@@ -220,6 +372,9 @@ TEST_F(EngineBasicTest, TestFreeList) {
   // key2 will be stored in 4th chunk
   ASSERT_EQ(engine->Set(key2, small_value), Status::Ok);
 
+  // wait for updated space be freed
+  sleep(4 * configs.background_work_interval);
+
   // new key 1 and new key 2 will be stored in updated 1st and 2nd chunks
   ASSERT_EQ(engine->Set(key1, small_value), Status::Ok);
 
@@ -229,7 +384,7 @@ TEST_F(EngineBasicTest, TestFreeList) {
   ASSERT_EQ(engine->Set(key3, large_value), Status::PmemOverflow);
 
   // Wait bg thread finish merging space of 3th and 4th chunks
-  sleep(2);
+  sleep(4 * configs.background_work_interval);
 
   // large key3 will be stored in merged 3th and 4th chunks
   ASSERT_EQ(engine->Set(key3, large_value), Status::Ok);
@@ -248,7 +403,7 @@ TEST_F(EngineBasicTest, TestFreeList) {
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
   int num_threads = 16;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::vector<int> n_local_entries(num_threads, 0);
@@ -365,7 +520,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
 TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   const std::string global_skiplist = "skiplist";
   int num_threads = 16;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::atomic<int> n_global_entries{0};
@@ -383,7 +538,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   ASSERT_EQ(engine->SDelete(global_skiplist, key), Status::Ok);
   --n_global_entries;
   ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::NotFound);
-  engine->ReleaseWriteThread();
+  engine->ReleaseAccessThread();
 
   auto SSetSGetSDelete = [&](uint32_t id) {
     std::string k1, k2, v1, v2;
@@ -525,7 +680,7 @@ TEST_F(EngineBasicTest, TestSeek) {
 
 TEST_F(EngineBasicTest, TestStringRestore) {
   int num_threads = 16;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -586,7 +741,7 @@ TEST_F(EngineBasicTest, TestStringRestore) {
 
 TEST_F(EngineBasicTest, TestSortedRestore) {
   int num_threads = 16;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -632,7 +787,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   for (auto is_opt : opt_restore_skiplists) {
     GlobalLogger.Info("Restore with opt_large_sorted_collection_restore: %d\n",
                       is_opt);
-    configs.max_write_threads = num_threads;
+    configs.max_access_threads = num_threads;
     configs.opt_large_sorted_collection_restore = is_opt;
     // reopen and restore engine and try gets
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -735,7 +890,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   int num_threads = 48;
   int num_collections = 16;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   configs.opt_large_sorted_collection_restore = true;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -804,7 +959,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
   int num_threads = 16;
   int count = 100;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -881,7 +1036,7 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
 TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   int num_threads = 16;
   int count = 100;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -958,7 +1113,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   int count = 100;
   int num_threads = 16;
 
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1174,14 +1329,14 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   delete engine;
 
   // reopen and restore engine
-  configs.max_write_threads = 1;
+  configs.max_access_threads = 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
-  LaunchNThreads(num_threads, IteratingThroughGlobal);
-  LaunchNThreads(num_threads, IteratingThroughThreadLocal);
-  LaunchNThreads(num_threads, HGetGlobal);
-  LaunchNThreads(num_threads, HGetThreadLocal);
+  LaunchNThreads(1, IteratingThroughGlobal);
+  LaunchNThreads(1, IteratingThroughThreadLocal);
+  LaunchNThreads(1, HGetGlobal);
+  LaunchNThreads(1, HGetThreadLocal);
 
   delete engine;
 }
@@ -1189,7 +1344,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
 TEST_F(EngineBasicTest, TestLocalQueue) {
   int num_threads = 16;
   int count = 100;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -1244,7 +1399,7 @@ TEST_F(EngineBasicTest, TestLocalQueue) {
 TEST_F(EngineBasicTest, TestQueueRestoration) {
   int num_threads = 16;
   int count = 100;
-  configs.max_write_threads = num_threads;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -1314,7 +1469,7 @@ TEST_F(EngineBasicTest, TestQueueRestoration) {
 TEST_F(EngineBasicTest, TestStringHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
-  configs.max_write_threads = n_thread_writing;
+  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1324,7 +1479,7 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   std::string val2(1023, 'b');
 
   ASSERT_EQ(engine->Set(key, val1), Status::Ok);
-  engine->ReleaseWriteThread();
+  engine->ReleaseAccessThread();
 
   auto EvenWriteOddRead = [&](uint32_t id) {
     for (size_t i = 0; i < count; i++) {
@@ -1366,7 +1521,7 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
 TEST_F(EngineBasicTest, TestSortedHotspot) {
   int n_thread_reading = 16;
   int n_thread_writing = 16;
-  configs.max_write_threads = n_thread_writing;
+  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1382,7 +1537,7 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
   for (const std::string &key : keys) {
     ASSERT_EQ(engine->SSet(collection_name, key, val1), Status::Ok);
-    engine->ReleaseWriteThread();
+    engine->ReleaseAccessThread();
 
     auto EvenWriteOddRead = [&](uint32_t id) {
       for (size_t i = 0; i < count; i++) {
@@ -1425,7 +1580,7 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   using kvpair = std::pair<std::string, std::string>;
   int threads = 16;
-  configs.max_write_threads = threads;
+  configs.max_access_threads = threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1533,7 +1688,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
   // T4: delete {"key0", "val0"} {"key3", "val3"} ... {"key18", "val18"}
   {
     Configs test_config = configs;
-    test_config.max_write_threads = 16;
+    test_config.max_access_threads = 16;
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
               Status::Ok);
 
@@ -1583,7 +1738,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
       ASSERT_EQ(engine->Set(key, val), Status::Ok);
     });
 
-   // thread 4
+    // thread 4
     ts.emplace_back([&]() {
       TEST_SYNC_POINT("Test::Delete::Start::0");
       for (int i = 0; i < batch_size; i += 3) {
@@ -1617,7 +1772,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
 
 TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
   Configs test_config = configs;
-  test_config.max_write_threads = 16;
+  test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
 
@@ -1682,9 +1837,12 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     for (int i = 0; i < batch_size; ++i) {
       std::string key = "key" + std::to_string(i);
       std::string val = "val*" + std::to_string(i);
-      wb.Put(key, val);
+
       if (i % 4 == 0) {
+        ASSERT_EQ(engine->Set(key, val), Status::Ok);
         wb.Delete(key);
+      } else {
+        wb.Put(key, val);
       }
     }
     try {
@@ -1697,7 +1855,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
         std::string got_val;
         std::string key = "key" + std::to_string(i);
         Status s = engine->Get(key, &got_val);
-        if (i == 0) {
+        if (i % 4 == 0) {
           ASSERT_EQ(s, Status::NotFound);
         } else {
           ASSERT_EQ(s, Status::Ok);
@@ -1716,7 +1874,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
 // Then Repair
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   Configs test_config = configs;
-  test_config.max_write_threads = 16;
+  test_config.max_access_threads = 16;
 
   std::atomic<int> update_num(1);
   int cnt = 20;
@@ -1786,7 +1944,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
 
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
   Configs test_config = configs;
-  test_config.max_write_threads = 16;
+  test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
 
@@ -1854,7 +2012,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
 //   thread2: iter
 TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   Configs test_config = configs;
-  test_config.max_write_threads = 16;
+  test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
   std::vector<std::thread> ths;

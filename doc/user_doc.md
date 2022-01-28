@@ -385,8 +385,8 @@ A KVDK instance can be accessed by multiple read and write threads safely. Synch
 
 Users can configure KVDK to adapt to their system environment by setting up a `kvdk::Configs` object and passing it to 'kvdk::Engine::Open' when initializing a KVDK instance.
 
-### Max Write Threads
-Maximum number of write threads is specified by `kvdk::Configs::max_write_threads`. Defaulted to 48. It's recommended to set this number to the number of threads provided by CPU. 
+### Max Access Threads
+Maximum number of access threads is specified by `kvdk::Configs::max_access_threads`. Defaulted to 48. It's recommended to set this number to the number of threads provided by CPU. 
 
 ### PMem File Size
 `kvdk::Configs::pmem_file_size` specifies the space allocated to a KVDK instance. Defaulted to 2^38Bytes = 256GB.
