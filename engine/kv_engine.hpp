@@ -74,8 +74,9 @@ public:
               const StringView value) override;
   Status SDelete(const StringView collection,
                  const StringView user_key) override;
-  std::shared_ptr<Iterator>
-  NewSortedIterator(const StringView collection) override;
+  Iterator *NewSortedIterator(const StringView collection,
+                              Snapshot *snapshot) override;
+  void ReleaseSortedIterator(Iterator *sorted_iterator) override;
 
   // Unordered Collection
   virtual Status HGet(StringView const collection_name, StringView const key,

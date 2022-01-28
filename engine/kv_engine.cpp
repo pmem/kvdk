@@ -212,14 +212,33 @@ Status KVEngine::CreateSortedCollection(const StringView collection_name,
   return s;
 }
 
-std::shared_ptr<Iterator>
-KVEngine::NewSortedIterator(const StringView collection) {
+Iterator *KVEngine::NewSortedIterator(const StringView collection,
+                                      Snapshot *snapshot) {
   Skiplist *skiplist;
   Status s =
       FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
+  bool create_snapshot = snapshot == nullptr;
+  if (create_snapshot) {
+    snapshot = GetSnapshot(false);
+  }
+
   return s == Status::Ok
-             ? std::make_shared<SortedIterator>(skiplist, pmem_allocator_)
+             ? new SortedIterator(skiplist, pmem_allocator_,
+                                  static_cast<SnapshotImpl *>(snapshot),
+                                  create_snapshot)
              : nullptr;
+}
+
+void KVEngine::ReleaseSortedIterator(Iterator *sorted_iterator) {
+  if (sorted_iterator == nullptr) {
+    GlobalLogger.Info("pass a nullptr in KVEngine::ReleaseSortedIterator!\n");
+    return;
+  }
+  SortedIterator *iter = static_cast<SortedIterator *>(sorted_iterator);
+  if (iter->own_snapshot_) {
+    ReleaseSnapshot(iter->snapshot_);
+  }
+  delete iter;
 }
 
 Status KVEngine::MaybeInitAccessThread() {

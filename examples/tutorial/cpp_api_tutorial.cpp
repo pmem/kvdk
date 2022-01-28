@@ -14,6 +14,7 @@
 #define DEBUG // For assert
 
 using StringView = pmem::obj::string_view;
+using kvdk::Snapshot;
 
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.
@@ -201,6 +202,7 @@ static void test_iterator() {
   }
 
   printf("Successfully iterated through a sorted named collections.\n");
+  engine->ReleaseSortedIterator(iter);
   return;
 }
 
@@ -296,6 +298,7 @@ static void test_customer_sorted_func() {
     ++i;
   }
   printf("Successfully collections sorted by number.\n");
+  engine->ReleaseSortedIterator(iter);
 }
 
 int main() {
