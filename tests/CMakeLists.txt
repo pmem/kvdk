@@ -1,7 +1,7 @@
 # For kvdk api general test
 set(TEST_SOURCES tests.cpp)
 add_executable(dbtest ${TEST_SOURCES})
-target_link_libraries(dbtest PUBLIC engine gtest gmock gtest_main)
+target_link_libraries(dbtest PUBLIC engine gtest gtest_main)
 
 # For stress tests
 set(TEST_SOURCES2 stress_test.cpp)

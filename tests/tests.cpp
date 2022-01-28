@@ -120,9 +120,11 @@ protected:
                 Status::Ok);
     }
     TestEmptyKey(collection, SetFunc, GetFunc, DeleteFunc);
-    LaunchNThreads(
-        configs.max_access_threads,
-        CreateBasicOperationTest(collection, SetFunc, GetFunc, DeleteFunc));
+    auto global_func = [=](uint64_t id) {
+      this->CreateBasicOperationTest(collection, SetFunc, GetFunc, DeleteFunc,
+                                     id);
+    };
+    LaunchNThreads(configs.max_access_threads, global_func);
   }
 
   void TestLocalCollection(const std::string &collection, SetOpsFunc SetFunc,
@@ -136,29 +138,22 @@ protected:
 
       TestEmptyKey(thread_local_collection, SetFunc, GetFunc, DeleteFunc);
 
-      auto BasicOpFunc = CreateBasicOperationTest(thread_local_collection,
-                                                  SetFunc, GetFunc, DeleteFunc);
-      BasicOpFunc(id);
+      CreateBasicOperationTest(thread_local_collection, SetFunc, GetFunc,
+                               DeleteFunc, id);
     };
     LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
   }
 
-  void SeekIterator(const std::string &collection, Types type,
-                    bool is_local = false) {
-    if (type != Types::Sorted && type != Types::Hash) {
-      return;
-    }
-
+  void SortedSeekIterator(const std::string &collection,
+                          bool is_local = false) {
     auto IteratingThrough = [&](uint32_t id) {
-      std::atomic<int> entries(0);
+      int entries = 0;
       std::string new_collection = collection;
       if (is_local) {
         new_collection += std::to_string(id);
       }
-      auto iter = type == Types::Sorted
-                      ? engine->NewSortedIterator(new_collection)
-                      : engine->NewUnorderedIterator(new_collection).get();
 
+      auto iter = engine->NewSortedIterator(new_collection);
       ASSERT_TRUE(iter != nullptr);
       // forward iterator
       iter->SeekToFirst();
@@ -170,9 +165,7 @@ protected:
           ++entries;
           std::string k = iter->Key();
           iter->Next();
-          if (type == Types::Sorted) {
-            ASSERT_EQ(true, k.compare(prev) > 0);
-          }
+          ASSERT_EQ(true, k.compare(prev) > 0);
           prev = k;
         }
       }
@@ -192,9 +185,56 @@ protected:
           --entries;
           std::string k = iter->Key();
           iter->Prev();
-          if (type == Types::Sorted) {
-            ASSERT_EQ(true, k.compare(next) < 0);
-          }
+          ASSERT_EQ(true, k.compare(next) < 0);
+          next = k;
+        }
+      }
+      ASSERT_EQ(entries, 0);
+      engine->ReleaseSortedIterator(iter);
+    };
+    LaunchNThreads(configs.max_access_threads, IteratingThrough);
+  }
+
+  void UnorderedSeekIterator(const std::string &collection,
+                             bool is_local = false) {
+    auto IteratingThrough = [&](uint32_t id) {
+      int entries = 0;
+      std::string new_collection = collection;
+      if (is_local) {
+        new_collection += std::to_string(id);
+      }
+
+      auto iter = engine->NewUnorderedIterator(new_collection);
+      ASSERT_TRUE(iter != nullptr);
+      // forward iterator
+      iter->SeekToFirst();
+      if (iter->Valid()) {
+        ++entries;
+        std::string prev = iter->Key();
+        iter->Next();
+        while (iter->Valid()) {
+          ++entries;
+          std::string k = iter->Key();
+          iter->Next();
+          prev = k;
+        }
+      }
+      if (is_local) {
+        ASSERT_EQ(cnt, entries);
+      } else {
+        ASSERT_EQ(cnt * configs.max_access_threads, entries);
+      }
+
+      // backward iterator
+      iter->SeekToLast();
+      if (iter->Valid()) {
+        --entries;
+        std::string next = iter->Key();
+        iter->Prev();
+        while (iter->Valid()) {
+          --entries;
+          std::string k = iter->Key();
+          iter->Prev();
           next = k;
         }
       }
@@ -216,41 +256,60 @@ private:
     engine->ReleaseAccessThread();
   }
 
-  std::function<void(uint32_t)>
-  CreateBasicOperationTest(const std::string &collection, SetOpsFunc SetFunc,
-                           GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc) {
-    auto basic_operation_test = [&](uint32_t id) {
-      std::string val1, val2, got_val1, got_val2;
-      int t_cnt = cnt;
-      while (t_cnt--) {
-        std::string key1(std::string(id + 1, 'a') + std::to_string(t_cnt));
-        std::string key2(std::string(id + 1, 'b') + std::to_string(t_cnt));
-        AssignData(val1, fast_random_64() % 1024);
-        AssignData(val2, fast_random_64() % 1024);
+  void CreateBasicOperationTest(const std::string &collection,
+                                SetOpsFunc SetFunc, GetOpsFunc GetFunc,
+                                DeleteOpsFunc DeleteFunc, uint32_t id) {
+    std::string val1, val2, got_val1, got_val2;
+    int t_cnt = cnt;
+    while (t_cnt--) {
+      std::string key1(std::string(id + 1, 'a') + std::to_string(t_cnt));
+      std::string key2(std::string(id + 1, 'b') + std::to_string(t_cnt));
+      AssignData(val1, fast_random_64() % 1024);
+      AssignData(val2, fast_random_64() % 1024);
 
-        // Set
-        ASSERT_EQ(SetFunc(collection, key1, val1), Status::Ok);
-        ASSERT_EQ(SetFunc(collection, key2, val2), Status::Ok);
+      // Set
+      ASSERT_EQ(SetFunc(collection, key1, val1), Status::Ok);
+      ASSERT_EQ(SetFunc(collection, key2, val2), Status::Ok);
 
-        // Get
-        ASSERT_EQ(GetFunc(collection, key1, &got_val1), Status::Ok);
-        ASSERT_EQ(val1, got_val1);
-        ASSERT_EQ(GetFunc(collection, key2, &got_val2), Status::Ok);
-        ASSERT_EQ(val2, got_val2);
+      // Get
+      ASSERT_EQ(GetFunc(collection, key1, &got_val1), Status::Ok);
+      ASSERT_EQ(val1, got_val1);
+      ASSERT_EQ(GetFunc(collection, key2, &got_val2), Status::Ok);
+      ASSERT_EQ(val2, got_val2);
 
-        // Delete
-        ASSERT_EQ(DeleteFunc(collection, key1), Status::Ok);
-        ASSERT_EQ(GetFunc(collection, key1, &got_val1), Status::NotFound);
+      // Delete
+      ASSERT_EQ(DeleteFunc(collection, key1), Status::Ok);
+      ASSERT_EQ(GetFunc(collection, key1, &got_val1), Status::NotFound);
 
-        // Update
-        AssignData(val2, fast_random_64() % 1024);
-        ASSERT_EQ(SetFunc(collection, key2, val2), Status::Ok);
-        ASSERT_EQ(GetFunc(collection, key2, &got_val2), Status::Ok);
-        ASSERT_EQ(got_val2, val2);
-      }
-    };
-    return basic_operation_test;
+      // Update
+      AssignData(val2, fast_random_64() % 1024);
+      ASSERT_EQ(SetFunc(collection, key2, val2), Status::Ok);
+      ASSERT_EQ(GetFunc(collection, key2, &got_val2), Status::Ok);
+      ASSERT_EQ(got_val2, val2);
+    }
   }
+
+  void ForwardIter(Iterator *iter, Types type) {
+    int forward_entries = 0;
+    ASSERT_TRUE(iter != nullptr);
+    // forward iterator
+    iter->SeekToFirst();
+    if (iter->Valid()) {
+      ++forward_entries;
+      std::string prev = iter->Key();
+      iter->Next();
+      while (iter->Valid()) {
+        ++forward_entries;
+        std::string k = iter->Key();
+        iter->Next();
+        if (type == Types::Sorted) {
+          ASSERT_EQ(true, k.compare(prev) > 0);
+        }
+        prev = k;
+      }
+    }
+  }
+  void BackwardIter(Iterator *iter) {}
 
 private:
   // Sequence of option configurations to try
@@ -555,7 +614,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
   do {
     TestLocalCollection("thread_skiplist", SortedSetFunc, SortedGetFunc,
                         SortedDeleteFunc);
-    SeekIterator("thread_skiplist", Types::Sorted, true);
+    SortedSeekIterator("thread_skiplist", true);
   } while (ChangedConfig());
 
   delete engine;
@@ -588,7 +647,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   do {
     TestGlobalCollection(collection, SortedSetFunc, SortedGetFunc,
                          SortedDeleteFunc, Types::Sorted);
-    SeekIterator(collection, Types::Sorted, false);
+    SortedSeekIterator(collection, false);
   } while (ChangedConfig());
   delete engine;
 }
@@ -936,7 +995,7 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
   do {
     TestLocalCollection("thread_unordered", UnorderedSetFunc, UnorderedGetFunc,
                         UnorderedDeleteFunc);
-    SeekIterator("thread_unordered", Types::Hash, true);
+    UnorderedSeekIterator("thread_unordered", true);
   } while (ChangedConfig());
   delete engine;
 }
@@ -964,7 +1023,7 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   do {
     TestGlobalCollection("global_unordered", UnorderedSetFunc, UnorderedGetFunc,
                          UnorderedDeleteFunc, Types::Hash);
-    SeekIterator("global_unordered", Types::Hash, false);
+    UnorderedSeekIterator("global_unordered", false);
   } while (ChangedConfig());
   delete engine;
 }

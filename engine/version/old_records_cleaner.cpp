@@ -214,11 +214,11 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       std::lock_guard<SpinMutex> lg(*hash_entry_lock);
       DLRecord *hash_indexed_pmem_record = nullptr;
       SkiplistNode *dram_node = nullptr;
-      switch (hash_entry_ref->header.offset_type) {
-      case HashOffsetType::DLRecord:
+      switch (hash_entry_ref->header.index_type) {
+      case HashIndexType::DLRecord:
         hash_indexed_pmem_record = hash_entry_ref->index.dl_record;
         break;
-      case HashOffsetType::SkiplistNode:
+      case HashIndexType::SkiplistNode:
         dram_node = hash_entry_ref->index.skiplist_node;
         hash_indexed_pmem_record = dram_node->record;
         break;
