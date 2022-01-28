@@ -22,7 +22,7 @@ git clone --recurse-submodules https://github.com/pmem/kvdk.git
 ```
 
 ## Building
-### Install dependent tools and libraries on Ubuntu (18.04.6)
+### Install dependent tools and libraries on Ubuntu 18.04
 ```bash
 sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl
 
@@ -30,7 +30,7 @@ git clone https://github.com/pmem/ndctl.git
 cd ndctl
 git checkout v70.1
 ./autogen.sh
-./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib
+./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib --disable-asciidoctor
 make
 sudo make install
 
@@ -49,10 +49,56 @@ sudo make install
 
 ```
 
+### Install dependent tools and libraries on CentOS 8
+```bash
+yum config-manager --add-repo /etc/yum.repos.d/CentOS-PowerTools.repo
+yum config-manager --set-enabled PowerTools
+
+yum install -y git gcc gcc-c++ autoconf automake asciidoc bash-completion xmlto libtool pkgconfig glib2 glib2-devel libfabric libfabric-devel doxygen graphviz pandoc ncurses kmod kmod-devel libudev-devel libuuid-devel json-c-devel keyutils-libs-devel gem make cmake libarchive clang-tools-extra hwloc-devel perl-Text-Diff gflags-devel
+
+git clone https://github.com/pmem/ndctl.git
+cd ndctl
+git checkout v70.1
+./autogen.sh
+./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib --disable-asciidoctor
+make
+sudo make install
+
+git clone https://github.com/pmem/pmdk.git
+cd pmdk
+git checkout 1.11.1
+make
+sudo make install
+
+wget https://github.com/Kitware/CMake/releases/download/v3.12.4/cmake-3.12.4.tar.gz
+tar vzxf cmake-3.12.4.tar.gz
+cd cmake-3.12.4
+./bootstrap
+make
+sudo make install
+```
+
 ### Compile KVDK
 ```bash
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON && make -j
+```
+
+### How to test it on a system without PMEM
+```bash
+# set the correct path for pmdk library
+export LD_LIBRARY_PATH=/usr/local/lib64
+
+# setup a tmpfs for test
+mkdir /mnt/pmem0
+mount -t tmpfs -o size=2G tmpfs /mnt/pmem0
+
+# force the program work on non-pmem directory
+export PMEM_IS_PMEM_FORCE=1
+
+cd kvdk/build/examples
+./cpp_api_tutorial
+
 ```
 
 ## Benchmarks
