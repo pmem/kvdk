@@ -120,8 +120,9 @@ protected:
                 Status::Ok);
     }
     TestEmptyKey(collection, SetFunc, GetFunc, DeleteFunc);
-    LaunchNThreads(configs.max_access_threads,
-                   BasicOperator(collection, SetFunc, GetFunc, DeleteFunc));
+    LaunchNThreads(
+        configs.max_access_threads,
+        CreateBasicOperationTest(collection, SetFunc, GetFunc, DeleteFunc));
   }
 
   void TestLocalCollection(const std::string &collection, SetOpsFunc SetFunc,
@@ -135,8 +136,8 @@ protected:
 
       TestEmptyKey(thread_local_collection, SetFunc, GetFunc, DeleteFunc);
 
-      auto BasicOpFunc =
-          BasicOperator(thread_local_collection, SetFunc, GetFunc, DeleteFunc);
+      auto BasicOpFunc = CreateBasicOperationTest(thread_local_collection,
+                                                  SetFunc, GetFunc, DeleteFunc);
       BasicOpFunc(id);
     };
     LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
@@ -215,10 +216,9 @@ private:
     engine->ReleaseAccessThread();
   }
 
-  std::function<void(uint32_t)> BasicOperator(const std::string &collection,
-                                              SetOpsFunc SetFunc,
-                                              GetOpsFunc GetFunc,
-                                              DeleteOpsFunc DeleteFunc) {
+  std::function<void(uint32_t)>
+  CreateBasicOperationTest(const std::string &collection, SetOpsFunc SetFunc,
+                           GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc) {
     return [&](uint32_t id) {
       std::string val1, val2, got_val1, got_val2;
       int t_cnt = cnt;
