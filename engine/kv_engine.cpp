@@ -59,7 +59,6 @@ KVEngine::~KVEngine() {
   closing_ = true;
   terminateBackgroundWorks();
 
-  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
   ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
 }
