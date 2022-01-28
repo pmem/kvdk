@@ -321,6 +321,7 @@ int main()
     }
 
     printf("Successfully iterated through a sorted named collections.\n");
+    engine->ReleaseSortedIterator(iter);
   }
 
   ... Do something else with KVDK instance ...

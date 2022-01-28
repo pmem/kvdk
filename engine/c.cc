@@ -35,6 +35,7 @@ struct KVDKWriteBatch {
   WriteBatch rep;
 };
 struct KVDKIterator {
+  KVDKIterType type;
   Iterator *rep;
 };
 struct KVDKCollection {
@@ -288,23 +289,48 @@ KVDKStatus KVDKRPop(KVDKEngine *engine, const char *collection,
   return s;
 }
 
-KVDKIterator *KVDKCreateIterator(KVDKEngine *engine, const char *collection,
-                                 size_t collection_len,
-                                 KVDKIterType iter_type) {
+KVDKIterator *KVDKCreateUnorderedIterator(KVDKEngine *engine,
+                                          const char *collection,
+                                          size_t collection_len) {
   KVDKIterator *result = new KVDKIterator;
-  if (iter_type == SORTED) {
-    result->rep =
-        (engine->rep->NewSortedIterator(std::string(collection))).get();
-  } else if (iter_type == HASH) {
-    result->rep =
-        (engine->rep->NewUnorderedIterator(std::string(collection))).get();
-  } else {
-    return nullptr;
-  }
+  result->rep =
+      (engine->rep->NewUnorderedIterator(std::string(collection))).get();
   if (!result->rep) {
+    delete result;
     return nullptr;
   }
+  result->type = HASH;
   return result;
+}
+
+KVDKIterator *KVDKCreateSortedIterator(KVDKEngine *engine,
+                                       const char *collection,
+                                       size_t collection_len,
+                                       KVDKSnapshot *snapshot) {
+  KVDKIterator *result = new KVDKIterator;
+  result->rep = (engine->rep->NewSortedIterator(
+      std::string(collection), snapshot ? snapshot->rep : nullptr));
+  if (!result->rep) {
+    delete result;
+    return nullptr;
+  }
+  result->type = SORTED;
+  return result;
+}
+
+void KVDKDestroyIterator(KVDKEngine *engine, KVDKIterator *iterator) {
+  switch (iterator->type) {
+  case SORTED: {
+    engine->rep->ReleaseSortedIterator(iterator->rep);
+    break;
+  }
+  case HASH: {
+  }
+
+  default:
+    std::abort();
+  }
+  delete iterator;
 }
 
 void KVDKIterSeekToFirst(KVDKIterator *iter) { iter->rep->SeekToFirst(); }
@@ -332,6 +358,4 @@ const char *KVDKIterValue(KVDKIterator *iter, size_t *val_len) {
   *val_len = val_str.size();
   return CopyStringToChar(val_str);
 }
-
-void KVDKIterDestory(KVDKIterator *iter) { delete iter; }
 }

@@ -342,8 +342,10 @@ bool Skiplist::Update(const StringView &key, const StringView &value,
                       const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!searchAndLockUpdatePos(&splice, updating_record, updating_record_lock,
-                              &prev_record_lock)) {
+
+  if (!SearchAndLockRecordPos(&splice, updating_record, updating_record_lock,
+                              &prev_record_lock, pmem_allocator_.get(),
+                              hash_table_.get())) {
     return false;
   }
 
@@ -373,8 +375,10 @@ bool Skiplist::Delete(const StringView &key, DLRecord *deleting_record,
                       const SpaceEntry &space_to_write) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!searchAndLockDeletePos(&splice, deleting_record, deleting_record_lock,
-                              &prev_record_lock)) {
+
+  if (!SearchAndLockRecordPos(&splice, deleting_record, deleting_record_lock,
+                              &prev_record_lock, pmem_allocator_.get(),
+                              hash_table_.get())) {
     return false;
   }
 
@@ -468,25 +472,36 @@ void SortedIterator::Seek(const std::string &key) {
   assert(skiplist_);
   Splice splice(skiplist_);
   skiplist_->Seek(key, &splice);
-  current = splice.next_pmem_record;
-  while (current->entry.meta.type == SortedDeleteRecord) {
-    current = pmem_allocator_->offset2addr<DLRecord>(current->next);
+  current_ = splice.next_pmem_record;
+  while (Valid()) {
+    // we only need to find valid version in seek, as the linkage in valid
+    // version record must be valid
+    DLRecord *valid_version_record = findValidVersion(current_);
+    if (valid_version_record == nullptr) {
+      current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
+    } else {
+      current_ = valid_version_record;
+      break;
+    }
+  }
+  while (current_->entry.meta.type == SortedDeleteRecord) {
+    current_ = pmem_allocator_->offset2addr<DLRecord>(current_->next);
   }
 }
 
 void SortedIterator::SeekToFirst() {
   uint64_t first = skiplist_->header()->record->next;
-  current = pmem_allocator_->offset2addr<DLRecord>(first);
-  while (current->entry.meta.type == SortedDeleteRecord) {
-    current = pmem_allocator_->offset2addr<DLRecord>(current->next);
+  current_ = pmem_allocator_->offset2addr<DLRecord>(first);
+  while (current_->entry.meta.type == SortedDeleteRecord) {
+    current_ = pmem_allocator_->offset2addr<DLRecord>(current_->next);
   }
 }
 
 void SortedIterator::SeekToLast() {
   uint64_t last = skiplist_->header()->record->prev;
-  current = pmem_allocator_->offset2addr<DLRecord>(last);
-  while (current->entry.meta.type == SortedDeleteRecord) {
-    current = pmem_allocator_->offset2addr<DLRecord>(current->prev);
+  current_ = pmem_allocator_->offset2addr<DLRecord>(last);
+  while (current_->entry.meta.type == SortedDeleteRecord) {
+    current_ = pmem_allocator_->offset2addr<DLRecord>(current_->prev);
   }
 }
 
@@ -495,8 +510,8 @@ void SortedIterator::Next() {
     return;
   }
   do {
-    current = pmem_allocator_->offset2addr<DLRecord>(current->next);
-  } while (current->entry.meta.type == SortedDeleteRecord);
+    current_ = pmem_allocator_->offset2addr<DLRecord>(current_->next);
+  } while (current_->entry.meta.type == SortedDeleteRecord);
 }
 
 void SortedIterator::Prev() {
@@ -504,20 +519,36 @@ void SortedIterator::Prev() {
     return;
   }
   do {
-    current = (pmem_allocator_->offset2addr<DLRecord>(current->prev));
-  } while (current->entry.meta.type == SortedDeleteRecord);
+    current_ = (pmem_allocator_->offset2addr<DLRecord>(current_->prev));
+  } while (current_->entry.meta.type == SortedDeleteRecord);
 }
 
 std::string SortedIterator::Key() {
   if (!Valid())
     return "";
-  return string_view_2_string(Skiplist::UserKey(current));
+  return string_view_2_string(Skiplist::UserKey(current_));
 }
 
 std::string SortedIterator::Value() {
   if (!Valid())
     return "";
-  return string_view_2_string(current->Value());
+  return string_view_2_string(current_->Value());
+}
+
+DLRecord *SortedIterator::findValidVersion(DLRecord *pmem_record) {
+  DLRecord *curr = pmem_record;
+  TimeStampType ts = snapshot_->GetTimestamp();
+  while (curr != nullptr && curr->entry.meta.timestamp > ts) {
+    curr = pmem_allocator_->offset2addr<DLRecord>(curr->older_version_offset);
+    kvdk_assert(curr == nullptr || curr->Validate(),
+                "Broken checkpoint: invalid older version sorted record");
+    kvdk_assert(curr == nullptr ||
+                    equal_string_view(curr->Key(), pmem_record->Key()),
+                "Broken checkpoint: key of older version sorted data is "
+                "not same as new "
+                "version");
+  }
+  return curr;
 }
 
 DLRecord *SortedCollectionRebuilder::FindValidVersion(

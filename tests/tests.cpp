@@ -86,7 +86,8 @@ TEST_F(EngineBasicTest, TestThreadManager) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
+// Test iterator/backup/checkpoint on a snapshot
+TEST_F(EngineBasicTest, TestBasicSnapshot) {
   uint32_t num_threads = 16;
   int count = 100;
   configs.max_access_threads = num_threads;
@@ -160,6 +161,18 @@ TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
   for (auto &t : ths) {
     t.join();
   }
+  Iterator *snapshot_iter =
+      engine->NewSortedIterator(sorted_collection, snapshot);
+  uint64_t snapshot_iter_cnt = 0;
+  snapshot_iter->SeekToFirst();
+  while (snapshot_iter->Valid()) {
+    ASSERT_TRUE(snapshot_iter->Valid());
+    snapshot_iter_cnt++;
+    ASSERT_EQ(snapshot_iter->Key(), snapshot_iter->Value());
+    snapshot_iter->Next();
+  }
+  ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+  engine->ReleaseSortedIterator(snapshot_iter);
   delete engine;
 
   std::vector<int> opt_restore_skiplists{0, 1};
@@ -229,6 +242,10 @@ TEST_F(EngineBasicTest, TestBasicBackupAndCheckpoint) {
       checkpoint_iter->Next();
     }
     ASSERT_EQ(backup_iter_cnt, num_threads * count * 2);
+    ASSERT_EQ(checkpoint_iter_cnt, num_threads * count * 2);
+    backup_engine->ReleaseSortedIterator(backup_iter);
+    engine->ReleaseSortedIterator(checkpoint_iter);
+
     delete engine;
     delete backup_engine;
   }
@@ -509,6 +526,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
       }
     }
     ASSERT_EQ(n_entries_scan[id], 0);
+    engine->ReleaseSortedIterator(t_iter);
   };
 
   LaunchNThreads(num_threads, SSetSGetSDelete);
@@ -619,6 +637,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
       }
     }
     ASSERT_EQ(n_entries[id], 0);
+    engine->ReleaseSortedIterator(iter);
   };
 
   auto SeekToDeleted = [&](uint32_t id) {
@@ -631,6 +650,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     t_iter2->Seek(std::to_string(id) + "k2");
     ASSERT_TRUE(t_iter2->Valid());
     ASSERT_EQ(t_iter2->Key(), std::to_string(id) + "k2");
+    engine->ReleaseSortedIterator(t_iter2);
   };
   LaunchNThreads(num_threads, SSetSGetSDelete);
   LaunchNThreads(num_threads, IteratingThrough);
@@ -669,12 +689,13 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(engine->SDelete(collection, "foo"), Status::Ok);
   ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::NotFound);
   ASSERT_EQ(engine->SSet(collection, "foo2", "bar2"), Status::Ok);
+  engine->ReleaseSortedIterator(iter);
   iter = engine->NewSortedIterator(collection);
   ASSERT_NE(iter, nullptr);
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(iter->Value(), "bar2");
-
+  engine->ReleaseSortedIterator(iter);
   delete engine;
 }
 
@@ -848,6 +869,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         }
       }
       ASSERT_EQ(data_entries_scan, 0);
+      engine->ReleaseSortedIterator(iter);
     }
 
     int data_entries_scan = 0;
@@ -882,7 +904,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       }
     }
     ASSERT_EQ(data_entries_scan, 0);
-
+    engine->ReleaseSortedIterator(iter);
     delete engine;
   }
 }
@@ -1671,6 +1693,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       iter->Next();
       cnt++;
     }
+    engine->ReleaseSortedIterator(iter);
   }
   ASSERT_EQ(engine->SDelete("collection0", "a"), Status::Ok);
   delete engine;
@@ -1992,6 +2015,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       backward_num++;
       sorted_iter->Prev();
     }
+    engine->ReleaseSortedIterator(sorted_iter);
     ASSERT_EQ(forward_num, backward_num);
 
     std::string got_val;
@@ -2060,6 +2084,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
         next = k;
       }
     }
+    engine->ReleaseSortedIterator(sorted_iter);
   }));
   for (auto &thread : ths) {
     thread.join();
