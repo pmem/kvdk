@@ -105,7 +105,7 @@ public:
   Status Backup(const std::string &backup_file);
   void LogAllocation(int tid, size_t sz) {
     if (tid == -1) {
-      global_allocated_size_ += sz;
+      global_allocated_size_.fetch_add(sz, std::memory_order_relaxed);
     } else {
       assert(tid >= 0);
       palloc_thread_cache_[tid].allocated_sz += sz;
@@ -114,7 +114,7 @@ public:
 
   void LogDeallocation(int tid, size_t sz) {
     if (tid == -1) {
-      global_allocated_size_ -= sz;
+      global_allocated_size_.fetch_sub(sz, std::memory_order_relaxed);
     } else {
       assert(tid >= 0);
       palloc_thread_cache_[tid].allocated_sz -= sz;
