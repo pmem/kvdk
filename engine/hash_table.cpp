@@ -144,7 +144,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
         break;
       }
 
-      if ((*entry_ptr)->Reusable()) {
+      if ((*entry_ptr)->Empty()) {
         reusable_entry = *entry_ptr;
       }
     }

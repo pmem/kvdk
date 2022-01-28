@@ -79,7 +79,7 @@ public:
     dst->index = src->index;
   }
 
-  bool Reusable() { return header.index_type == HashIndexType::Empty; }
+  bool Empty() { return header.index_type == HashIndexType::Empty; }
 
   // Make this hash entry reusable while its content been deleted
   void Clear() { header.index_type = HashIndexType::Empty; }
