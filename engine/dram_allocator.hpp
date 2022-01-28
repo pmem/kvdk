@@ -8,6 +8,7 @@
 #include "assert.h"
 #include "atomic"
 #include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
 #include "logger.hpp"
 #include "structures.hpp"
 #include <string>
@@ -26,8 +27,8 @@ public:
     return static_cast<T *>(offset);
   }
   inline uint64_t addr2offset(void *addr) { return (uint64_t)addr; }
-  ChunkBasedAllocator(uint32_t write_threads)
-      : dalloc_thread_cache_(write_threads) {}
+  ChunkBasedAllocator(uint32_t max_access_threads)
+      : dalloc_thread_cache_(max_access_threads) {}
   ChunkBasedAllocator(ChunkBasedAllocator const &) = delete;
   ChunkBasedAllocator(ChunkBasedAllocator &&) = delete;
   ~ChunkBasedAllocator() {

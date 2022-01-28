@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
 
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
@@ -127,7 +128,7 @@ public:
   NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
                uint32_t num_buckets_per_slot,
                const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-               uint32_t write_threads);
+               uint32_t max_access_threads);
 
   KeyHashHint GetHint(const StringView &key) {
     KeyHashHint hint;
@@ -157,12 +158,10 @@ public:
   // new hash entry
   // hash_entry_snap: store a hash entry copy of searching key
   // data_entry_meta: store a copy of data entry metadata part of searching key
-  // in_recovery: whether called during recovery of kvdk instance
   // hint: make sure hint.spin is hold
   Status SearchForWrite(const KeyHashHint &hint, const StringView &key,
                         uint16_t type_mask, HashEntry **entry_ptr,
-                        HashEntry *hash_entry_snap, DataEntry *data_entry_meta,
-                        bool in_recovery = false);
+                        HashEntry *hash_entry_snap, DataEntry *data_entry_meta);
 
   // Insert a hash entry to hash table
   //
@@ -174,11 +173,11 @@ private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
             uint32_t num_buckets_per_slot,
             const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-            uint32_t write_threads)
+            uint32_t max_access_threads)
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
-        hash_bucket_size_(hash_bucket_size), dram_allocator_(write_threads),
-        pmem_allocator_(pmem_allocator),
+        hash_bucket_size_(hash_bucket_size),
+        dram_allocator_(max_access_threads), pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)),
         slots_(hash_bucket_num / num_buckets_per_slot),

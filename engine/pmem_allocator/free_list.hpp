@@ -65,7 +65,7 @@ private:
 // space entry lists (the second level), and each list consists of several
 // free space entries (the third level).
 //
-// For a specific block size, a write thread will move a entry list from the
+// For a specific block size, a access thread will move a entry list from the
 // pool to its thread cache while no usable free space in the cache, and the
 // background thread will move cached entry list to the pool for merge and
 // balance resource
@@ -101,7 +101,7 @@ public:
     pool_[b_size].back().swap(src);
   }
 
-  // try to fetch a b_size free space entries list from pool to dst
+  // try to fetch b_size free space entries from a entry list of pool to dst
   bool TryFetchEntryList(std::vector<PMemOffsetType> &dst, uint32_t b_size) {
     if (pool_[b_size].size() != 0) {
       std::lock_guard<SpinMutex> lg(spins_[b_size]);
@@ -140,6 +140,9 @@ public:
   // Add a space entry
   void Push(const SpaceEntry &entry);
 
+  // Add a batch of space entry to free list entries pool
+  void BatchPush(const std::vector<SpaceEntry> &entries);
+
   // Request a at least "size" free space entry
   bool Get(uint32_t size, SpaceEntry *space_entry);
 
@@ -158,7 +161,7 @@ public:
   void MergeAndCheckTSInPool();
 
   // Move cached free space list to space entry pool to balance usable space
-  // of write threads
+  // of access threads
   //
   // Iterate every active entry lists of thread caches, move the list to
   // active_pool_, and update minimal timestamp of free entries meantime
@@ -169,7 +172,7 @@ public:
   void OrganizeFreeSpace();
 
 private:
-  // Each write threads cache some freed space entries in active_entry_offsets
+  // Each access thread caches some freed space entries in active_entry_offsets
   // to avoid contention. To balance free space entries among threads, if too
   // many entries cached by a thread, newly freed entries will be stored to
   // backup_entries and move to entry pool which shared by all threads.
@@ -182,7 +185,8 @@ private:
     FlistThreadCache(FlistThreadCache &&) = delete;
     FlistThreadCache(const FlistThreadCache &) = delete;
 
-    // Entry size stored in block unit
+    // Offsets of active entries, entry size stored in block unit indicated by
+    // Array index
     Array<std::vector<PMemOffsetType>> active_entry_offsets;
     // Protect active_entry_offsets
     Array<SpinMutex> spins;

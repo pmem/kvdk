@@ -58,6 +58,16 @@ private:
   uint64_t tagged_pointer;
 };
 
+struct BackupMark {
+  enum class Stage {
+    Init = 0,
+    Processing = 1,
+    Finish = 2,
+  };
+  TimeStampType backup_ts;
+  Stage stage;
+};
+
 // Used to record batch write stage and related records address, this should be
 // persisted on PMem
 //

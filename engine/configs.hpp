@@ -5,6 +5,7 @@
 #pragma once
 
 #include "kvdk/configs.hpp"
+#include "kvdk/namespace.hpp"
 #include "libpmem.h"
 
 namespace KVDK_NAMESPACE {

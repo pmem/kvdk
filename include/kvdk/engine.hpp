@@ -91,6 +91,21 @@ public:
   virtual Status RPush(StringView const collection_name,
                        StringView const value) = 0;
 
+  // Get a snapshot of the instance at this moment.
+  // If set make_checkpoint to true, a persistent checkpoint will be made until
+  // this snapshot is released. You can recover KVDK instance to the checkpoint
+  // version during recovery, then the checkpoint will be removed.
+  //
+  // Notice: you can maintain multiple snapshot but only the last checkpoint.
+  virtual Snapshot *GetSnapshot(bool make_checkpoint) = 0;
+
+  // Make a backup on "snapshot" to "backup_path"
+  virtual Status Backup(const pmem::obj::string_view backup_path,
+                        const Snapshot *snapshot) = 0;
+
+  // Release a snapshot of the instance
+  virtual void ReleaseSnapshot(const Snapshot *) = 0;
+
   // Create a KV iterator on sorted collection "collection", which is able to
   // sequentially iterate all KVs in the "collection".
   virtual std::shared_ptr<Iterator>
@@ -99,9 +114,9 @@ public:
   virtual std::shared_ptr<Iterator>
   NewUnorderedIterator(StringView const collection_name) = 0;
 
-  // Release resources occupied by this write thread so new thread can take
+  // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.
-  virtual void ReleaseWriteThread() = 0;
+  virtual void ReleaseAccessThread() = 0;
 
   virtual void SetCompareFunc(
       const StringView &collection_name,
