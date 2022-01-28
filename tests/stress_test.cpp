@@ -148,7 +148,8 @@ private:
 public:
   ShadowKVEngine() = delete;
   ShadowKVEngine(kvdk::Engine *&e, CollectionNameType cn, size_t nt)
-      : engine{e}, collection_name{cn}, engine_operator{engine, collection_name},
+      : engine{e}, collection_name{cn}, engine_operator{engine,
+                                                        collection_name},
         n_thread{nt}, possible_state{}, task_queues(n_thread) {}
 
   // Execute task_queues in ShadowKVEngine
@@ -158,7 +159,7 @@ public:
   void UpdatePossibleStates() {
     std::cout << "[Testing] Updating Engine State" << std::endl;
 
-    // Some keys are overwritten by operations in operateKVEngine(), 
+    // Some keys are overwritten by operations in operateKVEngine(),
     // states and values before calling operateKVEngine() are
     // no longer possible.
     {
