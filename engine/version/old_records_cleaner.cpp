@@ -8,6 +8,10 @@
 
 namespace KVDK_NAMESPACE {
 void OldRecordsCleaner::Push(const OldDataRecord &old_data_record) {
+  kvdk_assert(
+      static_cast<DataEntry *>(old_data_record.pmem_data_record)->meta.type &
+          (StringDataRecord | SortedDataRecord),
+      "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
 
@@ -17,6 +21,12 @@ void OldRecordsCleaner::Push(const OldDataRecord &old_data_record) {
 }
 
 void OldRecordsCleaner::Push(const OldDeleteRecord &old_delete_record) {
+  kvdk_assert(static_cast<DataEntry *>(old_delete_record.pmem_delete_record)
+                      ->meta.type &
+                  (StringDeleteRecord | SortedDeleteRecord),
+              "Wrong type in OldRecordsCleaner::Push");
+  kvdk_assert(access_thread.id >= 0,
+              "call OldRecordsCleaner::Push with uninitialized access thread");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
 
