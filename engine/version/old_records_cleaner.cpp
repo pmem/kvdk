@@ -74,7 +74,7 @@ void OldRecordsCleaner::TryGlobalClean() {
       if (record.release_time <= oldest_snapshot_ts) {
         space_to_free.emplace_back(purgeOldDataRecord(record));
       } else {
-        data_record_refered.emplace_back(std::move(record));
+        data_record_refered.emplace_back(record);
       }
     }
   }
@@ -87,7 +87,7 @@ void OldRecordsCleaner::TryGlobalClean() {
       if (record.release_time <= clean_all_data_record_ts_) {
         space_pending.entries.emplace_back(purgeOldDeleteRecord(record));
       } else {
-        delete_record_refered.emplace_back(std::move(record));
+        delete_record_refered.emplace_back(record);
       }
     }
   }
@@ -95,7 +95,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   if (space_pending.entries.size() > 0) {
     space_pending.release_time =
         kv_engine_->version_controller_.GetCurrentTimestamp();
-    pending_free_space_entries_.emplace_back(std::move(space_pending));
+    pending_free_space_entries_.emplace_back(space_pending);
   }
 
   auto iter = pending_free_space_entries_.begin();
@@ -114,9 +114,9 @@ void OldRecordsCleaner::TryGlobalClean() {
   }
 
   global_old_data_records_.clear();
-  global_old_data_records_.emplace_back(std::move(data_record_refered));
+  global_old_data_records_.emplace_back(data_record_refered);
   global_old_delete_records_.clear();
-  global_old_delete_records_.emplace_back(std::move(delete_record_refered));
+  global_old_delete_records_.emplace_back(delete_record_refered);
 }
 
 void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {

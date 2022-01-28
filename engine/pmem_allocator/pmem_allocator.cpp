@@ -334,8 +334,8 @@ Status PMEMAllocator::Backup(const std::string &backup_file_path) {
   };
 
   std::lock_guard<std::mutex> lg(backup_lock);
-  RAIICaller set_backup_processing([&]() { backup_processing = true; },
-                                   [&]() { backup_processing = false; });
+  backup_processing = true;
+  defer(backup_processing = false);
   // We prohibit allocate space from free space entry during backup, meanwhile,
   // the copying data maybe updated and write to new allocated segment, we need
   // these updated data for recovery, so we copy data twice

@@ -38,25 +38,18 @@
 
 namespace KVDK_NAMESPACE {
 
-// A tool struct that call a function on construct and call another function on
-// destroy
-struct RAIICaller {
-public:
-  RAIICaller(std::function<void()> &&call_on_construct,
-             std::function<void()> &&call_on_destroy)
-      : call_on_destroy_(call_on_destroy) {
-    call_on_construct();
-  }
-
-  RAIICaller(const RAIICaller &) = delete;
-  RAIICaller(RAIICaller &&) = delete;
-  RAIICaller() = delete;
-
-  ~RAIICaller() { call_on_destroy_(); }
-
-private:
-  std::function<void()> call_on_destroy_;
+// A tool struct that call f on destroy
+// use the macro defer(code) to do so
+template <typename F> struct Defer {
+  F f;
+  Defer(F f) : f(f) {}
+  ~Defer() { f(); }
 };
+template <typename F> Defer<F> defer_func(F f) { return Defer<F>(f); }
+#define DEFER_1(x, y) x##y
+#define DEFER_2(x, y) DEFER_1(x, y)
+#define DEFER_3(x) DEFER_2(x, __COUNTER__)
+#define defer(code) auto DEFER_3(_defer_) = defer_func([&]() { code; })
 
 inline uint64_t hash_str(const char *str, uint64_t size) {
   return XXH3_64bits(str, size);
