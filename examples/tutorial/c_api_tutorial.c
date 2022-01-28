@@ -319,8 +319,8 @@ void HashesCollectionExample(KVDKEngine *kvdk_engine) {
                      "key8", strlen("key8"));
   assert(s == Ok);
   // create sorted iterator
-  KVDKIterator *kvdk_iter = KVDKCreateSortedIterator(
-      kvdk_engine, hash_collection, strlen(hash_collection), NULL);
+  KVDKIterator *kvdk_iter = KVDKCreateUnorderedIterator(
+      kvdk_engine, hash_collection, strlen(hash_collection));
   int cnt = 0;
   for (KVDKIterSeekToFirst(kvdk_iter); KVDKIterValid(kvdk_iter);
        KVDKIterNext(kvdk_iter)) {
