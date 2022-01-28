@@ -4,8 +4,8 @@
 
 #include <chrono>
 #include <ctime>
+#include <deque>
 #include <future>
-#include <queue>
 #include <string>
 #include <sys/time.h>
 #include <thread>
@@ -21,7 +21,6 @@
 #include "pmem_allocator/free_list.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "test_util.h"
-
 
 using namespace KVDK_NAMESPACE;
 
@@ -63,10 +62,10 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
       // Test function.
       auto TestPmemAlloc = [&](uint64_t id) {
         std::vector<SpaceEntry> records;
-        thread_manager_->MaybeInitThread(write_thread);
+        thread_manager_->MaybeInitThread(access_thread);
         PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
             pmem_path, pmem_size, num_segment_blocks[i], block_sizes[i],
-            num_thread, true, false);
+            num_thread, true, false, nullptr);
         ASSERT_NE(pmem_alloc, nullptr);
 
         uint64_t kvpairs = pmem_size / block_sizes[i];
@@ -83,7 +82,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
 
         ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), (std::int64_t)0);
         records.clear();
-        
+
         uint64_t alloc_cnt = 1;
         // again allocate pmem
         while (true) {
@@ -92,7 +91,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
             break;
           alloc_cnt++;
         }
-        ASSERT_EQ(kvpairs,alloc_cnt);
+        ASSERT_EQ(kvpairs, alloc_cnt);
         delete pmem_alloc;
       };
 
@@ -108,9 +107,9 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   uint64_t block_size = 64;
   std::vector<uint64_t> alloc_size{8 * 64, 8 * 64, 16 * 64, 32 * 64};
   thread_manager_.reset(new ThreadManager(num_thread));
-  PMEMAllocator *pmem_alloc =
-      PMEMAllocator::NewPMEMAllocator(pmem_path, pmem_size, num_segment_block,
-                                      block_size, num_thread, true, false);
+  PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
+      pmem_path, pmem_size, num_segment_block, block_size, num_thread, true,
+      false, nullptr);
   ASSERT_NE(pmem_alloc, nullptr);
 
   /* Allocated pmem status (block nums):
@@ -118,29 +117,28 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
    */
 
   std::vector<SpaceEntry> records(num_thread);
-  thread_manager_->MaybeInitThread(write_thread);
+  thread_manager_->MaybeInitThread(access_thread);
   for (uint32_t i = 0; i < records.size(); ++i) {
     SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[i % 4]);
     records[i] = space_entry;
     ASSERT_NE(space_entry.size, 0);
   }
 
-  pmem_alloc->BackgroundWork();
   /* Allocated pmem status:
    * | null | null | null | 32 | null | null | null | 32 | null | null | null
    * | 32 | null | null | null | 32 |
    */
   auto TestPmemFree = [&](uint64_t id) {
-    thread_manager_->MaybeInitThread(write_thread);
+    thread_manager_->MaybeInitThread(access_thread);
     if ((id + 1) % 4 != 0) {
       pmem_alloc->Free(records[id]);
     }
   };
-
+     pmem_alloc->BackgroundWork();
   // Test merge free memory
   auto TestPmemFrag = [&](uint64_t id) {
-    thread_manager_->MaybeInitThread(write_thread);
-    if ((id + 1 % 4) == 0) {
+    thread_manager_->MaybeInitThread(access_thread);
+    if ((id + 1) % 4 == 0) {
       SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[id % 4]);
       ASSERT_NE(space_entry.size, 0);
     }
@@ -148,5 +146,59 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   LaunchNThreads(num_thread, TestPmemFree);
   LaunchNThreads(num_thread, TestPmemFrag);
 
+  delete pmem_alloc;
+}
+
+// TODO: Add more cases
+TEST_F(EnginePMemAllocatorTest, TestPMemAlocFreeList) {
+  uint32_t num_thread = 1;
+  uint64_t num_segment_block = 4 * kMinPaddingBlocks;
+  uint64_t block_size = 64;
+  uint64_t pmem_size = num_segment_block * block_size;
+  std::vector<int> alloc_size{1024, 512};
+  std::deque<SpaceEntry> records;
+  thread_manager_.reset(new ThreadManager(num_thread));
+  PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
+      pmem_path, pmem_size, num_segment_block, block_size, num_thread, true,
+      false, nullptr);
+  ASSERT_NE(pmem_alloc, nullptr);
+
+  thread_manager_->MaybeInitThread(access_thread);
+  // allocate 1024 bytes
+  records.push_back(pmem_alloc->Allocate(alloc_size[0]));
+  ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), (std::int64_t)1024);
+  //  allocate 512 bytes
+  records.push_back(pmem_alloc->Allocate(alloc_size[1]));
+  ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), (std::int64_t)1536);
+  //  allocate 512 bytes
+  records.push_back(pmem_alloc->Allocate(alloc_size[1]));
+  ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), pmem_size);
+
+  // free 1024 bytes
+  pmem_alloc->Free(records.front());
+  ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), (std::int64_t)1024);
+  records.pop_front();
+
+  // allocate 512 bytes, reuse freed 1024 bytes space
+  records.push_back(pmem_alloc->Allocate(alloc_size[1]));
+  ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), (std::int64_t)1536);
+  // allocate 512 bytes
+  records.push_back(pmem_alloc->Allocate(alloc_size[1]));
+  ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), pmem_size);
+
+  // free 512 bytes and again free 512 bytes
+  std::vector<SpaceEntry> frees;
+  frees.push_back(records.back());
+  records.pop_back();
+  frees.push_back(records.front());
+  records.pop_front();
+  pmem_alloc->BatchFree(frees);
+
+  // need to merge
+  pmem_alloc->BackgroundWork();
+
+  // allocate 1024 bytes
+  records.push_back(pmem_alloc->Allocate(alloc_size[0]));
+  ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), pmem_size);
   delete pmem_alloc;
 }

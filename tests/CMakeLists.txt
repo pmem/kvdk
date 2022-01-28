@@ -8,6 +8,7 @@ set(TEST_SOURCES2 stress_test.cpp)
 add_executable(dbstress_test ${TEST_SOURCES2})
 target_link_libraries(dbstress_test PUBLIC engine gtest gmock gtest_main)
 
+message(${PROJECT_SOURCE_DIR})
 # For pmem allocator module tests
 set(TEST_PMEM_ALLOC test_pmem_allocator.cpp)
 add_executable(dbtest_pmem_allocator ${TEST_PMEM_ALLOC})

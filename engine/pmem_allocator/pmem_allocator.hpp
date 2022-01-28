@@ -98,6 +98,9 @@ public:
   void BatchFree(const std::vector<SpaceEntry> &entries) {
     if (entries.size() > 0) {
       free_list_.BatchPush(entries);
+      for (auto &entry : entries) {
+        LogDeallocation(access_thread.id, entry.size);
+      }
     }
   }
 
@@ -170,6 +173,6 @@ private:
   VersionController *version_controller_;
 
   std::mutex backup_lock;
-  bool backup_processing;
+  bool backup_processing = false;
 };
 } // namespace KVDK_NAMESPACE
