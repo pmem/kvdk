@@ -611,7 +611,6 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
     StringView internal_key = next_record->Key();
     auto hash_hint = hash_table_->GetHint(internal_key);
     while (true) {
-      invalid_records.clear();
       std::lock_guard<SpinMutex> lg(*hash_hint.spin);
       Status s = hash_table_->SearchForRead(
           hash_hint, internal_key, SortedDataRecord | SortedDeleteRecord,
@@ -621,6 +620,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
                            "insert first before repair linkage");
         return Status::Abort;
       }
+      invalid_records.clear();
       DLRecord *valid_version_record =
           FindValidVersion(next_record, &invalid_records);
       if (valid_version_record == nullptr) {
