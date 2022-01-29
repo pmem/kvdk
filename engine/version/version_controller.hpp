@@ -12,16 +12,15 @@ namespace KVDK_NAMESPACE {
 constexpr TimeStampType kMaxTimestamp = UINT64_MAX;
 
 struct SnapshotImpl : public Snapshot {
-  explicit SnapshotImpl(const TimeStampType &t)
-      : timestamp(t), next(nullptr), prev(nullptr) {}
+  explicit SnapshotImpl(const TimeStampType &t) : timestamp(t) {}
 
-  SnapshotImpl() : SnapshotImpl(kMaxTimestamp) {}
+  SnapshotImpl() = default;
 
   TimeStampType GetTimestamp() const { return timestamp; }
 
-  TimeStampType timestamp;
-  SnapshotImpl *prev;
-  SnapshotImpl *next;
+  TimeStampType timestamp = kMaxTimestamp;
+  SnapshotImpl *prev = nullptr;
+  SnapshotImpl *next = nullptr;
 };
 
 // A SnapshotList is a linked-list of global snapshots, new older snapshot is

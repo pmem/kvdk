@@ -97,17 +97,28 @@ public:
 
   void BatchFree(const std::vector<SpaceEntry> &entries) {
     if (entries.size() > 0) {
-      free_list_.BatchPush(entries);
+      uint64_t freed = free_list_.BatchPush(entries);
+      LogDeallocation(access_thread.id, freed);
     }
   }
 
   Status Backup(const std::string &backup_file);
-  void LogAllocation(size_t tid, size_t sz) {
-    palloc_thread_cache_[tid].allocated_sz += sz;
+  void LogAllocation(int tid, size_t sz) {
+    if (tid == -1) {
+      global_allocated_size_.fetch_add(sz);
+    } else {
+      assert(tid >= 0);
+      palloc_thread_cache_[tid].allocated_sz += sz;
+    }
   }
 
-  void LogDeallocation(size_t tid, size_t sz) {
-    palloc_thread_cache_[tid].allocated_sz -= sz;
+  void LogDeallocation(int tid, size_t sz) {
+    if (tid == -1) {
+      global_allocated_size_.fetch_sub(sz);
+    } else {
+      assert(tid >= 0);
+      palloc_thread_cache_[tid].allocated_sz -= sz;
+    }
   }
 
   std::int64_t PMemUsageInBytes();
@@ -168,6 +179,7 @@ private:
   // For quickly get corresponding block size of a requested data size
   std::vector<uint16_t> data_size_2_block_size_;
   VersionController *version_controller_;
+  std::atomic<std::int64_t> global_allocated_size_{0};
 
   std::mutex backup_lock;
   bool backup_processing;

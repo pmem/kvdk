@@ -39,6 +39,7 @@ std::int64_t PMEMAllocator::PMemUsageInBytes() {
   for (auto const &ptcache : palloc_thread_cache_) {
     total += ptcache.allocated_sz;
   }
+  total += global_allocated_size_.load();
   return total;
 }
 
