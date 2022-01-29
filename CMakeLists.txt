@@ -102,15 +102,8 @@ target_include_directories(bench PUBLIC ./include ./extern ./)
 
 option(BUILD_TESTING "Build the tests" ON)
 if (BUILD_TESTING)
-    set(TEST_SOURCES tests/tests.cpp)
-    enable_testing()
-    include(GoogleTest)
-    add_subdirectory(extern/gtest)
-    add_executable(dbtest ${TEST_SOURCES})
-    target_link_libraries(dbtest PUBLIC engine gtest gmock gtest_main)
-    set(TEST_SOURCES2 tests/stress_test.cpp)
-    add_executable(dbstress_test ${TEST_SOURCES2})
-    target_link_libraries(dbstress_test PUBLIC engine gtest gmock gtest_main)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/extern/gtest)
+    add_subdirectory(tests)
 endif ()
 
 

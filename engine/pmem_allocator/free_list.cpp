@@ -120,19 +120,17 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
 }
 
 void Freelist::OrganizeFreeSpace() {
-  // Notice: we should move cached list to pool after merge entries in the pool,
-  // otherwise we may miss some entries during minimal timestamp checking
-  MergeAndCheckTSInPool();
   MoveCachedListsToPool();
+  MergeSpaceInPool();
 }
 
-void Freelist::MergeAndCheckTSInPool() {
+void Freelist::MergeSpaceInPool() {
   std::vector<PMemOffsetType> merging_list;
   std::vector<std::vector<PMemOffsetType>> merged_entry_list(
       max_classified_b_size_);
 
   for (uint32_t b_size = 1; b_size < max_classified_b_size_; b_size++) {
-    if (active_pool_.TryFetchEntryList(merging_list, b_size)) {
+    while (active_pool_.TryFetchEntryList(merging_list, b_size)) {
       for (PMemOffsetType &offset : merging_list) {
         assert(offset % block_size_ == 0);
         auto b_offset = offset / block_size_;

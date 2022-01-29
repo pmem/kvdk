@@ -182,6 +182,6 @@ private:
   std::atomic<std::int64_t> global_allocated_size_{0};
 
   std::mutex backup_lock;
-  bool backup_processing;
+  bool backup_processing = false;
 };
 } // namespace KVDK_NAMESPACE
