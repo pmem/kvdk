@@ -9,7 +9,9 @@
 #include <cstdlib>
 
 #include <atomic>
+#include <condition_variable>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -36,6 +38,19 @@
 
 namespace KVDK_NAMESPACE {
 
+// A tool struct that call f on destroy
+// use the macro defer(code) to do so
+template <typename F> struct Defer {
+  F f;
+  Defer(F f) : f(f) {}
+  ~Defer() { f(); }
+};
+template <typename F> Defer<F> defer_func(F f) { return Defer<F>(f); }
+#define DEFER_1(x, y) x##y
+#define DEFER_2(x, y) DEFER_1(x, y)
+#define DEFER_3(x) DEFER_2(x, __COUNTER__)
+#define defer(code) auto DEFER_3(_defer_) = defer_func([&]() { code; })
+
 inline uint64_t hash_str(const char *str, uint64_t size) {
   return XXH3_64bits(str, size);
 }
@@ -56,6 +71,12 @@ inline uint64_t fast_random_64() {
   x ^= x >> 27;      // c
   seed = x;
   return x * 0x2545F4914F6CDD1D;
+}
+
+inline static uint64_t rdtsc() {
+  uint32_t lo, hi;
+  __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+  return ((uint64_t)lo) | (((uint64_t)hi) << 32);
 }
 
 inline void memcpy_16(void *dst, const void *src) {

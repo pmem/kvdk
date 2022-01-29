@@ -56,7 +56,7 @@ public:
     thread_manager_.reset(new (std::nothrow) ThreadManager(num_write_threads));
     pmem_alloc_ = PMEMAllocator::NewPMEMAllocator(
         pmem_path, pmem_size, num_segment_blocks, block_size, num_write_threads,
-        true, false);
+        true, false, nullptr);
     kvdk_assert(pmem_alloc_ != nullptr, "New pmem allocator failed!");
     background.emplace_back(std::thread(&TestPMemAllocator::BackGround, this));
   }
@@ -77,7 +77,7 @@ public:
     }
   }
 
-  void InitThread() override { thread_manager_->MaybeInitThread(write_thread); }
+  void InitThread() override { thread_manager_->MaybeInitThread(access_thread); }
 
   ~TestPMemAllocator(void) {
     closing_ = true;

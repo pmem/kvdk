@@ -72,21 +72,24 @@ private:
   std::string tag_;
   size_t total_progress_;
   size_t current_progress_;
+  size_t last_report_;
+  size_t report_interval_;
   size_t bar_length_;
   size_t step_;
   bool enabled_;
 
-  bool finished_{false};
+  bool flush_newline_{false};
 
   static constexpr char symbol_done_{'#'};
   static constexpr char symbol_fill_{'-'};
 
 public:
   explicit ProgressBar(std::ostream &out, std::string tag,
-                       size_t total_progress, bool enabled = true,
-                       size_t bar_length = 50)
+                       size_t total_progress, size_t report_interval,
+                       bool enabled = true, size_t bar_length = 50)
       : out_stream_{out}, tag_{tag}, total_progress_{total_progress},
-        current_progress_{0}, bar_length_{bar_length},
+        current_progress_{0}, last_report_{0},
+        report_interval_{report_interval}, bar_length_{bar_length},
         step_{total_progress / bar_length}, enabled_{enabled} {
     assert(total_progress_ > 0);
     assert(bar_length_ > 0);
@@ -102,20 +105,25 @@ public:
   }
 
   void Update(size_t current_progress) {
-    assert(!finished_ && "Trying to update a completed progress!");
+    assert(!flush_newline_ && "Trying to update a completed progress!");
     assert(current_progress_ < current_progress &&
            current_progress <= total_progress_);
 
     current_progress_ = current_progress;
-    if (current_progress_ == total_progress_)
-      finished_ = true;
+    if (current_progress_ == total_progress_) {
+      flush_newline_ = true;
+    }
 
-    showProgress();
+    if (last_report_ + report_interval_ <= current_progress_ ||
+        current_progress_ == total_progress_) {
+      showProgress();
+      last_report_ = current_progress_;
+    }
   }
 
   ~ProgressBar() {
-    if (!finished_) {
-      finished_ = true;
+    if (!flush_newline_) {
+      flush_newline_ = true;
       showProgress();
     }
   }
@@ -142,7 +150,7 @@ private:
 
     out_stream_ << "]" << std::flush;
 
-    if (finished_)
+    if (flush_newline_)
       out_stream_ << std::endl;
   }
 };

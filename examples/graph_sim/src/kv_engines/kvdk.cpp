@@ -11,18 +11,18 @@ DEFINE_string(kvdk_collection, "",
 DEFINE_int64(kvdk_pmem_file_size, 100ULL << 30,
              "The size of kvdk pmem file size.");
 DEFINE_string(kvdk_path, "/mnt/pmem0/kvdk", "The path of the kvdk pmem file.");
-DEFINE_int64(kvdk_max_write_threads, 48,
-             "The max write threads number in kvdk.");
+DEFINE_int64(kvdk_max_access_threads, 48,
+             "The max access threads number in kvdk.");
 
 PMemKVDK::PMemKVDK(const std::string &db_path) {
   path_ = FLAGS_kvdk_path;
   collection_ = FLAGS_kvdk_collection;
 
   // set some options
-  options_.pmem_file_size = FLAGS_kvdk_pmem_file_size;
-  options_.max_write_threads = FLAGS_kvdk_max_write_threads;
+  configs_.pmem_file_size = FLAGS_kvdk_pmem_file_size;
+  configs_.max_access_threads = FLAGS_kvdk_max_access_threads;
 
-  auto s = kvdk::Engine::Open(path_, &db_, options_);
+  auto s = kvdk::Engine::Open(path_, &db_, configs_);
   if (s != kvdk::Status::Ok) {
     SimpleLoger("KVDK Open failed");
     return;
@@ -83,8 +83,9 @@ private:
 
 KVEngine::Iterator *PMemKVDK::NewIterator() {
   if (!collection_.empty()) {
+    // TODO fix snapshot
     auto it = db_->NewSortedIterator(collection_);
-    return new PMemKVDKIterator(it.get());
+    return new PMemKVDKIterator(it);
   }
   return nullptr;
 }

@@ -10,6 +10,7 @@
 
 namespace KVDK_NAMESPACE {
 
+// TODO: implement write batch deduplication
 struct WriteBatch {
   struct KV {
     std::string key;

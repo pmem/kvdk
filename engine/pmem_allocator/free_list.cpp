@@ -183,7 +183,7 @@ void Freelist::Push(const SpaceEntry &entry) {
   auto b_size = entry.size / block_size_;
   auto b_offset = entry.offset / block_size_;
   space_map_.Set(b_offset, b_size);
-  auto &flist_thread_cache = flist_thread_cache_[write_thread.id];
+  auto &flist_thread_cache = flist_thread_cache_[access_thread.id];
   if (b_size >= flist_thread_cache.active_entry_offsets.size()) {
     std::lock_guard<SpinMutex> lg(large_entries_spin_);
     large_entries_.emplace(entry);
@@ -193,10 +193,36 @@ void Freelist::Push(const SpaceEntry &entry) {
   }
 }
 
+void Freelist::BatchPush(const std::vector<SpaceEntry> &entries) {
+  Array<std::vector<PMemOffsetType>> moving_list(max_classified_b_size_);
+  for (const SpaceEntry &entry : entries) {
+    kvdk_assert(entry.size % block_size_ == 0,
+                "batch freed entry size is not aligned to block size");
+    uint32_t b_size = entry.size / block_size_;
+    uint64_t b_offset = entry.offset / block_size_;
+    space_map_.Set(b_offset, b_size);
+    if (b_size < max_classified_b_size_) {
+      moving_list[b_size].emplace_back(entry.offset);
+      if (moving_list[b_size].size() == kMinMovableEntries) {
+        active_pool_.MoveEntryList(moving_list[b_size], b_size);
+      }
+    } else {
+      std::lock_guard<SpinMutex> lg(large_entries_spin_);
+      large_entries_.emplace(entry);
+    }
+  }
+
+  for (uint32_t b_size = 1; b_size < moving_list.size(); b_size++) {
+    if (moving_list[b_size].size() > 0) {
+      active_pool_.MoveEntryList(moving_list[b_size], b_size);
+    }
+  }
+}
+
 bool Freelist::Get(uint32_t size, SpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
-  auto &flist_thread_cache = flist_thread_cache_[write_thread.id];
+  auto &flist_thread_cache = flist_thread_cache_[access_thread.id];
   for (uint32_t i = b_size; i < flist_thread_cache.active_entry_offsets.size();
        i++) {
     bool found = false;
@@ -280,7 +306,7 @@ void Freelist::MoveCachedListsToPool() {
 bool Freelist::MergeGet(uint32_t size, SpaceEntry *space_entry) {
   assert(size % block_size_ == 0);
   auto b_size = size / block_size_;
-  auto &cache_list = flist_thread_cache_[write_thread.id].active_entry_offsets;
+  auto &cache_list = flist_thread_cache_[access_thread.id].active_entry_offsets;
   for (uint32_t i = 1; i < max_classified_b_size_; i++) {
     size_t j = 0;
     while (j < cache_list[i].size()) {

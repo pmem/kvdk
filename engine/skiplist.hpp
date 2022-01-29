@@ -19,6 +19,7 @@
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
+class KVEngine;
 static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
 
@@ -211,6 +212,7 @@ public:
     assert(record != nullptr);
     switch (record->entry.meta.type) {
     case RecordType::SortedDataRecord:
+    case RecordType::SortedDeleteRecord:
       return CollectionUtils::ExtractID(record->Key());
       break;
     case RecordType::SortedHeaderRecord:
@@ -235,47 +237,75 @@ public:
   // splice point to node of "key"
   void Seek(const StringView &key, Splice *result_splice);
 
-  Status Rebuild();
-
-  // Insert a new key "key" to skiplist,
+  // Insert a new key "key" to the skiplist,
   //
   // space_to_write: PMem space entry to store new record.
   // dram_node: If height of new record > 0, store new dram node to it,
   // otherwise store nullptr instead
-  // inserting_key_lock: lock of inserting key, should be already locked while
-  // calling this function
+  // inserting_key_lock: lock of inserting key, should be locked before call
+  // this function
   //
   // Return true on success, return false on fail.
   bool Insert(const StringView &key, const StringView &value,
-              const SpaceEntry &space_to_write, TimeStampType timestamp,
-              SkiplistNode **dram_node, const SpinMutex *inserting_key_lock);
+              const SpinMutex *inserting_key_lock, TimeStampType timestamp,
+              SkiplistNode **dram_node, const SpaceEntry &space_to_write);
 
-  // Update "key" in skiplist
+  // Update "key" in the skiplist
   //
   // space_to_write: PMem space entry to store new record
   // updated_record: existing record of updating key
   // dram_node: dram node of existing record, if it's a height 0 record, then
   // pass nullptr
-  // updating_key_lock: lock of updating key, should be already locked while
-  // calling this function
+  // updating_record_lock: lock of updating record, should be locked before call
+  // this function
   //
   // Return true on success, return false on fail.
   bool Update(const StringView &key, const StringView &value,
-              const DLRecord *updated_record, const SpaceEntry &space_to_write,
-              TimeStampType timestamp, SkiplistNode *dram_node,
-              const SpinMutex *updating_key_lock);
+              const DLRecord *updating_record,
+              const SpinMutex *updating_record_lock, TimeStampType timestamp,
+              SkiplistNode *dram_node, const SpaceEntry &space_to_write);
 
-  // Delete "key" from skiplist
+  // Delete "key" from the skiplist by replace it with a delete record
   //
   // deleted_record:existing record of deleting key
   // dram_node:dram node of existing record, if it's a height 0 record, then
   // pass nullptr
-  // deleting_key_lock: lock of deleting key, should be already locked while
-  // calling this function
+  // deleting_key_lock: lock of deleting key, should be locked before call this
+  // function
   //
   // Return true on success, return false on fail.
-  bool Delete(const StringView &key, DLRecord *deleted_record,
-              SkiplistNode *dram_node, const SpinMutex *deleting_key_lock);
+  bool Delete(const StringView &key, DLRecord *deleting_record,
+              const SpinMutex *deleting_record_lock, TimeStampType timestamp,
+              SkiplistNode *dram_node, const SpaceEntry &space_to_write);
+
+  // Purge a dl record from its skiplist by remove it from linkage
+  //
+  // purged_record:existing record to purge
+  // dram_node:dram node of purging record, if it's a height 0 record, then
+  // pass nullptr
+  // purging_record_lock: lock of purging_record, should be locked before call
+  // this function
+  //
+  // Return true on success, return false on fail.
+  static bool Purge(DLRecord *purging_record,
+                    const SpinMutex *purging_record_lock,
+                    SkiplistNode *dram_node, PMEMAllocator *pmem_allocator,
+                    HashTable *hash_table);
+
+  // Replace "old_record" from its skiplist with "replacing_record", please make
+  // sure the key order is correct after replace
+  //
+  // old_record: existing record to be replaced
+  // replacing_record: new reocrd to replace the older one
+  // dram_node:dram node of old record, if it's a height 0 record, then
+  // pass nullptr
+  // old_record_lock: lock of old_record, should be locked before call
+  // this function
+  //
+  // Return true on success, return false on fail.
+  static bool Replace(DLRecord *old_record, DLRecord *replacing_record,
+                      const SpinMutex *old_record_lock, SkiplistNode *dram_node,
+                      PMEMAllocator *pmem_allocator, HashTable *hash_table);
 
   void ObsoleteNodes(const std::vector<SkiplistNode *> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
@@ -299,11 +329,34 @@ public:
 
   Status CheckConnection(int height);
 
+  // Link DLRecord "linking" between "prev" and "next"
+  static void LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking,
+                           PMEMAllocator *pmem_allocator);
+
+  // Find position of "searching_record" in its skiplist and lock its previous
+  // node
+  //
+  // dram_node: dram node of searching_record, if it's a height 0 record, then
+  // pass nullptr
+  // searching_record_lock: lock of searching record, should be locked before
+  // call this function
+  //
+  // Return true on success, return false on fail.
+  static bool
+  SearchAndLockRecordPos(Splice *splice, const DLRecord *searching_record,
+                         const SpinMutex *searching_record_lock,
+                         std::unique_lock<SpinMutex> *prev_record_lock,
+                         PMEMAllocator *pmem_allocator, HashTable *hash_table);
+
   void SetCompareFunc(CompFunc comp_func) { compare_func_ = comp_func; }
 
+  // Build a skiplist node for "pmem_record"
+  static SkiplistNode *NewNodeBuild(DLRecord *pmem_record);
+
 private:
-  // Insert DLRecord "inserting" between "prev" and "next"
-  void InsertDLRecord(DLRecord *prev, DLRecord *next, DLRecord *inserting);
+  inline void LinkDLRecord(DLRecord *prev, DLRecord *next, DLRecord *linking) {
+    return LinkDLRecord(prev, next, linking, pmem_allocator_.get());
+  }
 
   // Find and lock skiplist position to insert "key"
   //
@@ -311,27 +364,30 @@ private:
   // prev DLRecord and manage the lock with "prev_record_lock".
   //
   // The "insert_key" should be already locked before call this function
-  bool FindInsertPos(Splice *splice, const StringView &inserting_key,
-                     const SpinMutex *inserting_key_lock,
-                     std::unique_lock<SpinMutex> *prev_record_lock);
+  bool searchAndLockInsertPos(Splice *splice, const StringView &inserting_key,
+                              const SpinMutex *inserting_key_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock);
 
-  // Find and lock skiplist position to update"key".
+  // Search and lock skiplist position to update"key".
   //
   // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and manage
   // the lock with "prev_record_lock".
   //
   //  The "updated_key" should be already locked before call this function
-  bool FindUpdatePos(Splice *splice, const StringView &updating_key,
-                     const SpinMutex *updating_key_lock,
-                     const DLRecord *updated_record,
-                     std::unique_lock<SpinMutex> *prev_record_lock);
+  bool searchAndLockUpdatePos(Splice *splice, const DLRecord *updating_record,
+                              const SpinMutex *updating_record_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock) {
+    return SearchAndLockRecordPos(splice, updating_record, updating_record_lock,
+                                  prev_record_lock, pmem_allocator_.get(),
+                                  hash_table_.get());
+  }
 
-  bool FindDeletePos(Splice *splice, const StringView &deleting_key,
-                     const SpinMutex *deleting_key_lock,
-                     const DLRecord *deleted_record,
-                     std::unique_lock<SpinMutex> *prev_record_lock) {
-    return FindUpdatePos(splice, deleting_key, deleting_key_lock,
-                         deleted_record, prev_record_lock);
+  bool searchAndLockDeletePos(Splice *splice, const DLRecord *deleting_record,
+                              const SpinMutex *deleting_record_lock,
+                              std::unique_lock<SpinMutex> *prev_record_lock) {
+    return SearchAndLockRecordPos(splice, deleting_record, deleting_record_lock,
+                                  prev_record_lock, pmem_allocator_.get(),
+                                  hash_table_.get());
   }
 
   bool ValidateDLRecord(const DLRecord *record) {
@@ -365,9 +421,10 @@ private:
 class SortedIterator : public Iterator {
 public:
   SortedIterator(Skiplist *skiplist,
-                 const std::shared_ptr<PMEMAllocator> &pmem_allocator)
-      : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current(nullptr) {
-  }
+                 const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+                 SnapshotImpl *snapshot, bool own_snapshot)
+      : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current_(nullptr),
+        snapshot_(snapshot), own_snapshot_(own_snapshot) {}
 
   virtual void Seek(const std::string &key) override;
 
@@ -376,7 +433,7 @@ public:
   virtual void SeekToLast() override;
 
   virtual bool Valid() override {
-    return (current != nullptr && current != skiplist_->header()->record);
+    return (current_ != nullptr && current_ != skiplist_->header()->record);
   }
 
   virtual void Next() override;
@@ -388,9 +445,14 @@ public:
   virtual std::string Value() override;
 
 private:
+  friend KVEngine;
+  DLRecord *findValidVersion(DLRecord *pmem_record);
+
   Skiplist *skiplist_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  DLRecord *current;
+  DLRecord *current_;
+  SnapshotImpl *snapshot_;
+  bool own_snapshot_;
 };
 
 // A helper struct for seeking skiplist
@@ -427,35 +489,63 @@ struct Splice {
 class KVEngine;
 class SortedCollectionRebuilder {
 public:
-  SortedCollectionRebuilder() = default;
-  Status DealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node,
-                             const KVEngine *engine);
+  SortedCollectionRebuilder(PMEMAllocator *pmem_allocator,
+                            HashTable *hash_table, bool opt_parallel_rebuild,
+                            uint64_t num_rebuild_threads,
+                            const CheckPoint &checkpoint)
+      : pmem_allocator_(pmem_allocator), hash_table_(hash_table),
+        checkpoint_(checkpoint), opt_parallel_rebuild_(opt_parallel_rebuild),
+        num_rebuild_threads_(num_rebuild_threads){};
 
-  void
-  DealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node, int heightm,
-                      const std::shared_ptr<PMEMAllocator> &pmem_allocator);
+  Status
+  RebuildLinkage(const std::vector<std::shared_ptr<Skiplist>> &skiplists);
 
-  SkiplistNode *GetSortedOffset(int height);
-
-  void LinkedNode(uint64_t thread_id, int height, const KVEngine *engine);
-
-  Status Rebuild(const KVEngine *engine);
-
-  void UpdateEntriesOffset(const KVEngine *engine);
-
-  void SetEntriesOffsets(uint64_t entry_offset, bool is_visited,
-                         SkiplistNode *node) {
-    entries_offsets_.insert({entry_offset, {is_visited, node}});
+  void AddRecordForParallelRebuild(uint64_t record_offset, bool is_visited,
+                                   SkiplistNode *node) {
+    record_offsets_.insert({record_offset, {is_visited, node}});
   }
 
+  DLRecord *FindValidVersion(DLRecord *pmem_record,
+                             std::vector<DLRecord *> *invalid_version_records);
+
 private:
+  Status repairSkiplistLinkage(Skiplist *skiplist);
+
+  Status parallelRepairSkiplistLinkage();
+
+  Status updateRecordOffsets();
+
+  SkiplistNode *getSortedOffset(int height);
+
+  void linkedNode(uint64_t thread_id, int height);
+
+  Status dealWithFirstHeight(uint64_t thread_id, SkiplistNode *cur_node);
+
+  void dealWithOtherHeight(uint64_t thread_id, SkiplistNode *cur_node,
+                           int heightm);
+
+  void batchPurgeAndFree(std::vector<DLRecord *> &pmem_records) {
+    std::vector<SpaceEntry> to_free;
+    for (DLRecord *pmem_record : pmem_records) {
+      pmem_record->Destroy();
+      to_free.emplace_back(pmem_allocator_->addr2offset_checked(pmem_record),
+                           pmem_record->entry.header.record_size);
+    }
+    pmem_allocator_->BatchFree(to_free);
+  }
+
   struct SkiplistNodeInfo {
-    bool is_visited;
-    SkiplistNode *visited_node;
+    bool visited;
+    SkiplistNode *node;
   };
   SpinMutex map_mu_;
   std::vector<std::unordered_set<SkiplistNode *>> thread_cache_node_;
-  std::unordered_map<uint64_t, SkiplistNodeInfo> entries_offsets_;
+  std::unordered_map<uint64_t, SkiplistNodeInfo> record_offsets_;
+  PMEMAllocator *pmem_allocator_;
+  HashTable *hash_table_;
+  uint64_t num_rebuild_threads_;
+  bool opt_parallel_rebuild_;
+  CheckPoint checkpoint_;
 };
 
 } // namespace KVDK_NAMESPACE

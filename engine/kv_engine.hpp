@@ -9,11 +9,13 @@
 #include <ctime>
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <iostream>
 #include <list>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -30,18 +32,33 @@
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
 #include "utils/utils.hpp"
+#include "version/old_records_cleaner.hpp"
+#include "version/version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
 
 public:
-  KVEngine();
   ~KVEngine();
 
   static Status Open(const std::string &name, Engine **engine_ptr,
                      const Configs &configs);
 
+  Snapshot *GetSnapshot(bool make_checkpoint) override;
+
+  Status Backup(const pmem::obj::string_view backup_path,
+                const Snapshot *snapshot) override;
+
+  void ReleaseSnapshot(const Snapshot *snapshot) override {
+    {
+      std::lock_guard<std::mutex> lg(checkpoint_lock_);
+      persist_checkpoint_->MaybeRelease(
+          static_cast<const SnapshotImpl *>(snapshot));
+    }
+    version_controller_.ReleaseSnapshot(
+        static_cast<const SnapshotImpl *>(snapshot));
+  }
   void ReportPMemUsage();
 
   // Global Anonymous Collection
@@ -55,11 +72,11 @@ public:
               std::string *value) override;
   Status SSet(const StringView collection, const StringView user_key,
               const StringView value) override;
-  // TODO: Release delete record and deleted nodes
   Status SDelete(const StringView collection,
                  const StringView user_key) override;
-  std::shared_ptr<Iterator>
-  NewSortedIterator(const StringView collection) override;
+  Iterator *NewSortedIterator(const StringView collection,
+                              Snapshot *snapshot) override;
+  void ReleaseSortedIterator(Iterator *sorted_iterator) override;
 
   // Unordered Collection
   virtual Status HGet(StringView const collection_name, StringView const key,
@@ -92,26 +109,40 @@ public:
     return xPush(collection_name, value, QueueOpPosition::Right);
   }
 
-  void ReleaseWriteThread() override { write_thread.Release(); }
+  void ReleaseAccessThread() override { access_thread.Release(); }
 
   const std::vector<std::shared_ptr<Skiplist>> &GetSkiplists() {
     return skiplists_;
   };
 
 private:
+  friend OldRecordsCleaner;
+
+  KVEngine(const Configs &configs)
+      : engine_thread_cache_(configs.max_access_threads),
+        version_controller_(configs.max_access_threads),
+        old_records_cleaner_(this, configs.max_access_threads){};
+
   struct BatchWriteHint {
     TimeStampType timestamp{0};
     SpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
-    void *pmem_record_to_free = nullptr;
+    HashEntry *hash_entry_ptr = nullptr;
+    void *data_record_to_free = nullptr;
+    void *delete_record_to_free = nullptr;
+    bool space_not_used{false};
   };
 
-  struct ThreadLocalRes {
-    ThreadLocalRes() = default;
+  struct EngineThreadCache {
+    EngineThreadCache() = default;
 
-    std::uint64_t newest_restored_ts = 0;
     PendingBatch *persisted_pending_batch = nullptr;
-    std::unordered_map<std::uint64_t, int> visited_skiplist_ids;
+    // This thread is doing batch write
+    bool batch_writing = false;
+
+    // Info used in recovery
+    uint64_t newest_restored_ts = 0;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids{};
   };
 
   bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
@@ -125,7 +156,7 @@ private:
   Status HashGetImpl(const StringView &key, std::string *value,
                      uint16_t type_mask);
 
-  inline Status MaybeInitWriteThread();
+  inline Status MaybeInitAccessThread();
 
   void SetCompareFunc(
       const StringView &collection_name,
@@ -207,37 +238,51 @@ private:
 
   Status RestorePendingBatch();
 
+  Status MaybeRestoreBackup();
+
+  Status RestoreCheckpoint();
+
   Status PersistOrRecoverImmutableConfigs();
 
   Status RestoreDlistRecords(DLRecord *pmp_record);
 
   Status RestoreQueueRecords(DLRecord *pmp_record);
 
-  // Regularly works excecuted by background thread
-  void BackgroundWork();
-
   Status CheckConfigs(const Configs &configs);
 
   void FreeSkiplistDramNodes();
 
-  inline uint64_t get_cpu_tsc() {
-    uint32_t lo, hi;
-    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)lo) | (((uint64_t)hi) << 32);
-  }
+  inline void delayFree(const OldDeleteRecord &);
 
-  inline TimeStampType get_timestamp() {
-    auto res = get_cpu_tsc() - ts_on_startup_ + newest_version_on_startup_;
-    return res;
-  }
+  inline void delayFree(const OldDataRecord &);
 
-  inline std::string db_file_name() { return dir_ + "data"; }
+  inline std::string data_file() { return data_file(dir_); }
+
+  inline static std::string data_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "data";
+  }
 
   inline std::string persisted_pending_block_file(int thread_id) {
     return pending_batch_dir_ + std::to_string(thread_id);
   }
 
-  inline std::string config_file_name() { return dir_ + "configs"; }
+  inline std::string backup_mark_file() { return backup_mark_file(dir_); }
+
+  inline std::string checkpoint_file() { return checkpoint_file(dir_); }
+
+  inline static std::string checkpoint_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "checkpoint";
+  }
+
+  inline static std::string backup_mark_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "backup_mark";
+  }
+
+  inline std::string config_file() { return config_file(dir_); }
+
+  inline static std::string config_file(const std::string &instance_path) {
+    return format_dir_path(instance_path) + "configs";
+  }
 
   inline bool checkDLRecordLinkageLeft(DLRecord *pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
@@ -251,6 +296,11 @@ private:
     DLRecord *pmp_next =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
     return pmp_next->prev == offset;
+  }
+
+  // If this instance is a backup of another kvdk instance
+  bool RecoverToCheckpoint() {
+    return configs_.recover_to_checkpoint && persist_checkpoint_->Valid();
   }
 
   bool checkLinkage(DLRecord *pmp_record) {
@@ -286,14 +336,37 @@ private:
                    data_entry->header.record_size));
   }
 
-  std::vector<ThreadLocalRes> thread_res_;
+  inline void markEmptySpace(const SpaceEntry &space_entry) {
+    DataHeader header(0, space_entry.size);
+    pmem_memcpy_persist(
+        pmem_allocator_->offset2addr_checked(space_entry.offset), &header,
+        sizeof(DataHeader));
+  }
+
+  // Run in background to clean old records regularly
+  void backgroundOldRecordCleaner();
+
+  // Run in background to report PMem usage regularly
+  void backgroundPMemUsageReporter();
+
+  // Run in background to merge and balance free space of PMem Allocator
+  void backgroundPMemAllocatorOrgnizer();
+
+  // Run in background to free obsolete DRAM space
+  void backgroundDramCleaner();
+
+  // void backgroundWorkCoordinator();
+
+  void startBackgroundWorks();
+
+  void terminateBackgroundWorks();
+
+  Array<EngineThreadCache> engine_thread_cache_;
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};
   std::atomic<CollectionIDType> list_id_{0};
 
-  uint64_t ts_on_startup_ = 0;
-  uint64_t newest_version_on_startup_ = 0;
   std::shared_ptr<HashTable> hash_table_;
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
@@ -310,8 +383,31 @@ private:
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
-  SortedCollectionRebuilder sorted_rebuilder_;
+  std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
+  VersionController version_controller_;
+  OldRecordsCleaner old_records_cleaner_;
+
+  bool bg_cleaner_processing_;
+
   Comparator comparator_;
+
+  struct BackgroundWorkSignals {
+    BackgroundWorkSignals() = default;
+    BackgroundWorkSignals(const BackgroundWorkSignals &) = delete;
+
+    std::condition_variable_any old_records_cleaner_cv;
+    std::condition_variable_any pmem_usage_reporter_cv;
+    std::condition_variable_any pmem_allocator_organizer_cv;
+    std::condition_variable_any dram_cleaner_cv;
+
+    SpinMutex terminating_lock;
+    bool terminating = false;
+  };
+
+  CheckPoint *persist_checkpoint_;
+  std::mutex checkpoint_lock_;
+
+  BackgroundWorkSignals bg_work_signals_;
 };
 
 } // namespace KVDK_NAMESPACE

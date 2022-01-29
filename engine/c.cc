@@ -21,6 +21,7 @@ using kvdk::Collection;
 using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::Iterator;
+using kvdk::Snapshot;
 using kvdk::WriteBatch;
 
 extern "C" {
@@ -34,10 +35,14 @@ struct KVDKWriteBatch {
   WriteBatch rep;
 };
 struct KVDKIterator {
+  KVDKIterType type;
   Iterator *rep;
 };
 struct KVDKCollection {
   Collection *rep;
+};
+struct KVDKSnapshot {
+  Snapshot *rep;
 };
 
 static char *CopyStringToChar(const std::string &str) {
@@ -48,12 +53,12 @@ static char *CopyStringToChar(const std::string &str) {
 
 KVDKConfigs *KVDKCreateConfigs() { return new KVDKConfigs; }
 
-void KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_write_threads,
+void KVDKUserConfigs(KVDKConfigs *kv_config, uint64_t max_access_threads,
                      uint64_t pmem_file_size, unsigned char populate_pmem_space,
                      uint32_t pmem_block_size, uint64_t pmem_segment_blocks,
                      uint32_t hash_bucket_size, uint64_t hash_bucket_num,
                      uint32_t num_buckets_per_slot) {
-  kv_config->rep.max_write_threads = max_write_threads;
+  kv_config->rep.max_access_threads = max_access_threads;
   kv_config->rep.hash_bucket_num = hash_bucket_num;
   kv_config->rep.hash_bucket_size = hash_bucket_size;
   kv_config->rep.num_buckets_per_slot = num_buckets_per_slot;
@@ -79,8 +84,19 @@ KVDKStatus KVDKOpen(const char *name, const KVDKConfigs *config, FILE *log_file,
   return s;
 }
 
-void KVDKReleaseWriteThread(KVDKEngine *engine) {
-  engine->rep->ReleaseWriteThread();
+void KVDKReleaseAccessThread(KVDKEngine *engine) {
+  engine->rep->ReleaseAccessThread();
+}
+
+KVDKSnapshot *KVDKGetSnapshot(KVDKEngine *engine, int make_checkpoint) {
+  KVDKSnapshot *snapshot = new KVDKSnapshot;
+  snapshot->rep = engine->rep->GetSnapshot(make_checkpoint);
+  return snapshot;
+}
+
+void KVDKReleaseSnapshot(KVDKEngine *engine, KVDKSnapshot *snapshot) {
+  engine->rep->ReleaseSnapshot(snapshot->rep);
+  delete snapshot;
 }
 
 void KVDKCloseEngine(KVDKEngine *engine) {
@@ -273,23 +289,49 @@ KVDKStatus KVDKRPop(KVDKEngine *engine, const char *collection,
   return s;
 }
 
-KVDKIterator *KVDKCreateIterator(KVDKEngine *engine, const char *collection,
-                                 size_t collection_len,
-                                 KVDKIterType iter_type) {
+KVDKIterator *KVDKCreateUnorderedIterator(KVDKEngine *engine,
+                                          const char *collection,
+                                          size_t collection_len) {
   KVDKIterator *result = new KVDKIterator;
-  if (iter_type == SORTED) {
-    result->rep =
-        (engine->rep->NewSortedIterator(std::string(collection))).get();
-  } else if (iter_type == HASH) {
-    result->rep =
-        (engine->rep->NewUnorderedIterator(std::string(collection))).get();
-  } else {
-    return nullptr;
-  }
+  result->rep =
+      (engine->rep->NewUnorderedIterator(std::string(collection))).get();
   if (!result->rep) {
+    delete result;
     return nullptr;
   }
+  result->type = HASH;
   return result;
+}
+
+KVDKIterator *KVDKCreateSortedIterator(KVDKEngine *engine,
+                                       const char *collection,
+                                       size_t collection_len,
+                                       KVDKSnapshot *snapshot) {
+  KVDKIterator *result = new KVDKIterator;
+  result->rep = (engine->rep->NewSortedIterator(
+      std::string(collection), snapshot ? snapshot->rep : nullptr));
+  if (!result->rep) {
+    delete result;
+    return nullptr;
+  }
+  result->type = SORTED;
+  return result;
+}
+
+void KVDKDestroyIterator(KVDKEngine *engine, KVDKIterator *iterator) {
+  switch (iterator->type) {
+  case SORTED: {
+    engine->rep->ReleaseSortedIterator(iterator->rep);
+    break;
+  }
+  case HASH: {
+    break;
+  }
+
+  default:
+    std::abort();
+  }
+  delete iterator;
 }
 
 void KVDKIterSeekToFirst(KVDKIterator *iter) { iter->rep->SeekToFirst(); }
@@ -317,6 +359,4 @@ const char *KVDKIterValue(KVDKIterator *iter, size_t *val_len) {
   *val_len = val_str.size();
   return CopyStringToChar(val_str);
 }
-
-void KVDKIterDestory(KVDKIterator *iter) { delete iter; }
 }

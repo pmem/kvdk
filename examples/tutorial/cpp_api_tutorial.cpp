@@ -14,6 +14,7 @@
 #define DEBUG // For assert
 
 using StringView = pmem::obj::string_view;
+using kvdk::Snapshot;
 
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.
@@ -201,6 +202,7 @@ static void test_iterator() {
   }
 
   printf("Successfully iterated through a sorted named collections.\n");
+  engine->ReleaseSortedIterator(iter);
   return;
 }
 
@@ -255,8 +257,10 @@ static void test_customer_sorted_func() {
   // regitser compare function
   std::string comp_name = "double_comp";
   auto score_cmp = [](const StringView &a, const StringView &b) -> int {
-    double scorea = std::stod(a.data());
-    double scoreb = std::stod(b.data());
+    std::string str_a(a.data(), a.size());
+    std::string str_b(b.data(), b.size());
+    double scorea = std::stod(str_a);
+    double scoreb = std::stod(str_b);
     if (scorea == scoreb)
       return 0;
     else if (scorea < scoreb)
@@ -294,6 +298,7 @@ static void test_customer_sorted_func() {
     ++i;
   }
   printf("Successfully collections sorted by number.\n");
+  engine->ReleaseSortedIterator(iter);
 }
 
 int main() {

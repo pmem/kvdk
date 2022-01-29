@@ -13,10 +13,10 @@ HashTable *
 HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
                         uint32_t num_buckets_per_slot,
                         const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-                        uint32_t write_threads) {
+                        uint32_t max_access_threads) {
   HashTable *table = new (std::nothrow)
       HashTable(hash_bucket_num, hash_bucket_size, num_buckets_per_slot,
-                pmem_allocator, write_threads);
+                pmem_allocator, max_access_threads);
   if (table) {
     auto main_buckets_space =
         table->dram_allocator_.Allocate(hash_bucket_size * hash_bucket_num);
@@ -36,45 +36,45 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
                                uint16_t target_type,
                                const HashEntry *hash_entry,
                                DataEntry *data_entry_metadata) {
-  if (hash_entry->header.status == HashEntryStatus::Empty) {
-    return false;
-  }
   if ((target_type & hash_entry->header.data_type) &&
       hash_k_prefix == hash_entry->header.key_prefix) {
 
     void *pmem_record;
     StringView data_entry_key;
 
-    switch (hash_entry->header.offset_type) {
-    case HashOffsetType::StringRecord: {
+    switch (hash_entry->header.index_type) {
+    case HashIndexType::Empty: {
+      return false;
+    }
+    case HashIndexType::StringRecord: {
       pmem_record = hash_entry->index.string_record;
       data_entry_key = hash_entry->index.string_record->Key();
       break;
     }
-    case HashOffsetType::UnorderedCollectionElement:
-    case HashOffsetType::DLRecord: {
+    case HashIndexType::UnorderedCollectionElement:
+    case HashIndexType::DLRecord: {
       pmem_record = hash_entry->index.dl_record;
       data_entry_key = hash_entry->index.dl_record->Key();
       break;
     }
-    case HashOffsetType::UnorderedCollection: {
+    case HashIndexType::UnorderedCollection: {
       UnorderedCollection *p_collection =
           hash_entry->index.p_unordered_collection;
       data_entry_key = p_collection->Name();
       break;
     }
-    case HashOffsetType::Queue: {
+    case HashIndexType::Queue: {
       Queue *p_collection = hash_entry->index.queue_ptr;
       data_entry_key = p_collection->Name();
       break;
     }
-    case HashOffsetType::SkiplistNode: {
+    case HashIndexType::SkiplistNode: {
       SkiplistNode *dram_node = hash_entry->index.skiplist_node;
       pmem_record = dram_node->record;
       data_entry_key = dram_node->record->Key();
       break;
     }
-    case HashOffsetType::Skiplist: {
+    case HashIndexType::Skiplist: {
       Skiplist *skiplist = hash_entry->index.skiplist;
       pmem_record = skiplist->header()->record;
       data_entry_key = skiplist->Name();
@@ -82,8 +82,8 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
     }
     default: {
       GlobalLogger.Error("Not supported hash offset type: %u\n",
-                         hash_entry->header.offset_type);
-      assert(false && "Trying to use invalid HashOffsetType!");
+                         hash_entry->header.index_type);
+      assert(false && "Trying to use invalid HashIndexType!");
       return false;
     }
     }
@@ -102,7 +102,7 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
 Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
                                  uint16_t type_mask, HashEntry **entry_ptr,
                                  HashEntry *hash_entry_snap,
-                                 DataEntry *data_entry_meta, bool in_recovery) {
+                                 DataEntry *data_entry_meta) {
   assert(entry_ptr);
   assert((*entry_ptr) == nullptr);
   HashEntry *reusable_entry = nullptr;
@@ -120,7 +120,6 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
     memcpy_16(hash_entry_snap, *entry_ptr);
     if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
                        data_entry_meta)) {
-      (*entry_ptr)->header.status = HashEntryStatus::Updating;
       found = true;
     }
   }
@@ -145,9 +144,7 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
         break;
       }
 
-      if (!in_recovery /* we don't reused hash entry in
-                                             recovering */
-          && (*entry_ptr)->Reusable()) {
+      if ((*entry_ptr)->Empty()) {
         reusable_entry = *entry_ptr;
       }
     }
@@ -174,13 +171,9 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
     }
   }
 
-  // set status of writing position, see comments of HashEntryStatus
-  if (found) {
-    (*entry_ptr)->header.status = HashEntryStatus::Updating;
-  } else {
-    if ((*entry_ptr) != reusable_entry) {
-      (*entry_ptr)->header.status = HashEntryStatus::Initializing;
-    }
+  if (!found && (*entry_ptr) != reusable_entry) {
+    (*entry_ptr)->Clear();
+    hash_bucket_entries_[hint.bucket]++;
   }
 
   return found ? Status::Ok : Status::NotFound;
@@ -236,17 +229,12 @@ Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
 }
 
 void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_ptr,
-                       uint16_t type, void *index, HashOffsetType offset_type) {
-  assert(write_thread.id >= 0);
+                       uint16_t type, void *index, HashIndexType index_type) {
+  assert(access_thread.id >= 0);
 
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index,
-                           HashEntryStatus::Normal, offset_type);
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type);
 
-  bool new_entry = entry_ptr->header.status == HashEntryStatus::Initializing;
   memcpy_16(entry_ptr, &new_hash_entry);
-  if (new_entry) { // new allocated
-    hash_bucket_entries_[hint.bucket]++;
-  }
 }
 
 } // namespace KVDK_NAMESPACE
