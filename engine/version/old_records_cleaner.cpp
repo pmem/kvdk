@@ -222,9 +222,12 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         dram_node = hash_entry_ref->index.skiplist_node;
         hash_indexed_pmem_record = dram_node->record;
         break;
+      case HashIndexType::Empty:
+        break;
       default:
         GlobalLogger.Error(
-            "Wrong time in handle pending free skiplist delete record\n");
+            "Wrong type %u in handle pending free skiplist delete record\n",
+            hash_entry_ref->header.index_type);
         std::abort();
       }
 
