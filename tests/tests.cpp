@@ -144,7 +144,7 @@ protected:
     LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
   }
 
-  void SortedSeekIterator(const std::string &collection,
+  void TestSortedIterator(const std::string &collection,
                           bool is_local = false) {
     auto IteratingThrough = [&](uint32_t id) {
       int entries = 0;
@@ -195,7 +195,7 @@ protected:
     LaunchNThreads(configs.max_access_threads, IteratingThrough);
   }
 
-  void UnorderedSeekIterator(const std::string &collection,
+  void TestUnorderedIterator(const std::string &collection,
                              bool is_local = false) {
     auto IteratingThrough = [&](uint32_t id) {
       int entries = 0;
@@ -288,28 +288,6 @@ private:
       ASSERT_EQ(got_val2, val2);
     }
   }
-
-  void ForwardIter(Iterator *iter, Types type) {
-    int forward_entries = 0;
-    ASSERT_TRUE(iter != nullptr);
-    // forward iterator
-    iter->SeekToFirst();
-    if (iter->Valid()) {
-      ++forward_entries;
-      std::string prev = iter->Key();
-      iter->Next();
-      while (iter->Valid()) {
-        ++forward_entries;
-        std::string k = iter->Key();
-        iter->Next();
-        if (type == Types::Sorted) {
-          ASSERT_EQ(true, k.compare(prev) > 0);
-        }
-        prev = k;
-      }
-    }
-  }
-  void BackwardIter(Iterator *iter) {}
 
 private:
   // Sequence of option configurations to try
@@ -614,7 +592,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
   do {
     TestLocalCollection("thread_skiplist", SortedSetFunc, SortedGetFunc,
                         SortedDeleteFunc);
-    SortedSeekIterator("thread_skiplist", true);
+    TestSortedIterator("thread_skiplist", true);
   } while (ChangedConfig());
 
   delete engine;
@@ -647,7 +625,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   do {
     TestGlobalCollection(collection, SortedSetFunc, SortedGetFunc,
                          SortedDeleteFunc, Types::Sorted);
-    SortedSeekIterator(collection, false);
+    TestSortedIterator(collection, false);
   } while (ChangedConfig());
   delete engine;
 }
@@ -995,7 +973,7 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
   do {
     TestLocalCollection("thread_unordered", UnorderedSetFunc, UnorderedGetFunc,
                         UnorderedDeleteFunc);
-    UnorderedSeekIterator("thread_unordered", true);
+    TestUnorderedIterator("thread_unordered", true);
   } while (ChangedConfig());
   delete engine;
 }
@@ -1023,7 +1001,7 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   do {
     TestGlobalCollection("global_unordered", UnorderedSetFunc, UnorderedGetFunc,
                          UnorderedDeleteFunc, Types::Hash);
-    UnorderedSeekIterator("global_unordered", false);
+    TestUnorderedIterator("global_unordered", false);
   } while (ChangedConfig());
   delete engine;
 }
