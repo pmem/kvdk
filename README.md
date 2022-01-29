@@ -7,8 +7,8 @@
 *  The basic get/set/update/delete/iterate operations on sorted keys.
 *  Provide APIs to write multiple key-value pairs in an atomic batch.
 *  User can create multiple collections of sorted keys.
+*  Support checkpoint to get a consistent view of data.
 *  Support read-committed transactions. (TBD)
-*  Support snapshot to get a consistent view of data. (TBD)
 
 # Limitations
 *  Maximum supported key-value size is 64KB-64MB.
