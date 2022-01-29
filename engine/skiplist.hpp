@@ -148,7 +148,7 @@ private:
 class Skiplist : public Collection {
 public:
   Skiplist(DLRecord *h, const std::string &name, CollectionIDType id,
-           const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+           std::shared_ptr<PMEMAllocator> pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
       : Collection(name, id), pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
@@ -421,7 +421,7 @@ private:
 class SortedIterator : public Iterator {
 public:
   SortedIterator(Skiplist *skiplist,
-                 const std::shared_ptr<PMEMAllocator> &pmem_allocator,
+                 std::shared_ptr<PMEMAllocator> pmem_allocator,
                  SnapshotImpl *snapshot, bool own_snapshot)
       : skiplist_(skiplist), pmem_allocator_(pmem_allocator), current_(nullptr),
         snapshot_(snapshot), own_snapshot_(own_snapshot) {}
