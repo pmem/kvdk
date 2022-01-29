@@ -610,8 +610,16 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
                     pmem_record->entry.meta.timestamp,
                 "old pmem record has larger ts than new restored one in "
                 "restore skiplist record");
-    if (cached_data_entry.meta.timestamp <= persist_checkpoint_->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
+    if (!RecoverToCheckpoint() || cached_data_entry.meta
+                                          .timestamp <= persist_checkpoint_
+                                                            ->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
       purgeAndFree(old_pmem_record);
+    } else {
+      DLRecord *valid_version_record =
+          sorted_rebuilder_->FindValidVersion(old_pmem_record, nullptr);
+      if (valid_version_record != old_pmem_record) {
+        purgeAndFree(old_pmem_record);
+      }
     }
   }
 

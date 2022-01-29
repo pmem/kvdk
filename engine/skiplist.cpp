@@ -674,8 +674,11 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
           hash_hint, internal_key, SortedDataRecord | SortedDeleteRecord,
           &entry_ptr, &hash_entry, nullptr);
       if (s != Status::Ok) {
-        GlobalLogger.Error("Rebuild skiplist error, hash entry should be "
-                           "insert first before repair linkage");
+        GlobalLogger.Error(
+            "Rebuild skiplist error, hash entry should be "
+            "insert first before repair linkage, key %s type %u status %u",
+            string_view_2_string(Skiplist::UserKey(next_record)).c_str(),
+            next_record->entry.meta.type, s);
         return Status::Abort;
       }
       invalid_records.clear();
