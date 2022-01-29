@@ -559,8 +559,8 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord *pmem_record,
   if (!linked_record) {
     if (!RecoverToCheckpoint()) {
       purgeAndFree(pmem_record);
-      return Status::Ok;
     }
+    return Status::Ok;
   }
 
   DataEntry existing_data_entry;

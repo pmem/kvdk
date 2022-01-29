@@ -242,12 +242,12 @@ private:
   // check validation of k_size and v_size, as record may be left corrupted
   bool ValidateRecordSize() {
     return entry.meta.k_size + entry.meta.v_size + sizeof(DLRecord) <=
-           entry.header.record_size * 64;
+           entry.header.record_size;
   }
 
   uint32_t Checksum() {
-    uint32_t meta_checksum_size =
-        sizeof(DataMeta); /* we don't checksum pointers */
+    // we don't checksum next/prev pointers
+    uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
     return get_checksum((char *)&entry.meta, meta_checksum_size) +

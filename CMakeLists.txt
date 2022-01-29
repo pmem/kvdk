@@ -58,7 +58,7 @@ set(SOURCES
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
         engine/pmem_allocator/free_list.cpp
-        engine/c.cc
+        engine/c.cpp
         engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/queue.cpp

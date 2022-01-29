@@ -103,11 +103,11 @@ public:
     SpinMutex *spin;
   };
 
-  static HashTable *
-  NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
-               uint32_t num_buckets_per_slot,
-               std::shared_ptr<PMEMAllocator> pmem_allocator,
-               uint32_t max_access_threads);
+  static HashTable *NewHashTable(uint64_t hash_bucket_num,
+                                 uint32_t hash_bucket_size,
+                                 uint32_t num_buckets_per_slot,
+                                 std::shared_ptr<PMEMAllocator> pmem_allocator,
+                                 uint32_t max_access_threads);
 
   KeyHashHint GetHint(const StringView &key) {
     KeyHashHint hint;
