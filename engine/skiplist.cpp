@@ -675,7 +675,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist *skiplist) {
           &entry_ptr, &hash_entry, nullptr);
       if (s != Status::Ok) {
         GlobalLogger.Error("Rebuild skiplist error, hash entry should be "
-                           "insert first before repair linkage");
+                           "insert first before repair linkage\n");
         return Status::Abort;
       }
       invalid_records.clear();

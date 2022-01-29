@@ -127,7 +127,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       }
     }
 
-    cnt = count;
+    cnt = count * 10;
     // Update / Delete, and insert new
     while (cnt--) {
       std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));

@@ -194,7 +194,7 @@ void Freelist::Push(const SpaceEntry &entry) {
 }
 
 uint64_t Freelist::BatchPush(const std::vector<SpaceEntry> &entries) {
-  uint64_t pushed = 0;
+  uint64_t pushed_size = 0;
   Array<std::vector<PMemOffsetType>> moving_list(max_classified_b_size_);
   for (const SpaceEntry &entry : entries) {
     kvdk_assert(entry.size % block_size_ == 0,
@@ -211,7 +211,7 @@ uint64_t Freelist::BatchPush(const std::vector<SpaceEntry> &entries) {
       std::lock_guard<SpinMutex> lg(large_entries_spin_);
       large_entries_.emplace(entry);
     }
-    pushed += entry.size;
+    pushed_size += entry.size;
   }
 
   for (uint32_t b_size = 1; b_size < moving_list.size(); b_size++) {
@@ -219,6 +219,7 @@ uint64_t Freelist::BatchPush(const std::vector<SpaceEntry> &entries) {
       active_pool_.MoveEntryList(moving_list[b_size], b_size);
     }
   }
+  return pushed_size;
 }
 
 bool Freelist::Get(uint32_t size, SpaceEntry *space_entry) {
