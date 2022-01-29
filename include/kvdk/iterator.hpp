@@ -9,8 +9,8 @@
 namespace KVDK_NAMESPACE {
 
 class Iterator {
-public:
-  virtual void Seek(const std::string &key) = 0;
+ public:
+  virtual void Seek(const std::string& key) = 0;
 
   virtual void SeekToFirst() = 0;
 
@@ -27,4 +27,4 @@ public:
   virtual std::string Value() = 0;
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

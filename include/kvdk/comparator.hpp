@@ -11,12 +11,12 @@
 #include "libpmemobj++/string_view.hpp"
 
 class Comparator {
-public:
+ public:
   using StringView = pmem::obj::string_view;
 
   using compare =
-      std::function<int(const StringView &src, const StringView &target)>;
-  void SetComparaFunc(const StringView &compara_name, compare comp_func) {
+      std::function<int(const StringView& src, const StringView& target)>;
+  void SetComparaFunc(const StringView& compara_name, compare comp_func) {
     if (compara_table_.find(
             std::string{compara_name.data(), compara_name.size()}) ==
         compara_table_.end()) {
@@ -24,7 +24,7 @@ public:
           std::string{compara_name.data(), compara_name.size()}, comp_func);
     }
   }
-  compare GetComparaFunc(const StringView &compara_name) {
+  compare GetComparaFunc(const StringView& compara_name) {
     if (compara_table_.find(
             std::string{compara_name.data(), compara_name.size()}) !=
         compara_table_.end()) {
@@ -34,6 +34,6 @@ public:
     return nullptr;
   };
 
-private:
+ private:
   std::unordered_map<std::string, compare> compara_table_;
 };

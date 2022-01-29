@@ -15,7 +15,7 @@ namespace KVDK_NAMESPACE {
 class ThreadManager;
 
 struct Thread {
-public:
+ public:
   Thread() : id(-1), thread_manager(nullptr) {}
   ~Thread();
   void Release();
@@ -24,13 +24,13 @@ public:
 };
 
 class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
-public:
+ public:
   ThreadManager(uint32_t max_threads) : max_threads_(max_threads), ids_(0) {}
-  Status MaybeInitThread(Thread &t);
+  Status MaybeInitThread(Thread& t);
 
-  void Release(const Thread &t);
+  void Release(const Thread& t);
 
-private:
+ private:
   std::atomic<uint32_t> ids_;
   std::unordered_set<uint32_t> usable_id_;
   uint32_t max_threads_;
@@ -39,4 +39,4 @@ private:
 
 extern thread_local Thread access_thread;
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

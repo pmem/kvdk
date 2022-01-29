@@ -238,8 +238,7 @@ TEST_F(GraphSimulatorTest, GraphSimulatorTopN) {
   }
 
   EdgeList tmp_list;
-  ASSERT_EQ(graph_simulator->GetAllInEdges(vertexes[0], &tmp_list),
-            Status::Ok);
+  ASSERT_EQ(graph_simulator->GetAllInEdges(vertexes[0], &tmp_list), Status::Ok);
   ASSERT_EQ(tmp_list.Num(), 5);
 
   std::vector<std::pair<Vertex, uint64_t>> top_n;

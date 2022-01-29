@@ -7,34 +7,31 @@
 #include <thread>
 #include <vector>
 
-#include "gtest/gtest.h"
-
-#include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
-
 #include "../engine/kv_engine.hpp"
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "../engine/utils/sync_point.hpp"
-
+#include "gtest/gtest.h"
+#include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
 #include "test_util.h"
 
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
 
 using SetOpsFunc =
-    std::function<Status(const std::string &collection, const std::string &key,
-                         const std::string &value)>;
-using DeleteOpsFunc = std::function<Status(const std::string &collection,
-                                           const std::string &key)>;
+    std::function<Status(const std::string& collection, const std::string& key,
+                         const std::string& value)>;
+using DeleteOpsFunc = std::function<Status(const std::string& collection,
+                                           const std::string& key)>;
 
 using GetOpsFunc = std::function<Status(
-    const std::string &collection, const std::string &key, std::string *value)>;
+    const std::string& collection, const std::string& key, std::string* value)>;
 
 enum Types { String, Sorted, Hash, Queue };
 
 class EngineBasicTest : public testing::Test {
-protected:
-  Engine *engine = nullptr;
+ protected:
+  Engine* engine = nullptr;
   Configs configs;
   std::string db_path;
   std::string backup_path;
@@ -64,7 +61,7 @@ protected:
 
   virtual void TearDown() { Destroy(); }
 
-  void AssignData(std::string &data, int len) {
+  void AssignData(std::string& data, int len) {
     data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
   }
 
@@ -97,25 +94,25 @@ protected:
   // Return the current configuration.
   Configs CurrentConfigs() {
     switch (config_option) {
-    case MultiThread:
-      configs.max_access_threads = 16;
-      break;
-    case OptRestore:
-      configs.opt_large_sorted_collection_restore = true;
-      break;
-    default:
-      break;
+      case MultiThread:
+        configs.max_access_threads = 16;
+        break;
+      case OptRestore:
+        configs.opt_large_sorted_collection_restore = true;
+        break;
+      default:
+        break;
     }
     return configs;
   }
 
   // Set/Get/Delete
-  void TestGlobalCollection(const std::string &collection, SetOpsFunc SetFunc,
+  void TestGlobalCollection(const std::string& collection, SetOpsFunc SetFunc,
                             GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc,
                             Types type) {
     // Maybe having create collection for all collection types.
     if (type == Types::Sorted) {
-      Collection *collection_ptr;
+      Collection* collection_ptr;
       ASSERT_EQ(engine->CreateSortedCollection(collection, &collection_ptr),
                 Status::Ok);
     }
@@ -127,11 +124,11 @@ protected:
     LaunchNThreads(configs.max_access_threads, global_func);
   }
 
-  void TestLocalCollection(const std::string &collection, SetOpsFunc SetFunc,
+  void TestLocalCollection(const std::string& collection, SetOpsFunc SetFunc,
                            GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc) {
     auto Local_XSetXGetXDelete = [&](uint64_t id) {
       std::string thread_local_collection = collection + std::to_string(id);
-      Collection *local_collection_ptr;
+      Collection* local_collection_ptr;
       ASSERT_EQ(engine->CreateSortedCollection(thread_local_collection,
                                                &local_collection_ptr),
                 Status::Ok);
@@ -144,7 +141,7 @@ protected:
     LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
   }
 
-  void TestSortedIterator(const std::string &collection,
+  void TestSortedIterator(const std::string& collection,
                           bool is_local = false) {
     auto IteratingThrough = [&](uint32_t id) {
       int entries = 0;
@@ -195,7 +192,7 @@ protected:
     LaunchNThreads(configs.max_access_threads, IteratingThrough);
   }
 
-  void TestUnorderedIterator(const std::string &collection,
+  void TestUnorderedIterator(const std::string& collection,
                              bool is_local = false) {
     auto IteratingThrough = [&](uint32_t id) {
       int entries = 0;
@@ -243,8 +240,8 @@ protected:
     LaunchNThreads(configs.max_access_threads, IteratingThrough);
   }
 
-private:
-  void TestEmptyKey(const std::string &collection, SetOpsFunc SetFunc,
+ private:
+  void TestEmptyKey(const std::string& collection, SetOpsFunc SetFunc,
                     GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc) {
     std::string key, val, got_val;
     key = "", val = "val";
@@ -256,7 +253,7 @@ private:
     engine->ReleaseAccessThread();
   }
 
-  void CreateBasicOperationTest(const std::string &collection,
+  void CreateBasicOperationTest(const std::string& collection,
                                 SetOpsFunc SetFunc, GetOpsFunc GetFunc,
                                 DeleteOpsFunc DeleteFunc, uint32_t id) {
     std::string val1, val2, got_val1, got_val2;
@@ -289,7 +286,7 @@ private:
     }
   }
 
-private:
+ private:
   // Sequence of option configurations to try
   enum OptionConfig { Default, MultiThread, OptRestore, End };
   int config_option;
@@ -328,7 +325,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
             Status::Ok);
 
   std::string sorted_collection("sorted_collection");
-  Collection *sorted_collection_ptr;
+  Collection* sorted_collection_ptr;
   ASSERT_EQ(
       engine->CreateSortedCollection(sorted_collection, &sorted_collection_ptr),
       Status::Ok);
@@ -384,17 +381,17 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   while (set_finish_threads.load() != num_threads) {
     asm volatile("pause");
   }
-  Snapshot *snapshot = engine->GetSnapshot(true);
+  Snapshot* snapshot = engine->GetSnapshot(true);
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
     cv.notify_all();
   }
   engine->Backup(backup_path, snapshot);
-  for (auto &t : ths) {
+  for (auto& t : ths) {
     t.join();
   }
-  Iterator *snapshot_iter =
+  Iterator* snapshot_iter =
       engine->NewSortedIterator(sorted_collection, snapshot);
   uint64_t snapshot_iter_cnt = 0;
   snapshot_iter->SeekToFirst();
@@ -411,7 +408,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   std::vector<int> opt_restore_skiplists{0, 1};
   for (auto is_opt : opt_restore_skiplists) {
     configs.opt_large_sorted_collection_restore = is_opt;
-    Engine *backup_engine;
+    Engine* backup_engine;
     ASSERT_EQ(
         Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
         Status::Ok);
@@ -485,18 +482,18 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 }
 
 TEST_F(EngineBasicTest, TestBasicStringOperations) {
-  auto StringSetFunc = [&](const std::string &collection,
-                           const std::string &key,
-                           const std::string &value) -> Status {
+  auto StringSetFunc = [&](const std::string& collection,
+                           const std::string& key,
+                           const std::string& value) -> Status {
     return engine->Set(key, value);
   };
 
   auto StringGetFunc =
-      [&](const std::string &collection, const std::string &key,
-          std::string *value) -> Status { return engine->Get(key, value); };
+      [&](const std::string& collection, const std::string& key,
+          std::string* value) -> Status { return engine->Get(key, value); };
 
-  auto StringDeleteFunc = [&](const std::string &collection,
-                              const std::string &key) -> Status {
+  auto StringDeleteFunc = [&](const std::string& collection,
+                              const std::string& key) -> Status {
     return engine->Delete(key);
   };
 
@@ -570,20 +567,20 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
 }
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
-  auto SortedSetFunc = [&](const std::string &collection,
-                           const std::string &key,
-                           const std::string &value) -> Status {
+  auto SortedSetFunc = [&](const std::string& collection,
+                           const std::string& key,
+                           const std::string& value) -> Status {
     return engine->SSet(collection, key, value);
   };
 
-  auto SortedGetFunc = [&](const std::string &collection,
-                           const std::string &key,
-                           std::string *value) -> Status {
+  auto SortedGetFunc = [&](const std::string& collection,
+                           const std::string& key,
+                           std::string* value) -> Status {
     return engine->SGet(collection, key, value);
   };
 
-  auto SortedDeleteFunc = [&](const std::string &collection,
-                              const std::string &key) -> Status {
+  auto SortedDeleteFunc = [&](const std::string& collection,
+                              const std::string& key) -> Status {
     return engine->SDelete(collection, key);
   };
 
@@ -601,20 +598,20 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
 TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
   std::atomic<int> n_global_entries{0};
 
-  auto SortedSetFunc = [&](const std::string &collection,
-                           const std::string &key,
-                           const std::string &value) -> Status {
+  auto SortedSetFunc = [&](const std::string& collection,
+                           const std::string& key,
+                           const std::string& value) -> Status {
     return engine->SSet(collection, key, value);
   };
 
-  auto SortedGetFunc = [&](const std::string &collection,
-                           const std::string &key,
-                           std::string *value) -> Status {
+  auto SortedGetFunc = [&](const std::string& collection,
+                           const std::string& key,
+                           std::string* value) -> Status {
     return engine->SGet(collection, key, value);
   };
 
-  auto SortedDeleteFunc = [&](const std::string &collection,
-                              const std::string &key) -> Status {
+  auto SortedDeleteFunc = [&](const std::string& collection,
+                              const std::string& key) -> Status {
     return engine->SDelete(collection, key);
   };
 
@@ -637,7 +634,7 @@ TEST_F(EngineBasicTest, TestSeek) {
 
   // Test Seek
   std::string collection = "col1";
-  Collection *collection_ptr;
+  Collection* collection_ptr;
   ASSERT_EQ(engine->CreateSortedCollection(collection, &collection_ptr),
             Status::Ok);
   uint64_t z = 0;
@@ -717,13 +714,14 @@ TEST_F(EngineBasicTest, TestStringRestore) {
       std::string val(std::to_string(i));
       std::string updated_val(std::to_string(i * 2));
       Status s = engine->Get(key, &got_val);
-      if ((i * id) % 3 == 0 && (id * i) % 2 == 1) { // deleted then updated ones
+      if ((i * id) % 3 == 0 &&
+          (id * i) % 2 == 1) {  // deleted then updated ones
         ASSERT_EQ(s, Status::Ok);
         ASSERT_EQ(got_val, updated_val);
-      } else if ((i * id) % 2 == 0) { // not deleted ones
+      } else if ((i * id) % 2 == 0) {  // not deleted ones
         ASSERT_EQ(s, Status::Ok);
         ASSERT_EQ(got_val, val);
-      } else { // deleted ones
+      } else {  // deleted ones
         ASSERT_EQ(s, Status::NotFound);
       }
     }
@@ -739,7 +737,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
   // insert and delete some keys, then re-insert some deleted keys
   int count = 100;
   std::string overall_skiplist = "skiplist";
-  Collection *overall_collection_ptr;
+  Collection* overall_collection_ptr;
   ASSERT_EQ(
       engine->CreateSortedCollection(overall_skiplist, &overall_collection_ptr),
       Status::Ok);
@@ -748,7 +746,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
     std::string key_prefix(id, 'a');
     std::string got_val;
     std::string t_skiplist(thread_skiplist + std::to_string(id));
-    Collection *thread_collection_ptr;
+    Collection* thread_collection_ptr;
     ASSERT_EQ(
         engine->CreateSortedCollection(t_skiplist, &thread_collection_ptr),
         Status::Ok);
@@ -894,14 +892,14 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   for (uint64_t i = 1; i <= count; ++i) {
     std::string average_skiplist("a_skiplist" +
                                  std::to_string(i % num_collections));
-    Collection *avg_collection_ptr;
+    Collection* avg_collection_ptr;
     ASSERT_EQ(
         engine->CreateSortedCollection(average_skiplist, &avg_collection_ptr),
         Status::Ok);
   }
   for (uint32_t i = 0; i < num_threads; ++i) {
     std::string r_skiplist("r_skiplist" + std::to_string(i));
-    Collection *r_collection_ptr;
+    Collection* r_collection_ptr;
     ASSERT_EQ(engine->CreateSortedCollection(r_skiplist, &r_collection_ptr),
               Status::Ok);
   }
@@ -940,7 +938,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   // reopen and restore engine and try gets
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  auto skiplists = (dynamic_cast<KVEngine *>(engine))->GetSkiplists();
+  auto skiplists = (dynamic_cast<KVEngine*>(engine))->GetSkiplists();
   for (int h = 1; h <= 32; ++h) {
     for (auto s : skiplists) {
       ASSERT_EQ(s->CheckConnection(h), Status::Ok);
@@ -950,20 +948,20 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
-  auto UnorderedSetFunc = [&](const std::string &collection,
-                              const std::string &key,
-                              const std::string &value) -> Status {
+  auto UnorderedSetFunc = [&](const std::string& collection,
+                              const std::string& key,
+                              const std::string& value) -> Status {
     return engine->HSet(collection, key, value);
   };
 
-  auto UnorderedGetFunc = [&](const std::string &collection,
-                              const std::string &key,
-                              std::string *value) -> Status {
+  auto UnorderedGetFunc = [&](const std::string& collection,
+                              const std::string& key,
+                              std::string* value) -> Status {
     return engine->HGet(collection, key, value);
   };
 
-  auto UnorderedDeleteFunc = [&](const std::string &collection,
-                                 const std::string &key) -> Status {
+  auto UnorderedDeleteFunc = [&](const std::string& collection,
+                                 const std::string& key) -> Status {
     return engine->HDelete(collection, key);
   };
 
@@ -979,20 +977,20 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
 }
 
 TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
-  auto UnorderedSetFunc = [&](const std::string &collection,
-                              const std::string &key,
-                              const std::string &value) -> Status {
+  auto UnorderedSetFunc = [&](const std::string& collection,
+                              const std::string& key,
+                              const std::string& value) -> Status {
     return engine->HSet(collection, key, value);
   };
 
-  auto UnorderedGetFunc = [&](const std::string &collection,
-                              const std::string &key,
-                              std::string *value) -> Status {
+  auto UnorderedGetFunc = [&](const std::string& collection,
+                              const std::string& key,
+                              std::string* value) -> Status {
     return engine->HGet(collection, key, value);
   };
 
-  auto UnorderedDeleteFunc = [&](const std::string &collection,
-                                 const std::string &key) -> Status {
+  auto UnorderedDeleteFunc = [&](const std::string& collection,
+                                 const std::string& key) -> Status {
     return engine->HDelete(collection, key);
   };
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -1077,20 +1075,20 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
                              global_kvs_inserting[tid][j + count].first,
                              global_kvs_inserting[tid][j + count].second),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(global_collection_name,
-                             global_kvs_inserting[tid][j + count].first,
-                             &value_got),
-                Status::Ok);
+      ASSERT_EQ(
+          engine->HGet(global_collection_name,
+                       global_kvs_inserting[tid][j + count].first, &value_got),
+          Status::Ok);
       ASSERT_EQ(value_got, global_kvs_inserting[tid][j + count].second);
 
       // Delete second kv-pair in global collection
       ASSERT_EQ(engine->HDelete(global_collection_name,
                                 global_kvs_inserting[tid][j + count].first),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(global_collection_name,
-                             global_kvs_inserting[tid][j + count].first,
-                             &value_got),
-                Status::NotFound);
+      ASSERT_EQ(
+          engine->HGet(global_collection_name,
+                       global_kvs_inserting[tid][j + count].first, &value_got),
+          Status::NotFound);
     }
   };
 
@@ -1125,20 +1123,20 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
                              tlocal_kvs_inserting[tid][j + count].first,
                              tlocal_kvs_inserting[tid][j + count].second),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j + count].first,
-                             &value_got),
-                Status::Ok);
+      ASSERT_EQ(
+          engine->HGet(tlocal_collection_names[tid],
+                       tlocal_kvs_inserting[tid][j + count].first, &value_got),
+          Status::Ok);
       ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j + count].second);
 
       // Delete second kv-pair in global collection
       ASSERT_EQ(engine->HDelete(tlocal_collection_names[tid],
                                 tlocal_kvs_inserting[tid][j + count].first),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j + count].first,
-                             &value_got),
-                Status::NotFound);
+      ASSERT_EQ(
+          engine->HGet(tlocal_collection_names[tid],
+                       tlocal_kvs_inserting[tid][j + count].first, &value_got),
+          Status::NotFound);
     }
   };
 
@@ -1196,10 +1194,10 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
                 Status::Ok);
       ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
 
-      ASSERT_EQ(engine->HGet(global_collection_name,
-                             global_kvs_inserting[tid][j + count].first,
-                             &value_got),
-                Status::NotFound);
+      ASSERT_EQ(
+          engine->HGet(global_collection_name,
+                       global_kvs_inserting[tid][j + count].first, &value_got),
+          Status::NotFound);
     }
   };
 
@@ -1211,10 +1209,10 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
                 Status::Ok);
       ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j].second);
 
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j + count].first,
-                             &value_got),
-                Status::NotFound);
+      ASSERT_EQ(
+          engine->HGet(tlocal_collection_names[tid],
+                       tlocal_kvs_inserting[tid][j + count].first, &value_got),
+          Status::NotFound);
     }
   };
 
@@ -1428,11 +1426,11 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
                                 "SuperHotSpot1"};
   std::string val1(1024, 'a');
   std::string val2(1024, 'b');
-  Collection *collection_ptr;
+  Collection* collection_ptr;
   ASSERT_EQ(engine->CreateSortedCollection(collection_name, &collection_ptr),
             Status::Ok);
 
-  for (const std::string &key : keys) {
+  for (const std::string& key : keys) {
     ASSERT_EQ(engine->SSet(collection_name, key, val1), Status::Ok);
     engine->ReleaseAccessThread();
 
@@ -1484,7 +1482,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   std::vector<std::string> collections{"collection0", "collection1",
                                        "collection2"};
 
-  auto cmp0 = [](const StringView &a, const StringView &b) -> int {
+  auto cmp0 = [](const StringView& a, const StringView& b) -> int {
     double scorea = std::stod(string_view_2_string(a));
     double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
@@ -1495,7 +1493,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       return -1;
   };
 
-  auto cmp1 = [](const StringView &a, const StringView &b) -> int {
+  auto cmp1 = [](const StringView& a, const StringView& b) -> int {
     double scorea = std::stod(string_view_2_string(a));
     double scoreb = std::stod(string_view_2_string(b));
     if (scorea == scoreb)
@@ -1520,7 +1518,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   engine->SetCompareFunc("collection0_cmp", cmp0);
   engine->SetCompareFunc("collection1_cmp", cmp1);
   for (size_t i = 0; i < collections.size(); ++i) {
-    Collection *collection_ptr;
+    Collection* collection_ptr;
     Status s;
     if (i < 2) {
       std::string comp_name = "collection" + std::to_string(i) + "_cmp";
@@ -1546,13 +1544,13 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     std::vector<kvpair> expected_res(dedup_kvs.begin(), dedup_kvs.end());
     if (i == 0) {
       std::sort(expected_res.begin(), expected_res.end(),
-                [&](const kvpair &a, const kvpair &b) -> bool {
+                [&](const kvpair& a, const kvpair& b) -> bool {
                   return cmp0(a.first, b.first) <= 0;
                 });
 
     } else if (i == 1) {
       std::sort(expected_res.begin(), expected_res.end(),
-                [&](const kvpair &a, const kvpair &b) -> bool {
+                [&](const kvpair& a, const kvpair& b) -> bool {
                   return cmp1(a.first, b.first) <= 0;
                 });
     }
@@ -1600,8 +1598,8 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
          {"KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before",
           "Test::Delete::Start::0"}});
     SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::BatchWrite::AllocateRecord::After", [&](void *size) {
-          size_t bsize = *((size_t *)size);
+        "KVEngine::BatchWrite::AllocateRecord::After", [&](void* size) {
+          size_t bsize = *((size_t*)size);
           ASSERT_EQ(batch_size, bsize);
         });
 
@@ -1645,7 +1643,7 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
       }
     });
 
-    for (auto &t : ts) {
+    for (auto& t : ts) {
       t.join();
     }
 
@@ -1679,8 +1677,8 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->Reset();
     SyncPoint::GetInstance()->SetCallBack(
-        "KVEnigne::BatchWrite::BatchWriteRecord", [&](void *index) {
-          size_t idx = *(size_t *)(index);
+        "KVEnigne::BatchWrite::BatchWriteRecord", [&](void* index) {
+          size_t idx = *(size_t*)(index);
           if (idx == (batch_size / 2)) {
             throw 1;
           }
@@ -1724,8 +1722,8 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->Reset();
     SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::BatchWrite::purgeAndFree::Before", [&](void *index) {
-          size_t idx = *(size_t *)(index);
+        "KVEngine::BatchWrite::purgeAndFree::Before", [&](void* index) {
+          size_t idx = *(size_t*)(index);
           if (idx == 6) {
             throw 1;
           }
@@ -1746,7 +1744,7 @@ TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
     try {
       ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
     } catch (...) {
-      delete engine; // reopen engine;
+      delete engine;  // reopen engine;
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
                 Status::Ok);
       for (int i = 0; i < batch_size; ++i) {
@@ -1781,16 +1779,16 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::InsertDLRecord::UpdatePrev", [&](void *) {
+      "KVEngine::Skiplist::InsertDLRecord::UpdatePrev", [&](void*) {
         if (update_num % 8 == 0) {
           throw 1;
         }
       });
   SyncPoint::GetInstance()->SetCallBack(
-      "Test::SSet::Update::Finish", [&](void *) { update_num.fetch_add(1); });
+      "Test::SSet::Update::Finish", [&](void*) { update_num.fetch_add(1); });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  Collection *collection_ptr;
+  Collection* collection_ptr;
   std::string collection_name = "SortedRecoverySyncPoint";
   Status s = engine->CreateSortedCollection(collection_name, &collection_ptr);
   ASSERT_EQ(s, Status::Ok);
@@ -1851,7 +1849,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
   SyncPoint::GetInstance()->Reset();
   // only throw when the first call `SDelete`
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::Delete::PersistNext'sPrev::After", [&](void *) {
+      "KVEngine::Skiplist::Delete::PersistNext'sPrev::After", [&](void*) {
         if (!first_visited.load()) {
           first_visited.store(true);
           throw 1;
@@ -1859,7 +1857,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  Collection *collection_ptr;
+  Collection* collection_ptr;
   std::string collection_name = "SortedDeleteRecoverySyncPoint";
   Status s = engine->CreateSortedCollection(collection_name, &collection_ptr);
   ASSERT_EQ(s, Status::Ok);
@@ -1916,7 +1914,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
             Status::Ok);
   std::vector<std::thread> ths;
   std::string collection_name = "skiplist";
-  Collection *collection_ptr;
+  Collection* collection_ptr;
   ASSERT_EQ(engine->CreateSortedCollection(collection_name, &collection_ptr),
             Status::Ok);
 
@@ -1961,14 +1959,14 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
     }
     engine->ReleaseSortedIterator(sorted_iter);
   }));
-  for (auto &thread : ths) {
+  for (auto& thread : ths) {
     thread.join();
   }
 }
 
 #endif
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

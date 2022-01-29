@@ -18,21 +18,21 @@ namespace KVDK_NAMESPACE {
 class KVEngine;
 
 struct OldDataRecord {
-  void *pmem_data_record;
+  void* pmem_data_record;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely clear index of this OldDataRecord, and free its space
   TimeStampType release_time;
 };
 
 struct OldDeleteRecord {
-  void *pmem_delete_record;
+  void* pmem_delete_record;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely clear index of this OldDeleteRecord, and transfer it to
   // PendingFreeSpaceEntries
   TimeStampType release_time;
   // We need ref to hash entry for clear index of delete record
-  HashEntry *hash_entry_ref;
-  SpinMutex *hash_entry_lock;
+  HashEntry* hash_entry_ref;
+  SpinMutex* hash_entry_lock;
 };
 
 struct PendingFreeSpaceEntries {
@@ -48,24 +48,24 @@ struct PendingFreeSpaceEntries {
 // the updated/deleted records need to be ramained for a while until they are
 // not refered by any snapshot
 class OldRecordsCleaner {
-public:
-  OldRecordsCleaner(KVEngine *kv_engine, uint32_t max_access_threads)
+ public:
+  OldRecordsCleaner(KVEngine* kv_engine, uint32_t max_access_threads)
       : kv_engine_(kv_engine), cleaner_thread_cache_(max_access_threads) {
     assert(kv_engine_ != nullptr);
   }
 
-  void Push(const OldDataRecord &old_data_record);
-  void Push(const OldDeleteRecord &old_delete_record);
+  void Push(const OldDataRecord& old_data_record);
+  void Push(const OldDeleteRecord& old_delete_record);
   // Try to clean global old records
   void TryGlobalClean();
   void TryCleanCachedOldRecords(size_t num_limit_clean);
   uint64_t NumCachedOldRecords() {
     assert(access_thread.id >= 0);
-    auto &tc = cleaner_thread_cache_[access_thread.id];
+    auto& tc = cleaner_thread_cache_[access_thread.id];
     return tc.old_delete_records.size() + tc.old_data_records.size();
   }
 
-private:
+ private:
   struct CleanerThreadCache {
     std::deque<OldDeleteRecord> old_delete_records{};
     std::deque<OldDataRecord> old_data_records{};
@@ -74,10 +74,10 @@ private:
   const uint64_t kLimitCachedDeleteRecords = 1000000;
 
   void maybeUpdateOldestSnapshot();
-  SpaceEntry purgeOldDataRecord(const OldDataRecord &old_data_record);
-  SpaceEntry purgeOldDeleteRecord(const OldDeleteRecord &old_delete_record);
+  SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
+  SpaceEntry purgeOldDeleteRecord(const OldDeleteRecord& old_delete_record);
 
-  KVEngine *kv_engine_;
+  KVEngine* kv_engine_;
 
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
@@ -86,4 +86,4 @@ private:
   std::deque<PendingFreeSpaceEntries> pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

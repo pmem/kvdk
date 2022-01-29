@@ -4,12 +4,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
+#include <condition_variable>
 #include <cstdint>
 #include <ctime>
-
-#include <atomic>
-#include <condition_variable>
 #include <deque>
 #include <iostream>
 #include <list>
@@ -39,63 +38,63 @@ namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
 
-public:
+ public:
   ~KVEngine();
 
-  static Status Open(const std::string &name, Engine **engine_ptr,
-                     const Configs &configs);
+  static Status Open(const std::string& name, Engine** engine_ptr,
+                     const Configs& configs);
 
-  Snapshot *GetSnapshot(bool make_checkpoint) override;
+  Snapshot* GetSnapshot(bool make_checkpoint) override;
 
   Status Backup(const pmem::obj::string_view backup_path,
-                const Snapshot *snapshot) override;
+                const Snapshot* snapshot) override;
 
-  void ReleaseSnapshot(const Snapshot *snapshot) override {
+  void ReleaseSnapshot(const Snapshot* snapshot) override {
     {
       std::lock_guard<std::mutex> lg(checkpoint_lock_);
       persist_checkpoint_->MaybeRelease(
-          static_cast<const SnapshotImpl *>(snapshot));
+          static_cast<const SnapshotImpl*>(snapshot));
     }
     version_controller_.ReleaseSnapshot(
-        static_cast<const SnapshotImpl *>(snapshot));
+        static_cast<const SnapshotImpl*>(snapshot));
   }
   void ReportPMemUsage();
 
   // Global Anonymous Collection
-  Status Get(const StringView key, std::string *value) override;
+  Status Get(const StringView key, std::string* value) override;
   Status Set(const StringView key, const StringView value) override;
   Status Delete(const StringView key) override;
-  Status BatchWrite(const WriteBatch &write_batch) override;
+  Status BatchWrite(const WriteBatch& write_batch) override;
 
   // Sorted Collection
   Status SGet(const StringView collection, const StringView user_key,
-              std::string *value) override;
+              std::string* value) override;
   Status SSet(const StringView collection, const StringView user_key,
               const StringView value) override;
   Status SDelete(const StringView collection,
                  const StringView user_key) override;
-  Iterator *NewSortedIterator(const StringView collection,
-                              Snapshot *snapshot) override;
-  void ReleaseSortedIterator(Iterator *sorted_iterator) override;
+  Iterator* NewSortedIterator(const StringView collection,
+                              Snapshot* snapshot) override;
+  void ReleaseSortedIterator(Iterator* sorted_iterator) override;
 
   // Unordered Collection
   virtual Status HGet(StringView const collection_name, StringView const key,
-                      std::string *value) override;
+                      std::string* value) override;
   virtual Status HSet(StringView const collection_name, StringView const key,
                       StringView const value) override;
   virtual Status HDelete(StringView const collection_name,
                          StringView const key) override;
-  std::shared_ptr<Iterator>
-  NewUnorderedIterator(StringView const collection_name) override;
+  std::shared_ptr<Iterator> NewUnorderedIterator(
+      StringView const collection_name) override;
 
   // Queue
   virtual Status LPop(StringView const collection_name,
-                      std::string *value) override {
+                      std::string* value) override {
     return xPop(collection_name, value, QueueOpPosition::Left);
   }
 
   virtual Status RPop(StringView const collection_name,
-                      std::string *value) override {
+                      std::string* value) override {
     return xPop(collection_name, value, QueueOpPosition::Right);
   }
 
@@ -111,14 +110,14 @@ public:
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
-  const std::vector<std::shared_ptr<Skiplist>> &GetSkiplists() {
+  const std::vector<std::shared_ptr<Skiplist>>& GetSkiplists() {
     return skiplists_;
   };
 
-private:
+ private:
   friend OldRecordsCleaner;
 
-  KVEngine(const Configs &configs)
+  KVEngine(const Configs& configs)
       : engine_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads){};
@@ -127,16 +126,16 @@ private:
     TimeStampType timestamp{0};
     SpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
-    HashEntry *hash_entry_ptr = nullptr;
-    void *data_record_to_free = nullptr;
-    void *delete_record_to_free = nullptr;
+    HashEntry* hash_entry_ptr = nullptr;
+    void* data_record_to_free = nullptr;
+    void* delete_record_to_free = nullptr;
     bool space_not_used{false};
   };
 
   struct EngineThreadCache {
     EngineThreadCache() = default;
 
-    PendingBatch *persisted_pending_batch = nullptr;
+    PendingBatch* persisted_pending_batch = nullptr;
     // This thread is doing batch write
     bool batch_writing = false;
 
@@ -145,43 +144,43 @@ private:
     std::unordered_map<uint64_t, int> visited_skiplist_ids{};
   };
 
-  bool CheckKeySize(const StringView &key) { return key.size() <= UINT16_MAX; }
+  bool CheckKeySize(const StringView& key) { return key.size() <= UINT16_MAX; }
 
-  bool CheckValueSize(const StringView &value) {
+  bool CheckValueSize(const StringView& value) {
     return value.size() <= UINT32_MAX;
   }
 
-  Status Init(const std::string &name, const Configs &configs);
+  Status Init(const std::string& name, const Configs& configs);
 
-  Status HashGetImpl(const StringView &key, std::string *value,
+  Status HashGetImpl(const StringView& key, std::string* value,
                      uint16_t type_mask);
 
   inline Status MaybeInitAccessThread();
 
   void SetCompareFunc(
-      const StringView &collection_name,
-      std::function<int(const StringView &src, const StringView &target)>
+      const StringView& collection_name,
+      std::function<int(const StringView& src, const StringView& target)>
           comp_func) {
     comparator_.SetComparaFunc(collection_name, comp_func);
   }
 
   Status CreateSortedCollection(const StringView collection_name,
-                                Collection **collection_ptr,
-                                const StringView &comp_name) override;
+                                Collection** collection_ptr,
+                                const StringView& comp_name) override;
 
-private:
-  Status InitCollection(const StringView &collection, Collection **list,
+ private:
+  Status InitCollection(const StringView& collection, Collection** list,
                         uint16_t collection_type);
-  std::shared_ptr<UnorderedCollection>
-  createUnorderedCollection(StringView const collection_name);
+  std::shared_ptr<UnorderedCollection> createUnorderedCollection(
+      StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
 
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
-                        CollectionType **collection_ptr, uint64_t record_type) {
+                        CollectionType** collection_ptr, uint64_t record_type) {
     HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
     HashEntry hash_entry;
-    HashEntry *entry_ptr = nullptr;
+    HashEntry* entry_ptr = nullptr;
     Status s = hash_table_->SearchForRead(hint, collection_name, record_type,
                                           &entry_ptr, &hash_entry, nullptr);
 
@@ -189,7 +188,7 @@ private:
     if (s != Status::Ok) {
       return s;
     }
-    *collection_ptr = (CollectionType *)hash_entry.index.ptr;
+    *collection_ptr = (CollectionType*)hash_entry.index.ptr;
     return s;
   }
 
@@ -197,44 +196,44 @@ private:
   Status xPush(StringView const collection_name, StringView const value,
                QueueOpPosition push_pos);
 
-  Status xPop(StringView const collection_name, std::string *value,
+  Status xPop(StringView const collection_name, std::string* value,
               QueueOpPosition pop_pos);
 
   Status MaybeInitPendingBatchFile();
 
-  Status StringSetImpl(const StringView &key, const StringView &value);
+  Status StringSetImpl(const StringView& key, const StringView& value);
 
-  Status StringDeleteImpl(const StringView &key);
+  Status StringDeleteImpl(const StringView& key);
 
-  Status StringBatchWriteImpl(const WriteBatch::KV &kv,
-                              BatchWriteHint &batch_hint);
+  Status StringBatchWriteImpl(const WriteBatch::KV& kv,
+                              BatchWriteHint& batch_hint);
 
-  Status SSetImpl(Skiplist *skiplist, const StringView &user_key,
-                  const StringView &value);
+  Status SSetImpl(Skiplist* skiplist, const StringView& user_key,
+                  const StringView& value);
 
-  Status SDeleteImpl(Skiplist *skiplist, const StringView &user_key);
+  Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
   Status Recovery();
 
   Status RestoreData();
 
-  Status RestoreSkiplistHead(DLRecord *pmem_record,
-                             const DataEntry &cached_entry);
+  Status RestoreSkiplistHead(DLRecord* pmem_record,
+                             const DataEntry& cached_entry);
 
-  Status RestoreStringRecord(StringRecord *pmem_record,
-                             const DataEntry &cached_entry);
+  Status RestoreStringRecord(StringRecord* pmem_record,
+                             const DataEntry& cached_entry);
 
-  Status RestoreSkiplistRecord(DLRecord *pmem_record,
-                               const DataEntry &cached_data_entry);
+  Status RestoreSkiplistRecord(DLRecord* pmem_record,
+                               const DataEntry& cached_data_entry);
 
   // Check if a doubly linked record has been successfully inserted, and try
   // repair un-finished prev pointer
-  bool CheckAndRepairDLRecord(DLRecord *record);
+  bool CheckAndRepairDLRecord(DLRecord* record);
 
-  bool ValidateRecord(void *data_record);
+  bool ValidateRecord(void* data_record);
 
-  bool ValidateRecordAndGetValue(void *data_record, uint32_t expected_checksum,
-                                 std::string *value);
+  bool ValidateRecordAndGetValue(void* data_record, uint32_t expected_checksum,
+                                 std::string* value);
 
   Status RestorePendingBatch();
 
@@ -244,21 +243,21 @@ private:
 
   Status PersistOrRecoverImmutableConfigs();
 
-  Status RestoreDlistRecords(DLRecord *pmp_record);
+  Status RestoreDlistRecords(DLRecord* pmp_record);
 
-  Status RestoreQueueRecords(DLRecord *pmp_record);
+  Status RestoreQueueRecords(DLRecord* pmp_record);
 
-  Status CheckConfigs(const Configs &configs);
+  Status CheckConfigs(const Configs& configs);
 
   void FreeSkiplistDramNodes();
 
-  inline void delayFree(const OldDeleteRecord &);
+  inline void delayFree(const OldDeleteRecord&);
 
-  inline void delayFree(const OldDataRecord &);
+  inline void delayFree(const OldDataRecord&);
 
   inline std::string data_file() { return data_file(dir_); }
 
-  inline static std::string data_file(const std::string &instance_path) {
+  inline static std::string data_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "data";
   }
 
@@ -270,30 +269,30 @@ private:
 
   inline std::string checkpoint_file() { return checkpoint_file(dir_); }
 
-  inline static std::string checkpoint_file(const std::string &instance_path) {
+  inline static std::string checkpoint_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "checkpoint";
   }
 
-  inline static std::string backup_mark_file(const std::string &instance_path) {
+  inline static std::string backup_mark_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "backup_mark";
   }
 
   inline std::string config_file() { return config_file(dir_); }
 
-  inline static std::string config_file(const std::string &instance_path) {
+  inline static std::string config_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "configs";
   }
 
-  inline bool checkDLRecordLinkageLeft(DLRecord *pmp_record) {
+  inline bool checkDLRecordLinkageLeft(DLRecord* pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLRecord *pmem_record_prev =
+    DLRecord* pmem_record_prev =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
     return pmem_record_prev->next == offset;
   }
 
-  inline bool checkDLRecordLinkageRight(DLRecord *pmp_record) {
+  inline bool checkDLRecordLinkageRight(DLRecord* pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLRecord *pmp_next =
+    DLRecord* pmp_next =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
     return pmp_next->prev == offset;
   }
@@ -303,11 +302,11 @@ private:
     return configs_.recover_to_checkpoint && persist_checkpoint_->Valid();
   }
 
-  bool checkLinkage(DLRecord *pmp_record) {
+  bool checkLinkage(DLRecord* pmp_record) {
     uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLRecord *pmp_prev =
+    DLRecord* pmp_prev =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
-    DLRecord *pmp_next =
+    DLRecord* pmp_next =
         pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
     bool is_linked_left = (pmp_prev->next == offset);
     bool is_linked_right = (pmp_next->prev == offset);
@@ -322,21 +321,22 @@ private:
           "Broken DLDataEntry linkage: prev<=>curr->right, abort...\n");
       std::abort();
     } else {
-      GlobalLogger.Error("Broken DLDataEntry linkage: prev<-curr<=>right, "
-                         "which is logically impossible! Abort...\n");
+      GlobalLogger.Error(
+          "Broken DLDataEntry linkage: prev<-curr<=>right, "
+          "which is logically impossible! Abort...\n");
       std::abort();
     }
   }
 
-  inline void purgeAndFree(void *pmem_record) {
-    DataEntry *data_entry = static_cast<DataEntry *>(pmem_record);
+  inline void purgeAndFree(void* pmem_record) {
+    DataEntry* data_entry = static_cast<DataEntry*>(pmem_record);
     data_entry->Destroy();
     pmem_allocator_->Free(
         SpaceEntry(pmem_allocator_->addr2offset_checked(pmem_record),
                    data_entry->header.record_size));
   }
 
-  inline void markEmptySpace(const SpaceEntry &space_entry) {
+  inline void markEmptySpace(const SpaceEntry& space_entry) {
     DataHeader header(0, space_entry.size);
     pmem_memcpy_persist(
         pmem_allocator_->offset2addr_checked(space_entry.offset), &header,
@@ -393,7 +393,7 @@ private:
 
   struct BackgroundWorkSignals {
     BackgroundWorkSignals() = default;
-    BackgroundWorkSignals(const BackgroundWorkSignals &) = delete;
+    BackgroundWorkSignals(const BackgroundWorkSignals&) = delete;
 
     std::condition_variable_any old_records_cleaner_cv;
     std::condition_variable_any pmem_usage_reporter_cv;
@@ -404,10 +404,10 @@ private:
     bool terminating = false;
   };
 
-  CheckPoint *persist_checkpoint_;
+  CheckPoint* persist_checkpoint_;
   std::mutex checkpoint_lock_;
 
   BackgroundWorkSignals bg_work_signals_;
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

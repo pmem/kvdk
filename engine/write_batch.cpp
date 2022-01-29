@@ -3,11 +3,12 @@
  */
 
 #include "kvdk/write_batch.hpp"
+
 #include "data_record.hpp"
 
 namespace KVDK_NAMESPACE {
 
-void WriteBatch::Put(const std::string &key, const std::string &value) {
+void WriteBatch::Put(const std::string& key, const std::string& value) {
   kvs.push_back({
       key,
       value,
@@ -15,7 +16,7 @@ void WriteBatch::Put(const std::string &key, const std::string &value) {
   });
 }
 
-void WriteBatch::Delete(const std::string &key) {
+void WriteBatch::Delete(const std::string& key) {
   kvs.push_back({key, "", StringDeleteRecord});
 }
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

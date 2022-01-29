@@ -4,10 +4,8 @@
 
 #pragma once
 
-#include "libpmem.h"
-
 #include "kvdk/namespace.hpp"
-
+#include "libpmem.h"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -58,7 +56,9 @@ struct DataMeta {
   DataMeta() = default;
   DataMeta(TimeStampType _timestamp, RecordType _record_type,
            uint16_t _key_size, uint32_t _value_size)
-      : timestamp(_timestamp), type(_record_type), k_size(_key_size),
+      : timestamp(_timestamp),
+        type(_record_type),
+        k_size(_key_size),
         v_size(_value_size) {}
 
   TimeStampType timestamp;
@@ -88,7 +88,7 @@ struct DataEntry {
 };
 
 struct StringRecord {
-public:
+ public:
   DataEntry entry;
   PMemOffsetType older_version_record;
   char data[0];
@@ -98,22 +98,23 @@ public:
   //
   // target_address: pre-allocated space to store constructed record, it
   // should larger than sizeof(StringRecord) + key size + value size
-  static StringRecord *
-  ConstructStringRecord(void *target_address, uint32_t _record_size,
-                        TimeStampType _timestamp, RecordType _record_type,
-                        PMemOffsetType _older_version_record,
-                        const StringView &_key, const StringView &_value) {
-    StringRecord *record = new (target_address)
+  static StringRecord* ConstructStringRecord(
+      void* target_address, uint32_t _record_size, TimeStampType _timestamp,
+      RecordType _record_type, PMemOffsetType _older_version_record,
+      const StringView& _key, const StringView& _value) {
+    StringRecord* record = new (target_address)
         StringRecord(_record_size, _timestamp, _record_type,
                      _older_version_record, _key, _value);
     return record;
   }
 
   // Construct and persist a string record at pmem address "addr"
-  static StringRecord *
-  PersistStringRecord(void *addr, uint32_t record_size, TimeStampType timestamp,
-                      RecordType type, PMemOffsetType older_version_record,
-                      const StringView &key, const StringView &value);
+  static StringRecord* PersistStringRecord(void* addr, uint32_t record_size,
+                                           TimeStampType timestamp,
+                                           RecordType type,
+                                           PMemOffsetType older_version_record,
+                                           const StringView& key,
+                                           const StringView& value);
 
   void Destroy() { entry.Destroy(); }
 
@@ -141,10 +142,10 @@ public:
     return false;
   }
 
-private:
+ private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
                RecordType _record_type, PMemOffsetType _older_version_record,
-               const StringView &_key, const StringView &_value)
+               const StringView& _key, const StringView& _value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
         older_version_record(_older_version_record) {
@@ -164,13 +165,13 @@ private:
   uint32_t Checksum() {
     uint32_t checksum_size = entry.meta.k_size + entry.meta.v_size +
                              sizeof(StringRecord) - sizeof(DataHeader);
-    return get_checksum((char *)&entry.meta, checksum_size);
+    return get_checksum((char*)&entry.meta, checksum_size);
   }
 };
 
 // doubly linked record
 struct DLRecord {
-public:
+ public:
   DataEntry entry;
   PMemOffsetType older_version_offset;
   PMemOffsetType prev;
@@ -182,14 +183,14 @@ public:
   //
   // target_address: pre-allocated space to store constructed record, it
   // should no smaller than sizeof(DLRecord) + key size + value size
-  static DLRecord *ConstructDLRecord(void *target_address, uint32_t record_size,
+  static DLRecord* ConstructDLRecord(void* target_address, uint32_t record_size,
                                      TimeStampType timestamp,
                                      RecordType record_type,
                                      PMemOffsetType older_version_record,
                                      uint64_t prev, uint64_t next,
-                                     const StringView &key,
-                                     const StringView &value) {
-    DLRecord *record = new (target_address)
+                                     const StringView& key,
+                                     const StringView& value) {
+    DLRecord* record = new (target_address)
         DLRecord(record_size, timestamp, record_type, older_version_record,
                  prev, next, key, value);
     return record;
@@ -218,21 +219,23 @@ public:
   }
 
   // Construct and persist a dl record to PMem address "addr"
-  static DLRecord *PersistDLRecord(void *addr, uint32_t record_size,
+  static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
                                    TimeStampType timestamp, RecordType type,
                                    PMemOffsetType older_version_record,
                                    PMemOffsetType prev, PMemOffsetType next,
-                                   const StringView &key,
-                                   const StringView &value);
+                                   const StringView& key,
+                                   const StringView& value);
 
-private:
+ private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,
            RecordType _record_type, PMemOffsetType _older_version_record,
-           PMemOffsetType _prev, PMemOffsetType _next, const StringView &_key,
-           const StringView &_value)
+           PMemOffsetType _prev, PMemOffsetType _next, const StringView& _key,
+           const StringView& _value)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        older_version_offset(_older_version_record), prev(_prev), next(_next) {
+        older_version_offset(_older_version_record),
+        prev(_prev),
+        next(_next) {
     assert(_record_type & DLRecordType);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
@@ -250,8 +253,8 @@ private:
     uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
-    return get_checksum((char *)&entry.meta, meta_checksum_size) +
+    return get_checksum((char*)&entry.meta, meta_checksum_size) +
            get_checksum(data, data_checksum_size);
   }
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

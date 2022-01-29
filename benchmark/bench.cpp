@@ -1,3 +1,4 @@
+#include <gflags/gflags.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -7,16 +8,11 @@
 #include <string>
 #include <thread>
 
-#include <gflags/gflags.h>
-
-#include "sys/time.h"
-
+#include "engine/alias.hpp"
+#include "generator.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
-
-#include "engine/alias.hpp"
-
-#include "generator.hpp"
+#include "sys/time.h"
 
 using namespace google;
 using namespace KVDK_NAMESPACE;
@@ -94,7 +90,7 @@ DEFINE_bool(opt_large_sorted_collection_restore, false,
 DEFINE_bool(use_devdax_mode, false, "Use devdax device for kvdk");
 
 class Timer {
-public:
+ public:
   void Start() { clock_gettime(CLOCK_REALTIME, &start); }
 
   std::uint64_t End() {
@@ -104,7 +100,7 @@ public:
            (end.tv_nsec - start.tv_nsec);
   }
 
-private:
+ private:
   struct timespec start;
 };
 
@@ -115,11 +111,11 @@ std::atomic_uint64_t read_cnt{UINT64_MAX};
 std::vector<std::vector<std::uint64_t>> read_latencies;
 std::vector<std::vector<std::uint64_t>> write_latencies;
 std::vector<std::string> collections;
-Engine *engine;
+Engine* engine;
 std::string value_pool;
 size_t operations_per_thread;
 bool has_timed_out;
-std::vector<int> has_finished; // std::vector<bool> is a trap!
+std::vector<int> has_finished;  // std::vector<bool> is a trap!
 
 std::vector<PaddedEngine> engines;
 std::vector<PaddedRangeIterators> ranges;
@@ -143,37 +139,36 @@ std::uint64_t generate_key(size_t tid) {
   static extd::zipfian_distribution<std::uint64_t> zipf{max_key, 0.99};
   static std::uniform_int_distribution<std::uint64_t> uniform{0, max_key};
   switch (key_dist) {
-  case KeyDistribution::Range: {
-    return ranges[tid].gen();
-  }
-  case KeyDistribution::Random: {
-    return uniform(engines[tid].gen);
-  }
-  case KeyDistribution::Zipf: {
-    return zipf(engines[tid].gen);
-  }
-  default: {
-    throw;
-  }
+    case KeyDistribution::Range: {
+      return ranges[tid].gen();
+    }
+    case KeyDistribution::Random: {
+      return uniform(engines[tid].gen);
+    }
+    case KeyDistribution::Zipf: {
+      return zipf(engines[tid].gen);
+    }
+    default: {
+      throw;
+    }
   }
 }
 
 size_t generate_value_size(size_t tid) {
   switch (vsz_dist) {
-  case ValueSizeDistribution::Constant: {
-    return FLAGS_value_size;
-  }
-  case ValueSizeDistribution::Random: {
-    return engines[tid].gen() % FLAGS_value_size + 1;
-  }
-  default: {
-    throw;
-  }
+    case ValueSizeDistribution::Constant: {
+      return FLAGS_value_size;
+    }
+    case ValueSizeDistribution::Random: {
+      return engines[tid].gen() % FLAGS_value_size + 1;
+    }
+    default: {
+      throw;
+    }
   }
 }
 
 void DBWrite(int tid) {
-
   std::string key(8, ' ');
   WriteBatch batch;
   for (size_t operations = 0; operations < operations_per_thread;
@@ -188,42 +183,41 @@ void DBWrite(int tid) {
     StringView value = StringView(value_pool.data(), generate_value_size(tid));
 
     Timer timer;
-    if (FLAGS_latency)
-      timer.Start();
+    if (FLAGS_latency) timer.Start();
 
     Status s;
     switch (bench_data_type) {
-    case DataType::String: {
-      if (FLAGS_batch_size == 0) {
-        s = engine->Set(key, value);
-      } else {
-        batch.Put(key, std::string(value.data(), value.size()));
-        if (batch.Size() == FLAGS_batch_size) {
-          engine->BatchWrite(batch);
-          batch.Clear();
+      case DataType::String: {
+        if (FLAGS_batch_size == 0) {
+          s = engine->Set(key, value);
+        } else {
+          batch.Put(key, std::string(value.data(), value.size()));
+          if (batch.Size() == FLAGS_batch_size) {
+            engine->BatchWrite(batch);
+            batch.Clear();
+          }
         }
+        break;
       }
-      break;
-    }
-    case DataType::Sorted: {
-      s = engine->SSet(collections[num % FLAGS_num_collection], key, value);
-      break;
-    }
-    case DataType::Hashes: {
-      s = engine->HSet(collections[num % FLAGS_num_collection], key, value);
-      break;
-    }
-    case DataType::Queue: {
-      s = engine->LPush(collections[num % FLAGS_num_collection], value);
-      break;
-    }
-    case DataType::Blackhole: {
-      s = Status::Ok;
-      break;
-    }
-    default: {
-      throw std::runtime_error{"Unsupported data type!"};
-    }
+      case DataType::Sorted: {
+        s = engine->SSet(collections[num % FLAGS_num_collection], key, value);
+        break;
+      }
+      case DataType::Hashes: {
+        s = engine->HSet(collections[num % FLAGS_num_collection], key, value);
+        break;
+      }
+      case DataType::Queue: {
+        s = engine->LPush(collections[num % FLAGS_num_collection], value);
+        break;
+      }
+      case DataType::Blackhole: {
+        s = Status::Ok;
+        break;
+      }
+      default: {
+        throw std::runtime_error{"Unsupported data type!"};
+      }
     }
 
     if (FLAGS_latency) {
@@ -262,55 +256,55 @@ void DBScan(int tid) {
     memcpy(&key[0], &num, 8);
 
     switch (bench_data_type) {
-    case DataType::Sorted: {
-      auto iter =
-          engine->NewSortedIterator(collections[num % FLAGS_num_collection]);
-      if (iter) {
-        iter->Seek(key);
-        for (size_t i = 0; (i < scan_length) && (iter->Valid());
-             i++, iter->Next()) {
-          key = iter->Key();
-          value_sink = iter->Value();
-          ++operations;
-          if (operations > operations_counted + 1000) {
-            read_ops.fetch_add(operations - operations_counted);
-            operations_counted = operations;
+      case DataType::Sorted: {
+        auto iter =
+            engine->NewSortedIterator(collections[num % FLAGS_num_collection]);
+        if (iter) {
+          iter->Seek(key);
+          for (size_t i = 0; (i < scan_length) && (iter->Valid());
+               i++, iter->Next()) {
+            key = iter->Key();
+            value_sink = iter->Value();
+            ++operations;
+            if (operations > operations_counted + 1000) {
+              read_ops.fetch_add(operations - operations_counted);
+              operations_counted = operations;
+            }
           }
+        } else {
+          throw std::runtime_error{"Error creating SortedIterator"};
         }
-      } else {
-        throw std::runtime_error{"Error creating SortedIterator"};
+        engine->ReleaseSortedIterator(iter);
+        break;
       }
-      engine->ReleaseSortedIterator(iter);
-      break;
-    }
-    case DataType::Hashes: {
-      auto iter =
-          engine->NewUnorderedIterator(collections[num % FLAGS_num_collection]);
-      if (iter) {
-        for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
-          key = iter->Key();
-          value_sink = iter->Value();
-          ++operations;
-          if (operations > operations_counted + 1000) {
-            read_ops += (operations - operations_counted);
-            operations_counted = operations;
+      case DataType::Hashes: {
+        auto iter = engine->NewUnorderedIterator(
+            collections[num % FLAGS_num_collection]);
+        if (iter) {
+          for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+            key = iter->Key();
+            value_sink = iter->Value();
+            ++operations;
+            if (operations > operations_counted + 1000) {
+              read_ops += (operations - operations_counted);
+              operations_counted = operations;
+            }
           }
+        } else {
+          throw std::runtime_error{"Error creating UnorderedIterator"};
         }
-      } else {
-        throw std::runtime_error{"Error creating UnorderedIterator"};
+        break;
       }
-      break;
-    }
-    case DataType::Blackhole: {
-      operations += 1024;
-      read_ops.fetch_add(1024);
-      break;
-    }
-    case DataType::String:
-    case DataType::Queue:
-    default: {
-      throw std::runtime_error{"Unsupported data type!"};
-    }
+      case DataType::Blackhole: {
+        operations += 1024;
+        read_ops.fetch_add(1024);
+        break;
+      }
+      case DataType::String:
+      case DataType::Queue:
+      default: {
+        throw std::runtime_error{"Unsupported data type!"};
+      }
     }
   }
 
@@ -333,36 +327,35 @@ void DBRead(int tid) {
     memcpy(&key[0], &num, 8);
 
     Timer timer;
-    if (FLAGS_latency)
-      timer.Start();
+    if (FLAGS_latency) timer.Start();
 
     Status s;
     switch (bench_data_type) {
-    case DataType::String: {
-      s = engine->Get(key, &value_sink);
-      break;
-    }
-    case DataType::Sorted: {
-      s = engine->SGet(collections[num % FLAGS_num_collection], key,
-                       &value_sink);
-      break;
-    }
-    case DataType::Hashes: {
-      s = engine->HGet(collections[num % FLAGS_num_collection], key,
-                       &value_sink);
-      break;
-    }
-    case DataType::Queue: {
-      s = engine->RPop(collections[num % FLAGS_num_collection], &value_sink);
-      break;
-    }
-    case DataType::Blackhole: {
-      s = Status::Ok;
-      break;
-    }
-    default: {
-      throw std::runtime_error{"Unsupported!"};
-    }
+      case DataType::String: {
+        s = engine->Get(key, &value_sink);
+        break;
+      }
+      case DataType::Sorted: {
+        s = engine->SGet(collections[num % FLAGS_num_collection], key,
+                         &value_sink);
+        break;
+      }
+      case DataType::Hashes: {
+        s = engine->HGet(collections[num % FLAGS_num_collection], key,
+                         &value_sink);
+        break;
+      }
+      case DataType::Queue: {
+        s = engine->RPop(collections[num % FLAGS_num_collection], &value_sink);
+        break;
+      }
+      case DataType::Blackhole: {
+        s = Status::Ok;
+        break;
+      }
+      default: {
+        throw std::runtime_error{"Unsupported!"};
+      }
     }
 
     if (FLAGS_latency) {
@@ -409,37 +402,37 @@ void ProcessBenchmarkConfigs() {
   }
   // Initialize collections and batch parameters
   switch (bench_data_type) {
-  case DataType::String:
-  case DataType::Blackhole: {
-    break;
-  }
-  case DataType::Queue:
-  case DataType::Hashes:
-  case DataType::Sorted: {
-    if (FLAGS_batch_size > 0) {
-      throw std::invalid_argument{
-          R"(Batch is only supported for "hash" type data.)"};
+    case DataType::String:
+    case DataType::Blackhole: {
+      break;
     }
-    collections.resize(FLAGS_num_collection);
-    for (size_t i = 0; i < FLAGS_num_collection; i++) {
-      collections[i] = "Collection_" + std::to_string(i);
+    case DataType::Queue:
+    case DataType::Hashes:
+    case DataType::Sorted: {
+      if (FLAGS_batch_size > 0) {
+        throw std::invalid_argument{
+            R"(Batch is only supported for "hash" type data.)"};
+      }
+      collections.resize(FLAGS_num_collection);
+      for (size_t i = 0; i < FLAGS_num_collection; i++) {
+        collections[i] = "Collection_" + std::to_string(i);
+      }
+      break;
     }
-    break;
-  }
   }
 
   // Check for scan flag
   switch (bench_data_type) {
-  case DataType::String:
-  case DataType::Queue: {
-    if (FLAGS_scan) {
-      throw std::invalid_argument{
-          R"(Scan is not supported for "String" and "Queue" type data.)"};
+    case DataType::String:
+    case DataType::Queue: {
+      if (FLAGS_scan) {
+        throw std::invalid_argument{
+            R"(Scan is not supported for "String" and "Queue" type data.)"};
+      }
     }
-  }
-  default: {
-    break;
-  }
+    default: {
+      break;
+    }
   }
 
   if (FLAGS_value_size > 102400) {
@@ -475,7 +468,7 @@ void ProcessBenchmarkConfigs() {
   }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
   ProcessBenchmarkConfigs();
 
@@ -518,7 +511,7 @@ int main(int argc, char **argv) {
   if (bench_data_type == DataType::Sorted) {
     printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
     for (auto col : collections) {
-      Collection *collection_ptr;
+      Collection* collection_ptr;
       Status s = engine->CreateSortedCollection(col, &collection_ptr);
       if (s != Status::Ok) {
         throw std::runtime_error{"Fail to create Sorted collection"};
@@ -645,10 +638,11 @@ int main(int argc, char **argv) {
       }
       avg = total / ro / 10;
 
-      printf("read lantencies (us): Avg: %.2f, P50: %.2f, P99: %.2f, P99.5: "
-             "%.2f, "
-             "P99.9: %.2f, P99.99: %.2f\n",
-             avg, l50, l99, l995, l999, l9999);
+      printf(
+          "read lantencies (us): Avg: %.2f, P50: %.2f, P99: %.2f, P99.5: "
+          "%.2f, "
+          "P99.9: %.2f, P99.99: %.2f\n",
+          avg, l50, l99, l995, l999, l9999);
     }
 
     auto wo = write_ops.load();
@@ -680,15 +674,15 @@ int main(int argc, char **argv) {
       }
       avg = total / wo / 10;
 
-      printf("write lantencies (us): Avg: %.2f, P50: %.2f, P99: %.2f, P99.5: "
-             "%.2f, "
-             "P99.9: %.2f, P99.99: %.2f\n",
-             avg, l50, l99, l995, l999, l9999);
+      printf(
+          "write lantencies (us): Avg: %.2f, P50: %.2f, P99: %.2f, P99.5: "
+          "%.2f, "
+          "P99.9: %.2f, P99.99: %.2f\n",
+          avg, l50, l99, l995, l999, l9999);
     }
   }
 
-  if (bench_data_type != DataType::Blackhole)
-    delete engine;
+  if (bench_data_type != DataType::Blackhole) delete engine;
 
   return 0;
 }

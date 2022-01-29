@@ -11,6 +11,7 @@
 #pragma once
 
 #include <assert.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -36,37 +37,37 @@ namespace KVDK_NAMESPACE {
  * example in the unit tests.
  */
 class SyncPoint {
-public:
-  static SyncPoint *GetInstance();
-  SyncPoint(const SyncPoint &) = delete;
-  SyncPoint &operator=(const SyncPoint &) = delete;
+ public:
+  static SyncPoint* GetInstance();
+  SyncPoint(const SyncPoint&) = delete;
+  SyncPoint& operator=(const SyncPoint&) = delete;
 
   ~SyncPoint();
 
-  void LoadDependency(const std::vector<SyncPointPair> &dependencies);
+  void LoadDependency(const std::vector<SyncPointPair>& dependencies);
   void EnableProcessing();
   void DisableProcessing();
 
-  void SetCallBack(const std::string &point,
-                   const std::function<void(void *)> &callback);
+  void SetCallBack(const std::string& point,
+                   const std::function<void(void*)>& callback);
 
   void ClearAllCallBacks();
 
   void ClearDependTrace();
 
-  void Process(const std::string &point, void *func_arg = nullptr);
+  void Process(const std::string& point, void* func_arg = nullptr);
 
   void Reset();
 
-private:
+ private:
   SyncPoint();
-  SyncImpl *sync_impl_;
+  SyncImpl* sync_impl_;
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE
 
 #define TEST_SYNC_POINT(x) KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x)
-#define TEST_SYNC_POINT_CALLBACK(x, y)                                         \
+#define TEST_SYNC_POINT_CALLBACK(x, y) \
   KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x, y)
 
 #else

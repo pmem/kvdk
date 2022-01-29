@@ -1,16 +1,15 @@
-#include <cassert>
-#include <cctype>
+#include <immintrin.h>
+#include <x86intrin.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
+#include <cctype>
 #include <chrono>
 #include <mutex>
 #include <random>
 #include <thread>
 #include <unordered_map>
-
-#include <immintrin.h>
-#include <x86intrin.h>
 
 #include "utils/rand64.hpp"
 #include "utils/range_iterator.hpp"

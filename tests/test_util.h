@@ -12,24 +12,24 @@
 #include <vector>
 
 /* Create a string that contains 8 bytes from uint64_t. */
-inline std::string uint64_to_string(uint64_t &key) {
-  return std::string(reinterpret_cast<const char *>(&key), 8);
+inline std::string uint64_to_string(uint64_t& key) {
+  return std::string(reinterpret_cast<const char*>(&key), 8);
 }
 
-inline void random_str(char *str, unsigned int size) {
+inline void random_str(char* str, unsigned int size) {
   for (unsigned int i = 0; i < size; i++) {
     switch (rand() % 3) {
-    case 0:
-      str[i] = rand() % 10 + '0';
-      break;
-    case 1:
-      str[i] = rand() % 26 + 'A';
-      break;
-    case 2:
-      str[i] = rand() % 26 + 'a';
-      break;
-    default:
-      break;
+      case 0:
+        str[i] = rand() % 10 + '0';
+        break;
+      case 1:
+        str[i] = rand() % 26 + 'A';
+        break;
+      case 2:
+        str[i] = rand() % 26 + 'a';
+        break;
+      default:
+        break;
     }
   }
   str[size] = 0;
@@ -40,8 +40,7 @@ inline std::string GetRandomString(size_t len) {
   static std::default_random_engine re;
   std::string str;
   str.reserve(len);
-  for (size_t i = 0; i < len; i++)
-    str.push_back('a' + re() % 26);
+  for (size_t i = 0; i < len; i++) str.push_back('a' + re() % 26);
   return str;
 }
 
@@ -59,13 +58,12 @@ inline void LaunchNThreads(int n_thread, std::function<void(int tid)> func,
   for (int i = id_start; i < id_start + n_thread; i++) {
     ts.emplace_back(std::thread(func, i));
   }
-  for (auto &t : ts)
-    t.join();
+  for (auto& t : ts) t.join();
 }
 
 class ProgressBar {
-private:
-  std::ostream &out_stream_;
+ private:
+  std::ostream& out_stream_;
   std::string tag_;
   size_t total_progress_;
   size_t current_progress_;
@@ -80,14 +78,19 @@ private:
   static constexpr char symbol_done_{'#'};
   static constexpr char symbol_fill_{'-'};
 
-public:
-  explicit ProgressBar(std::ostream &out, std::string tag,
+ public:
+  explicit ProgressBar(std::ostream& out, std::string tag,
                        size_t total_progress, size_t report_interval,
                        bool enabled = true, size_t bar_length = 50)
-      : out_stream_{out}, tag_{tag}, total_progress_{total_progress},
-        current_progress_{0}, last_report_{0},
-        report_interval_{report_interval}, bar_length_{bar_length},
-        step_{total_progress / bar_length}, enabled_{enabled} {
+      : out_stream_{out},
+        tag_{tag},
+        total_progress_{total_progress},
+        current_progress_{0},
+        last_report_{0},
+        report_interval_{report_interval},
+        bar_length_{bar_length},
+        step_{total_progress / bar_length},
+        enabled_{enabled} {
     assert(total_progress_ > 0);
     assert(bar_length_ > 0);
     if (step_ == 0) {
@@ -125,10 +128,9 @@ public:
     }
   }
 
-private:
+ private:
   void showProgress() {
-    if (!enabled_)
-      return;
+    if (!enabled_) return;
 
     assert(current_progress_ <= current_progress_);
 
@@ -139,15 +141,13 @@ private:
 
     {
       size_t n_step_done = current_progress_ / step_;
-      for (size_t i = 0; i < n_step_done; i++)
-        out_stream_ << symbol_done_;
+      for (size_t i = 0; i < n_step_done; i++) out_stream_ << symbol_done_;
       for (size_t i = 0; i < bar_length_ - n_step_done; i++)
         out_stream_ << symbol_fill_;
     }
 
     out_stream_ << "]" << std::flush;
 
-    if (flush_newline_)
-      out_stream_ << std::endl;
+    if (flush_newline_) out_stream_ << std::endl;
   }
 };

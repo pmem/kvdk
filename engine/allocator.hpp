@@ -17,8 +17,8 @@ struct SpaceEntry {
 };
 
 class Allocator {
-public:
+ public:
   virtual SpaceEntry Allocate(uint64_t size) = 0;
-  virtual void Free(const SpaceEntry &entry) = 0;
+  virtual void Free(const SpaceEntry& entry) = 0;
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

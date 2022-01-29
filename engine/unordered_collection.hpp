@@ -4,18 +4,15 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 
-#include <algorithm>
-
 #include "../extern/libpmemobj++/string_view.hpp"
-
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
-
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
+#include "kvdk/engine.hpp"
+#include "kvdk/iterator.hpp"
 #include "macros.hpp"
 #include "structures.hpp"
 #include "utils/utils.hpp"
@@ -34,10 +31,11 @@ struct ModifyReturn {
 
   explicit ModifyReturn(PMemOffsetType offset_new_, PMemOffsetType offset_old_,
                         bool emplace_result)
-      : offset_new{offset_new_}, offset_old{offset_old_}, success{
-                                                              emplace_result} {}
+      : offset_new{offset_new_},
+        offset_old{offset_old_},
+        success{emplace_result} {}
 
-  ModifyReturn &operator=(ModifyReturn const &other) {
+  ModifyReturn& operator=(ModifyReturn const& other) {
     offset_new = other.offset_new;
     offset_old = other.offset_old;
     success = other.success;
@@ -46,7 +44,7 @@ struct ModifyReturn {
 
   static constexpr PMemOffsetType FailOffset = kNullPMemOffset;
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
 class UnorderedIterator;
@@ -62,15 +60,15 @@ class UnorderedIterator;
 class UnorderedCollection final
     : public std::enable_shared_from_this<UnorderedCollection>,
       public Collection {
-private:
+ private:
   using LockType = std::unique_lock<SpinMutex>;
   using LockPair = std::pair<LockType, LockType>;
 
   /// For locking, locking only
-  HashTable *hash_table_ptr_;
+  HashTable* hash_table_ptr_;
 
   /// DlistRecord for recovering
-  DLRecord *collection_record_ptr_;
+  DLRecord* collection_record_ptr_;
 
   /// DLinkedList manages data on PMem, also hold a PMemAllocator
   using DLinkedListType =
@@ -83,39 +81,39 @@ private:
 
   friend class UnorderedIterator;
 
-public:
+ public:
   /// Create UnorderedCollection and persist it on PMem
   /// DlistHeadRecord and DlistTailRecord holds ID as key
   /// and empty string as value
   /// DlistRecord holds collection name as key
   /// and ID as value
-  UnorderedCollection(HashTable *hash_table_ptr,
-                      PMEMAllocator *pmem_allocator_ptr, std::string const name,
+  UnorderedCollection(HashTable* hash_table_ptr,
+                      PMEMAllocator* pmem_allocator_ptr, std::string const name,
                       CollectionIDType id, TimeStampType timestamp);
 
   /// Recover UnorderedCollection from DLIST_RECORD
-  UnorderedCollection(HashTable *hash_table_ptr,
-                      PMEMAllocator *pmem_allocator_ptr,
-                      DLRecord *collection_record);
+  UnorderedCollection(HashTable* hash_table_ptr,
+                      PMEMAllocator* pmem_allocator_ptr,
+                      DLRecord* collection_record);
 
   /// Emplace a Record into the Collection
   /// lock to emplaced node must been acquired before being passed in
   ModifyReturn Emplace(TimeStampType timestamp, StringView const key,
-                       StringView const value, LockType const &lock);
+                       StringView const value, LockType const& lock);
 
-  ModifyReturn Replace(DLRecord *pos, TimeStampType timestamp,
+  ModifyReturn Replace(DLRecord* pos, TimeStampType timestamp,
                        StringView const key, StringView const value,
-                       LockType const &lock);
+                       LockType const& lock);
 
   /// Erase given record
   /// Return new_offset as next record
   /// old_offset as erased record
-  ModifyReturn Erase(DLRecord *pos, LockType const &lock);
+  ModifyReturn Erase(DLRecord* pos, LockType const& lock);
 
   inline TimeStampType Timestamp() const { return timestamp_; };
 
-  friend std::ostream &operator<<(std::ostream &out,
-                                  UnorderedCollection const &col) {
+  friend std::ostream& operator<<(std::ostream& out,
+                                  UnorderedCollection const& col) {
     auto iter = col.collection_record_ptr_;
     out << "Name: " << col.Name() << "\t"
         << "ID: " << to_hex(col.ID()) << "\n";
@@ -128,38 +126,34 @@ public:
     return out;
   }
 
-private:
-  inline bool lockPositions(iterator pos1, iterator pos2, LockType const &lock,
-                            LockPair &lock_holder) {
-    SpinMutex *spin = lock.mutex();
-    SpinMutex *spin1 = getMutex(pos1->Key());
-    SpinMutex *spin2 = getMutex(pos2->Key());
+ private:
+  inline bool lockPositions(iterator pos1, iterator pos2, LockType const& lock,
+                            LockPair& lock_holder) {
+    SpinMutex* spin = lock.mutex();
+    SpinMutex* spin1 = getMutex(pos1->Key());
+    SpinMutex* spin2 = getMutex(pos2->Key());
 
     kvdk_assert(lock.owns_lock(), "User supplied lock not acquired!");
 
     if (spin1 != spin) {
       lock_holder.first = LockType{*spin1, std::defer_lock};
-      if (!lock_holder.first.try_lock())
-        return false;
+      if (!lock_holder.first.try_lock()) return false;
     }
     if (spin2 != spin && spin2 != spin1) {
       lock_holder.second = LockType{*spin2, std::defer_lock};
-      if (!lock_holder.second.try_lock())
-        return false;
+      if (!lock_holder.second.try_lock()) return false;
     }
     return true;
   }
 
   inline static bool isAdjacent(iterator prev, iterator next) {
     iterator curr{prev};
-    if (++curr != next)
-      return false;
-    if (--curr != prev)
-      return false;
+    if (++curr != next) return false;
+    if (--curr != prev) return false;
     return true;
   }
 
-  inline bool isLinked(DLRecord *pos) {
+  inline bool isLinked(DLRecord* pos) {
     iterator curr = dlinked_list_.makeIterator(pos);
     iterator prev{curr};
     --prev;
@@ -168,7 +162,7 @@ private:
     return (--next == curr) && (++prev == curr);
   }
 
-  inline bool checkID(DLRecord *record_pmmptr) {
+  inline bool checkID(DLRecord* record_pmmptr) {
     if (!record_pmmptr ||
         CollectionUtils::ExtractID(record_pmmptr->Key()) != ID())
       return false;
@@ -176,27 +170,27 @@ private:
   }
 
   // Check if the Record is a valid record linked in current collection
-  inline bool isValidRecord(DLRecord *record_pmmptr) {
+  inline bool isValidRecord(DLRecord* record_pmmptr) {
     return checkID(record_pmmptr) &&
            (static_cast<RecordType>(record_pmmptr->entry.meta.type) ==
             RecordType::DlistDataRecord) &&
            isLinked(record_pmmptr);
   }
 
-  inline SpinMutex *getMutex(StringView internal_key) {
+  inline SpinMutex* getMutex(StringView internal_key) {
     return hash_table_ptr_->GetHint(internal_key).spin;
   }
 
-  inline iterator makeInternalIterator(DLRecord *pos) {
+  inline iterator makeInternalIterator(DLRecord* pos) {
     return dlinked_list_.makeIterator(pos);
   }
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
 class UnorderedIterator final : public Iterator {
-private:
+ private:
   /// shared pointer to pin the UnorderedCollection
   std::shared_ptr<UnorderedCollection> collection_shrdptr;
   using DLinkedListType =
@@ -210,7 +204,7 @@ private:
 
   friend class UnorderedCollection;
 
-public:
+ public:
   /// Construct UnorderedIterator of a given UnorderedCollection
   /// The Iterator is invalid now.
   /// Must SeekToFirst() or SeekToLast() before use.
@@ -218,7 +212,7 @@ public:
 
   /// UnorderedIterator currently does not support Seek to a key
   [[gnu::deprecated]] virtual void Seek([
-      [gnu::unused]] std::string const &key) final override {
+      [gnu::unused]] std::string const& key) final override {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 
@@ -279,7 +273,7 @@ public:
     return std::string(view_value.data(), view_value.size());
   }
 
-private:
+ private:
   // Proceed to next DlistDataRecord, can start from
   // DlistHeadRecord, DlistDataRecord
   // If reached DlistTailRecord, valid_ is set to false and returns
@@ -291,4 +285,4 @@ private:
   void internalPrev();
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

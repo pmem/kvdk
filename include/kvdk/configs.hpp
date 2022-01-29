@@ -125,4 +125,4 @@ struct Configs {
   bool recover_to_checkpoint = false;
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

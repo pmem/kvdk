@@ -9,11 +9,10 @@
 #include <limits>
 #include <vector>
 
-#include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
-
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
+#include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
 
@@ -51,31 +50,31 @@ class UnorderedCollection;
 class Queue;
 
 struct HashEntry {
-public:
+ public:
   union Index {
-    Index(void *_ptr) : ptr(_ptr) {}
+    Index(void* _ptr) : ptr(_ptr) {}
     Index() = default;
-    void *ptr;
-    SkiplistNode *skiplist_node;
-    StringRecord *string_record;
-    DLRecord *dl_record;
-    Skiplist *skiplist;
-    UnorderedCollection *p_unordered_collection;
-    Queue *queue_ptr;
+    void* ptr;
+    SkiplistNode* skiplist_node;
+    StringRecord* string_record;
+    DLRecord* dl_record;
+    Skiplist* skiplist;
+    UnorderedCollection* p_unordered_collection;
+    Queue* queue_ptr;
   };
   static_assert(sizeof(Index) == 8);
 
   HashEntry() = default;
 
-  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void *_index,
+  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void* _index,
             HashIndexType index_type)
       : header({key_hash_prefix, data_entry_type, index_type}), index(_index) {}
 
   HashHeader header;
   Index index;
 
-  static void CopyHeader(HashEntry *dst, HashEntry *src) { memcpy_8(dst, src); }
-  static void CopyOffset(HashEntry *dst, HashEntry *src) {
+  static void CopyHeader(HashEntry* dst, HashEntry* src) { memcpy_8(dst, src); }
+  static void CopyOffset(HashEntry* dst, HashEntry* src) {
     dst->index = src->index;
   }
 
@@ -86,7 +85,7 @@ public:
 };
 
 struct HashCache {
-  HashEntry *entry_ptr = nullptr;
+  HashEntry* entry_ptr = nullptr;
 };
 
 struct Slot {
@@ -95,21 +94,21 @@ struct Slot {
 };
 
 class HashTable {
-public:
+ public:
   struct KeyHashHint {
     uint64_t key_hash_value;
     uint32_t bucket;
     uint32_t slot;
-    SpinMutex *spin;
+    SpinMutex* spin;
   };
 
-  static HashTable *NewHashTable(uint64_t hash_bucket_num,
+  static HashTable* NewHashTable(uint64_t hash_bucket_num,
                                  uint32_t hash_bucket_size,
                                  uint32_t num_buckets_per_slot,
                                  std::shared_ptr<PMEMAllocator> pmem_allocator,
                                  uint32_t max_access_threads);
 
-  KeyHashHint GetHint(const StringView &key) {
+  KeyHashHint GetHint(const StringView& key) {
     KeyHashHint hint;
     hint.key_hash_value = hash_str(key.data(), key.size());
     hint.bucket = get_bucket_num(hint.key_hash_value);
@@ -125,9 +124,9 @@ public:
   // hash_entry_snap: store a hash entry copy of searching key for lock-free
   // read, as hash entry maybe modified by write operations
   // data_entry_meta: store a copy of data entry metadata part of searching key
-  Status SearchForRead(const KeyHashHint &hint, const StringView &key,
-                       uint16_t type_mask, HashEntry **entry_ptr,
-                       HashEntry *hash_entry_snap, DataEntry *data_entry_meta);
+  Status SearchForRead(const KeyHashHint& hint, const StringView& key,
+                       uint16_t type_mask, HashEntry** entry_ptr,
+                       HashEntry* hash_entry_snap, DataEntry* data_entry_meta);
 
   // Search key in hash table for write operations
   //
@@ -138,17 +137,17 @@ public:
   // hash_entry_snap: store a hash entry copy of searching key
   // data_entry_meta: store a copy of data entry metadata part of searching key
   // hint: make sure hint.spin is hold
-  Status SearchForWrite(const KeyHashHint &hint, const StringView &key,
-                        uint16_t type_mask, HashEntry **entry_ptr,
-                        HashEntry *hash_entry_snap, DataEntry *data_entry_meta);
+  Status SearchForWrite(const KeyHashHint& hint, const StringView& key,
+                        uint16_t type_mask, HashEntry** entry_ptr,
+                        HashEntry* hash_entry_snap, DataEntry* data_entry_meta);
 
   // Insert a hash entry to hash table
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
-  void Insert(const KeyHashHint &hint, HashEntry *entry_ptr, uint16_t type,
-              void *index, HashIndexType index_type);
+  void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, uint16_t type,
+              void* index, HashIndexType index_type);
 
-private:
+ private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
             uint32_t num_buckets_per_slot,
             std::shared_ptr<PMEMAllocator> pmem_allocator,
@@ -156,7 +155,8 @@ private:
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
         hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(max_access_threads), pmem_allocator_(pmem_allocator),
+        dram_allocator_(max_access_threads),
+        pmem_allocator_(pmem_allocator),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)),
         slots_(hash_bucket_num / num_buckets_per_slot),
@@ -173,9 +173,9 @@ private:
   // Check if "key" of data type "target_type" is indexed by "hash_entry". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
   // and return true, otherwise return false.
-  bool MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
-                      uint16_t target_type, const HashEntry *hash_entry,
-                      DataEntry *data_entry_metadata);
+  bool MatchHashEntry(const StringView& key, uint32_t hash_k_prefix,
+                      uint16_t target_type, const HashEntry* hash_entry,
+                      DataEntry* data_entry_metadata);
 
   std::vector<uint64_t> hash_bucket_entries_;
   const uint64_t hash_bucket_num_;
@@ -185,6 +185,6 @@ private:
   Array<Slot> slots_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   ChunkBasedAllocator dram_allocator_;
-  void *main_buckets_;
+  void* main_buckets_;
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

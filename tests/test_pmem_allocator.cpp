@@ -2,21 +2,20 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <sys/time.h>
+
 #include <chrono>
 #include <ctime>
 #include <deque>
 #include <future>
 #include <string>
-#include <sys/time.h>
 #include <thread>
 #include <vector>
 
 #include "../engine/kv_engine.hpp"
 #include "../engine/logger.hpp"
 #include "../engine/thread_manager.hpp"
-
 #include "gtest/gtest.h"
-
 #include "kvdk/engine.hpp"
 #include "pmem_allocator/free_list.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
@@ -25,8 +24,8 @@
 using namespace KVDK_NAMESPACE;
 
 class EnginePMemAllocatorTest : public testing::Test {
-protected:
-  Engine *engine = nullptr;
+ protected:
+  Engine* engine = nullptr;
   Configs configs;
   std::shared_ptr<ThreadManager> thread_manager_;
   std::string pmem_path;
@@ -39,7 +38,7 @@ protected:
     int res __attribute__((unused)) = system(cmd);
   }
 
-  virtual void TearDown() { // delete db_path
+  virtual void TearDown() {  // delete db_path
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", pmem_path.c_str());
     int res __attribute__((unused)) = system(cmd);
@@ -47,7 +46,7 @@ protected:
 };
 
 TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
-  uint64_t pmem_size = 128ULL << 20; // 128MB
+  uint64_t pmem_size = 128ULL << 20;  // 128MB
   uint64_t alloc_size = 8;
 
   // params config
@@ -63,7 +62,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
       auto TestPmemAlloc = [&](uint64_t id) {
         std::vector<SpaceEntry> records;
         thread_manager_->MaybeInitThread(access_thread);
-        PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
+        PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
             pmem_path, pmem_size, num_segment_blocks[i], block_sizes[i],
             num_thread, true, false, nullptr);
         ASSERT_NE(pmem_alloc, nullptr);
@@ -87,8 +86,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         // again allocate pmem
         while (true) {
           auto space_entry = pmem_alloc->Allocate(alloc_size);
-          if (pmem_alloc->PMemUsageInBytes() == alloc_bytes)
-            break;
+          if (pmem_alloc->PMemUsageInBytes() == alloc_bytes) break;
           alloc_cnt++;
         }
         ASSERT_EQ(kvpairs, alloc_cnt);
@@ -107,7 +105,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   uint64_t block_size = 64;
   std::vector<uint64_t> alloc_size{8 * 64, 8 * 64, 16 * 64, 32 * 64};
   thread_manager_.reset(new ThreadManager(num_thread));
-  PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
+  PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
       pmem_path, pmem_size, num_segment_block, block_size, num_thread, true,
       false, nullptr);
   ASSERT_NE(pmem_alloc, nullptr);
@@ -157,7 +155,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemAllocFreeList) {
   uint64_t pmem_size = num_segment_block * block_size;
   std::deque<SpaceEntry> records;
   thread_manager_.reset(new ThreadManager(num_thread));
-  PMEMAllocator *pmem_alloc = PMEMAllocator::NewPMEMAllocator(
+  PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
       pmem_path, pmem_size, num_segment_block, block_size, num_thread, true,
       false, nullptr);
   ASSERT_NE(pmem_alloc, nullptr);
