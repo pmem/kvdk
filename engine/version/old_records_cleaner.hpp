@@ -42,6 +42,13 @@ struct PendingFreeSpaceEntries {
   TimeStampType release_time;
 };
 
+struct PendingFreeSpaceEntry {
+  SpaceEntry entry;
+  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
+  // could safely free this entry
+  TimeStampType release_time;
+};
+
 // OldRecordsCleaner is used to clean old version PMem records of kvdk
 //
 // To support multi-version machenism and consistent backup of kvdk,
@@ -69,6 +76,7 @@ class OldRecordsCleaner {
   struct CleanerThreadCache {
     std::deque<OldDeleteRecord> old_delete_records{};
     std::deque<OldDataRecord> old_data_records{};
+    std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};
     SpinMutex old_records_lock;
   };
   const uint64_t kLimitCachedDeleteRecords = 1000000;
@@ -83,7 +91,7 @@ class OldRecordsCleaner {
 
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
   std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
-  std::deque<PendingFreeSpaceEntries> pending_free_space_entries_;
+  std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };
 }  // namespace KVDK_NAMESPACE

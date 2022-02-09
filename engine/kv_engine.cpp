@@ -1051,6 +1051,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
 
     if (!need_write_delete_record) {
       if (sized_space_entry.size > 0) {
+        markEmptySpace(sized_space_entry);
         pmem_allocator_->Free(sized_space_entry);
       }
       return s;
