@@ -1015,7 +1015,8 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
     return Status::InvalidDataSize;
   }
 
-  SpaceEntry sized_space_entry;
+  PMemAllocatorGuard alloc_guard{*pmem_allocator_};
+  bool has_allocated_space = false;
 
   while (1) {
     SkiplistNode* dram_node = nullptr;
@@ -1032,28 +1033,30 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
     Status s = hash_table_->SearchForRead(hint, collection_key,
                                           SortedDataRecord | SortedDeleteRecord,
                                           &entry_ptr, &hash_entry, &data_entry);
-    bool need_write_delete_record = false;
-
     switch (s) {
-      case Status::Ok:
-        if (hash_entry.header.data_type != SortedDeleteRecord) {
-          need_write_delete_record = true;
+      case Status::NotFound: {
+        return Status::Ok;
+      }
+      case Status::MemoryOverflow: {
+        return Status::MemoryOverflow;
+      }
+      case Status::Ok: {
+        if (hash_entry.header.data_type == SortedDeleteRecord) {
+          return Status::Ok;
+        } else {
+          kvdk_assert(hash_entry.header.data_type == SortedDataRecord,
+                      "") if (!has_allocated_space) {
+            if (!alloc_guard.TryAllocate(sizeof(DLRecord) +
+                                         collection_key.size())) {
+              return Status::PmemOverflow;
+            }
+            has_allocated_space = true;
+          }
+          break;
         }
-        break;
-      case Status::NotFound:
-        s = Status::Ok;
-        break;
-      case Status::MemoryOverflow:
-        break;
+      }
       default:
         std::abort();  // never reach
-    }
-
-    if (!need_write_delete_record) {
-      if (sized_space_entry.size > 0) {
-        pmem_allocator_->Free(sized_space_entry);
-      }
-      return s;
     }
 
     if (hash_entry.header.index_type == HashIndexType::SkiplistNode) {
@@ -1065,22 +1068,14 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
       existing_record = hash_entry.index.dl_record;
     }
 
-    if (sized_space_entry.size == 0) {
-      auto request_size = collection_key.size() + sizeof(DLRecord);
-      sized_space_entry = pmem_allocator_->Allocate(request_size);
-      // TODO: always keep space for delete record
-      if (sized_space_entry.size == 0) {
-        return Status::PmemOverflow;
-      }
-    }
-
-    void* delete_record_pmem_ptr =
-        pmem_allocator_->offset2addr(sized_space_entry.offset);
-
+    SpaceEntry space = alloc_guard.AllocatedSpace();
     if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
-                          dram_node, sized_space_entry)) {
+                          dram_node, space)) {
       continue;
     }
+    alloc_guard.Release();
+
+    void* delete_record_pmem_ptr = pmem_allocator_->offset2addr(space.offset);
 
     if (dram_node == nullptr) {
       hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord,
@@ -1236,6 +1231,12 @@ Status KVEngine::CheckConfigs(const Configs& configs) {
     return Status::InvalidConfiguration;
   }
 
+  if (configs.pmem_segment_blocks * configs.pmem_block_size >=
+      std::numeric_limits<std::uint32_t>::max()) {
+    GlobalLogger.Error("PMem segment size too large!\n");
+    return Status::InvalidConfiguration;
+  }
+
   if (configs.hash_bucket_size < sizeof(HashEntry) + 8) {
     GlobalLogger.Error("hash bucket too small\n");
     return Status::InvalidConfiguration;
@@ -1320,6 +1321,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   defer(engine_thread_cache_[access_thread.id].batch_writing = false;);
 
   std::set<SpinMutex*> spins_to_lock;
+  std::vector<PMemAllocatorGuard> alloc_guards{};
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
 
@@ -1334,18 +1336,17 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       GlobalLogger.Error("only support string type batch write\n");
       return Status::NotSupported;
     }
-    batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
-    // No enough space for batch write
-    if (batch_hints[i].allocated_space.size == 0) {
-      for (size_t j = 0; j < i; j++) {
-        pmem_allocator_->Free(batch_hints[j].allocated_space);
-      }
+    alloc_guards.emplace_back(*pmem_allocator_);
+    if (!alloc_guards.back().TryAllocate(requested_size)) {
       return Status::PmemOverflow;
     }
-    space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
 
     batch_hints[i].hash_hint = hash_table_->GetHint(kv.key);
     spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
+  }
+  for (size_t i = 0; i < write_batch.Size(); i++) {
+    batch_hints[i].allocated_space = alloc_guards[i].Release().first;
+    space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
   }
 
   size_t batch_size = write_batch.Size();

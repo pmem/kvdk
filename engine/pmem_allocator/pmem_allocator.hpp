@@ -185,4 +185,57 @@ class PMEMAllocator : public Allocator {
   std::mutex backup_lock;
   bool backup_processing = false;
 };
+
+class PMemAllocatorGuard {
+ private:
+  PMEMAllocator* alloc{nullptr};
+  SpaceEntry space{};
+
+ public:
+  PMemAllocatorGuard() = default;
+  PMemAllocatorGuard(PMEMAllocator& a) : alloc{&a} {}
+  PMemAllocatorGuard(PMemAllocatorGuard const&) = delete;
+  PMemAllocatorGuard& operator=(PMemAllocatorGuard const&) = delete;
+  // Transfer ownership to another guard
+  PMemAllocatorGuard(PMemAllocatorGuard&& other) { *this = std::move(other); }
+  PMemAllocatorGuard& operator=(PMemAllocatorGuard&& other) {
+    using std::swap;
+    swap(alloc, other.alloc);
+    swap(space, other.space);
+    return *this;
+  }
+  bool TryAllocate(std::size_t sz) {
+    if (space.size != 0) {
+      kvdk_assert(
+          false,
+          "Should not TryAllocate() second time if first time succeeded!");
+      return true;
+    }
+    space = alloc->Allocate(sz);
+    return (space.size != 0);
+  }
+  // Transfer ownership to caller.
+  std::pair<SpaceEntry, void*> Release() {
+    void* addr = alloc->offset2addr_checked(space.offset);
+    alloc = nullptr;
+    return std::make_pair(space, addr);
+  }
+  // Let caller use the allocated space,
+  // but caller must call Release() later if the space is used!
+  SpaceEntry AllocatedSpace() { return space; }
+  ~PMemAllocatorGuard() {
+    if (alloc != nullptr && space.size != 0) {
+      DataEntry padding{0,
+                        static_cast<std::uint32_t>(space.size),
+                        TimeStampType{},
+                        RecordType::Padding,
+                        0,
+                        0};
+      pmem_memcpy_persist(alloc->offset2addr_checked(space.offset), &padding,
+                          sizeof(DataEntry));
+      alloc->Free(space);
+    }
+  }
+};
+
 }  // namespace KVDK_NAMESPACE
