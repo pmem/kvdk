@@ -1044,8 +1044,8 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
         if (hash_entry.header.data_type == SortedDeleteRecord) {
           return Status::Ok;
         } else {
-          kvdk_assert(hash_entry.header.data_type == SortedDataRecord,
-                      "") if (!has_allocated_space) {
+          kvdk_assert(hash_entry.header.data_type == SortedDataRecord, "");
+          if (!has_allocated_space) {
             if (!alloc_guard.TryAllocate(sizeof(DLRecord) +
                                          collection_key.size())) {
               return Status::PmemOverflow;
