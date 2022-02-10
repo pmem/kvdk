@@ -1231,7 +1231,7 @@ Status KVEngine::CheckConfigs(const Configs& configs) {
     return Status::InvalidConfiguration;
   }
 
-  if (configs.pmem_segment_blocks * configs.pmem_block_size >=
+  if (configs.pmem_segment_blocks * configs.pmem_block_size >
       std::numeric_limits<std::uint32_t>::max()) {
     GlobalLogger.Error("PMem segment size too large!\n");
     return Status::InvalidConfiguration;
