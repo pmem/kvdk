@@ -336,6 +336,7 @@ class KVEngine : public Engine {
                    data_entry->header.record_size));
   }
 
+  // Mark an unused space on PMem
   inline void markEmptySpace(const SpaceEntry& space_entry) {
     DataHeader header(0, space_entry.size);
     pmem_memcpy_persist(

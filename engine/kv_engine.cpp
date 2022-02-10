@@ -1051,6 +1051,8 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
 
     if (!need_write_delete_record) {
       if (sized_space_entry.size > 0) {
+        // We must mark a allocated but unused space on PMem, otherwise data may
+        // lost in recovery
         markEmptySpace(sized_space_entry);
         pmem_allocator_->Free(sized_space_entry);
       }
@@ -1435,6 +1437,8 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord && !found) {
       batch_hint.space_not_used = true;
+      // We must mark a allocated but unused space on PMem, otherwise data may
+      // lost in recovery
       markEmptySpace(batch_hint.allocated_space);
       return Status::Ok;
     }
