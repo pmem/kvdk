@@ -40,7 +40,7 @@ enum class HashIndexType : uint16_t {
 
 struct HashHeader {
   uint32_t key_prefix;
-  uint16_t data_type;
+  RecordType record_type;
   HashIndexType index_type;
 };
 
@@ -68,10 +68,9 @@ struct alignas(16) HashEntry {
 
   HashEntry() = default;
 
-  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void* _index,
+  HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
             HashIndexType index_type)
-      : header_({key_hash_prefix, data_entry_type, index_type}),
-        index_(_index) {}
+      : header_({key_hash_prefix, record_type, index_type}), index_(_index) {}
 
   bool Empty() { return header_.index_type == HashIndexType::Empty; }
 
@@ -82,7 +81,7 @@ struct alignas(16) HashEntry {
 
   HashIndexType GetIndexType() const { return header_.index_type; }
 
-  uint16_t GetRecordType() const { return header_.data_type; }
+  RecordType GetRecordType() const { return header_.record_type; }
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
@@ -156,7 +155,7 @@ class HashTable {
   // Insert a hash entry to hash table
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
-  void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, uint16_t type,
+  void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
               void* index, HashIndexType index_type);
 
  private:

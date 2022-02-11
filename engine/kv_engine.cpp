@@ -626,7 +626,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
 }
 
 Status KVEngine::InitCollection(const StringView& collection, Collection** list,
-                                uint16_t collection_type) {
+                                RecordType collection_type) {
   if (!CheckKeySize(collection)) {
     return Status::InvalidDataSize;
   }
@@ -660,7 +660,7 @@ Status KVEngine::InitCollection(const StringView& collection, Collection** list,
   DLRecord* pmem_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(sized_space_entry.offset),
       sized_space_entry.size, version_controller_.GetCurrentTimestamp(),
-      (RecordType)collection_type, kNullPMemOffset, sized_space_entry.offset,
+      collection_type, kNullPMemOffset, sized_space_entry.offset,
       sized_space_entry.offset, collection, StringView((char*)&id, 8));
 
   {
@@ -1455,7 +1455,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
               : kNullPMemOffset,
         kv.key, kv.type == StringDataRecord ? kv.value : "");
 
-    hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
+    hash_table_->Insert(hash_hint, entry_ptr, (RecordType)kv.type, block_base,
                         HashIndexType::StringRecord);
 
     if (found) {

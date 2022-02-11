@@ -38,7 +38,7 @@ HashTable* HashTable::NewHashTable(
 
 bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
                       uint16_t target_type, DataEntry* data_entry_metadata) {
-  if ((target_type & header_.data_type) &&
+  if ((target_type & header_.record_type) &&
       hash_k_prefix == header_.key_prefix) {
     void* pmem_record;
     StringView data_entry_key;
@@ -232,8 +232,10 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
 }
 
 void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
-                       uint16_t type, void* index, HashIndexType index_type) {
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type);
+                       RecordType record_type, void* index,
+                       HashIndexType index_type) {
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, record_type, index,
+                           index_type);
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
