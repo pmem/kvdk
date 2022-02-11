@@ -247,7 +247,7 @@ class Skiplist : public Collection {
   // Return true on success, return false on fail.
   bool Insert(const StringView& key, const StringView& value,
               const SpinMutex* inserting_key_lock, TimeStampType timestamp,
-              SkiplistNode** dram_node, const SpaceEntry& space_to_write);
+              SkiplistNode** dram_node, GuardedSpace& space);
 
   // Update "key" in the skiplist
   //
@@ -262,7 +262,7 @@ class Skiplist : public Collection {
   bool Update(const StringView& key, const StringView& value,
               const DLRecord* updating_record,
               const SpinMutex* updating_record_lock, TimeStampType timestamp,
-              SkiplistNode* dram_node, const SpaceEntry& space_to_write);
+              SkiplistNode* dram_node, GuardedSpace& space);
 
   // Delete "key" from the skiplist by replace it with a delete record
   //
@@ -275,7 +275,7 @@ class Skiplist : public Collection {
   // Return true on success, return false on fail.
   bool Delete(const StringView& key, DLRecord* deleting_record,
               const SpinMutex* deleting_record_lock, TimeStampType timestamp,
-              SkiplistNode* dram_node, const SpaceEntry& space_to_write);
+              SkiplistNode* dram_node, GuardedSpace& space);
 
   // Purge a dl record from its skiplist by remove it from linkage
   //

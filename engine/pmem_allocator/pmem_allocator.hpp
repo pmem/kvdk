@@ -4,19 +4,21 @@
 
 #pragma once
 
-#include <fcntl.h>
-#include <sys/mman.h>
-
 #include <memory>
 #include <set>
 #include <vector>
+
+#include <fcntl.h>
+#include <sys/mman.h>
+
+#include "kvdk/namespace.hpp"
 
 #include "../allocator.hpp"
 #include "../data_record.hpp"
 #include "../structures.hpp"
 #include "../version/version_controller.hpp"
 #include "free_list.hpp"
-#include "kvdk/namespace.hpp"
+#include "guarded_space.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -30,65 +32,6 @@ constexpr uint64_t kMinPaddingBlocks = 8;
 // maximum allocated data size should smaller than a segment.
 class PMEMAllocator : public Allocator {
  public:
-  class GuardedSpace {
-   private:
-    using size_type = std::uint32_t;
-    PMEMAllocator* alloc{nullptr};
-    PMemOffsetType offset{kNullPMemOffset};
-    size_type size{};
-
-    friend class PMEMAllocator;
-    GuardedSpace(PMEMAllocator& a, size_type sz) : alloc{&a} {
-      SpaceEntry se = alloc->Allocate(sz);
-      offset = se.offset;
-      size = se.size;
-    }
-
-   public:
-    GuardedSpace() = default;
-    GuardedSpace(GuardedSpace const&) = delete;
-    GuardedSpace& operator=(GuardedSpace const&) = delete;
-    // Transfer ownership to another guard
-    GuardedSpace(GuardedSpace&& other) { *this = std::move(other); }
-    GuardedSpace& operator=(GuardedSpace&& other) {
-      kvdk_assert(alloc == nullptr && size == 0,
-                  "Cannot asigned to non-empty GuardedSpace");
-
-      using std::swap;
-      swap(alloc, other.alloc);
-      swap(offset, other.offset);
-      swap(size, other.size);
-      return *this;
-    }
-    // Release ownership of allocated space.
-    SpaceEntry Release() {
-      SpaceEntry ret{offset, size};
-      alloc = nullptr;
-      offset = kNullPMemOffset;
-      size = 0;
-      return ret;
-    }
-    PMemOffsetType Offset() const { return offset; }
-    void* Address() const { return alloc->offset2addr(offset); }
-    size_type Size() const { return size; }
-    SpaceEntry ToSpaceEntry() { return SpaceEntry{offset, size}; }
-    ~GuardedSpace() {
-      if (alloc != nullptr && size != 0) {
-#if DEBUG_LEVEL >= 1
-        GlobalLogger.Info("GuardedSpace unused. Padded and freed!\n");
-#endif
-        DataEntry padding{0,
-                          static_cast<std::uint32_t>(size),
-                          TimeStampType{},
-                          RecordType::Padding,
-                          0,
-                          0};
-        pmem_memcpy_persist(Address(), &padding, sizeof(DataEntry));
-        alloc->Free(ToSpaceEntry());
-      }
-    }
-  };
-
   ~PMEMAllocator();
 
   static PMEMAllocator* NewPMEMAllocator(

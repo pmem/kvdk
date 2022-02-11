@@ -169,14 +169,14 @@ class DLinkedList {
       // Persist tail first then head
       // If only tail is persisted then it can be deallocated by caller at
       // recovery
-      tail_pmmptr_ = DLRecord::PersistDLRecord(
-          tail_space.Address(), tail_space.Size(), timestamp, TailType,
-          NullPMemOffset, head_space.Offset(), NullPMemOffset, key, value);
-      head_pmmptr_ = DLRecord::PersistDLRecord(
-          head_space.Address(), head_space.Size(), timestamp, HeadType,
-          NullPMemOffset, NullPMemOffset, tail_space.Offset(), key, value);
-      head_space.Release();
-      tail_space.Release();
+      auto head_offset = head_space.Offset();
+      auto tail_offset = tail_space.Offset();
+      tail_pmmptr_ = DLRecord::PersistDLRecord(tail_space, timestamp, TailType,
+                                               NullPMemOffset, head_offset,
+                                               NullPMemOffset, key, value);
+      head_pmmptr_ = DLRecord::PersistDLRecord(head_space, timestamp, HeadType,
+                                               NullPMemOffset, NullPMemOffset,
+                                               tail_offset, key, value);
     }
   }
 
@@ -348,16 +348,15 @@ class DLinkedList {
       throw std::bad_alloc{};
     }
 
+    auto offset = space.Offset();
     DLRecord* record = DLRecord::PersistDLRecord(
-        space.Address(), space.Size(), timestamp, DataType, kNullPMemOffset,
+        space, timestamp, DataType, kNullPMemOffset,
         iter_prev.GetCurrentOffset(), iter_next.GetCurrentOffset(), key, value);
 
-    iter_prev->next = space.Offset();
+    iter_prev->next = offset;
     pmem_persist(&iter_prev->next, sizeof(PMemOffsetType));
-    iter_next->prev = space.Offset();
+    iter_next->prev = offset;
     pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
-
-    space.Release();
 
     return iterator{pmem_allocator_ptr_, record};
   }

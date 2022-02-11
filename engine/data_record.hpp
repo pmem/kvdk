@@ -4,8 +4,10 @@
 
 #pragma once
 
+#include <libpmem.h>
+
 #include "kvdk/namespace.hpp"
-#include "libpmem.h"
+#include "pmem_allocator/guarded_space.hpp"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -109,7 +111,7 @@ struct StringRecord {
   }
 
   // Construct and persist a string record at pmem address "addr"
-  static StringRecord* PersistStringRecord(void* addr, uint32_t record_size,
+  static StringRecord* PersistStringRecord(GuardedSpace& space,
                                            TimeStampType timestamp,
                                            RecordType type,
                                            PMemOffsetType older_version_record,
@@ -219,8 +221,8 @@ struct DLRecord {
   }
 
   // Construct and persist a dl record to PMem address "addr"
-  static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
-                                   TimeStampType timestamp, RecordType type,
+  static DLRecord* PersistDLRecord(GuardedSpace& space, TimeStampType timestamp,
+                                   RecordType type,
                                    PMemOffsetType older_version_record,
                                    PMemOffsetType prev, PMemOffsetType next,
                                    const StringView& key,

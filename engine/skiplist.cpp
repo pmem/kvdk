@@ -295,7 +295,7 @@ bool Skiplist::searchAndLockInsertPos(
 bool Skiplist::Insert(const StringView& key, const StringView& value,
                       const SpinMutex* inserting_key_lock,
                       TimeStampType timestamp, SkiplistNode** dram_node,
-                      const SpaceEntry& space_to_write) {
+                      GuardedSpace& space) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
   if (!searchAndLockInsertPos(&splice, key, inserting_key_lock,
@@ -307,9 +307,8 @@ bool Skiplist::Insert(const StringView& key, const StringView& value,
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord* new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedDataRecord, kNullPMemOffset, prev_offset, next_offset,
-      internal_key, value);
+      space, timestamp, SortedDataRecord, kNullPMemOffset, prev_offset,
+      next_offset, internal_key, value);
 
   // link new record to PMem
   LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -340,7 +339,7 @@ bool Skiplist::Update(const StringView& key, const StringView& value,
                       const DLRecord* updating_record,
                       const SpinMutex* updating_record_lock,
                       TimeStampType timestamp, SkiplistNode* dram_node,
-                      const SpaceEntry& space_to_write) {
+                      GuardedSpace& space) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
 
@@ -357,9 +356,8 @@ bool Skiplist::Update(const StringView& key, const StringView& value,
   PMemOffsetType next_offset =
       pmem_allocator_->addr2offset_checked(splice.next_pmem_record);
   DLRecord* new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedDataRecord, updated_offset, prev_offset, next_offset,
-      internal_key, value);
+      space, timestamp, SortedDataRecord, updated_offset, prev_offset,
+      next_offset, internal_key, value);
 
   // link new record
   LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -372,7 +370,7 @@ bool Skiplist::Update(const StringView& key, const StringView& value,
 bool Skiplist::Delete(const StringView& key, DLRecord* deleting_record,
                       const SpinMutex* deleting_record_lock,
                       TimeStampType timestamp, SkiplistNode* dram_node,
-                      const SpaceEntry& space_to_write) {
+                      GuardedSpace& space) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
 
@@ -389,9 +387,8 @@ bool Skiplist::Delete(const StringView& key, DLRecord* deleting_record,
   PMemOffsetType deleted_offset =
       pmem_allocator_->addr2offset_checked(deleting_record);
   DLRecord* delete_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedDeleteRecord, deleted_offset, prev_offset, next_offset,
-      internal_key, "");
+      space, timestamp, SortedDeleteRecord, deleted_offset, prev_offset,
+      next_offset, internal_key, "");
 
   assert(splice.prev_pmem_record->next == deleted_offset);
   assert(splice.next_pmem_record->prev == deleted_offset);

@@ -46,23 +46,24 @@ endif()
 
 # source files
 set(SOURCES
+        engine/pmem_allocator/free_list.cpp
+        engine/pmem_allocator/guarded_space.cpp
+        engine/pmem_allocator/pmem_allocator.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
+        engine/version/old_records_cleaner.cpp
+        engine/c.cpp
+        engine/data_record.cpp
+        engine/dram_allocator.cpp
         engine/engine.cpp
+        engine/hash_table.cpp
         engine/kv_engine.cpp
         engine/logger.cpp
-        engine/hash_table.cpp
-        engine/skiplist.cpp
-        engine/write_batch.cpp
-        engine/dram_allocator.cpp
-        engine/pmem_allocator/pmem_allocator.cpp
-        engine/thread_manager.cpp
-        engine/pmem_allocator/free_list.cpp
-        engine/c.cpp
-        engine/unordered_collection.cpp
-        engine/data_record.cpp
         engine/queue.cpp
-        engine/version/old_records_cleaner.cpp
+        engine/skiplist.cpp
+        engine/thread_manager.cpp
+        engine/unordered_collection.cpp
+        engine/write_batch.cpp
         )
 
 # .a library

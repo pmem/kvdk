@@ -23,11 +23,10 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
       throw std::bad_alloc{};
     }
     collection_record_ptr_ = DLRecord::PersistDLRecord(
-        space.Address(), space.Size(), timestamp, RecordType::DlistRecord,
-        kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
+        space, timestamp, RecordType::DlistRecord, kNullPMemOffset,
+        dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
         CollectionUtils::ID2String(ID()));
-    space.Release();
   }
 }
 
