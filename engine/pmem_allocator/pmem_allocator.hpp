@@ -222,7 +222,7 @@ class PMemAllocatorGuard {
   }
   // Let caller access the allocated space,
   // but caller must call Release() later to gain the ownership of space,
-  // otherwise PMemAllocatorGuard will still pad and free the space!
+  // otherwise PMemAllocatorGuard will still pad and Free() the space!
   SpaceEntry AllocatedSpace() { return space; }
   ~PMemAllocatorGuard() {
     if (alloc != nullptr && space.size != 0) {
