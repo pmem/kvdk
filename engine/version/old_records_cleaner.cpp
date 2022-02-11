@@ -201,7 +201,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         std::lock_guard<SpinMutex> lg(*old_delete_record.hash_entry_lock);
         if (old_delete_record.hash_entry_ref->GetIndex().string_record ==
             old_delete_record.pmem_delete_record) {
-          old_delete_record.hash_entry_ref->Clear();
+          kv_engine_->hash_table_->Erase(old_delete_record.hash_entry_ref);
         }
       }
       // we don't need to purge a delete record
@@ -239,7 +239,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
                   kv_engine_->hash_table_.get())) {
             continue;
           }
-          hash_entry_ref->Clear();
+          kv_engine_->hash_table_->Erase(hash_entry_ref);
         }
 
         return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),

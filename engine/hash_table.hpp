@@ -74,7 +74,7 @@ struct alignas(16) HashEntry {
 
   bool Empty() { return header_.index_type == HashIndexType::Empty; }
 
-  // Make this hash entry reusable while its content been deleted
+  // Make this hash entry empty while its content been deleted
   void Clear() { header_.index_type = HashIndexType::Empty; }
 
   Index GetIndex() const { return index_; }
@@ -157,6 +157,12 @@ class HashTable {
   // entry_ptr: position to insert, it's get from SearchForWrite()
   void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
               void* index, HashIndexType index_type);
+
+  // Erase a hash entry so it can be reused in future
+  void Erase(HashEntry* entry_ptr) {
+    assert(entry_ptr != nullptr);
+    entry_ptr->Clear();
+  }
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,

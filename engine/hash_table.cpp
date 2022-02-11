@@ -28,9 +28,9 @@ HashTable* HashTable::NewHashTable(
     } else {
       table->main_buckets_ =
           table->dram_allocator_.offset2addr(main_buckets_space.offset);
-      kvdk_assert(
-          (uint64_t)table->main_buckets_ % sizeof(HashEntry) == 0,
-          "hash table bucket address should aligned to hash entry size");
+      kvdk_assert((uint64_t)table->main_buckets_ % sizeof(HashEntry) == 0,
+                  "hash table bucket address should aligned to hash entry size "
+                  "in create new hash table");
     }
   }
   return table;
@@ -161,9 +161,9 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
             return Status::MemoryOverflow;
           }
           void* next_off = dram_allocator_.offset2addr(space.offset);
-          kvdk_assert(
-              (uint64_t)next_off % sizeof(HashEntry) == 0,
-              "hash table bucket address should aligned to hash entry size");
+          kvdk_assert((uint64_t)next_off % sizeof(HashEntry) == 0,
+                      "hash table bucket address should aligned to hash entry "
+                      "size in allocate new bucket");
           memset(next_off, 0, space.size);
           memcpy_8(bucket_ptr + hash_bucket_size_ - 8, &next_off);
           *entry_ptr = (HashEntry*)next_off;

@@ -688,7 +688,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
           asm volatile("pause");
           continue;
         }
-        entry_ptr->Clear();
+        hash_table_->Erase(entry_ptr);
       } else {
         if (valid_version_record != next_record) {
           // repair linkage of checkpoint version
@@ -872,7 +872,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
             asm volatile("pause");
             continue;
           }
-          entry_ptr->Clear();
+          hash_table_->Erase(entry_ptr);
         } else {
           // repair linkage of checkpoint version
           if (valid_version_record != next_record) {
@@ -1001,7 +1001,7 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
                                nullptr, pmem_allocator_, hash_table_)) {
             continue;
           }
-          entry_ptr->Clear();
+          hash_table_->Erase(entry_ptr);
         } else {
           // repair linkage of checkpoint version
           if (valid_version_record != hash_entry.GetIndex().dl_record) {

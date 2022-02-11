@@ -1801,7 +1801,7 @@ Status KVEngine::HDelete(StringView const collection_name,
 
           erase_result = p_collection->Erase(pmp_old_record, lock_record);
           if (erase_result.success) {
-            p_hash_entry->Clear();
+            hash_table_->Erase(p_hash_entry);
             purgeAndFree(pmp_old_record);
             return Status::Ok;
           } else {

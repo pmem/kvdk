@@ -98,8 +98,6 @@ inline void atomic_store_16(void* dst, const void* src) {
 inline void memcpy_16(void* dst, const void* src) {
   __m128i m0 = _mm_loadu_si128(((const __m128i*)src) + 0);
   _mm_storeu_si128(((__m128i*)dst) + 0, m0);
-  // ((std::atomic<__uint128_t>*)dst)
-  // ->store(((std::atomic<__uint128_t>*)src)->load());
 }
 
 inline void memcpy_8(void* dst, const void* src) {
