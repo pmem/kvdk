@@ -4,14 +4,12 @@
 
 #pragma once
 
-#include <memory>
-#include <set>
-#include <vector>
-
 #include <fcntl.h>
 #include <sys/mman.h>
 
-#include "kvdk/namespace.hpp"
+#include <memory>
+#include <set>
+#include <vector>
 
 #include "../allocator.hpp"
 #include "../data_record.hpp"
@@ -19,6 +17,7 @@
 #include "../version/version_controller.hpp"
 #include "free_list.hpp"
 #include "guarded_space.hpp"
+#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 

@@ -8,7 +8,6 @@
 
 #include "../data_record.hpp"
 #include "../logger.hpp"
-
 #include "pmem_allocator.hpp"
 
 namespace KVDK_NAMESPACE {
