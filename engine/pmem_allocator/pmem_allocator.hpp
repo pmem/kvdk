@@ -36,14 +36,12 @@ class PMEMAllocator : public Allocator {
     PMEMAllocator* alloc{nullptr};
     PMemOffsetType offset{kNullPMemOffset};
     size_type size{};
-    void* address{};
 
     friend class PMEMAllocator;
     GuardedSpace(PMEMAllocator& a, size_type sz) : alloc{&a} {
       SpaceEntry se = alloc->Allocate(sz);
       offset = se.offset;
       size = se.size;
-      address = alloc->offset2addr(offset);
     }
 
    public:
@@ -60,31 +58,32 @@ class PMEMAllocator : public Allocator {
       swap(alloc, other.alloc);
       swap(offset, other.offset);
       swap(size, other.size);
-      swap(address, other.address);
       return *this;
     }
     // Release ownership of allocated space.
-    GuardedSpace& operator=(std::nullptr_t) {
+    SpaceEntry Release() {
+      SpaceEntry ret{offset, size};
       alloc = nullptr;
       offset = kNullPMemOffset;
       size = 0;
-      address = nullptr;
-      return *this;
+      return ret;
     }
     PMemOffsetType Offset() const { return offset; }
-    void* Address() const { return address; }
+    void* Address() const { return alloc->offset2addr(offset); }
     size_type Size() const { return size; }
     SpaceEntry ToSpaceEntry() { return SpaceEntry{offset, size}; }
     ~GuardedSpace() {
       if (alloc != nullptr && size != 0) {
+#if DEBUG_LEVEL >= 1
         GlobalLogger.Info("GuardedSpace unused. Padded and freed!\n");
+#endif
         DataEntry padding{0,
                           static_cast<std::uint32_t>(size),
                           TimeStampType{},
                           RecordType::Padding,
                           0,
                           0};
-        pmem_memcpy_persist(address, &padding, sizeof(DataEntry));
+        pmem_memcpy_persist(Address(), &padding, sizeof(DataEntry));
         alloc->Free(ToSpaceEntry());
       }
     }

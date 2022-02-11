@@ -23,7 +23,7 @@ Queue::Queue(PMEMAllocator* pmem_allocator_ptr, std::string const name,
         kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
         CollectionUtils::ID2String(ID()));
-    space = nullptr;
+    space.Release();
   }
 }
 

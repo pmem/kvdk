@@ -175,8 +175,8 @@ class DLinkedList {
       head_pmmptr_ = DLRecord::PersistDLRecord(
           head_space.Address(), head_space.Size(), timestamp, HeadType,
           NullPMemOffset, NullPMemOffset, tail_space.Offset(), key, value);
-      head_space = nullptr;
-      tail_space = nullptr;
+      head_space.Release();
+      tail_space.Release();
     }
   }
 
@@ -357,7 +357,7 @@ class DLinkedList {
     iter_next->prev = space.Offset();
     pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
 
-    space = nullptr;
+    space.Release();
 
     return iterator{pmem_allocator_ptr_, record};
   }

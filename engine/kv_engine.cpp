@@ -663,7 +663,7 @@ Status KVEngine::InitCollection(const StringView& collection, Collection** list,
       space.Address(), space.Size(), version_controller_.GetCurrentTimestamp(),
       (RecordType)collection_type, kNullPMemOffset, space.Offset(),
       space.Offset(), collection, StringView((char*)&id, 8));
-  space = nullptr;
+  space.Release();
 
   std::lock_guard<std::mutex> guard{list_mu_};
   skiplists_.push_back(
@@ -1075,7 +1075,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
     ul.unlock();
     delayFree(OldDataRecord{existing_record, new_ts});
     delayFree(OldDeleteRecord{space.Address(), new_ts, entry_ptr, hint.spin});
-    space = nullptr;
+    space.Release();
     break;
   }
   return Status::Ok;
@@ -1112,7 +1112,7 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
     if (s == Status::MemoryOverflow) {
       return s;
     }
-    bool found = s == Status::Ok;
+    bool found = (s == Status::Ok);
 
     assert(!found || new_ts > data_entry.meta.timestamp);
 
@@ -1139,7 +1139,7 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
       } else {
         entry_ptr->header.data_type = SortedDataRecord;
       }
-      space = nullptr;
+      space.Release();
       ul.unlock();
       if (updated_type == SortedDataRecord) {
         delayFree(OldDataRecord{existing_record, new_ts});
@@ -1150,12 +1150,11 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
         continue;
       }
 
-      void* new_hash_index =
-          (dram_node == nullptr) ? space.Address() : dram_node;
       hash_table_->Insert(
-          hint, entry_ptr, SortedDataRecord, new_hash_index,
+          hint, entry_ptr, SortedDataRecord,
+          (dram_node == nullptr) ? space.Address() : dram_node,
           dram_node ? HashIndexType::SkiplistNode : HashIndexType::DLRecord);
-      space = nullptr;
+      space.Release();
       if (found) {
         delayFree(OldDataRecord{hash_entry.index.dl_record, new_ts});
       }
@@ -1310,7 +1309,6 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   defer(engine_thread_cache_[access_thread.id].batch_writing = false;);
 
   std::set<SpinMutex*> spins_to_lock;
-  std::vector<PMEMAllocator::GuardedSpace> guarded_spaces(write_batch.Size());
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<PMemOffsetType> space_entry_offsets(write_batch.Size());
 
@@ -1325,17 +1323,15 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       GlobalLogger.Error("only support string type batch write\n");
       return Status::NotSupported;
     }
-    guarded_spaces[i] = pmem_allocator_->GuardedAllocate(alloc_size);
-    if (guarded_spaces[i].Size() == 0) {
+    batch_hints[i].allocated_space =
+        pmem_allocator_->GuardedAllocate(alloc_size);
+    if (batch_hints[i].allocated_space.Size() == 0) {
       return Status::PmemOverflow;
     }
+    space_entry_offsets[i] = batch_hints[i].allocated_space.Offset();
 
     batch_hints[i].hash_hint = hash_table_->GetHint(kv.key);
     spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
-  }
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    batch_hints[i].allocated_space = guarded_spaces[i].ToSpaceEntry();
-    space_entry_offsets[i] = guarded_spaces[i].Offset();
   }
 
   size_t batch_size = write_batch.Size();
@@ -1360,19 +1356,18 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
 
   // Do batch writes
   for (size_t i = 0; i < write_batch.Size(); i++) {
-    if (write_batch.kvs[i].type == StringDataRecord ||
-        write_batch.kvs[i].type == StringDeleteRecord) {
-      s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
-      TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
-    } else {
+    if (write_batch.kvs[i].type != StringDataRecord &&
+        write_batch.kvs[i].type != StringDeleteRecord) {
       return Status::NotSupported;
-    }
-
-    // Something wrong
-    // TODO: roll back finished writes (hard to roll back hash table now)
-    if (s != Status::Ok) {
-      kvdk_assert(s == Status::MemoryOverflow, "");
-      return s;
+    } else {
+      TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
+      s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
+      // Something wrong
+      // TODO: roll back finished writes (hard to roll back hash table now)
+      if (s != Status::Ok) {
+        kvdk_assert(s == Status::MemoryOverflow, "");
+        return s;
+      }
     }
   }
 
@@ -1392,9 +1387,6 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       delayFree(OldDeleteRecord{batch_hints[i].delete_record_to_free, ts,
                                 batch_hints[i].hash_entry_ptr,
                                 batch_hints[i].hash_hint.spin});
-    }
-    if (!batch_hints[i].space_not_used) {
-      guarded_spaces[i] = nullptr;
     }
   }
   return Status::Ok;
@@ -1421,27 +1413,26 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
 
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord && !found) {
-      batch_hint.space_not_used = true;
-      markEmptySpace(batch_hint.allocated_space);
       return Status::Ok;
     }
 
     kvdk_assert(!found || batch_hint.timestamp >= data_entry.meta.timestamp,
                 "ts of new data smaller than existing data in batch write");
 
-    void* block_base =
-        pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
+    void* block_base = batch_hint.allocated_space.Address();
 
     TEST_SYNC_POINT(
         "KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
 
     StringRecord::PersistStringRecord(
-        block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
+        block_base, batch_hint.allocated_space.Size(), batch_hint.timestamp,
         static_cast<RecordType>(kv.type),
         found ? pmem_allocator_->addr2offset_checked(
                     hash_entry.index.string_record)
               : kNullPMemOffset,
         kv.key, kv.type == StringDataRecord ? kv.value : "");
+
+    batch_hint.allocated_space.Release();
 
     hash_table_->Insert(hash_hint, entry_ptr, kv.type, block_base,
                         HashIndexType::StringRecord);
@@ -1522,7 +1513,7 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
         delayFree(
             OldDeleteRecord{space.Address(), new_ts, entry_ptr, hint.spin});
 
-        space = nullptr;
+        space.Release();
 
         return s;
       }
@@ -1563,7 +1554,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value) {
     if (s == Status::MemoryOverflow) {
       return s;
     }
-    bool found = s == Status::Ok;
+    bool found = (s == Status::Ok);
 
     kvdk_assert(!found || new_ts > data_entry.meta.timestamp,
                 "old record has newer timestamp!");
@@ -1579,7 +1570,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value) {
     // Write hash index
     hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord, space.Address(),
                         HashIndexType::StringRecord);
-    space = nullptr;
+    space.Release();
     if (found && updated_type == StringDataRecord /* delete record is self-freed, so we don't need to free it here */) {
       ul.unlock();
       delayFree(OldDataRecord{hash_entry.index.string_record, new_ts});

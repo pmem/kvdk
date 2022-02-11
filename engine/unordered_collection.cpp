@@ -27,7 +27,7 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
         kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
         CollectionUtils::ID2String(ID()));
-    space = nullptr;
+    space.Release();
   }
 }
 

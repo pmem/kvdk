@@ -124,12 +124,11 @@ class KVEngine : public Engine {
 
   struct BatchWriteHint {
     TimeStampType timestamp{0};
-    SpaceEntry allocated_space{};
+    PMEMAllocator::GuardedSpace allocated_space{};
     HashTable::KeyHashHint hash_hint{};
     HashEntry* hash_entry_ptr = nullptr;
     void* data_record_to_free = nullptr;
     void* delete_record_to_free = nullptr;
-    bool space_not_used{false};
   };
 
   struct EngineThreadCache {
