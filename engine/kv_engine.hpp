@@ -170,7 +170,7 @@ class KVEngine : public Engine {
 
  private:
   Status InitCollection(const StringView& collection, Collection** list,
-                        uint16_t collection_type);
+                        RecordType collection_type);
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
@@ -188,7 +188,7 @@ class KVEngine : public Engine {
     if (s != Status::Ok) {
       return s;
     }
-    *collection_ptr = (CollectionType*)hash_entry.index.ptr;
+    *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
     return s;
   }
 

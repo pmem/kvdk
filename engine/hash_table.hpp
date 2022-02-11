@@ -40,7 +40,7 @@ enum class HashIndexType : uint16_t {
 
 struct HashHeader {
   uint32_t key_prefix;
-  uint16_t data_type;
+  RecordType record_type;
   HashIndexType index_type;
 };
 
@@ -49,8 +49,10 @@ class SkiplistNode;
 class UnorderedCollection;
 class Queue;
 
-struct HashEntry {
+struct alignas(16) HashEntry {
  public:
+  HashEntry& operator=(const HashEntry&) = delete;
+  HashEntry(const HashEntry& hash_entry) { atomic_load_16(this, &hash_entry); }
   union Index {
     Index(void* _ptr) : ptr(_ptr) {}
     Index() = default;
@@ -66,23 +68,32 @@ struct HashEntry {
 
   HashEntry() = default;
 
-  HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void* _index,
+  HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
             HashIndexType index_type)
-      : header({key_hash_prefix, data_entry_type, index_type}), index(_index) {}
+      : header_({key_hash_prefix, record_type, index_type}), index_(_index) {}
 
-  HashHeader header;
-  Index index;
+  bool Empty() { return header_.index_type == HashIndexType::Empty; }
 
-  static void CopyHeader(HashEntry* dst, HashEntry* src) { memcpy_8(dst, src); }
-  static void CopyOffset(HashEntry* dst, HashEntry* src) {
-    dst->index = src->index;
-  }
+  // Make this hash entry empty while its content been deleted
+  void Clear() { header_.index_type = HashIndexType::Empty; }
 
-  bool Empty() { return header.index_type == HashIndexType::Empty; }
+  Index GetIndex() const { return index_; }
 
-  // Make this hash entry reusable while its content been deleted
-  void Clear() { header.index_type = HashIndexType::Empty; }
+  HashIndexType GetIndexType() const { return header_.index_type; }
+
+  RecordType GetRecordType() const { return header_.record_type; }
+
+  // Check if "key" of data type "target_type" is indexed by "this". If
+  // matches, copy data entry of data record of "key" to "data_entry_metadata"
+  // and return true, otherwise return false.
+  bool Match(const StringView& key, uint32_t hash_k_prefix,
+             uint16_t target_type, DataEntry* data_entry_metadata);
+
+ private:
+  Index index_;
+  HashHeader header_;
 };
+static_assert(sizeof(HashEntry) == 16);
 
 struct HashCache {
   HashEntry* entry_ptr = nullptr;
@@ -144,8 +155,14 @@ class HashTable {
   // Insert a hash entry to hash table
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
-  void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, uint16_t type,
+  void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
               void* index, HashIndexType index_type);
+
+  // Erase a hash entry so it can be reused in future
+  void Erase(HashEntry* entry_ptr) {
+    assert(entry_ptr != nullptr);
+    entry_ptr->Clear();
+  }
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
@@ -169,13 +186,6 @@ class HashTable {
   inline uint32_t get_slot_num(uint32_t bucket) {
     return bucket / num_buckets_per_slot_;
   }
-
-  // Check if "key" of data type "target_type" is indexed by "hash_entry". If
-  // matches, copy data entry of data record of "key" to "data_entry_metadata"
-  // and return true, otherwise return false.
-  bool MatchHashEntry(const StringView& key, uint32_t hash_k_prefix,
-                      uint16_t target_type, const HashEntry* hash_entry,
-                      DataEntry* data_entry_metadata);
 
   std::vector<uint64_t> hash_bucket_entries_;
   const uint64_t hash_bucket_num_;

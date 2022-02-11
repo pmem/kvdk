@@ -145,7 +145,7 @@ def run_benchmark(
         "-populate={2} "\
         "-num_kv={3} "\
         "-threads={4} "\
-        "-max_write_threads={5} "\
+        "-max_access_threads={5} "\
         "-num_collection={6} "\
         "-timeout={7} "\
         "-value_size={8} "\

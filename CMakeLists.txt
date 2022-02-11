@@ -68,7 +68,7 @@ set(SOURCES
 # .a library
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
-target_link_libraries(engine PUBLIC pthread pmem gflags hwloc)
+target_link_libraries(engine PUBLIC pthread pmem gflags hwloc atomic)
 
 configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc

@@ -196,12 +196,12 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record);
   switch (data_entry->meta.type) {
     case StringDeleteRecord: {
-      if (old_delete_record.hash_entry_ref->index.string_record ==
+      if (old_delete_record.hash_entry_ref->GetIndex().string_record ==
           old_delete_record.pmem_delete_record) {
         std::lock_guard<SpinMutex> lg(*old_delete_record.hash_entry_lock);
-        if (old_delete_record.hash_entry_ref->index.string_record ==
+        if (old_delete_record.hash_entry_ref->GetIndex().string_record ==
             old_delete_record.pmem_delete_record) {
-          old_delete_record.hash_entry_ref->Clear();
+          kv_engine_->hash_table_->Erase(old_delete_record.hash_entry_ref);
         }
       }
       // we don't need to purge a delete record
@@ -215,12 +215,12 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         std::lock_guard<SpinMutex> lg(*hash_entry_lock);
         DLRecord* hash_indexed_pmem_record = nullptr;
         SkiplistNode* dram_node = nullptr;
-        switch (hash_entry_ref->header.index_type) {
+        switch (hash_entry_ref->GetIndexType()) {
           case HashIndexType::DLRecord:
-            hash_indexed_pmem_record = hash_entry_ref->index.dl_record;
+            hash_indexed_pmem_record = hash_entry_ref->GetIndex().dl_record;
             break;
           case HashIndexType::SkiplistNode:
-            dram_node = hash_entry_ref->index.skiplist_node;
+            dram_node = hash_entry_ref->GetIndex().skiplist_node;
             hash_indexed_pmem_record = dram_node->record;
             break;
           case HashIndexType::Empty:
@@ -228,7 +228,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           default:
             GlobalLogger.Error(
                 "Wrong type %u in handle pending free skiplist delete record\n",
-                hash_entry_ref->header.index_type);
+                hash_entry_ref->GetIndexType());
             std::abort();
         }
 
@@ -239,7 +239,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
                   kv_engine_->hash_table_.get())) {
             continue;
           }
-          hash_entry_ref->Clear();
+          kv_engine_->hash_table_->Erase(hash_entry_ref);
         }
 
         return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),

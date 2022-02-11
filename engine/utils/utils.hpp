@@ -29,6 +29,8 @@
 #include "xxhash.h"
 #undef XXH_INLINE_ALL
 
+#include <atomic>
+
 #include "../alias.hpp"
 #include "../macros.hpp"
 #include "kvdk/namespace.hpp"
@@ -51,6 +53,11 @@ Defer<F> defer_func(F f) {
 #define DEFER_2(x, y) DEFER_1(x, y)
 #define DEFER_3(x) DEFER_2(x, __COUNTER__)
 #define defer(code) auto DEFER_3(_defer_) = defer_func([&]() { code; })
+
+inline void atomic_memcpy_16(void* dst, void* src) {
+  ((std::atomic<__uint128_t>*)dst)
+      ->store(((std::atomic<__uint128_t>*)src)->load());
+}
 
 inline uint64_t hash_str(const char* str, uint64_t size) {
   return XXH3_64bits(str, size);
@@ -78,6 +85,14 @@ inline static uint64_t rdtsc() {
   uint32_t lo, hi;
   __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
   return ((uint64_t)lo) | (((uint64_t)hi) << 32);
+}
+
+inline void atomic_load_16(void* dst, const void* src) {
+  (*(__uint128_t*)dst) = __atomic_load_16(src, std::memory_order_relaxed);
+}
+
+inline void atomic_store_16(void* dst, const void* src) {
+  __atomic_store_16(dst, (*(__uint128_t*)src), std::memory_order_relaxed);
 }
 
 inline void memcpy_16(void* dst, const void* src) {
