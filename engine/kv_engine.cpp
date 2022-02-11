@@ -1016,7 +1016,6 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
   }
 
   PMemAllocatorGuard alloc_guard{*pmem_allocator_};
-  bool has_allocated_space = false;
 
   while (1) {
     SkiplistNode* dram_node = nullptr;
@@ -1045,12 +1044,11 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
           return Status::Ok;
         } else {
           kvdk_assert(hash_entry.header.data_type == SortedDataRecord, "");
-          if (!has_allocated_space) {
+          if (alloc_guard.AllocatedSpace().size == 0) {
             if (!alloc_guard.TryAllocate(sizeof(DLRecord) +
                                          collection_key.size())) {
               return Status::PmemOverflow;
             }
-            has_allocated_space = true;
           }
           break;
         }
