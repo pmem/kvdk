@@ -49,8 +49,10 @@ class SkiplistNode;
 class UnorderedCollection;
 class Queue;
 
-struct HashEntry {
+struct alignas(16) HashEntry {
  public:
+  HashEntry& operator=(const HashEntry&) = delete;
+  HashEntry(const HashEntry& hash_entry) { atomic_load_16(this, &hash_entry); }
   union Index {
     Index(void* _ptr) : ptr(_ptr) {}
     Index() = default;
@@ -68,21 +70,31 @@ struct HashEntry {
 
   HashEntry(uint32_t key_hash_prefix, uint16_t data_entry_type, void* _index,
             HashIndexType index_type)
-      : header({key_hash_prefix, data_entry_type, index_type}), index(_index) {}
+      : header_({key_hash_prefix, data_entry_type, index_type}),
+        index_(_index) {}
 
-  HashHeader header;
-  Index index;
-
-  static void CopyHeader(HashEntry* dst, HashEntry* src) { memcpy_8(dst, src); }
-  static void CopyOffset(HashEntry* dst, HashEntry* src) {
-    dst->index = src->index;
-  }
-
-  bool Empty() { return header.index_type == HashIndexType::Empty; }
+  bool Empty() { return header_.index_type == HashIndexType::Empty; }
 
   // Make this hash entry reusable while its content been deleted
-  void Clear() { header.index_type = HashIndexType::Empty; }
+  void Clear() { header_.index_type = HashIndexType::Empty; }
+
+  Index GetIndex() const { return index_; }
+
+  HashIndexType GetIndexType() const { return header_.index_type; }
+
+  uint16_t GetRecordType() const { return header_.data_type; }
+
+  // Check if "key" of data type "target_type" is indexed by "this". If
+  // matches, copy data entry of data record of "key" to "data_entry_metadata"
+  // and return true, otherwise return false.
+  bool Match(const StringView& key, uint32_t hash_k_prefix,
+             uint16_t target_type, DataEntry* data_entry_metadata);
+
+ private:
+  Index index_;
+  HashHeader header_;
 };
+static_assert(sizeof(HashEntry) == 16);
 
 struct HashCache {
   HashEntry* entry_ptr = nullptr;
@@ -169,13 +181,6 @@ class HashTable {
   inline uint32_t get_slot_num(uint32_t bucket) {
     return bucket / num_buckets_per_slot_;
   }
-
-  // Check if "key" of data type "target_type" is indexed by "hash_entry". If
-  // matches, copy data entry of data record of "key" to "data_entry_metadata"
-  // and return true, otherwise return false.
-  bool MatchHashEntry(const StringView& key, uint32_t hash_k_prefix,
-                      uint16_t target_type, const HashEntry* hash_entry,
-                      DataEntry* data_entry_metadata);
 
   std::vector<uint64_t> hash_bucket_entries_;
   const uint64_t hash_bucket_num_;

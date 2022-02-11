@@ -188,7 +188,7 @@ class KVEngine : public Engine {
     if (s != Status::Ok) {
       return s;
     }
-    *collection_ptr = (CollectionType*)hash_entry.index.ptr;
+    *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
     return s;
   }
 
