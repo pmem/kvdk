@@ -1327,6 +1327,14 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   std::set<SpinMutex*> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
+  auto free_space_on_failure = [&]() {
+    for (size_t i = 0; i < batch_hints.size(); i++) {
+      if (batch_hints[i].allocated_space.size > 0) {
+        this->markEmptySpace(batch_hints[i].allocated_space);
+        this->pmem_allocator_->Free(batch_hints[i].allocated_space);
+      }
+    }
+  };
 
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto& kv = write_batch.kvs[i];
@@ -1342,9 +1350,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
     // No enough space for batch write
     if (batch_hints[i].allocated_space.size == 0) {
-      for (size_t j = 0; j < i; j++) {
-        pmem_allocator_->Free(batch_hints[j].allocated_space);
-      }
+      free_space_on_failure();
       return Status::PmemOverflow;
     }
     space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
@@ -1380,6 +1386,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
       TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
     } else {
+      free_space_on_failure();
       return Status::NotSupported;
     }
 
