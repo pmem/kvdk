@@ -217,11 +217,12 @@ class PMemAllocatorGuard {
     using std::swap;
     swap(temp, space);
     alloc = nullptr;
-    
+
     return std::make_pair(temp, addr);
   }
-  // Let caller use the allocated space,
-  // but caller must call Release() later if the space is used!
+  // Let caller access the allocated space,
+  // but caller must call Release() later to gain the ownership of space,
+  // otherwise the space will be padded and Free()-ed.
   SpaceEntry AllocatedSpace() { return space; }
   ~PMemAllocatorGuard() {
     if (alloc != nullptr && space.size != 0) {
