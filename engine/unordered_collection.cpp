@@ -13,21 +13,21 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
                     StringView{""}},
       timestamp_{timestamp} {
   {
-    PMemAllocatorGuard alloc_guard{*dlinked_list_.pmem_allocator_ptr_};
-    if (!alloc_guard.TryAllocate(sizeof(DLRecord) + Name().size() +
-                                 sizeof(CollectionIDType))) {
+    auto space = dlinked_list_.pmem_allocator_ptr_->GuardedAllocate(
+        sizeof(DLRecord) + Name().size() + sizeof(CollectionIDType));
+    if (space.Size() == 0) {
       dlinked_list_.purgeAndFree(dlinked_list_.Head().GetCurrentAddress());
       dlinked_list_.purgeAndFree(dlinked_list_.Tail().GetCurrentAddress());
       dlinked_list_.head_pmmptr_ = nullptr;
       dlinked_list_.tail_pmmptr_ = nullptr;
       throw std::bad_alloc{};
     }
-    auto space = alloc_guard.Release();
     collection_record_ptr_ = DLRecord::PersistDLRecord(
-        space.second, space.first.size, timestamp, RecordType::DlistRecord,
+        space.Address(), space.Size(), timestamp, RecordType::DlistRecord,
         kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
         CollectionUtils::ID2String(ID()));
+    space = nullptr;
   }
 }
 

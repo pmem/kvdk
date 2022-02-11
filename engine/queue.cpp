@@ -9,21 +9,21 @@ Queue::Queue(PMEMAllocator* pmem_allocator_ptr, std::string const name,
                     CollectionUtils::ID2String(id), StringView{""}},
       timestamp_{timestamp} {
   {
-    PMemAllocatorGuard alloc_guard{*dlinked_list_.pmem_allocator_ptr_};
-    if (!alloc_guard.TryAllocate(sizeof(DLRecord) + Name().size() +
-                                 sizeof(CollectionIDType))) {
+    auto space = dlinked_list_.pmem_allocator_ptr_->GuardedAllocate(
+        sizeof(DLRecord) + Name().size() + sizeof(CollectionIDType));
+    if (space.Size() == 0) {
       dlinked_list_.purgeAndFree(dlinked_list_.Head().GetCurrentAddress());
       dlinked_list_.purgeAndFree(dlinked_list_.Tail().GetCurrentAddress());
       dlinked_list_.head_pmmptr_ = nullptr;
       dlinked_list_.tail_pmmptr_ = nullptr;
       throw std::bad_alloc{};
     }
-    auto space = alloc_guard.Release();
     collection_record_ptr_ = DLRecord::PersistDLRecord(
-        space.second, space.first.size, timestamp, RecordType::QueueRecord,
+        space.Address(), space.Size(), timestamp, RecordType::QueueRecord,
         kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
         CollectionUtils::ID2String(ID()));
+    space = nullptr;
   }
 }
 
@@ -41,8 +41,9 @@ Queue::Queue(PMEMAllocator* pmem_allocator_ptr, DLRecord* collection_record)
       timestamp_{collection_record->entry.meta.timestamp} {
   sz_ = 0;
   for (iterator iter = dlinked_list_.First(); iter != dlinked_list_.Tail();
-       ++iter)
+       ++iter) {
     ++sz_;
+  }
 }
 
 void Queue::PushFront(TimeStampType timestamp, StringView const value) {

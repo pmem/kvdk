@@ -30,6 +30,66 @@ constexpr uint64_t kMinPaddingBlocks = 8;
 // maximum allocated data size should smaller than a segment.
 class PMEMAllocator : public Allocator {
  public:
+  class GuardedSpace {
+   private:
+    using size_type = std::uint32_t;
+    PMEMAllocator* alloc{nullptr};
+    PMemOffsetType offset{kNullPMemOffset};
+    size_type size{};
+    void* address{};
+
+    friend class PMEMAllocator;
+    GuardedSpace(PMEMAllocator& a, size_type sz) : alloc{&a} {
+      SpaceEntry se = alloc->Allocate(sz);
+      offset = se.offset;
+      size = se.size;
+      address = alloc->offset2addr(offset);
+    }
+
+   public:
+    GuardedSpace() = default;
+    GuardedSpace(GuardedSpace const&) = delete;
+    GuardedSpace& operator=(GuardedSpace const&) = delete;
+    // Transfer ownership to another guard
+    GuardedSpace(GuardedSpace&& other) { *this = std::move(other); }
+    GuardedSpace& operator=(GuardedSpace&& other) {
+      kvdk_assert(alloc == nullptr && size == 0,
+                  "Cannot asigned to non-empty GuardedSpace");
+
+      using std::swap;
+      swap(alloc, other.alloc);
+      swap(offset, other.offset);
+      swap(size, other.size);
+      swap(address, other.address);
+      return *this;
+    }
+    // Release ownership of allocated space.
+    GuardedSpace& operator=(std::nullptr_t) {
+      alloc = nullptr;
+      offset = kNullPMemOffset;
+      size = 0;
+      address = nullptr;
+      return *this;
+    }
+    PMemOffsetType Offset() const { return offset; }
+    void* Address() const { return address; }
+    size_type Size() const { return size; }
+    SpaceEntry ToSpaceEntry() { return SpaceEntry{offset, size}; }
+    ~GuardedSpace() {
+      if (alloc != nullptr && size != 0) {
+        GlobalLogger.Info("GuardedSpace unused. Padded and freed!\n");
+        DataEntry padding{0,
+                          static_cast<std::uint32_t>(size),
+                          TimeStampType{},
+                          RecordType::Padding,
+                          0,
+                          0};
+        pmem_memcpy_persist(address, &padding, sizeof(DataEntry));
+        alloc->Free(ToSpaceEntry());
+      }
+    }
+  };
+
   ~PMEMAllocator();
 
   static PMEMAllocator* NewPMEMAllocator(
@@ -41,12 +101,16 @@ class PMEMAllocator : public Allocator {
   // Allocate a PMem space, return offset and actually allocated space in bytes
   SpaceEntry Allocate(uint64_t size) override;
 
+  GuardedSpace GuardedAllocate(std::uint32_t size) {
+    return GuardedSpace{*this, size};
+  }
+
   // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(const SpaceEntry& entry) override;
 
   // translate block_offset of allocated space to address
   inline void* offset2addr_checked(PMemOffsetType offset) {
-    assert(validate_offset(offset) && "Trying to access invalid offset");
+    kvdk_assert(validate_offset(offset), "Trying to access invalid offset");
     return pmem_ + offset;
   }
 
@@ -184,59 +248,6 @@ class PMEMAllocator : public Allocator {
 
   std::mutex backup_lock;
   bool backup_processing = false;
-};
-
-class PMemAllocatorGuard {
- private:
-  PMEMAllocator* alloc{nullptr};
-  SpaceEntry space{};
-
- public:
-  PMemAllocatorGuard() = default;
-  PMemAllocatorGuard(PMEMAllocator& a) : alloc{&a} {}
-  PMemAllocatorGuard(PMemAllocatorGuard const&) = delete;
-  PMemAllocatorGuard& operator=(PMemAllocatorGuard const&) = delete;
-  // Transfer ownership to another guard
-  PMemAllocatorGuard(PMemAllocatorGuard&& other) { *this = std::move(other); }
-  PMemAllocatorGuard& operator=(PMemAllocatorGuard&& other) {
-    using std::swap;
-    swap(alloc, other.alloc);
-    swap(space, other.space);
-    return *this;
-  }
-  bool TryAllocate(std::size_t sz) {
-    kvdk_assert(alloc != nullptr && space.size == 0, "Invalid state!");
-    space = alloc->Allocate(sz);
-    return (space.size != 0);
-  }
-  // Transfer ownership to caller.
-  std::pair<SpaceEntry, void*> Release() {
-    void* addr = alloc->offset2addr_checked(space.offset);
-
-    SpaceEntry temp;
-    using std::swap;
-    swap(temp, space);
-    alloc = nullptr;
-
-    return std::make_pair(temp, addr);
-  }
-  // Let caller access the allocated space,
-  // but caller must call Release() later to acquire the ownership of space,
-  // otherwise PMemAllocatorGuard will still pad and Free() the space!
-  SpaceEntry AllocatedSpace() { return space; }
-  ~PMemAllocatorGuard() {
-    if (alloc != nullptr && space.size != 0) {
-      DataEntry padding{0,
-                        static_cast<std::uint32_t>(space.size),
-                        TimeStampType{},
-                        RecordType::Padding,
-                        0,
-                        0};
-      pmem_memcpy_persist(alloc->offset2addr_checked(space.offset), &padding,
-                          sizeof(DataEntry));
-      alloc->Free(space);
-    }
-  }
 };
 
 }  // namespace KVDK_NAMESPACE

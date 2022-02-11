@@ -157,28 +157,26 @@ class DLinkedList {
         head_pmmptr_{nullptr},
         tail_pmmptr_{nullptr} {
     {
-      PMemAllocatorGuard alloc_guard_head{*pmem_allocator_ptr_};
-      PMemAllocatorGuard alloc_guard_tail{*pmem_allocator_ptr_};
+      auto head_space = pmem_allocator_ptr_->GuardedAllocate(
+          sizeof(DLRecord) + key.size() + value.size());
+      auto tail_space = pmem_allocator_ptr_->GuardedAllocate(
+          sizeof(DLRecord) + key.size() + value.size());
       // head and tail can hold any key and value supplied by caller.
-      if (!alloc_guard_head.TryAllocate(sizeof(DLRecord) + key.size() +
-                                        value.size()) ||
-          !alloc_guard_tail.TryAllocate(sizeof(DLRecord) + key.size() +
-                                        value.size())) {
+      if (head_space.Size() == 0 || tail_space.Size() == 0) {
         throw std::bad_alloc{};
       }
-
-      auto head_space = alloc_guard_head.Release();
-      auto tail_space = alloc_guard_tail.Release();
 
       // Persist tail first then head
       // If only tail is persisted then it can be deallocated by caller at
       // recovery
       tail_pmmptr_ = DLRecord::PersistDLRecord(
-          tail_space.second, tail_space.first.size, timestamp, TailType,
-          NullPMemOffset, head_space.first.offset, NullPMemOffset, key, value);
+          tail_space.Address(), tail_space.Size(), timestamp, TailType,
+          NullPMemOffset, head_space.Offset(), NullPMemOffset, key, value);
       head_pmmptr_ = DLRecord::PersistDLRecord(
-          head_space.second, head_space.first.size, timestamp, HeadType,
-          NullPMemOffset, NullPMemOffset, tail_space.first.offset, key, value);
+          head_space.Address(), head_space.Size(), timestamp, HeadType,
+          NullPMemOffset, NullPMemOffset, tail_space.Offset(), key, value);
+      head_space = nullptr;
+      tail_space = nullptr;
     }
   }
 
@@ -264,10 +262,12 @@ class DLinkedList {
     iterator iter_next{pos};
     ++iter_next;
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
-    iter_prev->next = iter_next.GetCurrentOffset();
-    pmem_persist(&iter_prev->next, sizeof(PMemOffsetType));
+
+    // Erase happens in the reverse order of emplaceBetween
     iter_next->prev = iter_prev.GetCurrentOffset();
     pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
+    iter_prev->next = iter_next.GetCurrentOffset();
+    pmem_persist(&iter_prev->next, sizeof(PMemOffsetType));
 
     return iter_next;
   }
@@ -342,22 +342,22 @@ class DLinkedList {
                                  StringView const value) {
     kvdk_assert(iter_prev && iter_next, "Invalid iterator in dlinked_list!");
 
-    auto space = pmem_allocator_ptr_->Allocate(sizeof(DLRecord) + key.size() +
-                                               value.size());
-    if (space.size == 0) {
+    auto space = pmem_allocator_ptr_->GuardedAllocate(
+        sizeof(DLRecord) + key.size() + value.size());
+    if (space.Size() == 0) {
       throw std::bad_alloc{};
     }
-    std::uint64_t offset = space.offset;
-    void* pmp = pmem_allocator_ptr_->offset2addr_checked(offset);
 
     DLRecord* record = DLRecord::PersistDLRecord(
-        pmp, space.size, timestamp, DataType, kNullPMemOffset,
+        space.Address(), space.Size(), timestamp, DataType, kNullPMemOffset,
         iter_prev.GetCurrentOffset(), iter_next.GetCurrentOffset(), key, value);
 
-    iter_prev->next = offset;
+    iter_prev->next = space.Offset();
     pmem_persist(&iter_prev->next, sizeof(PMemOffsetType));
-    iter_next->prev = offset;
+    iter_next->prev = space.Offset();
     pmem_persist(&iter_next->prev, sizeof(PMemOffsetType));
+
+    space = nullptr;
 
     return iterator{pmem_allocator_ptr_, record};
   }
