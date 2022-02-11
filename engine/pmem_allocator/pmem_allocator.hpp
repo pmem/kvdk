@@ -205,20 +205,20 @@ class PMemAllocatorGuard {
     return *this;
   }
   bool TryAllocate(std::size_t sz) {
-    if (space.size != 0) {
-      kvdk_assert(
-          false,
-          "Should not TryAllocate() second time if first time succeeded!");
-      return true;
-    }
+    kvdk_assert(alloc != nullptr && space.size == 0, "Invalid state!");
     space = alloc->Allocate(sz);
     return (space.size != 0);
   }
   // Transfer ownership to caller.
   std::pair<SpaceEntry, void*> Release() {
     void* addr = alloc->offset2addr_checked(space.offset);
+
+    SpaceEntry temp;
+    using std::swap;
+    swap(temp, space);
     alloc = nullptr;
-    return std::make_pair(space, addr);
+    
+    return std::make_pair(temp, addr);
   }
   // Let caller use the allocated space,
   // but caller must call Release() later if the space is used!

@@ -1393,7 +1393,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   for (size_t i = 0; i < alloc_guards.size(); i++) {
     alloc_guards[i].Release();
   }
-  
+
   std::string val;
 
   // Free updated kvs, we should purge all updated kvs before release locks and

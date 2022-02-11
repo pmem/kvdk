@@ -157,33 +157,28 @@ class DLinkedList {
         head_pmmptr_{nullptr},
         tail_pmmptr_{nullptr} {
     {
+      PMemAllocatorGuard alloc_guard_head{*pmem_allocator_ptr_};
+      PMemAllocatorGuard alloc_guard_tail{*pmem_allocator_ptr_};
       // head and tail can hold any key and value supplied by caller.
-      auto head_space_entry = pmem_allocator_ptr_->Allocate(
-          sizeof(DLRecord) + key.size() + value.size());
-      if (head_space_entry.size == 0) {
-        throw std::bad_alloc{};
-      }
-      auto tail_space_entry = pmem_allocator_ptr_->Allocate(
-          sizeof(DLRecord) + key.size() + value.size());
-      if (tail_space_entry.size == 0) {
-        pmem_allocator_ptr_->Free(head_space_entry);
+      if (!alloc_guard_head.TryAllocate(sizeof(DLRecord) + key.size() +
+                                        value.size()) ||
+          !alloc_guard_tail.TryAllocate(sizeof(DLRecord) + key.size() +
+                                        value.size())) {
         throw std::bad_alloc{};
       }
 
-      PMemOffsetType head_offset = head_space_entry.offset;
-      PMemOffsetType tail_offset = tail_space_entry.offset;
+      auto head_space = alloc_guard_head.Release();
+      auto tail_space = alloc_guard_tail.Release();
 
       // Persist tail first then head
       // If only tail is persisted then it can be deallocated by caller at
       // recovery
       tail_pmmptr_ = DLRecord::PersistDLRecord(
-          pmem_allocator_ptr_->offset2addr_checked(tail_offset),
-          tail_space_entry.size, timestamp, TailType, NullPMemOffset,
-          head_offset, NullPMemOffset, key, value);
+          tail_space.second, tail_space.first.size, timestamp, TailType,
+          NullPMemOffset, head_space.first.offset, NullPMemOffset, key, value);
       head_pmmptr_ = DLRecord::PersistDLRecord(
-          pmem_allocator_ptr_->offset2addr_checked(head_offset),
-          head_space_entry.size, timestamp, HeadType, NullPMemOffset,
-          NullPMemOffset, tail_offset, key, value);
+          head_space.second, head_space.first.size, timestamp, HeadType, 
+          NullPMemOffset, NullPMemOffset, tail_space.first.offset, key, value);
     }
   }
 
