@@ -1380,8 +1380,8 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     // Something wrong
     // TODO: roll back finished writes (hard to roll back hash table now)
     if (s != Status::Ok) {
-      assert(s == Status::MemoryOverflow);
-      std::abort();
+      kvdk_assert(s == Status::MemoryOverflow, "");
+      return s;
     }
   }
 
