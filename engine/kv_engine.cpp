@@ -1345,7 +1345,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
   }
   for (size_t i = 0; i < write_batch.Size(); i++) {
-    batch_hints[i].allocated_space = alloc_guards[i].Release().first;
+    batch_hints[i].allocated_space = alloc_guards[i].AllocatedSpace();
     space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
   }
 
@@ -1390,6 +1390,10 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   engine_thread_cache_[access_thread.id]
       .persisted_pending_batch->PersistFinish();
 
+  for (size_t i = 0; i < alloc_guards.size(); i++) {
+    alloc_guards[i].Release();
+  }
+  
   std::string val;
 
   // Free updated kvs, we should purge all updated kvs before release locks and
