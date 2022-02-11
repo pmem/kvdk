@@ -94,7 +94,7 @@ void OldRecordsCleaner::TryGlobalClean() {
 
   // Find purge-able delete records
   // To avoid access invalid data, an old delete record can be freed only if
-  // no holding snapshot is older that its purging time
+  // no holding snapshot is older than its purging time
   for (auto& delete_records : global_old_delete_records_) {
     for (auto& record : delete_records) {
       if (record.release_time <= clean_all_data_record_ts_) {
@@ -148,7 +148,7 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
          limit > 0;
          limit--) {
       // To avoid access invalid data, an old delete record can be freed only if
-      // no holding snapshot is older that its purging time
+      // no holding snapshot is older than its purging time
       tc.pending_free_space_entries.emplace_back(PendingFreeSpaceEntry{
           purgeOldDeleteRecord(tc.old_delete_records.front()),
           kv_engine_->version_controller_.GetCurrentTimestamp()});
