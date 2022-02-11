@@ -221,7 +221,7 @@ class PMemAllocatorGuard {
     return std::make_pair(temp, addr);
   }
   // Let caller access the allocated space,
-  // but caller must call Release() later to gain the ownership of space,
+  // but caller must call Release() later to acquire the ownership of space,
   // otherwise PMemAllocatorGuard will still pad and Free() the space!
   SpaceEntry AllocatedSpace() { return space; }
   ~PMemAllocatorGuard() {
