@@ -177,7 +177,7 @@ class DLinkedList {
           tail_space.second, tail_space.first.size, timestamp, TailType,
           NullPMemOffset, head_space.first.offset, NullPMemOffset, key, value);
       head_pmmptr_ = DLRecord::PersistDLRecord(
-          head_space.second, head_space.first.size, timestamp, HeadType, 
+          head_space.second, head_space.first.size, timestamp, HeadType,
           NullPMemOffset, NullPMemOffset, tail_space.first.offset, key, value);
     }
   }

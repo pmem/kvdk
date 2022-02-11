@@ -13,20 +13,18 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
                     StringView{""}},
       timestamp_{timestamp} {
   {
-    auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
-        sizeof(DLRecord) + Name().size() + sizeof(CollectionIDType));
-    if (list_record_space.size == 0) {
+    PMemAllocatorGuard alloc_guard{*dlinked_list_.pmem_allocator_ptr_};
+    if (!alloc_guard.TryAllocate(sizeof(DLRecord) + Name().size() +
+                                 sizeof(CollectionIDType))) {
       dlinked_list_.purgeAndFree(dlinked_list_.Head().GetCurrentAddress());
       dlinked_list_.purgeAndFree(dlinked_list_.Tail().GetCurrentAddress());
       dlinked_list_.head_pmmptr_ = nullptr;
       dlinked_list_.tail_pmmptr_ = nullptr;
       throw std::bad_alloc{};
     }
-    PMemOffsetType offset_list_record = list_record_space.offset;
+    auto space = alloc_guard.Release();
     collection_record_ptr_ = DLRecord::PersistDLRecord(
-        dlinked_list_.pmem_allocator_ptr_->offset2addr_checked(
-            offset_list_record),
-        list_record_space.size, timestamp, RecordType::DlistRecord,
+        space.second, space.first.size, timestamp, RecordType::DlistRecord,
         kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
         CollectionUtils::ID2String(ID()));
