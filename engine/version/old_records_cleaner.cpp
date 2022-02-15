@@ -92,7 +92,9 @@ void OldRecordsCleaner::TryGlobalClean() {
 
   clean_all_data_record_ts_ = oldest_snapshot_ts;
 
-  // Find free-able delete records
+  // Find purge-able delete records
+  // To avoid access invalid data, an old delete record can be freed only if
+  // no holding snapshot is older than its purging time
   for (auto& delete_records : global_old_delete_records_) {
     for (auto& record : delete_records) {
       if (record.release_time <= clean_all_data_record_ts_) {
@@ -106,11 +108,11 @@ void OldRecordsCleaner::TryGlobalClean() {
   if (space_pending.entries.size() > 0) {
     space_pending.release_time =
         kv_engine_->version_controller_.GetCurrentTimestamp();
-    pending_free_space_entries_.emplace_back(space_pending);
+    global_pending_free_space_entries_.emplace_back(space_pending);
   }
 
-  auto iter = pending_free_space_entries_.begin();
-  while (iter != pending_free_space_entries_.end()) {
+  auto iter = global_pending_free_space_entries_.begin();
+  while (iter != global_pending_free_space_entries_.end()) {
     if (iter->release_time < oldest_snapshot_ts) {
       kv_engine_->pmem_allocator_->BatchFree(iter->entries);
       iter++;
@@ -118,7 +120,8 @@ void OldRecordsCleaner::TryGlobalClean() {
       break;
     }
   }
-  pending_free_space_entries_.erase(pending_free_space_entries_.begin(), iter);
+  global_pending_free_space_entries_.erase(
+      global_pending_free_space_entries_.begin(), iter);
 
   if (space_to_free.size() > 0) {
     kv_engine_->pmem_allocator_->BatchFree(space_to_free);
@@ -144,8 +147,11 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
              clean_all_data_record_ts_ &&
          limit > 0;
          limit--) {
-      kv_engine_->pmem_allocator_->Free(
-          purgeOldDeleteRecord(tc.old_delete_records.front()));
+      // To avoid access invalid data, an old delete record can be freed only if
+      // no holding snapshot is older than its purging time
+      tc.pending_free_space_entries.emplace_back(PendingFreeSpaceEntry{
+          purgeOldDeleteRecord(tc.old_delete_records.front()),
+          kv_engine_->version_controller_.GetCurrentTimestamp()});
       tc.old_delete_records.pop_front();
     }
 
@@ -159,6 +165,16 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
       kv_engine_->pmem_allocator_->Free(
           purgeOldDataRecord(tc.old_data_records.front()));
       tc.old_data_records.pop_front();
+    }
+
+    for (int limit = num_limit_clean;
+         tc.pending_free_space_entries.size() > 0 &&
+         tc.pending_free_space_entries.front().release_time < oldest_refer_ts &&
+         limit > 0;
+         limit--) {
+      kv_engine_->pmem_allocator_->Free(
+          tc.pending_free_space_entries.front().entry);
+      tc.pending_free_space_entries.pop_front();
     }
   }
 }

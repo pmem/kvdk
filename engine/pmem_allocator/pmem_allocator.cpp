@@ -244,11 +244,9 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
         // TODO optimize, do not write PMem
         if (extra_space >= kMinPaddingBlocks * block_size_) {
           assert(extra_space % block_size_ == 0);
-          DataEntry padding(0, static_cast<uint32_t>(extra_space), 0,
-                            RecordType::Padding, 0, 0);
-          pmem_memcpy_persist(
-              offset2addr(palloc_thread_cache.free_entry.offset + aligned_size),
-              &padding, sizeof(DataEntry));
+          persistSpaceEntry(
+              palloc_thread_cache.free_entry.offset + aligned_size,
+              extra_space);
         } else {
           aligned_size = palloc_thread_cache.free_entry.size;
         }
