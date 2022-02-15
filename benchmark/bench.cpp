@@ -117,7 +117,7 @@ size_t operations_per_thread;
 bool has_timed_out;
 std::vector<int> has_finished;  // std::vector<bool> is a trap!
 
-std::vector<PaddedEngine> engines;
+std::vector<PaddedEngine> random_engines;
 std::vector<PaddedRangeIterators> ranges;
 
 enum class DataType {
@@ -143,10 +143,10 @@ std::uint64_t generate_key(size_t tid) {
       return ranges[tid].gen();
     }
     case KeyDistribution::Random: {
-      return uniform(engines[tid].gen);
+      return uniform(random_engines[tid].gen);
     }
     case KeyDistribution::Zipf: {
-      return zipf(engines[tid].gen);
+      return zipf(random_engines[tid].gen);
     }
     default: {
       throw;
@@ -160,7 +160,7 @@ size_t generate_value_size(size_t tid) {
       return FLAGS_value_size;
     }
     case ValueSizeDistribution::Random: {
-      return engines[tid].gen() % FLAGS_value_size + 1;
+      return random_engines[tid].gen() % FLAGS_value_size + 1;
     }
     default: {
       throw;
@@ -439,7 +439,8 @@ void ProcessBenchmarkConfigs() {
     throw std::invalid_argument{"value size too large"};
   }
 
-  if (FLAGS_fill || FLAGS_key_distribution == "uniform") {
+  random_engines.resize(FLAGS_threads);
+  if (FLAGS_fill) {
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
     operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
@@ -449,7 +450,6 @@ void ProcessBenchmarkConfigs() {
     }
   } else {
     operations_per_thread = FLAGS_num_operations / FLAGS_threads;
-    engines.resize(FLAGS_threads);
     if (FLAGS_key_distribution == "random") {
       key_dist = KeyDistribution::Random;
     } else if (FLAGS_key_distribution == "zipf") {
