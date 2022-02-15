@@ -21,7 +21,7 @@ enum class LogLevel : uint8_t {
 struct Snapshot {};
 
 struct SortedCollectionConfigs {
-  std::string compare_function_name = "";
+  std::string compare_function_name = "default";
 };
 
 struct Configs {

@@ -63,6 +63,7 @@ KVEngine::~KVEngine() {
 Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
                       const Configs& configs) {
   KVEngine* engine = new KVEngine(configs);
+  engine->SetCompareFunc("default", compare_string_view);
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
     *engine_ptr = engine;
@@ -183,30 +184,71 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
 
 Status KVEngine::CreateSortedCollection(
     const StringView collection_name, Collection** collection_ptr,
-    const SortedCollectionConfigs& configs) {
+    const SortedCollectionConfigs& s_configs) {
   *collection_ptr = nullptr;
   Status s = MaybeInitAccessThread();
+  defer(ReleaseAccessThread());
   if (s != Status::Ok) {
     return s;
   }
-  s = InitCollection(collection_name, collection_ptr,
-                     RecordType::SortedHeaderRecord);
-  if (s == Status::Ok) {
-    auto skiplist = (Skiplist*)(*collection_ptr);
-    if (!configs.compare_function_name.empty()) {
-      auto compare_func =
-          comparator_.GetComparaFunc(configs.compare_function_name);
-      if (compare_func != nullptr) {
-        skiplist->SetCompareFunc(compare_func);
-      } else {
-        GlobalLogger.Error("Compare function %s is not registered\n",
-                           configs.compare_function_name);
-        s = Status::Abort;
-      }
-    }
+
+  std::string configs_str = Skiplist::EncodeSortedCollectionConfigs(s_configs);
+  if (!CheckKeySize(collection_name)) {
+    return Status::InvalidDataSize;
   }
-  ReleaseAccessThread();
-  return s;
+
+  auto hint = hash_table_->GetHint(collection_name);
+  HashEntry hash_entry;
+  HashEntry* entry_ptr = nullptr;
+  DataEntry existing_data_entry;
+  std::lock_guard<SpinMutex> lg(*hint.spin);
+  // Since we do the first search without lock, we need to check again
+  entry_ptr = nullptr;
+  s = hash_table_->SearchForWrite(hint, collection_name, SortedHeaderRecord,
+                                  &entry_ptr, &hash_entry,
+                                  &existing_data_entry);
+  if (s == Status::Ok) {
+    *collection_ptr = static_cast<Collection*>(hash_entry.GetIndex().ptr);
+  } else if (s == Status::NotFound) {
+    auto compare_func =
+        comparator_.GetComparaFunc(s_configs.compare_function_name);
+    if (compare_func == nullptr) {
+      GlobalLogger.Error("Compare function %s is not registered\n",
+                         s_configs.compare_function_name);
+      return Status::Abort;
+    }
+    std::string s_configs_str =
+        Skiplist::EncodeSortedCollectionConfigs(s_configs);
+    uint32_t request_size = sizeof(DLRecord) + collection_name.size() +
+                            s_configs_str.size() + sizeof(CollectionIDType);
+    SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
+    if (space_entry.size == 0) {
+      return Status::PmemOverflow;
+    }
+    CollectionIDType id = list_id_.fetch_add(1);
+    std::string value_str = CollectionUtils::ID2String(id) + s_configs_str;
+    // PMem level of skiplist is circular, so the next and prev pointers of
+    // header point to itself
+    DLRecord* pmem_record = DLRecord::PersistDLRecord(
+        pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
+        version_controller_.GetCurrentTimestamp(), SortedHeaderRecord,
+        kNullPMemOffset, space_entry.offset, space_entry.offset,
+        collection_name, value_str);
+
+    auto skiplist = std::make_shared<Skiplist>(
+        pmem_record, string_view_2_string(collection_name), id, compare_func,
+        pmem_allocator_, hash_table_);
+    {
+      std::lock_guard<std::mutex> lg(list_mu_);
+      skiplists_.push_back(skiplist);
+      *collection_ptr = skiplist.get();
+    }
+    hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, *collection_ptr,
+                        HashIndexType::Skiplist);
+  } else {
+    return s;
+  }
+  return Status::Ok;
 }
 
 Iterator* KVEngine::NewSortedIterator(const StringView collection,
@@ -465,11 +507,24 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   HashEntry* entry_ptr = nullptr;
 
   CollectionIDType id = Skiplist::SkiplistID(pmem_record);
+  SortedCollectionConfigs s_configs = Skiplist::DecodeSortedCollectionConfigs(
+      StringView(pmem_record->Value().data() + sizeof(CollectionIDType),
+                 pmem_record->Value().size() - sizeof(CollectionIDType)));
+  auto compare_func =
+      comparator_.GetComparaFunc(s_configs.compare_function_name);
+  if (compare_func == nullptr) {
+    GlobalLogger.Error(
+        "Compare function %s of restoring sorted collection %s is not "
+        "registered\n",
+        s_configs.compare_function_name.c_str(),
+        string_view_2_string(pmem_record->Key()).c_str());
+    return Status::Abort;
+  }
   Skiplist* skiplist;
   {
     std::lock_guard<std::mutex> lg(list_mu_);
     skiplists_.push_back(std::make_shared<Skiplist>(
-        pmem_record, name, id, pmem_allocator_, hash_table_));
+        pmem_record, name, id, compare_func, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
     if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_->AddRecordForParallelRebuild(
@@ -623,62 +678,6 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
     }
   }
 
-  return Status::Ok;
-}
-
-Status KVEngine::InitCollection(const StringView& collection, Collection** list,
-                                RecordType collection_type) {
-  if (!CheckKeySize(collection)) {
-    return Status::InvalidDataSize;
-  }
-
-  auto hint = hash_table_->GetHint(collection);
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-  DataEntry existing_data_entry;
-  std::lock_guard<SpinMutex> lg(*hint.spin);
-  // Since we do the first search without lock, we need to check again
-  entry_ptr = nullptr;
-  Status s =
-      hash_table_->SearchForWrite(hint, collection, collection_type, &entry_ptr,
-                                  &hash_entry, &existing_data_entry);
-  if (s == Status::Ok) {
-    *list = static_cast<Collection*>(hash_entry.GetIndex().ptr);
-  }
-  if (s != Status::NotFound) {
-    return s;
-  }
-
-  uint32_t request_size =
-      sizeof(DLRecord) + collection.size() + sizeof(CollectionIDType) /* id */;
-  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
-  if (sized_space_entry.size == 0) {
-    return Status::PmemOverflow;
-  }
-  CollectionIDType id = list_id_.fetch_add(1);
-  // PMem level of skiplist is circular, so the next and prev pointers of
-  // header point to itself
-  DLRecord* pmem_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(sized_space_entry.offset),
-      sized_space_entry.size, version_controller_.GetCurrentTimestamp(),
-      collection_type, kNullPMemOffset, sized_space_entry.offset,
-      sized_space_entry.offset, collection, StringView((char*)&id, 8));
-
-  {
-    std::lock_guard<std::mutex> lg(list_mu_);
-    switch (collection_type) {
-      case SortedHeaderRecord:
-        skiplists_.push_back(std::make_shared<Skiplist>(
-            pmem_record, string_view_2_string(collection), id, pmem_allocator_,
-            hash_table_));
-        *list = skiplists_.back().get();
-        break;
-      default:
-        return Status::NotSupported;
-    }
-  }
-  hash_table_->Insert(hint, entry_ptr, collection_type, *list,
-                      HashIndexType::Skiplist);
   return Status::Ok;
 }
 

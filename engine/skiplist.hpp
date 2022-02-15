@@ -149,9 +149,10 @@ struct SkiplistNode {
 class Skiplist : public Collection {
  public:
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-           std::shared_ptr<PMEMAllocator> pmem_allocator,
+           CompFunc comp_func, std::shared_ptr<PMEMAllocator> pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
       : Collection(name, id),
+        compare_func_(comp_func),
         pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
     header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
@@ -350,10 +351,14 @@ class Skiplist : public Collection {
       std::unique_lock<SpinMutex>* prev_record_lock,
       PMEMAllocator* pmem_allocator, HashTable* hash_table);
 
-  void SetCompareFunc(CompFunc comp_func) { compare_func_ = comp_func; }
-
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
+
+  static std::string EncodeSortedCollectionConfigs(
+      const SortedCollectionConfigs& s_configs);
+
+  static SortedCollectionConfigs DecodeSortedCollectionConfigs(
+      StringView s_configs_str);
 
  private:
   inline void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {

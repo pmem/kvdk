@@ -1049,4 +1049,15 @@ SkiplistNode* Skiplist::NewNodeBuild(DLRecord* pmem_record) {
   return dram_node;
 }
 
+std::string Skiplist::EncodeSortedCollectionConfigs(
+    const SortedCollectionConfigs& s_configs) {
+  return s_configs.compare_function_name;
+}
+
+SortedCollectionConfigs Skiplist::DecodeSortedCollectionConfigs(
+    StringView s_configs_str) {
+  SortedCollectionConfigs configs;
+  configs.compare_function_name = string_view_2_string(s_configs_str);
+  return configs;
+}
 }  // namespace KVDK_NAMESPACE

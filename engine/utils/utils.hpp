@@ -396,11 +396,10 @@ inline static std::string ID2String(CollectionIDType id) {
 
 inline static CollectionIDType string2ID(const StringView& string_id) {
   CollectionIDType id;
-  kvdk_assert(sizeof(CollectionIDType) == string_id.size(),
+  kvdk_assert(sizeof(CollectionIDType) <= string_id.size(),
               "size of string id does not match CollectionIDType size!");
   memcpy(&id, string_id.data(), sizeof(CollectionIDType));
   return id;
 }
-
 }  // namespace CollectionUtils
 }  // namespace KVDK_NAMESPACE
