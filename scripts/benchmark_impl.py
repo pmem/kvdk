@@ -120,7 +120,7 @@ def run_benchmark(
     avg_kv_size = (header_sz + k_sz + avg_v_sz + 63) // 64 * 64
 
     # 1/4 for fill, 1/4 for insert, 1/4 for batch_write
-    num_kv = pmem_size // 4 // avg_kv_size
+    num_kv = int(pmem_size // 4 // avg_kv_size)
 
     # create report dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")

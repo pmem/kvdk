@@ -439,7 +439,8 @@ void ProcessBenchmarkConfigs() {
     throw std::invalid_argument{"value size too large"};
   }
 
-  if (FLAGS_fill || FLAGS_key_distribution == "uniform") {
+  engines.resize(FLAGS_threads);
+  if (FLAGS_fill) {
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
     operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
@@ -449,7 +450,6 @@ void ProcessBenchmarkConfigs() {
     }
   } else {
     operations_per_thread = FLAGS_num_operations / FLAGS_threads;
-    engines.resize(FLAGS_threads);
     if (FLAGS_key_distribution == "random") {
       key_dist = KeyDistribution::Random;
     } else if (FLAGS_key_distribution == "zipf") {
