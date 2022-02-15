@@ -181,9 +181,9 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   return s;
 }
 
-Status KVEngine::CreateSortedCollection(const StringView collection_name,
-                                        Collection** collection_ptr,
-                                        const StringView& comp_name) {
+Status KVEngine::CreateSortedCollection(
+    const StringView collection_name, Collection** collection_ptr,
+    const SortedCollectionConfigs& configs) {
   *collection_ptr = nullptr;
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
@@ -193,13 +193,14 @@ Status KVEngine::CreateSortedCollection(const StringView collection_name,
                      RecordType::SortedHeaderRecord);
   if (s == Status::Ok) {
     auto skiplist = (Skiplist*)(*collection_ptr);
-    if (!comp_name.empty()) {
-      auto compare_func = comparator_.GetComparaFunc(comp_name);
+    if (!configs.compare_function_name.empty()) {
+      auto compare_func =
+          comparator_.GetComparaFunc(configs.compare_function_name);
       if (compare_func != nullptr) {
         skiplist->SetCompareFunc(compare_func);
       } else {
         GlobalLogger.Error("Compare function %s is not registered\n",
-                           comp_name);
+                           configs.compare_function_name);
         s = Status::Abort;
       }
     }

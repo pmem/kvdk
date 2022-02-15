@@ -51,9 +51,9 @@ class Engine {
   // error.
   virtual Status Delete(const StringView key) = 0;
 
-  virtual Status CreateSortedCollection(const StringView collection_name,
-                                        Collection** sorted_collection,
-                                        const StringView& comp_name = "") = 0;
+  virtual Status CreateSortedCollection(
+      const StringView collection_name, Collection** sorted_collection,
+      const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
 
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return Ok

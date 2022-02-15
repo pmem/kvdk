@@ -143,6 +143,9 @@ struct SkiplistNode {
 // implemented in O(logn) time. Meanwhile, the skiplist nodes is also indexed by
 // the global hash table, so the updates/delete and point read operations can be
 // indexed by hash table and implemented in ~O(1) time
+// Each skiplist has a header record persisted on PMem, the key of header record
+// is the skiplist name, the value of header record is encoded by skiplist id
+// and configs
 class Skiplist : public Collection {
  public:
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,

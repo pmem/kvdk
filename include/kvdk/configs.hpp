@@ -20,6 +20,10 @@ enum class LogLevel : uint8_t {
 // A snapshot indicates a immutable view of a KVDK engine at a certain time
 struct Snapshot {};
 
+struct SortedCollectionConfigs {
+  std::string compare_function_name = "";
+};
+
 struct Configs {
   // Max number of access threads to read/write data to kvdk instance.
   //

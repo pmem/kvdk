@@ -21,6 +21,7 @@ using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::Iterator;
 using kvdk::Snapshot;
+using kvdk::SortedCollectionConfigs;
 using kvdk::WriteBatch;
 
 extern "C" {
@@ -44,6 +45,10 @@ struct KVDKSnapshot {
   Snapshot* rep;
 };
 
+struct KVDKSortedCollectionConfigs {
+  SortedCollectionConfigs rep;
+};
+
 static char* CopyStringToChar(const std::string& str) {
   char* result = reinterpret_cast<char*>(malloc(sizeof(char) * str.size()));
   memcpy(result, str.data(), sizeof(char) * str.size());
@@ -52,11 +57,11 @@ static char* CopyStringToChar(const std::string& str) {
 
 KVDKConfigs* KVDKCreateConfigs() { return new KVDKConfigs; }
 
-void KVDKUserConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
-                     uint64_t pmem_file_size, unsigned char populate_pmem_space,
-                     uint32_t pmem_block_size, uint64_t pmem_segment_blocks,
-                     uint32_t hash_bucket_size, uint64_t hash_bucket_num,
-                     uint32_t num_buckets_per_slot) {
+void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
+                    uint64_t pmem_file_size, unsigned char populate_pmem_space,
+                    uint32_t pmem_block_size, uint64_t pmem_segment_blocks,
+                    uint32_t hash_bucket_size, uint64_t hash_bucket_num,
+                    uint32_t num_buckets_per_slot) {
   kv_config->rep.max_access_threads = max_access_threads;
   kv_config->rep.hash_bucket_num = hash_bucket_num;
   kv_config->rep.hash_bucket_size = hash_bucket_size;
@@ -67,7 +72,22 @@ void KVDKUserConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
   kv_config->rep.populate_pmem_space = populate_pmem_space;
 }
 
-void KVDKConfigsDestory(KVDKConfigs* kv_config) { delete kv_config; }
+void KVDKDestroyConfigs(KVDKConfigs* kv_config) { delete kv_config; }
+
+KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs() {
+  return new KVDKSortedCollectionConfigs;
+}
+
+void KVDKSetSortedCollectionConfigs(KVDKSortedCollectionConfigs* configs,
+                                    const char* comp_func_name,
+                                    size_t comp_func_len) {
+  configs->rep.compare_function_name =
+      std::string(comp_func_name, comp_func_len);
+}
+
+void KVDKDestroySortedCollectionConfigs(KVDKSortedCollectionConfigs* configs) {
+  delete configs;
+}
 
 KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
                     KVDKEngine** kv_engine) {
@@ -124,13 +144,11 @@ KVDKStatus KVDKCreateSortedCollection(KVDKEngine* engine,
                                       KVDKCollection** sorted_collection,
                                       const char* collection_name,
                                       size_t collection_len,
-                                      const char* compara_name,
-                                      size_t compara_len) {
+                                      KVDKSortedCollectionConfigs* configs) {
   Collection* collection_ptr;
-
   KVDKStatus s = engine->rep->CreateSortedCollection(
       StringView(collection_name, collection_len), &collection_ptr,
-      StringView(compara_name, compara_len));
+      configs->rep);
   if (s != KVDKStatus::Ok) {
     sorted_collection = nullptr;
     return s;

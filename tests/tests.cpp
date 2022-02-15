@@ -1522,8 +1522,10 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     Status s;
     if (i < 2) {
       std::string comp_name = "collection" + std::to_string(i) + "_cmp";
+      SortedCollectionConfigs s_configs;
+      s_configs.compare_function_name = comp_name;
       s = engine->CreateSortedCollection(collections[i], &collection_ptr,
-                                         comp_name);
+                                         s_configs);
     } else {
       s = engine->CreateSortedCollection(collections[i], &collection_ptr);
     }

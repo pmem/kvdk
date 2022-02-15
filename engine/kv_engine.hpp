@@ -164,9 +164,9 @@ class KVEngine : public Engine {
     comparator_.SetComparaFunc(collection_name, comp_func);
   }
 
-  Status CreateSortedCollection(const StringView collection_name,
-                                Collection** collection_ptr,
-                                const StringView& comp_name) override;
+  Status CreateSortedCollection(
+      const StringView collection_name, Collection** collection_ptr,
+      const SortedCollectionConfigs& configs) override;
 
  private:
   Status InitCollection(const StringView& collection, Collection** list,
