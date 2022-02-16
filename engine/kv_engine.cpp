@@ -63,7 +63,7 @@ KVEngine::~KVEngine() {
 Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
                       const Configs& configs) {
   KVEngine* engine = new KVEngine(configs);
-  engine->SetCompareFunc("default", compare_string_view);
+  engine->RegisterCompareFunc("default", compare_string_view);
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
     *engine_ptr = engine;
@@ -192,7 +192,6 @@ Status KVEngine::CreateSortedCollection(
     return s;
   }
 
-  std::string configs_str = Skiplist::EncodeSortedCollectionConfigs(s_configs);
   if (!CheckKeySize(collection_name)) {
     return Status::InvalidDataSize;
   }
@@ -507,9 +506,18 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   HashEntry* entry_ptr = nullptr;
 
   CollectionIDType id = Skiplist::SkiplistID(pmem_record);
-  SortedCollectionConfigs s_configs = Skiplist::DecodeSortedCollectionConfigs(
+  SortedCollectionConfigs s_configs;
+  Status s = Skiplist::DecodeSortedCollectionConfigs(
       StringView(pmem_record->Value().data() + sizeof(CollectionIDType),
-                 pmem_record->Value().size() - sizeof(CollectionIDType)));
+                 pmem_record->Value().size() - sizeof(CollectionIDType)),
+      s_configs);
+
+  if (s != Status::Ok) {
+    GlobalLogger.Error("Decode configs of sorted collection %s error\n",
+                       string_view_2_string(pmem_record->Key()).c_str());
+    return s;
+  }
+
   auto compare_func =
       comparator_.GetComparaFunc(s_configs.compare_function_name);
   if (compare_func == nullptr) {
@@ -536,8 +544,8 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   // Here key is the collection name
   auto hint = hash_table_->GetHint(name);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->SearchForWrite(hint, name, SortedHeaderRecord,
-                                         &entry_ptr, &hash_entry, nullptr);
+  s = hash_table_->SearchForWrite(hint, name, SortedHeaderRecord, &entry_ptr,
+                                  &hash_entry, nullptr);
   if (s == Status::MemoryOverflow) {
     return s;
   }

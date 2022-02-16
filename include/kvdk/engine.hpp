@@ -131,9 +131,8 @@ class Engine {
   // part. New write requests of this thread need to re-request write resources.
   virtual void ReleaseAccessThread() = 0;
 
-  virtual void SetCompareFunc(
-      const StringView& collection_name,
-      std::function<int(const StringView& src, const StringView& target)>) = 0;
+  virtual void RegisterCompareFunc(const StringView& collection_name,
+                                   CompFunc) = 0;
 
   // Close the instance on exit.
   virtual ~Engine() = 0;

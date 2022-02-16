@@ -137,7 +137,8 @@ void KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
                              const StringView& target) -> int {
     return compare(src.data(), src.size(), target.data(), target.size());
   };
-  engine->rep->SetCompareFunc(StringView(compara_name, compara_len), comp_func);
+  engine->rep->RegisterCompareFunc(StringView(compara_name, compara_len),
+                                   comp_func);
 }
 
 KVDKStatus KVDKCreateSortedCollection(KVDKEngine* engine,

@@ -20,6 +20,7 @@ namespace KVDK_NAMESPACE {
 class KVEngine;
 static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
+const ConfigFieldSizeType kEncodedConfigsEndMark = 0;
 
 struct Splice;
 
@@ -354,11 +355,14 @@ class Skiplist : public Collection {
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
 
+  // Format:
+  // field size (4 bytes), field value|field size, field value|...| end mark (4
+  // bytes)
   static std::string EncodeSortedCollectionConfigs(
       const SortedCollectionConfigs& s_configs);
 
-  static SortedCollectionConfigs DecodeSortedCollectionConfigs(
-      StringView s_configs_str);
+  static Status DecodeSortedCollectionConfigs(
+      StringView s_configs_str, SortedCollectionConfigs& s_configs);
 
  private:
   inline void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {

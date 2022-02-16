@@ -120,7 +120,8 @@ class KVEngine : public Engine {
   KVEngine(const Configs& configs)
       : engine_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
-        old_records_cleaner_(this, configs.max_access_threads){};
+        old_records_cleaner_(this, configs.max_access_threads),
+        comparator_(configs.comparator){};
 
   struct BatchWriteHint {
     TimeStampType timestamp{0};
@@ -157,11 +158,9 @@ class KVEngine : public Engine {
 
   inline Status MaybeInitAccessThread();
 
-  void SetCompareFunc(
-      const StringView& collection_name,
-      std::function<int(const StringView& src, const StringView& target)>
-          comp_func) {
-    comparator_.SetComparaFunc(collection_name, comp_func);
+  void RegisterCompareFunc(const StringView& collection_name,
+                           CompFunc comp_func) {
+    comparator_.RegisterComparaFunc(collection_name, comp_func);
   }
 
   Status CreateSortedCollection(

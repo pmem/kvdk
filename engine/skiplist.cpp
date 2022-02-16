@@ -1051,13 +1051,56 @@ SkiplistNode* Skiplist::NewNodeBuild(DLRecord* pmem_record) {
 
 std::string Skiplist::EncodeSortedCollectionConfigs(
     const SortedCollectionConfigs& s_configs) {
-  return s_configs.compare_function_name;
+  const size_t num_config_fields = 1;
+  std::string config_str(
+      sizeof(ConfigFieldSizeType) * (num_config_fields + 1 /* end mark */) +
+          s_configs.compare_function_name.size(),
+      ' ');
+  size_t cur = 0;
+  ConfigFieldSizeType field_size = s_configs.compare_function_name.size();
+  memcpy(&config_str[cur], &field_size, sizeof(ConfigFieldSizeType));
+  cur += sizeof(ConfigFieldSizeType);
+  memcpy(&config_str[cur], s_configs.compare_function_name.data(), field_size);
+  cur += field_size;
+
+  memcpy(&config_str[cur], &kEncodedConfigsEndMark,
+         sizeof(ConfigFieldSizeType));
+
+  return config_str;
 }
 
-SortedCollectionConfigs Skiplist::DecodeSortedCollectionConfigs(
-    StringView s_configs_str) {
-  SortedCollectionConfigs configs;
-  configs.compare_function_name = string_view_2_string(s_configs_str);
-  return configs;
+Status Skiplist::DecodeSortedCollectionConfigs(
+    StringView s_configs_str, SortedCollectionConfigs& s_configs) {
+  ConfigFieldSizeType field_size = 0;
+  size_t cur = 0;
+  size_t setting_field = 0;
+  while (true) {
+    if ((cur + sizeof(ConfigFieldSizeType)) > s_configs_str.size()) {
+      return Status::Abort;
+    }
+    memcpy(&field_size, s_configs_str.data() + cur,
+           sizeof(ConfigFieldSizeType));
+    // Finished
+    if (field_size == kEncodedConfigsEndMark) {
+      return Status::Ok;
+    }
+    cur += sizeof(ConfigFieldSizeType);
+    if ((cur + field_size) > s_configs_str.size()) {
+      return Status::Abort;
+    }
+    std::string config_field_str(s_configs_str.data() + cur, field_size);
+
+    switch (setting_field) {
+      case 0: {
+        s_configs.compare_function_name = config_field_str;
+        break;
+      }
+
+      default:
+        return Status::Ok;
+    }
+    cur += field_size;
+    setting_field++;
+  }
 }
 }  // namespace KVDK_NAMESPACE

@@ -4,36 +4,37 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 #include <unordered_map>
 
 #include "kvdk/namespace.hpp"
 #include "libpmemobj++/string_view.hpp"
 
+namespace KVDK_NAMESPACE {
+using StringView = pmem::obj::string_view;
+using CompFunc =
+    std::function<int(const StringView& src, const StringView& target)>;
+
 class Comparator {
  public:
-  using StringView = pmem::obj::string_view;
-
-  using compare =
-      std::function<int(const StringView& src, const StringView& target)>;
-  void SetComparaFunc(const StringView& compara_name, compare comp_func) {
-    if (compara_table_.find(
-            std::string{compara_name.data(), compara_name.size()}) ==
-        compara_table_.end()) {
-      compara_table_.emplace(
-          std::string{compara_name.data(), compara_name.size()}, comp_func);
+  void RegisterComparaFunc(const StringView& compara_name, CompFunc comp_func) {
+    std::string name(compara_name.data(), compara_name.size());
+    if (compara_table_.find(name) == compara_table_.end()) {
+      compara_table_.emplace(name, comp_func);
     }
   }
-  compare GetComparaFunc(const StringView& compara_name) {
-    if (compara_table_.find(
-            std::string{compara_name.data(), compara_name.size()}) !=
-        compara_table_.end()) {
-      return compara_table_[std::string{compara_name.data(),
-                                        compara_name.size()}];
+
+  CompFunc GetComparaFunc(const StringView& compara_name) {
+    std::string name(compara_name.data(), compara_name.size());
+    auto iter = compara_table_.find(name);
+    if (iter != compara_table_.end()) {
+      return iter->second;
     }
     return nullptr;
   };
 
  private:
-  std::unordered_map<std::string, compare> compara_table_;
+  std::unordered_map<std::string, CompFunc> compara_table_;
 };
+}  // namespace KVDK_NAMESPACE

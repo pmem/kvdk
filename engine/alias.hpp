@@ -17,6 +17,5 @@ using PMemOffsetType = std::uint64_t;
 using TimeStampType = std::uint64_t;
 using CollectionIDType = std::uint64_t;
 using KeyHashType = std::uint64_t;
-using CompFunc =
-    std::function<int(const StringView& src, const StringView& target)>;
+using ConfigFieldSizeType = std::uint32_t;
 }  // namespace KVDK_NAMESPACE

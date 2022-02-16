@@ -1514,9 +1514,9 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     return std::make_pair(k, std::string(1, v));
   });
 
-  // registed compare function
-  engine->SetCompareFunc("collection0_cmp", cmp0);
-  engine->SetCompareFunc("collection1_cmp", cmp1);
+  // register compare function
+  engine->RegisterCompareFunc("collection0_cmp", cmp0);
+  engine->RegisterCompareFunc("collection1_cmp", cmp1);
   for (size_t i = 0; i < collections.size(); ++i) {
     Collection* collection_ptr;
     Status s;
@@ -1541,6 +1541,15 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     };
     LaunchNThreads(threads, Write);
   }
+
+  delete engine;
+  // Reopen engine error as the comparator is not registered in configs
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Abort);
+  configs.comparator.RegisterComparaFunc("collection0_cmp", cmp0);
+  configs.comparator.RegisterComparaFunc("collection1_cmp", cmp1);
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
 
   for (size_t i = 0; i < collections.size(); ++i) {
     std::vector<kvpair> expected_res(dedup_kvs.begin(), dedup_kvs.end());
