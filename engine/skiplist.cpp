@@ -1049,48 +1049,61 @@ SkiplistNode* Skiplist::NewNodeBuild(DLRecord* pmem_record) {
   return dram_node;
 }
 
-std::string Skiplist::EncodeSortedCollectionConfigs(
-    const SortedCollectionConfigs& s_configs) {
+std::string Skiplist::EncodeSortedCollectionValue(
+    CollectionIDType id, const SortedCollectionConfigs& s_configs) {
   const size_t num_config_fields = 1;
-  std::string config_str(
-      sizeof(ConfigFieldSizeType) * (num_config_fields + 1 /* end mark */) +
+  std::string value_str(
+      sizeof(CollectionIDType) +
+          sizeof(ConfigFieldSizeType) * (num_config_fields + 1 /* end mark */) +
           s_configs.compare_function_name.size(),
       ' ');
   size_t cur = 0;
+  memcpy(&value_str[cur], &id, sizeof(CollectionIDType));
+  cur += sizeof(CollectionIDType);
+
   ConfigFieldSizeType field_size = s_configs.compare_function_name.size();
-  memcpy(&config_str[cur], &field_size, sizeof(ConfigFieldSizeType));
+  memcpy(&value_str[cur], &field_size, sizeof(ConfigFieldSizeType));
   cur += sizeof(ConfigFieldSizeType);
-  memcpy(&config_str[cur], s_configs.compare_function_name.data(), field_size);
+  memcpy(&value_str[cur], s_configs.compare_function_name.data(), field_size);
   cur += field_size;
 
-  memcpy(&config_str[cur], &kEncodedConfigsEndMark,
-         sizeof(ConfigFieldSizeType));
+  memcpy(&value_str[cur], &kEncodedConfigsEndMark, sizeof(ConfigFieldSizeType));
 
-  return config_str;
+  return value_str;
 }
 
-Status Skiplist::DecodeSortedCollectionConfigs(
-    StringView s_configs_str, SortedCollectionConfigs& s_configs) {
-  ConfigFieldSizeType field_size = 0;
+Status Skiplist::DecodeSortedCollectionValue(
+    StringView value_str, CollectionIDType& id,
+    SortedCollectionConfigs& s_configs) {
+  ConfigFieldSizeType config_filed_size = 0;
   size_t cur = 0;
-  size_t setting_field = 0;
+  size_t setting_config_field = 0;
+
+  // Decode id
+  if ((cur + sizeof(CollectionIDType)) > value_str.size()) {
+    return Status::Abort;
+  }
+  memcpy(&id, &value_str[cur], sizeof(CollectionIDType));
+  cur += sizeof(CollectionIDType);
+
+  // Decode configs
   while (true) {
-    if ((cur + sizeof(ConfigFieldSizeType)) > s_configs_str.size()) {
+    if ((cur + sizeof(ConfigFieldSizeType)) > value_str.size()) {
       return Status::Abort;
     }
-    memcpy(&field_size, s_configs_str.data() + cur,
+    memcpy(&config_filed_size, value_str.data() + cur,
            sizeof(ConfigFieldSizeType));
     // Finished
-    if (field_size == kEncodedConfigsEndMark) {
+    if (config_filed_size == kEncodedConfigsEndMark) {
       return Status::Ok;
     }
     cur += sizeof(ConfigFieldSizeType);
-    if ((cur + field_size) > s_configs_str.size()) {
+    if ((cur + config_filed_size) > value_str.size()) {
       return Status::Abort;
     }
-    std::string config_field_str(s_configs_str.data() + cur, field_size);
+    std::string config_field_str(value_str.data() + cur, config_filed_size);
 
-    switch (setting_field) {
+    switch (setting_config_field) {
       case 0: {
         s_configs.compare_function_name = config_field_str;
         break;
@@ -1099,8 +1112,8 @@ Status Skiplist::DecodeSortedCollectionConfigs(
       default:
         return Status::Ok;
     }
-    cur += field_size;
-    setting_field++;
+    cur += config_filed_size;
+    setting_config_field++;
   }
 }
 }  // namespace KVDK_NAMESPACE

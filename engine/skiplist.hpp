@@ -356,13 +356,14 @@ class Skiplist : public Collection {
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
 
   // Format:
-  // field size (4 bytes), field value|field size, field value|...| end mark (4
-  // bytes)
-  static std::string EncodeSortedCollectionConfigs(
-      const SortedCollectionConfigs& s_configs);
+  // id (8 bytes) | config size (4 bytes), config | config size, config |...|
+  // end mark (4 bytes)
+  static std::string EncodeSortedCollectionValue(
+      CollectionIDType id, const SortedCollectionConfigs& s_configs);
 
-  static Status DecodeSortedCollectionConfigs(
-      StringView s_configs_str, SortedCollectionConfigs& s_configs);
+  static Status DecodeSortedCollectionValue(StringView value_str,
+                                            CollectionIDType& id,
+                                            SortedCollectionConfigs& s_configs);
 
  private:
   inline void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {

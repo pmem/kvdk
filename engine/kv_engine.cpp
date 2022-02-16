@@ -201,7 +201,6 @@ Status KVEngine::CreateSortedCollection(
   HashEntry* entry_ptr = nullptr;
   DataEntry existing_data_entry;
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  // Since we do the first search without lock, we need to check again
   entry_ptr = nullptr;
   s = hash_table_->SearchForWrite(hint, collection_name, SortedHeaderRecord,
                                   &entry_ptr, &hash_entry,
@@ -216,16 +215,15 @@ Status KVEngine::CreateSortedCollection(
                          s_configs.compare_function_name);
       return Status::Abort;
     }
-    std::string s_configs_str =
-        Skiplist::EncodeSortedCollectionConfigs(s_configs);
-    uint32_t request_size = sizeof(DLRecord) + collection_name.size() +
-                            s_configs_str.size() + sizeof(CollectionIDType);
+    CollectionIDType id = list_id_.fetch_add(1);
+    std::string value_str =
+        Skiplist::EncodeSortedCollectionValue(id, s_configs);
+    uint32_t request_size =
+        sizeof(DLRecord) + collection_name.size() + value_str.size();
     SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
     if (space_entry.size == 0) {
       return Status::PmemOverflow;
     }
-    CollectionIDType id = list_id_.fetch_add(1);
-    std::string value_str = CollectionUtils::ID2String(id) + s_configs_str;
     // PMem level of skiplist is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
@@ -505,15 +503,13 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   HashEntry hash_entry;
   HashEntry* entry_ptr = nullptr;
 
-  CollectionIDType id = Skiplist::SkiplistID(pmem_record);
+  CollectionIDType id;
   SortedCollectionConfigs s_configs;
-  Status s = Skiplist::DecodeSortedCollectionConfigs(
-      StringView(pmem_record->Value().data() + sizeof(CollectionIDType),
-                 pmem_record->Value().size() - sizeof(CollectionIDType)),
-      s_configs);
+  Status s = Skiplist::DecodeSortedCollectionValue(pmem_record->Value(), id,
+                                                   s_configs);
 
   if (s != Status::Ok) {
-    GlobalLogger.Error("Decode configs of sorted collection %s error\n",
+    GlobalLogger.Error("Decode id and configs of sorted collection %s error\n",
                        string_view_2_string(pmem_record->Key()).c_str());
     return s;
   }
