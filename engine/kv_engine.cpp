@@ -63,7 +63,6 @@ KVEngine::~KVEngine() {
 Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
                       const Configs& configs) {
   KVEngine* engine = new KVEngine(configs);
-  engine->RegisterCompareFunc("default", compare_string_view);
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
     *engine_ptr = engine;
@@ -174,6 +173,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     return Status::Abort;
   }
 
+  RegisterCompareFunc("default", compare_string_view);
   s = Recovery();
   startBackgroundWorks();
 
