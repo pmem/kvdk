@@ -149,7 +149,7 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
 bool PMEMAllocator::FetchSegment(SpaceEntry* segment_space_entry) {
   assert(segment_space_entry);
 
-  std::lock_guard<SpinMutex> lg(segment_lock_);
+  std::lock_guard<SpinMutex> lg(offset_head_lock_);
   if (offset_head_ <= pmem_size_ - segment_size_ &&
       offset2addr<DataHeader>(offset_head_)->record_size != 0) {
     *segment_space_entry = SpaceEntry{offset_head_, segment_size_};
@@ -161,7 +161,7 @@ bool PMEMAllocator::FetchSegment(SpaceEntry* segment_space_entry) {
 }
 
 bool PMEMAllocator::allocateSegmentSpace(SpaceEntry* segment_entry) {
-  std::lock_guard<SpinMutex> lg(segment_lock_);
+  std::lock_guard<SpinMutex> lg(offset_head_lock_);
   if (offset_head_ <= pmem_size_ - segment_size_) {
     *segment_entry = SpaceEntry{offset_head_, segment_size_};
     offset_head_ += segment_size_;
@@ -387,7 +387,7 @@ Status PMEMAllocator::Backup(const std::string& backup_file_path) {
   memcpy(backup_file, pmem_, copy_offset_1st_end);
   //  multi_thread_memcpy((char *)backup_file, pmem_, copy_offset_1st, 4);
   {
-    std::lock_guard<SpinMutex> lg(segment_lock_);
+    std::lock_guard<SpinMutex> lg(offset_head_lock_);
     copy_offset_2nd_end = offset_head_;
   }
   memcpy((char*)backup_file + copy_offset_2nd_start,

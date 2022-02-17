@@ -170,7 +170,7 @@ class PMEMAllocator : public Allocator {
   void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
 
   // Protect PMem offset head
-  SpinMutex segment_lock_;
+  SpinMutex offset_head_lock_;
   uint64_t offset_head_;
   std::vector<PAllocThreadCache, AlignedAllocator<PAllocThreadCache>>
       palloc_thread_cache_;
