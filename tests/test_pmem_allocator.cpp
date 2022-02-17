@@ -62,6 +62,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
       auto TestPmemAlloc = [&](uint64_t id) {
         std::vector<SpaceEntry> records;
         thread_manager_->MaybeInitThread(access_thread);
+        remove(pmem_path.c_str());
         PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
             pmem_path, pmem_size, num_segment_blocks[i], block_sizes[i],
             num_thread, true, false, nullptr);

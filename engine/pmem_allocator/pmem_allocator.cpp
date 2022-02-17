@@ -31,11 +31,11 @@ PMEMAllocator::PMEMAllocator(char* pmem, uint64_t pmem_size,
   init_data_size_2_block_size();
 }
 
-void PMEMAllocator::Free(const SpaceEntry& entry) {
-  if (entry.size > 0) {
-    assert(entry.size % block_size_ == 0);
-    free_list_.Push(entry);
-    LogDeallocation(access_thread.id, entry.size);
+void PMEMAllocator::Free(const SpaceEntry& space_entry) {
+  if (space_entry.size > 0) {
+    assert(space_entry.size % block_size_ == 0);
+    free_list_.Push(space_entry);
+    LogDeallocation(access_thread.id, space_entry.size);
   }
 }
 
@@ -248,6 +248,11 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 
         space_entry = palloc_thread_cache.free_entry;
         space_entry.size = aligned_size;
+        kvdk_assert(
+            space_entry.size ==
+                    offset2addr<DataHeader>(space_entry.offset)->record_size ||
+                0 == offset2addr<DataHeader>(space_entry.offset)->record_size,
+            "Size of a reused free space entry should be persisted on PMem");
         palloc_thread_cache.free_entry.size -= aligned_size;
         palloc_thread_cache.free_entry.offset += aligned_size;
         LogAllocation(access_thread.id, aligned_size);
