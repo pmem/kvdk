@@ -89,8 +89,10 @@ class PMEMAllocator : public Allocator {
     return offset < pmem_size_ && offset != kNullPMemOffset;
   }
 
-  // Free segment_space_entry and fetch an allocated segment to
-  // segment_space_entry, until reach the end of allocated space
+  // Try to fetch an used segment to segment_space_entry, until reach the a
+  // never used segment or end of pmem space
+  //
+  // Notice: Please only use this function in recovery
   bool FetchSegment(SpaceEntry* segment_space_entry);
 
   // Regularly execute by background thread of KVDK
@@ -168,7 +170,7 @@ class PMEMAllocator : public Allocator {
   void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
 
   // Protect PMem offset head
-  SpinMutex offset_head_lock_;
+  SpinMutex segment_lock_;
   uint64_t offset_head_;
   std::vector<PAllocThreadCache, AlignedAllocator<PAllocThreadCache>>
       palloc_thread_cache_;

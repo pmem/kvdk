@@ -148,34 +148,23 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
 
 bool PMEMAllocator::FetchSegment(SpaceEntry* segment_space_entry) {
   assert(segment_space_entry);
-  kvdk_assert(access_thread.id >= 0,
-              "Call PMEMAllocator::FetchSegment "
-              "with a un-initialized write thread\n");
-  if (segment_space_entry->size == segment_size_) {
-    persistSpaceEntry(segment_space_entry->offset, segment_size_);
-    palloc_thread_cache_[access_thread.id].segment_entry = *segment_space_entry;
-    LogDeallocation(access_thread.id, segment_size_);
-    return false;
-  }
 
-  assert(segment_space_entry->size == 0);
-
-  std::lock_guard<SpinMutex> lg(offset_head_lock_);
-  if (offset_head_ <= pmem_size_ - segment_size_) {
+  std::lock_guard<SpinMutex> lg(segment_lock_);
+  if (offset_head_ <= pmem_size_ - segment_size_ &&
+      offset2addr<DataHeader>(offset_head_)->record_size != 0) {
     *segment_space_entry = SpaceEntry{offset_head_, segment_size_};
     offset_head_ += segment_size_;
-    LogAllocation(access_thread.id, segment_size_);
     return true;
   }
   return false;
 }
 
 bool PMEMAllocator::allocateSegmentSpace(SpaceEntry* segment_entry) {
-  std::lock_guard<SpinMutex> lg(offset_head_lock_);
+  std::lock_guard<SpinMutex> lg(segment_lock_);
   if (offset_head_ <= pmem_size_ - segment_size_) {
     *segment_entry = SpaceEntry{offset_head_, segment_size_};
-    persistSpaceEntry(offset_head_, segment_size_);
     offset_head_ += segment_size_;
+    persistSpaceEntry(segment_entry->offset, segment_size_);
     return true;
   }
   return false;
@@ -260,10 +249,6 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
         space_entry.size = aligned_size;
         palloc_thread_cache.free_entry.size -= aligned_size;
         palloc_thread_cache.free_entry.offset += aligned_size;
-        kvdk_assert(
-            offset2addr_checked<DataHeader>(space_entry.offset)->record_size ==
-                space_entry.size,
-            "size of freelist-allocate PMem space should be persisted");
         LogAllocation(access_thread.id, aligned_size);
         return space_entry;
       }
@@ -396,7 +381,7 @@ Status PMEMAllocator::Backup(const std::string& backup_file_path) {
   memcpy(backup_file, pmem_, copy_offset_1st_end);
   //  multi_thread_memcpy((char *)backup_file, pmem_, copy_offset_1st, 4);
   {
-    std::lock_guard<SpinMutex> lg(offset_head_lock_);
+    std::lock_guard<SpinMutex> lg(segment_lock_);
     copy_offset_2nd_end = offset_head_;
   }
   memcpy((char*)backup_file + copy_offset_2nd_start,

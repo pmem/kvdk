@@ -177,7 +177,8 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   startBackgroundWorks();
 
   ReportPMemUsage();
-  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
+  // kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem
+  // Usage");
   return s;
 }
 
@@ -255,14 +256,10 @@ Status KVEngine::RestoreData() {
   uint64_t cnt = 0;
   while (true) {
     if (segment_recovering.size == 0) {
-      fetch = true;
-    }
-    if (fetch) {
       if (!pmem_allocator_->FetchSegment(&segment_recovering)) {
         break;
       }
       assert(segment_recovering.size % configs_.pmem_block_size == 0);
-      fetch = false;
     }
 
     void* recovering_pmem_record =
@@ -270,30 +267,23 @@ Status KVEngine::RestoreData() {
     memcpy(&data_entry_cached, recovering_pmem_record, sizeof(DataEntry));
 
     if (data_entry_cached.header.record_size == 0) {
-      if (segment_recovering.size ==
-          configs_.pmem_segment_blocks * configs_.pmem_block_size) {
-        // A never allocated segment, continue fetch
-        fetch = true;
-        continue;
-      } else {
-        // Iter through data blocks until find a valid size space entry or reach
-        // end of the segment
-        PMemOffsetType offset =
-            segment_recovering.offset + configs_.pmem_block_size;
-        uint64_t size = segment_recovering.size - configs_.pmem_block_size;
-        while (size > 0 &&
-               pmem_allocator_->offset2addr_checked<DataHeader>(offset)
-                       ->record_size == 0) {
-          size -= configs_.pmem_block_size;
-          offset += configs_.pmem_block_size;
-        }
-        uint64_t padding_size = offset - segment_recovering.offset;
-        DataEntry* recovering_pmem_data_entry =
-            static_cast<DataEntry*>(recovering_pmem_record);
-        recovering_pmem_data_entry->header.record_size = padding_size;
-        recovering_pmem_data_entry->meta.type = RecordType::Padding;
-        data_entry_cached = *recovering_pmem_data_entry;
+      // Iter through data blocks until find a valid size space entry or reach
+      // end of the segment
+      PMemOffsetType offset =
+          segment_recovering.offset + configs_.pmem_block_size;
+      uint64_t size = segment_recovering.size - configs_.pmem_block_size;
+      while (size > 0 &&
+             pmem_allocator_->offset2addr_checked<DataHeader>(offset)
+                     ->record_size == 0) {
+        size -= configs_.pmem_block_size;
+        offset += configs_.pmem_block_size;
       }
+      uint64_t padding_size = offset - segment_recovering.offset;
+      DataEntry* recovering_pmem_data_entry =
+          static_cast<DataEntry*>(recovering_pmem_record);
+      recovering_pmem_data_entry->header.record_size = padding_size;
+      recovering_pmem_data_entry->meta.type = RecordType::Padding;
+      data_entry_cached = *recovering_pmem_data_entry;
     }
 
     segment_recovering.size -= data_entry_cached.header.record_size;
