@@ -177,8 +177,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   startBackgroundWorks();
 
   ReportPMemUsage();
-  // kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem
-  // Usage");
+  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
   return s;
 }
 

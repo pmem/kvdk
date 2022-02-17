@@ -154,6 +154,7 @@ bool PMEMAllocator::FetchSegment(SpaceEntry* segment_space_entry) {
       offset2addr<DataHeader>(offset_head_)->record_size != 0) {
     *segment_space_entry = SpaceEntry{offset_head_, segment_size_};
     offset_head_ += segment_size_;
+    LogAllocation(-1, segment_size_);
     return true;
   }
   return false;
