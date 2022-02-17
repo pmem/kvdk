@@ -150,10 +150,10 @@ struct SkiplistNode {
 class Skiplist : public Collection {
  public:
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-           CompareFunc comp_func, std::shared_ptr<PMEMAllocator> pmem_allocator,
+           Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
       : Collection(name, id),
-        compare_func_(comp_func),
+        comparator_(comparator),
         pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
     header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
@@ -410,7 +410,7 @@ class Skiplist : public Collection {
   }
 
   int compare(const StringView& src_key, const StringView& target_key) {
-    return compare_func_(src_key, target_key);
+    return comparator_(src_key, target_key);
   }
 
   SkiplistNode* header_;
@@ -427,7 +427,7 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
-  CompareFunc compare_func_ = compare_string_view;
+  Comparator comparator_ = compare_string_view;
 };
 
 class SortedIterator : public Iterator {

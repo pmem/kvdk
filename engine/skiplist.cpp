@@ -1055,16 +1055,16 @@ std::string Skiplist::EncodeSortedCollectionValue(
   std::string value_str(
       sizeof(CollectionIDType) +
           sizeof(ConfigFieldSizeType) * (num_config_fields + 1 /* end mark */) +
-          s_configs.compare_function_name.size(),
+          s_configs.comparator_name.size(),
       ' ');
   size_t cur = 0;
   memcpy(&value_str[cur], &id, sizeof(CollectionIDType));
   cur += sizeof(CollectionIDType);
 
-  ConfigFieldSizeType field_size = s_configs.compare_function_name.size();
+  ConfigFieldSizeType field_size = s_configs.comparator_name.size();
   memcpy(&value_str[cur], &field_size, sizeof(ConfigFieldSizeType));
   cur += sizeof(ConfigFieldSizeType);
-  memcpy(&value_str[cur], s_configs.compare_function_name.data(), field_size);
+  memcpy(&value_str[cur], s_configs.comparator_name.data(), field_size);
   cur += field_size;
 
   memcpy(&value_str[cur], &kEncodedConfigsEndMark, sizeof(ConfigFieldSizeType));
@@ -1105,7 +1105,7 @@ Status Skiplist::DecodeSortedCollectionValue(
 
     switch (setting_config_field) {
       case 0: {
-        s_configs.compare_function_name = config_field_str;
+        s_configs.comparator_name = config_field_str;
         break;
       }
 

@@ -25,7 +25,7 @@ struct Snapshot {};
 // For correctness of encoding, please add new config field in the end of the
 // existing fields
 struct SortedCollectionConfigs {
-  std::string compare_function_name = "default";
+  std::string comparator_name = "default";
 };
 
 struct Configs {

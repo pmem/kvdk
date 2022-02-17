@@ -1515,15 +1515,15 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   });
 
   // register compare function
-  engine->RegisterCompareFunc("collection0_cmp", cmp0);
-  engine->RegisterCompareFunc("collection1_cmp", cmp1);
+  engine->RegisterComparator("collection0_cmp", cmp0);
+  engine->RegisterComparator("collection1_cmp", cmp1);
   for (size_t i = 0; i < collections.size(); ++i) {
     Collection* collection_ptr;
     Status s;
     if (i < 2) {
       std::string comp_name = "collection" + std::to_string(i) + "_cmp";
       SortedCollectionConfigs s_configs;
-      s_configs.compare_function_name = comp_name;
+      s_configs.comparator_name = comp_name;
       s = engine->CreateSortedCollection(collections[i], &collection_ptr,
                                          s_configs);
     } else {
@@ -1546,8 +1546,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   // Reopen engine error as the comparator is not registered in configs
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Abort);
-  configs.comparator.RegisterCompareFunc("collection0_cmp", cmp0);
-  configs.comparator.RegisterCompareFunc("collection1_cmp", cmp1);
+  configs.comparator.RegisterComparator("collection0_cmp", cmp0);
+  configs.comparator.RegisterComparator("collection1_cmp", cmp1);
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 

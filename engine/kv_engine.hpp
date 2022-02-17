@@ -158,9 +158,9 @@ class KVEngine : public Engine {
 
   inline Status MaybeInitAccessThread();
 
-  bool RegisterCompareFunc(const StringView& collection_name,
-                           CompareFunc comp_func) {
-    return comparators_.RegisterCompareFunc(collection_name, comp_func);
+  bool RegisterComparator(const StringView& collection_name,
+                          Comparator comp_func) {
+    return comparators_.RegisterComparator(collection_name, comp_func);
   }
 
   Status CreateSortedCollection(

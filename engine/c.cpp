@@ -81,8 +81,7 @@ KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs() {
 void KVDKSetSortedCollectionConfigs(KVDKSortedCollectionConfigs* configs,
                                     const char* comp_func_name,
                                     size_t comp_func_len) {
-  configs->rep.compare_function_name =
-      std::string(comp_func_name, comp_func_len);
+  configs->rep.comparator_name = std::string(comp_func_name, comp_func_len);
 }
 
 void KVDKDestroySortedCollectionConfigs(KVDKSortedCollectionConfigs* configs) {
@@ -137,8 +136,8 @@ int KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
                              const StringView& target) -> int {
     return compare(src.data(), src.size(), target.data(), target.size());
   };
-  return engine->rep->RegisterCompareFunc(StringView(compara_name, compara_len),
-                                          comp_func);
+  return engine->rep->RegisterComparator(StringView(compara_name, compara_len),
+                                         comp_func);
 }
 
 KVDKStatus KVDKCreateSortedCollection(KVDKEngine* engine,

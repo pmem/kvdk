@@ -173,7 +173,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     return Status::Abort;
   }
 
-  RegisterCompareFunc("default", compare_string_view);
+  RegisterComparator("default", compare_string_view);
   s = Recovery();
   startBackgroundWorks();
 
@@ -208,11 +208,10 @@ Status KVEngine::CreateSortedCollection(
   if (s == Status::Ok) {
     *collection_ptr = static_cast<Collection*>(hash_entry.GetIndex().ptr);
   } else if (s == Status::NotFound) {
-    auto compare_func =
-        comparators_.GetCompareFunc(s_configs.compare_function_name);
-    if (compare_func == nullptr) {
+    auto comparator = comparators_.GetComparator(s_configs.comparator_name);
+    if (comparator == nullptr) {
       GlobalLogger.Error("Compare function %s is not registered\n",
-                         s_configs.compare_function_name);
+                         s_configs.comparator_name);
       return Status::Abort;
     }
     CollectionIDType id = list_id_.fetch_add(1);
@@ -233,7 +232,7 @@ Status KVEngine::CreateSortedCollection(
         collection_name, value_str);
 
     auto skiplist = std::make_shared<Skiplist>(
-        pmem_record, string_view_2_string(collection_name), id, compare_func,
+        pmem_record, string_view_2_string(collection_name), id, comparator,
         pmem_allocator_, hash_table_);
     {
       std::lock_guard<std::mutex> lg(list_mu_);
@@ -514,13 +513,12 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
     return s;
   }
 
-  auto compare_func =
-      comparators_.GetCompareFunc(s_configs.compare_function_name);
-  if (compare_func == nullptr) {
+  auto comparator = comparators_.GetComparator(s_configs.comparator_name);
+  if (comparator == nullptr) {
     GlobalLogger.Error(
         "Compare function %s of restoring sorted collection %s is not "
         "registered\n",
-        s_configs.compare_function_name.c_str(),
+        s_configs.comparator_name.c_str(),
         string_view_2_string(pmem_record->Key()).c_str());
     return Status::Abort;
   }
@@ -528,7 +526,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   {
     std::lock_guard<std::mutex> lg(list_mu_);
     skiplists_.push_back(std::make_shared<Skiplist>(
-        pmem_record, name, id, compare_func, pmem_allocator_, hash_table_));
+        pmem_record, name, id, comparator, pmem_allocator_, hash_table_));
     skiplist = skiplists_.back().get();
     if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_->AddRecordForParallelRebuild(
