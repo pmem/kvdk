@@ -121,7 +121,7 @@ class KVEngine : public Engine {
       : engine_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads),
-        comparator_(configs.comparator){};
+        comparators_(configs.comparator){};
 
   struct BatchWriteHint {
     TimeStampType timestamp{0};
@@ -158,9 +158,9 @@ class KVEngine : public Engine {
 
   inline Status MaybeInitAccessThread();
 
-  void RegisterCompareFunc(const StringView& collection_name,
-                           CompFunc comp_func) {
-    comparator_.RegisterComparaFunc(collection_name, comp_func);
+  bool RegisterCompareFunc(const StringView& collection_name,
+                           CompareFunc comp_func) {
+    return comparators_.RegisterCompareFunc(collection_name, comp_func);
   }
 
   Status CreateSortedCollection(
@@ -389,7 +389,7 @@ class KVEngine : public Engine {
 
   bool bg_cleaner_processing_;
 
-  Comparator comparator_;
+  ComparatorTable comparators_;
 
   struct BackgroundWorkSignals {
     BackgroundWorkSignals() = default;

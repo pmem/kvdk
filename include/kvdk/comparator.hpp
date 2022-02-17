@@ -13,19 +13,26 @@
 
 namespace KVDK_NAMESPACE {
 using StringView = pmem::obj::string_view;
-using CompFunc =
+using CompareFunc =
     std::function<int(const StringView& src, const StringView& target)>;
 
-class Comparator {
+class ComparatorTable {
  public:
-  void RegisterComparaFunc(const StringView& compara_name, CompFunc comp_func) {
+  // Register a string compare function to the table
+  //
+  // Return true on success, return false if compara_name already existed
+  bool RegisterCompareFunc(const StringView& compara_name,
+                           CompareFunc comp_func) {
     std::string name(compara_name.data(), compara_name.size());
     if (compara_table_.find(name) == compara_table_.end()) {
       compara_table_.emplace(name, comp_func);
+      return true;
+    } else {
+      return false;
     }
   }
 
-  CompFunc GetComparaFunc(const StringView& compara_name) {
+  CompareFunc GetCompareFunc(const StringView& compara_name) {
     std::string name(compara_name.data(), compara_name.size());
     auto iter = compara_table_.find(name);
     if (iter != compara_table_.end()) {
@@ -35,6 +42,6 @@ class Comparator {
   };
 
  private:
-  std::unordered_map<std::string, CompFunc> compara_table_;
+  std::unordered_map<std::string, CompareFunc> compara_table_;
 };
 }  // namespace KVDK_NAMESPACE

@@ -128,17 +128,17 @@ void KVDKRemovePMemContents(const char* name) {
   int ret __attribute__((unused)) = system(res.c_str());
 }
 
-void KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
-                          size_t compara_len,
-                          int (*compare)(const char* src, size_t src_len,
-                                         const char* target,
-                                         size_t target_len)) {
+int KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
+                         size_t compara_len,
+                         int (*compare)(const char* src, size_t src_len,
+                                        const char* target,
+                                        size_t target_len)) {
   auto comp_func = [compare](const StringView& src,
                              const StringView& target) -> int {
     return compare(src.data(), src.size(), target.data(), target.size());
   };
-  engine->rep->RegisterCompareFunc(StringView(compara_name, compara_len),
-                                   comp_func);
+  return engine->rep->RegisterCompareFunc(StringView(compara_name, compara_len),
+                                          comp_func);
 }
 
 KVDKStatus KVDKCreateSortedCollection(KVDKEngine* engine,

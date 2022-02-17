@@ -150,7 +150,7 @@ struct SkiplistNode {
 class Skiplist : public Collection {
  public:
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-           CompFunc comp_func, std::shared_ptr<PMEMAllocator> pmem_allocator,
+           CompareFunc comp_func, std::shared_ptr<PMEMAllocator> pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
       : Collection(name, id),
         compare_func_(comp_func),
@@ -427,7 +427,7 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
-  CompFunc compare_func_ = compare_string_view;
+  CompareFunc compare_func_ = compare_string_view;
 };
 
 class SortedIterator : public Iterator {

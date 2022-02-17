@@ -1546,8 +1546,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   // Reopen engine error as the comparator is not registered in configs
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Abort);
-  configs.comparator.RegisterComparaFunc("collection0_cmp", cmp0);
-  configs.comparator.RegisterComparaFunc("collection1_cmp", cmp1);
+  configs.comparator.RegisterCompareFunc("collection0_cmp", cmp0);
+  configs.comparator.RegisterCompareFunc("collection1_cmp", cmp1);
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 

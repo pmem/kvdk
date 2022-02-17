@@ -209,7 +209,7 @@ Status KVEngine::CreateSortedCollection(
     *collection_ptr = static_cast<Collection*>(hash_entry.GetIndex().ptr);
   } else if (s == Status::NotFound) {
     auto compare_func =
-        comparator_.GetComparaFunc(s_configs.compare_function_name);
+        comparators_.GetCompareFunc(s_configs.compare_function_name);
     if (compare_func == nullptr) {
       GlobalLogger.Error("Compare function %s is not registered\n",
                          s_configs.compare_function_name);
@@ -515,7 +515,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   }
 
   auto compare_func =
-      comparator_.GetComparaFunc(s_configs.compare_function_name);
+      comparators_.GetCompareFunc(s_configs.compare_function_name);
   if (compare_func == nullptr) {
     GlobalLogger.Error(
         "Compare function %s of restoring sorted collection %s is not "

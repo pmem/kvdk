@@ -67,7 +67,7 @@ extern KVDK_LIBRARY_API KVDKSnapshot* KVDKGetSnapshot(KVDKEngine* engine,
 extern KVDK_LIBRARY_API void KVDKReleaseSnapshot(KVDKEngine* engine,
                                                  KVDKSnapshot* snapshot);
 
-extern KVDK_LIBRARY_API void KVDKRegisterCompFunc(
+extern KVDK_LIBRARY_API int KVDKRegisterCompFunc(
     KVDKEngine* engine, const char* compara_name, size_t compara_len,
     int (*compare)(const char* src, size_t src_len, const char* target,
                    size_t target_len));

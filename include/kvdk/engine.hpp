@@ -131,8 +131,12 @@ class Engine {
   // part. New write requests of this thread need to re-request write resources.
   virtual void ReleaseAccessThread() = 0;
 
-  virtual void RegisterCompareFunc(const StringView& collection_name,
-                                   CompFunc) = 0;
+  // Register a customized comparator to the engine on runtime
+  //
+  // Return true on success, return false if a comparator of comparator_name
+  // already existed
+  virtual bool RegisterCompareFunc(const StringView& comparator_name,
+                                   CompareFunc) = 0;
 
   // Close the instance on exit.
   virtual ~Engine() = 0;

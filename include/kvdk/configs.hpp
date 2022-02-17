@@ -134,7 +134,7 @@ struct Configs {
 
   // If customer compare functions is used in a kvdk engine, these functions
   // should be registered to the comparator before open engine
-  Comparator comparator;
+  ComparatorTable comparator;
 };
 
 }  // namespace KVDK_NAMESPACE
