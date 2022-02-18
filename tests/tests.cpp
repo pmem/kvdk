@@ -40,6 +40,8 @@ class EngineBasicTest : public testing::Test {
   virtual void SetUp() override {
     str_pool.resize(str_pool_length);
     random_str(&str_pool[0], str_pool_length);
+    // No logs by default, for debug, set it to All
+    configs.log_level = LogLevel::None;
     configs.pmem_file_size = (16ULL << 30);
     configs.populate_pmem_space = false;
     configs.hash_bucket_num = (1 << 10);
@@ -47,7 +49,6 @@ class EngineBasicTest : public testing::Test {
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
-    configs.log_level = LogLevel::All;
     configs.max_access_threads = 1;
     db_path = "/mnt/pmem0/kvdk-test";
     backup_path = "/mnt/pmem0/kvdk-test-backup";
@@ -639,7 +640,6 @@ TEST_F(EngineBasicTest, TestSeek) {
             Status::Ok);
   uint64_t z = 0;
   auto zero_filled_str = uint64_to_string(z);
-  printf("%s\n", zero_filled_str.c_str());
   ASSERT_EQ(engine->SSet(collection, zero_filled_str, zero_filled_str),
             Status::Ok);
   ASSERT_EQ(engine->SGet(collection, zero_filled_str, &val), Status::Ok);

@@ -16,6 +16,7 @@ enum class LogLevel : uint8_t {
   Debug,
   Info,
   Error,
+  None,
 };
 
 // A snapshot indicates a immutable view of a KVDK engine at a certain time
