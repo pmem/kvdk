@@ -168,8 +168,6 @@ class KVEngine : public Engine {
       const SortedCollectionConfigs& configs) override;
 
  private:
-  Status InitCollection(const StringView& collection, Collection** list,
-                        RecordType collection_type, void* collection_configs);
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
