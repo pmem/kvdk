@@ -1493,9 +1493,7 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
     return s;
   }
   assert(skiplist);
-  std::string skiplist_key(skiplist->InternalKey(user_key));
-  return HashGetImpl(skiplist_key, value,
-                     SortedDataRecord | SortedDeleteRecord);
+  return skiplist->Get(user_key, value);
 }
 
 Status KVEngine::StringDeleteImpl(const StringView& key) {

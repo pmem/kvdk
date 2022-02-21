@@ -1116,4 +1116,51 @@ Status Skiplist::DecodeSortedCollectionValue(
     setting_config_field++;
   }
 }
+
+Status Skiplist::Get(const StringView& key, std::string* value) {
+  if (hash_table_ == nullptr) {
+    Splice splice(this);
+    Seek(key, &splice);
+    if (compare_string_view(key, UserKey(splice.next_pmem_record))) {
+      value->assign(splice.next_pmem_record->Value().data(),
+                    splice.next_pmem_record->Value().size());
+      return Status::Ok;
+    } else {
+      return Status::NotFound;
+    }
+  } else {
+    std::string internal_key = InternalKey(key);
+    HashEntry hash_entry;
+    HashEntry* entry_ptr = nullptr;
+    DataEntry data_entry;
+    bool is_found = hash_table_->SearchForRead(
+                        hash_table_->GetHint(internal_key), internal_key,
+                        SortedDataRecord | SortedDeleteRecord, &entry_ptr,
+                        &hash_entry, &data_entry) == Status::Ok;
+    if (!is_found || (hash_entry.GetRecordType() & DeleteRecordType)) {
+      return Status::NotFound;
+    }
+
+    DLRecord* pmem_record;
+    switch (hash_entry.GetIndexType()) {
+      case HashIndexType::SkiplistNode: {
+        pmem_record = hash_entry.GetIndex().skiplist_node->record;
+        break;
+      }
+      case HashIndexType::DLRecord: {
+        pmem_record = hash_entry.GetIndex().dl_record;
+        break;
+      }
+      default: {
+        GlobalLogger.Error(
+            "Wrong hash index type while search sorted data in hash table\n");
+        return Status::Abort;
+      }
+    }
+
+    value->assign(pmem_record->Value().data(), pmem_record->Value().size());
+    return Status::Ok;
+  }
+}
+
 }  // namespace KVDK_NAMESPACE

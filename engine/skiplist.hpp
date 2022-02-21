@@ -228,6 +228,10 @@ class Skiplist : public Collection {
     return 0;
   }
 
+  Status Get(const StringView& key, std::string* value);
+
+  Status Set(const StringView& key, const StringView& value);
+
   // Start seek from this node, find dram position of "key" in the skiplist
   // between height "start_height" and "end"_height", and store position in
   // "result_splice", if "key" existing, the next pointers in splice point to
