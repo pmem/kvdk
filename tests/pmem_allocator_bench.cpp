@@ -2,16 +2,16 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <gflags/gflags.h>
+#include <sys/time.h>
+
 #include <chrono>
 #include <ctime>
 #include <future>
 #include <iostream>
 #include <string>
-#include <sys/time.h>
 #include <thread>
 #include <vector>
-
-#include <gflags/gflags.h>
 
 #include "../engine/kv_engine.hpp"
 #include "../engine/thread_manager.hpp"
@@ -22,10 +22,10 @@
 using namespace KVDK_NAMESPACE;
 
 #define MIN_ALLOC_SIZE 8
-#define MAX_ALLOC_SIZE 524288 // 512KB
+#define MAX_ALLOC_SIZE 524288  // 512KB
 
-#define NUM_SIZES 10000
-#define NUM_OFFSET 4096
+constexpr size_t NUM_SIZES = 10000;
+constexpr size_t NUM_OFFSET = 4096;
 
 // Benchmark configs
 DEFINE_string(pmem_path, "/mnt/pmem0/allcator_bench", "Instance path");
@@ -35,21 +35,20 @@ DEFINE_uint64(num_thread, 16, "Number of threads");
 DEFINE_uint64(iter_num, 10000,
               "Number of iterating operators(random free and allocate)");
 
-DEFINE_uint64(pmem_size, (std::uint64_t)64 << 30, "PMem total size");
+DEFINE_uint64(pmem_size, 64ULL << 30, "PMem total size");
 
-DEFINE_uint64(num_segment_blocks, (std::uint64_t)1024,
-              "PMem num blocks per segment");
+DEFINE_uint64(num_segment_blocks, 1024ULL, "PMem num blocks per segment");
 
 DEFINE_uint64(block_size, 16, "PMem block size");
 
 // Allocator Performance Class
 class AllocatorPerformance {
-private:
+ private:
   std::vector<std::uint64_t> random_alloc_sizes;
   std::vector<std::uint64_t> random_offsets;
 
-private:
-  /* Get a random block size with an inverse chi-square distribution.  */
+ private:
+  /* Get a random block size with an inverse square distribution.  */
   static uint64_t get_block_size(uint64_t rand_data) {
     /* Inverse square.  */
     const float exponent = -2;
@@ -65,11 +64,11 @@ private:
                           1 / (exponent + 1));
   }
 
-public:
-  void FixedModePerf(uint32_t num_thread, uint64_t fixed_alloc_size,
-                     int64_t iter_num, int seed, TestAllocator *allocator) {
+ public:
+  void FixedSizePerf(uint32_t num_thread, uint64_t fixed_alloc_size,
+                     int64_t iter_num, int seed, AllocatorAdaptor* allocator) {
     double execute_time = 0;
-    auto TestFixedModePerf = [&](uint64_t id) {
+    auto FixedSizeBench = [&](uint64_t id) {
       std::vector<op_alloc_info> res(iter_num);
       std::chrono::system_clock::time_point to_begin =
           std::chrono::high_resolution_clock::now();
@@ -85,15 +84,15 @@ public:
       std::chrono::duration<double, std::milli> elapsedTime(to_end - to_begin);
       execute_time += (elapsedTime.count() / 1000);
     };
-    LaunchNThreads(num_thread, TestFixedModePerf);
+    LaunchNThreads(num_thread, FixedSizeBench);
     std::cout << "Allocated " << std::fixed << std::setprecision(5)
               << iter_num * fixed_alloc_size
-              << " and free all, executed time: " << std::fixed
+              << " bytes and free all, executed time: " << std::fixed
               << std::setprecision(5) << execute_time << std::endl;
   }
 
   void RandomSizePerf(uint32_t num_thread, int64_t iter_num,
-                      TestAllocator *allocator) {
+                      AllocatorAdaptor* allocator) {
     std::vector<double> args(num_thread);
     std::vector<std::vector<op_alloc_info>> records(num_thread);
     double elapesd_time = 0;
@@ -122,7 +121,8 @@ public:
       elapesd_time += args[i];
     }
     std::cout << "Random allocated sized, Random allocated and free";
-    std::cout << "Total time: " << elapesd_time << "\n";
+    std::cout << "Total execute time: " << std::fixed << std::setprecision(5)
+              << elapesd_time << " seconds\n";
 
     // Clear all memory to avoid memory leak
     for (auto record : records) {
@@ -132,11 +132,11 @@ public:
     }
   }
 
-  AllocatorPerformance(int seed) {
-    std::srand(seed);
+  AllocatorPerformance() {
+    std::default_random_engine rand_engine{std::random_device()()};
     random_alloc_sizes.reserve(NUM_SIZES);
     for (size_t i = 0; i < NUM_SIZES; ++i) {
-      random_alloc_sizes.emplace_back(get_block_size(rand()));
+      random_alloc_sizes.emplace_back(get_block_size(rand_engine() % RAND_MAX));
     }
 
     random_offsets.reserve(NUM_OFFSET);
@@ -152,20 +152,20 @@ public:
   }
 };
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
-  AllocatorPerformance allcator_perf(11);
+  AllocatorPerformance allcator_perf;
 
   // For standard allocator
-  TestStandardAllocator *standard_allocator = new TestStandardAllocator();
+  StandardAllocatorWrapper* standard_allocator = new StandardAllocatorWrapper();
   std::cout << "Standard Allocator Performance: \n";
   allcator_perf.RandomSizePerf(FLAGS_num_thread, FLAGS_iter_num,
                                standard_allocator);
   delete standard_allocator;
 
   // For pmem allocator
-  TestPMemAllocator *pmem_allocator = new TestPMemAllocator();
+  PMemAllocatorWrapper* pmem_allocator = new PMemAllocatorWrapper();
   pmem_allocator->InitPMemAllocator(FLAGS_pmem_path, FLAGS_pmem_size,
                                     FLAGS_num_segment_blocks, FLAGS_block_size,
                                     FLAGS_num_thread);
