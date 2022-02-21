@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <stdio.h>
+#include <cstdio>
 
 #include "../engine/thread_manager.hpp"
 #include "gtest/gtest.h"
@@ -59,6 +59,7 @@ class PMemAllocatorWrapper : public AllocatorAdaptor {
   op_alloc_info wrapped_malloc(uint64_t alloc_size) override {
     op_alloc_info data;
     data.entry = pmem_alloc_->Allocate(alloc_size);
+    return data;
   }
 
   op_alloc_info wrapped_free(op_alloc_info* data) override {

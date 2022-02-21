@@ -42,7 +42,8 @@ DEFINE_uint64(num_segment_blocks, 1024ULL, "PMem num blocks per segment");
 DEFINE_uint64(block_size, 16, "PMem block size");
 
 // Allocator Performance Class
-class AllocatorPerformance {
+// TODO: add access_memory bench
+class AllocatorBench {
  private:
   std::vector<std::uint64_t> random_alloc_sizes;
   std::vector<std::uint64_t> random_offsets;
@@ -105,6 +106,7 @@ class AllocatorPerformance {
         std::uint64_t idx = random_offsets[i % NUM_OFFSET];
         // random free and allocate.
         allocator->wrapped_free(&work_sets[idx]);
+        uint64_t alloc_size = random_alloc_sizes[idx % NUM_SIZES];
         work_sets[idx] =
             allocator->wrapped_malloc(random_alloc_sizes[idx % NUM_SIZES]);
       }
@@ -125,6 +127,7 @@ class AllocatorPerformance {
               << elapesd_time << " seconds\n";
 
     // Clear all memory to avoid memory leak
+    allocator->InitThread();
     for (auto record : records) {
       for (auto r : record) {
         allocator->wrapped_free(&r);
@@ -132,7 +135,7 @@ class AllocatorPerformance {
     }
   }
 
-  AllocatorPerformance() {
+  AllocatorBench() {
     std::default_random_engine rand_engine{std::random_device()()};
     random_alloc_sizes.reserve(NUM_SIZES);
     for (size_t i = 0; i < NUM_SIZES; ++i) {
@@ -145,7 +148,7 @@ class AllocatorPerformance {
     }
   }
 
-  ~AllocatorPerformance() {
+  ~AllocatorBench() {
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", FLAGS_pmem_path.c_str());
     int res __attribute__((unused)) = system(cmd);
@@ -155,12 +158,12 @@ class AllocatorPerformance {
 int main(int argc, char** argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
-  AllocatorPerformance allcator_perf;
+  AllocatorBench allcator_bench;
 
   // For standard allocator
   StandardAllocatorWrapper* standard_allocator = new StandardAllocatorWrapper();
   std::cout << "Standard Allocator Performance: \n";
-  allcator_perf.RandomSizePerf(FLAGS_num_thread, FLAGS_iter_num,
+  allcator_bench.RandomSizePerf(FLAGS_num_thread, FLAGS_iter_num,
                                standard_allocator);
   delete standard_allocator;
 
@@ -171,7 +174,7 @@ int main(int argc, char** argv) {
                                     FLAGS_num_thread);
 
   std::cout << "PMmem Allocator Performance: \n";
-  allcator_perf.RandomSizePerf(FLAGS_num_thread, FLAGS_iter_num,
+  allcator_bench.RandomSizePerf(FLAGS_num_thread, FLAGS_iter_num,
                                pmem_allocator);
 
   delete pmem_allocator;
