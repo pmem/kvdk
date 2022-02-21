@@ -1,18 +1,17 @@
 #ifndef EXTD_XORSHIFT_ENGINE_HPP
 #define EXTD_XORSHIFT_ENGINE_HPP
 
-#include <cassert>
+#include <immintrin.h>
+#include <x86intrin.h>
 
+#include <cassert>
 #include <limits>
 #include <random>
 #include <stdexcept>
 
-#include <immintrin.h>
-#include <x86intrin.h>
-
 namespace extd {
 class xorshift_engine {
-public:
+ public:
   using result_type = std::uint64_t;
 
   inline explicit xorshift_engine() { reseed(); }
@@ -34,14 +33,13 @@ public:
     return std::numeric_limits<result_type>::max();
   }
 
-private:
+ private:
   void reseed() {
     size_t failures = 0;
     unsigned long long sink;
     while (_rdseed64_step(&sink) != 1 || sink == 0) {
       ++failures;
-      if (failures > 10000)
-        throw std::runtime_error{"Fail to seed the engine"};
+      if (failures > 10000) throw std::runtime_error{"Fail to seed the engine"};
     }
     s = sink;
   }
@@ -55,11 +53,11 @@ private:
     s ^= (s >> 27);
   }
 
-private:
+ private:
   result_type s;
   static constexpr result_type magic = 0x2545F4914F6CDD1D;
 };
 
-} // namespace extd
+}  // namespace extd
 
-#endif // EXTD_XORSHIFT_ENGINE_HPP
+#endif  // EXTD_XORSHIFT_ENGINE_HPP

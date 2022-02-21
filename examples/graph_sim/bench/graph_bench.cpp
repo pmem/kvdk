@@ -5,10 +5,9 @@
 #include <gflags/gflags.h>
 #include <sys/time.h>
 
-#include <cstdint>
-#include <cinttypes>
-
 #include <atomic>
+#include <cinttypes>
+#include <cstdint>
 #include <random>
 #include <string>
 #include <thread>
@@ -160,7 +159,8 @@ void GraphDataTopN() {
 
   fprintf(stdout, "TopN: \n");
   for (auto& item : topn_res) {
-    fprintf(stdout, "vertex : %" PRIu64 "InEdges : %" PRIu64 "\n", item.first.id, item.second);
+    fprintf(stdout, "vertex : %" PRIu64 "InEdges : %" PRIu64 "\n",
+            item.first.id, item.second);
   }
 }
 

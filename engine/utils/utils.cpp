@@ -2,10 +2,11 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include "utils.hpp"
+
 #include <hwloc.h>
 
 #include "../logger.hpp"
-#include "utils.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -49,4 +50,4 @@ int get_usable_pu(void) {
   hwloc_topology_destroy(topology);
   return pu;
 }
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

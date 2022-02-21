@@ -3,6 +3,7 @@
  */
 
 #include "data_record.hpp"
+
 #include "alias.hpp"
 #include "libpmem.h"
 
@@ -11,11 +12,11 @@ namespace KVDK_NAMESPACE {
 thread_local std::string thread_data_buffer;
 static constexpr int kDataBufferSize = 1024 * 1024;
 
-StringRecord *StringRecord::PersistStringRecord(
-    void *addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
-    PMemOffsetType older_version_record, const StringView &key,
-    const StringView &value) {
-  void *data_cpy_target;
+StringRecord* StringRecord::PersistStringRecord(
+    void* addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
+    PMemOffsetType older_version_record, const StringView& key,
+    const StringView& value) {
+  void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(StringRecord);
   bool with_buffer = write_size <= kDataBufferSize;
   if (with_buffer) {
@@ -26,7 +27,7 @@ StringRecord *StringRecord::PersistStringRecord(
   } else {
     data_cpy_target = addr;
   }
-  StringRecord *record = StringRecord::ConstructStringRecord(
+  StringRecord* record = StringRecord::ConstructStringRecord(
       data_cpy_target, record_size, timestamp, type, older_version_record, key,
       value);
   if (with_buffer) {
@@ -36,16 +37,16 @@ StringRecord *StringRecord::PersistStringRecord(
     pmem_persist(addr, write_size);
   }
 
-  return static_cast<StringRecord *>(addr);
+  return static_cast<StringRecord*>(addr);
 }
 
-DLRecord *DLRecord::PersistDLRecord(void *addr, uint32_t record_size,
+DLRecord* DLRecord::PersistDLRecord(void* addr, uint32_t record_size,
                                     TimeStampType timestamp, RecordType type,
                                     PMemOffsetType older_version_record,
                                     PMemOffsetType prev, PMemOffsetType next,
-                                    const StringView &key,
-                                    const StringView &value) {
-  void *data_cpy_target;
+                                    const StringView& key,
+                                    const StringView& value) {
+  void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(DLRecord);
   bool with_buffer = write_size <= kDataBufferSize;
   if (with_buffer) {
@@ -56,7 +57,7 @@ DLRecord *DLRecord::PersistDLRecord(void *addr, uint32_t record_size,
   } else {
     data_cpy_target = addr;
   }
-  DLRecord *record =
+  DLRecord* record =
       DLRecord::ConstructDLRecord(data_cpy_target, record_size, timestamp, type,
                                   older_version_record, prev, next, key, value);
   if (with_buffer) {
@@ -66,7 +67,7 @@ DLRecord *DLRecord::PersistDLRecord(void *addr, uint32_t record_size,
     pmem_persist(addr, write_size);
   }
 
-  return static_cast<DLRecord *>(addr);
+  return static_cast<DLRecord*>(addr);
 }
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

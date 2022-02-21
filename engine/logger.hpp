@@ -4,10 +4,11 @@
 
 #pragma once
 
+#include <unistd.h>
+
 #include <chrono>
 #include <cstdarg>
 #include <mutex>
-#include <unistd.h>
 
 #include "kvdk/configs.hpp"
 #include "kvdk/namespace.hpp"
@@ -17,16 +18,16 @@
 namespace KVDK_NAMESPACE {
 
 class Logger {
-public:
-  void Info(const char *format, ...);
-  void Error(const char *format, ...);
-  void Debug(const char *format, ...);
-  void Init(FILE *fp, LogLevel level);
+ public:
+  void Info(const char* format, ...);
+  void Error(const char* format, ...);
+  void Debug(const char* format, ...);
+  void Init(FILE* fp, LogLevel level);
 
-private:
-  void Log(const char *log_type, const char *format, va_list &args);
+ private:
+  void Log(const char* log_type, const char* format, va_list& args);
 
-  FILE *log_file_ = NULL;
+  FILE* log_file_ = NULL;
   LogLevel level_;
   std::mutex mut_;
 
@@ -35,4 +36,4 @@ private:
 
 extern Logger GlobalLogger;
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

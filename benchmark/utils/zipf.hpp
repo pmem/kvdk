@@ -2,15 +2,15 @@
 #define EXTD_ZIPF_HPP
 
 #include <cassert>
-
 #include <random>
 
 namespace extd {
 
 // Param: s, N
 // P(X=k) = k^{-s}/\sum_{i=1}^N i^{-s} = k^{-s}/zeta(N;s)
-template <typename IntType = int> class zipfian_distribution {
-public:
+template <typename IntType = int>
+class zipfian_distribution {
+ public:
   using result_type = IntType;
   using float_type = double;
 
@@ -18,7 +18,7 @@ public:
   static constexpr size_t precalc_n = 8;
   static constexpr float_type half = 0.5;
 
-private:
+ private:
   float_type zeta_k[precalc_n]{};
 
   result_type const N;
@@ -28,9 +28,9 @@ private:
   float_type const inv_r = 1 / r;
   float_type const a = precalc_n + 0.5;
   float_type const a_exp_r = std::pow(a, r);
-  float_type const zeta_n{zeta(N)}; // Last to initialize!
+  float_type const zeta_n{zeta(N)};  // Last to initialize!
 
-public:
+ public:
   inline zipfian_distribution(result_type n, float_type e = default_s)
       : N{n}, s{e} {
     for (size_t i = 0; i < precalc_n; i++) {
@@ -39,7 +39,7 @@ public:
   }
 
   template <typename UniformBitRandomGenerator>
-  inline result_type operator()(UniformBitRandomGenerator &g) const {
+  inline result_type operator()(UniformBitRandomGenerator& g) const {
     using GeneratorIntType = typename UniformBitRandomGenerator::result_type;
     static constexpr GeneratorIntType min = UniformBitRandomGenerator::min();
     static constexpr GeneratorIntType max = UniformBitRandomGenerator::max();
@@ -56,7 +56,7 @@ public:
     return std::pow(k, -s) / zeta_n;
   }
 
-private:
+ private:
   // zeta(k) = sum_{i=1}^{k} i^{-s}
   inline constexpr float_type zeta(result_type k) const {
     constexpr result_type acc_n = 100;
@@ -100,6 +100,6 @@ private:
   }
 };
 
-} // namespace extd
+}  // namespace extd
 
-#endif // EXTD_ZIPF_HPP
+#endif  // EXTD_ZIPF_HPP

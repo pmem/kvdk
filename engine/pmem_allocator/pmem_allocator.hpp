@@ -29,54 +29,55 @@ constexpr uint64_t kMinPaddingBlocks = 8;
 // several blocks, a block is the minimal allocation unit of PMem space. The
 // maximum allocated data size should smaller than a segment.
 class PMEMAllocator : public Allocator {
-public:
+ public:
   ~PMEMAllocator();
 
-  static PMEMAllocator *
-  NewPMEMAllocator(const std::string &pmem_file, uint64_t pmem_size,
-                   uint64_t num_segment_blocks, uint32_t block_size,
-                   uint32_t max_access_threads,
-                   bool populate_pmem_space_on_new_file, bool use_devdax_mode,
-                   VersionController *version_controller);
+  static PMEMAllocator* NewPMEMAllocator(
+      const std::string& pmem_file, uint64_t pmem_size,
+      uint64_t num_segment_blocks, uint32_t block_size,
+      uint32_t max_access_threads, bool populate_pmem_space_on_new_file,
+      bool use_devdax_mode, VersionController* version_controller);
 
   // Allocate a PMem space, return offset and actually allocated space in bytes
   SpaceEntry Allocate(uint64_t size) override;
 
   // Free a PMem space entry. The entry should be allocated by this allocator
-  void Free(const SpaceEntry &entry) override;
+  void Free(const SpaceEntry& entry) override;
 
   // translate block_offset of allocated space to address
-  inline void *offset2addr_checked(PMemOffsetType offset) {
+  inline void* offset2addr_checked(PMemOffsetType offset) {
     assert(validate_offset(offset) && "Trying to access invalid offset");
     return pmem_ + offset;
   }
 
-  inline void *offset2addr(PMemOffsetType offset) {
+  inline void* offset2addr(PMemOffsetType offset) {
     if (validate_offset(offset)) {
       return pmem_ + offset;
     }
     return nullptr;
   }
 
-  template <typename T> inline T *offset2addr_checked(PMemOffsetType offset) {
-    return static_cast<T *>(offset2addr_checked(offset));
+  template <typename T>
+  inline T* offset2addr_checked(PMemOffsetType offset) {
+    return static_cast<T*>(offset2addr_checked(offset));
   }
 
-  template <typename T> inline T *offset2addr(PMemOffsetType block_offset) {
-    return static_cast<T *>(offset2addr(block_offset));
+  template <typename T>
+  inline T* offset2addr(PMemOffsetType block_offset) {
+    return static_cast<T*>(offset2addr(block_offset));
   }
 
   // translate address of allocated space to block_offset
-  inline PMemOffsetType addr2offset_checked(const void *addr) {
-    assert((char *)addr >= pmem_);
-    PMemOffsetType offset = (char *)addr - pmem_;
+  inline PMemOffsetType addr2offset_checked(const void* addr) {
+    assert((char*)addr >= pmem_);
+    PMemOffsetType offset = (char*)addr - pmem_;
     assert(validate_offset(offset) && "Trying to create invalid offset");
     return offset;
   }
 
-  inline PMemOffsetType addr2offset(const void *addr) {
+  inline PMemOffsetType addr2offset(const void* addr) {
     if (addr) {
-      PMemOffsetType offset = (char *)addr - pmem_;
+      PMemOffsetType offset = (char*)addr - pmem_;
       if (validate_offset(offset)) {
         return offset;
       }
@@ -90,34 +91,45 @@ public:
 
   // Free segment_space_entry and fetch an allocated segment to
   // segment_space_entry, until reach the end of allocated space
-  bool FreeAndFetchSegment(SpaceEntry *segment_space_entry);
+  bool FreeAndFetchSegment(SpaceEntry* segment_space_entry);
 
   // Regularly execute by background thread of KVDK
   void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
 
-  void BatchFree(const std::vector<SpaceEntry> &entries) {
+  void BatchFree(const std::vector<SpaceEntry>& entries) {
     if (entries.size() > 0) {
-      free_list_.BatchPush(entries);
+      uint64_t freed = free_list_.BatchPush(entries);
+      LogDeallocation(access_thread.id, freed);
     }
   }
 
-  Status Backup(const std::string &backup_file);
-  void LogAllocation(size_t tid, size_t sz) {
-    palloc_thread_cache_[tid].allocated_sz += sz;
+  Status Backup(const std::string& backup_file);
+  void LogAllocation(int tid, size_t sz) {
+    if (tid == -1) {
+      global_allocated_size_.fetch_add(sz);
+    } else {
+      assert(tid >= 0);
+      palloc_thread_cache_[tid].allocated_sz += sz;
+    }
   }
 
-  void LogDeallocation(size_t tid, size_t sz) {
-    palloc_thread_cache_[tid].allocated_sz -= sz;
+  void LogDeallocation(int tid, size_t sz) {
+    if (tid == -1) {
+      global_allocated_size_.fetch_sub(sz);
+    } else {
+      assert(tid >= 0);
+      palloc_thread_cache_[tid].allocated_sz -= sz;
+    }
   }
 
   std::int64_t PMemUsageInBytes();
 
-private:
+ private:
   friend Freelist;
 
-  PMEMAllocator(char *pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
+  PMEMAllocator(char* pmem, uint64_t pmem_size, uint64_t num_segment_blocks,
                 uint32_t block_size, uint32_t max_access_threads,
-                VersionController *version_controller);
+                VersionController* version_controller);
   // Access threads cache a dedicated PMem segment and a free space to
   // avoid contention
   struct alignas(64) PAllocThreadCache {
@@ -129,9 +141,9 @@ private:
     std::int64_t allocated_sz{};
   };
 
-  bool allocateSegmentSpace(SpaceEntry *segment_entry);
+  bool allocateSegmentSpace(SpaceEntry* segment_entry);
 
-  static bool checkDevDaxAndGetSize(const char *path, uint64_t *size);
+  static bool checkDevDaxAndGetSize(const char* path, uint64_t* size);
 
   // Mark and persist a space entry on PMem
   void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
@@ -162,14 +174,15 @@ private:
       palloc_thread_cache_;
   const uint32_t block_size_;
   const uint64_t segment_size_;
-  char *pmem_;
+  char* pmem_;
   uint64_t pmem_size_;
   Freelist free_list_;
   // For quickly get corresponding block size of a requested data size
   std::vector<uint16_t> data_size_2_block_size_;
-  VersionController *version_controller_;
+  VersionController* version_controller_;
+  std::atomic<std::int64_t> global_allocated_size_{0};
 
   std::mutex backup_lock;
-  bool backup_processing;
+  bool backup_processing = false;
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

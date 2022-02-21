@@ -2,9 +2,9 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
-#include <mutex>
-
 #include "thread_manager.hpp"
+
+#include <mutex>
 
 namespace KVDK_NAMESPACE {
 
@@ -19,7 +19,7 @@ void Thread::Release() {
 
 Thread::~Thread() { Release(); }
 
-Status ThreadManager::MaybeInitThread(Thread &t) {
+Status ThreadManager::MaybeInitThread(Thread& t) {
   if (t.id < 0) {
     if (!usable_id_.empty()) {
       std::lock_guard<SpinMutex> lg(spin_);
@@ -41,7 +41,7 @@ Status ThreadManager::MaybeInitThread(Thread &t) {
   return Status::Ok;
 }
 
-void ThreadManager::Release(const Thread &t) {
+void ThreadManager::Release(const Thread& t) {
   if (t.id >= 0) {
     assert(t.id < max_threads_);
     std::lock_guard<SpinMutex> lg(spin_);
@@ -51,4 +51,4 @@ void ThreadManager::Release(const Thread &t) {
 
 thread_local Thread access_thread;
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

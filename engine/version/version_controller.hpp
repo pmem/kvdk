@@ -12,29 +12,28 @@ namespace KVDK_NAMESPACE {
 constexpr TimeStampType kMaxTimestamp = UINT64_MAX;
 
 struct SnapshotImpl : public Snapshot {
-  explicit SnapshotImpl(const TimeStampType &t)
-      : timestamp(t), next(nullptr), prev(nullptr) {}
+  explicit SnapshotImpl(const TimeStampType& t) : timestamp(t) {}
 
-  SnapshotImpl() : SnapshotImpl(kMaxTimestamp) {}
+  SnapshotImpl() = default;
 
   TimeStampType GetTimestamp() const { return timestamp; }
 
-  TimeStampType timestamp;
-  SnapshotImpl *prev;
-  SnapshotImpl *next;
+  TimeStampType timestamp = kMaxTimestamp;
+  SnapshotImpl* prev = nullptr;
+  SnapshotImpl* next = nullptr;
 };
 
 // A SnapshotList is a linked-list of global snapshots, new older snapshot is
 // linked at the tail of list
 class SnapshotList {
-public:
+ public:
   SnapshotList() : head_() {
     head_.prev = &head_;
     head_.next = &head_;
   }
 
-  SnapshotImpl *New(TimeStampType ts) {
-    SnapshotImpl *impl = new SnapshotImpl(ts);
+  SnapshotImpl* New(TimeStampType ts) {
+    SnapshotImpl* impl = new SnapshotImpl(ts);
     impl->prev = &head_;
     impl->next = head_.next;
     head_.next->prev = impl;
@@ -42,7 +41,7 @@ public:
     return impl;
   }
 
-  void Delete(const SnapshotImpl *impl) {
+  void Delete(const SnapshotImpl* impl) {
     impl->prev->next = impl->next;
     impl->next->prev = impl->prev;
     delete impl;
@@ -53,15 +52,15 @@ public:
   }
 
   ~SnapshotList() {
-    SnapshotImpl *curr = head_.next;
+    SnapshotImpl* curr = head_.next;
     while (curr != &head_) {
-      SnapshotImpl *tmp = curr->next;
+      SnapshotImpl* tmp = curr->next;
       delete curr;
       curr = tmp;
     }
   }
 
-private:
+ private:
   bool empty() { return head_.prev == &head_; }
 
   SnapshotImpl head_;
@@ -71,7 +70,7 @@ private:
 // The snapshots include temporal snapshots that cached by each access thread of
 // kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
-public:
+ public:
   VersionController(uint64_t max_access_threads)
       : version_thread_cache_(max_access_threads) {}
 
@@ -97,13 +96,13 @@ public:
         kMaxTimestamp;
   }
 
-  inline const SnapshotImpl &GetLocalSnapshot(size_t thread_num) {
+  inline const SnapshotImpl& GetLocalSnapshot(size_t thread_num) {
     kvdk_assert(thread_num < version_thread_cache_.size(),
                 "Wrong thread num in GetLocalSnapshot");
     return version_thread_cache_[thread_num].holding_snapshot;
   }
 
-  inline const SnapshotImpl &GetLocalSnapshot() {
+  inline const SnapshotImpl& GetLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 &&
                     access_thread.id < version_thread_cache_.size(),
                 "Uninitialized thread in GetLocalSnapshot");
@@ -111,13 +110,13 @@ public:
   }
 
   // Create a new global snapshot
-  SnapshotImpl *NewGlobalSnapshot() {
+  SnapshotImpl* NewGlobalSnapshot() {
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
     return global_snapshots_.New(GetCurrentTimestamp());
   }
 
   // Release a global snapshot, it should be created by this instance
-  void ReleaseSnapshot(const SnapshotImpl *impl) {
+  void ReleaseSnapshot(const SnapshotImpl* impl) {
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
     global_snapshots_.Delete(impl);
   }
@@ -134,7 +133,7 @@ public:
   void UpdatedOldestSnapshot() {
     TimeStampType ts = GetCurrentTimestamp();
     for (size_t i = 0; i < version_thread_cache_.size(); i++) {
-      auto &tc = version_thread_cache_[i];
+      auto& tc = version_thread_cache_[i];
       ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
     }
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
@@ -142,7 +141,7 @@ public:
         std::min(ts, global_snapshots_.OldestSnapshotTS());
   }
 
-private:
+ private:
   // Each access thread of the instance hold its own local snapshot in thread
   // cache to avoid thread contention
   struct alignas(64) VersionThreadCache {
@@ -167,13 +166,13 @@ private:
 };
 
 class CheckPoint {
-public:
-  void MakeCheckpoint(const Snapshot *snapshot) {
-    checkpoint_ts = static_cast<const SnapshotImpl *>(snapshot)->GetTimestamp();
+ public:
+  void MakeCheckpoint(const Snapshot* snapshot) {
+    checkpoint_ts = static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
   }
 
-  void MaybeRelease(const Snapshot *releasing_snapshot) {
-    if (static_cast<const SnapshotImpl *>(releasing_snapshot)->GetTimestamp() ==
+  void MaybeRelease(const Snapshot* releasing_snapshot) {
+    if (static_cast<const SnapshotImpl*>(releasing_snapshot)->GetTimestamp() ==
         checkpoint_ts) {
       Release();
     }
@@ -185,8 +184,8 @@ public:
 
   bool Valid() { return checkpoint_ts > 0; }
 
-private:
+ private:
   TimeStampType checkpoint_ts;
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

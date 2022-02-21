@@ -11,6 +11,7 @@
 #pragma one
 
 #include <assert.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -33,12 +34,12 @@ struct SyncPointPair {
 
 struct SyncImpl {
   SyncImpl() : ready_(false) {}
-  void LoadDependency(const std::vector<SyncPointPair> &dependencies) {
+  void LoadDependency(const std::vector<SyncPointPair>& dependencies) {
     std::lock_guard<std::mutex> lock(mutex_);
     consumers_.clear();
     producers_.clear();
     cleared_points_.clear();
-    for (const auto &dependency : dependencies) {
+    for (const auto& dependency : dependencies) {
       consumers_[dependency.producer].push_back(dependency.consumer);
       producers_[dependency.consumer].push_back(dependency.producer);
       point_table_.insert(dependency.consumer);
@@ -51,7 +52,7 @@ struct SyncImpl {
 
   void DisableProcessing() { ready_ = false; }
 
-  void Process(const std::string &point, void *func_arg) {
+  void Process(const std::string& point, void* func_arg) {
     if (!ready_) {
       return;
     }
@@ -79,8 +80,8 @@ struct SyncImpl {
     cv_.notify_all();
   }
 
-  void SetCallBack(const std::string &point,
-                   const std::function<void(void *)> &callback) {
+  void SetCallBack(const std::string& point,
+                   const std::function<void(void*)>& callback) {
     std::lock_guard<std::mutex> lock(mutex_);
     callbacks_[point] = callback;
     point_table_.insert(point);
@@ -94,10 +95,9 @@ struct SyncImpl {
     callbacks_.clear();
   }
 
-  bool IsClearedAllproducers(const std::string &point) {
-    for (const std::string &producer : producers_[point]) {
-      if (cleared_points_.find(producer) == cleared_points_.end())
-        return false;
+  bool IsClearedAllproducers(const std::string& point) {
+    for (const std::string& producer : producers_[point]) {
+      if (cleared_points_.find(producer) == cleared_points_.end()) return false;
     }
     return true;
   }
@@ -119,7 +119,7 @@ struct SyncImpl {
 
   virtual ~SyncImpl() {}
 
-private:
+ private:
   std::mutex mutex_;
   std::condition_variable cv_;
   std::atomic<bool> ready_;
@@ -129,9 +129,9 @@ private:
   std::unordered_map<std::string, std::vector<std::string>> consumers_;
   std::unordered_map<std::string, std::vector<std::string>> producers_;
   std::unordered_set<std::string> cleared_points_;
-  std::unordered_map<std::string, std::function<void(void *)>> callbacks_;
+  std::unordered_map<std::string, std::function<void(void*)>> callbacks_;
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE
 
 #endif

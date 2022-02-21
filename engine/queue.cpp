@@ -1,9 +1,10 @@
 #include "queue.hpp"
 
 namespace KVDK_NAMESPACE {
-Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
+Queue::Queue(PMEMAllocator* pmem_allocator_ptr, std::string const name,
              CollectionIDType id, TimeStampType timestamp)
-    : Collection{name, id}, collection_record_ptr_{nullptr},
+    : Collection{name, id},
+      collection_record_ptr_{nullptr},
       dlinked_list_{pmem_allocator_ptr, timestamp,
                     CollectionUtils::ID2String(id), StringView{""}},
       timestamp_{timestamp} {
@@ -28,7 +29,7 @@ Queue::Queue(PMEMAllocator *pmem_allocator_ptr, std::string const name,
   }
 }
 
-Queue::Queue(PMEMAllocator *pmem_allocator_ptr, DLRecord *collection_record)
+Queue::Queue(PMEMAllocator* pmem_allocator_ptr, DLRecord* collection_record)
     : Collection{string_view_2_string(collection_record->Key()),
                  CollectionUtils::string2ID(collection_record->Value())},
       collection_record_ptr_{collection_record},
@@ -58,11 +59,11 @@ void Queue::PushBack(TimeStampType timestamp, StringView const value) {
   ++sz_;
 }
 
-bool Queue::PopFront(std::string *value_got) {
+bool Queue::PopFront(std::string* value_got) {
   LockType lock_queue{queue_lock_};
   if (sz_ > 0) {
     --sz_;
-    DLRecord *old_front = dlinked_list_.First().GetCurrentAddress();
+    DLRecord* old_front = dlinked_list_.First().GetCurrentAddress();
     auto val = old_front->Value();
     kvdk_assert(CollectionUtils::ExtractID(old_front->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
@@ -77,11 +78,11 @@ bool Queue::PopFront(std::string *value_got) {
   }
 }
 
-bool Queue::PopBack(std::string *value_got) {
+bool Queue::PopBack(std::string* value_got) {
   LockType lock_queue{queue_lock_};
   if (sz_ > 0) {
     --sz_;
-    DLRecord *old_back = dlinked_list_.Last().GetCurrentAddress();
+    DLRecord* old_back = dlinked_list_.Last().GetCurrentAddress();
     auto val = old_back->Value();
     kvdk_assert(CollectionUtils::ExtractID(old_back->Key()) == ID(), "");
     value_got->assign(val.data(), val.size());
@@ -96,4 +97,4 @@ bool Queue::PopBack(std::string *value_got) {
   }
 }
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

@@ -58,7 +58,7 @@ set(SOURCES
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
         engine/pmem_allocator/free_list.cpp
-        engine/c.cc
+        engine/c.cpp
         engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/queue.cpp
@@ -68,7 +68,7 @@ set(SOURCES
 # .a library
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
-target_link_libraries(engine PUBLIC pthread pmem gflags hwloc)
+target_link_libraries(engine PUBLIC pthread pmem gflags hwloc atomic)
 
 configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
@@ -102,11 +102,9 @@ target_include_directories(bench PUBLIC ./include ./extern ./)
 
 option(BUILD_TESTING "Build the tests" ON)
 if (BUILD_TESTING)
-    enable_testing()
-    include(GoogleTest)
     add_subdirectory(${CMAKE_SOURCE_DIR}/extern/gtest)
     add_subdirectory(tests)
-endif()
+endif ()
 
 
 option(BUILD_TUTORIAL "Build the tutorial" ON)

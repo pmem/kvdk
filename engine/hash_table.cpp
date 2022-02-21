@@ -3,18 +3,19 @@
  */
 
 #include "hash_table.hpp"
+
 #include "queue.hpp"
 #include "skiplist.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
 
 namespace KVDK_NAMESPACE {
-HashTable *
-HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
-                        uint32_t num_buckets_per_slot,
-                        const std::shared_ptr<PMEMAllocator> &pmem_allocator,
-                        uint32_t max_access_threads) {
-  HashTable *table = new (std::nothrow)
+HashTable* HashTable::NewHashTable(
+    uint64_t hash_bucket_num, uint32_t hash_bucket_size,
+    uint32_t num_buckets_per_slot,
+    std::shared_ptr<PMEMAllocator> pmem_allocator,
+    uint32_t max_access_threads) {
+  HashTable* table = new (std::nothrow)
       HashTable(hash_bucket_num, hash_bucket_size, num_buckets_per_slot,
                 pmem_allocator, max_access_threads);
   if (table) {
@@ -27,65 +28,64 @@ HashTable::NewHashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
     } else {
       table->main_buckets_ =
           table->dram_allocator_.offset2addr(main_buckets_space.offset);
+      kvdk_assert((uint64_t)table->main_buckets_ % sizeof(HashEntry) == 0,
+                  "hash table bucket address should aligned to hash entry size "
+                  "in create new hash table");
     }
   }
   return table;
 }
 
-bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
-                               uint16_t target_type,
-                               const HashEntry *hash_entry,
-                               DataEntry *data_entry_metadata) {
-  if ((target_type & hash_entry->header.data_type) &&
-      hash_k_prefix == hash_entry->header.key_prefix) {
-
-    void *pmem_record;
+bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
+                      uint16_t target_type, DataEntry* data_entry_metadata) {
+  if ((target_type & header_.record_type) &&
+      hash_k_prefix == header_.key_prefix) {
+    void* pmem_record;
     StringView data_entry_key;
 
-    switch (hash_entry->header.index_type) {
-    case HashIndexType::Empty: {
-      return false;
-    }
-    case HashIndexType::StringRecord: {
-      pmem_record = hash_entry->index.string_record;
-      data_entry_key = hash_entry->index.string_record->Key();
-      break;
-    }
-    case HashIndexType::UnorderedCollectionElement:
-    case HashIndexType::DLRecord: {
-      pmem_record = hash_entry->index.dl_record;
-      data_entry_key = hash_entry->index.dl_record->Key();
-      break;
-    }
-    case HashIndexType::UnorderedCollection: {
-      UnorderedCollection *p_collection =
-          hash_entry->index.p_unordered_collection;
-      data_entry_key = p_collection->Name();
-      break;
-    }
-    case HashIndexType::Queue: {
-      Queue *p_collection = hash_entry->index.queue_ptr;
-      data_entry_key = p_collection->Name();
-      break;
-    }
-    case HashIndexType::SkiplistNode: {
-      SkiplistNode *dram_node = hash_entry->index.skiplist_node;
-      pmem_record = dram_node->record;
-      data_entry_key = dram_node->record->Key();
-      break;
-    }
-    case HashIndexType::Skiplist: {
-      Skiplist *skiplist = hash_entry->index.skiplist;
-      pmem_record = skiplist->header()->record;
-      data_entry_key = skiplist->Name();
-      break;
-    }
-    default: {
-      GlobalLogger.Error("Not supported hash offset type: %u\n",
-                         hash_entry->header.index_type);
-      assert(false && "Trying to use invalid HashIndexType!");
-      return false;
-    }
+    switch (header_.index_type) {
+      case HashIndexType::Empty: {
+        return false;
+      }
+      case HashIndexType::StringRecord: {
+        pmem_record = index_.string_record;
+        data_entry_key = index_.string_record->Key();
+        break;
+      }
+      case HashIndexType::UnorderedCollectionElement:
+      case HashIndexType::DLRecord: {
+        pmem_record = index_.dl_record;
+        data_entry_key = index_.dl_record->Key();
+        break;
+      }
+      case HashIndexType::UnorderedCollection: {
+        UnorderedCollection* p_collection = index_.p_unordered_collection;
+        data_entry_key = p_collection->Name();
+        break;
+      }
+      case HashIndexType::Queue: {
+        Queue* p_collection = index_.queue_ptr;
+        data_entry_key = p_collection->Name();
+        break;
+      }
+      case HashIndexType::SkiplistNode: {
+        SkiplistNode* dram_node = index_.skiplist_node;
+        pmem_record = dram_node->record;
+        data_entry_key = dram_node->record->Key();
+        break;
+      }
+      case HashIndexType::Skiplist: {
+        Skiplist* skiplist = index_.skiplist;
+        pmem_record = skiplist->header()->record;
+        data_entry_key = skiplist->Name();
+        break;
+      }
+      default: {
+        GlobalLogger.Error("Not supported hash index type: %u\n",
+                           header_.index_type);
+        assert(false && "Trying to use invalid HashIndexType!");
+        return false;
+      }
     }
 
     if (__glibc_likely(data_entry_metadata != nullptr)) {
@@ -99,15 +99,15 @@ bool HashTable::MatchHashEntry(const StringView &key, uint32_t hash_k_prefix,
   return false;
 }
 
-Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
-                                 uint16_t type_mask, HashEntry **entry_ptr,
-                                 HashEntry *hash_entry_snap,
-                                 DataEntry *data_entry_meta) {
+Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
+                                 uint16_t type_mask, HashEntry** entry_ptr,
+                                 HashEntry* hash_entry_snap,
+                                 DataEntry* data_entry_meta) {
   assert(entry_ptr);
   assert((*entry_ptr) == nullptr);
-  HashEntry *reusable_entry = nullptr;
-  char *bucket_ptr =
-      (char *)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
+  HashEntry* reusable_entry = nullptr;
+  char* bucket_ptr =
+      (char*)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
@@ -117,16 +117,16 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
   // search cache
   *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
   if (*entry_ptr != nullptr) {
-    memcpy_16(hash_entry_snap, *entry_ptr);
-    if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
-                       data_entry_meta)) {
+    atomic_load_16(hash_entry_snap, *entry_ptr);
+    if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
+                               data_entry_meta)) {
       found = true;
     }
   }
 
   if (!found) {
     // iterate hash entries
-    *entry_ptr = (HashEntry *)bucket_ptr;
+    *entry_ptr = (HashEntry*)bucket_ptr;
     uint64_t i = 0;
     for (i = 0; i < entries; i++) {
       if (i > 0 && i % num_entries_per_bucket_ == 0) {
@@ -134,11 +134,11 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
         memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
         _mm_prefetch(bucket_ptr, _MM_HINT_T0);
       }
-      *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
+      *entry_ptr = (HashEntry*)bucket_ptr + (i % num_entries_per_bucket_);
 
-      memcpy_16(hash_entry_snap, *entry_ptr);
-      if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
-                         data_entry_meta)) {
+      atomic_load_16(hash_entry_snap, *entry_ptr);
+      if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
+                                 data_entry_meta)) {
         slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
         found = true;
         break;
@@ -160,13 +160,16 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
             GlobalLogger.Error("Memory overflow!\n");
             return Status::MemoryOverflow;
           }
-          void *next_off = dram_allocator_.offset2addr(space.offset);
+          void* next_off = dram_allocator_.offset2addr(space.offset);
+          kvdk_assert((uint64_t)next_off % sizeof(HashEntry) == 0,
+                      "hash table bucket address should aligned to hash entry "
+                      "size in allocate new bucket");
           memset(next_off, 0, space.size);
           memcpy_8(bucket_ptr + hash_bucket_size_ - 8, &next_off);
-          *entry_ptr = (HashEntry *)next_off;
+          *entry_ptr = (HashEntry*)next_off;
         }
       } else {
-        *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
+        *entry_ptr = (HashEntry*)bucket_ptr + (i % num_entries_per_bucket_);
       }
     }
   }
@@ -179,14 +182,14 @@ Status HashTable::SearchForWrite(const KeyHashHint &hint, const StringView &key,
   return found ? Status::Ok : Status::NotFound;
 }
 
-Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
-                                uint16_t type_mask, HashEntry **entry_ptr,
-                                HashEntry *hash_entry_snap,
-                                DataEntry *data_entry_meta) {
+Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
+                                uint16_t type_mask, HashEntry** entry_ptr,
+                                HashEntry* hash_entry_snap,
+                                DataEntry* data_entry_meta) {
   assert(entry_ptr);
   assert((*entry_ptr) == nullptr);
-  char *bucket_ptr =
-      (char *)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
+  char* bucket_ptr =
+      (char*)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);
 
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
@@ -195,9 +198,9 @@ Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
   // search cache
   *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
   if (*entry_ptr != nullptr) {
-    memcpy_16(hash_entry_snap, *entry_ptr);
-    if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
-                       data_entry_meta)) {
+    atomic_load_16(hash_entry_snap, *entry_ptr);
+    if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
+                               data_entry_meta)) {
       return Status::Ok;
     }
   }
@@ -209,16 +212,16 @@ Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
       memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
       _mm_prefetch(bucket_ptr, _MM_HINT_T0);
     }
-    *entry_ptr = (HashEntry *)bucket_ptr + (i % num_entries_per_bucket_);
+    *entry_ptr = (HashEntry*)bucket_ptr + (i % num_entries_per_bucket_);
     while (1) {
-      memcpy_16(hash_entry_snap, *entry_ptr);
-      if (MatchHashEntry(key, key_hash_prefix, type_mask, hash_entry_snap,
-                         data_entry_meta)) {
+      atomic_load_16(hash_entry_snap, *entry_ptr);
+      if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
+                                 data_entry_meta)) {
         slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
         return Status::Ok;
       } else {
         // check if hash entry modified by another write thread during
-        // MatchHashEntry
+        // match hash entry
         if (memcmp(hash_entry_snap, *(entry_ptr), sizeof(HashEntry)) == 0) {
           break;
         }
@@ -228,13 +231,12 @@ Status HashTable::SearchForRead(const KeyHashHint &hint, const StringView &key,
   return Status::NotFound;
 }
 
-void HashTable::Insert(const KeyHashHint &hint, HashEntry *entry_ptr,
-                       uint16_t type, void *index, HashIndexType index_type) {
-  assert(access_thread.id >= 0);
-
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type);
-
-  memcpy_16(entry_ptr, &new_hash_entry);
+void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
+                       RecordType record_type, void* index,
+                       HashIndexType index_type) {
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, record_type, index,
+                           index_type);
+  atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

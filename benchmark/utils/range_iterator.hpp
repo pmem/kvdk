@@ -3,7 +3,6 @@
 
 #include <cassert>
 #include <cstdint>
-
 #include <type_traits>
 
 namespace extd {
@@ -12,7 +11,7 @@ template <typename IntType,
                                   bool>::type = true>
 // Yield Number in range [lower, upper), by step.
 class range_iterator {
-public:
+ public:
   range_iterator(IntType lo, IntType hi, IntType s = 1)
       : lower{lo}, upper{hi}, step{s}, curr{lower} {}
 
@@ -23,13 +22,13 @@ public:
     return old;
   }
 
-private:
+ private:
   IntType const lower;
   IntType const upper;
   IntType const step;
   IntType curr;
 };
 
-} // namespace extd
+}  // namespace extd
 
-#endif // EXTD_RANGE_ITERATOR_HPP
+#endif  // EXTD_RANGE_ITERATOR_HPP

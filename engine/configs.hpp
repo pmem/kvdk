@@ -21,14 +21,14 @@ struct ImmutableConfigs {
   // The number of blocks in a PMem segment
   uint64_t pmem_segment_blocks;
 
-  void AssignImmutableConfigs(Configs &configs) {
+  void AssignImmutableConfigs(Configs& configs) {
     configs.pmem_block_size = pmem_block_size;
     configs.pmem_segment_blocks = pmem_segment_blocks;
   }
 
   // Get persistent configs from "configs" and persist them to PMem
   // Notice: "this" should allocated on PMem
-  void PersistImmutableConfigs(const Configs &configs) {
+  void PersistImmutableConfigs(const Configs& configs) {
     pmem_block_size = configs.pmem_block_size;
     pmem_segment_blocks = configs.pmem_segment_blocks;
     pmem_persist(&pmem_block_size, sizeof(ImmutableConfigs) - 8);
@@ -39,4 +39,4 @@ struct ImmutableConfigs {
   bool Valid() { return validation_flag; }
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

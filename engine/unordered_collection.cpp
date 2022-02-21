@@ -1,12 +1,13 @@
 #include "unordered_collection.hpp"
 
 namespace KVDK_NAMESPACE {
-UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
-                                         PMEMAllocator *pmem_allocator_p,
+UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
+                                         PMEMAllocator* pmem_allocator_p,
                                          std::string const name,
                                          CollectionIDType id,
                                          TimeStampType timestamp)
-    : Collection(name, id), hash_table_ptr_{hash_table_ptr},
+    : Collection(name, id),
+      hash_table_ptr_{hash_table_ptr},
       collection_record_ptr_{nullptr},
       dlinked_list_{pmem_allocator_p, timestamp, CollectionUtils::ID2String(id),
                     StringView{""}},
@@ -32,12 +33,13 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
   }
 }
 
-UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
-                                         PMEMAllocator *pmem_allocator_p,
-                                         DLRecord *pmp_dlist_record)
+UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
+                                         PMEMAllocator* pmem_allocator_p,
+                                         DLRecord* pmp_dlist_record)
     : Collection{string_view_2_string(pmp_dlist_record->Key()),
                  CollectionUtils::string2ID(pmp_dlist_record->Value())},
-      hash_table_ptr_{hash_table_ptr}, collection_record_ptr_{pmp_dlist_record},
+      hash_table_ptr_{hash_table_ptr},
+      collection_record_ptr_{pmp_dlist_record},
       dlinked_list_{
           pmem_allocator_p,
           pmem_allocator_p->offset2addr_checked<DLRecord>(
@@ -50,8 +52,14 @@ UnorderedCollection::UnorderedCollection(HashTable *hash_table_ptr,
 ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
                                           StringView const key,
                                           StringView const value,
-                                          LockType const &lock) {
-  thread_local DLRecord *last_emplacement_pos = nullptr;
+                                          LockType const& lock) {
+  thread_local PMemOffsetType last_emplacement_offset = kNullPMemOffset;
+  DLRecord* last_emplacement_pos =
+      (last_emplacement_offset == kNullPMemOffset)
+          ? nullptr
+          : static_cast<DLRecord*>(
+                dlinked_list_.pmem_allocator_ptr_->offset2addr_checked(
+                    last_emplacement_offset));
 
   iterator new_record = makeInternalIterator(nullptr);
   LockPair lock_prev_and_next;
@@ -105,11 +113,11 @@ ModifyReturn UnorderedCollection::Emplace(TimeStampType timestamp,
   }
 }
 
-ModifyReturn UnorderedCollection::Replace(DLRecord *pos,
+ModifyReturn UnorderedCollection::Replace(DLRecord* pos,
                                           TimeStampType timestamp,
                                           StringView const key,
                                           StringView const value,
-                                          LockType const &lock) {
+                                          LockType const& lock) {
   kvdk_assert(checkID(pos) && isValidRecord(pos),
               "Trying to replace invalid record!");
 
@@ -130,7 +138,7 @@ ModifyReturn UnorderedCollection::Replace(DLRecord *pos,
   return ModifyReturn{curr.GetCurrentOffset(), old.GetCurrentOffset(), true};
 }
 
-ModifyReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
+ModifyReturn UnorderedCollection::Erase(DLRecord* pos, LockType const& lock) {
   kvdk_assert(checkID(pos) && isValidRecord(pos),
               "Trying to erase invalid record!");
 
@@ -153,41 +161,42 @@ ModifyReturn UnorderedCollection::Erase(DLRecord *pos, LockType const &lock) {
 UnorderedIterator::UnorderedIterator(
     std::shared_ptr<UnorderedCollection> sp_coll)
     : collection_shrdptr{sp_coll},
-      internal_iterator{sp_coll->dlinked_list_.Head()}, valid{false} {}
+      internal_iterator{sp_coll->dlinked_list_.Head()},
+      valid{false} {}
 
 void UnorderedIterator::internalNext() {
   if (!internal_iterator.valid()) {
     goto FATAL_FAILURE;
   }
   switch (static_cast<RecordType>(internal_iterator->entry.meta.type)) {
-  case RecordType::DlistHeadRecord:
-  case RecordType::DlistDataRecord: {
-    break;
-  }
-  case RecordType::DlistRecord:
-  case RecordType::DlistTailRecord:
-  default: {
-    goto FATAL_FAILURE;
-  }
+    case RecordType::DlistHeadRecord:
+    case RecordType::DlistDataRecord: {
+      break;
+    }
+    case RecordType::DlistRecord:
+    case RecordType::DlistTailRecord:
+    default: {
+      goto FATAL_FAILURE;
+    }
   }
 
   ++internal_iterator;
   while (internal_iterator.valid()) {
     valid = false;
     switch (internal_iterator->entry.meta.type) {
-    case RecordType::DlistDataRecord: {
-      valid = true;
-      return;
-    }
-    case RecordType::DlistTailRecord: {
-      valid = false;
-      return;
-    }
-    case RecordType::DlistHeadRecord:
-    case RecordType::DlistRecord:
-    default: {
-      goto FATAL_FAILURE;
-    }
+      case RecordType::DlistDataRecord: {
+        valid = true;
+        return;
+      }
+      case RecordType::DlistTailRecord: {
+        valid = false;
+        return;
+      }
+      case RecordType::DlistHeadRecord:
+      case RecordType::DlistRecord:
+      default: {
+        goto FATAL_FAILURE;
+      }
     }
   }
 FATAL_FAILURE:
@@ -199,37 +208,37 @@ void UnorderedIterator::internalPrev() {
     goto FATAL_FAILURE;
   }
   switch (static_cast<RecordType>(internal_iterator->entry.meta.type)) {
-  case RecordType::DlistTailRecord:
-  case RecordType::DlistDataRecord: {
-    break;
-  }
-  case RecordType::DlistHeadRecord:
-  case RecordType::DlistRecord:
-  default: {
-    goto FATAL_FAILURE;
-  }
+    case RecordType::DlistTailRecord:
+    case RecordType::DlistDataRecord: {
+      break;
+    }
+    case RecordType::DlistHeadRecord:
+    case RecordType::DlistRecord:
+    default: {
+      goto FATAL_FAILURE;
+    }
   }
 
   --internal_iterator;
   while (internal_iterator.valid()) {
     valid = false;
     switch (internal_iterator->entry.meta.type) {
-    case RecordType::DlistDataRecord: {
-      valid = true;
-      return;
-    }
-    case RecordType::DlistHeadRecord: {
-      valid = false;
-      return;
-    }
-    case RecordType::DlistTailRecord:
-    case RecordType::DlistRecord:
-    default: {
-      goto FATAL_FAILURE;
-    }
+      case RecordType::DlistDataRecord: {
+        valid = true;
+        return;
+      }
+      case RecordType::DlistHeadRecord: {
+        valid = false;
+        return;
+      }
+      case RecordType::DlistTailRecord:
+      case RecordType::DlistRecord:
+      default: {
+        goto FATAL_FAILURE;
+      }
     }
   }
 FATAL_FAILURE:
   kvdk_assert(false, "UnorderedIterator::internalPrev() fails!");
 }
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

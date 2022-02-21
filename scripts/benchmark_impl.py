@@ -116,7 +116,7 @@ def run_benchmark(
     # calculate num kv to fill
     header_sz = 24 if (key_distribution == 'string') else 40
     k_sz = 8
-    avg_v_sz = value_size if (value_size_distribution == 'constant') else (value_size / 2)
+    avg_v_sz = value_size if (value_size_distribution == 'constant') else (value_size // 2)
     avg_kv_size = (header_sz + k_sz + avg_v_sz + 63) // 64 * 64
 
     # 1/4 for fill, 1/4 for insert, 1/4 for batch_write
@@ -145,7 +145,7 @@ def run_benchmark(
         "-populate={2} "\
         "-num_kv={3} "\
         "-threads={4} "\
-        "-max_write_threads={5} "\
+        "-max_access_threads={5} "\
         "-num_collection={6} "\
         "-timeout={7} "\
         "-value_size={8} "\

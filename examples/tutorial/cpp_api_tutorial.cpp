@@ -2,8 +2,6 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
-#include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 #include <algorithm>
 #include <cassert>
 #include <random>
@@ -11,7 +9,10 @@
 #include <thread>
 #include <vector>
 
-#define DEBUG // For assert
+#include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
+
+#define DEBUG  // For assert
 
 using StringView = pmem::obj::string_view;
 using kvdk::Snapshot;
@@ -19,10 +20,10 @@ using kvdk::Snapshot;
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.
 // Modify this path if necessary.
-const char *pmem_path = "/mnt/pmem0/tutorial_kvdk_example";
+const char* pmem_path = "/mnt/pmem0/tutorial_kvdk_example";
 
 kvdk::Status status;
-kvdk::Engine *engine = nullptr;
+kvdk::Engine* engine = nullptr;
 
 static void test_anon_coll() {
   std::string key1{"key1"};
@@ -61,8 +62,9 @@ static void test_anon_coll() {
   status = engine->Delete(key2);
   assert(status == kvdk::Status::Ok);
 
-  printf("Successfully performed Get, Set, Delete operations on anonymous "
-         "global collection.\n");
+  printf(
+      "Successfully performed Get, Set, Delete operations on anonymous "
+      "global collection.\n");
   return;
 }
 
@@ -74,8 +76,8 @@ static void test_named_coll() {
   std::string value1{"value1"};
   std::string value2{"value2"};
   std::string v;
-  kvdk::Collection *collection1_ptr;
-  kvdk::Collection *collection2_ptr;
+  kvdk::Collection* collection1_ptr;
+  kvdk::Collection* collection2_ptr;
   status = engine->CreateSortedCollection(collection1, &collection1_ptr);
   assert(status == kvdk::Status::Ok);
 
@@ -123,14 +125,15 @@ static void test_named_coll() {
   status = engine->SDelete(collection1, key1);
   assert(status == kvdk::Status::Ok);
 
-  printf("Successfully performed SGet, SSet, SDelete operations on named "
-         "collections.\n");
+  printf(
+      "Successfully performed SGet, SSet, SDelete operations on named "
+      "collections.\n");
   return;
 }
 
 static void test_iterator() {
   std::string sorted_collection{"my_sorted_collection"};
-  kvdk::Collection *collection_ptr;
+  kvdk::Collection* collection_ptr;
   // Create Sorted Collection
   status = engine->CreateSortedCollection(sorted_collection, &collection_ptr);
   assert(status == kvdk::Status::Ok);
@@ -143,7 +146,7 @@ static void test_iterator() {
   std::shuffle(kv_pairs.begin(), kv_pairs.end(), std::mt19937{42});
   // Print out kv_pairs to check if they are really shuffled.
   printf("The shuffled kv-pairs are:\n");
-  for (const auto &kv : kv_pairs)
+  for (const auto& kv : kv_pairs)
     printf("%s\t%s\n", kv.first.c_str(), kv.second.c_str());
 
   // Populate collection "my_sorted_collection" with keys and values.
@@ -256,7 +259,7 @@ static void test_customer_sorted_func() {
 
   // regitser compare function
   std::string comp_name = "double_comp";
-  auto score_cmp = [](const StringView &a, const StringView &b) -> int {
+  auto score_cmp = [](const StringView& a, const StringView& b) -> int {
     std::string str_a(a.data(), a.size());
     std::string str_b(b.data(), b.size());
     double scorea = std::stod(str_a);
@@ -270,7 +273,7 @@ static void test_customer_sorted_func() {
   };
   engine->SetCompareFunc(comp_name, score_cmp);
   // create sorted collection
-  kvdk::Collection *collection_ptr;
+  kvdk::Collection* collection_ptr;
   kvdk::Status s =
       engine->CreateSortedCollection(collection, &collection_ptr, comp_name);
   assert(s == Ok);
@@ -302,7 +305,6 @@ static void test_customer_sorted_func() {
 }
 
 int main() {
-
   // Initialize a KVDK instance.
   kvdk::Configs engine_configs;
   {

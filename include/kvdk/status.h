@@ -21,18 +21,18 @@
 extern "C" {
 #endif
 
-#define FOREACH_ENUM(GEN)                                                      \
-  GEN(Ok)                                                                      \
-  GEN(NotFound)                                                                \
-  GEN(MemoryOverflow)                                                          \
-  GEN(PmemOverflow)                                                            \
-  GEN(NotSupported)                                                            \
-  GEN(MapError)                                                                \
-  GEN(BatchOverflow)                                                           \
-  GEN(TooManyAccessThreads)                                                    \
-  GEN(InvalidDataSize)                                                         \
-  GEN(IOError)                                                                 \
-  GEN(InvalidConfiguration)                                                    \
+#define FOREACH_ENUM(GEN)   \
+  GEN(Ok)                   \
+  GEN(NotFound)             \
+  GEN(MemoryOverflow)       \
+  GEN(PmemOverflow)         \
+  GEN(NotSupported)         \
+  GEN(MapError)             \
+  GEN(BatchOverflow)        \
+  GEN(TooManyAccessThreads) \
+  GEN(InvalidDataSize)      \
+  GEN(IOError)              \
+  GEN(InvalidConfiguration) \
   GEN(Abort)
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,

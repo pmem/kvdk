@@ -18,9 +18,9 @@ struct WriteBatch {
     uint16_t type;
   };
 
-  void Put(const std::string &key, const std::string &value);
+  void Put(const std::string& key, const std::string& value);
 
-  void Delete(const std::string &key);
+  void Delete(const std::string& key);
 
   void Clear() { kvs.clear(); }
 
@@ -28,4 +28,4 @@ struct WriteBatch {
 
   std::vector<KV> kvs;
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

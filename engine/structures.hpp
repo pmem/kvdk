@@ -4,8 +4,9 @@
 
 #pragma once
 
-#include <cstdint>
 #include <malloc.h>
+
+#include <cstdint>
 
 #include "kvdk/namespace.hpp"
 #include "logger.hpp"
@@ -14,22 +15,23 @@
 namespace KVDK_NAMESPACE {
 
 // A pointer with additional information on high 16 bits
-template <typename T> class PointerWithTag {
-public:
+template <typename T>
+class PointerWithTag {
+ public:
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
   // TODO: Maybe explicit
-  PointerWithTag(T *pointer) : tagged_pointer((uint64_t)pointer) {}
+  PointerWithTag(T* pointer) : tagged_pointer((uint64_t)pointer) {}
 
-  explicit PointerWithTag(T *pointer, uint16_t tag)
+  explicit PointerWithTag(T* pointer, uint16_t tag)
       : tagged_pointer((uint64_t)pointer | ((uint64_t)tag << 48)) {}
 
   PointerWithTag() : tagged_pointer(0) {}
 
-  T *RawPointer() { return (T *)(tagged_pointer & kPointerMask); }
+  T* RawPointer() { return (T*)(tagged_pointer & kPointerMask); }
 
-  const T *RawPointer() const {
-    return (const T *)(tagged_pointer & kPointerMask);
+  const T* RawPointer() const {
+    return (const T*)(tagged_pointer & kPointerMask);
   }
 
   bool Null() { return RawPointer() == nullptr; }
@@ -40,21 +42,21 @@ public:
 
   void SetTag(uint16_t tag) { tagged_pointer |= ((uint64_t)tag << 48); }
 
-  const T &operator*() const { return *RawPointer(); }
+  const T& operator*() const { return *RawPointer(); }
 
-  T &operator*() { return *(RawPointer()); }
+  T& operator*() { return *(RawPointer()); }
 
-  const T *operator->() const { return RawPointer(); }
+  const T* operator->() const { return RawPointer(); }
 
-  T *operator->() { return RawPointer(); }
+  T* operator->() { return RawPointer(); }
 
-  bool operator==(const T *raw_pointer) { return RawPointer() == raw_pointer; }
+  bool operator==(const T* raw_pointer) { return RawPointer() == raw_pointer; }
 
-  bool operator==(const T *raw_pointer) const {
+  bool operator==(const T* raw_pointer) const {
     return RawPointer() == raw_pointer;
   }
 
-private:
+ private:
   uint64_t tagged_pointer;
 };
 
@@ -88,7 +90,7 @@ struct PendingBatch {
   // Mark batch write as process and record writing offsets.
   // Make sure the struct is on PMem and there is enough space followed the
   // struct to store record
-  void PersistProcessing(const std::vector<PMemOffsetType> &record,
+  void PersistProcessing(const std::vector<PMemOffsetType>& record,
                          TimeStampType ts);
 
   // Mark batch write as finished.
@@ -101,4 +103,4 @@ struct PendingBatch {
   TimeStampType timestamp;
   PMemOffsetType record_offsets[0];
 };
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

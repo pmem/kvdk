@@ -14,7 +14,7 @@ DEFINE_string(kvdk_path, "/mnt/pmem0/kvdk", "The path of the kvdk pmem file.");
 DEFINE_int64(kvdk_max_access_threads, 48,
              "The max access threads number in kvdk.");
 
-PMemKVDK::PMemKVDK(const std::string &db_path) {
+PMemKVDK::PMemKVDK(const std::string& db_path) {
   path_ = FLAGS_kvdk_path;
   collection_ = FLAGS_kvdk_collection;
 
@@ -36,7 +36,7 @@ PMemKVDK::PMemKVDK(const std::string &db_path) {
 
 PMemKVDK::~PMemKVDK() { delete db_; }
 
-Status PMemKVDK::Put(const std::string &key, const std::string &value) {
+Status PMemKVDK::Put(const std::string& key, const std::string& value) {
   Status s;
   if (!collection_.empty()) {
     s = db_->SSet(collection_, key, value);
@@ -49,7 +49,7 @@ Status PMemKVDK::Put(const std::string &key, const std::string &value) {
   return s;
 }
 
-Status PMemKVDK::Get(const std::string &key, std::string *value) {
+Status PMemKVDK::Get(const std::string& key, std::string* value) {
   Status s;
   if (!collection_.empty()) {
     s = db_->SGet(collection_, key, value);
@@ -59,17 +59,17 @@ Status PMemKVDK::Get(const std::string &key, std::string *value) {
   return s;
 }
 
-Status PMemKVDK::Delete(const std::string &key) {
+Status PMemKVDK::Delete(const std::string& key) {
   return (!collection_.empty()) ? db_->SDelete(collection_, key)
                                 : db_->Delete(key);
 }
 
 class PMemKVDKIterator : public KVEngine::Iterator {
-public:
-  explicit PMemKVDKIterator(kvdk::Iterator *it) : iter_(it) {}
+ public:
+  explicit PMemKVDKIterator(kvdk::Iterator* it) : iter_(it) {}
   ~PMemKVDKIterator() = default;
 
-  void Seek(const std::string &key) override { iter_->Seek(key); }
+  void Seek(const std::string& key) override { iter_->Seek(key); }
   void SeekToFirst() override { iter_->SeekToFirst(); }
   void Next() override { iter_->Next(); }
   void Prev() override { iter_->Prev(); }
@@ -77,11 +77,11 @@ public:
   std::string Key() override { return iter_->Key(); }
   std::string Value() override { return iter_->Value(); }
 
-private:
-  kvdk::Iterator *iter_;
+ private:
+  kvdk::Iterator* iter_;
 };
 
-KVEngine::Iterator *PMemKVDK::NewIterator() {
+KVEngine::Iterator* PMemKVDK::NewIterator() {
   if (!collection_.empty()) {
     // TODO fix snapshot
     auto it = db_->NewSortedIterator(collection_);

@@ -9,6 +9,7 @@
 
 #include "kvdk/namespace.hpp"
 #include "libpmem.h"
+#include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
 using StringView = pmem::obj::string_view;
@@ -17,5 +18,5 @@ using TimeStampType = std::uint64_t;
 using CollectionIDType = std::uint64_t;
 using KeyHashType = std::uint64_t;
 using CompFunc =
-    std::function<int(const StringView &src, const StringView &target)>;
-} // namespace KVDK_NAMESPACE
+    std::function<int(const StringView& src, const StringView& target)>;
+}  // namespace KVDK_NAMESPACE

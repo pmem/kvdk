@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2021 Intel Corporation
  */
-#include <array>
-
 #include "logger.hpp"
+
+#include <array>
 
 namespace KVDK_NAMESPACE {
 
-void Logger::Debug(const char *format, ...) {
+void Logger::Debug(const char* format, ...) {
   if (level_ <= LogLevel::Debug) {
     va_list args;
     va_start(args, format);
@@ -16,7 +16,7 @@ void Logger::Debug(const char *format, ...) {
   }
 }
 
-void Logger::Info(const char *format, ...) {
+void Logger::Info(const char* format, ...) {
   if (level_ <= LogLevel::Info) {
     va_list args;
     va_start(args, format);
@@ -25,7 +25,7 @@ void Logger::Info(const char *format, ...) {
   }
 }
 
-void Logger::Error(const char *format, ...) {
+void Logger::Error(const char* format, ...) {
   if (level_ <= LogLevel::Error) {
     va_list args;
     va_start(args, format);
@@ -34,7 +34,7 @@ void Logger::Error(const char *format, ...) {
   }
 }
 
-void Logger::Log(const char *log_type, const char *format, va_list &args) {
+void Logger::Log(const char* log_type, const char* format, va_list& args) {
   if (log_file_ != nullptr) {
     std::lock_guard<std::mutex> lg(mut_);
     auto now = std::chrono::system_clock::now();
@@ -47,7 +47,7 @@ void Logger::Log(const char *log_type, const char *format, va_list &args) {
   }
 }
 
-void Logger::Init(FILE *fp, LogLevel level) {
+void Logger::Init(FILE* fp, LogLevel level) {
   log_file_ = fp;
   level_ = level;
   start_ts_ = std::chrono::system_clock::now();
@@ -55,4 +55,4 @@ void Logger::Init(FILE *fp, LogLevel level) {
 
 Logger GlobalLogger;
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE

@@ -12,13 +12,11 @@
 #include <unordered_set>
 #include <vector>
 
-#include "gtest/gtest.h"
-
-#include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
-
 #include "../engine/alias.hpp"
 #include "../engine/kv_engine.hpp"
+#include "gtest/gtest.h"
+#include "kvdk/engine.hpp"
+#include "kvdk/namespace.hpp"
 #include "test_util.h"
 
 using kvdk::StringView;
@@ -32,14 +30,14 @@ using CollectionNameType = StringView;
 // Operators are just wrappers of the engine and collection name
 // They offer an universal interface for calling KVEngine APIs
 class HashesOperator {
-  kvdk::Engine *&engine;
+  kvdk::Engine*& engine;
   CollectionNameType collection_name;
 
-public:
+ public:
   HashesOperator() = delete;
-  HashesOperator(kvdk::Engine *&e, CollectionNameType cn)
+  HashesOperator(kvdk::Engine*& e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
-  kvdk::Status operator()(KeyType key, std::string *value_got) {
+  kvdk::Status operator()(KeyType key, std::string* value_got) {
     return engine->HGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
@@ -51,14 +49,14 @@ public:
 };
 
 class SortedOperator {
-  kvdk::Engine *&engine;
+  kvdk::Engine*& engine;
   CollectionNameType collection_name;
 
-public:
+ public:
   SortedOperator() = delete;
-  SortedOperator(kvdk::Engine *&e, CollectionNameType cn)
+  SortedOperator(kvdk::Engine*& e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
-  kvdk::Status operator()(KeyType key, std::string *value_got) {
+  kvdk::Status operator()(KeyType key, std::string* value_got) {
     return engine->SGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
@@ -70,19 +68,18 @@ public:
 };
 
 class StringOperator {
-  kvdk::Engine *&engine;
+  kvdk::Engine*& engine;
   CollectionNameType collection_name;
 
-public:
+ public:
   StringOperator() = delete;
   // For convenince, introducing empty collection_name for global anonymous
   // collection
-  StringOperator(kvdk::Engine *&e, CollectionNameType cn)
+  StringOperator(kvdk::Engine*& e, CollectionNameType cn)
       : engine{e}, collection_name{} {
-    if (cn != collection_name)
-      throw;
+    if (cn != collection_name) throw;
   }
-  kvdk::Status operator()(KeyType key, std::string *value_got) {
+  kvdk::Status operator()(KeyType key, std::string* value_got) {
     return engine->Get(key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
@@ -98,8 +95,9 @@ enum class IteratingDirection { Forward, Backward };
 // User should call EvenXSetOddXSet() first to modify KVEngine,
 // then call UpdatePossibleStates() to update possible_state to
 // keep track of the state of the KVEngine.
-template <typename EngineOperator> class ShadowKVEngine {
-public:
+template <typename EngineOperator>
+class ShadowKVEngine {
+ public:
   struct StateAndValue {
     enum class State { Existing, Deleted } state;
     ValueType value;
@@ -116,10 +114,10 @@ public:
   struct SingleOp {
     enum class OpType { Get, Set, Delete } op;
     KeyType key;
-    ValueType value; // Empty for Delete, expected for Get
+    ValueType value;  // Empty for Delete, expected for Get
 
     // For printing error message
-    friend std::ostream &operator<<(std::ostream &out, SingleOp const &sop) {
+    friend std::ostream& operator<<(std::ostream& out, SingleOp const& sop) {
       out << "Op: "
           << (sop.op == OpType::Get
                   ? "Get"
@@ -135,8 +133,8 @@ public:
   using PossibleStates = std::unordered_multimap<KeyType, StateAndValue>;
   using StagedChanges = std::unordered_map<KeyType, StateAndValue>;
 
-private:
-  kvdk::Engine *&engine;
+ private:
+  kvdk::Engine*& engine;
   CollectionNameType collection_name;
   EngineOperator engine_operator;
   size_t const n_thread;
@@ -145,12 +143,15 @@ private:
   PossibleStates possible_state;
   std::vector<OperationQueue> task_queues;
 
-public:
+ public:
   ShadowKVEngine() = delete;
-  ShadowKVEngine(kvdk::Engine *&e, CollectionNameType cn, size_t nt)
-      : engine{e}, collection_name{cn}, engine_operator{engine,
-                                                        collection_name},
-        n_thread{nt}, possible_state{}, task_queues(n_thread) {}
+  ShadowKVEngine(kvdk::Engine*& e, CollectionNameType cn, size_t nt)
+      : engine{e},
+        collection_name{cn},
+        engine_operator{engine, collection_name},
+        n_thread{nt},
+        possible_state{},
+        task_queues(n_thread) {}
 
   // Execute task_queues in ShadowKVEngine
   // Update possible_state
@@ -165,7 +166,7 @@ public:
     {
       ProgressBar pbar{std::cout, "", n_thread, 1, true};
       for (size_t tid = 0; tid < n_thread; tid++) {
-        for (auto const &sop : task_queues[tid]) {
+        for (auto const& sop : task_queues[tid]) {
           possible_state.erase(sop.key);
         }
         pbar.Update(tid + 1);
@@ -177,25 +178,25 @@ public:
       ProgressBar pbar{std::cout, "", n_thread, 1, true};
       for (size_t tid = 0; tid < n_thread; tid++) {
         StagedChanges squashed_changes{task_queues[tid].size() * 2};
-        for (auto const &sop : task_queues[tid]) {
+        for (auto const& sop : task_queues[tid]) {
           switch (sop.op) {
-          case SingleOp::OpType::Get: {
-            // Get will not change the state of any KV
-            continue;
-          }
-          case SingleOp::OpType::Set: {
-            squashed_changes[sop.key] =
-                StateAndValue{StateAndValue::State::Existing, sop.value};
-            continue;
-          }
-          case SingleOp::OpType::Delete: {
-            squashed_changes[sop.key] =
-                StateAndValue{StateAndValue::State::Deleted, ValueType{}};
-            continue;
-          }
+            case SingleOp::OpType::Get: {
+              // Get will not change the state of any KV
+              continue;
+            }
+            case SingleOp::OpType::Set: {
+              squashed_changes[sop.key] =
+                  StateAndValue{StateAndValue::State::Existing, sop.value};
+              continue;
+            }
+            case SingleOp::OpType::Delete: {
+              squashed_changes[sop.key] =
+                  StateAndValue{StateAndValue::State::Deleted, ValueType{}};
+              continue;
+            }
           }
         }
-        for (auto const &kvs : squashed_changes) {
+        for (auto const& kvs : squashed_changes) {
           possible_state.emplace(kvs);
         }
         pbar.Update(tid + 1);
@@ -206,39 +207,38 @@ public:
   }
 
   // Modify KVEngine by Set
-  void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const &keys,
-                       std::vector<ValueType> const &values) {
+  void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const& keys,
+                       std::vector<ValueType> const& values) {
     task_queues[tid] = generateOperations(keys, values, false);
     operateKVEngine(tid, (tid == 0));
   }
 
   // Modify KVEngine by Set and Delete
-  void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const &keys,
-                          std::vector<ValueType> const &values) {
+  void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const& keys,
+                          std::vector<ValueType> const& values) {
     task_queues[tid] = generateOperations(keys, values, true);
     operateKVEngine(tid, (tid == 0));
   }
 
   // Check KVEngine by iterating through it.
   // Iterated KVs are looked up in possible_state.
-  void CheckIterator(kvdk::Iterator *iterator, IteratingDirection direction) {
-
+  void CheckIterator(kvdk::Iterator* iterator, IteratingDirection direction) {
     PossibleStates possible_state_copy{possible_state};
 
     // Iterating forward or backward.
     {
       ASSERT_TRUE(iterator != nullptr) << "Invalid Iterator";
       switch (direction) {
-      case IteratingDirection::Forward: {
-        std::cout << "[Testing] Iterating forward." << std::endl;
-        iterator->SeekToFirst();
-        break;
-      }
-      case IteratingDirection::Backward: {
-        std::cout << "[Testing] Iterating backward." << std::endl;
-        iterator->SeekToLast();
-        break;
-      }
+        case IteratingDirection::Forward: {
+          std::cout << "[Testing] Iterating forward." << std::endl;
+          iterator->SeekToFirst();
+          break;
+        }
+        case IteratingDirection::Backward: {
+          std::cout << "[Testing] Iterating backward." << std::endl;
+          iterator->SeekToLast();
+          break;
+        }
       }
 
       ProgressBar pbar{std::cout, "", possible_state.size(), 1000, true};
@@ -252,12 +252,12 @@ public:
         pbar.Update(possible_state.size() - possible_state_copy.size());
 
         switch (direction) {
-        case IteratingDirection::Forward:
-          iterator->Next();
-          break;
-        case IteratingDirection::Backward:
-          iterator->Prev();
-          break;
+          case IteratingDirection::Forward:
+            iterator->Next();
+            break;
+          case IteratingDirection::Backward:
+            iterator->Prev();
+            break;
         }
       }
       // Remaining kv-pairs in possible_kv_pairs are deleted kv-pairs
@@ -289,18 +289,18 @@ public:
 
         status = engine_operator(key, &value_got);
         switch (status) {
-        case kvdk::Status::Ok: {
-          checkState(key, {StateAndValue::State::Existing, value_got});
-          break;
-        }
-        case kvdk::Status::NotFound: {
-          checkState(key, {StateAndValue::State::Deleted, ValueType{}});
-          break;
-        }
-        default: {
-          ASSERT_TRUE(false) << "Invalid kvdk status in CheckGetter.";
-          break;
-        }
+          case kvdk::Status::Ok: {
+            checkState(key, {StateAndValue::State::Existing, value_got});
+            break;
+          }
+          case kvdk::Status::NotFound: {
+            checkState(key, {StateAndValue::State::Deleted, ValueType{}});
+            break;
+          }
+          default: {
+            ASSERT_TRUE(false) << "Invalid kvdk status in CheckGetter.";
+            break;
+          }
         }
 
         possible_state_copy.erase(key);
@@ -309,11 +309,11 @@ public:
     }
   }
 
-private:
+ private:
   // Excecute task_queues in KVEngine by calling EngineOperator
   // ShadowKVEngine remains unchanged
   void operateKVEngine(size_t tid, bool enable_progress_bar) {
-    OperationQueue const &tasks = task_queues[tid];
+    OperationQueue const& tasks = task_queues[tid];
 
     kvdk::Status status;
     std::string value_got;
@@ -321,33 +321,33 @@ private:
     ProgressBar progress_bar{std::cout, "", tasks.size(), 100,
                              enable_progress_bar};
     /// TODO: Catch kill point and clean up tasks
-    for (auto const &task : tasks) {
+    for (auto const& task : tasks) {
       switch (task.op) {
-      case SingleOp::OpType::Get: {
-        status = engine_operator(task.key, &value_got);
-        ASSERT_EQ(status, kvdk::Status::Ok)
-            << "Key cannot be queried with Get\n"
-            << "Key: " << task.key << "\n";
-        ASSERT_EQ(task.value, value_got)
-            << "Value got does not match expected\n"
-            << "Value got:\n"
-            << value_got << "\n"
-            << "Expected:\n"
-            << task.value << "\n";
-        break;
-      }
-      case SingleOp::OpType::Set: {
-        status = engine_operator(task.key, task.value);
-        ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to set key\n"
-                                            << "Key: " << task.key << "\n";
-        break;
-      }
-      case SingleOp::OpType::Delete: {
-        status = engine_operator(task.key);
-        ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to delete key\n"
-                                            << "Key: " << task.key << "\n";
-        break;
-      }
+        case SingleOp::OpType::Get: {
+          status = engine_operator(task.key, &value_got);
+          ASSERT_EQ(status, kvdk::Status::Ok)
+              << "Key cannot be queried with Get\n"
+              << "Key: " << task.key << "\n";
+          ASSERT_EQ(task.value, value_got)
+              << "Value got does not match expected\n"
+              << "Value got:\n"
+              << value_got << "\n"
+              << "Expected:\n"
+              << task.value << "\n";
+          break;
+        }
+        case SingleOp::OpType::Set: {
+          status = engine_operator(task.key, task.value);
+          ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to set key\n"
+                                              << "Key: " << task.key << "\n";
+          break;
+        }
+        case SingleOp::OpType::Delete: {
+          status = engine_operator(task.key);
+          ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to delete key\n"
+                                              << "Key: " << task.key << "\n";
+          break;
+        }
       }
       ++progress;
       progress_bar.Update(progress);
@@ -373,8 +373,8 @@ private:
                        << "Value: " << vstate.value << "\n";
   }
 
-  static OperationQueue generateOperations(std::vector<KeyType> const &keys,
-                                           std::vector<ValueType> const &values,
+  static OperationQueue generateOperations(std::vector<KeyType> const& keys,
+                                           std::vector<ValueType> const& values,
                                            bool interleaved_set_delete) {
     OperationQueue queue(keys.size());
     for (size_t i = 0; i < queue.size(); i++) {
@@ -387,12 +387,11 @@ private:
     return queue;
   }
 };
-} // namespace kvdk_testing
+}  // namespace kvdk_testing
 
 class EngineTestBase : public testing::Test {
-
-protected:
-  kvdk::Engine *engine = nullptr;
+ protected:
+  kvdk::Engine* engine = nullptr;
   kvdk::Configs configs;
   kvdk::Status status;
 
@@ -434,12 +433,12 @@ protected:
       shadow_sorted_engines;
   std::unique_ptr<ShadowString> shadow_string_engine;
 
-private:
+ private:
   std::vector<std::string> key_pool;
   std::vector<std::string> value_pool;
   std::default_random_engine rand{42};
 
-protected:
+ protected:
   /// Other tests should overload this function to setup parameters
   virtual void SetUpParameters() = 0;
 
@@ -480,7 +479,7 @@ protected:
     }
   }
 
-  void HashesAllHSet(std::string const &collection_name) {
+  void HashesAllHSet(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_hashes_engines[collection_name]->EvenXSetOddXSet(
@@ -493,7 +492,7 @@ protected:
     shadow_hashes_engines[collection_name]->UpdatePossibleStates();
   }
 
-  void HashesEvenHSetOddHDelete(std::string const &collection_name) {
+  void HashesEvenHSetOddHDelete(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_hashes_engines[collection_name]->EvenXSetOddXDelete(
@@ -506,7 +505,7 @@ protected:
     shadow_hashes_engines[collection_name]->UpdatePossibleStates();
   }
 
-  void SortedSetsAllSSet(std::string const &collection_name) {
+  void SortedSetsAllSSet(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_sorted_engines[collection_name]->EvenXSetOddXSet(
@@ -519,7 +518,7 @@ protected:
     shadow_sorted_engines[collection_name]->UpdatePossibleStates();
   }
 
-  void SortedSetsEvenSSetOddSDelete(std::string const &collection_name) {
+  void SortedSetsEvenSSetOddSDelete(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_sorted_engines[collection_name]->EvenXSetOddXDelete(
@@ -590,17 +589,17 @@ protected:
         new ShadowString{engine, kvdk_testing::CollectionNameType{}, n_thread});
   }
 
-  void InitializeHashes(std::string const &collection_name) {
+  void InitializeHashes(std::string const& collection_name) {
     shadow_hashes_engines[collection_name].reset(
         new ShadowHashes{engine, collection_name, n_thread});
   }
 
-  void InitializeSorted(std::string const &collection_name) {
+  void InitializeSorted(std::string const& collection_name) {
     shadow_sorted_engines[collection_name].reset(
         new ShadowSorted{engine, collection_name, n_thread});
   }
 
-private:
+ private:
   void purgeDB() {
     std::string cmd = "rm -rf " + path_db + "\n";
     [[gnu::unused]] int _sink = system(cmd.data());
@@ -655,7 +654,7 @@ private:
 };
 
 class EngineStressTest : public EngineTestBase {
-protected:
+ protected:
   virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
@@ -720,7 +719,7 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   std::string global_collection_name{"SortedCollection"};
   InitializeSorted(global_collection_name);
 
-  kvdk::Collection *dummy;
+  kvdk::Collection* dummy;
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
@@ -741,7 +740,7 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"SortedCollection"};
   InitializeSorted(global_collection_name);
 
-  kvdk::Collection *dummy;
+  kvdk::Collection* dummy;
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
@@ -791,7 +790,7 @@ TEST_F(EngineStressTest, StringSetAndDelete) {
 }
 
 class EngineHotspotTest : public EngineTestBase {
-protected:
+ protected:
   virtual void SetUpParameters() override final {
     /// Default configure parameters
     do_populate_when_initialize = false;
@@ -845,7 +844,7 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
   std::string global_collection_name{"SortedCollection"};
   InitializeSorted(global_collection_name);
 
-  kvdk::Collection *dummy;
+  kvdk::Collection* dummy;
   ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
             kvdk::Status::Ok);
 
@@ -884,7 +883,7 @@ TEST_F(EngineHotspotTest, StringMultipleHotspot) {
   }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

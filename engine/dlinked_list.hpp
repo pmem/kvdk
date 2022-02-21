@@ -4,24 +4,22 @@
 
 #pragma once
 
+#include <libpmem.h>
+
+#include <algorithm>
+#include <bitset>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-
-#include <algorithm>
-#include <bitset>
 #include <exception>
 #include <iomanip>
 #include <iostream>
-
-#include <libpmem.h>
 #include <libpmemobj++/string_view.hpp>
-
-#include "kvdk/engine.hpp"
 
 #include "alias.hpp"
 #include "hash_table.hpp"
+#include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "macros.hpp"
 #include "structures.hpp"
@@ -37,30 +35,30 @@ namespace KVDK_NAMESPACE {
 /// Deallocation is done by caller.
 template <RecordType HeadType, RecordType TailType, RecordType DataType>
 class DLinkedList {
-public:
+ public:
   /// It's up to caller to ensure that any
   /// iterator constructed belongs to the
   /// correct DlinkedList and to ensure that
   /// DlinkedList is valid when iterator
   /// accesses data on it.
   class iterator {
-  private:
+   private:
     friend class DLinkedList;
 
-  private:
+   private:
     /// PMem pointer to current Record
     /// Current position
-    PMEMAllocator *pmem_allocator_ptr_;
-    DLRecord *current_pmmptr_;
+    PMEMAllocator* pmem_allocator_ptr_;
+    DLRecord* current_pmmptr_;
 
-  private:
+   private:
     /// It's up to caller to provide correct PMem pointer
     /// and PMemAllocator to construct a iterator
-    explicit iterator(PMEMAllocator *pmem_allocator_p, DLRecord *curr)
+    explicit iterator(PMEMAllocator* pmem_allocator_p, DLRecord* curr)
         : pmem_allocator_ptr_{pmem_allocator_p}, current_pmmptr_{curr} {}
 
-  public:
-    iterator(iterator const &other) = default;
+   public:
+    iterator(iterator const& other) = default;
 
     /// Conversion to bool
     /// Returns true if the iterator is on some DlinkedList
@@ -69,21 +67,21 @@ public:
         return false;
       }
       switch (static_cast<RecordType>(current_pmmptr_->entry.meta.type)) {
-      case HeadType:
-      case TailType:
-      case DataType: {
-        return true;
-      }
-      default: {
-        return false;
-      }
+        case HeadType:
+        case TailType:
+        case DataType: {
+          return true;
+        }
+        default: {
+          return false;
+        }
       }
     }
 
     inline operator bool() const { return valid(); }
 
     /// Increment and Decrement operators
-    iterator &operator++() {
+    iterator& operator++() {
       current_pmmptr_ = getNextAddress();
       return *this;
     }
@@ -94,7 +92,7 @@ public:
       return old;
     }
 
-    iterator &operator--() {
+    iterator& operator--() {
       current_pmmptr_ = getPrevAddress();
       return *this;
     }
@@ -105,9 +103,9 @@ public:
       return old;
     }
 
-    DLRecord &operator*() { return *current_pmmptr_; }
+    DLRecord& operator*() { return *current_pmmptr_; }
 
-    DLRecord *operator->() { return current_pmmptr_; }
+    DLRecord* operator->() { return current_pmmptr_; }
 
     friend bool operator==(iterator lhs, iterator rhs) {
       return lhs.pmem_allocator_ptr_ == rhs.pmem_allocator_ptr_ &&
@@ -116,33 +114,33 @@ public:
 
     friend bool operator!=(iterator lhs, iterator rhs) { return !(lhs == rhs); }
 
-  private:
-    inline DLRecord *getNextAddress() const {
+   private:
+    inline DLRecord* getNextAddress() const {
       return pmem_allocator_ptr_->offset2addr_checked<DLRecord>(
           current_pmmptr_->next);
     }
 
-    inline DLRecord *getPrevAddress() const {
+    inline DLRecord* getPrevAddress() const {
       return pmem_allocator_ptr_->offset2addr_checked<DLRecord>(
           current_pmmptr_->prev);
     }
 
-  public:
+   public:
     inline PMemOffsetType GetCurrentOffset() const {
       return pmem_allocator_ptr_->addr2offset_checked(current_pmmptr_);
     }
 
-    inline DLRecord *GetCurrentAddress() const { return current_pmmptr_; }
+    inline DLRecord* GetCurrentAddress() const { return current_pmmptr_; }
   };
 
-private:
+ private:
   /// Allocator for allocating space for new nodes,
   /// as well as for deallocating space to delete nodes
-  PMEMAllocator *pmem_allocator_ptr_;
+  PMEMAllocator* pmem_allocator_ptr_;
   /// PMem pointer(pmp) to head node on PMem
-  DLRecord *head_pmmptr_;
+  DLRecord* head_pmmptr_;
   /// PMem pointer(pmp) to tail node on PMem
-  DLRecord *tail_pmmptr_;
+  DLRecord* tail_pmmptr_;
 
   friend class UnorderedCollection;
   friend class UnorderedIterator;
@@ -150,12 +148,13 @@ private:
 
   static constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 
-public:
+ public:
   /// Create DLinkedList and construct head and tail node on PMem.
   /// Caller supplied key and value are stored in head and tail nodes
-  DLinkedList(PMEMAllocator *pmem_allocator_p, TimeStampType timestamp,
+  DLinkedList(PMEMAllocator* pmem_allocator_p, TimeStampType timestamp,
               StringView const key, StringView const value)
-      : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{nullptr},
+      : pmem_allocator_ptr_{pmem_allocator_p},
+        head_pmmptr_{nullptr},
         tail_pmmptr_{nullptr} {
     {
       // head and tail can hold any key and value supplied by caller.
@@ -190,11 +189,11 @@ public:
 
   /// Create DLinkedList from existing head and tail node. Used for recovery.
   /// If from head to tail node is not forward linked, assertion fails.
-  DLinkedList(PMEMAllocator *pmem_allocator_p, DLRecord *head_pmmptr,
-              DLRecord *tail_pmmptr)
-      : pmem_allocator_ptr_{pmem_allocator_p}, head_pmmptr_{head_pmmptr},
+  DLinkedList(PMEMAllocator* pmem_allocator_p, DLRecord* head_pmmptr,
+              DLRecord* tail_pmmptr)
+      : pmem_allocator_ptr_{pmem_allocator_p},
+        head_pmmptr_{head_pmmptr},
         tail_pmmptr_{tail_pmmptr} {
-
 #if DEBUG_LEVEL > 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
@@ -204,33 +203,35 @@ public:
       ++curr;
       while (true) {
         switch (static_cast<RecordType>(curr->entry.meta.type)) {
-        case DataType: {
-          iterator next{curr};
-          ++next;
-          PMemOffsetType offset_curr = curr.GetCurrentOffset();
-          if (next->prev != offset_curr) {
-            GlobalLogger.Error(
-                "Found broken linkage when rebuilding DLinkedList! Repaired");
-            next->prev = offset_curr;
-            pmem_persist(&next->prev, sizeof(PMemOffsetType));
+          case DataType: {
+            iterator next{curr};
+            ++next;
+            PMemOffsetType offset_curr = curr.GetCurrentOffset();
+            if (next->prev != offset_curr) {
+              GlobalLogger.Error(
+                  "Found broken linkage when rebuilding DLinkedList! Repaired");
+              next->prev = offset_curr;
+              pmem_persist(&next->prev, sizeof(PMemOffsetType));
+            }
+            ++curr;
+            continue;
           }
-          ++curr;
-          continue;
-        }
-        case TailType: {
-          kvdk_assert(curr.GetCurrentAddress() == tail_pmmptr,
-                      "Unmatched head and tail when rebuilding a DlinkedList!");
-          return;
-        }
-        default: {
-          kvdk_assert(false, "Invalid record when iterating through "
-                             "DlinkedList! Cannot be repaired!");
-          std::abort();
-        }
+          case TailType: {
+            kvdk_assert(
+                curr.GetCurrentAddress() == tail_pmmptr,
+                "Unmatched head and tail when rebuilding a DlinkedList!");
+            return;
+          }
+          default: {
+            kvdk_assert(false,
+                        "Invalid record when iterating through "
+                        "DlinkedList! Cannot be repaired!");
+            std::abort();
+          }
         }
       }
     }
-#endif // DEBUG_LEVEL > 0
+#endif  // DEBUG_LEVEL > 0
   }
 
   // head_pmmptr and tail_pmmptr points to persisted Record of Head and Tail on
@@ -315,14 +316,14 @@ public:
     return emplaceBetween(iter_prev, iter_next, timestamp, key, value);
   }
 
-private:
-  iterator makeIterator(DLRecord *pos) const {
+ private:
+  iterator makeIterator(DLRecord* pos) const {
     return iterator{pmem_allocator_ptr_, pos};
   }
 
   // Only called by UnorderedCollection when fail to allocate space for
   // DlistRecord
-  void purgeAndFree(DLRecord *record_pmmptr) {
+  void purgeAndFree(DLRecord* record_pmmptr) {
     record_pmmptr->Destroy();
     pmem_allocator_ptr_->Free(
         SpaceEntry(pmem_allocator_ptr_->addr2offset_checked(record_pmmptr),
@@ -352,9 +353,9 @@ private:
       throw std::bad_alloc{};
     }
     std::uint64_t offset = space.offset;
-    void *pmp = pmem_allocator_ptr_->offset2addr_checked(offset);
+    void* pmp = pmem_allocator_ptr_->offset2addr_checked(offset);
 
-    DLRecord *record = DLRecord::PersistDLRecord(
+    DLRecord* record = DLRecord::PersistDLRecord(
         pmp, space.size, timestamp, DataType, kNullPMemOffset,
         iter_prev.GetCurrentOffset(), iter_next.GetCurrentOffset(), key, value);
 
@@ -367,8 +368,7 @@ private:
   }
 
   /// Output DlinkedList to ostream for debugging purpose.
-  friend std::ostream &operator<<(std::ostream &out, DLinkedList const &dlist) {
-
+  friend std::ostream& operator<<(std::ostream& out, DLinkedList const& dlist) {
     auto extractKey = [](StringView internal_key) {
       assert(sizeof(CollectionIDType) <= internal_key.size() &&
              "internal_key does not has space for key");
@@ -376,7 +376,7 @@ private:
                         internal_key.size() - sizeof(CollectionIDType));
     };
 
-    auto printRecord = [&](DLRecord *record) {
+    auto printRecord = [&](DLRecord* record) {
       auto internal_key = record->Key();
       out << "Type:\t" << to_hex(record->entry.meta.type) << "\t"
           << "Offset:\t"
@@ -401,4 +401,4 @@ private:
   }
 };
 
-} // namespace KVDK_NAMESPACE
+}  // namespace KVDK_NAMESPACE
