@@ -294,23 +294,34 @@ Status KVEngine::RestoreData() {
   uint64_t cnt = 0;
   while (true) {
     if (segment_recovering.size == 0) {
-      fetch = true;
-    }
-    if (fetch) {
-      if (!pmem_allocator_->FreeAndFetchSegment(&segment_recovering)) {
+      if (!pmem_allocator_->FetchSegment(&segment_recovering)) {
         break;
       }
-      fetch = false;
+      assert(segment_recovering.size % configs_.pmem_block_size == 0);
     }
 
     void* recovering_pmem_record =
         pmem_allocator_->offset2addr_checked(segment_recovering.offset);
     memcpy(&data_entry_cached, recovering_pmem_record, sizeof(DataEntry));
 
-    // reach the of of this segment or the segment is empty
     if (data_entry_cached.header.record_size == 0) {
-      fetch = true;
-      continue;
+      // Iter through data blocks until find a valid size space entry or reach
+      // end of the segment
+      PMemOffsetType offset =
+          segment_recovering.offset + configs_.pmem_block_size;
+      uint64_t size = segment_recovering.size - configs_.pmem_block_size;
+      while (size > 0 &&
+             pmem_allocator_->offset2addr_checked<DataHeader>(offset)
+                     ->record_size == 0) {
+        size -= configs_.pmem_block_size;
+        offset += configs_.pmem_block_size;
+      }
+      uint64_t padding_size = offset - segment_recovering.offset;
+      DataEntry* recovering_pmem_data_entry =
+          static_cast<DataEntry*>(recovering_pmem_record);
+      recovering_pmem_data_entry->header.record_size = padding_size;
+      recovering_pmem_data_entry->meta.type = RecordType::Padding;
+      data_entry_cached = *recovering_pmem_data_entry;
     }
 
     segment_recovering.size -= data_entry_cached.header.record_size;
@@ -1053,9 +1064,6 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
 
     if (!need_write_delete_record) {
       if (sized_space_entry.size > 0) {
-        // We must mark a allocated but unused space on PMem, otherwise data may
-        // lost in recovery
-        markEmptySpace(sized_space_entry);
         pmem_allocator_->Free(sized_space_entry);
       }
       return s;
@@ -1329,14 +1337,6 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   std::set<SpinMutex*> spins_to_lock;
   std::vector<BatchWriteHint> batch_hints(write_batch.Size());
   std::vector<uint64_t> space_entry_offsets;
-  auto free_space_on_failure = [&]() {
-    for (size_t i = 0; i < batch_hints.size(); i++) {
-      if (batch_hints[i].allocated_space.size > 0) {
-        this->markEmptySpace(batch_hints[i].allocated_space);
-        this->pmem_allocator_->Free(batch_hints[i].allocated_space);
-      }
-    }
-  };
 
   for (size_t i = 0; i < write_batch.Size(); i++) {
     auto& kv = write_batch.kvs[i];
@@ -1352,7 +1352,6 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
     // No enough space for batch write
     if (batch_hints[i].allocated_space.size == 0) {
-      free_space_on_failure();
       return Status::PmemOverflow;
     }
     space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
@@ -1388,7 +1387,6 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
       TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
     } else {
-      free_space_on_failure();
       return Status::NotSupported;
     }
 
@@ -1446,9 +1444,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord && !found) {
       batch_hint.space_not_used = true;
-      // We must mark a allocated but unused space on PMem, otherwise data may
-      // lost in recovery
-      markEmptySpace(batch_hint.allocated_space);
       return Status::Ok;
     }
 

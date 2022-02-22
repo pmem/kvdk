@@ -89,9 +89,11 @@ class PMEMAllocator : public Allocator {
     return offset < pmem_size_ && offset != kNullPMemOffset;
   }
 
-  // Free segment_space_entry and fetch an allocated segment to
-  // segment_space_entry, until reach the end of allocated space
-  bool FreeAndFetchSegment(SpaceEntry* segment_space_entry);
+  // Try to fetch an used segment to segment_space_entry, until reach the a
+  // never used segment or end of pmem space
+  //
+  // Notice: Please only use this function in recovery
+  bool FetchSegment(SpaceEntry* segment_space_entry);
 
   // Regularly execute by background thread of KVDK
   void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
@@ -145,9 +147,6 @@ class PMEMAllocator : public Allocator {
 
   static bool checkDevDaxAndGetSize(const char* path, uint64_t* size);
 
-  // Mark and persist a space entry on PMem
-  void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
-
   // Populate PMem space so the following access can be faster
   // Warning! this will zero the entire PMem space
   void populateSpace();
@@ -166,6 +165,9 @@ class PMEMAllocator : public Allocator {
     }
     return data_size / block_size_ + (data_size % block_size_ == 0 ? 0 : 1);
   }
+
+  // Mark and persist a space entry on PMem
+  void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
 
   // Protect PMem offset head
   SpinMutex offset_head_lock_;
