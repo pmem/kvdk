@@ -81,12 +81,14 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   int cmp;
 
   KVDKCollection* collecton1_ptr;
-  KVDKStatus s = KVDKCreateSortedCollection(
-      kvdk_engine, &collecton1_ptr, collection1, strlen(collection1), "", 0);
+  KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
+  KVDKStatus s =
+      KVDKCreateSortedCollection(kvdk_engine, &collecton1_ptr, collection1,
+                                 strlen(collection1), s_configs);
   assert(s == Ok);
   KVDKCollection* collecton2_ptr;
   s = KVDKCreateSortedCollection(kvdk_engine, &collecton2_ptr, collection2,
-                                 strlen(collection2), "", 0);
+                                 strlen(collection2), s_configs);
   assert(s == Ok);
   s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
@@ -122,6 +124,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   free(read_v2);
   KVDKDestorySortedCollection(collecton1_ptr);
   KVDKDestorySortedCollection(collecton2_ptr);
+  KVDKDestroySortedCollectionConfigs(s_configs);
   printf(
       "Successfully performed SortedGet, SortedSet, SortedDelete "
       "operations on named "
@@ -134,9 +137,10 @@ void SortedCollectinIterExample(KVDKEngine* kvdk_engine) {
                                  "5", "6", "7", "8", "9"};
   const char* sorted_collection = "sorted_collection";
   KVDKCollection* collecton_ptr;
+  KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
   KVDKStatus s =
       KVDKCreateSortedCollection(kvdk_engine, &collecton_ptr, sorted_collection,
-                                 strlen(sorted_collection), "", 0);
+                                 strlen(sorted_collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key", value[10] = "value";
@@ -200,6 +204,7 @@ void SortedCollectinIterExample(KVDKEngine* kvdk_engine) {
   printf("Successfully iterated through a sorted named collections.\n");
   KVDKDestroyIterator(kvdk_engine, kvdk_iter);
   KVDKDestorySortedCollection(collecton_ptr);
+  KVDKDestroySortedCollectionConfigs(s_configs);
 }
 
 int score_cmp(const char* a, size_t a_len, const char* b, size_t b_len) {
@@ -231,9 +236,10 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   KVDKRegisterCompFunc(kvdk_engine, comp_name, strlen(comp_name), score_cmp);
   // create sorted collection
   KVDKCollection* collecton_ptr;
-  KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, &collecton_ptr,
-                                            collection, strlen(collection),
-                                            comp_name, strlen(comp_name));
+  KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
+  KVDKSetSortedCollectionConfigs(s_configs, comp_name, strlen(comp_name));
+  KVDKStatus s = KVDKCreateSortedCollection(
+      kvdk_engine, &collecton_ptr, collection, strlen(collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
     s = KVDKSortedSet(kvdk_engine, collection, strlen(collection),
@@ -266,6 +272,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   KVDKDestroyIterator(kvdk_engine, iter);
   printf("Successfully collections sorted by number.\n");
   KVDKDestorySortedCollection(collecton_ptr);
+  KVDKDestroySortedCollectionConfigs(s_configs);
 }
 
 void BatchWriteAnonCollectionExample(KVDKEngine* kvdk_engine) {
@@ -381,8 +388,8 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
 int main() {
   // Initialize a KVDK instance.
   KVDKConfigs* kvdk_configs = KVDKCreateConfigs();
-  KVDKUserConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 128u,
-                  1ull << 10, 1 << 4);
+  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 128u,
+                 1ull << 10, 1 << 4);
 
   const char* engine_path = "/mnt/pmem0/tutorial_kvdk_example";
   // Purge old KVDK instance
@@ -412,7 +419,7 @@ int main() {
   // Listes Collection Example
   ListsCollectionExample(kvdk_engine);
 
-  KVDKConfigsDestory(kvdk_configs);
+  KVDKDestroyConfigs(kvdk_configs);
   KVDKCloseEngine(kvdk_engine);
   return 0;
 }

@@ -34,17 +34,26 @@ typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
 typedef struct KVDKCollection KVDKCollection;
 typedef struct KVDKSnapshot KVDKSnapshot;
+typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
 
 typedef enum { SORTED, HASH } KVDKIterType;
 
 extern KVDK_LIBRARY_API KVDKConfigs* KVDKCreateConfigs(void);
-extern KVDK_LIBRARY_API void KVDKUserConfigs(
+extern KVDK_LIBRARY_API void KVDKSetConfigs(
     KVDKConfigs* kv_config, uint64_t max_access_threads,
     uint64_t pmem_file_size, unsigned char populate_pmem_space,
     uint32_t pmem_block_size, uint64_t pmem_segment_blocks,
     uint32_t hash_bucket_size, uint64_t hash_bucket_num,
     uint32_t num_buckets_per_slot);
-extern KVDK_LIBRARY_API void KVDKConfigsDestory(KVDKConfigs* kv_config);
+extern KVDK_LIBRARY_API void KVDKDestroyConfigs(KVDKConfigs* kv_config);
+
+extern KVDK_LIBRARY_API KVDKSortedCollectionConfigs*
+KVDKCreateSortedCollectionConfigs();
+extern KVDK_LIBRARY_API void KVDKSetSortedCollectionConfigs(
+    KVDKSortedCollectionConfigs* configs, const char* comp_func_name,
+    size_t comp_func_len);
+extern KVDK_LIBRARY_API void KVDKDestroySortedCollectionConfigs(
+    KVDKSortedCollectionConfigs* configs);
 
 extern KVDK_LIBRARY_API KVDKStatus KVDKOpen(const char* name,
                                             const KVDKConfigs* config,
@@ -58,7 +67,7 @@ extern KVDK_LIBRARY_API KVDKSnapshot* KVDKGetSnapshot(KVDKEngine* engine,
 extern KVDK_LIBRARY_API void KVDKReleaseSnapshot(KVDKEngine* engine,
                                                  KVDKSnapshot* snapshot);
 
-extern KVDK_LIBRARY_API void KVDKRegisterCompFunc(
+extern KVDK_LIBRARY_API int KVDKRegisterCompFunc(
     KVDKEngine* engine, const char* compara_name, size_t compara_len,
     int (*compare)(const char* src, size_t src_len, const char* target,
                    size_t target_len));
@@ -67,7 +76,7 @@ extern KVDK_LIBRARY_API void KVDKRegisterCompFunc(
 extern KVDK_LIBRARY_API KVDKStatus KVDKCreateSortedCollection(
     KVDKEngine* engine, KVDKCollection** sorted_collection,
     const char* collection_name, size_t collection_len,
-    const char* compara_name, size_t compara_len);
+    KVDKSortedCollectionConfigs* configs);
 
 extern KVDK_LIBRARY_API void KVDKDestorySortedCollection(
     KVDKCollection* collection);

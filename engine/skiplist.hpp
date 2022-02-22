@@ -20,6 +20,7 @@ namespace KVDK_NAMESPACE {
 class KVEngine;
 static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
+const ConfigFieldSizeType kEncodedConfigsEndMark = 0;
 
 struct Splice;
 
@@ -143,12 +144,16 @@ struct SkiplistNode {
 // implemented in O(logn) time. Meanwhile, the skiplist nodes is also indexed by
 // the global hash table, so the updates/delete and point read operations can be
 // indexed by hash table and implemented in ~O(1) time
+// Each skiplist has a header record persisted on PMem, the key of header record
+// is the skiplist name, the value of header record is encoded by skiplist id
+// and configs
 class Skiplist : public Collection {
  public:
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-           std::shared_ptr<PMEMAllocator> pmem_allocator,
+           Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
            std::shared_ptr<HashTable> hash_table)
       : Collection(name, id),
+        comparator_(comparator),
         pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
     header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
@@ -347,10 +352,18 @@ class Skiplist : public Collection {
       std::unique_lock<SpinMutex>* prev_record_lock,
       PMEMAllocator* pmem_allocator, HashTable* hash_table);
 
-  void SetCompareFunc(CompFunc comp_func) { compare_func_ = comp_func; }
-
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
+
+  // Format:
+  // id (8 bytes) | config size (4 bytes), config | config size, config |...|
+  // end mark (4 bytes)
+  static std::string EncodeSortedCollectionValue(
+      CollectionIDType id, const SortedCollectionConfigs& s_configs);
+
+  static Status DecodeSortedCollectionValue(StringView value_str,
+                                            CollectionIDType& id,
+                                            SortedCollectionConfigs& s_configs);
 
  private:
   inline void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
@@ -397,7 +410,7 @@ class Skiplist : public Collection {
   }
 
   int compare(const StringView& src_key, const StringView& target_key) {
-    return compare_func_(src_key, target_key);
+    return comparator_(src_key, target_key);
   }
 
   SkiplistNode* header_;
@@ -414,7 +427,7 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
-  CompFunc compare_func_ = compare_string_view;
+  Comparator comparator_ = compare_string_view;
 };
 
 class SortedIterator : public Iterator {

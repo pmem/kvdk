@@ -51,9 +51,9 @@ class Engine {
   // error.
   virtual Status Delete(const StringView key) = 0;
 
-  virtual Status CreateSortedCollection(const StringView collection_name,
-                                        Collection** sorted_collection,
-                                        const StringView& comp_name = "") = 0;
+  virtual Status CreateSortedCollection(
+      const StringView collection_name, Collection** sorted_collection,
+      const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
 
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return Ok
@@ -131,9 +131,12 @@ class Engine {
   // part. New write requests of this thread need to re-request write resources.
   virtual void ReleaseAccessThread() = 0;
 
-  virtual void SetCompareFunc(
-      const StringView& collection_name,
-      std::function<int(const StringView& src, const StringView& target)>) = 0;
+  // Register a customized comparator to the engine on runtime
+  //
+  // Return true on success, return false if a comparator of comparator_name
+  // already existed
+  virtual bool RegisterComparator(const StringView& comparator_name,
+                                  Comparator) = 0;
 
   // Close the instance on exit.
   virtual ~Engine() = 0;

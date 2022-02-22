@@ -120,7 +120,8 @@ class KVEngine : public Engine {
   KVEngine(const Configs& configs)
       : engine_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
-        old_records_cleaner_(this, configs.max_access_threads){};
+        old_records_cleaner_(this, configs.max_access_threads),
+        comparators_(configs.comparator){};
 
   struct BatchWriteHint {
     TimeStampType timestamp{0};
@@ -157,20 +158,16 @@ class KVEngine : public Engine {
 
   inline Status MaybeInitAccessThread();
 
-  void SetCompareFunc(
-      const StringView& collection_name,
-      std::function<int(const StringView& src, const StringView& target)>
-          comp_func) {
-    comparator_.SetComparaFunc(collection_name, comp_func);
+  bool RegisterComparator(const StringView& collection_name,
+                          Comparator comp_func) {
+    return comparators_.RegisterComparator(collection_name, comp_func);
   }
 
-  Status CreateSortedCollection(const StringView collection_name,
-                                Collection** collection_ptr,
-                                const StringView& comp_name) override;
+  Status CreateSortedCollection(
+      const StringView collection_name, Collection** collection_ptr,
+      const SortedCollectionConfigs& configs) override;
 
  private:
-  Status InitCollection(const StringView& collection, Collection** list,
-                        RecordType collection_type);
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
@@ -390,7 +387,7 @@ class KVEngine : public Engine {
 
   bool bg_cleaner_processing_;
 
-  Comparator comparator_;
+  ComparatorTable comparators_;
 
   struct BackgroundWorkSignals {
     BackgroundWorkSignals() = default;

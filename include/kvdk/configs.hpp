@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "comparator.hpp"
 #include "namespace.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -15,10 +16,18 @@ enum class LogLevel : uint8_t {
   Debug,
   Info,
   Error,
+  None,
 };
 
 // A snapshot indicates a immutable view of a KVDK engine at a certain time
 struct Snapshot {};
+
+// Configs of created sorted collection
+// For correctness of encoding, please add new config field in the end of the
+// existing fields
+struct SortedCollectionConfigs {
+  std::string comparator_name = "default";
+};
 
 struct Configs {
   // Max number of access threads to read/write data to kvdk instance.
@@ -123,6 +132,10 @@ struct Configs {
   // Notice: If opening a backup instance, this will always be set to true
   // during recovery.
   bool recover_to_checkpoint = false;
+
+  // If customer compare functions is used in a kvdk engine, these functions
+  // should be registered to the comparator before open engine
+  ComparatorTable comparator;
 };
 
 }  // namespace KVDK_NAMESPACE

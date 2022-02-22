@@ -40,6 +40,8 @@ class EngineBasicTest : public testing::Test {
   virtual void SetUp() override {
     str_pool.resize(str_pool_length);
     random_str(&str_pool[0], str_pool_length);
+    // No logs by default, for debug, set it to All
+    configs.log_level = LogLevel::None;
     configs.pmem_file_size = (16ULL << 30);
     configs.populate_pmem_space = false;
     configs.hash_bucket_num = (1 << 10);
@@ -47,7 +49,6 @@ class EngineBasicTest : public testing::Test {
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
-    configs.log_level = LogLevel::All;
     configs.max_access_threads = 1;
     db_path = "/mnt/pmem0/kvdk-test";
     backup_path = "/mnt/pmem0/kvdk-test-backup";
@@ -639,7 +640,6 @@ TEST_F(EngineBasicTest, TestSeek) {
             Status::Ok);
   uint64_t z = 0;
   auto zero_filled_str = uint64_to_string(z);
-  printf("%s\n", zero_filled_str.c_str());
   ASSERT_EQ(engine->SSet(collection, zero_filled_str, zero_filled_str),
             Status::Ok);
   ASSERT_EQ(engine->SGet(collection, zero_filled_str, &val), Status::Ok);
@@ -1514,16 +1514,18 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     return std::make_pair(k, std::string(1, v));
   });
 
-  // registed compare function
-  engine->SetCompareFunc("collection0_cmp", cmp0);
-  engine->SetCompareFunc("collection1_cmp", cmp1);
+  // register compare function
+  engine->RegisterComparator("collection0_cmp", cmp0);
+  engine->RegisterComparator("collection1_cmp", cmp1);
   for (size_t i = 0; i < collections.size(); ++i) {
     Collection* collection_ptr;
     Status s;
     if (i < 2) {
       std::string comp_name = "collection" + std::to_string(i) + "_cmp";
+      SortedCollectionConfigs s_configs;
+      s_configs.comparator_name = comp_name;
       s = engine->CreateSortedCollection(collections[i], &collection_ptr,
-                                         comp_name);
+                                         s_configs);
     } else {
       s = engine->CreateSortedCollection(collections[i], &collection_ptr);
     }
@@ -1539,6 +1541,15 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     };
     LaunchNThreads(threads, Write);
   }
+
+  delete engine;
+  // Reopen engine error as the comparator is not registered in configs
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Abort);
+  configs.comparator.RegisterComparator("collection0_cmp", cmp0);
+  configs.comparator.RegisterComparator("collection1_cmp", cmp1);
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
 
   for (size_t i = 0; i < collections.size(); ++i) {
     std::vector<kvpair> expected_res(dedup_kvs.begin(), dedup_kvs.end());
