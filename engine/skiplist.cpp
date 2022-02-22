@@ -1118,10 +1118,11 @@ Status Skiplist::DecodeSortedCollectionValue(
 }
 
 Status Skiplist::Get(const StringView& key, std::string* value) {
-  if (hash_table_ == nullptr) {
+  if (!IndexedByHashtable()) {
     Splice splice(this);
     Seek(key, &splice);
-    if (compare_string_view(key, UserKey(splice.next_pmem_record))) {
+    if (equal_string_view(key, UserKey(splice.next_pmem_record)) &&
+        splice.next_pmem_record->entry.meta.type == SortedDataRecord) {
       value->assign(splice.next_pmem_record->Value().data(),
                     splice.next_pmem_record->Value().size());
       return Status::Ok;

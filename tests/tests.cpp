@@ -41,7 +41,7 @@ class EngineBasicTest : public testing::Test {
     str_pool.resize(str_pool_length);
     random_str(&str_pool[0], str_pool_length);
     // No logs by default, for debug, set it to All
-    configs.log_level = LogLevel::None;
+    configs.log_level = LogLevel::Debug;
     configs.pmem_file_size = (16ULL << 30);
     configs.populate_pmem_space = false;
     configs.hash_bucket_num = (1 << 10);
@@ -125,19 +125,98 @@ class EngineBasicTest : public testing::Test {
     LaunchNThreads(configs.max_access_threads, global_func);
   }
 
-  void TestLocalCollection(const std::string& collection, SetOpsFunc SetFunc,
-                           GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc) {
+  void TestLocalUnorderedCollection(const std::string& collection) {
+    auto UnorderedSetFunc = [&](const std::string& collection,
+                                const std::string& key,
+                                const std::string& value) -> Status {
+      return engine->HSet(collection, key, value);
+    };
+
+    auto UnorderedGetFunc = [&](const std::string& collection,
+                                const std::string& key,
+                                std::string* value) -> Status {
+      return engine->HGet(collection, key, value);
+    };
+
+    auto UnorderedDeleteFunc = [&](const std::string& collection,
+                                   const std::string& key) -> Status {
+      return engine->HDelete(collection, key);
+    };
+
+    auto Local_XSetXGetXDelete = [&](uint64_t id) {
+      std::string thread_local_collection = collection + std::to_string(id);
+
+      TestEmptyKey(thread_local_collection, UnorderedSetFunc, UnorderedGetFunc,
+                   UnorderedDeleteFunc);
+
+      CreateBasicOperationTest(thread_local_collection, UnorderedSetFunc,
+                               UnorderedGetFunc, UnorderedDeleteFunc, id);
+    };
+    LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
+  }
+
+  void TestGlobalSortedCollection(const std::string& collection,
+                                  const SortedCollectionConfigs& s_configs) {
+    auto SortedSetFunc = [&](const std::string& collection,
+                             const std::string& key,
+                             const std::string& value) -> Status {
+      return engine->SSet(collection, key, value);
+    };
+
+    auto SortedGetFunc = [&](const std::string& collection,
+                             const std::string& key,
+                             std::string* value) -> Status {
+      return engine->SGet(collection, key, value);
+    };
+
+    auto SortedDeleteFunc = [&](const std::string& collection,
+                                const std::string& key) -> Status {
+      return engine->SDelete(collection, key);
+    };
+
+    Collection* collection_ptr;
+    ASSERT_EQ(
+        engine->CreateSortedCollection(collection, &collection_ptr, s_configs),
+        Status::Ok);
+
+    auto global_func = [=](uint64_t id) {
+      this->CreateBasicOperationTest(collection, SortedSetFunc, SortedGetFunc,
+                                     SortedDeleteFunc, id);
+    };
+    LaunchNThreads(configs.max_access_threads, global_func);
+  }
+
+  void TestLocalSortedCollection(Engine* engine, const std::string& collection,
+                                 const SortedCollectionConfigs& s_configs) {
+    auto SortedSetFunc = [&](const std::string& collection,
+                             const std::string& key,
+                             const std::string& value) -> Status {
+      return engine->SSet(collection, key, value);
+    };
+
+    auto SortedGetFunc = [&](const std::string& collection,
+                             const std::string& key,
+                             std::string* value) -> Status {
+      return engine->SGet(collection, key, value);
+    };
+
+    auto SortedDeleteFunc = [&](const std::string& collection,
+                                const std::string& key) -> Status {
+      return engine->SDelete(collection, key);
+    };
+
     auto Local_XSetXGetXDelete = [&](uint64_t id) {
       std::string thread_local_collection = collection + std::to_string(id);
       Collection* local_collection_ptr;
-      ASSERT_EQ(engine->CreateSortedCollection(thread_local_collection,
-                                               &local_collection_ptr),
+      ASSERT_EQ(engine->CreateSortedCollection(
+                    thread_local_collection, &local_collection_ptr, s_configs),
                 Status::Ok);
 
-      TestEmptyKey(thread_local_collection, SetFunc, GetFunc, DeleteFunc);
+      TestEmptyKey(thread_local_collection, SortedSetFunc, SortedGetFunc,
+                   SortedDeleteFunc);
 
-      CreateBasicOperationTest(thread_local_collection, SetFunc, GetFunc,
-                               DeleteFunc, id);
+      CreateBasicOperationTest(thread_local_collection, SortedSetFunc,
+                               SortedGetFunc, SortedDeleteFunc, id);
     };
     LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
   }
@@ -568,29 +647,21 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
 }
 
 TEST_F(EngineBasicTest, TestLocalSortedCollection) {
-  auto SortedSetFunc = [&](const std::string& collection,
-                           const std::string& key,
-                           const std::string& value) -> Status {
-    return engine->SSet(collection, key, value);
-  };
-
-  auto SortedGetFunc = [&](const std::string& collection,
-                           const std::string& key,
-                           std::string* value) -> Status {
-    return engine->SGet(collection, key, value);
-  };
-
-  auto SortedDeleteFunc = [&](const std::string& collection,
-                              const std::string& key) -> Status {
-    return engine->SDelete(collection, key);
-  };
-
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   do {
-    TestLocalCollection("thread_skiplist", SortedSetFunc, SortedGetFunc,
-                        SortedDeleteFunc);
-    TestSortedIterator("thread_skiplist", true);
+    for (int index_with_hashtable : {0, 1}) {
+      SortedCollectionConfigs s_configs;
+      s_configs.index_with_hashtable = index_with_hashtable;
+      TestLocalSortedCollection(engine,
+                                "hash_index" +
+                                    std::to_string(index_with_hashtable) +
+                                    "thread_skiplist",
+                                s_configs);
+      TestSortedIterator("hash_index" + std::to_string(index_with_hashtable) +
+                             "thread_skiplist",
+                         true);
+    }
   } while (ChangedConfig());
 
   delete engine;
@@ -621,8 +692,8 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
 
   std::string collection = "global_skiplist";
   do {
-    TestGlobalCollection(collection, SortedSetFunc, SortedGetFunc,
-                         SortedDeleteFunc, Types::Sorted);
+    SortedCollectionConfigs s_configs;
+    TestGlobalSortedCollection(collection, s_configs);
     TestSortedIterator(collection, false);
   } while (ChangedConfig());
   delete engine;
@@ -948,29 +1019,11 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
-  auto UnorderedSetFunc = [&](const std::string& collection,
-                              const std::string& key,
-                              const std::string& value) -> Status {
-    return engine->HSet(collection, key, value);
-  };
-
-  auto UnorderedGetFunc = [&](const std::string& collection,
-                              const std::string& key,
-                              std::string* value) -> Status {
-    return engine->HGet(collection, key, value);
-  };
-
-  auto UnorderedDeleteFunc = [&](const std::string& collection,
-                                 const std::string& key) -> Status {
-    return engine->HDelete(collection, key);
-  };
-
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
   do {
-    TestLocalCollection("thread_unordered", UnorderedSetFunc, UnorderedGetFunc,
-                        UnorderedDeleteFunc);
+    TestLocalUnorderedCollection("thread_unordered");
     TestUnorderedIterator("thread_unordered", true);
   } while (ChangedConfig());
   delete engine;

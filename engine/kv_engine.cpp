@@ -233,8 +233,7 @@ Status KVEngine::CreateSortedCollection(
 
     auto skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
-        pmem_allocator_,
-        s_configs.index_with_hashtable ? hash_table_ : nullptr);
+        pmem_allocator_, hash_table_, s_configs.index_with_hashtable);
     {
       std::lock_guard<std::mutex> lg(list_mu_);
       skiplists_.push_back(skiplist);
@@ -538,8 +537,8 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   {
     std::lock_guard<std::mutex> lg(list_mu_);
     skiplists_.push_back(std::make_shared<Skiplist>(
-        pmem_record, name, id, comparator, pmem_allocator_,
-        s_configs.index_with_hashtable ? hash_table_ : nullptr));
+        pmem_record, name, id, comparator, pmem_allocator_, hash_table_,
+        s_configs.index_with_hashtable));
     skiplist = skiplists_.back().get();
     if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_->AddRecordForParallelRebuild(
@@ -1115,7 +1114,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
       bool found =
           (splice.next_pmem_record->entry.meta.type &
            (SortedDataRecord | SortedDeleteRecord)) &&
-          (compare_string_view(splice.next_pmem_record->Key(), user_key) == 0);
+          equal_string_view(splice.next_pmem_record->Key(), collection_key);
 
       bool need_write_delete_record =
           found && splice.next_pmem_record->entry.meta.type == SortedDataRecord;
@@ -1153,8 +1152,9 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
       }
       ul.unlock();
       delayFree(OldDataRecord{existing_record, new_ts});
-      delayFree(
-          OldDeleteRecord{delete_record_pmem_ptr, new_ts, nullptr, nullptr});
+      //      delayFree(
+      //          OldDeleteRecord{delete_record_pmem_ptr, new_ts, nullptr,
+      //          nullptr});
     }
     break;
   }
@@ -1246,7 +1246,7 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
       bool found =
           (splice.next_pmem_record->entry.meta.type &
            (SortedDataRecord | SortedDeleteRecord)) &&
-          (compare_string_view(splice.next_pmem_record->Key(), user_key) == 0);
+          equal_string_view(splice.next_pmem_record->Key(), collection_key);
 
       if (found) {
         if (splice.nexts[1] &&

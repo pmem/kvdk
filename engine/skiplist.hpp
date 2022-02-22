@@ -151,11 +151,12 @@ class Skiplist : public Collection {
  public:
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
            Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
-           std::shared_ptr<HashTable> hash_table)
+           std::shared_ptr<HashTable> hash_table, bool indexed_by_hashtable)
       : Collection(name, id),
         comparator_(comparator),
         pmem_allocator_(pmem_allocator),
-        hash_table_(hash_table) {
+        hash_table_(hash_table),
+        indexed_by_hashtable_(indexed_by_hashtable) {
     header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
     for (uint8_t i = 1; i <= kMaxHeight; i++) {
       header_->RelaxedSetNext(i, nullptr);
@@ -228,7 +229,7 @@ class Skiplist : public Collection {
     return 0;
   }
 
-  bool IndexedByHashtable() { return hash_table_ != nullptr; }
+  bool IndexedByHashtable() { return indexed_by_hashtable_; }
 
   Status Get(const StringView& key, std::string* value);
 
@@ -422,6 +423,7 @@ class Skiplist : public Collection {
   SkiplistNode* header_;
   std::shared_ptr<HashTable> hash_table_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
+  bool indexed_by_hashtable_;
   // nodes that unlinked on every height
   std::vector<SkiplistNode*> obsolete_nodes_;
   // to avoid concurrent access a just deleted node, a node can be safely
