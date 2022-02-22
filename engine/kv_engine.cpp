@@ -233,7 +233,8 @@ Status KVEngine::CreateSortedCollection(
 
     auto skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
-        pmem_allocator_, hash_table_);
+        pmem_allocator_,
+        s_configs.index_with_hashtable ? hash_table_ : nullptr);
     {
       std::lock_guard<std::mutex> lg(list_mu_);
       skiplists_.push_back(skiplist);
@@ -537,7 +538,8 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   {
     std::lock_guard<std::mutex> lg(list_mu_);
     skiplists_.push_back(std::make_shared<Skiplist>(
-        pmem_record, name, id, comparator, pmem_allocator_, hash_table_));
+        pmem_record, name, id, comparator, pmem_allocator_,
+        s_configs.index_with_hashtable ? hash_table_ : nullptr));
     skiplist = skiplists_.back().get();
     if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_->AddRecordForParallelRebuild(
@@ -1029,83 +1031,131 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
   }
 
   SpaceEntry sized_space_entry;
+  auto hint = hash_table_->GetHint(collection_key);
 
   while (1) {
     SkiplistNode* dram_node = nullptr;
     DLRecord* existing_record = nullptr;
-    HashEntry* entry_ptr = nullptr;
-    HashEntry hash_entry;
-    DataEntry data_entry;
-    auto hint = hash_table_->GetHint(collection_key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
     version_controller_.HoldLocalSnapshot();
     defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
-    Status s = hash_table_->SearchForRead(hint, collection_key,
-                                          SortedDataRecord | SortedDeleteRecord,
-                                          &entry_ptr, &hash_entry, &data_entry);
-    bool need_write_delete_record = false;
+    if (skiplist->IndexedByHashtable()) {
+      HashEntry* entry_ptr = nullptr;
+      HashEntry hash_entry;
+      DataEntry data_entry;
+      Status s = hash_table_->SearchForRead(
+          hint, collection_key, SortedDataRecord | SortedDeleteRecord,
+          &entry_ptr, &hash_entry, &data_entry);
+      bool need_write_delete_record = false;
 
-    switch (s) {
-      case Status::Ok:
-        if (hash_entry.GetRecordType() != SortedDeleteRecord) {
-          need_write_delete_record = true;
+      switch (s) {
+        case Status::Ok:
+          if (hash_entry.GetRecordType() != SortedDeleteRecord) {
+            need_write_delete_record = true;
+          }
+          break;
+        case Status::NotFound:
+          s = Status::Ok;
+          break;
+        case Status::MemoryOverflow:
+          break;
+        default:
+          std::abort();  // never reach
+      }
+
+      if (!need_write_delete_record) {
+        if (sized_space_entry.size > 0) {
+          pmem_allocator_->Free(sized_space_entry);
         }
-        break;
-      case Status::NotFound:
-        s = Status::Ok;
-        break;
-      case Status::MemoryOverflow:
-        break;
-      default:
-        std::abort();  // never reach
-    }
-
-    if (!need_write_delete_record) {
-      if (sized_space_entry.size > 0) {
-        pmem_allocator_->Free(sized_space_entry);
+        return s;
       }
-      return s;
-    }
 
-    if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-      dram_node = hash_entry.GetIndex().skiplist_node;
-      existing_record = dram_node->record;
-    } else {
-      dram_node = nullptr;
-      assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-      existing_record = hash_entry.GetIndex().dl_record;
-    }
+      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+        dram_node = hash_entry.GetIndex().skiplist_node;
+        existing_record = dram_node->record;
+      } else {
+        dram_node = nullptr;
+        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+        existing_record = hash_entry.GetIndex().dl_record;
+      }
 
-    if (sized_space_entry.size == 0) {
-      auto request_size = collection_key.size() + sizeof(DLRecord);
-      sized_space_entry = pmem_allocator_->Allocate(request_size);
-      // TODO: always keep space for delete record
       if (sized_space_entry.size == 0) {
-        return Status::PmemOverflow;
+        auto request_size = collection_key.size() + sizeof(DLRecord);
+        sized_space_entry = pmem_allocator_->Allocate(request_size);
+        // TODO: always keep space for delete record
+        if (sized_space_entry.size == 0) {
+          return Status::PmemOverflow;
+        }
       }
-    }
 
-    void* delete_record_pmem_ptr =
-        pmem_allocator_->offset2addr(sized_space_entry.offset);
+      void* delete_record_pmem_ptr =
+          pmem_allocator_->offset2addr(sized_space_entry.offset);
 
-    if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
-                          dram_node, sized_space_entry)) {
-      continue;
-    }
+      if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
+                            dram_node, sized_space_entry)) {
+        continue;
+      }
 
-    if (dram_node == nullptr) {
-      hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord,
-                          delete_record_pmem_ptr, HashIndexType::DLRecord);
+      if (dram_node == nullptr) {
+        hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord,
+                            delete_record_pmem_ptr, HashIndexType::DLRecord);
+      } else {
+        hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord, dram_node,
+                            HashIndexType::SkiplistNode);
+      }
+      ul.unlock();
+      delayFree(OldDataRecord{existing_record, new_ts});
+      delayFree(OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr,
+                                hint.spin});
     } else {
-      hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord, dram_node,
-                          HashIndexType::SkiplistNode);
+      Splice splice(skiplist);
+      skiplist->Seek(user_key, &splice);
+      bool found =
+          (splice.next_pmem_record->entry.meta.type &
+           (SortedDataRecord | SortedDeleteRecord)) &&
+          (compare_string_view(splice.next_pmem_record->Key(), user_key) == 0);
+
+      bool need_write_delete_record =
+          found && splice.next_pmem_record->entry.meta.type == SortedDataRecord;
+
+      if (!need_write_delete_record) {
+        if (sized_space_entry.size > 0) {
+          pmem_allocator_->Free(sized_space_entry);
+        }
+        return Status::Ok;
+      }
+
+      if (splice.nexts[1] &&
+          splice.nexts[1]->record == splice.next_pmem_record) {
+        dram_node = splice.nexts[1];
+        existing_record = dram_node->record;
+      } else {
+        dram_node = nullptr;
+        existing_record = splice.next_pmem_record;
+      }
+
+      if (sized_space_entry.size == 0) {
+        auto request_size = collection_key.size() + sizeof(DLRecord);
+        sized_space_entry = pmem_allocator_->Allocate(request_size);
+        if (sized_space_entry.size == 0) {
+          return Status::PmemOverflow;
+        }
+      }
+
+      void* delete_record_pmem_ptr =
+          pmem_allocator_->offset2addr(sized_space_entry.offset);
+
+      if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
+                            dram_node, sized_space_entry)) {
+        continue;
+      }
+      ul.unlock();
+      delayFree(OldDataRecord{existing_record, new_ts});
+      delayFree(
+          OldDeleteRecord{delete_record_pmem_ptr, new_ts, nullptr, nullptr});
     }
-    ul.unlock();
-    delayFree(OldDataRecord{existing_record, new_ts});
-    delayFree(
-        OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr, hint.spin});
     break;
   }
   return Status::Ok;
@@ -1125,74 +1175,107 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
   }
   void* new_record_pmem_ptr =
       pmem_allocator_->offset2addr(sized_space_entry.offset);
-
+  auto hint = hash_table_->GetHint(collection_key);
   while (1) {
     SkiplistNode* dram_node = nullptr;
-    HashEntry* entry_ptr = nullptr;
     DLRecord* existing_record = nullptr;
-    HashEntry hash_entry;
-    DataEntry data_entry;
-    auto hint = hash_table_->GetHint(collection_key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
     version_controller_.HoldLocalSnapshot();
     defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
-    Status s = hash_table_->SearchForWrite(
-        hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
-        &hash_entry, &data_entry);
-    if (s == Status::MemoryOverflow) {
-      return s;
-    }
-    bool found = s == Status::Ok;
-
-    assert(!found || new_ts > data_entry.meta.timestamp);
-
-    if (found) {
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-        dram_node = hash_entry.GetIndex().skiplist_node;
-        existing_record = dram_node->record;
-      } else {
-        dram_node = nullptr;
-        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-        existing_record = hash_entry.GetIndex().dl_record;
+    if (skiplist->IndexedByHashtable()) {
+      HashEntry* entry_ptr = nullptr;
+      HashEntry hash_entry;
+      DataEntry data_entry;
+      Status s = hash_table_->SearchForWrite(
+          hint, collection_key, SortedDataRecord | SortedDeleteRecord,
+          &entry_ptr, &hash_entry, &data_entry);
+      if (s == Status::MemoryOverflow) {
+        return s;
       }
+      bool found = s == Status::Ok;
 
-      if (!skiplist->Update(user_key, value, existing_record, hint.spin, new_ts,
-                            dram_node, sized_space_entry)) {
-        continue;
-      }
+      assert(!found || new_ts > data_entry.meta.timestamp);
 
-      // update a height 0 node
-      auto updated_type = entry_ptr->GetRecordType();
-      if (dram_node == nullptr) {
-        hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
-                            new_record_pmem_ptr, HashIndexType::DLRecord);
-      } else {
-        hash_table_->Insert(hint, entry_ptr, SortedDataRecord, dram_node,
-                            HashIndexType::SkiplistNode);
-      }
-      ul.unlock();
-      if (updated_type == SortedDataRecord) {
-        delayFree(OldDataRecord{existing_record, new_ts});
-      }
-    } else {
-      if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
-                            sized_space_entry)) {
-        continue;
-      }
-
-      void* new_hash_index =
-          (dram_node == nullptr) ? new_record_pmem_ptr : dram_node;
-      hash_table_->Insert(
-          hint, entry_ptr, SortedDataRecord, new_hash_index,
-          dram_node ? HashIndexType::SkiplistNode : HashIndexType::DLRecord);
       if (found) {
-        delayFree(OldDataRecord{hash_entry.GetIndex().dl_record, new_ts});
-      }
-    }
+        if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+          dram_node = hash_entry.GetIndex().skiplist_node;
+          existing_record = dram_node->record;
+        } else {
+          dram_node = nullptr;
+          assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+          existing_record = hash_entry.GetIndex().dl_record;
+        }
 
-    break;
+        if (!skiplist->Update(user_key, value, existing_record, hint.spin,
+                              new_ts, dram_node, sized_space_entry)) {
+          continue;
+        }
+
+        // update a height 0 node
+        auto updated_type = entry_ptr->GetRecordType();
+        if (dram_node == nullptr) {
+          hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
+                              new_record_pmem_ptr, HashIndexType::DLRecord);
+        } else {
+          hash_table_->Insert(hint, entry_ptr, SortedDataRecord, dram_node,
+                              HashIndexType::SkiplistNode);
+        }
+        ul.unlock();
+        if (updated_type == SortedDataRecord) {
+          delayFree(OldDataRecord{existing_record, new_ts});
+        }
+      } else {
+        if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
+                              sized_space_entry)) {
+          continue;
+        }
+
+        void* new_hash_index =
+            (dram_node == nullptr) ? new_record_pmem_ptr : dram_node;
+        hash_table_->Insert(
+            hint, entry_ptr, SortedDataRecord, new_hash_index,
+            dram_node ? HashIndexType::SkiplistNode : HashIndexType::DLRecord);
+      }
+
+      break;
+    } else {
+      Splice splice(skiplist);
+      skiplist->Seek(user_key, &splice);
+      bool found =
+          (splice.next_pmem_record->entry.meta.type &
+           (SortedDataRecord | SortedDeleteRecord)) &&
+          (compare_string_view(splice.next_pmem_record->Key(), user_key) == 0);
+
+      if (found) {
+        if (splice.nexts[1] &&
+            splice.nexts[1]->record == splice.next_pmem_record) {
+          dram_node = splice.nexts[1];
+          existing_record = dram_node->record;
+        } else {
+          dram_node = nullptr;
+          existing_record = splice.next_pmem_record;
+        }
+
+        if (!skiplist->Update(user_key, value, existing_record, hint.spin,
+                              new_ts, dram_node, sized_space_entry)) {
+          continue;
+        }
+
+        ul.unlock();
+        if (existing_record->entry.meta.type == SortedDataRecord) {
+          delayFree(OldDataRecord{existing_record, new_ts});
+        }
+      } else {
+        if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
+                              sized_space_entry)) {
+          continue;
+        }
+      }
+
+      break;
+    }
   }
   return Status::Ok;
 }

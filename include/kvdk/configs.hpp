@@ -27,6 +27,7 @@ struct Snapshot {};
 // existing fields
 struct SortedCollectionConfigs {
   std::string comparator_name = "default";
+  int index_with_hashtable = 1;
 };
 
 struct Configs {
