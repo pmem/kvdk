@@ -228,6 +228,8 @@ class Skiplist : public Collection {
     return 0;
   }
 
+  bool IndexedByHashtable() { return hash_table_ != nullptr; }
+
   Status Get(const StringView& key, std::string* value);
 
   Status Set(const StringView& key, const StringView& value);
