@@ -1,7 +1,9 @@
 includes='-I../include -I../extern'
-checks='abseil-*,bugprone-*,cert-*,clang-analyzer-*,concurrency-*,cppcoreguidelines-*,-cppcoreguidelines-pro-type-reinterpret-cast,google-*,misc-*,modernize-*'
+checks='abseil-*,bugprone-*,cert-*,clang-analyzer-*,cppcoreguidelines-*,-cppcoreguidelines-pro-type-reinterpret-cast,misc-*'
 
-# usage: ./clang_tidy.sh <source0> [... <sourceN>]
+# Just too much
+# find ../ -iname *.cpp -o -iname *.hpp | xargs -I '{}' clang-tidy-13 '{}' -checks=$checks -- $includes
+
 i=1;
 j=$#;
 if [ $j -eq 0 ]; then
