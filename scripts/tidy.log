@@ -1,0 +1,691 @@
+1 warning generated.
+/home/shizy/kvdk/scripts/../include/kvdk/namespace.hpp:8:9: warning: macro 'KVDK_NAMESPACE' used to declare a constant; consider using a 'constexpr' constant [cppcoreguidelines-macro-usage]
+#define KVDK_NAMESPACE kvdk
+        ^
+39144 warnings generated.
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:37:33: warning: 48 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint64_t max_access_threads = 48;
+                                ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:45:30: warning: 256ULL is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint64_t pmem_file_size = (256ULL << 30);
+                             ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:45:40: warning: 30 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint64_t pmem_file_size = (256ULL << 30);
+                                       ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:56:30: warning: 64 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint32_t pmem_block_size = 64;
+                             ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:64:34: warning: performing an implicit widening conversion to type 'uint64_t' (aka 'unsigned long') of a multiplication performed in type 'int' [bugprone-implicit-widening-of-multiplication-result]
+  uint64_t pmem_segment_blocks = 2 * 1024 * 1024;
+                                 ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:64:34: note: make conversion explicit to silence this warning
+  uint64_t pmem_segment_blocks = 2 * 1024 * 1024;
+                                 ^~~~~~~~~~~~~~~
+                                 static_cast<uint64_t>( )
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:64:34: note: perform multiplication in a wider type
+  uint64_t pmem_segment_blocks = 2 * 1024 * 1024;
+                                 ^~~~~~~~
+                                 static_cast<long>( )
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:64:38: warning: 1024 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint64_t pmem_segment_blocks = 2 * 1024 * 1024;
+                                     ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:64:45: warning: 1024 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint64_t pmem_segment_blocks = 2 * 1024 * 1024;
+                                            ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:70:31: warning: 128 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint32_t hash_bucket_size = 128;
+                              ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:79:36: warning: 27 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint64_t hash_bucket_num = (1 << 27);
+                                   ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:93:37: warning: 5.0 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  double background_work_interval = 5.0;
+                                    ^
+/home/shizy/kvdk/scripts/../include/kvdk/configs.hpp:98:39: warning: 1000000.0 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  double report_pmem_usage_interval = 1000000.0;
+                                      ^
+Suppressed 39133 warnings (39133 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+47137 warnings generated.
+/home/shizy/kvdk/scripts/../include/kvdk/engine.hpp:25:7: warning: class 'Engine' defines a non-default destructor but does not define a copy constructor, a copy assignment operator, a move constructor or a move assignment operator [cppcoreguidelines-special-member-functions]
+class Engine {
+      ^
+Suppressed 47136 warnings (47136 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+1 warning and 3 errors generated.
+Error while processing /home/shizy/kvdk/scripts/../include/kvdk/iterator.hpp.
+/home/shizy/kvdk/scripts/../include/kvdk/iterator.hpp:13:27: error: use of undeclared identifier 'std' [clang-diagnostic-error]
+  virtual void Seek(const std::string& key) = 0;
+                          ^
+/home/shizy/kvdk/scripts/../include/kvdk/iterator.hpp:25:11: error: use of undeclared identifier 'std' [clang-diagnostic-error]
+  virtual std::string Key() = 0;
+          ^
+/home/shizy/kvdk/scripts/../include/kvdk/iterator.hpp:27:11: error: use of undeclared identifier 'std' [clang-diagnostic-error]
+  virtual std::string Value() = 0;
+          ^
+Suppressed 1 warnings (1 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+Found compiler error(s).
+39131 warnings generated.
+Suppressed 39131 warnings (39131 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+25408 warnings generated.
+/home/shizy/kvdk/scripts/../include/kvdk/write_batch.hpp:29:19: warning: member variable 'kvs' has public visibility [misc-non-private-member-variables-in-classes]
+  std::vector<KV> kvs;
+                  ^
+Suppressed 25407 warnings (25407 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+3 warnings generated.
+Suppressed 3 warnings (3 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+28673 warnings generated.
+/home/shizy/kvdk/scripts/../include/kvdk/collection.hpp:35:24: warning: do not use C-style cast to convert between unrelated types [cppcoreguidelines-pro-type-cstyle-cast]
+    return std::string((char*)&list_id, 8)
+                       ^
+/home/shizy/kvdk/scripts/../include/kvdk/collection.hpp:35:41: warning: 8 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+    return std::string((char*)&list_id, 8)
+                                        ^
+/home/shizy/kvdk/scripts/../include/kvdk/collection.hpp:39:15: warning: member variable 'collection_name_' has protected visibility [cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes]
+  std::string collection_name_;
+              ^
+/home/shizy/kvdk/scripts/../include/kvdk/collection.hpp:40:12: warning: member variable 'collection_id_' has protected visibility [cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes]
+  uint64_t collection_id_;
+           ^
+Suppressed 28667 warnings (28667 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+54634 warnings and 1 error generated.
+Error while processing /home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp.
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:17:10: error: 'graph_impl.hpp' file not found [clang-diagnostic-error]
+#include "graph_impl.hpp"
+         ^~~~~~~~~~~~~~~~
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:22:1: warning: do not declare C-style arrays, use std::array<> instead [cppcoreguidelines-avoid-c-arrays]
+DEFINE_bool(construct, true, "Construct the graphdb.");
+^
+/usr/include/gflags/gflags.h:509:13: note: expanded from macro 'DEFINE_bool'
+    typedef ::fLB::CompileAssert FLAG_##name##_value_is_not_a_bool[     \
+            ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:22:1: warning: variable 'FLAGS_construct' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(construct, true, "Construct the graphdb.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:22:1: warning: variable 'FLAGS_noconstruct' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(construct, true, "Construct the graphdb.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:22:1: warning: variable 'o_construct' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(construct, true, "Construct the graphdb.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:23:1: warning: do not declare C-style arrays, use std::array<> instead [cppcoreguidelines-avoid-c-arrays]
+DEFINE_bool(search_degree, false, "Use the bfs search degree algo.");
+^
+/usr/include/gflags/gflags.h:509:13: note: expanded from macro 'DEFINE_bool'
+    typedef ::fLB::CompileAssert FLAG_##name##_value_is_not_a_bool[     \
+            ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:23:1: warning: variable 'FLAGS_nosearch_degree' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(search_degree, false, "Use the bfs search degree algo.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:23:1: warning: variable 'FLAGS_search_degree' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(search_degree, false, "Use the bfs search degree algo.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:23:1: warning: variable 'o_search_degree' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(search_degree, false, "Use the bfs search degree algo.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:24:1: warning: do not declare C-style arrays, use std::array<> instead [cppcoreguidelines-avoid-c-arrays]
+DEFINE_bool(topn, false, "Use the topn algo.");
+^
+/usr/include/gflags/gflags.h:509:13: note: expanded from macro 'DEFINE_bool'
+    typedef ::fLB::CompileAssert FLAG_##name##_value_is_not_a_bool[     \
+            ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:24:1: warning: variable 'FLAGS_notopn' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(topn, false, "Use the topn algo.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:24:1: warning: variable 'FLAGS_topn' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(topn, false, "Use the topn algo.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:24:1: warning: variable 'o_topn' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_bool(topn, false, "Use the topn algo.");
+^
+/usr/include/gflags/gflags.h:512:3: note: expanded from macro 'DEFINE_bool'
+  DEFINE_VARIABLE(bool, B, name, val, txt)
+  ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:25:1: warning: variable 'FLAGS_notopn_num' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(topn_num, 10, "The top num of the search with topn!");
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:25:1: warning: variable 'FLAGS_topn_num' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(topn_num, 10, "The top num of the search with topn!");
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:25:1: warning: variable 'o_topn_num' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(topn_num, 10, "The top num of the search with topn!");
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:27:1: warning: variable 'FLAGS_novertex_nums' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int64(vertex_nums, 10000000,
+^
+/usr/include/gflags/gflags.h:523:4: note: expanded from macro 'DEFINE_int64'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int64, I64, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:27:1: warning: variable 'FLAGS_vertex_nums' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int64(vertex_nums, 10000000,
+^
+/usr/include/gflags/gflags.h:523:4: note: expanded from macro 'DEFINE_int64'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int64, I64, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:27:1: warning: variable 'o_vertex_nums' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int64(vertex_nums, 10000000,
+^
+/usr/include/gflags/gflags.h:523:4: note: expanded from macro 'DEFINE_int64'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int64, I64, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:29:1: warning: variable 'FLAGS_novertex_id_range' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int64(vertex_id_range, 30000000, "The range of the vertex's id.");
+^
+/usr/include/gflags/gflags.h:523:4: note: expanded from macro 'DEFINE_int64'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int64, I64, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:29:1: warning: variable 'FLAGS_vertex_id_range' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int64(vertex_id_range, 30000000, "The range of the vertex's id.");
+^
+/usr/include/gflags/gflags.h:523:4: note: expanded from macro 'DEFINE_int64'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int64, I64, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:29:1: warning: variable 'o_vertex_id_range' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int64(vertex_id_range, 30000000, "The range of the vertex's id.");
+^
+/usr/include/gflags/gflags.h:523:4: note: expanded from macro 'DEFINE_int64'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int64, I64, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:30:1: warning: variable 'FLAGS_client_threads' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(client_threads, 32,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:30:1: warning: variable 'FLAGS_noclient_threads' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(client_threads, 32,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:30:1: warning: variable 'o_client_threads' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(client_threads, 32,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: initialization of 'FLAGS_noengine_name' with static storage duration may throw an exception that cannot be caught [cert-err58-cpp]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:586:21: note: expanded from macro 'DEFINE_string'
+    clstring* const FLAGS_no##name = ::fLS::                                \
+                    ^
+note: expanded from here
+/usr/include/gflags/gflags.h:542:18: note: possibly throwing function declared here
+inline clstring* dont_pass0toDEFINE_string(char *stringspot,
+                 ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: initialization of 'd_engine_name' with static storage duration may throw an exception that cannot be caught [cert-err58-cpp]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:592:33: note: expanded from macro 'DEFINE_string'
+    static StringFlagDestructor d_##name(s_##name[0].s, s_##name[1].s);     \
+                                ^
+note: expanded from here
+/usr/include/gflags/gflags.h:563:3: note: possibly throwing constructor declared here
+  StringFlagDestructor(void *current, void *defvalue)
+  ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: initialization of 'o_engine_name' with static storage duration may throw an exception that cannot be caught [cert-err58-cpp]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:589:45: note: expanded from macro 'DEFINE_string'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                       \
+                                            ^
+note: expanded from here
+/usr/lib/gcc/x86_64-linux-gnu/8/../../../../include/c++/8/bits/basic_string.h:437:7: note: possibly throwing constructor declared here
+      basic_string(const basic_string& __str)
+      ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: do not declare C-style arrays, use std::array<> instead [cppcoreguidelines-avoid-c-arrays]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:585:33: note: expanded from macro 'DEFINE_string'
+    static union { void* align; char s[sizeof(clstring)]; } s_##name[2];    \
+                                ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: variable 'FLAGS_engine_name' provides global access to a non-const object; consider making the referenced data 'const' [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:593:45: note: expanded from macro 'DEFINE_string'
+    extern GFLAGS_DLL_DEFINE_FLAG clstring& FLAGS_##name;                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: variable 'FLAGS_noengine_name' provides global access to a non-const object; consider making the pointed-to data 'const' [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:586:21: note: expanded from macro 'DEFINE_string'
+    clstring* const FLAGS_no##name = ::fLS::                                \
+                    ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: variable 'd_engine_name' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:592:33: note: expanded from macro 'DEFINE_string'
+    static StringFlagDestructor d_##name(s_##name[0].s, s_##name[1].s);     \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: variable 'o_engine_name' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:589:45: note: expanded from macro 'DEFINE_string'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                       \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: variable 's_engine_name' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:585:61: note: expanded from macro 'DEFINE_string'
+    static union { void* align; char s[sizeof(clstring)]; } s_##name[2];    \
+                                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:587:62: note: expanded from macro 'DEFINE_string'
+                                   dont_pass0toDEFINE_string(s_##name[0].s, \
+                                                             ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:32:1: warning: do not access members of unions; use (boost::)variant instead [cppcoreguidelines-pro-type-union-access]
+DEFINE_string(engine_name, "kvdk",
+^
+/usr/include/gflags/gflags.h:587:74: note: expanded from macro 'DEFINE_string'
+                                   dont_pass0toDEFINE_string(s_##name[0].s, \
+                                                                         ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:36:1: warning: variable 'FLAGS_novertex_info_len' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(vertex_info_len, 64,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:36:1: warning: variable 'FLAGS_vertex_info_len' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(vertex_info_len, 64,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:36:1: warning: variable 'o_vertex_info_len' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(vertex_info_len, 64,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:38:1: warning: variable 'FLAGS_edge_info_len' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(edge_info_len, 128,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:38:1: warning: variable 'FLAGS_noedge_info_len' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(edge_info_len, 128,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:38:1: warning: variable 'o_edge_info_len' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(edge_info_len, 128,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:41:1: warning: variable 'FLAGS_degree_level' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(degree_level, 2, "The depth of the search in the simple graphdb.");
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:41:1: warning: variable 'FLAGS_nodegree_level' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(degree_level, 2, "The depth of the search in the simple graphdb.");
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:41:1: warning: variable 'o_degree_level' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(degree_level, 2, "The depth of the search in the simple graphdb.");
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:42:1: warning: variable 'FLAGS_degree_nums' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(degree_nums, 128,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:480:33: note: expanded from macro 'DEFINE_VARIABLE'
+    GFLAGS_DLL_DEFINE_FLAG type FLAGS_##name = FLAGS_nono##name;        \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:42:1: warning: variable 'FLAGS_nodegree_nums' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(degree_nums, 128,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:481:10: note: expanded from macro 'DEFINE_VARIABLE'
+    type FLAGS_no##name = FLAGS_nono##name;                             \
+         ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:42:1: warning: variable 'o_degree_nums' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_int32(degree_nums, 128,
+^
+/usr/include/gflags/gflags.h:515:4: note: expanded from macro 'DEFINE_int32'
+   DEFINE_VARIABLE(GFLAGS_NAMESPACE::int32, I, \
+   ^
+/usr/include/gflags/gflags.h:482:45: note: expanded from macro 'DEFINE_VARIABLE'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: initialization of 'FLAGS_notopn_collection' with static storage duration may throw an exception that cannot be caught [cert-err58-cpp]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:586:21: note: expanded from macro 'DEFINE_string'
+    clstring* const FLAGS_no##name = ::fLS::                                \
+                    ^
+note: expanded from here
+/usr/include/gflags/gflags.h:542:18: note: possibly throwing function declared here
+inline clstring* dont_pass0toDEFINE_string(char *stringspot,
+                 ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: initialization of 'd_topn_collection' with static storage duration may throw an exception that cannot be caught [cert-err58-cpp]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:592:33: note: expanded from macro 'DEFINE_string'
+    static StringFlagDestructor d_##name(s_##name[0].s, s_##name[1].s);     \
+                                ^
+note: expanded from here
+/usr/include/gflags/gflags.h:563:3: note: possibly throwing constructor declared here
+  StringFlagDestructor(void *current, void *defvalue)
+  ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: initialization of 'o_topn_collection' with static storage duration may throw an exception that cannot be caught [cert-err58-cpp]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:589:45: note: expanded from macro 'DEFINE_string'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                       \
+                                            ^
+note: expanded from here
+/usr/lib/gcc/x86_64-linux-gnu/8/../../../../include/c++/8/bits/basic_string.h:437:7: note: possibly throwing constructor declared here
+      basic_string(const basic_string& __str)
+      ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: do not declare C-style arrays, use std::array<> instead [cppcoreguidelines-avoid-c-arrays]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:585:33: note: expanded from macro 'DEFINE_string'
+    static union { void* align; char s[sizeof(clstring)]; } s_##name[2];    \
+                                ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: variable 'FLAGS_notopn_collection' provides global access to a non-const object; consider making the pointed-to data 'const' [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:586:21: note: expanded from macro 'DEFINE_string'
+    clstring* const FLAGS_no##name = ::fLS::                                \
+                    ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: variable 'FLAGS_topn_collection' provides global access to a non-const object; consider making the referenced data 'const' [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:593:45: note: expanded from macro 'DEFINE_string'
+    extern GFLAGS_DLL_DEFINE_FLAG clstring& FLAGS_##name;                   \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: variable 'd_topn_collection' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:592:33: note: expanded from macro 'DEFINE_string'
+    static StringFlagDestructor d_##name(s_##name[0].s, s_##name[1].s);     \
+                                ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: variable 'o_topn_collection' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:589:45: note: expanded from macro 'DEFINE_string'
+    static GFLAGS_NAMESPACE::FlagRegisterer o_##name(                       \
+                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: variable 's_topn_collection' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:585:61: note: expanded from macro 'DEFINE_string'
+    static union { void* align; char s[sizeof(clstring)]; } s_##name[2];    \
+                                                            ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: do not implicitly decay an array into a pointer; consider using gsl::array_view or an explicit cast instead [cppcoreguidelines-pro-bounds-array-to-pointer-decay]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:587:62: note: expanded from macro 'DEFINE_string'
+                                   dont_pass0toDEFINE_string(s_##name[0].s, \
+                                                             ^
+note: expanded from here
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:45:1: warning: do not access members of unions; use (boost::)variant instead [cppcoreguidelines-pro-type-union-access]
+DEFINE_string(topn_collection, "kvdk_collection",
+^
+/usr/include/gflags/gflags.h:587:74: note: expanded from macro 'DEFINE_string'
+                                   dont_pass0toDEFINE_string(s_##name[0].s, \
+                                                                         ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:49:17: warning: variable 'generator' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+std::mt19937_64 generator;  // A simple random id producer.
+                ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:50:41: warning: variable 'bench_timer' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+std::unordered_map<std::string, double> bench_timer;
+                                        ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:51:17: warning: variable 'graph_simulator' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+GraphSimulator* graph_simulator{nullptr};
+                ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:51:17: warning: variable 'graph_simulator' provides global access to a non-const object; consider making the pointed-to data 'const' [cppcoreguidelines-avoid-non-const-global-variables]
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:54:43: warning: 26 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  return Vertex(id, std::string(len, id % 26 + 'a'));
+                                          ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:57:24: warning: 4 adjacent parameters of 'CreateEdge' of convertible types are easily swapped by mistake [bugprone-easily-swappable-parameters]
+static Edge CreateEdge(const Vertex& in, const Vertex& out,
+                       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:57:38: note: the first parameter in the range is 'in'
+static Edge CreateEdge(const Vertex& in, const Vertex& out,
+                                     ^~
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:58:66: note: the last parameter in the range is 'len'
+                       const uint32_t& direction, const int32_t& len) {
+                                                                 ^~~
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:57:24: note: 
+static Edge CreateEdge(const Vertex& in, const Vertex& out,
+                       ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:58:24: note: 'const int &' and 'const uint32_t &' may be implicitly converted: 'const int &' (as 'int') -> 'const uint32_t &' (as 'unsigned int'), 'const uint32_t &' (as 'unsigned int') -> 'const int &' (as 'int')
+                       const uint32_t& direction, const int32_t& len) {
+                       ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:57:24: note: after resolving type aliases, 'const int &' and 'const int32_t &' are the same
+static Edge CreateEdge(const Vertex& in, const Vertex& out,
+                       ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:58:24: note: 
+                       const uint32_t& direction, const int32_t& len) {
+                       ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:58:51: note: 'const uint32_t &' and 'const int32_t &' may be implicitly converted: 'const uint32_t &' (as 'unsigned int') -> 'const int32_t &' (as 'int'), 'const int32_t &' (as 'int') -> 'const uint32_t &' (as 'unsigned int')
+                       const uint32_t& direction, const int32_t& len) {
+                                                  ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:57:38: warning: parameter 'in' is unused [misc-unused-parameters]
+static Edge CreateEdge(const Vertex& in, const Vertex& out,
+                       ~~~~~~~~~~~~~~^~~~
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:57:56: warning: parameter 'out' is unused [misc-unused-parameters]
+static Edge CreateEdge(const Vertex& in, const Vertex& out,
+                                         ~~~~~~~~~~~~~~^~~~
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:59:8: warning: variable 'edge' is not initialized [cppcoreguidelines-init-variables]
+  Edge edge;
+       ^
+            = 0
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:68:3: warning: uninitialized record type: 'tv' [cppcoreguidelines-pro-type-member-init]
+  struct timeval tv;
+  ^
+                   {}
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:70:30: warning: narrowing conversion from '__suseconds_t' (aka 'long') to 'double' [bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions]
+  return static_cast<double>(tv.tv_usec / 1000000.0) + tv.tv_sec;
+                             ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:70:43: warning: 1000000.0 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  return static_cast<double>(tv.tv_usec / 1000000.0) + tv.tv_sec;
+                                          ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:70:56: warning: narrowing conversion from '__time_t' (aka 'long') to 'double' [bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions]
+  return static_cast<double>(tv.tv_usec / 1000000.0) + tv.tv_sec;
+                                                       ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:74:7: warning: class 'Timer' defines a non-default destructor but does not define a copy constructor, a copy assignment operator, a move constructor or a move assignment operator [cppcoreguidelines-special-member-functions]
+class Timer {
+      ^
+/home/shizy/kvdk/scripts/../examples/graph_sim/bench/graph_bench.cpp:84:13: warning: variable 'StartThreads' is non-const and globally accessible, consider making it const [cppcoreguidelines-avoid-non-const-global-variables]
+static void StartThreads(std::function<void()> func, int32_t thread_nums) {
+            ^
+Suppressed 54543 warnings (54543 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+Found compiler error(s).
+2185 warnings generated.
+/home/shizy/kvdk/scripts/../examples/graph_sim/src/options.hpp:12:36: warning: 2000 is a magic number; consider replacing it with a named constant [cppcoreguidelines-avoid-magic-numbers]
+  uint64_t max_edge_nums_per_value{2000};
+                                   ^
+Suppressed 2183 warnings (2183 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
