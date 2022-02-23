@@ -533,6 +533,16 @@ class SortedCollectionRebuilder {
   DLRecord* FindValidVersion(DLRecord* pmem_record,
                              std::vector<DLRecord*>* invalid_version_records);
 
+  void AddInvalidRecords(DLRecord* sorted_record) {
+    std::lock_guard<SpinMutex> lg(map_mu_);
+    invalid_records_.insert(sorted_record);
+  }
+
+  void RemoveInvalidRecords(DLRecord* sorted_record) {
+    std::lock_guard<SpinMutex> lg(map_mu_);
+    invalid_records_.erase(sorted_record);
+  }
+
  private:
   Status repairSkiplistLinkage(Skiplist* skiplist);
 
@@ -549,14 +559,19 @@ class SortedCollectionRebuilder {
   void dealWithOtherHeight(uint64_t thread_id, SkiplistNode* cur_node,
                            int heightm);
 
-  void batchPurgeAndFree(std::vector<DLRecord*>& pmem_records) {
+  void cleanInvalidRecords() {
     std::vector<SpaceEntry> to_free;
-    for (DLRecord* pmem_record : pmem_records) {
+    for (DLRecord* pmem_record : invalid_records_) {
       pmem_record->Destroy();
       to_free.emplace_back(pmem_allocator_->addr2offset_checked(pmem_record),
                            pmem_record->entry.header.record_size);
+      if (to_free.size() > 1000) {
+        pmem_allocator_->BatchFree(to_free);
+        to_free.clear();
+      }
     }
     pmem_allocator_->BatchFree(to_free);
+    invalid_records_.clear();
   }
 
   struct SkiplistNodeInfo {
@@ -571,6 +586,7 @@ class SortedCollectionRebuilder {
   uint64_t num_rebuild_threads_;
   bool opt_parallel_rebuild_;
   CheckPoint checkpoint_;
+  std::unordered_set<DLRecord*> invalid_records_;
 };
 
 }  // namespace KVDK_NAMESPACE

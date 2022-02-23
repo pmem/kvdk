@@ -654,7 +654,6 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
     splice.prevs[i] = skiplist->header();
     splice.prev_pmem_record = skiplist->header()->record;
   }
-  std::vector<DLRecord*> invalid_records;
 
   while (true) {
     HashEntry* entry_ptr = nullptr;
@@ -678,9 +677,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
             "insert first before repair linkage\n");
         return Status::Abort;
       }
-      invalid_records.clear();
-      DLRecord* valid_version_record =
-          FindValidVersion(next_record, &invalid_records);
+      DLRecord* valid_version_record = FindValidVersion(next_record, nullptr);
       if (valid_version_record == nullptr) {
         // purge invalid version record from list
         if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
@@ -690,6 +687,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
         }
         hash_table_->Erase(entry_ptr);
       } else {
+        RemoveInvalidRecords(valid_version_record);
         if (valid_version_record != next_record) {
           // repair linkage of checkpoint version
           if (!Skiplist::Replace(next_record, valid_version_record,
@@ -720,7 +718,6 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
         }
         splice.prev_pmem_record = valid_version_record;
       }
-      batchPurgeAndFree(invalid_records);
       break;
     }
   }
@@ -729,6 +726,7 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
 
 Status SortedCollectionRebuilder::RebuildLinkage(
     const std::vector<std::shared_ptr<Skiplist>>& skiplists) {
+  defer(this->cleanInvalidRecords());
   Status s = Status::Ok;
   if (skiplists.size() == 0) {
     return s;
@@ -833,9 +831,7 @@ SkiplistNode* SortedCollectionRebuilder::getSortedOffset(int height) {
 Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
                                                       SkiplistNode* cur_node) {
   DLRecord* visiting_record = cur_node->record;
-  std::vector<DLRecord*> invalid_records;
   while (true) {
-    invalid_records.clear();
     uint64_t next_offset = visiting_record->next;
     DLRecord* next_record =
         pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
@@ -863,8 +859,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
           return Status::Abort;
         }
         assert(entry_ptr->GetIndexType() == HashIndexType::DLRecord);
-        DLRecord* valid_version_record =
-            FindValidVersion(next_record, &invalid_records);
+        DLRecord* valid_version_record = FindValidVersion(next_record, nullptr);
         if (valid_version_record == nullptr) {
           // purge invalid version record from list
           if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
@@ -874,6 +869,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
           }
           hash_table_->Erase(entry_ptr);
         } else {
+          RemoveInvalidRecords(valid_version_record);
           // repair linkage of checkpoint version
           if (valid_version_record != next_record) {
             if (!Skiplist::Replace(next_record, valid_version_record,
@@ -902,7 +898,6 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(uint64_t thread_id,
           }
           visiting_record = valid_version_record;
         }
-        batchPurgeAndFree(invalid_records);
         break;
       }
     } else {
@@ -970,7 +965,6 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
     StringView internal_key = cur_record->Key();
     auto hash_hint = hash_table_->GetHint(internal_key);
     while (true) {
-      std::vector<DLRecord*> invalid_version_records;
       std::lock_guard<SpinMutex> lg(*hash_hint.spin);
       Status s =
           hash_table_->SearchForRead(hash_hint, internal_key, SortedRecordType,
@@ -993,8 +987,8 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
                     "wrong hash offset type in repair skiplist linkage");
         it = record_offsets_.erase(it);
         cur_record = hash_entry.GetIndex().dl_record;
-        DLRecord* valid_version_record = FindValidVersion(
-            hash_entry.GetIndex().dl_record, &invalid_version_records);
+        DLRecord* valid_version_record =
+            FindValidVersion(hash_entry.GetIndex().dl_record, nullptr);
         if (valid_version_record == nullptr) {
           // purge invalid version record from list
           if (!Skiplist::Purge(hash_entry.GetIndex().dl_record, hash_hint.spin,
@@ -1003,6 +997,7 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
           }
           hash_table_->Erase(entry_ptr);
         } else {
+          RemoveInvalidRecords(valid_version_record);
           // repair linkage of checkpoint version
           if (valid_version_record != hash_entry.GetIndex().dl_record) {
             if (!Skiplist::Replace(hash_entry.GetIndex().dl_record,
@@ -1028,7 +1023,6 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
           }
         }
       }
-      batchPurgeAndFree(invalid_version_records);
       break;
     }
   }

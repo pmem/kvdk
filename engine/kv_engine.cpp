@@ -628,6 +628,8 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
   if (!linked_record) {
     if (!RecoverToCheckpoint()) {
       purgeAndFree(pmem_record);
+    } else {
+      sorted_rebuilder_->AddInvalidRecords(pmem_record);
     }
     return Status::Ok;
   }
@@ -652,12 +654,12 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
     // avoid freeing a valid checkpoint version record
     if (!RecoverToCheckpoint() || existing_data_entry.meta.timestamp <=
                                       persist_checkpoint_->CheckpointTS()) {
-      purgeAndFree(pmem_record);
+      // purgeAndFree(pmem_record);
     } else {
       DLRecord* valid_version_record = sorted_rebuilder_->FindValidVersion(
           hash_entry.GetIndex().dl_record, nullptr);
       if (valid_version_record != pmem_record) {
-        purgeAndFree(pmem_record);
+        // purgeAndFree(pmem_record);
       }
     }
     return Status::Ok;
@@ -682,12 +684,12 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
     if (!RecoverToCheckpoint() || cached_data_entry.meta
                                           .timestamp <= persist_checkpoint_
                                                             ->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
-      purgeAndFree(old_pmem_record);
+      // purgeAndFree(old_pmem_record);
     } else {
       DLRecord* valid_version_record =
           sorted_rebuilder_->FindValidVersion(old_pmem_record, nullptr);
       if (valid_version_record != old_pmem_record) {
-        purgeAndFree(old_pmem_record);
+        // purgeAndFree(old_pmem_record);
       }
     }
   }
