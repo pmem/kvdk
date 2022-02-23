@@ -1855,7 +1855,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
       std::string collection_name = p_collection->Name();
       HashTable::KeyHashHint hint_collection =
           hash_table_->GetHint(collection_name);
-      std::unique_lock<SpinMutex>{*hint_collection.spin};
+      std::unique_lock<SpinMutex> guard{*hint_collection.spin};
 
       HashEntry hash_entry_collection;
       HashEntry* p_hash_entry_collection = nullptr;
