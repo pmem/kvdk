@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
   StandardAllocatorWrapper* standard_allocator = new StandardAllocatorWrapper();
   std::cout << "Standard Allocator Performance: \n";
   allcator_bench.RandomSizePerf(FLAGS_num_thread, FLAGS_iter_num,
-                               standard_allocator);
+                                standard_allocator);
   delete standard_allocator;
 
   // For pmem allocator
@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
 
   std::cout << "PMmem Allocator Performance: \n";
   allcator_bench.RandomSizePerf(FLAGS_num_thread, FLAGS_iter_num,
-                               pmem_allocator);
+                                pmem_allocator);
 
   delete pmem_allocator;
 
