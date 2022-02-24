@@ -74,7 +74,7 @@ class EngineBasicTest : public testing::Test {
     int res __attribute__((unused)) = system(cmd);
   }
 
-  bool ChangedConfig() {
+  bool ChangeConfig() {
     config_option++;
     if (config_option >= End) {
       return false;
@@ -87,6 +87,7 @@ class EngineBasicTest : public testing::Test {
   void ReopenEngine() {
     delete engine;
     engine = nullptr;
+    Destroy();
     configs = CurrentConfigs();
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
               Status::Ok);
@@ -582,7 +583,7 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
   do {
     TestGlobalCollection("global_string", StringSetFunc, StringGetFunc,
                          StringDeleteFunc, Types::String);
-  } while (ChangedConfig());
+  } while (ChangeConfig());
   delete engine;
 }
 
@@ -662,7 +663,7 @@ TEST_F(EngineBasicTest, TestLocalSortedCollection) {
                              "thread_skiplist",
                          true);
     }
-  } while (ChangedConfig());
+  } while (ChangeConfig());
 
   delete engine;
 }
@@ -695,7 +696,7 @@ TEST_F(EngineBasicTest, TestGlobalSortedCollection) {
     SortedCollectionConfigs s_configs;
     TestGlobalSortedCollection(collection, s_configs);
     TestSortedIterator(collection, false);
-  } while (ChangedConfig());
+  } while (ChangeConfig());
   delete engine;
 }
 
@@ -1025,7 +1026,7 @@ TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
   do {
     TestLocalUnorderedCollection("thread_unordered");
     TestUnorderedIterator("thread_unordered", true);
-  } while (ChangedConfig());
+  } while (ChangeConfig());
   delete engine;
 }
 
@@ -1053,7 +1054,7 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
     TestGlobalCollection("global_unordered", UnorderedSetFunc, UnorderedGetFunc,
                          UnorderedDeleteFunc, Types::Hash);
     TestUnorderedIterator("global_unordered", false);
-  } while (ChangedConfig());
+  } while (ChangeConfig());
   delete engine;
 }
 

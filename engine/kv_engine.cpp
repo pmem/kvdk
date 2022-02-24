@@ -622,8 +622,6 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
               "wrong record type in RestoreSkiplistRecord");
 
   bool linked_record = CheckAndRepairDLRecord(pmem_record);
-  std::string internal_key(pmem_record->Key());
-  StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
 
   if (!linked_record) {
     if (!RecoverToCheckpoint()) {
@@ -631,69 +629,16 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
     } else {
       sorted_rebuilder_->AddInvalidRecords(pmem_record);
     }
-    return Status::Ok;
-  }
-
-  DataEntry existing_data_entry;
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-
-  auto hint = hash_table_->GetHint(internal_key);
-  std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->SearchForWrite(
-      hint, internal_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
-      &hash_entry, &existing_data_entry);
-
-  if (s == Status::MemoryOverflow) {
-    return s;
-  }
-
-  bool found = s == Status::Ok;
-  if (found &&
-      existing_data_entry.meta.timestamp >= cached_data_entry.meta.timestamp) {
-    // avoid freeing a valid checkpoint version record
-    if (!RecoverToCheckpoint() || existing_data_entry.meta.timestamp <=
-                                      persist_checkpoint_->CheckpointTS()) {
-      // purgeAndFree(pmem_record);
-    } else {
-      DLRecord* valid_version_record = sorted_rebuilder_->FindValidVersion(
-          hash_entry.GetIndex().dl_record, nullptr);
-      if (valid_version_record != pmem_record) {
-        // purgeAndFree(pmem_record);
-      }
-    }
-    return Status::Ok;
-  }
-
-  SkiplistNode* dram_node = nullptr;
-  if (!found) {
-    // Hash entry won't be reused during data recovering so we don't
-    // neet to check status here
-    hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
-                        (void*)pmem_record, HashIndexType::DLRecord);
   } else {
-    DLRecord* old_pmem_record;
-    assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-    old_pmem_record = hash_entry.GetIndex().dl_record;
-    hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
-                        pmem_record, HashIndexType::DLRecord);
-    kvdk_assert(old_pmem_record->entry.meta.timestamp <
-                    pmem_record->entry.meta.timestamp,
-                "old pmem record has larger ts than new restored one in "
-                "restore skiplist record");
-    if (!RecoverToCheckpoint() || cached_data_entry.meta
-                                          .timestamp <= persist_checkpoint_
-                                                            ->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
-      // purgeAndFree(old_pmem_record);
-    } else {
-      DLRecord* valid_version_record =
-          sorted_rebuilder_->FindValidVersion(old_pmem_record, nullptr);
-      if (valid_version_record != old_pmem_record) {
-        // purgeAndFree(old_pmem_record);
-      }
+    if (configs_.opt_large_sorted_collection_restore &&
+        engine_thread_cache_[access_thread.id]
+                    .visited_skiplist_ids[Skiplist::SkiplistID(pmem_record)]++ %
+                kRestoreSkiplistStride ==
+            0) {
+      sorted_rebuilder_->AddRecordForParallelRebuild(
+          pmem_allocator_->addr2offset(pmem_record), false, nullptr);
     }
   }
-
   return Status::Ok;
 }
 
@@ -904,7 +849,7 @@ Status KVEngine::Recovery() {
   }
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
-      pmem_allocator_.get(), hash_table_.get(),
+      pmem_allocator_.get(), hash_table_.get(), thread_manager_.get(),
       configs_.opt_large_sorted_collection_restore, configs_.max_access_threads,
       *persist_checkpoint_));
   std::vector<std::future<Status>> fs;

@@ -513,11 +513,14 @@ class KVEngine;
 class SortedCollectionRebuilder {
  public:
   SortedCollectionRebuilder(PMEMAllocator* pmem_allocator,
-                            HashTable* hash_table, bool opt_parallel_rebuild,
+                            HashTable* hash_table,
+                            ThreadManager* thread_manager,
+                            bool opt_parallel_rebuild,
                             uint64_t num_rebuild_threads,
                             const CheckPoint& checkpoint)
       : pmem_allocator_(pmem_allocator),
         hash_table_(hash_table),
+        thread_manager_(thread_manager),
         checkpoint_(checkpoint),
         opt_parallel_rebuild_(opt_parallel_rebuild),
         num_rebuild_threads_(num_rebuild_threads){};
@@ -527,6 +530,7 @@ class SortedCollectionRebuilder {
 
   void AddRecordForParallelRebuild(uint64_t record_offset, bool is_visited,
                                    SkiplistNode* node) {
+    std::lock_guard<SpinMutex> lg(mu_);
     record_offsets_.insert({record_offset, {is_visited, node}});
   }
 
@@ -534,12 +538,12 @@ class SortedCollectionRebuilder {
                              std::vector<DLRecord*>* invalid_version_records);
 
   void AddInvalidRecords(DLRecord* sorted_record) {
-    std::lock_guard<SpinMutex> lg(map_mu_);
+    std::lock_guard<SpinMutex> lg(mu_);
     invalid_records_.insert(sorted_record);
   }
 
   void RemoveInvalidRecords(DLRecord* sorted_record) {
-    std::lock_guard<SpinMutex> lg(map_mu_);
+    std::lock_guard<SpinMutex> lg(mu_);
     invalid_records_.erase(sorted_record);
   }
 
@@ -552,12 +556,11 @@ class SortedCollectionRebuilder {
 
   SkiplistNode* getSortedOffset(int height);
 
-  void linkedNode(uint64_t thread_id, int height);
+  void linkDramNodes(int height);
 
-  Status dealWithFirstHeight(uint64_t thread_id, SkiplistNode* cur_node);
+  Status dealWithFirstHeight(SkiplistNode* cur_node);
 
-  void dealWithOtherHeight(uint64_t thread_id, SkiplistNode* cur_node,
-                           int heightm);
+  void dealWithOtherHeight(SkiplistNode* cur_node, int heightm);
 
   void cleanInvalidRecords() {
     std::vector<SpaceEntry> to_free;
@@ -578,11 +581,12 @@ class SortedCollectionRebuilder {
     bool visited;
     SkiplistNode* node;
   };
-  SpinMutex map_mu_;
+  SpinMutex mu_;
   std::vector<std::unordered_set<SkiplistNode*>> thread_cache_node_;
   std::unordered_map<uint64_t, SkiplistNodeInfo> record_offsets_;
   PMEMAllocator* pmem_allocator_;
   HashTable* hash_table_;
+  ThreadManager* thread_manager_;
   uint64_t num_rebuild_threads_;
   bool opt_parallel_rebuild_;
   CheckPoint checkpoint_;
