@@ -11,6 +11,7 @@
 
 #include "hash_table.hpp"
 #include "kv_engine.hpp"
+#include "utils/coding.hpp"
 #include "utils/sync_point.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -1056,22 +1057,10 @@ SkiplistNode* Skiplist::NewNodeBuild(DLRecord* pmem_record) {
 std::string Skiplist::EncodeSortedCollectionValue(
     CollectionIDType id, const SortedCollectionConfigs& s_configs) {
   const size_t num_config_fields = 1;
-  std::string value_str(
-      sizeof(CollectionIDType) +
-          sizeof(ConfigFieldSizeType) * (num_config_fields + 1 /* end mark */) +
-          s_configs.comparator_name.size(),
-      ' ');
-  size_t cur = 0;
-  memcpy(&value_str[cur], &id, sizeof(CollectionIDType));
-  cur += sizeof(CollectionIDType);
+  std::string value_str;
 
-  ConfigFieldSizeType field_size = s_configs.comparator_name.size();
-  memcpy(&value_str[cur], &field_size, sizeof(ConfigFieldSizeType));
-  cur += sizeof(ConfigFieldSizeType);
-  memcpy(&value_str[cur], s_configs.comparator_name.data(), field_size);
-  cur += field_size;
-
-  memcpy(&value_str[cur], &kEncodedConfigsEndMark, sizeof(ConfigFieldSizeType));
+  AppendInt64(&value_str, id);
+  AppendFixedString(&value_str, s_configs.comparator_name);
 
   return value_str;
 }
@@ -1079,46 +1068,14 @@ std::string Skiplist::EncodeSortedCollectionValue(
 Status Skiplist::DecodeSortedCollectionValue(
     StringView value_str, CollectionIDType& id,
     SortedCollectionConfigs& s_configs) {
-  ConfigFieldSizeType config_filed_size = 0;
-  size_t cur = 0;
-  size_t setting_config_field = 0;
-
-  // Decode id
-  if ((cur + sizeof(CollectionIDType)) > value_str.size()) {
+  if (!FetchInt64(&value_str, &id)) {
     return Status::Abort;
   }
-  memcpy(&id, &value_str[cur], sizeof(CollectionIDType));
-  cur += sizeof(CollectionIDType);
-
-  // Decode configs
-  while (true) {
-    if ((cur + sizeof(ConfigFieldSizeType)) > value_str.size()) {
-      return Status::Abort;
-    }
-    memcpy(&config_filed_size, value_str.data() + cur,
-           sizeof(ConfigFieldSizeType));
-    // Finished
-    if (config_filed_size == kEncodedConfigsEndMark) {
-      return Status::Ok;
-    }
-    cur += sizeof(ConfigFieldSizeType);
-    if ((cur + config_filed_size) > value_str.size()) {
-      return Status::Abort;
-    }
-    std::string config_field_str(value_str.data() + cur, config_filed_size);
-
-    switch (setting_config_field) {
-      case 0: {
-        s_configs.comparator_name = config_field_str;
-        break;
-      }
-
-      default:
-        return Status::Ok;
-    }
-    cur += config_filed_size;
-    setting_config_field++;
+  if (!FetchFixedString(&value_str, &s_configs.comparator_name)) {
+    return Status::Abort;
   }
+
+  return Status::Ok;
 }
 
 Status Skiplist::Get(const StringView& key, std::string* value) {

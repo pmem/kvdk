@@ -22,6 +22,7 @@
 #include "kvdk/engine.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
+#include "utils/coding.hpp"
 #include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
 
