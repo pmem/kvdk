@@ -1062,8 +1062,12 @@ std::string Skiplist::EncodeSortedCollectionValue(
 Status Skiplist::DecodeSortedCollectionValue(
     StringView value_str, CollectionIDType& id,
     SortedCollectionConfigs& s_configs) {
-  id = FetchInt64(&value_str);
-  s_configs.comparator_name = FetchFixedString(&value_str);
+  if (!FetchInt64(&value_str, &id)) {
+    return Status::Abort;
+  }
+  if (!FetchFixedString(&value_str, &s_configs.comparator_name)) {
+    return Status::Abort;
+  }
 
   return Status::Ok;
 }

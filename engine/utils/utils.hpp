@@ -383,9 +383,10 @@ inline static std::string EncodeID(CollectionIDType id) {
 }
 
 inline static CollectionIDType DecodeID(const StringView& string_id) {
-  kvdk_assert(sizeof(CollectionIDType) <= string_id.size(),
-              "size of string id does not match CollectionIDType size!");
-  return DecodeInt64(string_id);
+  CollectionIDType id;
+  bool ret = DecodeInt64(string_id, &id);
+  kvdk_assert(ret, "size of string id does not match CollectionIDType size!");
+  return id;
 }
 
 inline static StringView ExtractUserKey(const StringView& internal_key) {
