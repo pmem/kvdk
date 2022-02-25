@@ -577,6 +577,7 @@ class SortedCollectionRebuilder {
 
   struct SkiplistNodeInfo {
     bool visited;
+    bool build_hash_index;
     SkiplistNode* node;
   };
   SpinMutex mu_;

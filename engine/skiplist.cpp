@@ -998,6 +998,8 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
         }
         node = hash_entry.GetIndex().skiplist->header();
         it->second.node = node;
+        it->second.build_hash_index =
+            hash_entry.GetIndex().skiplist->IndexedByHashtable();
         it++;
       } else if (s == Status::NotFound) {
         it = record_offsets_.erase(it);
@@ -1022,12 +1024,17 @@ Status SortedCollectionRebuilder::updateRecordOffsets() {
           node = Skiplist::NewNodeBuild(valid_version_record);
 
           if (node != nullptr) {
-            hash_table_->Insert(hash_hint, entry_ptr,
-                                valid_version_record->entry.meta.type, node,
-                                HashIndexType::SkiplistNode);
+            auto iter = skiplists_->find(node->SkiplistID());
+            assert(iter != skiplists_->end());
+            bool index_with_hashtable = iter->second->IndexedByHashtable();
+            if (index_with_hashtable) {
+              hash_table_->Insert(hash_hint, entry_ptr,
+                                  valid_version_record->entry.meta.type, node,
+                                  HashIndexType::SkiplistNode);
+            }
             new_kvs.insert(
                 {pmem_allocator_->addr2offset_checked(valid_version_record),
-                 {false, node}});
+                 {false, index_with_hashtable, node}});
           }
           // TODO: comment why not insert dlrecord hash index here
         }
