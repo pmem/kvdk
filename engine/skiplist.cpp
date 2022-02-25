@@ -617,17 +617,18 @@ Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
     }
     defer(this->thread_manager_->Release(access_thread));
     while (true) {
-      SkiplistNode* cur_node = getSortedOffset(height);
-      if (!cur_node) {
+      SkiplistNodeInfo* start_point = getStartPoint(height);
+      if (!start_point) {
         break;
       }
       if (height == 1) {
-        Status s = dealWithFirstHeight(cur_node);
+        Status s = dealWithFirstHeight(start_point->node,
+                                       start_point->build_hash_index);
         if (s != Status::Ok) {
           return s;
         }
       } else {
-        dealWithOtherHeight(cur_node, height);
+        dealWithOtherHeight(start_point->node, height);
       }
     }
     linkDramNodes(height);
@@ -725,15 +726,18 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
                 "Rebuild skiplist error, hash entry of sorted data/delete "
                 "records should not be inserted before repair linkage\n");
             return Status::Abort;
-          }
-          if (dram_node) {
-            hash_table_->Insert(hash_hint, entry_ptr,
-                                valid_version_record->entry.meta.type,
-                                dram_node, HashIndexType::SkiplistNode);
+          } else if (s == Status::NotFound) {
+            if (dram_node) {
+              hash_table_->Insert(hash_hint, entry_ptr,
+                                  valid_version_record->entry.meta.type,
+                                  dram_node, HashIndexType::SkiplistNode);
+            } else {
+              hash_table_->Insert(
+                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                  valid_version_record, HashIndexType::DLRecord);
+            }
           } else {
-            hash_table_->Insert(hash_hint, entry_ptr,
-                                valid_version_record->entry.meta.type,
-                                valid_version_record, HashIndexType::DLRecord);
+            return s;
           }
         }
 
@@ -843,18 +847,20 @@ void SortedCollectionRebuilder::linkDramNodes(int height) {
   thread_cache_node_[access_thread.id].clear();
 }
 
-SkiplistNode* SortedCollectionRebuilder::getSortedOffset(int height) {
+SortedCollectionRebuilder::SkiplistNodeInfo*
+SortedCollectionRebuilder::getStartPoint(int height) {
   std::lock_guard<SpinMutex> kv_mux(mu_);
   for (auto& kv : record_offsets_) {
     if (!kv.second.visited && kv.second.node->Height() >= height - 1) {
       kv.second.visited = true;
-      return kv.second.node;
+      return &kv.second;
     }
   }
   return nullptr;
 }
 
-Status SortedCollectionRebuilder::dealWithFirstHeight(SkiplistNode* cur_node) {
+Status SortedCollectionRebuilder::dealWithFirstHeight(SkiplistNode* cur_node,
+                                                      bool build_hash_index) {
   DLRecord* visiting_record = cur_node->record;
   while (true) {
     uint64_t next_offset = visiting_record->next;
@@ -874,15 +880,7 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(SkiplistNode* cur_node) {
       auto hash_hint = hash_table_->GetHint(internal_key);
       while (true) {
         std::lock_guard<SpinMutex> lg(*hash_hint.spin);
-        Status s = hash_table_->SearchForWrite(hash_hint, internal_key,
-                                               SortedRecordType, &entry_ptr,
-                                               &hash_entry, &data_entry);
-        if (s == Status::Ok) {
-          GlobalLogger.Error(
-              "Rebuild skiplist error, hash entry of sorted data/delete "
-              "records should not be inserted before repair linkage\n");
-          return Status::Abort;
-        }
+
         DLRecord* valid_version_record = FindValidVersion(next_record, nullptr);
         if (valid_version_record == nullptr) {
           // purge invalid version record from list
@@ -906,17 +904,33 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(SkiplistNode* cur_node) {
           SkiplistNode* dram_node =
               Skiplist::NewNodeBuild(valid_version_record);
           if (dram_node != nullptr) {
-            hash_table_->Insert(hash_hint, entry_ptr,
-                                valid_version_record->entry.meta.type,
-                                dram_node, HashIndexType::SkiplistNode);
             cur_node->RelaxedSetNext(1, dram_node);
             dram_node->RelaxedSetNext(1, nullptr);
             cur_node = dram_node;
-          } else {
-            hash_table_->Insert(hash_hint, entry_ptr,
-                                valid_version_record->entry.meta.type,
-                                valid_version_record, HashIndexType::DLRecord);
           }
+
+          Status s = hash_table_->SearchForWrite(hash_hint, internal_key,
+                                                 SortedRecordType, &entry_ptr,
+                                                 &hash_entry, &data_entry);
+          if (s == Status::Ok) {
+            GlobalLogger.Error(
+                "Rebuild skiplist error, hash entry of sorted data/delete "
+                "records should not be inserted before repair linkage\n");
+            return Status::Abort;
+          } else if (s == Status::NotFound) {
+            if (dram_node) {
+              hash_table_->Insert(hash_hint, entry_ptr,
+                                  valid_version_record->entry.meta.type,
+                                  dram_node, HashIndexType::SkiplistNode);
+            } else {
+              hash_table_->Insert(
+                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                  valid_version_record, HashIndexType::DLRecord);
+            }
+          } else {
+            return s;
+          }
+
           visiting_record = valid_version_record;
         }
         break;

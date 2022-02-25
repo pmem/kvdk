@@ -546,17 +546,22 @@ class SortedCollectionRebuilder {
   }
 
  private:
+  struct SkiplistNodeInfo {
+    bool visited;
+    bool build_hash_index;
+    SkiplistNode* node;
+  };
   Status repairSkiplistLinkage(Skiplist* skiplist);
 
   Status parallelRepairSkiplistLinkage();
 
   Status updateRecordOffsets();
 
-  SkiplistNode* getSortedOffset(int height);
+  SkiplistNodeInfo* getStartPoint(int height);
 
   void linkDramNodes(int height);
 
-  Status dealWithFirstHeight(SkiplistNode* cur_node);
+  Status dealWithFirstHeight(SkiplistNode* cur_node, bool build_hash_index);
 
   void dealWithOtherHeight(SkiplistNode* cur_node, int heightm);
 
@@ -575,11 +580,6 @@ class SortedCollectionRebuilder {
     invalid_records_.clear();
   }
 
-  struct SkiplistNodeInfo {
-    bool visited;
-    bool build_hash_index;
-    SkiplistNode* node;
-  };
   SpinMutex mu_;
   std::vector<std::unordered_set<SkiplistNode*>> thread_cache_node_;
   std::unordered_map<uint64_t, SkiplistNodeInfo> record_offsets_;
