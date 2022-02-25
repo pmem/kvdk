@@ -110,7 +110,8 @@ class KVEngine : public Engine {
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
-  const std::vector<std::shared_ptr<Skiplist>>& GetSkiplists() {
+  const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
+  GetSkiplists() {
     return skiplists_;
   };
 
@@ -359,7 +360,7 @@ class KVEngine : public Engine {
 
   std::shared_ptr<HashTable> hash_table_;
 
-  std::vector<std::shared_ptr<Skiplist>> skiplists_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
   std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;

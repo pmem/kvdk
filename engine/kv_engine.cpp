@@ -22,7 +22,6 @@
 #include "kvdk/engine.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
-#include "utils/coding.hpp"
 #include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
 
@@ -75,8 +74,8 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
 }
 
 void KVEngine::FreeSkiplistDramNodes() {
-  for (auto skiplist : skiplists_) {
-    skiplist->PurgeObsoletedNodes();
+  for (auto& skiplist : skiplists_) {
+    skiplist.second->PurgeObsoletedNodes();
   }
 }
 
@@ -237,7 +236,7 @@ Status KVEngine::CreateSortedCollection(
         pmem_allocator_, hash_table_, s_configs.index_with_hashtable);
     {
       std::lock_guard<std::mutex> lg(list_mu_);
-      skiplists_.push_back(skiplist);
+      skiplists_.insert({id, skiplist});
       *collection_ptr = skiplist.get();
     }
     hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, *collection_ptr,
@@ -537,10 +536,11 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   Skiplist* skiplist;
   {
     std::lock_guard<std::mutex> lg(list_mu_);
-    skiplists_.push_back(std::make_shared<Skiplist>(
-        pmem_record, name, id, comparator, pmem_allocator_, hash_table_,
-        s_configs.index_with_hashtable));
-    skiplist = skiplists_.back().get();
+    auto sl = std::make_shared<Skiplist>(pmem_record, name, id, comparator,
+                                         pmem_allocator_, hash_table_,
+                                         s_configs.index_with_hashtable);
+    skiplists_.insert({id, sl});
+    skiplist = sl.get();
     if (configs_.opt_large_sorted_collection_restore) {
       sorted_rebuilder_->AddRecordForParallelRebuild(
           pmem_allocator_->addr2offset(pmem_record), false, nullptr);
@@ -852,7 +852,7 @@ Status KVEngine::Recovery() {
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       pmem_allocator_.get(), hash_table_.get(), thread_manager_.get(),
       configs_.opt_large_sorted_collection_restore, configs_.max_access_threads,
-      *persist_checkpoint_));
+      *persist_checkpoint_, &skiplists_));
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
@@ -871,7 +871,7 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  s = sorted_rebuilder_->RebuildLinkage(GetSkiplists());
+  s = sorted_rebuilder_->RebuildLinkage();
   if (s != Status::Ok) {
     return s;
   }

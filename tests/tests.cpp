@@ -1013,7 +1013,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   auto skiplists = (dynamic_cast<KVEngine*>(engine))->GetSkiplists();
   for (int h = 1; h <= 32; ++h) {
     for (auto s : skiplists) {
-      ASSERT_EQ(s->CheckConnection(h), Status::Ok);
+      ASSERT_EQ(s.second->CheckConnection(h), Status::Ok);
     }
   }
   delete engine;

@@ -745,11 +745,10 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
   return Status::Ok;
 }
 
-Status SortedCollectionRebuilder::RebuildLinkage(
-    const std::vector<std::shared_ptr<Skiplist>>& skiplists) {
+Status SortedCollectionRebuilder::RebuildLinkage() {
   defer(this->cleanInvalidRecords());
   Status s = Status::Ok;
-  if (skiplists.size() == 0) {
+  if (skiplists_->size() == 0) {
     return s;
   }
 
@@ -757,10 +756,12 @@ Status SortedCollectionRebuilder::RebuildLinkage(
     s = parallelRepairSkiplistLinkage();
   } else {
     std::vector<std::future<Status>> fs;
-    for (size_t i = 0; i <= skiplists.size() - 1; i++) {
+    int i = 0;
+    for (auto skiplist : *skiplists_) {
+      i++;
       fs.push_back(std::async(&SortedCollectionRebuilder::repairSkiplistLinkage,
-                              this, skiplists[i].get()));
-      if (i % num_rebuild_threads_ == 0 || i == skiplists.size() - 1) {
+                              this, skiplist.second.get()));
+      if (i % num_rebuild_threads_ == 0) {
         for (auto& f : fs) {
           s = f.get();
           if (s != Status::Ok) {
@@ -773,8 +774,8 @@ Status SortedCollectionRebuilder::RebuildLinkage(
   }
 #ifdef DEBUG_CHECK
   for (uint8_t h = 1; h <= kMaxHeight; h++) {
-    for (auto skiplist : skiplists) {
-      Status s = skiplist->CheckConnection(h);
+    for (auto skiplist : *skiplists_) {
+      Status s = skiplist.second->CheckConnection(h);
       if (s != Status::Ok) {
         GlobalLogger.Info("Check skiplist connecton at height %u error\n", h);
         return s;
@@ -1061,6 +1062,7 @@ std::string Skiplist::EncodeSortedCollectionValue(
 
   AppendInt64(&value_str, id);
   AppendFixedString(&value_str, s_configs.comparator_name);
+  AppendInt32(&value_str, s_configs.index_with_hashtable);
 
   return value_str;
 }
@@ -1072,6 +1074,9 @@ Status Skiplist::DecodeSortedCollectionValue(
     return Status::Abort;
   }
   if (!FetchFixedString(&value_str, &s_configs.comparator_name)) {
+    return Status::Abort;
+  }
+  if (!FetchInt32(&value_str, (uint32_t*)&s_configs.index_with_hashtable)) {
     return Status::Abort;
   }
 

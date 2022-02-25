@@ -510,21 +510,21 @@ struct Splice {
 class KVEngine;
 class SortedCollectionRebuilder {
  public:
-  SortedCollectionRebuilder(PMEMAllocator* pmem_allocator,
-                            HashTable* hash_table,
-                            ThreadManager* thread_manager,
-                            bool opt_parallel_rebuild,
-                            uint64_t num_rebuild_threads,
-                            const CheckPoint& checkpoint)
+  SortedCollectionRebuilder(
+      PMEMAllocator* pmem_allocator, HashTable* hash_table,
+      ThreadManager* thread_manager, bool opt_parallel_rebuild,
+      uint64_t num_rebuild_threads, const CheckPoint& checkpoint,
+      std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>*
+          skiplists)
       : pmem_allocator_(pmem_allocator),
         hash_table_(hash_table),
         thread_manager_(thread_manager),
         checkpoint_(checkpoint),
         opt_parallel_rebuild_(opt_parallel_rebuild),
-        num_rebuild_threads_(num_rebuild_threads){};
+        num_rebuild_threads_(num_rebuild_threads),
+        skiplists_(skiplists){};
 
-  Status RebuildLinkage(
-      const std::vector<std::shared_ptr<Skiplist>>& skiplists);
+  Status RebuildLinkage();
 
   void AddRecordForParallelRebuild(uint64_t record_offset, bool is_visited,
                                    SkiplistNode* node) {
@@ -589,6 +589,7 @@ class SortedCollectionRebuilder {
   bool opt_parallel_rebuild_;
   CheckPoint checkpoint_;
   std::unordered_set<DLRecord*> invalid_records_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>* skiplists_;
 };
 
 }  // namespace KVDK_NAMESPACE
