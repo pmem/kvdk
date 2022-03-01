@@ -1,5 +1,8 @@
 #pragma once
 
+#include <iomanip>
+#include <stdexcept>
+
 #define to_hex(x)                                                          \
   std::hex << std::setfill('0') << std::setw(sizeof(decltype(x)) * 2) << x \
            << std::dec

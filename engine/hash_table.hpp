@@ -164,6 +164,11 @@ class HashTable {
     entry_ptr->Clear();
   }
 
+  std::unique_lock<SpinMutex> AquireLock(StringView const& key)
+  {
+    return std::unique_lock<SpinMutex>{*GetHint(key).spin};
+  }
+
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
             uint32_t num_buckets_per_slot,

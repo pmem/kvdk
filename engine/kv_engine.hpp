@@ -23,6 +23,7 @@
 #include "dram_allocator.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
+#include "list_impl2.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
@@ -37,6 +38,8 @@
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
+
+  using List = ListImpl2<RecordType::ListRecord, RecordType::ListDataRecord>;
 
  public:
   ~KVEngine();
@@ -107,6 +110,8 @@ class KVEngine : public Engine {
                        StringView const value) override {
     return xPush(collection_name, value, QueueOpPosition::Right);
   }
+
+  // List
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
