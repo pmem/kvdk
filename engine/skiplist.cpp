@@ -622,12 +622,13 @@ Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
         break;
       }
       if (height == 1) {
-        Status s = buildIndex(start_point->node, start_point->build_hash_index);
+        Status s =
+            rebuildIndex(start_point->node, start_point->build_hash_index);
         if (s != Status::Ok) {
           return s;
         }
       } else {
-        linkDramNodes(start_point->node, height);
+        rebuildLinkage(start_point->node, height);
       }
     }
     linkStartPoints(height);
@@ -858,6 +859,90 @@ SortedCollectionRebuilder::getStartPoint(int height) {
   return nullptr;
 }
 
+Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
+                                               bool build_hash_index) {
+  SkiplistNode* cur_node = start_node;
+  DLRecord* cur_record = cur_node->record;
+  while (true) {
+    PMemOffsetType next_offset = cur_record->next;
+    DLRecord* next_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+    if (next_record->entry.meta.type == SortedHeaderRecord) {
+      cur_node->RelaxedSetNext(1, nullptr);
+      break;
+    }
+
+    if (record_offsets_.find(next_offset) == record_offsets_.end()) {
+      HashEntry hash_entry;
+      DataEntry data_entry;
+      HashEntry* entry_ptr = nullptr;
+      StringView internal_key = next_record->Key();
+
+      auto hash_hint = hash_table_->GetHint(internal_key);
+      while (true) {
+        std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+        DLRecord* valid_version_record = FindValidVersion(next_record, nullptr);
+        if (valid_version_record == nullptr) {
+          if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
+                               pmem_allocator_, hash_table_)) {
+            continue;
+          }
+        } else {
+          RemoveInvalidRecords(valid_version_record);
+          if (valid_version_record != next_record) {
+            if (!Skiplist::Replace(next_record, valid_version_record,
+                                   hash_hint.spin, nullptr, pmem_allocator_,
+                                   hash_table_)) {
+              continue;
+            }
+          }
+
+          assert(valid_version_record != nullptr);
+          SkiplistNode* dram_node =
+              Skiplist::NewNodeBuild(valid_version_record);
+          if (dram_node != nullptr) {
+            cur_node->RelaxedSetNext(1, dram_node);
+            dram_node->RelaxedSetNext(1, nullptr);
+            cur_node = dram_node;
+          }
+
+          if (build_hash_index) {
+            Status s = hash_table_->SearchForWrite(hash_hint, internal_key,
+                                                   SortedRecordType, &entry_ptr,
+                                                   &hash_entry, &data_entry);
+            if (s == Status::Ok) {
+              GlobalLogger.Error(
+                  "Rebuild skiplist error, hash entry of sorted data/delete "
+                  "records should not be inserted before repair linkage\n");
+              return Status::Abort;
+            } else if (s == Status::NotFound) {
+              if (dram_node) {
+                hash_table_->Insert(hash_hint, entry_ptr,
+                                    valid_version_record->entry.meta.type,
+                                    dram_node, HashIndexType::SkiplistNode);
+              } else {
+                hash_table_->Insert(
+                    hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                    valid_version_record, HashIndexType::DLRecord);
+              }
+            } else {
+              return s;
+            }
+          }
+
+          cur_record = valid_version_record;
+        }
+        break;
+      }
+    } else {
+      cur_node->RelaxedSetNext(1, nullptr);
+      thread_cache_node_[access_thread.id].insert(cur_node);
+      break;
+    }
+  }
+  return Status::Ok;
+}
+
 Status SortedCollectionRebuilder::buildIndex(SkiplistNode* cur_node,
                                              bool build_hash_index) {
   DLRecord* visiting_record = cur_node->record;
@@ -944,8 +1029,40 @@ Status SortedCollectionRebuilder::buildIndex(SkiplistNode* cur_node,
   return Status::Ok;
 }
 
-void SortedCollectionRebuilder::linkDramNodes(SkiplistNode* cur_node,
+void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
+                                               int height) {
+  while (start_node->Height() < height) {
+    start_node = start_node->RelaxedNext(height - 1).RawPointer();
+    if (start_node == nullptr ||
+        record_offsets_.find(pmem_allocator_->addr2offset_checked(
+            start_node->record)) != record_offsets_.end()) {
+      return;
+    }
+  }
+  SkiplistNode* cur_node = start_node;
+  SkiplistNode* next_node = cur_node->RelaxedNext(height - 1).RawPointer();
+  assert(start_node && start_node->Height() >= height);
+  while (true) {
+    if (next_node == nullptr ||
+        record_offsets_.find(pmem_allocator_->addr2offset_checked(
+            next_node->record)) != record_offsets_.end()) {
+      cur_node->RelaxedSetNext(height, nullptr);
+      thread_cache_node_[access_thread.id].insert(cur_node);
+      break;
+    }
+
+    if (next_node->Height() >= height) {
+      cur_node->RelaxedSetNext(height, next_node);
+      next_node->RelaxedSetNext(height, nullptr);
+      cur_node = next_node;
+    }
+    next_node = next_node->RelaxedNext(height - 1).RawPointer();
+  }
+}
+
+void SortedCollectionRebuilder::linkDramNodes(SkiplistNode* start_node,
                                               int height) {
+  SkiplistNode* cur_node = start_node;
   SkiplistNode* visited_node = cur_node;
   bool first_visited = true;
   while (true) {

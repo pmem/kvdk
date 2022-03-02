@@ -509,13 +509,9 @@ struct Splice {
 };
 class KVEngine;
 
-class CollectionBasedRebuilder {
+class CollectionBasedRebuilder {};
 
-};
-
-class NodeBasedRebuilder {
-
-};
+class NodeBasedRebuilder {};
 
 class SortedCollectionRebuilder {
  public:
@@ -572,7 +568,11 @@ class SortedCollectionRebuilder {
 
   Status buildIndex(SkiplistNode* cur_node, bool build_hash_index);
 
+  Status rebuildIndex(SkiplistNode* start_node, bool build_hash_index);
+
   void linkDramNodes(SkiplistNode* cur_node, int heightm);
+
+  void rebuildLinkage(SkiplistNode* start_node, int height);
 
   void cleanInvalidRecords() {
     std::vector<SpaceEntry> to_free;
