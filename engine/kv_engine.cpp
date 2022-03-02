@@ -57,6 +57,10 @@ KVEngine::~KVEngine() {
   terminateBackgroundWorks();
 
   ReportPMemUsage();
+  // GlobalLogger.Info("Normal scan\n");
+  // hash_table_->Scan();
+  GlobalLogger.Info("Iter scan\n");
+  hash_table_->AllScan();
   GlobalLogger.Info("Instance closed\n");
 }
 
