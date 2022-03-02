@@ -239,4 +239,50 @@ void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
+void HashTable::Scan() {
+  for (uint64_t slot_idx = 0; slot_idx < slots_.size(); ++slot_idx) {
+    std::unique_lock<SpinMutex> lock_slot{slots_[slot_idx].spin};
+    for (uint64_t bucket_idx = 0; bucket_idx < num_buckets_per_slot_;
+         ++bucket_idx) {
+      char* bucket_ptr = (char*)main_buckets_ +
+                         slot_idx * num_buckets_per_slot_ * hash_bucket_size_ +
+                         bucket_idx * hash_bucket_size_;
+      _mm_prefetch(bucket_ptr, _MM_HINT_T0);
+      uint64_t entries =
+          hash_bucket_entries_[slot_idx * num_buckets_per_slot_ + bucket_idx];
+      for (uint64_t entry_idx = 0; entry_idx < entries; ++entry_idx) {
+        if (entry_idx > 0 && entry_idx % num_entries_per_bucket_ == 0) {
+          bucket_ptr = bucket_ptr + hash_bucket_size_ - 8;
+          _mm_prefetch(bucket_ptr, _MM_HINT_T0);
+        }
+        HashEntry* entry =
+            (HashEntry*)bucket_ptr + (entry_idx % num_entries_per_bucket_);
+        if (entry->GetIndexType() == HashIndexType::StringRecord) {
+          if (entry->GetIndex().string_record->Key() == "a") {
+            printf("%s\n", entry->GetIndex().string_record->Value());
+          }
+        }
+      }
+    }
+  }
+}
+
+void HashTable::AllScan() {
+  for (uint64_t slot_idx = 0; slot_idx < slots_.size(); ++slot_idx) {
+    std::unique_lock<SpinMutex> lock_slot{slots_[slot_idx].spin};
+    uint32_t start_id = slot_idx * num_buckets_per_slot_;
+    uint32_t end_id = num_buckets_per_slot_ * (slot_idx + 1);
+    auto iter = Begin(start_id);
+    auto end_iter = End(end_id);
+    while (iter != end_iter) {
+      if (iter->GetIndexType() == HashIndexType::StringRecord) {
+        if (iter->GetIndex().string_record->Key() == "a") {
+          printf("%s\n", iter->GetIndex().string_record->Value());
+        }
+      }
+      iter++;
+    }
+  }
+}
+
 }  // namespace KVDK_NAMESPACE
