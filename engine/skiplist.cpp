@@ -622,16 +622,15 @@ Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
         break;
       }
       if (height == 1) {
-        Status s = dealWithFirstHeight(start_point->node,
-                                       start_point->build_hash_index);
+        Status s = buildIndex(start_point->node, start_point->build_hash_index);
         if (s != Status::Ok) {
           return s;
         }
       } else {
-        dealWithOtherHeight(start_point->node, height);
+        linkDramNodes(start_point->node, height);
       }
     }
-    linkDramNodes(height);
+    linkStartPoints(height);
     return Status::Ok;
   };
 
@@ -790,7 +789,7 @@ Status SortedCollectionRebuilder::RebuildLinkage() {
   return s;
 }
 
-void SortedCollectionRebuilder::linkDramNodes(int height) {
+void SortedCollectionRebuilder::linkStartPoints(int height) {
   for (auto v : thread_cache_node_[access_thread.id]) {
     if (v->Height() < height) {
       continue;
@@ -859,8 +858,8 @@ SortedCollectionRebuilder::getStartPoint(int height) {
   return nullptr;
 }
 
-Status SortedCollectionRebuilder::dealWithFirstHeight(SkiplistNode* cur_node,
-                                                      bool build_hash_index) {
+Status SortedCollectionRebuilder::buildIndex(SkiplistNode* cur_node,
+                                             bool build_hash_index) {
   DLRecord* visiting_record = cur_node->record;
   while (true) {
     uint64_t next_offset = visiting_record->next;
@@ -908,27 +907,28 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(SkiplistNode* cur_node,
             dram_node->RelaxedSetNext(1, nullptr);
             cur_node = dram_node;
           }
-
-          Status s = hash_table_->SearchForWrite(hash_hint, internal_key,
-                                                 SortedRecordType, &entry_ptr,
-                                                 &hash_entry, &data_entry);
-          if (s == Status::Ok) {
-            GlobalLogger.Error(
-                "Rebuild skiplist error, hash entry of sorted data/delete "
-                "records should not be inserted before repair linkage\n");
-            return Status::Abort;
-          } else if (s == Status::NotFound) {
-            if (dram_node) {
-              hash_table_->Insert(hash_hint, entry_ptr,
-                                  valid_version_record->entry.meta.type,
-                                  dram_node, HashIndexType::SkiplistNode);
+          if (build_hash_index) {
+            Status s = hash_table_->SearchForWrite(hash_hint, internal_key,
+                                                   SortedRecordType, &entry_ptr,
+                                                   &hash_entry, &data_entry);
+            if (s == Status::Ok) {
+              GlobalLogger.Error(
+                  "Rebuild skiplist error, hash entry of sorted data/delete "
+                  "records should not be inserted before repair linkage\n");
+              return Status::Abort;
+            } else if (s == Status::NotFound) {
+              if (dram_node) {
+                hash_table_->Insert(hash_hint, entry_ptr,
+                                    valid_version_record->entry.meta.type,
+                                    dram_node, HashIndexType::SkiplistNode);
+              } else {
+                hash_table_->Insert(
+                    hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                    valid_version_record, HashIndexType::DLRecord);
+              }
             } else {
-              hash_table_->Insert(
-                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
-                  valid_version_record, HashIndexType::DLRecord);
+              return s;
             }
-          } else {
-            return s;
           }
 
           visiting_record = valid_version_record;
@@ -944,8 +944,8 @@ Status SortedCollectionRebuilder::dealWithFirstHeight(SkiplistNode* cur_node,
   return Status::Ok;
 }
 
-void SortedCollectionRebuilder::dealWithOtherHeight(SkiplistNode* cur_node,
-                                                    int height) {
+void SortedCollectionRebuilder::linkDramNodes(SkiplistNode* cur_node,
+                                              int height) {
   SkiplistNode* visited_node = cur_node;
   bool first_visited = true;
   while (true) {

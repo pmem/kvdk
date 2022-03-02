@@ -508,6 +508,15 @@ struct Splice {
   }
 };
 class KVEngine;
+
+class CollectionBasedRebuilder {
+
+};
+
+class NodeBasedRebuilder {
+
+};
+
 class SortedCollectionRebuilder {
  public:
   SortedCollectionRebuilder(
@@ -559,11 +568,11 @@ class SortedCollectionRebuilder {
 
   SkiplistNodeInfo* getStartPoint(int height);
 
-  void linkDramNodes(int height);
+  void linkStartPoints(int height);
 
-  Status dealWithFirstHeight(SkiplistNode* cur_node, bool build_hash_index);
+  Status buildIndex(SkiplistNode* cur_node, bool build_hash_index);
 
-  void dealWithOtherHeight(SkiplistNode* cur_node, int heightm);
+  void linkDramNodes(SkiplistNode* cur_node, int heightm);
 
   void cleanInvalidRecords() {
     std::vector<SpaceEntry> to_free;
@@ -592,5 +601,4 @@ class SortedCollectionRebuilder {
   std::unordered_set<DLRecord*> invalid_records_;
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>* skiplists_;
 };
-
 }  // namespace KVDK_NAMESPACE
