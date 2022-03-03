@@ -574,6 +574,8 @@ class SortedCollectionRebuilder {
 
   void rebuildLinkage(SkiplistNode* start_node, int height);
 
+  void linkEndPoints(int height);
+
   void cleanInvalidRecords() {
     std::vector<SpaceEntry> to_free;
     for (DLRecord* pmem_record : invalid_records_) {

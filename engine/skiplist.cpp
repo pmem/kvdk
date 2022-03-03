@@ -631,7 +631,8 @@ Status SortedCollectionRebuilder::parallelRepairSkiplistLinkage() {
         rebuildLinkage(start_point->node, height);
       }
     }
-    linkStartPoints(height);
+    linkEndPoints(height);
+    // linkStartPoints(height);
     return Status::Ok;
   };
 
@@ -788,6 +789,43 @@ Status SortedCollectionRebuilder::RebuildLinkage() {
   }
 #endif
   return s;
+}
+
+void SortedCollectionRebuilder::linkEndPoints(int height) {
+  for (SkiplistNode* node : thread_cache_node_[access_thread.id]) {
+    if (node->Height() < height) {
+      continue;
+    }
+    assert(node->RelaxedNext(height).RawPointer() == nullptr);
+    if (height == 1) {
+      PMemOffsetType next_offset = node->record->next;
+      DLRecord* next_record =
+          pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+      while (next_record->entry.meta.type != SortedHeaderRecord) {
+        auto iter = record_offsets_.find(next_offset);
+        if (iter != record_offsets_.end()) {
+          assert(iter->second.node->Height() >= height);
+          node->RelaxedSetNext(height, iter->second.node);
+          break;
+        } else {
+          next_offset = next_record->next;
+          next_record =
+              pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+        }
+      }
+    } else {
+      SkiplistNode* next_node = node->RelaxedNext(height - 1).RawPointer();
+      while(next_node != nullptr){
+        if(next_node->Height() >= height){
+          node->RelaxedSetNext(height, next_node);
+          break;
+        } else {
+          next_node = next_node->RelaxedNext(height - 1).RawPointer();
+        }
+      }
+    }
+  }
+  thread_cache_node_[access_thread.id].clear();
 }
 
 void SortedCollectionRebuilder::linkStartPoints(int height) {
