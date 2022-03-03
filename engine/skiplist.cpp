@@ -780,10 +780,12 @@ Status SortedCollectionRebuilder::RebuildLinkage() {
 #ifdef DEBUG_CHECK
   for (uint8_t h = 1; h <= kMaxHeight; h++) {
     for (auto skiplist : *skiplists_) {
-      Status s = skiplist.second->CheckConnection(h);
-      if (s != Status::Ok) {
-        GlobalLogger.Info("Check skiplist connecton at height %u error\n", h);
-        return s;
+      if (skiplist.second->IndexedByHashtable()) {
+        Status s = skiplist.second->CheckConnection(h);
+        if (s != Status::Ok) {
+          GlobalLogger.Info("Check skiplist connecton at height %u error\n", h);
+          return s;
+        }
       }
     }
   }
