@@ -564,13 +564,7 @@ class SortedCollectionRebuilder {
 
   SkiplistNodeInfo* getStartPoint(int height);
 
-  void linkStartPoints(int height);
-
-  Status buildIndex(SkiplistNode* cur_node, bool build_hash_index);
-
   Status rebuildIndex(SkiplistNode* start_node, bool build_hash_index);
-
-  void linkDramNodes(SkiplistNode* cur_node, int heightm);
 
   void rebuildLinkage(SkiplistNode* start_node, int height);
 
