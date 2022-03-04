@@ -525,22 +525,21 @@ class SortedCollectionRebuilder {
         hash_table_(hash_table),
         thread_manager_(thread_manager),
         checkpoint_(checkpoint),
-        opt_parallel_rebuild_(opt_parallel_rebuild),
+        segment_based_rebuild_(opt_parallel_rebuild),
         num_rebuild_threads_(num_rebuild_threads),
         skiplists_(skiplists){};
 
-  Status RebuildLinkage();
+  Status RebuildIndex();
 
-  void AddRecordForParallelRebuild(uint64_t record_offset, bool is_visited,
-                                   SkiplistNode* node) {
-    std::lock_guard<SpinMutex> lg(mu_);
-    record_offsets_.insert({record_offset, {is_visited, node}});
+  void AddRecordForSegmentBasedRebuild(uint64_t record_offset, bool is_visited,
+                                       SkiplistNode* node) {
+    if (segment_based_rebuild_) {
+      std::lock_guard<SpinMutex> lg(mu_);
+      start_points_.insert({record_offset, {is_visited, node}});
+    }
   }
 
-  DLRecord* FindValidVersion(DLRecord* pmem_record,
-                             std::vector<DLRecord*>* invalid_version_records);
-
-  void AddInvalidRecords(DLRecord* sorted_record) {
+  void AddInvalidRecord(DLRecord* sorted_record) {
     std::lock_guard<SpinMutex> lg(mu_);
     invalid_records_.insert(sorted_record);
   }
@@ -551,18 +550,22 @@ class SortedCollectionRebuilder {
   }
 
  private:
-  struct SkiplistNodeInfo {
+  DLRecord* findValidVersion(DLRecord* pmem_record,
+                             std::vector<DLRecord*>* invalid_version_records);
+  struct StartPoint {
     bool visited;
     bool build_hash_index;
     SkiplistNode* node;
   };
-  Status repairSkiplistLinkage(Skiplist* skiplist);
+  Status rebuildSkiplistIndex(Skiplist* skiplist);
 
-  Status parallelRepairSkiplistLinkage();
+  Status listBasedIndexRebuild();
 
-  Status updateRecordOffsets();
+  Status segmentBasedIndexRebuild();
 
-  SkiplistNodeInfo* getStartPoint(int height);
+  Status buildStartPoints();
+
+  StartPoint* getStartPoint(int height);
 
   Status rebuildIndex(SkiplistNode* start_node, bool build_hash_index);
 
@@ -586,15 +589,16 @@ class SortedCollectionRebuilder {
   }
 
   SpinMutex mu_;
-  std::vector<std::unordered_set<SkiplistNode*>> thread_cache_node_;
-  std::unordered_map<uint64_t, SkiplistNodeInfo> record_offsets_;
+  std::vector<std::unordered_set<SkiplistNode*>> thread_end_points_;
+  std::unordered_map<uint64_t, StartPoint> start_points_;
   PMEMAllocator* pmem_allocator_;
   HashTable* hash_table_;
   ThreadManager* thread_manager_;
   uint64_t num_rebuild_threads_;
-  bool opt_parallel_rebuild_;
+  bool segment_based_rebuild_;
   CheckPoint checkpoint_;
   std::unordered_set<DLRecord*> invalid_records_;
-  std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>* skiplists_;
+  const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>*
+      skiplists_;
 };
 }  // namespace KVDK_NAMESPACE

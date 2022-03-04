@@ -542,7 +542,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
     skiplists_.insert({id, sl});
     skiplist = sl.get();
     if (configs_.opt_large_sorted_collection_restore) {
-      sorted_rebuilder_->AddRecordForParallelRebuild(
+      sorted_rebuilder_->AddRecordForSegmentBasedRebuild(
           pmem_allocator_->addr2offset(pmem_record), false, nullptr);
     }
   }
@@ -628,7 +628,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
     if (!RecoverToCheckpoint()) {
       purgeAndFree(pmem_record);
     } else {
-      sorted_rebuilder_->AddInvalidRecords(pmem_record);
+      sorted_rebuilder_->AddInvalidRecord(pmem_record);
     }
   } else {
     if (configs_.opt_large_sorted_collection_restore &&
@@ -636,7 +636,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
                     .visited_skiplist_ids[Skiplist::SkiplistID(pmem_record)]++ %
                 kRestoreSkiplistStride ==
             0) {
-      sorted_rebuilder_->AddRecordForParallelRebuild(
+      sorted_rebuilder_->AddRecordForSegmentBasedRebuild(
           pmem_allocator_->addr2offset(pmem_record), false, nullptr);
     }
   }
@@ -871,7 +871,7 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  s = sorted_rebuilder_->RebuildLinkage();
+  s = sorted_rebuilder_->RebuildIndex();
   if (s != Status::Ok) {
     return s;
   }
