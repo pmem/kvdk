@@ -29,6 +29,11 @@ class Engine {
   using StringView = pmem::obj::string_view;
 
   using GetterCallBack = void(*)(StringView const, void*);
+  // Default GetterCallBack
+  void CopyToString(StringView const src, void* dst)
+  {
+      static_cast<std::string*>(dst)->assign(src.data(), src.size());
+  }
 
   enum class Position
   {
@@ -105,46 +110,48 @@ class Engine {
                        StringView const value) = 0;
 
   /// List
+  // When the type of key is not a list, an error is returned.
+
   // List operations are guaranteed to be atomic.
   // User may manually lock the list to atomically perform multiple operations
-  virtual Status LockList(StringView key) = 0;
-  virtual Status TryLockList(StringView key) = 0;
-  virtual Status UnlockList(StringView key) = 0;
+  virtual Status ListLock(StringView key) = 0;
+  virtual Status ListTryLock(StringView key) = 0;
+  virtual Status ListUnlock(StringView key) = 0;
 
-  virtual Status LIndex(StringView key, IndexType index, std::string* elem) = 0;
-  virtual Status LIndex(StringView key, IndexType index, GetterCallBack cb, void* cb_args) = 0;
+  // Total elements in List
+  virtual Status ListLength(StringView key, size_t* sz) = 0;
 
-  // pos must be Position::Before or Position::After
-  virtual Status LInsert(StringView key, Position pos, StringView pivot, StringView elem) = 0;
+  // Scan the list and find the element specified. Return the indices.
+  virtual Status ListFind(StringView key, StringView elem, std::vector<size_t>* indices, IndexType rank = 1, size_t count = 1, size_t max_len = 0) = 0;
+  virtual Status ListFind(StringView key, StringView elem, size_t* index, IndexType rank = 1) = 0;
 
-  virtual Status LLen(StringView key, size_t* sz) = 0;
+  // Iterate through elements in a certain range in List
+  virtual Status ListRange(StringView key, IndexType start, IndexType stop, GetterCallBack cb, void* cb_args) = 0;
 
-  // src_pos and dst_pos must be Position::Left or Position::Right
-  // RPopLPush = LMove(src, dst, Position::Right, Position::Left)
-  virtual Status LMove(StringView src, StringView dst, Position src_pos, Position dst_pos) = 0;
+  // Indexing a element in List.
+  // First element has index 0, last element has index -1
+  virtual Status ListIndex(StringView key, IndexType index, GetterCallBack cb, void* cb_args) = 0;
+  virtual Status ListIndex(StringView key, IndexType index, std::string* elem) = 0;
 
-  virtual Status LPop(StringView key, GetterCallBack cb, void* cb_args, size_t cnt = 1) = 0;
-  virtual Status LPop(StringView key, std::string* elem) = 0;
+  // Push element to List at pos
+  // pos must be Position::Left or Position::Right
+  virtual Status ListPush(StringView key, Position pos, StringView elem) = 0;
 
-  virtual Status LPos(StringView key, StringView elem, std::vector<size_t>* indices, IndexType rank = 1, size_t count = 1, size_t max_len = 0) = 0;
-  virtual Status LPos(StringView key, StringView elem, size_t* index, IndexType rank = 1) = 0;
+  // pos must be Position::Left or Position::Right
+  virtual Status ListPop(StringView key, Position pos, GetterCallBack cb, void* cb_args, size_t cnt = 1) = 0;
+  virtual Status ListPop(StringView key, Position pos, std::string* elem) = 0;
 
-  // LPushX/LPush = LockList(key) + LPushOne(key, elem1) [+ LPushOne(key, elem2) ...]
-  virtual Status LPushOne(StringView key, StringView elem) = 0;
+  // Insert a element Before or After pivot.
+  // Use rank to skip the first (rank-1) pivot.
+  virtual Status ListInsert(StringView key, Position pos, IndexType pivot, StringView elem) = 0;
+  virtual Status ListInsert(StringView key, Position pos, StringView pivot, StringView elem, IndexType rank = 1) = 0;
 
-  virtual Status LRange(StringView key, IndexType start, IndexType stop, GetterCallBack cb, void* cb_args) = 0;
-
+  // Remove specified element
   // negative cnt will remove |cnt| elem from end of list
-  virtual Status LRem(StringView key, IndexType cnt, StringView elem) = 0;
+  virtual Status ListRemove(StringView key, IndexType cnt, StringView elem) = 0;
 
-  virtual Status LSet(StringView key, IndexType index, StringView elem) = 0;
-
-  virtual Status LTrim(StringView key, IndexType start, IndexType stop) = 0;
-
-  virtual Status RPop(StringView key, GetterCallBack cb, void* cb_args, size_t cnt = 1) = 0;
-
-  // RPushX/RPush = LockList(key) + RPushOne(key, elem1) [+ RPushOne(key, elem2) ...]
-  virtual Status RPushOne(StringView key, StringView elem) = 0;
+  // Replace the element at index
+  virtual Status ListSet(StringView key, IndexType index, StringView elem) = 0;
 
   // Get a snapshot of the instance at this moment.
   // If set make_checkpoint to true, a persistent checkpoint will be made until

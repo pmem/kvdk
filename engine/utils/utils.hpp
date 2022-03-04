@@ -31,6 +31,8 @@
 
 #include <atomic>
 
+#include <x86intrin.h>
+
 #include "../alias.hpp"
 #include "../macros.hpp"
 #include "kvdk/namespace.hpp"
@@ -65,6 +67,15 @@ inline uint64_t hash_str(const char* str, uint64_t size) {
 
 inline uint64_t get_checksum(const void* data, uint64_t size) {
   return XXH3_64bits(data, size);
+}
+
+inline unsigned long long get_seed()
+{
+  unsigned long long seed = 0;
+  while (seed == 0 && _rdseed64_step(&seed) != 1)
+  {
+  }
+  return seed;
 }
 
 inline uint64_t fast_random_64() {

@@ -4,9 +4,11 @@
 
 #pragma once
 
+#include <libpmem.h>
+
 #include "kvdk/namespace.hpp"
-#include "libpmem.h"
 #include "utils/utils.hpp"
+#include "alias.hpp"
 
 namespace KVDK_NAMESPACE {
 
