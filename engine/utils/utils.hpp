@@ -201,6 +201,75 @@ class SpinMutex {
   SpinMutex& operator=(const SpinMutex& s) = delete;
 };
 
+class RWLock {
+  static constexpr std::int64_t reader_val{1};
+  static constexpr std::int64_t writer_val{std::numeric_limits<std::int64_t>::min()};
+
+  // device.load() > 0 indicates only reader exists
+  // device.load() == 0 indicates no reader and no writer
+  // device.load() == writer_val indicates only writer exists, block readers
+  // Otherwise, writer has registered and is waiting for readers to leave
+  std::atomic_int64_t device{0};
+
+  bool TryRegisterReader()
+  {
+    std::int64_t old = device.load();
+    if (old < 0)
+    {
+      pause();
+      return false;
+    }
+    old = device.fetch_add(reader_val);
+    if (old < 0)
+    {
+      device.fetch_sub(reader_val);
+      pause();
+      return false;
+    }
+    return true;    
+  }
+
+  void RegisterReader()
+  {
+    while (!TryRegisterReader())
+    {
+      // Blocked until writer leaved
+    }
+    return;
+  }
+
+  void UnregisterReader()
+  {
+    device.fetch_sub(reader_val);
+    return;
+  }
+
+  void RegisterWriter()
+  {
+    std::int64_t old = device.fetch_add(writer_val);
+    while (device.load() != writer_val)
+    {
+      // Block until all readers leave
+    }   
+    return;
+  }
+
+  void UnregisterWriter()
+  {
+    device.fetch_sub(writer_val);
+  }
+
+private:
+  void pause()
+  {
+    for (size_t i = 0; i < 64; i++)
+    {
+      _mm_pause();
+    }
+  }
+
+};
+
 /// Caution: AlignedPoolAllocator is not thread-safe
 template <typename T>
 class AlignedPoolAllocator {
