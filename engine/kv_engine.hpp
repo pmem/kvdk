@@ -402,6 +402,7 @@ class KVEngine : public Engine {
   std::mutex checkpoint_lock_;
 
   BackgroundWorkSignals bg_work_signals_;
+
 };
 
 }  // namespace KVDK_NAMESPACE
