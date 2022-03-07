@@ -70,7 +70,7 @@ int main()
 `kvdk::Status` indicates status of KVDK function calls. 
 Functions return `kvdk::Status::Ok` if such a function call is a success.
 If exceptions are raised during function calls, other `kvdk::Status` is returned,
-such as `kvdk::Status::MemoryOverflow`.
+such as `kvdk::Status::DRAMOverflow`.
 
 ## Close a KVDK instance
 
