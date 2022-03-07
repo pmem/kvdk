@@ -158,7 +158,7 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
           auto space = dram_allocator_.Allocate(hash_bucket_size_);
           if (space.size == 0) {
             GlobalLogger.Error("Memory overflow!\n");
-            return Status::MemoryOverflow;
+            return Status::DRAMOverflow;
           }
           void* next_off = dram_allocator_.offset2addr(space.offset);
           kvdk_assert((uint64_t)next_off % sizeof(HashEntry) == 0,

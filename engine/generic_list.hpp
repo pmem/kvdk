@@ -86,7 +86,7 @@ class GenericList final : public Collection {
   class Iterator {
    private:
     // owner must be initialized with a List
-    GenericList* owner;
+    GenericList const* owner;
     // curr == nullptr indicates Head() and Tail()
     DLRecord* curr{nullptr};
 
@@ -96,7 +96,7 @@ class GenericList final : public Collection {
     // just for convention this state has two names
     // Tail() for iterating forward
     // Head() for iterating backward
-    explicit Iterator(GenericList* o) : owner{o} 
+    explicit Iterator(GenericList const* o) : owner{o} 
     {
       kvdk_assert(owner != nullptr, "Invalid iterator!");
     }
@@ -118,7 +118,7 @@ class GenericList final : public Collection {
       else if (curr->next != NullPMemOffset)
       {
         // Not Back(), goto next
-        curr = owner->address_of(curr->next);
+        curr = owner->atran.address_of(curr->next);
       }
       else
       {
@@ -144,7 +144,7 @@ class GenericList final : public Collection {
       else if (curr->prev != NullPMemOffset)
       {
         // Not Front(), goto prev
-        curr = owner->address_of(curr->prev);
+        curr = owner->atran.address_of(curr->prev);
       }
       else
       {
@@ -196,11 +196,11 @@ private:
   // Creation time, List name and id.
   void Init(char* p_base, SpaceEntry allocated, TimeStampType timestamp,
               StringView const key, CollectionIDType id) {
-      collection_name_.assign(key.data(), key.size())
+      collection_name_.assign(key.data(), key.size());
       collection_id_ = id;
       atran = AddressTranslator<DLRecord*>{p_base};
       list_record = StringRecord::PersistStringRecord(
-        pmem_base+allocated.offset, allocated.size, timestamp,
+        atran.address_of(allocated.offset), allocated.size, timestamp,
         RecordType::ListRecord, NullPMemOffset, key, ID2String(id));
   }
 
@@ -218,6 +218,8 @@ private:
     sz = n;
   }
 
+  size_t Size() const { return sz; }
+
   Iterator Front() { return ++Head(); }
 
   Iterator Back() { return --Tail(); }
@@ -225,6 +227,30 @@ private:
   Iterator Head() const { return Iterator{this}; }
 
   Iterator Tail() const { return Iterator{this}; }
+
+  Iterator Seek(std::int64_t index)
+  {
+    if (index >= 0)
+    {
+      auto iter = Front();
+      while (index != 0 && iter != Tail())
+      {
+        ++iter;
+        --index;
+      }
+      return iter;
+    }
+    else
+    {
+      auto iter = Back();
+      while (index != -1 && iter != Front())
+      {
+        --iter;
+        ++index;
+      }
+      return iter;
+    }
+  }
 
   Iterator Erase(Iterator pos) {
     kvdk_assert(pos != Head(), "Cannot erase Head()");
@@ -247,27 +273,27 @@ private:
       // Erase Front()
       kvdk_assert(next != Tail(), "");
       first = next.Address();
-      _mm_stream_si64(&next->prev, NullPMemOffset);
+      _mm_stream_si64(reinterpret_cast<long long*>(&next->prev), NullPMemOffset);
       _mm_mfence();
     }
     else if (next == Tail())
     {
       // Erase Back()
       kvdk_assert(prev != Head(), "");
-      last = prev.curr;
-      _mm_stream_si64(&prev->next, next.Offset());
+      last = prev.Address();
+      _mm_stream_si64(reinterpret_cast<long long*>(&prev->next), next.Offset());
       _mm_mfence();
     }
     else
     {
       kvdk_assert(prev != Head() && next != Tail(), "");
       // Reverse procedure of emplace_between() between two elements
-      _mm_stream_si64(&next->prev, prev.Offset());
+      _mm_stream_si64(reinterpret_cast<long long*>(&next->prev), prev.Offset());
       _mm_mfence();
       // If crash before prev->next = allocated.offset, 
       // the node will be repaired into List
       // If crash after that, the node will be deleted
-      _mm_stream_si64(&prev->next, next.Offset());
+      _mm_stream_si64(reinterpret_cast<long long*>(&prev->next), next.Offset());
       _mm_mfence();
     }
     --sz;
@@ -299,19 +325,19 @@ private:
     emplace_between(allocated, Head(), Front(), timestamp, key, value);
   }
 
-  void PushBack(TimeStampType timestamp, StringView const key,
+  void PushBack(SpaceEntry allocated, TimeStampType timestamp, StringView const key,
                               StringView const value) {
     emplace_between(allocated, Back(), Tail(), timestamp, key, value);
   }
 
-  void Replace(Iterator pos, TimeStampType timestamp,
+  void Replace(SpaceEntry allocated, Iterator pos, TimeStampType timestamp,
                           StringView const key, StringView const value) {
     kvdk_assert(ID() == ExtractID(pos->Key()), "Wrong List!");
     Iterator prev{pos};
     --prev;
     Iterator next{pos};
     ++next;
-    emplace_between(prev, next, timestamp, key, value);
+    emplace_between(allocated, prev, next, timestamp, key, value);
   }
 
   LockType* Mutex()
@@ -342,7 +368,7 @@ private:
     {
       // PushFront()
       kvdk_assert(next != Tail(), "");
-      _mm_stream_si64(&next->prev, allocated.offset);
+      _mm_stream_si64(reinterpret_cast<long long*>(&next->prev), allocated.offset);
       _mm_mfence();
       first = record;
     }
@@ -350,7 +376,7 @@ private:
     {
       // PushBack()
       kvdk_assert(prev != Head(), "");
-      _mm_stream_si64(&prev->next, allocated.offset);
+      _mm_stream_si64(reinterpret_cast<long long*>(&prev->next), allocated.offset);
       _mm_mfence();
       last = record;
     }
@@ -358,12 +384,12 @@ private:
     {
       // Emplace between two elements on PMem
       kvdk_assert(prev != Head() && next != Tail(), "");
-      _mm_stream_si64(&prev->next, allocated.offset);
+      _mm_stream_si64(reinterpret_cast<long long*>(&prev->next), allocated.offset);
       _mm_mfence();
       // If crash before prev->next = allocated.offset, 
       // newly emplaced node will be discarded
       // If crash after that, newly emplaced node will be repaired into List
-      _mm_stream_si64(&next->prev, allocated.offset);
+      _mm_stream_si64(reinterpret_cast<long long*>(&next->prev), allocated.offset);
       _mm_mfence();
     }
 

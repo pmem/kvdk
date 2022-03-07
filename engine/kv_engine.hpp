@@ -23,7 +23,7 @@
 #include "dram_allocator.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
-#include "list_impl2.hpp"
+#include "generic_list.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
@@ -38,8 +38,6 @@
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
   friend class SortedCollectionRebuilder;
-
-  using List = ListImpl2<RecordType::ListRecord, RecordType::ListDataRecord>;
 
  public:
   ~KVEngine();
@@ -172,6 +170,24 @@ class KVEngine : public Engine {
       const StringView collection_name, Collection** collection_ptr,
       const SortedCollectionConfigs& configs) override;
 
+  // List
+  Status ListLock(StringView key) final;
+  Status ListTryLock(StringView key) final;
+  Status ListUnlock(StringView key) final;
+  Status ListLength(StringView key, size_t* sz) final;
+  Status ListFind(StringView key, StringView elem, std::vector<size_t>* indices, IndexType rank = 1, size_t count = 1, size_t max_len = 0) final;
+  Status ListFind(StringView key, StringView elem, size_t* index, IndexType rank = 1, size_t max_len = 0) final;
+  Status ListRange(StringView key, IndexType start, IndexType stop, GetterCallBack cb, void* cb_args) final;
+  Status ListIndex(StringView key, IndexType index, GetterCallBack cb, void* cb_args) final;
+  Status ListIndex(StringView key, IndexType index, std::string* elem) final;
+  Status ListPush(StringView key, ListPosition pos, StringView elem) final;
+  Status ListPop(StringView key, ListPosition pos, GetterCallBack cb, void* cb_args, size_t cnt = 1) final;
+  Status ListPop(StringView key, ListPosition pos, std::string* elem) final;
+  Status ListInsert(StringView key, ListPosition pos, IndexType pivot, StringView elem) final;
+  Status ListInsert(StringView key, ListPosition pos, StringView pivot, StringView elem, IndexType rank = 1) final;
+  Status ListRemove(StringView key, IndexType cnt, StringView elem) final;
+  Status ListSet(StringView key, IndexType index, StringView elem) final;
+
  private:
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
@@ -180,6 +196,11 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
+    kvdk_assert(
+    (std::is_same<CollectionType, UnorderedCollection>::value && record_type == RecordType::DlistRecord) ||
+    (std::is_same<CollectionType, Queue>::value && record_type == RecordType::QueueRecord) ||
+    (std::is_same<CollectionType, Skiplist>::value && record_type == RecordType::SortedHeaderRecord) ||
+    (std::is_same<CollectionType, List>::value && record_type == RecordType::ListRecord), "");
     HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
     HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
@@ -365,9 +386,17 @@ class KVEngine : public Engine {
   std::shared_ptr<HashTable> hash_table_;
 
   std::vector<std::shared_ptr<Skiplist>> skiplists_;
+
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
+
   std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;
+
+  using List = GenericList<RecordType::ListRecord, RecordType::ListDataRecord>;
+  using ListBuilder = GenericListBuilder<RecordType::ListRecord, RecordType::ListDataRecord>;
+  std::vector<std::unique_ptr<List>> lists_;
+  std::unique_ptr<ListBuilder> list_builder_;
+
   std::mutex list_mu_;
 
   std::string dir_;
