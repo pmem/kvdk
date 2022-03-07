@@ -55,6 +55,8 @@ class Queue final : public Collection {
 
   inline TimeStampType Timestamp() const { return timestamp_; };
 
+  DLRecord* HeadRecord() { return collection_record_ptr_; }
+
  private:
   inline static bool isAdjacent(iterator prev, iterator next) {
     iterator curr{prev};

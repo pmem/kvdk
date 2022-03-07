@@ -23,6 +23,7 @@ using kvdk::Iterator;
 using kvdk::Snapshot;
 using kvdk::SortedCollectionConfigs;
 using kvdk::WriteBatch;
+using kvdk::WriteOptions;
 
 extern "C" {
 struct KVDKConfigs {
@@ -43,6 +44,9 @@ struct KVDKCollection {
 };
 struct KVDKSnapshot {
   Snapshot* rep;
+};
+struct KVDKWriteOptions {
+  WriteOptions rep;
 };
 
 struct KVDKSortedCollectionConfigs {
@@ -73,6 +77,22 @@ void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
 }
 
 void KVDKDestroyConfigs(KVDKConfigs* kv_config) { delete kv_config; }
+
+KVDKWriteOptions* KVDKCreateWriteOptions(void) { return new KVDKWriteOptions; }
+
+void KVDKDestroyWriteOptions(KVDKWriteOptions* kv_options) {
+  delete kv_options;
+}
+
+void KVDKWriteOptionsSetExpiredTime(KVDKWriteOptions* kv_options,
+                                    int64_t expired_time) {
+  kv_options->rep.expired_time = expired_time;
+}
+
+KVDK_LIBRARY_API void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions* kv_options,
+                                                  unsigned char key_exist) {
+  kv_options->rep.key_exist = key_exist;
+}
 
 KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs() {
   return new KVDKSortedCollectionConfigs;
@@ -195,8 +215,10 @@ KVDKStatus KVDKGet(KVDKEngine* engine, const char* key, size_t key_len,
 }
 
 KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
-                   const char* val, size_t val_len) {
-  return engine->rep->Set(StringView(key, key_len), StringView(val, val_len));
+                   const char* val, size_t val_len,
+                   const KVDKWriteOptions* write_option) {
+  return engine->rep->Set(StringView(key, key_len), StringView(val, val_len),
+                          write_option->rep);
 }
 
 KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key, size_t key_len) {

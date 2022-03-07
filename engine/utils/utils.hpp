@@ -376,6 +376,20 @@ void compare_excange_if_larger(std::atomic<T>& num, T target) {
 // Return the number of process unit (PU) that are bound to the kvdk instance
 int get_usable_pu(void);
 
+/* Return the UNIX time in microseconds */
+static long long ustime(void) {
+  struct timeval tv;
+  long long ust;
+
+  gettimeofday(&tv, NULL);
+  ust = ((long long)tv.tv_sec) * 1000000;
+  ust += tv.tv_usec;
+  return ust;
+}
+
+/* Return the UNIX time in milliseconds */
+static long long second_time(void) { return ustime() / 1000 / 1000; }
+
 namespace CollectionUtils {
 inline static StringView ExtractUserKey(const StringView& internal_key) {
   constexpr size_t sz_id = sizeof(CollectionIDType);

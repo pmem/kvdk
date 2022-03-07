@@ -105,6 +105,8 @@ class UnorderedCollection final
                        StringView const key, StringView const value,
                        LockType const& lock);
 
+  DLRecord* HeadRecord() { return collection_record_ptr_; }
+
   /// Erase given record
   /// Return new_offset as next record
   /// old_offset as erased record

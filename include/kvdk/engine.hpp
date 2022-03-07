@@ -38,13 +38,21 @@ class Engine {
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
   // successful persistence, return non-Ok on any error.
-  virtual Status Set(const StringView key, const StringView value) = 0;
+  virtual Status Set(const StringView key, const StringView value,
+                     const WriteOptions& options = WriteOptions()) = 0;
 
   virtual Status BatchWrite(const WriteBatch& write_batch) = 0;
 
   // Search the STRING-type KV of "key" and store the corresponding value to
   // *value on success. If the "key" does not exist, return NotFound.
   virtual Status Get(const StringView key, std::string* value) = 0;
+
+  // Search the STRING-type or Collection and store the corresponding expired
+  // time to *expired_time on success.
+  virtual Status GetExpiredTime(const StringView str,
+                                int64_t* expired_time) = 0;
+
+  virtual Status SetExpiredTime(const StringView str, int64_t expired_time) = 0;
 
   // Remove STRING-type KV of "key".
   // Return Ok on success or the "key" did not exist, return non-Ok on any

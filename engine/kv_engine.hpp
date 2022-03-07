@@ -60,9 +60,14 @@ class KVEngine : public Engine {
   }
   void ReportPMemUsage();
 
+  Status GetExpiredTime(const StringView str, int64_t* expired_time) override;
+
+  Status SetExpiredTime(const StringView str, int64_t expired_time) override;
+
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
-  Status Set(const StringView key, const StringView value) override;
+  Status Set(const StringView key, const StringView value,
+             const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
 
@@ -110,7 +115,8 @@ class KVEngine : public Engine {
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
-  const std::vector<std::shared_ptr<Skiplist>>& GetSkiplists() {
+  const std::unordered_map<uint64_t, std::shared_ptr<Skiplist>>&
+  GetSkiplists() {
     return skiplists_;
   };
 
@@ -200,15 +206,16 @@ class KVEngine : public Engine {
 
   Status MaybeInitPendingBatchFile();
 
-  Status StringSetImpl(const StringView& key, const StringView& value);
+  Status StringSetImpl(const StringView& key, const StringView& value,
+                       const WriteOptions& write_options);
 
   Status StringDeleteImpl(const StringView& key);
 
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status SSetImpl(Skiplist* skiplist, const StringView& user_key,
-                  const StringView& value);
+  Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
+                  const StringView& value, int64_t expired_time = 0);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
@@ -361,7 +368,7 @@ class KVEngine : public Engine {
 
   std::shared_ptr<HashTable> hash_table_;
 
-  std::vector<std::shared_ptr<Skiplist>> skiplists_;
+  std::unordered_map<uint64_t, std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
   std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;

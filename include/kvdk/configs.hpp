@@ -138,4 +138,12 @@ struct Configs {
   ComparatorTable comparator;
 };
 
+struct WriteOptions {
+  WriteOptions() {}
+  WriteOptions(int64_t _expired_time, bool _key_exist)
+      : expired_time(_expired_time), key_exist(_key_exist) {}
+  int64_t expired_time = 0;
+  bool key_exist = false;
+};
+
 }  // namespace KVDK_NAMESPACE

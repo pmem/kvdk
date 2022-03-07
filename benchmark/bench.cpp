@@ -189,7 +189,7 @@ void DBWrite(int tid) {
     switch (bench_data_type) {
       case DataType::String: {
         if (FLAGS_batch_size == 0) {
-          s = engine->Set(key, value);
+          s = engine->Set(key, value, WriteOptions());
         } else {
           batch.Put(key, std::string(value.data(), value.size()));
           if (batch.Size() == FLAGS_batch_size) {
@@ -505,7 +505,7 @@ int main(int argc, char** argv) {
     printf("calculate latencies\n");
     read_latencies.resize(read_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
     write_latencies.resize(write_threads,
-                           std::vector<std::uint64_t>(MAX_LAT+1, 0));
+                           std::vector<std::uint64_t>(MAX_LAT + 1, 0));
   }
 
   if (bench_data_type == DataType::Sorted) {
