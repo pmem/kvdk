@@ -80,6 +80,12 @@ void KVEngine::FreeSkiplistDramNodes() {
 }
 
 void KVEngine::ReportPMemUsage() {
+  // Check pmem allocator is initialized before use it.
+  // It may not be successfully initialized due to file operation errors.
+  if (pmem_allocator_ == nullptr) {
+    return;
+  }
+
   auto total = pmem_allocator_->PMemUsageInBytes();
   GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
                     (total / (1LL << 10)), (total / (1LL << 20)),

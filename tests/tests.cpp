@@ -80,7 +80,7 @@ class EngineBasicTest : public testing::Test {
       return false;
     } else {
       ReopenEngine();
-      return true;
+      return engine != nullptr;
     }
   }
 
