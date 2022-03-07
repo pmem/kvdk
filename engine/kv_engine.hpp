@@ -114,9 +114,7 @@ class KVEngine : public Engine {
     return skiplists_;
   };
 
-  const std::shared_ptr<HashTable> GetHashTable() {
-    return hash_table_;
-  }
+  const std::shared_ptr<HashTable> GetHashTable() { return hash_table_; }
 
  private:
   friend OldRecordsCleaner;
@@ -402,7 +400,6 @@ class KVEngine : public Engine {
   std::mutex checkpoint_lock_;
 
   BackgroundWorkSignals bg_work_signals_;
-
 };
 
 }  // namespace KVDK_NAMESPACE
