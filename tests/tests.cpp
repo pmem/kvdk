@@ -942,7 +942,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
-  int num_threads = 48;
+  int num_threads = 16;
   int num_collections = 16;
   configs.max_access_threads = num_threads;
   configs.opt_large_sorted_collection_restore = true;

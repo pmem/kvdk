@@ -148,10 +148,11 @@ struct SkiplistNode {
 // and configs
 class Skiplist : public Collection {
  public:
-  struct WriteReturn {
+  struct WriteResult {
     Status s = Status::Ok;
     DLRecord* existing_record = nullptr;
     DLRecord* write_record = nullptr;
+    SkiplistNode* dram_node = nullptr;
   };
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
@@ -236,68 +237,44 @@ class Skiplist : public Collection {
 
   bool IndexedByHashtable() { return indexed_by_hashtable_; }
 
+  // Set "key, value" to the skiplist
+  //
+  // hash_hint: hash table hint of the setting key, the lock of hint should
+  // already been locked
+  // timestamp: kvdk engine timestamp of this operation
+  //
+  // Return Ok on success, with the writed pmem record, its dram node and
+  // updated pmem record if it existed, return Abort if there is lock contension
+  WriteResult Set(const StringView& key, const StringView& value,
+                  const HashTable::KeyHashHint& hash_hint,
+                  TimeStampType timestamp);
+
   Status Get(const StringView& key, std::string* value);
 
-  Status Set(const StringView& key, const StringView& value);
+  // Delete "key" from the skiplist by replace it with a delete record
+  //
+  // hash_hint: hash table hint of the setting key, the lock of hint should
+  // already been locked
+  // timestamp: kvdk engine timestamp of this operation
+  //
+  // Return Ok on success, with the writed pmem delete record, its dram node and
+  // deleted pmem record if existed, return Abort if there is lock contension
+  WriteResult Delete(const StringView& key,
+                     const HashTable::KeyHashHint& hash_hint,
+                     TimeStampType timestamp);
 
-  // Start seek from this node, find dram position of "key" in the skiplist
+  // Seek position of "key" on both dram and PMem node in the skiplist, and
+  // store position in "result_splice". If "key" existing, the next pointers in
+  // splice point to node of "key"
+  void Seek(const StringView& key, Splice* result_splice);
+
+  // Start seek from "start_node", find dram position of "key" in the skiplist
   // between height "start_height" and "end"_height", and store position in
   // "result_splice", if "key" existing, the next pointers in splice point to
   // node of "key"
   void SeekNode(const StringView& key, SkiplistNode* start_node,
                 uint8_t start_height, uint8_t end_height,
                 Splice* result_splice);
-
-  // Start position of "key" on both dram and PMem node in the skiplist, and
-  // store position in "result_splice". If "key" existing, the next pointers in
-  // splice point to node of "key"
-  void Seek(const StringView& key, Splice* result_splice);
-
-  // Insert a new key "key" to the skiplist,
-  //
-  // space_to_write: PMem space entry to store new record.
-  // dram_node: If height of new record > 0, store new dram node to it,
-  // otherwise store nullptr instead
-  // inserting_key_lock: lock of inserting key, should be locked before call
-  // this function
-  //
-  // Return true on success, return false on fail.
-  bool Insert(const StringView& key, const StringView& value,
-              const SpinMutex* inserting_key_lock, TimeStampType timestamp,
-              SkiplistNode** dram_node, const SpaceEntry& space_to_write);
-
-  WriteReturn Insert2(const StringView& key, const StringView& value,
-                      TimeStampType timestamp);
-
-  // Update "key" in the skiplist
-  //
-  // space_to_write: PMem space entry to store new record
-  // updated_record: existing record of updating key
-  // dram_node: dram node of existing record, if it's a height 0 record, then
-  // pass nullptr
-  // updating_record_lock: lock of updating record, should be locked before call
-  // this function
-  //
-  // Return true on success, return false on fail.
-  bool Update(const StringView& key, const StringView& value,
-              const DLRecord* updating_record,
-              const SpinMutex* updating_record_lock, TimeStampType timestamp,
-              SkiplistNode* dram_node, const SpaceEntry& space_to_write);
-
-  // Delete "key" from the skiplist by replace it with a delete record
-  //
-  // deleted_record:existing record of deleting key
-  // dram_node:dram node of existing record, if it's a height 0 record, then
-  // pass nullptr
-  // deleting_key_lock: lock of deleting key, should be locked before call this
-  // function
-  //
-  // Return true on success, return false on fail.
-  bool Delete(const StringView& key, DLRecord* deleting_record,
-              const SpinMutex* deleting_record_lock, TimeStampType timestamp,
-              SkiplistNode* dram_node, const SpaceEntry& space_to_write);
-
-  WriteReturn Delete2(const StringView& key, TimeStampType timestamp);
 
   // Purge a dl record from its skiplist by remove it from linkage
   //
@@ -382,6 +359,22 @@ class Skiplist : public Collection {
                                             SortedCollectionConfigs& s_configs);
 
  private:
+  WriteResult setImplNoHash(const StringView& key, const StringView& value,
+                            const SpinMutex* locked_key_lock,
+                            TimeStampType timestamp);
+
+  WriteResult setImplWithHash(const StringView& key, const StringView& value,
+                              const HashTable::KeyHashHint& locked_hash_hint,
+                              TimeStampType timestamp);
+
+  WriteResult deleteImplNoHash(const StringView& key,
+                               const SpinMutex* locked_key_lock,
+                               TimeStampType timestamp);
+
+  WriteResult deleteImplWithHash(const StringView& key,
+                                 const HashTable::KeyHashHint& locked_hash_hint,
+                                 TimeStampType timestamp);
+
   inline void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
     return LinkDLRecord(prev, next, linking, pmem_allocator_.get());
   }
@@ -396,9 +389,22 @@ class Skiplist : public Collection {
                               const SpinMutex* inserting_key_lock,
                               std::unique_lock<SpinMutex>* prev_record_lock);
 
+  // lock skiplist position to insert "key" by locking
+  // prev DLRecord and manage the lock with "prev_record_lock".
+  //
+  // The "insert_key" should be already locked before call this function
   bool lockInsertPosition(const StringView& inserting_key,
                           DLRecord* prev_record,
                           const SpinMutex* inserting_key_lock,
+                          std::unique_lock<SpinMutex>* prev_record_lock);
+
+  // lock skiplist position of "record" by locking its prev DLRecord and manage
+  // the lock with "prev_record_lock".
+  //
+  // The key of "record" itself should be already locked before call
+  // this function
+  bool lockRecordPosition(const DLRecord* record,
+                          const SpinMutex* record_key_lock,
                           std::unique_lock<SpinMutex>* prev_record_lock);
 
   // Search and lock skiplist position to update"key".

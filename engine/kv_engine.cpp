@@ -977,103 +977,35 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
     return Status::InvalidDataSize;
   }
 
-  SpaceEntry sized_space_entry;
   auto hint = hash_table_->GetHint(collection_key);
 
   while (1) {
-    SkiplistNode* dram_node = nullptr;
-    DLRecord* existing_record = nullptr;
     std::unique_lock<SpinMutex> ul(*hint.spin);
     version_controller_.HoldLocalSnapshot();
     defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
-    if (skiplist->IndexedByHashtable()) {
-      HashEntry* entry_ptr = nullptr;
-      HashEntry hash_entry;
-      DataEntry data_entry;
-      Status s = hash_table_->SearchForRead(
-          hint, collection_key, SortedDataRecord | SortedDeleteRecord,
-          &entry_ptr, &hash_entry, &data_entry);
-      bool need_write_delete_record = false;
 
-      switch (s) {
-        case Status::Ok:
-          if (hash_entry.GetRecordType() != SortedDeleteRecord) {
-            need_write_delete_record = true;
-          }
-          break;
-        case Status::NotFound:
-          s = Status::Ok;
-          break;
-        case Status::MemoryOverflow:
-          break;
-        default:
-          std::abort();  // never reach
-      }
-
-      if (!need_write_delete_record) {
-        if (sized_space_entry.size > 0) {
-          pmem_allocator_->Free(sized_space_entry);
-        }
-        return s;
-      }
-
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-        dram_node = hash_entry.GetIndex().skiplist_node;
-        existing_record = dram_node->record;
-      } else {
-        dram_node = nullptr;
-        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-        existing_record = hash_entry.GetIndex().dl_record;
-      }
-
-      if (sized_space_entry.size == 0) {
-        auto request_size = collection_key.size() + sizeof(DLRecord);
-        sized_space_entry = pmem_allocator_->Allocate(request_size);
-        // TODO: always keep space for delete record
-        if (sized_space_entry.size == 0) {
-          return Status::PmemOverflow;
-        }
-      }
-
-      void* delete_record_pmem_ptr =
-          pmem_allocator_->offset2addr(sized_space_entry.offset);
-
-      if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
-                            dram_node, sized_space_entry)) {
+    auto ret = skiplist->Delete(user_key, hint, new_ts);
+    switch (ret.s) {
+      case Status::Abort:
         continue;
-      }
-
-      if (dram_node == nullptr) {
-        hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord,
-                            delete_record_pmem_ptr, HashIndexType::DLRecord);
-      } else {
-        hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord, dram_node,
-                            HashIndexType::SkiplistNode);
-      }
-      ul.unlock();
-      delayFree(OldDataRecord{existing_record, new_ts});
-      delayFree(OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr,
-                                hint.spin});
-    } else {
-      auto ret = skiplist->Delete2(user_key, new_ts);
-      switch (ret.s) {
-        case Status::Abort:
-          continue;
-        case Status::PmemOverflow:
-          return ret.s;
-        case Status::Ok:
-          ul.unlock();
-          if (ret.existing_record &&
-              ret.existing_record->entry.meta.type == SortedDataRecord) {
-            delayFree(OldDataRecord{ret.existing_record, new_ts});
-          }
+      case Status::PmemOverflow:
+        return ret.s;
+      case Status::Ok:
+        ul.unlock();
+        if (ret.write_record != nullptr) {
+          kvdk_assert(
+              ret.existing_record != nullptr &&
+                  ret.existing_record->entry.meta.type == SortedDataRecord,
+              "Wrong existing record type while insert a delete reocrd for "
+              "sorted collection");
+          delayFree(OldDataRecord{ret.existing_record, new_ts});
           delayFree(OldDeleteRecord{ret.write_record, new_ts});
-          return ret.s;
-        default:
-          std::abort();
-      }
+        }
+        return ret.s;
+      default:
+        std::abort();
     }
     break;
   }
@@ -1087,97 +1019,30 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
     return Status::InvalidDataSize;
   }
 
-  auto request_size = value.size() + collection_key.size() + sizeof(DLRecord);
-  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
-  if (sized_space_entry.size == 0) {
-    return Status::PmemOverflow;
-  }
-  void* new_record_pmem_ptr =
-      pmem_allocator_->offset2addr(sized_space_entry.offset);
   auto hint = hash_table_->GetHint(collection_key);
   while (1) {
-    SkiplistNode* dram_node = nullptr;
-    DLRecord* existing_record = nullptr;
     std::unique_lock<SpinMutex> ul(*hint.spin);
     version_controller_.HoldLocalSnapshot();
     defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
-    if (skiplist->IndexedByHashtable()) {
-      HashEntry* entry_ptr = nullptr;
-      HashEntry hash_entry;
-      DataEntry data_entry;
-      Status s = hash_table_->SearchForWrite(
-          hint, collection_key, SortedDataRecord | SortedDeleteRecord,
-          &entry_ptr, &hash_entry, &data_entry);
-      if (s == Status::MemoryOverflow) {
-        return s;
-      }
-      bool found = s == Status::Ok;
-
-      assert(!found || new_ts > data_entry.meta.timestamp);
-
-      if (found) {
-        if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-          dram_node = hash_entry.GetIndex().skiplist_node;
-          existing_record = dram_node->record;
-        } else {
-          dram_node = nullptr;
-          assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-          existing_record = hash_entry.GetIndex().dl_record;
+    auto ret = skiplist->Set(user_key, value, hint, new_ts);
+    switch (ret.s) {
+      case Status::Abort:
+        continue;
+      case Status::PmemOverflow:
+        break;
+      case Status::Ok:
+        if (ret.existing_record &&
+            ret.existing_record->entry.meta.type == SortedDataRecord) {
+          ul.unlock();
+          delayFree(OldDataRecord{ret.existing_record, new_ts});
         }
-
-        if (!skiplist->Update(user_key, value, existing_record, hint.spin,
-                              new_ts, dram_node, sized_space_entry)) {
-          continue;
-        }
-
-        // update a height 0 node
-        auto updated_type = entry_ptr->GetRecordType();
-        if (dram_node == nullptr) {
-          hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
-                              new_record_pmem_ptr, HashIndexType::DLRecord);
-        } else {
-          hash_table_->Insert(hint, entry_ptr, SortedDataRecord, dram_node,
-                              HashIndexType::SkiplistNode);
-        }
-        ul.unlock();
-        if (updated_type == SortedDataRecord) {
-          delayFree(OldDataRecord{existing_record, new_ts});
-        }
-      } else {
-        if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
-                              sized_space_entry)) {
-          continue;
-        }
-
-        void* new_hash_index =
-            (dram_node == nullptr) ? new_record_pmem_ptr : dram_node;
-        hash_table_->Insert(
-            hint, entry_ptr, SortedDataRecord, new_hash_index,
-            dram_node ? HashIndexType::SkiplistNode : HashIndexType::DLRecord);
-      }
-
-      break;
-    } else {
-      auto ret = skiplist->Insert2(user_key, value, new_ts);
-      switch (ret.s) {
-        case Status::Abort:
-          continue;
-        case Status::PmemOverflow:
-          break;
-        case Status::Ok:
-          if (ret.existing_record &&
-              ret.existing_record->entry.meta.type == SortedDataRecord) {
-            ul.unlock();
-            delayFree(OldDataRecord{ret.existing_record, new_ts});
-          }
-          break;
-        default:
-          std::abort();  // never shoud reach
-      }
-      return ret.s;
+        break;
+      default:
+        std::abort();  // never shoud reach
     }
+    return ret.s;
   }
   return Status::Ok;
 }
