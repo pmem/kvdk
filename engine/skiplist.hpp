@@ -301,7 +301,7 @@ class Skiplist : public Collection {
   // this function
   //
   // Return true on success, return false on fail.
-  static bool Replace(DLRecord* old_record, DLRecord* replacing_record,
+  static bool Replace(DLRecord* old_record, DLRecord* new_record,
                       const SpinMutex* old_record_lock, SkiplistNode* dram_node,
                       PMEMAllocator* pmem_allocator, HashTable* hash_table);
 
@@ -346,6 +346,17 @@ class Skiplist : public Collection {
       std::unique_lock<SpinMutex>* prev_record_lock,
       PMEMAllocator* pmem_allocator, HashTable* hash_table);
 
+  // lock skiplist position of "record" by locking its prev DLRecord and manage
+  // the lock with "prev_record_lock".
+  //
+  // The key of "record" itself should be already locked before call
+  // this function
+  static bool LockRecordPosition(const DLRecord* record,
+                                 const SpinMutex* record_key_lock,
+                                 std::unique_lock<SpinMutex>* prev_record_lock,
+                                 PMEMAllocator* pmem_allocator,
+                                 HashTable* hash_table);
+
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
 
@@ -378,16 +389,6 @@ class Skiplist : public Collection {
   inline void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
     return LinkDLRecord(prev, next, linking, pmem_allocator_.get());
   }
-
-  // Find and lock skiplist position to insert "key"
-  //
-  // Store prev dram nodes and prev/next PMem DLRecord in "splice", lock
-  // prev DLRecord and manage the lock with "prev_record_lock".
-  //
-  // The "insert_key" should be already locked before call this function
-  bool searchAndLockInsertPos(Splice* splice, const StringView& inserting_key,
-                              const SpinMutex* inserting_key_lock,
-                              std::unique_lock<SpinMutex>* prev_record_lock);
 
   // lock skiplist position to insert "key" by locking
   // prev DLRecord and manage the lock with "prev_record_lock".
