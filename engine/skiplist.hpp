@@ -305,13 +305,6 @@ class Skiplist : public Collection {
                       const SpinMutex* old_record_lock, SkiplistNode* dram_node,
                       PMEMAllocator* pmem_allocator, HashTable* hash_table);
 
-  void ObsoleteNodes(const std::vector<SkiplistNode*> nodes) {
-    std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
-    for (SkiplistNode* node : nodes) {
-      obsolete_nodes_.push_back(node);
-    }
-  }
-
   void PurgeObsoletedNodes() {
     std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
     if (pending_deletion_nodes_.size() > 0) {
@@ -326,36 +319,6 @@ class Skiplist : public Collection {
   }
 
   Status CheckConnection(int height);
-
-  // Link DLRecord "linking" between "prev" and "next"
-  static void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
-                           PMEMAllocator* pmem_allocator);
-
-  // Find position of "searching_record" in its skiplist and lock its previous
-  // node
-  //
-  // dram_node: dram node of searching_record, if it's a height 0 record, then
-  // pass nullptr
-  // searching_record_lock: lock of searching record, should be locked before
-  // call this function
-  //
-  // Return true on success, return false on fail.
-  static bool SearchAndLockRecordPos(
-      Splice* splice, const DLRecord* searching_record,
-      const SpinMutex* searching_record_lock,
-      std::unique_lock<SpinMutex>* prev_record_lock,
-      PMEMAllocator* pmem_allocator, HashTable* hash_table);
-
-  // lock skiplist position of "record" by locking its prev DLRecord and manage
-  // the lock with "prev_record_lock".
-  //
-  // The key of "record" itself should be already locked before call
-  // this function
-  static bool LockRecordPosition(const DLRecord* record,
-                                 const SpinMutex* record_key_lock,
-                                 std::unique_lock<SpinMutex>* prev_record_lock,
-                                 PMEMAllocator* pmem_allocator,
-                                 HashTable* hash_table);
 
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
@@ -386,8 +349,12 @@ class Skiplist : public Collection {
                                  const HashTable::KeyHashHint& locked_hash_hint,
                                  TimeStampType timestamp);
 
-  inline void LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
-    return LinkDLRecord(prev, next, linking, pmem_allocator_.get());
+  // Link DLRecord "linking" between "prev" and "next"
+  static void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
+                           PMEMAllocator* pmem_allocator);
+
+  inline void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
+    return linkDLRecord(prev, next, linking, pmem_allocator_.get());
   }
 
   // lock skiplist position to insert "key" by locking
@@ -404,33 +371,20 @@ class Skiplist : public Collection {
   //
   // The key of "record" itself should be already locked before call
   // this function
+  static bool lockRecordPosition(const DLRecord* record,
+                                 const SpinMutex* record_key_lock,
+                                 std::unique_lock<SpinMutex>* prev_record_lock,
+                                 PMEMAllocator* pmem_allocator,
+                                 HashTable* hash_table);
+
   bool lockRecordPosition(const DLRecord* record,
                           const SpinMutex* record_key_lock,
-                          std::unique_lock<SpinMutex>* prev_record_lock);
-
-  // Search and lock skiplist position to update"key".
-  //
-  // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and
-  // manage the lock with "prev_record_lock".
-  //
-  //  The "updated_key" should be already locked before call this function
-  bool searchAndLockUpdatePos(Splice* splice, const DLRecord* updating_record,
-                              const SpinMutex* updating_record_lock,
-                              std::unique_lock<SpinMutex>* prev_record_lock) {
-    return SearchAndLockRecordPos(splice, updating_record, updating_record_lock,
-                                  prev_record_lock, pmem_allocator_.get(),
-                                  hash_table_.get());
+                          std::unique_lock<SpinMutex>* prev_record_lock) {
+    return lockRecordPosition(record, record_key_lock, prev_record_lock,
+                              pmem_allocator_.get(), hash_table_.get());
   }
 
-  bool searchAndLockDeletePos(Splice* splice, const DLRecord* deleting_record,
-                              const SpinMutex* deleting_record_lock,
-                              std::unique_lock<SpinMutex>* prev_record_lock) {
-    return SearchAndLockRecordPos(splice, deleting_record, deleting_record_lock,
-                                  prev_record_lock, pmem_allocator_.get(),
-                                  hash_table_.get());
-  }
-
-  bool ValidateDLRecord(const DLRecord* record) {
+  bool validateDLRecord(const DLRecord* record) {
     DLRecord* prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
     return prev != nullptr &&
            prev->next == pmem_allocator_->addr2offset(record) &&
@@ -439,6 +393,13 @@ class Skiplist : public Collection {
 
   int compare(const StringView& src_key, const StringView& target_key) {
     return comparator_(src_key, target_key);
+  }
+
+  void obsoleteNodes(const std::vector<SkiplistNode*> nodes) {
+    std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
+    for (SkiplistNode* node : nodes) {
+      obsolete_nodes_.push_back(node);
+    }
   }
 
   SkiplistNode* header_;

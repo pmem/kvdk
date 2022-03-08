@@ -87,7 +87,7 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
     }
   }
   if (to_delete.size() > 0) {
-    result_splice->seeking_list->ObsoleteNodes(to_delete);
+    result_splice->seeking_list->obsoleteNodes(to_delete);
   }
 }
 
@@ -119,7 +119,7 @@ void Skiplist::Seek(const StringView& key, Splice* result_splice) {
     int cmp = compare(key, UserKey(next_record));
     // pmem record maybe updated before comparing string, then the comparing
     // result will be invalid, so we need to do double check
-    if (!ValidateDLRecord(next_record)) {
+    if (!validateDLRecord(next_record)) {
       return Seek(key, result_splice);
     }
 
@@ -185,48 +185,7 @@ Status Skiplist::CheckConnection(int height) {
   return Status::Ok;
 }
 
-bool Skiplist::SearchAndLockRecordPos(
-    Splice* splice, const DLRecord* searching_record,
-    const SpinMutex* record_lock, std::unique_lock<SpinMutex>* prev_record_lock,
-    PMEMAllocator* pmem_allocator, HashTable* hash_table) {
-  while (1) {
-    DLRecord* prev =
-        pmem_allocator->offset2addr<DLRecord>(searching_record->prev);
-    DLRecord* next =
-        pmem_allocator->offset2addr<DLRecord>(searching_record->next);
-    assert(prev != nullptr);
-    assert(next != nullptr);
-    splice->prev_pmem_record = prev;
-    splice->next_pmem_record = next;
-    uint64_t prev_offset = pmem_allocator->addr2offset(prev);
-    uint64_t next_offset = pmem_allocator->addr2offset(next);
-
-    auto prev_hint = hash_table->GetHint(prev->Key());
-    if (prev_hint.spin != record_lock) {
-      if (!prev_hint.spin->try_lock()) {
-        return false;
-      }
-      *prev_record_lock =
-          std::unique_lock<SpinMutex>(*prev_hint.spin, std::adopt_lock);
-    }
-
-    // Check if the list has changed before we successfully acquire lock.
-    // As updating searching_record is already locked, so we don't need to
-    // check its next
-    if (searching_record->prev != prev_offset ||
-        prev->next != pmem_allocator->addr2offset(searching_record)) {
-      continue;
-    }
-
-    assert(searching_record->prev == prev_offset);
-    assert(searching_record->next == next_offset);
-    assert(next->prev == pmem_allocator->addr2offset(searching_record));
-
-    return true;
-  }
-}
-
-bool Skiplist::LockRecordPosition(const DLRecord* record,
+bool Skiplist::lockRecordPosition(const DLRecord* record,
                                   const SpinMutex* record_key_lock,
                                   std::unique_lock<SpinMutex>* prev_record_lock,
                                   PMEMAllocator* pmem_allocator,
@@ -260,13 +219,6 @@ bool Skiplist::LockRecordPosition(const DLRecord* record,
 
     return true;
   }
-}
-
-bool Skiplist::lockRecordPosition(
-    const DLRecord* record, const SpinMutex* record_key_lock,
-    std::unique_lock<SpinMutex>* prev_record_lock) {
-  return LockRecordPosition(record, record_key_lock, prev_record_lock,
-                            pmem_allocator_.get(), hash_table_.get());
 }
 
 bool Skiplist::lockInsertPosition(
@@ -354,24 +306,25 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
                        const SpinMutex* old_record_lock,
                        SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
                        HashTable* hash_table) {
-  Splice splice(nullptr);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!SearchAndLockRecordPos(&splice, old_record, old_record_lock,
-                              &prev_record_lock, pmem_allocator, hash_table)) {
+  if (!lockRecordPosition(old_record, old_record_lock, &prev_record_lock,
+                          pmem_allocator, hash_table)) {
     return false;
   }
-  kvdk_assert(
-      splice.prev_pmem_record->next == pmem_allocator->addr2offset(old_record),
-      "Bad prev linkage in Skiplist::Replace");
-  kvdk_assert(
-      splice.prev_pmem_record->next == pmem_allocator->addr2offset(old_record),
-      "Bad next linkage in Skiplist::Replace");
-  new_record->prev = pmem_allocator->addr2offset(splice.prev_pmem_record);
+  PMemOffsetType prev_offset = old_record->prev;
+  PMemOffsetType next_offset = old_record->next;
+  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
+  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
+
+  kvdk_assert(prev->next == pmem_allocator->addr2offset(old_record),
+              "Bad prev linkage in Skiplist::Replace");
+  kvdk_assert(next->prev == pmem_allocator->addr2offset(old_record),
+              "Bad next linkage in Skiplist::Replace");
+  new_record->prev = prev_offset;
   pmem_persist(&new_record->prev, sizeof(PMemOffsetType));
-  new_record->next = pmem_allocator->addr2offset(splice.next_pmem_record);
+  new_record->next = next_offset;
   pmem_persist(&new_record->next, sizeof(PMemOffsetType));
-  Skiplist::LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record,
-                         new_record, pmem_allocator);
+  Skiplist::LinkDLRecord(prev, next, new_record, pmem_allocator);
   if (dram_node != nullptr) {
     kvdk_assert(dram_node->record == old_record,
                 "Dram node not belong to old record in Skiplist::Replace");
@@ -384,26 +337,27 @@ bool Skiplist::Purge(DLRecord* purging_record,
                      const SpinMutex* purging_record_lock,
                      SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
                      HashTable* hash_table) {
-  Splice splice(nullptr);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!SearchAndLockRecordPos(&splice, purging_record, purging_record_lock,
-                              &prev_record_lock, pmem_allocator, hash_table)) {
+  if (!lockRecordPosition(purging_record, purging_record_lock,
+                          &prev_record_lock, pmem_allocator, hash_table)) {
     return false;
   }
 
   // Modify linkage to drop deleted record
-  uint64_t purging_offset = pmem_allocator->addr2offset(purging_record);
-  DLRecord* prev = splice.prev_pmem_record;
-  DLRecord* next = splice.next_pmem_record;
+  PMemOffsetType purging_offset = pmem_allocator->addr2offset(purging_record);
+  PMemOffsetType prev_offset = purging_record->prev;
+  PMemOffsetType next_offset = purging_record->next;
+  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
+  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
   assert(prev->next == purging_offset);
   assert(next->prev == purging_offset);
   // For repair in recovery due to crashes during pointers changing, we should
   // first unlink deleting entry from next's prev.(It is the reverse process
   // of insertion)
-  next->prev = pmem_allocator->addr2offset(prev);
+  next->prev = prev_offset;
   pmem_persist(&next->prev, 8);
   TEST_SYNC_POINT("KVEngine::Skiplist::Delete::PersistNext'sPrev::After");
-  prev->next = pmem_allocator->addr2offset(next);
+  prev->next = next_offset;
   pmem_persist(&prev->next, 8);
   purging_record->Destroy();
 
@@ -1121,7 +1075,7 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(
 
   assert(splice.prev_pmem_record->next == existing_offset);
 
-  LinkDLRecord(prev_record, next_record, delete_record);
+  linkDLRecord(prev_record, next_record, delete_record);
 
   if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
     splice.nexts[1]->record = delete_record;
@@ -1187,7 +1141,7 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
         pmem_allocator_->offset2addr(space_to_write.offset),
         space_to_write.size, timestamp, SortedDeleteRecord, existing_offset,
         prev_offset, next_offset, internal_key, "");
-    LinkDLRecord(prev_record, next_record, delete_record);
+    linkDLRecord(prev_record, next_record, delete_record);
     ret.write_record = delete_record;
   } else {
     std::abort();  // never reach
@@ -1266,7 +1220,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
         space_to_write.size, timestamp, SortedDataRecord, existing_offset,
         prev_offset, next_offset, internal_key, value);
     ret.write_record = new_record;
-    LinkDLRecord(prev_record, next_record, new_record);
+    linkDLRecord(prev_record, next_record, new_record);
   } else {
     std::abort();  // never should reach
   }
@@ -1343,7 +1297,7 @@ Skiplist::WriteResult Skiplist::setImplNoHash(
       next_offset, internal_key, value);
   ret.write_record = new_record;
   // link new record to PMem
-  LinkDLRecord(prev_record, next_record, new_record);
+  linkDLRecord(prev_record, next_record, new_record);
   if (!exist) {
     // create dram node for new record
     ret.dram_node = Skiplist::NewNodeBuild(new_record);
