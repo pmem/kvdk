@@ -148,6 +148,12 @@ struct SkiplistNode {
 // and configs
 class Skiplist : public Collection {
  public:
+  struct WriteReturn {
+    Status s = Status::Ok;
+    DLRecord* existing_record = nullptr;
+    DLRecord* write_record = nullptr;
+  };
+
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
            Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
            std::shared_ptr<HashTable> hash_table, bool indexed_by_hashtable)
@@ -260,6 +266,9 @@ class Skiplist : public Collection {
               const SpinMutex* inserting_key_lock, TimeStampType timestamp,
               SkiplistNode** dram_node, const SpaceEntry& space_to_write);
 
+  WriteReturn Insert2(const StringView& key, const StringView& value,
+                      TimeStampType timestamp);
+
   // Update "key" in the skiplist
   //
   // space_to_write: PMem space entry to store new record
@@ -287,6 +296,8 @@ class Skiplist : public Collection {
   bool Delete(const StringView& key, DLRecord* deleting_record,
               const SpinMutex* deleting_record_lock, TimeStampType timestamp,
               SkiplistNode* dram_node, const SpaceEntry& space_to_write);
+
+  WriteReturn Delete2(const StringView& key, TimeStampType timestamp);
 
   // Purge a dl record from its skiplist by remove it from linkage
   //
@@ -385,10 +396,15 @@ class Skiplist : public Collection {
                               const SpinMutex* inserting_key_lock,
                               std::unique_lock<SpinMutex>* prev_record_lock);
 
+  bool lockInsertPosition(const StringView& inserting_key,
+                          DLRecord* prev_record,
+                          const SpinMutex* inserting_key_lock,
+                          std::unique_lock<SpinMutex>* prev_record_lock);
+
   // Search and lock skiplist position to update"key".
   //
-  // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and manage
-  // the lock with "prev_record_lock".
+  // Store prev/next PMem DLRecord in "splice", lock prev DLRecord and
+  // manage the lock with "prev_record_lock".
   //
   //  The "updated_key" should be already locked before call this function
   bool searchAndLockUpdatePos(Splice* splice, const DLRecord* updating_record,
@@ -479,6 +495,7 @@ class SortedIterator : public Iterator {
 // A helper struct for seeking skiplist
 struct Splice {
   // Seeking skiplist
+  // TODO: maybe we only need prev records/nodes
   Skiplist* seeking_list;
   std::array<SkiplistNode*, kMaxHeight + 1> nexts;
   std::array<SkiplistNode*, kMaxHeight + 1> prevs;

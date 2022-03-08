@@ -1057,52 +1057,23 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
       delayFree(OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr,
                                 hint.spin});
     } else {
-      Splice splice(skiplist);
-      skiplist->Seek(user_key, &splice);
-      bool found =
-          (splice.next_pmem_record->entry.meta.type &
-           (SortedDataRecord | SortedDeleteRecord)) &&
-          equal_string_view(splice.next_pmem_record->Key(), collection_key);
-
-      bool need_write_delete_record =
-          found && splice.next_pmem_record->entry.meta.type == SortedDataRecord;
-
-      if (!need_write_delete_record) {
-        if (sized_space_entry.size > 0) {
-          pmem_allocator_->Free(sized_space_entry);
-        }
-        return Status::Ok;
+      auto ret = skiplist->Delete2(user_key, new_ts);
+      switch (ret.s) {
+        case Status::Abort:
+          continue;
+        case Status::PmemOverflow:
+          return ret.s;
+        case Status::Ok:
+          ul.unlock();
+          if (ret.existing_record &&
+              ret.existing_record->entry.meta.type == SortedDataRecord) {
+            delayFree(OldDataRecord{ret.existing_record, new_ts});
+          }
+          delayFree(OldDeleteRecord{ret.write_record, new_ts});
+          return ret.s;
+        default:
+          std::abort();
       }
-
-      if (splice.nexts[1] &&
-          splice.nexts[1]->record == splice.next_pmem_record) {
-        dram_node = splice.nexts[1];
-        existing_record = dram_node->record;
-      } else {
-        dram_node = nullptr;
-        existing_record = splice.next_pmem_record;
-      }
-
-      if (sized_space_entry.size == 0) {
-        auto request_size = collection_key.size() + sizeof(DLRecord);
-        sized_space_entry = pmem_allocator_->Allocate(request_size);
-        if (sized_space_entry.size == 0) {
-          return Status::PmemOverflow;
-        }
-      }
-
-      void* delete_record_pmem_ptr =
-          pmem_allocator_->offset2addr(sized_space_entry.offset);
-
-      if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
-                            dram_node, sized_space_entry)) {
-        continue;
-      }
-      ul.unlock();
-      delayFree(OldDataRecord{existing_record, new_ts});
-      //      delayFree(
-      //          OldDeleteRecord{delete_record_pmem_ptr, new_ts, nullptr,
-      //          nullptr});
     }
     break;
   }
@@ -1189,40 +1160,23 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
 
       break;
     } else {
-      Splice splice(skiplist);
-      skiplist->Seek(user_key, &splice);
-      bool found =
-          (splice.next_pmem_record->entry.meta.type &
-           (SortedDataRecord | SortedDeleteRecord)) &&
-          equal_string_view(splice.next_pmem_record->Key(), collection_key);
-
-      if (found) {
-        if (splice.nexts[1] &&
-            splice.nexts[1]->record == splice.next_pmem_record) {
-          dram_node = splice.nexts[1];
-          existing_record = dram_node->record;
-        } else {
-          dram_node = nullptr;
-          existing_record = splice.next_pmem_record;
-        }
-
-        if (!skiplist->Update(user_key, value, existing_record, hint.spin,
-                              new_ts, dram_node, sized_space_entry)) {
+      auto ret = skiplist->Insert2(user_key, value, new_ts);
+      switch (ret.s) {
+        case Status::Abort:
           continue;
-        }
-
-        ul.unlock();
-        if (existing_record->entry.meta.type == SortedDataRecord) {
-          delayFree(OldDataRecord{existing_record, new_ts});
-        }
-      } else {
-        if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
-                              sized_space_entry)) {
-          continue;
-        }
+        case Status::PmemOverflow:
+          break;
+        case Status::Ok:
+          if (ret.existing_record &&
+              ret.existing_record->entry.meta.type == SortedDataRecord) {
+            ul.unlock();
+            delayFree(OldDataRecord{ret.existing_record, new_ts});
+          }
+          break;
+        default:
+          std::abort();  // never shoud reach
       }
-
-      break;
+      return ret.s;
     }
   }
   return Status::Ok;
@@ -1434,8 +1388,8 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
 
   std::string val;
 
-  // Free updated kvs, we should purge all updated kvs before release locks and
-  // after persist write stage
+  // Free updated kvs, we should purge all updated kvs before release locks
+  // and after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
     TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before", &i);
     if (batch_hints[i].data_record_to_free != nullptr) {
@@ -1571,7 +1525,8 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
                             HashIndexType::StringRecord);
         ul.unlock();
         delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
-        // We also delay free this delete record to recycle PMem and DRAM space
+        // We also delay free this delete record to recycle PMem and DRAM
+        // space
         delayFree(OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
 
         return s;
@@ -2177,8 +2132,8 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
 
 void KVEngine::delayFree(const OldDataRecord& old_data_record) {
   old_records_cleaner_.Push(old_data_record);
-  // To avoid too many cached old records pending clean, we try to clean cached
-  // records while pushing new one
+  // To avoid too many cached old records pending clean, we try to clean
+  // cached records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_work_signals_.old_records_cleaner_cv.notify_all();
@@ -2190,8 +2145,8 @@ void KVEngine::delayFree(const OldDataRecord& old_data_record) {
 
 void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
   old_records_cleaner_.Push(old_delete_record);
-  // To avoid too many cached old records pending clean, we try to clean cached
-  // records while pushing new one
+  // To avoid too many cached old records pending clean, we try to clean
+  // cached records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_work_signals_.old_records_cleaner_cv.notify_all();
