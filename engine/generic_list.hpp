@@ -52,11 +52,6 @@ public:
     return reinterpret_cast<RecordPointer>(pmem_base + off);
   }
 
-  char* base() const
-  {
-    return pmem_base;
-  }
-
   PMemOffsetType offset_of(RecordPointer rec) const
   {
     kvdk_assert(pmem_base != nullptr, "");
@@ -194,11 +189,11 @@ private:
 
   // Initialize a List with pmem base address p_base, pre-allocated space,
   // Creation time, List name and id.
-  void Init(char* p_base, SpaceEntry allocated, TimeStampType timestamp,
+  void Init(AddressTranslator<DLRecord*> tran, SpaceEntry allocated, TimeStampType timestamp,
               StringView const key, CollectionIDType id) {
       collection_name_.assign(key.data(), key.size());
       collection_id_ = id;
-      atran = AddressTranslator<DLRecord*>{p_base};
+      atran = tran;
       list_record = StringRecord::PersistStringRecord(
         atran.address_of(allocated.offset), allocated.size, timestamp,
         RecordType::ListRecord, NullPMemOffset, key, ID2String(id));
@@ -206,12 +201,12 @@ private:
 
   // Restore a List with its ListRecord, first and last element and size
   // This function is used by GenericListBuilder to restore the List
-  void Restore(char* p_base, StringRecord* list_rec, DLRecord* fi, DLRecord* la, size_t n)
+  void Restore(AddressTranslator<DLRecord*> tran, StringRecord* list_rec, DLRecord* fi, DLRecord* la, size_t n)
   {
     auto key = list_rec->Key();
     collection_name_.assign(key.data(), key.size());
     collection_id_ = string2ID(list_rec->Value());
-    atran = AddressTranslator<DLRecord*>{p_base};
+    atran = tran;
     list_record = list_rec;
     first = fi;
     last = la;
@@ -441,6 +436,14 @@ class GenericListBuilder final {
     DLRecord* first{nullptr};
     DLRecord* last{nullptr};
     std::atomic_uint64_t size{0U};
+
+    ListPrimer() = default;
+    ListPrimer(ListPrimer const& other) :
+      list_record{other.list_record},
+      unique{other.unique},
+      first{other.first},
+      last{other.last},
+      size{other.size.load()} {}
   };
   std::vector<ListPrimer> primers{};
   RWLock primers_lock;
@@ -572,7 +575,7 @@ public:
         kvdk_assert(primer.first == nullptr, "");
         kvdk_assert(primer.last == nullptr, "");
         kvdk_assert(primer.unique == nullptr, "");
-        rebuilded_lists->back()->Init(atran.base(), primer.list_record, nullptr, nullptr, 0);
+        rebuilded_lists->back()->Restore(atran, primer.list_record, nullptr, nullptr, 0);
         break;
       }
       case 1:
@@ -581,7 +584,7 @@ public:
         kvdk_assert(primer.first == nullptr, "");
         kvdk_assert(primer.last == nullptr, "");
         kvdk_assert(primer.unique != nullptr, "");
-        rebuilded_lists->back()->Init(atran.base(), primer.list_record, primer.unique, primer.unique, 1);
+        rebuilded_lists->back()->Restore(atran, primer.list_record, primer.unique, primer.unique, 1);
         break;
       }
       default:
@@ -590,7 +593,7 @@ public:
         kvdk_assert(primer.first != nullptr, "");
         kvdk_assert(primer.last != nullptr, "");
         kvdk_assert(primer.unique == nullptr, "");
-        rebuilded_lists->back()->Init(atran.base(), primer.list_record, primer.first, primer.last, 1);
+        rebuilded_lists->back()->Restore(atran, primer.list_record, primer.first, primer.last, 1);
         break;
       }
       }
@@ -773,7 +776,7 @@ private:
       if (atran.offset_of(elem) == atran.address_of(elem->next)->prev)
       {
         // Interrupted Replace/Emplace, repair into List
-        _mm_stream_si64(&atran.address_of(elem->prev)->next, atran.offset_of(elem));
+        _mm_stream_si64(reinterpret_cast<long long*>(&atran.address_of(elem->prev)->next), atran.offset_of(elem));
         _mm_mfence();
         return true;
       }
@@ -790,7 +793,10 @@ private:
     if (id >= primers.size())
     {
       primers_lock.RegisterWriter();
-      primers.resize((id + 1) * 3 / 2);
+      for (size_t i = primers.size(); i < (id + 1) * 3 / 2; i++)
+      {
+        primers.emplace_back();
+      }
       primers_lock.UnregisterWriter();
     }
   }

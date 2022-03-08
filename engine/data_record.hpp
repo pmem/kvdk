@@ -32,7 +32,7 @@ enum RecordType : uint16_t {
   QueueRecord = (1 << 12),
 
   ListRecord = (1 << 13),
-  ListDataRecord = (1 << 14),
+  ListElem = (1 << 14),
 
   Padding = (1 << 15),
 };
@@ -43,7 +43,7 @@ const uint16_t SortedRecordType =
 const uint16_t DLRecordType =
     (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
      DlistDataRecord | DlistHeadRecord | DlistTailRecord | DlistRecord |
-     QueueDataRecord | QueueHeadRecord | QueueTailRecord | QueueRecord | ListRecord | ListDataRecord);
+     QueueDataRecord | QueueHeadRecord | QueueTailRecord | QueueRecord | ListRecord | ListElem);
 
 const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
 

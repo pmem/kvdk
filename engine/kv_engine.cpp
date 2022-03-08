@@ -415,6 +415,16 @@ Status KVEngine::RestoreData() {
         s = RestoreQueueRecords(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
+      case RecordType::ListRecord:
+      {
+        s = restoreListRecord(static_cast<StringRecord*>(recovering_pmem_record));
+        break;
+      }
+      case RecordType::ListElem:
+      {
+        s = restoreListElem(static_cast<DLRecord*>(recovering_pmem_record));
+        break;
+      }
       default: {
         GlobalLogger.Error(
             "Invalid Record type when recovering. Trying "
@@ -904,6 +914,10 @@ Status KVEngine::Recovery() {
       pmem_allocator_.get(), hash_table_.get(),
       configs_.opt_large_sorted_collection_restore, configs_.max_access_threads,
       *persist_checkpoint_));
+
+  list_builder_.reset(new ListBuilder{});
+  list_builder_->Init(static_cast<char*>(pmem_allocator_->offset2addr(0)), &lists_, 1U);
+
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
@@ -928,6 +942,9 @@ Status KVEngine::Recovery() {
   }
 
   GlobalLogger.Info("Rebuild skiplist done\n");
+
+  list_builder_->RebuildLists();
+  GlobalLogger.Info("Rebuild Lists done\n");
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
@@ -1626,6 +1643,7 @@ Status KVEngine::Set(const StringView key, const StringView value) {
 
 }  // namespace KVDK_NAMESPACE
 
+// UnorderedCollection
 namespace KVDK_NAMESPACE {
 std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
     StringView const collection_name) {
@@ -1955,6 +1973,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
 
 }  // namespace KVDK_NAMESPACE
 
+// Queue
 namespace KVDK_NAMESPACE {
 std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
   std::uint64_t ts = version_controller_.GetCurrentTimestamp();
@@ -2123,6 +2142,10 @@ Status KVEngine::RestoreQueueRecords(DLRecord* pmp_record) {
     }
   }
 }
+} // namespace KVDK_NAMESPACE
+
+// Snapshot, delayFree and background work
+namespace KVDK_NAMESPACE {
 
 Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
@@ -2406,7 +2429,7 @@ namespace KVDK_NAMESPACE
   Status KVEngine::ListPush(StringView key, ListPosition pos, StringView elem)
   {
     List* list;
-    Status s = FindCollection(key, &list, RecordType::ListRecord);
+    Status s = listFindInitNonExist(key, &list);
     if (s != Status::Ok)
     {
       return s;
@@ -2485,7 +2508,7 @@ namespace KVDK_NAMESPACE
   Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot, StringView elem)
   {
     List* list;
-    Status s = FindCollection(key, &list, RecordType::ListRecord);
+    Status s = listFindInitNonExist(key, &list);
     if (s != Status::Ok)
     {
       return s;
@@ -2587,6 +2610,70 @@ namespace KVDK_NAMESPACE
     }
     list->Replace(space, iter, version_controller_.GetCurrentTimestamp(), "", elem);
     return Status::Ok;
+  }
+
+  std::unique_ptr<KVEngine::List> KVEngine::createList(StringView key) {
+    std::uint64_t ts = version_controller_.GetCurrentTimestamp();
+    CollectionIDType id = list_id_.fetch_add(1);
+    List* list = new List{};
+    auto space = pmem_allocator_->Allocate(sizeof(StringRecord)+key.size()+sizeof(CollectionIDType));
+    if (space.size == 0)
+    {
+      return nullptr;
+      // throw std::bad_alloc{};
+    }
+    list->Init(AddressTranslator<DLRecord*>(static_cast<char*>(pmem_allocator_->offset2addr(0))), space, ts, key, id);
+    return std::unique_ptr<List>(list);
+  }
+
+  Status KVEngine::restoreListElem(DLRecord* pmp_record)
+  {
+    list_builder_->AddListElem(pmp_record);
+    return Status::Ok;
+  }
+
+  Status KVEngine::restoreListRecord(StringRecord* pmp_record)
+  {
+    list_builder_->AddListRecord(pmp_record);
+    return Status::Ok;
+  }
+
+  Status KVEngine::restoreLists()
+  {
+    CollectionIDType max_id = 0;
+    for (auto const& list : lists_)
+    {
+      std::lock_guard<SpinMutex> guard{*hash_table_->GetHint(list->Name()).spin};
+      Status s = registerCollection(list->Name(), list.get());
+      max_id = std::max(max_id, list->ID());
+    }
+    auto old = list_id_.load();
+    while (max_id > old && !list_id_.compare_exchange_strong(old, max_id))
+    {
+    }
+    
+    return Status::Ok;
+  }
+
+  Status KVEngine::listFindInitNonExist(StringView key, List** list)
+  {
+    Status s = FindCollection(key, list, RecordType::ListRecord);
+    if (s == Status::Ok)
+    {
+      return s;
+    }
+    kvdk_assert(s == Status::NotFound, "");
+    auto temp_list = createList(key);
+    if (temp_list == nullptr)
+    {
+      return Status::PmemOverflow;
+    }
+    s = registerCollection(key, temp_list.get());
+    if (s == Status::Ok)
+    {
+      temp_list.release();
+    }
+    return s;
   }
 
 } // KVDK_NAMESPACE

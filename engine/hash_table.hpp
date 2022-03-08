@@ -34,8 +34,9 @@ enum class HashIndexType : uint16_t {
   UnorderedCollectionElement = 6,
   // Index field contains pointer to Queue object on DRAM
   Queue = 7,
+  List = 8,
   // Index is empty which point to nothing
-  Empty = 8,
+  Empty = 9,
 };
 
 struct HashHeader {

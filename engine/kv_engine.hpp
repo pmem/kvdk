@@ -189,18 +189,79 @@ class KVEngine : public Engine {
   Status ListSet(StringView key, IndexType index, StringView elem) final;
 
  private:
+  using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
+  using ListBuilder = GenericListBuilder<RecordType::ListRecord, RecordType::ListElem>;
+ 
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
 
+  std::unique_ptr<List> createList(StringView key);
+
+  template<typename CollectionType>
+  static constexpr RecordType collectionType()
+  {
+    return 
+      std::is_same<CollectionType, UnorderedCollection>::value ? RecordType::DlistRecord :
+      std::is_same<CollectionType, Queue>::value ? RecordType::QueueRecord :
+      std::is_same<CollectionType, Skiplist>::value ? RecordType::SortedHeaderRecord :
+      std::is_same<CollectionType, List>::value ? RecordType::ListRecord : RecordType::Empty;
+  }
+
+  static HashIndexType pointerType(RecordType rtype)
+  {
+    switch (rtype)
+    {
+      case RecordType::Empty:
+      {
+        return HashIndexType::Empty;
+      }
+      case RecordType::StringDataRecord:
+      case RecordType::StringDeleteRecord:
+      {
+        return HashIndexType::StringRecord;
+      }
+      case RecordType::SortedDataRecord:
+      case RecordType::SortedDeleteRecord:
+      {
+        return HashIndexType::DLRecord;
+      }
+      case RecordType::SortedHeaderRecord:
+      {
+        return HashIndexType::Skiplist;
+      }
+      case RecordType::DlistDataRecord:
+      {
+        return HashIndexType::UnorderedCollectionElement;
+      }
+      case RecordType::DlistRecord:
+      {
+        return HashIndexType::UnorderedCollection;
+      }
+      case RecordType::QueueRecord:
+      {
+        return HashIndexType::Queue;
+      }
+      case RecordType::ListRecord:
+      {
+        return HashIndexType::List;
+      }
+      case RecordType::DlistHeadRecord:
+      case RecordType::QueueDataRecord:
+      case RecordType::QueueHeadRecord:
+      case RecordType::QueueTailRecord:
+      case RecordType::ListElem:
+      default:
+      {
+        return HashIndexType::Invalid;
+      }
+    }
+  }
+
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
-    kvdk_assert(
-    (std::is_same<CollectionType, UnorderedCollection>::value && record_type == RecordType::DlistRecord) ||
-    (std::is_same<CollectionType, Queue>::value && record_type == RecordType::QueueRecord) ||
-    (std::is_same<CollectionType, Skiplist>::value && record_type == RecordType::SortedHeaderRecord) ||
-    (std::is_same<CollectionType, List>::value && record_type == RecordType::ListRecord), "");
+    kvdk_assert(collectionType<CollectionType>() == record_type, "Type Mismatch!");
     HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
     HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
@@ -214,6 +275,28 @@ class KVEngine : public Engine {
     *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
     return s;
   }
+
+  // Lockless. It's up to caller to lock the HashTable
+  template <typename CollectionType>
+  Status registerCollection(const StringView key, CollectionType* coll) {
+    RecordType type = collectionType<CollectionType>();
+    HashTable::KeyHashHint hint = hash_table_->GetHint(key);
+    HashEntry hash_entry;
+    HashEntry* entry_ptr = nullptr;
+    Status s = hash_table_->SearchForWrite(hint, key, type,
+                                          &entry_ptr, &hash_entry, nullptr);
+    if (s != Status::NotFound)
+    {
+      kvdk_assert(s != Status::Ok, "Collection already registered!");
+      return s;
+    }
+    HashIndexType ptype = pointerType(type);
+    kvdk_assert(ptype != HashIndexType::Invalid, "Invalid pointer type!");
+    hash_table_->Insert(hint, entry_ptr, type, coll, ptype);
+    return s;
+  }
+
+  Status listFindInitNonExist(StringView key, List** list);
 
   enum class QueueOpPosition { Left, Right };
   Status xPush(StringView const collection_name, StringView const value,
@@ -269,6 +352,12 @@ class KVEngine : public Engine {
   Status RestoreDlistRecords(DLRecord* pmp_record);
 
   Status RestoreQueueRecords(DLRecord* pmp_record);
+
+  Status restoreListElem(DLRecord* pmp_record);
+
+  Status restoreListRecord(StringRecord* pmp_record);
+
+  Status restoreLists();
 
   Status CheckConfigs(const Configs& configs);
 
@@ -392,8 +481,6 @@ class KVEngine : public Engine {
 
   std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;
 
-  using List = GenericList<RecordType::ListRecord, RecordType::ListDataRecord>;
-  using ListBuilder = GenericListBuilder<RecordType::ListRecord, RecordType::ListDataRecord>;
   std::vector<std::unique_ptr<List>> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 

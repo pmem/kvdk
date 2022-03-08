@@ -211,6 +211,7 @@ class RWLock {
   // Otherwise, writer has registered and is waiting for readers to leave
   std::atomic_int64_t device{0};
 
+public:
   bool TryRegisterReader()
   {
     std::int64_t old = device.load();
