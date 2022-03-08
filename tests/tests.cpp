@@ -1607,122 +1607,44 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
   auto hash_table = test_kvengine->GetHashTable();
   int total_entry_num = 0;
   // Hash Table Iterator
-  // scan hash table with unlocked slot.
+  // scan hash table with locked slot.
   {
-    auto iter = hash_table->Begin();    // bucket_idx = 0
-    auto end_iter = hash_table->End();  // bucket_idx = configs.hash_bucket_num
-    while (iter != end_iter) {
-      if (iter->GetIndexType() == HashIndexType::StringRecord) {
-        total_entry_num++;
-        ASSERT_EQ(string_view_2_string(iter->GetIndex().string_record->Value()),
-                  "stringval");
-      } else if (iter->GetIndexType() == HashIndexType::Skiplist) {
-        total_entry_num++;
-        ASSERT_EQ(string_view_2_string(iter->GetIndex().skiplist->Name()),
-                  collection_name);
-      } else if (iter->GetIndexType() == HashIndexType::SkiplistNode) {
-        total_entry_num++;
-        ASSERT_EQ(string_view_2_string(
-                      iter->GetIndex().skiplist_node->record->Value()),
-                  "sortedval");
-      } else if (iter->GetIndexType() == HashIndexType::DLRecord) {
-        total_entry_num++;
-        ASSERT_EQ(string_view_2_string(iter->GetIndex().dl_record->Value()),
-                  "sortedval");
-      } else {
-        ASSERT_EQ((iter->GetIndexType() == HashIndexType::Invalid) ||
-                      (iter->GetIndexType() == HashIndexType::Empty),
-                  true);
+    auto slot_iter = hash_table->NewSlotIterator();
+    while (slot_iter->Valid()) {
+      auto bucket_iter = slot_iter->Begin();
+      auto end_bucket_iter = slot_iter->End();
+      while (bucket_iter != end_bucket_iter) {
+        if (bucket_iter->GetIndexType() == HashIndexType::StringRecord) {
+          total_entry_num++;
+          ASSERT_EQ(string_view_2_string(
+                        bucket_iter->GetIndex().string_record->Value()),
+                    "stringval");
+        } else if (bucket_iter->GetIndexType() == HashIndexType::Skiplist) {
+          total_entry_num++;
+          ASSERT_EQ(
+              string_view_2_string(bucket_iter->GetIndex().skiplist->Name()),
+              collection_name);
+        } else if (bucket_iter->GetIndexType() == HashIndexType::SkiplistNode) {
+          total_entry_num++;
+          ASSERT_EQ(string_view_2_string(
+                        bucket_iter->GetIndex().skiplist_node->record->Value()),
+                    "sortedval");
+        } else if (bucket_iter->GetIndexType() == HashIndexType::DLRecord) {
+          total_entry_num++;
+          ASSERT_EQ(
+              string_view_2_string(bucket_iter->GetIndex().dl_record->Value()),
+              "sortedval");
+        } else {
+          ASSERT_EQ((bucket_iter->GetIndexType() == HashIndexType::Invalid) ||
+                        (bucket_iter->GetIndexType() == HashIndexType::Empty),
+                    true);
+        }
+        bucket_iter++;
       }
-      ++iter;
+      slot_iter->Next();
     }
     ASSERT_EQ(total_entry_num, threads + 1);
   }
-
-  // scan hash table with locked slot.
-  {
-    for (uint64_t slot_idx = 0;
-         slot_idx < configs.hash_bucket_num / configs.num_buckets_per_slot;
-         ++slot_idx) {
-      std::unique_lock<SpinMutex> lock_slot{
-          *hash_table->GetSlotMutex(slot_idx)};
-      uint32_t start_id = slot_idx * configs.num_buckets_per_slot;
-      uint32_t end_id = configs.num_buckets_per_slot * (slot_idx + 1);
-      hash_table->SetIterRange(start_id, end_id);
-      auto iter = hash_table->Begin();
-      auto end_iter = hash_table->End();
-      while (iter != end_iter) {
-        if (iter->GetIndexType() == HashIndexType::StringRecord) {
-          total_entry_num--;
-          ASSERT_EQ(
-              string_view_2_string(iter->GetIndex().string_record->Value()),
-              "stringval");
-        } else if (iter->GetIndexType() == HashIndexType::Skiplist) {
-          total_entry_num--;
-          ASSERT_EQ(string_view_2_string(iter->GetIndex().skiplist->Name()),
-                    collection_name);
-        } else if (iter->GetIndexType() == HashIndexType::SkiplistNode) {
-          total_entry_num--;
-          ASSERT_EQ(string_view_2_string(
-                        iter->GetIndex().skiplist_node->record->Value()),
-                    "sortedval");
-        } else if (iter->GetIndexType() == HashIndexType::DLRecord) {
-          total_entry_num--;
-          ASSERT_EQ(string_view_2_string(iter->GetIndex().dl_record->Value()),
-                    "sortedval");
-        } else {
-          ASSERT_EQ((iter->GetIndexType() == HashIndexType::Invalid) ||
-                        (iter->GetIndexType() == HashIndexType::Empty),
-                    true);
-        }
-        iter++;
-      }
-    }
-    ASSERT_EQ(total_entry_num, 0);
-  }
-
-  delete engine;
-}
-
-TEST_F(EngineBasicTest, TestHashTableRangeIter) {
-  uint64_t threads = 16;
-  configs.max_access_threads = threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  std::string key = "stringkey";
-  std::string val = "stringval";
-  std::string updated_val = "stringupdatedval";
-
-  ASSERT_EQ(engine->Set(key, val), Status::Ok);
-
-  auto StringUpdate = [&]() {
-    sleep(5);
-    ASSERT_EQ(engine->Set(key, val + "update"), Status::Ok);
-  };
-
-  auto HashTableScan = [&]() {
-    auto test_kvengine = static_cast<KVEngine*>(engine);
-    auto hash_table = test_kvengine->GetHashTable();
-    auto hint = hash_table->GetHint(key);
-    std::unique_lock<SpinMutex> lock_slot{*hint.spin};
-    uint32_t start_id = hint.slot * configs.num_buckets_per_slot;
-    uint32_t end_id = configs.num_buckets_per_slot * (hint.slot + 1);
-    hash_table->SetIterRange(start_id, end_id);
-    auto iter = hash_table->Begin();
-    auto end_iter = hash_table->End();
-    while (iter != end_iter) {
-      if (iter->GetIndexType() == HashIndexType::StringRecord) {
-        ASSERT_EQ(iter->GetIndex().string_record->Key(), key);
-        ASSERT_EQ(iter->GetIndex().string_record->Value(), val);
-      }
-      iter++;
-    }
-  };
-
-  std::vector<std::thread> ts;
-  ts.emplace_back(std::thread(StringUpdate));
-  ts.emplace_back(std::thread(HashTableScan));
-  for (auto& t : ts) t.join();
   delete engine;
 }
 
@@ -2118,6 +2040,53 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   }
 }
 
+TEST_F(EngineBasicTest, TestHashTableRangeIter) {
+  uint64_t threads = 16;
+  configs.max_access_threads = threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string key = "stringkey";
+  std::string val = "stringval";
+  std::string updated_val = "stringupdatedval";
+
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+  SyncPoint::GetInstance()->LoadDependency(
+      {{"ScanHashTable", "KVEngine::StringSetImpl::BeforeLock"}});
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  auto StringUpdate = [&]() {
+    ASSERT_EQ(engine->Set(key, updated_val), Status::Ok);
+  };
+
+  auto HashTableScan = [&]() {
+    auto test_kvengine = static_cast<KVEngine*>(engine);
+    auto hash_table = test_kvengine->GetHashTable();
+    auto slot_iter = hash_table->NewSlotIterator();
+    while (slot_iter->Valid()) {
+      auto bucket_iter = slot_iter->Begin();
+      auto end_bucket_iter = slot_iter->End();
+      while (bucket_iter != end_bucket_iter) {
+        if (bucket_iter->GetIndexType() == HashIndexType::StringRecord) {
+          TEST_SYNC_POINT("ScanHashTable");
+          sleep(2);
+          ASSERT_EQ(bucket_iter->GetIndex().string_record->Key(), key);
+          ASSERT_EQ(bucket_iter->GetIndex().string_record->Value(), val);
+        }
+        bucket_iter++;
+      }
+      slot_iter->Next();
+    }
+  };
+
+  std::vector<std::thread> ts;
+  ts.emplace_back(std::thread(StringUpdate));
+  ts.emplace_back(std::thread(HashTableScan));
+  for (auto& t : ts) t.join();
+  delete engine;
+}
 #endif
 
 int main(int argc, char** argv) {

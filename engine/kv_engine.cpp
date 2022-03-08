@@ -1577,6 +1577,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value) {
 
   {
     auto hint = hash_table_->GetHint(key);
+    TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
     std::unique_lock<SpinMutex> ul(*hint.spin);
     // Set current snapshot to this thread
     version_controller_.HoldLocalSnapshot();
