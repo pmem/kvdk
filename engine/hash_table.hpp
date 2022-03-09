@@ -15,6 +15,7 @@
 #include "kvdk/namespace.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
+#include "simple_list.hpp"
 
 namespace KVDK_NAMESPACE {
 enum class HashIndexType : uint16_t {
@@ -64,6 +65,7 @@ struct alignas(16) HashEntry {
     Skiplist* skiplist;
     UnorderedCollection* p_unordered_collection;
     Queue* queue_ptr;
+    List* list;
   };
   static_assert(sizeof(Index) == 8);
 

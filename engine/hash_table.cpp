@@ -4,6 +4,7 @@
 
 #include "hash_table.hpp"
 
+#include "simple_list.hpp"
 #include "queue.hpp"
 #include "skiplist.hpp"
 #include "thread_manager.hpp"
@@ -40,7 +41,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
                       uint16_t target_type, DataEntry* data_entry_metadata) {
   if ((target_type & header_.record_type) &&
       hash_k_prefix == header_.key_prefix) {
-    void* pmem_record;
+    void* pmem_record = nullptr;
     StringView data_entry_key;
 
     switch (header_.index_type) {
@@ -58,14 +59,17 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
         data_entry_key = index_.dl_record->Key();
         break;
       }
+      case HashIndexType::List:
+      {
+        data_entry_key = index_.list->Name();
+        break;
+      }
       case HashIndexType::UnorderedCollection: {
-        UnorderedCollection* p_collection = index_.p_unordered_collection;
-        data_entry_key = p_collection->Name();
+        data_entry_key = index_.p_unordered_collection->Name();
         break;
       }
       case HashIndexType::Queue: {
-        Queue* p_collection = index_.queue_ptr;
-        data_entry_key = p_collection->Name();
+        data_entry_key = index_.queue_ptr->Name();
         break;
       }
       case HashIndexType::SkiplistNode: {
@@ -88,7 +92,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
       }
     }
 
-    if (__glibc_likely(data_entry_metadata != nullptr)) {
+    if (data_entry_metadata != nullptr) {
       memcpy(data_entry_metadata, pmem_record, sizeof(DataEntry));
     }
 

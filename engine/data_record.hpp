@@ -154,8 +154,9 @@ struct StringRecord {
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
         older_version_record(_older_version_record) {
-    assert(_record_type == StringDataRecord ||
-           _record_type == StringDeleteRecord);
+    assert(_record_type == RecordType::StringDataRecord ||
+           _record_type == RecordType::StringDeleteRecord ||
+           _record_type == RecordType::ListRecord);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();

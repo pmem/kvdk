@@ -7,6 +7,8 @@
 #include <atomic>
 #include <array>
 #include <deque>
+#include <iostream>
+#include <iomanip>
 #include <mutex>
 #include <random>
 #include <unordered_map>
@@ -134,7 +136,7 @@ class GenericList final : public Collection {
       {
         // Tail(), goto Back()
         // Back() == Head() if List is empty.
-        curr = owner->first;
+        curr = owner->last;
       }
       else if (curr->prev != NullPMemOffset)
       {
@@ -276,7 +278,7 @@ private:
       // Erase Back()
       kvdk_assert(prev != Head(), "");
       last = prev.Address();
-      _mm_stream_si64(reinterpret_cast<long long*>(&prev->next), next.Offset());
+      _mm_stream_si64(reinterpret_cast<long long*>(&prev->next), NullPMemOffset);
       _mm_mfence();
     }
     else
@@ -566,7 +568,7 @@ public:
         continue;
       }
       
-      rebuilded_lists->emplace_back();
+      rebuilded_lists->emplace_back(new List{});
       switch (primer.size.load())
       {
       case 0:
@@ -575,6 +577,7 @@ public:
         kvdk_assert(primer.first == nullptr, "");
         kvdk_assert(primer.last == nullptr, "");
         kvdk_assert(primer.unique == nullptr, "");
+        kvdk_assert(primer.size.load() == 0, "")
         rebuilded_lists->back()->Restore(atran, primer.list_record, nullptr, nullptr, 0);
         break;
       }
@@ -584,6 +587,7 @@ public:
         kvdk_assert(primer.first == nullptr, "");
         kvdk_assert(primer.last == nullptr, "");
         kvdk_assert(primer.unique != nullptr, "");
+        kvdk_assert(primer.size.load() == 1, "")
         rebuilded_lists->back()->Restore(atran, primer.list_record, primer.unique, primer.unique, 1);
         break;
       }
@@ -593,7 +597,7 @@ public:
         kvdk_assert(primer.first != nullptr, "");
         kvdk_assert(primer.last != nullptr, "");
         kvdk_assert(primer.unique == nullptr, "");
-        rebuilded_lists->back()->Restore(atran, primer.list_record, primer.first, primer.last, 1);
+        rebuilded_lists->back()->Restore(atran, primer.list_record, primer.first, primer.last, primer.size.load());
         break;
       }
       }

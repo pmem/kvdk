@@ -337,6 +337,8 @@ Status KVEngine::RestoreData() {
       case RecordType::DlistHeadRecord:
       case RecordType::DlistTailRecord:
       case RecordType::DlistDataRecord:
+      case RecordType::ListRecord:
+      case RecordType::ListElem:
       case RecordType::QueueRecord:
       case RecordType::QueueDataRecord:
       case RecordType::QueueHeadRecord:
@@ -487,7 +489,8 @@ bool KVEngine::ValidateRecord(void* data_record) {
   DataEntry* entry = static_cast<DataEntry*>(data_record);
   switch (entry->meta.type) {
     case RecordType::StringDataRecord:
-    case RecordType::StringDeleteRecord: {
+    case RecordType::StringDeleteRecord:
+    case RecordType::ListRecord: {
       return static_cast<StringRecord*>(data_record)->Validate();
     }
     case RecordType::SortedDataRecord:
@@ -500,7 +503,8 @@ bool KVEngine::ValidateRecord(void* data_record) {
     case RecordType::QueueRecord:
     case RecordType::QueueDataRecord:
     case RecordType::QueueHeadRecord:
-    case RecordType::QueueTailRecord: {
+    case RecordType::QueueTailRecord:
+    case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
     default:
@@ -944,6 +948,11 @@ Status KVEngine::Recovery() {
   GlobalLogger.Info("Rebuild skiplist done\n");
 
   list_builder_->RebuildLists();
+  for (auto const& list : lists_)
+  {
+    registerCollection(list->Name(), list.get());
+  }
+  
   GlobalLogger.Info("Rebuild Lists done\n");
 
   uint64_t latest_version_ts = 0;
@@ -2313,11 +2322,17 @@ namespace KVDK_NAMESPACE
 
   Status KVEngine::ListFind(StringView key, StringView elem, std::vector<size_t>* indices, IndexType rank, size_t count, size_t max_len)
   {
+    Status s = MaybeInitAccessThread();
+    if (s != Status::Ok)
+    {
+      return s;
+    }
+
     kvdk_assert(rank != 0, "Invalid argument!");
     kvdk_assert(indices != nullptr && indices->empty(), "Invalid output parameter!");
 
     List* list;
-    Status s = FindCollection(key, &list, RecordType::ListRecord);
+    s = FindCollection(key, &list, RecordType::ListRecord);
     if (s != Status::Ok)
     {
       return s;
@@ -2428,8 +2443,14 @@ namespace KVDK_NAMESPACE
 
   Status KVEngine::ListPush(StringView key, ListPosition pos, StringView elem)
   {
+    Status s = MaybeInitAccessThread();
+    if (s != Status::Ok)
+    {
+      return s;
+    }
+
     List* list;
-    Status s = listFindInitNonExist(key, &list);
+    s = listFindInitNonExist(key, &list);
     if (s != Status::Ok)
     {
       return s;
@@ -2463,8 +2484,14 @@ namespace KVDK_NAMESPACE
 
   Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb, void* cb_args, size_t cnt)
   {
+    Status s = MaybeInitAccessThread();
+    if (s != Status::Ok)
+    {
+      return s;
+    }
+
     List* list;
-    Status s = FindCollection(key, &list, RecordType::ListRecord);
+    s = FindCollection(key, &list, RecordType::ListRecord);
     if (s != Status::Ok)
     {
       return s;
@@ -2478,7 +2505,9 @@ namespace KVDK_NAMESPACE
       {
         cb(list->Front()->Value(), cb_args);
         --cnt;
+        DLRecord* front = list->Front().Address();
         list->PopFront();
+        purgeAndFree(front);
       }
       return Status::Ok;
     }
@@ -2488,7 +2517,9 @@ namespace KVDK_NAMESPACE
       {
         cb(list->Back()->Value(), cb_args);
         --cnt;
+        DLRecord* back = list->Back().Address();
         list->PopBack();
+        purgeAndFree(back);
       }
       return Status::Ok;
     }
@@ -2507,8 +2538,14 @@ namespace KVDK_NAMESPACE
 
   Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot, StringView elem)
   {
+    Status s = MaybeInitAccessThread();
+    if (s != Status::Ok)
+    {
+      return s;
+    }
+
     List* list;
-    Status s = listFindInitNonExist(key, &list);
+    s = listFindInitNonExist(key, &list);
     if (s != Status::Ok)
     {
       return s;
@@ -2568,8 +2605,14 @@ namespace KVDK_NAMESPACE
 
   Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem)
   {
+    Status s = MaybeInitAccessThread();
+    if (s != Status::Ok)
+    {
+      return s;
+    }
+
     List* list;
-    Status s = FindCollection(key, &list, RecordType::ListRecord);
+    s = FindCollection(key, &list, RecordType::ListRecord);
     if (s != Status::Ok)
     {
       return s;
@@ -2580,7 +2623,9 @@ namespace KVDK_NAMESPACE
     {
       if (iter->Value() == elem)
       {
+        DLRecord* old = iter.Address();
         iter = list->Erase(iter);
+        purgeAndFree(old);
       }
     }
     return Status::Ok;
@@ -2608,11 +2653,13 @@ namespace KVDK_NAMESPACE
     {
       return Status::InvalidArgument;
     }
+    DLRecord* old = iter.Address();
     list->Replace(space, iter, version_controller_.GetCurrentTimestamp(), "", elem);
+    purgeAndFree(old);
     return Status::Ok;
   }
 
-  std::unique_ptr<KVEngine::List> KVEngine::createList(StringView key) {
+  std::unique_ptr<List> KVEngine::createList(StringView key) {    
     std::uint64_t ts = version_controller_.GetCurrentTimestamp();
     CollectionIDType id = list_id_.fetch_add(1);
     List* list = new List{};
@@ -2668,6 +2715,7 @@ namespace KVDK_NAMESPACE
     {
       return Status::PmemOverflow;
     }
+    *list = temp_list.get();
     s = registerCollection(key, temp_list.get());
     if (s == Status::Ok)
     {

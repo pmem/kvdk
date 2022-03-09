@@ -23,10 +23,10 @@
 #include "dram_allocator.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
-#include "generic_list.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
+#include "simple_list.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
@@ -188,10 +188,7 @@ class KVEngine : public Engine {
   Status ListRemove(StringView key, IndexType cnt, StringView elem) final;
   Status ListSet(StringView key, IndexType index, StringView elem) final;
 
- private:
-  using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
-  using ListBuilder = GenericListBuilder<RecordType::ListRecord, RecordType::ListElem>;
- 
+ private: 
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
@@ -293,7 +290,7 @@ class KVEngine : public Engine {
     HashIndexType ptype = pointerType(type);
     kvdk_assert(ptype != HashIndexType::Invalid, "Invalid pointer type!");
     hash_table_->Insert(hint, entry_ptr, type, coll, ptype);
-    return s;
+    return Status::Ok;
   }
 
   Status listFindInitNonExist(StringView key, List** list);
