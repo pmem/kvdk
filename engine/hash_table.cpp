@@ -4,7 +4,6 @@
 
 #include "hash_table.hpp"
 
-#include "queue.hpp"
 #include "simple_list.hpp"
 #include "skiplist.hpp"
 #include "thread_manager.hpp"
@@ -65,10 +64,6 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
       }
       case HashIndexType::UnorderedCollection: {
         data_entry_key = index_.p_unordered_collection->Name();
-        break;
-      }
-      case HashIndexType::Queue: {
-        data_entry_key = index_.queue_ptr->Name();
         break;
       }
       case HashIndexType::SkiplistNode: {

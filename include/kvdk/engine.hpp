@@ -28,9 +28,9 @@ class Engine {
   using IndexType = std::int64_t;
   using StringView = pmem::obj::string_view;
 
-  using GetterCallBack = void (*)(StringView const, void*);
+  using GetterCallBack = void (*)(StringView, void*);
   // Default GetterCallBack
-  static void CopyToString(StringView const src, void* dst) {
+  static void CopyToString(StringView src, void* dst) {
     static_cast<std::string*>(dst)->assign(src.data(), src.size());
   }
 
@@ -88,17 +88,6 @@ class Engine {
                       std::string* value) = 0;
 
   virtual Status HDelete(const StringView collection, const StringView key) = 0;
-
-  // Queue
-  virtual Status LPop(StringView const collection_name, std::string* value) = 0;
-
-  virtual Status RPop(StringView const collection_name, std::string* value) = 0;
-
-  virtual Status LPush(StringView const collection_name,
-                       StringView const value) = 0;
-
-  virtual Status RPush(StringView const collection_name,
-                       StringView const value) = 0;
 
   /// List
   // When the type of key is not a list, an error is returned.

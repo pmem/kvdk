@@ -33,11 +33,9 @@ enum class HashIndexType : uint16_t {
   UnorderedCollection = 5,
   // Index field contains PMem pointer to element of UnorderedCollection
   UnorderedCollectionElement = 6,
-  // Index field contains pointer to Queue object on DRAM
-  Queue = 7,
-  List = 8,
+  List = 7,
   // Index is empty which point to nothing
-  Empty = 9,
+  Empty = 8,
 };
 
 struct HashHeader {
@@ -49,7 +47,6 @@ struct HashHeader {
 class Skiplist;
 class SkiplistNode;
 class UnorderedCollection;
-class Queue;
 
 struct alignas(16) HashEntry {
  public:
@@ -64,7 +61,6 @@ struct alignas(16) HashEntry {
     DLRecord* dl_record;
     Skiplist* skiplist;
     UnorderedCollection* p_unordered_collection;
-    Queue* queue_ptr;
     List* list;
   };
   static_assert(sizeof(Index) == 8);

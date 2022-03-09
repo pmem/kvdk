@@ -144,7 +144,6 @@ class DLinkedList {
 
   friend class UnorderedCollection;
   friend class UnorderedIterator;
-  friend class Queue;
 
   static constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 

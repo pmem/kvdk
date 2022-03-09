@@ -266,22 +266,24 @@ KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
 
 KVDKStatus KVDKLPush(KVDKEngine* engine, const char* collection,
                      size_t collection_len, const char* key, size_t key_len) {
-  return engine->rep->LPush(StringView(collection, collection_len),
-                            StringView(key, key_len));
+  return engine->rep->ListPush(StringView(collection, collection_len),
+                               Engine::ListPosition::Left,
+                               StringView(key, key_len));
 }
 
 KVDKStatus KVDKRPush(KVDKEngine* engine, const char* collection,
                      size_t collection_len, const char* key, size_t key_len) {
-  return engine->rep->RPush(StringView(collection, collection_len),
-                            StringView(key, key_len));
+  return engine->rep->ListPush(StringView(collection, collection_len),
+                               Engine::ListPosition::Right,
+                               StringView(key, key_len));
 }
 
 KVDKStatus KVDKLPop(KVDKEngine* engine, const char* collection,
                     size_t collection_len, char** key, size_t* key_len) {
   std::string str;
   *key = nullptr;
-  KVDKStatus s =
-      engine->rep->LPop(StringView(collection, collection_len), &str);
+  KVDKStatus s = engine->rep->ListPop(StringView(collection, collection_len),
+                                      Engine::ListPosition::Left, &str);
   if (s != KVDKStatus::Ok) {
     *key_len = 0;
     return s;
@@ -295,8 +297,8 @@ KVDKStatus KVDKRPop(KVDKEngine* engine, const char* collection,
                     size_t collection_len, char** key, size_t* key_len) {
   std::string str;
   *key = nullptr;
-  KVDKStatus s =
-      engine->rep->RPop(StringView(collection, collection_len), &str);
+  KVDKStatus s = engine->rep->ListPop(StringView(collection, collection_len),
+                                      Engine::ListPosition::Right, &str);
   if (s != KVDKStatus::Ok) {
     *key_len = 0;
     return s;

@@ -45,17 +45,14 @@ class AddressTranslator {
 
   RecordPointer address_of(PMemOffsetType off) const {
     kvdk_assert(pmem_base != nullptr, "");
-    kvdk_assert(
-        off != NullPMemOffset,
-        "Dereferencing Null!") return reinterpret_cast<RecordPointer>(pmem_base +
-                                                                      off);
+    kvdk_assert(off != NullPMemOffset, "Dereferencing Null!");
+    return reinterpret_cast<RecordPointer>(pmem_base + off);
   }
 
   PMemOffsetType offset_of(RecordPointer rec) const {
     kvdk_assert(pmem_base != nullptr, "");
-    kvdk_assert(rec != nullptr,
-                "Dereferencing nullptr!") return reinterpret_cast<char*>(rec) -
-        pmem_base;
+    kvdk_assert(rec != nullptr, "Dereferencing nullptr!");
+    return reinterpret_cast<char*>(rec) - pmem_base;
   }
 };
 
@@ -660,7 +657,7 @@ class GenericListBuilder final {
     if (atran.address_of(elem->prev)->next == NullPMemOffset) {
       // Interrupted PushBack()/PopBack()
       return false;
-    } else if (atran.address_of(elem->next)->prev == atran.offset_of(elem)) {
+    } else if (atran.address_of(elem->prev)->next == atran.offset_of(elem)) {
       return true;
     } else {
       // Interrupted ReplaceBack()

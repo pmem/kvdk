@@ -53,7 +53,7 @@ DEFINE_double(
 DEFINE_bool(latency, false, "Stat operation latencies");
 
 DEFINE_string(type, "string",
-              "Storage engine to benchmark, can be string, sorted, hash, queue "
+              "Storage engine to benchmark, can be string, sorted, hash, list "
               "or blackhole");
 
 DEFINE_bool(scan, false,
@@ -120,13 +120,7 @@ std::vector<int> has_finished;  // std::vector<bool> is a trap!
 std::vector<PaddedEngine> random_engines;
 std::vector<PaddedRangeIterators> ranges;
 
-enum class DataType {
-  String,
-  Sorted,
-  Hashes,
-  Queue,
-  Blackhole
-} bench_data_type;
+enum class DataType { String, Sorted, Hashes, List, Blackhole } bench_data_type;
 
 enum class KeyDistribution { Range, Random, Zipf } key_dist;
 
@@ -207,8 +201,9 @@ void DBWrite(int tid) {
         s = engine->HSet(collections[num % FLAGS_num_collection], key, value);
         break;
       }
-      case DataType::Queue: {
-        s = engine->LPush(collections[num % FLAGS_num_collection], value);
+      case DataType::List: {
+        s = engine->ListPush(collections[num % FLAGS_num_collection],
+                             Engine::ListPosition::Left, value);
         break;
       }
       case DataType::Blackhole: {
@@ -301,7 +296,7 @@ void DBScan(int tid) {
         break;
       }
       case DataType::String:
-      case DataType::Queue:
+      case DataType::List:
       default: {
         throw std::runtime_error{"Unsupported data type!"};
       }
@@ -345,8 +340,9 @@ void DBRead(int tid) {
                          &value_sink);
         break;
       }
-      case DataType::Queue: {
-        s = engine->RPop(collections[num % FLAGS_num_collection], &value_sink);
+      case DataType::List: {
+        s = engine->ListPop(collections[num % FLAGS_num_collection],
+                            Engine::ListPosition::Right, &value_sink);
         break;
       }
       case DataType::Blackhole: {
@@ -393,8 +389,8 @@ void ProcessBenchmarkConfigs() {
     bench_data_type = DataType::String;
   } else if (FLAGS_type == "hash") {
     bench_data_type = DataType::Hashes;
-  } else if (FLAGS_type == "queue") {
-    bench_data_type = DataType::Queue;
+  } else if (FLAGS_type == "list") {
+    bench_data_type = DataType::List;
   } else if (FLAGS_type == "blackhole") {
     bench_data_type = DataType::Blackhole;
   } else {
@@ -406,7 +402,7 @@ void ProcessBenchmarkConfigs() {
     case DataType::Blackhole: {
       break;
     }
-    case DataType::Queue:
+    case DataType::List:
     case DataType::Hashes:
     case DataType::Sorted: {
       if (FLAGS_batch_size > 0) {
@@ -424,10 +420,10 @@ void ProcessBenchmarkConfigs() {
   // Check for scan flag
   switch (bench_data_type) {
     case DataType::String:
-    case DataType::Queue: {
+    case DataType::List: {
       if (FLAGS_scan) {
         throw std::invalid_argument{
-            R"(Scan is not supported for "String" and "Queue" type data.)"};
+            R"(Scan is not supported for "String" and "List" type data.)"};
       }
     }
     default: {

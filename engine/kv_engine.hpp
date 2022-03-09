@@ -25,7 +25,6 @@
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
-#include "queue.hpp"
 #include "simple_list.hpp"
 #include "skiplist.hpp"
 #include "structures.hpp"
@@ -87,29 +86,6 @@ class KVEngine : public Engine {
                          StringView const key) override;
   std::shared_ptr<Iterator> NewUnorderedIterator(
       StringView const collection_name) override;
-
-  // Queue
-  virtual Status LPop(StringView const collection_name,
-                      std::string* value) override {
-    return xPop(collection_name, value, QueueOpPosition::Left);
-  }
-
-  virtual Status RPop(StringView const collection_name,
-                      std::string* value) override {
-    return xPop(collection_name, value, QueueOpPosition::Right);
-  }
-
-  virtual Status LPush(StringView const collection_name,
-                       StringView const value) override {
-    return xPush(collection_name, value, QueueOpPosition::Left);
-  }
-
-  virtual Status RPush(StringView const collection_name,
-                       StringView const value) override {
-    return xPush(collection_name, value, QueueOpPosition::Right);
-  }
-
-  // List
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
@@ -199,7 +175,6 @@ class KVEngine : public Engine {
  private:
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
-  std::unique_ptr<Queue> createQueue(StringView const collection_name);
 
   std::unique_ptr<List> createList(StringView key);
 
@@ -207,13 +182,11 @@ class KVEngine : public Engine {
   static constexpr RecordType collectionType() {
     return std::is_same<CollectionType, UnorderedCollection>::value
                ? RecordType::DlistRecord
-               : std::is_same<CollectionType, Queue>::value
-                     ? RecordType::QueueRecord
-                     : std::is_same<CollectionType, Skiplist>::value
-                           ? RecordType::SortedHeaderRecord
-                           : std::is_same<CollectionType, List>::value
-                                 ? RecordType::ListRecord
-                                 : RecordType::Empty;
+               : std::is_same<CollectionType, Skiplist>::value
+                     ? RecordType::SortedHeaderRecord
+                     : std::is_same<CollectionType, List>::value
+                           ? RecordType::ListRecord
+                           : RecordType::Empty;
   }
 
   static HashIndexType pointerType(RecordType rtype) {
@@ -238,16 +211,10 @@ class KVEngine : public Engine {
       case RecordType::DlistRecord: {
         return HashIndexType::UnorderedCollection;
       }
-      case RecordType::QueueRecord: {
-        return HashIndexType::Queue;
-      }
       case RecordType::ListRecord: {
         return HashIndexType::List;
       }
       case RecordType::DlistHeadRecord:
-      case RecordType::QueueDataRecord:
-      case RecordType::QueueHeadRecord:
-      case RecordType::QueueTailRecord:
       case RecordType::ListElem:
       default: {
         return HashIndexType::Invalid;
@@ -295,13 +262,6 @@ class KVEngine : public Engine {
 
   Status listFindInitNonExist(StringView key, List** list);
 
-  enum class QueueOpPosition { Left, Right };
-  Status xPush(StringView const collection_name, StringView const value,
-               QueueOpPosition push_pos);
-
-  Status xPop(StringView const collection_name, std::string* value,
-              QueueOpPosition pop_pos);
-
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const StringView& key, const StringView& value);
@@ -347,8 +307,6 @@ class KVEngine : public Engine {
   Status PersistOrRecoverImmutableConfigs();
 
   Status RestoreDlistRecords(DLRecord* pmp_record);
-
-  Status RestoreQueueRecords(DLRecord* pmp_record);
 
   Status restoreListElem(DLRecord* pmp_record);
 
@@ -475,8 +433,6 @@ class KVEngine : public Engine {
 
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
-
-  std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;
 
   std::vector<std::unique_ptr<List>> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
