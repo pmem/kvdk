@@ -553,6 +553,8 @@ class SortedCollectionRebuilder {
 
   void cleanInvalidRecords();
 
+  Status linkHighDramNodes(Skiplist* skiplist);
+
   // thread cache for segment based rebuild
   struct ThreadCache {
     // end node of thread recovered segments

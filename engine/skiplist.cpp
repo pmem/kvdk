@@ -509,47 +509,82 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   }
   std::vector<std::future<Status>> fs;
 
-  auto repair_linkage_at_height_n = [&](uint32_t thread_num,
-                                        uint8_t height) -> Status {
+  auto rebuild_segments_index = [&]() -> Status {
     Status s = this->kv_engine_->MaybeInitAccessThread();
     if (s != Status::Ok) {
       return s;
     }
     defer(this->kv_engine_->ReleaseAccessThread());
-    while (true) {
-      SegmentStart* start_point = getStartPoint(height);
-      if (!start_point) {
-        break;
-      }
-      if (height == 1) {
-        Status s = rebuildSegmentIndex(start_point->node,
-                                       start_point->build_hash_index);
-        if (s != Status::Ok) {
-          return s;
+    for (auto iter = this->start_points_.begin();
+         iter != this->start_points_.end(); iter++) {
+      if (!iter->second.visited) {
+        std::lock_guard<SpinMutex> lg(this->mu_);
+        if (!iter->second.visited) {
+          iter->second.visited = true;
+        } else {
+          continue;
         }
       } else {
-        linkSegmentDramNodes(start_point->node, height);
+        continue;
+      }
+
+      Status s =
+          rebuildSegmentIndex(iter->second.node, iter->second.build_hash_index);
+      if (s != Status::Ok) {
+        return s;
       }
     }
     return Status::Ok;
   };
 
-  for (uint8_t height = 1; height <= kMaxHeight; ++height) {
-    for (uint32_t thread_num = 0; thread_num < num_rebuild_threads_;
-         ++thread_num) {
-      fs.push_back(std::async(repair_linkage_at_height_n, thread_num, height));
-    }
-    for (auto& f : fs) {
-      Status s = f.get();
-      if (s != Status::Ok) {
-        return s;
-      }
-    }
-    fs.clear();
-    for (auto& kv : start_points_) {
-      kv.second.visited = false;
+  for (uint32_t thread_num = 0; thread_num < num_rebuild_threads_;
+       ++thread_num) {
+    fs.push_back(std::async(rebuild_segments_index));
+  }
+  for (auto& f : fs) {
+    Status s = f.get();
+    if (s != Status::Ok) {
+      return s;
     }
   }
+  fs.clear();
+  for (auto& s : kv_engine_->skiplists_) {
+    fs.push_back(std::async(&SortedCollectionRebuilder::linkHighDramNodes, this,
+                            s.second.get()));
+  }
+  for (auto& f : fs) {
+    Status s = f.get();
+    if (s != Status::Ok) {
+      return s;
+    }
+  }
+
+  start_points_.clear();
+  return Status::Ok;
+}
+
+Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
+  Splice splice(skiplist);
+  for (uint8_t i = 1; i <= kMaxHeight; i++) {
+    splice.prevs[i] = skiplist->header();
+  }
+
+  SkiplistNode* next_node = splice.prevs[1]->RelaxedNext(1).RawPointer();
+  while (next_node != nullptr) {
+    assert(splice.prevs[1]->RelaxedNext(1).RawPointer() == next_node);
+    splice.prevs[1] = next_node;
+    if (next_node->Height() > 1) {
+      for (uint8_t i = 2; i <= next_node->Height(); i++) {
+        splice.prevs[i]->RelaxedSetNext(i, next_node);
+        splice.prevs[i] = next_node;
+      }
+    }
+    next_node = next_node->RelaxedNext(1).RawPointer();
+  }
+  for (uint8_t i = 1; i <= kMaxHeight; i++) {
+    splice.prevs[i]->RelaxedSetNext(i, nullptr);
+  }
+
   return Status::Ok;
 }
 
