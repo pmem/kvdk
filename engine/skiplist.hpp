@@ -495,15 +495,11 @@ struct Splice {
 };
 class KVEngine;
 
-class CollectionBasedRebuilder {};
-
-class NodeBasedRebuilder {};
-
 class SortedCollectionRebuilder {
  public:
   SortedCollectionRebuilder(
       PMEMAllocator* pmem_allocator, HashTable* hash_table,
-      ThreadManager* thread_manager, bool opt_parallel_rebuild,
+      ThreadManager* thread_manager, bool segment_based_rebuild,
       uint64_t num_rebuild_threads, const CheckPoint& checkpoint,
       std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>*
           skiplists)
@@ -511,7 +507,7 @@ class SortedCollectionRebuilder {
         hash_table_(hash_table),
         thread_manager_(thread_manager),
         checkpoint_(checkpoint),
-        segment_based_rebuild_(opt_parallel_rebuild),
+        segment_based_rebuild_(segment_based_rebuild),
         num_rebuild_threads_(num_rebuild_threads),
         skiplists_(skiplists){};
 
@@ -538,7 +534,7 @@ class SortedCollectionRebuilder {
  private:
   DLRecord* findValidVersion(DLRecord* pmem_record,
                              std::vector<DLRecord*>* invalid_version_records);
-  struct StartPoint {
+  struct SegmentStart {
     bool visited;
     bool build_hash_index;
     SkiplistNode* node;
@@ -549,9 +545,9 @@ class SortedCollectionRebuilder {
 
   Status segmentBasedIndexRebuild();
 
-  Status buildStartPoints();
+  Status buildSegmentStart();
 
-  StartPoint* getStartPoint(int height);
+  SegmentStart* getStartPoint(int height);
 
   Status rebuildIndex(SkiplistNode* start_node, bool build_hash_index);
 
@@ -574,9 +570,15 @@ class SortedCollectionRebuilder {
     invalid_records_.clear();
   }
 
+  // thread cache for segment based rebuild
+  struct ThreadCache {
+    // end node of thread recovered segments
+    std::unordered_set<SkiplistNode*> end_points{};
+  };
+
   SpinMutex mu_;
-  std::vector<std::unordered_set<SkiplistNode*>> thread_end_points_;
-  std::unordered_map<uint64_t, StartPoint> start_points_;
+  std::vector<ThreadCache> rebuilder_thread_cache_;
+  std::unordered_map<uint64_t, SegmentStart> start_points_;
   PMEMAllocator* pmem_allocator_;
   HashTable* hash_table_;
   ThreadManager* thread_manager_;

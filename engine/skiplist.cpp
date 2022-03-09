@@ -91,7 +91,7 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
   }
 }
 
-void Skiplist::LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
+void Skiplist::linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
                             PMEMAllocator* pmem_allocator) {
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
@@ -324,7 +324,7 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
   pmem_persist(&new_record->prev, sizeof(PMemOffsetType));
   new_record->next = next_offset;
   pmem_persist(&new_record->next, sizeof(PMemOffsetType));
-  Skiplist::LinkDLRecord(prev, next, new_record, pmem_allocator);
+  Skiplist::linkDLRecord(prev, next, new_record, pmem_allocator);
   if (dram_node != nullptr) {
     kvdk_assert(dram_node->record == old_record,
                 "Dram node not belong to old record in Skiplist::Replace");
@@ -501,8 +501,8 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(
 }
 
 Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
-  thread_end_points_.resize(num_rebuild_threads_);
-  Status s = buildStartPoints();
+  rebuilder_thread_cache_.resize(num_rebuild_threads_);
+  Status s = buildSegmentStart();
   if (s != Status::Ok) {
     return s;
   }
@@ -516,7 +516,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
     }
     defer(this->thread_manager_->Release(access_thread));
     while (true) {
-      StartPoint* start_point = getStartPoint(height);
+      SegmentStart* start_point = getStartPoint(height);
       if (!start_point) {
         break;
       }
@@ -696,7 +696,8 @@ Status SortedCollectionRebuilder::RebuildIndex() {
 }
 
 void SortedCollectionRebuilder::linkEndPoints(int height) {
-  for (SkiplistNode* node : thread_end_points_[access_thread.id]) {
+  for (SkiplistNode* node :
+       rebuilder_thread_cache_[access_thread.id].end_points) {
     if (node->Height() < height) {
       continue;
     }
@@ -729,11 +730,11 @@ void SortedCollectionRebuilder::linkEndPoints(int height) {
       }
     }
   }
-  thread_end_points_[access_thread.id].clear();
+  rebuilder_thread_cache_[access_thread.id].end_points.clear();
 }
 
-SortedCollectionRebuilder::StartPoint* SortedCollectionRebuilder::getStartPoint(
-    int height) {
+SortedCollectionRebuilder::SegmentStart*
+SortedCollectionRebuilder::getStartPoint(int height) {
   std::lock_guard<SpinMutex> kv_mux(mu_);
   for (auto& kv : start_points_) {
     if (!kv.second.visited && kv.second.node->Height() >= height - 1) {
@@ -821,7 +822,7 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
       }
     } else {
       cur_node->RelaxedSetNext(1, nullptr);
-      thread_end_points_[access_thread.id].insert(cur_node);
+      rebuilder_thread_cache_[access_thread.id].end_points.insert(cur_node);
       break;
     }
   }
@@ -846,7 +847,7 @@ void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
         start_points_.find(pmem_allocator_->addr2offset_checked(
             next_node->record)) != start_points_.end()) {
       cur_node->RelaxedSetNext(height, nullptr);
-      thread_end_points_[access_thread.id].insert(cur_node);
+      rebuilder_thread_cache_[access_thread.id].end_points.insert(cur_node);
       break;
     }
 
@@ -859,9 +860,10 @@ void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
   }
 }
 
-Status SortedCollectionRebuilder::buildStartPoints() {
-  std::unordered_map<uint64_t, StartPoint> new_kvs;
-  std::unordered_map<uint64_t, StartPoint>::iterator it = start_points_.begin();
+Status SortedCollectionRebuilder::buildSegmentStart() {
+  std::unordered_map<uint64_t, SegmentStart> new_kvs;
+  std::unordered_map<uint64_t, SegmentStart>::iterator it =
+      start_points_.begin();
   while (it != start_points_.end()) {
     DataEntry data_entry;
     HashEntry* entry_ptr = nullptr;
