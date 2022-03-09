@@ -238,7 +238,7 @@ struct SlotIterator {
     }
 
     HashEntry& operator*() {
-      return *((HashEntry*)bucket_ptr_ +
+      return *(reinterpret_cast<HashEntry*>(bucket_ptr_) +
                entry_idx_ % slot_iter_->hash_table_->num_entries_per_bucket_);
     }
 
@@ -276,7 +276,7 @@ struct SlotIterator {
         bucket_ptr_ = nullptr;
         return;
       }
-      bucket_ptr_ = (char*)hash_table->main_buckets_ +
+      bucket_ptr_ = reinterpret_cast<char*>(hash_table->main_buckets_) +
                     bucket_idx_ * hash_table->hash_bucket_size_;
       _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
     }
