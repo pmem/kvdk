@@ -29,9 +29,9 @@
 #include "xxhash.h"
 #undef XXH_INLINE_ALL
 
-#include <atomic>
-
 #include <x86intrin.h>
+
+#include <atomic>
 
 #include "../alias.hpp"
 #include "../macros.hpp"
@@ -69,11 +69,9 @@ inline uint64_t get_checksum(const void* data, uint64_t size) {
   return XXH3_64bits(data, size);
 }
 
-inline unsigned long long get_seed()
-{
+inline unsigned long long get_seed() {
   unsigned long long seed = 0;
-  while (seed == 0 && _rdseed64_step(&seed) != 1)
-  {
+  while (seed == 0 && _rdseed64_step(&seed) != 1) {
   }
   return seed;
 }
@@ -203,7 +201,8 @@ class SpinMutex {
 
 class RWLock {
   static constexpr std::int64_t reader_val{1};
-  static constexpr std::int64_t writer_val{std::numeric_limits<std::int64_t>::min()};
+  static constexpr std::int64_t writer_val{
+      std::numeric_limits<std::int64_t>::min()};
 
   // device.load() > 0 indicates only reader exists
   // device.load() == 0 indicates no reader and no writer
@@ -211,64 +210,50 @@ class RWLock {
   // Otherwise, writer has registered and is waiting for readers to leave
   std::atomic_int64_t device{0};
 
-public:
-  bool TryRegisterReader()
-  {
+ public:
+  bool TryRegisterReader() {
     std::int64_t old = device.load();
-    if (old < 0)
-    {
+    if (old < 0) {
       pause();
       return false;
     }
     old = device.fetch_add(reader_val);
-    if (old < 0)
-    {
+    if (old < 0) {
       device.fetch_sub(reader_val);
       pause();
       return false;
     }
-    return true;    
+    return true;
   }
 
-  void RegisterReader()
-  {
-    while (!TryRegisterReader())
-    {
+  void RegisterReader() {
+    while (!TryRegisterReader()) {
       // Blocked until writer leaved
     }
     return;
   }
 
-  void UnregisterReader()
-  {
+  void UnregisterReader() {
     device.fetch_sub(reader_val);
     return;
   }
 
-  void RegisterWriter()
-  {
+  void RegisterWriter() {
     std::int64_t old = device.fetch_add(writer_val);
-    while (device.load() != writer_val)
-    {
+    while (device.load() != writer_val) {
       // Block until all readers leave
-    }   
+    }
     return;
   }
 
-  void UnregisterWriter()
-  {
-    device.fetch_sub(writer_val);
-  }
+  void UnregisterWriter() { device.fetch_sub(writer_val); }
 
-private:
-  void pause()
-  {
-    for (size_t i = 0; i < 64; i++)
-    {
+ private:
+  void pause() {
+    for (size_t i = 0; i < 64; i++) {
       _mm_pause();
     }
   }
-
 };
 
 /// Caution: AlignedPoolAllocator is not thread-safe

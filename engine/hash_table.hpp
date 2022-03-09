@@ -14,8 +14,8 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
-#include "structures.hpp"
 #include "simple_list.hpp"
+#include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
 enum class HashIndexType : uint16_t {
@@ -167,8 +167,7 @@ class HashTable {
     entry_ptr->Clear();
   }
 
-  std::unique_lock<SpinMutex> AquireLock(StringView const& key)
-  {
+  std::unique_lock<SpinMutex> AquireLock(StringView const& key) {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
 

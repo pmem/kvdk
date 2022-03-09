@@ -175,72 +175,73 @@ class KVEngine : public Engine {
   Status ListTryLock(StringView key) final;
   Status ListUnlock(StringView key) final;
   Status ListLength(StringView key, size_t* sz) final;
-  Status ListFind(StringView key, StringView elem, std::vector<size_t>* indices, IndexType rank = 1, size_t count = 1, size_t max_len = 0) final;
-  Status ListFind(StringView key, StringView elem, size_t* index, IndexType rank = 1, size_t max_len = 0) final;
-  Status ListRange(StringView key, IndexType start, IndexType stop, GetterCallBack cb, void* cb_args) final;
-  Status ListIndex(StringView key, IndexType index, GetterCallBack cb, void* cb_args) final;
+  Status ListFind(StringView key, StringView elem, std::vector<size_t>* indices,
+                  IndexType rank = 1, size_t count = 1,
+                  size_t max_len = 0) final;
+  Status ListFind(StringView key, StringView elem, size_t* index,
+                  IndexType rank = 1, size_t max_len = 0) final;
+  Status ListRange(StringView key, IndexType start, IndexType stop,
+                   GetterCallBack cb, void* cb_args) final;
+  Status ListIndex(StringView key, IndexType index, GetterCallBack cb,
+                   void* cb_args) final;
   Status ListIndex(StringView key, IndexType index, std::string* elem) final;
   Status ListPush(StringView key, ListPosition pos, StringView elem) final;
-  Status ListPop(StringView key, ListPosition pos, GetterCallBack cb, void* cb_args, size_t cnt = 1) final;
+  Status ListPop(StringView key, ListPosition pos, GetterCallBack cb,
+                 void* cb_args, size_t cnt = 1) final;
   Status ListPop(StringView key, ListPosition pos, std::string* elem) final;
-  Status ListInsert(StringView key, ListPosition pos, IndexType pivot, StringView elem) final;
-  Status ListInsert(StringView key, ListPosition pos, StringView pivot, StringView elem, IndexType rank = 1) final;
+  Status ListInsert(StringView key, ListPosition pos, IndexType pivot,
+                    StringView elem) final;
+  Status ListInsert(StringView key, ListPosition pos, StringView pivot,
+                    StringView elem, IndexType rank = 1) final;
   Status ListRemove(StringView key, IndexType cnt, StringView elem) final;
   Status ListSet(StringView key, IndexType index, StringView elem) final;
 
- private: 
+ private:
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
 
   std::unique_ptr<List> createList(StringView key);
 
-  template<typename CollectionType>
-  static constexpr RecordType collectionType()
-  {
-    return 
-      std::is_same<CollectionType, UnorderedCollection>::value ? RecordType::DlistRecord :
-      std::is_same<CollectionType, Queue>::value ? RecordType::QueueRecord :
-      std::is_same<CollectionType, Skiplist>::value ? RecordType::SortedHeaderRecord :
-      std::is_same<CollectionType, List>::value ? RecordType::ListRecord : RecordType::Empty;
+  template <typename CollectionType>
+  static constexpr RecordType collectionType() {
+    return std::is_same<CollectionType, UnorderedCollection>::value
+               ? RecordType::DlistRecord
+               : std::is_same<CollectionType, Queue>::value
+                     ? RecordType::QueueRecord
+                     : std::is_same<CollectionType, Skiplist>::value
+                           ? RecordType::SortedHeaderRecord
+                           : std::is_same<CollectionType, List>::value
+                                 ? RecordType::ListRecord
+                                 : RecordType::Empty;
   }
 
-  static HashIndexType pointerType(RecordType rtype)
-  {
-    switch (rtype)
-    {
-      case RecordType::Empty:
-      {
+  static HashIndexType pointerType(RecordType rtype) {
+    switch (rtype) {
+      case RecordType::Empty: {
         return HashIndexType::Empty;
       }
       case RecordType::StringDataRecord:
-      case RecordType::StringDeleteRecord:
-      {
+      case RecordType::StringDeleteRecord: {
         return HashIndexType::StringRecord;
       }
       case RecordType::SortedDataRecord:
-      case RecordType::SortedDeleteRecord:
-      {
+      case RecordType::SortedDeleteRecord: {
         return HashIndexType::DLRecord;
       }
-      case RecordType::SortedHeaderRecord:
-      {
+      case RecordType::SortedHeaderRecord: {
         return HashIndexType::Skiplist;
       }
-      case RecordType::DlistDataRecord:
-      {
+      case RecordType::DlistDataRecord: {
         return HashIndexType::UnorderedCollectionElement;
       }
-      case RecordType::DlistRecord:
-      {
+      case RecordType::DlistRecord: {
         return HashIndexType::UnorderedCollection;
       }
-      case RecordType::QueueRecord:
-      {
+      case RecordType::QueueRecord: {
         return HashIndexType::Queue;
       }
-      case RecordType::ListRecord:
-      {
+      case RecordType::ListRecord: {
         return HashIndexType::List;
       }
       case RecordType::DlistHeadRecord:
@@ -248,8 +249,7 @@ class KVEngine : public Engine {
       case RecordType::QueueHeadRecord:
       case RecordType::QueueTailRecord:
       case RecordType::ListElem:
-      default:
-      {
+      default: {
         return HashIndexType::Invalid;
       }
     }
@@ -258,7 +258,8 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
-    kvdk_assert(collectionType<CollectionType>() == record_type, "Type Mismatch!");
+    kvdk_assert(collectionType<CollectionType>() == record_type,
+                "Type Mismatch!");
     HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
     HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
@@ -280,10 +281,9 @@ class KVEngine : public Engine {
     HashTable::KeyHashHint hint = hash_table_->GetHint(key);
     HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
-    Status s = hash_table_->SearchForWrite(hint, key, type,
-                                          &entry_ptr, &hash_entry, nullptr);
-    if (s != Status::NotFound)
-    {
+    Status s = hash_table_->SearchForWrite(hint, key, type, &entry_ptr,
+                                           &hash_entry, nullptr);
+    if (s != Status::NotFound) {
       kvdk_assert(s != Status::Ok, "Collection already registered!");
       return s;
     }

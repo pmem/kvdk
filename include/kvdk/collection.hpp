@@ -4,12 +4,12 @@
 
 #pragma once
 
+#include <cstring>
 #include <string>
 
-#include "kvdk/namespace.hpp"
-#include "../engine/macros.hpp"
 #include "../engine/alias.hpp"
-
+#include "../engine/macros.hpp"
+#include "kvdk/namespace.hpp"
 #include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -32,30 +32,30 @@ class Collection {
     return makeInternalKey(key, ID());
   }
 
-inline static StringView ExtractUserKey(const StringView& internal_key) {
-  constexpr size_t sz_id = sizeof(CollectionIDType);
-  kvdk_assert(sz_id <= internal_key.size(),
-              "internal_key does not has space for key");
-  return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
-}
+  inline static StringView ExtractUserKey(const StringView& internal_key) {
+    constexpr size_t sz_id = sizeof(CollectionIDType);
+    kvdk_assert(sz_id <= internal_key.size(),
+                "internal_key does not has space for key");
+    return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
+  }
 
-inline static uint64_t ExtractID(const StringView& internal_key) {
-  CollectionIDType id;
-  memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
-  return id;
-}
+  inline static uint64_t ExtractID(const StringView& internal_key) {
+    CollectionIDType id;
+    memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
+    return id;
+  }
 
-inline static std::string ID2String(CollectionIDType id) {
-  return std::string(reinterpret_cast<char*>(&id), sizeof(CollectionIDType));
-}
+  inline static std::string ID2String(CollectionIDType id) {
+    return std::string(reinterpret_cast<char*>(&id), sizeof(CollectionIDType));
+  }
 
-inline static CollectionIDType string2ID(const StringView& string_id) {
-  CollectionIDType id;
-  kvdk_assert(sizeof(CollectionIDType) <= string_id.size(),
-              "size of string id does not match CollectionIDType size!");
-  memcpy(&id, string_id.data(), sizeof(CollectionIDType));
-  return id;
-}
+  inline static CollectionIDType string2ID(const StringView& string_id) {
+    CollectionIDType id;
+    kvdk_assert(sizeof(CollectionIDType) <= string_id.size(),
+                "size of string id does not match CollectionIDType size!");
+    memcpy(&id, string_id.data(), sizeof(CollectionIDType));
+    return id;
+  }
 
  protected:
   inline static std::string makeInternalKey(const StringView& user_key,

@@ -28,11 +28,10 @@ class Engine {
   using IndexType = std::int64_t;
   using StringView = pmem::obj::string_view;
 
-  using GetterCallBack = void(*)(StringView const, void*);
+  using GetterCallBack = void (*)(StringView const, void*);
   // Default GetterCallBack
-  static void CopyToString(StringView const src, void* dst)
-  {
-      static_cast<std::string*>(dst)->assign(src.data(), src.size());
+  static void CopyToString(StringView const src, void* dst) {
+    static_cast<std::string*>(dst)->assign(src.data(), src.size());
   }
 
   // Open a new KVDK instance or restore a existing KVDK instance with the
@@ -103,13 +102,7 @@ class Engine {
 
   /// List
   // When the type of key is not a list, an error is returned.
-  enum class ListPosition
-  {
-      Before,
-      After,
-      Left,
-      Right
-  };
+  enum class ListPosition { Before, After, Left, Right };
   // List operations are guaranteed to be atomic.
   // User may manually lock the list to atomically perform multiple operations
   virtual Status ListLock(StringView key) = 0;
@@ -120,29 +113,40 @@ class Engine {
   virtual Status ListLength(StringView key, size_t* sz) = 0;
 
   // Scan the list and find the element(s) specified. Return the index/indices.
-  virtual Status ListFind(StringView key, StringView elem, std::vector<size_t>* indices, IndexType rank = 1, size_t count = 1, size_t max_len = 0) = 0;
-  virtual Status ListFind(StringView key, StringView elem, size_t* index, IndexType rank = 1, size_t max_len = 0) = 0;
+  virtual Status ListFind(StringView key, StringView elem,
+                          std::vector<size_t>* indices, IndexType rank = 1,
+                          size_t count = 1, size_t max_len = 0) = 0;
+  virtual Status ListFind(StringView key, StringView elem, size_t* index,
+                          IndexType rank = 1, size_t max_len = 0) = 0;
 
   // Iterate through elements in a certain range in List
-  virtual Status ListRange(StringView key, IndexType start, IndexType stop, GetterCallBack cb, void* cb_args) = 0;
+  virtual Status ListRange(StringView key, IndexType start, IndexType stop,
+                           GetterCallBack cb, void* cb_args) = 0;
 
   // Indexing a element in List.
   // First element has index 0, last element has index -1
-  virtual Status ListIndex(StringView key, IndexType index, GetterCallBack cb, void* cb_args) = 0;
-  virtual Status ListIndex(StringView key, IndexType index, std::string* elem) = 0;
+  virtual Status ListIndex(StringView key, IndexType index, GetterCallBack cb,
+                           void* cb_args) = 0;
+  virtual Status ListIndex(StringView key, IndexType index,
+                           std::string* elem) = 0;
 
   // Push element to List at pos
   // pos must be Position::Left or Position::Right
-  virtual Status ListPush(StringView key, ListPosition pos, StringView elem) = 0;
+  virtual Status ListPush(StringView key, ListPosition pos,
+                          StringView elem) = 0;
 
   // pos must be Position::Left or Position::Right
-  virtual Status ListPop(StringView key, ListPosition pos, GetterCallBack cb, void* cb_args, size_t cnt = 1) = 0;
-  virtual Status ListPop(StringView key, ListPosition pos, std::string* elem) = 0;
+  virtual Status ListPop(StringView key, ListPosition pos, GetterCallBack cb,
+                         void* cb_args, size_t cnt = 1) = 0;
+  virtual Status ListPop(StringView key, ListPosition pos,
+                         std::string* elem) = 0;
 
   // Insert a element Before or After pivot.
   // Use rank to skip the first (rank-1) pivot.
-  virtual Status ListInsert(StringView key, ListPosition pos, IndexType pivot, StringView elem) = 0;
-  virtual Status ListInsert(StringView key, ListPosition pos, StringView pivot, StringView elem, IndexType rank = 1) = 0;
+  virtual Status ListInsert(StringView key, ListPosition pos, IndexType pivot,
+                            StringView elem) = 0;
+  virtual Status ListInsert(StringView key, ListPosition pos, StringView pivot,
+                            StringView elem, IndexType rank = 1) = 0;
 
   // Remove specified element
   // negative cnt will remove |cnt| elem from end of list

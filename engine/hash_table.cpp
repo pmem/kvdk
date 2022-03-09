@@ -4,8 +4,8 @@
 
 #include "hash_table.hpp"
 
-#include "simple_list.hpp"
 #include "queue.hpp"
+#include "simple_list.hpp"
 #include "skiplist.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
@@ -59,8 +59,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
         data_entry_key = index_.dl_record->Key();
         break;
       }
-      case HashIndexType::List:
-      {
+      case HashIndexType::List: {
         data_entry_key = index_.list->Name();
         break;
       }

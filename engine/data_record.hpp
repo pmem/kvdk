@@ -4,11 +4,12 @@
 
 #pragma once
 
+#include <immintrin.h>
 #include <libpmem.h>
 
+#include "alias.hpp"
 #include "kvdk/namespace.hpp"
 #include "utils/utils.hpp"
-#include "alias.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -43,7 +44,8 @@ const uint16_t SortedRecordType =
 const uint16_t DLRecordType =
     (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
      DlistDataRecord | DlistHeadRecord | DlistTailRecord | DlistRecord |
-     QueueDataRecord | QueueHeadRecord | QueueTailRecord | QueueRecord | ListRecord | ListElem);
+     QueueDataRecord | QueueHeadRecord | QueueTailRecord | QueueRecord |
+     ListRecord | ListElem);
 
 const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
 
@@ -222,6 +224,18 @@ struct DLRecord {
 
   StringView Value() const {
     return StringView(data + entry.meta.k_size, entry.meta.v_size);
+  }
+
+  void PersistNext(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&next),
+                    static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
+  void PersistPrev(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&prev),
+                    static_cast<long long>(offset));
+    _mm_mfence();
   }
 
   // Construct and persist a dl record to PMem address "addr"
