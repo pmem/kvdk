@@ -545,11 +545,9 @@ class SortedCollectionRebuilder {
 
   SegmentStart* getStartPoint(int height);
 
-  Status rebuildIndex(SkiplistNode* start_node, bool build_hash_index);
+  Status rebuildSegmentIndex(SkiplistNode* start_node, bool build_hash_index);
 
-  void rebuildLinkage(SkiplistNode* start_node, int height);
-
-  void linkEndPoints(int height);
+  void linkSegmentDramNodes(SkiplistNode* start_node, int height);
 
   void cleanInvalidRecords();
 

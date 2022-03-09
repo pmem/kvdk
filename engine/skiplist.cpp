@@ -522,16 +522,15 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
         break;
       }
       if (height == 1) {
-        Status s =
-            rebuildIndex(start_point->node, start_point->build_hash_index);
+        Status s = rebuildSegmentIndex(start_point->node,
+                                       start_point->build_hash_index);
         if (s != Status::Ok) {
           return s;
         }
       } else {
-        rebuildLinkage(start_point->node, height);
+        linkSegmentDramNodes(start_point->node, height);
       }
     }
-    linkEndPoints(height);
     return Status::Ok;
   };
 
@@ -700,46 +699,6 @@ Status SortedCollectionRebuilder::RebuildIndex() {
   return s;
 }
 
-void SortedCollectionRebuilder::linkEndPoints(int height) {
-  for (SkiplistNode* node :
-       rebuilder_thread_cache_[access_thread.id].end_points) {
-    if (node->Height() < height) {
-      continue;
-    }
-    assert(node->RelaxedNext(height).RawPointer() == nullptr);
-    if (height == 1) {
-      PMemOffsetType next_offset = node->record->next;
-      DLRecord* next_record =
-          kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
-              next_offset);
-      while (next_record->entry.meta.type != SortedHeaderRecord) {
-        auto iter = start_points_.find(next_offset);
-        if (iter != start_points_.end()) {
-          assert(iter->second.node->Height() >= height);
-          node->RelaxedSetNext(height, iter->second.node);
-          break;
-        } else {
-          next_offset = next_record->next;
-          next_record =
-              kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
-                  next_offset);
-        }
-      }
-    } else {
-      SkiplistNode* next_node = node->RelaxedNext(height - 1).RawPointer();
-      while (next_node != nullptr) {
-        if (next_node->Height() >= height) {
-          node->RelaxedSetNext(height, next_node);
-          break;
-        } else {
-          next_node = next_node->RelaxedNext(height - 1).RawPointer();
-        }
-      }
-    }
-  }
-  rebuilder_thread_cache_[access_thread.id].end_points.clear();
-}
-
 SortedCollectionRebuilder::SegmentStart*
 SortedCollectionRebuilder::getStartPoint(int height) {
   std::lock_guard<SpinMutex> kv_mux(mu_);
@@ -752,8 +711,8 @@ SortedCollectionRebuilder::getStartPoint(int height) {
   return nullptr;
 }
 
-Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
-                                               bool build_hash_index) {
+Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
+                                                      bool build_hash_index) {
   SkiplistNode* cur_node = start_node;
   DLRecord* cur_record = cur_node->record;
   while (true) {
@@ -765,7 +724,8 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
       break;
     }
 
-    if (start_points_.find(next_offset) == start_points_.end()) {
+    auto iter = start_points_.find(next_offset);
+    if (iter == start_points_.end()) {
       HashEntry hash_entry;
       DataEntry data_entry;
       HashEntry* entry_ptr = nullptr;
@@ -832,16 +792,21 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
         break;
       }
     } else {
-      cur_node->RelaxedSetNext(1, nullptr);
-      rebuilder_thread_cache_[access_thread.id].end_points.insert(cur_node);
+      // link end point to next segment
+      if (iter->second.node->record->entry.meta.type != SortedHeaderRecord) {
+        cur_node->RelaxedSetNext(1, iter->second.node);
+      } else {
+        cur_node->RelaxedSetNext(1, nullptr);
+      }
       break;
     }
   }
   return Status::Ok;
 }
 
-void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
-                                               int height) {
+void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
+                                                     int height) {
+  assert(height > 1);
   while (start_node->Height() < height) {
     start_node = start_node->RelaxedNext(height - 1).RawPointer();
     if (start_node == nullptr ||
@@ -853,12 +818,24 @@ void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
   SkiplistNode* cur_node = start_node;
   SkiplistNode* next_node = cur_node->RelaxedNext(height - 1).RawPointer();
   assert(start_node && start_node->Height() >= height);
+  bool finish = false;
   while (true) {
-    if (next_node == nullptr ||
-        start_points_.find(kv_engine_->pmem_allocator_->addr2offset_checked(
-            next_node->record)) != start_points_.end()) {
+    if (next_node == nullptr) {
       cur_node->RelaxedSetNext(height, nullptr);
-      rebuilder_thread_cache_[access_thread.id].end_points.insert(cur_node);
+      break;
+    }
+
+    if (start_points_.find(kv_engine_->pmem_allocator_->addr2offset_checked(
+            next_node->record)) != start_points_.end()) {
+      // link end point of this segment
+      while (true) {
+        if (next_node == nullptr || next_node->Height() >= height) {
+          cur_node->RelaxedSetNext(height, next_node);
+          break;
+        } else {
+          next_node = next_node->RelaxedNext(height - 1).RawPointer();
+        }
+      }
       break;
     }
 
