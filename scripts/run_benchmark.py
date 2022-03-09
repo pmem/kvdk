@@ -29,7 +29,7 @@ data_types = []
 
 if __name__ == "__main__":
     usage = 'usage: run_benchmark.py [data type] [key distribution]\n\
-        data type can be "string", "sorted", "hash", "queue", or "all"\n\
+        data type can be "string", "sorted", "hash", "list", or "all"\n\
         key distribution can be "random" or "zipf" or "all".'
     if len(sys.argv) != 3:
         print(usage)
@@ -40,12 +40,12 @@ if __name__ == "__main__":
         data_types = ['sorted']
     elif sys.argv[1] == 'hash':
         data_types = ['hash']
-    elif sys.argv[1] == 'queue':
-        data_types = ['queue']
+    elif sys.argv[1] == 'list':
+        data_types = ['list']
     elif sys.argv[1] == 'blackhole':
         data_types = ['blackhole']
     elif sys.argv[1] == 'all':
-        data_types = ['blackhole', 'string', 'sorted', 'hash', 'queue']
+        data_types = ['blackhole', 'string', 'sorted', 'hash', 'list']
     else:
         print(usage)
         exit(1)

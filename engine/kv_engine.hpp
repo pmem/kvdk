@@ -176,7 +176,7 @@ class KVEngine : public Engine {
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
 
-  std::unique_ptr<List> createList(StringView key);
+  List* createList(StringView key);
 
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
@@ -260,7 +260,7 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
-  Status listFindInitNonExist(StringView key, List** list);
+  Status listFindInitNX(StringView key, List** list);
 
   Status MaybeInitPendingBatchFile();
 

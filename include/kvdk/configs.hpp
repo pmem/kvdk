@@ -19,6 +19,12 @@ enum class LogLevel : uint8_t {
   None,
 };
 
+#if DEBUG_LEVEL >= 1
+static constexpr LogLevel DefaultLogLevel = LogLevel::All;
+#else
+static constexpr LogLevel DefaultLogLevel = LogLevel::None;
+#endif
+
 // A snapshot indicates a immutable view of a KVDK engine at a certain time
 struct Snapshot {};
 
@@ -119,7 +125,7 @@ struct Configs {
   std::string devdax_meta_dir = "/mnt/kvdk-pmem-meta";
 
   // Log information to show
-  LogLevel log_level = LogLevel::Info;
+  LogLevel log_level = DefaultLogLevel;
 
   // Optional optimization strategy for few large skiplists by multi-thread
   // recovery a skiplist. The optimization can get better performance when

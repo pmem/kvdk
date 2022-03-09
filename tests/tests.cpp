@@ -92,6 +92,13 @@ class EngineBasicTest : public testing::Test {
               Status::Ok);
   }
 
+  void Reboot() {
+    delete engine;
+    engine = nullptr;
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+              Status::Ok);
+  }
+
   // Return the current configuration.
   Configs CurrentConfigs() {
     switch (config_option) {
@@ -1247,9 +1254,9 @@ static void CopyAndCount(kvdk::StringView sw, void* bulk_str) {
   bulk->n++;
 }
 
-TEST_F(EngineBasicTest, TestLocalList) {
-  int num_threads = 1;
-  int count = 100;
+TEST_F(EngineBasicTest, TestList) {
+  int num_threads = 16;
+  int count = 1000;
   int bulk = 5;
   ASSERT_EQ(count % bulk, 0);
   configs.max_access_threads = num_threads;
@@ -1261,93 +1268,80 @@ TEST_F(EngineBasicTest, TestLocalList) {
   for (size_t i = 0; i < num_threads; i++) {
     keys[i] = "List_" + std::to_string(i);
     for (size_t j = 0; j < count; j++) {
-      // elems[i].push_back(GetRandomString(1024));
       elems[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }
   }
 
-  auto LPushRPop = [&](uint32_t tid) {
-    std::string value_got;
+  std::vector<std::list<std::string>> lists_copy(num_threads);
+
+  auto LPush = [&](uint32_t tid) {
     size_t sz;
     for (size_t j = 0; j < count; j++) {
       ASSERT_EQ(engine->ListPush(keys[tid], Engine::ListPosition::Left,
                                  elems[tid][j]),
                 Status::Ok);
+      lists_copy[tid].push_front(elems[tid][j]);
       ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
-      ASSERT_EQ(sz, j + 1);
+      ASSERT_EQ(sz, lists_copy[tid].size());
     }
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(
-          engine->ListPop(keys[tid], Engine::ListPosition::Right, &value_got),
-          Status::Ok);
-      ASSERT_EQ(elems[tid][j], value_got);
-      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
-      ASSERT_EQ(sz, count - (1 + j));
-    }
-    ASSERT_EQ(
-        engine->ListPop(keys[tid], Engine::ListPosition::Right, &value_got),
-        Status::Ok);
   };
 
-  auto RPushLBulkPop = [&](uint32_t tid) {
-    BulkString bulk_str;
-    BulkString expected;
+  auto RPush = [&](uint32_t tid) {
     size_t sz;
     for (size_t j = 0; j < count; j++) {
       ASSERT_EQ(engine->ListPush(keys[tid], Engine::ListPosition::Right,
                                  elems[tid][j]),
                 Status::Ok);
+      lists_copy[tid].push_back(elems[tid][j]);
       ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
-      ASSERT_EQ(sz, j + 1);
+      ASSERT_EQ(sz, lists_copy[tid].size());
     }
+  };
+
+  auto LPopOne = [&](uint32_t tid) {
+    std::string value_got;
+    size_t sz;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(
+          engine->ListPop(keys[tid], Engine::ListPosition::Left, &value_got),
+          Status::Ok);
+      ASSERT_EQ(lists_copy[tid].front(), value_got);
+      lists_copy[tid].pop_front();
+      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
+      ASSERT_EQ(sz, lists_copy[tid].size());
+    }
+  };
+
+  auto RPopOne = [&](uint32_t tid) {
+    std::string value_got;
+    size_t sz;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(
+          engine->ListPop(keys[tid], Engine::ListPosition::Right, &value_got),
+          Status::Ok);
+      ASSERT_EQ(lists_copy[tid].back(), value_got);
+      lists_copy[tid].pop_back();
+      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
+      ASSERT_EQ(sz, lists_copy[tid].size());
+    }
+  };
+
+  auto LBulkPop = [&](uint32_t tid) {
+    BulkString bulk_str;
+    BulkString expected;
+    size_t sz;
     for (size_t j = 0; j < count; j += bulk) {
       ASSERT_EQ(engine->ListPop(keys[tid], Engine::ListPosition::Left,
                                 CopyAndCount, &bulk_str, bulk),
                 Status::Ok);
-      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
-      ASSERT_EQ(sz, count - (bulk + j));
-      for (size_t jj = 0; jj < bulk; jj++) {
-        CopyAndCount(elems[tid][j + jj], &expected);
+      for (size_t jj = 0; jj < bulk && !lists_copy.empty(); jj++) {
+        CopyAndCount(lists_copy[tid].front(), &expected);
+        lists_copy[tid].pop_front();
       }
+      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
+      ASSERT_EQ(sz, lists_copy[tid].size());
       ASSERT_EQ(bulk_str.n, expected.n);
       ASSERT_EQ(bulk_str.str, expected.str);
-    }
-  };
-
-  LaunchNThreads(num_threads, LPushRPop);
-  LaunchNThreads(num_threads, RPushLBulkPop);
-
-  delete engine;
-}
-
-TEST_F(EngineBasicTest, TestListRestore) {
-  int num_threads = 16;
-  int count = 100;
-  int bulk = 5;
-  ASSERT_EQ(count % bulk, 0);
-  configs.max_access_threads = num_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  std::vector<std::vector<std::string>> elems(num_threads);
-  std::vector<std::string> keys(num_threads);
-  for (size_t i = 0; i < num_threads; i++) {
-    keys[i] = "List_" + std::to_string(i);
-    for (size_t j = 0; j < count; j++) {
-      // elems[i].push_back(GetRandomString(1024));
-      elems[i].push_back(std::to_string(i) + "_" + std::to_string(j));
-    }
-  }
-
-  auto LPush = [&](uint32_t tid) {
-    std::string value_got;
-    size_t sz;
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->ListPush(keys[tid], Engine::ListPosition::Left,
-                                 elems[tid][j]),
-                Status::Ok);
-      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
-      ASSERT_EQ(sz, j + 1);
     }
   };
 
@@ -1359,21 +1353,35 @@ TEST_F(EngineBasicTest, TestListRestore) {
       ASSERT_EQ(engine->ListPop(keys[tid], Engine::ListPosition::Right,
                                 CopyAndCount, &bulk_str, bulk),
                 Status::Ok);
-      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
-      ASSERT_EQ(sz, count - (bulk + j));
-      for (size_t jj = 0; jj < bulk; jj++) {
-        CopyAndCount(elems[tid][j + jj], &expected);
+      for (size_t jj = 0; jj < bulk && !lists_copy.empty(); jj++) {
+        CopyAndCount(lists_copy[tid].back(), &expected);
+        lists_copy[tid].pop_back();
       }
+      ASSERT_EQ(engine->ListLength(keys[tid], &sz), Status::Ok);
+      ASSERT_EQ(sz, lists_copy[tid].size());
       ASSERT_EQ(bulk_str.n, expected.n);
       ASSERT_EQ(bulk_str.str, expected.str);
     }
   };
 
   LaunchNThreads(num_threads, LPush);
-  delete engine;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
+  LaunchNThreads(num_threads, RPush);
+  LaunchNThreads(num_threads, LPopOne);
+  LaunchNThreads(num_threads, RPopOne);
+  LaunchNThreads(num_threads, RPush);
+  LaunchNThreads(num_threads, LPush);
   LaunchNThreads(num_threads, RBulkPop);
+  LaunchNThreads(num_threads, LBulkPop);
+
+  LaunchNThreads(num_threads, LPush);
+  LaunchNThreads(num_threads, RPush);
+  LaunchNThreads(num_threads, RPush);
+  LaunchNThreads(num_threads, LPush);
+  Reboot();
+  LaunchNThreads(num_threads, LPopOne);
+  LaunchNThreads(num_threads, RPopOne);
+  LaunchNThreads(num_threads, RBulkPop);
+  LaunchNThreads(num_threads, LBulkPop);
 
   delete engine;
 }

@@ -2208,6 +2208,9 @@ Status KVEngine::ListRange(StringView key, IndexType start, IndexType stop,
   }
   std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
   auto iter = list->Seek(start);
+  if (iter == list->Tail()) {
+    return Status::OutOfRange;
+  }
   stop = (stop >= 0) ? stop : list->Size() + stop + 1;
   /// TODO: what if stop < start?
   while (start <= stop && iter != list->Tail()) {
@@ -2234,7 +2237,7 @@ Status KVEngine::ListPush(StringView key, ListPosition pos, StringView elem) {
   }
 
   List* list;
-  s = listFindInitNonExist(key, &list);
+  s = listFindInitNX(key, &list);
   if (s != Status::Ok) {
     return s;
   }
@@ -2320,7 +2323,7 @@ Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot,
   }
 
   List* list;
-  s = listFindInitNonExist(key, &list);
+  s = listFindInitNX(key, &list);
   if (s != Status::Ok) {
     return s;
   }
@@ -2334,7 +2337,7 @@ Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot,
   std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
   auto iter = list->Seek(pivot);
   if (iter == list->Tail()) {
-    return Status::InvalidArgument;
+    return Status::OutOfRange;
   }
 
   switch (pos) {
@@ -2413,7 +2416,7 @@ Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
 
   auto iter = list->Seek(index);
   if (iter == list->Tail()) {
-    return Status::InvalidArgument;
+    return Status::OutOfRange;
   }
   DLRecord* old = iter.Address();
   list->Replace(space, iter, version_controller_.GetCurrentTimestamp(), "",
@@ -2422,7 +2425,7 @@ Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
   return Status::Ok;
 }
 
-std::unique_ptr<List> KVEngine::createList(StringView key) {
+List* KVEngine::createList(StringView key) {
   std::uint64_t ts = version_controller_.GetCurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   List* list = new List{};
@@ -2435,7 +2438,9 @@ std::unique_ptr<List> KVEngine::createList(StringView key) {
   list->Init(AddressTranslator<DLRecord*>(
                  static_cast<char*>(pmem_allocator_->offset2addr(0))),
              space, ts, key, id);
-  return std::unique_ptr<List>(list);
+  std::lock_guard<std::mutex> guard{list_mu_};
+  lists_.emplace_back(list);
+  return list;
 }
 
 Status KVEngine::restoreListElem(DLRecord* pmp_record) {
@@ -2462,22 +2467,17 @@ Status KVEngine::restoreLists() {
   return Status::Ok;
 }
 
-Status KVEngine::listFindInitNonExist(StringView key, List** list) {
+Status KVEngine::listFindInitNX(StringView key, List** list) {
   Status s = FindCollection(key, list, RecordType::ListRecord);
   if (s == Status::Ok) {
     return s;
   }
   kvdk_assert(s == Status::NotFound, "");
-  auto temp_list = createList(key);
-  if (temp_list == nullptr) {
+  *list = createList(key);
+  if (*list == nullptr) {
     return Status::PmemOverflow;
   }
-  *list = temp_list.get();
-  s = registerCollection(key, temp_list.get());
-  if (s == Status::Ok) {
-    temp_list.release();
-  }
-  return s;
+  return registerCollection(key, *list);
 }
 
 }  // namespace KVDK_NAMESPACE

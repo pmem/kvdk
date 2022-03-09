@@ -71,7 +71,7 @@ def read_write_random(exec, shared_para, data_type, report_path, num_operations)
 
 
 def range_scan(exec, shared_para, data_type, report_path, num_operations):
-    if data_type == "string" or data_type == "queue":
+    if data_type == "string" or data_type == "list":
         return
     new_para = shared_para + \
         " -fill=0 -type={} -read_ratio=1 -scan=1 -num_operations={}".format(data_type, num_operations)

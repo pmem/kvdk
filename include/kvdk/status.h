@@ -26,6 +26,7 @@ extern "C" {
   GEN(NotFound)             \
   GEN(WrongType)            \
   GEN(LockingFailure)       \
+  GEN(OutOfRange)           \
   GEN(DRAMOverflow)         \
   GEN(PmemOverflow)         \
   GEN(NotSupported)         \
