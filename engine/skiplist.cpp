@@ -937,7 +937,7 @@ Status SortedCollectionRebuilder::buildStartPoints() {
 
 SkiplistNode* Skiplist::NewNodeBuild(DLRecord* pmem_record) {
   SkiplistNode* dram_node = nullptr;
-  auto height = Skiplist::RandomHeight();
+  auto height = Skiplist::randomHeight();
   if (height > 0) {
     StringView user_key = UserKey(pmem_record);
     dram_node = SkiplistNode::NewNode(user_key, pmem_record, height);

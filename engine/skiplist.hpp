@@ -190,15 +190,6 @@ class Skiplist : public Collection {
     }
   }
 
-  static uint8_t RandomHeight() {
-    uint8_t height = 0;
-    while (height < kMaxHeight && fast_random_64() & 1) {
-      height++;
-    }
-
-    return height;
-  }
-
   SkiplistNode* header() { return header_; }
 
   inline static StringView UserKey(const SkiplistNode* node) {
@@ -249,6 +240,7 @@ class Skiplist : public Collection {
                   const HashTable::KeyHashHint& hash_hint,
                   TimeStampType timestamp);
 
+  // Get value of "key" from the skiplist
   Status Get(const StringView& key, std::string* value);
 
   // Delete "key" from the skiplist by replace it with a delete record
@@ -400,6 +392,15 @@ class Skiplist : public Collection {
     for (SkiplistNode* node : nodes) {
       obsolete_nodes_.push_back(node);
     }
+  }
+
+  static uint8_t randomHeight() {
+    uint8_t height = 0;
+    while (height < kMaxHeight && fast_random_64() & 1) {
+      height++;
+    }
+
+    return height;
   }
 
   SkiplistNode* header_;
