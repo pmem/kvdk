@@ -497,19 +497,14 @@ class KVEngine;
 
 class SortedCollectionRebuilder {
  public:
-  SortedCollectionRebuilder(
-      PMEMAllocator* pmem_allocator, HashTable* hash_table,
-      ThreadManager* thread_manager, bool segment_based_rebuild,
-      uint64_t num_rebuild_threads, const CheckPoint& checkpoint,
-      std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>*
-          skiplists)
-      : pmem_allocator_(pmem_allocator),
-        hash_table_(hash_table),
-        thread_manager_(thread_manager),
+  SortedCollectionRebuilder(KVEngine* kv_engine, bool segment_based_rebuild,
+                            uint64_t num_rebuild_threads,
+                            const CheckPoint& checkpoint)
+      : kv_engine_(kv_engine),
         checkpoint_(checkpoint),
         segment_based_rebuild_(segment_based_rebuild),
         num_rebuild_threads_(num_rebuild_threads),
-        skiplists_(skiplists){};
+        rebuilder_thread_cache_(num_rebuild_threads){};
 
   Status RebuildIndex();
 
@@ -555,20 +550,7 @@ class SortedCollectionRebuilder {
 
   void linkEndPoints(int height);
 
-  void cleanInvalidRecords() {
-    std::vector<SpaceEntry> to_free;
-    for (DLRecord* pmem_record : invalid_records_) {
-      pmem_record->Destroy();
-      to_free.emplace_back(pmem_allocator_->addr2offset_checked(pmem_record),
-                           pmem_record->entry.header.record_size);
-      if (to_free.size() > 1000) {
-        pmem_allocator_->BatchFree(to_free);
-        to_free.clear();
-      }
-    }
-    pmem_allocator_->BatchFree(to_free);
-    invalid_records_.clear();
-  }
+  void cleanInvalidRecords();
 
   // thread cache for segment based rebuild
   struct ThreadCache {
@@ -576,17 +558,13 @@ class SortedCollectionRebuilder {
     std::unordered_set<SkiplistNode*> end_points{};
   };
 
+  KVEngine* kv_engine_;
   SpinMutex mu_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
   std::unordered_map<uint64_t, SegmentStart> start_points_;
-  PMEMAllocator* pmem_allocator_;
-  HashTable* hash_table_;
-  ThreadManager* thread_manager_;
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;
   std::unordered_set<DLRecord*> invalid_records_;
-  const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>*
-      skiplists_;
 };
 }  // namespace KVDK_NAMESPACE

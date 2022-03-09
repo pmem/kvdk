@@ -488,7 +488,8 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(
     if (invalid_version_records) {
       invalid_version_records->push_back(curr);
     }
-    curr = pmem_allocator_->offset2addr<DLRecord>(curr->older_version_offset);
+    curr = kv_engine_->pmem_allocator_->offset2addr<DLRecord>(
+        curr->older_version_offset);
     kvdk_assert(curr == nullptr || curr->Validate(),
                 "Broken checkpoint: invalid older version sorted record");
     kvdk_assert(
@@ -501,7 +502,6 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(
 }
 
 Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
-  rebuilder_thread_cache_.resize(num_rebuild_threads_);
   Status s = buildSegmentStart();
   if (s != Status::Ok) {
     return s;
@@ -510,11 +510,11 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
 
   auto repair_linkage_at_height_n = [&](uint32_t thread_num,
                                         uint8_t height) -> Status {
-    Status s = this->thread_manager_->MaybeInitThread(access_thread);
+    Status s = this->kv_engine_->MaybeInitAccessThread();
     if (s != Status::Ok) {
       return s;
     }
-    defer(this->thread_manager_->Release(access_thread));
+    defer(this->kv_engine_->ReleaseAccessThread());
     while (true) {
       SegmentStart* start_point = getStartPoint(height);
       if (!start_point) {
@@ -554,12 +554,12 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
 }
 
 Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
-  Status s = thread_manager_->MaybeInitThread(access_thread);
+  Status s = kv_engine_->MaybeInitAccessThread();
   if (s != Status::Ok) {
     GlobalLogger.Error("too many threads repair skiplist linkage\n");
     return s;
   }
-  defer(thread_manager_->Release(access_thread));
+  defer(kv_engine_->ReleaseAccessThread());
   Splice splice(skiplist);
   HashEntry hash_entry;
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
@@ -570,20 +570,21 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
   while (true) {
     uint64_t next_offset = splice.prev_pmem_record->next;
     DLRecord* next_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+        kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
     if (next_record == skiplist->header()->record) {
       break;
     }
 
     StringView internal_key = next_record->Key();
-    auto hash_hint = hash_table_->GetHint(internal_key);
+    auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
     while (true) {
       std::lock_guard<SpinMutex> lg(*hash_hint.spin);
       DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
       if (valid_version_record == nullptr) {
         // purge invalid version record from list
         if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
-                             pmem_allocator_, hash_table_)) {
+                             kv_engine_->pmem_allocator_.get(),
+                             kv_engine_->hash_table_.get())) {
           asm volatile("pause");
           continue;
         }
@@ -592,8 +593,9 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         if (valid_version_record != next_record) {
           // repair linkage of checkpoint version
           if (!Skiplist::Replace(next_record, valid_version_record,
-                                 hash_hint.spin, nullptr, pmem_allocator_,
-                                 hash_table_)) {
+                                 hash_hint.spin, nullptr,
+                                 kv_engine_->pmem_allocator_.get(),
+                                 kv_engine_->hash_table_.get())) {
             continue;
           }
         }
@@ -614,7 +616,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         // Rebuild hash index
         if (skiplist->IndexedByHashtable()) {
           HashEntry* entry_ptr = nullptr;
-          Status s = hash_table_->SearchForWrite(
+          Status s = kv_engine_->hash_table_->SearchForWrite(
               hash_hint, internal_key, SortedDataRecord | SortedDeleteRecord,
               &entry_ptr, &hash_entry, nullptr);
           if (s == Status::MemoryOverflow) {
@@ -627,11 +629,11 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
             return Status::Abort;
           } else if (s == Status::NotFound) {
             if (dram_node) {
-              hash_table_->Insert(hash_hint, entry_ptr,
-                                  valid_version_record->entry.meta.type,
-                                  dram_node, HashIndexType::SkiplistNode);
+              kv_engine_->hash_table_->Insert(
+                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                  dram_node, HashIndexType::SkiplistNode);
             } else {
-              hash_table_->Insert(
+              kv_engine_->hash_table_->Insert(
                   hash_hint, entry_ptr, valid_version_record->entry.meta.type,
                   valid_version_record, HashIndexType::DLRecord);
             }
@@ -651,11 +653,11 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 Status SortedCollectionRebuilder::listBasedIndexRebuild() {
   std::vector<std::future<Status>> fs;
   int i = 0;
-  for (auto skiplist : *skiplists_) {
+  for (auto skiplist : kv_engine_->skiplists_) {
     i++;
     fs.push_back(std::async(&SortedCollectionRebuilder::rebuildSkiplistIndex,
                             this, skiplist.second.get()));
-    if (i % num_rebuild_threads_ == 0 || i == skiplists_->size()) {
+    if (i % num_rebuild_threads_ == 0 || i == kv_engine_->skiplists_.size()) {
       for (auto& f : fs) {
         Status s = f.get();
         if (s != Status::Ok) {
@@ -670,7 +672,7 @@ Status SortedCollectionRebuilder::listBasedIndexRebuild() {
 Status SortedCollectionRebuilder::RebuildIndex() {
   defer(this->cleanInvalidRecords());
   Status s = Status::Ok;
-  if (skiplists_->size() == 0) {
+  if (kv_engine_->skiplists_.size() == 0) {
     return s;
   }
 
@@ -681,7 +683,7 @@ Status SortedCollectionRebuilder::RebuildIndex() {
   }
 #ifdef DEBUG_CHECK
   for (uint8_t h = 1; h <= kMaxHeight; h++) {
-    for (auto skiplist : *skiplists_) {
+    for (auto skiplist : kv_engine_->skiplists_) {
       if (skiplist.second->IndexedByHashtable()) {
         Status s = skiplist.second->CheckConnection(h);
         if (s != Status::Ok) {
@@ -705,7 +707,8 @@ void SortedCollectionRebuilder::linkEndPoints(int height) {
     if (height == 1) {
       PMemOffsetType next_offset = node->record->next;
       DLRecord* next_record =
-          pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+          kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
+              next_offset);
       while (next_record->entry.meta.type != SortedHeaderRecord) {
         auto iter = start_points_.find(next_offset);
         if (iter != start_points_.end()) {
@@ -715,7 +718,8 @@ void SortedCollectionRebuilder::linkEndPoints(int height) {
         } else {
           next_offset = next_record->next;
           next_record =
-              pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+              kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
+                  next_offset);
         }
       }
     } else {
@@ -752,7 +756,7 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
   while (true) {
     PMemOffsetType next_offset = cur_record->next;
     DLRecord* next_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+        kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
     if (next_record->entry.meta.type == SortedHeaderRecord) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
@@ -764,21 +768,23 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
       HashEntry* entry_ptr = nullptr;
       StringView internal_key = next_record->Key();
 
-      auto hash_hint = hash_table_->GetHint(internal_key);
+      auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
       while (true) {
         std::lock_guard<SpinMutex> lg(*hash_hint.spin);
         DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
         if (valid_version_record == nullptr) {
           if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
-                               pmem_allocator_, hash_table_)) {
+                               kv_engine_->pmem_allocator_.get(),
+                               kv_engine_->hash_table_.get())) {
             continue;
           }
         } else {
           RemoveInvalidRecords(valid_version_record);
           if (valid_version_record != next_record) {
             if (!Skiplist::Replace(next_record, valid_version_record,
-                                   hash_hint.spin, nullptr, pmem_allocator_,
-                                   hash_table_)) {
+                                   hash_hint.spin, nullptr,
+                                   kv_engine_->pmem_allocator_.get(),
+                                   kv_engine_->hash_table_.get())) {
               continue;
             }
           }
@@ -793,9 +799,9 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
           }
 
           if (build_hash_index) {
-            Status s = hash_table_->SearchForWrite(hash_hint, internal_key,
-                                                   SortedRecordType, &entry_ptr,
-                                                   &hash_entry, &data_entry);
+            Status s = kv_engine_->hash_table_->SearchForWrite(
+                hash_hint, internal_key, SortedRecordType, &entry_ptr,
+                &hash_entry, &data_entry);
             if (s == Status::Ok) {
               GlobalLogger.Error(
                   "Rebuild skiplist error, hash entry of sorted data/delete "
@@ -803,11 +809,11 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
               return Status::Abort;
             } else if (s == Status::NotFound) {
               if (dram_node) {
-                hash_table_->Insert(hash_hint, entry_ptr,
-                                    valid_version_record->entry.meta.type,
-                                    dram_node, HashIndexType::SkiplistNode);
+                kv_engine_->hash_table_->Insert(
+                    hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                    dram_node, HashIndexType::SkiplistNode);
               } else {
-                hash_table_->Insert(
+                kv_engine_->hash_table_->Insert(
                     hash_hint, entry_ptr, valid_version_record->entry.meta.type,
                     valid_version_record, HashIndexType::DLRecord);
               }
@@ -834,7 +840,7 @@ void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
   while (start_node->Height() < height) {
     start_node = start_node->RelaxedNext(height - 1).RawPointer();
     if (start_node == nullptr ||
-        start_points_.find(pmem_allocator_->addr2offset_checked(
+        start_points_.find(kv_engine_->pmem_allocator_->addr2offset_checked(
             start_node->record)) != start_points_.end()) {
       return;
     }
@@ -844,7 +850,7 @@ void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
   assert(start_node && start_node->Height() >= height);
   while (true) {
     if (next_node == nullptr ||
-        start_points_.find(pmem_allocator_->addr2offset_checked(
+        start_points_.find(kv_engine_->pmem_allocator_->addr2offset_checked(
             next_node->record)) != start_points_.end()) {
       cur_node->RelaxedSetNext(height, nullptr);
       rebuilder_thread_cache_[access_thread.id].end_points.insert(cur_node);
@@ -860,6 +866,22 @@ void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
   }
 }
 
+void SortedCollectionRebuilder::cleanInvalidRecords() {
+  std::vector<SpaceEntry> to_free;
+  for (DLRecord* pmem_record : invalid_records_) {
+    pmem_record->Destroy();
+    to_free.emplace_back(
+        kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),
+        pmem_record->entry.header.record_size);
+    if (to_free.size() > 1000) {
+      kv_engine_->pmem_allocator_->BatchFree(to_free);
+      to_free.clear();
+    }
+  }
+  kv_engine_->pmem_allocator_->BatchFree(to_free);
+  invalid_records_.clear();
+}
+
 Status SortedCollectionRebuilder::buildSegmentStart() {
   std::unordered_map<uint64_t, SegmentStart> new_kvs;
   std::unordered_map<uint64_t, SegmentStart>::iterator it =
@@ -869,14 +891,15 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
     HashEntry* entry_ptr = nullptr;
     HashEntry hash_entry;
     SkiplistNode* node = nullptr;
-    DLRecord* cur_record = pmem_allocator_->offset2addr<DLRecord>(it->first);
+    DLRecord* cur_record =
+        kv_engine_->pmem_allocator_->offset2addr<DLRecord>(it->first);
     StringView internal_key = cur_record->Key();
-    auto hash_hint = hash_table_->GetHint(internal_key);
+    auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
     while (true) {
       std::lock_guard<SpinMutex> lg(*hash_hint.spin);
-      Status s =
-          hash_table_->SearchForWrite(hash_hint, internal_key, SortedRecordType,
-                                      &entry_ptr, &hash_entry, &data_entry);
+      Status s = kv_engine_->hash_table_->SearchForWrite(
+          hash_hint, internal_key, SortedRecordType, &entry_ptr, &hash_entry,
+          &data_entry);
       if (s == Status::Ok) {
         if (hash_entry.GetIndexType() != HashIndexType::Skiplist) {
           GlobalLogger.Error(
@@ -895,7 +918,8 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
         if (valid_version_record == nullptr) {
           // purge invalid version record from list
           if (!Skiplist::Purge(cur_record, hash_hint.spin, nullptr,
-                               pmem_allocator_, hash_table_)) {
+                               kv_engine_->pmem_allocator_.get(),
+                               kv_engine_->hash_table_.get())) {
             continue;
           }
         } else {
@@ -903,8 +927,9 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
           // repair linkage of checkpoint version
           if (valid_version_record != cur_record) {
             if (!Skiplist::Replace(cur_record, valid_version_record,
-                                   hash_hint.spin, nullptr, pmem_allocator_,
-                                   hash_table_)) {
+                                   hash_hint.spin, nullptr,
+                                   kv_engine_->pmem_allocator_.get(),
+                                   kv_engine_->hash_table_.get())) {
               continue;
             }
           }
@@ -912,17 +937,17 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
           node = Skiplist::NewNodeBuild(valid_version_record);
 
           if (node != nullptr) {
-            auto iter = skiplists_->find(node->SkiplistID());
-            assert(iter != skiplists_->end());
+            auto iter = kv_engine_->skiplists_.find(node->SkiplistID());
+            assert(iter != kv_engine_->skiplists_.end());
             bool index_with_hashtable = iter->second->IndexedByHashtable();
             if (index_with_hashtable) {
-              hash_table_->Insert(hash_hint, entry_ptr,
-                                  valid_version_record->entry.meta.type, node,
-                                  HashIndexType::SkiplistNode);
+              kv_engine_->hash_table_->Insert(
+                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                  node, HashIndexType::SkiplistNode);
             }
-            new_kvs.insert(
-                {pmem_allocator_->addr2offset_checked(valid_version_record),
-                 {false, index_with_hashtable, node}});
+            new_kvs.insert({kv_engine_->pmem_allocator_->addr2offset_checked(
+                                valid_version_record),
+                            {false, index_with_hashtable, node}});
           }
           // TODO: comment why not insert dlrecord hash index here
         }

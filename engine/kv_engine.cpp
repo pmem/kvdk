@@ -276,10 +276,6 @@ void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
   delete iter;
 }
 
-Status KVEngine::MaybeInitAccessThread() {
-  return thread_manager_->MaybeInitThread(access_thread);
-}
-
 Status KVEngine::RestoreData() {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
@@ -850,9 +846,8 @@ Status KVEngine::Recovery() {
   }
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
-      pmem_allocator_.get(), hash_table_.get(), thread_manager_.get(),
-      configs_.opt_large_sorted_collection_restore, configs_.max_access_threads,
-      *persist_checkpoint_, &skiplists_));
+      this, configs_.opt_large_sorted_collection_restore,
+      configs_.max_access_threads, *persist_checkpoint_));
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {

@@ -157,7 +157,9 @@ class KVEngine : public Engine {
   Status HashGetImpl(const StringView& key, std::string* value,
                      uint16_t type_mask);
 
-  inline Status MaybeInitAccessThread();
+  inline Status MaybeInitAccessThread() {
+    return thread_manager_->MaybeInitThread(access_thread);
+  }
 
   bool RegisterComparator(const StringView& collection_name,
                           Comparator comp_func) {
