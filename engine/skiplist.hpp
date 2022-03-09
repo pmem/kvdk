@@ -354,7 +354,7 @@ class Skiplist : public Collection {
   //
   // The "insert_key" should be already locked before call this function
   bool lockInsertPosition(const StringView& inserting_key,
-                          DLRecord* prev_record,
+                          DLRecord* prev_record, DLRecord* next_record,
                           const SpinMutex* inserting_key_lock,
                           std::unique_lock<SpinMutex>* prev_record_lock);
 
@@ -516,14 +516,14 @@ class SortedCollectionRebuilder {
     }
   }
 
-  void AddInvalidRecord(DLRecord* sorted_record) {
+  void AddUnlinkedRecord(DLRecord* sorted_record) {
     std::lock_guard<SpinMutex> lg(mu_);
-    invalid_records_.insert(sorted_record);
+    unlinked_records_.insert(sorted_record);
   }
 
-  void RemoveInvalidRecords(DLRecord* sorted_record) {
+  void RemoveUnlinkedRecord(DLRecord* sorted_record) {
     std::lock_guard<SpinMutex> lg(mu_);
-    invalid_records_.erase(sorted_record);
+    unlinked_records_.erase(sorted_record);
   }
 
  private:
@@ -565,6 +565,6 @@ class SortedCollectionRebuilder {
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;
-  std::unordered_set<DLRecord*> invalid_records_;
+  std::unordered_set<DLRecord*> unlinked_records_;
 };
 }  // namespace KVDK_NAMESPACE

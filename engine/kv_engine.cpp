@@ -624,7 +624,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
     if (!RecoverToCheckpoint()) {
       purgeAndFree(pmem_record);
     } else {
-      sorted_rebuilder_->AddInvalidRecord(pmem_record);
+      sorted_rebuilder_->AddUnlinkedRecord(pmem_record);
     }
   } else {
     if (configs_.opt_large_sorted_collection_restore &&

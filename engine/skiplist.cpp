@@ -223,7 +223,7 @@ bool Skiplist::lockRecordPosition(const DLRecord* record,
 
 bool Skiplist::lockInsertPosition(
     const StringView& inserting_key, DLRecord* prev_record,
-    const SpinMutex* inserting_key_lock,
+    DLRecord* next_record, const SpinMutex* inserting_key_lock,
     std::unique_lock<SpinMutex>* prev_record_lock) {
   PMemOffsetType prev_offset =
       pmem_allocator_->addr2offset_checked(prev_record);
@@ -236,11 +236,12 @@ bool Skiplist::lockInsertPosition(
         std::unique_lock<SpinMutex>(*prev_hint.spin, std::adopt_lock);
   }
 
-  PMemOffsetType next_offset = prev_record->next;
-  DLRecord* next_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+  PMemOffsetType next_offset =
+      pmem_allocator_->addr2offset_checked(next_record);
   // Check if the linkage has changed before we successfully acquire lock.
-  auto check_linkage = [&]() { return next_record->prev == prev_offset; };
+  auto check_linkage = [&]() {
+    return prev_record->next == next_offset && next_record->prev == prev_offset;
+  };
   // Check id and order as prev and next may be both freed, then inserted
   // to another position while keep linkage, before we lock them
   // For example:
@@ -588,8 +589,9 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
           asm volatile("pause");
           continue;
         }
+        AddUnlinkedRecord(next_record);
       } else {
-        RemoveInvalidRecords(valid_version_record);
+        RemoveUnlinkedRecord(valid_version_record);
         if (valid_version_record != next_record) {
           // repair linkage of checkpoint version
           if (!Skiplist::Replace(next_record, valid_version_record,
@@ -598,6 +600,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
                                  kv_engine_->hash_table_.get())) {
             continue;
           }
+          AddUnlinkedRecord(next_record);
         }
 
         // Rebuild dram node
@@ -778,8 +781,9 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
                                kv_engine_->hash_table_.get())) {
             continue;
           }
+          AddUnlinkedRecord(next_record);
         } else {
-          RemoveInvalidRecords(valid_version_record);
+          RemoveUnlinkedRecord(valid_version_record);
           if (valid_version_record != next_record) {
             if (!Skiplist::Replace(next_record, valid_version_record,
                                    hash_hint.spin, nullptr,
@@ -787,6 +791,7 @@ Status SortedCollectionRebuilder::rebuildIndex(SkiplistNode* start_node,
                                    kv_engine_->hash_table_.get())) {
               continue;
             }
+            AddUnlinkedRecord(next_record);
           }
 
           assert(valid_version_record != nullptr);
@@ -868,7 +873,7 @@ void SortedCollectionRebuilder::rebuildLinkage(SkiplistNode* start_node,
 
 void SortedCollectionRebuilder::cleanInvalidRecords() {
   std::vector<SpaceEntry> to_free;
-  for (DLRecord* pmem_record : invalid_records_) {
+  for (DLRecord* pmem_record : unlinked_records_) {
     pmem_record->Destroy();
     to_free.emplace_back(
         kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),
@@ -879,7 +884,7 @@ void SortedCollectionRebuilder::cleanInvalidRecords() {
     }
   }
   kv_engine_->pmem_allocator_->BatchFree(to_free);
-  invalid_records_.clear();
+  unlinked_records_.clear();
 }
 
 Status SortedCollectionRebuilder::buildSegmentStart() {
@@ -922,8 +927,9 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
                                kv_engine_->hash_table_.get())) {
             continue;
           }
+          AddUnlinkedRecord(cur_record);
         } else {
-          RemoveInvalidRecords(valid_version_record);
+          RemoveUnlinkedRecord(valid_version_record);
           // repair linkage of checkpoint version
           if (valid_version_record != cur_record) {
             if (!Skiplist::Replace(cur_record, valid_version_record,
@@ -932,6 +938,7 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
                                    kv_engine_->hash_table_.get())) {
               continue;
             }
+            AddUnlinkedRecord(cur_record);
           }
           assert(valid_version_record != nullptr);
           node = Skiplist::NewNodeBuild(valid_version_record);
@@ -1299,7 +1306,8 @@ Skiplist::WriteResult Skiplist::setImplNoHash(
         ret.existing_record->next);
   } else {
     ret.existing_record = nullptr;
-    if (!lockInsertPosition(key, splice.prev_pmem_record, inserting_key_lock,
+    if (!lockInsertPosition(key, splice.prev_pmem_record,
+                            splice.next_pmem_record, inserting_key_lock,
                             &prev_record_lock)) {
       ret.s = Status::Abort;
       return ret;
