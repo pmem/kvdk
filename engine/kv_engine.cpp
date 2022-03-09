@@ -1338,6 +1338,9 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
     return s;
   }
   assert(skiplist);
+  // Set current snapshot to this thread
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
   return skiplist->Get(user_key, value);
 }
 

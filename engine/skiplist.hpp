@@ -230,14 +230,15 @@ class Skiplist : public Collection {
 
   // Set "key, value" to the skiplist
   //
-  // hash_hint: hash table hint of the setting key, the lock of hint should
-  // already been locked
+  // key_hash_hint_locked: hash table hint of the setting key, the lock of hint
+  // should already been locked
   // timestamp: kvdk engine timestamp of this operation
   //
   // Return Ok on success, with the writed pmem record, its dram node and
-  // updated pmem record if it existed, return Abort if there is lock contension
+  // updated pmem record if it existed, return Abort if there is lock
+  // contension
   WriteResult Set(const StringView& key, const StringView& value,
-                  const HashTable::KeyHashHint& hash_hint,
+                  const HashTable::KeyHashHint& key_hash_hint_locked,
                   TimeStampType timestamp);
 
   // Get value of "key" from the skiplist
@@ -245,14 +246,14 @@ class Skiplist : public Collection {
 
   // Delete "key" from the skiplist by replace it with a delete record
   //
-  // hash_hint: hash table hint of the setting key, the lock of hint should
-  // already been locked
+  // key_hash_hint_locked: hash table hint of the deleting key, the lock of hint
+  // should already been locked
   // timestamp: kvdk engine timestamp of this operation
   //
   // Return Ok on success, with the writed pmem delete record, its dram node and
   // deleted pmem record if existed, return Abort if there is lock contension
   WriteResult Delete(const StringView& key,
-                     const HashTable::KeyHashHint& hash_hint,
+                     const HashTable::KeyHashHint& key_hash_hint_locked,
                      TimeStampType timestamp);
 
   // Seek position of "key" on both dram and PMem node in the skiplist, and
