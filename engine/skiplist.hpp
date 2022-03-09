@@ -523,8 +523,10 @@ class SortedCollectionRebuilder {
   }
 
   void RemoveUnlinkedRecord(DLRecord* sorted_record) {
-    std::lock_guard<SpinMutex> lg(mu_);
-    unlinked_records_.erase(sorted_record);
+    if (unlinked_records_.size() > 0) {
+      std::lock_guard<SpinMutex> lg(mu_);
+      unlinked_records_.erase(sorted_record);
+    }
   }
 
  private:

@@ -792,7 +792,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
         break;
       }
     } else {
-      // link end point to next segment
+      // link end point of this segment
       if (iter->second.node->record->entry.meta.type != SortedHeaderRecord) {
         cur_node->RelaxedSetNext(1, iter->second.node);
       } else {
