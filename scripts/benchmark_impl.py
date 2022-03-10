@@ -20,7 +20,7 @@ def __fill(exec, shared_para, data_type, report_path):
 def read_random(exec, shared_para, data_type, report_path, num_operations):
     new_para = shared_para + \
         " -fill=0 -type={} -read_ratio=1 -num_operations={}".format(data_type, num_operations)
-    report = report_path + "read_random"
+    report = report_path + "read_random" if (data_type != "list") else "pop"
     print("Read random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
     print(cmd)
@@ -30,7 +30,7 @@ def read_random(exec, shared_para, data_type, report_path, num_operations):
 def insert_random(exec, shared_para, data_type, report_path, num_operations):
     new_para = shared_para + \
         " -fill=0 -type={} -read_ratio=0 -existing_keys_ratio=0 -num_operations={}".format(data_type, num_operations)
-    report = report_path + "insert_random"
+    report = report_path + "insert_random" if (data_type != "list") else "push"
     print("Insert random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
     print(cmd)
@@ -51,6 +51,8 @@ def batch_insert_random(exec, shared_para, data_type, report_path, num_operation
 
 
 def update_random(exec, shared_para, data_type, report_path, num_operations):
+    if data_type == "list":
+        return
     new_para = shared_para + \
         " -fill=0 -type={} -read_ratio=0 -num_operations={}".format(data_type, num_operations)
     report = report_path + "update_random"
@@ -61,9 +63,12 @@ def update_random(exec, shared_para, data_type, report_path, num_operations):
 
 
 def read_write_random(exec, shared_para, data_type, report_path, num_operations):
+    ratio = 0.9
+    if data_type == "list":
+        ratio = 0.5
     new_para = shared_para + \
-        " -fill=0 -type={} -read_ratio=0.9 -num_operations={}".format(data_type, num_operations)
-    report = report_path + "read_write_random"
+        " -fill=0 -type={} -read_ratio={} -num_operations={}".format(data_type, ratio, num_operations)
+    report = report_path + "read_write_random" if (data_type != "list") else "pushpop"
     print("Read write random {}".format(data_type))
     cmd = "{0} {1} > {2}".format(exec, new_para, report)
     print(cmd)
