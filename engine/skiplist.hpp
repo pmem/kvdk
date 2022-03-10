@@ -489,42 +489,43 @@ class SortedCollectionRebuilder {
   void addSegmentStartPoint(DLRecord* record);
 
  private:
-  DLRecord* findValidVersion(DLRecord* pmem_record,
-                             std::vector<DLRecord*>* invalid_version_records);
-  struct SegmentStart {
+  struct RebuildSegment {
     bool visited;
     bool build_hash_index;
-    SkiplistNode* node;
+    SkiplistNode* start_node;
   };
+  DLRecord* findValidVersion(DLRecord* pmem_record,
+                             std::vector<DLRecord*>* invalid_version_records);
+
   Status rebuildSkiplistIndex(Skiplist* skiplist);
 
   Status listBasedIndexRebuild();
 
   Status segmentBasedIndexRebuild();
 
-  Status buildSegmentStart();
-
-  SegmentStart* getStartPoint(int height);
+  Status buildRecoverySegment();
 
   Status rebuildSegmentIndex(SkiplistNode* start_node, bool build_hash_index);
+
+  Status linkHighDramNodes(Skiplist* skiplist);
 
   void linkSegmentDramNodes(SkiplistNode* start_node, int height);
 
   void cleanInvalidRecords();
 
-  Status linkHighDramNodes(Skiplist* skiplist);
-
   bool checkAndRepairRecord(DLRecord* record);
 
-  // thread cache for segment based rebuild
   struct ThreadCache {
+    // For segment based rebuild
     std::unordered_map<uint64_t, int> visited_skiplists{};
+
+    // For clean unlinked records in checkpoint recovery
   };
 
   KVEngine* kv_engine_;
   SpinMutex mu_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
-  std::unordered_map<DLRecord*, SegmentStart> start_points_;
+  std::unordered_map<DLRecord*, RebuildSegment> recovery_segments_;
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;

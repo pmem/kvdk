@@ -514,7 +514,6 @@ int main(int argc, char** argv) {
     for (auto col : collections) {
       Collection* collection_ptr;
       SortedCollectionConfigs s_configs;
-      s_configs.index_with_hashtable = false;
       Status s =
           engine->CreateSortedCollection(col, &collection_ptr, s_configs);
       if (s != Status::Ok) {

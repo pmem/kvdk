@@ -944,7 +944,8 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(
 }
 
 Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
-  Status s = buildSegmentStart();
+  GlobalLogger.Info("segment based rebuild start\n");
+  Status s = buildRecoverySegment();
   if (s != Status::Ok) {
     return s;
   }
@@ -956,8 +957,8 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
       return s;
     }
     defer(this->kv_engine_->ReleaseAccessThread());
-    for (auto iter = this->start_points_.begin();
-         iter != this->start_points_.end(); iter++) {
+    for (auto iter = this->recovery_segments_.begin();
+         iter != this->recovery_segments_.end(); iter++) {
       if (!iter->second.visited) {
         std::lock_guard<SpinMutex> lg(this->mu_);
         if (!iter->second.visited) {
@@ -969,8 +970,8 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
         continue;
       }
 
-      Status s =
-          rebuildSegmentIndex(iter->second.node, iter->second.build_hash_index);
+      Status s = rebuildSegmentIndex(iter->second.start_node,
+                                     iter->second.build_hash_index);
       if (s != Status::Ok) {
         return s;
       }
@@ -978,6 +979,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
     return Status::Ok;
   };
 
+  GlobalLogger.Info("build segment index\n");
   for (uint32_t thread_num = 0; thread_num < num_rebuild_threads_;
        ++thread_num) {
     fs.push_back(std::async(rebuild_segments_index));
@@ -989,6 +991,8 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
     }
   }
   fs.clear();
+  GlobalLogger.Info("link dram nodes\n");
+
   for (auto& s : kv_engine_->skiplists_) {
     fs.push_back(std::async(&SortedCollectionRebuilder::linkHighDramNodes, this,
                             s.second.get()));
@@ -1000,7 +1004,9 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
     }
   }
 
-  start_points_.clear();
+  recovery_segments_.clear();
+  GlobalLogger.Info("segment based rebuild done\n");
+
   return Status::Ok;
 }
 
@@ -1175,18 +1181,6 @@ Status SortedCollectionRebuilder::RebuildIndex() {
   return s;
 }
 
-SortedCollectionRebuilder::SegmentStart*
-SortedCollectionRebuilder::getStartPoint(int height) {
-  std::lock_guard<SpinMutex> kv_mux(mu_);
-  for (auto& kv : start_points_) {
-    if (!kv.second.visited && kv.second.node->Height() >= height - 1) {
-      kv.second.visited = true;
-      return &kv.second;
-    }
-  }
-  return nullptr;
-}
-
 Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
                                                       bool build_hash_index) {
   SkiplistNode* cur_node = start_node;
@@ -1200,8 +1194,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       break;
     }
 
-    auto iter = start_points_.find(next_record);
-    if (iter == start_points_.end()) {
+    auto iter = recovery_segments_.find(next_record);
+    if (iter == recovery_segments_.end()) {
       HashEntry hash_entry;
       DataEntry data_entry;
       HashEntry* entry_ptr = nullptr;
@@ -1269,8 +1263,9 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       }
     } else {
       // link end point of this segment
-      if (iter->second.node->record->entry.meta.type != SortedHeaderRecord) {
-        cur_node->RelaxedSetNext(1, iter->second.node);
+      if (iter->second.start_node->record->entry.meta.type !=
+          SortedHeaderRecord) {
+        cur_node->RelaxedSetNext(1, iter->second.start_node);
       } else {
         cur_node->RelaxedSetNext(1, nullptr);
       }
@@ -1285,8 +1280,8 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
   assert(height > 1);
   while (start_node->Height() < height) {
     start_node = start_node->RelaxedNext(height - 1).RawPointer();
-    if (start_node == nullptr ||
-        start_points_.find(start_node->record) != start_points_.end()) {
+    if (start_node == nullptr || recovery_segments_.find(start_node->record) !=
+                                     recovery_segments_.end()) {
       return;
     }
   }
@@ -1300,7 +1295,8 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
       break;
     }
 
-    if (start_points_.find(next_node->record) != start_points_.end()) {
+    if (recovery_segments_.find(next_node->record) !=
+        recovery_segments_.end()) {
       // link end point of this segment
       while (true) {
         if (next_node == nullptr || next_node->Height() >= height) {
@@ -1338,10 +1334,10 @@ void SortedCollectionRebuilder::cleanInvalidRecords() {
   unlinked_records_.clear();
 }
 
-Status SortedCollectionRebuilder::buildSegmentStart() {
-  std::unordered_map<DLRecord*, SegmentStart> new_kvs;
-  auto it = start_points_.begin();
-  while (it != start_points_.end()) {
+Status SortedCollectionRebuilder::buildRecoverySegment() {
+  std::unordered_map<DLRecord*, RebuildSegment> new_kvs;
+  auto it = recovery_segments_.begin();
+  while (it != recovery_segments_.end()) {
     DataEntry data_entry;
     HashEntry* entry_ptr = nullptr;
     HashEntry hash_entry;
@@ -1362,12 +1358,12 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
           return Status::Abort;
         }
         node = hash_entry.GetIndex().skiplist->header();
-        it->second.node = node;
+        it->second.start_node = node;
         it->second.build_hash_index =
             hash_entry.GetIndex().skiplist->IndexedByHashtable();
         it++;
       } else if (s == Status::NotFound) {
-        it = start_points_.erase(it);
+        it = recovery_segments_.erase(it);
         DLRecord* valid_version_record = findValidVersion(cur_record, nullptr);
         if (valid_version_record == nullptr) {
           // purge invalid version record from list
@@ -1413,7 +1409,7 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
       break;
     }
   }
-  start_points_.insert(new_kvs.begin(), new_kvs.end());
+  recovery_segments_.insert(new_kvs.begin(), new_kvs.end());
   return Status::Ok;
 }
 
@@ -1458,7 +1454,7 @@ bool SortedCollectionRebuilder::checkAndRepairRecord(DLRecord* record) {
 void SortedCollectionRebuilder::addSegmentStartPoint(DLRecord* record) {
   if (segment_based_rebuild_) {
     std::lock_guard<SpinMutex> lg(mu_);
-    start_points_.insert({record, {false, false, nullptr}});
+    recovery_segments_.insert({record, {false, false, nullptr}});
   }
 }
 
