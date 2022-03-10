@@ -273,6 +273,7 @@ class GenericList final : public Collection {
     --prev;
     Iterator next{pos};
     emplace_between(allocated, prev, next, timestamp, key, value);
+    ++sz;
   }
 
   void EmplaceAfter(SpaceEntry allocated, Iterator pos, TimeStampType timestamp,
@@ -281,16 +282,19 @@ class GenericList final : public Collection {
     Iterator next{pos};
     ++next;
     emplace_between(allocated, prev, next, timestamp, key, value);
+    ++sz;
   }
 
   void PushFront(SpaceEntry allocated, TimeStampType timestamp,
                  StringView const key, StringView const value) {
     emplace_between(allocated, Head(), Front(), timestamp, key, value);
+    ++sz;
   }
 
   void PushBack(SpaceEntry allocated, TimeStampType timestamp,
                 StringView const key, StringView const value) {
     emplace_between(allocated, Back(), Tail(), timestamp, key, value);
+    ++sz;
   }
 
   void Replace(SpaceEntry allocated, Iterator pos, TimeStampType timestamp,
@@ -339,7 +343,6 @@ class GenericList final : public Collection {
       next->PersistPrev(allocated.offset);
     }
 
-    ++sz;
     return (next == Tail()) ? --next : ++prev;
   }
 

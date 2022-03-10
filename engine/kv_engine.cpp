@@ -2144,13 +2144,12 @@ Status KVEngine::ListFind(StringView key, StringView elem,
   max_len = (max_len == 0) ? list->Size() : max_len;
   if (rank > 0) {
     size_t index = 0;
-    for (auto iter = list->Front(); iter != list->Tail(); ++iter) {
+    for (auto iter = list->Front(); iter != list->Tail(); ++iter, ++index) {
       if (max_len == 0) {
         return Status::Ok;
       }
       --max_len;
 
-      ++index;
       if (iter->Value() == elem) {
         --rank;
         if (rank <= 0) {
@@ -2164,13 +2163,12 @@ Status KVEngine::ListFind(StringView key, StringView elem,
     }
   } else {
     size_t index = list->Size();
-    for (auto iter = list->Front(); iter != list->Tail(); ++iter) {
+    for (auto iter = list->Front(); iter != list->Tail(); ++iter, --index) {
       if (max_len == 0) {
         return Status::Ok;
       }
       --max_len;
 
-      --index;
       if (iter->Value() == elem) {
         --rank;
         if (rank <= 0) {
@@ -2400,8 +2398,12 @@ Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
 }
 
 Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
   List* list;
-  Status s = FindCollection(key, &list, RecordType::ListRecord);
+  s = FindCollection(key, &list, RecordType::ListRecord);
   if (s != Status::Ok) {
     return s;
   }
