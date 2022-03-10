@@ -1072,7 +1072,6 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         }
         AddUnlinkedRecord(next_record);
       } else {
-        RemoveUnlinkedRecord(valid_version_record);
         if (valid_version_record != next_record) {
           // repair linkage of checkpoint version
           if (!Skiplist::Replace(next_record, valid_version_record,
@@ -1213,7 +1212,6 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           }
           AddUnlinkedRecord(next_record);
         } else {
-          RemoveUnlinkedRecord(valid_version_record);
           if (valid_version_record != next_record) {
             if (!Skiplist::Replace(next_record, valid_version_record,
                                    hash_hint.spin, nullptr,
@@ -1320,18 +1318,22 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
 
 void SortedCollectionRebuilder::cleanInvalidRecords() {
   std::vector<SpaceEntry> to_free;
-  for (DLRecord* pmem_record : unlinked_records_) {
-    pmem_record->Destroy();
-    to_free.emplace_back(
-        kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),
-        pmem_record->entry.header.record_size);
-    if (to_free.size() > 1000) {
-      kv_engine_->pmem_allocator_->BatchFree(to_free);
-      to_free.clear();
+  for (auto& thread_cache : rebuilder_thread_cache_) {
+    for (DLRecord* pmem_record : thread_cache.unlinked_records) {
+      if (!checkRecordLinkage(pmem_record)) {
+        pmem_record->Destroy();
+        to_free.emplace_back(
+            kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),
+            pmem_record->entry.header.record_size);
+        if (to_free.size() > 1000) {
+          kv_engine_->pmem_allocator_->BatchFree(to_free);
+          to_free.clear();
+        }
+      }
     }
+    thread_cache.unlinked_records.clear();
   }
   kv_engine_->pmem_allocator_->BatchFree(to_free);
-  unlinked_records_.clear();
 }
 
 Status SortedCollectionRebuilder::buildRecoverySegment() {
@@ -1374,7 +1376,6 @@ Status SortedCollectionRebuilder::buildRecoverySegment() {
           }
           AddUnlinkedRecord(cur_record);
         } else {
-          RemoveUnlinkedRecord(valid_version_record);
           // repair linkage of checkpoint version
           if (valid_version_record != cur_record) {
             if (!Skiplist::Replace(cur_record, valid_version_record,
@@ -1417,7 +1418,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   kvdk_assert(record->entry.meta.type == SortedDataRecord ||
                   record->entry.meta.type == SortedDeleteRecord,
               "wrong record type in RestoreSkiplistRecord");
-  bool linked_record = checkAndRepairRecord(record);
+  bool linked_record = checkAndRepairRecordLinkage(record);
 
   if (!linked_record) {
     if (!checkpoint_.Valid()) {
@@ -1435,7 +1436,15 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   return Status::Ok;
 }
 
-bool SortedCollectionRebuilder::checkAndRepairRecord(DLRecord* record) {
+bool SortedCollectionRebuilder::checkRecordLinkage(DLRecord* record) {
+  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
+  uint64_t offset = pmem_allocator->addr2offset(record);
+  DLRecord* prev = pmem_allocator->offset2addr<DLRecord>(record->prev);
+  DLRecord* next = pmem_allocator->offset2addr<DLRecord>(record->next);
+  return prev->next == offset && next->prev == offset;
+}
+
+bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
   uint64_t offset = pmem_allocator->addr2offset(record);
   DLRecord* prev = pmem_allocator->offset2addr<DLRecord>(record->prev);

@@ -474,12 +474,10 @@ int main(int argc, char** argv) {
 
   if (bench_data_type != DataType::Blackhole) {
     Configs configs;
-    configs.opt_large_sorted_collection_restore = true;
     configs.populate_pmem_space = FLAGS_populate;
     configs.max_access_threads = FLAGS_max_access_threads;
     configs.pmem_file_size = FLAGS_space;
-    configs.opt_large_sorted_collection_restore =
-        FLAGS_opt_large_sorted_collection_restore;
+    configs.opt_large_sorted_collection_restore = true;
     configs.use_devdax_mode = FLAGS_use_devdax_mode;
     Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
     if (s != Status::Ok) {

@@ -475,15 +475,9 @@ class SortedCollectionRebuilder {
   Status AddHeader(DLRecord* record);
 
   void AddUnlinkedRecord(DLRecord* sorted_record) {
-    std::lock_guard<SpinMutex> lg(mu_);
-    unlinked_records_.insert(sorted_record);
-  }
-
-  void RemoveUnlinkedRecord(DLRecord* sorted_record) {
-    if (unlinked_records_.size() > 0) {
-      std::lock_guard<SpinMutex> lg(mu_);
-      unlinked_records_.erase(sorted_record);
-    }
+    assert(access_thread.id >= 0);
+    rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
+        sorted_record);
   }
 
   void addSegmentStartPoint(DLRecord* record);
@@ -513,13 +507,16 @@ class SortedCollectionRebuilder {
 
   void cleanInvalidRecords();
 
-  bool checkAndRepairRecord(DLRecord* record);
+  bool checkRecordLinkage(DLRecord* record);
+
+  bool checkAndRepairRecordLinkage(DLRecord* record);
 
   struct ThreadCache {
     // For segment based rebuild
     std::unordered_map<uint64_t, int> visited_skiplists{};
 
     // For clean unlinked records in checkpoint recovery
+    std::vector<DLRecord*> unlinked_records;
   };
 
   KVEngine* kv_engine_;
@@ -529,7 +526,6 @@ class SortedCollectionRebuilder {
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;
-  std::unordered_set<DLRecord*> unlinked_records_;
   // Select elements as a segment start point for segment based rebuild every
   // kRestoreSkiplistStride elements per skiplist
   const uint64_t kRestoreSkiplistStride = 10000;
