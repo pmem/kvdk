@@ -535,7 +535,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
     skiplists_.insert({id, sl});
     skiplist = sl.get();
     if (configs_.opt_large_sorted_collection_restore) {
-      sorted_rebuilder_->addSegmentStartPoint(pmem_record);
+      sorted_rebuilder_->addRecoverySegment(pmem_record);
     }
   }
   compare_excange_if_larger(list_id_, id + 1);

@@ -208,6 +208,11 @@ class Skiplist : public Collection {
                 uint8_t start_height, uint8_t end_height,
                 Splice* result_splice);
 
+  // check node linkage and hash index
+  Status CheckIndex();
+
+  void CleanObsoletedNodes();
+
   // Purge a dl record from its skiplist by remove it from linkage
   //
   // purged_record:existing record to purge
@@ -236,11 +241,6 @@ class Skiplist : public Collection {
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
                       const SpinMutex* old_record_lock, SkiplistNode* dram_node,
                       PMEMAllocator* pmem_allocator, HashTable* hash_table);
-
-  void CleanObsoletedNodes();
-
-  // check node linkage and hash index
-  Status CheckIndex();
 
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
@@ -481,12 +481,11 @@ class SortedCollectionRebuilder {
         sorted_record);
   }
 
-  void addSegmentStartPoint(DLRecord* record);
+  void addRecoverySegment(DLRecord* record);
 
  private:
   struct RebuildSegment {
     bool visited;
-    bool build_hash_index;
     SkiplistNode* start_node;
   };
   DLRecord* findValidVersion(DLRecord* pmem_record,
@@ -498,7 +497,7 @@ class SortedCollectionRebuilder {
 
   Status segmentBasedIndexRebuild();
 
-  Status buildRecoverySegment();
+  Status buildSegmentStartNode();
 
   Status rebuildSegmentIndex(SkiplistNode* start_node, bool build_hash_index);
 
@@ -511,6 +510,11 @@ class SortedCollectionRebuilder {
   bool checkRecordLinkage(DLRecord* record);
 
   bool checkAndRepairRecordLinkage(DLRecord* record);
+
+  // insert hash index "ptr" for "key", the key should be locked before call
+  // this function
+  Status insertHashIndex(const StringView& key, void* ptr,
+                         HashIndexType index_type);
 
   struct ThreadCache {
     // For segment based rebuild

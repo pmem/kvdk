@@ -944,7 +944,7 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(
 
 Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   GlobalLogger.Info("segment based rebuild start\n");
-  Status s = buildRecoverySegment();
+  Status s = buildSegmentStartNode();
   if (s != Status::Ok) {
     return s;
   }
@@ -969,8 +969,12 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
         continue;
       }
 
-      Status s = rebuildSegmentIndex(iter->second.start_node,
-                                     iter->second.build_hash_index);
+      bool build_hash_index =
+          this->kv_engine_->GetSkiplists()
+              .find(Skiplist::SkiplistID(iter->second.start_node->record))
+              ->second->IndexedByHashtable();
+
+      Status s = rebuildSegmentIndex(iter->second.start_node, build_hash_index);
       if (s != Status::Ok) {
         return s;
       }
@@ -1097,29 +1101,16 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 
         // Rebuild hash index
         if (skiplist->IndexedByHashtable()) {
-          HashEntry* entry_ptr = nullptr;
-          Status s = kv_engine_->hash_table_->SearchForWrite(
-              hash_hint, internal_key, SortedDataRecord | SortedDeleteRecord,
-              &entry_ptr, &hash_entry, nullptr);
-          if (s == Status::MemoryOverflow) {
-            return s;
-          }
-          if (s == Status::Ok) {
-            GlobalLogger.Error(
-                "Rebuild skiplist error, hash entry of sorted data/delete "
-                "records should not be inserted before repair linkage\n");
-            return Status::Abort;
-          } else if (s == Status::NotFound) {
-            if (dram_node) {
-              kv_engine_->hash_table_->Insert(
-                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
-                  dram_node, HashIndexType::SkiplistNode);
-            } else {
-              kv_engine_->hash_table_->Insert(
-                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
-                  valid_version_record, HashIndexType::DLRecord);
-            }
+          Status s;
+          if (dram_node) {
+            s = insertHashIndex(internal_key, dram_node,
+                                HashIndexType::SkiplistNode);
           } else {
+            s = insertHashIndex(internal_key, valid_version_record,
+                                HashIndexType::DLRecord);
+          }
+
+          if (s != Status::Ok) {
             return s;
           }
         }
@@ -1227,25 +1218,16 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           }
 
           if (build_hash_index) {
-            Status s = kv_engine_->hash_table_->SearchForWrite(
-                hash_hint, internal_key, SortedRecordType, &entry_ptr,
-                &hash_entry, &data_entry);
-            if (s == Status::Ok) {
-              GlobalLogger.Error(
-                  "Rebuild skiplist error, hash entry of sorted data/delete "
-                  "records should not be inserted before repair linkage\n");
-              return Status::Abort;
-            } else if (s == Status::NotFound) {
-              if (dram_node) {
-                kv_engine_->hash_table_->Insert(
-                    hash_hint, entry_ptr, valid_version_record->entry.meta.type,
-                    dram_node, HashIndexType::SkiplistNode);
-              } else {
-                kv_engine_->hash_table_->Insert(
-                    hash_hint, entry_ptr, valid_version_record->entry.meta.type,
-                    valid_version_record, HashIndexType::DLRecord);
-              }
+            Status s;
+            if (dram_node) {
+              s = insertHashIndex(internal_key, dram_node,
+                                  HashIndexType::SkiplistNode);
             } else {
+              s = insertHashIndex(internal_key, valid_version_record,
+                                  HashIndexType::DLRecord);
+            }
+
+            if (s != Status::Ok) {
               return s;
             }
           }
@@ -1331,15 +1313,14 @@ void SortedCollectionRebuilder::cleanInvalidRecords() {
   kv_engine_->pmem_allocator_->BatchFree(to_free);
 }
 
-Status SortedCollectionRebuilder::buildRecoverySegment() {
-  std::unordered_map<DLRecord*, RebuildSegment> new_kvs;
-  auto it = recovery_segments_.begin();
-  while (it != recovery_segments_.end()) {
+Status SortedCollectionRebuilder::buildSegmentStartNode() {
+  auto segment_iter = recovery_segments_.begin();
+  while (segment_iter != recovery_segments_.end()) {
     DataEntry data_entry;
     HashEntry* entry_ptr = nullptr;
     HashEntry hash_entry;
     SkiplistNode* node = nullptr;
-    DLRecord* cur_record = it->first;
+    DLRecord* cur_record = segment_iter->first;
     StringView internal_key = cur_record->Key();
     auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
     while (true) {
@@ -1355,12 +1336,9 @@ Status SortedCollectionRebuilder::buildRecoverySegment() {
           return Status::Abort;
         }
         node = hash_entry.GetIndex().skiplist->header();
-        it->second.start_node = node;
-        it->second.build_hash_index =
-            hash_entry.GetIndex().skiplist->IndexedByHashtable();
-        it++;
+        segment_iter->second.start_node = node;
+        segment_iter++;
       } else if (s == Status::NotFound) {
-        it = recovery_segments_.erase(it);
         DLRecord* valid_version_record = findValidVersion(cur_record, nullptr);
         if (valid_version_record == nullptr) {
           // purge invalid version record from list
@@ -1370,6 +1348,7 @@ Status SortedCollectionRebuilder::buildRecoverySegment() {
             continue;
           }
           AddUnlinkedRecord(cur_record);
+          segment_iter = recovery_segments_.erase(segment_iter);
         } else {
           // repair linkage of checkpoint version
           if (valid_version_record != cur_record) {
@@ -1382,21 +1361,22 @@ Status SortedCollectionRebuilder::buildRecoverySegment() {
             AddUnlinkedRecord(cur_record);
           }
           assert(valid_version_record != nullptr);
-          node = Skiplist::NewNodeBuild(valid_version_record);
 
-          if (node != nullptr) {
-            auto iter = kv_engine_->skiplists_.find(node->SkiplistID());
-            assert(iter != kv_engine_->skiplists_.end());
-            bool index_with_hashtable = iter->second->IndexedByHashtable();
-            if (index_with_hashtable) {
-              kv_engine_->hash_table_->Insert(
-                  hash_hint, entry_ptr, valid_version_record->entry.meta.type,
-                  node, HashIndexType::SkiplistNode);
-            }
-            new_kvs.insert(
-                {valid_version_record, {false, index_with_hashtable, node}});
+          // we always build dram node for a recovery segment start record
+          while (node == nullptr) {
+            node = Skiplist::NewNodeBuild(valid_version_record);
           }
-          // TODO: comment why not insert dlrecord hash index here
+          auto skiplist_iter = kv_engine_->skiplists_.find(node->SkiplistID());
+          assert(skiplist_iter != kv_engine_->skiplists_.end());
+          bool index_with_hashtable =
+              skiplist_iter->second->IndexedByHashtable();
+          if (index_with_hashtable) {
+            kv_engine_->hash_table_->Insert(
+                hash_hint, entry_ptr, valid_version_record->entry.meta.type,
+                node, HashIndexType::SkiplistNode);
+          }
+          segment_iter->second.start_node = node;
+          segment_iter++;
         }
       } else {
         assert(s == Status::MemoryOverflow);
@@ -1405,7 +1385,6 @@ Status SortedCollectionRebuilder::buildRecoverySegment() {
       break;
     }
   }
-  recovery_segments_.insert(new_kvs.begin(), new_kvs.end());
   return Status::Ok;
 }
 
@@ -1427,7 +1406,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
                     .visited_skiplists[Skiplist::SkiplistID(record)] %
                 kRestoreSkiplistStride ==
             0) {
-      addSegmentStartPoint(record);
+      addRecoverySegment(record);
     }
   }
   return Status::Ok;
@@ -1457,10 +1436,48 @@ bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
   return true;
 }
 
-void SortedCollectionRebuilder::addSegmentStartPoint(DLRecord* record) {
+void SortedCollectionRebuilder::addRecoverySegment(DLRecord* start_record) {
   if (segment_based_rebuild_) {
     std::lock_guard<SpinMutex> lg(mu_);
-    recovery_segments_.insert({record, {false, false, nullptr}});
+    recovery_segments_.insert({start_record, {false, nullptr}});
+  }
+}
+
+Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
+                                                  void* index_ptr,
+                                                  HashIndexType index_type) {
+  uint16_t search_type_mask;
+  RecordType record_type;
+  if (index_type == HashIndexType::DLRecord) {
+    search_type_mask = SortedDataRecord | SortedDeleteRecord;
+    record_type = static_cast<DLRecord*>(index_ptr)->entry.meta.type;
+  } else if (index_type == HashIndexType::SkiplistNode) {
+    search_type_mask = SortedDataRecord | SortedDeleteRecord;
+    record_type =
+        static_cast<SkiplistNode*>(index_ptr)->record->entry.meta.type;
+  } else if (index_type == HashIndexType::Skiplist) {
+    search_type_mask = SortedHeaderRecord;
+    record_type = SortedHeaderRecord;
+  }
+
+  HashEntry* entry_ptr = nullptr;
+  HashEntry hash_entry;
+  auto hash_hint = kv_engine_->hash_table_->GetHint(key);
+  Status s = kv_engine_->hash_table_->SearchForWrite(
+      hash_hint, key, search_type_mask, &entry_ptr, &hash_entry, nullptr);
+  if (s == Status::NotFound) {
+    kv_engine_->hash_table_->Insert(hash_hint, entry_ptr, record_type,
+                                    index_ptr, index_type);
+    return Status::Ok;
+  } else if (s == Status::Ok) {
+    GlobalLogger.Error(
+        "Rebuild skiplist error, hash entry of sorted records should not be "
+        "inserted before rebuild\n");
+    return Status::Abort;
+  } else if (s == Status::MemoryOverflow) {
+    return s;
+  } else {
+    std::abort();  // never reach
   }
 }
 
