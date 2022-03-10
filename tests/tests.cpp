@@ -41,7 +41,7 @@ class EngineBasicTest : public testing::Test {
     str_pool.resize(str_pool_length);
     random_str(&str_pool[0], str_pool_length);
     // No logs by default, for debug, set it to All
-    configs.log_level = LogLevel::None;
+    configs.log_level = LogLevel::All;
     configs.pmem_file_size = (16ULL << 30);
     configs.populate_pmem_space = false;
     configs.hash_bucket_num = (1 << 10);
