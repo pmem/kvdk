@@ -359,6 +359,7 @@ Status KVEngine::RestoreData() {
             "Corrupted Record met when recovering. It has invalid "
             "type. Record type: %u, Checksum: %u\n",
             data_entry_cached.meta.type, data_entry_cached.header.checksum);
+        kvdk_assert(data_entry_cached.header.checksum == 0, "");
         data_entry_cached.meta.type = RecordType::Padding;
         break;
       }
