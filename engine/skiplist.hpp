@@ -528,6 +528,6 @@ class SortedCollectionRebuilder {
   CheckPoint checkpoint_;
   // Select elements as a segment start point for segment based rebuild every
   // kRestoreSkiplistStride elements per skiplist
-  const uint64_t kRestoreSkiplistStride = 10000;
+  const uint64_t kRestoreSkiplistStride = 100000;
 };
 }  // namespace KVDK_NAMESPACE

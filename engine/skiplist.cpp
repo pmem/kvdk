@@ -1428,8 +1428,10 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
     }
   } else {
     if (segment_based_rebuild_ &&
-        rebuilder_thread_cache_[access_thread.id]
-            .visited_skiplists[Skiplist::SkiplistID(record)]++) {
+        ++rebuilder_thread_cache_[access_thread.id]
+                    .visited_skiplists[Skiplist::SkiplistID(record)] %
+                kRestoreSkiplistStride ==
+            0) {
       addSegmentStartPoint(record);
     }
   }
