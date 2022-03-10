@@ -1002,11 +1002,9 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   auto skiplists = (dynamic_cast<KVEngine*>(engine))->GetSkiplists();
-  for (int h = 1; h <= 32; ++h) {
-    for (auto s : skiplists) {
-      if (s.second->IndexedByHashtable()) {
-        ASSERT_EQ(s.second->CheckConnection(h), Status::Ok);
-      }
+  for (auto s : skiplists) {
+    if (s.second->IndexedByHashtable()) {
+      ASSERT_EQ(s.second->CheckIndex(), Status::Ok);
     }
   }
   delete engine;

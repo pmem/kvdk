@@ -239,7 +239,8 @@ class Skiplist : public Collection {
 
   void CleanObsoletedNodes();
 
-  Status CheckConnection(int height);
+  // check node linkage and hash index
+  Status CheckIndex();
 
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);

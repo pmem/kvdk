@@ -170,55 +170,54 @@ void Skiplist::Seek(const StringView& key, Splice* result_splice) {
   result_splice->prev_pmem_record = prev_record;
 }
 
-Status Skiplist::CheckConnection(int height) {
-  SkiplistNode* cur_node = header_;
-  DLRecord* cur_record = cur_node->record;
+Status Skiplist::CheckIndex() {
+  Splice splice(this);
+  splice.prev_pmem_record = header_->record;
+  for (uint8_t i = 1; i <= kMaxHeight; i++) {
+    splice.prevs[i] = header_;
+  }
+
   while (true) {
-    SkiplistNode* next_node = cur_node->Next(height).RawPointer();
-    uint64_t next_offset = cur_record->next;
-    DLRecord* next_record = pmem_allocator_->offset2addr<DLRecord>(next_offset);
-    assert(next_record != nullptr);
-    if (next_record == header()->record) {
-      if (next_node != nullptr) {
-        GlobalLogger.Error(
-            "when next pmem data record is skiplist header, the "
-            "next node should be nullptr\n");
-        return Status::Abort;
-      }
+    DLRecord* next_record = pmem_allocator_->offset2addr_checked<DLRecord>(
+        splice.prev_pmem_record->next);
+    if (next_record == header_->record) {
       break;
     }
-    HashEntry hash_entry;
-    DataEntry data_entry;
-    HashEntry* entry_ptr = nullptr;
-    StringView key = next_record->Key();
-    Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
-                                          next_record->entry.meta.type,
-                                          &entry_ptr, &hash_entry, &data_entry);
-    assert(s == Status::Ok && "search node fail!");
+    SkiplistNode* next_node = splice.prevs[1]->RelaxedNext(1).RawPointer();
+    if (IndexedByHashtable()) {
+      HashEntry hash_entry;
+      HashEntry* entry_ptr = nullptr;
+      StringView key = next_record->Key();
+      Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
+                                            next_record->entry.meta.type,
+                                            &entry_ptr, &hash_entry, nullptr);
+      if (s != Status::Ok) {
+        return Status::Abort;
+      }
 
-    if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-      SkiplistNode* dram_node = hash_entry.GetIndex().skiplist_node;
-      if (next_node == nullptr) {
-        if (dram_node->Height() >= height) {
-          GlobalLogger.Error(
-              "when next_node is nullptr, the dram data entry should be "
-              "DLRecord or dram node's height < cur_node's height\n");
+      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+        if (hash_entry.GetIndex().skiplist_node != next_node) {
           return Status::Abort;
         }
       } else {
-        if (dram_node->Height() >= height) {
-          if (!(dram_node->Height() == next_node->Height() &&
-                dram_node->SkiplistID() == next_node->SkiplistID() &&
-                dram_node->UserKey() == next_node->UserKey())) {
-            GlobalLogger.Error("incorret skiplist node info\n");
-            return Status::Abort;
-          }
-          cur_node = next_node;
+        if (hash_entry.GetIndex().dl_record != next_record) {
+          return Status::Abort;
         }
       }
     }
-    cur_record = next_record;
+
+    // Check dram linkage
+    if (next_node && next_node->record == next_record) {
+      for (uint8_t i = 1; i <= next_node->Height(); i++) {
+        if (splice.prevs[i]->RelaxedNext(i).RawPointer() != next_node) {
+          return Status::Abort;
+        }
+        splice.prevs[i] = next_node;
+      }
+    }
+    splice.prev_pmem_record = next_record;
   }
+
   return Status::Ok;
 }
 
@@ -1165,15 +1164,11 @@ Status SortedCollectionRebuilder::RebuildIndex() {
     listBasedIndexRebuild();
   }
 #ifdef DEBUG_CHECK
-  for (uint8_t h = 1; h <= kMaxHeight; h++) {
-    for (auto skiplist : kv_engine_->skiplists_) {
-      if (skiplist.second->IndexedByHashtable()) {
-        Status s = skiplist.second->CheckConnection(h);
-        if (s != Status::Ok) {
-          GlobalLogger.Info("Check skiplist connecton at height %u error\n", h);
-          return s;
-        }
-      }
+  for (auto skiplist : kv_engine_->skiplists_) {
+    Status s = skiplist.second->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Info("Check skiplist index error\n");
+      return s;
     }
   }
 #endif
