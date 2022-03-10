@@ -159,13 +159,13 @@ class Skiplist : public Collection {
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
            Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
-           std::shared_ptr<HashTable> hash_table, bool indexed_by_hashtable);
+           std::shared_ptr<HashTable> hash_table, bool index_with_hashtable);
 
   ~Skiplist();
 
-  SkiplistNode* header() { return header_; }
+  SkiplistNode* Header() { return header_; }
 
-  bool IndexedByHashtable() { return indexed_by_hashtable_; }
+  bool IndexWithHashtable() { return index_with_hashtable_; }
 
   // Set "key, value" to the skiplist
   //
@@ -370,7 +370,7 @@ class Skiplist : public Collection {
   SkiplistNode* header_;
   std::shared_ptr<HashTable> hash_table_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  bool indexed_by_hashtable_;
+  bool index_with_hashtable_;
   // nodes that unlinked on every height
   std::vector<SkiplistNode*> obsolete_nodes_;
   // to avoid concurrent access a just deleted node, a node can be safely
@@ -403,7 +403,7 @@ class SortedIterator : public Iterator {
   virtual void SeekToLast() override;
 
   virtual bool Valid() override {
-    return (current_ != nullptr && current_ != skiplist_->header()->record);
+    return (current_ != nullptr && current_ != skiplist_->Header()->record);
   }
 
   virtual void Next() override;
@@ -444,7 +444,7 @@ struct Splice {
       if (start_height > kMaxHeight || prevs[start_height] == nullptr) {
         assert(seeking_list != nullptr);
         start_height = kMaxHeight;
-        start_node = seeking_list->header();
+        start_node = seeking_list->Header();
       } else if (prevs[start_height]->Next(start_height).GetTag()) {
         // If prev on this height has been deleted, roll back to higher height
         start_height++;

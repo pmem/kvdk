@@ -45,12 +45,12 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
                    Comparator comparator,
                    std::shared_ptr<PMEMAllocator> pmem_allocator,
                    std::shared_ptr<HashTable> hash_table,
-                   bool indexed_by_hashtable)
+                   bool index_with_hashtable)
     : Collection(name, id),
       comparator_(comparator),
       pmem_allocator_(pmem_allocator),
       hash_table_(hash_table),
-      indexed_by_hashtable_(indexed_by_hashtable) {
+      index_with_hashtable_(index_with_hashtable) {
   header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     header_->RelaxedSetNext(i, nullptr);
@@ -81,7 +81,7 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
           // this node has been deleted, so seek from header
           kvdk_assert(result_splice->seeking_list != nullptr,
                       "skiplist must be set for seek operation!");
-          return SeekNode(key, result_splice->seeking_list->header(),
+          return SeekNode(key, result_splice->seeking_list->Header(),
                           kMaxHeight, end_height, result_splice);
         }
         continue;
@@ -146,7 +146,7 @@ void Skiplist::Seek(const StringView& key, Splice* result_splice) {
   DLRecord* next_record = nullptr;
   while (1) {
     next_record = pmem_allocator_->offset2addr<DLRecord>(prev_record->next);
-    if (next_record == header()->record) {
+    if (next_record == Header()->record) {
       break;
     }
 
@@ -184,7 +184,7 @@ Status Skiplist::CheckIndex() {
       break;
     }
     SkiplistNode* next_node = splice.prevs[1]->RelaxedNext(1).RawPointer();
-    if (IndexedByHashtable()) {
+    if (IndexWithHashtable()) {
       HashEntry hash_entry;
       HashEntry* entry_ptr = nullptr;
       StringView key = next_record->Key();
@@ -321,7 +321,7 @@ bool Skiplist::lockInsertPosition(
 Skiplist::WriteResult Skiplist::Delete(const StringView& key,
                                        const HashTable::KeyHashHint& hash_hint,
                                        TimeStampType timestamp) {
-  if (IndexedByHashtable()) {
+  if (IndexWithHashtable()) {
     return deleteImplWithHash(key, hash_hint, timestamp);
   } else {
     return deleteImplNoHash(key, hash_hint.spin, timestamp);
@@ -332,7 +332,7 @@ Skiplist::WriteResult Skiplist::Set(const StringView& key,
                                     const StringView& value,
                                     const HashTable::KeyHashHint& hash_hint,
                                     TimeStampType timestamp) {
-  if (IndexedByHashtable()) {
+  if (IndexWithHashtable()) {
     return setImplWithHash(key, value, hash_hint, timestamp);
   } else {
     return setImplNoHash(key, value, hash_hint.spin, timestamp);
@@ -446,7 +446,7 @@ Status Skiplist::DecodeSortedCollectionValue(
 }
 
 Status Skiplist::Get(const StringView& key, std::string* value) {
-  if (!IndexedByHashtable()) {
+  if (!IndexWithHashtable()) {
     Splice splice(this);
     Seek(key, &splice);
     if (equal_string_view(key, UserKey(splice.next_pmem_record)) &&
@@ -556,7 +556,7 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
     const StringView& key, const HashTable::KeyHashHint& locked_hash_hint,
     TimeStampType timestamp) {
   WriteResult ret;
-  assert(IndexedByHashtable());
+  assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
   SpinMutex* deleting_key_lock = locked_hash_hint.spin;
   HashEntry* entry_ptr = nullptr;
@@ -634,7 +634,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
     const StringView& key, const StringView& value,
     const HashTable::KeyHashHint& locked_hash_hint, TimeStampType timestamp) {
   WriteResult ret;
-  assert(IndexedByHashtable());
+  assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
   SpinMutex* inserting_key_lock = locked_hash_hint.spin;
   HashEntry* entry_ptr = nullptr;
@@ -716,7 +716,7 @@ Skiplist::WriteResult Skiplist::setImplNoHash(
   Splice splice(this);
   Seek(key, &splice);
 
-  bool exist = !IndexedByHashtable() /* a hash indexed skiplist call this
+  bool exist = !IndexWithHashtable() /* a hash indexed skiplist call this
                                         function only if key not exist */
                && (splice.next_pmem_record->entry.meta.type &
                    (SortedDataRecord | SortedDeleteRecord)) &&
@@ -829,7 +829,7 @@ void SortedIterator::Seek(const std::string& key) {
 }
 
 void SortedIterator::SeekToFirst() {
-  uint64_t first = skiplist_->header()->record->next;
+  uint64_t first = skiplist_->Header()->record->next;
   current_ = pmem_allocator_->offset2addr<DLRecord>(first);
   while (Valid()) {
     DLRecord* valid_version_record = findValidVersion(current_);
@@ -844,7 +844,7 @@ void SortedIterator::SeekToFirst() {
 }
 
 void SortedIterator::SeekToLast() {
-  uint64_t last = skiplist_->header()->record->prev;
+  uint64_t last = skiplist_->Header()->record->prev;
   current_ = pmem_allocator_->offset2addr<DLRecord>(last);
   while (Valid()) {
     DLRecord* valid_version_record = findValidVersion(current_);
@@ -981,7 +981,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
       bool build_hash_index =
           this->rebuild_skiplits_
               .find(Skiplist::SkiplistID(iter->second.start_node->record))
-              ->second->IndexedByHashtable();
+              ->second->IndexWithHashtable();
 
       Status s = rebuildSegmentIndex(iter->second.start_node, build_hash_index);
       if (s != Status::Ok) {
@@ -1030,7 +1030,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
 Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
   Splice splice(skiplist);
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
-    splice.prevs[i] = skiplist->header();
+    splice.prevs[i] = skiplist->Header();
   }
 
   SkiplistNode* next_node = splice.prevs[1]->RelaxedNext(1).RawPointer();
@@ -1067,15 +1067,15 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
   Splice splice(skiplist);
   HashEntry hash_entry;
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
-    splice.prevs[i] = skiplist->header();
-    splice.prev_pmem_record = skiplist->header()->record;
+    splice.prevs[i] = skiplist->Header();
+    splice.prev_pmem_record = skiplist->Header()->record;
   }
 
   while (true) {
     uint64_t next_offset = splice.prev_pmem_record->next;
     DLRecord* next_record =
         kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
-    if (next_record == skiplist->header()->record) {
+    if (next_record == skiplist->Header()->record) {
       break;
     }
 
@@ -1119,7 +1119,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         }
 
         // Rebuild hash index
-        if (skiplist->IndexedByHashtable()) {
+        if (skiplist->IndexWithHashtable()) {
           Status s;
           if (dram_node) {
             s = insertHashIndex(internal_key, dram_node,
@@ -1391,7 +1391,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 
   if (segment_based_rebuild_) {
     // Always use header as a recovery segment
-    addRecoverySegment(skiplist->header());
+    addRecoverySegment(skiplist->Header());
   }
 
   // Always index skiplist header with hash table

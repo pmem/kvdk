@@ -1003,7 +1003,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
             Status::Ok);
   auto skiplists = (dynamic_cast<KVEngine*>(engine))->GetSkiplists();
   for (auto s : skiplists) {
-    if (s.second->IndexedByHashtable()) {
+    if (s.second->IndexWithHashtable()) {
       ASSERT_EQ(s.second->CheckIndex(), Status::Ok);
     }
   }
