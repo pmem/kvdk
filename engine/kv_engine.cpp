@@ -2477,7 +2477,7 @@ Status KVEngine::listFindInitNX(StringView key, List** list) {
   if (s == Status::Ok) {
     return s;
   }
-  
+
   kvdk_assert(s == Status::NotFound, "");
   *list = createList(key);
   if (*list == nullptr) {
