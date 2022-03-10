@@ -355,7 +355,7 @@ Status KVEngine::RestoreData() {
       }
       default: {
         // Report Corrupted Record, but still release it and continues
-        GlobalLogger.Debug(
+        GlobalLogger.Error(
             "Corrupted Record met when recovering. It has invalid "
             "type. Record type: %u, Checksum: %u\n",
             data_entry_cached.meta.type, data_entry_cached.header.checksum);

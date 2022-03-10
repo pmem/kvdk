@@ -301,8 +301,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 }
 
 void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
-  DataHeader header(0, size);
-  pmem_memcpy_persist(offset2addr_checked(offset), &header, sizeof(DataHeader));
+  DataEntry padding{0, size, TimeStampType{}, RecordType::Padding, 0, 0};
+  pmem_memcpy_persist(offset2addr_checked(offset), &padding, sizeof(DataEntry));
 }
 
 Status PMEMAllocator::Backup(const std::string& backup_file_path) {
