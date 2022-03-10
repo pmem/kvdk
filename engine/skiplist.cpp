@@ -1192,15 +1192,15 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
   SkiplistNode* cur_node = start_node;
   DLRecord* cur_record = cur_node->record;
   while (true) {
-    PMemOffsetType next_offset = cur_record->next;
     DLRecord* next_record =
-        kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+        kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
+            cur_record->next);
     if (next_record->entry.meta.type == SortedHeaderRecord) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
     }
 
-    auto iter = start_points_.find(next_offset);
+    auto iter = start_points_.find(next_record);
     if (iter == start_points_.end()) {
       HashEntry hash_entry;
       DataEntry data_entry;
@@ -1286,8 +1286,7 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
   while (start_node->Height() < height) {
     start_node = start_node->RelaxedNext(height - 1).RawPointer();
     if (start_node == nullptr ||
-        start_points_.find(kv_engine_->pmem_allocator_->addr2offset_checked(
-            start_node->record)) != start_points_.end()) {
+        start_points_.find(start_node->record) != start_points_.end()) {
       return;
     }
   }
@@ -1301,8 +1300,7 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
       break;
     }
 
-    if (start_points_.find(kv_engine_->pmem_allocator_->addr2offset_checked(
-            next_node->record)) != start_points_.end()) {
+    if (start_points_.find(next_node->record) != start_points_.end()) {
       // link end point of this segment
       while (true) {
         if (next_node == nullptr || next_node->Height() >= height) {
@@ -1341,16 +1339,14 @@ void SortedCollectionRebuilder::cleanInvalidRecords() {
 }
 
 Status SortedCollectionRebuilder::buildSegmentStart() {
-  std::unordered_map<uint64_t, SegmentStart> new_kvs;
-  std::unordered_map<uint64_t, SegmentStart>::iterator it =
-      start_points_.begin();
+  std::unordered_map<DLRecord*, SegmentStart> new_kvs;
+  auto it = start_points_.begin();
   while (it != start_points_.end()) {
     DataEntry data_entry;
     HashEntry* entry_ptr = nullptr;
     HashEntry hash_entry;
     SkiplistNode* node = nullptr;
-    DLRecord* cur_record =
-        kv_engine_->pmem_allocator_->offset2addr<DLRecord>(it->first);
+    DLRecord* cur_record = it->first;
     StringView internal_key = cur_record->Key();
     auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
     while (true) {
@@ -1405,9 +1401,8 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
                   hash_hint, entry_ptr, valid_version_record->entry.meta.type,
                   node, HashIndexType::SkiplistNode);
             }
-            new_kvs.insert({kv_engine_->pmem_allocator_->addr2offset_checked(
-                                valid_version_record),
-                            {false, index_with_hashtable, node}});
+            new_kvs.insert(
+                {valid_version_record, {false, index_with_hashtable, node}});
           }
           // TODO: comment why not insert dlrecord hash index here
         }
@@ -1420,6 +1415,51 @@ Status SortedCollectionRebuilder::buildSegmentStart() {
   }
   start_points_.insert(new_kvs.begin(), new_kvs.end());
   return Status::Ok;
+}
+
+Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
+  kvdk_assert(record->entry.meta.type == SortedDataRecord ||
+                  record->entry.meta.type == SortedDeleteRecord,
+              "wrong record type in RestoreSkiplistRecord");
+  bool linked_record = checkAndRepairRecord(record);
+
+  if (!linked_record) {
+    if (!checkpoint_.Valid()) {
+      kv_engine_->purgeAndFree(record);
+    } else {
+      AddUnlinkedRecord(record);
+    }
+  } else {
+    if (segment_based_rebuild_ &&
+        rebuilder_thread_cache_[access_thread.id]
+            .visited_skiplists[Skiplist::SkiplistID(record)]++) {
+      addSegmentStartPoint(record);
+    }
+  }
+  return Status::Ok;
+}
+
+bool SortedCollectionRebuilder::checkAndRepairRecord(DLRecord* record) {
+  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
+  uint64_t offset = pmem_allocator->addr2offset(record);
+  DLRecord* prev = pmem_allocator->offset2addr<DLRecord>(record->prev);
+  DLRecord* next = pmem_allocator->offset2addr<DLRecord>(record->next);
+  if (prev->next != offset && next->prev != offset) {
+    return false;
+  }
+  // Repair un-finished write
+  if (next && next->prev != offset) {
+    next->prev = offset;
+    pmem_persist(&next->prev, 8);
+  }
+  return true;
+}
+
+void SortedCollectionRebuilder::addSegmentStartPoint(DLRecord* record) {
+  if (segment_based_rebuild_) {
+    std::lock_guard<SpinMutex> lg(mu_);
+    start_points_.insert({record, {false, false, nullptr}});
+  }
 }
 
 }  // namespace KVDK_NAMESPACE

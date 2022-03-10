@@ -149,6 +149,7 @@ struct SkiplistNode {
 // and configs
 class Skiplist : public Collection {
  public:
+  // Result of a write operation
   struct WriteResult {
     Status s = Status::Ok;
     DLRecord* existing_record = nullptr;
@@ -469,13 +470,9 @@ class SortedCollectionRebuilder {
 
   Status RebuildIndex();
 
-  void AddRecordForSegmentBasedRebuild(uint64_t record_offset, bool is_visited,
-                                       SkiplistNode* node) {
-    if (segment_based_rebuild_) {
-      std::lock_guard<SpinMutex> lg(mu_);
-      start_points_.insert({record_offset, {is_visited, node}});
-    }
-  }
+  Status AddElement(DLRecord* record);
+
+  Status AddHeader(DLRecord* record);
 
   void AddUnlinkedRecord(DLRecord* sorted_record) {
     std::lock_guard<SpinMutex> lg(mu_);
@@ -488,6 +485,8 @@ class SortedCollectionRebuilder {
       unlinked_records_.erase(sorted_record);
     }
   }
+
+  void addSegmentStartPoint(DLRecord* record);
 
  private:
   DLRecord* findValidVersion(DLRecord* pmem_record,
@@ -515,16 +514,23 @@ class SortedCollectionRebuilder {
 
   Status linkHighDramNodes(Skiplist* skiplist);
 
+  bool checkAndRepairRecord(DLRecord* record);
+
   // thread cache for segment based rebuild
-  struct ThreadCache {};
+  struct ThreadCache {
+    std::unordered_map<uint64_t, int> visited_skiplists{};
+  };
 
   KVEngine* kv_engine_;
   SpinMutex mu_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
-  std::unordered_map<uint64_t, SegmentStart> start_points_;
+  std::unordered_map<DLRecord*, SegmentStart> start_points_;
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;
   std::unordered_set<DLRecord*> unlinked_records_;
+  // Select elements as a segment start point for segment based rebuild every
+  // kRestoreSkiplistStride elements per skiplist
+  const uint64_t kRestoreSkiplistStride = 10000;
 };
 }  // namespace KVDK_NAMESPACE

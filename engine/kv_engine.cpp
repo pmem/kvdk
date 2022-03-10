@@ -29,9 +29,6 @@ namespace KVDK_NAMESPACE {
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
 // fsdax mode align to 2MB by default.
 constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
-// Select a record every 10000 into restored skiplist map for multi-thread
-// restoring large skiplist.
-constexpr uint64_t kRestoreSkiplistStride = 10000;
 constexpr uint64_t kMaxCachedOldRecords = 10000;
 constexpr size_t kLimitForegroundCleanOldRecords = 1;
 
@@ -538,8 +535,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
     skiplists_.insert({id, sl});
     skiplist = sl.get();
     if (configs_.opt_large_sorted_collection_restore) {
-      sorted_rebuilder_->AddRecordForSegmentBasedRebuild(
-          pmem_allocator_->addr2offset(pmem_record), false, nullptr);
+      sorted_rebuilder_->addSegmentStartPoint(pmem_record);
     }
   }
   compare_excange_if_larger(list_id_, id + 1);
@@ -614,29 +610,7 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord* record) {
 
 Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
                                        const DataEntry& cached_data_entry) {
-  kvdk_assert(pmem_record->entry.meta.type == SortedDataRecord ||
-                  pmem_record->entry.meta.type == SortedDeleteRecord,
-              "wrong record type in RestoreSkiplistRecord");
-
-  bool linked_record = CheckAndRepairDLRecord(pmem_record);
-
-  if (!linked_record) {
-    if (!RecoverToCheckpoint()) {
-      purgeAndFree(pmem_record);
-    } else {
-      sorted_rebuilder_->AddUnlinkedRecord(pmem_record);
-    }
-  } else {
-    if (configs_.opt_large_sorted_collection_restore &&
-        engine_thread_cache_[access_thread.id]
-                    .visited_skiplist_ids[Skiplist::SkiplistID(pmem_record)]++ %
-                kRestoreSkiplistStride ==
-            0) {
-      sorted_rebuilder_->AddRecordForSegmentBasedRebuild(
-          pmem_allocator_->addr2offset(pmem_record), false, nullptr);
-    }
-  }
-  return Status::Ok;
+  return sorted_rebuilder_->AddElement(pmem_record);
 }
 
 Status KVEngine::PersistOrRecoverImmutableConfigs() {
