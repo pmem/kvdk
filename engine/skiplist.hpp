@@ -462,14 +462,16 @@ class SortedCollectionRebuilder {
  public:
   SortedCollectionRebuilder(KVEngine* kv_engine, bool segment_based_rebuild,
                             uint64_t num_rebuild_threads,
-                            const CheckPoint& checkpoint)
-      : kv_engine_(kv_engine),
-        checkpoint_(checkpoint),
-        segment_based_rebuild_(segment_based_rebuild),
-        num_rebuild_threads_(num_rebuild_threads),
-        rebuilder_thread_cache_(num_rebuild_threads){};
+                            const CheckPoint& checkpoint);
 
-  Status RebuildIndex();
+  struct RebuildResult {
+    Status s = Status::Ok;
+    CollectionIDType max_id = 0;
+    std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>
+        rebuild_skiplits;
+  };
+
+  RebuildResult RebuildIndex();
 
   Status AddElement(DLRecord* record);
 
@@ -480,8 +482,6 @@ class SortedCollectionRebuilder {
     rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
         sorted_record);
   }
-
-  void addRecoverySegment(DLRecord* record);
 
  private:
   struct RebuildSegment {
@@ -497,12 +497,17 @@ class SortedCollectionRebuilder {
 
   Status segmentBasedIndexRebuild();
 
-  Status buildSegmentStartNode();
+  // Add a recovery segment start from "start_node"
+  void addRecoverySegment(SkiplistNode* start_node);
 
+  // Build/link first level dram nodes and build hash index for a recovery
+  // segment
   Status rebuildSegmentIndex(SkiplistNode* start_node, bool build_hash_index);
 
+  // Link high level dram nodes of a skiplist after build the first level
   Status linkHighDramNodes(Skiplist* skiplist);
 
+  // Segment based dram nodes link, not used for now
   void linkSegmentDramNodes(SkiplistNode* start_node, int height);
 
   void cleanInvalidRecords();
@@ -521,18 +526,21 @@ class SortedCollectionRebuilder {
     std::unordered_map<uint64_t, int> visited_skiplists{};
 
     // For clean unlinked records in checkpoint recovery
-    std::vector<DLRecord*> unlinked_records;
+    std::vector<DLRecord*> unlinked_records{};
   };
 
   KVEngine* kv_engine_;
-  SpinMutex mu_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
-  std::unordered_map<DLRecord*, RebuildSegment> recovery_segments_;
+  SpinMutex lock_;
+  std::unordered_map<DLRecord*, RebuildSegment> recovery_segments_{};
+  std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>
+      rebuild_skiplits_{};
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;
   // Select elements as a segment start point for segment based rebuild every
   // kRestoreSkiplistStride elements per skiplist
-  const uint64_t kRestoreSkiplistStride = 100000;
+  CollectionIDType max_recovered_id_ = 0;
+  const uint64_t kRestoreSkiplistStride = 10000;
 };
 }  // namespace KVDK_NAMESPACE

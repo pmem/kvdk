@@ -15,7 +15,7 @@ value_size_distributions = ['constant']
 timeout = 30                          # For operations other than fill
 populate_on_fill = 0                  # For fill only
 pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
-num_collection = 1
+num_collection = 100000
 
 benchmarks = [
     benchmark_impl.batch_insert_random,

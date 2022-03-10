@@ -379,12 +379,12 @@ Status KVEngine::RestoreData() {
       case RecordType::SortedDataRecord:
       case RecordType::SortedDeleteRecord: {
         s = RestoreSkiplistRecord(
-            static_cast<DLRecord*>(recovering_pmem_record), data_entry_cached);
+            static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::SortedHeaderRecord: {
-        s = RestoreSkiplistHead(static_cast<DLRecord*>(recovering_pmem_record),
-                                data_entry_cached);
+        s = RestoreSkiplistHeader(
+            static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::StringDataRecord:
@@ -492,66 +492,8 @@ bool KVEngine::ValidateRecord(void* data_record) {
   }
 }
 
-Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
-                                     const DataEntry& data_entry_cached) {
-  assert(pmem_record->entry.meta.type == SortedHeaderRecord);
-
-  if (RecoverToCheckpoint() &&
-      data_entry_cached.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
-    purgeAndFree(pmem_record);
-    return Status::Ok;
-  }
-
-  std::string name = string_view_2_string(pmem_record->Key());
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-
-  CollectionIDType id;
-  SortedCollectionConfigs s_configs;
-  Status s = Skiplist::DecodeSortedCollectionValue(pmem_record->Value(), id,
-                                                   s_configs);
-
-  if (s != Status::Ok) {
-    GlobalLogger.Error("Decode id and configs of sorted collection %s error\n",
-                       string_view_2_string(pmem_record->Key()).c_str());
-    return s;
-  }
-
-  auto comparator = comparators_.GetComparator(s_configs.comparator_name);
-  if (comparator == nullptr) {
-    GlobalLogger.Error(
-        "Compare function %s of restoring sorted collection %s is not "
-        "registered\n",
-        s_configs.comparator_name.c_str(),
-        string_view_2_string(pmem_record->Key()).c_str());
-    return Status::Abort;
-  }
-  Skiplist* skiplist;
-  {
-    std::lock_guard<std::mutex> lg(list_mu_);
-    auto sl = std::make_shared<Skiplist>(pmem_record, name, id, comparator,
-                                         pmem_allocator_, hash_table_,
-                                         s_configs.index_with_hashtable);
-    skiplists_.insert({id, sl});
-    skiplist = sl.get();
-    if (configs_.opt_large_sorted_collection_restore) {
-      sorted_rebuilder_->addRecoverySegment(pmem_record);
-    }
-  }
-  compare_excange_if_larger(list_id_, id + 1);
-
-  // Here key is the collection name
-  auto hint = hash_table_->GetHint(name);
-  std::lock_guard<SpinMutex> lg(*hint.spin);
-  s = hash_table_->SearchForWrite(hint, name, SortedHeaderRecord, &entry_ptr,
-                                  &hash_entry, nullptr);
-  if (s == Status::MemoryOverflow) {
-    return s;
-  }
-  assert(s == Status::NotFound);
-  hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist,
-                      HashIndexType::Skiplist);
-  return Status::Ok;
+Status KVEngine::RestoreSkiplistHeader(DLRecord* header_record) {
+  return sorted_rebuilder_->AddHeader(header_record);
 }
 
 Status KVEngine::RestoreStringRecord(StringRecord* pmem_record,
@@ -608,8 +550,7 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord* record) {
   return true;
 }
 
-Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
-                                       const DataEntry& cached_data_entry) {
+Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record) {
   return sorted_rebuilder_->AddElement(pmem_record);
 }
 
@@ -840,12 +781,26 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  s = sorted_rebuilder_->RebuildIndex();
-  if (s != Status::Ok) {
-    return s;
+  auto ret = sorted_rebuilder_->RebuildIndex();
+  if (ret.s != Status::Ok) {
+    return ret.s;
   }
+  list_id_ = ret.max_id + 1;
+  skiplists_.swap(ret.rebuild_skiplits);
+
+#ifdef DEBUG_CHECK
+  for (auto skiplist : skiplists_) {
+    Status s = skiplist.second->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Info("Check skiplist index error\n");
+      return s;
+    }
+  }
+#endif
 
   GlobalLogger.Info("Rebuild skiplist done\n");
+
+  sorted_rebuilder_.reset(nullptr);
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {

@@ -918,6 +918,19 @@ DLRecord* SortedIterator::findValidVersion(DLRecord* pmem_record) {
   return curr;
 }
 
+SortedCollectionRebuilder::SortedCollectionRebuilder(
+    KVEngine* kv_engine, bool segment_based_rebuild,
+    uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
+    : kv_engine_(kv_engine),
+      checkpoint_(checkpoint),
+      segment_based_rebuild_(segment_based_rebuild),
+      num_rebuild_threads_(std::min(num_rebuild_threads,
+                                    kv_engine->configs_.max_access_threads)),
+      recovery_segments_(),
+      rebuild_skiplits_() {
+  rebuilder_thread_cache_.resize(num_rebuild_threads_);
+}
+
 DLRecord* SortedCollectionRebuilder::findValidVersion(
     DLRecord* pmem_record, std::vector<DLRecord*>* invalid_version_records) {
   if (!checkpoint_.Valid()) {
@@ -944,10 +957,6 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(
 
 Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   GlobalLogger.Info("segment based rebuild start\n");
-  Status s = buildSegmentStartNode();
-  if (s != Status::Ok) {
-    return s;
-  }
   std::vector<std::future<Status>> fs;
 
   auto rebuild_segments_index = [&]() -> Status {
@@ -959,7 +968,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
     for (auto iter = this->recovery_segments_.begin();
          iter != this->recovery_segments_.end(); iter++) {
       if (!iter->second.visited) {
-        std::lock_guard<SpinMutex> lg(this->mu_);
+        std::lock_guard<SpinMutex> lg(this->lock_);
         if (!iter->second.visited) {
           iter->second.visited = true;
         } else {
@@ -970,7 +979,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
       }
 
       bool build_hash_index =
-          this->kv_engine_->GetSkiplists()
+          this->rebuild_skiplits_
               .find(Skiplist::SkiplistID(iter->second.start_node->record))
               ->second->IndexedByHashtable();
 
@@ -996,14 +1005,19 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   fs.clear();
   GlobalLogger.Info("link dram nodes\n");
 
-  for (auto& s : kv_engine_->skiplists_) {
+  int i = 0;
+  for (auto& s : rebuild_skiplits_) {
+    i++;
     fs.push_back(std::async(&SortedCollectionRebuilder::linkHighDramNodes, this,
                             s.second.get()));
-  }
-  for (auto& f : fs) {
-    Status s = f.get();
-    if (s != Status::Ok) {
-      return s;
+    if (i % num_rebuild_threads_ == 0 || i == rebuild_skiplits_.size()) {
+      for (auto& f : fs) {
+        Status s = f.get();
+        if (s != Status::Ok) {
+          return s;
+        }
+      }
+      fs.clear();
     }
   }
 
@@ -1045,6 +1059,11 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     return s;
   }
   defer(kv_engine_->ReleaseAccessThread());
+
+  if (s != Status::Ok) {
+    return s;
+  }
+
   Splice splice(skiplist);
   HashEntry hash_entry;
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
@@ -1126,11 +1145,11 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 Status SortedCollectionRebuilder::listBasedIndexRebuild() {
   std::vector<std::future<Status>> fs;
   int i = 0;
-  for (auto skiplist : kv_engine_->skiplists_) {
+  for (auto skiplist : rebuild_skiplits_) {
     i++;
     fs.push_back(std::async(&SortedCollectionRebuilder::rebuildSkiplistIndex,
                             this, skiplist.second.get()));
-    if (i % num_rebuild_threads_ == 0 || i == kv_engine_->skiplists_.size()) {
+    if (i % num_rebuild_threads_ == 0 || i == rebuild_skiplits_.size()) {
       for (auto& f : fs) {
         Status s = f.get();
         if (s != Status::Ok) {
@@ -1140,36 +1159,47 @@ Status SortedCollectionRebuilder::listBasedIndexRebuild() {
       fs.clear();
     }
   }
+
+  return Status::Ok;
 }
 
-Status SortedCollectionRebuilder::RebuildIndex() {
-  defer(this->cleanInvalidRecords());
-  Status s = Status::Ok;
-  if (kv_engine_->skiplists_.size() == 0) {
-    return s;
+SortedCollectionRebuilder::RebuildResult
+SortedCollectionRebuilder::RebuildIndex() {
+  RebuildResult ret;
+  if (rebuild_skiplits_.size() == 0) {
+    return ret;
   }
 
   if (segment_based_rebuild_) {
-    s = segmentBasedIndexRebuild();
+    ret.s = segmentBasedIndexRebuild();
   } else {
-    listBasedIndexRebuild();
+    ret.s = listBasedIndexRebuild();
   }
-#ifdef DEBUG_CHECK
-  for (auto skiplist : kv_engine_->skiplists_) {
-    Status s = skiplist.second->CheckIndex();
-    if (s != Status::Ok) {
-      GlobalLogger.Info("Check skiplist index error\n");
-      return s;
-    }
+
+  if (ret.s == Status::Ok) {
+    ret.max_id = max_recovered_id_;
+    ret.rebuild_skiplits.swap(rebuild_skiplits_);
   }
-#endif
-  return s;
+  cleanInvalidRecords();
+  return ret;
 }
 
 Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
                                                       bool build_hash_index) {
+  Status s;
+  // First insert hash index for the start node
+  if (build_hash_index &&
+      start_node->record->entry.meta.type != SortedHeaderRecord) {
+    s = insertHashIndex(start_node->record->Key(), start_node,
+                        HashIndexType::SkiplistNode);
+    if (s != Status::Ok) {
+      return s;
+    }
+  }
+
   SkiplistNode* cur_node = start_node;
   DLRecord* cur_record = cur_node->record;
+
   while (true) {
     DLRecord* next_record =
         kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
@@ -1218,7 +1248,6 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           }
 
           if (build_hash_index) {
-            Status s;
             if (dram_node) {
               s = insertHashIndex(internal_key, dram_node,
                                   HashIndexType::SkiplistNode);
@@ -1237,7 +1266,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
         break;
       }
     } else {
-      // link end point of this segment
+      // link end node of this segment to adjacent segment
       if (iter->second.start_node->record->entry.meta.type !=
           SortedHeaderRecord) {
         cur_node->RelaxedSetNext(1, iter->second.start_node);
@@ -1313,79 +1342,63 @@ void SortedCollectionRebuilder::cleanInvalidRecords() {
   kv_engine_->pmem_allocator_->BatchFree(to_free);
 }
 
-Status SortedCollectionRebuilder::buildSegmentStartNode() {
-  auto segment_iter = recovery_segments_.begin();
-  while (segment_iter != recovery_segments_.end()) {
-    DataEntry data_entry;
-    HashEntry* entry_ptr = nullptr;
-    HashEntry hash_entry;
-    SkiplistNode* node = nullptr;
-    DLRecord* cur_record = segment_iter->first;
-    StringView internal_key = cur_record->Key();
-    auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
-    while (true) {
-      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
-      Status s = kv_engine_->hash_table_->SearchForWrite(
-          hash_hint, internal_key, SortedRecordType, &entry_ptr, &hash_entry,
-          &data_entry);
-      if (s == Status::Ok) {
-        if (hash_entry.GetIndexType() != HashIndexType::Skiplist) {
-          GlobalLogger.Error(
-              "Rebuild skiplist error, hash entry of sorted data/delete "
-              "records should not be inserted before repair linkage\n");
-          return Status::Abort;
-        }
-        node = hash_entry.GetIndex().skiplist->header();
-        segment_iter->second.start_node = node;
-        segment_iter++;
-      } else if (s == Status::NotFound) {
-        DLRecord* valid_version_record = findValidVersion(cur_record, nullptr);
-        if (valid_version_record == nullptr) {
-          // purge invalid version record from list
-          if (!Skiplist::Purge(cur_record, hash_hint.spin, nullptr,
-                               kv_engine_->pmem_allocator_.get(),
-                               kv_engine_->hash_table_.get())) {
-            continue;
-          }
-          AddUnlinkedRecord(cur_record);
-          segment_iter = recovery_segments_.erase(segment_iter);
-        } else {
-          // repair linkage of checkpoint version
-          if (valid_version_record != cur_record) {
-            if (!Skiplist::Replace(cur_record, valid_version_record,
-                                   hash_hint.spin, nullptr,
-                                   kv_engine_->pmem_allocator_.get(),
-                                   kv_engine_->hash_table_.get())) {
-              continue;
-            }
-            AddUnlinkedRecord(cur_record);
-          }
-          assert(valid_version_record != nullptr);
-
-          // we always build dram node for a recovery segment start record
-          while (node == nullptr) {
-            node = Skiplist::NewNodeBuild(valid_version_record);
-          }
-          auto skiplist_iter = kv_engine_->skiplists_.find(node->SkiplistID());
-          assert(skiplist_iter != kv_engine_->skiplists_.end());
-          bool index_with_hashtable =
-              skiplist_iter->second->IndexedByHashtable();
-          if (index_with_hashtable) {
-            kv_engine_->hash_table_->Insert(
-                hash_hint, entry_ptr, valid_version_record->entry.meta.type,
-                node, HashIndexType::SkiplistNode);
-          }
-          segment_iter->second.start_node = node;
-          segment_iter++;
-        }
-      } else {
-        assert(s == Status::MemoryOverflow);
-        return s;
-      }
-      break;
-    }
+Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
+  assert(header_record->entry.meta.type == SortedHeaderRecord);
+  if (checkpoint_.Valid() &&
+      header_record->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
+    // Notice: if a skiplist  header newer than a checkpoint, space of its
+    // elements may not be freed, nor indexed by engine
+    //
+    // TODO: resolve this
+    kv_engine_->purgeAndFree(header_record);
+    return Status::Ok;
   }
-  return Status::Ok;
+
+  std::string collection_name = string_view_2_string(header_record->Key());
+  CollectionIDType id;
+  SortedCollectionConfigs s_configs;
+  Status s = Skiplist::DecodeSortedCollectionValue(header_record->Value(), id,
+                                                   s_configs);
+
+  if (s != Status::Ok) {
+    GlobalLogger.Error("Decode id and configs of sorted collection %s error\n",
+                       string_view_2_string(header_record->Key()).c_str());
+    return s;
+  }
+
+  auto comparator =
+      kv_engine_->comparators_.GetComparator(s_configs.comparator_name);
+  if (comparator == nullptr) {
+    GlobalLogger.Error(
+        "Compare function %s of restoring sorted collection %s is not "
+        "registered\n",
+        s_configs.comparator_name.c_str(),
+        string_view_2_string(header_record->Key()).c_str());
+    return Status::Abort;
+  }
+
+  auto skiplist = std::make_shared<Skiplist>(
+      header_record, collection_name, id, comparator,
+      kv_engine_->pmem_allocator_, kv_engine_->hash_table_,
+      s_configs.index_with_hashtable);
+  {
+    // TODO: maybe return a skiplist map in rebuild finish, instead of access
+    // engine directly
+    std::lock_guard<SpinMutex> lg(lock_);
+    rebuild_skiplits_.insert({id, skiplist});
+    max_recovered_id_ = std::max(max_recovered_id_, id);
+  }
+
+  if (segment_based_rebuild_) {
+    // Always use header as a recovery segment
+    addRecoverySegment(skiplist->header());
+  }
+
+  // Always index skiplist header with hash table
+  s = insertHashIndex(skiplist->Name(), skiplist.get(),
+                      HashIndexType::Skiplist);
+
+  return s;
 }
 
 Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
@@ -1405,8 +1418,14 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
         ++rebuilder_thread_cache_[access_thread.id]
                     .visited_skiplists[Skiplist::SkiplistID(record)] %
                 kRestoreSkiplistStride ==
-            0) {
-      addRecoverySegment(record);
+            0 &&
+        findValidVersion(record, nullptr) == record) {
+      SkiplistNode* start_node = nullptr;
+      while (start_node == nullptr) {
+        // Always build dram node for a recovery segment start record
+        start_node = Skiplist::NewNodeBuild(record);
+      }
+      addRecoverySegment(start_node);
     }
   }
   return Status::Ok;
@@ -1436,10 +1455,10 @@ bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
   return true;
 }
 
-void SortedCollectionRebuilder::addRecoverySegment(DLRecord* start_record) {
+void SortedCollectionRebuilder::addRecoverySegment(SkiplistNode* start_node) {
   if (segment_based_rebuild_) {
-    std::lock_guard<SpinMutex> lg(mu_);
-    recovery_segments_.insert({start_record, {false, nullptr}});
+    std::lock_guard<SpinMutex> lg(lock_);
+    recovery_segments_.insert({start_node->record, {false, start_node}});
   }
 }
 

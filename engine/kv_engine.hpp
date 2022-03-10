@@ -217,14 +217,12 @@ class KVEngine : public Engine {
 
   Status RestoreData();
 
-  Status RestoreSkiplistHead(DLRecord* pmem_record,
-                             const DataEntry& cached_entry);
+  Status RestoreSkiplistHeader(DLRecord* pmem_record);
 
   Status RestoreStringRecord(StringRecord* pmem_record,
                              const DataEntry& cached_entry);
 
-  Status RestoreSkiplistRecord(DLRecord* pmem_record,
-                               const DataEntry& cached_data_entry);
+  Status RestoreSkiplistRecord(DLRecord* pmem_record);
 
   // Check if a doubly linked record has been successfully inserted, and try
   // repair un-finished prev pointer
