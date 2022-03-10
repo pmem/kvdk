@@ -513,7 +513,10 @@ int main(int argc, char** argv) {
     printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
     for (auto col : collections) {
       Collection* collection_ptr;
-      Status s = engine->CreateSortedCollection(col, &collection_ptr);
+      SortedCollectionConfigs s_configs;
+      s_configs.index_with_hashtable = false;
+      Status s =
+          engine->CreateSortedCollection(col, &collection_ptr, s_configs);
       if (s != Status::Ok) {
         throw std::runtime_error{"Fail to create Sorted collection"};
       }

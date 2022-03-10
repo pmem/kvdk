@@ -22,6 +22,7 @@ static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
 
 struct Splice;
+class KVEngine;
 
 /* Format:
  * next pointers | DLRecord on pmem | height | cached key size |
@@ -157,74 +158,11 @@ class Skiplist : public Collection {
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
            Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
-           std::shared_ptr<HashTable> hash_table, bool indexed_by_hashtable)
-      : Collection(name, id),
-        comparator_(comparator),
-        pmem_allocator_(pmem_allocator),
-        hash_table_(hash_table),
-        indexed_by_hashtable_(indexed_by_hashtable) {
-    header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
-    for (uint8_t i = 1; i <= kMaxHeight; i++) {
-      header_->RelaxedSetNext(i, nullptr);
-    }
-  }
+           std::shared_ptr<HashTable> hash_table, bool indexed_by_hashtable);
 
-  ~Skiplist() {
-    if (header_) {
-      SkiplistNode* to_delete = header_;
-      while (to_delete) {
-        SkiplistNode* next = to_delete->Next(1).RawPointer();
-        SkiplistNode::DeleteNode(to_delete);
-        to_delete = next;
-      }
-      std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
-      for (SkiplistNode* node : pending_deletion_nodes_) {
-        SkiplistNode::DeleteNode(node);
-      }
-      pending_deletion_nodes_.clear();
-      std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
-      for (SkiplistNode* node : obsolete_nodes_) {
-        SkiplistNode::DeleteNode(node);
-      }
-      obsolete_nodes_.clear();
-    }
-  }
+  ~Skiplist();
 
   SkiplistNode* header() { return header_; }
-
-  inline static StringView UserKey(const SkiplistNode* node) {
-    assert(node != nullptr);
-    if (node->cached_key_size > 0) {
-      return StringView(node->cached_key, node->cached_key_size);
-    }
-    return CollectionUtils::ExtractUserKey(node->record->Key());
-  }
-
-  inline static StringView UserKey(const DLRecord* record) {
-    assert(record != nullptr);
-    return CollectionUtils::ExtractUserKey(record->Key());
-  }
-
-  inline static CollectionIDType SkiplistID(const SkiplistNode* node) {
-    assert(node != nullptr);
-    return SkiplistID(node->record);
-  }
-
-  inline static CollectionIDType SkiplistID(const DLRecord* record) {
-    assert(record != nullptr);
-    switch (record->entry.meta.type) {
-      case RecordType::SortedDataRecord:
-      case RecordType::SortedDeleteRecord:
-        return CollectionUtils::ExtractID(record->Key());
-        break;
-      case RecordType::SortedHeaderRecord:
-        return CollectionUtils::DecodeID(record->Value());
-      default:
-        kvdk_assert(false, "Wrong type in SkiplistID");
-        GlobalLogger.Error("Wrong type in SkiplistID");
-    }
-    return 0;
-  }
 
   bool IndexedByHashtable() { return indexed_by_hashtable_; }
 
@@ -235,7 +173,7 @@ class Skiplist : public Collection {
   // timestamp: kvdk engine timestamp of this operation
   //
   // Return Ok on success, with the writed pmem record, its dram node and
-  // updated pmem record if it existed, return Abort if there is lock
+  // updated pmem record if it existed, return Abort if there is thread
   // contension
   WriteResult Set(const StringView& key, const StringView& value,
                   const HashTable::KeyHashHint& key_hash_hint_locked,
@@ -251,7 +189,7 @@ class Skiplist : public Collection {
   // timestamp: kvdk engine timestamp of this operation
   //
   // Return Ok on success, with the writed pmem delete record, its dram node and
-  // deleted pmem record if existed, return Abort if there is lock contension
+  // deleted pmem record if existed, return Abort if there is thread contension
   WriteResult Delete(const StringView& key,
                      const HashTable::KeyHashHint& key_hash_hint_locked,
                      TimeStampType timestamp);
@@ -298,18 +236,7 @@ class Skiplist : public Collection {
                       const SpinMutex* old_record_lock, SkiplistNode* dram_node,
                       PMEMAllocator* pmem_allocator, HashTable* hash_table);
 
-  void PurgeObsoletedNodes() {
-    std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
-    if (pending_deletion_nodes_.size() > 0) {
-      for (SkiplistNode* node : pending_deletion_nodes_) {
-        SkiplistNode::DeleteNode(node);
-      }
-      pending_deletion_nodes_.clear();
-    }
-
-    std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
-    obsolete_nodes_.swap(pending_deletion_nodes_);
-  }
+  void CleanObsoletedNodes();
 
   Status CheckConnection(int height);
 
@@ -324,6 +251,40 @@ class Skiplist : public Collection {
   static Status DecodeSortedCollectionValue(StringView value_str,
                                             CollectionIDType& id,
                                             SortedCollectionConfigs& s_configs);
+
+  inline static StringView UserKey(const SkiplistNode* node) {
+    assert(node != nullptr);
+    if (node->cached_key_size > 0) {
+      return StringView(node->cached_key, node->cached_key_size);
+    }
+    return CollectionUtils::ExtractUserKey(node->record->Key());
+  }
+
+  inline static StringView UserKey(const DLRecord* record) {
+    assert(record != nullptr);
+    return CollectionUtils::ExtractUserKey(record->Key());
+  }
+
+  inline static CollectionIDType SkiplistID(const SkiplistNode* node) {
+    assert(node != nullptr);
+    return SkiplistID(node->record);
+  }
+
+  inline static CollectionIDType SkiplistID(const DLRecord* record) {
+    assert(record != nullptr);
+    switch (record->entry.meta.type) {
+      case RecordType::SortedDataRecord:
+      case RecordType::SortedDeleteRecord:
+        return CollectionUtils::ExtractID(record->Key());
+        break;
+      case RecordType::SortedHeaderRecord:
+        return CollectionUtils::DecodeID(record->Value());
+      default:
+        kvdk_assert(false, "Wrong type in SkiplistID");
+        GlobalLogger.Error("Wrong type in SkiplistID");
+    }
+    return 0;
+  }
 
  private:
   WriteResult setImplNoHash(const StringView& key, const StringView& value,
@@ -494,7 +455,6 @@ struct Splice {
     }
   }
 };
-class KVEngine;
 
 class SortedCollectionRebuilder {
  public:
@@ -556,10 +516,7 @@ class SortedCollectionRebuilder {
   Status linkHighDramNodes(Skiplist* skiplist);
 
   // thread cache for segment based rebuild
-  struct ThreadCache {
-    // end node of thread recovered segments
-    std::unordered_set<SkiplistNode*> end_points{};
-  };
+  struct ThreadCache {};
 
   KVEngine* kv_engine_;
   SpinMutex mu_;

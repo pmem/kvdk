@@ -75,7 +75,7 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
 
 void KVEngine::FreeSkiplistDramNodes() {
   for (auto& skiplist : skiplists_) {
-    skiplist.second->PurgeObsoletedNodes();
+    skiplist.second->CleanObsoletedNodes();
   }
 }
 
