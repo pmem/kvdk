@@ -1609,39 +1609,50 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
   // Hash Table Iterator
   // scan hash table with locked slot.
   {
-    auto slot_iter = hash_table->NewSlotIterator();
-    while (slot_iter->Valid()) {
-      auto bucket_iter = slot_iter->Begin();
-      auto end_bucket_iter = slot_iter->End();
+    auto slot_iter = hash_table->GetSlotIterator();
+    while (slot_iter.Valid()) {
+      auto bucket_iter = slot_iter.Begin();
+      auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
-        if (bucket_iter->GetIndexType() == HashIndexType::StringRecord) {
-          total_entry_num++;
-          ASSERT_EQ(string_view_2_string(
-                        bucket_iter->GetIndex().string_record->Value()),
-                    "stringval");
-        } else if (bucket_iter->GetIndexType() == HashIndexType::Skiplist) {
-          total_entry_num++;
-          ASSERT_EQ(
-              string_view_2_string(bucket_iter->GetIndex().skiplist->Name()),
-              collection_name);
-        } else if (bucket_iter->GetIndexType() == HashIndexType::SkiplistNode) {
-          total_entry_num++;
-          ASSERT_EQ(string_view_2_string(
-                        bucket_iter->GetIndex().skiplist_node->record->Value()),
-                    "sortedval");
-        } else if (bucket_iter->GetIndexType() == HashIndexType::DLRecord) {
-          total_entry_num++;
-          ASSERT_EQ(
-              string_view_2_string(bucket_iter->GetIndex().dl_record->Value()),
-              "sortedval");
-        } else {
-          ASSERT_EQ((bucket_iter->GetIndexType() == HashIndexType::Invalid) ||
-                        (bucket_iter->GetIndexType() == HashIndexType::Empty),
-                    true);
+        switch (bucket_iter->GetIndexType()) {
+          case HashIndexType::StringRecord: {
+            total_entry_num++;
+            ASSERT_EQ(string_view_2_string(
+                          bucket_iter->GetIndex().string_record->Value()),
+                      "stringval");
+            break;
+          }
+          case HashIndexType::Skiplist: {
+            total_entry_num++;
+            ASSERT_EQ(
+                string_view_2_string(bucket_iter->GetIndex().skiplist->Name()),
+                collection_name);
+            break;
+          }
+          case HashIndexType::SkiplistNode: {
+            total_entry_num++;
+            ASSERT_EQ(
+                string_view_2_string(
+                    bucket_iter->GetIndex().skiplist_node->record->Value()),
+                "sortedval");
+            break;
+          }
+          case HashIndexType::DLRecord: {
+            total_entry_num++;
+            ASSERT_EQ(string_view_2_string(
+                          bucket_iter->GetIndex().dl_record->Value()),
+                      "sortedval");
+            break;
+          }
+          default:
+            ASSERT_EQ((bucket_iter->GetIndexType() == HashIndexType::Invalid) ||
+                          (bucket_iter->GetIndexType() == HashIndexType::Empty),
+                      true);
+            break;
         }
         bucket_iter++;
       }
-      slot_iter->Next();
+      slot_iter.Next();
     }
     ASSERT_EQ(total_entry_num, threads + 1);
   }
@@ -2064,10 +2075,10 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
   auto HashTableScan = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     auto hash_table = test_kvengine->GetHashTable();
-    auto slot_iter = hash_table->NewSlotIterator();
-    while (slot_iter->Valid()) {
-      auto bucket_iter = slot_iter->Begin();
-      auto end_bucket_iter = slot_iter->End();
+    auto slot_iter = hash_table->GetSlotIterator();
+    while (slot_iter.Valid()) {
+      auto bucket_iter = slot_iter.Begin();
+      auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
         if (bucket_iter->GetIndexType() == HashIndexType::StringRecord) {
           TEST_SYNC_POINT("ScanHashTable");
@@ -2077,7 +2088,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
         }
         bucket_iter++;
       }
-      slot_iter->Next();
+      slot_iter.Next();
     }
   };
 

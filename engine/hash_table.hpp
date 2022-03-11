@@ -74,8 +74,6 @@ struct alignas(16) HashEntry {
 
   bool Empty() { return header_.index_type == HashIndexType::Empty; }
 
-  bool Invalid() { return header_.index_type == HashIndexType::Invalid; }
-
   // Make this hash entry empty while its content been deleted
   void Clear() { header_.index_type = HashIndexType::Empty; }
 
@@ -169,7 +167,7 @@ class HashTable {
     entry_ptr->Clear();
   }
 
-  std::unique_ptr<SlotIterator> NewSlotIterator();
+  SlotIterator GetSlotIterator();
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
@@ -207,16 +205,22 @@ class HashTable {
 
 struct SlotIterator {
  private:
+  // The range of bucket id is [0, hash_bucket_num_).The range of bucket id
+  // corresponding to the current slot is [slot_id*num_buckets_per_slot_,
+  // (slot_id+1)*num_buckets_per_slot_).
   uint64_t iter_start_bucket_idx_;
   uint64_t iter_end_bucket_idx_;
+  // lock current access slot
   std::unique_lock<SpinMutex> iter_lock_slot_;
+  // current slot id
   uint64_t current_slot_id;
   HashTable* hash_table_;
 
   void GetBucketRangeAndLockSlot() {
-    std::unique_lock<SpinMutex> lock_slot{
-        hash_table_->slots_[current_slot_id].spin};
-    iter_lock_slot_.swap(lock_slot);
+    // release prev slot lock.
+    iter_lock_slot_ = std::unique_lock<SpinMutex>(
+        hash_table_->slots_[current_slot_id].spin, std::defer_lock);
+    iter_lock_slot_.lock();
     iter_start_bucket_idx_ =
         current_slot_id * hash_table_->num_buckets_per_slot_;
     iter_end_bucket_idx_ =

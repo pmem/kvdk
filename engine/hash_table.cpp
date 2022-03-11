@@ -239,8 +239,6 @@ void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
-std::unique_ptr<SlotIterator> HashTable::NewSlotIterator() {
-  return std::unique_ptr<SlotIterator>(new SlotIterator(this));
-}
+SlotIterator HashTable::GetSlotIterator() { return SlotIterator{this}; }
 
 }  // namespace KVDK_NAMESPACE
