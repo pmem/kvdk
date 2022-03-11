@@ -566,54 +566,59 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
                                      SortedDataRecord | SortedDeleteRecord,
                                      &entry_ptr, &hash_entry, nullptr);
 
-  if (ret.s == Status::NotFound) {
-    ret.s = Status::Ok;
-    return ret;
-  } else if (ret.s == Status::Ok) {
-    if (hash_entry.GetRecordType() == SortedDeleteRecord) {
+  switch (ret.s) {
+    case Status::NotFound: {
+      ret.s = Status::Ok;
       return ret;
     }
+    case Status::Ok: {
+      if (hash_entry.GetRecordType() == SortedDeleteRecord) {
+        return ret;
+      }
 
-    if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-      ret.dram_node = hash_entry.GetIndex().skiplist_node;
-      ret.existing_record = ret.dram_node->record;
-    } else {
-      ret.dram_node = nullptr;
-      assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-      ret.existing_record = hash_entry.GetIndex().dl_record;
+      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+        ret.dram_node = hash_entry.GetIndex().skiplist_node;
+        ret.existing_record = ret.dram_node->record;
+      } else {
+        ret.dram_node = nullptr;
+        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+        ret.existing_record = hash_entry.GetIndex().dl_record;
+      }
+      assert(timestamp > ret.existing_record->entry.meta.timestamp);
+
+      // Try to write delete record
+      if (!lockRecordPosition(ret.existing_record, deleting_key_lock,
+                              &prev_record_lock)) {
+        ret.s = Status::Abort;
+        return ret;
+      }
+
+      auto space_to_write =
+          pmem_allocator_->Allocate(internal_key.size() + sizeof(DLRecord));
+      if (space_to_write.size == 0) {
+        ret.s = Status::PmemOverflow;
+        return ret;
+      }
+
+      PMemOffsetType prev_offset = ret.existing_record->prev;
+      DLRecord* prev_record =
+          pmem_allocator_->offset2addr_checked<DLRecord>(prev_offset);
+      PMemOffsetType next_offset = ret.existing_record->next;
+      DLRecord* next_record =
+          pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+      PMemOffsetType existing_offset =
+          pmem_allocator_->addr2offset_checked(ret.existing_record);
+      DLRecord* delete_record = DLRecord::PersistDLRecord(
+          pmem_allocator_->offset2addr(space_to_write.offset),
+          space_to_write.size, timestamp, SortedDeleteRecord, existing_offset,
+          prev_offset, next_offset, internal_key, "");
+      linkDLRecord(prev_record, next_record, delete_record);
+      ret.write_record = delete_record;
+
+      break;
     }
-    assert(timestamp > ret.existing_record->entry.meta.timestamp);
-
-    // Try to write delete record
-    if (!lockRecordPosition(ret.existing_record, deleting_key_lock,
-                            &prev_record_lock)) {
-      ret.s = Status::Abort;
-      return ret;
-    }
-
-    auto space_to_write =
-        pmem_allocator_->Allocate(internal_key.size() + sizeof(DLRecord));
-    if (space_to_write.size == 0) {
-      ret.s = Status::PmemOverflow;
-      return ret;
-    }
-
-    PMemOffsetType prev_offset = ret.existing_record->prev;
-    DLRecord* prev_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(prev_offset);
-    PMemOffsetType next_offset = ret.existing_record->next;
-    DLRecord* next_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
-    PMemOffsetType existing_offset =
-        pmem_allocator_->addr2offset_checked(ret.existing_record);
-    DLRecord* delete_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr(space_to_write.offset),
-        space_to_write.size, timestamp, SortedDeleteRecord, existing_offset,
-        prev_offset, next_offset, internal_key, "");
-    linkDLRecord(prev_record, next_record, delete_record);
-    ret.write_record = delete_record;
-  } else {
-    std::abort();  // never reach
+    default:
+      std::abort();  // never reach
   }
 
   // until here, new record is already inserted to list
@@ -644,54 +649,62 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
                                       SortedDataRecord | SortedDeleteRecord,
                                       &entry_ptr, &hash_entry, nullptr);
 
-  if (ret.s == Status::MemoryOverflow) {
-    return ret;
-  } else if (ret.s == Status::NotFound) {
-    ret = setImplNoHash(key, value, locked_hash_hint.spin, timestamp);
-    if (ret.s != Status::Ok) {
+  switch (ret.s) {
+    case Status::Ok: {
+      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+        ret.dram_node = hash_entry.GetIndex().skiplist_node;
+        ret.existing_record = ret.dram_node->record;
+      } else {
+        ret.dram_node = nullptr;
+        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+        ret.existing_record = hash_entry.GetIndex().dl_record;
+      }
+      assert(timestamp > ret.existing_record->entry.meta.timestamp);
+
+      // Try to write delete record
+      if (!lockRecordPosition(ret.existing_record, locked_hash_hint.spin,
+                              &prev_record_lock)) {
+        ret.s = Status::Abort;
+        return ret;
+      }
+
+      auto request_size = internal_key.size() + value.size() + sizeof(DLRecord);
+      auto space_to_write = pmem_allocator_->Allocate(request_size);
+      if (space_to_write.size == 0) {
+        ret.s = Status::PmemOverflow;
+        return ret;
+      }
+
+      PMemOffsetType prev_offset = ret.existing_record->prev;
+      DLRecord* prev_record =
+          pmem_allocator_->offset2addr_checked<DLRecord>(prev_offset);
+      PMemOffsetType next_offset = ret.existing_record->next;
+      DLRecord* next_record =
+          pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+      PMemOffsetType existing_offset =
+          pmem_allocator_->addr2offset_checked(ret.existing_record);
+      DLRecord* new_record = DLRecord::PersistDLRecord(
+          pmem_allocator_->offset2addr(space_to_write.offset),
+          space_to_write.size, timestamp, SortedDataRecord, existing_offset,
+          prev_offset, next_offset, internal_key, value);
+      ret.write_record = new_record;
+      linkDLRecord(prev_record, next_record, new_record);
+
+      break;
+    }
+    case Status::NotFound: {
+      ret = setImplNoHash(key, value, locked_hash_hint.spin, timestamp);
+      if (ret.s != Status::Ok) {
+        return ret;
+      }
+
+      break;
+    }
+    case Status::MemoryOverflow: {
       return ret;
     }
-  } else if (ret.s == Status::Ok) {
-    if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-      ret.dram_node = hash_entry.GetIndex().skiplist_node;
-      ret.existing_record = ret.dram_node->record;
-    } else {
-      ret.dram_node = nullptr;
-      assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-      ret.existing_record = hash_entry.GetIndex().dl_record;
-    }
-    assert(timestamp > ret.existing_record->entry.meta.timestamp);
-
-    // Try to write delete record
-    if (!lockRecordPosition(ret.existing_record, locked_hash_hint.spin,
-                            &prev_record_lock)) {
-      ret.s = Status::Abort;
-      return ret;
-    }
-
-    auto request_size = internal_key.size() + value.size() + sizeof(DLRecord);
-    auto space_to_write = pmem_allocator_->Allocate(request_size);
-    if (space_to_write.size == 0) {
-      ret.s = Status::PmemOverflow;
-      return ret;
-    }
-
-    PMemOffsetType prev_offset = ret.existing_record->prev;
-    DLRecord* prev_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(prev_offset);
-    PMemOffsetType next_offset = ret.existing_record->next;
-    DLRecord* next_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
-    PMemOffsetType existing_offset =
-        pmem_allocator_->addr2offset_checked(ret.existing_record);
-    DLRecord* new_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr(space_to_write.offset),
-        space_to_write.size, timestamp, SortedDataRecord, existing_offset,
-        prev_offset, next_offset, internal_key, value);
-    ret.write_record = new_record;
-    linkDLRecord(prev_record, next_record, new_record);
-  } else {
-    std::abort();  // never should reach
+    default:
+      std::abort();  // never should reach
   }
 
   // until here, new record is already inserted to list
@@ -1484,19 +1497,25 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
   auto hash_hint = kv_engine_->hash_table_->GetHint(key);
   Status s = kv_engine_->hash_table_->SearchForWrite(
       hash_hint, key, search_type_mask, &entry_ptr, &hash_entry, nullptr);
-  if (s == Status::NotFound) {
-    kv_engine_->hash_table_->Insert(hash_hint, entry_ptr, record_type,
-                                    index_ptr, index_type);
-    return Status::Ok;
-  } else if (s == Status::Ok) {
-    GlobalLogger.Error(
-        "Rebuild skiplist error, hash entry of sorted records should not be "
-        "inserted before rebuild\n");
-    return Status::Abort;
-  } else if (s == Status::MemoryOverflow) {
-    return s;
-  } else {
-    std::abort();  // never reach
+  switch (s) {
+    case Status::NotFound: {
+      kv_engine_->hash_table_->Insert(hash_hint, entry_ptr, record_type,
+                                      index_ptr, index_type);
+      return Status::Ok;
+    }
+    case Status::Ok: {
+      GlobalLogger.Error(
+          "Rebuild skiplist error, hash entry of sorted records should not be "
+          "inserted before rebuild\n");
+      return Status::Abort;
+    }
+
+    case Status::MemoryOverflow: {
+      return s;
+    }
+
+    default:
+      std::abort();  // never reach
   }
 }
 
