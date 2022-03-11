@@ -194,6 +194,14 @@ class KVEngine : public Engine {
       return s;
     }
     *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
+
+    // check collection is expired.
+    auto expired_time = (*collection_ptr)->GetExpiredTime();
+    if (expired_time > 0 && expired_time <= second_time()) {
+      (*collection_ptr)->UpdateExpiredStatus(true);
+      return Status::NotFound;
+    }
+
     return s;
   }
 

@@ -1232,6 +1232,7 @@ Status KVEngine::SSet(const StringView collection, const StringView user_key,
   if (s != Status::Ok) {
     return s;
   }
+
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
@@ -1520,12 +1521,8 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
     return s;
   }
 
-  auto expired_time = skiplist->header()->record->GetExpiredTime();
-  if (expired_time > 0 && expired_time < second_time()) {
-    return Status::NotFound;
-  }
-
   assert(skiplist);
+
   std::string skiplist_key(skiplist->InternalKey(user_key));
   return HashGetImpl(skiplist_key, value,
                      SortedDataRecord | SortedDeleteRecord);
@@ -1535,26 +1532,32 @@ Status KVEngine::GetExpiredTime(const StringView str, int64_t* expired_time) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   HashEntry hash_entry;
   HashEntry* entry_ptr = nullptr;
+  *expired_time = -1;
   Status s = hash_table_->SearchForRead(hint, str, ExpiredRecordType,
                                         &entry_ptr, &hash_entry, nullptr);
   if (s != Status::Ok) {
-    *expired_time = -1;
     return s;
   }
+
+  Collection* collection_ptr = nullptr;
   switch (entry_ptr->GetIndexType()) {
-    case HashIndexType::Skiplist:
-      *expired_time =
-          entry_ptr->GetIndex().skiplist->header()->record->GetExpiredTime();
+    case HashIndexType::Skiplist: {
+      collection_ptr = entry_ptr->GetIndex().skiplist;
+      *expired_time = collection_ptr->GetExpiredTime();
       break;
-    case HashIndexType::UnorderedCollection:
-      *expired_time = entry_ptr->GetIndex()
-                          .p_unordered_collection->HeadRecord()
-                          ->GetExpiredTime();
+    }
+    case HashIndexType::UnorderedCollection: {
+      collection_ptr = entry_ptr->GetIndex().p_unordered_collection;
+      *expired_time = collection_ptr->GetExpiredTime();
       break;
-    case HashIndexType::Queue:
-      *expired_time =
-          entry_ptr->GetIndex().queue_ptr->HeadRecord()->GetExpiredTime();
+    }
+
+    case HashIndexType::Queue: {
+      collection_ptr = entry_ptr->GetIndex().queue_ptr;
+      *expired_time = collection_ptr->GetExpiredTime();
       break;
+    }
+
     case HashIndexType::StringRecord:
       *expired_time = entry_ptr->GetIndex().string_record->GetExpiredTime();
       break;
@@ -1562,7 +1565,10 @@ Status KVEngine::GetExpiredTime(const StringView str, int64_t* expired_time) {
       return Status::NotSupported;
   }
   // TODO(zhichen): Free this record
-  if (*expired_time <= second_time()) {
+  if (*expired_time > 0 && *expired_time <= second_time()) {
+    if (collection_ptr) {
+      collection_ptr->UpdateExpiredStatus(true);
+    }
     *expired_time = -1;
     return Status::NotFound;
   }
@@ -1577,36 +1583,43 @@ Status KVEngine::SetExpiredTime(const StringView str, int64_t expired_time) {
                                         &entry_ptr, &hash_entry, nullptr);
   if (s != Status::Ok) return s;
 
-  // TODO(zhichen): check support record type
-  switch (entry_ptr->GetIndexType()) {
-    case HashIndexType::StringRecord: {
-      WriteOptions write_options{expired_time, false};
-      s = StringSetImpl(str, entry_ptr->GetIndex().string_record->Value(),
-                        write_options);
-      break;
+  if (entry_ptr->GetIndexType() == HashIndexType::StringRecord) {
+    WriteOptions write_options{expired_time, false};
+    auto string_record = entry_ptr->GetIndex().string_record;
+    // string record has already been expired.
+    if (string_record->GetExpiredTime() < second_time()) {
+      return Status::NotFound;
     }
-    case HashIndexType::Skiplist: {
-      auto skiplist = entry_ptr->GetIndex().skiplist;
-      auto head_record = skiplist->header()->record;
-      return SSetImpl(skiplist, head_record->Key(), head_record->Value(),
-                      expired_time);
+    s = StringSetImpl(str, entry_ptr->GetIndex().string_record->Value(),
+                      write_options);
+  } else if (entry_ptr->GetIndexType() == HashIndexType::Skiplist) {
+    auto skiplist = entry_ptr->GetIndex().skiplist;
+    // sorted collection has already been expired.
+    if (skiplist->IsExpired()) {
+      return Status::NotFound;
     }
-    case HashIndexType::UnorderedCollection: {
-      auto hashes = entry_ptr->GetIndex().p_unordered_collection;
-      auto head_record = hashes->HeadRecord();
-      std::unique_lock<SpinMutex> slot_lock(*hint.spin);
-      head_record->entry.header.expired_time = expired_time;
-      return Status::Ok;
+    auto head_record = skiplist->header()->record;
+    return SSetImpl(skiplist, head_record->Key(), head_record->Value(),
+                    expired_time);
+  } else if (entry_ptr->GetIndexType() == HashIndexType::UnorderedCollection) {
+    auto hashes = entry_ptr->GetIndex().p_unordered_collection;
+    // hashes collection has already been expired.
+    if (hashes->IsExpired()) {
+      return Status::NotFound;
     }
-    case HashIndexType::Queue: {
-      auto queue = entry_ptr->GetIndex().queue_ptr;
-      auto head_record = queue->HeadRecord();
-      std::unique_lock<SpinMutex> slot_lock(*hint.spin);
-      head_record->entry.header.expired_time = expired_time;
-      return Status::Ok;
+    hashes->InplaceUpdateExpiredTime(expired_time);
+    return Status::Ok;
+  } else if (entry_ptr->GetIndexType() == HashIndexType::Queue) {
+    auto queue = entry_ptr->GetIndex().queue_ptr;
+    // queue collection has already been expired.
+    if (queue->IsExpired()) {
+      return Status::NotFound;
     }
-    default:
-      return Status::NotSupported;
+    std::unique_lock<SpinMutex> slot_lock(*hint.spin);
+    queue->InplaceUpdateExpiredTime(expired_time);
+    return Status::Ok;
+  } else {
+    return Status::NotSupported;
   }
   return Status::Ok;
 }
@@ -1765,11 +1778,6 @@ Status KVEngine::HGet(StringView const collection_name, StringView const key,
   s = FindCollection(collection_name, &p_uncoll, RecordType::DlistRecord);
   if (s != Status::Ok) {
     return s;
-  }
-
-  auto expired_time = p_uncoll->HeadRecord()->GetExpiredTime();
-  if (expired_time > 0 && expired_time < second_time()) {
-    return Status::NotFound;
   }
 
   std::string internal_key = p_uncoll->InternalKey(key);
@@ -2093,11 +2101,6 @@ Status KVEngine::xPop(StringView const collection_name, std::string* value,
   s = FindCollection(collection_name, &queue_ptr, RecordType::QueueRecord);
   if (s != Status::Ok) {
     return s;
-  }
-
-  auto expired_time = queue_ptr->HeadRecord()->GetExpiredTime();
-  if (expired_time > 0 && expired_time < second_time()) {
-    return Status::NotFound;
   }
 
   bool pop_success = false;

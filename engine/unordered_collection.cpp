@@ -5,8 +5,9 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
                                          PMEMAllocator* pmem_allocator_p,
                                          std::string const name,
                                          CollectionIDType id,
-                                         TimeStampType timestamp)
-    : Collection(name, id),
+                                         TimeStampType timestamp,
+                                         bool is_expired)
+    : Collection(name, id, is_expired),
       hash_table_ptr_{hash_table_ptr},
       collection_record_ptr_{nullptr},
       dlinked_list_{pmem_allocator_p, timestamp, CollectionUtils::ID2String(id),
