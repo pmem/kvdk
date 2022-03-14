@@ -2285,8 +2285,7 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
         cb(list->Front()->Value(), cb_args);
         --cnt;
         DLRecord* front = list->Front().Address();
-        list->PopFront();
-        purgeAndFree(front);
+        list->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
       }
       return Status::Ok;
     }
@@ -2295,8 +2294,7 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
         cb(list->Back()->Value(), cb_args);
         --cnt;
         DLRecord* back = list->Back().Address();
-        list->PopBack();
-        purgeAndFree(back);
+        list->PopBack([&](DLRecord* rec) { purgeAndFree(rec); });
       }
       return Status::Ok;
     }
@@ -2390,8 +2388,7 @@ Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
   for (auto iter = list->Front(); iter != list->Tail(); ++iter) {
     if (iter->Value() == elem) {
       DLRecord* old = iter.Address();
-      iter = list->Erase(iter);
-      purgeAndFree(old);
+      iter = list->Erase(iter, [&](DLRecord* rec) { purgeAndFree(rec); });
     }
   }
   return Status::Ok;
@@ -2422,8 +2419,7 @@ Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
   }
   DLRecord* old = iter.Address();
   list->Replace(space, iter, version_controller_.GetCurrentTimestamp(), "",
-                elem);
-  purgeAndFree(old);
+                elem, [&](DLRecord* rec) { purgeAndFree(rec); });
   return Status::Ok;
 }
 

@@ -175,15 +175,22 @@ class GenericList final : public Collection {
 
   // Initialize a List with pmem base address p_base, pre-allocated space,
   // Creation time, List name and id.
-  void Init(AddressTranslator<DLRecord*> tran, SpaceEntry allocated,
+  void Init(AddressTranslator<DLRecord*> tran, SpaceEntry space,
             TimeStampType timestamp, StringView const key,
             CollectionIDType id) {
     collection_name_.assign(key.data(), key.size());
     collection_id_ = id;
     atran = tran;
     list_record = StringRecord::PersistStringRecord(
-        atran.address_of(allocated.offset), allocated.size, timestamp,
+        atran.address_of(space.offset), space.size, timestamp,
         RecordType::ListRecord, NullPMemOffset, key, ID2String(id));
+  }
+
+  template <typename ListDeleter>
+  void Destroy(ListDeleter list_deleter) {
+    kvdk_assert(sz == 0 && list_record != nullptr,
+                "Only initialized empty List can be destroyed!");
+    list_deleter(list_record);
   }
 
   // Restore a List with its ListRecord, first and last element and size
@@ -228,7 +235,8 @@ class GenericList final : public Collection {
     }
   }
 
-  Iterator Erase(Iterator pos) {
+  template <typename ElemDeleter>
+  Iterator Erase(Iterator pos, ElemDeleter elem_deleter) {
     kvdk_assert(pos != Head(), "Cannot erase Head()");
     kvdk_assert(sz >= 1, "Cannot erase from empty List!");
     kvdk_assert(ExtractID(pos->Key()) == ID(), "Erase from wrong List!");
@@ -258,13 +266,20 @@ class GenericList final : public Collection {
       next->PersistPrev(prev.Offset());
       prev->PersistNext(next.Offset());
     }
+    elem_deleter(pos.Address());
     --sz;
     return next;
   }
 
-  void PopFront() { Erase(Front()); }
+  template <typename ElemDeleter>
+  void PopFront(ElemDeleter elem_deleter) {
+    Erase(Front(), elem_deleter);
+  }
 
-  void PopBack() { Erase(Back()); }
+  template <typename ElemDeleter>
+  void PopBack(ElemDeleter elem_deleter) {
+    Erase(Back(), elem_deleter);
+  }
 
   void EmplaceBefore(SpaceEntry allocated, Iterator pos,
                      TimeStampType timestamp, StringView const key,
@@ -297,14 +312,17 @@ class GenericList final : public Collection {
     ++sz;
   }
 
+  template <typename ElemDeleter>
   void Replace(SpaceEntry allocated, Iterator pos, TimeStampType timestamp,
-               StringView const key, StringView const value) {
+               StringView const key, StringView const value,
+               ElemDeleter elem_deleter) {
     kvdk_assert(ID() == ExtractID(pos->Key()), "Wrong List!");
     Iterator prev{pos};
     --prev;
     Iterator next{pos};
     ++next;
     emplace_between(allocated, prev, next, timestamp, key, value);
+    elem_deleter(pos.Address());
   }
 
   LockType* Mutex() { return &mu; }
