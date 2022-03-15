@@ -556,6 +556,31 @@ class GenericListBuilder final {
     }
   }
 
+  template <typename ElemDeleter>
+  void CleanBrokens(ElemDeleter elem_deleter) {
+    for (DLRecord* elem : brokens) {
+      switch (typeOf(elem)) {
+        case ListRecordType::Unique: {
+          kvdk_assert(false, "Impossible!");
+          break;
+        }
+        case ListRecordType::First: {
+          kvdk_assert(!isValidFirst(elem), "");
+          break;
+        }
+        case ListRecordType::Last: {
+          kvdk_assert(!isValidLast(elem), "");
+          break;
+        }
+        case ListRecordType::Middle: {
+          kvdk_assert(isDiscardedMiddle(elem), "");
+          break;
+        }
+      }
+      elem_deleter(elem);
+    }
+  }
+
  private:
   ListRecordType typeOf(DLRecord* elem) {
     if (elem->prev == NullPMemOffset) {
@@ -687,6 +712,13 @@ class GenericListBuilder final {
                   "");
       return false;
     }
+  }
+
+  // Check for discarded Middle
+  bool isDiscardedMiddle(DLRecord* elem) {
+    kvdk_assert(typeOf(elem) == ListRecordType::Middle, "Not a middle");
+    return (atran.offset_of(elem) != atran.address_of(elem->prev)->next) &&
+           (atran.offset_of(elem) != atran.address_of(elem->next)->prev);
   }
 
   // When false is returned, the node is put in temporary pool

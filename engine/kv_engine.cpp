@@ -933,6 +933,7 @@ Status KVEngine::Recovery() {
   GlobalLogger.Info("Rebuild skiplist done\n");
 
   list_builder_->RebuildLists();
+  list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
   s = restoreLists();
   if (s != Status::Ok) {
     return s;
