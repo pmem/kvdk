@@ -301,8 +301,10 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 }
 
 void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
-  DataHeader header(0, size);
-  pmem_memcpy_persist(offset2addr_checked(offset), &header, sizeof(DataHeader));
+  std::uint32_t sz = static_cast<std::uint32_t>(size);
+  kvdk_assert(size == static_cast<std::uint64_t>(sz), "Integer Overflow!");
+  DataEntry padding{0, sz, TimeStampType{}, RecordType::Padding, 0, 0};
+  pmem_memcpy_persist(offset2addr_checked(offset), &padding, sizeof(DataEntry));
 }
 
 Status PMEMAllocator::Backup(const std::string& backup_file_path) {
