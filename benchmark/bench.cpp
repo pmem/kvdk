@@ -154,11 +154,12 @@ std::uint64_t generate_cid(size_t tid) {
   static std::uniform_int_distribution<std::uint64_t> uniform{
       1, FLAGS_num_collection};
   switch (key_dist) {
-    case KeyDistribution::Uniform: {
-      return uniform(random_engines[tid].gen) - 1;
-    }
     case KeyDistribution::Zipf: {
       return zipf(random_engines[tid].gen) - 1;
+    }
+    case KeyDistribution::Uniform:
+    case KeyDistribution::Range: {
+      return uniform(random_engines[tid].gen) - 1;
     }
     default: {
       throw;

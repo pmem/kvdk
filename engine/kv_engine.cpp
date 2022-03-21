@@ -555,7 +555,7 @@ Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
   std::lock_guard<SpinMutex> lg(*hint.spin);
   s = hash_table_->SearchForWrite(hint, name, SortedHeaderRecord, &entry_ptr,
                                   &hash_entry, nullptr);
-  if (s == Status::DRAMOverflow) {
+  if (s == Status::MemoryOverflow) {
     return s;
   }
   assert(s == Status::NotFound);
@@ -583,7 +583,7 @@ Status KVEngine::RestoreStringRecord(StringRecord* pmem_record,
       hash_table_->SearchForWrite(hint, key, StringRecordType, &entry_ptr,
                                   &hash_entry, &existing_data_entry);
 
-  if (s == Status::DRAMOverflow) {
+  if (s == Status::MemoryOverflow) {
     return s;
   }
 
@@ -645,7 +645,7 @@ Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
       hint, internal_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
       &hash_entry, &existing_data_entry);
 
-  if (s == Status::DRAMOverflow) {
+  if (s == Status::MemoryOverflow) {
     return s;
   }
 
@@ -1075,7 +1075,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
       case Status::NotFound:
         s = Status::Ok;
         break;
-      case Status::DRAMOverflow:
+      case Status::MemoryOverflow:
         break;
       default:
         std::abort();  // never reach
@@ -1160,7 +1160,7 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
     Status s = hash_table_->SearchForWrite(
         hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
         &hash_entry, &data_entry);
-    if (s == Status::DRAMOverflow) {
+    if (s == Status::MemoryOverflow) {
       return s;
     }
     bool found = s == Status::Ok;
@@ -1412,7 +1412,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     // Something wrong
     // TODO: roll back finished writes (hard to roll back hash table now)
     if (s != Status::Ok) {
-      assert(s == Status::DRAMOverflow);
+      assert(s == Status::MemoryOverflow);
       std::abort();
     }
   }
@@ -1454,7 +1454,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
     Status s =
         hash_table_->SearchForWrite(hash_hint, kv.key, StringRecordType,
                                     &entry_ptr, &hash_entry, &data_entry);
-    if (s == Status::DRAMOverflow) {
+    if (s == Status::MemoryOverflow) {
       return s;
     }
     batch_hint.hash_entry_ptr = entry_ptr;
@@ -1602,7 +1602,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value) {
     Status s = hash_table_->SearchForWrite(
         hint, key, StringDeleteRecord | StringDataRecord, &hash_entry_ptr,
         &hash_entry, &data_entry);
-    if (s == Status::DRAMOverflow) {
+    if (s == Status::MemoryOverflow) {
       return s;
     }
     bool found = s == Status::Ok;
