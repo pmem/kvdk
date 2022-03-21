@@ -208,6 +208,10 @@ class Skiplist : public Collection {
                 uint8_t start_height, uint8_t end_height,
                 Splice* result_splice);
 
+  // Destroy and free the whole skiplist, including skiplist nodes and pmem
+  // records.
+  void Destroy();
+
   // check node linkage and hash index
   Status CheckIndex();
 
@@ -367,6 +371,10 @@ class Skiplist : public Collection {
     return height;
   }
 
+  void destroyRecords();
+
+  void destroyNodes();
+
   SkiplistNode* header_;
   std::shared_ptr<HashTable> hash_table_;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
@@ -477,17 +485,14 @@ class SortedCollectionRebuilder {
 
   Status AddHeader(DLRecord* record);
 
-  void AddUnlinkedRecord(DLRecord* sorted_record) {
-    assert(access_thread.id >= 0);
-    rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
-        sorted_record);
-  }
-
  private:
   struct RebuildSegment {
     bool visited;
     SkiplistNode* start_node;
   };
+
+  bool recoverToCheckpoint() { return checkpoint_.Valid(); }
+
   DLRecord* findValidVersion(DLRecord* pmem_record,
                              std::vector<DLRecord*>* invalid_version_records);
 
@@ -521,6 +526,12 @@ class SortedCollectionRebuilder {
   Status insertHashIndex(const StringView& key, void* ptr,
                          HashIndexType index_type);
 
+  void addUnlinkedRecord(DLRecord* pmem_record) {
+    assert(access_thread.id >= 0);
+    rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
+        pmem_record);
+  }
+
   struct ThreadCache {
     // For segment based rebuild
     std::unordered_map<uint64_t, int> visited_skiplists{};
@@ -533,8 +544,13 @@ class SortedCollectionRebuilder {
   std::vector<ThreadCache> rebuilder_thread_cache_;
   SpinMutex lock_;
   std::unordered_map<DLRecord*, RebuildSegment> recovery_segments_{};
+  // skiplists that need to rebuild index
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>
       rebuild_skiplits_{};
+  // skiplists that either newer than checkpoint or expired, need to be
+  // destroyed
+  std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>
+      invalid_skiplists_{};
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;

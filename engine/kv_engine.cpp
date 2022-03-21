@@ -768,7 +768,7 @@ Status KVEngine::Recovery() {
   }
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
-      this, configs_.opt_large_sorted_collection_restore,
+      this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");

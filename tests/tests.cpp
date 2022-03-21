@@ -100,7 +100,7 @@ class EngineBasicTest : public testing::Test {
         configs.max_access_threads = 16;
         break;
       case OptRestore:
-        configs.opt_large_sorted_collection_restore = true;
+        configs.opt_large_sorted_collection_recovery = true;
         break;
       default:
         break;
@@ -406,13 +406,15 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
             Status::Ok);
 
   std::string sorted_collection("sorted_collection");
+  std::string sorted_collection_after_snapshot(
+      "sorted_collection_after_snapshot");
   Collection* sorted_collection_ptr;
   ASSERT_EQ(
       engine->CreateSortedCollection(sorted_collection, &sorted_collection_ptr),
       Status::Ok);
 
   bool snapshot_done(false);
-  std::atomic<int> set_finish_threads(0);
+  std::atomic<int> set_finished_threads(0);
   SpinMutex spin;
   std::condition_variable_any cv;
 
@@ -430,7 +432,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       ASSERT_EQ(engine->SSet(sorted_collection, key2, key2), Status::Ok);
     }
     // Wait snapshot done
-    set_finish_threads.fetch_add(1);
+    set_finished_threads.fetch_add(1);
+    engine->ReleaseAccessThread();
     {
       std::unique_lock<SpinMutex> ul(spin);
       while (!snapshot_done) {
@@ -449,8 +452,9 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       ASSERT_EQ(engine->Set(key3, key3), Status::Ok);
       ASSERT_EQ(engine->SSet(sorted_collection, key1, "updated " + key1),
                 Status::Ok);
-      ASSERT_EQ(engine->SDelete(sorted_collection, key1), Status::Ok);
+      ASSERT_EQ(engine->SDelete(sorted_collection, key2), Status::Ok);
       ASSERT_EQ(engine->SSet(sorted_collection, key3, key3), Status::Ok);
+      ASSERT_EQ(engine->SSet(sorted_collection_after_snapshot, key1, key1), Ok);
     }
   };
 
@@ -459,10 +463,14 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     ths.emplace_back(std::thread(WriteThread, i));
   }
   // wait until all threads insert done
-  while (set_finish_threads.load() != num_threads) {
+  while (set_finished_threads.load() != num_threads) {
     asm volatile("pause");
   }
   Snapshot* snapshot = engine->GetSnapshot(true);
+  // Insert a new collection after snapshot
+  ASSERT_EQ(engine->CreateSortedCollection(sorted_collection_after_snapshot,
+                                           &sorted_collection_ptr),
+            Status::Ok);
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
@@ -472,6 +480,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   for (auto& t : ths) {
     t.join();
   }
+
   Iterator* snapshot_iter =
       engine->NewSortedIterator(sorted_collection, snapshot);
   uint64_t snapshot_iter_cnt = 0;
@@ -484,15 +493,23 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   }
   ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
   engine->ReleaseSortedIterator(snapshot_iter);
+
+  snapshot_iter =
+      engine->NewSortedIterator(sorted_collection_after_snapshot, snapshot);
+  snapshot_iter->SeekToFirst();
+  ASSERT_FALSE(snapshot_iter->Valid());
+  engine->ReleaseSortedIterator(snapshot_iter);
   delete engine;
 
   std::vector<int> opt_restore_skiplists{0, 1};
   for (auto is_opt : opt_restore_skiplists) {
-    configs.opt_large_sorted_collection_restore = is_opt;
+    configs.opt_large_sorted_collection_recovery = is_opt;
     Engine* backup_engine;
+
     ASSERT_EQ(
         Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
         Status::Ok);
+
     configs.recover_to_checkpoint = true;
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
               Status::Ok);
@@ -527,12 +544,17 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
                   Status::NotFound);
         ASSERT_EQ(got_v1, key1);
         ASSERT_EQ(got_v2, key2);
+        ASSERT_EQ(backup_engine->SGet(sorted_collection_after_snapshot, key1,
+                                      &got_v1),
+                  Status::NotFound);
         ASSERT_EQ(engine->SGet(sorted_collection, key1, &got_v1), Status::Ok);
         ASSERT_EQ(engine->SGet(sorted_collection, key2, &got_v2), Status::Ok);
         ASSERT_EQ(engine->SGet(sorted_collection, key3, &got_v3),
                   Status::NotFound);
         ASSERT_EQ(got_v1, key1);
         ASSERT_EQ(got_v2, key2);
+        ASSERT_EQ(engine->SGet(sorted_collection_after_snapshot, key1, &got_v1),
+                  Status::NotFound);
       }
     }
 
@@ -556,6 +578,12 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     ASSERT_EQ(checkpoint_iter_cnt, num_threads * count * 2);
     backup_engine->ReleaseSortedIterator(backup_iter);
     engine->ReleaseSortedIterator(checkpoint_iter);
+
+    ASSERT_EQ(
+        backup_engine->NewSortedIterator(sorted_collection_after_snapshot),
+        nullptr);
+    ASSERT_EQ(engine->NewSortedIterator(sorted_collection_after_snapshot),
+              nullptr);
 
     delete engine;
     delete backup_engine;
@@ -789,58 +817,61 @@ TEST_F(EngineBasicTest, TestStringRestore) {
 TEST_F(EngineBasicTest, TestSortedRestore) {
   int num_threads = 16;
   configs.max_access_threads = num_threads;
-  for (int index_with_hashtable : {0, 1}) {
-    SortedCollectionConfigs s_configs;
-    s_configs.index_with_hashtable = index_with_hashtable;
-    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-              Status::Ok);
-    // insert and delete some keys, then re-insert some deleted keys
-    int count = 100;
-    std::string global_skiplist =
-        std::to_string(index_with_hashtable) + "skiplist";
-    Collection* global_collection_ptr;
-    ASSERT_EQ(engine->CreateSortedCollection(global_skiplist,
-                                             &global_collection_ptr, s_configs),
-              Status::Ok);
-    std::string thread_skiplist =
-        std::to_string(index_with_hashtable) + "t_skiplist";
-    auto SetupEngine = [&](uint32_t id) {
-      std::string key_prefix(id, 'a');
-      std::string got_val;
-      std::string t_skiplist(thread_skiplist + std::to_string(id));
-      Collection* thread_collection_ptr;
-      ASSERT_EQ(engine->CreateSortedCollection(
-                    t_skiplist, &thread_collection_ptr, s_configs),
+  for (int opt_large_sorted_collection_recovery : {0, 1}) {
+    for (int index_with_hashtable : {0, 1}) {
+      SortedCollectionConfigs s_configs;
+      s_configs.index_with_hashtable = index_with_hashtable;
+      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
                 Status::Ok);
-      for (int i = 1; i <= count; i++) {
-        auto key = key_prefix + std::to_string(i);
-        auto overall_val = std::to_string(i);
-        auto t_val = std::to_string(i * 2);
-        ASSERT_EQ(engine->SSet(global_skiplist, key, overall_val), Status::Ok);
-        ASSERT_EQ(engine->SSet(t_skiplist, key, t_val), Status::Ok);
-        ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::Ok);
-        ASSERT_EQ(got_val, overall_val);
-        ASSERT_EQ(engine->SGet(t_skiplist, key, &got_val), Status::Ok);
-        ASSERT_EQ(got_val, t_val);
-        if (i % 2 == 1) {
-          ASSERT_EQ(engine->SDelete(global_skiplist, key), Status::Ok);
-          ASSERT_EQ(engine->SDelete(t_skiplist, key), Status::Ok);
-          ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val),
-                    Status::NotFound);
-          ASSERT_EQ(engine->SGet(t_skiplist, key, &got_val), Status::NotFound);
+      // insert and delete some keys, then re-insert some deleted keys
+      int count = 100;
+      std::string global_skiplist =
+          std::to_string(index_with_hashtable) + "skiplist";
+      Collection* global_collection_ptr;
+      ASSERT_EQ(engine->CreateSortedCollection(
+                    global_skiplist, &global_collection_ptr, s_configs),
+                Status::Ok);
+      std::string thread_skiplist =
+          std::to_string(index_with_hashtable) + "t_skiplist";
+      auto SetupEngine = [&](uint32_t id) {
+        std::string key_prefix(id, 'a');
+        std::string got_val;
+        std::string t_skiplist(thread_skiplist + std::to_string(id));
+        Collection* thread_collection_ptr;
+        ASSERT_EQ(engine->CreateSortedCollection(
+                      t_skiplist, &thread_collection_ptr, s_configs),
+                  Status::Ok);
+        for (int i = 1; i <= count; i++) {
+          auto key = key_prefix + std::to_string(i);
+          auto overall_val = std::to_string(i);
+          auto t_val = std::to_string(i * 2);
+          ASSERT_EQ(engine->SSet(global_skiplist, key, overall_val),
+                    Status::Ok);
+          ASSERT_EQ(engine->SSet(t_skiplist, key, t_val), Status::Ok);
+          ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val), Status::Ok);
+          ASSERT_EQ(got_val, overall_val);
+          ASSERT_EQ(engine->SGet(t_skiplist, key, &got_val), Status::Ok);
+          ASSERT_EQ(got_val, t_val);
+          if (i % 2 == 1) {
+            ASSERT_EQ(engine->SDelete(global_skiplist, key), Status::Ok);
+            ASSERT_EQ(engine->SDelete(t_skiplist, key), Status::Ok);
+            ASSERT_EQ(engine->SGet(global_skiplist, key, &got_val),
+                      Status::NotFound);
+            ASSERT_EQ(engine->SGet(t_skiplist, key, &got_val),
+                      Status::NotFound);
+          }
         }
-      }
-    };
+      };
 
-    LaunchNThreads(num_threads, SetupEngine);
+      LaunchNThreads(num_threads, SetupEngine);
 
-    delete engine;
-    std::vector<int> opt_restore_skiplists{0, 1};
-    for (auto is_opt : opt_restore_skiplists) {
-      GlobalLogger.Info(
-          "Restore with opt_large_sorted_collection_restore: %d\n", is_opt);
+      delete engine;
+      GlobalLogger.Debug(
+          "Restore with opt_large_sorted_collection_restore: %d\n",
+          opt_large_sorted_collection_recovery);
       configs.max_access_threads = num_threads;
-      configs.opt_large_sorted_collection_restore = is_opt;
+      configs.opt_large_sorted_collection_recovery =
+          opt_large_sorted_collection_recovery;
       // reopen and restore engine and try gets
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
                 Status::Ok);
@@ -945,7 +976,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   int num_threads = 16;
   int num_collections = 16;
   configs.max_access_threads = num_threads;
-  configs.opt_large_sorted_collection_restore = true;
+  configs.opt_large_sorted_collection_recovery = true;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
