@@ -11,7 +11,7 @@
 
 #include "hash_table.hpp"
 #include "kv_engine.hpp"
-#include "utils/coding.hpp"
+#include "utils/codec.hpp"
 #include "utils/sync_point.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -422,9 +422,9 @@ std::string Skiplist::EncodeSortedCollectionValue(
   const size_t num_config_fields = 1;
   std::string value_str;
 
-  AppendInt64(&value_str, id);
+  AppendUint64(&value_str, id);
   AppendFixedString(&value_str, s_configs.comparator_name);
-  AppendInt32(&value_str, s_configs.index_with_hashtable);
+  AppendUint32(&value_str, s_configs.index_with_hashtable);
 
   return value_str;
 }
@@ -432,13 +432,13 @@ std::string Skiplist::EncodeSortedCollectionValue(
 Status Skiplist::DecodeSortedCollectionValue(
     StringView value_str, CollectionIDType& id,
     SortedCollectionConfigs& s_configs) {
-  if (!FetchInt64(&value_str, &id)) {
+  if (!FetchUint64(&value_str, &id)) {
     return Status::Abort;
   }
   if (!FetchFixedString(&value_str, &s_configs.comparator_name)) {
     return Status::Abort;
   }
-  if (!FetchInt32(&value_str, (uint32_t*)&s_configs.index_with_hashtable)) {
+  if (!FetchUint32(&value_str, (uint32_t*)&s_configs.index_with_hashtable)) {
     return Status::Abort;
   }
 
