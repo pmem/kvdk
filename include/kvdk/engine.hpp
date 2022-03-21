@@ -52,6 +52,7 @@ class Engine {
   virtual Status GetExpiredTime(const StringView str,
                                 int64_t* expired_time) = 0;
 
+  // Set the STRING-type or Collection type expired time.
   virtual Status SetExpiredTime(const StringView str, int64_t expired_time) = 0;
 
   // Remove STRING-type KV of "key".

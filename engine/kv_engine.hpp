@@ -197,7 +197,7 @@ class KVEngine : public Engine {
 
     // check collection is expired.
     auto expired_time = (*collection_ptr)->GetExpiredTime();
-    if (expired_time > 0 && expired_time <= second_time()) {
+    if (expired_time > 0 && expired_time <= now()) {
       (*collection_ptr)->UpdateExpiredStatus(true);
       return Status::NotFound;
     }
@@ -223,7 +223,10 @@ class KVEngine : public Engine {
                               BatchWriteHint& batch_hint);
 
   Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
-                  const StringView& value, int64_t expired_time = 0);
+                  const StringView& value);
+
+  Status UpdateHeadWithExpiredTime(Skiplist* skiplist,
+                                   ExpiredTimeType expired_time);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 

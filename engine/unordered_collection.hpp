@@ -110,8 +110,11 @@ class UnorderedCollection final
     return collection_record_ptr_->GetExpiredTime();
   }
 
-  void InplaceUpdateExpiredTime(int64_t expired_time) {
-    collection_record_ptr_->entry.header.expired_time = expired_time;
+  // inplace expired time
+  void InplaceUpdateExpiredTime(ExpiredTimeType expired_time) {
+    collection_record_ptr_->entry.expired_time = expired_time * 1000;
+    pmem_persist(&collection_record_ptr_->entry.expired_time,
+                 sizeof(ExpiredTimeType));
   }
 
   /// Erase given record

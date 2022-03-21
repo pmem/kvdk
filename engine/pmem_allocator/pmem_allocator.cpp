@@ -301,7 +301,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 }
 
 void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
-  DataHeader header(0, size, 0);
+  DataHeader header(0, size);
   pmem_memcpy_persist(offset2addr_checked(offset), &header, sizeof(DataHeader));
 }
 

@@ -50,12 +50,10 @@ const uint16_t ExpiredRecordType =
 
 struct DataHeader {
   DataHeader() = default;
-  DataHeader(uint32_t c, uint32_t s, ExpiredTimeType time)
-      : checksum(c), record_size(s), expired_time(time) {}
+  DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {}
 
   uint32_t checksum;
   uint32_t record_size;
-  ExpiredTimeType expired_time;
 };
 
 struct DataMeta {
@@ -79,7 +77,8 @@ struct DataEntry {
             TimeStampType _timestamp, RecordType _record_type,
             uint16_t _key_size, uint32_t _value_size,
             ExpiredTimeType _expired_time)
-      : header(_checksum, _record_size, _expired_time),
+      : header(_checksum, _record_size),
+        expired_time(_expired_time * 1000), /*convert to microsecond*/
         meta(_timestamp, _record_type, _key_size, _value_size) {}
 
   DataEntry() = default;
@@ -91,6 +90,7 @@ struct DataEntry {
 
   // TODO jiayu: use function to access these
   DataHeader header;
+  ExpiredTimeType expired_time;
   DataMeta meta;
 };
 
@@ -151,7 +151,7 @@ struct StringRecord {
     return false;
   }
 
-  ExpiredTimeType GetExpiredTime() { return entry.header.expired_time; }
+  ExpiredTimeType GetExpiredTime() { return entry.expired_time; }
 
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
@@ -176,7 +176,8 @@ struct StringRecord {
 
   uint32_t Checksum() {
     uint32_t checksum_size = entry.meta.k_size + entry.meta.v_size +
-                             sizeof(StringRecord) - sizeof(DataHeader);
+                             sizeof(StringRecord) - sizeof(DataHeader) -
+                             sizeof(ExpiredTimeType);
     return get_checksum((char*)&entry.meta, checksum_size);
   }
 };
@@ -228,7 +229,7 @@ struct DLRecord {
     return StringView(data + entry.meta.k_size, entry.meta.v_size);
   }
 
-  ExpiredTimeType GetExpiredTime() { return entry.header.expired_time; }
+  ExpiredTimeType GetExpiredTime() { return entry.expired_time; }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,

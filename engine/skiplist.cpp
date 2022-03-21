@@ -294,18 +294,18 @@ bool Skiplist::searchAndLockInsertPos(
   }
 }
 
-bool Skiplist::Insert(const StringView& internal_key, const StringView& value,
+bool Skiplist::Insert(const StringView& key, const StringView& value,
                       const SpinMutex* inserting_key_lock,
                       TimeStampType timestamp, SkiplistNode** dram_node,
                       const SpaceEntry& space_to_write) {
-  StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
-  if (!searchAndLockInsertPos(&splice, user_key, inserting_key_lock,
+  if (!searchAndLockInsertPos(&splice, key, inserting_key_lock,
                               &prev_record_lock)) {
     return false;
   }
 
+  std::string internal_key(InternalKey(key));
   uint64_t prev_offset = pmem_allocator_->addr2offset(splice.prev_pmem_record);
   uint64_t next_offset = pmem_allocator_->addr2offset(splice.next_pmem_record);
   DLRecord* new_record = DLRecord::PersistDLRecord(
@@ -330,7 +330,7 @@ bool Skiplist::Insert(const StringView& internal_key, const StringView& value,
             break;
           }
         } else {
-          splice.Recompute(user_key, i);
+          splice.Recompute(key, i);
         }
       }
     }
@@ -342,8 +342,8 @@ bool Skiplist::Update(const StringView& internal_key, const StringView& value,
                       const DLRecord* updating_record,
                       const SpinMutex* updating_record_lock,
                       TimeStampType timestamp, RecordType record_type,
-                      int64_t expired_time, SkiplistNode* dram_node,
-                      const SpaceEntry& space_to_write) {
+                      SkiplistNode* dram_node, const SpaceEntry& space_to_write,
+                      int64_t expired_time) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
 
@@ -1123,4 +1123,5 @@ Status Skiplist::DecodeSortedCollectionValue(
     setting_config_field++;
   }
 }
+
 }  // namespace KVDK_NAMESPACE

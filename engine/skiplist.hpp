@@ -275,8 +275,8 @@ class Skiplist : public Collection {
   bool Update(const StringView& internal_key, const StringView& value,
               const DLRecord* updating_record,
               const SpinMutex* updating_record_lock, TimeStampType timestamp,
-              RecordType record_type, int64_t expired_time,
-              SkiplistNode* dram_node, const SpaceEntry& space_to_write);
+              RecordType record_type, SkiplistNode* dram_node,
+              const SpaceEntry& space_to_write, int64_t expired_time = 0);
 
   // Delete "key" from the skiplist by replace it with a delete record
   //
