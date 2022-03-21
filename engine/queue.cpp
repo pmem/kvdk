@@ -6,7 +6,7 @@ Queue::Queue(PMEMAllocator* pmem_allocator_ptr, std::string const name,
     : Collection{name, id, is_expired},
       collection_record_ptr_{nullptr},
       dlinked_list_{pmem_allocator_ptr, timestamp,
-                    CollectionUtils::ID2String(id), StringView{""}},
+                    CollectionUtils::EncodeID(id), StringView{""}},
       timestamp_{timestamp} {
   {
     auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
@@ -25,13 +25,13 @@ Queue::Queue(PMEMAllocator* pmem_allocator_ptr, std::string const name,
         list_record_space.size, timestamp, RecordType::QueueRecord,
         kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
         dlinked_list_.Tail().GetCurrentOffset(), Name(),
-        CollectionUtils::ID2String(ID()));
+        CollectionUtils::EncodeID(ID()));
   }
 }
 
 Queue::Queue(PMEMAllocator* pmem_allocator_ptr, DLRecord* collection_record)
     : Collection{string_view_2_string(collection_record->Key()),
-                 CollectionUtils::string2ID(collection_record->Value())},
+                 CollectionUtils::DecodeID(collection_record->Value())},
       collection_record_ptr_{collection_record},
       dlinked_list_{
           pmem_allocator_ptr,

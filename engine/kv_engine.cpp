@@ -80,6 +80,12 @@ void KVEngine::FreeSkiplistDramNodes() {
 }
 
 void KVEngine::ReportPMemUsage() {
+  // Check pmem allocator is initialized before use it.
+  // It may not be successfully initialized due to file operation errors.
+  if (pmem_allocator_ == nullptr) {
+    return;
+  }
+
   auto total = pmem_allocator_->PMemUsageInBytes();
   GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
                     (total / (1LL << 10)), (total / (1LL << 20)),
@@ -357,8 +363,9 @@ Status KVEngine::RestoreData() {
         // Report Corrupted Record, but still release it and continues
         GlobalLogger.Error(
             "Corrupted Record met when recovering. It has invalid "
-            "type. Record type: %u\n",
-            data_entry_cached.meta.type);
+            "type. Record type: %u, Checksum: %u\n",
+            data_entry_cached.meta.type, data_entry_cached.header.checksum);
+        kvdk_assert(data_entry_cached.header.checksum == 0, "");
         data_entry_cached.meta.type = RecordType::Padding;
         break;
       }
@@ -1729,6 +1736,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
 
   {
     auto hint = hash_table_->GetHint(key);
+    TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
     std::unique_lock<SpinMutex> ul(*hint.spin);
     // Set current snapshot to this thread
     version_controller_.HoldLocalSnapshot();

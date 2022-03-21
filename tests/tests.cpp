@@ -41,7 +41,7 @@ class EngineBasicTest : public testing::Test {
     str_pool.resize(str_pool_length);
     random_str(&str_pool[0], str_pool_length);
     // No logs by default, for debug, set it to All
-    configs.log_level = LogLevel::Debug;
+    configs.log_level = LogLevel::All;
     configs.pmem_file_size = (16ULL << 30);
     configs.populate_pmem_space = false;
     configs.hash_bucket_num = (1 << 10);
@@ -80,7 +80,7 @@ class EngineBasicTest : public testing::Test {
       return false;
     } else {
       ReopenEngine();
-      return true;
+      return engine != nullptr;
     }
   }
 
@@ -1583,6 +1583,82 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestHashTableIterator) {
+  uint64_t threads = 16;
+  configs.max_access_threads = threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  Collection* sorted_collection_ptr;
+  std::string collection_name = "sortedcollection";
+  engine->CreateSortedCollection(collection_name, &sorted_collection_ptr);
+  auto MixedSet = [&](uint64_t id) {
+    if (id % 2 == 0) {
+      ASSERT_EQ(engine->Set("stringkey" + std::to_string(id), "stringval"),
+                Status::Ok);
+    } else {
+      ASSERT_EQ(engine->SSet(collection_name, "sortedkey" + std::to_string(id),
+                             "sortedval"),
+                Status::Ok);
+    }
+  };
+  LaunchNThreads(threads, MixedSet);
+
+  auto test_kvengine = static_cast<KVEngine*>(engine);
+  auto hash_table = test_kvengine->GetHashTable();
+  int total_entry_num = 0;
+  // Hash Table Iterator
+  // scan hash table with locked slot.
+  {
+    auto slot_iter = hash_table->GetSlotIterator();
+    while (slot_iter.Valid()) {
+      auto bucket_iter = slot_iter.Begin();
+      auto end_bucket_iter = slot_iter.End();
+      while (bucket_iter != end_bucket_iter) {
+        switch (bucket_iter->GetIndexType()) {
+          case HashIndexType::StringRecord: {
+            total_entry_num++;
+            ASSERT_EQ(string_view_2_string(
+                          bucket_iter->GetIndex().string_record->Value()),
+                      "stringval");
+            break;
+          }
+          case HashIndexType::Skiplist: {
+            total_entry_num++;
+            ASSERT_EQ(
+                string_view_2_string(bucket_iter->GetIndex().skiplist->Name()),
+                collection_name);
+            break;
+          }
+          case HashIndexType::SkiplistNode: {
+            total_entry_num++;
+            ASSERT_EQ(
+                string_view_2_string(
+                    bucket_iter->GetIndex().skiplist_node->record->Value()),
+                "sortedval");
+            break;
+          }
+          case HashIndexType::DLRecord: {
+            total_entry_num++;
+            ASSERT_EQ(string_view_2_string(
+                          bucket_iter->GetIndex().dl_record->Value()),
+                      "sortedval");
+            break;
+          }
+          default:
+            ASSERT_EQ((bucket_iter->GetIndexType() == HashIndexType::Invalid) ||
+                          (bucket_iter->GetIndexType() == HashIndexType::Empty),
+                      true);
+            break;
+        }
+        bucket_iter++;
+      }
+      slot_iter.Next();
+    }
+    ASSERT_EQ(total_entry_num, threads + 1);
+  }
+  delete engine;
+}
+
 TEST_F(EngineBasicTest, TestExpireAPI) {
   int n_thread_reading = 1;
   int n_thread_writing = 1;
@@ -1694,24 +1770,24 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // Close engine and Recovery
   delete engine;
-  // ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-  //           Status::Ok);
-  // // Get string record expired time
-  // ASSERT_EQ(engine->GetExpiredTime(key, &expired_time), Status::Ok);
-  // ASSERT_EQ(expired_time, new_expired_time);
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // Get string record expired time
+  ASSERT_EQ(engine->GetExpiredTime(key, &expired_time), Status::Ok);
+  ASSERT_EQ(expired_time, new_expired_time);
 
-  // // Get sorted record expired time
-  // ASSERT_EQ(engine->GetExpiredTime(sorted_collection, &expired_time),
-  //           Status::NotFound);
+  // Get sorted record expired time
+  ASSERT_EQ(engine->GetExpiredTime(sorted_collection, &expired_time),
+            Status::NotFound);
 
-  // // Get hashes record expired time
-  // ASSERT_EQ(engine->GetExpiredTime(hashes_collection, &expired_time),
-  //           Status::NotFound);
+  // Get hashes record expired time
+  ASSERT_EQ(engine->GetExpiredTime(hashes_collection, &expired_time),
+            Status::NotFound);
 
-  // // Get list record expired time
-  // ASSERT_EQ(engine->GetExpiredTime(list_collection + key, &expired_time),
-  //           Status::NotFound);
-  // delete engine;
+  // Get list record expired time
+  ASSERT_EQ(engine->GetExpiredTime(list_collection + key, &expired_time),
+            Status::NotFound);
+  delete engine;
 }
 
 // ========================= Sync Point ======================================
@@ -2107,6 +2183,53 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   }
 }
 
+TEST_F(EngineBasicTest, TestHashTableRangeIter) {
+  uint64_t threads = 16;
+  configs.max_access_threads = threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string key = "stringkey";
+  std::string val = "stringval";
+  std::string updated_val = "stringupdatedval";
+
+  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+  SyncPoint::GetInstance()->LoadDependency(
+      {{"ScanHashTable", "KVEngine::StringSetImpl::BeforeLock"}});
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  auto StringUpdate = [&]() {
+    ASSERT_EQ(engine->Set(key, updated_val), Status::Ok);
+  };
+
+  auto HashTableScan = [&]() {
+    auto test_kvengine = static_cast<KVEngine*>(engine);
+    auto hash_table = test_kvengine->GetHashTable();
+    auto slot_iter = hash_table->GetSlotIterator();
+    while (slot_iter.Valid()) {
+      auto bucket_iter = slot_iter.Begin();
+      auto end_bucket_iter = slot_iter.End();
+      while (bucket_iter != end_bucket_iter) {
+        if (bucket_iter->GetIndexType() == HashIndexType::StringRecord) {
+          TEST_SYNC_POINT("ScanHashTable");
+          sleep(2);
+          ASSERT_EQ(bucket_iter->GetIndex().string_record->Key(), key);
+          ASSERT_EQ(bucket_iter->GetIndex().string_record->Value(), val);
+        }
+        bucket_iter++;
+      }
+      slot_iter.Next();
+    }
+  };
+
+  std::vector<std::thread> ts;
+  ts.emplace_back(std::thread(StringUpdate));
+  ts.emplace_back(std::thread(HashTableScan));
+  for (auto& t : ts) t.join();
+  delete engine;
+}
 #endif
 
 int main(int argc, char** argv) {
