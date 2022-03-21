@@ -472,6 +472,10 @@ class SortedCollectionRebuilder {
                             uint64_t num_rebuild_threads,
                             const CheckPoint& checkpoint);
 
+  // Rebuild result of skiplists
+  //
+  // rebuild_skiplists: succeffully rebuilded skiplists
+  // max_id: max id of "rebuild_skiplists"
   struct RebuildResult {
     Status s = Status::Ok;
     CollectionIDType max_id = 0;
@@ -479,10 +483,13 @@ class SortedCollectionRebuilder {
         rebuild_skiplits;
   };
 
+  // Rebuild DRAM index for skiplists and free invalid records.
   RebuildResult RebuildIndex();
 
+  // Add a skiplist data/delete record to rebuilder
   Status AddElement(DLRecord* record);
 
+  // Add a skiplist header to rebuilder
   Status AddHeader(DLRecord* record);
 
  private:
