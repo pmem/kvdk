@@ -115,6 +115,9 @@ class KVEngine : public Engine {
     return skiplists_;
   };
 
+  // Used by test case.
+  const std::shared_ptr<HashTable>& GetHashTable() { return hash_table_; }
+
  private:
   friend OldRecordsCleaner;
 

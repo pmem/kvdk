@@ -24,13 +24,13 @@ git clone --recurse-submodules https://github.com/pmem/kvdk.git
 ## Building
 ### Install dependent tools and libraries on Ubuntu 18.04
 ```bash
-sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl
+sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
 
 git clone https://github.com/pmem/ndctl.git
 cd ndctl
 git checkout v70.1
 ./autogen.sh
-./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib --disable-asciidoctor
+./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib
 make
 sudo make install
 
@@ -51,7 +51,7 @@ sudo make install
 
 ### Install dependent tools and libraries on CentOS 8
 ```bash
-yum config-manager --add-repo /etc/yum.repos.d/CentOS-PowerTools.repo
+yum config-manager --add-repo /etc/yum.repos.d/CentOS-Linux-PowerTools.repo
 yum config-manager --set-enabled PowerTools
 
 yum install -y git gcc gcc-c++ autoconf automake asciidoc bash-completion xmlto libtool pkgconfig glib2 glib2-devel libfabric libfabric-devel doxygen graphviz pandoc ncurses kmod kmod-devel libudev-devel libuuid-devel json-c-devel keyutils-libs-devel gem make cmake libarchive clang-tools-extra hwloc-devel perl-Text-Diff gflags-devel
@@ -60,7 +60,7 @@ git clone https://github.com/pmem/ndctl.git
 cd ndctl
 git checkout v70.1
 ./autogen.sh
-./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib --disable-asciidoctor
+./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib
 make
 sudo make install
 
@@ -97,6 +97,7 @@ mount -t tmpfs -o size=2G tmpfs /mnt/pmem0
 export PMEM_IS_PMEM_FORCE=1
 
 cd kvdk/build/examples
+# Note: this requires CPU supporting AVX512
 ./cpp_api_tutorial
 
 ```

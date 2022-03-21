@@ -54,7 +54,7 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   assert(cmp == 0);
   s = KVDKGet(kvdk_engine, key2, key2_len, &read_v2_len, &read_v2);
   assert(s == Ok);
-  s = CmpCompare(read_v2, read_v2_len, value2, value2_len);
+  cmp = CmpCompare(read_v2, read_v2_len, value2, value2_len);
   assert(cmp == 0);
   s = KVDKDelete(kvdk_engine, key1, key1_len);
   assert(s == Ok);

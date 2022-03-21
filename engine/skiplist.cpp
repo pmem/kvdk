@@ -1517,6 +1517,8 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
     default:
       std::abort();  // never reach
   }
+
+  return Status::Ok;
 }
 
 }  // namespace KVDK_NAMESPACE
