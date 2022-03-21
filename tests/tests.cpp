@@ -1395,7 +1395,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListInsert(key, kvdk::Engine::ListPosition::Before,
                                  insert_pos, elem),
               Status::Ok);
-    ASSERT_EQ(engine->ListFind(key, elem, &found), Status::Ok);
+    ASSERT_EQ(engine->ListPos(key, elem, &found), Status::Ok);
     ASSERT_EQ(found, insert_pos);
     ASSERT_EQ(
         engine->ListIndex(key, static_cast<std::int64_t>(found), &value_got),

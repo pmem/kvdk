@@ -414,12 +414,11 @@ Status KVEngine::RestoreData() {
         break;
       }
       case RecordType::ListRecord: {
-        s = restoreListRecord(
-            static_cast<StringRecord*>(recovering_pmem_record));
+        s = listRestoreList(static_cast<StringRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::ListElem: {
-        s = restoreListElem(static_cast<DLRecord*>(recovering_pmem_record));
+        s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       default: {
@@ -941,7 +940,7 @@ Status KVEngine::Recovery() {
 
   list_builder_->RebuildLists();
   list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
-  s = registerLists();
+  s = listRegisterRecovered();
   if (s != Status::Ok) {
     return s;
   }
@@ -2094,8 +2093,9 @@ void KVEngine::backgroundDramCleaner() {
 // List
 namespace KVDK_NAMESPACE {
 Status KVEngine::ListLock(StringView key) {
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  Status s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
@@ -2104,8 +2104,9 @@ Status KVEngine::ListLock(StringView key) {
 }
 
 Status KVEngine::ListTryLock(StringView key) {
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  Status s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
@@ -2117,8 +2118,9 @@ Status KVEngine::ListTryLock(StringView key) {
 }
 
 Status KVEngine::ListUnlock(StringView key) {
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  Status s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
@@ -2127,8 +2129,9 @@ Status KVEngine::ListUnlock(StringView key) {
 }
 
 Status KVEngine::ListLength(StringView key, size_t* sz) {
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  Status s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
@@ -2136,60 +2139,44 @@ Status KVEngine::ListLength(StringView key, size_t* sz) {
   return Status::Ok;
 }
 
-Status KVEngine::ListFind(StringView key, StringView elem,
-                          std::vector<size_t>* indices, IndexType rank,
-                          size_t count, size_t max_len) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
+Status KVEngine::ListPos(StringView key, StringView elem,
+                         std::vector<size_t>* indices, IndexType rank,
+                         size_t count, size_t max_len) {
   kvdk_assert(rank != 0, "Invalid argument!");
   kvdk_assert(indices != nullptr && indices->empty(),
               "Invalid output parameter!");
 
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
-  std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
+
   max_len = (max_len == 0) ? list->Size() : max_len;
   if (rank > 0) {
     size_t index = 0;
-    for (auto iter = list->Front(); iter != list->Tail(); ++iter, ++index) {
-      if (max_len == 0) {
-        return Status::Ok;
-      }
-      --max_len;
-
+    for (auto iter = list->Front();
+         iter != list->Tail() && max_len != 0 && count != 0;
+         ++iter, ++index, --max_len) {
       if (iter->Value() == elem) {
         --rank;
         if (rank <= 0) {
           indices->push_back(index);
           --count;
-          if (count == 0) {
-            return Status::Ok;
-          }
         }
       }
     }
   } else {
     size_t index = list->Size();
-    for (auto iter = list->Front(); iter != list->Tail(); ++iter, --index) {
-      if (max_len == 0) {
-        return Status::Ok;
-      }
-      --max_len;
-
+    for (auto iter = list->Front();
+         iter != list->Tail() && max_len != 0 && count != 0;
+         ++iter, --index, --max_len) {
       if (iter->Value() == elem) {
         --rank;
         if (rank <= 0) {
           indices->push_back(index);
           --count;
-          if (count == 0) {
-            return Status::Ok;
-          }
         }
       }
     }
@@ -2197,10 +2184,10 @@ Status KVEngine::ListFind(StringView key, StringView elem,
   return Status::Ok;
 }
 
-Status KVEngine::ListFind(StringView key, StringView elem, size_t* index,
-                          IndexType rank, size_t max_len) {
+Status KVEngine::ListPos(StringView key, StringView elem, size_t* index,
+                         IndexType rank, size_t max_len) {
   std::vector<size_t> indices;
-  Status s = ListFind(key, elem, &indices, rank, 1, max_len);
+  Status s = ListPos(key, elem, &indices, rank, 1, max_len);
   if (s != Status::Ok) {
     return s;
   }
@@ -2212,12 +2199,13 @@ Status KVEngine::ListFind(StringView key, StringView elem, size_t* index,
 
 Status KVEngine::ListRange(StringView key, IndexType start, IndexType stop,
                            GetterCallBack cb, void* cb_args) {
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  Status s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
-  std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
+
   auto iter = list->Seek(start);
   if (iter == list->Tail()) {
     return Status::OutOfRange;
@@ -2242,23 +2230,19 @@ Status KVEngine::ListIndex(StringView key, IndexType index, std::string* elem) {
 }
 
 Status KVEngine::ListPush(StringView key, ListPosition pos, StringView elem) {
-  Status s = MaybeInitAccessThread();
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, true, guard);
   if (s != Status::Ok) {
     return s;
   }
 
-  List* list;
-  s = listFindInitNX(key, &list);
-  if (s != Status::Ok) {
-    return s;
-  }
   auto space = pmem_allocator_->Allocate(
       sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
   if (space.size == 0) {
     return Status::PmemOverflow;
   }
 
-  std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
   switch (pos) {
     case ListPosition::Left: {
       list->PushFront(space, version_controller_.GetCurrentTimestamp(), "",
@@ -2281,18 +2265,13 @@ Status KVEngine::ListPush(StringView key, ListPosition pos, StringView elem) {
 
 Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
                          void* cb_args, size_t cnt) {
-  Status s = MaybeInitAccessThread();
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
 
-  List* list;
-  auto guard1 = hash_table_->AquireLock(key);
-  s = FindCollection(key, &list, RecordType::ListRecord);
-  if (s != Status::Ok) {
-    return s;
-  }
-  std::lock_guard<std::recursive_mutex> guard2{*list->Mutex()};
   switch (pos) {
     case ListPosition::Left: {
       while (list->Size() > 0 && cnt > 0) {
@@ -2320,8 +2299,9 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
     }
   }
   if (list->Size() == 0) {
-    destroyList(list);
+    auto guard = hash_table_->AcquireLock(key);
     unregisterCollection<List>(key);
+    listDestroy(list);
   }
   return Status::Ok;
 }
@@ -2332,13 +2312,9 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, std::string* elem) {
 
 Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot,
                             StringView elem) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  s = listFindInitNX(key, &list);
+  Status s = listFind(key, &list, true, guard);
   if (s != Status::Ok) {
     return s;
   }
@@ -2349,7 +2325,6 @@ Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot,
     return Status::PmemOverflow;
   }
 
-  std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
   auto iter = list->Seek(pivot);
   if (iter == list->Tail()) {
     return Status::OutOfRange;
@@ -2377,33 +2352,28 @@ Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot,
 
 Status KVEngine::ListInsert(StringView key, ListPosition pos, StringView pivot,
                             StringView elem, IndexType rank) {
-  Status s = ListLock(key);
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, true, guard);
   if (s != Status::Ok) {
     return s;
   }
+
   size_t index;
-  s = ListFind(key, elem, &index, rank, 0);
+  s = ListPos(key, elem, &index, rank, 0);
   if (s != Status::Ok) {
     return s;
   }
-  s = ListInsert(key, pos, static_cast<IndexType>(index), elem);
-  ListUnlock(key);
-  return s;
+  return ListInsert(key, pos, static_cast<IndexType>(index), elem);
 }
 
 Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  auto guard1 = hash_table_->AquireLock(key);
-  s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
-  std::lock_guard<std::recursive_mutex> guard2{*list->Mutex()};
 
   for (auto iter = list->Front(); iter != list->Tail() && cnt > 0; ++iter) {
     if (iter->Value() == elem) {
@@ -2413,19 +2383,17 @@ Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
     }
   }
   if (list->Size() == 0) {
-    destroyList(list);
+    auto guard2 = hash_table_->AcquireLock(key);
     unregisterCollection<List>(key);
+    listDestroy(list);
   }
   return Status::Ok;
 }
 
 Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
-  s = FindCollection(key, &list, RecordType::ListRecord);
+  Status s = listFind(key, &list, false, guard);
   if (s != Status::Ok) {
     return s;
   }
@@ -2435,8 +2403,6 @@ Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
   if (space.size == 0) {
     return Status::PmemOverflow;
   }
-
-  std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
 
   auto iter = list->Seek(index);
   if (iter == list->Tail()) {
@@ -2448,7 +2414,7 @@ Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
   return Status::Ok;
 }
 
-List* KVEngine::createList(StringView key) {
+List* KVEngine::listCreate(StringView key) {
   std::uint64_t ts = version_controller_.GetCurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   List* list = new List{};
@@ -2456,7 +2422,6 @@ List* KVEngine::createList(StringView key) {
                                          sizeof(CollectionIDType));
   if (space.size == 0) {
     return nullptr;
-    // throw std::bad_alloc{};
   }
   list->Init(AddressTranslator<DLRecord*>(
                  static_cast<char*>(pmem_allocator_->offset2addr(0))),
@@ -2466,21 +2431,21 @@ List* KVEngine::createList(StringView key) {
   return list;
 }
 
-Status KVEngine::restoreListElem(DLRecord* pmp_record) {
+Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
   list_builder_->AddListElem(pmp_record);
   return Status::Ok;
 }
 
-Status KVEngine::restoreListRecord(StringRecord* pmp_record) {
+Status KVEngine::listRestoreList(StringRecord* pmp_record) {
   list_builder_->AddListRecord(pmp_record);
   return Status::Ok;
 }
 
-Status KVEngine::registerLists() {
+Status KVEngine::listRegisterRecovered() {
   CollectionIDType max_id = 0;
   for (auto const& list : lists_) {
-    std::lock_guard<SpinMutex> guard{*hash_table_->GetHint(list->Name()).spin};
-    Status s = registerCollection(list->Name(), list.get());
+    auto guard = hash_table_->AcquireLock(list->Name());
+    Status s = registerCollection(list.get());
     max_id = std::max(max_id, list->ID());
   }
   auto old = list_id_.load();
@@ -2488,7 +2453,8 @@ Status KVEngine::registerLists() {
   }
   return Status::Ok;
 }
-Status KVEngine::destroyList(List* list) {
+
+Status KVEngine::listDestroy(List* list) {
   while (list->Size() > 0) {
     list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
   }
@@ -2496,23 +2462,55 @@ Status KVEngine::destroyList(List* list) {
   return Status::Ok;
 }
 
-Status KVEngine::listFindInitNX(StringView key, List** list) {
-  Status s = FindCollection(key, list, RecordType::ListRecord);
-  if (s == Status::Ok) {
+Status KVEngine::listFind(StringView key, List** list, bool init_nx,
+                          std::unique_lock<std::recursive_mutex>& guard) {
+  // The life cycle of a List includes following stages
+  // Uninitialized. List not created yet.
+  // Active. Initialized and registered on HashTable.
+  // Inactive. Destroyed and unregistered from HashTable.
+  // Always lock List visible to other threads first,
+  // then lock the HashTable to avoid deadlock.
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    kvdk_assert(s == Status::TooManyAccessThreads, "");
     return s;
   }
-  auto guard = hash_table_->AquireLock(key);
   s = FindCollection(key, list, RecordType::ListRecord);
-  if (s == Status::Ok) {
+  if (s != Status::Ok && s != Status::NotFound) {
     return s;
+  }
+  if (s == Status::Ok) {
+    guard = (*list)->AcquireLock();
+    if ((*list)->Valid()) {
+      // Active and successfully locked
+      return Status::Ok;
+    }
+    // Inactive
+  }
+  if (!init_nx) {
+    // Uninitialized or Inactive
+    return Status::NotFound;
   }
 
-  kvdk_assert(s == Status::NotFound, "");
-  *list = createList(key);
-  if (*list == nullptr) {
+  // Uninitialized or Inactive, initialize new one
+  auto guard2 = hash_table_->AcquireLock(key);
+  s = FindCollection(key, list, RecordType::ListRecord);
+  if (s != Status::Ok && s != Status::NotFound) {
+    return s;
+  }
+  if (s == Status::Ok) {
+    guard = (*list)->AcquireLock();
+    if ((*list)->Valid()) {
+      return Status::Ok;
+    }
+  }
+  // No other thread have created one, create one here.
+  (*list) = listCreate(key);
+  if ((*list) == nullptr) {
     return Status::PmemOverflow;
   }
-  return registerCollection(key, *list);
+  guard = (*list)->AcquireLock();
+  return registerCollection(*list);
 }
 
 }  // namespace KVDK_NAMESPACE

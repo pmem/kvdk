@@ -166,7 +166,7 @@ class HashTable {
     entry_ptr->Clear();
   }
 
-  std::unique_lock<SpinMutex> AquireLock(StringView const& key) {
+  std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
 

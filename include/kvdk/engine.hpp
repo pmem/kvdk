@@ -102,11 +102,11 @@ class Engine {
   virtual Status ListLength(StringView key, size_t* sz) = 0;
 
   // Scan the list and find the element(s) specified. Return the index/indices.
-  virtual Status ListFind(StringView key, StringView elem,
-                          std::vector<size_t>* indices, IndexType rank = 1,
-                          size_t count = 1, size_t max_len = 0) = 0;
-  virtual Status ListFind(StringView key, StringView elem, size_t* index,
-                          IndexType rank = 1, size_t max_len = 0) = 0;
+  virtual Status ListPos(StringView key, StringView elem,
+                         std::vector<size_t>* indices, IndexType rank = 1,
+                         size_t count = 1, size_t max_len = 0) = 0;
+  virtual Status ListPos(StringView key, StringView elem, size_t* index,
+                         IndexType rank = 1, size_t max_len = 0) = 0;
 
   // Iterate through elements in a certain range in List
   virtual Status ListRange(StringView key, IndexType start, IndexType stop,

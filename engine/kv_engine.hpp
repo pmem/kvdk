@@ -154,11 +154,11 @@ class KVEngine : public Engine {
   Status ListTryLock(StringView key) final;
   Status ListUnlock(StringView key) final;
   Status ListLength(StringView key, size_t* sz) final;
-  Status ListFind(StringView key, StringView elem, std::vector<size_t>* indices,
-                  IndexType rank = 1, size_t count = 1,
-                  size_t max_len = 0) final;
-  Status ListFind(StringView key, StringView elem, size_t* index,
-                  IndexType rank = 1, size_t max_len = 0) final;
+  Status ListPos(StringView key, StringView elem, std::vector<size_t>* indices,
+                 IndexType rank = 1, size_t count = 1,
+                 size_t max_len = 0) final;
+  Status ListPos(StringView key, StringView elem, size_t* index,
+                 IndexType rank = 1, size_t max_len = 0) final;
   Status ListRange(StringView key, IndexType start, IndexType stop,
                    GetterCallBack cb, void* cb_args) final;
   Status ListIndex(StringView key, IndexType index, GetterCallBack cb,
@@ -178,8 +178,6 @@ class KVEngine : public Engine {
  private:
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
-
-  List* createList(StringView key);
 
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
@@ -246,12 +244,12 @@ class KVEngine : public Engine {
 
   // Lockless. It's up to caller to lock the HashTable
   template <typename CollectionType>
-  Status registerCollection(const StringView key, CollectionType* coll) {
+  Status registerCollection(CollectionType* coll) {
     RecordType type = collectionType<CollectionType>();
-    HashTable::KeyHashHint hint = hash_table_->GetHint(key);
+    HashTable::KeyHashHint hint = hash_table_->GetHint(coll->Name());
     HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
-    Status s = hash_table_->SearchForWrite(hint, key, type, &entry_ptr,
+    Status s = hash_table_->SearchForWrite(hint, coll->Name(), type, &entry_ptr,
                                            &hash_entry, nullptr);
     if (s != Status::NotFound) {
       kvdk_assert(s != Status::Ok, "Collection already registered!");
@@ -281,7 +279,12 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
-  Status listFindInitNX(StringView key, List** list);
+  List* listCreate(StringView key);
+
+  // Find and lock the list. Initialize non-existing if required.
+  // Guarantees always return a valid List and lockes it if returns Status::Ok
+  Status listFind(StringView key, List** list, bool init_nx,
+                  std::unique_lock<std::recursive_mutex>& guard);
 
   Status MaybeInitPendingBatchFile();
 
@@ -329,13 +332,13 @@ class KVEngine : public Engine {
 
   Status RestoreDlistRecords(DLRecord* pmp_record);
 
-  Status restoreListElem(DLRecord* pmp_record);
+  Status listRestoreElem(DLRecord* pmp_record);
 
-  Status restoreListRecord(StringRecord* pmp_record);
+  Status listRestoreList(StringRecord* pmp_record);
 
-  Status registerLists();
+  Status listRegisterRecovered();
 
-  Status destroyList(List* list);
+  Status listDestroy(List* list);
 
   Status CheckConfigs(const Configs& configs);
 

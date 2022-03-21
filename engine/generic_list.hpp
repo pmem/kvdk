@@ -195,6 +195,8 @@ class GenericList final : public Collection {
     list_record = nullptr;
   }
 
+  bool Valid() const { return (list_record != nullptr); }
+
   // Restore a List with its ListRecord, first and last element and size
   // This function is used by GenericListBuilder to restore the List
   void Restore(AddressTranslator<DLRecord*> tran, StringRecord* list_rec,
@@ -328,6 +330,10 @@ class GenericList final : public Collection {
   }
 
   LockType* Mutex() { return &mu; }
+
+  std::unique_lock<LockType> AcquireLock() {
+    return std::unique_lock<LockType>(mu);
+  }
 
  private:
   Iterator emplace_between(SpaceEntry allocated, Iterator prev, Iterator next,
