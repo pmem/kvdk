@@ -122,9 +122,9 @@ std::vector<PaddedRangeIterators> ranges;
 
 enum class DataType { String, Sorted, Hashes, List, Blackhole } bench_data_type;
 
-enum class KeyDistribution { Range, Random, Zipf } key_dist;
+enum class KeyDistribution { Range, Uniform, Zipf } key_dist;
 
-enum class ValueSizeDistribution { Constant, Random } vsz_dist;
+enum class ValueSizeDistribution { Constant, Uniform } vsz_dist;
 
 std::uint64_t generate_key(size_t tid) {
   static std::uint64_t max_key = FLAGS_existing_keys_ratio == 0
@@ -136,11 +136,29 @@ std::uint64_t generate_key(size_t tid) {
     case KeyDistribution::Range: {
       return ranges[tid].gen();
     }
-    case KeyDistribution::Random: {
+    case KeyDistribution::Uniform: {
       return uniform(random_engines[tid].gen);
     }
     case KeyDistribution::Zipf: {
       return zipf(random_engines[tid].gen);
+    }
+    default: {
+      throw;
+    }
+  }
+}
+
+std::uint64_t generate_cid(size_t tid) {
+  static extd::zipfian_distribution<std::uint64_t> zipf{FLAGS_num_collection,
+                                                        0.99};
+  static std::uniform_int_distribution<std::uint64_t> uniform{
+      1, FLAGS_num_collection};
+  switch (key_dist) {
+    case KeyDistribution::Uniform: {
+      return uniform(random_engines[tid].gen) - 1;
+    }
+    case KeyDistribution::Zipf: {
+      return zipf(random_engines[tid].gen) - 1;
     }
     default: {
       throw;
@@ -153,7 +171,7 @@ size_t generate_value_size(size_t tid) {
     case ValueSizeDistribution::Constant: {
       return FLAGS_value_size;
     }
-    case ValueSizeDistribution::Random: {
+    case ValueSizeDistribution::Uniform: {
       return random_engines[tid].gen() % FLAGS_value_size + 1;
     }
     default: {
@@ -173,6 +191,7 @@ void DBWrite(int tid) {
 
     // generate key
     std::uint64_t num = generate_key(tid);
+    std::uint64_t cid = generate_cid(tid);
     memcpy(&key[0], &num, 8);
     StringView value = StringView(value_pool.data(), generate_value_size(tid));
 
@@ -194,16 +213,16 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Sorted: {
-        s = engine->SSet(collections[num % FLAGS_num_collection], key, value);
+        s = engine->SSet(collections[cid], key, value);
         break;
       }
       case DataType::Hashes: {
-        s = engine->HSet(collections[num % FLAGS_num_collection], key, value);
+        s = engine->HSet(collections[cid], key, value);
         break;
       }
       case DataType::List: {
-        s = engine->ListPush(collections[num % FLAGS_num_collection],
-                             Engine::ListPosition::Left, value);
+        s = engine->ListPush(collections[cid], Engine::ListPosition::Left,
+                             value);
         break;
       }
       case DataType::Blackhole: {
@@ -247,13 +266,13 @@ void DBScan(int tid) {
       break;
     }
 
-    uint64_t num = generate_key(tid);
+    std::uint64_t num = generate_key(tid);
+    std::uint64_t cid = generate_cid(tid);
     memcpy(&key[0], &num, 8);
 
     switch (bench_data_type) {
       case DataType::Sorted: {
-        auto iter =
-            engine->NewSortedIterator(collections[num % FLAGS_num_collection]);
+        auto iter = engine->NewSortedIterator(collections[cid]);
         if (iter) {
           iter->Seek(key);
           for (size_t i = 0; (i < scan_length) && (iter->Valid());
@@ -273,8 +292,7 @@ void DBScan(int tid) {
         break;
       }
       case DataType::Hashes: {
-        auto iter = engine->NewUnorderedIterator(
-            collections[num % FLAGS_num_collection]);
+        auto iter = engine->NewUnorderedIterator(collections[cid]);
         if (iter) {
           for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             key = iter->Key();
@@ -319,6 +337,7 @@ void DBRead(int tid) {
     }
 
     std::uint64_t num = generate_key(tid);
+    std::uint64_t cid = generate_cid(tid);
     memcpy(&key[0], &num, 8);
 
     Timer timer;
@@ -331,18 +350,16 @@ void DBRead(int tid) {
         break;
       }
       case DataType::Sorted: {
-        s = engine->SGet(collections[num % FLAGS_num_collection], key,
-                         &value_sink);
+        s = engine->SGet(collections[cid], key, &value_sink);
         break;
       }
       case DataType::Hashes: {
-        s = engine->HGet(collections[num % FLAGS_num_collection], key,
-                         &value_sink);
+        s = engine->HGet(collections[cid], key, &value_sink);
         break;
       }
       case DataType::List: {
-        s = engine->ListPop(collections[num % FLAGS_num_collection],
-                            Engine::ListPosition::Right, &value_sink);
+        s = engine->ListPop(collections[cid], Engine::ListPosition::Right,
+                            &value_sink);
         break;
       }
       case DataType::Blackhole: {
@@ -447,7 +464,7 @@ void ProcessBenchmarkConfigs() {
   } else {
     operations_per_thread = FLAGS_num_operations / FLAGS_threads;
     if (FLAGS_key_distribution == "random") {
-      key_dist = KeyDistribution::Random;
+      key_dist = KeyDistribution::Uniform;
     } else if (FLAGS_key_distribution == "zipf") {
       key_dist = KeyDistribution::Zipf;
     } else {
@@ -458,7 +475,7 @@ void ProcessBenchmarkConfigs() {
   if (FLAGS_value_size_distribution == "constant") {
     vsz_dist = ValueSizeDistribution::Constant;
   } else if (FLAGS_value_size_distribution == "random") {
-    vsz_dist = ValueSizeDistribution::Random;
+    vsz_dist = ValueSizeDistribution::Uniform;
   } else {
     throw std::runtime_error{"Invalid value size distribution"};
   }
