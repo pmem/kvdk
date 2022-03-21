@@ -35,6 +35,7 @@
 
 #include "../alias.hpp"
 #include "../macros.hpp"
+#include "coding.hpp"
 #include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -443,6 +444,17 @@ void compare_excange_if_larger(std::atomic<T>& num, T target) {
 int get_usable_pu(void);
 
 namespace CollectionUtils {
+inline static std::string EncodeID(CollectionIDType id) {
+  return EncodeInt64(id);
+}
+
+inline static CollectionIDType DecodeID(const StringView& string_id) {
+  CollectionIDType id;
+  bool ret = DecodeInt64(string_id, &id);
+  kvdk_assert(ret, "size of string id does not match CollectionIDType size!");
+  return id;
+}
+
 inline static StringView ExtractUserKey(const StringView& internal_key) {
   constexpr size_t sz_id = sizeof(CollectionIDType);
   kvdk_assert(sz_id <= internal_key.size(),
@@ -451,21 +463,7 @@ inline static StringView ExtractUserKey(const StringView& internal_key) {
 }
 
 inline static uint64_t ExtractID(const StringView& internal_key) {
-  CollectionIDType id;
-  memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
-  return id;
-}
-
-inline static std::string ID2String(CollectionIDType id) {
-  return std::string(reinterpret_cast<char*>(&id), 8);
-}
-
-inline static CollectionIDType string2ID(const StringView& string_id) {
-  CollectionIDType id;
-  kvdk_assert(sizeof(CollectionIDType) <= string_id.size(),
-              "size of string id does not match CollectionIDType size!");
-  memcpy(&id, string_id.data(), sizeof(CollectionIDType));
-  return id;
+  return DecodeID(internal_key);
 }
 }  // namespace CollectionUtils
 }  // namespace KVDK_NAMESPACE

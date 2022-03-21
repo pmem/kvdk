@@ -20,7 +20,6 @@ namespace KVDK_NAMESPACE {
 class KVEngine;
 static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
-const ConfigFieldSizeType kEncodedConfigsEndMark = 0;
 
 struct Splice;
 
@@ -220,7 +219,7 @@ class Skiplist : public Collection {
         return CollectionUtils::ExtractID(record->Key());
         break;
       case RecordType::SortedHeaderRecord:
-        return CollectionUtils::string2ID(record->Value());
+        return CollectionUtils::DecodeID(record->Value());
       default:
         kvdk_assert(false, "Wrong type in SkiplistID");
         GlobalLogger.Error("Wrong type in SkiplistID");
@@ -356,8 +355,7 @@ class Skiplist : public Collection {
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
 
   // Format:
-  // id (8 bytes) | config size (4 bytes), config | config size, config |...|
-  // end mark (4 bytes)
+  // id (8 bytes) | configs
   static std::string EncodeSortedCollectionValue(
       CollectionIDType id, const SortedCollectionConfigs& s_configs);
 
