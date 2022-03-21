@@ -1014,9 +1014,6 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(
   DLRecord* curr = pmem_record;
   while (curr != nullptr &&
          curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
-    if (invalid_version_records) {
-      invalid_version_records->push_back(curr);
-    }
     curr = kv_engine_->pmem_allocator_->offset2addr<DLRecord>(
         curr->older_version_offset);
     kvdk_assert(curr == nullptr || curr->Validate(),

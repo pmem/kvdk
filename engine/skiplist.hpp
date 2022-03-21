@@ -493,32 +493,53 @@ class SortedCollectionRebuilder {
 
   bool recoverToCheckpoint() { return checkpoint_.Valid(); }
 
+  // Find the version of pmem_record under checkpoint version if checkpoint
+  // exist, otherwise return pmem_record itself. Return nullptr if no valid
+  // version of pmem_record exist.
+  // If invalid_version_records is not null, put all invalid versions into it.
   DLRecord* findValidVersion(DLRecord* pmem_record,
                              std::vector<DLRecord*>* invalid_version_records);
 
-  Status rebuildSkiplistIndex(Skiplist* skiplist);
-
+  // Rebuild DRAM index based on skiplists, i.e., every recovery thread rebuilds
+  // a whole skiplist one by one in parallel
   Status listBasedIndexRebuild();
 
+  // Rebuild DRAM index based on skiplist segments, i.e., every recovery thread
+  // rebuilds a segment of a skiplist one by one in parallel
   Status segmentBasedIndexRebuild();
 
+  // Rebuild index for a skiplist
+  //
+  // Used in list based index rebuild
+  Status rebuildSkiplistIndex(Skiplist* skiplist);
+
   // Add a recovery segment start from "start_node"
+  //
+  // Used in segment based index rebuild
   void addRecoverySegment(SkiplistNode* start_node);
 
   // Build/link first level dram nodes and build hash index for a recovery
   // segment
+  //
+  // Used in segment based index rebuild
   Status rebuildSegmentIndex(SkiplistNode* start_node, bool build_hash_index);
 
   // Link high level dram nodes of a skiplist after build the first level
+  //
+  // Used in segment based index rebuild
   Status linkHighDramNodes(Skiplist* skiplist);
 
-  // Segment based dram nodes link, not used for now
+  // Segment based dram nodes link
+  //
+  // Used in segment based index rebuild (not used for now)
   void linkSegmentDramNodes(SkiplistNode* start_node, int height);
 
   void cleanInvalidRecords();
 
+  // Check if a record collectly linked in PMem list
   bool checkRecordLinkage(DLRecord* record);
 
+  // Check if a record collectly linked in PMem list, and repair linkage if able
   bool checkAndRepairRecordLinkage(DLRecord* record);
 
   // insert hash index "ptr" for "key", the key should be locked before call
