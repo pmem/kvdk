@@ -188,9 +188,11 @@ class GenericList final : public Collection {
 
   template <typename ListDeleter>
   void Destroy(ListDeleter list_deleter) {
-    kvdk_assert(sz == 0 && list_record != nullptr,
+    kvdk_assert(sz == 0 && list_record != nullptr && first == nullptr &&
+                    last == nullptr,
                 "Only initialized empty List can be destroyed!");
     list_deleter(list_record);
+    list_record = nullptr;
   }
 
   // Restore a List with its ListRecord, first and last element and size

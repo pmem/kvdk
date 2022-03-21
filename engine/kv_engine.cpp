@@ -934,7 +934,7 @@ Status KVEngine::Recovery() {
 
   list_builder_->RebuildLists();
   list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
-  s = restoreLists();
+  s = registerLists();
   if (s != Status::Ok) {
     return s;
   }
@@ -1864,6 +1864,10 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
                 hash_table_.get(), pmem_allocator_.get(), pmp_record);
         p_collection = sp_collection.get();
         vec_sp_unordered_collections_.emplace_back(sp_collection);
+        CollectionIDType id = p_collection->ID();
+        auto old = list_id_.load();
+        while (id >= old && !list_id_.compare_exchange_strong(old, id + 1)) {
+        }
       }
 
       std::string collection_name = p_collection->Name();
@@ -2275,11 +2279,12 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
   }
 
   List* list;
+  auto guard1 = hash_table_->AquireLock(key);
   s = FindCollection(key, &list, RecordType::ListRecord);
   if (s != Status::Ok) {
     return s;
   }
-  std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
+  std::lock_guard<std::recursive_mutex> guard2{*list->Mutex()};
   switch (pos) {
     case ListPosition::Left: {
       while (list->Size() > 0 && cnt > 0) {
@@ -2288,7 +2293,7 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
         DLRecord* front = list->Front().Address();
         list->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
       }
-      return Status::Ok;
+      break;
     }
     case ListPosition::Right: {
       while (list->Size() > 0 && cnt > 0) {
@@ -2297,7 +2302,7 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
         DLRecord* back = list->Back().Address();
         list->PopBack([&](DLRecord* rec) { purgeAndFree(rec); });
       }
-      return Status::Ok;
+      break;
     }
     default: {
       kvdk_assert(
@@ -2306,6 +2311,11 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
       return Status::InvalidArgument;
     }
   }
+  if (list->Size() == 0) {
+    destroyList(list);
+    unregisterCollection<List>(key);
+  }
+  return Status::Ok;
 }
 
 Status KVEngine::ListPop(StringView key, ListPosition pos, std::string* elem) {
@@ -2380,17 +2390,23 @@ Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
   }
 
   List* list;
+  auto guard1 = hash_table_->AquireLock(key);
   s = FindCollection(key, &list, RecordType::ListRecord);
   if (s != Status::Ok) {
     return s;
   }
-  std::lock_guard<std::recursive_mutex> guard{*list->Mutex()};
+  std::lock_guard<std::recursive_mutex> guard2{*list->Mutex()};
 
-  for (auto iter = list->Front(); iter != list->Tail(); ++iter) {
+  for (auto iter = list->Front(); iter != list->Tail() && cnt > 0; ++iter) {
     if (iter->Value() == elem) {
       DLRecord* old = iter.Address();
       iter = list->Erase(iter, [&](DLRecord* rec) { purgeAndFree(rec); });
+      --cnt;
     }
+  }
+  if (list->Size() == 0) {
+    destroyList(list);
+    unregisterCollection<List>(key);
   }
   return Status::Ok;
 }
@@ -2452,7 +2468,7 @@ Status KVEngine::restoreListRecord(StringRecord* pmp_record) {
   return Status::Ok;
 }
 
-Status KVEngine::restoreLists() {
+Status KVEngine::registerLists() {
   CollectionIDType max_id = 0;
   for (auto const& list : lists_) {
     std::lock_guard<SpinMutex> guard{*hash_table_->GetHint(list->Name()).spin};
@@ -2460,9 +2476,17 @@ Status KVEngine::restoreLists() {
     max_id = std::max(max_id, list->ID());
   }
   auto old = list_id_.load();
-  while (max_id > old && !list_id_.compare_exchange_strong(old, max_id)) {
+  while (max_id >= old && !list_id_.compare_exchange_strong(old, max_id + 1)) {
   }
-
+  return Status::Ok;
+}
+Status KVEngine::destroyList(List* list)
+{
+  while (list->Size() > 0)
+  {
+    list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
+  }
+  list->Destroy([&](StringRecord* lrec) { purgeAndFree(lrec); });
   return Status::Ok;
 }
 

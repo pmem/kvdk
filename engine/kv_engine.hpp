@@ -260,6 +260,24 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
+  template <typename CollectionType>
+  Status unregisterCollection(const StringView key) {
+    RecordType type = collectionType<CollectionType>();
+    HashTable::KeyHashHint hint = hash_table_->GetHint(key);
+    HashEntry hash_entry;
+    HashEntry* entry_ptr = nullptr;
+    Status s = hash_table_->SearchForWrite(hint, key, type, &entry_ptr,
+                                           &hash_entry, nullptr);
+    if (s == Status::NotFound) {
+      kvdk_assert(s != Status::Ok, "Collection not found!");
+      return s;
+    }
+    HashIndexType ptype = pointerType(type);
+    kvdk_assert(ptype != HashIndexType::Invalid, "Invalid pointer type!");
+    hash_table_->Erase(entry_ptr);
+    return Status::Ok;
+  }
+
   Status listFindInitNX(StringView key, List** list);
 
   Status MaybeInitPendingBatchFile();
@@ -312,7 +330,9 @@ class KVEngine : public Engine {
 
   Status restoreListRecord(StringRecord* pmp_record);
 
-  Status restoreLists();
+  Status registerLists();
+
+  Status destroyList(List* list);
 
   Status CheckConfigs(const Configs& configs);
 
