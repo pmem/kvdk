@@ -478,10 +478,10 @@ class GenericListBuilder final {
     CollectionIDType id = Collection::string2ID(lrec->Value());
     maybeResizePrimers(id);
 
-    primers_lock.RegisterReader();
+    primers_lock.lock_shared();
     kvdk_assert(primers.at(id).list_record == nullptr, "");
     primers.at(id).list_record = lrec;
-    primers_lock.UnregisterReader();
+    primers_lock.unlock_shared();
   }
 
   void AddListElem(DLRecord* elem) {
@@ -607,13 +607,13 @@ class GenericListBuilder final {
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
-    primers_lock.RegisterReader();
+    primers_lock.lock_shared();
     kvdk_assert(primers.at(id).unique == nullptr, "");
     kvdk_assert(primers.at(id).first == nullptr, "");
     kvdk_assert(primers.at(id).last == nullptr, "");
     primers.at(id).unique = elem;
     primers.at(id).size.fetch_add(1U);
-    primers_lock.UnregisterReader();
+    primers_lock.unlock_shared();
   }
 
   void addFirstElem(DLRecord* elem) {
@@ -623,17 +623,18 @@ class GenericListBuilder final {
     if (!isValidFirst(elem)) {
       std::lock_guard<std::mutex> guard{brokens_lock};
       brokens.push_back(elem);
+      return;
     }
 
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
-    primers_lock.RegisterReader();
+    primers_lock.lock_shared();
     kvdk_assert(primers.at(id).first == nullptr, "");
     kvdk_assert(primers.at(id).unique == nullptr, "");
     primers.at(id).first = elem;
     primers.at(id).size.fetch_add(1U);
-    primers_lock.UnregisterReader();
+    primers_lock.unlock_shared();
   }
 
   void addLastElem(DLRecord* elem) {
@@ -643,17 +644,18 @@ class GenericListBuilder final {
     if (!isValidLast(elem)) {
       std::lock_guard<std::mutex> guard{brokens_lock};
       brokens.push_back(elem);
+      return;
     }
 
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
-    primers_lock.RegisterReader();
+    primers_lock.lock_shared();
     kvdk_assert(primers.at(id).last == nullptr, "");
     kvdk_assert(primers.at(id).unique == nullptr, "");
     primers.at(id).last = elem;
     primers.at(id).size.fetch_add(1U);
-    primers_lock.UnregisterReader();
+    primers_lock.unlock_shared();
   }
 
   // Reservoir algorithm
@@ -669,9 +671,10 @@ class GenericListBuilder final {
 
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
-    primers_lock.RegisterReader();
+
+    primers_lock.lock_shared();
     primers.at(id).size.fetch_add(1U);
-    primers_lock.UnregisterReader();
+    primers_lock.unlock_shared();
 
     thread_local std::default_random_engine rengine{get_seed()};
 
@@ -748,11 +751,10 @@ class GenericListBuilder final {
 
   void maybeResizePrimers(CollectionIDType id) {
     if (id >= primers.size()) {
-      primers_lock.RegisterWriter();
+      std::lock_guard<decltype(primers_lock)> guard{primers_lock};
       for (size_t i = primers.size(); i < (id + 1) * 3 / 2; i++) {
         primers.emplace_back();
       }
-      primers_lock.UnregisterWriter();
     }
   }
 };

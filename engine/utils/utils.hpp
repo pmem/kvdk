@@ -212,42 +212,51 @@ class RWLock {
   std::atomic_int64_t device{0};
 
  public:
-  bool TryRegisterReader() {
+  bool try_lock_shared() {
     std::int64_t old = device.load();
-    if (old < 0) {
-      pause();
-      return false;
-    }
-    old = device.fetch_add(reader_val);
-    if (old < 0) {
-      device.fetch_sub(reader_val);
-      pause();
+    if (old < 0 || !device.compare_exchange_strong(old, old + reader_val)) {
+      // Other writer has acquired lock.
       return false;
     }
     return true;
   }
 
-  void RegisterReader() {
-    while (!TryRegisterReader()) {
-      // Blocked until writer leaved
+  void lock_shared() {
+    while (!try_lock_shared()) {
+      pause();
     }
     return;
   }
 
-  void UnregisterReader() {
+  void unlock_shared() {
     device.fetch_sub(reader_val);
     return;
   }
 
-  void RegisterWriter() {
-    std::int64_t old = device.fetch_add(writer_val);
+  bool try_lock() {
+    std::int64_t old = device.load();
+    if (old < 0 || !device.compare_exchange_strong(old, old + writer_val)) {
+      // Other writer has acquired lock.
+      return false;
+    }
     while (device.load() != writer_val) {
-      // Block until all readers leave
+      // Block until all readers have left.
+      pause();
+    }
+    return true;
+  }
+
+  void lock() {
+    while (!try_lock()) {
+      pause();
     }
     return;
   }
 
-  void UnregisterWriter() { device.fetch_sub(writer_val); }
+  void unlock() {
+    device.fetch_sub(writer_val);
+    return;
+  }
 
  private:
   void pause() {
