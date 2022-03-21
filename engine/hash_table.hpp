@@ -169,7 +169,7 @@ class HashTable {
   std::unique_lock<SpinMutex> AquireLock(StringView const& key) {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
-  
+
   SlotIterator GetSlotIterator();
 
  private:

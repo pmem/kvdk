@@ -2488,10 +2488,8 @@ Status KVEngine::registerLists() {
   }
   return Status::Ok;
 }
-Status KVEngine::destroyList(List* list)
-{
-  while (list->Size() > 0)
-  {
+Status KVEngine::destroyList(List* list) {
+  while (list->Size() > 0) {
     list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
   }
   list->Destroy([&](StringRecord* lrec) { purgeAndFree(lrec); });
