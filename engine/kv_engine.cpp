@@ -1615,7 +1615,11 @@ Status KVEngine::UpdateHeadWithExpiredTime(Skiplist* skiplist,
   return Status::Ok;
 }
 
-Status KVEngine::SetExpiredTime(const StringView str, int64_t expired_time) {
+Status KVEngine::SetExpiredTime(const StringView str,
+                                ExpiredTimeType expired_time) {
+  if (!CheckOverFlow(expired_time)) {
+    return Status::InvalidArgument;
+  }
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   HashEntry hash_entry;
   HashEntry* entry_ptr = nullptr;
@@ -1788,6 +1792,11 @@ Status KVEngine::Set(const StringView key, const StringView value,
   if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
+
+  if (!CheckOverFlow(options.expired_time)) {
+    return Status::InvalidArgument;
+  }
+
   return StringSetImpl(key, value, options);
 }
 

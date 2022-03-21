@@ -33,6 +33,7 @@ extern "C" {
   GEN(InvalidDataSize)      \
   GEN(IOError)              \
   GEN(InvalidConfiguration) \
+  GEN(InvalidArgument)      \
   GEN(Abort)
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,

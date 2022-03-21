@@ -160,6 +160,14 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
+  bool CheckOverFlow(ExpiredTimeType expired_time) {
+    // check millisecond to microsecond
+    if (expired_time < INT64_MAX / 1000 || expired_time < INT64_MIN / 1000) {
+      return false;
+    }
+    return true;
+  }
+
   Status Init(const std::string& name, const Configs& configs);
 
   Status HashGetImpl(const StringView& key, std::string* value,
