@@ -2,6 +2,8 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <x86intrin.h>
+
 #include <future>
 #include <string>
 #include <thread>
@@ -50,8 +52,8 @@ class EngineBasicTest : public testing::Test {
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
     configs.max_access_threads = 1;
-    db_path = "/mnt/pmem0/kvdk-test";
-    backup_path = "/mnt/pmem0/kvdk-test-backup";
+    db_path = "/mnt/pmem0/kvdk-test-" + std::to_string(__rdtsc());
+    backup_path = "/mnt/pmem0/kvdk-test-backup-" + std::to_string(__rdtsc());
     char cmd[1024];
     sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
             backup_path.c_str());
