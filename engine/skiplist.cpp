@@ -361,6 +361,7 @@ bool Skiplist::Update(const StringView& internal_key, const StringView& value,
       pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
       timestamp, record_type, updated_offset, prev_offset, next_offset,
       internal_key, value, expired_time);
+  expire_time = expired_time;
 
   // link new record
   LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);

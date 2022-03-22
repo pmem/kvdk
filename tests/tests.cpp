@@ -1853,19 +1853,17 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For list
   {
-    ASSERT_EQ(engine->LPush(list_collection, "list" + val), Status::Ok);
+    ASSERT_EQ(engine->ListPush(list_collection, Engine::ListPosition::Left,
+                               "list" + val),
+              Status::Ok);
     // Set expired time for collection
     ASSERT_EQ(engine->Expire(list_collection, max_ttl_time),
               Status::InvalidArgument);
-    ASSERT_EQ(engine->LPush(list_collection, "list2" + val), Status::Ok);
-    ASSERT_EQ(engine->RPush(list_collection, "list3" + val), Status::Ok);
     ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
     // check list is persist
     ASSERT_EQ(ttl_time, -1);
     // reset expired time for collection
     ASSERT_EQ(engine->Expire(list_collection, normal_ttl_time), Status::Ok);
-    ASSERT_EQ(engine->LPop(list_collection, &got_val), Status::Ok);
-    ASSERT_EQ(engine->RPop(list_collection, &got_val), Status::Ok);
     ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
   }
 

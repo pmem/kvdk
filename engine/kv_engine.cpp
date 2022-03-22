@@ -990,8 +990,7 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     }
     void* pmem_record = nullptr;
     if (hash_entry.GetRecordType() == StringDataRecord) {
-      if (TimeUtils::CheckIsExpired(
-              hash_entry.GetIndex().string_record->GetExpiredTime())) {
+      if (hash_entry.GetIndex().string_record->HasExpired()) {
         // TODO: push record into expired cleaner
         return Status::NotFound;
       }
@@ -1553,37 +1552,36 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   Collection* collection_ptr = nullptr;
   switch (entry_ptr->GetIndexType()) {
     case HashIndexType::Skiplist: {
-      collection_ptr = entry_ptr->GetIndex().skiplist;
-      expired_time = collection_ptr->GetExpiredTime();
+      expired_time = entry_ptr->GetIndex().skiplist->ExpireTime();
       break;
     }
     case HashIndexType::UnorderedCollection: {
-      collection_ptr = entry_ptr->GetIndex().p_unordered_collection;
-      expired_time = collection_ptr->GetExpiredTime();
+      expired_time = entry_ptr->GetIndex().p_unordered_collection->ExpireTime();
       break;
     }
 
     case HashIndexType::List: {
-      // collection_ptr = entry_ptr->GetIndex().queue_ptr;
-      // expired_time = collection_ptr->GetExpiredTime();
-      throw std::runtime_error{"Unimplemented!"};
+      expired_time = entry_ptr->GetIndex().list->ExpireTime();
       break;
     }
 
-    case HashIndexType::StringRecord:
-      expired_time = entry_ptr->GetIndex().string_record->GetExpiredTime();
+    case HashIndexType::StringRecord: {
+      expired_time = entry_ptr->GetIndex().string_record->ExpireTime();
       break;
-    default:
+    }
+    default: {
       return Status::NotSupported;
+    }
   }
 
   // TODO(zhichen): Free this record
+  /// TODO: we should have a unified findKey() to do all these dirty work, aka,
+  /// erase an expired key if it finds one and then return Status::NotFound.
+  /// The problem is, after the findKey() confirms that the key has yet expired,
+  /// the key may expire after we call ExpireTime()
+  /// TODO: return 0 even if the key has expired for a second or two if
+  /// findKey() have successfully returned.
   if (TimeUtils::CheckIsExpired(expired_time)) {
-    if (collection_ptr) {
-      // set hash entry empty
-      hash_table_->Erase(entry_ptr);
-      // TODO(zhichen): push background thread cleaner
-    }
     *ttl_time = kInvalidTTLTime;
     return Status::NotFound;
   }
@@ -1615,7 +1613,7 @@ Status KVEngine::UpdateHeadWithExpiredTime(Skiplist* skiplist,
     dram_node = entry_ptr->GetIndex().skiplist->header();
     existing_record = dram_node->record;
 
-    if (TimeUtils::CheckIsExpired(existing_record->GetExpiredTime())) {
+    if (existing_record->HasExpired()) {
       hash_table_->Erase(entry_ptr);
       // Push into cleaner queue.
       return Status::NotFound;
@@ -1645,43 +1643,6 @@ Status KVEngine::UpdateHeadWithExpiredTime(Skiplist* skiplist,
   return Status::Ok;
 }
 
-Status KVEngine::InplaceUpdatedExpiredTime(const StringView& str,
-                                           ExpiredTimeType expired_time,
-                                           RecordType record_type) {
-  HashTable::KeyHashHint hint = hash_table_->GetHint(str);
-  std::unique_lock<SpinMutex> ul(*hint.spin);
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-  Status s = hash_table_->SearchForRead(hint, str, record_type, &entry_ptr,
-                                        &hash_entry, nullptr);
-  if (s != Status::Ok) return s;
-  switch (entry_ptr->GetIndexType()) {
-    case HashIndexType::Queue: {
-      if (TimeUtils::CheckIsExpired(
-              entry_ptr->GetIndex().queue_ptr->GetExpiredTime())) {
-        hash_table_->Erase(entry_ptr);
-        // Push into cleaner queue.
-        return Status::NotFound;
-      }
-      return entry_ptr->GetIndex().queue_ptr->InplaceUpdatedExpiredTime(
-          expired_time);
-    }
-    case HashIndexType::UnorderedCollection:
-      if (TimeUtils::CheckIsExpired(
-              entry_ptr->GetIndex().p_unordered_collection->GetExpiredTime())) {
-        hash_table_->Erase(entry_ptr);
-        // Push into cleaner queue.
-        return Status::NotFound;
-      }
-      return entry_ptr->GetIndex()
-          .p_unordered_collection->InplaceUpdatedExpiredTime(expired_time);
-      break;
-    default:
-      return Status::NotSupported;
-  }
-  return Status::Ok;
-}
-
 Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (!CheckTTLOverFlow(ttl_time, base_time)) {
@@ -1706,15 +1667,42 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
     case HashIndexType::Skiplist:
       return UpdateHeadWithExpiredTime(entry_ptr->GetIndex().skiplist,
                                        expired_time);
-    case HashIndexType::UnorderedCollection:
-      // will replace by updating, instead of inplacing.
-      return InplaceUpdatedExpiredTime(str, expired_time,
-                                       RecordType::DlistRecord);
-    case HashIndexType::Queue:
-      return InplaceUpdatedExpiredTime(str, expired_time,
-                                       RecordType::QueueRecord);
-    default:
-      Status::NotSupported;
+    case HashIndexType::UnorderedCollection: {
+      UnorderedCollection* pcoll;
+      auto guard = hash_table_->AcquireLock(str);
+      s = FindCollection(str, &pcoll, RecordType::DlistRecord);
+      if (s != Status::Ok) {
+        return s;
+      }
+      /// TODO: put these unregister and delete work in findKey()
+      pcoll->ExpireAt(expired_time);
+      if (pcoll->HasExpired()) {
+        unregisterCollection<UnorderedCollection>(str);
+        /// TODO: Also delete from PMem
+        return Status::NotFound;
+      }
+      return Status::Ok;
+    }
+    case HashIndexType::List: {
+      std::unique_lock<std::recursive_mutex> guard_list;
+      List* list;
+      s = listFind(str, &list, false, guard_list);
+      if (s != Status::Ok) {
+        return s;
+      }
+      list->ExpireAt(expired_time);
+      if (list->HasExpired()) {
+        /// TODO: Let cleaner asynchronously do the work.
+        listDestroy(list);
+        auto guard = hash_table_->AcquireLock(str);
+        unregisterCollection<List>(str);
+        return Status::Ok;
+      }
+      return Status::Ok;
+    }
+    default: {
+      return Status::NotSupported;
+    }
   }
   return Status::Ok;
 }

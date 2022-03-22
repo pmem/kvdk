@@ -262,12 +262,18 @@ class KVEngine : public Engine {
     *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
 
     // check collection is expired.
-    if (TimeUtils::CheckIsExpired((*collection_ptr)->GetExpiredTime())) {
-      hash_table_->Erase(entry_ptr);
+    if ((*collection_ptr)->HasExpired()) {
       // TODO(Zhichen): add background cleaner.
-      return Status::NotFound;
+      /// TODO: let's discuss whether we should clean it here,
+      /// or clean it outside.
+      /// Some functions will call this function with HashTable locked.
+      /// For example, List always lock the List, then if necessary,
+      /// it will lock the HashTable to unregister List.
+      /// Maybe we should have this renamed to findKeyImpl,
+      /// and a wrapper findKey that calls it and cleans expired key.
+      return Status::Expired;
     }
-    return s;
+    return Status::Ok;
   }
 
   // Lockless. It's up to caller to lock the HashTable
@@ -322,10 +328,6 @@ class KVEngine : public Engine {
 
   Status UpdateHeadWithExpiredTime(Skiplist* skiplist,
                                    ExpiredTimeType expired_time);
-
-  Status InplaceUpdatedExpiredTime(const StringView& str,
-                                   ExpiredTimeType expired_time,
-                                   RecordType record_type);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 

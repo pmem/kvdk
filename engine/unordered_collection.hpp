@@ -105,15 +105,9 @@ class UnorderedCollection final
                        StringView const key, StringView const value,
                        LockType const& lock);
 
-  ExpiredTimeType GetExpiredTime() const override {
-    return collection_record_ptr_->GetExpiredTime();
-  }
-
-  Status InplaceUpdatedExpiredTime(ExpiredTimeType expired_time) {
-    collection_record_ptr_->expired_time = expired_time;
-    pmem_persist(&collection_record_ptr_->expired_time,
-                 sizeof(ExpiredTimeType));
-    return Status::Ok;
+  void ExpireAt(ExpiredTimeType time) final {
+    collection_record_ptr_->PersistExpireTimeNT(time);
+    expire_time = time;
   }
 
   /// Erase given record

@@ -173,7 +173,7 @@ class GenericList final : public Collection {
   GenericList& operator=(GenericList&&) = delete;
   ~GenericList() = default;
 
-  // Initialize a List with pmem base address p_base, pre-allocated space,
+  // Initialize a List with pmem base address p_base, pre-space space,
   // Creation time, List name and id.
   void Init(AddressTranslator<DLRecord*> tran, SpaceEntry space,
             TimeStampType timestamp, StringView const key,
@@ -213,6 +213,17 @@ class GenericList final : public Collection {
     sz = n;
   }
 
+  LockType* Mutex() { return &mu; }
+
+  std::unique_lock<LockType> AcquireLock() {
+    return std::unique_lock<LockType>(mu);
+  }
+
+  void ExpireAt(ExpiredTimeType time) final {
+    list_record->PersistExpireTimeNT(time);
+    expire_time = time;
+  }
+
   size_t Size() const { return sz; }
 
   Iterator Front() { return ++Head(); }
@@ -245,7 +256,7 @@ class GenericList final : public Collection {
   Iterator Erase(Iterator pos, ElemDeleter elem_deleter) {
     kvdk_assert(pos != Head(), "Cannot erase Head()");
     kvdk_assert(sz >= 1, "Cannot erase from empty List!");
-    kvdk_assert(ExtractID(pos->Key()) == ID(), "Erase from wrong List!");
+    kvdk_assert(pos->ID() == ID(), "Erase from wrong List!");
 
     Iterator prev{pos};
     --prev;
@@ -287,58 +298,51 @@ class GenericList final : public Collection {
     Erase(Back(), elem_deleter);
   }
 
-  void EmplaceBefore(SpaceEntry allocated, Iterator pos,
-                     TimeStampType timestamp, StringView const key,
-                     StringView const value) {
+  void EmplaceBefore(SpaceEntry space, Iterator pos, TimeStampType timestamp,
+                     StringView const key, StringView const value) {
     Iterator prev{pos};
     --prev;
     Iterator next{pos};
-    emplace_between(allocated, prev, next, timestamp, key, value);
+    emplace_between(space, prev, next, timestamp, key, value);
     ++sz;
   }
 
-  void EmplaceAfter(SpaceEntry allocated, Iterator pos, TimeStampType timestamp,
+  void EmplaceAfter(SpaceEntry space, Iterator pos, TimeStampType timestamp,
                     StringView const key, StringView const value) {
     Iterator prev{pos};
     Iterator next{pos};
     ++next;
-    emplace_between(allocated, prev, next, timestamp, key, value);
+    emplace_between(space, prev, next, timestamp, key, value);
     ++sz;
   }
 
-  void PushFront(SpaceEntry allocated, TimeStampType timestamp,
+  void PushFront(SpaceEntry space, TimeStampType timestamp,
                  StringView const key, StringView const value) {
-    emplace_between(allocated, Head(), Front(), timestamp, key, value);
+    emplace_between(space, Head(), Front(), timestamp, key, value);
     ++sz;
   }
 
-  void PushBack(SpaceEntry allocated, TimeStampType timestamp,
-                StringView const key, StringView const value) {
-    emplace_between(allocated, Back(), Tail(), timestamp, key, value);
+  void PushBack(SpaceEntry space, TimeStampType timestamp, StringView const key,
+                StringView const value) {
+    emplace_between(space, Back(), Tail(), timestamp, key, value);
     ++sz;
   }
 
   template <typename ElemDeleter>
-  void Replace(SpaceEntry allocated, Iterator pos, TimeStampType timestamp,
+  void Replace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
                StringView const key, StringView const value,
                ElemDeleter elem_deleter) {
-    kvdk_assert(ID() == ExtractID(pos->Key()), "Wrong List!");
+    kvdk_assert(ID() == pos->ID(), "Wrong List!");
     Iterator prev{pos};
     --prev;
     Iterator next{pos};
     ++next;
-    emplace_between(allocated, prev, next, timestamp, key, value);
+    emplace_between(space, prev, next, timestamp, key, value);
     elem_deleter(pos.Address());
   }
 
-  LockType* Mutex() { return &mu; }
-
-  std::unique_lock<LockType> AcquireLock() {
-    return std::unique_lock<LockType>(mu);
-  }
-
  private:
-  Iterator emplace_between(SpaceEntry allocated, Iterator prev, Iterator next,
+  Iterator emplace_between(SpaceEntry space, Iterator prev, Iterator next,
                            TimeStampType timestamp, StringView const key,
                            StringView const value) {
     kvdk_assert(++Iterator{prev} == next || ++++Iterator{prev} == next,
@@ -347,8 +351,8 @@ class GenericList final : public Collection {
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
     DLRecord* record = DLRecord::PersistDLRecord(
-        atran.addressOf(allocated.offset), allocated.size, timestamp, DataType,
-        NullPMemOffset, prev_off, next_off, InternalKey(key), value);
+        atran.addressOf(space.offset), space.size, timestamp, DataType,
+        NullPMemOffset, prev_off, next_off, key, value, ID());
 
     if (sz == 0) {
       kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
@@ -357,18 +361,18 @@ class GenericList final : public Collection {
     } else if (prev == Head()) {
       // PushFront()
       kvdk_assert(next != Tail(), "");
-      next->PersistPrevNT(allocated.offset);
+      next->PersistPrevNT(space.offset);
       first = record;
     } else if (next == Tail()) {
       // PushBack()
       kvdk_assert(prev != Head(), "");
-      prev->PersistNextNT(allocated.offset);
+      prev->PersistNextNT(space.offset);
       last = record;
     } else {
       // Emplace between two elements on PMem
       kvdk_assert(prev != Head() && next != Tail(), "");
-      prev->PersistNextNT(allocated.offset);
-      next->PersistPrevNT(allocated.offset);
+      prev->PersistNextNT(space.offset);
+      next->PersistPrevNT(space.offset);
     }
 
     return (next == Tail()) ? --next : ++prev;
@@ -376,14 +380,13 @@ class GenericList final : public Collection {
 
   friend std::ostream& operator<<(std::ostream& out, GenericList const& list) {
     auto printRecord = [&](DLRecord* record) {
-      auto internal_key = record->Key();
       out << "Type:\t" << to_hex(record->entry.meta.type) << "\t"
           << "Prev:\t" << to_hex(record->prev) << "\t"
           << "Offset:\t"
           << to_hex(reinterpret_cast<char*>(record) - list.pmem_base) << "\t"
           << "Next:\t" << to_hex(record->next) << "\t"
-          << "Key: " << to_hex(Collection::ExtractID(internal_key))
-          << Collection::ExtractUserKey(internal_key) << "\t"
+          << "ID:\t" << record->ID() << "\t"
+          << "Key: " << record->Key() << "\t"
           << "Value: " << record->Value() << "\n";
     };
 
@@ -616,7 +619,7 @@ class GenericListBuilder final {
     kvdk_assert(elem->prev == NullPMemOffset && elem->next == NullPMemOffset,
                 "Not UniqueElem!");
 
-    CollectionIDType id = Collection::ExtractID(elem->Key());
+    CollectionIDType id = elem->ID();
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
@@ -638,7 +641,7 @@ class GenericListBuilder final {
       return;
     }
 
-    CollectionIDType id = Collection::ExtractID(elem->Key());
+    CollectionIDType id = elem->ID();
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
@@ -659,7 +662,7 @@ class GenericListBuilder final {
       return;
     }
 
-    CollectionIDType id = Collection::ExtractID(elem->Key());
+    CollectionIDType id = elem->ID();
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
@@ -681,7 +684,7 @@ class GenericListBuilder final {
       return;
     }
 
-    CollectionIDType id = Collection::ExtractID(elem->Key());
+    CollectionIDType id = elem->ID();
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
