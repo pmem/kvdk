@@ -414,7 +414,7 @@ Status KVEngine::RestoreData() {
         break;
       }
       case RecordType::ListRecord: {
-        s = listRestoreList(static_cast<StringRecord*>(recovering_pmem_record));
+        s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::ListElem: {
@@ -483,8 +483,7 @@ bool KVEngine::ValidateRecord(void* data_record) {
   DataEntry* entry = static_cast<DataEntry*>(data_record);
   switch (entry->meta.type) {
     case RecordType::StringDataRecord:
-    case RecordType::StringDeleteRecord:
-    case RecordType::ListRecord: {
+    case RecordType::StringDeleteRecord: {
       return static_cast<StringRecord*>(data_record)->Validate();
     }
     case RecordType::SortedDataRecord:
@@ -494,6 +493,7 @@ bool KVEngine::ValidateRecord(void* data_record) {
     case RecordType::DlistRecord:
     case RecordType::DlistHeadRecord:
     case RecordType::DlistTailRecord:
+    case RecordType::ListRecord:
     case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
@@ -2418,7 +2418,7 @@ List* KVEngine::listCreate(StringView key) {
   std::uint64_t ts = version_controller_.GetCurrentTimestamp();
   CollectionIDType id = list_id_.fetch_add(1);
   List* list = new List{};
-  auto space = pmem_allocator_->Allocate(sizeof(StringRecord) + key.size() +
+  auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
                                          sizeof(CollectionIDType));
   if (space.size == 0) {
     return nullptr;
@@ -2436,7 +2436,7 @@ Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
   return Status::Ok;
 }
 
-Status KVEngine::listRestoreList(StringRecord* pmp_record) {
+Status KVEngine::listRestoreList(DLRecord* pmp_record) {
   list_builder_->AddListRecord(pmp_record);
   return Status::Ok;
 }
@@ -2458,7 +2458,7 @@ Status KVEngine::listDestroy(List* list) {
   while (list->Size() > 0) {
     list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
   }
-  list->Destroy([&](StringRecord* lrec) { purgeAndFree(lrec); });
+  list->Destroy([&](DLRecord* lrec) { purgeAndFree(lrec); });
   return Status::Ok;
 }
 

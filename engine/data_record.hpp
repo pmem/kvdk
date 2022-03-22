@@ -39,7 +39,7 @@ const uint16_t SortedRecordType =
 const uint16_t DLRecordType =
     (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
      DlistDataRecord | DlistHeadRecord | DlistTailRecord | DlistRecord |
-     ListElem);
+     ListElem | ListRecord);
 
 const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
 
@@ -151,8 +151,7 @@ struct StringRecord {
               _value.size()),
         older_version_record(_older_version_record) {
     assert(_record_type == RecordType::StringDataRecord ||
-           _record_type == RecordType::StringDeleteRecord ||
-           _record_type == RecordType::ListRecord);
+           _record_type == RecordType::StringDeleteRecord);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();

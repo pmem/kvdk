@@ -279,13 +279,6 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
-  List* listCreate(StringView key);
-
-  // Find and lock the list. Initialize non-existing if required.
-  // Guarantees always return a valid List and lockes it if returns Status::Ok
-  Status listFind(StringView key, List** list, bool init_nx,
-                  std::unique_lock<std::recursive_mutex>& guard);
-
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const StringView& key, const StringView& value);
@@ -332,9 +325,16 @@ class KVEngine : public Engine {
 
   Status RestoreDlistRecords(DLRecord* pmp_record);
 
+  List* listCreate(StringView key);
+
+  // Find and lock the list. Initialize non-existing if required.
+  // Guarantees always return a valid List and lockes it if returns Status::Ok
+  Status listFind(StringView key, List** list, bool init_nx,
+                  std::unique_lock<std::recursive_mutex>& guard);
+
   Status listRestoreElem(DLRecord* pmp_record);
 
-  Status listRestoreList(StringRecord* pmp_record);
+  Status listRestoreList(DLRecord* pmp_record);
 
   Status listRegisterRecovered();
 

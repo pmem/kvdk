@@ -62,7 +62,7 @@ class GenericList final : public Collection {
   // For offset-address translation
   AddressTranslator<DLRecord*> atran{};
   // Persisted ListType on PMem, contains List name(key) and id(value).
-  StringRecord* list_record{nullptr};
+  DLRecord* list_record{nullptr};
   // First Element in List, nullptr indicates empty List
   DLRecord* first{nullptr};
   // Last Element in List, nullptr indicates empty List
@@ -181,9 +181,10 @@ class GenericList final : public Collection {
     collection_name_.assign(key.data(), key.size());
     collection_id_ = id;
     atran = tran;
-    list_record = StringRecord::PersistStringRecord(
+    list_record = DLRecord::PersistDLRecord(
         atran.address_of(space.offset), space.size, timestamp,
-        RecordType::ListRecord, NullPMemOffset, key, ID2String(id));
+        RecordType::ListRecord, NullPMemOffset, NullPMemOffset, NullPMemOffset,
+        key, ID2String(id));
   }
 
   template <typename ListDeleter>
@@ -199,7 +200,7 @@ class GenericList final : public Collection {
 
   // Restore a List with its ListRecord, first and last element and size
   // This function is used by GenericListBuilder to restore the List
-  void Restore(AddressTranslator<DLRecord*> tran, StringRecord* list_rec,
+  void Restore(AddressTranslator<DLRecord*> tran, DLRecord* list_rec,
                DLRecord* fi, DLRecord* la, size_t n) {
     auto key = list_rec->Key();
     collection_name_.assign(key.data(), key.size());
@@ -409,7 +410,7 @@ class GenericListBuilder final {
   std::array<DLRecord*, NMiddlePoints> mpoints{};
 
   struct ListPrimer {
-    StringRecord* list_record{nullptr};
+    DLRecord* list_record{nullptr};
     DLRecord* unique{nullptr};
     DLRecord* first{nullptr};
     DLRecord* last{nullptr};
@@ -480,7 +481,7 @@ class GenericListBuilder final {
     n_worker = num_worker;
   }
 
-  void AddListRecord(StringRecord* lrec) {
+  void AddListRecord(DLRecord* lrec) {
     CollectionIDType id = Collection::string2ID(lrec->Value());
     maybeResizePrimers(id);
 
