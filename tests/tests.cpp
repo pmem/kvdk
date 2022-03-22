@@ -79,12 +79,12 @@ class EngineBasicTest : public testing::Test {
     if (config_option >= End) {
       return false;
     } else {
-      ReopenEngine();
+      ReCreateEngine();
       return engine != nullptr;
     }
   }
 
-  void ReopenEngine() {
+  void ReCreateEngine() {
     delete engine;
     engine = nullptr;
     Destroy();

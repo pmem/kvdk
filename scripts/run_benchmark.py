@@ -13,7 +13,7 @@ value_sizes = [120]
 # random: value size uniformly distributed in [1, value_size]
 value_size_distributions = ['constant']
 timeout = 30                          # For operations other than fill
-populate_on_fill = 0                  # For fill only
+populate_on_fill = 1                  # For fill only
 pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 num_collection = 100000
 

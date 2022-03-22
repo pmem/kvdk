@@ -5,7 +5,7 @@
 #include "hash_table.hpp"
 
 #include "queue.hpp"
-#include "skiplist.hpp"
+#include "sorted_collection/skiplist.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
 
