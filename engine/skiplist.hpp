@@ -150,8 +150,8 @@ class Skiplist : public Collection {
  public:
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
            Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
-           std::shared_ptr<HashTable> hash_table, bool is_expired = false)
-      : Collection(name, id, is_expired),
+           std::shared_ptr<HashTable> hash_table)
+      : Collection(name, id),
         comparator_(comparator),
         pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {
@@ -193,12 +193,8 @@ class Skiplist : public Collection {
 
   SkiplistNode* header() { return header_; }
 
-  int64_t GetExpiredTime() const override {
+  ExpiredTimeType GetExpiredTime() const override {
     return header_->record->GetExpiredTime();
-  }
-
-  uint32_t GetHeadRecordSize() {
-    return header_->record->entry.header.record_size;
   }
 
   inline static StringView UserKey(const SkiplistNode* node) {

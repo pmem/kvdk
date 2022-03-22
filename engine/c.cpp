@@ -84,9 +84,9 @@ void KVDKDestroyWriteOptions(KVDKWriteOptions* kv_options) {
   delete kv_options;
 }
 
-void KVDKWriteOptionsSetExpiredTime(KVDKWriteOptions* kv_options,
-                                    int64_t expired_time) {
-  kv_options->rep.expired_time = expired_time;
+void KVDKWriteOptionsSetTTLTime(KVDKWriteOptions* kv_options,
+                                int64_t ttl_time) {
+  kv_options->rep.ttl_time = ttl_time;
 }
 
 KVDK_LIBRARY_API void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions* kv_options,
@@ -397,5 +397,15 @@ const char* KVDKIterValue(KVDKIterator* iter, size_t* val_len) {
   std::string val_str = iter->rep->Value();
   *val_len = val_str.size();
   return CopyStringToChar(val_str);
+}
+
+KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str, size_t str_len,
+                      int64_t ttl_time) {
+  return engine->rep->Expire(std::string(str, str_len), ttl_time);
+}
+
+KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str, size_t str_len,
+                      int64_t* ttl_time) {
+  return engine->rep->GetTTL(std::string(str, str_len), ttl_time);
 }
 }

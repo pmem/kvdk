@@ -49,11 +49,10 @@ class Engine {
 
   // Search the STRING-type or Collection and store the corresponding expired
   // time to *expired_time on success.
-  virtual Status GetExpiredTime(const StringView str,
-                                int64_t* expired_time) = 0;
+  virtual Status GetTTL(const StringView str, int64_t* ttl_time) = 0;
 
   // Set the STRING-type or Collection type expired time.
-  virtual Status SetExpiredTime(const StringView str, int64_t expired_time) = 0;
+  virtual Status Expire(const StringView str, int64_t ttl_time) = 0;
 
   // Remove STRING-type KV of "key".
   // Return Ok on success or the "key" did not exist, return non-Ok on any

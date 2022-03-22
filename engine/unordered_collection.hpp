@@ -89,8 +89,7 @@ class UnorderedCollection final
   /// and ID as value
   UnorderedCollection(HashTable* hash_table_ptr,
                       PMEMAllocator* pmem_allocator_ptr, std::string const name,
-                      CollectionIDType id, TimeStampType timestamp,
-                      bool is_expired = false);
+                      CollectionIDType id, TimeStampType timestamp);
 
   /// Recover UnorderedCollection from DLIST_RECORD
   UnorderedCollection(HashTable* hash_table_ptr,
@@ -106,15 +105,15 @@ class UnorderedCollection final
                        StringView const key, StringView const value,
                        LockType const& lock);
 
-  int64_t GetExpiredTime() const override {
+  ExpiredTimeType GetExpiredTime() const override {
     return collection_record_ptr_->GetExpiredTime();
   }
 
-  // inplace expired time
-  void InplaceUpdateExpiredTime(ExpiredTimeType expired_time) {
-    collection_record_ptr_->entry.expired_time = expired_time * 1000;
-    pmem_persist(&collection_record_ptr_->entry.expired_time,
+  Status InplaceUpdatedExpiredTime(ExpiredTimeType expired_time) {
+    collection_record_ptr_->expired_time = expired_time;
+    pmem_persist(&collection_record_ptr_->expired_time,
                  sizeof(ExpiredTimeType));
+    return Status::Ok;
   }
 
   /// Erase given record

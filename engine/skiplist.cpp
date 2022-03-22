@@ -95,7 +95,6 @@ void Skiplist::LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
-  auto prevnext_record = pmem_allocator->offset2addr<DLRecord>(prev->next);
 
   TEST_SYNC_POINT("KVEngine::Skiplist::InsertDLRecord::UpdatePrev");
   next->prev = inserting_record_offset;

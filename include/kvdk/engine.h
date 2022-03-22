@@ -50,8 +50,7 @@ extern KVDK_LIBRARY_API void KVDKDestroyConfigs(KVDKConfigs* kv_config);
 
 KVDK_LIBRARY_API KVDKWriteOptions* KVDKCreateWriteOptions(void);
 KVDK_LIBRARY_API void KVDKDestroyWriteOptions(KVDKWriteOptions*);
-KVDK_LIBRARY_API void KVDKWriteOptionsSetExpiredTime(KVDKWriteOptions*,
-                                                     int64_t);
+KVDK_LIBRARY_API void KVDKWriteOptionsSetTTLTime(KVDKWriteOptions*, int64_t);
 KVDK_LIBRARY_API void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions*,
                                                   unsigned char);
 
@@ -179,6 +178,12 @@ extern KVDK_LIBRARY_API const char* KVDKIterKey(KVDKIterator* iter,
                                                 size_t* key_len);
 extern KVDK_LIBRARY_API const char* KVDKIterValue(KVDKIterator* iter,
                                                   size_t* val_len);
+
+// For Expire
+KVDK_LIBRARY_API KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str,
+                                       size_t str_len, int64_t ttl_time);
+KVDK_LIBRARY_API KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str,
+                                       size_t str_len, int64_t* ttl_time);
 
 #ifdef __cplusplus
 } /* end extern "C" */

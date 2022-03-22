@@ -19,5 +19,6 @@ using CollectionIDType = std::uint64_t;
 using KeyHashType = std::uint64_t;
 using ConfigFieldSizeType = std::uint32_t;
 using ExpiredTimeType = std::int64_t;
+using TTLTimeType = std::int64_t;
 using UnixTimeType = std::int64_t;
 }  // namespace KVDK_NAMESPACE

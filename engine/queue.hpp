@@ -41,7 +41,7 @@ class Queue final : public Collection {
 
  public:
   Queue(PMEMAllocator* pmem_allocator_ptr, std::string const name,
-        CollectionIDType id, TimeStampType timestamp, bool is_expired = false);
+        CollectionIDType id, TimeStampType timestamp);
 
   Queue(PMEMAllocator* pmem_allocator_ptr, DLRecord* collection_record);
 
@@ -55,15 +55,15 @@ class Queue final : public Collection {
 
   inline TimeStampType Timestamp() const { return timestamp_; };
 
-  int64_t GetExpiredTime() const override {
+  ExpiredTimeType GetExpiredTime() const override {
     return collection_record_ptr_->GetExpiredTime();
   }
 
-  // inplace expired time
-  void InplaceUpdateExpiredTime(ExpiredTimeType expired_time) {
-    collection_record_ptr_->entry.expired_time = expired_time * 1000;
-    pmem_persist(&collection_record_ptr_->entry.expired_time,
+  Status InplaceUpdatedExpiredTime(ExpiredTimeType expired_time) {
+    collection_record_ptr_->expired_time = expired_time;
+    pmem_persist(&collection_record_ptr_->expired_time,
                  sizeof(ExpiredTimeType));
+    return Status::Ok;
   }
 
  private:

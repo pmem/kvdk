@@ -15,17 +15,13 @@ using StringView = pmem::obj::string_view;
 // A collection of key-value pairs
 class Collection {
  public:
-  Collection(const std::string& name, uint64_t id, bool is_expired = false)
-      : collection_name_(name), collection_id_(id), is_expired_(is_expired) {}
+  Collection(const std::string& name, uint64_t id)
+      : collection_name_(name), collection_id_(id) {}
   // Return unique ID of the collection
   uint64_t ID() const { return collection_id_; }
 
   // Return name of the collection
   const std::string& Name() const { return collection_name_; }
-
-  bool IsExpired() const { return is_expired_; }
-
-  void UpdateExpiredStatus(bool is_expired) { is_expired_ = is_expired; }
 
   virtual int64_t GetExpiredTime() const = 0;
 
@@ -44,6 +40,5 @@ class Collection {
 
   std::string collection_name_;
   uint64_t collection_id_;
-  bool is_expired_;
 };
 }  // namespace KVDK_NAMESPACE

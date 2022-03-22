@@ -60,9 +60,9 @@ class KVEngine : public Engine {
   }
   void ReportPMemUsage();
 
-  Status GetExpiredTime(const StringView str, int64_t* expired_time) override;
+  Status GetTTL(const StringView str, TTLTimeType* ttl_time) override;
 
-  Status SetExpiredTime(const StringView str, int64_t expired_time) override;
+  Status Expire(const StringView str, TTLTimeType ttl_time) override;
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
@@ -160,9 +160,9 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
-  bool CheckOverFlow(ExpiredTimeType expired_time) {
-    // check millisecond to microsecond
-    if (expired_time < INT64_MAX / 1000 || expired_time < INT64_MIN / 1000) {
+  bool CheckTTLOverFlow(TTLTimeType ttl_time, int64_t base_time) {
+    // check overflow
+    if (ttl_time > INT64_MAX - base_time) {
       return false;
     }
     return true;
@@ -205,12 +205,11 @@ class KVEngine : public Engine {
     *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
 
     // check collection is expired.
-    auto expired_time = (*collection_ptr)->GetExpiredTime();
-    if (expired_time > 0 && expired_time <= now()) {
-      (*collection_ptr)->UpdateExpiredStatus(true);
+    if (TimeUtils::CheckIsExpired((*collection_ptr)->GetExpiredTime())) {
+      hash_table_->Erase(entry_ptr);
+      // TODO(Zhichen): add background cleaner.
       return Status::NotFound;
     }
-
     return s;
   }
 
@@ -236,6 +235,10 @@ class KVEngine : public Engine {
 
   Status UpdateHeadWithExpiredTime(Skiplist* skiplist,
                                    ExpiredTimeType expired_time);
+
+  Status InplaceUpdatedExpiredTime(const StringView& str,
+                                   ExpiredTimeType expired_time,
+                                   RecordType record_type);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
