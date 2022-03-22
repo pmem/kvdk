@@ -181,6 +181,10 @@ class KVEngine : public Engine {
 
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
+    static_assert(std::is_same<CollectionType, UnorderedCollection>::value ||
+                      std::is_same<CollectionType, Skiplist>::value ||
+                      std::is_same<CollectionType, List>::value,
+                  "Invalid type!");
     return std::is_same<CollectionType, UnorderedCollection>::value
                ? RecordType::DlistRecord
                : std::is_same<CollectionType, Skiplist>::value
@@ -201,7 +205,8 @@ class KVEngine : public Engine {
       }
       case RecordType::SortedDataRecord:
       case RecordType::SortedDeleteRecord: {
-        return HashIndexType::DLRecord;
+        kvdk_assert(false, "Not supported!");
+        return HashIndexType::Invalid;
       }
       case RecordType::SortedHeaderRecord: {
         return HashIndexType::Skiplist;
@@ -218,6 +223,8 @@ class KVEngine : public Engine {
       case RecordType::DlistHeadRecord:
       case RecordType::ListElem:
       default: {
+        /// TODO: Remove Expire Flag
+        kvdk_assert(false, "Invalid type!");
         return HashIndexType::Invalid;
       }
     }

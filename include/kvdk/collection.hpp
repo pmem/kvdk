@@ -9,6 +9,7 @@
 
 #include "../engine/alias.hpp"
 #include "../engine/macros.hpp"
+#include "../engine/utils/coding.hpp"
 #include "kvdk/namespace.hpp"
 #include "libpmemobj++/string_view.hpp"
 
@@ -39,29 +40,22 @@ class Collection {
     return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
   }
 
-  inline static uint64_t ExtractID(const StringView& internal_key) {
+  inline static CollectionIDType ExtractID(const StringView& internal_key) {
+    kvdk_assert(sizeof(CollectionIDType) <= internal_key.size(),
+                "internal_key does not has space for id");
     CollectionIDType id;
     memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
     return id;
   }
 
   inline static std::string ID2String(CollectionIDType id) {
-    return std::string(reinterpret_cast<char*>(&id), sizeof(CollectionIDType));
-  }
-
-  inline static CollectionIDType string2ID(const StringView& string_id) {
-    CollectionIDType id;
-    kvdk_assert(sizeof(CollectionIDType) <= string_id.size(),
-                "size of string id does not match CollectionIDType size!");
-    memcpy(&id, string_id.data(), sizeof(CollectionIDType));
-    return id;
+    return std::string{reinterpret_cast<char*>(&id), sizeof(CollectionIDType)};
   }
 
  protected:
   inline static std::string makeInternalKey(const StringView& user_key,
                                             uint64_t list_id) {
-    return std::string((char*)&list_id, 8)
-        .append(user_key.data(), user_key.size());
+    return ID2String(list_id).append(user_key.data(), user_key.size());
   }
 
   std::string collection_name_;

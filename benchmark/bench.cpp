@@ -148,25 +148,6 @@ std::uint64_t generate_key(size_t tid) {
   }
 }
 
-std::uint64_t generate_cid(size_t tid) {
-  static extd::zipfian_distribution<std::uint64_t> zipf{FLAGS_num_collection,
-                                                        0.99};
-  static std::uniform_int_distribution<std::uint64_t> uniform{
-      1, FLAGS_num_collection};
-  switch (key_dist) {
-    case KeyDistribution::Zipf: {
-      return zipf(random_engines[tid].gen) - 1;
-    }
-    case KeyDistribution::Uniform:
-    case KeyDistribution::Range: {
-      return uniform(random_engines[tid].gen) - 1;
-    }
-    default: {
-      throw;
-    }
-  }
-}
-
 size_t generate_value_size(size_t tid) {
   switch (vsz_dist) {
     case ValueSizeDistribution::Constant: {
@@ -192,7 +173,7 @@ void DBWrite(int tid) {
 
     // generate key
     std::uint64_t num = generate_key(tid);
-    std::uint64_t cid = generate_cid(tid);
+    std::uint64_t cid = num % FLAGS_num_collection;
     memcpy(&key[0], &num, 8);
     StringView value = StringView(value_pool.data(), generate_value_size(tid));
 
@@ -268,7 +249,7 @@ void DBScan(int tid) {
     }
 
     std::uint64_t num = generate_key(tid);
-    std::uint64_t cid = generate_cid(tid);
+    std::uint64_t cid = num % FLAGS_num_collection;
     memcpy(&key[0], &num, 8);
 
     switch (bench_data_type) {
@@ -338,7 +319,7 @@ void DBRead(int tid) {
     }
 
     std::uint64_t num = generate_key(tid);
-    std::uint64_t cid = generate_cid(tid);
+    std::uint64_t cid = num % FLAGS_num_collection;
     memcpy(&key[0], &num, 8);
 
     Timer timer;

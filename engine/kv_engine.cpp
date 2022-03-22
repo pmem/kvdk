@@ -2113,7 +2113,7 @@ Status KVEngine::ListTryLock(StringView key) {
   if (list->Mutex()->try_lock()) {
     return Status::Ok;
   } else {
-    return Status::LockingFailure;
+    return Status::OperationFail;
   }
 }
 

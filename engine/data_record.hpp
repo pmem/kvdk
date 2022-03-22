@@ -219,16 +219,26 @@ struct DLRecord {
     return StringView(data + entry.meta.k_size, entry.meta.v_size);
   }
 
-  void PersistNext(PMemOffsetType offset) {
+  void PersistNextNT(PMemOffsetType offset) {
     _mm_stream_si64(reinterpret_cast<long long*>(&next),
                     static_cast<long long>(offset));
     _mm_mfence();
   }
 
-  void PersistPrev(PMemOffsetType offset) {
+  void PersistPrevNT(PMemOffsetType offset) {
     _mm_stream_si64(reinterpret_cast<long long*>(&prev),
                     static_cast<long long>(offset));
     _mm_mfence();
+  }
+
+  void PersistNextCLWB(PMemOffsetType offset) {
+    next = offset;
+    _mm_clwb(&next);
+  }
+
+  void PersistPrevCLWB(PMemOffsetType offset) {
+    prev = offset;
+    _mm_clwb(&prev);
   }
 
   // Construct and persist a dl record to PMem address "addr"

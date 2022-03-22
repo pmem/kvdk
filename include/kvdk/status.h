@@ -25,7 +25,7 @@ extern "C" {
   GEN(Ok)                   \
   GEN(NotFound)             \
   GEN(WrongType)            \
-  GEN(LockingFailure)       \
+  GEN(OperationFail)        \
   GEN(OutOfRange)           \
   GEN(MemoryOverflow)       \
   GEN(PmemOverflow)         \
@@ -37,7 +37,6 @@ extern "C" {
   GEN(InvalidArgument)      \
   GEN(IOError)              \
   GEN(InvalidConfiguration) \
-  GEN(Unimplemented)        \
   GEN(Abort)
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,

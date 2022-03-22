@@ -43,13 +43,13 @@ class AddressTranslator {
   AddressTranslator& operator=(AddressTranslator&&) = default;
   ~AddressTranslator() = default;
 
-  RecordPointer address_of(PMemOffsetType off) const {
+  RecordPointer addressOf(PMemOffsetType off) const {
     kvdk_assert(pmem_base != nullptr, "");
     kvdk_assert(off != NullPMemOffset, "Dereferencing Null!");
     return reinterpret_cast<RecordPointer>(pmem_base + off);
   }
 
-  PMemOffsetType offset_of(RecordPointer rec) const {
+  PMemOffsetType offsetOf(RecordPointer rec) const {
     kvdk_assert(pmem_base != nullptr, "");
     kvdk_assert(rec != nullptr, "Dereferencing nullptr!");
     return reinterpret_cast<char*>(rec) - pmem_base;
@@ -106,7 +106,7 @@ class GenericList final : public Collection {
         curr = owner->first;
       } else if (curr->next != NullPMemOffset) {
         // Not Back(), goto next
-        curr = owner->atran.address_of(curr->next);
+        curr = owner->atran.addressOf(curr->next);
       } else {
         // Back(), goto Tail()
         curr = nullptr;
@@ -127,7 +127,7 @@ class GenericList final : public Collection {
         curr = owner->last;
       } else if (curr->prev != NullPMemOffset) {
         // Not Front(), goto prev
-        curr = owner->atran.address_of(curr->prev);
+        curr = owner->atran.addressOf(curr->prev);
       } else {
         // Front(), goto Head()
         curr = nullptr;
@@ -145,7 +145,7 @@ class GenericList final : public Collection {
 
     DLRecord* operator->() { return curr; }
 
-    PMemOffsetType Offset() const { return owner->atran.offset_of(Address()); }
+    PMemOffsetType Offset() const { return owner->atran.offsetOf(Address()); }
 
     DLRecord* Address() const {
       kvdk_assert(curr != nullptr, "Trying to address dummy Iterator Head()!");
@@ -182,7 +182,7 @@ class GenericList final : public Collection {
     collection_id_ = id;
     atran = tran;
     list_record = DLRecord::PersistDLRecord(
-        atran.address_of(space.offset), space.size, timestamp,
+        atran.addressOf(space.offset), space.size, timestamp,
         RecordType::ListRecord, NullPMemOffset, NullPMemOffset, NullPMemOffset,
         key, ID2String(id));
   }
@@ -204,7 +204,8 @@ class GenericList final : public Collection {
                DLRecord* fi, DLRecord* la, size_t n) {
     auto key = list_rec->Key();
     collection_name_.assign(key.data(), key.size());
-    collection_id_ = string2ID(list_rec->Value());
+    kvdk_assert(list_rec->Value().size() == sizeof(CollectionIDType), "");
+    collection_id_ = ExtractID(list_rec->Value());
     atran = tran;
     list_record = list_rec;
     first = fi;
@@ -232,7 +233,7 @@ class GenericList final : public Collection {
       return iter;
     } else {
       auto iter = Back();
-      while (index != -1 && iter != Front()) {
+      while (index != -1 && iter != Head()) {
         --iter;
         ++index;
       }
@@ -259,17 +260,17 @@ class GenericList final : public Collection {
       // Erase Front()
       kvdk_assert(next != Tail(), "");
       first = next.Address();
-      next->PersistPrev(NullPMemOffset);
+      next->PersistPrevNT(NullPMemOffset);
     } else if (next == Tail()) {
       // Erase Back()
       kvdk_assert(prev != Head(), "");
       last = prev.Address();
-      prev->PersistNext(NullPMemOffset);
+      prev->PersistNextNT(NullPMemOffset);
     } else {
       kvdk_assert(prev != Head() && next != Tail(), "");
       // Reverse procedure of emplace_between() between two elements
-      next->PersistPrev(prev.Offset());
-      prev->PersistNext(next.Offset());
+      next->PersistPrevNT(prev.Offset());
+      prev->PersistNextNT(next.Offset());
     }
     elem_deleter(pos.Address());
     --sz;
@@ -346,7 +347,7 @@ class GenericList final : public Collection {
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
     DLRecord* record = DLRecord::PersistDLRecord(
-        atran.address_of(allocated.offset), allocated.size, timestamp, DataType,
+        atran.addressOf(allocated.offset), allocated.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
 
     if (sz == 0) {
@@ -356,18 +357,18 @@ class GenericList final : public Collection {
     } else if (prev == Head()) {
       // PushFront()
       kvdk_assert(next != Tail(), "");
-      next->PersistPrev(allocated.offset);
+      next->PersistPrevNT(allocated.offset);
       first = record;
     } else if (next == Tail()) {
       // PushBack()
       kvdk_assert(prev != Head(), "");
-      prev->PersistNext(allocated.offset);
+      prev->PersistNextNT(allocated.offset);
       last = record;
     } else {
       // Emplace between two elements on PMem
       kvdk_assert(prev != Head() && next != Tail(), "");
-      prev->PersistNext(allocated.offset);
-      next->PersistPrev(allocated.offset);
+      prev->PersistNextNT(allocated.offset);
+      next->PersistPrevNT(allocated.offset);
     }
 
     return (next == Tail()) ? --next : ++prev;
@@ -406,6 +407,8 @@ class GenericListBuilder final {
   std::mutex mu;
   std::vector<std::unique_ptr<List>>* rebuilded_lists{nullptr};
 
+  // Resevoir for middle points
+  // Middle points can be used for multi-thread interating through Lists
   std::atomic_uint64_t mpoint_cnt{0U};
   std::array<DLRecord*, NMiddlePoints> mpoints{};
 
@@ -482,7 +485,8 @@ class GenericListBuilder final {
   }
 
   void AddListRecord(DLRecord* lrec) {
-    CollectionIDType id = Collection::string2ID(lrec->Value());
+    kvdk_assert(lrec->Value().size() == sizeof(CollectionIDType), "");
+    CollectionIDType id = Collection::ExtractID(lrec->Value());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
@@ -537,8 +541,9 @@ class GenericListBuilder final {
           kvdk_assert(primer.first == nullptr, "");
           kvdk_assert(primer.last == nullptr, "");
           kvdk_assert(primer.unique == nullptr, "");
-          kvdk_assert(primer.size.load() == 0, "") rebuilded_lists->back()
-              ->Restore(atran, primer.list_record, nullptr, nullptr, 0);
+          kvdk_assert(primer.size.load() == 0, "");
+          rebuilded_lists->back()->Restore(atran, primer.list_record, nullptr,
+                                           nullptr, 0);
           break;
         }
         case 1: {
@@ -546,9 +551,9 @@ class GenericListBuilder final {
           kvdk_assert(primer.first == nullptr, "");
           kvdk_assert(primer.last == nullptr, "");
           kvdk_assert(primer.unique != nullptr, "");
-          kvdk_assert(primer.size.load() == 1, "") rebuilded_lists->back()
-              ->Restore(atran, primer.list_record, primer.unique, primer.unique,
-                        1);
+          kvdk_assert(primer.size.load() == 1, "");
+          rebuilded_lists->back()->Restore(atran, primer.list_record,
+                                           primer.unique, primer.unique, 1);
           break;
         }
         default: {
@@ -697,14 +702,14 @@ class GenericListBuilder final {
   }
 
   bool isValidFirst(DLRecord* elem) {
-    if (atran.address_of(elem->next)->prev == NullPMemOffset) {
+    if (atran.addressOf(elem->next)->prev == NullPMemOffset) {
       // Interrupted PushFront()/PopFront()
       return false;
-    } else if (atran.address_of(elem->next)->prev == atran.offset_of(elem)) {
+    } else if (atran.addressOf(elem->next)->prev == atran.offsetOf(elem)) {
       return true;
     } else {
       // Interrupted ReplaceFront()
-      kvdk_assert(atran.address_of(atran.address_of(elem->next)->prev)->next ==
+      kvdk_assert(atran.addressOf(atran.addressOf(elem->next)->prev)->next ==
                       elem->next,
                   "");
       return false;
@@ -712,14 +717,14 @@ class GenericListBuilder final {
   }
 
   bool isValidLast(DLRecord* elem) {
-    if (atran.address_of(elem->prev)->next == NullPMemOffset) {
+    if (atran.addressOf(elem->prev)->next == NullPMemOffset) {
       // Interrupted PushBack()/PopBack()
       return false;
-    } else if (atran.address_of(elem->prev)->next == atran.offset_of(elem)) {
+    } else if (atran.addressOf(elem->prev)->next == atran.offsetOf(elem)) {
       return true;
     } else {
       // Interrupted ReplaceBack()
-      kvdk_assert(atran.address_of(atran.address_of(elem->prev)->next)->prev ==
+      kvdk_assert(atran.addressOf(atran.addressOf(elem->prev)->next)->prev ==
                       elem->prev,
                   "");
       return false;
@@ -729,15 +734,15 @@ class GenericListBuilder final {
   // Check for discarded Middle
   bool isDiscardedMiddle(DLRecord* elem) {
     kvdk_assert(typeOf(elem) == ListRecordType::Middle, "Not a middle");
-    return (atran.offset_of(elem) != atran.address_of(elem->prev)->next) &&
-           (atran.offset_of(elem) != atran.address_of(elem->next)->prev);
+    return (atran.offsetOf(elem) != atran.addressOf(elem->prev)->next) &&
+           (atran.offsetOf(elem) != atran.addressOf(elem->next)->prev);
   }
 
   // When false is returned, the node is put in temporary pool
   // and processed after all restoration is done
   bool maybeTryFixMiddle(DLRecord* elem) {
-    if (atran.offset_of(elem) == atran.address_of(elem->prev)->next) {
-      if (atran.offset_of(elem) == atran.address_of(elem->next)->prev) {
+    if (atran.offsetOf(elem) == atran.addressOf(elem->prev)->next) {
+      if (atran.offsetOf(elem) == atran.addressOf(elem->next)->prev) {
         // Normal Middle
         return true;
       } else {
@@ -745,9 +750,9 @@ class GenericListBuilder final {
         return false;
       }
     } else {
-      if (atran.offset_of(elem) == atran.address_of(elem->next)->prev) {
+      if (atran.offsetOf(elem) == atran.addressOf(elem->next)->prev) {
         // Interrupted Replace/Emplace(older), repair into List
-        atran.address_of(elem->prev)->PersistNext(atran.offset_of(elem));
+        atran.addressOf(elem->prev)->PersistNextNT(atran.offsetOf(elem));
         return true;
       } else {
         // Un-purged, discard
