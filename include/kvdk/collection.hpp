@@ -27,6 +27,8 @@ class Collection {
   // Return name of the collection
   const std::string& Name() const { return collection_name_; }
 
+  virtual ExpiredTimeType GetExpiredTime() const = 0;
+
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id
   std::string InternalKey(const StringView& key) {

@@ -60,9 +60,14 @@ class KVEngine : public Engine {
   }
   void ReportPMemUsage();
 
+  Status GetTTL(const StringView str, TTLTimeType* ttl_time) override;
+
+  Status Expire(const StringView str, TTLTimeType ttl_time) override;
+
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
-  Status Set(const StringView key, const StringView value) override;
+  Status Set(const StringView key, const StringView value,
+             const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
 
@@ -89,7 +94,8 @@ class KVEngine : public Engine {
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
-  const std::vector<std::shared_ptr<Skiplist>>& GetSkiplists() {
+  const std::unordered_map<uint64_t, std::shared_ptr<Skiplist>>&
+  GetSkiplists() {
     return skiplists_;
   };
 
@@ -131,6 +137,14 @@ class KVEngine : public Engine {
 
   bool CheckValueSize(const StringView& value) {
     return value.size() <= UINT32_MAX;
+  }
+
+  bool CheckTTLOverFlow(TTLTimeType ttl_time, int64_t base_time) {
+    // check overflow
+    if (ttl_time > INT64_MAX - base_time) {
+      return false;
+    }
+    return true;
   }
 
   Status Init(const std::string& name, const Configs& configs);
@@ -246,6 +260,13 @@ class KVEngine : public Engine {
       return s;
     }
     *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
+
+    // check collection is expired.
+    if (TimeUtils::CheckIsExpired((*collection_ptr)->GetExpiredTime())) {
+      hash_table_->Erase(entry_ptr);
+      // TODO(Zhichen): add background cleaner.
+      return Status::NotFound;
+    }
     return s;
   }
 
@@ -288,15 +309,23 @@ class KVEngine : public Engine {
 
   Status MaybeInitPendingBatchFile();
 
-  Status StringSetImpl(const StringView& key, const StringView& value);
+  Status StringSetImpl(const StringView& key, const StringView& value,
+                       const WriteOptions& write_options);
 
   Status StringDeleteImpl(const StringView& key);
 
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status SSetImpl(Skiplist* skiplist, const StringView& user_key,
+  Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
                   const StringView& value);
+
+  Status UpdateHeadWithExpiredTime(Skiplist* skiplist,
+                                   ExpiredTimeType expired_time);
+
+  Status InplaceUpdatedExpiredTime(const StringView& str,
+                                   ExpiredTimeType expired_time,
+                                   RecordType record_type);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
@@ -462,8 +491,7 @@ class KVEngine : public Engine {
 
   std::shared_ptr<HashTable> hash_table_;
 
-  std::vector<std::shared_ptr<Skiplist>> skiplists_;
-
+  std::unordered_map<uint64_t, std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
 

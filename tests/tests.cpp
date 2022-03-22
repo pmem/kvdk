@@ -310,18 +310,17 @@ TEST_F(EngineBasicTest, TestThreadManager) {
             Status::Ok);
   std::string key("k");
   std::string val("value");
-
-  ASSERT_EQ(engine->Set(key, val), Status::Ok);
+  ASSERT_EQ(engine->Set(key, val, WriteOptions()), Status::Ok);
 
   // Reach max access threads
-  auto s = std::async(&Engine::Set, engine, key, val);
+  auto s = std::async(&Engine::Set, engine, key, val, WriteOptions());
   ASSERT_EQ(s.get(), Status::TooManyAccessThreads);
   // Manually release access thread
   engine->ReleaseAccessThread();
-  s = std::async(&Engine::Set, engine, key, val);
+  s = std::async(&Engine::Set, engine, key, val, WriteOptions());
   ASSERT_EQ(s.get(), Status::Ok);
   // Release access thread on thread exits
-  s = std::async(&Engine::Set, engine, key, val);
+  s = std::async(&Engine::Set, engine, key, val, WriteOptions());
   ASSERT_EQ(s.get(), Status::Ok);
   delete engine;
 }
@@ -353,8 +352,9 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       // Insert
       std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
       std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
-      ASSERT_EQ(engine->Set(key1, key1), Status::Ok);
-      ASSERT_EQ(engine->Set(key2, key2), Status::Ok);
+      WriteOptions write_options;
+      ASSERT_EQ(engine->Set(key1, key1, write_options), Status::Ok);
+      ASSERT_EQ(engine->Set(key2, key2, write_options), Status::Ok);
       ASSERT_EQ(engine->SSet(sorted_collection, key1, key1), Status::Ok);
       ASSERT_EQ(engine->SSet(sorted_collection, key2, key2), Status::Ok);
     }
@@ -950,7 +950,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   auto skiplists = (dynamic_cast<KVEngine*>(engine))->GetSkiplists();
   for (int h = 1; h <= 32; ++h) {
     for (auto s : skiplists) {
-      ASSERT_EQ(s->CheckConnection(h), Status::Ok);
+      ASSERT_EQ(s.second->CheckConnection(h), Status::Ok);
     }
   }
   delete engine;
@@ -1768,6 +1768,125 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestExpireAPI) {
+  int n_thread_reading = 1;
+  int n_thread_writing = 1;
+  configs.max_access_threads = n_thread_writing + n_thread_reading;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::string got_val;
+  int64_t ttl_time;
+  WriteOptions write_options1{-2, false};
+  WriteOptions write_options2{INT64_MAX / 1000, false};
+  std::string key = "expired_key";
+  std::string val(10, 'a');
+  std::string val2(10, 'b');
+  std::string list_collection = "ListCollection";
+  std::string sorted_collection = "SortedCollection";
+  std::string hashes_collection = "HashesCollection";
+  int64_t normal_ttl_time = 10000; /* 10s */
+  int64_t max_ttl_time = INT64_MAX;
+
+  // For string
+  {
+    // key is expired. Check expired time when reading.
+    ASSERT_EQ(engine->Set(key, val, write_options1), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
+
+    // update kv pair with new expired time.
+    ASSERT_EQ(engine->Set(key, val2, write_options2), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+    ASSERT_EQ(got_val, val2);
+
+    // Get expired time.
+    ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
+
+    // reset expired time for string record.
+    ASSERT_EQ(engine->Expire(key, normal_ttl_time), Status::NotSupported);
+  }
+
+  // For sorte collection
+  {
+    Collection* collection_ptr;
+    Status s =
+        engine->CreateSortedCollection(sorted_collection, &collection_ptr);
+    ASSERT_EQ(s, Status::Ok);
+    ASSERT_EQ(engine->SSet(sorted_collection, "sorted" + key, "sorted" + val),
+              Status::Ok);
+    // Set expired time for collection
+    ASSERT_EQ(engine->Expire(sorted_collection, max_ttl_time),
+              Status::InvalidArgument);
+    ASSERT_EQ(engine->SSet(sorted_collection, "sorted2" + key, "sorted2" + val),
+              Status::Ok);
+    ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::Ok);
+    // check sorted_collection is persist;
+    ASSERT_EQ(ttl_time, -1);
+    // reset expired time for collection
+    ASSERT_EQ(engine->Expire(sorted_collection, 2), Status::Ok);
+    sleep(2);
+    ASSERT_EQ(engine->SGet(sorted_collection, "sorted" + key, &got_val),
+              Status::NotFound);
+    ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
+    ASSERT_EQ(ttl_time, -2);
+  }
+
+  // For hashes collection
+  {
+    ASSERT_EQ(engine->HSet(hashes_collection, "hashes" + key, "hashes" + val),
+              Status::Ok);
+    // Set expired time for collection, max_ttl_time is overflow.
+    ASSERT_EQ(engine->Expire(hashes_collection, max_ttl_time),
+              Status::InvalidArgument);
+    ASSERT_EQ(engine->HSet(hashes_collection, "hashes2" + key, "hashes2" + val),
+              Status::Ok);
+
+    // reset expired time for collection
+    ASSERT_EQ(engine->Expire(hashes_collection, normal_ttl_time), Status::Ok);
+    ASSERT_EQ(engine->HGet(hashes_collection, "hashes" + key, &got_val),
+              Status::Ok);
+    ASSERT_EQ(got_val, "hashes" + val);
+    // get collection ttl time
+    sleep(2);
+    ASSERT_EQ(engine->GetTTL(hashes_collection, &ttl_time), Status::Ok);
+  }
+
+  // For list
+  {
+    ASSERT_EQ(engine->LPush(list_collection, "list" + val), Status::Ok);
+    // Set expired time for collection
+    ASSERT_EQ(engine->Expire(list_collection, max_ttl_time),
+              Status::InvalidArgument);
+    ASSERT_EQ(engine->LPush(list_collection, "list2" + val), Status::Ok);
+    ASSERT_EQ(engine->RPush(list_collection, "list3" + val), Status::Ok);
+    ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
+    // check list is persist
+    ASSERT_EQ(ttl_time, -1);
+    // reset expired time for collection
+    ASSERT_EQ(engine->Expire(list_collection, normal_ttl_time), Status::Ok);
+    ASSERT_EQ(engine->LPop(list_collection, &got_val), Status::Ok);
+    ASSERT_EQ(engine->RPop(list_collection, &got_val), Status::Ok);
+    ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
+  }
+
+  // Close engine and Recovery
+  delete engine;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  // Get string record expired time
+  ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
+
+  // Get sorted record expired time
+  ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
+
+  // Get hashes record expired time
+  ASSERT_EQ(engine->GetTTL(hashes_collection, &ttl_time), Status::Ok);
+
+  // Get list record expired time
+  ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
+  delete engine;
+}
+
 // ========================= Sync Point ======================================
 
 #if DEBUG_LEVEL > 0
@@ -2133,6 +2252,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
 
   // Iter
   ths.emplace_back(std::thread([&]() {
+    sleep(1);
     auto sorted_iter = engine->NewSortedIterator(collection_name);
     sorted_iter->SeekToLast();
     int iter_num = 0;

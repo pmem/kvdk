@@ -95,6 +95,7 @@ void Skiplist::LinkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
+
   TEST_SYNC_POINT("KVEngine::Skiplist::InsertDLRecord::UpdatePrev");
   next->prev = inserting_record_offset;
   pmem_persist(&next->prev, 8);
@@ -336,11 +337,12 @@ bool Skiplist::Insert(const StringView& key, const StringView& value,
   return true;
 }
 
-bool Skiplist::Update(const StringView& key, const StringView& value,
+bool Skiplist::Update(const StringView& internal_key, const StringView& value,
                       const DLRecord* updating_record,
                       const SpinMutex* updating_record_lock,
-                      TimeStampType timestamp, SkiplistNode* dram_node,
-                      const SpaceEntry& space_to_write) {
+                      TimeStampType timestamp, RecordType record_type,
+                      SkiplistNode* dram_node, const SpaceEntry& space_to_write,
+                      int64_t expired_time) {
   Splice splice(this);
   std::unique_lock<SpinMutex> prev_record_lock;
 
@@ -349,7 +351,6 @@ bool Skiplist::Update(const StringView& key, const StringView& value,
     return false;
   }
 
-  std::string internal_key(InternalKey(key));
   PMemOffsetType updated_offset =
       pmem_allocator_->addr2offset_checked(updating_record);
   PMemOffsetType prev_offset =
@@ -358,8 +359,8 @@ bool Skiplist::Update(const StringView& key, const StringView& value,
       pmem_allocator_->addr2offset_checked(splice.next_pmem_record);
   DLRecord* new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedDataRecord, updated_offset, prev_offset, next_offset,
-      internal_key, value);
+      timestamp, record_type, updated_offset, prev_offset, next_offset,
+      internal_key, value, expired_time);
 
   // link new record
   LinkDLRecord(splice.prev_pmem_record, splice.next_pmem_record, new_record);
@@ -728,19 +729,24 @@ Status SortedCollectionRebuilder::repairSkiplistLinkage(Skiplist* skiplist) {
 }
 
 Status SortedCollectionRebuilder::RebuildLinkage(
-    const std::vector<std::shared_ptr<Skiplist>>& skiplists) {
+    const std::unordered_map<uint64_t, std::shared_ptr<Skiplist>>& skiplists) {
   Status s = Status::Ok;
   if (skiplists.size() == 0) {
     return s;
   }
 
   if (opt_parallel_rebuild_) {
+    for (auto s : skiplists) {
+      AddRecordForParallelRebuild(
+          pmem_allocator_->addr2offset(s.second->header()->record), false,
+          nullptr);
+    }
     s = parallelRepairSkiplistLinkage();
   } else {
     std::vector<std::future<Status>> fs;
     for (auto s : skiplists) {
       fs.push_back(std::async(&SortedCollectionRebuilder::repairSkiplistLinkage,
-                              this, s.get()));
+                              this, s.second.get()));
     }
     for (auto& f : fs) {
       s = f.get();
@@ -752,7 +758,7 @@ Status SortedCollectionRebuilder::RebuildLinkage(
 #ifdef DEBUG_CHECK
   for (uint8_t h = 1; h <= kMaxHeight; h++) {
     for (auto skiplist : skiplists) {
-      Status s = skiplist->CheckConnection(h);
+      Status s = skiplist.second->CheckConnection(h);
       if (s != Status::Ok) {
         GlobalLogger.Info("Check skiplist connecton at height %u error\n", h);
         return s;
@@ -1071,4 +1077,5 @@ Status Skiplist::DecodeSortedCollectionValue(
 
   return Status::Ok;
 }
+
 }  // namespace KVDK_NAMESPACE

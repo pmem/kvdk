@@ -45,6 +45,10 @@ const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
 
 const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
+const uint16_t ExpirableRecordType =
+    (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
+     RecordType::ListElem | RecordType::DlistRecord);
+
 struct DataHeader {
   DataHeader() = default;
   DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {}
@@ -92,6 +96,7 @@ struct StringRecord {
  public:
   DataEntry entry;
   PMemOffsetType older_version_record;
+  ExpiredTimeType expired_time;
   char data[0];
 
   // Construct a StringRecord instance at target_address. As the record need
@@ -102,10 +107,11 @@ struct StringRecord {
   static StringRecord* ConstructStringRecord(
       void* target_address, uint32_t _record_size, TimeStampType _timestamp,
       RecordType _record_type, PMemOffsetType _older_version_record,
-      const StringView& _key, const StringView& _value) {
+      const StringView& _key, const StringView& _value,
+      ExpiredTimeType _expired_time) {
     StringRecord* record = new (target_address)
         StringRecord(_record_size, _timestamp, _record_type,
-                     _older_version_record, _key, _value);
+                     _older_version_record, _key, _value, _expired_time);
     return record;
   }
 
@@ -115,7 +121,8 @@ struct StringRecord {
                                            RecordType type,
                                            PMemOffsetType older_version_record,
                                            const StringView& key,
-                                           const StringView& value);
+                                           const StringView& value,
+                                           ExpiredTimeType expired_time = 0);
 
   void Destroy() { entry.Destroy(); }
 
@@ -143,15 +150,19 @@ struct StringRecord {
     return false;
   }
 
+  ExpiredTimeType GetExpiredTime() { return expired_time; }
+
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
                RecordType _record_type, PMemOffsetType _older_version_record,
-               const StringView& _key, const StringView& _value)
+               const StringView& _key, const StringView& _value,
+               ExpiredTimeType _expired_time)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        older_version_record(_older_version_record) {
-    assert(_record_type == RecordType::StringDataRecord ||
-           _record_type == RecordType::StringDeleteRecord);
+        older_version_record(_older_version_record),
+        expired_time(_expired_time) {
+    assert(_record_type == StringDataRecord ||
+           _record_type == StringDeleteRecord);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
@@ -164,9 +175,11 @@ struct StringRecord {
   }
 
   uint32_t Checksum() {
-    uint32_t checksum_size = entry.meta.k_size + entry.meta.v_size +
-                             sizeof(StringRecord) - sizeof(DataHeader);
-    return get_checksum((char*)&entry.meta, checksum_size);
+    uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
+    uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
+
+    return get_checksum((char*)&entry.meta, meta_checksum_size) +
+           get_checksum(data, data_checksum_size);
   }
 };
 
@@ -177,6 +190,7 @@ struct DLRecord {
   PMemOffsetType older_version_offset;
   PMemOffsetType prev;
   PMemOffsetType next;
+  ExpiredTimeType expired_time;
   char data[0];
 
   // Construct a DLRecord instance at "target_address". As the record need
@@ -184,16 +198,14 @@ struct DLRecord {
   //
   // target_address: pre-allocated space to store constructed record, it
   // should no smaller than sizeof(DLRecord) + key size + value size
-  static DLRecord* ConstructDLRecord(void* target_address, uint32_t record_size,
-                                     TimeStampType timestamp,
-                                     RecordType record_type,
-                                     PMemOffsetType older_version_record,
-                                     uint64_t prev, uint64_t next,
-                                     const StringView& key,
-                                     const StringView& value) {
+  static DLRecord* ConstructDLRecord(
+      void* target_address, uint32_t record_size, TimeStampType timestamp,
+      RecordType record_type, PMemOffsetType older_version_record,
+      uint64_t prev, uint64_t next, const StringView& key,
+      const StringView& value, ExpiredTimeType expired_time) {
     DLRecord* record = new (target_address)
         DLRecord(record_size, timestamp, record_type, older_version_record,
-                 prev, next, key, value);
+                 prev, next, key, value, expired_time);
     return record;
   }
 
@@ -231,6 +243,12 @@ struct DLRecord {
     _mm_mfence();
   }
 
+  void PersistExpireTimeNT(ExpiredTimeType time) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
+                    static_cast<long long>(time));
+    _mm_mfence();
+  }
+  
   void PersistNextCLWB(PMemOffsetType offset) {
     next = offset;
     _mm_clwb(&next);
@@ -240,6 +258,13 @@ struct DLRecord {
     prev = offset;
     _mm_clwb(&prev);
   }
+  
+  void PersistExpireTimeCLWB(ExpiredTimeType time) {
+    expired_time = time;
+    _mm_clwb(&expired_time);
+  }
+
+  ExpiredTimeType GetExpiredTime() { return expired_time; }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
@@ -247,18 +272,20 @@ struct DLRecord {
                                    PMemOffsetType older_version_record,
                                    PMemOffsetType prev, PMemOffsetType next,
                                    const StringView& key,
-                                   const StringView& value);
+                                   const StringView& value,
+                                   ExpiredTimeType expired_time = 0);
 
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,
            RecordType _record_type, PMemOffsetType _older_version_record,
            PMemOffsetType _prev, PMemOffsetType _next, const StringView& _key,
-           const StringView& _value)
+           const StringView& _value, ExpiredTimeType _expired_time)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
         older_version_offset(_older_version_record),
         prev(_prev),
-        next(_next) {
+        next(_next),
+        expired_time(_expired_time) {
     assert(_record_type & DLRecordType);
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());

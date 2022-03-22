@@ -38,15 +38,17 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   size_t value2_len = strlen(value2);
   size_t read_v1_len, read_v2_len;
   int cmp;
-  KVDKStatus s = KVDKSet(kvdk_engine, key1, key1_len, value1, value1_len);
+  KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
+  KVDKStatus s =
+      KVDKSet(kvdk_engine, key1, key1_len, value1, value1_len, write_option);
   assert(s == Ok);
-  s = KVDKSet(kvdk_engine, key2, key1_len, value2, value2_len);
+  s = KVDKSet(kvdk_engine, key2, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);
   cmp = CmpCompare(read_v1, read_v1_len, value1, value1_len);
   assert(cmp == 0);
-  s = KVDKSet(kvdk_engine, key1, key1_len, value2, value2_len);
+  s = KVDKSet(kvdk_engine, key1, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);

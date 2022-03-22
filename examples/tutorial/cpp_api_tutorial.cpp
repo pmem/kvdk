@@ -31,9 +31,10 @@ static void test_anon_coll() {
   std::string value1{"value1"};
   std::string value2{"value2"};
   std::string v;
+  kvdk::WriteOptions write_options;
 
   // Insert key1-value1
-  status = engine->Set(key1, value1);
+  status = engine->Set(key1, value1, write_options);
   assert(status == kvdk::Status::Ok);
 
   // Get value1 by key1
@@ -42,7 +43,7 @@ static void test_anon_coll() {
   assert(v == value1);
 
   // Update key1-value1 to key1-value2
-  status = engine->Set(key1, value2);
+  status = engine->Set(key1, value2, write_options);
   assert(status == kvdk::Status::Ok);
 
   // Get value2 by key1
@@ -51,7 +52,7 @@ static void test_anon_coll() {
   assert(v == value2);
 
   // Insert key2-value2
-  status = engine->Set(key2, value2);
+  status = engine->Set(key2, value2, write_options);
   assert(status == kvdk::Status::Ok);
 
   // Delete key1-value2

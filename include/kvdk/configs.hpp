@@ -138,4 +138,13 @@ struct Configs {
   ComparatorTable comparator;
 };
 
+struct WriteOptions {
+  WriteOptions() {}
+  WriteOptions(int64_t _ttl_time, bool _key_exist)
+      : ttl_time(_ttl_time), key_exist(_key_exist) {}
+  // expired time in milliseconod
+  int64_t ttl_time = -1;
+  bool key_exist = false;
+};
+
 }  // namespace KVDK_NAMESPACE
