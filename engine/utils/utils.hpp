@@ -377,6 +377,29 @@ void compare_excange_if_larger(std::atomic<T>& num, T target) {
 // Return the number of process unit (PU) that are bound to the kvdk instance
 int get_usable_pu(void);
 
+namespace TimeUtils {
+/* Return the UNIX time in microseconds */
+inline UnixTimeType unix_time(void) {
+  struct timeval tv;
+  UnixTimeType ust;
+
+  gettimeofday(&tv, NULL);
+  ust = ((UnixTimeType)tv.tv_sec) * 1000000;
+  ust += tv.tv_usec;
+  return ust;
+}
+
+inline int64_t millisecond_time() { return unix_time() / 1000; }
+
+inline bool CheckIsExpired(ExpiredTimeType expired_time) {
+  if (expired_time > 0 && expired_time <= millisecond_time()) {
+    return true;
+  }
+  return false;
+}
+
+}  // namespace TimeUtils
+
 namespace CollectionUtils {
 inline static std::string EncodeID(CollectionIDType id) {
   return EncodeInt64(id);

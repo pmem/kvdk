@@ -193,6 +193,10 @@ class Skiplist : public Collection {
 
   SkiplistNode* header() { return header_; }
 
+  ExpiredTimeType GetExpiredTime() const override {
+    return header_->record->GetExpiredTime();
+  }
+
   inline static StringView UserKey(const SkiplistNode* node) {
     assert(node != nullptr);
     if (node->cached_key_size > 0) {
@@ -263,10 +267,11 @@ class Skiplist : public Collection {
   // this function
   //
   // Return true on success, return false on fail.
-  bool Update(const StringView& key, const StringView& value,
+  bool Update(const StringView& internal_key, const StringView& value,
               const DLRecord* updating_record,
               const SpinMutex* updating_record_lock, TimeStampType timestamp,
-              SkiplistNode* dram_node, const SpaceEntry& space_to_write);
+              RecordType record_type, SkiplistNode* dram_node,
+              const SpaceEntry& space_to_write, int64_t expired_time = 0);
 
   // Delete "key" from the skiplist by replace it with a delete record
   //
@@ -513,7 +518,7 @@ class SortedCollectionRebuilder {
         num_rebuild_threads_(num_rebuild_threads){};
 
   Status RebuildLinkage(
-      const std::vector<std::shared_ptr<Skiplist>>& skiplists);
+      const std::unordered_map<uint64_t, std::shared_ptr<Skiplist>>& skiplists);
 
   void AddRecordForParallelRebuild(uint64_t record_offset, bool is_visited,
                                    SkiplistNode* node) {
