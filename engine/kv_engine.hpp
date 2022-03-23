@@ -278,6 +278,9 @@ class KVEngine : public Engine {
       }
     };
     if (!HasExpired(result.entry)) {
+      result.s = (expected_type & result.entry.GetRecordType())
+                     ? result.s
+                     : Status::WrongType;
       return result;
     }
     // Key expired, lock the slot to do search
@@ -293,6 +296,9 @@ class KVEngine : public Engine {
         return result;
       }
       if (!HasExpired(result.entry)) {
+        result.s = (expected_type & result.entry.GetRecordType())
+                       ? result.s
+                       : Status::WrongType;
         return result;
       }
     }
