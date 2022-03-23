@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "alias.hpp"
+#include "define.hpp"
 #include "kvdk/collection.hpp"
 #include "kvdk/configs.hpp"
 #include "kvdk/engine.h"

@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 
-#include "engine/alias.hpp"
+#include "engine/define.hpp"
 #include "generator.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"

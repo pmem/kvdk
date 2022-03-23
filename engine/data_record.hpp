@@ -121,7 +121,7 @@ struct StringRecord {
                                            PMemOffsetType older_version_record,
                                            const StringView& key,
                                            const StringView& value,
-                                           ExpiredTimeType expired_time = 0);
+                                           ExpiredTimeType expired_time = -1);
 
   void Destroy() { entry.Destroy(); }
 
@@ -238,7 +238,7 @@ struct DLRecord {
                                    PMemOffsetType prev, PMemOffsetType next,
                                    const StringView& key,
                                    const StringView& value,
-                                   ExpiredTimeType expired_time = 0);
+                                   ExpiredTimeType expired_time = -1);
 
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,

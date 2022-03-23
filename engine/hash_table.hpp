@@ -17,7 +17,7 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class HashIndexType : uint16_t {
+enum class HashIndexType : uint8_t {
   // Value initialized considered as Invalid
   Invalid = 0,
   // Index is PMem offset of a string record
@@ -42,6 +42,7 @@ struct HashHeader {
   uint32_t key_prefix;
   RecordType record_type;
   HashIndexType index_type;
+  bool is_persist;
 };
 
 class Skiplist;
@@ -51,6 +52,7 @@ class Queue;
 
 struct alignas(16) HashEntry {
  public:
+  friend class HashTable;
   HashEntry& operator=(const HashEntry&) = delete;
   HashEntry(const HashEntry& hash_entry) { atomic_load_16(this, &hash_entry); }
   union Index {
@@ -69,13 +71,11 @@ struct alignas(16) HashEntry {
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
-            HashIndexType index_type)
-      : header_({key_hash_prefix, record_type, index_type}), index_(_index) {}
+            HashIndexType index_type, bool is_persist)
+      : header_({key_hash_prefix, record_type, index_type, is_persist}),
+        index_(_index) {}
 
   bool Empty() { return header_.index_type == HashIndexType::Empty; }
-
-  // Make this hash entry empty while its content been deleted
-  void Clear() { header_.index_type = HashIndexType::Empty; }
 
   Index GetIndex() const { return index_; }
 
@@ -83,11 +83,19 @@ struct alignas(16) HashEntry {
 
   RecordType GetRecordType() const { return header_.record_type; }
 
+  bool IsPersist() { return header_.is_persist; }
+
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
   // and return true, otherwise return false.
   bool Match(const StringView& key, uint32_t hash_k_prefix,
              uint16_t target_type, DataEntry* data_entry_metadata);
+
+ private:
+  // Make this hash entry empty while its content been deleted
+  void Clear() { header_.index_type = HashIndexType::Empty; }
+
+  bool SetExpiredFlag() { header_.is_persist = false; }
 
  private:
   Index index_;
@@ -159,12 +167,17 @@ class HashTable {
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
   void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
-              void* index, HashIndexType index_type);
+              void* index, HashIndexType index_type, bool is_persist = true);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
     assert(entry_ptr != nullptr);
     entry_ptr->Clear();
+  }
+
+  void SetExpiredFlag(HashEntry* entry_ptr) {
+    assert(entry_ptr != nullptr);
+    entry_ptr->SetExpiredFlag();
   }
 
   SlotIterator GetSlotIterator();

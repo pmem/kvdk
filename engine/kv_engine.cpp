@@ -26,16 +26,6 @@
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
-constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
-// fsdax mode align to 2MB by default.
-constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
-// Select a record every 10000 into restored skiplist map for multi-thread
-// restoring large skiplist.
-constexpr uint64_t kRestoreSkiplistStride = 10000;
-constexpr uint64_t kMaxCachedOldRecords = 10000;
-constexpr size_t kLimitForegroundCleanOldRecords = 1;
-constexpr int64_t kInvalidTTLTime = -2;
-constexpr int64_t kPersistTime = -1;
 
 void PendingBatch::PersistFinish() {
   num_kv = 0;
@@ -1624,14 +1614,18 @@ Status KVEngine::UpdateHeadWithExpiredTime(Skiplist* skiplist,
       continue;
     }
 
-    hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist,
-                        HashIndexType::Skiplist);
+    expired_time == -1
+        ? hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist,
+                              HashIndexType::Skiplist)
+        : hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist,
+                              HashIndexType::Skiplist, false);
     //(TODO) free head record
     break;
   }
   return Status::Ok;
 }
 
+// add hash entry flag.
 Status KVEngine::InplaceUpdatedExpiredTime(const StringView& str,
                                            ExpiredTimeType expired_time,
                                            RecordType record_type) {
@@ -1817,9 +1811,14 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
         key, value, expired_time);
 
     auto updated_type = hash_entry_ptr->GetRecordType();
+
     // Write hash index
-    hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord, block_base,
-                        HashIndexType::StringRecord);
+    expired_time == -1
+        ? hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord,
+                              block_base, HashIndexType::StringRecord)
+        : hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord,
+                              block_base, HashIndexType::StringRecord, false);
+
     if (found && updated_type == StringDataRecord /* delete record is self-freed, so we don't need to free it here */) {
       ul.unlock();
       delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
@@ -2447,6 +2446,72 @@ void KVEngine::backgroundDramCleaner() {
     }
     FreeSkiplistDramNodes();
   }
+}
+
+uint64_t KVEngine::ExpiredCleaner() {
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    std::runtime_error("BackGround Init access thread fail!");
+  }
+  uint64_t num_entries =
+      (configs_.hash_bucket_size - 8 /* next pointer */) / sizeof(HashEntry);
+  uint64_t cleaned_kv = 0;
+  uint64_t scan_kv = 0;
+  int64_t time = 0;
+  ExpiredTimeType expired_time;
+  // Iterate hash table
+  auto start_ts = std::chrono::system_clock::now();
+  auto slot_iter = hash_table_->GetSlotIterator();
+  while (slot_iter.Valid()) {
+    auto base_time = TimeUtils::millisecond_time();
+    auto bucket_iter = slot_iter.Begin();
+    auto end_bucket_iter = slot_iter.End();
+    while (bucket_iter != end_bucket_iter) {
+      switch (bucket_iter->GetIndexType()) {
+        case HashIndexType::StringRecord: {
+          if (!bucket_iter->IsPersist()) {
+            // check persist time.
+            expired_time =
+                bucket_iter->GetIndex().string_record->GetExpiredTime();
+            if (expired_time >= 0 && expired_time <= base_time) {
+            }
+          }
+        }
+        case HashIndexType::UnorderedCollection: {
+          break;
+        }
+        case HashIndexType::Queue: {
+          break;
+        }
+        case HashIndexType::Skiplist: {
+          break;
+        }
+      }
+      bucket_iter++;
+    }
+    slot_iter.Next();
+  }
+
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now() - start_ts);
+  auto avg = scan_kv / duration.count();
+  GlobalLogger.Info(
+      "Iterator Hash Table cost time: %ld ms, scan kvs num: %ld, cleaned kvs "
+      "num: %ld, scan kvs/ms: %ld\n",
+      duration.count(), scan_kv, cleaned_kv, avg);
+  ReportPMemUsage();
+  return avg;
+}
+
+void KVEngine::backgroundExpiredCleaner() {
+  uint64_t avg_throughputs = 0;
+  int scan_times = 0;
+  while (!bg_work_signals_.terminating) {
+    avg_throughputs += ExpiredCleaner();
+    scan_times++;
+  }
+  GlobalLogger.Info("One: %ld %ld Avg Scan kvs/ms: %ld\n", avg_throughputs,
+                    scan_times, avg_throughputs / scan_times);
 }
 
 }  // namespace KVDK_NAMESPACE

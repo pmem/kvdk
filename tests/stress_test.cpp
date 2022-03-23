@@ -12,7 +12,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../engine/alias.hpp"
+#include "../engine/define.hpp"
 #include "../engine/kv_engine.hpp"
 #include "gtest/gtest.h"
 #include "kvdk/engine.hpp"

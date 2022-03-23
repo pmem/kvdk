@@ -3,7 +3,7 @@
  */
 #pragma once
 
-#include "../alias.hpp"
+#include "../define.hpp"
 #include "../thread_manager.hpp"
 #include "../utils/utils.hpp"
 #include "kvdk/configs.hpp"

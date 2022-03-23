@@ -31,7 +31,7 @@
 
 #include <atomic>
 
-#include "../alias.hpp"
+#include "../define.hpp"
 #include "../macros.hpp"
 #include "coding.hpp"
 #include "kvdk/namespace.hpp"

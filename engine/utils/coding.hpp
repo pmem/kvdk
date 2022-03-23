@@ -8,7 +8,7 @@
 
 #include <string>
 
-#include "../alias.hpp"
+#include "../define.hpp"
 
 namespace KVDK_NAMESPACE {
 

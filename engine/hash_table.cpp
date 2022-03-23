@@ -232,10 +232,10 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
 }
 
 void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
-                       RecordType record_type, void* index,
-                       HashIndexType index_type) {
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, record_type, index,
-                           index_type);
+                       RecordType type, void* index, HashIndexType index_type,
+                       bool is_persist /*= true*/) {
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type,
+                           is_persist);
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 

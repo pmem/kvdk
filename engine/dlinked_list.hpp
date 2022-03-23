@@ -17,7 +17,7 @@
 #include <iostream>
 #include <libpmemobj++/string_view.hpp>
 
-#include "alias.hpp"
+#include "define.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
