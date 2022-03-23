@@ -261,17 +261,15 @@ class KVEngine : public Engine {
     }
 
     auto HasExpired = [](HashEntry entry) {
-      ExpiredTimeType expire_time;
       switch (entry.GetIndexType()) {
         case HashIndexType::StringRecord: {
-          kvdk_assert(entry.GetRecordType() == RecordType::StringDataRecord,
-                      "");
+          kvdk_assert(entry.GetRecordType() == StringDataRecord, "");
           return entry.GetIndex().string_record->HasExpired();
         }
-        case HashIndexType::UnorderedCollection: {
-          case HashIndexType::Queue:
-          case HashIndexType::Skiplist:
-            return static_cast<Collection*>(entry.GetIndex().ptr)->HasExpired();
+        case HashIndexType::UnorderedCollection:
+        case HashIndexType::Queue:
+        case HashIndexType::Skiplist: {
+          return static_cast<Collection*>(entry.GetIndex().ptr)->HasExpired();
         }
         default: {
           kvdk_assert(false, "Unreachable branch!");
