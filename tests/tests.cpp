@@ -1550,8 +1550,8 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
 TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   using kvpair = std::pair<std::string, std::string>;
-  int threads = 1;
-  configs.max_access_threads = threads;
+  int num_threads = 16;
+  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1615,7 +1615,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
                   Status::Ok);
       }
     };
-    LaunchNThreads(threads, Write);
+    LaunchNThreads(num_threads, Write);
   }
 
   delete engine;

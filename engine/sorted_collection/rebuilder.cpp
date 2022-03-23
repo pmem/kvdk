@@ -77,7 +77,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
       header_record->entry.meta.timestamp > checkpoint_.CheckpointTS();
 
   // Check if this skiplist has newer version than checkpoint
-  bool invalid_skiplist = invalid_version;
+  bool invalid_skiplist = expired || invalid_version;
 
   auto skiplist = std::
       make_shared<Skiplist>(header_record, collection_name, id, comparator,
@@ -86,11 +86,6 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
                             s_configs.index_with_hashtable && invalid_skiplist /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
 
   if (invalid_skiplist) {
-    GlobalLogger.Debug("add invalid skiplist %s\n", skiplist->Name().c_str());
-    if (expired) {
-      GlobalLogger.Debug("skiplist %s it's expired\n",
-                         skiplist->Name().c_str());
-    }
     std::lock_guard<SpinMutex> lg(lock_);
     invalid_skiplists_.insert({id, skiplist});
     max_recovered_id_ = std::max(max_recovered_id_, id);

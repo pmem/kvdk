@@ -822,11 +822,7 @@ void Skiplist::CleanObsoletedNodes() {
 void Skiplist::Destroy() {
   GlobalLogger.Debug("Destroy skiplist %s\n", Name().c_str());
   destroyRecords();
-  GlobalLogger.Debug("Destroy pmem records of skiplist %s finish\n",
-                     Name().c_str());
   destroyNodes();
-  GlobalLogger.Debug("Destroy skiplist nodes of skiplist %s finish\n",
-                     Name().c_str());
 }
 
 void Skiplist::destroyNodes() {
