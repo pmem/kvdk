@@ -1668,37 +1668,35 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
       return UpdateHeadWithExpiredTime(entry_ptr->GetIndex().skiplist,
                                        expired_time);
     case HashIndexType::UnorderedCollection: {
-      UnorderedCollection* pcoll;
       auto guard = hash_table_->AcquireLock(str);
-      s = FindCollection(str, &pcoll, RecordType::DlistRecord);
+      s = hash_table_->SearchForWrite(hint, str, RecordType::DlistRecord,
+                                      &entry_ptr, &hash_entry, nullptr);
       if (s != Status::Ok) {
         return s;
       }
+      UnorderedCollection* pcoll = hash_entry.GetIndex().p_unordered_collection;
       /// TODO: put these unregister and delete work in findKey()
       if (pcoll->HasExpired()) {
-        unregisterCollection<UnorderedCollection>(str);
+        hash_table_->Erase(entry_ptr);
         /// TODO: Also delete from PMem
         return Status::NotFound;
       }
       pcoll->ExpireAt(expired_time);
       if (pcoll->HasExpired()) {
-        unregisterCollection<UnorderedCollection>(str);
+        hash_table_->Erase(entry_ptr);
         /// TODO: Also delete from PMem
         return Status::NotFound;
       }
       return Status::Ok;
     }
     case HashIndexType::List: {
-      std::unique_lock<std::recursive_mutex> guard_list;
+      std::unique_lock<std::recursive_mutex> guard;
       List* list;
-      s = listFind(str, &list, false, guard_list);
-      if (s != Status::Ok) {
-        return s;
-      }
+      listFind(str, &list, false, guard);
       if (list->HasExpired()) {
-        /// TODO: Let cleaner asynchronously do the work.
+        /// TODO:
         listDestroy(list);
-        auto guard = hash_table_->AcquireLock(str);
+        auto guard2 = hash_table_->AcquireLock(str);
         unregisterCollection<List>(str);
         return Status::Ok;
       }
@@ -2705,6 +2703,7 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
   }
 
   // Uninitialized or Inactive, initialize new one
+  /// TODO: may deadlock!
   auto guard2 = hash_table_->AcquireLock(key);
   s = FindCollection(key, list, RecordType::ListRecord);
   if (s != Status::Ok && s != Status::NotFound) {

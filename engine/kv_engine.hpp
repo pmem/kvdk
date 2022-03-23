@@ -244,6 +244,8 @@ class KVEngine : public Engine {
     }
   }
 
+  // May lock HashTable internally, caller must call this without lock
+  // HashTable!
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
@@ -264,14 +266,7 @@ class KVEngine : public Engine {
     // check collection is expired.
     if ((*collection_ptr)->HasExpired()) {
       // TODO(Zhichen): add background cleaner.
-      /// TODO: let's discuss whether we should clean it here,
-      /// or clean it outside.
-      /// Some functions will call this function with HashTable locked.
-      /// For example, List always lock the List, then if necessary,
-      /// it will lock the HashTable to unregister List.
-      /// Maybe we should have this renamed to findKeyImpl,
-      /// and a wrapper findKey that calls it and cleans expired key.
-      return Status::Expired;
+      return Status::NotFound;
     }
     return Status::Ok;
   }
@@ -295,6 +290,7 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
+  // Lockless, caller should lock the key aforehand.
   template <typename CollectionType>
   Status unregisterCollection(const StringView key) {
     RecordType type = collectionType<CollectionType>();
