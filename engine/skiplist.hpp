@@ -193,8 +193,12 @@ class Skiplist : public Collection {
 
   SkiplistNode* header() { return header_; }
 
-  ExpiredTimeType GetExpiredTime() const override {
-    return header_->record->GetExpiredTime();
+  bool HasExpired() const final {
+    return TimeUtils::CheckIsExpired(ExpireTime());
+  }
+
+  void ExpireAt(ExpiredTimeType time) {
+    throw std::runtime_error{"Unimplemented!"};
   }
 
   inline static StringView UserKey(const SkiplistNode* node) {

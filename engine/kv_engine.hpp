@@ -205,7 +205,7 @@ class KVEngine : public Engine {
     *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
 
     // check collection is expired.
-    if (TimeUtils::CheckIsExpired((*collection_ptr)->GetExpiredTime())) {
+    if (TimeUtils::CheckIsExpired((*collection_ptr)->ExpireTime())) {
       hash_table_->Erase(entry_ptr);
       // TODO(Zhichen): add background cleaner.
       return Status::NotFound;
@@ -260,33 +260,24 @@ class KVEngine : public Engine {
       return result;
     }
 
-    bool HasExpired = [](HashEntry entry) {
+    auto HasExpired = [](HashEntry entry) {
+      ExpiredTimeType expire_time;
       switch (entry.GetIndexType()) {
         case HashIndexType::StringRecord: {
-          kvdk_assert(
-              result.entry.GetRecordType() == RecordType::StringDataRecord, "");
-          expire_time = result.entry.GetIndex().string_record;
-          break;
+          kvdk_assert(entry.GetRecordType() == RecordType::StringDataRecord,
+                      "");
+          return entry.GetIndex().string_record->HasExpired();
         }
         case HashIndexType::UnorderedCollection: {
-          expire_time =
-              result.entry.GetIndex().p_unordered_collection->GetExpiredTime();
-          break;
-        }
-        case HashIndexType::Queue: {
-          expire_time = result.entry.GetIndex().queue_ptr->GetExpiredTime();
-          break;
-        }
-        case HashIndexType::Skiplist: {
-          expire_time = result.entry.GetIndex().skiplist->GetExpiredTime();
-          break;
+          case HashIndexType::Queue:
+          case HashIndexType::Skiplist:
+            return static_cast<Collection*>(entry.GetIndex().ptr)->HasExpired();
         }
         default: {
           kvdk_assert(false, "Unreachable branch!");
           std::abort();
         }
       }
-      return TimeUtils::CheckIsExpired(expire_time);
     };
     if (!HasExpired(result.entry)) {
       return result;

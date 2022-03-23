@@ -979,7 +979,7 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     void* pmem_record = nullptr;
     if (hash_entry.GetRecordType() == StringDataRecord) {
       if (TimeUtils::CheckIsExpired(
-              hash_entry.GetIndex().string_record->GetExpiredTime())) {
+              hash_entry.GetIndex().string_record->ExpireTime())) {
         // TODO: push record into expired cleaner
         return Status::NotFound;
       }
@@ -1542,24 +1542,25 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   switch (entry_ptr->GetIndexType()) {
     case HashIndexType::Skiplist: {
       collection_ptr = entry_ptr->GetIndex().skiplist;
-      expired_time = collection_ptr->GetExpiredTime();
+      expired_time = collection_ptr->ExpireTime();
       break;
     }
     case HashIndexType::UnorderedCollection: {
       collection_ptr = entry_ptr->GetIndex().p_unordered_collection;
-      expired_time = collection_ptr->GetExpiredTime();
+      expired_time = collection_ptr->ExpireTime();
       break;
     }
 
     case HashIndexType::Queue: {
       collection_ptr = entry_ptr->GetIndex().queue_ptr;
-      expired_time = collection_ptr->GetExpiredTime();
+      expired_time = collection_ptr->ExpireTime();
       break;
     }
 
-    case HashIndexType::StringRecord:
-      expired_time = entry_ptr->GetIndex().string_record->GetExpiredTime();
+    case HashIndexType::StringRecord: {
+      expired_time = entry_ptr->GetIndex().string_record->ExpireTime();
       break;
+    }
     default:
       return Status::NotSupported;
   }
@@ -1602,7 +1603,7 @@ Status KVEngine::UpdateHeadWithExpiredTime(Skiplist* skiplist,
     dram_node = entry_ptr->GetIndex().skiplist->header();
     existing_record = dram_node->record;
 
-    if (TimeUtils::CheckIsExpired(existing_record->GetExpiredTime())) {
+    if (TimeUtils::CheckIsExpired(existing_record->ExpireTime())) {
       hash_table_->Erase(entry_ptr);
       // Push into cleaner queue.
       return Status::NotFound;
@@ -1645,24 +1646,24 @@ Status KVEngine::InplaceUpdatedExpiredTime(const StringView& str,
   switch (entry_ptr->GetIndexType()) {
     case HashIndexType::Queue: {
       if (TimeUtils::CheckIsExpired(
-              entry_ptr->GetIndex().queue_ptr->GetExpiredTime())) {
+              entry_ptr->GetIndex().queue_ptr->ExpireTime())) {
         hash_table_->Erase(entry_ptr);
         // Push into cleaner queue.
         return Status::NotFound;
       }
-      return entry_ptr->GetIndex().queue_ptr->InplaceUpdatedExpiredTime(
-          expired_time);
+      entry_ptr->GetIndex().queue_ptr->ExpireAt(expired_time);
+      return Status::Ok;
     }
-    case HashIndexType::UnorderedCollection:
+    case HashIndexType::UnorderedCollection: {
       if (TimeUtils::CheckIsExpired(
-              entry_ptr->GetIndex().p_unordered_collection->GetExpiredTime())) {
+              entry_ptr->GetIndex().p_unordered_collection->ExpireTime())) {
         hash_table_->Erase(entry_ptr);
         // Push into cleaner queue.
         return Status::NotFound;
       }
-      return entry_ptr->GetIndex()
-          .p_unordered_collection->InplaceUpdatedExpiredTime(expired_time);
-      break;
+      entry_ptr->GetIndex().p_unordered_collection->ExpireAt(expired_time);
+      return Status::Ok;
+    }
     default:
       return Status::NotSupported;
   }

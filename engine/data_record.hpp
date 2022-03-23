@@ -5,9 +5,8 @@
 #pragma once
 
 #include <immintrin.h>
-#include <x86intrin.h>
-
 #include <libpmem.h>
+#include <x86intrin.h>
 
 #include "alias.hpp"
 #include "kvdk/namespace.hpp"
@@ -53,9 +52,7 @@ const uint16_t ExpirableRecordType =
     (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
      RecordType::QueueRecord | RecordType::DlistRecord);
 
-const uint16_t PrimaryRecordType =(
-  ExpirableRecordType | StringDeleteRecord
-);
+const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
 
 struct DataHeader {
   DataHeader() = default;
@@ -158,8 +155,8 @@ struct StringRecord {
     return false;
   }
 
-  ExpiredTimeType GetExpiredTime() const { return expired_time; }
-  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpiredTime()); }
+  ExpiredTimeType ExpireTime() const { return expired_time; }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(ExpireTime()); }
 
   void PersistExpireTimeNT(ExpiredTimeType time) {
     _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
@@ -286,11 +283,11 @@ struct DLRecord {
     _mm_clwb(&expired_time);
   }
 
-  ExpiredTimeType GetExpiredTime() const {
+  ExpiredTimeType ExpireTime() const {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     return expired_time;
   }
-  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpiredTime()); }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(ExpireTime()); }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
