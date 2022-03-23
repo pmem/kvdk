@@ -4,8 +4,13 @@
 
 #pragma once
 
+#include <immintrin.h>
+#include <x86intrin.h>
+
+#include <libpmem.h>
+
+#include "alias.hpp"
 #include "kvdk/namespace.hpp"
-#include "libpmem.h"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -48,10 +53,9 @@ const uint16_t ExpirableRecordType =
     (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
      RecordType::QueueRecord | RecordType::DlistRecord);
 
-const uint16_t PrimaryRecordType =
-    (RecordType::StringDataRecord | RecordType::StringDeleteRecord |
-     RecordType::SortedHeaderRecord | RecordType::DlistRecord |
-     RecordType::QueueRecord);
+const uint16_t PrimaryRecordType =(
+  ExpirableRecordType | StringDeleteRecord
+);
 
 struct DataHeader {
   DataHeader() = default;
@@ -154,7 +158,19 @@ struct StringRecord {
     return false;
   }
 
-  ExpiredTimeType GetExpiredTime() { return expired_time; }
+  ExpiredTimeType GetExpiredTime() const { return expired_time; }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpiredTime()); }
+
+  void PersistExpireTimeNT(ExpiredTimeType time) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
+                    static_cast<long long>(time));
+    _mm_mfence();
+  }
+
+  void PersistExpireTimeCLWB(ExpiredTimeType time) {
+    expired_time = time;
+    _mm_clwb(&expired_time);
+  }
 
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
@@ -179,10 +195,11 @@ struct StringRecord {
   }
 
   uint32_t Checksum() {
-    uint32_t checksum_size = entry.meta.k_size + entry.meta.v_size +
-                             sizeof(StringRecord) - sizeof(DataHeader) -
-                             sizeof(ExpiredTimeType);
-    return get_checksum((char*)&entry.meta, checksum_size);
+    uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
+    uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
+
+    return get_checksum((char*)&entry.meta, meta_checksum_size) +
+           get_checksum(data, data_checksum_size);
   }
 };
 
@@ -234,7 +251,46 @@ struct DLRecord {
     return StringView(data + entry.meta.k_size, entry.meta.v_size);
   }
 
-  ExpiredTimeType GetExpiredTime() { return expired_time; }
+  void PersistNextNT(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&next),
+                    static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
+  void PersistPrevNT(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&prev),
+                    static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
+  void PersistExpireTimeNT(ExpiredTimeType time) {
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
+    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
+                    static_cast<long long>(time));
+    _mm_mfence();
+  }
+
+  void PersistNextCLWB(PMemOffsetType offset) {
+    next = offset;
+    _mm_clwb(&next);
+  }
+
+  void PersistPrevCLWB(PMemOffsetType offset) {
+    prev = offset;
+    _mm_clwb(&prev);
+  }
+
+  void PersistExpireTimeCLWB(ExpiredTimeType time) {
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
+    expired_time = time;
+    _mm_clwb(&expired_time);
+  }
+
+  ExpiredTimeType GetExpiredTime() const {
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
+    return expired_time;
+  }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpiredTime()); }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,

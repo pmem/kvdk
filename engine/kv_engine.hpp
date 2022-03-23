@@ -213,9 +213,7 @@ class KVEngine : public Engine {
     return s;
   }
 
-
-  struct LookupResult
-  {
+  struct LookupResult {
     Status s{Status::NotSupported};
     HashEntry entry{};
     HashEntry* entry_ptr{nullptr};
@@ -224,17 +222,18 @@ class KVEngine : public Engine {
   // lookupKeyImpl does not check for deleted or expired key.
   // It returns whatever it finds as is.
   // It's up to caller to handle the deleted or expired key.
-  template<bool readonly>
+  template <bool readonly>
   LookupResult lookupKeyImpl(StringView key) {
     LookupResult result;
     HashTable::KeyHashHint hint = hash_table_->GetHint(key);
     if (readonly) {
-      result.s = hash_table_->SearchForRead(hint, key, PrimaryRecordType,
-                                            &result.entry_ptr, &result.entry, nullptr);
-    }
-    else {
+      result.s =
+          hash_table_->SearchForRead(hint, key, PrimaryRecordType,
+                                     &result.entry_ptr, &result.entry, nullptr);
+    } else {
       result.s = hash_table_->SearchForWrite(hint, key, PrimaryRecordType,
-                                            &result.entry_ptr, &result.entry, nullptr);
+                                             &result.entry_ptr, &result.entry,
+                                             nullptr);
     }
     return result;
   }
@@ -242,40 +241,101 @@ class KVEngine : public Engine {
   // Look up the key, checks for expiration or deletion.
   // If key is deleted or has expired, handle it to ExpireCleaner
   // Also checks whether the type matches expected type.
-  template<bool owns_lock>
+  template <bool owns_lock>
   LookupResult lookupKey(StringView key, RecordType expected_type) {
     LookupResult result = lookupKeyImpl<true>(key);
     if (result.s != Status::Ok) {
       kvdk_assert(result.s == Status::NotFound, "");
       return result;
     }
-    bool key_expired;
-    switch (result.entry.GetIndexType())
-    {
-    case HashIndexType::StringRecord:
-    {
-      StringRecord* rec = result.entry.GetIndex().string_record;
-      if (result.entry.GetRecordType() == RecordType::StringDeleteRecord)
-      {
-        /// DeleteRecord is already handled by OldRecordCleaner
-        /// TODO: don't use DeleteRecord. 
-        /// Use Record with empty value and a specific expire_time(e.g. 0)
-        /// to indicate deletion. Add member function isDeleted().
-        /// Let ExpireCleaner handle all expires and deletions.
-        /// TODO: Don't default an expire_time in constructor. 
-        /// Set a constant. (e.g. INT_MAX)
-        result.s = Status::NotFound;
-        return result;
-      }
-      kvdk_assert(result.entry.GetRecordType() == RecordType::StringDataRecord, "");
-      key_expired = result.entry.
-    }
-      break;
-    
-    default:
-      break;
+    if (result.entry.GetRecordType() == RecordType::StringDeleteRecord) {
+      /// DeleteRecord is already handled by OldRecordCleaner
+      /// TODO: don't use DeleteRecord.
+      /// Use Record with empty value and a specific expire_time(e.g. 0)
+      /// to indicate deletion. Add member function Deleted().
+      /// Let ExpireCleaner handle all expires and deletions.
+      /// TODO: Don't default an expire_time in constructor.
+      /// Set a constant. (e.g. INT_MAX)
+      result.s = Status::NotFound;
+      return result;
     }
 
+    bool HasExpired = [](HashEntry entry) {
+      switch (entry.GetIndexType()) {
+        case HashIndexType::StringRecord: {
+          kvdk_assert(
+              result.entry.GetRecordType() == RecordType::StringDataRecord, "");
+          expire_time = result.entry.GetIndex().string_record;
+          break;
+        }
+        case HashIndexType::UnorderedCollection: {
+          expire_time =
+              result.entry.GetIndex().p_unordered_collection->GetExpiredTime();
+          break;
+        }
+        case HashIndexType::Queue: {
+          expire_time = result.entry.GetIndex().queue_ptr->GetExpiredTime();
+          break;
+        }
+        case HashIndexType::Skiplist: {
+          expire_time = result.entry.GetIndex().skiplist->GetExpiredTime();
+          break;
+        }
+        default: {
+          kvdk_assert(false, "Unreachable branch!");
+          std::abort();
+        }
+      }
+      return TimeUtils::CheckIsExpired(expire_time);
+    };
+    if (!HasExpired(result.entry)) {
+      return result;
+    }
+    // Key expired, lock the slot to do search
+    // Since SetExpireTime() or Delete() must acquire the lock of the slot,
+    // we can safely read or expire the key here.
+    std::unique_lock<SpinMutex> guard{*hash_table_->GetHint(key).spin,
+                                      std::defer_lock};
+    if (!owns_lock) {
+      guard.lock();
+      result = lookupKeyImpl<false>(key);
+      if (result.s != Status::Ok) {
+        kvdk_assert(result.s == Status::NotFound, "");
+        return result;
+      }
+      if (!HasExpired(result.entry)) {
+        return result;
+      }
+    }
+    // Indeed expired, remove the key from HashTable and PMem
+    switch (result.entry.GetIndexType()) {
+      case HashIndexType::StringRecord: {
+        hash_table_->Erase(result.entry_ptr);
+        /// TODO: Let Cleaner erase the key
+        break;
+      }
+      case HashIndexType::UnorderedCollection: {
+        hash_table_->Erase(result.entry_ptr);
+        /// TODO: Let Cleaner erase the key
+        break;
+      }
+      case HashIndexType::Queue: {
+        hash_table_->Erase(result.entry_ptr);
+        /// TODO: Let Cleaner erase the key
+        break;
+      }
+      case HashIndexType::Skiplist: {
+        hash_table_->Erase(result.entry_ptr);
+        /// TODO: Let Cleaner erase the key
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unreachable branch!");
+        std::abort();
+      }
+    }
+    result.s = Status::NotFound;
+    return result;
   }
 
   enum class QueueOpPosition { Left, Right };
