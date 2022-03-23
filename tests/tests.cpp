@@ -1697,7 +1697,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
     ASSERT_EQ(engine->Expire(key, normal_ttl_time), Status::NotSupported);
   }
 
-  // For sorte collection
+  // For sorted collection
   {
     Collection* collection_ptr;
     Status s =

@@ -111,7 +111,7 @@ class UnorderedCollection final
 
   void ExpireAt(ExpiredTimeType time) {
     collection_record_ptr_->PersistExpireTimeNT(time);
-    expire_time = time;
+    expire_time_ = time;
   }
 
   /// Erase given record

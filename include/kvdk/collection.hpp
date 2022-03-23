@@ -19,14 +19,14 @@ class Collection {
  public:
   Collection(const std::string& name, CollectionIDType id,
              ExpiredTimeType t = ExpiredTimeType{})
-      : collection_name_(name), collection_id_(id), expire_time{t} {}
+      : collection_name_(name), collection_id_(id), expire_time_{t} {}
   // Return unique ID of the collection
   uint64_t ID() const { return collection_id_; }
 
   // Return name of the collection
   const std::string& Name() const { return collection_name_; }
 
-  ExpiredTimeType ExpireTime() const { return expire_time; }
+  ExpiredTimeType ExpireTime() const { return expire_time_; }
   virtual bool HasExpired() const = 0;
   virtual void ExpireAt(ExpiredTimeType) = 0;
 
@@ -59,9 +59,9 @@ class Collection {
 
   std::string collection_name_;
   CollectionIDType collection_id_;
-  // To simplify code base, expire_time field is added.
+  // To simplify code base, expire_time_ field is added.
   // However, it's up to inherited class to maintain that field.
   // Always update this field in ExpireAt()!
-  ExpiredTimeType expire_time;
+  ExpiredTimeType expire_time_;
 };
 }  // namespace KVDK_NAMESPACE
