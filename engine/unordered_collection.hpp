@@ -105,6 +105,17 @@ class UnorderedCollection final
                        StringView const key, StringView const value,
                        LockType const& lock);
 
+  ExpiredTimeType GetExpiredTime() const override {
+    return collection_record_ptr_->GetExpiredTime();
+  }
+
+  Status ExpireAt(ExpiredTimeType expired_time) {
+    collection_record_ptr_->expired_time = expired_time;
+    pmem_persist(&collection_record_ptr_->expired_time,
+                 sizeof(ExpiredTimeType));
+    return Status::Ok;
+  }
+
   /// Erase given record
   /// Return new_offset as next record
   /// old_offset as erased record
@@ -211,8 +222,8 @@ class UnorderedIterator final : public Iterator {
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
   /// UnorderedIterator currently does not support Seek to a key
-  [[gnu::deprecated]] virtual void Seek([
-      [gnu::unused]] std::string const& key) final override {
+  [[gnu::deprecated]] virtual void Seek(
+      [[gnu::unused]] std::string const& key) final override {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 

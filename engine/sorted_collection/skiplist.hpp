@@ -166,6 +166,12 @@ class Skiplist : public Collection {
 
   bool IndexWithHashtable() { return index_with_hashtable_; }
 
+  ExpiredTimeType GetExpiredTime() const override {
+    return header_->record->GetExpiredTime();
+  }
+
+  Status ExpireAt(ExpiredTimeType expired_time);
+
   // Set "key, value" to the skiplist
   //
   // key_hash_hint_locked: hash table hint of the setting key, the lock of hint

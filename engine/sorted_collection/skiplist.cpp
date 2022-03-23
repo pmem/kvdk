@@ -49,6 +49,12 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
   }
 };
 
+Status Skiplist::ExpireAt(ExpiredTimeType expired_time) {
+  header_->record->expired_time = expired_time;
+  pmem_persist(&header_->record->expired_time, sizeof(ExpiredTimeType));
+  return Status::Ok;
+}
+
 void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
                         uint8_t start_height, uint8_t end_height,
                         Splice* result_splice) {
@@ -859,7 +865,7 @@ void Skiplist::destroyRecords() {
         }
 
         if (IndexWithHashtable()) {
-          HashEntry* entry_ptr;
+          HashEntry* entry_ptr = nullptr;
           HashEntry hash_entry;
           auto s = hash_table_->SearchForRead(hash_hint, key,
                                               to_destroy->entry.meta.type,

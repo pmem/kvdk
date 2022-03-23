@@ -30,6 +30,7 @@ extern "C" {
 
 typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
+typedef struct KVDKWriteOptions KVDKWriteOptions;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
 typedef struct KVDKCollection KVDKCollection;
@@ -46,6 +47,12 @@ extern KVDK_LIBRARY_API void KVDKSetConfigs(
     uint32_t hash_bucket_size, uint64_t hash_bucket_num,
     uint32_t num_buckets_per_slot);
 extern KVDK_LIBRARY_API void KVDKDestroyConfigs(KVDKConfigs* kv_config);
+
+KVDK_LIBRARY_API KVDKWriteOptions* KVDKCreateWriteOptions(void);
+KVDK_LIBRARY_API void KVDKDestroyWriteOptions(KVDKWriteOptions*);
+KVDK_LIBRARY_API void KVDKWriteOptionsSetTTLTime(KVDKWriteOptions*, int64_t);
+KVDK_LIBRARY_API void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions*,
+                                                  unsigned char);
 
 extern KVDK_LIBRARY_API KVDKSortedCollectionConfigs*
 KVDKCreateSortedCollectionConfigs();
@@ -98,9 +105,9 @@ extern KVDK_LIBRARY_API KVDKStatus KVDKWrite(KVDKEngine* engine,
 extern KVDK_LIBRARY_API KVDKStatus KVDKGet(KVDKEngine* engine, const char* key,
                                            size_t key_len, size_t* val_len,
                                            char** val);
-extern KVDK_LIBRARY_API KVDKStatus KVDKSet(KVDKEngine* engine, const char* key,
-                                           size_t key_len, const char* val,
-                                           size_t val_len);
+extern KVDK_LIBRARY_API KVDKStatus
+KVDKSet(KVDKEngine* engine, const char* key, size_t key_len, const char* val,
+        size_t val_len, const KVDKWriteOptions* write_option);
 extern KVDK_LIBRARY_API KVDKStatus KVDKDelete(KVDKEngine* engine,
                                               const char* key, size_t key_len);
 
@@ -171,6 +178,12 @@ extern KVDK_LIBRARY_API const char* KVDKIterKey(KVDKIterator* iter,
                                                 size_t* key_len);
 extern KVDK_LIBRARY_API const char* KVDKIterValue(KVDKIterator* iter,
                                                   size_t* val_len);
+
+// For Expire
+KVDK_LIBRARY_API KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str,
+                                       size_t str_len, int64_t ttl_time);
+KVDK_LIBRARY_API KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str,
+                                       size_t str_len, int64_t* ttl_time);
 
 #ifdef __cplusplus
 } /* end extern "C" */

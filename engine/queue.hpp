@@ -55,6 +55,17 @@ class Queue final : public Collection {
 
   inline TimeStampType Timestamp() const { return timestamp_; };
 
+  ExpiredTimeType GetExpiredTime() const override {
+    return collection_record_ptr_->GetExpiredTime();
+  }
+
+  Status ExpireAt(ExpiredTimeType expired_time) {
+    collection_record_ptr_->expired_time = expired_time;
+    pmem_persist(&collection_record_ptr_->expired_time,
+                 sizeof(ExpiredTimeType));
+    return Status::Ok;
+  }
+
  private:
   inline static bool isAdjacent(iterator prev, iterator next) {
     iterator curr{prev};

@@ -61,9 +61,24 @@ class KVEngine : public Engine {
   }
   void ReportPMemUsage();
 
+  // Expire str after ttl_time
+  //
+  // Notice:
+  // 1. Expire assumes that str is not duplicated among all types, which is not
+  // implemented yet
+  // 2. Expire is not compatible with checkpoint for now
+  Status Expire(const StringView str, TTLTimeType ttl_time) override;
+  // Get time to expire of str
+  //
+  // Notice:
+  // Expire assumes that str is not duplicated among all types, which is not
+  // implemented yet
+  Status GetTTL(const StringView str, TTLTimeType* ttl_time) override;
+
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
-  Status Set(const StringView key, const StringView value) override;
+  Status Set(const StringView key, const StringView value,
+             const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
 
@@ -156,6 +171,17 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
+  bool CheckTTL(TTLTimeType ttl_time, int64_t base_time) {
+    if (ttl_time < 0 && ttl_time != kPersistTime) {
+      return false;
+    }
+    // check overflow
+    if (ttl_time > INT64_MAX - base_time) {
+      return false;
+    }
+    return true;
+  }
+
   Status Init(const std::string& name, const Configs& configs);
 
   Status HashGetImpl(const StringView& key, std::string* value,
@@ -193,6 +219,13 @@ class KVEngine : public Engine {
       return s;
     }
     *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
+
+    // check collection is expired.
+    if (TimeUtils::CheckIsExpired((*collection_ptr)->GetExpiredTime())) {
+      hash_table_->Erase(entry_ptr);
+      // TODO(Zhichen): add background cleaner.
+      return Status::NotFound;
+    }
     return s;
   }
 
@@ -205,14 +238,15 @@ class KVEngine : public Engine {
 
   Status MaybeInitPendingBatchFile();
 
-  Status StringSetImpl(const StringView& key, const StringView& value);
+  Status StringSetImpl(const StringView& key, const StringView& value,
+                       const WriteOptions& write_options);
 
   Status StringDeleteImpl(const StringView& key);
 
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status SSetImpl(Skiplist* skiplist, const StringView& user_key,
+  Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
                   const StringView& value);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);

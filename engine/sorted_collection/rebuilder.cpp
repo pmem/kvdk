@@ -71,25 +71,31 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
     return Status::Abort;
   }
 
+  bool expired = TimeUtils::CheckIsExpired(header_record->GetExpiredTime());
+  bool invalid_version =
+      recoverToCheckpoint() &&
+      header_record->entry.meta.timestamp > checkpoint_.CheckpointTS();
+
   // Check if this skiplist has newer version than checkpoint
-  bool valid_skiplist =
-      !recoverToCheckpoint() ||
-      header_record->entry.meta.timestamp <= checkpoint_.CheckpointTS();
+  bool invalid_skiplist = invalid_version;
 
   auto skiplist = std::
       make_shared<Skiplist>(header_record, collection_name, id, comparator,
                             kv_engine_->pmem_allocator_,
                             kv_engine_->hash_table_,
-                            s_configs.index_with_hashtable && valid_skiplist /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+                            s_configs.index_with_hashtable && invalid_skiplist /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
 
-  if (!valid_skiplist) {
+  if (invalid_skiplist) {
     GlobalLogger.Debug("add invalid skiplist %s\n", skiplist->Name().c_str());
+    if (expired) {
+      GlobalLogger.Debug("skiplist %s it's expired\n",
+                         skiplist->Name().c_str());
+    }
     std::lock_guard<SpinMutex> lg(lock_);
     invalid_skiplists_.insert({id, skiplist});
     max_recovered_id_ = std::max(max_recovered_id_, id);
     s = Status::Ok;
   } else {
-    GlobalLogger.Debug("add recovery skiplist %s\n", skiplist->Name().c_str());
     {
       // TODO: maybe return a skiplist map in rebuild finish, instead of access
       // engine directly

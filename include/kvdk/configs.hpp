@@ -11,6 +11,11 @@
 
 namespace KVDK_NAMESPACE {
 
+// used for expire
+constexpr int64_t kExpiredTime = 0;
+constexpr int64_t kPersistTime = -1;
+constexpr int64_t kInvalidTime = -2;
+
 enum class LogLevel : uint8_t {
   All = 0,
   Debug,
@@ -137,6 +142,16 @@ struct Configs {
   // If customer compare functions is used in a kvdk engine, these functions
   // should be registered to the comparator before open engine
   ComparatorTable comparator;
+};
+
+struct WriteOptions {
+  WriteOptions() {}
+  WriteOptions(int64_t _ttl_time, bool _key_exist)
+      : ttl_time(_ttl_time), key_exist(_key_exist) {}
+  // expired time in milliseconod, should be kPersistTime for no expiration
+  // data, or >= 0 as the ttl
+  int64_t ttl_time = kPersistTime;
+  bool key_exist = false;
 };
 
 }  // namespace KVDK_NAMESPACE

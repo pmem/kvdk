@@ -15,7 +15,7 @@ static constexpr int kDataBufferSize = 1024 * 1024;
 StringRecord* StringRecord::PersistStringRecord(
     void* addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
     PMemOffsetType older_version_record, const StringView& key,
-    const StringView& value) {
+    const StringView& value, ExpiredTimeType expired_time) {
   void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(StringRecord);
   bool with_buffer = write_size <= kDataBufferSize;
@@ -29,7 +29,7 @@ StringRecord* StringRecord::PersistStringRecord(
   }
   StringRecord* record = StringRecord::ConstructStringRecord(
       data_cpy_target, record_size, timestamp, type, older_version_record, key,
-      value);
+      value, expired_time);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();
@@ -45,7 +45,8 @@ DLRecord* DLRecord::PersistDLRecord(void* addr, uint32_t record_size,
                                     PMemOffsetType older_version_record,
                                     PMemOffsetType prev, PMemOffsetType next,
                                     const StringView& key,
-                                    const StringView& value) {
+                                    const StringView& value,
+                                    ExpiredTimeType expired_time) {
   void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(DLRecord);
   bool with_buffer = write_size <= kDataBufferSize;
@@ -57,9 +58,9 @@ DLRecord* DLRecord::PersistDLRecord(void* addr, uint32_t record_size,
   } else {
     data_cpy_target = addr;
   }
-  DLRecord* record =
-      DLRecord::ConstructDLRecord(data_cpy_target, record_size, timestamp, type,
-                                  older_version_record, prev, next, key, value);
+  DLRecord* record = DLRecord::ConstructDLRecord(
+      data_cpy_target, record_size, timestamp, type, older_version_record, prev,
+      next, key, value, expired_time);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();
