@@ -243,7 +243,7 @@ class KVEngine : public Engine {
   // Also checks whether the type matches expected type.
   template <bool owns_lock>
   LookupResult lookupKey(StringView key, RecordType expected_type) {
-    LookupResult result = lookupKeyImpl<true>(key);
+    LookupResult result = lookupKeyImpl<false>(key);
     if (result.s != Status::Ok) {
       kvdk_assert(result.s == Status::NotFound, "");
       return result;
