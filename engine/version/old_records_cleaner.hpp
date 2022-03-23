@@ -94,4 +94,5 @@ class OldRecordsCleaner {
   std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };
+
 }  // namespace KVDK_NAMESPACE

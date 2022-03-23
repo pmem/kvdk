@@ -379,7 +379,7 @@ class KVEngine : public Engine {
 
   // void backgroundWorkCoordinator();
 
-  uint64_t ExpiredCleaner();
+  void ExpiredCleaner();
   void backgroundExpiredCleaner();
 
   void startBackgroundWorks();

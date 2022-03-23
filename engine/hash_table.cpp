@@ -231,11 +231,12 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
   return Status::NotFound;
 }
 
-void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
-                       RecordType type, void* index, HashIndexType index_type,
-                       bool is_persist /*= true*/) {
+void HashTable::Insert(
+    const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type, void* index,
+    HashIndexType index_type,
+    HashEntryStatus entry_status /*= HashEntryStatus::Persist*/) {
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type,
-                           is_persist);
+                           entry_status);
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
