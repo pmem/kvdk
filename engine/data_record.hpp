@@ -48,6 +48,8 @@ const uint16_t ExpirableRecordType =
     (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
      RecordType::QueueRecord | RecordType::DlistRecord);
 
+const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
+
 struct DataHeader {
   DataHeader() = default;
   DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {}
