@@ -150,8 +150,8 @@ struct StringRecord {
     return false;
   }
 
-  ExpiredTimeType ExpireTime() { return expired_time; }
-  bool HasExpired() { return TimeUtils::CheckIsExpired(ExpireTime()); }
+  ExpiredTimeType ExpireTime() const { return expired_time; }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(ExpireTime()); }
 
   void PersistExpireTimeNT(ExpiredTimeType time) {
     _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
@@ -202,13 +202,7 @@ struct DLRecord {
   PMemOffsetType older_version_offset;
   PMemOffsetType prev;
   PMemOffsetType next;
-  union {
-    /// TODO: use template instead of union
-    /// Currently ListElem use this field to store id
-    /// The constructor may look confusing.
-    ExpiredTimeType expired_time;
-    CollectionIDType id;
-  };
+  ExpiredTimeType expired_time;
 
   char data[0];
 
@@ -242,17 +236,6 @@ struct DLRecord {
       return Checksum() == expected_checksum;
     }
     return false;
-  }
-
-  CollectionIDType ID() const {
-    kvdk_assert(entry.meta.type == RecordType::ListElem, "");
-    return id;
-  }
-
-  StringView InternalKey() const {
-    kvdk_assert(entry.meta.type == RecordType::ListElem, "");
-    return StringView{data - sizeof(CollectionIDType),
-                      sizeof(CollectionIDType) + entry.meta.k_size};
   }
 
   StringView Key() const { return StringView(data, entry.meta.k_size); }
@@ -296,11 +279,11 @@ struct DLRecord {
     _mm_clwb(&expired_time);
   }
 
-  ExpiredTimeType ExpireTime() {
+  ExpiredTimeType ExpireTime() const {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     return expired_time;
   }
-  bool HasExpired() { return TimeUtils::CheckIsExpired(ExpireTime()); }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(ExpireTime()); }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,

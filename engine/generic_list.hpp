@@ -256,7 +256,7 @@ class GenericList final : public Collection {
   Iterator Erase(Iterator pos, ElemDeleter elem_deleter) {
     kvdk_assert(pos != Head(), "Cannot erase Head()");
     kvdk_assert(sz >= 1, "Cannot erase from empty List!");
-    kvdk_assert(pos->ID() == ID(), "Erase from wrong List!");
+    kvdk_assert(ExtractID(pos->Key()) == ID(), "Erase from wrong List!");
 
     Iterator prev{pos};
     --prev;
@@ -332,7 +332,7 @@ class GenericList final : public Collection {
   void Replace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
                StringView const key, StringView const value,
                ElemDeleter elem_deleter) {
-    kvdk_assert(ID() == pos->ID(), "Wrong List!");
+    kvdk_assert(ExtractID(pos->Key()) == ID(), "Wrong List!");
     Iterator prev{pos};
     --prev;
     Iterator next{pos};
@@ -352,7 +352,7 @@ class GenericList final : public Collection {
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
     DLRecord* record = DLRecord::PersistDLRecord(
         atran.addressOf(space.offset), space.size, timestamp, DataType,
-        NullPMemOffset, prev_off, next_off, key, value, ID());
+        NullPMemOffset, prev_off, next_off, InternalKey(key), value);
 
     if (sz == 0) {
       kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
@@ -385,8 +385,8 @@ class GenericList final : public Collection {
           << "Offset:\t"
           << to_hex(reinterpret_cast<char*>(record) - list.pmem_base) << "\t"
           << "Next:\t" << to_hex(record->next) << "\t"
-          << "ID:\t" << record->ID() << "\t"
-          << "Key: " << record->Key() << "\t"
+          << "ID:\t" << to_hex(Collection::ExtractID(record->Key())) << "\t"
+          << "Key: " << Collection::ExtractUserKey(record->Key()) << "\t"
           << "Value: " << record->Value() << "\n";
     };
 
@@ -619,7 +619,7 @@ class GenericListBuilder final {
     kvdk_assert(elem->prev == NullPMemOffset && elem->next == NullPMemOffset,
                 "Not UniqueElem!");
 
-    CollectionIDType id = elem->ID();
+    CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
@@ -641,7 +641,7 @@ class GenericListBuilder final {
       return;
     }
 
-    CollectionIDType id = elem->ID();
+    CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
@@ -662,7 +662,7 @@ class GenericListBuilder final {
       return;
     }
 
-    CollectionIDType id = elem->ID();
+    CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
@@ -684,7 +684,7 @@ class GenericListBuilder final {
       return;
     }
 
-    CollectionIDType id = elem->ID();
+    CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
