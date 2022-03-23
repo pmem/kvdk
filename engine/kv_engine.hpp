@@ -256,11 +256,11 @@ class KVEngine : public Engine {
       }
     }
 
-    if (has_expired) {
-      result.s = (type_mask & result.entry.GetRecordType()) ? result.s
-                                                            : Status::WrongType;
-      return result;
-    }
+    result.s = has_expired ? Status::NotFound
+                           : (type_mask & result.entry.GetRecordType())
+                                 ? result.s
+                                 : Status::WrongType;
+    return result;
   }
 
   enum class QueueOpPosition { Left, Right };
