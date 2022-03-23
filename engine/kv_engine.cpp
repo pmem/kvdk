@@ -1675,6 +1675,11 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
         return s;
       }
       /// TODO: put these unregister and delete work in findKey()
+      if (pcoll->HasExpired()) {
+        unregisterCollection<UnorderedCollection>(str);
+        /// TODO: Also delete from PMem
+        return Status::NotFound;
+      }
       pcoll->ExpireAt(expired_time);
       if (pcoll->HasExpired()) {
         unregisterCollection<UnorderedCollection>(str);
@@ -1689,6 +1694,13 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
       s = listFind(str, &list, false, guard_list);
       if (s != Status::Ok) {
         return s;
+      }
+      if (list->HasExpired()) {
+        /// TODO: Let cleaner asynchronously do the work.
+        listDestroy(list);
+        auto guard = hash_table_->AcquireLock(str);
+        unregisterCollection<List>(str);
+        return Status::Ok;
       }
       list->ExpireAt(expired_time);
       if (list->HasExpired()) {
