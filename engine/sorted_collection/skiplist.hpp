@@ -170,7 +170,7 @@ class Skiplist : public Collection {
     return header_->record->GetExpiredTime();
   }
 
-  Status ExpireAt(ExpiredTimeType expired_time);
+  Status SetExpireTime(ExpiredTimeType expired_time);
 
   // Set "key, value" to the skiplist
   //

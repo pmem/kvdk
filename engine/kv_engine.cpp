@@ -1373,11 +1373,12 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
     case HashIndexType::StringRecord:
       return Status::NotSupported;
     case HashIndexType::Skiplist:
-      return entry_ptr->GetIndex().skiplist->ExpireAt(expired_time);
+      return entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
     case HashIndexType::UnorderedCollection:
-      return entry_ptr->GetIndex().p_unordered_collection->ExpireAt(expired_time);
+      return entry_ptr->GetIndex().p_unordered_collection->SetExpireTime(
+          expired_time);
     case HashIndexType::Queue:
-      return entry_ptr->GetIndex().queue_ptr->ExpireAt(expired_time);
+      return entry_ptr->GetIndex().queue_ptr->SetExpireTime(expired_time);
     default:
       Status::NotSupported;
   }

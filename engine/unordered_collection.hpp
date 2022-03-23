@@ -109,7 +109,7 @@ class UnorderedCollection final
     return collection_record_ptr_->GetExpiredTime();
   }
 
-  Status ExpireAt(ExpiredTimeType expired_time) {
+  Status SetExpireTime(ExpiredTimeType expired_time) {
     collection_record_ptr_->expired_time = expired_time;
     pmem_persist(&collection_record_ptr_->expired_time,
                  sizeof(ExpiredTimeType));
