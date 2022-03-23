@@ -379,8 +379,7 @@ class KVEngine : public Engine {
 
   // void backgroundWorkCoordinator();
 
-  uint64_t ExpiredCleaner();
-  void backgroundExpiredCleaner();
+  void ExpiredCleaner();
 
   void startBackgroundWorks();
 
@@ -424,6 +423,7 @@ class KVEngine : public Engine {
     std::condition_variable_any pmem_usage_reporter_cv;
     std::condition_variable_any pmem_allocator_organizer_cv;
     std::condition_variable_any dram_cleaner_cv;
+    std::condition_variable_any scan_hash_table_cv;
 
     SpinMutex terminating_lock;
     bool terminating = false;
