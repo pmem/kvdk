@@ -29,9 +29,9 @@ class Collection {
   // Return name of the collection
   const std::string& Name() const { return collection_name_; }
 
-  ExpiredTimeType ExpireTime() const { return ExpireTime(); }
+  ExpiredTimeType GetExpireTime() const { return GetExpireTime(); }
   bool HasExpired() const { return TimeUtils::CheckIsExpired(expire_time); }
-  virtual void ExpireAt(ExpiredTimeType) = 0;
+  virtual void SetExpireTime(ExpiredTimeType) = 0;
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id
@@ -68,7 +68,7 @@ class Collection {
   CollectionIDType collection_id_;
   // To simplify code base, expire_time field is added.
   // However, it's up to inherited class to maintain that field.
-  // Always update this field in ExpireAt()!
+  // Always update this field in SetExpireTime()!
   ExpiredTimeType expire_time;
 };
 }  // namespace KVDK_NAMESPACE

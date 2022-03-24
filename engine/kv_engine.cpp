@@ -1550,21 +1550,21 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   Collection* collection_ptr = nullptr;
   switch (entry_ptr->GetIndexType()) {
     case HashIndexType::Skiplist: {
-      expired_time = entry_ptr->GetIndex().skiplist->ExpireTime();
+      expired_time = entry_ptr->GetIndex().skiplist->GetExpireTime();
       break;
     }
     case HashIndexType::UnorderedCollection: {
-      expired_time = entry_ptr->GetIndex().p_unordered_collection->ExpireTime();
+      expired_time = entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
       break;
     }
 
     case HashIndexType::List: {
-      expired_time = entry_ptr->GetIndex().list->ExpireTime();
+      expired_time = entry_ptr->GetIndex().list->GetExpireTime();
       break;
     }
 
     case HashIndexType::StringRecord: {
-      expired_time = entry_ptr->GetIndex().string_record->ExpireTime();
+      expired_time = entry_ptr->GetIndex().string_record->GetExpireTime();
       break;
     }
     default: {
@@ -1576,7 +1576,7 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   /// TODO: we should have a unified findKey() to do all these dirty work, aka,
   /// erase an expired key if it finds one and then return Status::NotFound.
   /// The problem is, after the findKey() confirms that the key has yet expired,
-  /// the key may expire after we call ExpireTime()
+  /// the key may expire after we call GetExpireTime()
   /// TODO: return 0 even if the key has expired for a second or two if
   /// findKey() have successfully returned.
   if (TimeUtils::CheckIsExpired(expired_time)) {
@@ -1679,7 +1679,7 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
         /// TODO: Also delete from PMem
         return Status::NotFound;
       }
-      pcoll->ExpireAt(expired_time);
+      pcoll->SetExpireTime(expired_time);
       if (pcoll->HasExpired()) {
         hash_table_->Erase(entry_ptr);
         /// TODO: Also delete from PMem
@@ -1697,7 +1697,7 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
         listDestroy(list);
         return Status::NotFound;
       }
-      list->ExpireAt(expired_time);
+      list->SetExpireTime(expired_time);
       if (list->HasExpired()) {
         auto result = removeKey(str);
         kvdk_assert(result.s == Status::Ok, "");

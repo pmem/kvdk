@@ -192,7 +192,7 @@ class GenericList final : public Collection {
     return std::unique_lock<LockType>(mu);
   }
 
-  void ExpireAt(ExpiredTimeType time) final {
+  void SetExpireTime(ExpiredTimeType time) final {
     list_record->PersistExpireTimeNT(time);
     expire_time = time;
   }

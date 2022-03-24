@@ -152,8 +152,8 @@ struct StringRecord {
     return false;
   }
 
-  ExpiredTimeType ExpireTime() const { return expired_time; }
-  bool HasExpired() const { return TimeUtils::CheckIsExpired(ExpireTime()); }
+  ExpiredTimeType GetExpireTime() const { return expired_time; }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
 
   void PersistExpireTimeNT(ExpiredTimeType time) {
     _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
@@ -281,11 +281,11 @@ struct DLRecord {
     _mm_clwb(&expired_time);
   }
 
-  ExpiredTimeType ExpireTime() const {
+  ExpiredTimeType GetExpireTime() const {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     return expired_time;
   }
-  bool HasExpired() const { return TimeUtils::CheckIsExpired(ExpireTime()); }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
