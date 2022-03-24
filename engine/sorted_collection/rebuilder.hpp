@@ -38,7 +38,7 @@ class SortedCollectionRebuilder {
   };
 
   // Rebuild DRAM index for skiplists and free invalid records.
-  RebuildResult RebuildIndex();
+  RebuildResult Rebuild();
 
   // Add a skiplist data/delete record to rebuilder
   Status AddElement(DLRecord* record);
@@ -136,9 +136,9 @@ class SortedCollectionRebuilder {
   uint64_t num_rebuild_threads_;
   bool segment_based_rebuild_;
   CheckPoint checkpoint_;
+  CollectionIDType max_recovered_id_ = 0;
   // Select elements as a segment start point for segment based rebuild every
   // kRestoreSkiplistStride elements per skiplist
-  CollectionIDType max_recovered_id_ = 0;
   const uint64_t kRestoreSkiplistStride = 10000;
 };
-}
+}  // namespace KVDK_NAMESPACE

@@ -24,8 +24,7 @@ SortedCollectionRebuilder::SortedCollectionRebuilder(
   rebuilder_thread_cache_.resize(num_rebuild_threads_);
 }
 
-SortedCollectionRebuilder::RebuildResult
-SortedCollectionRebuilder::RebuildIndex() {
+SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
   RebuildResult ret;
   if (rebuild_skiplits_.size() == 0) {
     return ret;

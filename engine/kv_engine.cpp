@@ -789,7 +789,7 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  auto ret = sorted_rebuilder_->RebuildIndex();
+  auto ret = sorted_rebuilder_->Rebuild();
   if (ret.s != Status::Ok) {
     return ret.s;
   }
