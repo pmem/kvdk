@@ -47,7 +47,9 @@ const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
 const uint16_t ExpirableRecordType =
     (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
-     RecordType::ListElem | RecordType::DlistRecord);
+     RecordType::ListRecord | RecordType::DlistRecord);
+
+const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
 
 struct DataHeader {
   DataHeader() = default;

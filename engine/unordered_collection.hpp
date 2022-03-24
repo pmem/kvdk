@@ -216,21 +216,20 @@ class UnorderedIterator final : public Iterator {
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
   /// UnorderedIterator currently does not support Seek to a key
-  [[gnu::deprecated]] virtual void Seek([
-      [gnu::unused]] std::string const& key) final override {
+  [[gnu::deprecated]] virtual void Seek(std::string const&) final {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 
   /// Seek to First DlistDataRecord if exists,
   /// otherwise Valid() will return false.
-  virtual void SeekToFirst() final override {
+  virtual void SeekToFirst() final {
     internal_iterator = collection_shrdptr->dlinked_list_.Head();
     internalNext();
   }
 
   /// Seek to Last DlistDataRecord if exists,
   /// otherwise Valid() will return false.
-  virtual void SeekToLast() final override {
+  virtual void SeekToLast() final {
     internal_iterator = collection_shrdptr->dlinked_list_.Tail();
     internalPrev();
   }
@@ -239,13 +238,13 @@ class UnorderedIterator final : public Iterator {
   /// DlistHeadRecord, DlistTailRecord is considered
   /// invalid. User should always check Valid() before accessing data with Key()
   /// and Value() Iterating with Next() and Prev()
-  inline virtual bool Valid() final override { return valid; }
+  inline virtual bool Valid() final { return valid; }
 
   /// Try proceeding to next DlistDataRecord.
   /// User should check Valid() before accessing data.
   /// Calling Next() on invalid UnorderedIterator will do nothing.
   /// This prevents any further misuses.
-  virtual void Next() final override {
+  virtual void Next() final {
     if (Valid()) {
       internalNext();
     }

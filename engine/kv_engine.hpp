@@ -197,7 +197,8 @@ class KVEngine : public Engine {
   static constexpr RecordType collectionType() {
     static_assert(std::is_same<CollectionType, UnorderedCollection>::value ||
                       std::is_same<CollectionType, Skiplist>::value ||
-                      std::is_same<CollectionType, List>::value,
+                      std::is_same<CollectionType, List>::value ||
+                      std::is_same<CollectionType, StringRecord>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, UnorderedCollection>::value
                ? RecordType::DlistRecord
@@ -247,8 +248,9 @@ class KVEngine : public Engine {
   // May lock HashTable internally, caller must call this without lock
   // HashTable!
   template <typename CollectionType>
-  Status FindCollection(const StringView collection_name,
-                        CollectionType** collection_ptr, uint64_t record_type) {
+  [[gnu::deprecated]] Status FindCollection(const StringView collection_name,
+                                            CollectionType** collection_ptr,
+                                            uint64_t record_type) {
     kvdk_assert(collectionType<CollectionType>() == record_type,
                 "Type Mismatch!");
     HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
@@ -271,6 +273,56 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
+  struct LookupResult {
+    Status s{Status::NotSupported};
+    HashEntry entry{};
+    HashEntry* entry_ptr{nullptr};
+  };
+
+  // Lockless look up the key,
+  // return Status::NotFound is key is not found or has expired.
+  // return Status::WrongType if type_mask does not match.
+  // return Status::Ok otherwise.
+  LookupResult lookupKey(StringView key, RecordType type_mask) {
+    LookupResult result;
+    auto hint = hash_table_->GetHint(key);
+    result.s =
+        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
+                                   &result.entry_ptr, &result.entry, nullptr);
+    if (result.s != Status::Ok) {
+      kvdk_assert(result.s == Status::NotFound, "");
+      return result;
+    }
+    if (result.entry.GetRecordType() == RecordType::StringDeleteRecord) {
+      result.s = Status::NotFound;
+      return result;
+    }
+    bool has_expired;
+    switch (result.entry.GetRecordType()) {
+      case RecordType::StringDataRecord: {
+        has_expired = result.entry.GetIndex().string_record->HasExpired();
+        break;
+      }
+      case RecordType::DlistRecord:
+      case RecordType::ListRecord:
+      case RecordType::SortedHeaderRecord: {
+        has_expired =
+            static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired();
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unreachable branch!");
+        std::abort();
+      }
+    }
+
+    result.s = has_expired ? Status::NotFound
+                           : (type_mask & result.entry.GetRecordType())
+                                 ? result.s
+                                 : Status::WrongType;
+    return result;
+  }
+
   // Lockless. It's up to caller to lock the HashTable
   template <typename CollectionType>
   Status registerCollection(CollectionType* coll) {
@@ -278,35 +330,41 @@ class KVEngine : public Engine {
     HashTable::KeyHashHint hint = hash_table_->GetHint(coll->Name());
     HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
-    Status s = hash_table_->SearchForWrite(hint, coll->Name(), type, &entry_ptr,
-                                           &hash_entry, nullptr);
+    Status s =
+        hash_table_->SearchForWrite(hint, coll->Name(), PrimaryRecordType,
+                                    &entry_ptr, &hash_entry, nullptr);
     if (s != Status::NotFound) {
-      kvdk_assert(s != Status::Ok, "Collection already registered!");
-      return s;
+      if (hash_entry.GetRecordType() != type) {
+        return Status::WrongType;
+      }
+      kvdk_assert(false, "Collection already registered!");
+      return Status::Abort;
     }
+
     HashIndexType ptype = pointerType(type);
     kvdk_assert(ptype != HashIndexType::Invalid, "Invalid pointer type!");
     hash_table_->Insert(hint, entry_ptr, type, coll, ptype);
     return Status::Ok;
   }
 
+  struct RemoveResult {
+    Status s{Status::NotSupported};
+    HashEntry entry{};
+  };
+
   // Lockless, caller should lock the key aforehand.
-  template <typename CollectionType>
-  Status unregisterCollection(const StringView key) {
-    RecordType type = collectionType<CollectionType>();
+  // Remove key from HashTable. It's up to caller to handle the erased key
+  RemoveResult removeKey(const StringView key) {
+    RemoveResult result;
     HashTable::KeyHashHint hint = hash_table_->GetHint(key);
-    HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
-    Status s = hash_table_->SearchForWrite(hint, key, type, &entry_ptr,
-                                           &hash_entry, nullptr);
-    if (s == Status::NotFound) {
-      kvdk_assert(s != Status::Ok, "Collection not found!");
-      return s;
+    result.s = hash_table_->SearchForWrite(hint, key, PrimaryRecordType,
+                                           &entry_ptr, &result.entry, nullptr);
+    if (result.s != Status::Ok) {
+      return result;
     }
-    HashIndexType ptype = pointerType(type);
-    kvdk_assert(ptype != HashIndexType::Invalid, "Invalid pointer type!");
     hash_table_->Erase(entry_ptr);
-    return Status::Ok;
+    return result;
   }
 
   Status MaybeInitPendingBatchFile();

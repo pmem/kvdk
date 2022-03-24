@@ -1685,7 +1685,6 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
       if (pcoll->HasExpired()) {
         hash_table_->Erase(entry_ptr);
         /// TODO: Also delete from PMem
-        return Status::NotFound;
       }
       return Status::Ok;
     }
@@ -1693,19 +1692,18 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
       std::unique_lock<std::recursive_mutex> guard;
       List* list;
       listFind(str, &list, false, guard);
+      auto guard2 = hash_table_->AcquireLock(str);
       if (list->HasExpired()) {
-        /// TODO:
+        auto result = removeKey(str);
+        kvdk_assert(result.s == Status::Ok, "");
         listDestroy(list);
-        auto guard2 = hash_table_->AcquireLock(str);
-        unregisterCollection<List>(str);
-        return Status::Ok;
+        return Status::NotFound;
       }
       list->ExpireAt(expired_time);
       if (list->HasExpired()) {
-        /// TODO: Let cleaner asynchronously do the work.
+        auto result = removeKey(str);
+        kvdk_assert(result.s == Status::Ok, "");
         listDestroy(list);
-        auto guard = hash_table_->AcquireLock(str);
-        unregisterCollection<List>(str);
         return Status::Ok;
       }
       return Status::Ok;
@@ -2510,7 +2508,8 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
   }
   if (list->Size() == 0) {
     auto guard = hash_table_->AcquireLock(key);
-    unregisterCollection<List>(key);
+    auto result = removeKey(key);
+    kvdk_assert(result.s == Status::Ok, "");
     listDestroy(list);
   }
   return Status::Ok;
@@ -2593,8 +2592,9 @@ Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
     }
   }
   if (list->Size() == 0) {
-    auto guard2 = hash_table_->AcquireLock(key);
-    unregisterCollection<List>(key);
+    auto guard = hash_table_->AcquireLock(key);
+    auto result = removeKey(key);
+    kvdk_assert(result.s == Status::Ok, "");
     listDestroy(list);
   }
   return Status::Ok;
@@ -2680,48 +2680,53 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
   // Inactive. Destroyed and unregistered from HashTable.
   // Always lock List visible to other threads first,
   // then lock the HashTable to avoid deadlock.
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    kvdk_assert(s == Status::TooManyAccessThreads, "");
-    return s;
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
   }
-  s = FindCollection(key, list, RecordType::ListRecord);
-  if (s != Status::Ok && s != Status::NotFound) {
-    return s;
-  }
-  if (s == Status::Ok) {
-    guard = (*list)->AcquireLock();
-    if ((*list)->Valid()) {
-      // Active and successfully locked
-      return Status::Ok;
+  {
+    auto result = lookupKey(key, RecordType::ListRecord);
+    if (result.s != Status::Ok && result.s != Status::NotFound) {
+      return result.s;
     }
-    // Inactive
-  }
-  if (!init_nx) {
-    // Uninitialized or Inactive
-    return Status::NotFound;
+    if (result.s == Status::Ok) {
+      (*list) = result.entry.GetIndex().list;
+      guard = (*list)->AcquireLock();
+      if ((*list)->Valid()) {
+        // Active and successfully locked
+        return Status::Ok;
+      }
+      // Inactive, already destroyed by other thread.
+      // The inactive List will be removed from HashTable
+      // by caller that destroys it with HashTable locked.
+    }
+    if (!init_nx) {
+      // Uninitialized or Inactive
+      return Status::NotFound;
+    }
   }
 
   // Uninitialized or Inactive, initialize new one
   /// TODO: may deadlock!
-  auto guard2 = hash_table_->AcquireLock(key);
-  s = FindCollection(key, list, RecordType::ListRecord);
-  if (s != Status::Ok && s != Status::NotFound) {
-    return s;
-  }
-  if (s == Status::Ok) {
-    guard = (*list)->AcquireLock();
-    if ((*list)->Valid()) {
+  {
+    auto guard2 = hash_table_->AcquireLock(key);
+    auto result = lookupKey(key, RecordType::ListRecord);
+    if (result.s != Status::Ok && result.s != Status::NotFound) {
+      return result.s;
+    }
+    if (result.s == Status::Ok) {
+      (*list) = result.entry.GetIndex().list;
+      guard = (*list)->AcquireLock();
+      kvdk_assert((*list)->Valid(), "Invalid list should have been removed!");
       return Status::Ok;
     }
+    // No other thread have created one, create one here.
+    (*list) = listCreate(key);
+    if ((*list) == nullptr) {
+      return Status::PmemOverflow;
+    }
+    guard = (*list)->AcquireLock();
+    return registerCollection(*list);
   }
-  // No other thread have created one, create one here.
-  (*list) = listCreate(key);
-  if ((*list) == nullptr) {
-    return Status::PmemOverflow;
-  }
-  guard = (*list)->AcquireLock();
-  return registerCollection(*list);
 }
 
 }  // namespace KVDK_NAMESPACE
