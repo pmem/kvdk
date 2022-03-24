@@ -918,9 +918,7 @@ Status KVEngine::Recovery() {
       configs_.opt_large_sorted_collection_restore, configs_.max_access_threads,
       *persist_checkpoint_));
 
-  list_builder_.reset(new ListBuilder{});
-  list_builder_->Init(static_cast<char*>(pmem_allocator_->offset2addr(0)),
-                      &lists_, 1U);
+  list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_, 1U});
 
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
@@ -2633,9 +2631,7 @@ List* KVEngine::listCreate(StringView key) {
   if (space.size == 0) {
     return nullptr;
   }
-  list->Init(AddressTranslator<DLRecord*>(
-                 static_cast<char*>(pmem_allocator_->offset2addr(0))),
-             space, ts, key, id);
+  list->Init(pmem_allocator_.get(), space, ts, key, id);
   std::lock_guard<std::mutex> guard{list_mu_};
   lists_.emplace_back(list);
   return list;
