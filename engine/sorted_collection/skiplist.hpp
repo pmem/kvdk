@@ -179,7 +179,7 @@ class Skiplist : public Collection {
   // timestamp: kvdk engine timestamp of this operation
   //
   // Return Ok on success, with the writed pmem record, its dram node and
-  // updated pmem record if it existed, return Abort if there is thread
+  // updated pmem record if it existed, return Fail if there is thread
   // contension
   WriteResult Set(const StringView& key, const StringView& value,
                   const HashTable::KeyHashHint& key_hash_hint_locked,
@@ -195,7 +195,7 @@ class Skiplist : public Collection {
   // timestamp: kvdk engine timestamp of this operation
   //
   // Return Ok on success, with the writed pmem delete record, its dram node and
-  // deleted pmem record if existed, return Abort if there is thread contension
+  // deleted pmem record if existed, return Fail if there is thread contension
   WriteResult Delete(const StringView& key,
                      const HashTable::KeyHashHint& key_hash_hint_locked,
                      TimeStampType timestamp);
