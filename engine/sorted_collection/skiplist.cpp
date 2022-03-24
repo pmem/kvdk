@@ -49,7 +49,7 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
   }
 };
 
-Status Skiplist::SetExpireTime(ExpiredTimeType expired_time) {
+Status Skiplist::SetExpiredTime(ExpiredTimeType expired_time) {
   header_->record->expired_time = expired_time;
   pmem_persist(&header_->record->expired_time, sizeof(ExpiredTimeType));
   return Status::Ok;
@@ -154,9 +154,13 @@ void Skiplist::Seek(const StringView& key, Splice* result_splice) {
     int cmp = compare(key, UserKey(next_record));
     // pmem record maybe updated before comparing string, then the comparing
     // result will be invalid, so we need to do double check
-    if (!validateDLRecord(next_record)) {
-      return Seek(key, result_splice);
-    }
+    //
+    // Notice: In current implementation with the guard of snapshot mechanism,
+    // the record won't be freed during this operation, so this should not be
+    // happen
+    // if (!validateDLRecord(next_record)) {
+    // return Seek(key, result_splice);
+    // }
 
     if (cmp > 0) {
       prev_record = next_record;
@@ -289,6 +293,10 @@ bool Skiplist::lockInsertPosition(
   // another skip list:"new record reuse prev" -> "new record reuse next" ->
   // In this case, inserting record will be mis-inserted between "new record
   // reuse prev" and "new record reuse next"
+  //
+  // Notice: In current implementation with the guard of snapshot mechanism, the
+  // prev and next won't be freed during this operation, so id and order won't
+  // be changed anymore. We only check id and order in debug mode
   auto check_id = [&]() {
     return SkiplistID(next_record) == ID() && SkiplistID(prev_record) == ID();
   };
@@ -301,17 +309,19 @@ bool Skiplist::lockInsertPosition(
                         compare(inserting_key, UserKey(prev_record)) > 0);
     return res;
   };
-  if (!check_linkage() || !check_id() || !check_order()) {
+  if (!check_linkage()) {
     prev_record_lock->unlock();
     return false;
   }
+
+  kvdk_assert(check_id(),
+              "Check id of prev and next failed during skiplist insert\n");
+  kvdk_assert(check_order(),
+              "Check key order of prev and next failed during skiplist "
+              "insert\n");
+
   assert(prev_record->next == next_offset);
   assert(next_record->prev == prev_offset);
-
-  assert(prev_record == header_->record ||
-         compare(Skiplist::UserKey(prev_record), inserting_key) < 0);
-  assert(next_record == header_->record ||
-         compare(Skiplist::UserKey(next_record), inserting_key) >= 0);
 
   return true;
 }
@@ -514,7 +524,7 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(
   std::unique_lock<SpinMutex> prev_record_lock;
   if (!lockRecordPosition(ret.existing_record, locked_key_lock,
                           &prev_record_lock)) {
-    ret.s = Status::Abort;
+    ret.s = Status::Fail;
     return ret;
   }
 
@@ -587,7 +597,7 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
       // Try to write delete record
       if (!lockRecordPosition(ret.existing_record, deleting_key_lock,
                               &prev_record_lock)) {
-        ret.s = Status::Abort;
+        ret.s = Status::Fail;
         return ret;
       }
 
@@ -662,7 +672,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
       // Try to write delete record
       if (!lockRecordPosition(ret.existing_record, locked_hash_hint.spin,
                               &prev_record_lock)) {
-        ret.s = Status::Abort;
+        ret.s = Status::Fail;
         return ret;
       }
 
@@ -743,7 +753,7 @@ Skiplist::WriteResult Skiplist::setImplNoHash(
     }
     if (!lockRecordPosition(ret.existing_record, inserting_key_lock,
                             &prev_record_lock)) {
-      ret.s = Status::Abort;
+      ret.s = Status::Fail;
       return ret;
     }
     prev_record = pmem_allocator_->offset2addr_checked<DLRecord>(
@@ -755,7 +765,7 @@ Skiplist::WriteResult Skiplist::setImplNoHash(
     if (!lockInsertPosition(key, splice.prev_pmem_record,
                             splice.next_pmem_record, inserting_key_lock,
                             &prev_record_lock)) {
-      ret.s = Status::Abort;
+      ret.s = Status::Fail;
       return ret;
     }
     next_record = splice.next_pmem_record;

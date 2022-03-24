@@ -926,7 +926,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
 
     auto ret = skiplist->Delete(user_key, hint, new_ts);
     switch (ret.s) {
-      case Status::Abort:
+      case Status::Fail:
         continue;
       case Status::PmemOverflow:
         return ret.s;
@@ -966,7 +966,7 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
         version_controller_.GetLocalSnapshot().GetTimestamp();
     auto ret = skiplist->Set(user_key, value, hint, new_ts);
     switch (ret.s) {
-      case Status::Abort:
+      case Status::Fail:
         continue;
       case Status::PmemOverflow:
         break;
@@ -1358,8 +1358,6 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
 
   ExpiredTimeType expired_time = ttl_time + base_time;
 
-  // TODO(zhichen): Now need to twice search. If aligned the lock of
-  // skiplist, list and hash, we can once search.
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::lock_guard<SpinMutex> lg(*hint.spin);
   HashEntry hash_entry;
@@ -1373,12 +1371,12 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
     case HashIndexType::StringRecord:
       return Status::NotSupported;
     case HashIndexType::Skiplist:
-      return entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
+      return entry_ptr->GetIndex().skiplist->SetExpiredTime(expired_time);
     case HashIndexType::UnorderedCollection:
-      return entry_ptr->GetIndex().p_unordered_collection->SetExpireTime(
+      return entry_ptr->GetIndex().p_unordered_collection->SetExpiredTime(
           expired_time);
     case HashIndexType::Queue:
-      return entry_ptr->GetIndex().queue_ptr->SetExpireTime(expired_time);
+      return entry_ptr->GetIndex().queue_ptr->SetExpiredTime(expired_time);
     default:
       Status::NotSupported;
   }

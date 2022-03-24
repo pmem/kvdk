@@ -38,9 +38,6 @@ class SortedIterator : public Iterator {
         break;
       }
     }
-    while (current_->entry.meta.type == SortedDeleteRecord) {
-      current_ = pmem_allocator_->offset2addr<DLRecord>(current_->next);
-    }
   }
 
   virtual void SeekToFirst() override {

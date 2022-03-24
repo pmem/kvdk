@@ -500,22 +500,22 @@ Status SortedCollectionRebuilder::listBasedIndexRebuild() {
 
 bool SortedCollectionRebuilder::checkRecordLinkage(DLRecord* record) {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-  uint64_t offset = pmem_allocator->addr2offset(record);
-  DLRecord* prev = pmem_allocator->offset2addr<DLRecord>(record->prev);
-  DLRecord* next = pmem_allocator->offset2addr<DLRecord>(record->next);
+  uint64_t offset = pmem_allocator->addr2offset_checked(record);
+  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
+  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(record->next);
   return prev->next == offset && next->prev == offset;
 }
 
 bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-  uint64_t offset = pmem_allocator->addr2offset(record);
-  DLRecord* prev = pmem_allocator->offset2addr<DLRecord>(record->prev);
-  DLRecord* next = pmem_allocator->offset2addr<DLRecord>(record->next);
+  uint64_t offset = pmem_allocator->addr2offset_checked(record);
+  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
+  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(record->next);
   if (prev->next != offset && next->prev != offset) {
     return false;
   }
   // Repair un-finished write
-  if (next && next->prev != offset) {
+  if (next->prev != offset) {
     next->prev = offset;
     pmem_persist(&next->prev, 8);
   }
