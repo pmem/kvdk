@@ -213,6 +213,56 @@ class KVEngine : public Engine {
     return s;
   }
 
+  struct LookupResult {
+    Status s{Status::NotSupported};
+    HashEntry entry{};
+    HashEntry* entry_ptr{nullptr};
+  };
+
+  // Look up the key,
+  // return Status::NotFound is key is not found or has expired.
+  // return Status::WrongType if type_mask does not match.
+  // return Status::Ok otherwise.
+  LookupResult lookupKey(StringView key, RecordType type_mask) {
+    LookupResult result;
+    auto hint = hash_table_->GetHint(key);
+    result.s =
+        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
+                                   &result.entry_ptr, &result.entry, nullptr);
+    if (result.s != Status::Ok) {
+      kvdk_assert(result.s == Status::NotFound, "");
+      return result;
+    }
+    if (result.entry.GetRecordType() == RecordType::StringDeleteRecord) {
+      result.s = Status::NotFound;
+      return result;
+    }
+    bool has_expired;
+    switch (result.entry.GetRecordType()) {
+      case RecordType::StringDataRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            result.entry.GetIndex().string_record->GetExpiredTime());
+      }
+      case RecordType::DlistRecord:
+      case RecordType::QueueRecord:
+      case RecordType::SortedHeaderRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            static_cast<Collection*>(result.entry.GetIndex().ptr)
+                ->GetExpiredTime());
+      }
+      default: {
+        kvdk_assert(false, "Unreachable branch!");
+        std::abort();
+      }
+    }
+
+    result.s = has_expired ? Status::NotFound
+                           : (type_mask & result.entry.GetRecordType())
+                                 ? result.s
+                                 : Status::WrongType;
+    return result;
+  }
+
   enum class QueueOpPosition { Left, Right };
   Status xPush(StringView const collection_name, StringView const value,
                QueueOpPosition push_pos);
