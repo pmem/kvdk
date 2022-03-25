@@ -187,9 +187,8 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
 }
 
 Status KVEngine::CreateSortedCollection(
-    const StringView collection_name, Collection** collection_ptr,
+    const StringView collection_name,
     const SortedCollectionConfigs& s_configs) {
-  *collection_ptr = nullptr;
   Status s = MaybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) {
@@ -209,9 +208,7 @@ Status KVEngine::CreateSortedCollection(
   s = hash_table_->SearchForWrite(hint, collection_name, SortedHeaderRecord,
                                   &entry_ptr, &hash_entry,
                                   &existing_data_entry);
-  if (s == Status::Ok) {
-    *collection_ptr = static_cast<Collection*>(hash_entry.GetIndex().ptr);
-  } else if (s == Status::NotFound) {
+  if (s == Status::NotFound) {
     auto comparator = comparators_.GetComparator(s_configs.comparator_name);
     if (comparator == nullptr) {
       GlobalLogger.Error("Compare function %s is not registered\n",
@@ -241,9 +238,8 @@ Status KVEngine::CreateSortedCollection(
     {
       std::lock_guard<std::mutex> lg(list_mu_);
       skiplists_.insert({id, skiplist});
-      *collection_ptr = skiplist.get();
     }
-    hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, *collection_ptr,
+    hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist.get(),
                         HashIndexType::Skiplist);
   } else {
     return s;

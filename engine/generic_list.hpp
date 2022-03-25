@@ -20,8 +20,8 @@
 #include <unordered_map>
 
 #include "alias.hpp"
+#include "collection.hpp"
 #include "data_record.hpp"
-#include "kvdk/collection.hpp"
 #include "macros.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "utils/utils.hpp"

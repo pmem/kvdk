@@ -27,7 +27,7 @@ PMemKVDK::PMemKVDK(const std::string& db_path) {
     SimpleLoger("KVDK Open failed");
     return;
   }
-  s = db_->CreateSortedCollection(collection_, &collection_ptr_);
+  s = db_->CreateSortedCollection(collection_);
   if (s != kvdk::Status::Ok) {
     SimpleLoger("Create Sorted Collection Failed!");
     return;
