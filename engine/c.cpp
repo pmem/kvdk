@@ -222,10 +222,10 @@ KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
 }
 
 KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
-                      c_string (*modify)(const char* val, size_t val_len),
+                      c_string (*modify)(c_string val),
                       const KVDKWriteOptions* write_option) {
-  auto modify_func = [&](StringView val) {
-    auto result_view = modify(val.data(), val.size());
+  auto modify_func = [&](StringView value) {
+    auto result_view = modify(c_string{value.data(), value.size()});
     return std::string(result_view.data, result_view.size);
   };
   return engine->rep->Modify(StringView(key, key_len), modify_func,
