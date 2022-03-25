@@ -1577,6 +1577,51 @@ Status KVEngine::Set(const StringView key, const StringView value,
 }  // namespace KVDK_NAMESPACE
 
 namespace KVDK_NAMESPACE {
+KVEngine::LookupResult KVEngine::lookupKey(StringView key,
+                                           RecordType type_mask) {
+  LookupResult result;
+  auto hint = hash_table_->GetHint(key);
+  result.s = hash_table_->SearchForRead(
+      hint, key, PrimaryRecordType, &result.entry_ptr, &result.entry, nullptr);
+  if (result.s != Status::Ok) {
+    kvdk_assert(result.s == Status::NotFound, "");
+    return result;
+  }
+  RecordType record_type = result.entry.GetRecordType();
+
+  if (type_mask & record_type) {
+    if (record_type == RecordType::StringDeleteRecord) {
+      result.s = Status::NotFound;
+      return result;
+    }
+    bool has_expired;
+    switch (record_type) {
+      case RecordType::StringDataRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            result.entry.GetIndex().string_record->GetExpiredTime());
+        break;
+      }
+      case RecordType::DlistRecord:
+      case RecordType::QueueRecord:
+      case RecordType::SortedHeaderRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            static_cast<Collection*>(result.entry.GetIndex().ptr)
+                ->GetExpiredTime());
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unreachable branch!");
+        std::abort();
+      }
+    }
+
+    result.s = has_expired ? Status::NotFound : result.s;
+  } else {
+    result.s = Status::WrongType;
+  }
+  return result;
+}
+
 std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
     StringView const collection_name) {
   TimeStampType ts = version_controller_.GetCurrentTimestamp();

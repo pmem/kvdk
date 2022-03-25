@@ -203,6 +203,18 @@ class KVEngine : public Engine {
       const SortedCollectionConfigs& configs) override;
 
  private:
+  struct LookupResult {
+    Status s{Status::NotSupported};
+    HashEntry entry{};
+    HashEntry* entry_ptr{nullptr};
+  };
+
+  // Look up the key,
+  // return Status::NotFound is key is not found or has expired.
+  // return Status::WrongType if type_mask does not match.
+  // return Status::Ok otherwise.
+  LookupResult lookupKey(StringView key, RecordType type_mask);
+
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
   std::unique_ptr<Queue> createQueue(StringView const collection_name);
@@ -229,61 +241,6 @@ class KVEngine : public Engine {
       return Status::NotFound;
     }
     return s;
-  }
-
-  struct LookupResult {
-    Status s{Status::NotSupported};
-    HashEntry entry{};
-    HashEntry* entry_ptr{nullptr};
-  };
-
-  // Look up the key,
-  // return Status::NotFound is key is not found or has expired.
-  // return Status::WrongType if type_mask does not match.
-  // return Status::Ok otherwise.
-  LookupResult lookupKey(StringView key, RecordType type_mask) {
-    LookupResult result;
-    auto hint = hash_table_->GetHint(key);
-    result.s =
-        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
-                                   &result.entry_ptr, &result.entry, nullptr);
-    if (result.s != Status::Ok) {
-      kvdk_assert(result.s == Status::NotFound, "");
-      return result;
-    }
-    RecordType record_type = result.entry.GetRecordType();
-
-    if (type_mask & record_type) {
-      if (record_type == RecordType::StringDeleteRecord) {
-        result.s = Status::NotFound;
-        return result;
-      }
-      bool has_expired;
-      switch (record_type) {
-        case RecordType::StringDataRecord: {
-          has_expired = TimeUtils::CheckIsExpired(
-              result.entry.GetIndex().string_record->GetExpiredTime());
-          break;
-        }
-        case RecordType::DlistRecord:
-        case RecordType::QueueRecord:
-        case RecordType::SortedHeaderRecord: {
-          has_expired = TimeUtils::CheckIsExpired(
-              static_cast<Collection*>(result.entry.GetIndex().ptr)
-                  ->GetExpiredTime());
-          break;
-        }
-        default: {
-          kvdk_assert(false, "Unreachable branch!");
-          std::abort();
-        }
-      }
-
-      result.s = has_expired ? Status::NotFound : result.s;
-    } else {
-      result.s = Status::WrongType;
-    }
-    return result;
   }
 
   enum class QueueOpPosition { Left, Right };
