@@ -70,7 +70,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
     return Status::Abort;
   }
 
-  bool expired = TimeUtils::CheckIsExpired(header_record->GetExpiredTime());
+  bool expired = TimeUtils::CheckIsExpired(header_record->GetExpireTime());
   bool invalid_version =
       recoverToCheckpoint() &&
       header_record->entry.meta.timestamp > checkpoint_.CheckpointTS();

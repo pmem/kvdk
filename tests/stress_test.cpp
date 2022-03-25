@@ -395,7 +395,8 @@ class EngineTestBase : public testing::Test {
   kvdk::Configs configs;
   kvdk::Status status;
 
-  const std::string path_db{"/mnt/pmem0/kvdk_test_extensive"};
+  const std::string path_db{"/mnt/pmem0/kvdk_stress_test_" +
+                            std::to_string(__rdtsc())};
 
   /// The following parameters are used to configure the test.
   /// Override SetUpParameters to provide different parameters

@@ -49,7 +49,7 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
   }
 };
 
-Status Skiplist::SetExpiredTime(ExpiredTimeType expired_time) {
+Status Skiplist::SetExpireTime(ExpiredTimeType expired_time) {
   header_->record->expired_time = expired_time;
   pmem_persist(&header_->record->expired_time, sizeof(ExpiredTimeType));
   return Status::Ok;

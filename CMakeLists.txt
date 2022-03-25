@@ -62,7 +62,6 @@ set(SOURCES
         engine/c.cpp
         engine/unordered_collection.cpp
         engine/data_record.cpp
-        engine/queue.cpp
         engine/version/old_records_cleaner.cpp
         )
 

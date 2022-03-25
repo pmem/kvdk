@@ -337,10 +337,8 @@ Status KVEngine::RestoreData() {
       case RecordType::DlistHeadRecord:
       case RecordType::DlistTailRecord:
       case RecordType::DlistDataRecord:
-      case RecordType::QueueRecord:
-      case RecordType::QueueDataRecord:
-      case RecordType::QueueHeadRecord:
-      case RecordType::QueueTailRecord: {
+      case RecordType::ListRecord:
+      case RecordType::ListElem: {
         if (!ValidateRecord(recovering_pmem_record)) {
           // Checksum dismatch, mark as padding to be Freed
           // Otherwise the Restore will continue normally
@@ -409,11 +407,12 @@ Status KVEngine::RestoreData() {
         s = RestoreDlistRecords(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordType::QueueRecord:
-      case RecordType::QueueDataRecord:
-      case RecordType::QueueHeadRecord:
-      case RecordType::QueueTailRecord: {
-        s = RestoreQueueRecords(static_cast<DLRecord*>(recovering_pmem_record));
+      case RecordType::ListRecord: {
+        s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
+        break;
+      }
+      case RecordType::ListElem: {
+        s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       default: {
@@ -488,10 +487,8 @@ bool KVEngine::ValidateRecord(void* data_record) {
     case RecordType::DlistRecord:
     case RecordType::DlistHeadRecord:
     case RecordType::DlistTailRecord:
-    case RecordType::QueueRecord:
-    case RecordType::QueueDataRecord:
-    case RecordType::QueueHeadRecord:
-    case RecordType::QueueTailRecord: {
+    case RecordType::ListRecord:
+    case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
     default:
@@ -771,6 +768,9 @@ Status KVEngine::Recovery() {
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
+
+  list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_, 1U});
+
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
@@ -805,10 +805,17 @@ Status KVEngine::Recovery() {
     }
   }
 #endif
-
   GlobalLogger.Info("Rebuild skiplist done\n");
-
   sorted_rebuilder_.reset(nullptr);
+
+  list_builder_->RebuildLists();
+  list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
+  s = listRegisterRecovered();
+  if (s != Status::Ok) {
+    return s;
+  }
+  list_builder_.reset(nullptr);
+  GlobalLogger.Info("Rebuild Lists done\n");
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
@@ -843,8 +850,7 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     }
     void* pmem_record = nullptr;
     if (hash_entry.GetRecordType() == StringDataRecord) {
-      if (TimeUtils::CheckIsExpired(
-              hash_entry.GetIndex().string_record->GetExpiredTime())) {
+      if (hash_entry.GetIndex().string_record->HasExpired()) {
         // TODO: push record into expired cleaner
         return Status::NotFound;
       }
@@ -1097,7 +1103,7 @@ Status KVEngine::MaybeInitPendingBatchFile() {
                  persisted_pending_file_size, PMEM_FILE_CREATE, 0666,
                  &mapped_len, &is_pmem)) == nullptr ||
         !is_pmem || mapped_len != persisted_pending_file_size) {
-      return Status::MapError;
+      return Status::PMemMapFileError;
     }
   }
   return Status::Ok;
@@ -1305,36 +1311,37 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   Collection* collection_ptr = nullptr;
   switch (entry_ptr->GetIndexType()) {
     case HashIndexType::Skiplist: {
-      collection_ptr = entry_ptr->GetIndex().skiplist;
-      expired_time = collection_ptr->GetExpiredTime();
+      expired_time = entry_ptr->GetIndex().skiplist->GetExpireTime();
       break;
     }
     case HashIndexType::UnorderedCollection: {
-      collection_ptr = entry_ptr->GetIndex().p_unordered_collection;
-      expired_time = collection_ptr->GetExpiredTime();
+      expired_time =
+          entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
       break;
     }
 
-    case HashIndexType::Queue: {
-      collection_ptr = entry_ptr->GetIndex().queue_ptr;
-      expired_time = collection_ptr->GetExpiredTime();
+    case HashIndexType::List: {
+      expired_time = entry_ptr->GetIndex().list->GetExpireTime();
       break;
     }
 
-    case HashIndexType::StringRecord:
-      expired_time = entry_ptr->GetIndex().string_record->GetExpiredTime();
+    case HashIndexType::StringRecord: {
+      expired_time = entry_ptr->GetIndex().string_record->GetExpireTime();
       break;
-    default:
+    }
+    default: {
       return Status::NotSupported;
+    }
   }
 
   // TODO(zhichen): Free this record
+  /// TODO: we should have a unified findKey() to do all these dirty work, aka,
+  /// erase an expired key if it finds one and then return Status::NotFound.
+  /// The problem is, after the findKey() confirms that the key has yet expired,
+  /// the key may expire after we call GetExpireTime()
+  /// TODO: return 0 even if the key has expired for a second or two if
+  /// findKey() have successfully returned.
   if (TimeUtils::CheckIsExpired(expired_time)) {
-    if (collection_ptr) {
-      // set hash entry empty
-      hash_table_->Erase(entry_ptr);
-      // TODO(zhichen): push background thread cleaner
-    }
     *ttl_time = kInvalidTTLTime;
     return Status::NotFound;
   }
@@ -1370,15 +1377,38 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
   switch (entry_ptr->GetIndexType()) {
     case HashIndexType::StringRecord:
       return Status::NotSupported;
-    case HashIndexType::Skiplist:
-      return entry_ptr->GetIndex().skiplist->SetExpiredTime(expired_time);
-    case HashIndexType::UnorderedCollection:
-      return entry_ptr->GetIndex().p_unordered_collection->SetExpiredTime(
-          expired_time);
-    case HashIndexType::Queue:
-      return entry_ptr->GetIndex().queue_ptr->SetExpiredTime(expired_time);
-    default:
-      Status::NotSupported;
+    case HashIndexType::Skiplist: {
+      return entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
+    }
+    case HashIndexType::UnorderedCollection: {
+      UnorderedCollection* pcoll = hash_entry.GetIndex().p_unordered_collection;
+      /// TODO: put these unregister and delete work in findKey()
+      kvdk_assert(!pcoll->HasExpired(), "Impossible");
+      pcoll->SetExpireTime(expired_time);
+      if (pcoll->HasExpired()) {
+        hash_table_->Erase(entry_ptr);
+        /// TODO: Also delete from PMem
+      }
+      return Status::Ok;
+    }
+    case HashIndexType::List: {
+      std::unique_lock<std::recursive_mutex> guard;
+      List* list;
+      /// TODO: (Ziyan) This may deadlock!
+      listFind(str, &list, false, guard);
+      kvdk_assert(!list->HasExpired(), "Impossible!");
+      list->SetExpireTime(expired_time);
+      if (list->HasExpired()) {
+        auto result = removeKey(str);
+        kvdk_assert(result.s == Status::Ok, "");
+        listDestroy(list);
+        return Status::Ok;
+      }
+      return Status::Ok;
+    }
+    default: {
+      return Status::NotSupported;
+    }
   }
   return Status::Ok;
 }
@@ -1524,6 +1554,7 @@ Status KVEngine::Set(const StringView key, const StringView value,
 
 }  // namespace KVDK_NAMESPACE
 
+// UnorderedCollection
 namespace KVDK_NAMESPACE {
 std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
     StringView const collection_name) {
@@ -1748,6 +1779,10 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
                 hash_table_.get(), pmem_allocator_.get(), pmp_record);
         p_collection = sp_collection.get();
         vec_sp_unordered_collections_.emplace_back(sp_collection);
+        CollectionIDType id = p_collection->ID();
+        auto old = list_id_.load();
+        while (id >= old && !list_id_.compare_exchange_strong(old, id + 1)) {
+        }
       }
 
       std::string collection_name = p_collection->Name();
@@ -1853,175 +1888,8 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
 
 }  // namespace KVDK_NAMESPACE
 
+// Snapshot, delayFree and background work
 namespace KVDK_NAMESPACE {
-std::unique_ptr<Queue> KVEngine::createQueue(StringView const collection_name) {
-  std::uint64_t ts = version_controller_.GetCurrentTimestamp();
-  CollectionIDType id = list_id_.fetch_add(1);
-  std::string name(collection_name.data(), collection_name.size());
-  return std::unique_ptr<Queue>(new Queue{pmem_allocator_.get(), name, id, ts});
-}
-
-Status KVEngine::xPop(StringView const collection_name, std::string* value,
-                      KVEngine::QueueOpPosition pop_pos) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  Queue* queue_ptr;
-  s = FindCollection(collection_name, &queue_ptr, RecordType::QueueRecord);
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  bool pop_success = false;
-  switch (pop_pos) {
-    case QueueOpPosition::Left: {
-      pop_success = queue_ptr->PopFront(value);
-      break;
-    }
-    case QueueOpPosition::Right: {
-      pop_success = queue_ptr->PopBack(value);
-      break;
-    }
-    default: {
-      GlobalLogger.Error("Impossible!");
-      return Status::Abort;
-    }
-  }
-  if (pop_success) {
-    return Status::Ok;
-  } else {
-    return Status::NotFound;
-  }
-}
-
-Status KVEngine::xPush(StringView const collection_name, StringView const value,
-                       KVEngine::QueueOpPosition push_pos) try {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  Queue* queue_ptr = nullptr;
-
-  // Find UnorederedCollection, create if none exists
-  {
-    s = FindCollection(collection_name, &queue_ptr, RecordType::QueueRecord);
-    if (s == Status::NotFound) {
-      HashTable::KeyHashHint hint_collection =
-          hash_table_->GetHint(collection_name);
-      std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
-      {
-        // Lock and find again in case other threads have created the
-        // UnorderedCollection
-        s = FindCollection(collection_name, &queue_ptr,
-                           RecordType::QueueRecord);
-        if (s == Status::Ok) {
-          // Some thread already created the collection
-          // Do nothing
-        } else {
-          {
-            std::lock_guard<std::mutex> lg{list_mu_};
-            queue_uptr_vec_.emplace_back(createQueue(collection_name));
-            queue_ptr = queue_uptr_vec_.back().get();
-          }
-
-          HashEntry hash_entry_collection;
-          HashEntry* p_hash_entry_collection = nullptr;
-          Status s = hash_table_->SearchForWrite(
-              hint_collection, collection_name, RecordType::QueueRecord,
-              &p_hash_entry_collection, &hash_entry_collection, nullptr);
-          kvdk_assert(s == Status::NotFound, "Logically impossible!");
-          hash_table_->Insert(hint_collection, p_hash_entry_collection,
-                              RecordType::QueueRecord, queue_ptr,
-                              HashIndexType::Queue);
-        }
-      }
-    }
-  }
-
-  // Push
-  {
-    TimeStampType ts = version_controller_.GetCurrentTimestamp();
-    switch (push_pos) {
-      case QueueOpPosition::Left: {
-        queue_ptr->PushFront(ts, value);
-        return Status::Ok;
-      }
-      case QueueOpPosition::Right: {
-        queue_ptr->PushBack(ts, value);
-        return Status::Ok;
-      }
-      default: {
-        GlobalLogger.Error("Impossible!");
-        return Status::Abort;
-      }
-    }
-  }
-} catch (std::bad_alloc const& ex) {
-  return Status::PmemOverflow;
-}
-
-Status KVEngine::RestoreQueueRecords(DLRecord* pmp_record) {
-  switch (pmp_record->entry.meta.type) {
-    case RecordType::QueueRecord: {
-      Queue* queue_ptr = nullptr;
-      std::lock_guard<std::mutex> lg{list_mu_};
-      {
-        queue_uptr_vec_.emplace_back(
-            new Queue{pmem_allocator_.get(), pmp_record});
-        queue_ptr = queue_uptr_vec_.back().get();
-      }
-
-      std::string collection_name = queue_ptr->Name();
-      HashTable::KeyHashHint hint_collection =
-          hash_table_->GetHint(collection_name);
-      std::unique_lock<SpinMutex> guard{*hint_collection.spin};
-
-      HashEntry hash_entry_collection;
-      HashEntry* p_hash_entry_collection = nullptr;
-      Status s = hash_table_->SearchForWrite(
-          hint_collection, collection_name, RecordType::QueueRecord,
-          &p_hash_entry_collection, &hash_entry_collection, nullptr);
-      kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
-      hash_table_->Insert(hint_collection, p_hash_entry_collection,
-                          RecordType::QueueRecord, queue_ptr,
-                          HashIndexType::Queue);
-      return Status::Ok;
-    }
-    case RecordType::QueueHeadRecord: {
-      kvdk_assert(pmp_record->prev == kNullPMemOffset &&
-                      checkDLRecordLinkageRight(pmp_record),
-                  "Bad linkage found when RestoreDlistRecords. Broken head.");
-      return Status::Ok;
-    }
-    case RecordType::QueueTailRecord: {
-      kvdk_assert(pmp_record->next == kNullPMemOffset &&
-                      checkDLRecordLinkageLeft(pmp_record),
-                  "Bad linkage found when RestoreDlistRecords. Broken tail.");
-      return Status::Ok;
-    }
-    case RecordType::QueueDataRecord: {
-      bool linked = checkLinkage(static_cast<DLRecord*>(pmp_record));
-      if (!linked) {
-        GlobalLogger.Error("Bad linkage!\n");
-// Bad linkage handled by DlinkedList.
-#if DEBUG_LEVEL == 0
-        GlobalLogger.Error(
-            "Bad linkage can only be repaired when DEBUG_LEVEL > 0!\n");
-        std::abort();
-#endif
-        return Status::Ok;
-      } else {
-        return Status::Ok;
-      }
-    }
-    default: {
-      kvdk_assert(false, "Wrong type in RestoreDlistRecords!\n");
-      return Status::Abort;
-    }
-  }
-}
 
 Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
@@ -2125,6 +1993,437 @@ void KVEngine::backgroundDramCleaner() {
       }
     }
     FreeSkiplistDramNodes();
+  }
+}
+
+}  // namespace KVDK_NAMESPACE
+
+// List
+namespace KVDK_NAMESPACE {
+Status KVEngine::ListLock(StringView key) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+  list->Mutex()->lock();
+  return Status::Ok;
+}
+
+Status KVEngine::ListTryLock(StringView key) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+  if (list->Mutex()->try_lock()) {
+    return Status::Ok;
+  } else {
+    return Status::OperationFail;
+  }
+}
+
+Status KVEngine::ListUnlock(StringView key) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+  list->Mutex()->unlock();
+  return Status::Ok;
+}
+
+Status KVEngine::ListLength(StringView key, size_t* sz) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+  *sz = list->Size();
+  return Status::Ok;
+}
+
+Status KVEngine::ListPos(StringView key, StringView elem,
+                         std::vector<size_t>* indices, IndexType rank,
+                         size_t count, size_t max_len) {
+  kvdk_assert(rank != 0, "Invalid argument!");
+  kvdk_assert(indices != nullptr && indices->empty(),
+              "Invalid output parameter!");
+
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  max_len = (max_len == 0) ? list->Size() : max_len;
+  if (rank > 0) {
+    size_t index = 0;
+    for (auto iter = list->Front();
+         iter != list->Tail() && max_len != 0 && count != 0;
+         ++iter, ++index, --max_len) {
+      if (iter->Value() == elem) {
+        --rank;
+        if (rank <= 0) {
+          indices->push_back(index);
+          --count;
+        }
+      }
+    }
+  } else {
+    size_t index = list->Size();
+    for (auto iter = list->Front();
+         iter != list->Tail() && max_len != 0 && count != 0;
+         ++iter, --index, --max_len) {
+      if (iter->Value() == elem) {
+        --rank;
+        if (rank <= 0) {
+          indices->push_back(index);
+          --count;
+        }
+      }
+    }
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::ListPos(StringView key, StringView elem, size_t* index,
+                         IndexType rank, size_t max_len) {
+  std::vector<size_t> indices;
+  Status s = ListPos(key, elem, &indices, rank, 1, max_len);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  kvdk_assert(indices.size() == 1, "");
+  *index = indices.front();
+  return s;
+}
+
+Status KVEngine::ListRange(StringView key, IndexType start, IndexType stop,
+                           GetterCallBack cb, void* cb_args) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  auto iter = list->Seek(start);
+  if (iter == list->Tail()) {
+    return Status::OutOfRange;
+  }
+  stop = (stop >= 0) ? stop : list->Size() + stop + 1;
+  /// TODO: what if stop < start?
+  while (start <= stop && iter != list->Tail()) {
+    cb(iter->Value(), cb_args);
+    ++start;
+    ++iter;
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::ListIndex(StringView key, IndexType index, GetterCallBack cb,
+                           void* cb_args) {
+  return ListRange(key, index, index, cb, cb_args);
+}
+
+Status KVEngine::ListIndex(StringView key, IndexType index, std::string* elem) {
+  return ListIndex(key, index, CopyToString, elem);
+}
+
+Status KVEngine::ListPush(StringView key, ListPosition pos, StringView elem) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, true, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  auto space = pmem_allocator_->Allocate(
+      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
+  if (space.size == 0) {
+    return Status::PmemOverflow;
+  }
+
+  switch (pos) {
+    case ListPosition::Left: {
+      list->PushFront(space, version_controller_.GetCurrentTimestamp(), "",
+                      elem);
+      return Status::Ok;
+    }
+    case ListPosition::Right: {
+      list->PushBack(space, version_controller_.GetCurrentTimestamp(), "",
+                     elem);
+      return Status::Ok;
+    }
+    default: {
+      kvdk_assert(
+          false,
+          "Only ListPosition::Left and ListPosition::Right are supported!");
+      return Status::InvalidArgument;
+    }
+  }
+}
+
+Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
+                         void* cb_args, size_t cnt) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  switch (pos) {
+    case ListPosition::Left: {
+      while (list->Size() > 0 && cnt > 0) {
+        cb(list->Front()->Value(), cb_args);
+        --cnt;
+        DLRecord* front = list->Front().Address();
+        list->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
+      }
+      break;
+    }
+    case ListPosition::Right: {
+      while (list->Size() > 0 && cnt > 0) {
+        cb(list->Back()->Value(), cb_args);
+        --cnt;
+        DLRecord* back = list->Back().Address();
+        list->PopBack([&](DLRecord* rec) { purgeAndFree(rec); });
+      }
+      break;
+    }
+    default: {
+      kvdk_assert(
+          false,
+          "Only ListPosition::Left and ListPosition::Right are supported!");
+      return Status::InvalidArgument;
+    }
+  }
+  if (list->Size() == 0) {
+    auto guard = hash_table_->AcquireLock(key);
+    auto result = removeKey(key);
+    kvdk_assert(result.s == Status::Ok, "");
+    listDestroy(list);
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::ListPop(StringView key, ListPosition pos, std::string* elem) {
+  return ListPop(key, pos, CopyToString, elem);
+}
+
+Status KVEngine::ListInsert(StringView key, ListPosition pos, IndexType pivot,
+                            StringView elem) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, true, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  auto space = pmem_allocator_->Allocate(
+      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
+  if (space.size == 0) {
+    return Status::PmemOverflow;
+  }
+
+  auto iter = list->Seek(pivot);
+  if (iter == list->Tail()) {
+    return Status::OutOfRange;
+  }
+
+  switch (pos) {
+    case ListPosition::Before: {
+      list->EmplaceBefore(space, iter,
+                          version_controller_.GetCurrentTimestamp(), "", elem);
+      return Status::Ok;
+    }
+    case ListPosition::After: {
+      list->EmplaceAfter(space, iter, version_controller_.GetCurrentTimestamp(),
+                         "", elem);
+      return Status::Ok;
+    }
+    default: {
+      kvdk_assert(
+          false,
+          "Only ListPosition::Before and ListPosition::After supported!");
+      return Status::InvalidArgument;
+    }
+  }
+}
+
+Status KVEngine::ListInsert(StringView key, ListPosition pos, StringView pivot,
+                            StringView elem, IndexType rank) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, true, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  size_t index;
+  s = ListPos(key, elem, &index, rank, 0);
+  if (s != Status::Ok) {
+    return s;
+  }
+  return ListInsert(key, pos, static_cast<IndexType>(index), elem);
+}
+
+Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  for (auto iter = list->Front(); iter != list->Tail() && cnt > 0; ++iter) {
+    if (iter->Value() == elem) {
+      DLRecord* old = iter.Address();
+      iter = list->Erase(iter, [&](DLRecord* rec) { purgeAndFree(rec); });
+      --cnt;
+    }
+  }
+  if (list->Size() == 0) {
+    auto guard = hash_table_->AcquireLock(key);
+    auto result = removeKey(key);
+    kvdk_assert(result.s == Status::Ok, "");
+    listDestroy(list);
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  auto space = pmem_allocator_->Allocate(
+      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
+  if (space.size == 0) {
+    return Status::PmemOverflow;
+  }
+
+  auto iter = list->Seek(index);
+  if (iter == list->Tail()) {
+    return Status::OutOfRange;
+  }
+  DLRecord* old = iter.Address();
+  list->Replace(space, iter, version_controller_.GetCurrentTimestamp(), "",
+                elem, [&](DLRecord* rec) { purgeAndFree(rec); });
+  return Status::Ok;
+}
+
+List* KVEngine::listCreate(StringView key) {
+  std::uint64_t ts = version_controller_.GetCurrentTimestamp();
+  CollectionIDType id = list_id_.fetch_add(1);
+  List* list = new List{};
+  auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
+                                         sizeof(CollectionIDType));
+  if (space.size == 0) {
+    return nullptr;
+  }
+  list->Init(pmem_allocator_.get(), space, ts, key, id);
+  std::lock_guard<std::mutex> guard{list_mu_};
+  lists_.emplace_back(list);
+  return list;
+}
+
+Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
+  list_builder_->AddListElem(pmp_record);
+  return Status::Ok;
+}
+
+Status KVEngine::listRestoreList(DLRecord* pmp_record) {
+  list_builder_->AddListRecord(pmp_record);
+  return Status::Ok;
+}
+
+Status KVEngine::listRegisterRecovered() {
+  CollectionIDType max_id = 0;
+  for (auto const& list : lists_) {
+    auto guard = hash_table_->AcquireLock(list->Name());
+    Status s = registerCollection(list.get());
+    max_id = std::max(max_id, list->ID());
+  }
+  auto old = list_id_.load();
+  while (max_id >= old && !list_id_.compare_exchange_strong(old, max_id + 1)) {
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::listDestroy(List* list) {
+  while (list->Size() > 0) {
+    list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
+  }
+  list->Destroy([&](DLRecord* lrec) { purgeAndFree(lrec); });
+  return Status::Ok;
+}
+
+Status KVEngine::listFind(StringView key, List** list, bool init_nx,
+                          std::unique_lock<std::recursive_mutex>& guard) {
+  // The life cycle of a List includes following stages
+  // Uninitialized. List not created yet.
+  // Active. Initialized and registered on HashTable.
+  // Inactive. Destroyed and unregistered from HashTable.
+  // Always lock List visible to other threads first,
+  // then lock the HashTable to avoid deadlock.
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
+  {
+    auto result = lookupKey(key, RecordType::ListRecord);
+    if (result.s != Status::Ok && result.s != Status::NotFound) {
+      return result.s;
+    }
+    if (result.s == Status::Ok) {
+      (*list) = result.entry.GetIndex().list;
+      guard = (*list)->AcquireLock();
+      if ((*list)->Valid()) {
+        // Active and successfully locked
+        return Status::Ok;
+      }
+      // Inactive, already destroyed by other thread.
+      // The inactive List will be removed from HashTable
+      // by caller that destroys it with HashTable locked.
+    }
+    if (!init_nx) {
+      // Uninitialized or Inactive
+      return Status::NotFound;
+    }
+  }
+
+  // Uninitialized or Inactive, initialize new one
+  /// TODO: may deadlock!
+  {
+    auto guard2 = hash_table_->AcquireLock(key);
+    auto result = lookupKey(key, RecordType::ListRecord);
+    if (result.s != Status::Ok && result.s != Status::NotFound) {
+      return result.s;
+    }
+    if (result.s == Status::Ok) {
+      (*list) = result.entry.GetIndex().list;
+      guard = (*list)->AcquireLock();
+      kvdk_assert((*list)->Valid(), "Invalid list should have been removed!");
+      return Status::Ok;
+    }
+    // No other thread have created one, create one here.
+    (*list) = listCreate(key);
+    if ((*list) == nullptr) {
+      return Status::PmemOverflow;
+    }
+    guard = (*list)->AcquireLock();
+    return registerCollection(*list);
   }
 }
 

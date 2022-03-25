@@ -4,9 +4,12 @@
 
 #pragma once
 
+#include <immintrin.h>
+#include <libpmem.h>
+
+#include "alias.hpp"
 #include "kvdk/configs.hpp"
 #include "kvdk/namespace.hpp"
-#include "libpmem.h"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -25,12 +28,10 @@ enum RecordType : uint16_t {
   DlistTailRecord = (1 << 7),
   DlistRecord = (1 << 8),
 
-  QueueDataRecord = (1 << 9),
-  QueueHeadRecord = (1 << 10),
-  QueueTailRecord = (1 << 11),
-  QueueRecord = (1 << 12),
+  ListRecord = (1 << 9),
+  ListElem = (1 << 10),
 
-  Padding = 1 << 15,
+  Padding = (1 << 15),
 };
 
 const uint16_t SortedRecordType =
@@ -39,7 +40,7 @@ const uint16_t SortedRecordType =
 const uint16_t DLRecordType =
     (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
      DlistDataRecord | DlistHeadRecord | DlistTailRecord | DlistRecord |
-     QueueDataRecord | QueueHeadRecord | QueueTailRecord | QueueRecord);
+     ListElem | ListRecord);
 
 const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
 
@@ -47,7 +48,7 @@ const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
 const uint16_t ExpirableRecordType =
     (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
-     RecordType::QueueRecord | RecordType::DlistRecord);
+     RecordType::ListRecord | RecordType::DlistRecord);
 
 const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
 
@@ -150,7 +151,19 @@ struct StringRecord {
     return false;
   }
 
-  ExpiredTimeType GetExpiredTime() { return expired_time; }
+  ExpiredTimeType GetExpireTime() const { return expired_time; }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
+
+  void PersistExpireTimeNT(ExpiredTimeType time) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
+                    static_cast<long long>(time));
+    _mm_mfence();
+  }
+
+  void PersistExpireTimeCLWB(ExpiredTimeType time) {
+    expired_time = time;
+    _mm_clwb(&expired_time);
+  }
 
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
@@ -192,6 +205,7 @@ struct DLRecord {
   PMemOffsetType prev;
   PMemOffsetType next;
   ExpiredTimeType expired_time;
+
   char data[0];
 
   // Construct a DLRecord instance at "target_address". As the record need
@@ -232,7 +246,46 @@ struct DLRecord {
     return StringView(data + entry.meta.k_size, entry.meta.v_size);
   }
 
-  ExpiredTimeType GetExpiredTime() { return expired_time; }
+  void PersistNextNT(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&next),
+                    static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
+  void PersistPrevNT(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&prev),
+                    static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
+  void PersistExpireTimeNT(ExpiredTimeType time) {
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
+    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
+                    static_cast<long long>(time));
+    _mm_mfence();
+  }
+
+  void PersistNextCLWB(PMemOffsetType offset) {
+    next = offset;
+    _mm_clwb(&next);
+  }
+
+  void PersistPrevCLWB(PMemOffsetType offset) {
+    prev = offset;
+    _mm_clwb(&prev);
+  }
+
+  void PersistExpireTimeCLWB(ExpiredTimeType time) {
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
+    expired_time = time;
+    _mm_clwb(&expired_time);
+  }
+
+  ExpiredTimeType GetExpireTime() const {
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
+    return expired_time;
+  }
+  bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
