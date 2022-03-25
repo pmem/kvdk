@@ -473,6 +473,4 @@ inline bool CheckIsExpired(ExpiredTimeType expired_time) {
 }
 
 }  // namespace TimeUtils
-
-namespace CollectionUtils {}  // namespace CollectionUtils
 }  // namespace KVDK_NAMESPACE

@@ -263,6 +263,8 @@ class KVEngine : public Engine {
 
   // May lock HashTable internally, caller must call this without lock
   // HashTable!
+  //
+  // TODO (jiayu): replace this with lookupKey
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
