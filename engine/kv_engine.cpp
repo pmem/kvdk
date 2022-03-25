@@ -1756,7 +1756,8 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
                                const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
-  if (!CheckTTLOverFlow(write_options.ttl_time, base_time)) {
+  if (write_options.ttl_time >= 0 &&
+      !CheckTTLOverFlow(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
 
@@ -1764,7 +1765,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   ExpiredTimeType expired_time = -1;
   if (write_options.ttl_time) {
     expired_time = write_options.ttl_time + base_time;
-    entry_status = HashEntryStatus::Expire;
+    entry_status = HashEntryStatus::TTL;
   }
 
   DataEntry data_entry;
@@ -1817,7 +1818,8 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
                         HashIndexType::StringRecord, entry_status);
 
     /* delete record is self-freed, so we don't need to free it here */
-    if (found && updated_type == StringDataRecord) {
+    if (found && updated_type == StringDataRecord &&
+        !hash_entry_ptr->IsExpiredStatus()) {
       ul.unlock();
       delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
     }
@@ -1830,6 +1832,7 @@ Status KVEngine::Set(const StringView key, const StringView value,
                      const WriteOptions& options) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
+    printf("&&&\n");
     return s;
   }
 
@@ -2364,7 +2367,7 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
 }
 
 void KVEngine::delayFree(const OldDataRecord& old_data_record) {
-  old_records_cleaner_.Push(old_data_record);
+  old_records_cleaner_.PushToCache(old_data_record);
   // To avoid too many cached old records pending clean, we try to clean cached
   // records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
@@ -2377,7 +2380,7 @@ void KVEngine::delayFree(const OldDataRecord& old_data_record) {
 }
 
 void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
-  old_records_cleaner_.Push(old_delete_record);
+  old_records_cleaner_.PushToCache(old_delete_record);
   // To avoid too many cached old records pending clean, we try to clean cached
   // records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
@@ -2401,6 +2404,7 @@ void KVEngine::backgroundOldRecordCleaner() {
       }
     }
     bg_cleaner_processing_ = true;
+    ExpiredCleaner();
     old_records_cleaner_.TryGlobalClean();
   }
 }
@@ -2447,10 +2451,13 @@ void KVEngine::backgroundDramCleaner() {
 }
 
 void KVEngine::ExpiredCleaner() {
+<<<<<<< HEAD
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     std::runtime_error("BackGround Init access thread fail!");
   }
+=======
+>>>>>>> b11567ccf97b6af77de0985857245c70a3cd0c86
   int64_t time = 0;
   ExpiredTimeType expired_time;
   // Iterate hash table
@@ -2460,16 +2467,32 @@ void KVEngine::ExpiredCleaner() {
     auto bucket_iter = slot_iter.Begin();
     auto end_bucket_iter = slot_iter.End();
     auto new_ts = version_controller_.GetCurrentTimestamp();
+<<<<<<< HEAD
+=======
+    std::deque<OldDeleteRecord> expired_record_queue;
+>>>>>>> b11567ccf97b6af77de0985857245c70a3cd0c86
     uint64_t need_clean_num = 0;
     while (bucket_iter != end_bucket_iter) {
       switch (bucket_iter->GetIndexType()) {
         case HashIndexType::StringRecord: {
+<<<<<<< HEAD
           if (bucket_iter->IsExpireStatus() &&
               TimeUtils::CheckIsExpired(
                   bucket_iter->GetIndex().string_record->GetExpiredTime())) {
             // push expired cleaner
             old_records_cleaner_.Push(
                 OldDataRecord{bucket_iter->GetIndex().ptr, new_ts});
+=======
+          if (bucket_iter->IsTTLStatus() &&
+              TimeUtils::CheckIsExpired(
+                  bucket_iter->GetIndex().string_record->GetExpiredTime())) {
+            hash_table_->UpdateEntryStatus(&(*bucket_iter),
+                                           HashEntryStatus::Expired);
+            // push expired cleaner
+            expired_record_queue.push_back(
+                OldDeleteRecord{bucket_iter->GetIndex().ptr, new_ts,
+                                &(*bucket_iter), slot_iter.GetSlotLock()});
+>>>>>>> b11567ccf97b6af77de0985857245c70a3cd0c86
             need_clean_num++;
           }
         }
@@ -2480,6 +2503,7 @@ void KVEngine::ExpiredCleaner() {
           break;
         }
         default:
+<<<<<<< HEAD
           continue;
       }
       bucket_iter++;
@@ -2488,21 +2512,17 @@ void KVEngine::ExpiredCleaner() {
     // TODO(zhichen): Optimazated for expired cleaner only for expired records,
     // instead of old records
     old_records_cleaner_.TryCleanCachedOldRecords(need_clean_num);
+=======
+          break;
+      }
+      bucket_iter++;
+    }
+    old_records_cleaner_.PushToGloble(expired_record_queue);
+>>>>>>> b11567ccf97b6af77de0985857245c70a3cd0c86
     slot_iter.Next();
   }
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::system_clock::now() - start_ts);
-  GlobalLogger.Info("Iterator Hash Table cost time: %ld ms\n",
-                    duration.count());
-  ReportPMemUsage();
-}
-
-void KVEngine::backgroundExpiredCleaner() {
-  uint64_t avg_throughputs = 0;
-  int scan_times = 0;
-  while (!bg_work_signals_.terminating) {
-    ExpiredCleaner();
-  }
 }
 
 }  // namespace KVDK_NAMESPACE

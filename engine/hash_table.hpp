@@ -40,8 +40,13 @@ enum class HashIndexType : uint8_t {
 
 enum class HashEntryStatus : uint8_t {
   Persist = 0,
+<<<<<<< HEAD
   Expire = 1 << 0,
   PendingFree = 1 << 1,
+=======
+  TTL = 1 << 0,  // expirable
+  Expired = 1 << 1,
+>>>>>>> b11567ccf97b6af77de0985857245c70a3cd0c86
 };
 
 struct HashHeader {
@@ -89,6 +94,7 @@ struct alignas(16) HashEntry {
 
   RecordType GetRecordType() const { return header_.record_type; }
 
+<<<<<<< HEAD
   bool IsPendingFreeStatus() {
     return header_.entry_status == HashEntryStatus::PendingFree;
   }
@@ -96,6 +102,13 @@ struct alignas(16) HashEntry {
   bool IsExpireStatus() {
     return header_.entry_status == HashEntryStatus::Expire;
   }
+=======
+  bool IsExpiredStatus() {
+    return header_.entry_status == HashEntryStatus::Expired;
+  }
+
+  bool IsTTLStatus() { return header_.entry_status == HashEntryStatus::TTL; }
+>>>>>>> b11567ccf97b6af77de0985857245c70a3cd0c86
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
@@ -349,6 +362,8 @@ struct SlotIterator {
   }
 
   BucketIterator End() { return BucketIterator{this, iter_end_bucket_idx_}; }
+
+  SpinMutex* GetSlotLock() { return iter_lock_slot_.mutex(); }
 };
 
 }  // namespace KVDK_NAMESPACE
