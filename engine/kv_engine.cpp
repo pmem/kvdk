@@ -1211,6 +1211,60 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   return Status::Ok;
 }
 
+Status KVEngine::Modify(const StringView key, std::string* new_value,
+                        ModifyFunction modify_func,
+                        const WriteOptions& write_options) {
+  int64_t base_time = TimeUtils::millisecond_time();
+  if (!CheckTTL(write_options.ttl_time, base_time)) {
+    return Status::InvalidArgument;
+  }
+  ExpiredTimeType expired_time = write_options.ttl_time == kPersistTime
+                                     ? kPersistTime
+                                     : write_options.ttl_time + base_time;
+
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto hint = hash_table_->GetHint(key);
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
+  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto ret = lookupKey(key, static_cast<RecordType>(StringRecordType));
+  if (ret.s == Status::Ok) {
+    StringRecord* old_record = ret.entry.GetIndex().string_record;
+
+    std::string modified_value = modify_func(old_record->Value());
+    if (!CheckValueSize(modified_value)) {
+      return Status::InvalidDataSize;
+    }
+
+    auto requested_size =
+        key.size() + modified_value.size() + sizeof(StringRecord);
+    SpaceEntry space_entry = pmem_allocator_->Allocate(requested_size);
+    if (space_entry.size == 0) {
+      return Status::PmemOverflow;
+    }
+
+    kvdk_assert(new_ts > old_record->GetTimestamp(),
+                "old record has newer timestamp");
+    StringRecord* new_record_ptr =
+        pmem_allocator_->offset2addr<StringRecord>(space_entry.offset);
+    StringRecord::PersistStringRecord(
+        new_record_ptr, space_entry.size, new_ts, StringDataRecord,
+        pmem_allocator_->addr2offset_checked(old_record), key, modified_value,
+        expired_time);
+
+    hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record_ptr,
+                        HashIndexType::StringRecord);
+    ul.unlock();
+    delayFree(OldDataRecord({old_record, new_ts}));
+    new_value->assign(modified_value);
+  }
+  return ret.s;
+}
+
 Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
                                       BatchWriteHint& batch_hint) {
   DataEntry data_entry;
@@ -1552,6 +1606,51 @@ Status KVEngine::Set(const StringView key, const StringView value,
 
 // UnorderedCollection
 namespace KVDK_NAMESPACE {
+KVEngine::LookupResult KVEngine::lookupKey(StringView key,
+                                           RecordType type_mask) {
+  LookupResult result;
+  auto hint = hash_table_->GetHint(key);
+  result.s = hash_table_->SearchForRead(
+      hint, key, PrimaryRecordType, &result.entry_ptr, &result.entry, nullptr);
+  if (result.s != Status::Ok) {
+    kvdk_assert(result.s == Status::NotFound, "");
+    return result;
+  }
+  RecordType record_type = result.entry.GetRecordType();
+
+  if (type_mask & record_type) {
+    if (record_type == RecordType::StringDeleteRecord) {
+      result.s = Status::NotFound;
+      return result;
+    }
+    bool has_expired;
+    switch (record_type) {
+      case RecordType::StringDataRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            result.entry.GetIndex().string_record->GetExpireTime());
+        break;
+      }
+      case RecordType::DlistRecord:
+      case RecordType::ListRecord:
+      case RecordType::SortedHeaderRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            static_cast<Collection*>(result.entry.GetIndex().ptr)
+                ->GetExpireTime());
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unreachable branch!");
+        std::abort();
+      }
+    }
+
+    result.s = has_expired ? Status::NotFound : result.s;
+  } else {
+    result.s = Status::WrongType;
+  }
+  return result;
+}
+
 std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
     StringView const collection_name) {
   TimeStampType ts = version_controller_.GetCurrentTimestamp();
