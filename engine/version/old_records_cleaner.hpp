@@ -11,7 +11,7 @@
 #include "../thread_manager.hpp"
 #include "../utils/utils.hpp"
 #include "kvdk/configs.hpp"
-#include "kvdk/namespace.hpp"
+#include "kvdk/types.hpp"
 #include "version_controller.hpp"
 
 namespace KVDK_NAMESPACE {

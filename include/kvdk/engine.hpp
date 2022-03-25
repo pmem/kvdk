@@ -15,9 +15,8 @@
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
-#include "libpmemobj++/string_view.hpp"
-#include "namespace.hpp"
 #include "status.hpp"
+#include "types.hpp"
 #include "write_batch.hpp"
 
 namespace KVDK_NAMESPACE {

@@ -22,7 +22,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "kvdk/namespace.hpp"
+#include "kvdk/types.hpp"
 
 #if DEBUG_LEVEL > 0
 namespace KVDK_NAMESPACE {

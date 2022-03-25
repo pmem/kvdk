@@ -9,18 +9,12 @@
 #include <cstring>
 #include <string>
 
-#include "kvdk/namespace.hpp"
 #include "kvdk/status.hpp"
+#include "kvdk/types.hpp"
 #include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
-/// TODO: (ziyan/zhichen) provide kvdkdef.hpp to put these common alias.
 /// TODO: (ziyan) add expire_time field to Collection.
-using StringView = pmem::obj::string_view;
-using CollectionIDType = std::uint64_t;
-using ExpiredTimeType = std::int64_t;
-
-// A collection of key-value pairs
 /// TODO: (ziyan) move collection.hpp to engine/
 /// This interface provides little functionality to user
 /// And it includes part of implementation.

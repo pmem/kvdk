@@ -1,4 +1,5 @@
 #include <gflags/gflags.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -8,11 +9,9 @@
 #include <string>
 #include <thread>
 
-#include "engine/alias.hpp"
 #include "generator.hpp"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
-#include "sys/time.h"
+#include "kvdk/types.hpp"
 
 using namespace google;
 using namespace KVDK_NAMESPACE;

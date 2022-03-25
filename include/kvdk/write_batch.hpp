@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "namespace.hpp"
+#include "types.hpp"
 
 namespace KVDK_NAMESPACE {
 

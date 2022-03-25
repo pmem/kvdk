@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 
 #define DEBUG  // For assert
 

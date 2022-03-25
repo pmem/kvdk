@@ -16,7 +16,7 @@
 #include "../structures.hpp"
 #include "../version/version_controller.hpp"
 #include "free_list.hpp"
-#include "kvdk/namespace.hpp"
+#include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
 

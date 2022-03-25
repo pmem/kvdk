@@ -1303,7 +1303,7 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
                                         &entry_ptr, &hash_entry, nullptr);
 
   ExpiredTimeType expired_time;
-  *ttl_time = kInvalidTTLTime;
+  *ttl_time = kInvalidTTL;
   if (s != Status::Ok) {
     return s;
   }
@@ -1342,16 +1342,16 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   /// TODO: return 0 even if the key has expired for a second or two if
   /// findKey() have successfully returned.
   if (TimeUtils::CheckIsExpired(expired_time)) {
-    *ttl_time = kInvalidTTLTime;
+    *ttl_time = kInvalidTTL;
     return Status::NotFound;
   }
   // return ttl time
   if (expired_time == kPersistTime) {
-    *ttl_time = kPersistTime;
+    *ttl_time = kPersistTTL;
   } else {
     *ttl_time = expired_time - TimeUtils::millisecond_time();
     if (*ttl_time <= 0) {
-      *ttl_time = kInvalidTTLTime;
+      *ttl_time = kInvalidTTL;
     }
   }
   return Status::Ok;
@@ -1477,8 +1477,8 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   if (!CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
-  ExpiredTimeType expired_time = write_options.ttl_time == kPersistTime
-                                     ? kPersistTime
+  ExpiredTimeType expired_time = write_options.ttl_time == kPersistTTL
+                                     ? kPersistTTL
                                      : write_options.ttl_time + base_time;
 
   DataEntry data_entry;

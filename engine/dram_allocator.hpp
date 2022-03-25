@@ -6,13 +6,13 @@
 
 #include <sys/mman.h>
 
+#include <atomic>
+#include <cassert>
 #include <string>
 
 #include "allocator.hpp"
-#include "assert.h"
-#include "atomic"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
+#include "kvdk/types.hpp"
 #include "logger.hpp"
 #include "structures.hpp"
 

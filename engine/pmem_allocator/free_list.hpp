@@ -9,7 +9,7 @@
 
 #include "../allocator.hpp"
 #include "../utils/utils.hpp"
-#include "kvdk/namespace.hpp"
+#include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
 

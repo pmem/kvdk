@@ -150,8 +150,9 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
+  /// TODO: TTL2ExpireTime() and ExpireTime2TTL() to perform conversion
   bool CheckTTL(TTLTimeType ttl_time, int64_t base_time) {
-    if (ttl_time < 0 && ttl_time != kPersistTime) {
+    if (ttl_time < 0 && ttl_time != kPersistTTL) {
       return false;
     }
     // check overflow

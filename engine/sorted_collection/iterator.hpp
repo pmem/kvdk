@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "kvdk/namespace.hpp"
 #include "skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
