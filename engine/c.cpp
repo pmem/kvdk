@@ -207,14 +207,20 @@ KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
 }
 
 KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
-                      c_string (*modify)(c_string val),
+                      CString* new_value, CString (*modify)(CString val),
                       const KVDKWriteOptions* write_option) {
   auto modify_func = [&](StringView value) {
-    auto result_view = modify(c_string{value.data(), value.size()});
+    auto result_view = modify(CString{value.data(), value.size()});
+    *new_value = result_view;
     return std::string(result_view.data, result_view.size);
   };
-  return engine->rep->Modify(StringView(key, key_len), modify_func,
-                             write_option->rep);
+  std::string modify_result;
+  KVDKStatus s = engine->rep->Modify(StringView(key, key_len), &modify_result,
+                                     modify_func, write_option->rep);
+  assert(s != KVDKStatus::Ok || (modify_result.size() == new_value->size &&
+                                 memcmp(modify_result.data(), new_value->data,
+                                        modify_result.size() == 0)));
+  return s;
 }
 
 KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key, size_t key_len) {

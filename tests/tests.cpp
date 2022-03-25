@@ -629,13 +629,20 @@ TEST_F(EngineBasicTest, TestStringModify) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string plus_key = "plus";
+  std::string tmp_value;
   ASSERT_EQ(engine->Set(plus_key, "0", WriteOptions()), Status::Ok);
-  ASSERT_EQ(engine->Modify("not_exist_key", num_plus), Status::NotFound);
+  ASSERT_EQ(engine->Modify("not_exist_key", &tmp_value, num_plus),
+            Status::NotFound);
   engine->ReleaseAccessThread();
 
   auto modify = [&](int tid) {
+    std::string modify_result;
+    int prev_num = 0;
     for (int i = 0; i < ops_per_thread; i++) {
-      ASSERT_EQ(engine->Modify(plus_key, num_plus), Status::Ok);
+      ASSERT_EQ(engine->Modify(plus_key, &modify_result, num_plus), Status::Ok);
+      uint64_t result_num = std::stod(modify_result);
+      ASSERT_TRUE(result_num > prev_num);
+      prev_num = result_num;
     }
   };
 

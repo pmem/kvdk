@@ -1211,7 +1211,8 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   return Status::Ok;
 }
 
-Status KVEngine::Modify(const StringView key, ModifyFunction modify_func,
+Status KVEngine::Modify(const StringView key, std::string* new_value,
+                        ModifyFunction modify_func,
                         const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (!CheckTTL(write_options.ttl_time, base_time)) {
@@ -1259,6 +1260,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunction modify_func,
                         HashIndexType::StringRecord);
     ul.unlock();
     delayFree(OldDataRecord({old_record, new_ts}));
+    new_value->assign(modified_value);
   }
   return ret.s;
 }

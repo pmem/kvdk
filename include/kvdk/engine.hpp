@@ -53,8 +53,10 @@ class Engine {
 
   // Modify value of existing key in the engine according to "modify_func"
   //
-  // Return Ok if key exist and sccessfully update value to modifed one
-  virtual Status Modify(const StringView key, ModifyFunction modify_func,
+  // Store modify result in "new_value" and return Ok if key exist and
+  // sccessfully update value to modifed one
+  virtual Status Modify(const StringView key, std::string* new_value,
+                        ModifyFunction modify_func,
                         const WriteOptions& options = WriteOptions()) = 0;
 
   virtual Status BatchWrite(const WriteBatch& write_batch) = 0;

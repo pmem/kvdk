@@ -81,7 +81,8 @@ class KVEngine : public Engine {
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
-  virtual Status Modify(const StringView key, ModifyFunction modify_func,
+  virtual Status Modify(const StringView key, std::string* new_value,
+                        ModifyFunction modify_func,
                         const WriteOptions& options) override;
 
   // Sorted Collection
@@ -232,11 +233,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, UnorderedCollection>::value
                ? RecordType::DlistRecord
-               : std::is_same<CollectionType, Skiplist>::value
-                     ? RecordType::SortedHeaderRecord
-                     : std::is_same<CollectionType, List>::value
-                           ? RecordType::ListRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, Skiplist>::value
+               ? RecordType::SortedHeaderRecord
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+                                                       : RecordType::Empty;
   }
 
   static HashIndexType pointerType(RecordType rtype) {
