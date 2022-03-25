@@ -218,10 +218,11 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, UnorderedCollection>::value
                ? RecordType::DlistRecord
-           : std::is_same<CollectionType, Skiplist>::value
-               ? RecordType::SortedHeaderRecord
-           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
-                                                       : RecordType::Empty;
+               : std::is_same<CollectionType, Skiplist>::value
+                     ? RecordType::SortedHeaderRecord
+                     : std::is_same<CollectionType, List>::value
+                           ? RecordType::ListRecord
+                           : RecordType::Empty;
   }
 
   static HashIndexType pointerType(RecordType rtype) {
@@ -330,9 +331,10 @@ class KVEngine : public Engine {
       }
     }
 
-    result.s = has_expired                                  ? Status::NotFound
-               : (type_mask & result.entry.GetRecordType()) ? result.s
-                                                            : Status::WrongType;
+    result.s = has_expired ? Status::NotFound
+                           : (type_mask & result.entry.GetRecordType())
+                                 ? result.s
+                                 : Status::WrongType;
     return result;
   }
 

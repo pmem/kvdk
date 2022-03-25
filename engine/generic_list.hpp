@@ -334,7 +334,7 @@ class GenericList final : public Collection {
   Iterator emplace_between(SpaceEntry space, Iterator prev, Iterator next,
                            TimeStampType timestamp, StringView const key,
                            StringView const value) {
-    kvdk_assert(++Iterator{prev} == next || ++ ++Iterator{prev} == next,
+    kvdk_assert(++Iterator{prev} == next || ++++Iterator{prev} == next,
                 "Should only insert or replace");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
