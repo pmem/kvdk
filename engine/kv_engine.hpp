@@ -176,7 +176,7 @@ class KVEngine : public Engine {
   }
 
   Status CreateSortedCollection(
-      const StringView collection_name, Collection** collection_ptr,
+      const StringView collection_name,
       const SortedCollectionConfigs& configs) override;
 
   // List
@@ -263,10 +263,11 @@ class KVEngine : public Engine {
 
   // May lock HashTable internally, caller must call this without lock
   // HashTable!
+  //
+  // TODO (jiayu): replace this with lookupKey
   template <typename CollectionType>
-  [[gnu::deprecated]] Status FindCollection(const StringView collection_name,
-                                            CollectionType** collection_ptr,
-                                            uint64_t record_type) {
+  Status FindCollection(const StringView collection_name,
+                        CollectionType** collection_ptr, uint64_t record_type) {
     kvdk_assert(collectionType<CollectionType>() == record_type,
                 "Type Mismatch!");
     HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);

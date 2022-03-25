@@ -7,7 +7,6 @@
 #include <cstring>
 
 #include "alias.hpp"
-#include "kvdk/collection.hpp"
 #include "kvdk/configs.hpp"
 #include "kvdk/engine.h"
 #include "kvdk/engine.hpp"
@@ -16,7 +15,6 @@
 #include "kvdk/write_batch.hpp"
 using kvdk::StringView;
 
-using kvdk::Collection;
 using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::Iterator;
@@ -38,9 +36,6 @@ struct KVDKWriteBatch {
 struct KVDKIterator {
   KVDKIterType type;
   Iterator* rep;
-};
-struct KVDKCollection {
-  Collection* rep;
 };
 struct KVDKSnapshot {
   Snapshot* rep;
@@ -161,25 +156,15 @@ int KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
 }
 
 KVDKStatus KVDKCreateSortedCollection(KVDKEngine* engine,
-                                      KVDKCollection** sorted_collection,
                                       const char* collection_name,
                                       size_t collection_len,
                                       KVDKSortedCollectionConfigs* configs) {
-  Collection* collection_ptr;
   KVDKStatus s = engine->rep->CreateSortedCollection(
-      StringView(collection_name, collection_len), &collection_ptr,
-      configs->rep);
+      StringView(collection_name, collection_len), configs->rep);
   if (s != KVDKStatus::Ok) {
-    sorted_collection = nullptr;
     return s;
   }
-  *sorted_collection = new KVDKCollection;
-  (*sorted_collection)->rep = collection_ptr;
   return s;
-}
-
-void KVDKDestorySortedCollection(KVDKCollection* collection) {
-  delete collection;
 }
 
 KVDKWriteBatch* KVDKWriteBatchCreate(void) { return new KVDKWriteBatch; }

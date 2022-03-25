@@ -33,7 +33,6 @@ typedef struct KVDKConfigs KVDKConfigs;
 typedef struct KVDKWriteOptions KVDKWriteOptions;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
-typedef struct KVDKCollection KVDKCollection;
 typedef struct KVDKSnapshot KVDKSnapshot;
 typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
 
@@ -81,12 +80,8 @@ extern KVDK_LIBRARY_API int KVDKRegisterCompFunc(
 
 // Create Sorted Collection
 extern KVDK_LIBRARY_API KVDKStatus KVDKCreateSortedCollection(
-    KVDKEngine* engine, KVDKCollection** sorted_collection,
-    const char* collection_name, size_t collection_len,
+    KVDKEngine* engine, const char* collection_name, size_t collection_len,
     KVDKSortedCollectionConfigs* configs);
-
-extern KVDK_LIBRARY_API void KVDKDestorySortedCollection(
-    KVDKCollection* collection);
 
 // For BatchWrite
 extern KVDK_LIBRARY_API KVDKWriteBatch* KVDKWriteBatchCreate(void);

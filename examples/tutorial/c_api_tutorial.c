@@ -82,15 +82,12 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   size_t read_v1_len, read_v2_len;
   int cmp;
 
-  KVDKCollection* collecton1_ptr;
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
-  KVDKStatus s =
-      KVDKCreateSortedCollection(kvdk_engine, &collecton1_ptr, collection1,
-                                 strlen(collection1), s_configs);
+  KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, collection1,
+                                            strlen(collection1), s_configs);
   assert(s == Ok);
-  KVDKCollection* collecton2_ptr;
-  s = KVDKCreateSortedCollection(kvdk_engine, &collecton2_ptr, collection2,
-                                 strlen(collection2), s_configs);
+  s = KVDKCreateSortedCollection(kvdk_engine, collection2, strlen(collection2),
+                                 s_configs);
   assert(s == Ok);
   s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
@@ -124,8 +121,6 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   free(read_v1);
   free(read_v2);
-  KVDKDestorySortedCollection(collecton1_ptr);
-  KVDKDestorySortedCollection(collecton2_ptr);
   KVDKDestroySortedCollectionConfigs(s_configs);
   printf(
       "Successfully performed SortedGet, SortedSet, SortedDelete "
@@ -138,11 +133,9 @@ void SortedCollectinIterExample(KVDKEngine* kvdk_engine) {
   const char* sorted_nums[10] = {"0", "1", "2", "3", "4",
                                  "5", "6", "7", "8", "9"};
   const char* sorted_collection = "sorted_collection";
-  KVDKCollection* collecton_ptr;
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
-  KVDKStatus s =
-      KVDKCreateSortedCollection(kvdk_engine, &collecton_ptr, sorted_collection,
-                                 strlen(sorted_collection), s_configs);
+  KVDKStatus s = KVDKCreateSortedCollection(
+      kvdk_engine, sorted_collection, strlen(sorted_collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key", value[10] = "value";
@@ -205,7 +198,6 @@ void SortedCollectinIterExample(KVDKEngine* kvdk_engine) {
   assert(i == 0);
   printf("Successfully iterated through a sorted named collections.\n");
   KVDKDestroyIterator(kvdk_engine, kvdk_iter);
-  KVDKDestorySortedCollection(collecton_ptr);
   KVDKDestroySortedCollectionConfigs(s_configs);
 }
 
@@ -237,11 +229,10 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   const char* comp_name = "double_comp";
   KVDKRegisterCompFunc(kvdk_engine, comp_name, strlen(comp_name), score_cmp);
   // create sorted collection
-  KVDKCollection* collecton_ptr;
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
   KVDKSetSortedCollectionConfigs(s_configs, comp_name, strlen(comp_name));
-  KVDKStatus s = KVDKCreateSortedCollection(
-      kvdk_engine, &collecton_ptr, collection, strlen(collection), s_configs);
+  KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, collection,
+                                            strlen(collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
     s = KVDKSortedSet(kvdk_engine, collection, strlen(collection),
@@ -273,7 +264,6 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   }
   KVDKDestroyIterator(kvdk_engine, iter);
   printf("Successfully collections sorted by number.\n");
-  KVDKDestorySortedCollection(collecton_ptr);
   KVDKDestroySortedCollectionConfigs(s_configs);
 }
 
