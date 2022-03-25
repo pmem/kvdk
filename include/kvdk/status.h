@@ -24,6 +24,7 @@ extern "C" {
 #define FOREACH_ENUM(GEN)   \
   GEN(Ok)                   \
   GEN(NotFound)             \
+  GEN(WrongType)            \
   GEN(MemoryOverflow)       \
   GEN(PmemOverflow)         \
   GEN(NotSupported)         \
@@ -34,6 +35,7 @@ extern "C" {
   GEN(IOError)              \
   GEN(InvalidConfiguration) \
   GEN(InvalidArgument)      \
+  GEN(Fail)                 \
   GEN(Abort)
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,

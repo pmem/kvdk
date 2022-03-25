@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "define.hpp"
+#include "alias.hpp"
 #include "kvdk/collection.hpp"
 #include "kvdk/configs.hpp"
 #include "kvdk/engine.h"
@@ -407,5 +407,9 @@ KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str, size_t str_len,
 KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str, size_t str_len,
                       int64_t* ttl_time) {
   return engine->rep->GetTTL(std::string(str, str_len), ttl_time);
+}
+
+KVDKStatus KVDKPersist(KVDKEngine* engine, const char* str, size_t str_len) {
+  return engine->rep->Persist(std::string(str, str_len));
 }
 }

@@ -54,6 +54,9 @@ class Engine {
   // Set the STRING-type or Collection type expired time.
   virtual Status Expire(const StringView str, int64_t ttl_time) = 0;
 
+  // Set the STRING-type or Collection type as persist.
+  virtual Status Persist(const StringView str) = 0;
+
   // Remove STRING-type KV of "key".
   // Return Ok on success or the "key" did not exist, return non-Ok on any
   // error.

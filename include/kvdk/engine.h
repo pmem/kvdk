@@ -182,8 +182,13 @@ extern KVDK_LIBRARY_API const char* KVDKIterValue(KVDKIterator* iter,
 // For Expire
 KVDK_LIBRARY_API KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str,
                                        size_t str_len, int64_t ttl_time);
+// ttl_time returns INT64_MAX if the key is persist, ttl_time returns 0 if the
+// key is expired.
 KVDK_LIBRARY_API KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str,
                                        size_t str_len, int64_t* ttl_time);
+
+KVDK_LIBRARY_API KVDKStatus KVDKPersist(KVDKEngine* engine, const char* str,
+                                        size_t str_len);
 
 #ifdef __cplusplus
 } /* end extern "C" */

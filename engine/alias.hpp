@@ -30,7 +30,4 @@ constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
 constexpr uint64_t kRestoreSkiplistStride = 10000;
 constexpr uint64_t kMaxCachedOldRecords = 10000;
 constexpr size_t kLimitForegroundCleanOldRecords = 1;
-constexpr uint64_t kBackgroundAccessThread = 2;
-constexpr int64_t kInvalidTTLTime = -2;
-constexpr int64_t kPersistTime = -1;
 }  // namespace KVDK_NAMESPACE

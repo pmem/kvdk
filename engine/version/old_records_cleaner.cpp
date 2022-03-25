@@ -5,7 +5,7 @@
 #include "old_records_cleaner.hpp"
 
 #include "../kv_engine.hpp"
-#include "../skiplist.hpp"
+#include "../sorted_collection/skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {

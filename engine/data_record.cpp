@@ -4,7 +4,7 @@
 
 #include "data_record.hpp"
 
-#include "define.hpp"
+#include "alias.hpp"
 #include "libpmem.h"
 
 namespace KVDK_NAMESPACE {

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "kvdk/configs.hpp"
 #include "kvdk/namespace.hpp"
 #include "libpmem.h"
 #include "utils/utils.hpp"
@@ -47,6 +48,8 @@ const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 const uint16_t ExpirableRecordType =
     (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
      RecordType::QueueRecord | RecordType::DlistRecord);
+
+const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
 
 struct DataHeader {
   DataHeader() = default;
@@ -115,13 +118,11 @@ struct StringRecord {
   }
 
   // Construct and persist a string record at pmem address "addr"
-  static StringRecord* PersistStringRecord(void* addr, uint32_t record_size,
-                                           TimeStampType timestamp,
-                                           RecordType type,
-                                           PMemOffsetType older_version_record,
-                                           const StringView& key,
-                                           const StringView& value,
-                                           ExpiredTimeType expired_time = -1);
+  static StringRecord* PersistStringRecord(
+      void* addr, uint32_t record_size, TimeStampType timestamp,
+      RecordType type, PMemOffsetType older_version_record,
+      const StringView& key, const StringView& value,
+      ExpiredTimeType expired_time = kPersistTime);
 
   void Destroy() { entry.Destroy(); }
 
@@ -174,10 +175,12 @@ struct StringRecord {
   }
 
   uint32_t Checksum() {
-    uint32_t checksum_size = entry.meta.k_size + entry.meta.v_size +
-                             sizeof(StringRecord) - sizeof(DataHeader) -
-                             sizeof(ExpiredTimeType);
-    return get_checksum((char*)&entry.meta, checksum_size);
+    // we don't checksum next/prev pointers
+    uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
+    uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
+
+    return get_checksum((char*)&entry.meta, meta_checksum_size) +
+           get_checksum(data, data_checksum_size);
   }
 };
 
@@ -238,7 +241,7 @@ struct DLRecord {
                                    PMemOffsetType prev, PMemOffsetType next,
                                    const StringView& key,
                                    const StringView& value,
-                                   ExpiredTimeType expired_time = -1);
+                                   ExpiredTimeType expired_time = kPersistTime);
 
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,

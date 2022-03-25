@@ -5,7 +5,7 @@
 #include "hash_table.hpp"
 
 #include "queue.hpp"
-#include "skiplist.hpp"
+#include "sorted_collection/skiplist.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
 
@@ -76,7 +76,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
       }
       case HashIndexType::Skiplist: {
         Skiplist* skiplist = index_.skiplist;
-        pmem_record = skiplist->header()->record;
+        pmem_record = skiplist->Header()->record;
         data_entry_key = skiplist->Name();
         break;
       }
@@ -187,7 +187,7 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
                                 HashEntry* hash_entry_snap,
                                 DataEntry* data_entry_meta) {
   assert(entry_ptr);
-  assert((*entry_ptr) == nullptr);
+  *entry_ptr = nullptr;
   char* bucket_ptr =
       (char*)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);

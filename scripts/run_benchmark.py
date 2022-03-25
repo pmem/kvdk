@@ -18,10 +18,10 @@ pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
 num_collection = 16
 
 benchmarks = [
-    benchmark_impl.batch_insert_random, 
+    benchmark_impl.batch_insert_random,
     benchmark_impl.insert_random,
-    benchmark_impl.range_scan, 
-    benchmark_impl.read_random, 
+    benchmark_impl.range_scan,
+    benchmark_impl.read_random,
     benchmark_impl.read_write_random,
     benchmark_impl.update_random]
 
@@ -54,11 +54,11 @@ if __name__ == "__main__":
     elif sys.argv[2] == 'zipf':
         key_distributions = ['zipf']
     elif sys.argv[2] == 'all':
-        key_distributions = ['random','zipf']
+        key_distributions = ['random', 'zipf']
     else:
         print(usage)
         exit(1)
-    
+
     for [data_type, value_size, vsz_dist, k_dist] in itertools.product(data_types, value_sizes, value_size_distributions, key_distributions):
         benchmark_impl.run_benchmark(data_type, exec, pmem_path, pmem_size, populate_on_fill,
                                      num_thread, num_collection, timeout, k_dist, value_size, vsz_dist, benchmarks)

@@ -26,7 +26,8 @@
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
-#include "skiplist.hpp"
+#include "sorted_collection/rebuilder.hpp"
+#include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
@@ -60,9 +61,22 @@ class KVEngine : public Engine {
   }
   void ReportPMemUsage();
 
+  // Expire str after ttl_time
+  //
+  // Notice:
+  // 1. Expire assumes that str is not duplicated among all types, which is not
+  // implemented yet
+  // 2. Expire is not compatible with checkpoint for now
+  Status Expire(const StringView str, TTLTimeType ttl_time) override;
+  // Get time to expire of str
+  //
+  // Notice:
+  // Expire assumes that str is not duplicated among all types, which is not
+  // implemented yet
   Status GetTTL(const StringView str, TTLTimeType* ttl_time) override;
 
-  Status Expire(const StringView str, TTLTimeType ttl_time) override;
+  // Set str as persist.
+  Status Persist(const StringView str) override;
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
@@ -115,7 +129,7 @@ class KVEngine : public Engine {
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
-  const std::unordered_map<uint64_t, std::shared_ptr<Skiplist>>&
+  const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
   GetSkiplists() {
     return skiplists_;
   };
@@ -160,20 +174,14 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
-  bool CheckTTLOverFlow(TTLTimeType ttl_time, int64_t base_time) {
-    // check overflow
-    if (ttl_time > INT64_MAX - base_time) {
-      return false;
-    }
-    return true;
-  }
-
   Status Init(const std::string& name, const Configs& configs);
 
   Status HashGetImpl(const StringView& key, std::string* value,
                      uint16_t type_mask);
 
-  inline Status MaybeInitAccessThread();
+  inline Status MaybeInitAccessThread() {
+    return thread_manager_->MaybeInitThread(access_thread);
+  }
 
   bool RegisterComparator(const StringView& collection_name,
                           Comparator comp_func) {
@@ -206,11 +214,61 @@ class KVEngine : public Engine {
 
     // check collection is expired.
     if (TimeUtils::CheckIsExpired((*collection_ptr)->GetExpiredTime())) {
-      hash_table_->Erase(entry_ptr);
       // TODO(Zhichen): add background cleaner.
+      hash_table_->UpdateEntryStatus(entry_ptr, HashEntryStatus::Expired);
       return Status::NotFound;
     }
     return s;
+  }
+
+  struct LookupResult {
+    Status s{Status::NotSupported};
+    HashEntry entry{};
+    HashEntry* entry_ptr{nullptr};
+  };
+
+  // Look up the key,
+  // return Status::NotFound is key is not found or has expired.
+  // return Status::WrongType if type_mask does not match.
+  // return Status::Ok otherwise.
+  LookupResult lookupKey(StringView key, RecordType type_mask) {
+    LookupResult result;
+    auto hint = hash_table_->GetHint(key);
+    result.s =
+        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
+                                   &result.entry_ptr, &result.entry, nullptr);
+    if (result.s != Status::Ok) {
+      kvdk_assert(result.s == Status::NotFound, "");
+      return result;
+    }
+    if (result.entry.GetRecordType() == RecordType::StringDeleteRecord) {
+      result.s = Status::NotFound;
+      return result;
+    }
+    bool has_expired;
+    switch (result.entry.GetRecordType()) {
+      case RecordType::StringDataRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            result.entry.GetIndex().string_record->GetExpiredTime());
+      }
+      case RecordType::DlistRecord:
+      case RecordType::QueueRecord:
+      case RecordType::SortedHeaderRecord: {
+        has_expired = TimeUtils::CheckIsExpired(
+            static_cast<Collection*>(result.entry.GetIndex().ptr)
+                ->GetExpiredTime());
+      }
+      default: {
+        kvdk_assert(false, "Unreachable branch!");
+        std::abort();
+      }
+    }
+
+    result.s = has_expired ? Status::NotFound
+                           : (type_mask & result.entry.GetRecordType())
+                                 ? result.s
+                                 : Status::WrongType;
+    return result;
   }
 
   enum class QueueOpPosition { Left, Right };
@@ -233,27 +291,18 @@ class KVEngine : public Engine {
   Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
                   const StringView& value);
 
-  Status UpdateHeadWithExpiredTime(Skiplist* skiplist,
-                                   ExpiredTimeType expired_time);
-
-  Status InplaceUpdatedExpiredTime(const StringView& str,
-                                   ExpiredTimeType expired_time,
-                                   RecordType record_type);
-
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
   Status Recovery();
 
   Status RestoreData();
 
-  Status RestoreSkiplistHead(DLRecord* pmem_record,
-                             const DataEntry& cached_entry);
+  Status RestoreSkiplistHeader(DLRecord* pmem_record);
 
   Status RestoreStringRecord(StringRecord* pmem_record,
                              const DataEntry& cached_entry);
 
-  Status RestoreSkiplistRecord(DLRecord* pmem_record,
-                               const DataEntry& cached_data_entry);
+  Status RestoreSkiplistRecord(DLRecord* pmem_record);
 
   // Check if a doubly linked record has been successfully inserted, and try
   // repair un-finished prev pointer
@@ -393,7 +442,7 @@ class KVEngine : public Engine {
 
   std::shared_ptr<HashTable> hash_table_;
 
-  std::unordered_map<uint64_t, std::shared_ptr<Skiplist>> skiplists_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
   std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;
