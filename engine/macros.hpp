@@ -9,12 +9,12 @@
            << std::dec
 
 #if DEBUG_LEVEL > 0
-#define kvdk_assert(cond, msg)                               \
-  {                                                          \
-    if (!(cond)) {                                           \
-      throw std::runtime_error{__FILE__ " " __LINE__ ":\t" + \
-                               std::string{msg}};            \
-    }                                                        \
+#define kvdk_assert(cond, msg)                                           \
+  {                                                                      \
+    if (!(cond)) {                                                       \
+      throw std::runtime_error{__FILE__ " " + std::to_string(__LINE__) + \
+                               ":\t" + std::string{msg}};                \
+    }                                                                    \
   }
 #else
 #define kvdk_assert(cond, msg) \

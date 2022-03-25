@@ -381,8 +381,8 @@ class DLinkedList {
           << "\t"
           << "Prev:\t" << to_hex(record->prev) << "\t"
           << "Next:\t" << to_hex(record->next) << "\t"
-          << "Key: " << to_hex(CollectionUtils::ExtractID(internal_key))
-          << CollectionUtils::ExtractUserKey(internal_key) << "\t"
+          << "Key: " << to_hex(Collection::ExtractID(internal_key))
+          << Collection::ExtractUserKey(internal_key) << "\t"
           << "Value: " << record->Value() << "\n";
     };
 

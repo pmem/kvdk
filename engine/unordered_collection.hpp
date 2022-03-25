@@ -8,7 +8,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include "../extern/libpmemobj++/string_view.hpp"
+#include "alias.hpp"
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -176,9 +176,7 @@ class UnorderedCollection final
   }
 
   inline bool checkID(DLRecord* record_pmmptr) {
-    if (!record_pmmptr ||
-        CollectionUtils::ExtractID(record_pmmptr->Key()) != ID())
-      return false;
+    if (!record_pmmptr || ExtractID(record_pmmptr->Key()) != ID()) return false;
     return true;
   }
 
@@ -273,7 +271,7 @@ class UnorderedIterator final : public Iterator {
   /// return key in DlistDataRecord
   inline virtual std::string Key() override {
     kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
-    auto view_key = CollectionUtils::ExtractUserKey(internal_iterator->Key());
+    auto view_key = Collection::ExtractUserKey(internal_iterator->Key());
     return std::string(view_key.data(), view_key.size());
   }
 

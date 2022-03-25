@@ -3,8 +3,6 @@
  */
 #include "logger.hpp"
 
-#include <array>
-
 namespace KVDK_NAMESPACE {
 
 void Logger::Debug(const char* format, ...) {

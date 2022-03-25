@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -505,10 +506,8 @@ int main(int argc, char** argv) {
   if (bench_data_type == DataType::Sorted) {
     printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
     for (auto col : collections) {
-      Collection* collection_ptr;
       SortedCollectionConfigs s_configs;
-      Status s =
-          engine->CreateSortedCollection(col, &collection_ptr, s_configs);
+      Status s = engine->CreateSortedCollection(col, s_configs);
       if (s != Status::Ok) {
         throw std::runtime_error{"Fail to create Sorted collection"};
       }

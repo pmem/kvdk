@@ -9,8 +9,7 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
     : Collection(name, id),
       hash_table_ptr_{hash_table_ptr},
       collection_record_ptr_{nullptr},
-      dlinked_list_{pmem_allocator_p, timestamp, CollectionUtils::EncodeID(id),
-                    StringView{""}},
+      dlinked_list_{pmem_allocator_p, timestamp, EncodeID(id), StringView{""}},
       timestamp_{timestamp} {
   {
     auto list_record_space = dlinked_list_.pmem_allocator_ptr_->Allocate(
@@ -28,8 +27,7 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
             offset_list_record),
         list_record_space.size, timestamp, RecordType::DlistRecord,
         kNullPMemOffset, dlinked_list_.Head().GetCurrentOffset(),
-        dlinked_list_.Tail().GetCurrentOffset(), Name(),
-        CollectionUtils::EncodeID(ID()));
+        dlinked_list_.Tail().GetCurrentOffset(), Name(), EncodeID(ID()));
   }
 }
 
@@ -37,7 +35,7 @@ UnorderedCollection::UnorderedCollection(HashTable* hash_table_ptr,
                                          PMEMAllocator* pmem_allocator_p,
                                          DLRecord* pmp_dlist_record)
     : Collection{string_view_2_string(pmp_dlist_record->Key()),
-                 CollectionUtils::DecodeID(pmp_dlist_record->Value())},
+                 DecodeID(pmp_dlist_record->Value())},
       hash_table_ptr_{hash_table_ptr},
       collection_record_ptr_{pmp_dlist_record},
       dlinked_list_{

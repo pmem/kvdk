@@ -9,34 +9,26 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <x86intrin.h>
 
 #include <atomic>
 #include <cassert>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <string>
 #include <vector>
 
-#include "libpmemobj++/string_view.hpp"
-
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 #undef XXH_INLINE_ALL
 
-#include <x86intrin.h>
-
-#include <atomic>
-
 #include "../alias.hpp"
 #include "../macros.hpp"
 #include "codec.hpp"
-#include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -473,31 +465,4 @@ inline bool CheckIsExpired(ExpiredTimeType expired_time) {
 }
 
 }  // namespace TimeUtils
-
-namespace CollectionUtils {
-[[gnu::deprecated]] inline static std::string EncodeID(CollectionIDType id) {
-  return EncodeUint64(id);
-}
-
-[[gnu::deprecated]] inline static CollectionIDType DecodeID(
-    const StringView& string_id) {
-  CollectionIDType id;
-  bool ret = DecodeUint64(string_id, &id);
-  kvdk_assert(ret, "size of string id does not match CollectionIDType size!");
-  return id;
-}
-
-[[gnu::deprecated]] inline static StringView ExtractUserKey(
-    const StringView& internal_key) {
-  constexpr size_t sz_id = sizeof(CollectionIDType);
-  kvdk_assert(sz_id <= internal_key.size(),
-              "internal_key does not has space for key");
-  return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
-}
-
-[[gnu::deprecated]] inline static uint64_t ExtractID(
-    const StringView& internal_key) {
-  return DecodeID(internal_key);
-}
-}  // namespace CollectionUtils
 }  // namespace KVDK_NAMESPACE

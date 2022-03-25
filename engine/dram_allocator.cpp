@@ -4,7 +4,6 @@
 
 #include "dram_allocator.hpp"
 
-#include "kvdk/types.hpp"
 #include "thread_manager.hpp"
 
 namespace KVDK_NAMESPACE {

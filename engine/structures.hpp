@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <malloc.h>
-
 #include <cstdint>
 
 #include "alias.hpp"

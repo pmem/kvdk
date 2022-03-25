@@ -9,9 +9,8 @@
 #include <cstring>
 #include <string>
 
+#include "alias.hpp"
 #include "kvdk/status.hpp"
-#include "kvdk/types.hpp"
-#include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
 /// TODO: (ziyan) add expire_time field to Collection.
@@ -38,19 +37,26 @@ class Collection {
     return makeInternalKey(key, ID());
   }
 
+  inline static std::string EncodeID(CollectionIDType id) {
+    return EncodeUint64(id);
+  }
+
+  inline static CollectionIDType DecodeID(const StringView& string_id) {
+    CollectionIDType id;
+    bool ret = DecodeUint64(string_id, &id);
+    kvdk_assert(ret, "size of string id does not match CollectionIDType size!");
+    return id;
+  }
+
   inline static StringView ExtractUserKey(const StringView& internal_key) {
     constexpr size_t sz_id = sizeof(CollectionIDType);
-    assert(sz_id <= internal_key.size() ||
-           "internal_key does not has space for key");
+    kvdk_assert(sz_id <= internal_key.size(),
+                "internal_key does not has space for key");
     return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
   }
 
-  inline static CollectionIDType ExtractID(const StringView& internal_key) {
-    assert(sizeof(CollectionIDType) <= internal_key.size() ||
-           "internal_key does not has space for id");
-    CollectionIDType id;
-    memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
-    return id;
+  inline static uint64_t ExtractID(const StringView& internal_key) {
+    return DecodeID(internal_key);
   }
 
   inline static std::string ID2String(CollectionIDType id) {

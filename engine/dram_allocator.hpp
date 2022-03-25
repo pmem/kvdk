@@ -10,9 +10,9 @@
 #include <cassert>
 #include <string>
 
+#include "alias.hpp"
 #include "allocator.hpp"
 #include "kvdk/engine.hpp"
-#include "kvdk/types.hpp"
 #include "logger.hpp"
 #include "structures.hpp"
 

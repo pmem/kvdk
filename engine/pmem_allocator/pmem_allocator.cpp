@@ -4,12 +4,12 @@
 
 #include "pmem_allocator.hpp"
 
+#include <libpmem.h>
 #include <sys/sysmacros.h>
 
 #include <thread>
 
 #include "../thread_manager.hpp"
-#include "libpmem.h"
 
 namespace KVDK_NAMESPACE {
 

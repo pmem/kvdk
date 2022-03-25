@@ -4,8 +4,6 @@
 
 #include "data_record.hpp"
 
-#include "alias.hpp"
-
 namespace KVDK_NAMESPACE {
 // use buffer to acc nt-write
 thread_local std::string thread_data_buffer;

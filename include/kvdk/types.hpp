@@ -7,13 +7,10 @@
 
 #include "libpmemobj++/string_view.hpp"
 
-#ifndef KVDK_NAMESPACE
-#define KVDK_NAMESPACE kvdk
-#endif
-
 namespace KVDK_NAMESPACE {
 using StringView = pmem::obj::string_view;
 using CollectionIDType = std::uint64_t;
+using IndexType = std::int64_t;
 
 using UnixTimeType = std::int64_t;
 using ExpiredTimeType = UnixTimeType;
@@ -27,3 +24,25 @@ constexpr TTLTimeType kInvalidTTL = -2;
 }  // namespace KVDK_NAMESPACE
 
 #endif  // KVDKDEF_HPP
+
+#if !__cpp_lib_string_view
+#include <bits/functional_hash.h>
+
+#include <ios>
+
+template <class CharT, class Traits>
+std::basic_ostream<CharT, Traits>& operator<<(
+    std::basic_ostream<CharT, Traits>& out,
+    pmem::obj::basic_string_view<CharT, Traits> sv) {
+  return std::__ostream_insert(out, sv.data(), sv.size());
+}
+
+namespace std {
+template <>
+struct hash<pmem::obj::string_view> {
+  size_t operator()(pmem::obj::string_view const& sv) const noexcept {
+    return _Hash_impl::hash(sv.data(), sv.size());
+  }
+};
+}  // namespace std
+#endif  // !__cpp_lib_string_view
