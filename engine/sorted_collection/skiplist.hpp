@@ -204,19 +204,6 @@ class Skiplist : public Collection {
                      const HashTable::KeyHashHint& key_hash_hint_locked,
                      TimeStampType timestamp);
 
-  // Modify value of "key" with modify_func if "key" exists
-  //
-  // key_hash_hint_locked: hash table hint of the modifying key, the lock of
-  // hint should already been locked timestamp: kvdk engine timestamp of this
-  // operation
-  //
-  // Return Ok on success, with the new pmem delete record, its dram node
-  // and old pmem record, return Fail if there is thread
-  // contension
-  WriteResult Modify(const StringView& key,
-                     const HashTable::KeyHashHint& key_hash_hint_locked,
-                     ModifyFunction modify_func);
-
   // Seek position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"

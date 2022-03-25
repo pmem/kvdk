@@ -347,14 +347,6 @@ Skiplist::WriteResult Skiplist::Set(const StringView& key,
   }
 }
 
-Skiplist::WriteResult Skiplist::Modify(
-    const StringView& key, const HashTable::KeyHashHint& key_hash_hint_locked,
-    ModifyFunction modify_func) {
-  WriteResult ret;
-  ret.s = Status::NotSupported;
-  return ret;
-}
-
 bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
                        const SpinMutex* old_record_lock,
                        SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
