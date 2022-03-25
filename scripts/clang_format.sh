@@ -1,3 +1,5 @@
+#!/bin/bash
+
 src_dirs=( benchmark engine examples include tests )
 file_types=( h hpp c cpp )
 
