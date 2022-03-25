@@ -82,6 +82,9 @@ class KVEngine : public Engine {
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
+  virtual Status Modify(const StringView key, std::string* new_value,
+                        ModifyFunction modify_func,
+                        const WriteOptions& options) override;
 
   // Sorted Collection
   Status SGet(const StringView collection, const StringView user_key,
@@ -208,6 +211,18 @@ class KVEngine : public Engine {
   Status ListSet(StringView key, IndexType index, StringView elem) final;
 
  private:
+  struct LookupResult {
+    Status s{Status::NotSupported};
+    HashEntry entry{};
+    HashEntry* entry_ptr{nullptr};
+  };
+
+  // Look up the key,
+  // return Status::NotFound is key is not found or has expired.
+  // return Status::WrongType if type_mask does not match.
+  // return Status::Ok otherwise.
+  LookupResult lookupKey(StringView key, RecordType type_mask);
+
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
 
@@ -292,55 +307,9 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
-  struct LookupResult {
-    Status s{Status::NotSupported};
-    HashEntry entry{};
-    HashEntry* entry_ptr{nullptr};
-  };
-
-  // Lockless look up the key,
-  // return Status::NotFound is key is not found or has expired.
-  // return Status::WrongType if type_mask does not match.
-  // return Status::Ok otherwise.
-  LookupResult lookupKey(StringView key, RecordType type_mask) {
-    LookupResult result;
-    auto hint = hash_table_->GetHint(key);
-    result.s =
-        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
-                                   &result.entry_ptr, &result.entry, nullptr);
-    if (result.s != Status::Ok) {
-      kvdk_assert(result.s == Status::NotFound, "");
-      return result;
-    }
-    if (result.entry.GetRecordType() == RecordType::StringDeleteRecord) {
-      result.s = Status::NotFound;
-      return result;
-    }
-    bool has_expired;
-    switch (result.entry.GetRecordType()) {
-      case RecordType::StringDataRecord: {
-        has_expired = result.entry.GetIndex().string_record->HasExpired();
-        break;
-      }
-      case RecordType::DlistRecord:
-      case RecordType::ListRecord:
-      case RecordType::SortedHeaderRecord: {
-        has_expired =
-            static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired();
-        break;
-      }
-      default: {
-        kvdk_assert(false, "Unreachable branch!");
-        std::abort();
-      }
-    }
-
-    result.s = has_expired ? Status::NotFound
-                           : (type_mask & result.entry.GetRecordType())
-                                 ? result.s
-                                 : Status::WrongType;
-    return result;
-  }
+  enum class QueueOpPosition { Left, Right };
+  Status xPush(StringView const collection_name, StringView const value,
+               QueueOpPosition push_pos);
 
   // Lockless. It's up to caller to lock the HashTable
   template <typename CollectionType>
