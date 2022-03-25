@@ -20,7 +20,8 @@
 #include "configs.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
-#include "skiplist.hpp"
+#include "sorted_collection/iterator.hpp"
+#include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
@@ -29,13 +30,8 @@ namespace KVDK_NAMESPACE {
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
 // fsdax mode align to 2MB by default.
 constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
-// Select a record every 10000 into restored skiplist map for multi-thread
-// restoring large skiplist.
-constexpr uint64_t kRestoreSkiplistStride = 10000;
 constexpr uint64_t kMaxCachedOldRecords = 10000;
 constexpr size_t kLimitForegroundCleanOldRecords = 1;
-constexpr int64_t kInvalidTTLTime = -2;
-constexpr int64_t kPersistTime = -1;
 
 void PendingBatch::PersistFinish() {
   num_kv = 0;
@@ -76,8 +72,8 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
 }
 
 void KVEngine::FreeSkiplistDramNodes() {
-  for (auto skiplist : skiplists_) {
-    skiplist.second->PurgeObsoletedNodes();
+  for (auto& skiplist : skiplists_) {
+    skiplist.second->CleanObsoletedNodes();
   }
 }
 
@@ -241,7 +237,7 @@ Status KVEngine::CreateSortedCollection(
 
     auto skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
-        pmem_allocator_, hash_table_);
+        pmem_allocator_, hash_table_, s_configs.index_with_hashtable);
     {
       std::lock_guard<std::mutex> lg(list_mu_);
       skiplists_.insert({id, skiplist});
@@ -282,10 +278,6 @@ void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
     ReleaseSnapshot(iter->snapshot_);
   }
   delete iter;
-}
-
-Status KVEngine::MaybeInitAccessThread() {
-  return thread_manager_->MaybeInitThread(access_thread);
 }
 
 Status KVEngine::RestoreData() {
@@ -395,12 +387,12 @@ Status KVEngine::RestoreData() {
       case RecordType::SortedDataRecord:
       case RecordType::SortedDeleteRecord: {
         s = RestoreSkiplistRecord(
-            static_cast<DLRecord*>(recovering_pmem_record), data_entry_cached);
+            static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::SortedHeaderRecord: {
-        s = RestoreSkiplistHead(static_cast<DLRecord*>(recovering_pmem_record),
-                                data_entry_cached);
+        s = RestoreSkiplistHeader(
+            static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::StringDataRecord:
@@ -508,72 +500,8 @@ bool KVEngine::ValidateRecord(void* data_record) {
   }
 }
 
-Status KVEngine::RestoreSkiplistHead(DLRecord* pmem_record,
-                                     const DataEntry& data_entry_cached) {
-  assert(pmem_record->entry.meta.type == SortedHeaderRecord);
-
-  if (RecoverToCheckpoint() &&
-      data_entry_cached.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
-    purgeAndFree(pmem_record);
-    return Status::Ok;
-  }
-
-  std::string name = string_view_2_string(pmem_record->Key());
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-
-  CollectionIDType id;
-  SortedCollectionConfigs s_configs;
-  Status s = Skiplist::DecodeSortedCollectionValue(pmem_record->Value(), id,
-                                                   s_configs);
-
-  if (s != Status::Ok) {
-    GlobalLogger.Error("Decode id and configs of sorted collection %s error\n",
-                       string_view_2_string(pmem_record->Key()).c_str());
-    return s;
-  }
-
-  auto comparator = comparators_.GetComparator(s_configs.comparator_name);
-  if (comparator == nullptr) {
-    GlobalLogger.Error(
-        "Compare function %s of restoring sorted collection %s is not "
-        "registered\n",
-        s_configs.comparator_name.c_str(),
-        string_view_2_string(pmem_record->Key()).c_str());
-    return Status::Abort;
-  }
-
-  // Here key is the collection name
-  auto hint = hash_table_->GetHint(name);
-  std::lock_guard<SpinMutex> lg(*hint.spin);
-  s = hash_table_->SearchForWrite(hint, name, SortedHeaderRecord, &entry_ptr,
-                                  &hash_entry, nullptr);
-  if (s == Status::MemoryOverflow) {
-    return s;
-  }
-
-  if (s == Status::Ok &&
-      pmem_record->entry.meta.timestamp < entry_ptr->GetIndex()
-                                              .skiplist->header()
-                                              ->record->entry.meta.timestamp) {
-    // TODO(zhichen): free the expired record
-    return s;
-  }
-
-  if (s == Status::NotFound) {
-    compare_excange_if_larger(list_id_, id + 1);
-  }
-
-  auto new_skiplist = std::make_shared<Skiplist>(
-      pmem_record, name, id, comparator, pmem_allocator_, hash_table_);
-
-  hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, new_skiplist.get(),
-                      HashIndexType::Skiplist);
-  {
-    std::lock_guard<std::mutex> lg(list_mu_);
-    skiplists_[id] = new_skiplist;
-  }
-  return Status::Ok;
+Status KVEngine::RestoreSkiplistHeader(DLRecord* header_record) {
+  return sorted_rebuilder_->AddHeader(header_record);
 }
 
 Status KVEngine::RestoreStringRecord(StringRecord* pmem_record,
@@ -630,84 +558,8 @@ bool KVEngine::CheckAndRepairDLRecord(DLRecord* record) {
   return true;
 }
 
-Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record,
-                                       const DataEntry& cached_data_entry) {
-  kvdk_assert(pmem_record->entry.meta.type == SortedDataRecord ||
-                  pmem_record->entry.meta.type == SortedDeleteRecord,
-              "wrong record type in RestoreSkiplistRecord");
-
-  bool linked_record = CheckAndRepairDLRecord(pmem_record);
-  std::string internal_key(pmem_record->Key());
-  StringView user_key = CollectionUtils::ExtractUserKey(internal_key);
-
-  if (!linked_record) {
-    if (!RecoverToCheckpoint()) {
-      purgeAndFree(pmem_record);
-    }
-    return Status::Ok;
-  }
-
-  DataEntry existing_data_entry;
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-
-  auto hint = hash_table_->GetHint(internal_key);
-  std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s = hash_table_->SearchForWrite(
-      hint, internal_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
-      &hash_entry, &existing_data_entry);
-
-  if (s == Status::MemoryOverflow) {
-    return s;
-  }
-
-  bool found = s == Status::Ok;
-  if (found &&
-      existing_data_entry.meta.timestamp >= cached_data_entry.meta.timestamp) {
-    // avoid freeing a valid checkpoint version record
-    if (!RecoverToCheckpoint() || existing_data_entry.meta.timestamp <=
-                                      persist_checkpoint_->CheckpointTS()) {
-      purgeAndFree(pmem_record);
-    } else {
-      DLRecord* valid_version_record = sorted_rebuilder_->FindValidVersion(
-          hash_entry.GetIndex().dl_record, nullptr);
-      if (valid_version_record != pmem_record) {
-        purgeAndFree(pmem_record);
-      }
-    }
-    return Status::Ok;
-  }
-
-  SkiplistNode* dram_node = nullptr;
-  if (!found) {
-    // Hash entry won't be reused during data recovering so we don't
-    // neet to check status here
-    hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
-                        (void*)pmem_record, HashIndexType::DLRecord);
-  } else {
-    DLRecord* old_pmem_record;
-    assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-    old_pmem_record = hash_entry.GetIndex().dl_record;
-    hash_table_->Insert(hint, entry_ptr, cached_data_entry.meta.type,
-                        pmem_record, HashIndexType::DLRecord);
-    kvdk_assert(old_pmem_record->entry.meta.timestamp <
-                    pmem_record->entry.meta.timestamp,
-                "old pmem record has larger ts than new restored one in "
-                "restore skiplist record");
-    if (!RecoverToCheckpoint() || cached_data_entry.meta
-                                          .timestamp <= persist_checkpoint_
-                                                            ->CheckpointTS() /* avoid freeing a valid checkpoint version record */) {
-      purgeAndFree(old_pmem_record);
-    } else {
-      DLRecord* valid_version_record =
-          sorted_rebuilder_->FindValidVersion(old_pmem_record, nullptr);
-      if (valid_version_record != old_pmem_record) {
-        purgeAndFree(old_pmem_record);
-      }
-    }
-  }
-
-  return Status::Ok;
+Status KVEngine::RestoreSkiplistRecord(DLRecord* pmem_record) {
+  return sorted_rebuilder_->AddElement(pmem_record);
 }
 
 Status KVEngine::PersistOrRecoverImmutableConfigs() {
@@ -917,9 +769,8 @@ Status KVEngine::Recovery() {
   }
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
-      pmem_allocator_.get(), hash_table_.get(),
-      configs_.opt_large_sorted_collection_restore, configs_.max_access_threads,
-      *persist_checkpoint_));
+      this, configs_.opt_large_sorted_collection_recovery,
+      configs_.max_access_threads, *persist_checkpoint_));
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
@@ -938,12 +789,26 @@ Status KVEngine::Recovery() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  s = sorted_rebuilder_->RebuildLinkage(GetSkiplists());
-  if (s != Status::Ok) {
-    return s;
+  auto ret = sorted_rebuilder_->Rebuild();
+  if (ret.s != Status::Ok) {
+    return ret.s;
   }
+  list_id_ = ret.max_id + 1;
+  skiplists_.swap(ret.rebuild_skiplits);
+
+#ifdef DEBUG_CHECK
+  for (auto skiplist : skiplists_) {
+    Status s = skiplist.second->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Info("Check skiplist index error\n");
+      return s;
+    }
+  }
+#endif
 
   GlobalLogger.Info("Rebuild skiplist done\n");
+
+  sorted_rebuilder_.reset(nullptr);
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
@@ -1050,84 +915,36 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
     return Status::InvalidDataSize;
   }
 
-  SpaceEntry sized_space_entry;
+  auto hint = hash_table_->GetHint(collection_key);
 
   while (1) {
-    SkiplistNode* dram_node = nullptr;
-    DLRecord* existing_record = nullptr;
-    HashEntry* entry_ptr = nullptr;
-    HashEntry hash_entry;
-    DataEntry data_entry;
-    auto hint = hash_table_->GetHint(collection_key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
     version_controller_.HoldLocalSnapshot();
     defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
-    Status s = hash_table_->SearchForRead(hint, collection_key,
-                                          SortedDataRecord | SortedDeleteRecord,
-                                          &entry_ptr, &hash_entry, &data_entry);
-    bool need_write_delete_record = false;
 
-    switch (s) {
+    auto ret = skiplist->Delete(user_key, hint, new_ts);
+    switch (ret.s) {
+      case Status::Fail:
+        continue;
+      case Status::PmemOverflow:
+        return ret.s;
       case Status::Ok:
-        if (hash_entry.GetRecordType() != SortedDeleteRecord) {
-          need_write_delete_record = true;
+        ul.unlock();
+        if (ret.write_record != nullptr) {
+          kvdk_assert(
+              ret.existing_record != nullptr &&
+                  ret.existing_record->entry.meta.type == SortedDataRecord,
+              "Wrong existing record type while insert a delete reocrd for "
+              "sorted collection");
+          delayFree(OldDataRecord{ret.existing_record, new_ts});
+          delayFree(OldDeleteRecord{ret.write_record, new_ts});
         }
-        break;
-      case Status::NotFound:
-        s = Status::Ok;
-        break;
-      case Status::MemoryOverflow:
-        break;
+        return ret.s;
       default:
-        std::abort();  // never reach
+        std::abort();
     }
-
-    if (!need_write_delete_record) {
-      if (sized_space_entry.size > 0) {
-        pmem_allocator_->Free(sized_space_entry);
-      }
-      return s;
-    }
-
-    if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-      dram_node = hash_entry.GetIndex().skiplist_node;
-      existing_record = dram_node->record;
-    } else {
-      dram_node = nullptr;
-      assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-      existing_record = hash_entry.GetIndex().dl_record;
-    }
-
-    if (sized_space_entry.size == 0) {
-      auto request_size = collection_key.size() + sizeof(DLRecord);
-      sized_space_entry = pmem_allocator_->Allocate(request_size);
-      // TODO: always keep space for delete record
-      if (sized_space_entry.size == 0) {
-        return Status::PmemOverflow;
-      }
-    }
-
-    void* delete_record_pmem_ptr =
-        pmem_allocator_->offset2addr(sized_space_entry.offset);
-
-    if (!skiplist->Delete(user_key, existing_record, hint.spin, new_ts,
-                          dram_node, sized_space_entry)) {
-      continue;
-    }
-
-    if (dram_node == nullptr) {
-      hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord,
-                          delete_record_pmem_ptr, HashIndexType::DLRecord);
-    } else {
-      hash_table_->Insert(hint, entry_ptr, SortedDeleteRecord, dram_node,
-                          HashIndexType::SkiplistNode);
-    }
-    ul.unlock();
-    delayFree(OldDataRecord{existing_record, new_ts});
-    delayFree(
-        OldDeleteRecord{delete_record_pmem_ptr, new_ts, entry_ptr, hint.spin});
     break;
   }
   return Status::Ok;
@@ -1140,83 +957,30 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
     return Status::InvalidDataSize;
   }
 
-  auto request_size = value.size() + collection_key.size() + sizeof(DLRecord);
-  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
-  if (sized_space_entry.size == 0) {
-    return Status::PmemOverflow;
-  }
-
-  void* new_record_pmem_ptr =
-      pmem_allocator_->offset2addr(sized_space_entry.offset);
-
+  auto hint = hash_table_->GetHint(collection_key);
   while (1) {
-    SkiplistNode* dram_node = nullptr;
-    HashEntry* entry_ptr = nullptr;
-    DLRecord* existing_record = nullptr;
-    HashEntry hash_entry;
-    DataEntry data_entry;
-    auto hint = hash_table_->GetHint(collection_key);
     std::unique_lock<SpinMutex> ul(*hint.spin);
     version_controller_.HoldLocalSnapshot();
     defer(version_controller_.ReleaseLocalSnapshot());
     TimeStampType new_ts =
         version_controller_.GetLocalSnapshot().GetTimestamp();
-    Status s = hash_table_->SearchForWrite(
-        hint, collection_key, SortedDataRecord | SortedDeleteRecord, &entry_ptr,
-        &hash_entry, &data_entry);
-    if (s == Status::MemoryOverflow) {
-      return s;
-    }
-    bool found = s == Status::Ok;
-
-    assert(!found || new_ts > data_entry.meta.timestamp);
-
-    if (found) {
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
-        dram_node = hash_entry.GetIndex().skiplist_node;
-        existing_record = dram_node->record;
-      } else {
-        dram_node = nullptr;
-        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
-        existing_record = hash_entry.GetIndex().dl_record;
-      }
-
-      if (!skiplist->Update(collection_key, value, existing_record, hint.spin,
-                            new_ts, SortedDataRecord, dram_node,
-                            sized_space_entry)) {
+    auto ret = skiplist->Set(user_key, value, hint, new_ts);
+    switch (ret.s) {
+      case Status::Fail:
         continue;
-      }
-
-      // update a height 0 node
-      auto updated_type = entry_ptr->GetRecordType();
-      if (dram_node == nullptr) {
-        hash_table_->Insert(hint, entry_ptr, SortedDataRecord,
-                            new_record_pmem_ptr, HashIndexType::DLRecord);
-      } else {
-        hash_table_->Insert(hint, entry_ptr, SortedDataRecord, dram_node,
-                            HashIndexType::SkiplistNode);
-      }
-      ul.unlock();
-      if (updated_type == SortedDataRecord) {
-        delayFree(OldDataRecord{existing_record, new_ts});
-      }
-    } else {
-      if (!skiplist->Insert(user_key, value, hint.spin, new_ts, &dram_node,
-                            sized_space_entry)) {
-        continue;
-      }
-
-      void* new_hash_index =
-          (dram_node == nullptr) ? new_record_pmem_ptr : dram_node;
-      hash_table_->Insert(
-          hint, entry_ptr, SortedDataRecord, new_hash_index,
-          dram_node ? HashIndexType::SkiplistNode : HashIndexType::DLRecord);
-      if (found) {
-        delayFree(OldDataRecord{hash_entry.GetIndex().dl_record, new_ts});
-      }
+      case Status::PmemOverflow:
+        break;
+      case Status::Ok:
+        if (ret.existing_record &&
+            ret.existing_record->entry.meta.type == SortedDataRecord) {
+          ul.unlock();
+          delayFree(OldDataRecord{ret.existing_record, new_ts});
+        }
+        break;
+      default:
+        std::abort();  // never shoud reach
     }
-
-    break;
+    return ret.s;
   }
   return Status::Ok;
 }
@@ -1426,8 +1190,8 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
 
   std::string val;
 
-  // Free updated kvs, we should purge all updated kvs before release locks and
-  // after persist write stage
+  // Free updated kvs, we should purge all updated kvs before release locks
+  // and after persist write stage
   for (size_t i = 0; i < write_batch.Size(); i++) {
     TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before", &i);
     if (batch_hints[i].data_record_to_free != nullptr) {
@@ -1518,10 +1282,10 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
   }
 
   assert(skiplist);
-
-  std::string skiplist_key(skiplist->InternalKey(user_key));
-  return HashGetImpl(skiplist_key, value,
-                     SortedDataRecord | SortedDeleteRecord);
+  // Set current snapshot to this thread
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
+  return skiplist->Get(user_key, value);
 }
 
 Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
@@ -1575,111 +1339,27 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
     return Status::NotFound;
   }
   // return ttl time
-  *ttl_time = expired_time ? expired_time - TimeUtils::millisecond_time()
-                           : kPersistTime;
-  return Status::Ok;
-}
-
-Status KVEngine::UpdateHeadWithExpiredTime(Skiplist* skiplist,
-                                           ExpiredTimeType expired_time) {
-  auto key = skiplist->header()->record->Key();
-  while (1) {
-    SkiplistNode* dram_node = nullptr;
-    HashEntry* entry_ptr = nullptr;
-    HashEntry hash_entry;
-    DataEntry data_entry;
-    DLRecord* existing_record = nullptr;
-    auto hint = hash_table_->GetHint(key);
-    std::unique_lock<SpinMutex> ul(*hint.spin);
-    version_controller_.HoldLocalSnapshot();
-    defer(version_controller_.ReleaseLocalSnapshot());
-    TimeStampType new_ts =
-        version_controller_.GetLocalSnapshot().GetTimestamp();
-    Status s = hash_table_->SearchForRead(hint, key, SortedHeaderRecord,
-                                          &entry_ptr, &hash_entry, &data_entry);
-    if (s != Status::Ok) return s;
-
-    dram_node = entry_ptr->GetIndex().skiplist->header();
-    existing_record = dram_node->record;
-
-    if (TimeUtils::CheckIsExpired(existing_record->GetExpiredTime())) {
-      hash_table_->Erase(entry_ptr);
-      // Push into cleaner queue.
-      return Status::NotFound;
+  if (expired_time == kPersistTime) {
+    *ttl_time = kPersistTime;
+  } else {
+    *ttl_time = expired_time - TimeUtils::millisecond_time();
+    if (*ttl_time <= 0) {
+      *ttl_time = kInvalidTTLTime;
     }
-
-    auto value = skiplist->header()->record->Value();
-    auto request_size = value.size() + key.size() + sizeof(DLRecord);
-    SpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
-    if (sized_space_entry.size == 0) {
-      return Status::PmemOverflow;
-    }
-    void* new_head_record =
-        pmem_allocator_->offset2addr(sized_space_entry.offset);
-
-    // TODO: Replaced by new skiplist api.
-    if (!skiplist->Update(key, value, existing_record, hint.spin, new_ts,
-                          RecordType::SortedHeaderRecord, dram_node,
-                          sized_space_entry, expired_time)) {
-      continue;
-    }
-
-    hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist,
-                        HashIndexType::Skiplist);
-    //(TODO) free head record
-    break;
-  }
-  return Status::Ok;
-}
-
-Status KVEngine::InplaceUpdatedExpiredTime(const StringView& str,
-                                           ExpiredTimeType expired_time,
-                                           RecordType record_type) {
-  HashTable::KeyHashHint hint = hash_table_->GetHint(str);
-  std::unique_lock<SpinMutex> ul(*hint.spin);
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-  Status s = hash_table_->SearchForRead(hint, str, record_type, &entry_ptr,
-                                        &hash_entry, nullptr);
-  if (s != Status::Ok) return s;
-  switch (entry_ptr->GetIndexType()) {
-    case HashIndexType::Queue: {
-      if (TimeUtils::CheckIsExpired(
-              entry_ptr->GetIndex().queue_ptr->GetExpiredTime())) {
-        hash_table_->Erase(entry_ptr);
-        // Push into cleaner queue.
-        return Status::NotFound;
-      }
-      return entry_ptr->GetIndex().queue_ptr->InplaceUpdatedExpiredTime(
-          expired_time);
-    }
-    case HashIndexType::UnorderedCollection:
-      if (TimeUtils::CheckIsExpired(
-              entry_ptr->GetIndex().p_unordered_collection->GetExpiredTime())) {
-        hash_table_->Erase(entry_ptr);
-        // Push into cleaner queue.
-        return Status::NotFound;
-      }
-      return entry_ptr->GetIndex()
-          .p_unordered_collection->InplaceUpdatedExpiredTime(expired_time);
-      break;
-    default:
-      return Status::NotSupported;
   }
   return Status::Ok;
 }
 
 Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
   int64_t base_time = TimeUtils::millisecond_time();
-  if (!CheckTTLOverFlow(ttl_time, base_time)) {
+  if (!CheckTTL(ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
 
   ExpiredTimeType expired_time = ttl_time + base_time;
 
-  // TODO(zhichen): Now need to twice search. If aligned the lock of
-  // skiplist, list and hash, we can once search.
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
+  std::lock_guard<SpinMutex> lg(*hint.spin);
   HashEntry hash_entry;
   HashEntry* entry_ptr = nullptr;
   Status s = hash_table_->SearchForRead(hint, str, ExpirableRecordType,
@@ -1691,15 +1371,12 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
     case HashIndexType::StringRecord:
       return Status::NotSupported;
     case HashIndexType::Skiplist:
-      return UpdateHeadWithExpiredTime(entry_ptr->GetIndex().skiplist,
-                                       expired_time);
+      return entry_ptr->GetIndex().skiplist->SetExpiredTime(expired_time);
     case HashIndexType::UnorderedCollection:
-      // will replace by updating, instead of inplacing.
-      return InplaceUpdatedExpiredTime(str, expired_time,
-                                       RecordType::DlistRecord);
+      return entry_ptr->GetIndex().p_unordered_collection->SetExpiredTime(
+          expired_time);
     case HashIndexType::Queue:
-      return InplaceUpdatedExpiredTime(str, expired_time,
-                                       RecordType::QueueRecord);
+      return entry_ptr->GetIndex().queue_ptr->SetExpiredTime(expired_time);
     default:
       Status::NotSupported;
   }
@@ -1750,7 +1427,8 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
                             HashIndexType::StringRecord);
         ul.unlock();
         delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
-        // We also delay free this delete record to recycle PMem and DRAM space
+        // We also delay free this delete record to recycle PMem and DRAM
+        // space
         delayFree(OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
 
         return s;
@@ -1766,11 +1444,12 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
                                const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
-  if (!CheckTTLOverFlow(write_options.ttl_time, base_time)) {
+  if (!CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
-  ExpiredTimeType expired_time =
-      write_options.ttl_time == -1 ? 0 : write_options.ttl_time + base_time;
+  ExpiredTimeType expired_time = write_options.ttl_time == kPersistTime
+                                     ? kPersistTime
+                                     : write_options.ttl_time + base_time;
 
   DataEntry data_entry;
   HashEntry hash_entry;
@@ -2368,8 +2047,8 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
 
 void KVEngine::delayFree(const OldDataRecord& old_data_record) {
   old_records_cleaner_.Push(old_data_record);
-  // To avoid too many cached old records pending clean, we try to clean cached
-  // records while pushing new one
+  // To avoid too many cached old records pending clean, we try to clean
+  // cached records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_work_signals_.old_records_cleaner_cv.notify_all();
@@ -2381,8 +2060,8 @@ void KVEngine::delayFree(const OldDataRecord& old_data_record) {
 
 void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
   old_records_cleaner_.Push(old_delete_record);
-  // To avoid too many cached old records pending clean, we try to clean cached
-  // records while pushing new one
+  // To avoid too many cached old records pending clean, we try to clean
+  // cached records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
       !bg_cleaner_processing_) {
     bg_work_signals_.old_records_cleaner_cv.notify_all();

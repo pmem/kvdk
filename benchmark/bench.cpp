@@ -82,7 +82,7 @@ DEFINE_int32(max_access_threads, 32, "Max access threads of the instance");
 
 DEFINE_uint64(space, (256ULL << 30), "Max usable PMem space of the instance");
 
-DEFINE_bool(opt_large_sorted_collection_restore, false,
+DEFINE_bool(opt_large_sorted_collection_restore, true,
             " Optional optimization strategy which Multi-thread recovery a "
             "skiplist. When having few large skiplists, the optimization can "
             "get better performance");
@@ -477,7 +477,7 @@ int main(int argc, char** argv) {
     configs.populate_pmem_space = FLAGS_populate;
     configs.max_access_threads = FLAGS_max_access_threads;
     configs.pmem_file_size = FLAGS_space;
-    configs.opt_large_sorted_collection_restore =
+    configs.opt_large_sorted_collection_recovery =
         FLAGS_opt_large_sorted_collection_restore;
     configs.use_devdax_mode = FLAGS_use_devdax_mode;
     Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
@@ -512,7 +512,9 @@ int main(int argc, char** argv) {
     printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
     for (auto col : collections) {
       Collection* collection_ptr;
-      Status s = engine->CreateSortedCollection(col, &collection_ptr);
+      SortedCollectionConfigs s_configs;
+      Status s =
+          engine->CreateSortedCollection(col, &collection_ptr, s_configs);
       if (s != Status::Ok) {
         throw std::runtime_error{"Fail to create Sorted collection"};
       }

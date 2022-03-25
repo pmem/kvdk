@@ -26,7 +26,8 @@
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "queue.hpp"
-#include "skiplist.hpp"
+#include "sorted_collection/rebuilder.hpp"
+#include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
 #include "unordered_collection.hpp"
@@ -60,9 +61,19 @@ class KVEngine : public Engine {
   }
   void ReportPMemUsage();
 
-  Status GetTTL(const StringView str, TTLTimeType* ttl_time) override;
-
+  // Expire str after ttl_time
+  //
+  // Notice:
+  // 1. Expire assumes that str is not duplicated among all types, which is not
+  // implemented yet
+  // 2. Expire is not compatible with checkpoint for now
   Status Expire(const StringView str, TTLTimeType ttl_time) override;
+  // Get time to expire of str
+  //
+  // Notice:
+  // Expire assumes that str is not duplicated among all types, which is not
+  // implemented yet
+  Status GetTTL(const StringView str, TTLTimeType* ttl_time) override;
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
@@ -115,7 +126,7 @@ class KVEngine : public Engine {
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
-  const std::unordered_map<uint64_t, std::shared_ptr<Skiplist>>&
+  const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
   GetSkiplists() {
     return skiplists_;
   };
@@ -160,7 +171,10 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
-  bool CheckTTLOverFlow(TTLTimeType ttl_time, int64_t base_time) {
+  bool CheckTTL(TTLTimeType ttl_time, int64_t base_time) {
+    if (ttl_time < 0 && ttl_time != kPersistTime) {
+      return false;
+    }
     // check overflow
     if (ttl_time > INT64_MAX - base_time) {
       return false;
@@ -173,7 +187,9 @@ class KVEngine : public Engine {
   Status HashGetImpl(const StringView& key, std::string* value,
                      uint16_t type_mask);
 
-  inline Status MaybeInitAccessThread();
+  inline Status MaybeInitAccessThread() {
+    return thread_manager_->MaybeInitThread(access_thread);
+  }
 
   bool RegisterComparator(const StringView& collection_name,
                           Comparator comp_func) {
@@ -283,27 +299,18 @@ class KVEngine : public Engine {
   Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
                   const StringView& value);
 
-  Status UpdateHeadWithExpiredTime(Skiplist* skiplist,
-                                   ExpiredTimeType expired_time);
-
-  Status InplaceUpdatedExpiredTime(const StringView& str,
-                                   ExpiredTimeType expired_time,
-                                   RecordType record_type);
-
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
   Status Recovery();
 
   Status RestoreData();
 
-  Status RestoreSkiplistHead(DLRecord* pmem_record,
-                             const DataEntry& cached_entry);
+  Status RestoreSkiplistHeader(DLRecord* pmem_record);
 
   Status RestoreStringRecord(StringRecord* pmem_record,
                              const DataEntry& cached_entry);
 
-  Status RestoreSkiplistRecord(DLRecord* pmem_record,
-                               const DataEntry& cached_data_entry);
+  Status RestoreSkiplistRecord(DLRecord* pmem_record);
 
   // Check if a doubly linked record has been successfully inserted, and try
   // repair un-finished prev pointer
@@ -441,7 +448,7 @@ class KVEngine : public Engine {
 
   std::shared_ptr<HashTable> hash_table_;
 
-  std::unordered_map<uint64_t, std::shared_ptr<Skiplist>> skiplists_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
   std::vector<std::unique_ptr<Queue>> queue_uptr_vec_;

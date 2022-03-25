@@ -59,7 +59,7 @@ class Queue final : public Collection {
     return collection_record_ptr_->GetExpiredTime();
   }
 
-  Status InplaceUpdatedExpiredTime(ExpiredTimeType expired_time) {
+  Status SetExpiredTime(ExpiredTimeType expired_time) {
     collection_record_ptr_->expired_time = expired_time;
     pmem_persist(&collection_record_ptr_->expired_time,
                  sizeof(ExpiredTimeType));
