@@ -1794,7 +1794,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
     ASSERT_EQ(engine->SGet(sorted_collection, "sorted" + key, &got_val),
               Status::NotFound);
     ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
-    ASSERT_EQ(ttl_time, kInvalidTime);
+    ASSERT_EQ(ttl_time, kInvalidTTLTime);
   }
 
   // For hashes collection

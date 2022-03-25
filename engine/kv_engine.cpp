@@ -1297,7 +1297,7 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
                                         &entry_ptr, &hash_entry, nullptr);
 
   ExpiredTimeType expired_time;
-  *ttl_time = kInvalidTime;
+  *ttl_time = kInvalidTTLTime;
   if (s != Status::Ok) {
     return s;
   }
@@ -1335,7 +1335,7 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
       hash_table_->Erase(entry_ptr);
       // TODO(zhichen): push background thread cleaner
     }
-    *ttl_time = kInvalidTime;
+    *ttl_time = kInvalidTTLTime;
     return Status::NotFound;
   }
   // return ttl time
@@ -1344,7 +1344,7 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   } else {
     *ttl_time = expired_time - TimeUtils::millisecond_time();
     if (*ttl_time <= 0) {
-      *ttl_time = kInvalidTime;
+      *ttl_time = kInvalidTTLTime;
     }
   }
   return Status::Ok;
