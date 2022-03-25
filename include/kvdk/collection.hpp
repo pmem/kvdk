@@ -13,7 +13,8 @@
 #include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
-/// TODO: (ziyan) provide kvdkdef.hpp to put these common alias.
+/// TODO: (ziyan/zhichen) provide kvdkdef.hpp to put these common alias.
+/// TODO: (ziyan) add expire_time field to Collection.
 using StringView = pmem::obj::string_view;
 using CollectionIDType = std::uint64_t;
 using ExpiredTimeType = std::int64_t;
@@ -24,9 +25,8 @@ using ExpiredTimeType = std::int64_t;
 /// And it includes part of implementation.
 class Collection {
  public:
-  Collection(const std::string& name, CollectionIDType id,
-             ExpiredTimeType t = ExpiredTimeType{})
-      : collection_name_(name), collection_id_(id), expire_time{t} {}
+  Collection(const std::string& name, CollectionIDType id)
+      : collection_name_(name), collection_id_(id) {}
   // Return unique ID of the collection
   uint64_t ID() const { return collection_id_; }
 
@@ -70,9 +70,5 @@ class Collection {
 
   std::string collection_name_;
   CollectionIDType collection_id_;
-  // To simplify code base, expire_time field is added.
-  // However, it's up to inherited class to maintain that field.
-  // Always update this field in SetExpireTime()!
-  ExpiredTimeType expire_time;
 };
 }  // namespace KVDK_NAMESPACE

@@ -193,7 +193,9 @@ class Skiplist : public Collection {
 
   SkiplistNode* header() { return header_; }
 
-  ExpiredTimeType GetExpireTime() const final { return expire_time; }
+  ExpiredTimeType GetExpireTime() const final {
+    return header_->record->expired_time;
+  }
 
   bool HasExpired() const final {
     return TimeUtils::CheckIsExpired(GetExpireTime());

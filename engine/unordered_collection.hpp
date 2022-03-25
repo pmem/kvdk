@@ -105,7 +105,9 @@ class UnorderedCollection final
                        StringView const key, StringView const value,
                        LockType const& lock);
 
-  ExpiredTimeType GetExpireTime() const final { return expire_time; }
+  ExpiredTimeType GetExpireTime() const final {
+    return collection_record_ptr_->GetExpireTime();
+  }
 
   bool HasExpired() const final {
     return TimeUtils::CheckIsExpired(GetExpireTime());
@@ -113,7 +115,6 @@ class UnorderedCollection final
 
   void SetExpireTime(ExpiredTimeType time) final {
     collection_record_ptr_->PersistExpireTimeNT(time);
-    expire_time = time;
   }
 
   /// Erase given record

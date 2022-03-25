@@ -192,7 +192,9 @@ class GenericList final : public Collection {
     return std::unique_lock<LockType>(mu);
   }
 
-  ExpiredTimeType GetExpireTime() const final { return expire_time; }
+  ExpiredTimeType GetExpireTime() const final {
+    return list_record->GetExpireTime();
+  }
 
   bool HasExpired() const final {
     return TimeUtils::CheckIsExpired(GetExpireTime());
@@ -200,7 +202,6 @@ class GenericList final : public Collection {
 
   void SetExpireTime(ExpiredTimeType time) final {
     list_record->PersistExpireTimeNT(time);
-    expire_time = time;
   }
 
   size_t Size() const { return sz; }
@@ -469,7 +470,7 @@ class GenericListBuilder final {
       : alloc{a}, rebuilded_lists{lists}, n_worker{num_worker} {
     kvdk_assert(lists != nullptr && lists->empty(), "");
     kvdk_assert(num_worker != 0, "");
-    kvdk_assert(rebuilded_lists == nullptr, "Already initialized!");
+    kvdk_assert(rebuilded_lists != nullptr, "Empty input!");
   }
 
   void AddListRecord(DLRecord* lrec) {
