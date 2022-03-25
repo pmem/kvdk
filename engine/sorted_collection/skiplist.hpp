@@ -272,12 +272,12 @@ class Skiplist : public Collection {
     if (node->cached_key_size > 0) {
       return StringView(node->cached_key, node->cached_key_size);
     }
-    return CollectionUtils::ExtractUserKey(node->record->Key());
+    return ExtractUserKey(node->record->Key());
   }
 
   inline static StringView UserKey(const DLRecord* record) {
     assert(record != nullptr);
-    return CollectionUtils::ExtractUserKey(record->Key());
+    return ExtractUserKey(record->Key());
   }
 
   inline static CollectionIDType SkiplistID(const SkiplistNode* node) {
@@ -290,10 +290,10 @@ class Skiplist : public Collection {
     switch (record->entry.meta.type) {
       case RecordType::SortedDataRecord:
       case RecordType::SortedDeleteRecord:
-        return CollectionUtils::ExtractID(record->Key());
+        return ExtractID(record->Key());
         break;
       case RecordType::SortedHeaderRecord:
-        return CollectionUtils::DecodeID(record->Value());
+        return DecodeID(record->Value());
       default:
         kvdk_assert(false, "Wrong type in SkiplistID");
         GlobalLogger.Error("Wrong type in SkiplistID");

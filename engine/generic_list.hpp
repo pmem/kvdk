@@ -20,8 +20,8 @@
 #include <unordered_map>
 
 #include "alias.hpp"
+#include "collection.hpp"
 #include "data_record.hpp"
-#include "kvdk/collection.hpp"
 #include "macros.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "utils/utils.hpp"
@@ -334,7 +334,7 @@ class GenericList final : public Collection {
   Iterator emplace_between(SpaceEntry space, Iterator prev, Iterator next,
                            TimeStampType timestamp, StringView const key,
                            StringView const value) {
-    kvdk_assert(++Iterator{prev} == next || ++++Iterator{prev} == next,
+    kvdk_assert(++Iterator{prev} == next || ++ ++Iterator{prev} == next,
                 "Should only insert or replace");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();

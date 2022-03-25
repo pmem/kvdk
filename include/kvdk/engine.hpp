@@ -11,7 +11,6 @@
 #include <string>
 #include <type_traits>
 
-#include "collection.hpp"
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
@@ -69,7 +68,7 @@ class Engine {
   virtual Status Delete(const StringView key) = 0;
 
   virtual Status CreateSortedCollection(
-      const StringView collection_name, Collection** sorted_collection,
+      const StringView collection_name,
       const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
 
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
