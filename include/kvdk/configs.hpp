@@ -11,6 +11,12 @@
 
 namespace KVDK_NAMESPACE {
 
+// used for expire
+// TODO: use INT_MAX for kPersistTime, remove kInvalidTTLTime, typedef for TTL
+// and ExpiredTime
+constexpr int64_t kPersistTime = -1;
+constexpr int64_t kInvalidTTLTime = -2;
+
 enum class LogLevel : uint8_t {
   All = 0,
   Debug,
@@ -27,6 +33,7 @@ struct Snapshot {};
 // existing fields
 struct SortedCollectionConfigs {
   std::string comparator_name = "default";
+  int index_with_hashtable = 1;
 };
 
 struct Configs {
@@ -124,7 +131,7 @@ struct Configs {
   // Optional optimization strategy for few large skiplists by multi-thread
   // recovery a skiplist. The optimization can get better performance when
   // having few large skiplists. Default is to close optimization.
-  bool opt_large_sorted_collection_restore = false;
+  bool opt_large_sorted_collection_recovery = false;
 
   // If a checkpoint is made in last open, recover the instance to the
   // checkpoint version if this true
@@ -142,8 +149,9 @@ struct WriteOptions {
   WriteOptions() {}
   WriteOptions(int64_t _ttl_time, bool _key_exist)
       : ttl_time(_ttl_time), key_exist(_key_exist) {}
-  // expired time in milliseconod
-  int64_t ttl_time = -1;
+  // expired time in milliseconod, should be kPersistTime for no expiration
+  // data, or >= 0 as the ttl
+  int64_t ttl_time = kPersistTime;
   bool key_exist = false;
 };
 

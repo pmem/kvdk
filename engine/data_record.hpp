@@ -8,6 +8,7 @@
 #include <libpmem.h>
 
 #include "alias.hpp"
+#include "kvdk/configs.hpp"
 #include "kvdk/namespace.hpp"
 #include "utils/utils.hpp"
 
@@ -118,13 +119,11 @@ struct StringRecord {
   }
 
   // Construct and persist a string record at pmem address "addr"
-  static StringRecord* PersistStringRecord(void* addr, uint32_t record_size,
-                                           TimeStampType timestamp,
-                                           RecordType type,
-                                           PMemOffsetType older_version_record,
-                                           const StringView& key,
-                                           const StringView& value,
-                                           ExpiredTimeType expired_time = 0);
+  static StringRecord* PersistStringRecord(
+      void* addr, uint32_t record_size, TimeStampType timestamp,
+      RecordType type, PMemOffsetType older_version_record,
+      const StringView& key, const StringView& value,
+      ExpiredTimeType expired_time = kPersistTime);
 
   void Destroy() { entry.Destroy(); }
 
@@ -189,6 +188,7 @@ struct StringRecord {
   }
 
   uint32_t Checksum() {
+    // we don't checksum next/prev pointers
     uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
@@ -294,7 +294,7 @@ struct DLRecord {
                                    PMemOffsetType prev, PMemOffsetType next,
                                    const StringView& key,
                                    const StringView& value,
-                                   ExpiredTimeType expired_time = 0);
+                                   ExpiredTimeType expired_time = kPersistTime);
 
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,

@@ -35,7 +35,7 @@
 
 #include "../alias.hpp"
 #include "../macros.hpp"
-#include "coding.hpp"
+#include "codec.hpp"
 #include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -91,7 +91,7 @@ inline uint64_t fast_random_64() {
   return x * 0x2545F4914F6CDD1D;
 }
 
-inline static uint64_t rdtsc() {
+inline uint64_t rdtsc() {
   uint32_t lo, hi;
   __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
   return ((uint64_t)lo) | (((uint64_t)hi) << 32);
@@ -150,12 +150,12 @@ inline int create_dir_if_missing(const std::string& name) {
   return res;
 }
 
-static inline std::string string_view_2_string(const StringView& src) {
+inline std::string string_view_2_string(const StringView& src) {
   return std::string(src.data(), src.size());
 }
 
-static inline int compare_string_view(const StringView& src,
-                                      const StringView& target) {
+inline int compare_string_view(const StringView& src,
+                               const StringView& target) {
   auto size = std::min(src.size(), target.size());
   for (uint32_t i = 0; i < size; i++) {
     if (src[i] != target[i]) {
@@ -165,8 +165,7 @@ static inline int compare_string_view(const StringView& src,
   return src.size() - target.size();
 }
 
-static inline bool equal_string_view(const StringView& src,
-                                     const StringView& target) {
+inline bool equal_string_view(const StringView& src, const StringView& target) {
   if (src.size() == target.size()) {
     return compare_string_view(src, target) == 0;
   }
@@ -467,7 +466,7 @@ inline UnixTimeType unix_time(void) {
 inline int64_t millisecond_time() { return unix_time() / 1000; }
 
 inline bool CheckIsExpired(ExpiredTimeType expired_time) {
-  if (expired_time > 0 && expired_time <= millisecond_time()) {
+  if (expired_time >= 0 && expired_time <= millisecond_time()) {
     return true;
   }
   return false;
@@ -477,13 +476,13 @@ inline bool CheckIsExpired(ExpiredTimeType expired_time) {
 
 namespace CollectionUtils {
 [[gnu::deprecated]] inline static std::string EncodeID(CollectionIDType id) {
-  return EncodeInt64(id);
+  return EncodeUint64(id);
 }
 
 [[gnu::deprecated]] inline static CollectionIDType DecodeID(
     const StringView& string_id) {
   CollectionIDType id;
-  bool ret = DecodeInt64(string_id, &id);
+  bool ret = DecodeUint64(string_id, &id);
   kvdk_assert(ret, "size of string id does not match CollectionIDType size!");
   return id;
 }
