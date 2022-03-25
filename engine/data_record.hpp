@@ -152,6 +152,8 @@ struct StringRecord {
 
   ExpiredTimeType GetExpiredTime() { return expired_time; }
 
+  TimeStampType GetTimestamp() { return entry.meta.timestamp; }
+
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
                RecordType _record_type, PMemOffsetType _older_version_record,

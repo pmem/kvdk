@@ -81,6 +81,8 @@ class KVEngine : public Engine {
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
+  virtual Status Modify(const StringView key, ModifyFunction modify_func,
+                        const WriteOptions& options) override;
 
   // Sorted Collection
   Status SGet(const StringView collection, const StringView user_key,
@@ -249,33 +251,38 @@ class KVEngine : public Engine {
       kvdk_assert(result.s == Status::NotFound, "");
       return result;
     }
-    if (result.entry.GetRecordType() == RecordType::StringDeleteRecord) {
-      result.s = Status::NotFound;
-      return result;
-    }
-    bool has_expired;
-    switch (result.entry.GetRecordType()) {
-      case RecordType::StringDataRecord: {
-        has_expired = TimeUtils::CheckIsExpired(
-            result.entry.GetIndex().string_record->GetExpiredTime());
-      }
-      case RecordType::DlistRecord:
-      case RecordType::QueueRecord:
-      case RecordType::SortedHeaderRecord: {
-        has_expired = TimeUtils::CheckIsExpired(
-            static_cast<Collection*>(result.entry.GetIndex().ptr)
-                ->GetExpiredTime());
-      }
-      default: {
-        kvdk_assert(false, "Unreachable branch!");
-        std::abort();
-      }
-    }
+    RecordType record_type = result.entry.GetRecordType();
 
-    result.s = has_expired ? Status::NotFound
-                           : (type_mask & result.entry.GetRecordType())
-                                 ? result.s
-                                 : Status::WrongType;
+    if (type_mask & record_type) {
+      if (record_type == RecordType::StringDeleteRecord) {
+        result.s = Status::NotFound;
+        return result;
+      }
+      bool has_expired;
+      switch (record_type) {
+        case RecordType::StringDataRecord: {
+          has_expired = TimeUtils::CheckIsExpired(
+              result.entry.GetIndex().string_record->GetExpiredTime());
+          break;
+        }
+        case RecordType::DlistRecord:
+        case RecordType::QueueRecord:
+        case RecordType::SortedHeaderRecord: {
+          has_expired = TimeUtils::CheckIsExpired(
+              static_cast<Collection*>(result.entry.GetIndex().ptr)
+                  ->GetExpiredTime());
+          break;
+        }
+        default: {
+          kvdk_assert(false, "Unreachable branch!");
+          std::abort();
+        }
+      }
+
+      result.s = has_expired ? Status::NotFound : result.s;
+    } else {
+      result.s = Status::WrongType;
+    }
     return result;
   }
 

@@ -615,6 +615,35 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestStringModify) {
+  auto num_plus = [](StringView value) {
+    uint64_t num = std::stoul(std::string(value.data(), value.size()));
+    return std::to_string(num + 1);
+  };
+
+  int num_threads = 16;
+  int ops_per_thread = 1000;
+  configs.max_access_threads = num_threads;
+
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string plus_key = "plus";
+  ASSERT_EQ(engine->Set(plus_key, "0", WriteOptions()), Status::Ok);
+  ASSERT_EQ(engine->Modify("not_exist_key", num_plus), Status::NotFound);
+  engine->ReleaseAccessThread();
+
+  auto modify = [&](int tid) {
+    for (int i = 0; i < ops_per_thread; i++) {
+      ASSERT_EQ(engine->Modify(plus_key, num_plus), Status::Ok);
+    }
+  };
+
+  LaunchNThreads(num_threads, modify);
+  std::string val;
+  ASSERT_EQ(engine->Get(plus_key, &val), Status::Ok);
+  ASSERT_EQ(std::stoi(val), ops_per_thread * num_threads);
+}
+
 TEST_F(EngineBasicTest, TestBatchWrite) {
   int num_threads = 16;
   configs.max_access_threads = num_threads;
