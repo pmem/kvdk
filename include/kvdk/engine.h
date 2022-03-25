@@ -41,7 +41,7 @@ typedef enum { SORTED, HASH } KVDKIterType;
 typedef struct {
   const char* data;
   uint64_t size;
-} CString;
+} KVDKString;
 
 extern KVDK_LIBRARY_API KVDKConfigs* KVDKCreateConfigs(void);
 extern KVDK_LIBRARY_API void KVDKSetConfigs(
@@ -111,8 +111,8 @@ KVDKSet(KVDKEngine* engine, const char* key, size_t key_len, const char* val,
 extern KVDK_LIBRARY_API KVDKStatus KVDKDelete(KVDKEngine* engine,
                                               const char* key, size_t key_len);
 extern KVDK_LIBRARY_API KVDKStatus KVDKModify(
-    KVDKEngine* engine, const char* key, size_t key_len, CString* new_value,
-    CString (*modify)(CString val), const KVDKWriteOptions* write_option);
+    KVDKEngine* engine, const char* key, size_t key_len, KVDKString* new_value,
+    KVDKString (*modify)(KVDKString val), const KVDKWriteOptions* write_option);
 
 // For Named Global Collection
 extern KVDK_LIBRARY_API KVDKStatus
