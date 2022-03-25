@@ -166,11 +166,15 @@ class Skiplist : public Collection {
 
   bool IndexWithHashtable() { return index_with_hashtable_; }
 
-  ExpiredTimeType GetExpiredTime() const override {
-    return header_->record->GetExpiredTime();
+  ExpiredTimeType GetExpireTime() const final {
+    return header_->record->expired_time;
   }
 
-  Status SetExpiredTime(ExpiredTimeType expired_time);
+  bool HasExpired() const final {
+    return TimeUtils::CheckIsExpired(GetExpireTime());
+  }
+
+  Status SetExpireTime(ExpiredTimeType expired_time) final;
 
   // Set "key, value" to the skiplist
   //

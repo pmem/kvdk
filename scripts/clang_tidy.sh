@@ -1,3 +1,5 @@
+#!/bin/
+
 includes='-I../include -I../extern'
 checks='abseil-*,bugprone-*,cert-*,clang-analyzer-*,cppcoreguidelines-*,-cppcoreguidelines-pro-type-reinterpret-cast,misc-*'
 
