@@ -1554,7 +1554,8 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
       break;
     }
     case HashIndexType::UnorderedCollection: {
-      expired_time = entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
+      expired_time =
+          entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
       break;
     }
 

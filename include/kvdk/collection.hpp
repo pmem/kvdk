@@ -4,20 +4,24 @@
 
 #pragma once
 
+#include <cassert>
+#include <cinttypes>
 #include <cstring>
 #include <string>
 
-#include "../engine/alias.hpp"
-#include "../engine/macros.hpp"
-#include "../engine/utils/coding.hpp"
-#include "../engine/utils/utils.hpp"
 #include "kvdk/namespace.hpp"
 #include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
+/// TODO: (ziyan) provide kvdkdef.hpp to put these common alias.
 using StringView = pmem::obj::string_view;
+using CollectionIDType = std::uint64_t;
+using ExpiredTimeType = std::int64_t;
 
 // A collection of key-value pairs
+/// TODO: (ziyan) move collection.hpp to engine/
+/// This interface provides little functionality to user
+/// And it includes part of implementation.
 class Collection {
  public:
   Collection(const std::string& name, CollectionIDType id,
@@ -29,8 +33,8 @@ class Collection {
   // Return name of the collection
   const std::string& Name() const { return collection_name_; }
 
-  ExpiredTimeType GetExpireTime() const { return GetExpireTime(); }
-  bool HasExpired() const { return TimeUtils::CheckIsExpired(expire_time); }
+  virtual ExpiredTimeType GetExpireTime() const = 0;
+  virtual bool HasExpired() const = 0;
   virtual void SetExpireTime(ExpiredTimeType) = 0;
 
   // Return internal representation of "key" in the collection
@@ -41,14 +45,14 @@ class Collection {
 
   inline static StringView ExtractUserKey(const StringView& internal_key) {
     constexpr size_t sz_id = sizeof(CollectionIDType);
-    kvdk_assert(sz_id <= internal_key.size(),
-                "internal_key does not has space for key");
+    assert(sz_id <= internal_key.size() ||
+           "internal_key does not has space for key");
     return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
   }
 
   inline static CollectionIDType ExtractID(const StringView& internal_key) {
-    kvdk_assert(sizeof(CollectionIDType) <= internal_key.size(),
-                "internal_key does not has space for id");
+    assert(sizeof(CollectionIDType) <= internal_key.size() ||
+           "internal_key does not has space for id");
     CollectionIDType id;
     memcpy(&id, internal_key.data(), sizeof(CollectionIDType));
     return id;
