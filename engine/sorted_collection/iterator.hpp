@@ -27,49 +27,19 @@ class SortedIterator : public Iterator {
     Splice splice(skiplist_);
     skiplist_->Seek(key, &splice);
     current_ = splice.next_pmem_record;
-    while (Valid()) {
-      DLRecord* valid_version_record = findValidVersion(current_);
-      if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.type == SortedDeleteRecord) {
-        current_ =
-            pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
-      } else {
-        current_ = valid_version_record;
-        break;
-      }
-    }
+    skipInvalidRecords(true);
   }
 
   virtual void SeekToFirst() override {
     uint64_t first = skiplist_->Header()->record->next;
     current_ = pmem_allocator_->offset2addr<DLRecord>(first);
-    while (Valid()) {
-      DLRecord* valid_version_record = findValidVersion(current_);
-      if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.type == SortedDeleteRecord) {
-        current_ =
-            pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
-      } else {
-        current_ = valid_version_record;
-        break;
-      }
-    }
+    skipInvalidRecords(true);
   }
 
   virtual void SeekToLast() override {
     uint64_t last = skiplist_->Header()->record->prev;
     current_ = pmem_allocator_->offset2addr<DLRecord>(last);
-    while (Valid()) {
-      DLRecord* valid_version_record = findValidVersion(current_);
-      if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.type == SortedDeleteRecord) {
-        current_ =
-            pmem_allocator_->offset2addr_checked<DLRecord>(current_->prev);
-      } else {
-        current_ = valid_version_record;
-        break;
-      }
-    }
+    skipInvalidRecords(false);
   }
 
   virtual bool Valid() override {
@@ -81,17 +51,7 @@ class SortedIterator : public Iterator {
       return;
     }
     current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
-    while (Valid()) {
-      DLRecord* valid_version_record = findValidVersion(current_);
-      if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.type == SortedDeleteRecord) {
-        current_ =
-            pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
-      } else {
-        current_ = valid_version_record;
-        break;
-      }
-    }
+    skipInvalidRecords(true);
   }
 
   virtual void Prev() override {
@@ -99,17 +59,7 @@ class SortedIterator : public Iterator {
       return;
     }
     current_ = (pmem_allocator_->offset2addr<DLRecord>(current_->prev));
-    while (Valid()) {
-      DLRecord* valid_version_record = findValidVersion(current_);
-      if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.type == SortedDeleteRecord) {
-        current_ =
-            pmem_allocator_->offset2addr_checked<DLRecord>(current_->prev);
-      } else {
-        current_ = valid_version_record;
-        break;
-      }
-    }
+    skipInvalidRecords(false);
   }
 
   virtual std::string Key() override {
@@ -138,6 +88,24 @@ class SortedIterator : public Iterator {
           "version");
     }
     return curr;
+  }
+
+  // Move current_ to next/prev valid version data record
+  void skipInvalidRecords(bool forward) {
+    while (Valid()) {
+      DLRecord* valid_version_record = findValidVersion(current_);
+      if (valid_version_record == nullptr ||
+          valid_version_record->entry.meta.type == SortedDeleteRecord) {
+        current_ =
+            forward
+                ? pmem_allocator_->offset2addr_checked<DLRecord>(current_->next)
+                : pmem_allocator_->offset2addr_checked<DLRecord>(
+                      current_->prev);
+      } else {
+        current_ = valid_version_record;
+        break;
+      }
+    }
   }
 
   Skiplist* skiplist_;

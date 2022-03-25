@@ -1344,7 +1344,7 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
   } else {
     *ttl_time = expired_time - TimeUtils::millisecond_time();
     if (*ttl_time <= 0) {
-      *ttl_time = kExpiredTime;
+      *ttl_time = kInvalidTime;
     }
   }
   return Status::Ok;

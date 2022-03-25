@@ -14,7 +14,6 @@ namespace KVDK_NAMESPACE {
 // used for expire
 // TODO: use INT_MAX for kPersistTime, remove kInvalidTime, typedef for TTL and
 // ExpiredTime
-constexpr int64_t kExpiredTime = 0;
 constexpr int64_t kPersistTime = -1;
 constexpr int64_t kInvalidTime = -2;
 
