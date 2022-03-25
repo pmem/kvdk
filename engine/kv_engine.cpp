@@ -1378,7 +1378,7 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
     case HashIndexType::StringRecord:
       return Status::NotSupported;
     case HashIndexType::Skiplist: {
-      return entry_ptr->GetIndex().skiplist->SetExpiredTime(expired_time);
+      return entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
     }
     case HashIndexType::UnorderedCollection: {
       UnorderedCollection* pcoll = hash_entry.GetIndex().p_unordered_collection;

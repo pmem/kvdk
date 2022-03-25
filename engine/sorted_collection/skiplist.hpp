@@ -174,11 +174,7 @@ class Skiplist : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
-  void SetExpireTime(ExpiredTimeType time) final {
-    throw std::runtime_error{"Unimplemented!"};
-  }
-
-  Status SetExpiredTime(ExpiredTimeType expired_time);
+  Status SetExpireTime(ExpiredTimeType expired_time) final;
 
   // Set "key, value" to the skiplist
   //

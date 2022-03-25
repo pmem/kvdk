@@ -10,6 +10,7 @@
 #include <string>
 
 #include "kvdk/namespace.hpp"
+#include "kvdk/status.hpp"
 #include "libpmemobj++/string_view.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -35,7 +36,7 @@ class Collection {
 
   virtual ExpiredTimeType GetExpireTime() const = 0;
   virtual bool HasExpired() const = 0;
-  virtual void SetExpireTime(ExpiredTimeType) = 0;
+  virtual Status SetExpireTime(ExpiredTimeType) = 0;
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id

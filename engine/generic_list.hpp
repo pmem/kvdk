@@ -200,8 +200,9 @@ class GenericList final : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
-  void SetExpireTime(ExpiredTimeType time) final {
+  Status SetExpireTime(ExpiredTimeType time) final {
     list_record->PersistExpireTimeNT(time);
+    return Status::Ok;
   }
 
   size_t Size() const { return sz; }

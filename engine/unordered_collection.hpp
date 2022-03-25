@@ -113,8 +113,9 @@ class UnorderedCollection final
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
-  void SetExpireTime(ExpiredTimeType time) final {
+  Status SetExpireTime(ExpiredTimeType time) final {
     collection_record_ptr_->PersistExpireTimeNT(time);
+    return Status::Ok;
   }
 
   /// Erase given record
