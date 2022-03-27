@@ -24,23 +24,28 @@ extern "C" {
 #define FOREACH_ENUM(GEN)   \
   GEN(Ok)                   \
   GEN(NotFound)             \
+  GEN(Expired)              \
   GEN(WrongType)            \
+  GEN(OperationFail)        \
+  GEN(OutOfRange)           \
   GEN(MemoryOverflow)       \
   GEN(PmemOverflow)         \
   GEN(NotSupported)         \
-  GEN(MapError)             \
+  GEN(PMemMapFileError)     \
   GEN(BatchOverflow)        \
   GEN(TooManyAccessThreads) \
   GEN(InvalidDataSize)      \
+  GEN(InvalidArgument)      \
   GEN(IOError)              \
   GEN(InvalidConfiguration) \
-  GEN(InvalidArgument)      \
   GEN(Fail)                 \
   GEN(Abort)
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,
 
 typedef enum { FOREACH_ENUM(GENERATE_ENUM) } KVDKStatus;
+
+static char const* KVDKStatusStrings[] = {FOREACH_ENUM(GENERATE_STRING)};
 
 #ifdef __cplusplus
 } /* end extern "C" */

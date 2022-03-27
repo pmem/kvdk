@@ -33,7 +33,6 @@ typedef struct KVDKConfigs KVDKConfigs;
 typedef struct KVDKWriteOptions KVDKWriteOptions;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
-typedef struct KVDKCollection KVDKCollection;
 typedef struct KVDKSnapshot KVDKSnapshot;
 typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
 
@@ -81,12 +80,8 @@ extern KVDK_LIBRARY_API int KVDKRegisterCompFunc(
 
 // Create Sorted Collection
 extern KVDK_LIBRARY_API KVDKStatus KVDKCreateSortedCollection(
-    KVDKEngine* engine, KVDKCollection** sorted_collection,
-    const char* collection_name, size_t collection_len,
+    KVDKEngine* engine, const char* collection_name, size_t collection_len,
     KVDKSortedCollectionConfigs* configs);
-
-extern KVDK_LIBRARY_API void KVDKDestorySortedCollection(
-    KVDKCollection* collection);
 
 // For BatchWrite
 extern KVDK_LIBRARY_API KVDKWriteBatch* KVDKWriteBatchCreate(void);
@@ -110,6 +105,19 @@ KVDKSet(KVDKEngine* engine, const char* key, size_t key_len, const char* val,
         size_t val_len, const KVDKWriteOptions* write_option);
 extern KVDK_LIBRARY_API KVDKStatus KVDKDelete(KVDKEngine* engine,
                                               const char* key, size_t key_len);
+// Modify value of existing "key" according to modify function, and update
+// existing value with modify result
+//
+// modify: a function to modify existing value. old_val is existing value, store
+// modify result in new_val
+//
+// Return Ok if key exists and update old_val to new_value successful
+extern KVDK_LIBRARY_API KVDKStatus
+KVDKModify(KVDKEngine* engine, const char* key, size_t key_len, char* new_value,
+           size_t* new_value_len,
+           void (*modify)(const char* old_val, size_t old_val_len,
+                          char* new_val, size_t* new_val_len),
+           const KVDKWriteOptions* write_option);
 
 // For Named Global Collection
 extern KVDK_LIBRARY_API KVDKStatus

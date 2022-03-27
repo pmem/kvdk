@@ -62,7 +62,6 @@ set(SOURCES
         engine/c.cpp
         engine/unordered_collection.cpp
         engine/data_record.cpp
-        engine/queue.cpp
         engine/version/old_records_cleaner.cpp
         )
 
@@ -76,7 +75,6 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 set(KVDK_PUBLIC_HEADERS
-    ${PROJECT_SOURCE_DIR}/include/kvdk/collection.hpp
     ${PROJECT_SOURCE_DIR}/include/kvdk/comparator.hpp
     ${PROJECT_SOURCE_DIR}/include/kvdk/configs.hpp
     ${PROJECT_SOURCE_DIR}/include/kvdk/engine.h

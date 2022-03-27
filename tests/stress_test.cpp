@@ -395,7 +395,8 @@ class EngineTestBase : public testing::Test {
   kvdk::Configs configs;
   kvdk::Status status;
 
-  const std::string path_db{"/mnt/pmem0/kvdk_test_extensive"};
+  const std::string path_db{"/mnt/pmem0/kvdk_stress_test_" +
+                            std::to_string(__rdtsc())};
 
   /// The following parameters are used to configure the test.
   /// Override SetUpParameters to provide different parameters
@@ -719,8 +720,7 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
   std::string global_collection_name{"SortedCollection"};
   InitializeSorted(global_collection_name);
 
-  kvdk::Collection* dummy;
-  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
+  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name),
             kvdk::Status::Ok);
 
   std::cout << "[Testing] Modify, check, reboot and check engine for "
@@ -740,8 +740,7 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
   std::string global_collection_name{"SortedCollection"};
   InitializeSorted(global_collection_name);
 
-  kvdk::Collection* dummy;
-  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
+  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name),
             kvdk::Status::Ok);
 
   std::cout << "[Testing] Modify, check, reboot and check engine for "
@@ -844,8 +843,7 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
   std::string global_collection_name{"SortedCollection"};
   InitializeSorted(global_collection_name);
 
-  kvdk::Collection* dummy;
-  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, &dummy),
+  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name),
             kvdk::Status::Ok);
 
   std::cout << "[Testing] Modify, check, reboot and check engine for "

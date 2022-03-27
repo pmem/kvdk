@@ -7,7 +7,6 @@
 #include <cstring>
 
 #include "alias.hpp"
-#include "kvdk/collection.hpp"
 #include "kvdk/configs.hpp"
 #include "kvdk/engine.h"
 #include "kvdk/engine.hpp"
@@ -16,7 +15,6 @@
 #include "kvdk/write_batch.hpp"
 using kvdk::StringView;
 
-using kvdk::Collection;
 using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::Iterator;
@@ -38,9 +36,6 @@ struct KVDKWriteBatch {
 struct KVDKIterator {
   KVDKIterType type;
   Iterator* rep;
-};
-struct KVDKCollection {
-  Collection* rep;
 };
 struct KVDKSnapshot {
   Snapshot* rep;
@@ -161,25 +156,15 @@ int KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
 }
 
 KVDKStatus KVDKCreateSortedCollection(KVDKEngine* engine,
-                                      KVDKCollection** sorted_collection,
                                       const char* collection_name,
                                       size_t collection_len,
                                       KVDKSortedCollectionConfigs* configs) {
-  Collection* collection_ptr;
   KVDKStatus s = engine->rep->CreateSortedCollection(
-      StringView(collection_name, collection_len), &collection_ptr,
-      configs->rep);
+      StringView(collection_name, collection_len), configs->rep);
   if (s != KVDKStatus::Ok) {
-    sorted_collection = nullptr;
     return s;
   }
-  *sorted_collection = new KVDKCollection;
-  (*sorted_collection)->rep = collection_ptr;
   return s;
-}
-
-void KVDKDestorySortedCollection(KVDKCollection* collection) {
-  delete collection;
 }
 
 KVDKWriteBatch* KVDKWriteBatchCreate(void) { return new KVDKWriteBatch; }
@@ -219,6 +204,23 @@ KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
                    const KVDKWriteOptions* write_option) {
   return engine->rep->Set(StringView(key, key_len), StringView(val, val_len),
                           write_option->rep);
+}
+
+KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
+                      char* new_value, size_t* new_value_len,
+                      void (*modify)(const char*, size_t, char*, size_t*),
+                      const KVDKWriteOptions* write_option) {
+  auto modify_func = [&](StringView value) {
+    modify(value.data(), value.size(), new_value, new_value_len);
+    return std::string(new_value, *new_value_len);
+  };
+  std::string modify_result;
+  KVDKStatus s = engine->rep->Modify(StringView(key, key_len), &modify_result,
+                                     modify_func, write_option->rep);
+  assert(s != KVDKStatus::Ok ||
+         (modify_result.size() == *new_value_len &&
+          memcmp(modify_result.data(), new_value, modify_result.size()) == 0));
+  return s;
 }
 
 KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key, size_t key_len) {
@@ -288,22 +290,24 @@ KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
 
 KVDKStatus KVDKLPush(KVDKEngine* engine, const char* collection,
                      size_t collection_len, const char* key, size_t key_len) {
-  return engine->rep->LPush(StringView(collection, collection_len),
-                            StringView(key, key_len));
+  return engine->rep->ListPush(StringView(collection, collection_len),
+                               Engine::ListPosition::Left,
+                               StringView(key, key_len));
 }
 
 KVDKStatus KVDKRPush(KVDKEngine* engine, const char* collection,
                      size_t collection_len, const char* key, size_t key_len) {
-  return engine->rep->RPush(StringView(collection, collection_len),
-                            StringView(key, key_len));
+  return engine->rep->ListPush(StringView(collection, collection_len),
+                               Engine::ListPosition::Right,
+                               StringView(key, key_len));
 }
 
 KVDKStatus KVDKLPop(KVDKEngine* engine, const char* collection,
                     size_t collection_len, char** key, size_t* key_len) {
   std::string str;
   *key = nullptr;
-  KVDKStatus s =
-      engine->rep->LPop(StringView(collection, collection_len), &str);
+  KVDKStatus s = engine->rep->ListPop(StringView(collection, collection_len),
+                                      Engine::ListPosition::Left, &str);
   if (s != KVDKStatus::Ok) {
     *key_len = 0;
     return s;
@@ -317,8 +321,8 @@ KVDKStatus KVDKRPop(KVDKEngine* engine, const char* collection,
                     size_t collection_len, char** key, size_t* key_len) {
   std::string str;
   *key = nullptr;
-  KVDKStatus s =
-      engine->rep->RPop(StringView(collection, collection_len), &str);
+  KVDKStatus s = engine->rep->ListPop(StringView(collection, collection_len),
+                                      Engine::ListPosition::Right, &str);
   if (s != KVDKStatus::Ok) {
     *key_len = 0;
     return s;
