@@ -77,12 +77,10 @@ static void test_named_coll() {
   std::string value1{"value1"};
   std::string value2{"value2"};
   std::string v;
-  kvdk::Collection* collection1_ptr;
-  kvdk::Collection* collection2_ptr;
-  status = engine->CreateSortedCollection(collection1, &collection1_ptr);
+  status = engine->CreateSortedCollection(collection1);
   assert(status == kvdk::Status::Ok);
 
-  status = engine->CreateSortedCollection(collection2, &collection2_ptr);
+  status = engine->CreateSortedCollection(collection2);
   assert(status == kvdk::Status::Ok);
   // Insert key1-value1 into "my_collection_1".
   // Implicitly create a collection named "my_collection_1" in which
@@ -134,9 +132,8 @@ static void test_named_coll() {
 
 static void test_iterator() {
   std::string sorted_collection{"my_sorted_collection"};
-  kvdk::Collection* collection_ptr;
   // Create Sorted Collection
-  status = engine->CreateSortedCollection(sorted_collection, &collection_ptr);
+  status = engine->CreateSortedCollection(sorted_collection);
   assert(status == kvdk::Status::Ok);
   // Create toy keys and values.
   std::vector<std::pair<std::string, std::string>> kv_pairs;
@@ -274,11 +271,9 @@ static void test_customer_sorted_func() {
   };
   engine->RegisterComparator(comp_name, score_cmp);
   // create sorted collection
-  kvdk::Collection* collection_ptr;
   kvdk::SortedCollectionConfigs s_configs;
   s_configs.comparator_name = comp_name;
-  kvdk::Status s =
-      engine->CreateSortedCollection(collection, &collection_ptr, s_configs);
+  kvdk::Status s = engine->CreateSortedCollection(collection, s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
     s = engine->SSet(collection, array[i].number_key, array[i].value);

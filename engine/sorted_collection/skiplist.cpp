@@ -49,12 +49,9 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
   }
 };
 
-Status Skiplist::SetExpiredTime(ExpiredTimeType expired_time) {
-  if (TimeUtils::CheckIsExpired(header_->record->expired_time)) {
-    return Status::NotFound;
-  }
+Status Skiplist::SetExpireTime(ExpireTimeType expired_time) {
   header_->record->expired_time = expired_time;
-  pmem_persist(&header_->record->expired_time, sizeof(ExpiredTimeType));
+  pmem_persist(&header_->record->expired_time, sizeof(ExpireTimeType));
   return Status::Ok;
 }
 
@@ -570,12 +567,11 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
   SpinMutex* deleting_key_lock = locked_hash_hint.spin;
-  HashEntry* entry_ptr = nullptr;
   HashEntry hash_entry;
   std::unique_lock<SpinMutex> prev_record_lock;
   ret.s = hash_table_->SearchForRead(locked_hash_hint, internal_key,
                                      SortedDataRecord | SortedDeleteRecord,
-                                     &entry_ptr, &hash_entry, nullptr);
+                                     &ret.entry_ptr, &hash_entry, nullptr);
 
   switch (ret.s) {
     case Status::NotFound: {
@@ -635,11 +631,11 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
   // until here, new record is already inserted to list
   assert(ret.write_record != nullptr);
   if (ret.dram_node == nullptr) {
-    hash_table_->Insert(locked_hash_hint, entry_ptr, SortedDeleteRecord,
+    hash_table_->Insert(locked_hash_hint, ret.entry_ptr, SortedDeleteRecord,
                         ret.write_record, HashIndexType::DLRecord);
   } else {
     ret.dram_node->record = ret.write_record;
-    hash_table_->Insert(locked_hash_hint, entry_ptr, SortedDeleteRecord,
+    hash_table_->Insert(locked_hash_hint, ret.entry_ptr, SortedDeleteRecord,
                         ret.dram_node, HashIndexType::SkiplistNode);
   }
 

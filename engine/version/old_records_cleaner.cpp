@@ -24,7 +24,7 @@ void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
 void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record)->meta.type &
-          (StringDeleteRecord | SortedDeleteRecord),
+          (StringDeleteRecord | SortedDeleteRecord | ExpirableRecordType),
       "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
@@ -216,6 +216,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
   DataEntry* data_entry =
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record);
   switch (data_entry->meta.type) {
+    case StringDataRecord:
     case StringDeleteRecord: {
       if (old_delete_record.hash_entry_ref->GetIndex().string_record ==
           old_delete_record.pmem_delete_record) {

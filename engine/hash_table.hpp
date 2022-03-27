@@ -14,6 +14,7 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/namespace.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
+#include "simple_list.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -32,8 +33,7 @@ enum class HashIndexType : uint8_t {
   UnorderedCollection = 5,
   // Index field contains PMem pointer to element of UnorderedCollection
   UnorderedCollectionElement = 6,
-  // Index field contains pointer to Queue object on DRAM
-  Queue = 7,
+  List = 7,
   // Index is empty which point to nothing
   Empty = 8,
 };
@@ -54,7 +54,6 @@ struct HashHeader {
 class Skiplist;
 class SkiplistNode;
 class UnorderedCollection;
-class Queue;
 
 struct alignas(16) HashEntry {
  public:
@@ -70,7 +69,7 @@ struct alignas(16) HashEntry {
     DLRecord* dl_record;
     Skiplist* skiplist;
     UnorderedCollection* p_unordered_collection;
-    Queue* queue_ptr;
+    List* list;
   };
   static_assert(sizeof(Index) == 8);
 
@@ -191,6 +190,10 @@ class HashTable {
   void UpdateEntryStatus(HashEntry* entry_ptr, HashEntryStatus entry_status) {
     assert(entry_ptr != nullptr);
     entry_ptr->UpdateEntryStatus(entry_status);
+  }
+
+  std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {
+    return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
 
   SlotIterator GetSlotIterator();

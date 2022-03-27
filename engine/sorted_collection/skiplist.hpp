@@ -154,6 +154,7 @@ class Skiplist : public Collection {
     DLRecord* existing_record = nullptr;
     DLRecord* write_record = nullptr;
     SkiplistNode* dram_node = nullptr;
+    HashEntry* entry_ptr = nullptr;
   };
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
@@ -166,11 +167,15 @@ class Skiplist : public Collection {
 
   bool IndexWithHashtable() { return index_with_hashtable_; }
 
-  ExpiredTimeType GetExpiredTime() const override {
-    return header_->record->GetExpiredTime();
+  ExpireTimeType GetExpireTime() const final {
+    return header_->record->expired_time;
   }
 
-  Status SetExpiredTime(ExpiredTimeType expired_time);
+  bool HasExpired() const final {
+    return TimeUtils::CheckIsExpired(GetExpireTime());
+  }
+
+  Status SetExpireTime(ExpireTimeType expired_time) final;
 
   // Set "key, value" to the skiplist
   //
@@ -268,12 +273,12 @@ class Skiplist : public Collection {
     if (node->cached_key_size > 0) {
       return StringView(node->cached_key, node->cached_key_size);
     }
-    return CollectionUtils::ExtractUserKey(node->record->Key());
+    return ExtractUserKey(node->record->Key());
   }
 
   inline static StringView UserKey(const DLRecord* record) {
     assert(record != nullptr);
-    return CollectionUtils::ExtractUserKey(record->Key());
+    return ExtractUserKey(record->Key());
   }
 
   inline static CollectionIDType SkiplistID(const SkiplistNode* node) {
@@ -286,10 +291,10 @@ class Skiplist : public Collection {
     switch (record->entry.meta.type) {
       case RecordType::SortedDataRecord:
       case RecordType::SortedDeleteRecord:
-        return CollectionUtils::ExtractID(record->Key());
+        return ExtractID(record->Key());
         break;
       case RecordType::SortedHeaderRecord:
-        return CollectionUtils::DecodeID(record->Value());
+        return DecodeID(record->Value());
       default:
         kvdk_assert(false, "Wrong type in SkiplistID");
         GlobalLogger.Error("Wrong type in SkiplistID");

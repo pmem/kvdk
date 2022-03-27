@@ -105,17 +105,16 @@ class UnorderedCollection final
                        StringView const key, StringView const value,
                        LockType const& lock);
 
-  ExpiredTimeType GetExpiredTime() const override {
-    return collection_record_ptr_->GetExpiredTime();
+  ExpireTimeType GetExpireTime() const final {
+    return collection_record_ptr_->GetExpireTime();
   }
 
-  Status SetExpiredTime(ExpiredTimeType expired_time) {
-    if (TimeUtils::CheckIsExpired(collection_record_ptr_->expired_time)) {
-      return Status::NotFound;
-    }
-    collection_record_ptr_->expired_time = expired_time;
-    pmem_persist(&collection_record_ptr_->expired_time,
-                 sizeof(ExpiredTimeType));
+  bool HasExpired() const final {
+    return TimeUtils::CheckIsExpired(GetExpireTime());
+  }
+
+  Status SetExpireTime(ExpireTimeType time) final {
+    collection_record_ptr_->PersistExpireTimeNT(time);
     return Status::Ok;
   }
 
@@ -177,9 +176,7 @@ class UnorderedCollection final
   }
 
   inline bool checkID(DLRecord* record_pmmptr) {
-    if (!record_pmmptr ||
-        CollectionUtils::ExtractID(record_pmmptr->Key()) != ID())
-      return false;
+    if (!record_pmmptr || ExtractID(record_pmmptr->Key()) != ID()) return false;
     return true;
   }
 
@@ -225,21 +222,20 @@ class UnorderedIterator final : public Iterator {
   UnorderedIterator(std::shared_ptr<UnorderedCollection> sp_coll);
 
   /// UnorderedIterator currently does not support Seek to a key
-  [[gnu::deprecated]] virtual void Seek([
-      [gnu::unused]] std::string const& key) final override {
+  [[gnu::deprecated]] virtual void Seek(std::string const&) final {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 
   /// Seek to First DlistDataRecord if exists,
   /// otherwise Valid() will return false.
-  virtual void SeekToFirst() final override {
+  virtual void SeekToFirst() final {
     internal_iterator = collection_shrdptr->dlinked_list_.Head();
     internalNext();
   }
 
   /// Seek to Last DlistDataRecord if exists,
   /// otherwise Valid() will return false.
-  virtual void SeekToLast() final override {
+  virtual void SeekToLast() final {
     internal_iterator = collection_shrdptr->dlinked_list_.Tail();
     internalPrev();
   }
@@ -248,13 +244,13 @@ class UnorderedIterator final : public Iterator {
   /// DlistHeadRecord, DlistTailRecord is considered
   /// invalid. User should always check Valid() before accessing data with Key()
   /// and Value() Iterating with Next() and Prev()
-  inline virtual bool Valid() final override { return valid; }
+  inline virtual bool Valid() final { return valid; }
 
   /// Try proceeding to next DlistDataRecord.
   /// User should check Valid() before accessing data.
   /// Calling Next() on invalid UnorderedIterator will do nothing.
   /// This prevents any further misuses.
-  virtual void Next() final override {
+  virtual void Next() final {
     if (Valid()) {
       internalNext();
     }
@@ -275,7 +271,7 @@ class UnorderedIterator final : public Iterator {
   /// return key in DlistDataRecord
   inline virtual std::string Key() override {
     kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
-    auto view_key = CollectionUtils::ExtractUserKey(internal_iterator->Key());
+    auto view_key = Collection::ExtractUserKey(internal_iterator->Key());
     return std::string(view_key.data(), view_key.size());
   }
 

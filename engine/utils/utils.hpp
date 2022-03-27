@@ -29,6 +29,8 @@
 #include "xxhash.h"
 #undef XXH_INLINE_ALL
 
+#include <x86intrin.h>
+
 #include <atomic>
 
 #include "../alias.hpp"
@@ -67,6 +69,13 @@ inline uint64_t hash_str(const char* str, uint64_t size) {
 
 inline uint64_t get_checksum(const void* data, uint64_t size) {
   return XXH3_64bits(data, size);
+}
+
+inline unsigned long long get_seed() {
+  unsigned long long seed = 0;
+  while (seed == 0 && _rdseed64_step(&seed) != 1) {
+  }
+  return seed;
 }
 
 inline uint64_t fast_random_64() {
@@ -189,6 +198,72 @@ class SpinMutex {
   SpinMutex(const SpinMutex& s) = delete;
   SpinMutex(SpinMutex&& s) = delete;
   SpinMutex& operator=(const SpinMutex& s) = delete;
+};
+
+class RWLock {
+  static constexpr std::int64_t reader_val{1};
+  static constexpr std::int64_t writer_val{
+      std::numeric_limits<std::int64_t>::min()};
+
+  // device.load() > 0 indicates only reader exists
+  // device.load() == 0 indicates no reader and no writer
+  // device.load() == writer_val indicates only writer exists, block readers
+  // Otherwise, writer has registered and is waiting for readers to leave
+  std::atomic_int64_t device{0};
+
+ public:
+  bool try_lock_shared() {
+    std::int64_t old = device.load();
+    if (old < 0 || !device.compare_exchange_strong(old, old + reader_val)) {
+      // Other writer has acquired lock.
+      return false;
+    }
+    return true;
+  }
+
+  void lock_shared() {
+    while (!try_lock_shared()) {
+      pause();
+    }
+    return;
+  }
+
+  void unlock_shared() {
+    device.fetch_sub(reader_val);
+    return;
+  }
+
+  bool try_lock() {
+    std::int64_t old = device.load();
+    if (old < 0 || !device.compare_exchange_strong(old, old + writer_val)) {
+      // Other writer has acquired lock.
+      return false;
+    }
+    while (device.load() != writer_val) {
+      // Block until all readers have left.
+      pause();
+    }
+    return true;
+  }
+
+  void lock() {
+    while (!try_lock()) {
+      pause();
+    }
+    return;
+  }
+
+  void unlock() {
+    device.fetch_sub(writer_val);
+    return;
+  }
+
+ private:
+  void pause() {
+    for (size_t i = 0; i < 64; i++) {
+      _mm_pause();
+    }
+  }
 };
 
 /// Caution: AlignedPoolAllocator is not thread-safe
@@ -391,14 +466,14 @@ inline UnixTimeType unix_time(void) {
 
 inline int64_t millisecond_time() { return unix_time() / 1000; }
 
-inline bool CheckIsExpired(ExpiredTimeType expired_time) {
+inline bool CheckIsExpired(ExpireTimeType expired_time) {
   if (expired_time >= 0 && expired_time <= millisecond_time()) {
     return true;
   }
   return false;
 }
 
-inline bool CheckTTL(TTLTimeType ttl_time, int64_t base_time) {
+inline bool CheckTTL(TTLType ttl_time, int64_t base_time) {
   if (ttl_time != kPersistTime &&
       /* check overflow*/ ttl_time > INT64_MAX - base_time) {
     return false;
@@ -406,29 +481,15 @@ inline bool CheckTTL(TTLTimeType ttl_time, int64_t base_time) {
   return true;
 }
 
+inline ExpireTimeType TTLToExpireTime(TTLType ttl_time,
+                                      int64_t base_time = millisecond_time()) {
+  return ttl_time == kPersistTime ? kPersistTime : ttl_time + base_time;
+}
+
+inline TTLType ExpireTimeToTTL(ExpireTimeType expire_time,
+                               int64_t base_time = millisecond_time()) {
+  return expire_time == kPersistTime ? kPersistTime : expire_time - base_time;
+}
+
 }  // namespace TimeUtils
-
-namespace CollectionUtils {
-inline static std::string EncodeID(CollectionIDType id) {
-  return EncodeUint64(id);
-}
-
-inline static CollectionIDType DecodeID(const StringView& string_id) {
-  CollectionIDType id;
-  bool ret = DecodeUint64(string_id, &id);
-  kvdk_assert(ret, "size of string id does not match CollectionIDType size!");
-  return id;
-}
-
-inline static StringView ExtractUserKey(const StringView& internal_key) {
-  constexpr size_t sz_id = sizeof(CollectionIDType);
-  kvdk_assert(sz_id <= internal_key.size(),
-              "internal_key does not has space for key");
-  return StringView(internal_key.data() + sz_id, internal_key.size() - sz_id);
-}
-
-inline static uint64_t ExtractID(const StringView& internal_key) {
-  return DecodeID(internal_key);
-}
-}  // namespace CollectionUtils
 }  // namespace KVDK_NAMESPACE

@@ -2,6 +2,8 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <x86intrin.h>
+
 #include <future>
 #include <string>
 #include <thread>
@@ -27,7 +29,7 @@ using DeleteOpsFunc = std::function<Status(const std::string& collection,
 using GetOpsFunc = std::function<Status(
     const std::string& collection, const std::string& key, std::string* value)>;
 
-enum Types { String, Sorted, Hash, Queue };
+enum Types { String, Sorted, Hash };
 
 class EngineBasicTest : public testing::Test {
  protected:
@@ -50,8 +52,8 @@ class EngineBasicTest : public testing::Test {
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
     configs.max_access_threads = 1;
-    db_path = "/mnt/pmem0/kvdk-test";
-    backup_path = "/mnt/pmem0/kvdk-test-backup";
+    db_path = "/mnt/pmem0/kvdk-test-" + std::to_string(__rdtsc());
+    backup_path = "/mnt/pmem0/kvdk-test-backup-" + std::to_string(__rdtsc());
     char cmd[1024];
     sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
             backup_path.c_str());
@@ -93,6 +95,13 @@ class EngineBasicTest : public testing::Test {
               Status::Ok);
   }
 
+  void Reboot() {
+    delete engine;
+    engine = nullptr;
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+              Status::Ok);
+  }
+
   // Return the current configuration.
   Configs CurrentConfigs() {
     switch (config_option) {
@@ -114,9 +123,7 @@ class EngineBasicTest : public testing::Test {
                             Types type) {
     // Maybe having create collection for all collection types.
     if (type == Types::Sorted) {
-      Collection* collection_ptr;
-      ASSERT_EQ(engine->CreateSortedCollection(collection, &collection_ptr),
-                Status::Ok);
+      ASSERT_EQ(engine->CreateSortedCollection(collection), Status::Ok);
     }
     TestEmptyKey(collection, SetFunc, GetFunc, DeleteFunc);
     auto global_func = [=](uint64_t id) {
@@ -175,10 +182,8 @@ class EngineBasicTest : public testing::Test {
       return engine->SDelete(collection, key);
     };
 
-    Collection* collection_ptr;
-    ASSERT_EQ(
-        engine->CreateSortedCollection(collection, &collection_ptr, s_configs),
-        Status::Ok);
+    ASSERT_EQ(engine->CreateSortedCollection(collection, s_configs),
+              Status::Ok);
 
     auto global_func = [=](uint64_t id) {
       this->CreateBasicOperationTest(collection, SortedSetFunc, SortedGetFunc,
@@ -209,9 +214,9 @@ class EngineBasicTest : public testing::Test {
     auto Local_XSetXGetXDelete = [&](uint64_t id) {
       std::string thread_local_collection = collection + std::to_string(id);
       Collection* local_collection_ptr;
-      ASSERT_EQ(engine->CreateSortedCollection(
-                    thread_local_collection, &local_collection_ptr, s_configs),
-                Status::Ok);
+      ASSERT_EQ(
+          engine->CreateSortedCollection(thread_local_collection, s_configs),
+          Status::Ok);
 
       TestEmptyKey(thread_local_collection, SortedSetFunc, SortedGetFunc,
                    SortedDeleteFunc);
@@ -407,10 +412,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   std::string sorted_collection("sorted_collection");
   std::string sorted_collection_after_snapshot(
       "sorted_collection_after_snapshot");
-  Collection* sorted_collection_ptr;
-  ASSERT_EQ(
-      engine->CreateSortedCollection(sorted_collection, &sorted_collection_ptr),
-      Status::Ok);
+  ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
 
   bool snapshot_done(false);
   std::atomic<int> set_finished_threads(0);
@@ -468,8 +470,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   }
   Snapshot* snapshot = engine->GetSnapshot(true);
   // Insert a new collection after snapshot
-  ASSERT_EQ(engine->CreateSortedCollection(sorted_collection_after_snapshot,
-                                           &sorted_collection_ptr),
+  ASSERT_EQ(engine->CreateSortedCollection(sorted_collection_after_snapshot),
             Status::Ok);
   {
     std::lock_guard<SpinMutex> ul(spin);
@@ -615,6 +616,42 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestStringModify) {
+  auto num_plus = [](StringView value) {
+    uint64_t num = std::stoul(std::string(value.data(), value.size()));
+    return std::to_string(num + 1);
+  };
+
+  int num_threads = 16;
+  int ops_per_thread = 1000;
+  configs.max_access_threads = num_threads;
+
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string plus_key = "plus";
+  std::string tmp_value;
+  ASSERT_EQ(engine->Set(plus_key, "0", WriteOptions()), Status::Ok);
+  ASSERT_EQ(engine->Modify("not_exist_key", &tmp_value, num_plus),
+            Status::NotFound);
+  engine->ReleaseAccessThread();
+
+  auto modify = [&](int tid) {
+    std::string modify_result;
+    int prev_num = 0;
+    for (int i = 0; i < ops_per_thread; i++) {
+      ASSERT_EQ(engine->Modify(plus_key, &modify_result, num_plus), Status::Ok);
+      uint64_t result_num = std::stod(modify_result);
+      ASSERT_TRUE(result_num > prev_num);
+      prev_num = result_num;
+    }
+  };
+
+  LaunchNThreads(num_threads, modify);
+  std::string val;
+  ASSERT_EQ(engine->Get(plus_key, &val), Status::Ok);
+  ASSERT_EQ(std::stoi(val), ops_per_thread * num_threads);
+}
+
 TEST_F(EngineBasicTest, TestBatchWrite) {
   int num_threads = 16;
   configs.max_access_threads = num_threads;
@@ -720,9 +757,7 @@ TEST_F(EngineBasicTest, TestSeek) {
 
   // Test Seek
   std::string collection = "col1";
-  Collection* collection_ptr;
-  ASSERT_EQ(engine->CreateSortedCollection(collection, &collection_ptr),
-            Status::Ok);
+  ASSERT_EQ(engine->CreateSortedCollection(collection), Status::Ok);
   uint64_t z = 0;
   auto zero_filled_str = uint64_to_string(z);
   ASSERT_EQ(engine->SSet(collection, zero_filled_str, zero_filled_str),
@@ -735,8 +770,7 @@ TEST_F(EngineBasicTest, TestSeek) {
 
   // Test SeekToFirst
   collection.assign("col2");
-  ASSERT_EQ(engine->CreateSortedCollection(collection, &collection_ptr),
-            Status::Ok);
+  ASSERT_EQ(engine->CreateSortedCollection(collection), Status::Ok);
   ASSERT_EQ(engine->SSet(collection, "foo", "bar"), Status::Ok);
   ASSERT_EQ(engine->SGet(collection, "foo", &val), Status::Ok);
   ASSERT_EQ(engine->SDelete(collection, "foo"), Status::Ok);
@@ -827,9 +861,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       int count = 100;
       std::string global_skiplist =
           std::to_string(index_with_hashtable) + "skiplist";
-      Collection* global_collection_ptr;
-      ASSERT_EQ(engine->CreateSortedCollection(
-                    global_skiplist, &global_collection_ptr, s_configs),
+      ASSERT_EQ(engine->CreateSortedCollection(global_skiplist, s_configs),
                 Status::Ok);
       std::string thread_skiplist =
           std::to_string(index_with_hashtable) + "t_skiplist";
@@ -837,9 +869,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         std::string key_prefix(id, 'a');
         std::string got_val;
         std::string t_skiplist(thread_skiplist + std::to_string(id));
-        Collection* thread_collection_ptr;
-        ASSERT_EQ(engine->CreateSortedCollection(
-                      t_skiplist, &thread_collection_ptr, s_configs),
+        ASSERT_EQ(engine->CreateSortedCollection(t_skiplist, s_configs),
                   Status::Ok);
         for (int i = 1; i <= count; i++) {
           auto key = key_prefix + std::to_string(i);
@@ -986,16 +1016,11 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   for (uint64_t i = 1; i <= count; ++i) {
     std::string average_skiplist("a_skiplist" +
                                  std::to_string(i % num_collections));
-    Collection* avg_collection_ptr;
-    ASSERT_EQ(
-        engine->CreateSortedCollection(average_skiplist, &avg_collection_ptr),
-        Status::Ok);
+    ASSERT_EQ(engine->CreateSortedCollection(average_skiplist), Status::Ok);
   }
   for (uint32_t i = 0; i < num_threads; ++i) {
     std::string r_skiplist("r_skiplist" + std::to_string(i));
-    Collection* r_collection_ptr;
-    ASSERT_EQ(engine->CreateSortedCollection(r_skiplist, &r_collection_ptr),
-              Status::Ok);
+    ASSERT_EQ(engine->CreateSortedCollection(r_skiplist), Status::Ok);
   }
   auto SetupEngine = [&](uint32_t id) {
     std::string key_prefix(id, 'a');
@@ -1312,127 +1337,227 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestLocalQueue) {
-  int num_threads = 16;
-  int count = 100;
-  configs.max_access_threads = num_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  // insert and delete some keys, then re-insert some deleted keys
-
-  std::vector<std::vector<std::string>> local_values(num_threads);
-  std::vector<std::string> local_collection_names(num_threads);
-  for (size_t i = 0; i < num_threads; i++) {
-    local_collection_names[i] = "local_uncoll_t" + std::to_string(i);
-    for (size_t j = 0; j < count * 3; j++) {
-      local_values[i].push_back(GetRandomString(1024));
-    }
-  }
-
-  auto LPushRPop = [&](uint32_t tid) {
-    std::string value_got;
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(
-          engine->LPush(local_collection_names[tid], local_values[tid][j]),
-          Status::Ok);
-    }
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
-                Status::Ok);
-      ASSERT_EQ(local_values[tid][j], value_got);
-    }
-    ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
-              Status::NotFound);
-  };
-
-  auto RPushLPop = [&](uint32_t tid) {
-    std::string value_got;
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(
-          engine->RPush(local_collection_names[tid], local_values[tid][j]),
-          Status::Ok);
-    }
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
-                Status::Ok);
-      ASSERT_EQ(local_values[tid][j], value_got);
-    }
-    ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
-              Status::NotFound);
-  };
-
-  LaunchNThreads(num_threads, LPushRPop);
-  LaunchNThreads(num_threads, RPushLPop);
-
-  delete engine;
+struct BulkString {
+  std::string str;
+  size_t n{0};
+};
+static void CopyAndCount(kvdk::StringView sw, void* bulk_str) {
+  BulkString* bulk = static_cast<BulkString*>(bulk_str);
+  bulk->str.append(sw.data(), sw.size());
+  bulk->str.append("\n");
+  bulk->n++;
 }
 
-TEST_F(EngineBasicTest, TestQueueRestoration) {
+TEST_F(EngineBasicTest, TestList) {
   int num_threads = 16;
-  int count = 100;
+  int count = 1000;
+  int bulk = 5;
+  ASSERT_EQ(count % bulk, 0);
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  // insert and delete some keys, then re-insert some deleted keys
 
-  std::vector<std::vector<std::string>> local_values(num_threads);
-  std::vector<std::string> local_collection_names(num_threads);
+  std::vector<std::vector<std::string>> elems_vec(num_threads);
+  std::vector<std::string> key_vec(num_threads);
   for (size_t i = 0; i < num_threads; i++) {
-    local_collection_names[i] = "local_uncoll_t" + std::to_string(i);
+    key_vec[i] = "List_" + std::to_string(i);
     for (size_t j = 0; j < count; j++) {
-      local_values[i].push_back(GetRandomString(1024));
+      elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }
   }
 
-  auto LPush = [&](uint32_t tid) {
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(
-          engine->LPush(local_collection_names[tid], local_values[tid][j]),
-          Status::Ok);
-    }
-  };
+  std::vector<std::list<std::string>> list_copy_vec(num_threads);
 
-  auto RPop = [&](uint32_t tid) {
-    std::string value_got;
+  auto LPush = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    size_t sz;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
+      ASSERT_EQ(engine->ListPush(key, Engine::ListPosition::Left, elems[j]),
                 Status::Ok);
-      ASSERT_EQ(local_values[tid][j], value_got);
-    }
-    ASSERT_EQ(engine->RPop(local_collection_names[tid], &value_got),
-              Status::NotFound);
-  };
-
-  auto RPush = [&](uint32_t tid) {
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(
-          engine->RPush(local_collection_names[tid], local_values[tid][j]),
-          Status::Ok);
+      list_copy.push_front(elems[j]);
+      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(sz, list_copy.size());
     }
   };
 
-  auto LPop = [&](uint32_t tid) {
-    std::string value_got;
+  auto RPush = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    size_t sz;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
+      ASSERT_EQ(engine->ListPush(key, Engine::ListPosition::Right, elems[j]),
                 Status::Ok);
-      ASSERT_EQ(local_values[tid][j], value_got);
+      list_copy_vec[tid].push_back(elems[j]);
+      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(sz, list_copy.size());
     }
-    ASSERT_EQ(engine->LPop(local_collection_names[tid], &value_got),
-              Status::NotFound);
+  };
+
+  auto LPopOne = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    std::string value_got;
+    size_t sz;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Left, &value_got),
+                Status::Ok);
+      ASSERT_EQ(list_copy.front(), value_got);
+      list_copy.pop_front();
+      // Empty list is deleted!
+      // ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      // ASSERT_EQ(sz, list_copy.size());
+    }
+  };
+
+  auto RPopOne = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    std::string value_got;
+    size_t sz;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Right, &value_got),
+                Status::Ok);
+      ASSERT_EQ(list_copy.back(), value_got);
+      list_copy.pop_back();
+      // Empty list is deleted!
+      // ASSERT_TR(engine->ListLength(key, &sz), Status::Ok);
+      // ASSERT_EQ(sz, list_copy.size());
+    }
+  };
+
+  auto LBulkPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    BulkString bulk_str;
+    BulkString expected;
+    size_t sz;
+    for (size_t j = 0; j < count; j += bulk) {
+      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Left, CopyAndCount,
+                                &bulk_str, bulk),
+                Status::Ok);
+      for (size_t jj = 0; jj < bulk && !list_copy_vec.empty(); jj++) {
+        CopyAndCount(list_copy.front(), &expected);
+        list_copy.pop_front();
+      }
+      // ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      // ASSERT_EQ(sz, list_copy.size());
+      ASSERT_EQ(bulk_str.n, expected.n);
+      ASSERT_EQ(bulk_str.str, expected.str);
+    }
+  };
+
+  auto RBulkPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    BulkString bulk_str;
+    BulkString expected;
+    size_t sz;
+    for (size_t j = 0; j < count; j += bulk) {
+      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Right, CopyAndCount,
+                                &bulk_str, bulk),
+                Status::Ok);
+      for (size_t jj = 0; jj < bulk && !list_copy_vec.empty(); jj++) {
+        CopyAndCount(list_copy.back(), &expected);
+        list_copy.pop_back();
+      }
+      // ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      // ASSERT_EQ(sz, list_copy.size());
+      ASSERT_EQ(bulk_str.n, expected.n);
+      ASSERT_EQ(bulk_str.str, expected.str);
+    }
+  };
+
+  auto LInsertFindIndexRemove = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    std::string elem{std::to_string(tid) + "pivot"};
+    std::string value_got;
+    auto& list_copy = list_copy_vec[tid];
+    size_t len;
+    size_t found;
+    size_t const insert_pos = 42;
+    ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
+    ASSERT_GT(len, insert_pos);
+    ASSERT_EQ(engine->ListInsert(key, kvdk::Engine::ListPosition::Before,
+                                 insert_pos, elem),
+              Status::Ok);
+    ASSERT_EQ(engine->ListPos(key, elem, &found), Status::Ok);
+    ASSERT_EQ(found, insert_pos);
+    ASSERT_EQ(
+        engine->ListIndex(key, static_cast<std::int64_t>(found), &value_got),
+        Status::Ok);
+    ASSERT_EQ(value_got, elem);
+    ASSERT_EQ(engine->ListRemove(key, 1, elem), Status::Ok);
+    // ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
+    // ASSERT_EQ(len, list_copy.size());
+  };
+
+  auto LSet = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    std::string value_got;
+    auto& list_copy = list_copy_vec[tid];
+    size_t len;
+    ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
+    ASSERT_GT(len, count);
+    auto iter = list_copy.begin();
+    for (int i = 0; i < count; i++, iter++) {
+      engine->ListIndex(key, i, &value_got);
+      ASSERT_EQ(value_got, *iter);
+      value_got += "_new";
+      engine->ListSet(key, i, value_got);
+      *iter = value_got;
+    }
+  };
+
+  auto LRange = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    BulkString bulk_str;
+    BulkString expected;
+    auto& list_copy = list_copy_vec[tid];
+    size_t len;
+    ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
+    ASSERT_GT(len, count);
+
+    ASSERT_EQ(engine->ListRange(key, 0, -1, CopyAndCount, &bulk_str),
+              Status::Ok);
+    for (auto iter = list_copy.begin(); iter != list_copy.end(); ++iter) {
+      CopyAndCount(*iter, &expected);
+    }
+
+    ASSERT_EQ(bulk_str.n, expected.n);
+    ASSERT_EQ(bulk_str.str, expected.str);
   };
 
   LaunchNThreads(num_threads, LPush);
-  delete engine;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  LaunchNThreads(num_threads, RPop);
-
   LaunchNThreads(num_threads, RPush);
-  delete engine;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  LaunchNThreads(num_threads, LPop);
+  LaunchNThreads(num_threads, LInsertFindIndexRemove);
+  LaunchNThreads(num_threads, LSet);
+  LaunchNThreads(num_threads, LPopOne);
+  LaunchNThreads(num_threads, RPopOne);
+  LaunchNThreads(num_threads, RPush);
+  LaunchNThreads(num_threads, LPush);
+  LaunchNThreads(num_threads, LInsertFindIndexRemove);
+  LaunchNThreads(num_threads, LSet);
+  LaunchNThreads(num_threads, LRange);
+  LaunchNThreads(num_threads, RBulkPop);
+  LaunchNThreads(num_threads, LBulkPop);
+
+  LaunchNThreads(num_threads, LPush);
+  LaunchNThreads(num_threads, RPush);
+  LaunchNThreads(num_threads, RPush);
+  LaunchNThreads(num_threads, LPush);
+  LaunchNThreads(num_threads, LInsertFindIndexRemove);
+  LaunchNThreads(num_threads, LSet);
+  Reboot();
+  LaunchNThreads(num_threads, RBulkPop);
+  LaunchNThreads(num_threads, LBulkPop);
+  LaunchNThreads(num_threads, LRange);
 
   delete engine;
 }
@@ -1502,9 +1627,7 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
                                 "SuperHotSpot1"};
   std::string val1(1024, 'a');
   std::string val2(1024, 'b');
-  Collection* collection_ptr;
-  ASSERT_EQ(engine->CreateSortedCollection(collection_name, &collection_ptr),
-            Status::Ok);
+  ASSERT_EQ(engine->CreateSortedCollection(collection_name), Status::Ok);
 
   for (const std::string& key : keys) {
     ASSERT_EQ(engine->SSet(collection_name, key, val1), Status::Ok);
@@ -1594,16 +1717,14 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   engine->RegisterComparator("collection0_cmp", cmp0);
   engine->RegisterComparator("collection1_cmp", cmp1);
   for (size_t i = 0; i < collections.size(); ++i) {
-    Collection* collection_ptr;
     Status s;
     if (i < 2) {
       std::string comp_name = "collection" + std::to_string(i) + "_cmp";
       SortedCollectionConfigs s_configs;
       s_configs.comparator_name = comp_name;
-      s = engine->CreateSortedCollection(collections[i], &collection_ptr,
-                                         s_configs);
+      s = engine->CreateSortedCollection(collections[i], s_configs);
     } else {
-      s = engine->CreateSortedCollection(collections[i], &collection_ptr);
+      s = engine->CreateSortedCollection(collections[i]);
     }
     ASSERT_EQ(s, Status::Ok);
   }
@@ -1663,9 +1784,8 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
   configs.max_access_threads = threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  Collection* sorted_collection_ptr;
   std::string collection_name = "sortedcollection";
-  engine->CreateSortedCollection(collection_name, &sorted_collection_ptr);
+  engine->CreateSortedCollection(collection_name);
   auto MixedSet = [&](uint64_t id) {
     if (id % 2 == 0) {
       ASSERT_EQ(engine->Set("stringkey" + std::to_string(id), "stringval"),
@@ -1774,9 +1894,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For sorte collection
   {
-    Collection* collection_ptr;
-    Status s =
-        engine->CreateSortedCollection(sorted_collection, &collection_ptr);
+    Status s = engine->CreateSortedCollection(sorted_collection);
     ASSERT_EQ(s, Status::Ok);
     ASSERT_EQ(engine->SSet(sorted_collection, "sorted" + key, "sorted" + val),
               Status::Ok);
@@ -1819,19 +1937,17 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For list
   {
-    ASSERT_EQ(engine->LPush(list_collection, "list" + val), Status::Ok);
+    ASSERT_EQ(engine->ListPush(list_collection, Engine::ListPosition::Left,
+                               "list" + val),
+              Status::Ok);
     // Set expired time for collection
     ASSERT_EQ(engine->Expire(list_collection, max_ttl_time),
               Status::InvalidArgument);
-    ASSERT_EQ(engine->LPush(list_collection, "list2" + val), Status::Ok);
-    ASSERT_EQ(engine->RPush(list_collection, "list3" + val), Status::Ok);
     ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
     // check list is persist
     ASSERT_EQ(ttl_time, kPersistTime);
     // reset expired time for collection
     ASSERT_EQ(engine->Expire(list_collection, normal_ttl_time), Status::Ok);
-    ASSERT_EQ(engine->LPop(list_collection, &got_val), Status::Ok);
-    ASSERT_EQ(engine->RPop(list_collection, &got_val), Status::Ok);
     ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
   }
 
@@ -2069,9 +2185,8 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
       "Test::SSet::Update::Finish", [&](void*) { update_num.fetch_add(1); });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  Collection* collection_ptr;
   std::string collection_name = "SortedRecoverySyncPoint";
-  Status s = engine->CreateSortedCollection(collection_name, &collection_ptr);
+  Status s = engine->CreateSortedCollection(collection_name);
   ASSERT_EQ(s, Status::Ok);
 
   try {
@@ -2138,9 +2253,8 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  Collection* collection_ptr;
   std::string collection_name = "SortedDeleteRecoverySyncPoint";
-  Status s = engine->CreateSortedCollection(collection_name, &collection_ptr);
+  Status s = engine->CreateSortedCollection(collection_name);
   ASSERT_EQ(s, Status::Ok);
 
   std::vector<std::string> keylists{"C", "A", "D"};
@@ -2195,9 +2309,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
             Status::Ok);
   std::vector<std::thread> ths;
   std::string collection_name = "skiplist";
-  Collection* collection_ptr;
-  ASSERT_EQ(engine->CreateSortedCollection(collection_name, &collection_ptr),
-            Status::Ok);
+  ASSERT_EQ(engine->CreateSortedCollection(collection_name), Status::Ok);
 
   engine->SSet(collection_name, "key0", "val0");
   engine->SSet(collection_name, "key2", "val2");
