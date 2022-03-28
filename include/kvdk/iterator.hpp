@@ -8,9 +8,13 @@
 
 namespace KVDK_NAMESPACE {
 
+using IndexType = std::int64_t;
+
 class Iterator {
  public:
   virtual void Seek(const std::string& key) = 0;
+
+  virtual void Seek(IndexType pos) = 0;
 
   virtual void SeekToFirst() = 0;
 
