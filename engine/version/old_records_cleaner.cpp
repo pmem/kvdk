@@ -233,6 +233,8 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
                         data_entry->header.record_size);
     }
     case SortedDeleteRecord: {
+    handle_sorted_delete_record : {
+      std::lock_guard<SpinMutex> lg(*old_delete_record.key_lock);
       auto delete_record_index_type =
           old_delete_record.index_pointer.skiplist_node.GetTag();
       SkiplistNode* dram_node = nullptr;
@@ -286,10 +288,11 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
             static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
             old_delete_record.key_lock, dram_node,
             kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get())) {
-          return purgeOldDeleteRecord(
-              old_delete_record);  // lock conflict, retry
+          // lock conflict, retry
+          goto handle_sorted_delete_record;
         }
       }
+    }
     }
     default: {
       std::abort();
