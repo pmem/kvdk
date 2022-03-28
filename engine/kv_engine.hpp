@@ -81,9 +81,9 @@ class KVEngine : public Engine {
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
-  virtual Status Modify(const StringView key, std::string* new_value,
-                        ModifyFunction modify_func,
-                        const WriteOptions& options) override;
+  Status Modify(const StringView key, std::string* new_value,
+                ModifyFunction modify_func,
+                const WriteOptions& options) override;
 
   // Sorted Collection
   Status SGet(const StringView collection, const StringView user_key,
@@ -97,12 +97,12 @@ class KVEngine : public Engine {
   void ReleaseSortedIterator(Iterator* sorted_iterator) override;
 
   // Unordered Collection
-  virtual Status HGet(StringView const collection_name, StringView const key,
-                      std::string* value) override;
-  virtual Status HSet(StringView const collection_name, StringView const key,
-                      StringView const value) override;
-  virtual Status HDelete(StringView const collection_name,
-                         StringView const key) override;
+  Status HGet(StringView const collection_name, StringView const key,
+              std::string* value) override;
+  Status HSet(StringView const collection_name, StringView const key,
+              StringView const value) override;
+  Status HDelete(StringView const collection_name,
+                 StringView const key) override;
   std::shared_ptr<Iterator> NewUnorderedIterator(
       StringView const collection_name) override;
 
@@ -187,26 +187,15 @@ class KVEngine : public Engine {
   Status ListTryLock(StringView key) final;
   Status ListUnlock(StringView key) final;
   Status ListLength(StringView key, size_t* sz) final;
-  Status ListPos(StringView key, StringView elem, std::vector<size_t>* indices,
-                 IndexType rank = 1, size_t count = 1,
-                 size_t max_len = 0) final;
-  Status ListPos(StringView key, StringView elem, size_t* index,
-                 IndexType rank = 1, size_t max_len = 0) final;
-  Status ListRange(StringView key, IndexType start, IndexType stop,
-                   GetterCallBack cb, void* cb_args) final;
-  Status ListIndex(StringView key, IndexType index, GetterCallBack cb,
-                   void* cb_args) final;
-  Status ListIndex(StringView key, IndexType index, std::string* elem) final;
-  Status ListPush(StringView key, ListPosition pos, StringView elem) final;
-  Status ListPop(StringView key, ListPosition pos, GetterCallBack cb,
-                 void* cb_args, size_t cnt = 1) final;
-  Status ListPop(StringView key, ListPosition pos, std::string* elem) final;
-  Status ListInsert(StringView key, ListPosition pos, IndexType pivot,
-                    StringView elem) final;
-  Status ListInsert(StringView key, ListPosition pos, StringView pivot,
-                    StringView elem, IndexType rank = 1) final;
-  Status ListRemove(StringView key, IndexType cnt, StringView elem) final;
-  Status ListSet(StringView key, IndexType index, StringView elem) final;
+  Status ListPushFront(StringView key, StringView elem) final;
+  Status ListPushBack(StringView key, StringView elem) final;
+  Status ListPopFront(StringView key, std::string* elem) final;
+  Status ListPopBack(StringView key, std::string* elem) final;
+  Status ListInitIterator(StringView key, ListIterator** iter) final;
+  Status ListDestroyIterator(ListIterator** iter) final;
+  Status ListInsert(ListIterator* pos, StringView elem) final;
+  Status ListErase(ListIterator* pos) final;
+  Status ListSet(ListIterator* pos, StringView elem) final;
 
  private:
   struct LookupResult {

@@ -120,19 +120,18 @@ class Engine {
   // Pop last element of List
   virtual Status ListPopBack(StringView key, std::string* elem) = 0;
 
-  // Insert a element Before or After pivot.
-  // Use rank to skip the first (rank-1) pivot.
-  virtual Status ListInsertBefore(StringView key, ListPosition pos, IndexType pivot,
-                            StringView elem) = 0;
-  virtual Status ListInsertAfter(StringView key, ListPosition pos, StringView pivot,
-                            StringView elem, IndexType rank = 1) = 0;
+  virtual Status ListInitIterator(StringView key, ListIterator** iter) = 0;
+
+  virtual Status ListDestroyIterator(ListIterator** iter) = 0;
+
+  // Insert a element Before pos.
+  virtual Status ListInsert(ListIterator* pos, StringView elem) = 0;
 
   // Remove specified element
-  // negative cnt will remove |cnt| elem from end of list
-  virtual Status ListRemove(StringView key, IndexType cnt, StringView elem) = 0;
+  virtual Status ListErase(ListIterator* pos) = 0;
 
-  // Replace the element at index
-  virtual Status ListSet(StringView key, IndexType index, StringView elem) = 0;
+  // Replace the element at pos
+  virtual Status ListSet(ListIterator* pos, StringView elem) = 0;
 
   // Get a snapshot of the instance at this moment.
   // If set make_checkpoint to true, a persistent checkpoint will be made until

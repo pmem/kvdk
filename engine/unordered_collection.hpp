@@ -226,6 +226,8 @@ class UnorderedIterator final : public Iterator {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 
+  IteratorType Type() const final { return IteratorType::HashIterator; }
+
   /// Seek to First DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToFirst() final {

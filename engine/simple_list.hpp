@@ -4,66 +4,57 @@
 
 #include <stdexcept>
 
-#include "kvdk/iterator.hpp"
-
 #include "generic_list.hpp"
+#include "kvdk/iterator.hpp"
 
 namespace KVDK_NAMESPACE {
 using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
 using ListBuilder =
     GenericListBuilder<RecordType::ListRecord, RecordType::ListElem>;
 
-class ListIterator : Iterator
-{
-public:
-    ListIterator(List* l) : list{l}, rep{l->Front()} 
-    {
-        kvdk_assert(list != nullptr, "");
+class ListIteratorImpl : public ListIterator {
+ public:
+  void Seek(StringView elem) final {
+    SeekToFirst();
+    while (Valid() && elem != rep->Value()) {
+      ++rep;
     }
+  }
 
-    void Seek(const std::string& elem) final
-    {
-        while (rep != list->Tail() && elem != rep->Value())
-        {
-            ++rep;
-        }
-    }
+  void Seek(IndexType pos) final { rep = list->Seek(pos); }
 
-    void Seek(IndexType pos)
-    {
-        
-    }
+  void SeekToFirst() final { rep = list->Front(); }
 
-  virtual void Seek(IndexType pos) = 0;
+  void SeekToLast() final { rep = list->Back(); }
 
-  virtual void SeekToFirst() = 0;
+  bool Valid() const final {
+    // list->Head() == list->Tail()
+    return (rep != list->Tail());
+  }
 
-  virtual void SeekToLast() = 0;
+  void Next() final { ++rep; }
 
-    bool Valid() final
-    {
-        // list->Head() == list->Tail()
-        return (rep != );
-    }
+  void Prev() final { --rep; }
 
-    void Next() final 
-    {
-        ++rep;
-    }
+  std::string Value() const final {
+    kvdk_assert(Valid(), "Invalid ListIteratorImpl!");
+    auto sw = rep->Value();
+    return std::string{sw.data(), sw.size()};
+  }
 
-    void Prev() final
-    {
-        ++rep;
-    }
+ public:
+  ListIteratorImpl(List* l) : list{l}, rep{l->Front()} {
+    kvdk_assert(list != nullptr, "");
+  }
 
-  virtual std::string Key() = 0;
+  List::Iterator& Rep() { return rep; }
 
-  virtual std::string Value() = 0;
-  
-private:
-    List::Iterator rep;
+  List* Owner() const { return list; }
+
+ private:
+  List* list;
+  List::Iterator rep;
 };
-
 
 }  // namespace KVDK_NAMESPACE
 

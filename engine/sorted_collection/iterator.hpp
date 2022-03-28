@@ -72,6 +72,10 @@ class SortedIterator : public Iterator {
     return string_view_2_string(current_->Value());
   }
 
+  IteratorType Type() const final {
+    return IteratorType::SortedIterator;
+  }
+
  private:
   friend KVEngine;
   DLRecord* findValidVersion(DLRecord* pmem_record) {
