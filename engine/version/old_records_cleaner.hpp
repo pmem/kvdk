@@ -25,14 +25,33 @@ struct OldDataRecord {
 };
 
 struct OldDeleteRecord {
+  union RecordIndex {
+    RecordIndex(void* ptr, PointerType type)
+        : hash_entry((HashEntry*)ptr, type) {}
+    PointerWithTag<HashEntry, PointerType> hash_entry;
+    PointerWithTag<SkiplistNode, PointerType> skiplist_node;
+  };
+
+  OldDeleteRecord(void* _pmem_delete_record, void* _record_index,
+                  PointerType _index_type, TimeStampType _release_time,
+                  SpinMutex* _key_lock)
+      : pmem_delete_record(_pmem_delete_record),
+        release_time(_release_time),
+        key_lock(_key_lock),
+        index_pointer(_record_index, _index_type) {}
+
   void* pmem_delete_record;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely clear index of this OldDeleteRecord, and transfer it to
   // PendingFreeSpaceEntries
   TimeStampType release_time;
-  // We need ref to hash entry for clear index of delete record
-  HashEntry* hash_entry_ref;
-  SpinMutex* hash_entry_lock;
+  // We may need to clean index for delete record, so we need track its index
+  // and key lock
+  //
+  // The tag of pointer indicates the type of pointer, like hash ptr or skiplist
+  // node
+  RecordIndex index_pointer;
+  SpinMutex* key_lock;
 };
 
 struct PendingFreeSpaceEntries {
@@ -83,7 +102,7 @@ class OldRecordsCleaner {
 
   void maybeUpdateOldestSnapshot();
   SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
-  SpaceEntry purgeOldDeleteRecord(const OldDeleteRecord& old_delete_record);
+  SpaceEntry purgeOldDeleteRecord(OldDeleteRecord& old_delete_record);
 
   KVEngine* kv_engine_;
 

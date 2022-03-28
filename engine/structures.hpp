@@ -14,45 +14,76 @@
 
 namespace KVDK_NAMESPACE {
 
+enum class PointerType : uint8_t {
+  // Value uninitialized considered as Invalid
+  Invalid = 0,
+  // Point to a string record on PMem
+  StringRecord = 1,
+  // Point to a doubly linked record on PMem
+  DLRecord = 2,
+  // Point to a dram skiplist node object
+  SkiplistNode = 3,
+  // Point to a dram Skiplist object
+  Skiplist = 4,
+  // Point to a UnorderedCollection object on DRAM
+  UnorderedCollection = 5,
+  // Point to a element of UnorderedCollection
+  UnorderedCollectionElement = 6,
+  // Point to a dram List object
+  List = 7,
+  // Point to a hash entry of hash table
+  HashEntry = 8,
+  // Empty which point to nothing
+  Empty = 100,
+};
+
 // A pointer with additional information on high 16 bits
-template <typename T>
+template <typename T_Pointer, typename T_Tag>
 class PointerWithTag {
  public:
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
   // TODO: Maybe explicit
-  PointerWithTag(T* pointer) : tagged_pointer((uint64_t)pointer) {}
+  PointerWithTag(T_Pointer* pointer) : tagged_pointer((uint64_t)pointer) {
+    assert(sizeof(T_Tag) <= 2);
+  }
 
-  explicit PointerWithTag(T* pointer, uint16_t tag)
-      : tagged_pointer((uint64_t)pointer | ((uint64_t)tag << 48)) {}
+  explicit PointerWithTag(T_Pointer* pointer, T_Tag tag)
+      : tagged_pointer((uint64_t)pointer | ((uint64_t)tag << 48)) {
+    assert(sizeof(T_Tag) <= 2);
+  }
 
   PointerWithTag() : tagged_pointer(0) {}
 
-  T* RawPointer() { return (T*)(tagged_pointer & kPointerMask); }
-
-  const T* RawPointer() const {
-    return (const T*)(tagged_pointer & kPointerMask);
+  T_Pointer* RawPointer() {
+    return (T_Pointer*)(tagged_pointer & kPointerMask);
   }
 
-  bool Null() { return RawPointer() == nullptr; }
+  const T_Pointer* RawPointer() const {
+    return (const T_Pointer*)(tagged_pointer & kPointerMask);
+  }
 
-  uint16_t GetTag() { return tagged_pointer >> 48; }
+  bool Null() const { return RawPointer() == nullptr; }
+
+  T_Tag GetTag() const { return static_cast<T_Tag>(tagged_pointer >> 48); }
 
   void ClearTag() { tagged_pointer &= kPointerMask; }
 
-  void SetTag(uint16_t tag) { tagged_pointer |= ((uint64_t)tag << 48); }
+  void SetTag(T_Tag tag) { tagged_pointer |= ((uint64_t)tag << 48); }
 
-  const T& operator*() const { return *RawPointer(); }
+  const T_Pointer& operator*() const { return *RawPointer(); }
 
-  T& operator*() { return *(RawPointer()); }
+  T_Pointer& operator*() { return *(RawPointer()); }
 
-  const T* operator->() const { return RawPointer(); }
+  const T_Pointer* operator->() const { return RawPointer(); }
 
-  T* operator->() { return RawPointer(); }
+  T_Pointer* operator->() { return RawPointer(); }
 
-  bool operator==(const T* raw_pointer) { return RawPointer() == raw_pointer; }
+  bool operator==(const T_Pointer* raw_pointer) {
+    return RawPointer() == raw_pointer;
+  }
 
-  bool operator==(const T* raw_pointer) const {
+  bool operator==(const T_Pointer* raw_pointer) const {
     return RawPointer() == raw_pointer;
   }
 

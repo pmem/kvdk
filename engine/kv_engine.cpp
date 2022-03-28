@@ -240,7 +240,7 @@ Status KVEngine::CreateSortedCollection(
       skiplists_.insert({id, skiplist});
     }
     hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist.get(),
-                        HashIndexType::Skiplist);
+                        PointerType::Skiplist);
   } else {
     return s;
   }
@@ -528,7 +528,7 @@ Status KVEngine::RestoreStringRecord(StringRecord* pmem_record,
   }
 
   hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, pmem_record,
-                      HashIndexType::StringRecord);
+                      PointerType::StringRecord);
   if (found) {
     purgeAndFree(hash_entry.GetIndex().ptr);
   }
@@ -854,11 +854,11 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     } else if (hash_entry.GetRecordType() == DlistDataRecord) {
       pmem_record = hash_entry.GetIndex().ptr;
     } else if (hash_entry.GetRecordType() == SortedDataRecord) {
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
         SkiplistNode* dram_node = hash_entry.GetIndex().skiplist_node;
         pmem_record = dram_node->record;
       } else {
-        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+        assert(hash_entry.GetIndexType() == PointerType::DLRecord);
         pmem_record = hash_entry.GetIndex().dl_record;
       }
     } else {
@@ -941,8 +941,18 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
               "Wrong existing record type while insert a delete reocrd for "
               "sorted collection");
           delayFree(OldDataRecord{ret.existing_record, new_ts});
-          delayFree(OldDeleteRecord{ret.write_record, new_ts,
-                                    ret.hash_entry_ptr, hint.spin});
+          if (ret.hash_entry_ptr != nullptr) {
+            delayFree(OldDeleteRecord(ret.write_record, ret.hash_entry_ptr,
+                                      PointerType::HashEntry, new_ts,
+                                      hint.spin));
+          } else if (ret.dram_node != nullptr) {
+            delayFree(OldDeleteRecord(ret.write_record, ret.dram_node,
+                                      PointerType::SkiplistNode, new_ts,
+                                      hint.spin));
+          } else {
+            delayFree(OldDeleteRecord(ret.write_record, nullptr,
+                                      PointerType::Empty, new_ts, hint.spin));
+          }
         }
         return ret.s;
       default:
@@ -1201,9 +1211,9 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       delayFree(OldDataRecord{batch_hints[i].data_record_to_free, ts});
     }
     if (batch_hints[i].delete_record_to_free != nullptr) {
-      delayFree(OldDeleteRecord{batch_hints[i].delete_record_to_free, ts,
-                                batch_hints[i].hash_entry_ptr,
-                                batch_hints[i].hash_hint.spin});
+      delayFree(OldDeleteRecord(
+          batch_hints[i].delete_record_to_free, batch_hints[i].hash_entry_ptr,
+          PointerType::HashEntry, ts, batch_hints[i].hash_hint.spin));
     }
     if (batch_hints[i].space_not_used) {
       pmem_allocator_->Free(batch_hints[i].allocated_space);
@@ -1258,7 +1268,7 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
         expired_time);
 
     hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record_ptr,
-                        HashIndexType::StringRecord);
+                        PointerType::StringRecord);
     ul.unlock();
     delayFree(OldDataRecord({old_record, new_ts}));
     new_value->assign(modified_value);
@@ -1309,7 +1319,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
         kv.key, kv.type == StringDataRecord ? kv.value : "");
 
     hash_table_->Insert(hash_hint, entry_ptr, (RecordType)kv.type, block_base,
-                        HashIndexType::StringRecord);
+                        PointerType::StringRecord);
 
     if (found) {
       if (kv.type == StringDeleteRecord) {
@@ -1361,22 +1371,22 @@ Status KVEngine::GetTTL(const StringView str, TTLTimeType* ttl_time) {
 
   Collection* collection_ptr = nullptr;
   switch (entry_ptr->GetIndexType()) {
-    case HashIndexType::Skiplist: {
+    case PointerType::Skiplist: {
       expired_time = entry_ptr->GetIndex().skiplist->GetExpireTime();
       break;
     }
-    case HashIndexType::UnorderedCollection: {
+    case PointerType::UnorderedCollection: {
       expired_time =
           entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
       break;
     }
 
-    case HashIndexType::List: {
+    case PointerType::List: {
       expired_time = entry_ptr->GetIndex().list->GetExpireTime();
       break;
     }
 
-    case HashIndexType::StringRecord: {
+    case PointerType::StringRecord: {
       expired_time = entry_ptr->GetIndex().string_record->GetExpireTime();
       break;
     }
@@ -1426,12 +1436,12 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
 
   auto hash_type = entry_ptr->GetIndexType();
   switch (entry_ptr->GetIndexType()) {
-    case HashIndexType::StringRecord:
+    case PointerType::StringRecord:
       return Status::NotSupported;
-    case HashIndexType::Skiplist: {
+    case PointerType::Skiplist: {
       return entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
     }
-    case HashIndexType::UnorderedCollection: {
+    case PointerType::UnorderedCollection: {
       UnorderedCollection* pcoll = hash_entry.GetIndex().p_unordered_collection;
       /// TODO: put these unregister and delete work in findKey()
       kvdk_assert(!pcoll->HasExpired(), "Impossible");
@@ -1442,7 +1452,7 @@ Status KVEngine::Expire(const StringView str, TTLTimeType ttl_time) {
       }
       return Status::Ok;
     }
-    case HashIndexType::List: {
+    case PointerType::List: {
       std::unique_lock<std::recursive_mutex> guard;
       List* list;
       /// TODO: (Ziyan) This may deadlock!
@@ -1505,12 +1515,13 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
             key, "");
 
         hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
-                            HashIndexType::StringRecord);
+                            PointerType::StringRecord);
         ul.unlock();
         delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
         // We also delay free this delete record to recycle PMem and DRAM
         // space
-        delayFree(OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
+        delayFree(OldDeleteRecord(pmem_ptr, entry_ptr, PointerType::HashEntry,
+                                  new_ts, hint.spin));
 
         return s;
       }
@@ -1579,7 +1590,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
     auto updated_type = hash_entry_ptr->GetRecordType();
     // Write hash index
     hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord, block_base,
-                        HashIndexType::StringRecord);
+                        PointerType::StringRecord);
     if (found && updated_type == StringDataRecord /* delete record is self-freed, so we don't need to free it here */) {
       ul.unlock();
       delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
@@ -1722,7 +1733,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
           kvdk_assert(s == Status::NotFound, "Logically impossible!");
           hash_table_->Insert(hint_collection, p_hash_entry_collection,
                               RecordType::DlistRecord, p_collection,
-                              HashIndexType::UnorderedCollection);
+                              PointerType::UnorderedCollection);
         }
       }
     }
@@ -1792,7 +1803,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
                 emplace_result.offset_new);
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             RecordType::DlistDataRecord, pmp_new_record,
-                            HashIndexType::UnorderedCollectionElement);
+                            PointerType::UnorderedCollectionElement);
         return Status::Ok;
       }
     }
@@ -1893,7 +1904,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
           &p_hash_entry_collection, &hash_entry_collection, nullptr);
       hash_table_->Insert(hint_collection, p_hash_entry_collection,
                           RecordType::DlistRecord, p_collection,
-                          HashIndexType::UnorderedCollection);
+                          PointerType::UnorderedCollection);
       kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
       return Status::Ok;
     }
@@ -1935,7 +1946,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
         case Status::NotFound: {
           hash_table_->Insert(hint_record, p_hash_entry_record,
                               pmp_record->entry.meta.type, pmp_record,
-                              HashIndexType::UnorderedCollectionElement);
+                              PointerType::UnorderedCollectionElement);
           return Status::Ok;
         }
         case Status::Ok: {
@@ -1949,7 +1960,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
             }
             hash_table_->Insert(hint_record, p_hash_entry_record,
                                 pmp_record->entry.meta.type, pmp_record,
-                                HashIndexType::UnorderedCollectionElement);
+                                PointerType::UnorderedCollectionElement);
             purgeAndFree(pmp_old_record);
 
           } else if (pmp_old_record->entry.meta.timestamp ==

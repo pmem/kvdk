@@ -61,13 +61,13 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
   std::vector<SkiplistNode*> to_delete;
   assert(start_node->height >= start_height && end_height >= 1);
   SkiplistNode* prev = start_node;
-  PointerWithTag<SkiplistNode> next;
+  PointerWithTag<SkiplistNode, SkiplistNode::NodeStatus> next;
   for (uint8_t i = start_height; i >= end_height; i--) {
     uint64_t round = 0;
     while (1) {
       next = prev->Next(i);
       // prev is logically deleted, roll back to prev height.
-      if (next.GetTag()) {
+      if (next.GetTag() == SkiplistNode::NodeStatus::Deleted) {
         if (i < start_height) {
           i++;
           prev = result_splice->prevs[i];
@@ -93,7 +93,7 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
 
       // Physically remove deleted "next" nodes from skiplist
       auto next_next = next->Next(i);
-      if (next_next.GetTag()) {
+      if (next_next.GetTag() == SkiplistNode::NodeStatus::Deleted) {
         if (prev->CASNext(i, next, next_next.RawPointer())) {
           if (--next->valid_links == 0) {
             to_delete.push_back(next.RawPointer());
@@ -197,7 +197,7 @@ Status Skiplist::CheckIndex() {
         return Status::Abort;
       }
 
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
         if (hash_entry.GetIndex().skiplist_node != next_node) {
           return Status::Abort;
         }
@@ -480,11 +480,11 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
 
     DLRecord* pmem_record;
     switch (hash_entry.GetIndexType()) {
-      case HashIndexType::SkiplistNode: {
+      case PointerType::SkiplistNode: {
         pmem_record = hash_entry.GetIndex().skiplist_node->record;
         break;
       }
-      case HashIndexType::DLRecord: {
+      case PointerType::DLRecord: {
         pmem_record = hash_entry.GetIndex().dl_record;
         break;
       }
@@ -584,12 +584,12 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
         return ret;
       }
 
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
         ret.dram_node = hash_entry.GetIndex().skiplist_node;
         ret.existing_record = ret.dram_node->record;
       } else {
         ret.dram_node = nullptr;
-        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+        assert(hash_entry.GetIndexType() == PointerType::DLRecord);
         ret.existing_record = hash_entry.GetIndex().dl_record;
       }
       assert(timestamp > ret.existing_record->entry.meta.timestamp);
@@ -634,11 +634,11 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
   assert(ret.write_record != nullptr);
   if (ret.dram_node == nullptr) {
     hash_table_->Insert(locked_hash_hint, entry_ptr, SortedDeleteRecord,
-                        ret.write_record, HashIndexType::DLRecord);
+                        ret.write_record, PointerType::DLRecord);
   } else {
     ret.dram_node->record = ret.write_record;
     hash_table_->Insert(locked_hash_hint, entry_ptr, SortedDeleteRecord,
-                        ret.dram_node, HashIndexType::SkiplistNode);
+                        ret.dram_node, PointerType::SkiplistNode);
   }
 
   return ret;
@@ -660,12 +660,12 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
 
   switch (ret.s) {
     case Status::Ok: {
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
         ret.dram_node = hash_entry.GetIndex().skiplist_node;
         ret.existing_record = ret.dram_node->record;
       } else {
         ret.dram_node = nullptr;
-        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+        assert(hash_entry.GetIndexType() == PointerType::DLRecord);
         ret.existing_record = hash_entry.GetIndex().dl_record;
       }
       assert(timestamp > ret.existing_record->entry.meta.timestamp);
@@ -721,11 +721,11 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
   assert(ret.write_record != nullptr);
   if (ret.dram_node == nullptr) {
     hash_table_->Insert(locked_hash_hint, entry_ptr, SortedDataRecord,
-                        ret.write_record, HashIndexType::DLRecord);
+                        ret.write_record, PointerType::DLRecord);
   } else {
     ret.dram_node->record = ret.write_record;
     hash_table_->Insert(locked_hash_hint, entry_ptr, SortedDataRecord,
-                        ret.dram_node, HashIndexType::SkiplistNode);
+                        ret.dram_node, PointerType::SkiplistNode);
   }
 
   return ret;
@@ -801,7 +801,7 @@ Skiplist::WriteResult Skiplist::setImplNoHash(
           auto now_next = splice.prevs[i]->Next(i);
           // if next has been changed or been deleted, re-compute
           if (now_next.RawPointer() == splice.nexts[i] &&
-              now_next.GetTag() == 0) {
+              now_next.GetTag() == SkiplistNode::NodeStatus::Normal) {
             ret.dram_node->RelaxedSetNext(i, splice.nexts[i]);
             if (splice.prevs[i]->CASNext(i, splice.nexts[i], ret.dram_node)) {
               break;

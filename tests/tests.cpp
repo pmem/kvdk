@@ -1812,21 +1812,21 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
       auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
         switch (bucket_iter->GetIndexType()) {
-          case HashIndexType::StringRecord: {
+          case PointerType::StringRecord: {
             total_entry_num++;
             ASSERT_EQ(string_view_2_string(
                           bucket_iter->GetIndex().string_record->Value()),
                       "stringval");
             break;
           }
-          case HashIndexType::Skiplist: {
+          case PointerType::Skiplist: {
             total_entry_num++;
             ASSERT_EQ(
                 string_view_2_string(bucket_iter->GetIndex().skiplist->Name()),
                 collection_name);
             break;
           }
-          case HashIndexType::SkiplistNode: {
+          case PointerType::SkiplistNode: {
             total_entry_num++;
             ASSERT_EQ(
                 string_view_2_string(
@@ -1834,7 +1834,7 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
                 "sortedval");
             break;
           }
-          case HashIndexType::DLRecord: {
+          case PointerType::DLRecord: {
             total_entry_num++;
             ASSERT_EQ(string_view_2_string(
                           bucket_iter->GetIndex().dl_record->Value()),
@@ -1842,8 +1842,8 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
             break;
           }
           default:
-            ASSERT_EQ((bucket_iter->GetIndexType() == HashIndexType::Invalid) ||
-                          (bucket_iter->GetIndexType() == HashIndexType::Empty),
+            ASSERT_EQ((bucket_iter->GetIndexType() == PointerType::Invalid) ||
+                          (bucket_iter->GetIndexType() == PointerType::Empty),
                       true);
             break;
         }
@@ -2389,7 +2389,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
       auto bucket_iter = slot_iter.Begin();
       auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
-        if (bucket_iter->GetIndexType() == HashIndexType::StringRecord) {
+        if (bucket_iter->GetIndexType() == PointerType::StringRecord) {
           TEST_SYNC_POINT("ScanHashTable");
           sleep(2);
           ASSERT_EQ(bucket_iter->GetIndex().string_record->Key(), key);

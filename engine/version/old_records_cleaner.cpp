@@ -207,17 +207,25 @@ SpaceEntry OldRecordsCleaner::purgeOldDataRecord(
 }
 
 SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
-    const OldDeleteRecord& old_delete_record) {
+    OldDeleteRecord& old_delete_record) {
   DataEntry* data_entry =
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record);
   switch (data_entry->meta.type) {
     case StringDeleteRecord: {
-      if (old_delete_record.hash_entry_ref->GetIndex().string_record ==
+      kvdk_assert(
+          old_delete_record.index_pointer.hash_entry.RawPointer() != nullptr &&
+              old_delete_record.key_lock != nullptr &&
+              old_delete_record.index_pointer.hash_entry.GetTag() ==
+                  PointerType::HashEntry,
+          "hash index not stored in old delete record of string");
+      HashEntry* hash_entry_ptr = static_cast<HashEntry*>(
+          old_delete_record.index_pointer.hash_entry.RawPointer());
+      if (hash_entry_ptr->GetIndex().string_record ==
           old_delete_record.pmem_delete_record) {
-        std::lock_guard<SpinMutex> lg(*old_delete_record.hash_entry_lock);
-        if (old_delete_record.hash_entry_ref->GetIndex().string_record ==
+        std::lock_guard<SpinMutex> lg(*old_delete_record.key_lock);
+        if (hash_entry_ptr->GetIndex().string_record ==
             old_delete_record.pmem_delete_record) {
-          kv_engine_->hash_table_->Erase(old_delete_record.hash_entry_ref);
+          kv_engine_->hash_table_->Erase(hash_entry_ptr);
         }
       }
       // we don't need to purge a delete record
@@ -225,41 +233,62 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
                         data_entry->header.record_size);
     }
     case SortedDeleteRecord: {
-      while (1) {
-        HashEntry* hash_entry_ref = old_delete_record.hash_entry_ref;
-        SpinMutex* hash_entry_lock = old_delete_record.hash_entry_lock;
-        std::lock_guard<SpinMutex> lg(*hash_entry_lock);
-        DLRecord* hash_indexed_pmem_record = nullptr;
-        SkiplistNode* dram_node = nullptr;
-        switch (hash_entry_ref->GetIndexType()) {
-          case HashIndexType::DLRecord:
-            hash_indexed_pmem_record = hash_entry_ref->GetIndex().dl_record;
-            break;
-          case HashIndexType::SkiplistNode:
+      auto delete_record_index_type =
+          old_delete_record.index_pointer.skiplist_node.GetTag();
+      SkiplistNode* dram_node = nullptr;
+      bool need_clean = false;
+      switch (delete_record_index_type) {
+        case PointerType::HashEntry: {
+          DLRecord* hash_indexed_pmem_record;
+          HashEntry* hash_entry_ref = static_cast<HashEntry*>(
+              old_delete_record.index_pointer.hash_entry.RawPointer());
+          auto hash_index_type = hash_entry_ref->GetIndexType();
+          if (hash_index_type == PointerType::DLRecord) {
+            if (hash_entry_ref->GetIndex().dl_record ==
+                old_delete_record.pmem_delete_record) {
+              hash_indexed_pmem_record = hash_entry_ref->GetIndex().dl_record;
+            }
+          } else if (hash_index_type == PointerType::SkiplistNode) {
             dram_node = hash_entry_ref->GetIndex().skiplist_node;
             hash_indexed_pmem_record = dram_node->record;
-            break;
-          case HashIndexType::Empty:
-            break;
-          default:
-            GlobalLogger.Error(
-                "Wrong type %u in handle pending free skiplist delete record\n",
-                hash_entry_ref->GetIndexType());
-            std::abort();
-        }
-
-        if (hash_indexed_pmem_record == old_delete_record.pmem_delete_record) {
-          if (!Skiplist::Purge(
-                  static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
-                  hash_entry_lock, dram_node, kv_engine_->pmem_allocator_.get(),
-                  kv_engine_->hash_table_.get())) {
-            continue;
+          } else {
+            std::abort();  // never reach
           }
-          kv_engine_->hash_table_->Erase(hash_entry_ref);
-        }
 
-        return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
-                          data_entry->header.record_size);
+          if (hash_indexed_pmem_record ==
+              old_delete_record.pmem_delete_record) {
+            need_clean = true;
+            kv_engine_->hash_table_->Erase(hash_entry_ref);
+          }
+          break;
+        }
+        case PointerType::SkiplistNode: {
+          dram_node = static_cast<SkiplistNode*>(
+              old_delete_record.index_pointer.skiplist_node.RawPointer());
+          if (dram_node->record == old_delete_record.pmem_delete_record) {
+            need_clean = true;
+          }
+          break;
+        }
+        case PointerType::Empty: {
+          if (Skiplist::CheckRecordLinkage(
+                  static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
+                  kv_engine_->pmem_allocator_.get())) {
+            need_clean = true;
+          }
+        }
+        default: {
+          std::abort();  // never should reach
+        }
+      }
+      if (need_clean) {
+        while (!Skiplist::Purge(
+            static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
+            old_delete_record.key_lock, dram_node,
+            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get())) {
+          return purgeOldDeleteRecord(
+              old_delete_record);  // lock conflict, retry
+        }
       }
     }
     default: {
