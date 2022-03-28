@@ -622,6 +622,7 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(
           prev_offset, next_offset, internal_key, "");
       linkDLRecord(prev_record, next_record, delete_record);
       ret.write_record = delete_record;
+      ret.hash_entry_ptr = entry_ptr;
 
       break;
     }
@@ -696,6 +697,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
           space_to_write.size, timestamp, SortedDataRecord, existing_offset,
           prev_offset, next_offset, internal_key, value);
       ret.write_record = new_record;
+      ret.hash_entry_ptr = entry_ptr;
       linkDLRecord(prev_record, next_record, new_record);
 
       break;

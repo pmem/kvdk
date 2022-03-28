@@ -650,6 +650,8 @@ TEST_F(EngineBasicTest, TestStringModify) {
   std::string val;
   ASSERT_EQ(engine->Get(plus_key, &val), Status::Ok);
   ASSERT_EQ(std::stoi(val), ops_per_thread * num_threads);
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestBatchWrite) {

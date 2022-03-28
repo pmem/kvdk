@@ -941,7 +941,8 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
               "Wrong existing record type while insert a delete reocrd for "
               "sorted collection");
           delayFree(OldDataRecord{ret.existing_record, new_ts});
-          delayFree(OldDeleteRecord{ret.write_record, new_ts});
+          delayFree(OldDeleteRecord{ret.write_record, new_ts,
+                                    ret.hash_entry_ptr, hint.spin});
         }
         return ret.s;
       default:

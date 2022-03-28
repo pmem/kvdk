@@ -154,6 +154,7 @@ class Skiplist : public Collection {
     DLRecord* existing_record = nullptr;
     DLRecord* write_record = nullptr;
     SkiplistNode* dram_node = nullptr;
+    HashEntry* hash_entry_ptr = nullptr;
   };
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
