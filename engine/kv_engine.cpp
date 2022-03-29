@@ -2095,42 +2095,6 @@ void KVEngine::backgroundDramCleaner() {
 
 // List
 namespace KVDK_NAMESPACE {
-Status KVEngine::ListLock(StringView key) {
-  std::unique_lock<std::recursive_mutex> guard;
-  List* list;
-  Status s = listFind(key, &list, false, guard);
-  if (s != Status::Ok) {
-    return s;
-  }
-  list->Mutex()->lock();
-  return Status::Ok;
-}
-
-Status KVEngine::ListTryLock(StringView key) {
-  std::unique_lock<std::recursive_mutex> guard;
-  List* list;
-  Status s = listFind(key, &list, false, guard);
-  if (s != Status::Ok) {
-    return s;
-  }
-  if (list->Mutex()->try_lock()) {
-    return Status::Ok;
-  } else {
-    return Status::OperationFail;
-  }
-}
-
-Status KVEngine::ListUnlock(StringView key) {
-  std::unique_lock<std::recursive_mutex> guard;
-  List* list;
-  Status s = listFind(key, &list, false, guard);
-  if (s != Status::Ok) {
-    return s;
-  }
-  list->Mutex()->unlock();
-  return Status::Ok;
-}
-
 Status KVEngine::ListLength(StringView key, size_t* sz) {
   std::unique_lock<std::recursive_mutex> guard;
   List* list;
@@ -2224,24 +2188,6 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   return Status::Ok;
 }
 
-Status KVEngine::ListIteratorInit(StringView key, ListIterator** iter) {
-  *iter = nullptr;
-  std::unique_lock<std::recursive_mutex> guard;
-  List* list;
-  Status s = listFind(key, &list, false, guard);
-  if (s != Status::Ok) {
-    return s;
-  }
-  *iter = new ListIteratorImpl{list};
-  return Status::Ok;
-}
-
-Status KVEngine::ListIteratorDestroy(ListIterator** iter) {
-  delete (*iter);
-  *iter = nullptr;
-  return Status::Ok;
-}
-
 Status KVEngine::ListInsert(ListIterator* pos, StringView elem) {
   ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos);
   kvdk_assert(iter != nullptr, "Invalid iterator!")
@@ -2315,6 +2261,16 @@ Status KVEngine::ListSet(ListIterator* pos, StringView elem) {
                               version_controller_.GetCurrentTimestamp(), "",
                               elem, [&](DLRecord* rec) { purgeAndFree(rec); });
   return Status::Ok;
+}
+
+std::unique_ptr<ListIterator> KVEngine::ListMakeIterator(StringView key) {
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(key, &list, false, guard);
+  if (s != Status::Ok) {
+    return nullptr;
+  }
+  return std::unique_ptr<ListIteratorImpl>{new ListIteratorImpl{list}};
 }
 
 List* KVEngine::listCreate(StringView key) {

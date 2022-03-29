@@ -457,19 +457,24 @@ KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
   return engine->rep->ListSet(pos->rep, StringView{elem_data, elem_len});
 }
 
-KVDKStatus KVDKListIteratorInit(KVDKEngine* engine, char const* key_data,
-                                size_t key_len, KVDKListIterator** iter) {
+int KVDKListIteratorInit(KVDKEngine* engine, char const* key_data,
+                         size_t key_len, KVDKListIterator** iter) {
+  auto iter2 = engine->rep->ListMakeIterator(StringView{key_data, key_len});
+  if (iter2 == nullptr) {
+    *iter = nullptr;
+    return -1;
+  }
   *iter = new KVDKListIterator;
-  return engine->rep->ListIteratorInit(StringView{key_data, key_len},
-                                       &(*iter)->rep);
+  (*iter)->rep = iter2.release();
+  return 0;
 }
 
-KVDKStatus KVDKListIteratorDestroy(KVDKEngine* engine,
-                                   KVDKListIterator** iter) {
-  KVDKStatus s = engine->rep->ListIteratorDestroy(&(*iter)->rep);
-  delete (*iter);
-  *iter = nullptr;
-  return s;
+void KVDKListIteratorDestroy(KVDKEngine* engine, KVDKListIterator** iter) {
+  if (*iter != nullptr) {
+    delete (*iter)->rep;
+    delete (*iter);
+    *iter = nullptr;
+  }
 }
 
 void KVDKListIteratorPrev(KVDKListIterator* iter) { iter->rep->Prev(); }

@@ -183,19 +183,15 @@ class KVEngine : public Engine {
       const SortedCollectionConfigs& configs) override;
 
   // List
-  Status ListLock(StringView key) final;
-  Status ListTryLock(StringView key) final;
-  Status ListUnlock(StringView key) final;
   Status ListLength(StringView key, size_t* sz) final;
   Status ListPushFront(StringView key, StringView elem) final;
   Status ListPushBack(StringView key, StringView elem) final;
   Status ListPopFront(StringView key, std::string* elem) final;
   Status ListPopBack(StringView key, std::string* elem) final;
-  Status ListIteratorInit(StringView key, ListIterator** iter) final;
-  Status ListIteratorDestroy(ListIterator** iter) final;
   Status ListInsert(ListIterator* pos, StringView elem) final;
   Status ListErase(ListIterator* pos) final;
   Status ListSet(ListIterator* pos, StringView elem) final;
+  std::unique_ptr<ListIterator> ListMakeIterator(StringView key) final;
 
  private:
   struct LookupResult {

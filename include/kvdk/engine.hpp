@@ -101,12 +101,6 @@ class Engine {
   virtual Status HDelete(const StringView collection, const StringView key) = 0;
 
   /// List
-  // List operations are guaranteed to be atomic.
-  // User may manually lock the list to atomically perform multiple operations
-  virtual Status ListLock(StringView key) = 0;
-  virtual Status ListTryLock(StringView key) = 0;
-  virtual Status ListUnlock(StringView key) = 0;
-
   // Total elements in List
   virtual Status ListLength(StringView key, size_t* sz) = 0;
 
@@ -120,10 +114,6 @@ class Engine {
   // Pop last element of List
   virtual Status ListPopBack(StringView key, std::string* elem) = 0;
 
-  virtual Status ListIteratorInit(StringView key, ListIterator** iter) = 0;
-
-  virtual Status ListIteratorDestroy(ListIterator** iter) = 0;
-
   // Insert a element Before pos.
   virtual Status ListInsert(ListIterator* pos, StringView elem) = 0;
 
@@ -132,6 +122,8 @@ class Engine {
 
   // Replace the element at pos
   virtual Status ListSet(ListIterator* pos, StringView elem) = 0;
+
+  virtual std::unique_ptr<ListIterator> ListMakeIterator(StringView key) = 0;
 
   // Get a snapshot of the instance at this moment.
   // If set make_checkpoint to true, a persistent checkpoint will be made until

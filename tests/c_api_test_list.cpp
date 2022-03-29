@@ -42,8 +42,7 @@ TEST_F(EngineCAPITestBase, List) {
   auto ListPopBack = [&](std::string const& key) {
     char* value;
     size_t sz;
-    KVDKStatus s =
-        KVDKListPopBack(engine, key.data(), key.size(), &value, &sz);
+    KVDKStatus s = KVDKListPopBack(engine, key.data(), key.size(), &value, &sz);
     std::string ret{value, sz};
     free(value);
     return std::make_pair(s, ret);
@@ -118,10 +117,7 @@ TEST_F(EngineCAPITestBase, List) {
     auto& list_copy = list_copy_vec[tid];
 
     KVDKListIterator* iter{nullptr};
-    KVDKStatus s = KVDKListIteratorInit(engine, key.data(), key.size(), &iter);
-    ASSERT_TRUE((s == KVDKStatus::NotFound && list_copy.empty()) ||
-                (s == KVDKStatus::Ok));
-    if (s == KVDKStatus::Ok) {
+    if (KVDKListIteratorInit(engine, key.data(), key.size(), &iter) == 0) {
       KVDKListIteratorSeekPos(iter, 0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(KVDKListIteratorIsValid(iter));
@@ -136,9 +132,8 @@ TEST_F(EngineCAPITestBase, List) {
         ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
         KVDKListIteratorPrev(iter);
       }
-
-      ASSERT_EQ(KVDKListIteratorDestroy(engine, &iter), KVDKStatus::Ok);
     }
+    KVDKListIteratorDestroy(engine, &iter);
   };
 
   auto ListInsertSetRemove = [&](size_t tid) {
@@ -153,8 +148,7 @@ TEST_F(EngineCAPITestBase, List) {
     ASSERT_GT(len, insert_pos);
 
     KVDKListIterator* iter{nullptr};
-    ASSERT_EQ(KVDKListIteratorInit(engine, key.data(), key.size(), &iter),
-              KVDKStatus::Ok);
+    ASSERT_EQ(KVDKListIteratorInit(engine, key.data(), key.size(), &iter), 0);
 
     KVDKListIteratorSeekPos(iter, insert_pos);
     auto iter2 = std::next(list_copy.begin(), insert_pos);
@@ -184,7 +178,7 @@ TEST_F(EngineCAPITestBase, List) {
     iter2 = list_copy.erase(iter2);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
 
-    ASSERT_EQ(KVDKListIteratorDestroy(engine, &iter), KVDKStatus::Ok);
+    KVDKListIteratorDestroy(engine, &iter);
   };
 
   for (size_t i = 0; i < 3; i++) {

@@ -1418,11 +1418,9 @@ TEST_F(EngineBasicTest, TestList) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
-    ListIterator* iter;
-    Status s = engine->ListIteratorInit(key, &iter);
-    ASSERT_TRUE((list_copy.empty() && s == Status::NotFound) ||
-                (s == Status::Ok));
-    if (s == Status::Ok) {
+    auto iter = engine->ListMakeIterator(key);
+    ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
+    if (iter != nullptr) {
       iter->Seek(0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(iter->Valid());
@@ -1437,8 +1435,6 @@ TEST_F(EngineBasicTest, TestList) {
         ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
       }
-
-      ASSERT_EQ(engine->ListIteratorDestroy(&iter), Status::Ok);
     }
   };
 
@@ -1452,15 +1448,15 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
-    ListIterator* iter;
-    ASSERT_EQ(engine->ListIteratorInit(key, &iter), Status::Ok);
+    auto iter = engine->ListMakeIterator(key);
+    ASSERT_NE(iter, nullptr);
 
     iter->Seek(insert_pos);
     auto iter2 = std::next(list_copy.begin(), insert_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(engine->ListInsert(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListInsert(iter.get(), elem), Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
     ASSERT_EQ(iter->Value(), *iter2);
 
@@ -1469,7 +1465,7 @@ TEST_F(EngineBasicTest, TestList) {
     ----iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
-    ASSERT_EQ(engine->ListSet(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListSet(iter.get(), elem), Status::Ok);
     *iter2 = elem;
     ASSERT_EQ(iter->Value(), *iter2);
 
@@ -1477,11 +1473,9 @@ TEST_F(EngineBasicTest, TestList) {
     iter->Prev();
     ----iter2;
     ASSERT_EQ(iter->Value(), *iter2);
-    ASSERT_EQ(engine->ListErase(iter), Status::Ok);
+    ASSERT_EQ(engine->ListErase(iter.get()), Status::Ok);
     iter2 = list_copy.erase(iter2);
     ASSERT_EQ(iter->Value(), *iter2);
-
-    ASSERT_EQ(engine->ListIteratorDestroy(&iter), Status::Ok);
   };
 
   for (size_t i = 0; i < 3; i++) {
