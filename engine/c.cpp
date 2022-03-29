@@ -43,7 +43,7 @@ struct KVDKIterator {
 };
 
 struct KVDKListIterator {
-  ListIterator* rep;
+  std::unique_ptr<ListIterator> rep;
 };
 
 struct KVDKSnapshot {
@@ -456,13 +456,12 @@ int KVDKListIteratorInit(KVDKEngine* engine, char const* key_data,
     return -1;
   }
   *iter = new KVDKListIterator;
-  (*iter)->rep = iter2.release();
+  (*iter)->rep.swap(iter2);
   return 0;
 }
 
 void KVDKListIteratorDestroy(KVDKEngine* engine, KVDKListIterator** iter) {
   if (*iter != nullptr) {
-    delete (*iter)->rep;
     delete (*iter);
     *iter = nullptr;
   }

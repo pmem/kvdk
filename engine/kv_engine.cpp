@@ -2204,15 +2204,15 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   return Status::Ok;
 }
 
-Status KVEngine::ListInsert(ListIterator* pos, StringView elem) {
+Status KVEngine::ListInsert(std::unique_ptr<ListIterator> const& pos,
+                            StringView elem) {
   if (!CheckValueSize(elem)) {
     return Status::InvalidDataSize;
   }
-  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos);
-  kvdk_assert(iter != nullptr, "Invalid iterator!")
+  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos.get());
+  kvdk_assert(iter != nullptr, "Invalid iterator!");
 
-      std::unique_lock<std::recursive_mutex>
-          guard;
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(iter->Owner()->Name(), &list, false, guard);
   if (s != Status::Ok) {
@@ -2231,12 +2231,11 @@ Status KVEngine::ListInsert(ListIterator* pos, StringView elem) {
   return Status::Ok;
 }
 
-Status KVEngine::ListErase(ListIterator* pos) {
-  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos);
-  kvdk_assert(iter != nullptr, "Invalid iterator!")
+Status KVEngine::ListErase(std::unique_ptr<ListIterator> const& pos) {
+  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos.get());
+  kvdk_assert(iter != nullptr, "Invalid iterator!");
 
-      std::unique_lock<std::recursive_mutex>
-          guard;
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(iter->Owner()->Name(), &list, false, guard);
   if (s != Status::Ok) {
@@ -2258,15 +2257,15 @@ Status KVEngine::ListErase(ListIterator* pos) {
 }
 
 // Replace the element at pos
-Status KVEngine::ListSet(ListIterator* pos, StringView elem) {
+Status KVEngine::ListSet(std::unique_ptr<ListIterator> const& pos,
+                         StringView elem) {
   if (!CheckValueSize(elem)) {
     return Status::InvalidDataSize;
   }
-  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos);
-  kvdk_assert(iter != nullptr, "Invalid iterator!")
+  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos.get());
+  kvdk_assert(iter != nullptr, "Invalid iterator!");
 
-      std::unique_lock<std::recursive_mutex>
-          guard;
+  std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(iter->Owner()->Name(), &list, false, guard);
   if (s != Status::Ok) {

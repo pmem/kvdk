@@ -153,7 +153,8 @@ class Engine {
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted. pos is unchanged but is invalid.
   //    Status::Ok if operation succeeded. pos points to inserted element.
-  virtual Status ListInsert(ListIterator* pos, StringView elem) = 0;
+  virtual Status ListInsert(std::unique_ptr<ListIterator> const& pos,
+                            StringView elem) = 0;
 
   // Remove the element indexed by ListIterator pos
   // Return:
@@ -161,7 +162,7 @@ class Engine {
   //    deleted. pos is unchanged but is invalid.
   //    Status::Ok if operation succeeded. pos points
   //    to successor of erased element.
-  virtual Status ListErase(ListIterator* pos) = 0;
+  virtual Status ListErase(std::unique_ptr<ListIterator> const& pos) = 0;
 
   // Replace the element at pos
   // Return:
@@ -169,7 +170,8 @@ class Engine {
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted. pos is unchanged but invalid.
   //    Status::Ok if operation succeeded. pos points to updated element.
-  virtual Status ListSet(ListIterator* pos, StringView elem) = 0;
+  virtual Status ListSet(std::unique_ptr<ListIterator> const& pos,
+                         StringView elem) = 0;
 
   // Create an ListIterator from List
   // Return:
