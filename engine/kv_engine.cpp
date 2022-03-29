@@ -1853,14 +1853,15 @@ Status KVEngine::HDelete(StringView const collection_name,
   }
 }
 
-std::shared_ptr<Iterator> KVEngine::NewUnorderedIterator(
+std::unique_ptr<Iterator> KVEngine::NewUnorderedIterator(
     StringView const collection_name) {
   UnorderedCollection* p_collection;
   Status s =
       FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-  return s == Status::Ok ? std::make_shared<UnorderedIterator>(
-                               p_collection->shared_from_this())
-                         : nullptr;
+  return (s == Status::Ok)
+             ? std::unique_ptr<UnorderedIterator>(
+                   new UnorderedIterator{p_collection->shared_from_this()})
+             : nullptr;
 }
 
 Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {

@@ -5,8 +5,8 @@
 #include "c_api_test.hpp"
 
 TEST_F(EngineCAPITestBase, List) {
-  int num_threads = 16;
-  int count = 10000;
+  size_t num_threads = 16;
+  size_t count = 1000;
 
   std::vector<std::vector<std::string>> elems_vec(num_threads);
   std::vector<std::string> key_vec(num_threads);

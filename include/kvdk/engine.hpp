@@ -212,7 +212,7 @@ class Engine {
   // Release a sorted iterator
   virtual void ReleaseSortedIterator(Iterator*) = 0;
 
-  virtual std::shared_ptr<Iterator> NewUnorderedIterator(
+  virtual std::unique_ptr<Iterator> NewUnorderedIterator(
       StringView const collection_name) = 0;
 
   // Release resources occupied by this access thread so new thread can take

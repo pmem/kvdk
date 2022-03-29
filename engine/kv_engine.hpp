@@ -103,7 +103,7 @@ class KVEngine : public Engine {
               StringView const value) override;
   Status HDelete(StringView const collection_name,
                  StringView const key) override;
-  std::shared_ptr<Iterator> NewUnorderedIterator(
+  std::unique_ptr<Iterator> NewUnorderedIterator(
       StringView const collection_name) override;
 
   void ReleaseAccessThread() override { access_thread.Release(); }
