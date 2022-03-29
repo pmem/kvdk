@@ -874,6 +874,7 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
       continue;
     }
 
+    // TODO. remove checksum validation when unordered_collection supports mvcc
     void* data_buffer = malloc(record_size);
     memcpy(data_buffer, pmem_record, record_size);
     // If the pmem data record is corrupted or modified during get, redo search
