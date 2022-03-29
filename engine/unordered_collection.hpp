@@ -280,7 +280,10 @@ class UnorderedIterator final : public Iterator {
   /// return value in DlistDataRecord
   /// throw runtime_error if !Valid()
   inline virtual std::string Value() override {
-    kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
+    if (!Valid()) {
+      kvdk_assert(false, "Accessing data with invalid UnorderedIterator!");
+      return std::string{};
+    }
     auto view_value = internal_iterator->Value();
     return std::string(view_value.data(), view_value.size());
   }

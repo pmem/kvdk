@@ -100,29 +100,83 @@ class Engine {
 
   virtual Status HDelete(const StringView collection, const StringView key) = 0;
 
-  /// List
-  // Total elements in List
+  /// List APIs ///////////////////////////////////////////////////////////////
+
+  // Total elements in List.
+  // Return:
+  //    Status::InvalidDataSize if key is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::NotFound if key does not exist or has expired.
+  //    Status::Ok and length of List if List exists.
   virtual Status ListLength(StringView key, size_t* sz) = 0;
 
-  // Push element to front of List
+  // Push element as first element of List
+  // Create a new List and push the element if key is not found
+  // Return:
+  //    Status::InvalidDataSize if key or elem is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::Ok if operation succeeded.
   virtual Status ListPushFront(StringView key, StringView elem) = 0;
-  // Push element to back of List
+
+  // Push element as last element of List
+  // Create a new List and push the element if key is not found
+  // Return:
+  //    Status::InvalidDataSize if key or elem is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::Ok if operation succeeded.
   virtual Status ListPushBack(StringView key, StringView elem) = 0;
 
   // Pop first element of List
+  // Erase the key if List is empty after pop.
+  // Return:
+  //    Status::InvalidDataSize if key is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::NotFound if key does not exist or has expired.
+  //    Status::Ok and element if operation succeeded.
   virtual Status ListPopFront(StringView key, std::string* elem) = 0;
+
   // Pop last element of List
+  // Erase the key if List is empty after pop.
+  // Return:
+  //    Status::InvalidDataSize if key is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::NotFound if key does not exist or has expired.
+  //    Status::Ok and element if operation succeeded.
   virtual Status ListPopBack(StringView key, std::string* elem) = 0;
 
-  // Insert a element Before pos.
+  // Insert an element before element indexed by ListIterator pos
+  // Return:
+  //    Status::InvalidDataSize if elem is too long. pos is unchanged.
+  //    Status::PMemOverflow if PMem exhausted. pos is unchanged.
+  //    Status::NotFound if List of the ListIterator has expired or been
+  //    deleted. pos is unchanged but is invalid.
+  //    Status::Ok if operation succeeded. pos points to inserted element.
   virtual Status ListInsert(ListIterator* pos, StringView elem) = 0;
 
-  // Remove specified element
+  // Remove the element indexed by ListIterator pos
+  // Return:
+  //    Status::NotFound if List of the ListIterator has expired or been
+  //    deleted. pos is unchanged but is invalid.
+  //    Status::Ok if operation succeeded. pos points
+  //    to successor of erased element.
   virtual Status ListErase(ListIterator* pos) = 0;
 
   // Replace the element at pos
+  // Return:
+  //    Status::InvalidDataSize if elem is too long
+  //    Status::NotFound if List of the ListIterator has expired or been
+  //    deleted. pos is unchanged but invalid.
+  //    Status::Ok if operation succeeded. pos points to updated element.
   virtual Status ListSet(ListIterator* pos, StringView elem) = 0;
 
+  // Create an ListIterator from List
+  // Return:
+  //    nullptr if List is not found or has expired, or key is not of type List,
+  //    otherwise return ListIterator to First element of List
+  // Internally ListIterator holds an recursive of List, which is relased
+  // on destruction of ListIterator
   virtual std::unique_ptr<ListIterator> ListMakeIterator(StringView key) = 0;
 
   // Get a snapshot of the instance at this moment.

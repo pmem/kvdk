@@ -2096,6 +2096,9 @@ void KVEngine::backgroundDramCleaner() {
 // List
 namespace KVDK_NAMESPACE {
 Status KVEngine::ListLength(StringView key, size_t* sz) {
+  if (!CheckKeySize(key)) {
+    return Status::InvalidDataSize;
+  }
   std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(key, &list, false, guard);
@@ -2107,6 +2110,9 @@ Status KVEngine::ListLength(StringView key, size_t* sz) {
 }
 
 Status KVEngine::ListPushFront(StringView key, StringView elem) {
+  if (!CheckKeySize(key) || !CheckValueSize(elem)) {
+    return Status::InvalidDataSize;
+  }
   /// TODO: (Ziyan) use gargage collection mechanism from version controller
   /// to perform these operations lockless.
   std::unique_lock<std::recursive_mutex> guard;
@@ -2127,6 +2133,9 @@ Status KVEngine::ListPushFront(StringView key, StringView elem) {
 }
 
 Status KVEngine::ListPushBack(StringView key, StringView elem) {
+  if (!CheckKeySize(key) || !CheckValueSize(elem)) {
+    return Status::InvalidDataSize;
+  }
   std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(key, &list, true, guard);
@@ -2145,6 +2154,9 @@ Status KVEngine::ListPushBack(StringView key, StringView elem) {
 }
 
 Status KVEngine::ListPopFront(StringView key, std::string* elem) {
+  if (!CheckKeySize(key)) {
+    return Status::InvalidDataSize;
+  }
   std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(key, &list, false, guard);
@@ -2167,6 +2179,9 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
 }
 
 Status KVEngine::ListPopBack(StringView key, std::string* elem) {
+  if (!CheckKeySize(key)) {
+    return Status::InvalidDataSize;
+  }
   std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(key, &list, false, guard);
@@ -2189,6 +2204,9 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
 }
 
 Status KVEngine::ListInsert(ListIterator* pos, StringView elem) {
+  if (!CheckValueSize(elem)) {
+    return Status::InvalidDataSize;
+  }
   ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos);
   kvdk_assert(iter != nullptr, "Invalid iterator!")
 
@@ -2240,6 +2258,9 @@ Status KVEngine::ListErase(ListIterator* pos) {
 
 // Replace the element at pos
 Status KVEngine::ListSet(ListIterator* pos, StringView elem) {
+  if (!CheckValueSize(elem)) {
+    return Status::InvalidDataSize;
+  }
   ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos);
   kvdk_assert(iter != nullptr, "Invalid iterator!")
 
@@ -2264,6 +2285,9 @@ Status KVEngine::ListSet(ListIterator* pos, StringView elem) {
 }
 
 std::unique_ptr<ListIterator> KVEngine::ListMakeIterator(StringView key) {
+  if (!CheckKeySize(key)) {
+    return nullptr;
+  }
   std::unique_lock<std::recursive_mutex> guard;
   List* list;
   Status s = listFind(key, &list, false, guard);

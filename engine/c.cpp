@@ -404,7 +404,8 @@ KVDKStatus KVDKListPushBack(KVDKEngine* engine, char const* key_data,
 KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
                             size_t key_len, char** elem_data,
                             size_t* elem_len) {
-  assert(*elem == nullptr && "Invalid input parameter!");
+  *elem_data = nullptr;
+  *elem_len = 0;
   std::string buffer;
   KVDKStatus s =
       engine->rep->ListPopFront(StringView{key_data, key_len}, &buffer);
@@ -417,7 +418,8 @@ KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
 
 KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
                            size_t key_len, char** elem_data, size_t* elem_len) {
-  assert(*elem == nullptr && "Invalid input parameter!");
+  *elem_data = nullptr;
+  *elem_len = 0;
   std::string buffer;
   KVDKStatus s =
       engine->rep->ListPopBack(StringView{key_data, key_len}, &buffer);
@@ -490,7 +492,8 @@ int KVDKListIteratorIsValid(KVDKListIterator* iter) {
 
 void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
                               size_t* elem_len) {
-  assert(*elem == nullptr);
+  *elem_data = nullptr;
+  *elem_len = 0;
   std::string buffer = iter->rep->Value();
   *elem_data = CopyStringToChar(buffer);
   *elem_len = buffer.size();

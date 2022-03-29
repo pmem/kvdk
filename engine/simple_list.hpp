@@ -38,7 +38,10 @@ class ListIteratorImpl final : public ListIterator {
   void Prev() final { --rep; }
 
   std::string Value() const final {
-    kvdk_assert(Valid(), "Invalid ListIteratorImpl!");
+    if (!Valid()) {
+      kvdk_assert(false, "Accessing data with invalid ListIterator!");
+      return std::string{};
+    }
     auto sw = rep->Value();
     return std::string{sw.data(), sw.size()};
   }
