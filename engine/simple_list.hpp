@@ -2,6 +2,7 @@
 #ifndef SIMPLE_LIST_HPP
 #define SIMPLE_LIST_HPP
 
+#include <mutex>
 #include <stdexcept>
 
 #include "generic_list.hpp"
@@ -45,7 +46,8 @@ class ListIteratorImpl final : public ListIterator {
   ~ListIteratorImpl() final = default;
 
  public:
-  ListIteratorImpl(List* l) : list{l}, rep{l->Front()} {
+  ListIteratorImpl(List* l)
+      : list{l}, rep{l->Front()}, guard{list->AcquireLock()} {
     kvdk_assert(list != nullptr, "");
   }
 
@@ -56,6 +58,7 @@ class ListIteratorImpl final : public ListIterator {
  private:
   List* list;
   List::Iterator rep;
+  std::unique_lock<std::recursive_mutex> guard;
 };
 
 }  // namespace KVDK_NAMESPACE
