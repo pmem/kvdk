@@ -213,13 +213,13 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
   switch (data_entry->meta.type) {
     case StringDeleteRecord: {
       kvdk_assert(
-          old_delete_record.index_pointer.hash_entry.RawPointer() != nullptr &&
+          old_delete_record.record_index.hash_entry.RawPointer() != nullptr &&
               old_delete_record.key_lock != nullptr &&
-              old_delete_record.index_pointer.hash_entry.GetTag() ==
+              old_delete_record.record_index.hash_entry.GetTag() ==
                   PointerType::HashEntry,
           "hash index not stored in old delete record of string");
       HashEntry* hash_entry_ptr = static_cast<HashEntry*>(
-          old_delete_record.index_pointer.hash_entry.RawPointer());
+          old_delete_record.record_index.hash_entry.RawPointer());
       if (hash_entry_ptr->GetIndex().string_record ==
           old_delete_record.pmem_delete_record) {
         std::lock_guard<SpinMutex> lg(*old_delete_record.key_lock);
@@ -236,14 +236,14 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
     handle_sorted_delete_record : {
       std::lock_guard<SpinMutex> lg(*old_delete_record.key_lock);
       auto delete_record_index_type =
-          old_delete_record.index_pointer.skiplist_node.GetTag();
+          old_delete_record.record_index.skiplist_node.GetTag();
       SkiplistNode* dram_node = nullptr;
       bool need_clean = false;
       switch (delete_record_index_type) {
         case PointerType::HashEntry: {
           DLRecord* hash_indexed_pmem_record;
           HashEntry* hash_entry_ref = static_cast<HashEntry*>(
-              old_delete_record.index_pointer.hash_entry.RawPointer());
+              old_delete_record.record_index.hash_entry.RawPointer());
           auto hash_index_type = hash_entry_ref->GetIndexType();
           if (hash_index_type == PointerType::DLRecord) {
             if (hash_entry_ref->GetIndex().dl_record ==
@@ -266,7 +266,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         }
         case PointerType::SkiplistNode: {
           dram_node = static_cast<SkiplistNode*>(
-              old_delete_record.index_pointer.skiplist_node.RawPointer());
+              old_delete_record.record_index.skiplist_node.RawPointer());
           if (dram_node->record == old_delete_record.pmem_delete_record) {
             need_clean = true;
           }
@@ -278,6 +278,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
                   kv_engine_->pmem_allocator_.get())) {
             need_clean = true;
           }
+          break;
         }
         default: {
           std::abort();  // never should reach
@@ -292,6 +293,8 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           goto handle_sorted_delete_record;
         }
       }
+      return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
+                        data_entry->header.record_size);
     }
     }
     default: {

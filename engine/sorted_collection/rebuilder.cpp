@@ -82,7 +82,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
       make_shared<Skiplist>(header_record, collection_name, id, comparator,
                             kv_engine_->pmem_allocator_,
                             kv_engine_->hash_table_,
-                            s_configs.index_with_hashtable && invalid_skiplist /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+                            s_configs.index_with_hashtable && !invalid_skiplist /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
 
   if (invalid_skiplist) {
     std::lock_guard<SpinMutex> lg(lock_);

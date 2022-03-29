@@ -38,52 +38,52 @@ enum class PointerType : uint8_t {
 };
 
 // A pointer with additional information on high 16 bits
-template <typename T_Pointer, typename T_Tag>
+template <typename PointerType, typename TagType>
 class PointerWithTag {
  public:
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
   // TODO: Maybe explicit
-  PointerWithTag(T_Pointer* pointer) : tagged_pointer((uint64_t)pointer) {
-    assert(sizeof(T_Tag) <= 2);
+  PointerWithTag(PointerType* pointer) : tagged_pointer((uint64_t)pointer) {
+    assert(sizeof(TagType) <= 2);
   }
 
-  explicit PointerWithTag(T_Pointer* pointer, T_Tag tag)
+  explicit PointerWithTag(PointerType* pointer, TagType tag)
       : tagged_pointer((uint64_t)pointer | ((uint64_t)tag << 48)) {
-    assert(sizeof(T_Tag) <= 2);
+    assert(sizeof(TagType) <= 2);
   }
 
   PointerWithTag() : tagged_pointer(0) {}
 
-  T_Pointer* RawPointer() {
-    return (T_Pointer*)(tagged_pointer & kPointerMask);
+  PointerType* RawPointer() {
+    return (PointerType*)(tagged_pointer & kPointerMask);
   }
 
-  const T_Pointer* RawPointer() const {
-    return (const T_Pointer*)(tagged_pointer & kPointerMask);
+  const PointerType* RawPointer() const {
+    return (const PointerType*)(tagged_pointer & kPointerMask);
   }
 
   bool Null() const { return RawPointer() == nullptr; }
 
-  T_Tag GetTag() const { return static_cast<T_Tag>(tagged_pointer >> 48); }
+  TagType GetTag() const { return static_cast<TagType>(tagged_pointer >> 48); }
 
   void ClearTag() { tagged_pointer &= kPointerMask; }
 
-  void SetTag(T_Tag tag) { tagged_pointer |= ((uint64_t)tag << 48); }
+  void SetTag(TagType tag) { tagged_pointer |= ((uint64_t)tag << 48); }
 
-  const T_Pointer& operator*() const { return *RawPointer(); }
+  const PointerType& operator*() const { return *RawPointer(); }
 
-  T_Pointer& operator*() { return *(RawPointer()); }
+  PointerType& operator*() { return *(RawPointer()); }
 
-  const T_Pointer* operator->() const { return RawPointer(); }
+  const PointerType* operator->() const { return RawPointer(); }
 
-  T_Pointer* operator->() { return RawPointer(); }
+  PointerType* operator->() { return RawPointer(); }
 
-  bool operator==(const T_Pointer* raw_pointer) {
+  bool operator==(const PointerType* raw_pointer) {
     return RawPointer() == raw_pointer;
   }
 
-  bool operator==(const T_Pointer* raw_pointer) const {
+  bool operator==(const PointerType* raw_pointer) const {
     return RawPointer() == raw_pointer;
   }
 

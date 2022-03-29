@@ -38,7 +38,7 @@ struct OldDeleteRecord {
       : pmem_delete_record(_pmem_delete_record),
         release_time(_release_time),
         key_lock(_key_lock),
-        index_pointer(_record_index, _index_type) {}
+        record_index(_record_index, _index_type) {}
 
   void* pmem_delete_record;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
@@ -50,7 +50,7 @@ struct OldDeleteRecord {
   //
   // The tag of pointer indicates the type of pointer, like hash ptr or skiplist
   // node
-  RecordIndex index_pointer;
+  RecordIndex record_index;
   SpinMutex* key_lock;
 };
 
