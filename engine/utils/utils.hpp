@@ -473,7 +473,7 @@ inline bool CheckIsExpired(ExpireTimeType expired_time) {
   return false;
 }
 
-inline bool CheckTTL(TTLType ttl_time, int64_t base_time) {
+inline bool CheckTTL(TTLType ttl_time, UnixTimeType base_time) {
   if (ttl_time != kPersistTime &&
       /* check overflow*/ ttl_time > INT64_MAX - base_time) {
     return false;
@@ -481,13 +481,13 @@ inline bool CheckTTL(TTLType ttl_time, int64_t base_time) {
   return true;
 }
 
-inline ExpireTimeType TTLToExpireTime(TTLType ttl_time,
-                                      int64_t base_time = millisecond_time()) {
+inline ExpireTimeType TTLToExpireTime(
+    TTLType ttl_time, UnixTimeType base_time = millisecond_time()) {
   return ttl_time == kPersistTime ? kPersistTime : ttl_time + base_time;
 }
 
 inline TTLType ExpireTimeToTTL(ExpireTimeType expire_time,
-                               int64_t base_time = millisecond_time()) {
+                               UnixTimeType base_time = millisecond_time()) {
   return expire_time == kPersistTime ? kPersistTime : expire_time - base_time;
 }
 

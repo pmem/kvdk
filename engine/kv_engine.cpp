@@ -1358,16 +1358,6 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   std::unique_lock<SpinMutex> ul(*hint.spin);
   LookupResult res = lookupKey(str, ExpirableRecordType);
   if (res.s == Status::Expired) {
-    // Push the expired record into cleaner and update hash entry status with
-    // HashEntryStatus::Expired.
-    // TODO(zhichen): This `if` will be removed when completing collection
-    // deletion.
-    if (res.entry_ptr->GetIndexType() == HashIndexType::StringRecord) {
-      hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
-      delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
-                                version_controller_.GetCurrentTimestamp(),
-                                res.entry_ptr, hint.spin});
-    }
     *ttl_time = kExpiredTime;
     return Status::NotFound;
   }
@@ -1406,7 +1396,7 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   return res.s;
 }
 
-Status KVEngine::updateTTL(const StringView str, TTLType ttl_time) {
+Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (!TimeUtils::CheckTTL(ttl_time, base_time)) {
     return Status::InvalidArgument;
@@ -1416,6 +1406,7 @@ Status KVEngine::updateTTL(const StringView str, TTLType ttl_time) {
 
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
+  // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
   LookupResult res = lookupKey(str, ExpirableRecordType);
   if (ttl_time <= 0 /*immediately expired*/ || (res.s == Status::Expired)) {
     // Push the expired record into cleaner and update hash entry status with
@@ -1472,14 +1463,6 @@ Status KVEngine::updateTTL(const StringView str, TTLType ttl_time) {
                                                       : HashEntryStatus::TTL);
   }
   return res.s;
-}
-
-Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
-  return updateTTL(str, ttl_time);
-}
-
-Status KVEngine::Persist(const StringView str) {
-  return updateTTL(str, kPersistTime);
 }
 
 Status KVEngine::StringDeleteImpl(const StringView& key) {
@@ -2041,6 +2024,7 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
 }
 
 void KVEngine::delayFree(const OldDataRecord& old_data_record) {
+  old_records_cleaner_.PushToCache(old_data_record);
   // To avoid too many cached old records pending clean, we try to clean cached
   // records while pushing new one
   if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
@@ -2077,7 +2061,7 @@ void KVEngine::backgroundOldRecordCleaner() {
       }
     }
     bg_cleaner_processing_ = true;
-    ExpiredCleaner();
+    CleanExpired();
     old_records_cleaner_.TryGlobalClean();
   }
 }
@@ -2123,7 +2107,7 @@ void KVEngine::backgroundDramCleaner() {
   }
 }
 
-void KVEngine::ExpiredCleaner() {
+void KVEngine::CleanExpired() {
   int64_t time = 0;
   ExpireTimeType expired_time;
   // Iterate hash table

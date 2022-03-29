@@ -195,9 +195,6 @@ KVDK_LIBRARY_API KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str,
 KVDK_LIBRARY_API KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str,
                                        size_t str_len, int64_t* ttl_time);
 
-KVDK_LIBRARY_API KVDKStatus KVDKPersist(KVDKEngine* engine, const char* str,
-                                        size_t str_len);
-
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

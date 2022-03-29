@@ -75,9 +75,6 @@ class KVEngine : public Engine {
   // implemented yet
   Status GetTTL(const StringView str, TTLType* ttl_time) override;
 
-  // Set str as persist.
-  Status Persist(const StringView str) override;
-
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
   Status Set(const StringView key, const StringView value,
@@ -119,7 +116,7 @@ class KVEngine : public Engine {
   // Used by test case.
   const std::shared_ptr<HashTable>& GetHashTable() { return hash_table_; }
 
-  void ExpiredCleaner();
+  void CleanExpired();
 
  private:
   friend OldRecordsCleaner;
@@ -489,8 +486,6 @@ class KVEngine : public Engine {
         SpaceEntry(pmem_allocator_->addr2offset_checked(pmem_record),
                    data_entry->header.record_size));
   }
-
-  Status updateTTL(const StringView str, TTLType ttl_time);
 
   // Run in background to clean old records regularly
   void backgroundOldRecordCleaner();

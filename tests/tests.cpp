@@ -1988,13 +1988,12 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   };
   auto ExpiredClean = [&](uint64_t id) {
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->ExpiredCleaner();
+    test_kvengine->CleanExpired();
   };
 
-  auto ExpireString = [&](uint64_t id, Status s) {
+  auto ExpireString = [&](Status s) {
     for (int i = 0; i < cnt; ++i) {
       std::string key = std::to_string(i) + "stringk";
-      std::string val = std::to_string(i) + std::to_string(id) + "stringval";
       std::string got_val;
       if (engine->Get(key, &got_val) == Status::Ok) {
         ASSERT_EQ(engine->Expire(key, 1), s);
@@ -2007,10 +2006,8 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       std::string key = std::to_string(i) + "stringk";
       std::string got_val;
       int64_t ttl_time;
-      Status s = engine->Get(key, &got_val);
+      Status s = engine->GetTTL(key, &ttl_time);
       if (s == Status::Ok) {
-        ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
-        // roughly check
         ASSERT_EQ(INT32_MAX / 10000, ttl_time / 10000);
       } else {
         ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::NotFound);
@@ -2022,7 +2019,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   {
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(SetString, 0));
-    ts.emplace_back(std::thread(ExpireString, 1, Status::Ok));
+    ts.emplace_back(std::thread(ExpireString, Status::Ok));
     sleep(2);
     ts.emplace_back(std::thread(ExpiredClean, 2));
     for (auto& t : ts) t.join();
@@ -2034,7 +2031,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   {
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(SetString, 0));
-    ts.emplace_back(std::thread(ExpireString, 1, Status::Ok));
+    ts.emplace_back(std::thread(ExpireString, Status::Ok));
     ts.emplace_back(std::thread(ExpiredClean, 2));
     ts.emplace_back(std::thread(GetString));
     for (auto& t : ts) t.join();

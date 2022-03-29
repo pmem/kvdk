@@ -324,7 +324,7 @@ static void test_expire() {
     s = engine->Expire(key, INT32_MAX);
     assert(s == kvdk::Status::Ok);
     // case: change to persist key
-    s = engine->Persist(key);
+    s = engine->Expire(key, kvdk::kPersistTime);
     assert(s == kvdk::Status::Ok);
     s = engine->GetTTL(key, &ttl_time);
     assert(s == kvdk::Status::Ok);
@@ -354,7 +354,7 @@ static void test_expire() {
     s = engine->Expire(sorted_collection, INT32_MAX);
     assert(s == kvdk::Status::Ok);
     // case: change to persist key
-    s = engine->Persist(sorted_collection);
+    s = engine->Expire(sorted_collection, kvdk::kPersistTime);
     s = engine->GetTTL(sorted_collection, &ttl_time);
     assert(s == kvdk::Status::Ok);
     assert(ttl_time == kvdk::kPersistTime);
@@ -383,7 +383,7 @@ static void test_expire() {
     s = engine->Expire(hash_collection, 1);
     assert(s == kvdk::Status::Ok);
     // case: change to persist key
-    s = engine->Persist(hash_collection);
+    s = engine->Expire(hash_collection, kvdk::kPersistTime);
     s = engine->GetTTL(hash_collection, &ttl_time);
     assert(s == kvdk::Status::Ok);
     assert(ttl_time == kvdk::kPersistTime);
