@@ -120,9 +120,9 @@ class Engine {
   // Pop last element of List
   virtual Status ListPopBack(StringView key, std::string* elem) = 0;
 
-  virtual Status ListInitIterator(StringView key, ListIterator** iter) = 0;
+  virtual Status ListIteratorInit(StringView key, ListIterator** iter) = 0;
 
-  virtual Status ListDestroyIterator(ListIterator** iter) = 0;
+  virtual Status ListIteratorDestroy(ListIterator** iter) = 0;
 
   // Insert a element Before pos.
   virtual Status ListInsert(ListIterator* pos, StringView elem) = 0;

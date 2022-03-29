@@ -1419,29 +1419,26 @@ TEST_F(EngineBasicTest, TestList) {
     auto& list_copy = list_copy_vec[tid];
 
     ListIterator* iter;
-    Status s = engine->ListInitIterator(key, &iter);
+    Status s = engine->ListIteratorInit(key, &iter);
     ASSERT_TRUE((list_copy.empty() && s == Status::NotFound) ||
                 (s == Status::Ok));
     if (s == Status::Ok) {
       iter->Seek(0);
-      auto iter2 = list_copy.begin();
-      while (iter->Valid()) {
+      for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
+        ASSERT_TRUE(iter->Valid());
         ASSERT_EQ(iter->Value(), *iter2);
         iter->Next();
-        ++iter2;
       }
-      ASSERT_EQ(iter2, list_copy.end());
 
       iter->Seek(-1);
-      auto iter3 = list_copy.rbegin();
-      while (iter->Valid()) {
-        ASSERT_EQ(iter->Value(), *iter3);
+      for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
+           iter2++) {
+        ASSERT_TRUE(iter->Valid());
+        ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
-        ++iter3;
       }
-      ASSERT_EQ(iter3, list_copy.rend());
 
-      ASSERT_EQ(engine->ListDestroyIterator(&iter), Status::Ok);
+      ASSERT_EQ(engine->ListIteratorDestroy(&iter), Status::Ok);
     }
   };
 
@@ -1450,27 +1447,30 @@ TEST_F(EngineBasicTest, TestList) {
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     size_t const insert_pos = 5;
+    std::string elem;
 
     ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
     ListIterator* iter;
-    ASSERT_EQ(engine->ListInitIterator(key, &iter), Status::Ok);
+    ASSERT_EQ(engine->ListIteratorInit(key, &iter), Status::Ok);
 
     iter->Seek(insert_pos);
     auto iter2 = std::next(list_copy.begin(), insert_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
-    ASSERT_EQ(engine->ListInsert(iter, iter->Value() + "_before"), Status::Ok);
-    iter2 = list_copy.insert(iter2, *iter2 + "_before");
+    elem = *iter2 + "_before";
+    ASSERT_EQ(engine->ListInsert(iter, elem), Status::Ok);
+    iter2 = list_copy.insert(iter2, elem);
     ASSERT_EQ(iter->Value(), *iter2);
 
     iter->Prev();
     iter->Prev();
     ----iter2;
     ASSERT_EQ(iter->Value(), *iter2);
-    ASSERT_EQ(engine->ListSet(iter, iter->Value() + "_new"), Status::Ok);
-    *iter2 = *iter2 + "_new";
+    elem = *iter2 + "_new";
+    ASSERT_EQ(engine->ListSet(iter, elem), Status::Ok);
+    *iter2 = elem;
     ASSERT_EQ(iter->Value(), *iter2);
 
     iter->Prev();
@@ -1481,7 +1481,7 @@ TEST_F(EngineBasicTest, TestList) {
     iter2 = list_copy.erase(iter2);
     ASSERT_EQ(iter->Value(), *iter2);
 
-    ASSERT_EQ(engine->ListDestroyIterator(&iter), Status::Ok);
+    ASSERT_EQ(engine->ListIteratorDestroy(&iter), Status::Ok);
   };
 
   for (size_t i = 0; i < 3; i++) {

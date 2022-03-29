@@ -417,7 +417,7 @@ KVDKStatus KVDKListPushBack(KVDKEngine* engine, char const* key_data,
 }
 
 KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
-                            size_t key_len, char const** elem_data,
+                            size_t key_len, char** elem_data,
                             size_t* elem_len) {
   assert(*elem == nullptr && "Invalid input parameter!");
   std::string buffer;
@@ -431,8 +431,7 @@ KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
 }
 
 KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
-                           size_t key_len, char const** elem_data,
-                           size_t* elem_len) {
+                           size_t key_len, char** elem_data, size_t* elem_len) {
   assert(*elem == nullptr && "Invalid input parameter!");
   std::string buffer;
   KVDKStatus s =
@@ -442,15 +441,6 @@ KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
     *elem_len = buffer.size();
   }
   return s;
-}
-
-KVDKStatus KVDKListInitIterator(KVDKEngine* engine, char const* key_data,
-                                size_t key_len, KVDKListIterator* iter) {
-  return engine->rep->ListInitIterator(StringView{key_data, key_len},
-                                       &iter->rep);
-}
-KVDKStatus KVDKListDestroyIterator(KVDKEngine* engine, KVDKListIterator* iter) {
-  return engine->rep->ListDestroyIterator(&iter->rep);
 }
 
 KVDKStatus KVDKListInsert(KVDKEngine* engine, KVDKListIterator* pos,
@@ -465,6 +455,21 @@ KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos) {
 KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
                        char const* elem_data, size_t elem_len) {
   return engine->rep->ListSet(pos->rep, StringView{elem_data, elem_len});
+}
+
+KVDKStatus KVDKListIteratorInit(KVDKEngine* engine, char const* key_data,
+                                size_t key_len, KVDKListIterator** iter) {
+  *iter = new KVDKListIterator;
+  return engine->rep->ListIteratorInit(StringView{key_data, key_len},
+                                       &(*iter)->rep);
+}
+
+KVDKStatus KVDKListIteratorDestroy(KVDKEngine* engine,
+                                   KVDKListIterator** iter) {
+  KVDKStatus s = engine->rep->ListIteratorDestroy(&(*iter)->rep);
+  delete (*iter);
+  *iter = nullptr;
+  return s;
 }
 
 void KVDKListIteratorPrev(KVDKListIterator* iter) { iter->rep->Prev(); }
@@ -493,7 +498,7 @@ int KVDKListIteratorIsValid(KVDKListIterator* iter) {
   return (valid ? 1 : 0);
 }
 
-void KVDKListIteratorGetValue(KVDKListIterator* iter, char const** elem_data,
+void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
                               size_t* elem_len) {
   assert(*elem == nullptr);
   std::string buffer = iter->rep->Value();

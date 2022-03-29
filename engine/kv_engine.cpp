@@ -2224,7 +2224,7 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   return Status::Ok;
 }
 
-Status KVEngine::ListInitIterator(StringView key, ListIterator** iter) {
+Status KVEngine::ListIteratorInit(StringView key, ListIterator** iter) {
   *iter = nullptr;
   std::unique_lock<std::recursive_mutex> guard;
   List* list;
@@ -2236,7 +2236,7 @@ Status KVEngine::ListInitIterator(StringView key, ListIterator** iter) {
   return Status::Ok;
 }
 
-Status KVEngine::ListDestroyIterator(ListIterator** iter) {
+Status KVEngine::ListIteratorDestroy(ListIterator** iter) {
   delete (*iter);
   *iter = nullptr;
   return Status::Ok;

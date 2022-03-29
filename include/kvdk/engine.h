@@ -135,20 +135,20 @@ extern KVDKStatus KVDKListPushBack(KVDKEngine* engine, char const* key_data,
                                    size_t key_len, char const* elem_data,
                                    size_t elem_len);
 extern KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
-                                   size_t key_len, char const** elem_data,
+                                   size_t key_len, char** elem_data,
                                    size_t* elem_len);
 extern KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
-                                  size_t key_len, char const** elem_data,
+                                  size_t key_len, char** elem_data,
                                   size_t* elem_len);
-extern KVDKStatus KVDKListIteratorInit(KVDKEngine* engine, char const* key_data,
-                                       size_t key_len, KVDKListIterator** iter);
-extern KVDKStatus KVDKListIteratorDestroy(KVDKEngine* engine,
-                                          KVDKListIterator** iter);
 extern KVDKStatus KVDKListInsert(KVDKEngine* engine, KVDKListIterator* pos,
                                  char const* elem_data, size_t elem_len);
 extern KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos);
 extern KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
                               char const* elem_data, size_t elem_len);
+extern KVDKStatus KVDKListIteratorInit(KVDKEngine* engine, char const* key_data,
+                                       size_t key_len, KVDKListIterator** iter);
+extern KVDKStatus KVDKListIteratorDestroy(KVDKEngine* engine,
+                                          KVDKListIterator** iter);
 extern void KVDKListIteratorPrev(KVDKListIterator* iter);
 extern void KVDKListIteratorNext(KVDKListIterator* iter);
 extern void KVDKListIteratorSeekToFirst(KVDKListIterator* iter);
@@ -157,8 +157,8 @@ extern void KVDKListIteratorSeekPos(KVDKListIterator* iter, long pos);
 extern void KVDKListIteratorSeekElem(KVDKListIterator* iter,
                                      char const* elem_data, size_t elem_len);
 extern int KVDKListIteratorIsValid(KVDKListIterator* iter);
-extern void KVDKListIteratorGetValue(KVDKListIterator* iter,
-                                     char const** elem_data, size_t* elem_len);
+extern void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
+                                     size_t* elem_len);
 
 extern KVDKIterator* KVDKCreateUnorderedIterator(KVDKEngine* engine,
                                                  const char* collection,

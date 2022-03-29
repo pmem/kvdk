@@ -12,7 +12,7 @@ using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
 using ListBuilder =
     GenericListBuilder<RecordType::ListRecord, RecordType::ListElem>;
 
-class ListIteratorImpl : public ListIterator {
+class ListIteratorImpl final : public ListIterator {
  public:
   void Seek(StringView elem) final {
     SeekToFirst();
@@ -41,6 +41,8 @@ class ListIteratorImpl : public ListIterator {
     auto sw = rep->Value();
     return std::string{sw.data(), sw.size()};
   }
+
+  ~ListIteratorImpl() final = default;
 
  public:
   ListIteratorImpl(List* l) : list{l}, rep{l->Front()} {

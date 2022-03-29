@@ -191,8 +191,8 @@ class KVEngine : public Engine {
   Status ListPushBack(StringView key, StringView elem) final;
   Status ListPopFront(StringView key, std::string* elem) final;
   Status ListPopBack(StringView key, std::string* elem) final;
-  Status ListInitIterator(StringView key, ListIterator** iter) final;
-  Status ListDestroyIterator(ListIterator** iter) final;
+  Status ListIteratorInit(StringView key, ListIterator** iter) final;
+  Status ListIteratorDestroy(ListIterator** iter) final;
   Status ListInsert(ListIterator* pos, StringView elem) final;
   Status ListErase(ListIterator* pos) final;
   Status ListSet(ListIterator* pos, StringView elem) final;

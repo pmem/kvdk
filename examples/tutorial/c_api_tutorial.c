@@ -350,13 +350,13 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
                                      strlen(list_collection), key, strlen(key));
     assert(s == Ok);
     size_t key_len_res;
-    char const* key_res;
+    char* key_res;
     s = KVDKListPopFront(kvdk_engine, list_collection, strlen(list_collection),
                          &key_res, &key_len_res);
     assert(s == Ok);
     int cmp = CmpCompare(key_res, key_len_res, key, strlen(key));
     assert(cmp == 0);
-    free((void*)key_res);
+    free(key_res);
   }
 
   for (int i = 0; i < 10; ++i) {
@@ -366,13 +366,13 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
                                     strlen(list_collection), key, strlen(key));
     assert(s == Ok);
     size_t key_len_res;
-    char const* key_res;
+    char* key_res;
     s = KVDKListPopBack(kvdk_engine, list_collection, strlen(list_collection),
                         &key_res, &key_len_res);
     assert(s == Ok);
     int cmp = CmpCompare(key_res, key_len_res, key, strlen(key));
     assert(cmp == 0);
-    free((void*)key_res);
+    free(key_res);
   }
   printf("Successfully performed RPush RPop LPush LPop on Lists.\n");
 }

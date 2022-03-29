@@ -51,6 +51,8 @@ class ListIterator {
   virtual void Prev() = 0;
 
   virtual std::string Value() const = 0;
+
+  virtual ~ListIterator() = default;
 };
 
 }  // namespace KVDK_NAMESPACE

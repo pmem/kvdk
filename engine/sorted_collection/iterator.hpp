@@ -72,9 +72,7 @@ class SortedIterator : public Iterator {
     return string_view_2_string(current_->Value());
   }
 
-  IteratorType Type() const final {
-    return IteratorType::SortedIterator;
-  }
+  IteratorType Type() const final { return IteratorType::SortedIterator; }
 
  private:
   friend KVEngine;
