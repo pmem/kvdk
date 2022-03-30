@@ -116,8 +116,9 @@ TEST_F(EngineCAPITestBase, List) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
-    KVDKListIterator* iter{nullptr};
-    if (KVDKListIteratorInit(engine, key.data(), key.size(), &iter) == 0) {
+    KVDKListIterator* iter =
+        KVDKListIteratorCreate(engine, key.data(), key.size());
+    if (iter != nullptr) {
       KVDKListIteratorSeekPos(iter, 0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(KVDKListIteratorIsValid(iter));
@@ -133,7 +134,7 @@ TEST_F(EngineCAPITestBase, List) {
         KVDKListIteratorPrev(iter);
       }
     }
-    KVDKListIteratorDestroy(engine, &iter);
+    KVDKListIteratorDestroy(engine, iter);
   };
 
   auto ListInsertSetRemove = [&](size_t tid) {
@@ -147,8 +148,9 @@ TEST_F(EngineCAPITestBase, List) {
               KVDKStatus::Ok);
     ASSERT_GT(len, insert_pos);
 
-    KVDKListIterator* iter{nullptr};
-    ASSERT_EQ(KVDKListIteratorInit(engine, key.data(), key.size(), &iter), 0);
+    KVDKListIterator* iter =
+        KVDKListIteratorCreate(engine, key.data(), key.size());
+    ASSERT_NE(iter, nullptr);
 
     KVDKListIteratorSeekPos(iter, insert_pos);
     auto iter2 = std::next(list_copy.begin(), insert_pos);
@@ -178,7 +180,7 @@ TEST_F(EngineCAPITestBase, List) {
     iter2 = list_copy.erase(iter2);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
 
-    KVDKListIteratorDestroy(engine, &iter);
+    KVDKListIteratorDestroy(engine, iter);
   };
 
   for (size_t i = 0; i < 3; i++) {

@@ -141,10 +141,10 @@ extern KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos);
 extern KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
                               char const* elem_data, size_t elem_len);
 /// ListIterator //////////////////////////////////////////////////////////////
-extern int KVDKListIteratorInit(KVDKEngine* engine, char const* key_data,
-                                size_t key_len, KVDKListIterator** iter);
-extern void KVDKListIteratorDestroy(KVDKEngine* engine,
-                                    KVDKListIterator** iter);
+extern KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
+                                                char const* key_data,
+                                                size_t key_len);
+extern void KVDKListIteratorDestroy(KVDKEngine* engine, KVDKListIterator* iter);
 extern void KVDKListIteratorPrev(KVDKListIterator* iter);
 extern void KVDKListIteratorNext(KVDKListIterator* iter);
 extern void KVDKListIteratorSeekToFirst(KVDKListIterator* iter);
