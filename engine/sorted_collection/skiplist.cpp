@@ -49,9 +49,9 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
   }
 };
 
-Status Skiplist::SetExpireTime(ExpiredTimeType expired_time) {
+Status Skiplist::SetExpireTime(ExpireTimeType expired_time) {
   header_->record->expired_time = expired_time;
-  pmem_persist(&header_->record->expired_time, sizeof(ExpiredTimeType));
+  pmem_persist(&header_->record->expired_time, sizeof(ExpireTimeType));
   return Status::Ok;
 }
 
@@ -883,7 +883,7 @@ void Skiplist::destroyRecords() {
                                               to_destroy->entry.meta.type,
                                               &entry_ptr, &hash_entry, nullptr);
           if (s == Status::Ok) {
-            entry_ptr->Clear();
+            hash_table_->Erase(entry_ptr);
           }
         }
 
