@@ -21,8 +21,8 @@ class EngineCAPITestBase : public testing::Test {
                             std::to_string(__rdtsc())};
 
   virtual void SetUp() override {
-    KVDKSetConfigs(configs, 32, (4UL << 30), false, 64, (1UL << 20), 128,
-                   1024, 1);
+    KVDKSetConfigs(configs, 32, (4UL << 30), false, 64, (1UL << 20), 128, 1024,
+                   1);
     KVDKOpen(db_path.c_str(), configs, stdout, &engine);
     ASSERT_EQ(KVDKOpen(db_path.c_str(), configs, stdout, &engine),
               KVDKStatus::Ok)
