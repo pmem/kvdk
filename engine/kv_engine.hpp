@@ -81,6 +81,7 @@ class KVEngine : public Engine {
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
+
   Status Modify(const StringView key, std::string* new_value,
                 ModifyFunction modify_func,
                 const WriteOptions& options) override;

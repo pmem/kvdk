@@ -81,6 +81,7 @@ extern KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
                           const KVDKWriteOptions* write_option);
 extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
                              size_t key_len);
+
 // Modify value of existing "key" according to modify function, and update
 // existing value with modify result
 //
