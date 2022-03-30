@@ -106,7 +106,7 @@ class SortedCollectionRebuilder {
   // insert hash index "ptr" for "key", the key should be locked before call
   // this function
   Status insertHashIndex(const StringView& key, void* ptr,
-                         HashIndexType index_type);
+                         PointerType index_type);
 
   void addUnlinkedRecord(DLRecord* pmem_record) {
     assert(access_thread.id >= 0);

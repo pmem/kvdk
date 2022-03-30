@@ -650,6 +650,8 @@ TEST_F(EngineBasicTest, TestStringModify) {
   std::string val;
   ASSERT_EQ(engine->Get(plus_key, &val), Status::Ok);
   ASSERT_EQ(std::stoi(val), ops_per_thread * num_threads);
+
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestBatchWrite) {
@@ -844,6 +846,24 @@ TEST_F(EngineBasicTest, TestStringRestore) {
         ASSERT_EQ(s, Status::NotFound);
       }
     }
+  }
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestStringLargeValue) {
+  configs.pmem_block_size = (1UL << 6);
+  configs.pmem_segment_blocks = (1UL << 24);
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  for (size_t sz = 1024; sz < (1UL << 30); sz *= 2) {
+    std::string key{"large"};
+    std::string value(sz, 'a');
+    std::string sink;
+
+    ASSERT_EQ(engine->Set(key, value), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
+    ASSERT_EQ(value, sink);
   }
   delete engine;
 }
@@ -1748,21 +1768,21 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
       auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
         switch (bucket_iter->GetIndexType()) {
-          case HashIndexType::StringRecord: {
+          case PointerType::StringRecord: {
             total_entry_num++;
             ASSERT_EQ(string_view_2_string(
                           bucket_iter->GetIndex().string_record->Value()),
                       "stringval");
             break;
           }
-          case HashIndexType::Skiplist: {
+          case PointerType::Skiplist: {
             total_entry_num++;
             ASSERT_EQ(
                 string_view_2_string(bucket_iter->GetIndex().skiplist->Name()),
                 collection_name);
             break;
           }
-          case HashIndexType::SkiplistNode: {
+          case PointerType::SkiplistNode: {
             total_entry_num++;
             ASSERT_EQ(
                 string_view_2_string(
@@ -1770,7 +1790,7 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
                 "sortedval");
             break;
           }
-          case HashIndexType::DLRecord: {
+          case PointerType::DLRecord: {
             total_entry_num++;
             ASSERT_EQ(string_view_2_string(
                           bucket_iter->GetIndex().dl_record->Value()),
@@ -1778,8 +1798,8 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
             break;
           }
           default:
-            ASSERT_EQ((bucket_iter->GetIndexType() == HashIndexType::Invalid) ||
-                          (bucket_iter->GetIndexType() == HashIndexType::Empty),
+            ASSERT_EQ((bucket_iter->GetIndexType() == PointerType::Invalid) ||
+                          (bucket_iter->GetIndexType() == PointerType::Empty),
                       true);
             break;
         }
@@ -2323,7 +2343,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
       auto bucket_iter = slot_iter.Begin();
       auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
-        if (bucket_iter->GetIndexType() == HashIndexType::StringRecord) {
+        if (bucket_iter->GetIndexType() == PointerType::StringRecord) {
           TEST_SYNC_POINT("ScanHashTable");
           sleep(2);
           ASSERT_EQ(bucket_iter->GetIndex().string_record->Key(), key);

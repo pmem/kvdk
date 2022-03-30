@@ -48,6 +48,7 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   cmp = CmpCompare(read_v1, read_v1_len, value1, value1_len);
   assert(cmp == 0);
+  free(read_v1);
   s = KVDKSet(kvdk_engine, key1, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
@@ -100,6 +101,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   cmp = CmpCompare(read_v1, read_v1_len, value1, strlen(value1));
   assert(cmp == 0);
+  free(read_v1);
   s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value2, strlen(value2));
   assert(s == Ok);
