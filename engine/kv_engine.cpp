@@ -1213,8 +1213,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   engine_thread_cache_[access_thread.id]
       .persisted_pending_batch->PersistFinish();
 
-  // Free updated kvs, we should purge all updated kvs before release locks
-  // and after persist write stage
+  // Free outdated kvs
   for (size_t i = 0; i < write_batch.Size(); i++) {
     TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before", &i);
     if (batch_hints[i].data_record_to_free != nullptr) {
