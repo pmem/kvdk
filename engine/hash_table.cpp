@@ -173,7 +173,7 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   }
 
   if (!found && (*entry_ptr) != reusable_entry) {
-    (*entry_ptr)->Clear();
+    (*entry_ptr)->clear();
     hash_bucket_entries_[hint.bucket]++;
   }
 
@@ -229,11 +229,12 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
   return Status::NotFound;
 }
 
-void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
-                       RecordType record_type, void* index,
-                       PointerType index_type) {
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, record_type, index,
-                           index_type);
+void HashTable::Insert(
+    const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type, void* index,
+    PointerType index_type,
+    HashEntryStatus entry_status /*= HashEntryStatus::Persist*/) {
+  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type,
+                           entry_status);
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 

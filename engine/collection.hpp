@@ -29,9 +29,9 @@ class Collection {
   // Return name of the collection
   const std::string& Name() const { return collection_name_; }
 
-  virtual ExpiredTimeType GetExpireTime() const = 0;
+  virtual ExpireTimeType GetExpireTime() const = 0;
   virtual bool HasExpired() const = 0;
-  virtual Status SetExpireTime(ExpiredTimeType) = 0;
+  virtual Status SetExpireTime(ExpireTimeType) = 0;
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id

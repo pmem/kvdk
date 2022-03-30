@@ -36,6 +36,7 @@
 #include "../alias.hpp"
 #include "../macros.hpp"
 #include "codec.hpp"
+#include "kvdk/configs.hpp"
 #include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -465,11 +466,29 @@ inline UnixTimeType unix_time(void) {
 
 inline int64_t millisecond_time() { return unix_time() / 1000; }
 
-inline bool CheckIsExpired(ExpiredTimeType expired_time) {
+inline bool CheckIsExpired(ExpireTimeType expired_time) {
   if (expired_time >= 0 && expired_time <= millisecond_time()) {
     return true;
   }
   return false;
+}
+
+inline bool CheckTTL(TTLType ttl_time, UnixTimeType base_time) {
+  if (ttl_time != kPersistTime &&
+      /* check overflow*/ ttl_time > INT64_MAX - base_time) {
+    return false;
+  }
+  return true;
+}
+
+inline ExpireTimeType TTLToExpireTime(
+    TTLType ttl_time, UnixTimeType base_time = millisecond_time()) {
+  return ttl_time == kPersistTime ? kPersistTime : ttl_time + base_time;
+}
+
+inline TTLType ExpireTimeToTTL(ExpireTimeType expire_time,
+                               UnixTimeType base_time = millisecond_time()) {
+  return expire_time == kPersistTime ? kPersistTime : expire_time - base_time;
 }
 
 }  // namespace TimeUtils

@@ -80,8 +80,9 @@ class OldRecordsCleaner {
     assert(kv_engine_ != nullptr);
   }
 
-  void Push(const OldDataRecord& old_data_record);
-  void Push(const OldDeleteRecord& old_delete_record);
+  void PushToCache(const OldDataRecord& old_data_record);
+  void PushToCache(const OldDeleteRecord& old_delete_record);
+  void PushToGloble(const std::deque<OldDeleteRecord>& old_delete_records);
   // Try to clean global old records
   void TryGlobalClean();
   void TryCleanCachedOldRecords(size_t num_limit_clean);
@@ -113,4 +114,5 @@ class OldRecordsCleaner {
   std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };
+
 }  // namespace KVDK_NAMESPACE
