@@ -82,7 +82,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
       make_shared<Skiplist>(header_record, collection_name, id, comparator,
                             kv_engine_->pmem_allocator_,
                             kv_engine_->hash_table_,
-                            s_configs.index_with_hashtable && invalid_skiplist /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+                            s_configs.index_with_hashtable && !invalid_skiplist /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
 
   if (invalid_skiplist) {
     std::lock_guard<SpinMutex> lg(lock_);
@@ -105,7 +105,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 
     // Always index skiplist header with hash table
     s = insertHashIndex(skiplist->Name(), skiplist.get(),
-                        HashIndexType::Skiplist);
+                        PointerType::Skiplist);
   }
   return s;
 }
@@ -230,7 +230,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
   if (build_hash_index &&
       start_node->record->entry.meta.type != SortedHeaderRecord) {
     s = insertHashIndex(start_node->record->Key(), start_node,
-                        HashIndexType::SkiplistNode);
+                        PointerType::SkiplistNode);
     if (s != Status::Ok) {
       return s;
     }
@@ -289,10 +289,10 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           if (build_hash_index) {
             if (dram_node) {
               s = insertHashIndex(internal_key, dram_node,
-                                  HashIndexType::SkiplistNode);
+                                  PointerType::SkiplistNode);
             } else {
               s = insertHashIndex(internal_key, valid_version_record,
-                                  HashIndexType::DLRecord);
+                                  PointerType::DLRecord);
             }
 
             if (s != Status::Ok) {
@@ -457,10 +457,10 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
           Status s;
           if (dram_node) {
             s = insertHashIndex(internal_key, dram_node,
-                                HashIndexType::SkiplistNode);
+                                PointerType::SkiplistNode);
           } else {
             s = insertHashIndex(internal_key, valid_version_record,
-                                HashIndexType::DLRecord);
+                                PointerType::DLRecord);
           }
 
           if (s != Status::Ok) {
@@ -498,11 +498,8 @@ Status SortedCollectionRebuilder::listBasedIndexRebuild() {
 }
 
 bool SortedCollectionRebuilder::checkRecordLinkage(DLRecord* record) {
-  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-  uint64_t offset = pmem_allocator->addr2offset_checked(record);
-  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
-  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-  return prev->next == offset && next->prev == offset;
+  return Skiplist::CheckRecordLinkage(record,
+                                      kv_engine_->pmem_allocator_.get());
 }
 
 bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
@@ -555,17 +552,17 @@ void SortedCollectionRebuilder::addRecoverySegment(SkiplistNode* start_node) {
 
 Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
                                                   void* index_ptr,
-                                                  HashIndexType index_type) {
+                                                  PointerType index_type) {
   uint16_t search_type_mask;
   RecordType record_type;
-  if (index_type == HashIndexType::DLRecord) {
+  if (index_type == PointerType::DLRecord) {
     search_type_mask = SortedDataRecord | SortedDeleteRecord;
     record_type = static_cast<DLRecord*>(index_ptr)->entry.meta.type;
-  } else if (index_type == HashIndexType::SkiplistNode) {
+  } else if (index_type == PointerType::SkiplistNode) {
     search_type_mask = SortedDataRecord | SortedDeleteRecord;
     record_type =
         static_cast<SkiplistNode*>(index_ptr)->record->entry.meta.type;
-  } else if (index_type == HashIndexType::Skiplist) {
+  } else if (index_type == PointerType::Skiplist) {
     search_type_mask = SortedHeaderRecord;
     record_type = SortedHeaderRecord;
   }

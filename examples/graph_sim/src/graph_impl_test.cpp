@@ -216,6 +216,7 @@ TEST_F(GraphSimulatorTest, MemoryEngineTest) {
     ASSERT_EQ(it->Key().c_str(), "key" + std::to_string(i));
     i++;
   }
+  delete it;
   delete kv_engine;
 }
 

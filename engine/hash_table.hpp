@@ -18,30 +18,10 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class HashIndexType : uint16_t {
-  // Value initialized considered as Invalid
-  Invalid = 0,
-  // Index is PMem offset of a string record
-  StringRecord = 1,
-  // Index is PMem offset of a doubly linked record
-  DLRecord = 2,
-  // Index is pointer to a dram skiplist node
-  SkiplistNode = 3,
-  // Index is pointer to a dram skiplist struct
-  Skiplist = 4,
-  // Index field contains pointer to UnorderedCollection object on DRAM
-  UnorderedCollection = 5,
-  // Index field contains PMem pointer to element of UnorderedCollection
-  UnorderedCollectionElement = 6,
-  List = 7,
-  // Index is empty which point to nothing
-  Empty = 8,
-};
-
 struct HashHeader {
   uint32_t key_prefix;
   RecordType record_type;
-  HashIndexType index_type;
+  PointerType index_type;
 };
 
 class Skiplist;
@@ -68,17 +48,17 @@ struct alignas(16) HashEntry {
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
-            HashIndexType index_type)
+            PointerType index_type)
       : header_({key_hash_prefix, record_type, index_type}), index_(_index) {}
 
-  bool Empty() { return header_.index_type == HashIndexType::Empty; }
+  bool Empty() { return header_.index_type == PointerType::Empty; }
 
   // Make this hash entry empty while its content been deleted
-  void Clear() { header_.index_type = HashIndexType::Empty; }
+  void Clear() { header_.index_type = PointerType::Empty; }
 
   Index GetIndex() const { return index_; }
 
-  HashIndexType GetIndexType() const { return header_.index_type; }
+  PointerType GetIndexType() const { return header_.index_type; }
 
   RecordType GetRecordType() const { return header_.record_type; }
 
@@ -158,7 +138,7 @@ class HashTable {
   //
   // entry_ptr: position to insert, it's get from SearchForWrite()
   void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
-              void* index, HashIndexType index_type);
+              void* index, PointerType index_type);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
