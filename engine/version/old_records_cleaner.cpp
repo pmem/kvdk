@@ -238,7 +238,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       auto delete_record_index_type =
           old_delete_record.record_index.skiplist_node.GetTag();
       SkiplistNode* dram_node = nullptr;
-      bool need_clean = false;
+      bool need_purge = false;
       switch (delete_record_index_type) {
         case PointerType::HashEntry: {
           DLRecord* hash_indexed_pmem_record;
@@ -254,12 +254,15 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
             dram_node = hash_entry_ref->GetIndex().skiplist_node;
             hash_indexed_pmem_record = dram_node->record;
           } else {
-            std::abort();  // never reach
+            // Hash entry of this key already been cleaned. This happens if
+            // another delete record of this key inserted in hash table and
+            // cleaned before this record
+            break;
           }
 
           if (hash_indexed_pmem_record ==
               old_delete_record.pmem_delete_record) {
-            need_clean = true;
+            need_purge = true;
             kv_engine_->hash_table_->Erase(hash_entry_ref);
           }
           break;
@@ -268,23 +271,25 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           dram_node = static_cast<SkiplistNode*>(
               old_delete_record.record_index.skiplist_node.RawPointer());
           if (dram_node->record == old_delete_record.pmem_delete_record) {
-            need_clean = true;
+            need_purge = true;
           }
           break;
         }
         case PointerType::Empty: {
+          // This record is not indexed by hash table and skiplist node, so we
+          // check linkage to determine if its already been purged
           if (Skiplist::CheckRecordLinkage(
                   static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
                   kv_engine_->pmem_allocator_.get())) {
-            need_clean = true;
+            need_purge = true;
           }
           break;
         }
         default: {
-          std::abort();  // never should reach
+          kvdk_assert(false, "never should reach");
         }
       }
-      if (need_clean) {
+      if (need_purge) {
         while (!Skiplist::Purge(
             static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
             old_delete_record.key_lock, dram_node,
