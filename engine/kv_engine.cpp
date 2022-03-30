@@ -1206,10 +1206,10 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     }
   }
 
+  ul_locks.clear();
+
   engine_thread_cache_[access_thread.id]
       .persisted_pending_batch->PersistFinish();
-
-  std::string val;
 
   // Free updated kvs, we should purge all updated kvs before release locks
   // and after persist write stage
