@@ -456,7 +456,7 @@ KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
   }
   KVDKListIterator* iter = new KVDKListIterator;
   iter->rep.swap(rep);
-  return 0;
+  return iter;
 }
 
 void KVDKListIteratorDestroy(KVDKListIterator* iter) { delete iter; }
