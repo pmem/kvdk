@@ -30,8 +30,12 @@ struct Splice;
  * */
 struct SkiplistNode {
  public:
+  enum class NodeStatus : uint8_t {
+    Normal = 0,
+    Deleted = 1,
+  };
   // Tagged pointers means this node has been logically removed from the list
-  std::atomic<PointerWithTag<SkiplistNode>> next[0];
+  std::atomic<PointerWithTag<SkiplistNode, NodeStatus>> next[0];
   // Doubly linked record on PMem
   DLRecord* record;
   // TODO: save memory
@@ -75,28 +79,28 @@ struct SkiplistNode {
 
   CollectionIDType SkiplistID();
 
-  PointerWithTag<SkiplistNode> Next(int l) {
+  PointerWithTag<SkiplistNode, NodeStatus> Next(int l) {
     assert(l > 0 && l <= height && "should be less than node's height");
     return next[-l].load(std::memory_order_acquire);
   }
 
-  bool CASNext(int l, PointerWithTag<SkiplistNode> expected,
-               PointerWithTag<SkiplistNode> x) {
+  bool CASNext(int l, PointerWithTag<SkiplistNode, NodeStatus> expected,
+               PointerWithTag<SkiplistNode, NodeStatus> x) {
     assert(l > 0 && l <= height && "should be less than node's height");
     return (next[-l].compare_exchange_strong(expected, x));
   }
 
-  PointerWithTag<SkiplistNode> RelaxedNext(int l) {
+  PointerWithTag<SkiplistNode, NodeStatus> RelaxedNext(int l) {
     assert(l > 0 && l <= height && "should be less than node's height");
     return next[-l].load(std::memory_order_relaxed);
   }
 
-  void SetNext(int l, PointerWithTag<SkiplistNode> x) {
+  void SetNext(int l, PointerWithTag<SkiplistNode, NodeStatus> x) {
     assert(l > 0 && l <= height && "should be less than node's height");
     next[-l].store(x, std::memory_order_release);
   }
 
-  void RelaxedSetNext(int l, PointerWithTag<SkiplistNode> x) {
+  void RelaxedSetNext(int l, PointerWithTag<SkiplistNode, NodeStatus> x) {
     assert(l > 0 && l <= height && "should be less than node's height");
     next[-l].store(x, std::memory_order_relaxed);
   }
@@ -107,10 +111,11 @@ struct SkiplistNode {
       while (1) {
         auto next = RelaxedNext(l);
         // This node alread tagged by another thread
-        if (next.GetTag()) {
+        if (next.GetTag() == NodeStatus::Deleted) {
           continue;
         }
-        auto tagged = PointerWithTag<SkiplistNode>(next.RawPointer(), 1);
+        auto tagged = PointerWithTag<SkiplistNode, NodeStatus>(
+            next.RawPointer(), NodeStatus::Deleted);
         if (CASNext(l, next, tagged)) {
           break;
         }
@@ -154,7 +159,7 @@ class Skiplist : public Collection {
     DLRecord* existing_record = nullptr;
     DLRecord* write_record = nullptr;
     SkiplistNode* dram_node = nullptr;
-    HashEntry* entry_ptr = nullptr;
+    HashEntry* hash_entry_ptr = nullptr;
   };
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
@@ -226,6 +231,17 @@ class Skiplist : public Collection {
   Status CheckIndex();
 
   void CleanObsoletedNodes();
+
+  // Check if record correctly linked on list
+  static bool CheckRecordLinkage(DLRecord* record,
+                                 PMEMAllocator* pmem_allocator) {
+    uint64_t offset = pmem_allocator->addr2offset_checked(record);
+    DLRecord* prev =
+        pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
+    DLRecord* next =
+        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
+    return prev->next == offset && next->prev == offset;
+  }
 
   // Purge a dl record from its skiplist by remove it from linkage
   //
@@ -430,7 +446,8 @@ struct Splice {
         assert(seeking_list != nullptr);
         start_height = kMaxHeight;
         start_node = seeking_list->Header();
-      } else if (prevs[start_height]->Next(start_height).GetTag()) {
+      } else if (prevs[start_height]->Next(start_height).GetTag() ==
+                 SkiplistNode::NodeStatus::Deleted) {
         // If prev on this height has been deleted, roll back to higher height
         start_height++;
         continue;

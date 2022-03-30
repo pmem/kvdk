@@ -231,38 +231,38 @@ class KVEngine : public Engine {
                            : RecordType::Empty;
   }
 
-  static HashIndexType pointerType(RecordType rtype) {
+  static PointerType pointerType(RecordType rtype) {
     switch (rtype) {
       case RecordType::Empty: {
-        return HashIndexType::Empty;
+        return PointerType::Empty;
       }
       case RecordType::StringDataRecord:
       case RecordType::StringDeleteRecord: {
-        return HashIndexType::StringRecord;
+        return PointerType::StringRecord;
       }
       case RecordType::SortedDataRecord:
       case RecordType::SortedDeleteRecord: {
         kvdk_assert(false, "Not supported!");
-        return HashIndexType::Invalid;
+        return PointerType::Invalid;
       }
       case RecordType::SortedHeaderRecord: {
-        return HashIndexType::Skiplist;
+        return PointerType::Skiplist;
       }
       case RecordType::DlistDataRecord: {
-        return HashIndexType::UnorderedCollectionElement;
+        return PointerType::UnorderedCollectionElement;
       }
       case RecordType::DlistRecord: {
-        return HashIndexType::UnorderedCollection;
+        return PointerType::UnorderedCollection;
       }
       case RecordType::ListRecord: {
-        return HashIndexType::List;
+        return PointerType::List;
       }
       case RecordType::DlistHeadRecord:
       case RecordType::ListElem:
       default: {
         /// TODO: Remove Expire Flag
         kvdk_assert(false, "Invalid type!");
-        return HashIndexType::Invalid;
+        return PointerType::Invalid;
       }
     }
   }
@@ -312,8 +312,8 @@ class KVEngine : public Engine {
       return Status::Abort;
     }
 
-    HashIndexType ptype = pointerType(type);
-    kvdk_assert(ptype != HashIndexType::Invalid, "Invalid pointer type!");
+    PointerType ptype = pointerType(type);
+    kvdk_assert(ptype != PointerType::Invalid, "Invalid pointer type!");
     hash_table_->Insert(hint, entry_ptr, type, coll, ptype);
     return Status::Ok;
   }

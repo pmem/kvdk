@@ -188,10 +188,17 @@ extern KVDK_LIBRARY_API const char* KVDKIterValue(KVDKIterator* iter,
                                                   size_t* val_len);
 
 // For Expire
+/* ttl_time is negetive or positive number, If ttl_time == INT64_MAX,
+ * the key is persistent; If ttl_time <=0, the key is expired immediately.
+ */
 KVDK_LIBRARY_API KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str,
                                        size_t str_len, int64_t ttl_time);
-// ttl_time returns INT64_MAX if the key is persist, ttl_time returns 0 if the
-// key is expired.
+/* ttl_time is INT64_MAX and return Status::Ok if the key is persist
+ * ttl_time is 0 and return Status::NotFound if the key is expired or doesnot
+ * exist.
+ * ttl_time is certain positive number and return Status::Ok if the key hasn't
+ * expired and exist.
+ */
 KVDK_LIBRARY_API KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str,
                                        size_t str_len, int64_t* ttl_time);
 

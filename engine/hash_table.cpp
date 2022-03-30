@@ -44,35 +44,35 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
     StringView data_entry_key;
 
     switch (header_.index_type) {
-      case HashIndexType::Empty: {
+      case PointerType::Empty: {
         return false;
       }
-      case HashIndexType::StringRecord: {
+      case PointerType::StringRecord: {
         pmem_record = index_.string_record;
         data_entry_key = index_.string_record->Key();
         break;
       }
-      case HashIndexType::UnorderedCollectionElement:
-      case HashIndexType::DLRecord: {
+      case PointerType::UnorderedCollectionElement:
+      case PointerType::DLRecord: {
         pmem_record = index_.dl_record;
         data_entry_key = index_.dl_record->Key();
         break;
       }
-      case HashIndexType::List: {
+      case PointerType::List: {
         data_entry_key = index_.list->Name();
         break;
       }
-      case HashIndexType::UnorderedCollection: {
+      case PointerType::UnorderedCollection: {
         data_entry_key = index_.p_unordered_collection->Name();
         break;
       }
-      case HashIndexType::SkiplistNode: {
+      case PointerType::SkiplistNode: {
         SkiplistNode* dram_node = index_.skiplist_node;
         pmem_record = dram_node->record;
         data_entry_key = dram_node->record->Key();
         break;
       }
-      case HashIndexType::Skiplist: {
+      case PointerType::Skiplist: {
         Skiplist* skiplist = index_.skiplist;
         pmem_record = skiplist->Header()->record;
         data_entry_key = skiplist->Name();
@@ -81,7 +81,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
       default: {
         GlobalLogger.Error("Not supported hash index type: %u\n",
                            header_.index_type);
-        assert(false && "Trying to use invalid HashIndexType!");
+        assert(false && "Trying to use invalid PointerType!");
         return false;
       }
     }
@@ -173,7 +173,7 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   }
 
   if (!found && (*entry_ptr) != reusable_entry) {
-    (*entry_ptr)->Clear();
+    (*entry_ptr)->clear();
     hash_bucket_entries_[hint.bucket]++;
   }
 
@@ -231,7 +231,7 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
 
 void HashTable::Insert(
     const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type, void* index,
-    HashIndexType index_type,
+    PointerType index_type,
     HashEntryStatus entry_status /*= HashEntryStatus::Persist*/) {
   HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type,
                            entry_status);

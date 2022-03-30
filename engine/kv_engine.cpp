@@ -235,7 +235,7 @@ Status KVEngine::CreateSortedCollection(
       skiplists_.insert({id, skiplist});
     }
     hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist.get(),
-                        HashIndexType::Skiplist);
+                        PointerType::Skiplist);
   } else {
     return s;
   }
@@ -523,7 +523,7 @@ Status KVEngine::RestoreStringRecord(StringRecord* pmem_record,
   }
 
   hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, pmem_record,
-                      HashIndexType::StringRecord);
+                      PointerType::StringRecord);
   if (found) {
     purgeAndFree(hash_entry.GetIndex().ptr);
   }
@@ -851,11 +851,11 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     } else if (hash_entry.GetRecordType() == DlistDataRecord) {
       pmem_record = hash_entry.GetIndex().ptr;
     } else if (hash_entry.GetRecordType() == SortedDataRecord) {
-      if (hash_entry.GetIndexType() == HashIndexType::SkiplistNode) {
+      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
         SkiplistNode* dram_node = hash_entry.GetIndex().skiplist_node;
         pmem_record = dram_node->record;
       } else {
-        assert(hash_entry.GetIndexType() == HashIndexType::DLRecord);
+        assert(hash_entry.GetIndexType() == PointerType::DLRecord);
         pmem_record = hash_entry.GetIndex().dl_record;
       }
     } else {
@@ -870,14 +870,19 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
       continue;
     }
-    char data_buffer[record_size];
+
+    // TODO. remove checksum validation when unordered_collection supports mvcc
+    void* data_buffer = malloc(record_size);
     memcpy(data_buffer, pmem_record, record_size);
     // If the pmem data record is corrupted or modified during get, redo search
-    if (ValidateRecordAndGetValue(data_buffer, data_entry.header.checksum,
-                                  value)) {
+    bool valid = ValidateRecordAndGetValue(data_buffer,
+                                           data_entry.header.checksum, value);
+    free(data_buffer);
+    if (valid) {
       break;
     }
   }
+
   return Status::Ok;
 }
 
@@ -938,9 +943,20 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
               "Wrong existing record type while insert a delete reocrd for "
               "sorted collection");
           delayFree(OldDataRecord{ret.existing_record, new_ts});
-          if (skiplist->IndexWithHashtable()) {
-            delayFree(OldDeleteRecord{ret.write_record, new_ts, ret.entry_ptr,
-                                      hint.spin});
+          if (ret.hash_entry_ptr != nullptr) {
+            // delete record indexed by hash table
+            delayFree(OldDeleteRecord(ret.write_record, ret.hash_entry_ptr,
+                                      PointerType::HashEntry, new_ts,
+                                      hint.spin));
+          } else if (ret.dram_node != nullptr) {
+            // no hash index, by a skiplist node points to delete record
+            delayFree(OldDeleteRecord(ret.write_record, ret.dram_node,
+                                      PointerType::SkiplistNode, new_ts,
+                                      hint.spin));
+          } else {
+            // delete record nor pointed by hash entry nor skiplist node
+            delayFree(OldDeleteRecord(ret.write_record, nullptr,
+                                      PointerType::Empty, new_ts, hint.spin));
           }
         }
         return ret.s;
@@ -1200,9 +1216,9 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       delayFree(OldDataRecord{batch_hints[i].data_record_to_free, ts});
     }
     if (batch_hints[i].delete_record_to_free != nullptr) {
-      delayFree(OldDeleteRecord{batch_hints[i].delete_record_to_free, ts,
-                                batch_hints[i].hash_entry_ptr,
-                                batch_hints[i].hash_hint.spin});
+      delayFree(OldDeleteRecord(
+          batch_hints[i].delete_record_to_free, batch_hints[i].hash_entry_ptr,
+          PointerType::HashEntry, ts, batch_hints[i].hash_hint.spin));
     }
     if (batch_hints[i].space_not_used) {
       pmem_allocator_->Free(batch_hints[i].allocated_space);
@@ -1237,8 +1253,8 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
   if (ret.s == Status::Expired) {
     hash_table_->UpdateEntryStatus(ret.entry_ptr, HashEntryStatus::Expired);
     ul.unlock();
-    delayFree(OldDeleteRecord{ret.entry.GetIndex().ptr, new_ts, ret.entry_ptr,
-                              hint.spin});
+    delayFree(OldDeleteRecord{ret.entry.GetIndex().ptr, ret.entry_ptr,
+                              PointerType::HashEntry, new_ts, hint.spin});
     return Status::NotFound;
   }
   if (ret.s == Status::Ok) {
@@ -1266,7 +1282,7 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
         expired_time);
 
     hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record_ptr,
-                        HashIndexType::StringRecord);
+                        PointerType::StringRecord);
     ul.unlock();
     delayFree(OldDataRecord({old_record, new_ts}));
     new_value->assign(modified_value);
@@ -1317,7 +1333,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
         kv.key, kv.type == StringDataRecord ? kv.value : "");
 
     hash_table_->Insert(hash_hint, entry_ptr, (RecordType)kv.type, block_base,
-                        HashIndexType::StringRecord);
+                        PointerType::StringRecord);
 
     if (found) {
       if (kv.type == StringDeleteRecord) {
@@ -1361,28 +1377,27 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
     *ttl_time = kExpiredTime;
     return Status::NotFound;
   }
-
   *ttl_time = kExpiredTime;
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;
     switch (res.entry_ptr->GetIndexType()) {
-      case HashIndexType::Skiplist: {
+      case PointerType::Skiplist: {
         expire_time = res.entry_ptr->GetIndex().skiplist->GetExpireTime();
         break;
       }
-      case HashIndexType::UnorderedCollection: {
+      case PointerType::UnorderedCollection: {
         expire_time =
             res.entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
         break;
       }
 
-      case HashIndexType::List: {
+      case PointerType::List: {
         expire_time = res.entry_ptr->GetIndex().list->GetExpireTime();
         break;
       }
 
-      case HashIndexType::StringRecord: {
+      case PointerType::StringRecord: {
         expire_time = res.entry_ptr->GetIndex().string_record->GetExpireTime();
         break;
       }
@@ -1413,12 +1428,12 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
     // HashEntryStatus::Expired.
     // TODO(zhichen): This `if` will be removed when completing collection
     // deletion.
-    if (res.entry_ptr->GetIndexType() == HashIndexType::StringRecord) {
+    if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
       hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
       ul.unlock();
-      delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
-                                version_controller_.GetCurrentTimestamp(),
-                                res.entry_ptr, hint.spin});
+      delayFree(OldDeleteRecord{
+          res.entry_ptr->GetIndex().ptr, res.entry_ptr, PointerType::HashEntry,
+          version_controller_.GetCurrentTimestamp(), hint.spin});
     }
     return Status::NotFound;
   }
@@ -1427,7 +1442,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
     std::string val;
     WriteOptions write_option{ttl_time, false};
     switch (res.entry_ptr->GetIndexType()) {
-      case HashIndexType::StringRecord: {
+      case PointerType::StringRecord: {
         ul.unlock();
         res.s = Modify(
             str, &val,
@@ -1435,18 +1450,18 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
             write_option);
         break;
       }
-      case HashIndexType::Skiplist: {
+      case PointerType::Skiplist: {
         res.s = res.entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
         break;
       }
-      case HashIndexType::UnorderedCollection: {
+      case PointerType::UnorderedCollection: {
         UnorderedCollection* pcoll =
             res.entry.GetIndex().p_unordered_collection;
         /// TODO: put these unregister and delete work in findKey()
         res.s = pcoll->SetExpireTime(expired_time);
         break;
       }
-      case HashIndexType::List: {
+      case PointerType::List: {
         res.s = res.entry_ptr->GetIndex().list->SetExpireTime(expired_time);
         break;
       }
@@ -1506,11 +1521,13 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
             key, "");
 
         hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
-                            HashIndexType::StringRecord);
+                            PointerType::StringRecord);
         ul.unlock();
         delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
-        // We also delay free this delete record to recycle PMem and DRAM space
-        delayFree(OldDeleteRecord{pmem_ptr, new_ts, entry_ptr, hint.spin});
+        // We also delay free this delete record to recycle PMem and DRAM
+        // space
+        delayFree(OldDeleteRecord(pmem_ptr, entry_ptr, PointerType::HashEntry,
+                                  new_ts, hint.spin));
 
         return s;
       }
@@ -1583,12 +1600,11 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
     auto updated_type = hash_entry_ptr->GetRecordType();
 
     hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord, block_base,
-                        HashIndexType::StringRecord, entry_status);
-
-    /* delete record is self-freed or this record is expired(already pushed into
-     * cleaner queue), so we don't need to free it here */
-    if (found && updated_type == StringDataRecord &&
-        !hash_entry_ptr->IsExpiredStatus()) {
+                        PointerType::StringRecord);
+    if (found &&
+        updated_type == StringDataRecord
+        /* delete record is self-freed, so we don't need to free it here */
+        && !hash_entry_ptr->IsExpiredStatus()) {
       ul.unlock();
       delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
     }
@@ -1736,7 +1752,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
           kvdk_assert(s == Status::NotFound, "Logically impossible!");
           hash_table_->Insert(hint_collection, p_hash_entry_collection,
                               RecordType::DlistRecord, p_collection,
-                              HashIndexType::UnorderedCollection);
+                              PointerType::UnorderedCollection);
         }
       }
     }
@@ -1806,7 +1822,7 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
                 emplace_result.offset_new);
         hash_table_->Insert(hint_record, p_hash_entry_record,
                             RecordType::DlistDataRecord, pmp_new_record,
-                            HashIndexType::UnorderedCollectionElement);
+                            PointerType::UnorderedCollectionElement);
         return Status::Ok;
       }
     }
@@ -1907,7 +1923,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
           &p_hash_entry_collection, &hash_entry_collection, nullptr);
       hash_table_->Insert(hint_collection, p_hash_entry_collection,
                           RecordType::DlistRecord, p_collection,
-                          HashIndexType::UnorderedCollection);
+                          PointerType::UnorderedCollection);
       kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
       return Status::Ok;
     }
@@ -1949,7 +1965,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
         case Status::NotFound: {
           hash_table_->Insert(hint_record, p_hash_entry_record,
                               pmp_record->entry.meta.type, pmp_record,
-                              HashIndexType::UnorderedCollectionElement);
+                              PointerType::UnorderedCollectionElement);
           return Status::Ok;
         }
         case Status::Ok: {
@@ -1963,7 +1979,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
             }
             hash_table_->Insert(hint_record, p_hash_entry_record,
                                 pmp_record->entry.meta.type, pmp_record,
-                                HashIndexType::UnorderedCollectionElement);
+                                PointerType::UnorderedCollectionElement);
             purgeAndFree(pmp_old_record);
 
           } else if (pmp_old_record->entry.meta.timestamp ==
@@ -2121,21 +2137,21 @@ void KVEngine::CleanExpired() {
     uint64_t need_clean_num = 0;
     while (bucket_iter != end_bucket_iter) {
       switch (bucket_iter->GetIndexType()) {
-        case HashIndexType::StringRecord: {
+        case PointerType::StringRecord: {
           if (bucket_iter->IsTTLStatus() &&
               bucket_iter->GetIndex().string_record->HasExpired()) {
             hash_table_->UpdateEntryStatus(&(*bucket_iter),
                                            HashEntryStatus::Expired);
             // push expired cleaner
-            expired_record_queue.push_back(
-                OldDeleteRecord{bucket_iter->GetIndex().ptr, new_ts,
-                                &(*bucket_iter), slot_iter.GetSlotLock()});
+            expired_record_queue.push_back(OldDeleteRecord{
+                bucket_iter->GetIndex().ptr, &(*bucket_iter),
+                PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
             need_clean_num++;
           }
         }
-        case HashIndexType::UnorderedCollection:
-        case HashIndexType::List:
-        case HashIndexType::Skiplist: {
+        case PointerType::UnorderedCollection:
+        case PointerType::List:
+        case PointerType::Skiplist: {
           // TODO(zhichen): check expired. and push into collection cleaner.
           break;
         }
