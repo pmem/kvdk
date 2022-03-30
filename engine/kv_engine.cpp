@@ -301,22 +301,13 @@ Status KVEngine::RestoreData() {
     memcpy(&data_entry_cached, recovering_pmem_record, sizeof(DataEntry));
 
     if (data_entry_cached.header.record_size == 0) {
-      // Iter through data blocks until find a valid size space entry or reach
-      // end of the segment
-      PMemOffsetType offset =
-          segment_recovering.offset + configs_.pmem_block_size;
-      uint64_t size = segment_recovering.size - configs_.pmem_block_size;
-      while (size > 0 &&
-             pmem_allocator_->offset2addr_checked<DataHeader>(offset)
-                     ->record_size == 0) {
-        size -= configs_.pmem_block_size;
-        offset += configs_.pmem_block_size;
-      }
-      uint64_t padding_size = offset - segment_recovering.offset;
+      // Reach end of the segment, mark it as padding
       DataEntry* recovering_pmem_data_entry =
           static_cast<DataEntry*>(recovering_pmem_record);
+      uint64_t padding_size = segment_recovering.size;
       recovering_pmem_data_entry->header.record_size = padding_size;
       recovering_pmem_data_entry->meta.type = RecordType::Padding;
+      pmem_persist(recovering_pmem_data_entry, sizeof(DataEntry));
       data_entry_cached = *recovering_pmem_data_entry;
     }
 

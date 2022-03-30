@@ -237,6 +237,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
           assert(extra_space % block_size_ == 0);
           // Mark splited space entry size on PMem, we should firstly mark the
           // 2st part for correctness in recovery
+          //
+          // TODO (jiayu): Avoid persist metadata on PMem while allocating
           persistSpaceEntry(
               palloc_thread_cache.free_entry.offset + aligned_size,
               extra_space);
@@ -285,18 +287,12 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   space_entry = palloc_thread_cache.segment_entry;
   space_entry.size = aligned_size;
 
-  if (palloc_thread_cache.segment_entry.size == segment_size_) {
-    // Persist size of space entry on PMem while allocate space from a new
-    // segment for correctness in recovery.
-    //
-    // For the rest allocation from this segment, we do not persist size for
-    // performance consideration, the size will be persisted by kv engine, or
-    // easily recovered in recovery as the content on the segment must be 0
-    persistSpaceEntry(space_entry.offset, space_entry.size);
-  }
-  palloc_thread_cache.segment_entry.offset += aligned_size;
-  palloc_thread_cache.segment_entry.size -= aligned_size;
-  LogAllocation(access_thread.id, aligned_size);
+  // Persist size of space entry on PMem
+  // TODO (jiayu): Avoid persist metadata on PMem while allocating
+  persistSpaceEntry(space_entry.offset, space_entry.size);
+  palloc_thread_cache.segment_entry.offset += space_entry.size;
+  palloc_thread_cache.segment_entry.size -= space_entry.size;
+  LogAllocation(access_thread.id, space_entry.size);
   return space_entry;
 }
 
