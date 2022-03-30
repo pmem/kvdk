@@ -119,7 +119,7 @@ KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
   KVDKStatus s =
       Engine::Open(std::string(name), &engine, config->rep, log_file);
   if (s != KVDKStatus::Ok) {
-    kv_engine = nullptr;
+    *kv_engine = nullptr;
     return s;
   }
   *kv_engine = new KVDKEngine;
