@@ -305,9 +305,11 @@ Status KVEngine::RestoreData() {
       DataEntry* recovering_pmem_data_entry =
           static_cast<DataEntry*>(recovering_pmem_record);
       uint64_t padding_size = segment_recovering.size;
-      recovering_pmem_data_entry->header.record_size = padding_size;
       recovering_pmem_data_entry->meta.type = RecordType::Padding;
-      pmem_persist(recovering_pmem_data_entry, sizeof(DataEntry));
+      pmem_persist(&recovering_pmem_data_entry->meta.type, sizeof(RecordType));
+      recovering_pmem_data_entry->header.record_size = padding_size;
+      pmem_persist(&recovering_pmem_data_entry->header.record_size,
+                   sizeof(uint32_t));
       data_entry_cached = *recovering_pmem_data_entry;
     }
 
