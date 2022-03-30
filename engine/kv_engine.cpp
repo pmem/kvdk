@@ -1206,6 +1206,8 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     }
   }
 
+  // Must release all spinlocks before delayFree(), 
+  // otherwise may deadlock as delayFree() also try to acquire these spinlocks.
   ul_locks.clear();
 
   engine_thread_cache_[access_thread.id]
