@@ -329,7 +329,7 @@ Status GraphSimulator::GetTopN(
     edge_list.EdgeListDecode(&value);
     top_n.Push(std::make_pair(vertex, edge_list.Num()));
   }
-
+  delete iter;
   if (top_n.Size() == 0) {
     return Status::Abort;
   }

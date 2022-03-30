@@ -469,12 +469,11 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
     std::string internal_key = InternalKey(key);
     HashEntry hash_entry;
     HashEntry* entry_ptr = nullptr;
-    DataEntry data_entry;
     bool is_found = hash_table_->SearchForRead(
                         hash_table_->GetHint(internal_key), internal_key,
                         SortedDataRecord | SortedDeleteRecord, &entry_ptr,
-                        &hash_entry, &data_entry) == Status::Ok;
-    if (!is_found || (hash_entry.GetRecordType() & DeleteRecordType)) {
+                        &hash_entry, nullptr) == Status::Ok;
+    if (!is_found) {
       return Status::NotFound;
     }
 
@@ -495,8 +494,13 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
       }
     }
 
-    value->assign(pmem_record->Value().data(), pmem_record->Value().size());
-    return Status::Ok;
+    if (pmem_record->entry.meta.type == SortedDeleteRecord) {
+      return Status::NotFound;
+    } else {
+      assert(pmem_record->entry.meta.type == SortedDataRecord);
+      value->assign(pmem_record->Value().data(), pmem_record->Value().size());
+      return Status::Ok;
+    }
   }
 }
 
