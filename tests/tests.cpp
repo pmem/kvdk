@@ -1339,7 +1339,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
 
 TEST_F(EngineBasicTest, TestList) {
   int num_threads = 16;
-  int count = 10000;
+  int count = 1000;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
