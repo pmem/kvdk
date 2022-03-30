@@ -848,6 +848,24 @@ TEST_F(EngineBasicTest, TestStringRestore) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestStringLargeValue) {
+  configs.pmem_block_size = (1UL << 6);
+  configs.pmem_segment_blocks = (1UL << 24);
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  for (size_t sz = 1024; sz < (1UL << 30); sz *= 2) {
+    std::string key{"large"};
+    std::string value(sz, 'a');
+    std::string sink;
+
+    ASSERT_EQ(engine->Set(key, value), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
+    ASSERT_EQ(value, sink);
+  }
+  delete engine;
+}
+
 TEST_F(EngineBasicTest, TestSortedRestore) {
   int num_threads = 16;
   configs.max_access_threads = num_threads;

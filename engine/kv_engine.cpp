@@ -873,14 +873,19 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
       continue;
     }
-    char data_buffer[record_size];
+
+    // TODO. remove checksum validation when unordered_collection supports mvcc
+    void* data_buffer = malloc(record_size);
     memcpy(data_buffer, pmem_record, record_size);
     // If the pmem data record is corrupted or modified during get, redo search
-    if (ValidateRecordAndGetValue(data_buffer, data_entry.header.checksum,
-                                  value)) {
+    bool valid = ValidateRecordAndGetValue(data_buffer,
+                                           data_entry.header.checksum, value);
+    free(data_buffer);
+    if (valid) {
       break;
     }
   }
+
   return Status::Ok;
 }
 
