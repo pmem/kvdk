@@ -459,9 +459,7 @@ KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
   return 0;
 }
 
-void KVDKListIteratorDestroy(KVDKEngine* engine, KVDKListIterator* iter) {
-  delete iter;
-}
+void KVDKListIteratorDestroy(KVDKListIterator* iter) { delete iter; }
 
 void KVDKListIteratorPrev(KVDKListIterator* iter) { iter->rep->Prev(); }
 

@@ -134,7 +134,7 @@ TEST_F(EngineCAPITestBase, List) {
         KVDKListIteratorPrev(iter);
       }
     }
-    KVDKListIteratorDestroy(engine, iter);
+    KVDKListIteratorDestroy(iter);
   };
 
   auto ListInsertSetRemove = [&](size_t tid) {
@@ -180,7 +180,7 @@ TEST_F(EngineCAPITestBase, List) {
     iter2 = list_copy.erase(iter2);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
 
-    KVDKListIteratorDestroy(engine, iter);
+    KVDKListIteratorDestroy(iter);
   };
 
   for (size_t i = 0; i < 3; i++) {
