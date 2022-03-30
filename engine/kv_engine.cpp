@@ -787,7 +787,7 @@ Status KVEngine::Recovery() {
   list_id_ = ret.max_id + 1;
   skiplists_.swap(ret.rebuild_skiplits);
 
-#ifdef DEBUG_CHECK
+#ifdef KVDK_DEBUG_CHECK
   for (auto skiplist : skiplists_) {
     Status s = skiplist.second->CheckIndex();
     if (s != Status::Ok) {
@@ -1944,9 +1944,9 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
       bool linked = checkLinkage(static_cast<DLRecord*>(pmp_record));
       if (!linked) {
         GlobalLogger.Error("Bad linkage!\n");
-#if DEBUG_LEVEL == 0
+#if KVDK_DEBUG_LEVEL == 0
         GlobalLogger.Error(
-            "Bad linkage can only be repaired when DEBUG_LEVEL > 0!\n");
+            "Bad linkage can only be repaired when KVDK_DEBUG_LEVEL > 0!\n");
         std::abort();
 #endif
         return Status::Ok;

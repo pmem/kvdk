@@ -193,7 +193,7 @@ class DLinkedList {
       : pmem_allocator_ptr_{pmem_allocator_p},
         head_pmmptr_{head_pmmptr},
         tail_pmmptr_{tail_pmmptr} {
-#if DEBUG_LEVEL > 0
+#if KVDK_DEBUG_LEVEL > 0
     {
       kvdk_assert(head_pmmptr->entry.meta.type == HeadType,
                   "Cannot rebuild a DlinkedList from given PMem pointer "
@@ -230,7 +230,7 @@ class DLinkedList {
         }
       }
     }
-#endif  // DEBUG_LEVEL > 0
+#endif  // KVDK_DEBUG_LEVEL > 0
   }
 
   // head_pmmptr and tail_pmmptr points to persisted Record of Head and Tail on
