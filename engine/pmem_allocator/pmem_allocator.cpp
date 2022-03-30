@@ -232,29 +232,24 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       if (palloc_thread_cache.free_entry.size >= aligned_size) {
         // Padding remaining space
         auto extra_space = palloc_thread_cache.free_entry.size - aligned_size;
-        // TODO optimize, do not write PMem
         if (extra_space >= kMinPaddingBlocks * block_size_) {
           assert(extra_space % block_size_ == 0);
           // Mark splited space entry size on PMem, we should firstly mark the
           // 2st part for correctness in recovery
-          //
-          // TODO (jiayu): Avoid persist metadata on PMem while allocating
           persistSpaceEntry(
               palloc_thread_cache.free_entry.offset + aligned_size,
               extra_space);
-          persistSpaceEntry(palloc_thread_cache.free_entry.offset,
-                            aligned_size);
         } else {
           aligned_size = palloc_thread_cache.free_entry.size;
         }
 
         space_entry = palloc_thread_cache.free_entry;
         space_entry.size = aligned_size;
-        kvdk_assert(
-            space_entry.size ==
-                    offset2addr<DataHeader>(space_entry.offset)->record_size ||
-                0 == offset2addr<DataHeader>(space_entry.offset)->record_size,
-            "Size of a reused free space entry should be persisted on PMem");
+        if (offset2addr_checked<DataEntry>(space_entry.offset)
+                ->header.record_size != space_entry.size) {
+          // TODO (jiayu): Avoid persist metadata on PMem in allocation
+          persistSpaceEntry(space_entry.offset, space_entry.size);
+        }
         palloc_thread_cache.free_entry.size -= aligned_size;
         palloc_thread_cache.free_entry.offset += aligned_size;
         LogAllocation(access_thread.id, aligned_size);
@@ -288,7 +283,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   space_entry.size = aligned_size;
 
   // Persist size of space entry on PMem
-  // TODO (jiayu): Avoid persist metadata on PMem while allocating
+  // TODO (jiayu): Avoid persist metadata on PMem in allocation
   persistSpaceEntry(space_entry.offset, space_entry.size);
   palloc_thread_cache.segment_entry.offset += space_entry.size;
   palloc_thread_cache.segment_entry.size -= space_entry.size;
