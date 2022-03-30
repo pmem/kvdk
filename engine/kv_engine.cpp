@@ -1203,13 +1203,14 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     }
   }
 
+  // Must release all spinlocks before delayFree(),
+  // otherwise may deadlock as delayFree() also try to acquire these spinlocks.
+  ul_locks.clear();
+
   engine_thread_cache_[access_thread.id]
       .persisted_pending_batch->PersistFinish();
 
-  std::string val;
-
-  // Free updated kvs, we should purge all updated kvs before release locks and
-  // after persist write stage
+  // Free outdated kvs
   for (size_t i = 0; i < write_batch.Size(); i++) {
     TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before", &i);
     if (batch_hints[i].data_record_to_free != nullptr) {
