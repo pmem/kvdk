@@ -942,14 +942,17 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
               "sorted collection");
           delayFree(OldDataRecord{ret.existing_record, new_ts});
           if (ret.hash_entry_ptr != nullptr) {
+            // delete record indexed by hash table
             delayFree(OldDeleteRecord(ret.write_record, ret.hash_entry_ptr,
                                       PointerType::HashEntry, new_ts,
                                       hint.spin));
           } else if (ret.dram_node != nullptr) {
+            // no hash index, by a skiplist node points to delete record
             delayFree(OldDeleteRecord(ret.write_record, ret.dram_node,
                                       PointerType::SkiplistNode, new_ts,
                                       hint.spin));
           } else {
+            // delete record nor pointed by hash entry nor skiplist node
             delayFree(OldDeleteRecord(ret.write_record, nullptr,
                                       PointerType::Empty, new_ts, hint.spin));
           }
