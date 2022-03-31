@@ -25,14 +25,33 @@ struct OldDataRecord {
 };
 
 struct OldDeleteRecord {
+  union RecordIndex {
+    RecordIndex(void* ptr, PointerType type)
+        : hash_entry((HashEntry*)ptr, type) {}
+    PointerWithTag<HashEntry, PointerType> hash_entry;
+    PointerWithTag<SkiplistNode, PointerType> skiplist_node;
+  };
+
+  OldDeleteRecord(void* _pmem_delete_record, void* _record_index,
+                  PointerType _index_type, TimeStampType _release_time,
+                  SpinMutex* _key_lock)
+      : pmem_delete_record(_pmem_delete_record),
+        release_time(_release_time),
+        key_lock(_key_lock),
+        record_index(_record_index, _index_type) {}
+
   void* pmem_delete_record;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely clear index of this OldDeleteRecord, and transfer it to
   // PendingFreeSpaceEntries
   TimeStampType release_time;
-  // We need ref to hash entry for clear index of delete record
-  HashEntry* hash_entry_ref;
-  SpinMutex* hash_entry_lock;
+  // We may need to clean index for delete record, so we need track its index
+  // and key lock
+  //
+  // The tag of pointer indicates the type of pointer, like hash ptr or skiplist
+  // node
+  RecordIndex record_index;
+  SpinMutex* key_lock;
 };
 
 struct PendingFreeSpaceEntries {
@@ -61,8 +80,9 @@ class OldRecordsCleaner {
     assert(kv_engine_ != nullptr);
   }
 
-  void Push(const OldDataRecord& old_data_record);
-  void Push(const OldDeleteRecord& old_delete_record);
+  void PushToCache(const OldDataRecord& old_data_record);
+  void PushToCache(const OldDeleteRecord& old_delete_record);
+  void PushToGloble(const std::deque<OldDeleteRecord>& old_delete_records);
   // Try to clean global old records
   void TryGlobalClean();
   void TryCleanCachedOldRecords(size_t num_limit_clean);
@@ -83,7 +103,7 @@ class OldRecordsCleaner {
 
   void maybeUpdateOldestSnapshot();
   SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
-  SpaceEntry purgeOldDeleteRecord(const OldDeleteRecord& old_delete_record);
+  SpaceEntry purgeOldDeleteRecord(OldDeleteRecord& old_delete_record);
 
   KVEngine* kv_engine_;
 
@@ -94,4 +114,5 @@ class OldRecordsCleaner {
   std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };
+
 }  // namespace KVDK_NAMESPACE

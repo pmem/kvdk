@@ -2,6 +2,8 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <cassert>
 #include <random>
@@ -301,6 +303,104 @@ static void test_customer_sorted_func() {
   engine->ReleaseSortedIterator(iter);
 }
 
+static void test_expire() {
+  int64_t ttl_time;
+  std::string got_val;
+  kvdk::Status s;
+  // For string
+  {
+    std::string key = "stringkey";
+    std::string val = "stringval";
+    // case: set expire time
+    s = engine->Set(key, val, kvdk::WriteOptions{100, false});
+    assert(s == kvdk::Status::Ok);
+    s = engine->Get(key, &got_val);
+    assert(s == kvdk::Status::Ok);
+    assert(got_val == val);
+    s = engine->GetTTL(key, &ttl_time);
+    assert(s == kvdk::Status::Ok);
+    // case: reset expire time
+    s = engine->Expire(key, INT32_MAX);
+    assert(s == kvdk::Status::Ok);
+    // case: change to persist key
+    s = engine->Expire(key, kvdk::kPersistTime);
+    assert(s == kvdk::Status::Ok);
+    s = engine->GetTTL(key, &ttl_time);
+    assert(s == kvdk::Status::Ok);
+    assert(ttl_time == kvdk::kPersistTime);
+    // case: key is expired.
+    s = engine->Expire(key, 1);
+    assert(s == kvdk::Status::Ok);
+    sleep(1);
+    s = engine->Get(key, &got_val);
+    assert(s == kvdk::Status::NotFound);
+    printf("Successfully expire string\n");
+  }
+
+  {
+    std::string sorted_collection = "sorted_collection";
+    std::string key = "sortedkey";
+    std::string val = "sortedval";
+
+    s = engine->CreateSortedCollection(sorted_collection);
+    // case: default persist key.
+    s = engine->GetTTL(sorted_collection, &ttl_time);
+    assert(s == kvdk::Status::Ok);
+    assert(ttl_time == kvdk::kPersistTime);
+    s = engine->SSet(sorted_collection, key, val);
+    assert(s == kvdk::Status::Ok);
+    // case: set expire_time
+    s = engine->Expire(sorted_collection, INT32_MAX);
+    assert(s == kvdk::Status::Ok);
+    // case: change to persist key
+    s = engine->Expire(sorted_collection, kvdk::kPersistTime);
+    s = engine->GetTTL(sorted_collection, &ttl_time);
+    assert(s == kvdk::Status::Ok);
+    assert(ttl_time == kvdk::kPersistTime);
+    // case: key is expired.
+    s = engine->Expire(sorted_collection, 1);
+    assert(s == kvdk::Status::Ok);
+    sleep(1);
+    s = engine->SGet(sorted_collection, key, &got_val);
+    assert(s == kvdk::Status::NotFound);
+    printf("Successfully expire sorted\n");
+  }
+
+  {
+    std::string hash_collection = "hash_collection";
+    std::string key = "hashkey";
+    std::string val = "hashval";
+
+    // case: default persist key
+    s = engine->HSet(hash_collection, key, val);
+    assert(s == kvdk::Status::Ok);
+    s = engine->GetTTL(hash_collection, &ttl_time);
+    assert(s == kvdk::Status::Ok);
+    assert(ttl_time == kvdk::kPersistTime);
+
+    // case: set expire_time
+    s = engine->Expire(hash_collection, 1);
+    assert(s == kvdk::Status::Ok);
+    // case: change to persist key
+    s = engine->Expire(hash_collection, kvdk::kPersistTime);
+    s = engine->GetTTL(hash_collection, &ttl_time);
+    assert(s == kvdk::Status::Ok);
+    assert(ttl_time == kvdk::kPersistTime);
+    // case: key is expired.
+    s = engine->Expire(hash_collection, 1);
+    assert(s == kvdk::Status::Ok);
+    sleep(1);
+    s = engine->HGet(hash_collection, key, &got_val);
+    assert(s == kvdk::Status::NotFound);
+    printf("Successfully expire hash\n");
+  }
+
+  {
+    // TODO: add expire list, but now list api has changed.
+  }
+  return;
+}
+
 int main() {
   // Initialize a KVDK instance.
   kvdk::Configs engine_configs;
@@ -337,6 +437,9 @@ int main() {
 
   // BatchWrite on Anonymous Global Collection
   test_batch_write();
+
+  // Expire
+  test_expire();
 
   // Close KVDK instance.
   delete engine;

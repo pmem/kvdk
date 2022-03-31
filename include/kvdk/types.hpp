@@ -13,14 +13,14 @@ using CollectionIDType = std::uint64_t;
 using IndexType = std::int64_t;
 
 using UnixTimeType = std::int64_t;
-using ExpiredTimeType = UnixTimeType;
-using TTLTimeType = std::int64_t;
+using ExpireTimeType = UnixTimeType;
+using TTLType = std::int64_t;
 
 /// TODO: helper functions to convert between ExpireTime and TTL
-constexpr ExpiredTimeType kPersistTime = -1;
-constexpr ExpiredTimeType kInvalidExpireTime = -2;
-constexpr TTLTimeType kPersistTTL = -1;
-constexpr TTLTimeType kInvalidTTL = -2;
+constexpr ExpireTimeType kPersistTime = -1;
+constexpr ExpireTimeType kInvalidExpireTime = -2;
+constexpr TTLType kPersistTTL = -1;
+constexpr TTLType kInvalidTTL = -2;
 }  // namespace KVDK_NAMESPACE
 
 #endif  // KVDKDEF_HPP
