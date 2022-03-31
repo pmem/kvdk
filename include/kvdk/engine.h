@@ -180,12 +180,11 @@ extern KVDK_LIBRARY_API void KVDKIterSeekToLast(KVDKIterator* iter);
 extern KVDK_LIBRARY_API void KVDKIterSeek(KVDKIterator* iter, const char* str,
                                           size_t str_len);
 extern KVDK_LIBRARY_API void KVDKIterNext(KVDKIterator* iter);
-extern KVDK_LIBRARY_API void KVDKIterPre(KVDKIterator* iter);
+extern KVDK_LIBRARY_API void KVDKIterPrev(KVDKIterator* iter);
 extern KVDK_LIBRARY_API unsigned char KVDKIterValid(KVDKIterator* iter);
-extern KVDK_LIBRARY_API const char* KVDKIterKey(KVDKIterator* iter,
-                                                size_t* key_len);
-extern KVDK_LIBRARY_API const char* KVDKIterValue(KVDKIterator* iter,
-                                                  size_t* val_len);
+extern KVDK_LIBRARY_API char* KVDKIterKey(KVDKIterator* iter, size_t* key_len);
+extern KVDK_LIBRARY_API char* KVDKIterValue(KVDKIterator* iter,
+                                            size_t* val_len);
 
 // For Expire
 /* ttl_time is negetive or positive number, If ttl_time == INT64_MAX,

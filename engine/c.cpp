@@ -28,14 +28,15 @@ struct KVDKConfigs {
   Configs rep;
 };
 struct KVDKEngine {
-  Engine* rep;
+  std::unique_ptr<Engine> rep;
 };
 struct KVDKWriteBatch {
   WriteBatch rep;
 };
 struct KVDKIterator {
   KVDKIterType type;
-  Iterator* rep;
+  Iterator* sorted_iter;
+  std::shared_ptr<Iterator> hash_iter;
 };
 struct KVDKSnapshot {
   Snapshot* rep;
@@ -109,11 +110,11 @@ KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
   KVDKStatus s =
       Engine::Open(std::string(name), &engine, config->rep, log_file);
   if (s != KVDKStatus::Ok) {
-    kv_engine = nullptr;
+    *kv_engine = nullptr;
     return s;
   }
   *kv_engine = new KVDKEngine;
-  (*kv_engine)->rep = engine;
+  (*kv_engine)->rep.reset(engine);
   return s;
 }
 
@@ -132,10 +133,7 @@ void KVDKReleaseSnapshot(KVDKEngine* engine, KVDKSnapshot* snapshot) {
   delete snapshot;
 }
 
-void KVDKCloseEngine(KVDKEngine* engine) {
-  delete engine->rep;
-  delete engine;
-}
+void KVDKCloseEngine(KVDKEngine* engine) { delete engine; }
 
 void KVDKRemovePMemContents(const char* name) {
   std::string res = "rm -rf " + std::string(name) + "\n";
@@ -336,9 +334,9 @@ KVDKIterator* KVDKCreateUnorderedIterator(KVDKEngine* engine,
                                           const char* collection,
                                           size_t collection_len) {
   KVDKIterator* result = new KVDKIterator;
-  result->rep =
-      (engine->rep->NewUnorderedIterator(std::string(collection))).get();
-  if (!result->rep) {
+  result->hash_iter =
+      engine->rep->NewUnorderedIterator(std::string(collection));
+  if (result->hash_iter == nullptr) {
     delete result;
     return nullptr;
   }
@@ -351,9 +349,9 @@ KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
                                        size_t collection_len,
                                        KVDKSnapshot* snapshot) {
   KVDKIterator* result = new KVDKIterator;
-  result->rep = (engine->rep->NewSortedIterator(
+  result->sorted_iter = (engine->rep->NewSortedIterator(
       std::string(collection), snapshot ? snapshot->rep : nullptr));
-  if (!result->rep) {
+  if (result->sorted_iter == nullptr) {
     delete result;
     return nullptr;
   }
@@ -364,41 +362,149 @@ KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
 void KVDKDestroyIterator(KVDKEngine* engine, KVDKIterator* iterator) {
   switch (iterator->type) {
     case SORTED: {
-      engine->rep->ReleaseSortedIterator(iterator->rep);
+      engine->rep->ReleaseSortedIterator(iterator->sorted_iter);
       break;
     }
     case HASH: {
       break;
     }
-
-    default:
+    default: {
       std::abort();
+    }
   }
   delete iterator;
 }
 
-void KVDKIterSeekToFirst(KVDKIterator* iter) { iter->rep->SeekToFirst(); }
-
-void KVDKIterSeekToLast(KVDKIterator* iter) { iter->rep->SeekToLast(); }
-
-void KVDKIterSeek(KVDKIterator* iter, const char* str, size_t str_len) {
-  iter->rep->Seek(std::string(str, str_len));
+void KVDKIterSeekToFirst(KVDKIterator* iter) {
+  switch (iter->type) {
+    case SORTED: {
+      iter->sorted_iter->SeekToFirst();
+      break;
+    }
+    case HASH: {
+      iter->hash_iter->SeekToFirst();
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
 }
 
-unsigned char KVDKIterValid(KVDKIterator* iter) { return iter->rep->Valid(); }
+void KVDKIterSeekToLast(KVDKIterator* iter) {
+  switch (iter->type) {
+    case SORTED: {
+      iter->sorted_iter->SeekToLast();
+      break;
+    }
+    case HASH: {
+      iter->hash_iter->SeekToLast();
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
+}
 
-void KVDKIterNext(KVDKIterator* iter) { iter->rep->Next(); }
+void KVDKIterSeek(KVDKIterator* iter, const char* str, size_t str_len) {
+  switch (iter->type) {
+    case SORTED: {
+      iter->sorted_iter->Seek(std::string{str, str_len});
+      break;
+    }
+    case HASH: {
+      iter->hash_iter->Seek(std::string{str, str_len});
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
+}
 
-void KVDKIterPre(KVDKIterator* iter) { iter->rep->Prev(); }
+unsigned char KVDKIterValid(KVDKIterator* iter) {
+  switch (iter->type) {
+    case SORTED: {
+      return iter->sorted_iter->Valid();
+      break;
+    }
+    case HASH: {
+      iter->hash_iter->Valid();
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
+}
 
-const char* KVDKIterKey(KVDKIterator* iter, size_t* key_len) {
-  std::string key_str = iter->rep->Key();
+void KVDKIterNext(KVDKIterator* iter) {
+  switch (iter->type) {
+    case SORTED: {
+      iter->sorted_iter->Next();
+      break;
+    }
+    case HASH: {
+      iter->hash_iter->Next();
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
+}
+
+void KVDKIterPrev(KVDKIterator* iter) {
+  switch (iter->type) {
+    case SORTED: {
+      iter->sorted_iter->Prev();
+      break;
+    }
+    case HASH: {
+      iter->hash_iter->Prev();
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
+}
+
+char* KVDKIterKey(KVDKIterator* iter, size_t* key_len) {
+  std::string key_str;
+  switch (iter->type) {
+    case SORTED: {
+      key_str = iter->sorted_iter->Key();
+      break;
+    }
+    case HASH: {
+      key_str = iter->hash_iter->Key();
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
   *key_len = key_str.size();
   return CopyStringToChar(key_str);
 }
 
-const char* KVDKIterValue(KVDKIterator* iter, size_t* val_len) {
-  std::string val_str = iter->rep->Value();
+char* KVDKIterValue(KVDKIterator* iter, size_t* val_len) {
+  std::string val_str;
+  switch (iter->type) {
+    case SORTED: {
+      val_str = iter->sorted_iter->Value();
+      break;
+    }
+    case HASH: {
+      val_str = iter->hash_iter->Value();
+      break;
+    }
+    default: {
+      std::abort();
+    }
+  }
   *val_len = val_str.size();
   return CopyStringToChar(val_str);
 }
