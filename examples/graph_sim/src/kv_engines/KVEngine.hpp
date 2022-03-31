@@ -40,6 +40,7 @@ class KVEngine {
     virtual void Next() = 0;
     virtual void Prev() = 0;
     virtual bool Valid() = 0;
+    virtual ~Iterator() = default;
 
     virtual std::string Key() = 0;
     virtual std::string Value() = 0;
