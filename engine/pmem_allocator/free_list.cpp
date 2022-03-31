@@ -4,8 +4,6 @@
 
 #include "free_list.hpp"
 
-#include <libpmem.h>
-
 #include "../thread_manager.hpp"
 #include "pmem_allocator.hpp"
 

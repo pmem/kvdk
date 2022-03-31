@@ -7,7 +7,6 @@
 #include <cstdio>
 
 #include "../engine/thread_manager.hpp"
-#include "kvdk/namespace.hpp"
 #include "pmem_allocator/free_list.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 

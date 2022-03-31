@@ -8,7 +8,7 @@
 #include "../sorted_collection/skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
-void OldRecordsCleaner::Push(const OldDataRecord& old_data_record) {
+void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &
           (StringDataRecord | SortedDataRecord),
@@ -21,10 +21,10 @@ void OldRecordsCleaner::Push(const OldDataRecord& old_data_record) {
   tc.old_data_records.emplace_back(old_data_record);
 }
 
-void OldRecordsCleaner::Push(const OldDeleteRecord& old_delete_record) {
+void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record)->meta.type &
-          (StringDeleteRecord | SortedDeleteRecord),
+          (StringDeleteRecord | SortedDeleteRecord | ExpirableRecordType),
       "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
@@ -34,6 +34,11 @@ void OldRecordsCleaner::Push(const OldDeleteRecord& old_delete_record) {
   auto& tc = cleaner_thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
   tc.old_delete_records.emplace_back(old_delete_record);
+}
+
+void OldRecordsCleaner::PushToGloble(
+    const std::deque<OldDeleteRecord>& old_delete_records) {
+  global_old_delete_records_.emplace_back(old_delete_records);
 }
 
 void OldRecordsCleaner::TryGlobalClean() {
@@ -211,6 +216,10 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
   DataEntry* data_entry =
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record);
   switch (data_entry->meta.type) {
+    case StringDataRecord:
+      kvdk_assert(old_delete_record.record_index.hash_entry.RawPointer()
+                      ->IsExpiredStatus(),
+                  "ths string data record should be expired.");
     case StringDeleteRecord: {
       kvdk_assert(
           old_delete_record.record_index.hash_entry.RawPointer() != nullptr &&

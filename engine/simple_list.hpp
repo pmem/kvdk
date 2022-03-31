@@ -1,6 +1,4 @@
 #pragma once
-#ifndef SIMPLE_LIST_HPP
-#define SIMPLE_LIST_HPP
 
 #include <mutex>
 #include <stdexcept>
@@ -65,5 +63,3 @@ class ListIteratorImpl final : public ListIterator {
 };
 
 }  // namespace KVDK_NAMESPACE
-
-#endif  // SIMPLE_LIST_HPP

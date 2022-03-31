@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "../alias.hpp"
 #include "../hash_table.hpp"
 #include "../structures.hpp"
 #include "../utils/utils.hpp"
@@ -172,7 +173,7 @@ class Skiplist : public Collection {
 
   bool IndexWithHashtable() { return index_with_hashtable_; }
 
-  ExpiredTimeType GetExpireTime() const final {
+  ExpireTimeType GetExpireTime() const final {
     return header_->record->expired_time;
   }
 
@@ -180,7 +181,7 @@ class Skiplist : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
-  Status SetExpireTime(ExpiredTimeType expired_time) final;
+  Status SetExpireTime(ExpireTimeType expired_time) final;
 
   // Set "key, value" to the skiplist
   //

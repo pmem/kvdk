@@ -12,6 +12,7 @@ if (BUILD_ROCKSDB)
     set(ROCKSDB_INCLUDE_DIR ${PROJECT_BINARY_DIR}/rocksdb/include)
     set(ROCKSDB_LIBRARY ${PROJECT_BINARY_DIR}/rocksdb/build/librocksdb.so)
     add_definitions(-DBUILD_ROCKSDB)
+    set(CMAKE_CXX_STANDARD 17)
 endif()
 
 file(GLOB sources

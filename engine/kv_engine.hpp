@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "hash_table.hpp"
@@ -67,13 +68,13 @@ class KVEngine : public Engine {
   // 1. Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
   // 2. Expire is not compatible with checkpoint for now
-  Status Expire(const StringView str, TTLTimeType ttl_time) override;
+  Status Expire(const StringView str, TTLType ttl_time) override;
   // Get time to expire of str
   //
   // Notice:
   // Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
-  Status GetTTL(const StringView str, TTLTimeType* ttl_time) override;
+  Status GetTTL(const StringView str, TTLType* ttl_time) override;
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
@@ -117,6 +118,8 @@ class KVEngine : public Engine {
   // Used by test case.
   const std::shared_ptr<HashTable>& GetHashTable() { return hash_table_; }
 
+  void CleanExpired();
+
  private:
   friend OldRecordsCleaner;
 
@@ -152,17 +155,6 @@ class KVEngine : public Engine {
 
   bool CheckValueSize(const StringView& value) {
     return value.size() <= UINT32_MAX;
-  }
-
-  bool CheckTTL(TTLTimeType ttl_time, int64_t base_time) {
-    if (ttl_time < 0 && ttl_time != kPersistTime) {
-      return false;
-    }
-    // check overflow
-    if (ttl_time > INT64_MAX - base_time) {
-      return false;
-    }
-    return true;
   }
 
   Status Init(const std::string& name, const Configs& configs);
@@ -207,7 +199,7 @@ class KVEngine : public Engine {
   // return Status::NotFound is key is not found or has expired.
   // return Status::WrongType if type_mask does not match.
   // return Status::Ok otherwise.
-  LookupResult lookupKey(StringView key, RecordType type_mask);
+  LookupResult lookupKey(StringView key, uint16_t type_mask);
 
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
@@ -271,26 +263,20 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
-    kvdk_assert(collectionType<CollectionType>() == record_type,
-                "Type Mismatch!");
-    HashTable::KeyHashHint hint = hash_table_->GetHint(collection_name);
-    HashEntry hash_entry;
-    HashEntry* entry_ptr = nullptr;
-    Status s = hash_table_->SearchForRead(hint, collection_name, record_type,
-                                          &entry_ptr, &hash_entry, nullptr);
-
-    *collection_ptr = nullptr;
-    if (s != Status::Ok) {
-      return s;
-    }
-    *collection_ptr = (CollectionType*)hash_entry.GetIndex().ptr;
-
-    // check collection is expired.
-    if ((*collection_ptr)->HasExpired()) {
-      // TODO(Zhichen): add background cleaner.
+    LookupResult res = lookupKey(collection_name, record_type);
+    if (res.s == Status::Expired) {
+      // TODO(zhichen): will open the following code when completing collection
+      // deletion.
+      // delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
+      //                           version_controller_.GetCurrentTimestamp(),
+      //                           res.entry_ptr, hint.spin});
       return Status::NotFound;
     }
-    return Status::Ok;
+    *collection_ptr =
+        res.s == Status::Ok
+            ? static_cast<CollectionType*>(res.entry_ptr->GetIndex().ptr)
+            : nullptr;
+    return res.s;
   }
 
   enum class QueueOpPosition { Left, Right };

@@ -8,7 +8,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include "../extern/libpmemobj++/string_view.hpp"
+#include "alias.hpp"
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -105,7 +105,7 @@ class UnorderedCollection final
                        StringView const key, StringView const value,
                        LockType const& lock);
 
-  ExpiredTimeType GetExpireTime() const final {
+  ExpireTimeType GetExpireTime() const final {
     return collection_record_ptr_->GetExpireTime();
   }
 
@@ -113,7 +113,7 @@ class UnorderedCollection final
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
-  Status SetExpireTime(ExpiredTimeType time) final {
+  Status SetExpireTime(ExpireTimeType time) final {
     collection_record_ptr_->PersistExpireTimeNT(time);
     return Status::Ok;
   }

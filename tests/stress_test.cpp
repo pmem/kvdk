@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2021 Intel Corporation
  */
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -14,9 +16,7 @@
 
 #include "../engine/alias.hpp"
 #include "../engine/kv_engine.hpp"
-#include "gtest/gtest.h"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 #include "test_util.h"
 
 using kvdk::StringView;

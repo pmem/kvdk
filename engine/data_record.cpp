@@ -4,9 +4,6 @@
 
 #include "data_record.hpp"
 
-#include "alias.hpp"
-#include "libpmem.h"
-
 namespace KVDK_NAMESPACE {
 // use buffer to acc nt-write
 thread_local std::string thread_data_buffer;
@@ -15,7 +12,7 @@ static constexpr int kDataBufferSize = 1024 * 1024;
 StringRecord* StringRecord::PersistStringRecord(
     void* addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
     PMemOffsetType older_version_record, const StringView& key,
-    const StringView& value, ExpiredTimeType expired_time) {
+    const StringView& value, ExpireTimeType expired_time) {
   void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(StringRecord);
   bool with_buffer = write_size <= kDataBufferSize;
@@ -46,7 +43,7 @@ DLRecord* DLRecord::PersistDLRecord(void* addr, uint32_t record_size,
                                     PMemOffsetType prev, PMemOffsetType next,
                                     const StringView& key,
                                     const StringView& value,
-                                    ExpiredTimeType expired_time) {
+                                    ExpireTimeType expired_time) {
   void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(DLRecord);
   bool with_buffer = write_size <= kDataBufferSize;

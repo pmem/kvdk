@@ -4,20 +4,17 @@
 
 #pragma once
 
-#include <cstdio>
-#include <cstring>
-#include <functional>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
-#include "libpmemobj++/string_view.hpp"
-#include "namespace.hpp"
 #include "status.hpp"
+#include "types.hpp"
 #include "write_batch.hpp"
+
+namespace kvdk = KVDK_NAMESPACE;
 
 namespace KVDK_NAMESPACE {
 
@@ -26,9 +23,6 @@ using ModifyFunction = std::function<std::string(const StringView& src)>;
 // This is the abstraction of a persistent KVDK instance
 class Engine {
  public:
-  using IndexType = std::int64_t;
-  using StringView = pmem::obj::string_view;
-
   // Open a new KVDK instance or restore a existing KVDK instance with the
   // specified "name". The "name" indicates the dir path that persist the
   // instance.
@@ -61,9 +55,19 @@ class Engine {
 
   // Search the STRING-type or Collection and store the corresponding expired
   // time to *expired_time on success.
+  /*
+   * @param ttl_time.
+   * If the key is persist, ttl_time is INT64_MAX and Status::Ok;
+   * If the key is expired or does not exist, ttl_time is 0 and return
+   * Status::NotFound.
+   */
   virtual Status GetTTL(const StringView str, int64_t* ttl_time) = 0;
 
-  // Set the STRING-type or Collection type expired time.
+  /* Set the STRING-type or Collection type expired time.
+   * @param ttl_time is negetive or positive number.
+   * If ttl_time == INT64_MAX, the key is persistent;
+   * If ttl_time <=0, the key is expired immediately;
+   */
   virtual Status Expire(const StringView str, int64_t ttl_time) = 0;
 
   // Remove STRING-type KV of "key".

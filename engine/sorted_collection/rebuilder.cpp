@@ -7,7 +7,6 @@
 #include <future>
 
 #include "../kv_engine.hpp"
-#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 SortedCollectionRebuilder::SortedCollectionRebuilder(

@@ -5,11 +5,9 @@
 #pragma once
 
 #include "iterator.h"
-#include "namespace.hpp"
+#include "types.hpp"
 
 namespace KVDK_NAMESPACE {
-
-using IndexType = std::int64_t;
 
 using IteratorType = KVDKIteratorType;
 

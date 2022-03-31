@@ -9,19 +9,25 @@
 #include <limits>
 #include <vector>
 
+#include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "simple_list.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
+enum class HashEntryStatus : uint8_t {
+  Persist = 0,
+  TTL = 1 << 0,  // expirable
+  Expired = 1 << 1,
+};
 struct HashHeader {
   uint32_t key_prefix;
   RecordType record_type;
   PointerType index_type;
+  HashEntryStatus entry_status;
 };
 
 class Skiplist;
@@ -30,6 +36,7 @@ class UnorderedCollection;
 
 struct alignas(16) HashEntry {
  public:
+  friend class HashTable;
   HashEntry& operator=(const HashEntry&) = delete;
   HashEntry(const HashEntry& hash_entry) { atomic_load_16(this, &hash_entry); }
   union Index {
@@ -48,13 +55,11 @@ struct alignas(16) HashEntry {
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
-            PointerType index_type)
-      : header_({key_hash_prefix, record_type, index_type}), index_(_index) {}
+            PointerType index_type, HashEntryStatus entry_status)
+      : header_({key_hash_prefix, record_type, index_type, entry_status}),
+        index_(_index) {}
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
-
-  // Make this hash entry empty while its content been deleted
-  void Clear() { header_.index_type = PointerType::Empty; }
 
   Index GetIndex() const { return index_; }
 
@@ -62,11 +67,25 @@ struct alignas(16) HashEntry {
 
   RecordType GetRecordType() const { return header_.record_type; }
 
+  bool IsExpiredStatus() {
+    return header_.entry_status == HashEntryStatus::Expired;
+  }
+
+  bool IsTTLStatus() { return header_.entry_status == HashEntryStatus::TTL; }
+
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
   // and return true, otherwise return false.
   bool Match(const StringView& key, uint32_t hash_k_prefix,
              uint16_t target_type, DataEntry* data_entry_metadata);
+
+ private:
+  // Make this hash entry empty while its content been deleted
+  void clear() { header_.index_type = PointerType::Empty; }
+
+  bool updateEntryStatus(HashEntryStatus entry_status) {
+    header_.entry_status = entry_status;
+  }
 
  private:
   Index index_;
@@ -135,15 +154,21 @@ class HashTable {
                         HashEntry* hash_entry_snap, DataEntry* data_entry_meta);
 
   // Insert a hash entry to hash table
-  //
-  // entry_ptr: position to insert, it's get from SearchForWrite()
+  // @param entry_ptr: position to insert, it's get from SearchForWrite()
+  // TODO: remove the default param.
   void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
-              void* index, PointerType index_type);
+              void* index, PointerType index_type,
+              HashEntryStatus entry_status = HashEntryStatus::Persist);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
     assert(entry_ptr != nullptr);
-    entry_ptr->Clear();
+    entry_ptr->clear();
+  }
+
+  void UpdateEntryStatus(HashEntry* entry_ptr, HashEntryStatus entry_status) {
+    assert(entry_ptr != nullptr);
+    entry_ptr->updateEntryStatus(entry_status);
   }
 
   std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {
@@ -304,6 +329,8 @@ struct SlotIterator {
   }
 
   BucketIterator End() { return BucketIterator{this, iter_end_bucket_idx_}; }
+
+  SpinMutex* GetSlotLock() { return iter_lock_slot_.mutex(); }
 };
 
 }  // namespace KVDK_NAMESPACE

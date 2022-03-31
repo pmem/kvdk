@@ -21,7 +21,6 @@
 #include "alias.hpp"
 #include "collection.hpp"
 #include "data_record.hpp"
-#include "kvdk/namespace.hpp"
 #include "macros.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "utils/utils.hpp"
@@ -209,7 +208,7 @@ class GenericList final : public Collection {
     return std::unique_lock<LockType>(mu);
   }
 
-  ExpiredTimeType GetExpireTime() const final {
+  ExpireTimeType GetExpireTime() const final {
     return list_record->GetExpireTime();
   }
 
@@ -217,7 +216,7 @@ class GenericList final : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
-  Status SetExpireTime(ExpiredTimeType time) final {
+  Status SetExpireTime(ExpireTimeType time) final {
     list_record->PersistExpireTimeNT(time);
     return Status::Ok;
   }
