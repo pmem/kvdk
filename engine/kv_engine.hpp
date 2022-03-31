@@ -116,7 +116,7 @@ class KVEngine : public Engine {
   // Used by test case.
   const std::shared_ptr<HashTable>& GetHashTable() { return hash_table_; }
 
-  void CleanExpired();
+  void CleanOutDated();
 
  private:
   friend OldRecordsCleaner;

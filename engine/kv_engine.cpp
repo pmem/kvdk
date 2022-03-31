@@ -296,22 +296,15 @@ Status KVEngine::RestoreData() {
     memcpy(&data_entry_cached, recovering_pmem_record, sizeof(DataEntry));
 
     if (data_entry_cached.header.record_size == 0) {
-      // Iter through data blocks until find a valid size space entry or reach
-      // end of the segment
-      PMemOffsetType offset =
-          segment_recovering.offset + configs_.pmem_block_size;
-      uint64_t size = segment_recovering.size - configs_.pmem_block_size;
-      while (size > 0 &&
-             pmem_allocator_->offset2addr_checked<DataHeader>(offset)
-                     ->record_size == 0) {
-        size -= configs_.pmem_block_size;
-        offset += configs_.pmem_block_size;
-      }
-      uint64_t padding_size = offset - segment_recovering.offset;
+      // Reach end of the segment, mark it as padding
       DataEntry* recovering_pmem_data_entry =
           static_cast<DataEntry*>(recovering_pmem_record);
-      recovering_pmem_data_entry->header.record_size = padding_size;
+      uint64_t padding_size = segment_recovering.size;
       recovering_pmem_data_entry->meta.type = RecordType::Padding;
+      pmem_persist(&recovering_pmem_data_entry->meta.type, sizeof(RecordType));
+      recovering_pmem_data_entry->header.record_size = padding_size;
+      pmem_persist(&recovering_pmem_data_entry->header.record_size,
+                   sizeof(uint32_t));
       data_entry_cached = *recovering_pmem_data_entry;
     }
 
@@ -2068,7 +2061,7 @@ void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
 
 void KVEngine::backgroundOldRecordCleaner() {
   while (!closing_) {
-    CleanExpired();
+    CleanOutDated();
   }
 }
 
@@ -2113,7 +2106,7 @@ void KVEngine::backgroundDramCleaner() {
   }
 }
 
-void KVEngine::CleanExpired() {
+void KVEngine::CleanOutDated() {
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
