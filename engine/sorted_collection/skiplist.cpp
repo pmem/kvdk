@@ -554,7 +554,10 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(
       internal_key, "");
   ret.write_record = delete_record;
 
-  assert(splice.prev_pmem_record->next == existing_offset);
+  kvdk_assert(prev_record->next == existing_offset,
+              "wrong linkage in skiplist delete after acquiring lock");
+  kvdk_assert(next_record->prev == existing_offset,
+              "wrong linkage in skiplist delete after acquiring lock");
 
   linkDLRecord(prev_record, next_record, delete_record);
 
