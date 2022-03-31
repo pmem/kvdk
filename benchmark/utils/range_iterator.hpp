@@ -1,5 +1,4 @@
-#ifndef EXTD_RANGE_ITERATOR_HPP
-#define EXTD_RANGE_ITERATOR_HPP
+#pragma once
 
 #include <cassert>
 #include <cstdint>
@@ -30,5 +29,3 @@ class range_iterator {
 };
 
 }  // namespace extd
-
-#endif  // EXTD_RANGE_ITERATOR_HPP

@@ -1,6 +1,4 @@
 #pragma once
-#ifndef KVDKDEF_HPP
-#define KVDKDEF_HPP
 
 #include <cinttypes>
 #include <string>
@@ -20,8 +18,6 @@ constexpr ExpireTimeType kPersistTime = INT64_MAX;
 constexpr TTLType kPersistTTL = INT64_MAX;
 constexpr TTLType kInvalidTTL = -2;
 }  // namespace KVDK_NAMESPACE
-
-#endif  // KVDKDEF_HPP
 
 #if !__cpp_lib_string_view
 #include <bits/functional_hash.h>
@@ -43,4 +39,5 @@ struct hash<pmem::obj::string_view> {
   }
 };
 }  // namespace std
+
 #endif  // !__cpp_lib_string_view
