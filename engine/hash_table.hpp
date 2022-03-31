@@ -83,7 +83,7 @@ struct alignas(16) HashEntry {
   // Make this hash entry empty while its content been deleted
   void clear() { header_.index_type = PointerType::Empty; }
 
-  bool updateEntryStatus(HashEntryStatus entry_status) {
+  void updateEntryStatus(HashEntryStatus entry_status) {
     header_.entry_status = entry_status;
   }
 
