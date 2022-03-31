@@ -165,7 +165,9 @@ struct StringRecord {
     _mm_clwb(&expired_time);
   }
 
-  TimeStampType GetTimestamp() { return entry.meta.timestamp; }
+  TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
+
+  RecordType GetRecordType() const { return entry.meta.type; }
 
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
@@ -297,6 +299,8 @@ struct DLRecord {
                                    const StringView& key,
                                    const StringView& value,
                                    ExpireTimeType expired_time = kPersistTime);
+
+  uint32_t GetRecordSize() const { return entry.header.record_size; }
 
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,

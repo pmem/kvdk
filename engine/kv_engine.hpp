@@ -206,10 +206,14 @@ class KVEngine : public Engine {
     HashEntry* entry_ptr{nullptr};
   };
 
-  // Look up the key,
-  // return Status::NotFound is key is not found or has expired.
+  // Look up the first level key (e.g. collections or string, not collection
+  // elems)
+  //
+  // return Status::NotFound is key is not found.
   // return Status::WrongType if type_mask does not match.
+  // return Status::Expired if key has been expired
   // return Status::Ok otherwise.
+  template <bool allocate_hash_entry_if_missing>
   LookupResult lookupKey(StringView key, uint16_t type_mask);
 
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
@@ -224,11 +228,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, UnorderedCollection>::value
                ? RecordType::DlistRecord
-               : std::is_same<CollectionType, Skiplist>::value
-                     ? RecordType::SortedHeaderRecord
-                     : std::is_same<CollectionType, List>::value
-                           ? RecordType::ListRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, Skiplist>::value
+               ? RecordType::SortedHeaderRecord
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+                                                       : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -274,7 +277,7 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
-    LookupResult res = lookupKey(collection_name, record_type);
+    LookupResult res = lookupKey<false>(collection_name, record_type);
     if (res.s == Status::Expired) {
       // TODO(zhichen): will open the following code when completing collection
       // deletion.

@@ -836,34 +836,15 @@ Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
     bool is_found = hash_table_->SearchForRead(
                         hash_table_->GetHint(key), key, type_mask, &entry_ptr,
                         &hash_entry, &data_entry) == Status::Ok;
-    if (!is_found || (hash_entry.GetRecordType() & DeleteRecordType) ||
-        hash_entry.IsExpiredStatus()) {
+    if (!is_found || (hash_entry.GetRecordType() & DeleteRecordType)) {
       return Status::NotFound;
     }
-    void* pmem_record = nullptr;
-    if (hash_entry.GetRecordType() == StringDataRecord) {
-      if (hash_entry.GetIndex().string_record->HasExpired()) {
-        // push the expired string record into cleaner during scaning hash
-        // table, because need to update hash entry status
-        return Status::NotFound;
-      }
-      pmem_record = hash_entry.GetIndex().string_record;
-    } else if (hash_entry.GetRecordType() == DlistDataRecord) {
-      pmem_record = hash_entry.GetIndex().ptr;
-    } else if (hash_entry.GetRecordType() == SortedDataRecord) {
-      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
-        SkiplistNode* dram_node = hash_entry.GetIndex().skiplist_node;
-        pmem_record = dram_node->record;
-      } else {
-        assert(hash_entry.GetIndexType() == PointerType::DLRecord);
-        pmem_record = hash_entry.GetIndex().dl_record;
-      }
-    } else {
-      return Status::NotSupported;
-    }
+    kvdk_assert(hash_entry.GetRecordType() == DlistDataRecord,
+                "Wrong type in hash get impl");
+    DLRecord* pmem_record = hash_entry.GetIndex().dl_record;
 
     // Copy PMem data record to dram buffer
-    auto record_size = data_entry.header.record_size;
+    auto record_size = pmem_record->GetRecordSize();
     // Region of data_entry.header.record_size may be corrupted by a write
     // operation if the original reading space entry is merged with the adjacent
     // one by pmem allocator
@@ -896,7 +877,20 @@ Status KVEngine::Get(const StringView key, std::string* value) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-  return HashGetImpl(key, value, StringRecordType);
+
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
+  auto ret = lookupKey<false>(key, StringDataRecord | StringDeleteRecord);
+  if (ret.s == Status::Ok) {
+    StringRecord* string_record = ret.entry.GetIndex().string_record;
+    kvdk_assert(string_record->GetRecordType() == StringDataRecord,
+                "Got wrong data type in string get");
+    kvdk_assert(string_record->Validate(), "Corrupted data in string get");
+    value->assign(string_record->Value().data(), string_record->Value().size());
+    return Status::Ok;
+  } else {
+    return ret.s;
+  }
 }
 
 Status KVEngine::Delete(const StringView key) {
@@ -1249,9 +1243,9 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
   version_controller_.HoldLocalSnapshot();
   defer(version_controller_.ReleaseLocalSnapshot());
   TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
-  auto ret = lookupKey(key, static_cast<RecordType>(StringRecordType));
+  auto ret = lookupKey<false>(key, static_cast<RecordType>(StringRecordType));
   // push it into cleaner
-  if (ret.s == Status::Expired) {
+  if (ret.s == Status::Expired && ret.entry_ptr->IsTTLStatus()) {
     hash_table_->UpdateEntryStatus(ret.entry_ptr, HashEntryStatus::Expired);
     ul.unlock();
     delayFree(OldDeleteRecord{ret.entry.GetIndex().ptr, ret.entry_ptr,
@@ -1371,14 +1365,10 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
 }
 
 Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
+  *ttl_time = kExpiredTime;
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
-  LookupResult res = lookupKey(str, ExpirableRecordType);
-  if (res.s == Status::Expired) {
-    *ttl_time = kExpiredTime;
-    return Status::NotFound;
-  }
-  *ttl_time = kExpiredTime;
+  LookupResult res = lookupKey<false>(str, ExpirableRecordType);
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;
@@ -1423,8 +1413,9 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
-  LookupResult res = lookupKey(str, ExpirableRecordType);
-  if (ttl_time <= 0 /*immediately expired*/ || (res.s == Status::Expired)) {
+  LookupResult res = lookupKey<false>(str, ExpirableRecordType);
+  if (ttl_time <= 0 /*immediately expired*/ ||
+      (res.s == Status::Expired && res.entry_ptr->IsTTLStatus())) {
     // Push the expired record into cleaner and update hash entry status with
     // HashEntryStatus::Expired.
     // TODO(zhichen): This `if` will be removed when completing collection
@@ -1632,53 +1623,58 @@ Status KVEngine::Set(const StringView key, const StringView value,
 
 // UnorderedCollection
 namespace KVDK_NAMESPACE {
+template <bool allocate_hash_entry_if_missing>
 KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
   LookupResult result;
   auto hint = hash_table_->GetHint(key);
-  result.s = hash_table_->SearchForRead(
-      hint, key, PrimaryRecordType, &result.entry_ptr, &result.entry, nullptr);
-  if (result.s != Status::Ok) {
-    kvdk_assert(result.s == Status::NotFound, "");
-    return result;
+  if (!allocate_hash_entry_if_missing) {
+    result.s =
+        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
+                                   &result.entry_ptr, &result.entry, nullptr);
+  } else {
+    result.s =
+        hash_table_->SearchForWrite(hint, key, PrimaryRecordType,
+                                    &result.entry_ptr, &result.entry, nullptr);
   }
 
-  if (result.entry_ptr->IsExpiredStatus()) {
-    result.s = Status::NotFound;
+  if (result.s != Status::Ok) {
+    kvdk_assert(
+        result.s == Status::NotFound || result.s == Status::MemoryOverflow, "");
     return result;
   }
 
   RecordType record_type = result.entry.GetRecordType();
+  bool type_match = type_mask & record_type;
+  bool expired;
 
-  if (type_mask & record_type) {
-    if (record_type == RecordType::StringDeleteRecord) {
-      result.s = Status::NotFound;
-      return result;
-    }
-    bool has_expired;
-    switch (record_type) {
-      case RecordType::StringDataRecord: {
-        has_expired = result.entry.GetIndex().string_record->HasExpired();
-        break;
-      }
-      case RecordType::DlistRecord:
-      case RecordType::ListRecord:
-      case RecordType::SortedHeaderRecord: {
-        has_expired = TimeUtils::CheckIsExpired(
-            static_cast<Collection*>(result.entry.GetIndex().ptr)
-                ->GetExpireTime());
-        break;
-      }
-      default: {
-        kvdk_assert(false, "Unreachable branch!");
-        std::abort();
-      }
-    }
+  if (record_type == RecordType::StringDeleteRecord && type_match) {
+    result.s = Status::NotFound;
+    return result;
+  }
 
-    if (has_expired) {
-      result.s = Status::Expired;
+  switch (record_type) {
+    case RecordType::StringDataRecord: {
+      expired = result.entry.GetIndex().string_record->HasExpired();
+      break;
     }
+    case RecordType::DlistRecord:
+    case RecordType::ListRecord:
+    case RecordType::SortedHeaderRecord: {
+      expired = TimeUtils::CheckIsExpired(
+          static_cast<Collection*>(result.entry.GetIndex().ptr)
+              ->GetExpireTime());
+      break;
+    }
+    default: {
+      kvdk_assert(false, "Unreachable branch!");
+      std::abort();
+    }
+  }
+
+  if (expired) {
+    result.s = type_match ? Status::Expired : Status::NotFound;
   } else {
-    result.s = Status::WrongType;
+    result.s = type_match ? Status::Ok : Status::WrongType;
   }
   return result;
 }
@@ -2554,7 +2550,7 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
     return Status::TooManyAccessThreads;
   }
   {
-    auto result = lookupKey(key, RecordType::ListRecord);
+    auto result = lookupKey<false>(key, RecordType::ListRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound) {
       return result.s;
     }
@@ -2579,7 +2575,7 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
   /// TODO: may deadlock!
   {
     auto guard2 = hash_table_->AcquireLock(key);
-    auto result = lookupKey(key, RecordType::ListRecord);
+    auto result = lookupKey<false>(key, RecordType::ListRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound) {
       return result.s;
     }
