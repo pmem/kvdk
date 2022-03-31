@@ -1,5 +1,4 @@
-#ifndef EXTD_ZIPF_HPP
-#define EXTD_ZIPF_HPP
+#pragma once
 
 #include <cassert>
 #include <random>
@@ -101,5 +100,3 @@ class zipfian_distribution {
 };
 
 }  // namespace extd
-
-#endif  // EXTD_ZIPF_HPP

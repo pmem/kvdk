@@ -2,6 +2,7 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <gtest/gtest.h>
 #include <x86intrin.h>
 
 #include <future>
@@ -12,9 +13,7 @@
 #include "../engine/kv_engine.hpp"
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "../engine/utils/sync_point.hpp"
-#include "gtest/gtest.h"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 #include "test_util.h"
 
 using namespace KVDK_NAMESPACE;
@@ -1982,14 +1981,14 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
               Status::Ok);
     ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::Ok);
     // check sorted_collection is persist;
-    ASSERT_EQ(ttl_time, kPersistTime);
+    ASSERT_EQ(ttl_time, kPersistTTL);
     // reset expired time for collection
     ASSERT_EQ(engine->Expire(sorted_collection, 2), Status::Ok);
     sleep(2);
     ASSERT_EQ(engine->SGet(sorted_collection, "sorted" + key, &got_val),
               Status::NotFound);
     ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
-    ASSERT_EQ(ttl_time, kExpiredTime);
+    ASSERT_EQ(ttl_time, kInvalidTTL);
   }
 
   // For hashes collection
@@ -2086,7 +2085,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
         ASSERT_EQ(INT32_MAX / 10000, ttl_time / 10000);
       } else {
         ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::NotFound);
-        ASSERT_EQ(ttl_time, kExpiredTime);
+        ASSERT_EQ(ttl_time, kInvalidTTL);
       }
     }
   };

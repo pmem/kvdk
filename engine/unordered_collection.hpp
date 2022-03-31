@@ -8,7 +8,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include "../extern/libpmemobj++/string_view.hpp"
+#include "alias.hpp"
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"

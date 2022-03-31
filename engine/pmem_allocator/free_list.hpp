@@ -7,9 +7,9 @@
 #include <memory>
 #include <set>
 
+#include "../alias.hpp"
 #include "../allocator.hpp"
 #include "../utils/utils.hpp"
-#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 

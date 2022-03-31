@@ -10,8 +10,8 @@
 #include <cstdarg>
 #include <mutex>
 
+#include "alias.hpp"
 #include "kvdk/configs.hpp"
-#include "kvdk/namespace.hpp"
 
 #define DO_LOG 1
 

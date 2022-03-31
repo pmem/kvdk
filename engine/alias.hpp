@@ -5,23 +5,17 @@
 #pragma once
 
 #include <cinttypes>
-#include <functional>
 
-#include "kvdk/namespace.hpp"
-#include "libpmem.h"
-#include "libpmemobj++/string_view.hpp"
+#include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
-using StringView = pmem::obj::string_view;
+// Internal types
 using PMemOffsetType = std::uint64_t;
 using TimeStampType = std::uint64_t;
-using CollectionIDType = std::uint64_t;
 using KeyHashType = std::uint64_t;
 using ConfigFieldSizeType = std::uint32_t;
-using ExpireTimeType = std::int64_t;
-using TTLType = std::int64_t;
-using UnixTimeType = std::int64_t;
 
+/// TODO: move these constants to where they are relevant
 constexpr uint64_t kMaxWriteBatchSize = (1 << 20);
 // fsdax mode align to 2MB by default.
 constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);

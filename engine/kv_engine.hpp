@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "hash_table.hpp"

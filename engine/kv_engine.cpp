@@ -296,22 +296,15 @@ Status KVEngine::RestoreData() {
     memcpy(&data_entry_cached, recovering_pmem_record, sizeof(DataEntry));
 
     if (data_entry_cached.header.record_size == 0) {
-      // Iter through data blocks until find a valid size space entry or reach
-      // end of the segment
-      PMemOffsetType offset =
-          segment_recovering.offset + configs_.pmem_block_size;
-      uint64_t size = segment_recovering.size - configs_.pmem_block_size;
-      while (size > 0 &&
-             pmem_allocator_->offset2addr_checked<DataHeader>(offset)
-                     ->record_size == 0) {
-        size -= configs_.pmem_block_size;
-        offset += configs_.pmem_block_size;
-      }
-      uint64_t padding_size = offset - segment_recovering.offset;
+      // Reach end of the segment, mark it as padding
       DataEntry* recovering_pmem_data_entry =
           static_cast<DataEntry*>(recovering_pmem_record);
-      recovering_pmem_data_entry->header.record_size = padding_size;
+      uint64_t padding_size = segment_recovering.size;
       recovering_pmem_data_entry->meta.type = RecordType::Padding;
+      pmem_persist(&recovering_pmem_data_entry->meta.type, sizeof(RecordType));
+      recovering_pmem_data_entry->header.record_size = padding_size;
+      pmem_persist(&recovering_pmem_data_entry->header.record_size,
+                   sizeof(uint32_t));
       data_entry_cached = *recovering_pmem_data_entry;
     }
 
@@ -500,7 +493,8 @@ Status KVEngine::RestoreStringRecord(StringRecord* pmem_record,
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
-  std::string key(pmem_record->Key());
+  auto view = pmem_record->Key();
+  std::string key{view.data(), view.size()};
   DataEntry existing_data_entry;
   HashEntry hash_entry;
   HashEntry* entry_ptr = nullptr;
@@ -1365,7 +1359,7 @@ Status KVEngine::SGet(const StringView collection, const StringView user_key,
 }
 
 Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
-  *ttl_time = kExpiredTime;
+  *ttl_time = kInvalidTTL;
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   LookupResult res = lookupKey<false>(str, ExpirableRecordType);

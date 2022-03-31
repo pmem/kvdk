@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "../alias.hpp"
 #include "../hash_table.hpp"
 #include "../structures.hpp"
 #include "../utils/utils.hpp"

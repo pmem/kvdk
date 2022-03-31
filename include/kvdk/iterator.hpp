@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "namespace.hpp"
+#include "types.hpp"
 
 namespace KVDK_NAMESPACE {
 

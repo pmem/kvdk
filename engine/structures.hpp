@@ -4,11 +4,9 @@
 
 #pragma once
 
-#include <malloc.h>
-
 #include <cstdint>
 
-#include "kvdk/namespace.hpp"
+#include "alias.hpp"
 #include "logger.hpp"
 #include "utils/utils.hpp"
 

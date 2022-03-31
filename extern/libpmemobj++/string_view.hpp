@@ -15,10 +15,7 @@
 #include <string>
 #include <utility>
 
-#define USE_STL_STRING_VIEW_IF_POSSIBLE false
-#define USE_STL_STRING_VIEW (__cpp_lib_string_view && USE_STL_STRING_VIEW_IF_POSSIBLE)
-
-#if USE_STL_STRING_VIEW
+#if __cpp_lib_string_view
 #include <string_view>
 #endif
 
@@ -28,7 +25,7 @@ namespace pmem
 namespace obj
 {
 
-#if USE_STL_STRING_VIEW
+#if __cpp_lib_string_view
 
 template <typename CharT, typename Traits = std::char_traits<CharT>>
 using basic_string_view = std::basic_string_view<CharT, Traits>;
@@ -43,7 +40,8 @@ using u32string_view = std::basic_string_view<char32_t>;
  * Our partial std::string_view implementation.
  *
  * If C++17's std::string_view implementation is not available, this one
- * is used to avoid unnecessary string copying.
+ * is used to avoid unnecessary string copying. It's compatible with
+ * the std API, but it does not cover all functionalities.
  * @ingroup data_view
  */
 template <typename CharT, typename Traits = std::char_traits<CharT>>
@@ -70,8 +68,6 @@ public:
 	constexpr basic_string_view(const CharT *data, size_type size);
 	constexpr basic_string_view(const std::basic_string<CharT, Traits> &s);
 	constexpr basic_string_view(const CharT *data);
-	
-	explicit operator std::basic_string<CharT, Traits>() const;
 
 	/** Constructor initialized with the basic_string_view *rhs*.
 	 *
@@ -166,9 +162,28 @@ private:
 	size_type size_;
 };
 
+/**
+ * The most typical string_view usage - the char specialization.
+ * @ingroup data_view
+ */
 using string_view = basic_string_view<char>;
+
+/**
+ * The wide char specialization.
+ * @ingroup data_view
+ */
 using wstring_view = basic_string_view<wchar_t>;
+
+/**
+ * The char16 specialization.
+ * @ingroup data_view
+ */
 using u16string_view = basic_string_view<char16_t>;
+
+/**
+ * The char32 specialization.
+ * @ingroup data_view
+ */
 using u32string_view = basic_string_view<char32_t>;
 
 /**
@@ -218,12 +233,6 @@ constexpr inline basic_string_view<CharT, Traits>::basic_string_view(
 	const CharT *data)
     : data_(data), size_(Traits::length(data))
 {
-}
-
-template <class CharT, class Traits>
-inline basic_string_view<CharT, Traits>::operator std::basic_string<CharT, Traits>() const
-{
-	return std::basic_string<CharT, Traits>{data_, size_};
 }
 
 /**
@@ -307,7 +316,7 @@ basic_string_view<CharT, Traits>::crbegin() const noexcept
 }
 
 /**
- * Returns an iterator to the first character of the view.
+ * Returns a reverse_iterator to the first character of the view.
  * Reverse iterators iterate backwards: increasing
  * them moves them towards the beginning of the string.
  * This character acts as a placeholder, attempting to access it results
@@ -323,7 +332,7 @@ basic_string_view<CharT, Traits>::rend() const noexcept
 }
 
 /**
- * Returns an iterator to the first character of the view.
+ * Returns a reverse_iterator to the first character of the view.
  * Reverse iterators iterate backwards: increasing
  * them moves them towards the beginning of the string.
  * This character acts as a placeholder, attempting to access it results
@@ -1399,30 +1408,9 @@ operator>=(
 {
 	return lhs.compare(rhs) >= 0;
 }
-
-template <class CharT, class Traits>
-std::ostream& operator<<(std::ostream& out, basic_string_view<CharT, Traits> const& sv)
-{
-	out << std::basic_string<CharT, Traits>{sv};
-	return out;
-}
-
 #endif
 
 } /* namespace obj */
 } /* namespace pmem */
-
-#if !USE_STL_STRING_VIEW
-#include<bits/functional_hash.h>
-namespace std
-{
-template<>
-struct hash<pmem::obj::string_view>
-{
-	size_t operator()(pmem::obj::string_view const& sv) const noexcept
-	{ return _Hash_impl::hash(sv.data(), sv.size()); }
-};
-}
-#endif /* !USE_STL_STRING_VIEW */
 
 #endif /* LIBPMEMOBJ_CPP_STRING_VIEW */
