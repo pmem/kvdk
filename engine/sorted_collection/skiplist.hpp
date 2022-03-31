@@ -401,10 +401,11 @@ class Skiplist : public Collection {
 
   void destroyNodes();
 
-  SkiplistNode* header_;
-  std::shared_ptr<HashTable> hash_table_;
+  Comparator comparator_ = compare_string_view;
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
+  std::shared_ptr<HashTable> hash_table_;
   bool index_with_hashtable_;
+  SkiplistNode* header_;
   // nodes that unlinked on every height
   std::vector<SkiplistNode*> obsolete_nodes_;
   // to avoid concurrent access a just deleted node, a node can be safely
@@ -416,7 +417,6 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
-  Comparator comparator_ = compare_string_view;
 };
 
 // A helper struct for locating a skiplist position

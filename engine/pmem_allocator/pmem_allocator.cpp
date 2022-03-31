@@ -333,25 +333,6 @@ Status PMEMAllocator::Backup(const std::string& backup_file_path) {
     return Status::IOError;
   }
 
-  auto multi_thread_memcpy = [&](char* dst, char* src, size_t len,
-                                 uint64_t threads) {
-    size_t per_thread = len / threads;
-    size_t extra = len % threads;
-    std::vector<std::thread> ths;
-    for (size_t i = 0; i < threads; i++) {
-      ths.emplace_back([&]() {
-        memcpy(dst + i * per_thread, src + i * per_thread, per_thread);
-      });
-    }
-    memcpy(dst + len - extra, src + len - extra, extra);
-
-    GlobalLogger.Info("%lu threads memcpy\n", ths.size());
-    for (auto& t : ths) {
-      t.join();
-    }
-    GlobalLogger.Info("%lu threads memcpy done\n", ths.size());
-  };
-
   std::lock_guard<std::mutex> lg(backup_lock);
   backup_processing = true;
   defer(backup_processing = false);

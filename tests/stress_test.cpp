@@ -283,7 +283,6 @@ class ShadowKVEngine {
     {
       std::cout << "[Testing] Checking by Get" << std::endl;
       ProgressBar pbar{std::cout, "", possible_state.size(), 1000, true};
-      size_t progress = 0;
       while (!possible_state_copy.empty()) {
         auto key = possible_state_copy.begin()->first;
 

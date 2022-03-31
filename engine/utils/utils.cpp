@@ -13,7 +13,6 @@ namespace KVDK_NAMESPACE {
 int get_usable_pu(void) {
   hwloc_topology_t topology;
   hwloc_bitmap_t set;
-  hwloc_const_bitmap_t cset_available;
   int err;
 
   /* create a topology */
@@ -30,7 +29,8 @@ int get_usable_pu(void) {
   }
 
   /* retrieve the entire set of available PUs */
-  cset_available = hwloc_topology_get_topology_cpuset(topology);
+  [[gnu::unused]] hwloc_const_bitmap_t cset_available =
+      hwloc_topology_get_topology_cpuset(topology);
 
   /* retrieve the CPU binding of the current entire process */
   set = hwloc_bitmap_alloc();

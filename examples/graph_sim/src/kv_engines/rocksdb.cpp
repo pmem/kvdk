@@ -17,7 +17,7 @@ DEFINE_int64(rocksdb_block_cache_size, 42949672960,
 class RocksdbIterator : public KVEngine::Iterator {
  public:
   explicit RocksdbIterator(rocksdb::Iterator* it) : itr_(it) {}
-  ~RocksdbIterator() { delete itr_; }
+  virtual ~RocksdbIterator() { delete itr_; }
 
   void Seek(const std::string& key) { itr_->Seek(key); }
   void SeekToFirst() { itr_->SeekToFirst(); }

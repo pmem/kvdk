@@ -9,7 +9,7 @@
 
 namespace KVDK_NAMESPACE {
 
-void ChunkBasedAllocator::Free(const SpaceEntry& entry) {
+void ChunkBasedAllocator::Free(const SpaceEntry&) {
   // Not supported yet
 }
 

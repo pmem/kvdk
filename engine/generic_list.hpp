@@ -468,9 +468,9 @@ class GenericListBuilder final {
   explicit GenericListBuilder(PMEMAllocator* a,
                               std::vector<std::unique_ptr<List>>* lists,
                               size_t num_worker)
-      : alloc{a}, rebuilded_lists{lists}, n_worker{num_worker} {
+      : alloc{a}, n_worker{num_worker}, rebuilded_lists{lists} {
     kvdk_assert(lists != nullptr && lists->empty(), "");
-    kvdk_assert(num_worker != 0, "");
+    kvdk_assert(n_worker != 0, "");
     kvdk_assert(rebuilded_lists != nullptr, "Empty input!");
   }
 

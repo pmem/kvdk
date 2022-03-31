@@ -45,13 +45,13 @@ struct OldDeleteRecord {
   // could safely clear index of this OldDeleteRecord, and transfer it to
   // PendingFreeSpaceEntries
   TimeStampType release_time;
+  SpinMutex* key_lock;
   // We may need to clean index for delete record, so we need track its index
   // and key lock
   //
   // The tag of pointer indicates the type of pointer, like hash ptr or skiplist
   // node
   RecordIndex record_index;
-  SpinMutex* key_lock;
 };
 
 struct PendingFreeSpaceEntries {

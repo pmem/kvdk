@@ -368,13 +368,6 @@ class DLinkedList {
 
   /// Output DlinkedList to ostream for debugging purpose.
   friend std::ostream& operator<<(std::ostream& out, DLinkedList const& dlist) {
-    auto extractKey = [](StringView internal_key) {
-      assert(sizeof(CollectionIDType) <= internal_key.size() &&
-             "internal_key does not has space for key");
-      return StringView(internal_key.data() + sizeof(CollectionIDType),
-                        internal_key.size() - sizeof(CollectionIDType));
-    };
-
     auto printRecord = [&](DLRecord* record) {
       auto internal_key = record->Key();
       out << "Type:\t" << to_hex(record->entry.meta.type) << "\t"

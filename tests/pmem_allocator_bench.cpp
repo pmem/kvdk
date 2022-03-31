@@ -67,9 +67,9 @@ class AllocatorBench {
 
  public:
   void FixedSizePerf(uint32_t num_thread, uint64_t fixed_alloc_size,
-                     int64_t iter_num, int seed, AllocatorAdaptor* allocator) {
+                     int64_t iter_num, int, AllocatorAdaptor* allocator) {
     double execute_time = 0;
-    auto FixedSizeBench = [&](uint64_t id) {
+    auto FixedSizeBench = [&](size_t) {
       std::vector<op_alloc_info> res(iter_num);
       std::chrono::system_clock::time_point to_begin =
           std::chrono::high_resolution_clock::now();
@@ -106,7 +106,6 @@ class AllocatorBench {
         std::uint64_t idx = random_offsets[i % NUM_OFFSET];
         // random free and allocate.
         allocator->wrapped_free(&work_sets[idx]);
-        uint64_t alloc_size = random_alloc_sizes[idx % NUM_SIZES];
         work_sets[idx] =
             allocator->wrapped_malloc(random_alloc_sizes[idx % NUM_SIZES]);
       }

@@ -336,8 +336,9 @@ KVDKIterator* KVDKCreateUnorderedIterator(KVDKEngine* engine,
                                           const char* collection,
                                           size_t collection_len) {
   KVDKIterator* result = new KVDKIterator;
-  result->rep =
-      (engine->rep->NewUnorderedIterator(std::string(collection))).get();
+  result->rep = (engine->rep->NewUnorderedIterator(
+                     StringView{collection, collection_len}))
+                    .get();
   if (!result->rep) {
     delete result;
     return nullptr;
@@ -351,8 +352,9 @@ KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
                                        size_t collection_len,
                                        KVDKSnapshot* snapshot) {
   KVDKIterator* result = new KVDKIterator;
-  result->rep = (engine->rep->NewSortedIterator(
-      std::string(collection), snapshot ? snapshot->rep : nullptr));
+  result->rep =
+      (engine->rep->NewSortedIterator(StringView{collection, collection_len},
+                                      snapshot ? snapshot->rep : nullptr));
   if (!result->rep) {
     delete result;
     return nullptr;
