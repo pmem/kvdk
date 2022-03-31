@@ -379,6 +379,63 @@ class EngineBasicTest : public testing::Test {
   int cnt;
 };
 
+TEST_F(EngineBasicTest, TestUniqueKey) {
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string sorted_collection("sorted_collection");
+  std::string unordered_collection("unordered_collection");
+  std::string list("list");
+  std::string str("str");
+  std::string collection_key("ck");
+  std::string val("val");
+
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  ASSERT_EQ(engine->Set(str, val), Status::Ok);
+  ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
+  ASSERT_EQ(engine->HSet(unordered_collection, collection_key, val),
+            Status::Ok);
+  ASSERT_EQ(engine->ListPush(list, Engine::ListPosition::Left, collection_key),
+            Status::Ok);
+
+  std::string got_val;
+  // Test string
+  {
+    std::string new_val("new_str_val");
+    // Set
+    ASSERT_EQ(engine->Set(sorted_collection, new_val), Status::WrongType);
+    ASSERT_EQ(engine->Set(unordered_collection, new_val), Status::WrongType);
+    ASSERT_EQ(engine->Set(list, new_val), Status::WrongType);
+    ASSERT_EQ(engine->Set(str, new_val), Status::Ok);
+    // Get
+    ASSERT_EQ(engine->Get(sorted_collection, &got_val), Status::WrongType);
+    ASSERT_EQ(engine->Get(unordered_collection, &got_val), Status::WrongType);
+    ASSERT_EQ(engine->Get(list, &got_val), Status::WrongType);
+    ASSERT_EQ(engine->Get(str, &got_val), Status::Ok);
+    ASSERT_EQ(got_val, new_val);
+  }
+
+  // Test sorted
+  {
+    std::string new_val("new_sorted_val");
+    // Set
+    ASSERT_EQ(engine->SSet(unordered_collection, collection_key, new_val),
+              Status::WrongType);
+    ASSERT_EQ(engine->SSet(list, collection_key, new_val), Status::WrongType);
+    ASSERT_EQ(engine->SSet(str, collection_key, new_val), Status::WrongType);
+    ASSERT_EQ(engine->SSet(sorted_collection, collection_key, new_val),
+              Status::Ok);
+    // Get
+    ASSERT_EQ(engine->SGet(unordered_collection, collection_key, &got_val),
+              Status::WrongType);
+    ASSERT_EQ(engine->SGet(list, collection_key, &got_val), Status::WrongType);
+    ASSERT_EQ(engine->SGet(str, collection_key, &got_val), Status::WrongType);
+    ASSERT_EQ(engine->SGet(sorted_collection, collection_key, &got_val),
+              Status::Ok);
+    ASSERT_EQ(got_val, new_val);
+  }
+}
+
 TEST_F(EngineBasicTest, TestThreadManager) {
   int max_access_threads = 1;
   configs.max_access_threads = max_access_threads;

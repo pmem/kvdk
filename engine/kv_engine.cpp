@@ -889,7 +889,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
     value->assign(string_record->Value().data(), string_record->Value().size());
     return Status::Ok;
   } else {
-    return ret.s;
+    return ret.s == Status::Expired ? Status::NotFound : ret.s;
   }
 }
 
@@ -1399,7 +1399,7 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
     // return ttl time
     *ttl_time = TimeUtils::ExpireTimeToTTL(expire_time);
   }
-  return res.s;
+  return res.s == Status::Expired ? Status::NotFound : res.s;
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
@@ -1473,62 +1473,37 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
 }
 
 Status KVEngine::StringDeleteImpl(const StringView& key) {
-  DataEntry data_entry;
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
+  auto hint = hash_table_->GetHint(key);
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
+  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
 
-  uint32_t requested_size = key.size() + sizeof(StringRecord);
-  SpaceEntry sized_space_entry;
-
-  {
-    auto hint = hash_table_->GetHint(key);
-    std::unique_lock<SpinMutex> ul(*hint.spin);
-    // Set current snapshot to this thread
-    version_controller_.HoldLocalSnapshot();
-    defer(version_controller_.ReleaseLocalSnapshot());
-    TimeStampType new_ts =
-        version_controller_.GetLocalSnapshot().GetTimestamp();
-    Status s = hash_table_->SearchForWrite(
-        hint, key, StringDeleteRecord | StringDataRecord, &entry_ptr,
-        &hash_entry, &data_entry);
-
-    switch (s) {
-      case Status::Ok: {
-        if (entry_ptr->GetRecordType() == StringDeleteRecord) {
-          return s;
-        }
-        auto request_size = key.size() + sizeof(StringRecord);
-        SpaceEntry sized_space_entry = pmem_allocator_->Allocate(request_size);
-        if (sized_space_entry.size == 0) {
-          return Status::PmemOverflow;
-        }
-
-        void* pmem_ptr =
-            pmem_allocator_->offset2addr_checked(sized_space_entry.offset);
-
-        StringRecord::PersistStringRecord(
-            pmem_ptr, sized_space_entry.size, new_ts, StringDeleteRecord,
-            pmem_allocator_->addr2offset_checked(
-                hash_entry.GetIndex().string_record),
-            key, "");
-
-        hash_table_->Insert(hint, entry_ptr, StringDeleteRecord, pmem_ptr,
-                            PointerType::StringRecord);
-        ul.unlock();
-        delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
-        // We also delay free this delete record to recycle PMem and DRAM
-        // space
-        delayFree(OldDeleteRecord(pmem_ptr, entry_ptr, PointerType::HashEntry,
-                                  new_ts, hint.spin));
-
-        return s;
-      }
-      case Status::NotFound:
-        return Status::Ok;
-      default:
-        return s;
+  auto ret = lookupKey<false>(key, StringDeleteRecord | StringDataRecord);
+  if (ret.s == Status::Ok) {
+    // We only write delete record if key exist
+    auto request_size = key.size() + sizeof(StringRecord);
+    SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
+    if (space_entry.size == 0) {
+      return Status::PmemOverflow;
     }
+
+    void* pmem_ptr = pmem_allocator_->offset2addr_checked(space_entry.offset);
+    StringRecord::PersistStringRecord(pmem_ptr, space_entry.size, new_ts,
+                                      StringDeleteRecord,
+                                      pmem_allocator_->addr2offset_checked(
+                                          ret.entry.GetIndex().string_record),
+                                      key, "");
+    hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
+                        PointerType::StringRecord);
+    ul.unlock();
+    delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
+    // Free this delete record to recycle PMem and DRAM space
+    delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr, PointerType::HashEntry,
+                              new_ts, hint.spin));
   }
+
+  return Status::Ok;
 }
 
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
@@ -1551,12 +1526,20 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   version_controller_.HoldLocalSnapshot();
   defer(version_controller_.ReleaseLocalSnapshot());
   TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+
+  // Lookup key in hashtable
   auto ret = lookupKey<true>(key, StringDataRecord | StringDeleteRecord);
   if (ret.s == Status::MemoryOverflow || ret.s == Status::WrongType) {
     return ret.s;
   }
-  bool found = ret.s == Status::Ok || ret.s == Status::Expired;
+  bool existing = ret.s == Status::Ok || ret.s == Status::Expired;
+  kvdk_assert((!existing && ret.s == Status::NotFound) ||
+                  (existing &&
+                   new_ts > ret.entry.GetIndex().string_record->GetTimestamp()),
+              "existing record has newer timestamp or wrong return status in "
+              "string set");
 
+  // Persist key-value pair to PMem
   uint32_t requested_size = value.size() + key.size() + sizeof(StringRecord);
   SpaceEntry space_entry = pmem_allocator_->Allocate(requested_size);
   if (space_entry.size == 0) {
@@ -1564,29 +1547,19 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   }
   StringRecord* new_record =
       pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
-  kvdk_assert(
-      !found || new_ts > ret.entry.GetIndex().string_record->GetTimestamp(),
-      "old record has newer timestamp");
-  // Persist key-value pair to PMem
   StringRecord::PersistStringRecord(
       new_record, space_entry.size, new_ts, StringDataRecord,
-      found ? pmem_allocator_->addr2offset_checked(
-                  ret.entry.GetIndex().string_record)
-            : kNullPMemOffset,
+      existing ? pmem_allocator_->addr2offset_checked(
+                     ret.entry.GetIndex().string_record)
+               : kNullPMemOffset,
       key, value, expired_time);
-  {
-    hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
-                        PointerType::StringRecord);
-    if(found){
-      if();
-    }
-    if (found &&
-        updated_type == StringDataRecord
-        /* delete record is self-freed, so we don't need to free it here */
-        && !hash_entry_ptr->IsExpiredStatus()) {
-      ul.unlock();
-      delayFree(OldDataRecord{hash_entry.GetIndex().string_record, new_ts});
-    }
+
+  hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
+                      PointerType::StringRecord);
+  // Free existing record
+  if (existing && !ret.entry.IsExpiredStatus() /*Check if expired_key already handled by background cleaner*/) {
+    ul.unlock();
+    delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
   }
 
   return Status::Ok;
