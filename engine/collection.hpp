@@ -14,9 +14,6 @@
 
 namespace KVDK_NAMESPACE {
 /// TODO: (ziyan) add expire_time field to Collection.
-/// TODO: (ziyan) move collection.hpp to engine/
-/// This interface provides little functionality to user
-/// And it includes part of implementation.
 class Collection {
  public:
   Collection(const std::string& name, CollectionIDType id)

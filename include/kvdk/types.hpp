@@ -16,9 +16,7 @@ using UnixTimeType = std::int64_t;
 using ExpireTimeType = UnixTimeType;
 using TTLType = std::int64_t;
 
-/// TODO: helper functions to convert between ExpireTime and TTL
 constexpr ExpireTimeType kPersistTime = INT64_MAX;
-constexpr ExpireTimeType kInvalidExpireTime = -2;
 constexpr TTLType kPersistTTL = INT64_MAX;
 constexpr TTLType kInvalidTTL = -2;
 }  // namespace KVDK_NAMESPACE
