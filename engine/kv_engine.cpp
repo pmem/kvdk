@@ -1545,54 +1545,41 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
                                      ? HashEntryStatus::Persist
                                      : HashEntryStatus::TTL;
 
-  DataEntry data_entry;
-  HashEntry hash_entry;
-  HashEntry* hash_entry_ptr = nullptr;
-  uint32_t v_size = value.size();
+  auto hint = hash_table_->GetHint(key);
+  TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
+  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto ret = lookupKey<true>(key, StringDataRecord | StringDeleteRecord);
+  if (ret.s == Status::MemoryOverflow || ret.s == Status::WrongType) {
+    return ret.s;
+  }
+  bool found = ret.s == Status::Ok || ret.s == Status::Expired;
 
-  uint32_t requested_size = v_size + key.size() + sizeof(StringRecord);
-
-  // Space is already allocated for batch writes
-  SpaceEntry sized_space_entry = pmem_allocator_->Allocate(requested_size);
-  if (sized_space_entry.size == 0) {
+  uint32_t requested_size = value.size() + key.size() + sizeof(StringRecord);
+  SpaceEntry space_entry = pmem_allocator_->Allocate(requested_size);
+  if (space_entry.size == 0) {
     return Status::PmemOverflow;
   }
-
+  StringRecord* new_record =
+      pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
+  kvdk_assert(
+      !found || new_ts > ret.entry.GetIndex().string_record->GetTimestamp(),
+      "old record has newer timestamp");
+  // Persist key-value pair to PMem
+  StringRecord::PersistStringRecord(
+      new_record, space_entry.size, new_ts, StringDataRecord,
+      found ? pmem_allocator_->addr2offset_checked(
+                  ret.entry.GetIndex().string_record)
+            : kNullPMemOffset,
+      key, value, expired_time);
   {
-    auto hint = hash_table_->GetHint(key);
-    TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
-    std::unique_lock<SpinMutex> ul(*hint.spin);
-    // Set current snapshot to this thread
-    version_controller_.HoldLocalSnapshot();
-    defer(version_controller_.ReleaseLocalSnapshot());
-    TimeStampType new_ts =
-        version_controller_.GetLocalSnapshot().GetTimestamp();
-
-    // Search position to write index in hash table.
-    Status s = hash_table_->SearchForWrite(
-        hint, key, StringDeleteRecord | StringDataRecord, &hash_entry_ptr,
-        &hash_entry, &data_entry);
-    if (s == Status::MemoryOverflow) {
-      return s;
-    }
-    bool found = s == Status::Ok;
-
-    void* block_base = pmem_allocator_->offset2addr(sized_space_entry.offset);
-
-    kvdk_assert(!found || new_ts > data_entry.meta.timestamp,
-                "old record has newer timestamp!");
-    // Persist key-value pair to PMem
-    StringRecord::PersistStringRecord(
-        block_base, sized_space_entry.size, new_ts, StringDataRecord,
-        found ? pmem_allocator_->addr2offset_checked(
-                    hash_entry.GetIndex().string_record)
-              : kNullPMemOffset,
-        key, value, expired_time);
-
-    auto updated_type = hash_entry_ptr->GetRecordType();
-
-    hash_table_->Insert(hint, hash_entry_ptr, StringDataRecord, block_base,
+    hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
                         PointerType::StringRecord);
+    if(found){
+      if();
+    }
     if (found &&
         updated_type == StringDataRecord
         /* delete record is self-freed, so we don't need to free it here */
