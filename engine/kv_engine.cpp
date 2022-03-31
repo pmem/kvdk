@@ -493,7 +493,8 @@ Status KVEngine::RestoreStringRecord(StringRecord* pmem_record,
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
-  std::string key(pmem_record->Key());
+  auto view = pmem_record->Key();
+  std::string key{view.data(), view.size()};
   DataEntry existing_data_entry;
   HashEntry hash_entry;
   HashEntry* entry_ptr = nullptr;
@@ -1367,11 +1368,10 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   LookupResult res = lookupKey(str, ExpirableRecordType);
+  *ttl_time = kInvalidTTL;
   if (res.s == Status::Expired) {
-    *ttl_time = kExpiredTime;
     return Status::NotFound;
   }
-  *ttl_time = kExpiredTime;
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;

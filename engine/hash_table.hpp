@@ -9,10 +9,10 @@
 #include <limits>
 #include <vector>
 
+#include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "simple_list.hpp"
 #include "structures.hpp"

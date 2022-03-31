@@ -7,6 +7,7 @@
 #include <atomic>
 #include <unordered_set>
 
+#include "alias.hpp"
 #include "kvdk/engine.hpp"
 #include "utils/utils.hpp"
 

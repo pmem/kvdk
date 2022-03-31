@@ -4,20 +4,17 @@
 
 #pragma once
 
-#include <cstdio>
-#include <cstring>
-#include <functional>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
-#include "libpmemobj++/string_view.hpp"
-#include "namespace.hpp"
 #include "status.hpp"
+#include "types.hpp"
 #include "write_batch.hpp"
+
+namespace kvdk = KVDK_NAMESPACE;
 
 namespace KVDK_NAMESPACE {
 
@@ -26,9 +23,6 @@ using ModifyFunction = std::function<std::string(const StringView& src)>;
 // This is the abstraction of a persistent KVDK instance
 class Engine {
  public:
-  using IndexType = std::int64_t;
-  using StringView = pmem::obj::string_view;
-
   using GetterCallBack = void (*)(StringView, void*);
   // Default GetterCallBack
   static void CopyToString(StringView src, void* dst) {

@@ -13,7 +13,6 @@
 #include <deque>
 #include <iomanip>
 #include <iostream>
-#include <libpmemobj++/string_view.hpp>
 #include <mutex>
 #include <random>
 #include <stdexcept>
