@@ -1013,7 +1013,7 @@ Status KVEngine::SSet(const StringView collection, const StringView user_key,
 Status KVEngine::CheckConfigs(const Configs& configs) {
   auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
 
-  if (configs.pmem_block_size < 16) {
+  if (configs.pmem_block_size < kMinPMemBlockSize) {
     GlobalLogger.Error("pmem block size too small\n");
     return Status::InvalidConfiguration;
   }
