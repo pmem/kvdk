@@ -227,10 +227,11 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, UnorderedCollection>::value
                ? RecordType::DlistRecord
-           : std::is_same<CollectionType, Skiplist>::value
-               ? RecordType::SortedHeaderRecord
-           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
-                                                       : RecordType::Empty;
+               : std::is_same<CollectionType, Skiplist>::value
+                     ? RecordType::SortedHeaderRecord
+                     : std::is_same<CollectionType, List>::value
+                           ? RecordType::ListRecord
+                           : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {

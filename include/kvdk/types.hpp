@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cinttypes>
-#include <string>
 #include <functional>
+#include <string>
 
 #include "libpmemobj++/string_view.hpp"
 

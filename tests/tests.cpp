@@ -1572,7 +1572,8 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Prev();
     iter->Prev();
-    -- --iter2;
+    --iter2;
+    --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListSet(iter, elem), Status::Ok);
@@ -1581,7 +1582,8 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Prev();
     iter->Prev();
-    -- --iter2;
+    --iter2;
+    --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     ASSERT_EQ(engine->ListErase(iter), Status::Ok);
     iter2 = list_copy.erase(iter2);
