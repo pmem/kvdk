@@ -82,7 +82,7 @@ class OldRecordsCleaner {
 
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OldDeleteRecord& old_delete_record);
-  void PushToGloble(const std::deque<OldDeleteRecord>& old_delete_records);
+  void PushToGlabal(const std::deque<OldDeleteRecord>& old_delete_records);
   // Try to clean global old records
   void TryGlobalClean();
   void TryCleanCachedOldRecords(size_t num_limit_clean);
