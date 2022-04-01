@@ -384,7 +384,7 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string unordered_collection("unordered_collection");
   std::string list("list");
   std::string str("str");
-  std::string elem_key("ck");
+  std::string elem_key("elem");
   std::string val("val");
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -392,8 +392,7 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
   ASSERT_EQ(engine->Set(str, val), Status::Ok);
   ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
   ASSERT_EQ(engine->HSet(unordered_collection, elem_key, val), Status::Ok);
-  ASSERT_EQ(engine->ListPush(list, Engine::ListPosition::Left, elem_key),
-            Status::Ok);
+  ASSERT_EQ(engine->ListPushBack(list, elem_key), Status::Ok);
 
   std::string got_val;
   // Test string
@@ -449,39 +448,29 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
   }
 
   // Test list
-  {
+  for (const std::string& collection_name :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s = collection_name == list ? Status::Ok : Status ::WrongType;
+    std::string new_val_back("new_back_val");
+    std::string new_val_front("new_front_val");
     size_t length;
-    for (auto position :
-         {Engine::ListPosition::Left, Engine::ListPosition::Right}) {
-      std::string new_val("new_list_val" +
-                          std::to_string(static_cast<uint64_t>(position)));
-      // push
-      ASSERT_EQ(engine->ListPush(unordered_collection, position, new_val),
-                Status::WrongType);
-      ASSERT_EQ(engine->ListPush(sorted_collection, position, new_val),
-                Status::WrongType);
-      ASSERT_EQ(engine->ListPush(str, position, new_val), Status::WrongType);
-      ASSERT_EQ(engine->ListPush(list, position, new_val), Status::Ok);
-      // pop
-      ASSERT_EQ(engine->ListPop(unordered_collection, position, &got_val),
-                Status::WrongType);
-      ASSERT_EQ(engine->ListPop(sorted_collection, position, &got_val),
-                Status::WrongType);
-      ASSERT_EQ(engine->ListPop(str, position, &got_val), Status::WrongType);
-      ASSERT_EQ(engine->ListPop(list, position, &got_val), Status::Ok);
-      ASSERT_EQ(got_val, new_val);
-    }
+    std::string got_val_back;
+    std::string got_val_front;
 
-    // length
-    ASSERT_EQ(engine->ListLength(unordered_collection, &length),
-              Status::WrongType);
-    // length
-    ASSERT_EQ(engine->ListLength(sorted_collection, &length),
-              Status::WrongType);  // length
-    ASSERT_EQ(engine->ListLength(str, &length),
-              Status::WrongType);  // length
-    ASSERT_EQ(engine->ListLength(list, &length), Status::Ok);
-    ASSERT_EQ(length, 1);
+    // Push
+    ASSERT_EQ(engine->ListPushBack(collection_name, new_val_back), ret_s);
+    ASSERT_EQ(engine->ListPushFront(collection_name, new_val_front), ret_s);
+    // Pop
+    ASSERT_EQ(engine->ListPopBack(collection_name, &got_val_back), ret_s);
+    ASSERT_EQ(engine->ListPopFront(collection_name, &got_val_front), ret_s);
+    // Length
+    ASSERT_EQ(engine->ListLength(collection_name, &length), ret_s);
+
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val_back, new_val_back);
+      ASSERT_EQ(got_val_front, new_val_front);
+      ASSERT_EQ(length, 1);
+    }
   }
 }
 
@@ -1581,7 +1570,7 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Prev();
     iter->Prev();
-    ----iter2;
+    -- --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListSet(iter, elem), Status::Ok);
@@ -1590,7 +1579,7 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Prev();
     iter->Prev();
-    ----iter2;
+    -- --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     ASSERT_EQ(engine->ListErase(iter), Status::Ok);
     iter2 = list_copy.erase(iter2);
