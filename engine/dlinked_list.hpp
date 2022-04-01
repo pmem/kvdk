@@ -15,12 +15,10 @@
 #include <exception>
 #include <iomanip>
 #include <iostream>
-#include <libpmemobj++/string_view.hpp>
 
 #include "alias.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 #include "macros.hpp"
 #include "structures.hpp"
 #include "utils/sync_point.hpp"

@@ -10,9 +10,8 @@
 
 #pragma once
 
-#include <assert.h>
-
 #include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <functional>
 #include <mutex>

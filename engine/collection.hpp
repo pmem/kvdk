@@ -10,15 +10,10 @@
 #include <string>
 
 #include "alias.hpp"
-#include "kvdk/namespace.hpp"
 #include "kvdk/status.hpp"
 
 namespace KVDK_NAMESPACE {
 /// TODO: (ziyan) add expire_time field to Collection.
-
-// A collection of key-value pairs
-/// This interface provides little functionality to user
-/// And it includes part of implementation.
 class Collection {
  public:
   Collection(const std::string& name, CollectionIDType id)

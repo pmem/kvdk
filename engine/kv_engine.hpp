@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "hash_table.hpp"
@@ -534,7 +535,7 @@ class KVEngine : public Engine {
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
 
-  bool need_clean = false;
+  bool need_clean_records_ = false;
 
   ComparatorTable comparators_;
 

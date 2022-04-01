@@ -36,7 +36,7 @@ void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
   tc.old_delete_records.emplace_back(old_delete_record);
 }
 
-void OldRecordsCleaner::PushToGlabal(
+void OldRecordsCleaner::PushToGlobal(
     const std::deque<OldDeleteRecord>& old_delete_records) {
   global_old_delete_records_.emplace_back(old_delete_records);
 }

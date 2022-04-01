@@ -11,12 +11,12 @@
 #include <set>
 #include <vector>
 
+#include "../alias.hpp"
 #include "../allocator.hpp"
 #include "../data_record.hpp"
 #include "../structures.hpp"
 #include "../version/version_controller.hpp"
 #include "free_list.hpp"
-#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 

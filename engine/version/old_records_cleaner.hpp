@@ -7,11 +7,11 @@
 #include <deque>
 #include <vector>
 
+#include "../alias.hpp"
 #include "../hash_table.hpp"
 #include "../thread_manager.hpp"
 #include "../utils/utils.hpp"
 #include "kvdk/configs.hpp"
-#include "kvdk/namespace.hpp"
 #include "version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -82,7 +82,7 @@ class OldRecordsCleaner {
 
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OldDeleteRecord& old_delete_record);
-  void PushToGlabal(const std::deque<OldDeleteRecord>& old_delete_records);
+  void PushToGlobal(const std::deque<OldDeleteRecord>& old_delete_records);
   // Try to clean global old records
   void TryGlobalClean();
   void TryCleanCachedOldRecords(size_t num_limit_clean);
