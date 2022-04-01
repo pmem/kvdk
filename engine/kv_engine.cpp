@@ -1496,7 +1496,7 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
                               new_ts, hint.spin));
   }
 
-  return Status::Ok;
+  return ret.s == Status::NotFound ? Status::Ok : ret.s;
 }
 
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
@@ -1600,12 +1600,11 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
   bool type_match = type_mask & record_type;
   bool expired;
 
-  if (record_type == RecordType::StringDeleteRecord && type_match) {
-    result.s = Status::NotFound;
-    return result;
-  }
-
   switch (record_type) {
+    case RecordType::StringDeleteRecord: {
+      result.s = type_match ? Status::NotFound : Status::WrongType;
+      return result;
+    }
     case RecordType::StringDataRecord: {
       expired = result.entry.GetIndex().string_record->HasExpired();
       break;
@@ -1630,7 +1629,7 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
     result.s = type_match ? Status::Ok : Status::WrongType;
   }
   return result;
-}
+}  // namespace KVDK_NAMESPACE
 
 std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
     StringView const collection_name) {
@@ -1784,10 +1783,8 @@ Status KVEngine::HDelete(StringView const collection_name,
   }
   UnorderedCollection* p_collection;
   s = FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-  if (s == Status::NotFound) return Status::Ok;
-
-  // Erase DlistDataRecord if found one.
-  {
+  if (s == Status::Ok) {
+    // Erase DlistDataRecord if found one.
     auto internal_key = p_collection->InternalKey(key);
     HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
 
@@ -1828,6 +1825,8 @@ Status KVEngine::HDelete(StringView const collection_name,
         }
       }
     }
+  } else {
+    return s == Status::NotFound ? Ok : s;
   }
 }
 

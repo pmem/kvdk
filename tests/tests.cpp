@@ -412,6 +412,11 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     ASSERT_EQ(engine->Get(list, &got_val), Status::WrongType);
     ASSERT_EQ(engine->Get(str, &got_val), Status::Ok);
     ASSERT_EQ(got_val, new_val);
+    // Delete
+    ASSERT_EQ(engine->Delete(unordered_collection), Status::WrongType);
+    ASSERT_EQ(engine->Delete(list), Status::WrongType);
+    ASSERT_EQ(engine->Delete(sorted_collection), Status::WrongType);
+    ASSERT_EQ(engine->Delete(str), Status::Ok);
   }
 
   // Test sorted
@@ -437,6 +442,12 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     ASSERT_EQ(engine->SGet(sorted_collection, collection_key, &got_val),
               Status::Ok);
     ASSERT_EQ(got_val, new_val);
+    // Delete
+    ASSERT_EQ(engine->SDelete(unordered_collection, collection_key),
+              Status::WrongType);
+    ASSERT_EQ(engine->SDelete(list, collection_key), Status::WrongType);
+    ASSERT_EQ(engine->SDelete(str, collection_key), Status::WrongType);
+    ASSERT_EQ(engine->SDelete(sorted_collection, collection_key), Status::Ok);
   }
 
   // Test unordered
@@ -457,6 +468,13 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     ASSERT_EQ(engine->HGet(unordered_collection, collection_key, &got_val),
               Status::Ok);
     ASSERT_EQ(got_val, new_val);
+    // Delete
+    ASSERT_EQ(engine->HDelete(list, collection_key), Status::WrongType);
+    ASSERT_EQ(engine->HDelete(str, collection_key), Status::WrongType);
+    ASSERT_EQ(engine->HDelete(sorted_collection, collection_key),
+              Status::WrongType);
+    ASSERT_EQ(engine->HDelete(unordered_collection, collection_key),
+              Status::Ok);
   }
 
   // Test list
@@ -492,6 +510,7 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     ASSERT_EQ(engine->ListLength(str, &length),
               Status::WrongType);  // length
     ASSERT_EQ(engine->ListLength(list, &length), Status::Ok);
+    ASSERT_EQ(length, 1);
   }
 }
 
