@@ -93,6 +93,7 @@ struct DataEntry {
   DataHeader header;
   DataMeta meta;
 };
+static_assert(sizeof(DataEntry) <= kMinPMemBlockSize);
 
 struct StringRecord {
  public:
