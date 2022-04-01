@@ -516,7 +516,8 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
   return;
 }
 
-void IncN(const char* old_val, size_t old_val_len, char** new_val, size_t* new_val_len, void* n_pointer){
+void IncN(const char* old_val, size_t old_val_len, char** new_val,
+          size_t* new_val_len, void* n_pointer) {
   assert(n_pointer);
   assert(old_val_len == sizeof(int));
   int n = *((int*)n_pointer);
@@ -532,11 +533,13 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
   int incr_by = 5;
   KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
   int old_num = 0;
-  KVDKStatus s = KVDKSet(kvdk_engine, "key", 3, (char*)&old_num, sizeof(int), write_option);
+  KVDKStatus s = KVDKSet(kvdk_engine, "key", 3, (char*)&old_num, sizeof(int),
+                         write_option);
   assert(s == Ok);
   char* new_val;
   size_t new_val_size;
-  s = KVDKModify(kvdk_engine, "key", 3, &new_val, &new_val_size, IncN, &incr_by, write_option);
+  s = KVDKModify(kvdk_engine, "key", 3, &new_val, &new_val_size, IncN, &incr_by,
+                 write_option);
   assert(s == Ok);
   int new_num = *((int*)new_val);
   assert(new_num == 5);
@@ -558,7 +561,7 @@ int main() {
   KVDKStatus s = KVDKOpen(engine_path, kvdk_configs, stdout, &kvdk_engine);
   assert(s == Ok);
 
-    // Modify Example
+  // Modify Example
   ModifyExample(kvdk_engine);
 
   // Anonymous Global Collection Example
