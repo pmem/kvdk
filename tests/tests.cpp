@@ -1354,26 +1354,12 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   delete engine;
 }
 
-struct BulkString {
-  std::string str;
-  size_t n{0};
-};
-static void CopyAndCount(kvdk::StringView sw, void* bulk_str) {
-  BulkString* bulk = static_cast<BulkString*>(bulk_str);
-  bulk->str.append(sw.data(), sw.size());
-  bulk->str.append("\n");
-  bulk->n++;
-}
-
 TEST_F(EngineBasicTest, TestList) {
   size_t num_threads = 16;
   size_t count = 1000;
-  size_t bulk = 5;
-  ASSERT_EQ(count % bulk, 0);
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-
   std::vector<std::vector<std::string>> elems_vec(num_threads);
   std::vector<std::string> key_vec(num_threads);
   for (size_t i = 0; i < num_threads; i++) {
@@ -1382,180 +1368,145 @@ TEST_F(EngineBasicTest, TestList) {
       elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }
   }
-
   std::vector<std::list<std::string>> list_copy_vec(num_threads);
-
   auto LPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->ListPush(key, Engine::ListPosition::Left, elems[j]),
-                Status::Ok);
+      ASSERT_EQ(engine->ListPushFront(key, elems[j]), Status::Ok);
       list_copy.push_front(elems[j]);
       ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
-
   auto RPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->ListPush(key, Engine::ListPosition::Right, elems[j]),
-                Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(key, elems[j]), Status::Ok);
       list_copy_vec[tid].push_back(elems[j]);
       ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
 
-  auto LPopOne = [&](size_t tid) {
+  auto LPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
+    size_t sz;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Left, &value_got),
-                Status::Ok);
+      ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.front(), value_got);
       list_copy.pop_front();
+      // Empty list is deleted!
+      ASSERT_TRUE((engine->ListLength(key, &sz) == Status::NotFound &&
+                   list_copy.empty()) ||
+                  sz == list_copy.size());
     }
   };
 
-  auto RPopOne = [&](size_t tid) {
+  auto RPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
+    size_t sz;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Right, &value_got),
-                Status::Ok);
+      ASSERT_EQ(engine->ListPopBack(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.back(), value_got);
       list_copy.pop_back();
+      ASSERT_TRUE((engine->ListLength(key, &sz) == Status::NotFound &&
+                   list_copy.empty()) ||
+                  sz == list_copy.size());
     }
   };
 
-  auto LBulkPop = [&](size_t tid) {
+  auto ListIterate = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
-    BulkString bulk_str;
-    BulkString expected;
-    for (size_t j = 0; j < count; j += bulk) {
-      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Left, CopyAndCount,
-                                &bulk_str, bulk),
-                Status::Ok);
-      for (size_t jj = 0; jj < bulk && !list_copy_vec.empty(); jj++) {
-        CopyAndCount(list_copy.front(), &expected);
-        list_copy.pop_front();
+
+    auto iter = engine->ListMakeIterator(key);
+    ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
+    if (iter != nullptr) {
+      iter->Seek(0);
+      for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
+        ASSERT_TRUE(iter->Valid());
+        ASSERT_EQ(iter->Value(), *iter2);
+        iter->Next();
       }
-      ASSERT_EQ(bulk_str.n, expected.n);
-      ASSERT_EQ(bulk_str.str, expected.str);
+
+      iter->Seek(-1);
+      for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
+           iter2++) {
+        ASSERT_TRUE(iter->Valid());
+        ASSERT_EQ(iter->Value(), *iter2);
+        iter->Prev();
+      }
     }
   };
 
-  auto RBulkPop = [&](size_t tid) {
+  auto ListInsertSetRemove = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
-    BulkString bulk_str;
-    BulkString expected;
-    for (size_t j = 0; j < count; j += bulk) {
-      ASSERT_EQ(engine->ListPop(key, Engine::ListPosition::Right, CopyAndCount,
-                                &bulk_str, bulk),
-                Status::Ok);
-      for (size_t jj = 0; jj < bulk && !list_copy_vec.empty(); jj++) {
-        CopyAndCount(list_copy.back(), &expected);
-        list_copy.pop_back();
-      }
-      ASSERT_EQ(bulk_str.n, expected.n);
-      ASSERT_EQ(bulk_str.str, expected.str);
-    }
-  };
-
-  auto LInsertFindIndexRemove = [&](size_t tid) {
-    auto const& key = key_vec[tid];
-    std::string elem{std::to_string(tid) + "pivot"};
-    std::string value_got;
     size_t len;
-    size_t found;
-    size_t const insert_pos = 42;
+    size_t const insert_pos = 5;
+    std::string elem;
+
     ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
-    ASSERT_EQ(engine->ListInsert(key, kvdk::Engine::ListPosition::Before,
-                                 insert_pos, elem),
-              Status::Ok);
-    ASSERT_EQ(engine->ListPos(key, elem, &found), Status::Ok);
-    ASSERT_EQ(found, insert_pos);
-    ASSERT_EQ(
-        engine->ListIndex(key, static_cast<std::int64_t>(found), &value_got),
-        Status::Ok);
-    ASSERT_EQ(value_got, elem);
-    ASSERT_EQ(engine->ListRemove(key, 1, elem), Status::Ok);
-    // ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
-    // ASSERT_EQ(len, list_copy.size());
+
+    auto iter = engine->ListMakeIterator(key);
+    ASSERT_NE(iter, nullptr);
+
+    iter->Seek(insert_pos);
+    auto iter2 = std::next(list_copy.begin(), insert_pos);
+    ASSERT_EQ(iter->Value(), *iter2);
+
+    elem = *iter2 + "_before";
+    ASSERT_EQ(engine->ListInsert(iter, elem), Status::Ok);
+    iter2 = list_copy.insert(iter2, elem);
+    ASSERT_EQ(iter->Value(), *iter2);
+
+    iter->Prev();
+    iter->Prev();
+    ----iter2;
+    ASSERT_EQ(iter->Value(), *iter2);
+    elem = *iter2 + "_new";
+    ASSERT_EQ(engine->ListSet(iter, elem), Status::Ok);
+    *iter2 = elem;
+    ASSERT_EQ(iter->Value(), *iter2);
+
+    iter->Prev();
+    iter->Prev();
+    ----iter2;
+    ASSERT_EQ(iter->Value(), *iter2);
+    ASSERT_EQ(engine->ListErase(iter), Status::Ok);
+    iter2 = list_copy.erase(iter2);
+    ASSERT_EQ(iter->Value(), *iter2);
   };
 
-  auto LSet = [&](size_t tid) {
-    auto const& key = key_vec[tid];
-    std::string value_got;
-    auto& list_copy = list_copy_vec[tid];
-    size_t len;
-    ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
-    ASSERT_GT(len, count);
-    auto iter = list_copy.begin();
-    for (size_t i = 0; i < count; i++, iter++) {
-      engine->ListIndex(key, i, &value_got);
-      ASSERT_EQ(value_got, *iter);
-      value_got += "_new";
-      engine->ListSet(key, i, value_got);
-      *iter = value_got;
+  for (size_t i = 0; i < 3; i++) {
+    LaunchNThreads(num_threads, LPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, RPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, LPop);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, RPop);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, RPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, LPush);
+    for (size_t j = 0; j < 100; j++) {
+      LaunchNThreads(num_threads, ListInsertSetRemove);
+      LaunchNThreads(num_threads, ListIterate);
     }
-  };
-
-  auto LRange = [&](size_t tid) {
-    auto const& key = key_vec[tid];
-    BulkString bulk_str;
-    BulkString expected;
-    auto& list_copy = list_copy_vec[tid];
-    size_t len;
-    ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
-    ASSERT_GT(len, count);
-
-    ASSERT_EQ(engine->ListRange(key, 0, -1, CopyAndCount, &bulk_str),
-              Status::Ok);
-    for (auto iter = list_copy.begin(); iter != list_copy.end(); ++iter) {
-      CopyAndCount(*iter, &expected);
-    }
-
-    ASSERT_EQ(bulk_str.n, expected.n);
-    ASSERT_EQ(bulk_str.str, expected.str);
-  };
-
-  LaunchNThreads(num_threads, LPush);
-  LaunchNThreads(num_threads, RPush);
-  LaunchNThreads(num_threads, LInsertFindIndexRemove);
-  LaunchNThreads(num_threads, LSet);
-  LaunchNThreads(num_threads, LPopOne);
-  LaunchNThreads(num_threads, RPopOne);
-  LaunchNThreads(num_threads, RPush);
-  LaunchNThreads(num_threads, LPush);
-  LaunchNThreads(num_threads, LInsertFindIndexRemove);
-  LaunchNThreads(num_threads, LSet);
-  LaunchNThreads(num_threads, LRange);
-  LaunchNThreads(num_threads, RBulkPop);
-  LaunchNThreads(num_threads, LBulkPop);
-
-  LaunchNThreads(num_threads, LPush);
-  LaunchNThreads(num_threads, RPush);
-  LaunchNThreads(num_threads, RPush);
-  LaunchNThreads(num_threads, LPush);
-  LaunchNThreads(num_threads, LInsertFindIndexRemove);
-  LaunchNThreads(num_threads, LSet);
-  Reboot();
-  LaunchNThreads(num_threads, RBulkPop);
-  LaunchNThreads(num_threads, LBulkPop);
-  LaunchNThreads(num_threads, LRange);
+    Reboot();
+  }
 
   delete engine;
 }
@@ -1936,9 +1887,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For list
   {
-    ASSERT_EQ(engine->ListPush(list_collection, Engine::ListPosition::Left,
-                               "list" + val),
-              Status::Ok);
+    ASSERT_EQ(engine->ListPushFront(list_collection, "list" + val), Status::Ok);
     // Set expired time for collection
     ASSERT_EQ(engine->Expire(list_collection, max_ttl_time),
               Status::InvalidArgument);

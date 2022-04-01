@@ -203,8 +203,7 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::List: {
-        s = engine->ListPush(collections[cid], Engine::ListPosition::Left,
-                             value);
+        s = engine->ListPushFront(collections[cid], value);
         break;
       }
       case DataType::Blackhole: {
@@ -340,8 +339,7 @@ void DBRead(int tid) {
         break;
       }
       case DataType::List: {
-        s = engine->ListPop(collections[cid], Engine::ListPosition::Right,
-                            &value_sink);
+        s = engine->ListPopBack(collections[cid], &value_sink);
         break;
       }
       case DataType::Blackhole: {

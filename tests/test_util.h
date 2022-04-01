@@ -10,6 +10,7 @@
 #include <numeric>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 /* Create a string that contains 8 bytes from uint64_t. */
