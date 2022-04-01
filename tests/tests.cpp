@@ -385,96 +385,68 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string unordered_collection("unordered_collection");
   std::string list("list");
   std::string str("str");
-  std::string collection_key("ck");
+  std::string elem_key("ck");
   std::string val("val");
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   ASSERT_EQ(engine->Set(str, val), Status::Ok);
   ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
-  ASSERT_EQ(engine->HSet(unordered_collection, collection_key, val),
-            Status::Ok);
-  ASSERT_EQ(engine->ListPush(list, Engine::ListPosition::Left, collection_key),
+  ASSERT_EQ(engine->HSet(unordered_collection, elem_key, val), Status::Ok);
+  ASSERT_EQ(engine->ListPush(list, Engine::ListPosition::Left, elem_key),
             Status::Ok);
 
   std::string got_val;
   // Test string
-  {
+  for (const std::string& string_key :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s = string_key == str ? Status::Ok : Status::WrongType;
     std::string new_val("new_str_val");
     // Set
-    ASSERT_EQ(engine->Set(sorted_collection, new_val), Status::WrongType);
-    ASSERT_EQ(engine->Set(unordered_collection, new_val), Status::WrongType);
-    ASSERT_EQ(engine->Set(list, new_val), Status::WrongType);
-    ASSERT_EQ(engine->Set(str, new_val), Status::Ok);
+    ASSERT_EQ(engine->Set(string_key, new_val), ret_s);
     // Get
-    ASSERT_EQ(engine->Get(sorted_collection, &got_val), Status::WrongType);
-    ASSERT_EQ(engine->Get(unordered_collection, &got_val), Status::WrongType);
-    ASSERT_EQ(engine->Get(list, &got_val), Status::WrongType);
-    ASSERT_EQ(engine->Get(str, &got_val), Status::Ok);
-    ASSERT_EQ(got_val, new_val);
+    ASSERT_EQ(engine->Get(string_key, &got_val), ret_s);
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val, new_val);
+    }
     // Delete
-    ASSERT_EQ(engine->Delete(unordered_collection), Status::WrongType);
-    ASSERT_EQ(engine->Delete(list), Status::WrongType);
-    ASSERT_EQ(engine->Delete(sorted_collection), Status::WrongType);
-    ASSERT_EQ(engine->Delete(str), Status::Ok);
+    ASSERT_EQ(engine->Delete(string_key), ret_s);
   }
 
   // Test sorted
-  {
+  for (const std::string& collection_name :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s =
+        collection_name == sorted_collection ? Status::Ok : Status::WrongType;
     std::string new_val("new_sorted_val");
     // Create
-    ASSERT_EQ(engine->CreateSortedCollection(unordered_collection),
-              Status::WrongType);
-    ASSERT_EQ(engine->CreateSortedCollection(list), Status::WrongType);
-    ASSERT_EQ(engine->CreateSortedCollection(str), Status::WrongType);
+    ASSERT_EQ(engine->CreateSortedCollection(collection_name), ret_s);
     // Set
-    ASSERT_EQ(engine->SSet(unordered_collection, collection_key, new_val),
-              Status::WrongType);
-    ASSERT_EQ(engine->SSet(list, collection_key, new_val), Status::WrongType);
-    ASSERT_EQ(engine->SSet(str, collection_key, new_val), Status::WrongType);
-    ASSERT_EQ(engine->SSet(sorted_collection, collection_key, new_val),
-              Status::Ok);
+    ASSERT_EQ(engine->SSet(collection_name, elem_key, new_val), ret_s);
     // Get
-    ASSERT_EQ(engine->SGet(unordered_collection, collection_key, &got_val),
-              Status::WrongType);
-    ASSERT_EQ(engine->SGet(list, collection_key, &got_val), Status::WrongType);
-    ASSERT_EQ(engine->SGet(str, collection_key, &got_val), Status::WrongType);
-    ASSERT_EQ(engine->SGet(sorted_collection, collection_key, &got_val),
-              Status::Ok);
-    ASSERT_EQ(got_val, new_val);
-    // Delete
-    ASSERT_EQ(engine->SDelete(unordered_collection, collection_key),
-              Status::WrongType);
-    ASSERT_EQ(engine->SDelete(list, collection_key), Status::WrongType);
-    ASSERT_EQ(engine->SDelete(str, collection_key), Status::WrongType);
-    ASSERT_EQ(engine->SDelete(sorted_collection, collection_key), Status::Ok);
+    ASSERT_EQ(engine->SGet(collection_name, elem_key, &got_val), ret_s);
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val, new_val);
+    }
+    // Delete elem
+    ASSERT_EQ(engine->SDelete(collection_name, elem_key), ret_s);
   }
 
   // Test unordered
-  {
+  for (const std::string& collection_name :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s = collection_name == unordered_collection ? Status::Ok
+                                                           : Status::WrongType;
     std::string new_val("new_unordered_val");
     // Set
-    ASSERT_EQ(engine->HSet(sorted_collection, collection_key, new_val),
-              Status::WrongType);
-    ASSERT_EQ(engine->HSet(list, collection_key, new_val), Status::WrongType);
-    ASSERT_EQ(engine->HSet(str, collection_key, new_val), Status::WrongType);
-    ASSERT_EQ(engine->HSet(unordered_collection, collection_key, new_val),
-              Status::Ok);
+    ASSERT_EQ(engine->HSet(collection_name, elem_key, new_val), ret_s);
     // Get
-    ASSERT_EQ(engine->HGet(sorted_collection, collection_key, &got_val),
-              Status::WrongType);
-    ASSERT_EQ(engine->HGet(list, collection_key, &got_val), Status::WrongType);
-    ASSERT_EQ(engine->HGet(str, collection_key, &got_val), Status::WrongType);
-    ASSERT_EQ(engine->HGet(unordered_collection, collection_key, &got_val),
-              Status::Ok);
-    ASSERT_EQ(got_val, new_val);
+    ASSERT_EQ(engine->HGet(collection_name, elem_key, &got_val), ret_s);
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val, new_val);
+    }
     // Delete
-    ASSERT_EQ(engine->HDelete(list, collection_key), Status::WrongType);
-    ASSERT_EQ(engine->HDelete(str, collection_key), Status::WrongType);
-    ASSERT_EQ(engine->HDelete(sorted_collection, collection_key),
-              Status::WrongType);
-    ASSERT_EQ(engine->HDelete(unordered_collection, collection_key),
-              Status::Ok);
+    ASSERT_EQ(engine->HDelete(collection_name, elem_key), ret_s);
   }
 
   // Test list
