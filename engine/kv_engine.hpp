@@ -118,7 +118,7 @@ class KVEngine : public Engine {
   // Used by test case.
   const std::shared_ptr<HashTable>& GetHashTable() { return hash_table_; }
 
-  void CleanExpired();
+  void CleanOutDated();
 
  private:
   friend OldRecordsCleaner;
@@ -533,7 +533,7 @@ class KVEngine : public Engine {
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
 
-  bool bg_cleaner_processing_;
+  bool need_clean_records_ = false;
 
   ComparatorTable comparators_;
 
@@ -541,7 +541,6 @@ class KVEngine : public Engine {
     BackgroundWorkSignals() = default;
     BackgroundWorkSignals(const BackgroundWorkSignals&) = delete;
 
-    std::condition_variable_any old_records_cleaner_cv;
     std::condition_variable_any pmem_usage_reporter_cv;
     std::condition_variable_any pmem_allocator_organizer_cv;
     std::condition_variable_any dram_cleaner_cv;

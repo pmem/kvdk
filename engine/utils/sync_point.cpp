@@ -10,7 +10,7 @@
 
 #include "sync_point.hpp"
 
-#if DEBUG_LEVEL > 0
+#if KVDK_DEBUG_LEVEL > 0
 
 namespace KVDK_NAMESPACE {
 SyncPoint* SyncPoint::GetInstance() {
