@@ -22,6 +22,8 @@ class SortedIterator : public Iterator {
         snapshot_(snapshot),
         own_snapshot_(own_snapshot) {}
 
+  virtual ~SortedIterator() = default;
+
   virtual void Seek(const std::string& key) override {
     assert(skiplist_);
     Splice splice(skiplist_);

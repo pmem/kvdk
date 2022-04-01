@@ -280,7 +280,6 @@ Status KVEngine::RestoreData() {
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
-  bool fetch = false;
   uint64_t cnt = 0;
   while (true) {
     if (segment_recovering.size == 0) {
@@ -1152,7 +1151,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
   }
 
-  size_t batch_size = write_batch.Size();
+  [[gnu::unused]] size_t batch_size = write_batch.Size();
   TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::AllocateRecord::After",
                            &batch_size);
   // lock spin mutex with order to avoid deadlock
@@ -1509,9 +1508,6 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
 
   ExpireTimeType expired_time =
       TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
-  HashEntryStatus entry_status = expired_time == kPersistTime
-                                     ? HashEntryStatus::Persist
-                                     : HashEntryStatus::TTL;
 
   auto hint = hash_table_->GetHint(key);
   TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
@@ -1968,7 +1964,7 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   TimeStampType snapshot_ts = static_cast<SnapshotImpl*>(ret)->GetTimestamp();
 
   // A snapshot should not contain any ongoing batch write
-  for (auto i = 0; i < configs_.max_access_threads; i++) {
+  for (size_t i = 0; i < configs_.max_access_threads; i++) {
     while (engine_thread_cache_[i].batch_writing &&
            snapshot_ts >=
                version_controller_.GetLocalSnapshot(i).GetTimestamp()) {
@@ -2070,8 +2066,6 @@ void KVEngine::backgroundDramCleaner() {
 }
 
 void KVEngine::CleanExpired() {
-  int64_t time = 0;
-  ExpireTimeType expired_time;
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
@@ -2302,7 +2296,6 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
       while (list->Size() > 0 && cnt > 0) {
         cb(list->Front()->Value(), cb_args);
         --cnt;
-        DLRecord* front = list->Front().Address();
         list->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
       }
       break;
@@ -2311,7 +2304,6 @@ Status KVEngine::ListPop(StringView key, ListPosition pos, GetterCallBack cb,
       while (list->Size() > 0 && cnt > 0) {
         cb(list->Back()->Value(), cb_args);
         --cnt;
-        DLRecord* back = list->Back().Address();
         list->PopBack([&](DLRecord* rec) { purgeAndFree(rec); });
       }
       break;
@@ -2386,7 +2378,7 @@ Status KVEngine::ListInsert(StringView key, ListPosition pos, StringView pivot,
   }
 
   size_t index;
-  s = ListPos(key, elem, &index, rank, 0);
+  s = ListPos(key, pivot, &index, rank, 0);
   if (s != Status::Ok) {
     return s;
   }
@@ -2403,7 +2395,6 @@ Status KVEngine::ListRemove(StringView key, IndexType cnt, StringView elem) {
 
   for (auto iter = list->Front(); iter != list->Tail() && cnt > 0; ++iter) {
     if (iter->Value() == elem) {
-      DLRecord* old = iter.Address();
       iter = list->Erase(iter, [&](DLRecord* rec) { purgeAndFree(rec); });
       --cnt;
     }
@@ -2435,7 +2426,6 @@ Status KVEngine::ListSet(StringView key, IndexType index, StringView elem) {
   if (iter == list->Tail()) {
     return Status::OutOfRange;
   }
-  DLRecord* old = iter.Address();
   list->Replace(space, iter, version_controller_.GetCurrentTimestamp(), "",
                 elem, [&](DLRecord* rec) { purgeAndFree(rec); });
   return Status::Ok;
@@ -2471,6 +2461,9 @@ Status KVEngine::listRegisterRecovered() {
   for (auto const& list : lists_) {
     auto guard = hash_table_->AcquireLock(list->Name());
     Status s = registerCollection(list.get());
+    if (s != Status::Ok) {
+      return s;
+    }
     max_id = std::max(max_id, list->ID());
   }
   auto old = list_id_.load();

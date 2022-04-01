@@ -54,12 +54,12 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
   std::vector<uint32_t> block_sizes{16, 32, 64};
   std::vector<uint32_t> num_threads = {1, 16};
 
-  for (int i = 0; i < num_segment_blocks.size(); ++i) {
+  for (size_t i = 0; i < num_segment_blocks.size(); ++i) {
     for (auto num_thread : num_threads) {
       thread_manager_.reset(new ThreadManager(num_thread));
 
       // Test function.
-      auto TestPmemAlloc = [&](uint64_t id) {
+      auto TestPmemAlloc = [&](size_t) {
         std::vector<SpaceEntry> records;
         thread_manager_->MaybeInitThread(access_thread);
         remove(pmem_path.c_str());
@@ -86,7 +86,6 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         uint64_t alloc_cnt = 1;
         // again allocate pmem
         while (true) {
-          auto space_entry = pmem_alloc->Allocate(alloc_size);
           if (pmem_alloc->PMemUsageInBytes() == alloc_bytes) break;
           alloc_cnt++;
         }
