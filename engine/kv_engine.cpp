@@ -195,15 +195,12 @@ Status KVEngine::CreateSortedCollection(
   }
 
   auto hint = hash_table_->GetHint(collection_name);
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-  DataEntry existing_data_entry;
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  entry_ptr = nullptr;
-  s = hash_table_->SearchForWrite(hint, collection_name, SortedHeaderRecord,
-                                  &entry_ptr, &hash_entry,
-                                  &existing_data_entry);
-  if (s == Status::NotFound) {
+  version_controller_.HoldLocalSnapshot();
+  defer(version_controller_.ReleaseLocalSnapshot());
+  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto ret = lookupKey<true>(collection_name, SortedHeaderRecord);
+  if (ret.s == NotFound) {
     auto comparator = comparators_.GetComparator(s_configs.comparator_name);
     if (comparator == nullptr) {
       GlobalLogger.Error("Compare function %s is not registered\n",
@@ -223,9 +220,8 @@ Status KVEngine::CreateSortedCollection(
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
-        version_controller_.GetCurrentTimestamp(), SortedHeaderRecord,
-        kNullPMemOffset, space_entry.offset, space_entry.offset,
-        collection_name, value_str);
+        new_ts, SortedHeaderRecord, kNullPMemOffset, space_entry.offset,
+        space_entry.offset, collection_name, value_str);
 
     auto skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
@@ -234,11 +230,14 @@ Status KVEngine::CreateSortedCollection(
       std::lock_guard<std::mutex> lg(list_mu_);
       skiplists_.insert({id, skiplist});
     }
-    hash_table_->Insert(hint, entry_ptr, SortedHeaderRecord, skiplist.get(),
+    hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderRecord, skiplist.get(),
                         PointerType::Skiplist);
   } else {
-    return s;
+    // Todo (jiayu): handle expired skiplist
+    // Todo (jiayu): what if skiplist exists but comparator not match?
+    return ret.s;
   }
+
   return Status::Ok;
 }
 
@@ -1677,35 +1676,32 @@ Status KVEngine::HSet(StringView const collection_name, StringView const key,
     if (s == Status::NotFound) {
       HashTable::KeyHashHint hint_collection =
           hash_table_->GetHint(collection_name);
+      // Lock and find again in case other threads have created the
+      // UnorderedCollection
       std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
-      {
-        // Lock and find again in case other threads have created the
-        // UnorderedCollection
-        s = FindCollection(collection_name, &p_collection,
-                           RecordType::DlistRecord);
-        if (s == Status::Ok) {
-          // Some thread already created the collection
-          // Do nothing
-        } else {
-          auto sp_collection = createUnorderedCollection(collection_name);
+      auto ret = lookupKey<true>(collection_name, RecordType::DlistRecord);
+      if (ret.s == Status::NotFound) {
+        auto sp_collection = createUnorderedCollection(collection_name);
 
-          p_collection = sp_collection.get();
-          {
-            std::lock_guard<std::mutex> lg{list_mu_};
-            vec_sp_unordered_collections_.push_back(sp_collection);
-          }
-
-          HashEntry hash_entry_collection;
-          HashEntry* p_hash_entry_collection = nullptr;
-          Status s = hash_table_->SearchForWrite(
-              hint_collection, collection_name, RecordType::DlistRecord,
-              &p_hash_entry_collection, &hash_entry_collection, nullptr);
-          kvdk_assert(s == Status::NotFound, "Logically impossible!");
-          hash_table_->Insert(hint_collection, p_hash_entry_collection,
-                              RecordType::DlistRecord, p_collection,
-                              PointerType::UnorderedCollection);
+        p_collection = sp_collection.get();
+        {
+          std::lock_guard<std::mutex> lg{list_mu_};
+          vec_sp_unordered_collections_.push_back(sp_collection);
         }
+
+        hash_table_->Insert(hint_collection, ret.entry_ptr,
+                            RecordType::DlistRecord, p_collection,
+                            PointerType::UnorderedCollection);
+        ret.s = Status::Ok;
+      } else if (ret.s == Status::Ok) {
+        p_collection = ret.entry.GetIndex().p_unordered_collection;
+        // Todo: handle expired
       }
+      s = ret.s;
+    }
+
+    if (s != Status::Ok) {
+      return s;
     }
   }
 

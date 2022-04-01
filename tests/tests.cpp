@@ -417,6 +417,11 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
   // Test sorted
   {
     std::string new_val("new_sorted_val");
+    // Create
+    ASSERT_EQ(engine->CreateSortedCollection(unordered_collection),
+              Status::WrongType);
+    ASSERT_EQ(engine->CreateSortedCollection(list), Status::WrongType);
+    ASSERT_EQ(engine->CreateSortedCollection(str), Status::WrongType);
     // Set
     ASSERT_EQ(engine->SSet(unordered_collection, collection_key, new_val),
               Status::WrongType);
@@ -432,6 +437,34 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     ASSERT_EQ(engine->SGet(sorted_collection, collection_key, &got_val),
               Status::Ok);
     ASSERT_EQ(got_val, new_val);
+  }
+
+  // Test unordered
+  {
+    std::string new_val("new_unordered_val");
+    // Set
+    ASSERT_EQ(engine->HSet(sorted_collection, collection_key, new_val),
+              Status::WrongType);
+    ASSERT_EQ(engine->HSet(list, collection_key, new_val), Status::WrongType);
+    ASSERT_EQ(engine->HSet(str, collection_key, new_val), Status::WrongType);
+    ASSERT_EQ(engine->HSet(unordered_collection, collection_key, new_val),
+              Status::Ok);
+    // Get
+    ASSERT_EQ(engine->HGet(sorted_collection, collection_key, &got_val),
+              Status::WrongType);
+    ASSERT_EQ(engine->HGet(list, collection_key, &got_val), Status::WrongType);
+    ASSERT_EQ(engine->HGet(str, collection_key, &got_val), Status::WrongType);
+    ASSERT_EQ(engine->HGet(unordered_collection, collection_key, &got_val),
+              Status::Ok);
+    ASSERT_EQ(got_val, new_val);
+  }
+
+  // Test list
+  {
+    std::string new_val("new_list_val");
+    ASSERT_EQ(engine->ListPush(unordered_collection, Engine::ListPosition::Left,
+                               new_val),
+              Status::WrongType);
   }
 }
 
