@@ -281,7 +281,6 @@ Status KVEngine::RestoreData() {
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
-  bool fetch = false;
   uint64_t cnt = 0;
   while (true) {
     if (segment_recovering.size == 0) {
@@ -1159,7 +1158,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
   }
 
-  size_t batch_size = write_batch.Size();
+  [[gnu::unused]] size_t batch_size = write_batch.Size();
   TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::AllocateRecord::After",
                            &batch_size);
   // lock spin mutex with order to avoid deadlock
@@ -1479,7 +1478,6 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
   HashEntry hash_entry;
   HashEntry* entry_ptr = nullptr;
 
-  uint32_t requested_size = key.size() + sizeof(StringRecord);
   SpaceEntry sized_space_entry;
 
   {
@@ -1543,9 +1541,6 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
 
   ExpireTimeType expired_time =
       TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
-  HashEntryStatus entry_status = expired_time == kPersistTime
-                                     ? HashEntryStatus::Persist
-                                     : HashEntryStatus::TTL;
 
   DataEntry data_entry;
   HashEntry hash_entry;
@@ -2017,7 +2012,7 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   TimeStampType snapshot_ts = static_cast<SnapshotImpl*>(ret)->GetTimestamp();
 
   // A snapshot should not contain any ongoing batch write
-  for (auto i = 0; i < configs_.max_access_threads; i++) {
+  for (size_t i = 0; i < configs_.max_access_threads; i++) {
     while (engine_thread_cache_[i].batch_writing &&
            snapshot_ts >=
                version_controller_.GetLocalSnapshot(i).GetTimestamp()) {
@@ -2119,8 +2114,6 @@ void KVEngine::backgroundDramCleaner() {
 }
 
 void KVEngine::CleanExpired() {
-  int64_t time = 0;
-  ExpireTimeType expired_time;
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
@@ -2235,8 +2228,8 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
     return s;
   }
 
-  DLRecord* front = list->Front().Address();
-  auto sw = front->Value();
+  kvdk_assert (list->Size() != 0, "");
+  auto sw = list->Front()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
 
@@ -2260,8 +2253,8 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
     return s;
   }
 
-  DLRecord* back = list->Back().Address();
-  auto sw = back->Value();
+  kvdk_assert (list->Size() != 0, "");
+  auto sw = list->Back()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopBack([&](DLRecord* rec) { purgeAndFree(rec); });
 
@@ -2312,6 +2305,7 @@ Status KVEngine::ListErase(std::unique_ptr<ListIterator> const& pos) {
     return s;
   }
   kvdk_assert(list == iter->Owner(), "Iterator outdated!");
+  kvdk_assert(iter->Valid(), "Trying to erase invalid iterator!");
 
   iter->Rep() =
       list->Erase(iter->Rep(), [&](DLRecord* rec) { purgeAndFree(rec); });
@@ -2397,6 +2391,9 @@ Status KVEngine::listRegisterRecovered() {
   for (auto const& list : lists_) {
     auto guard = hash_table_->AcquireLock(list->Name());
     Status s = registerCollection(list.get());
+    if (s != Status::Ok) {
+      return s;
+    }
     max_id = std::max(max_id, list->ID());
   }
   auto old = list_id_.load();
