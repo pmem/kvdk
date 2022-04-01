@@ -1355,8 +1355,8 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
 }
 
 TEST_F(EngineBasicTest, TestList) {
-  int num_threads = 16;
-  int count = 1000;
+  size_t num_threads = 16;
+  size_t count = 1000;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -1396,7 +1396,6 @@ TEST_F(EngineBasicTest, TestList) {
 
   auto LPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
-    auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
     size_t sz;
@@ -1413,7 +1412,6 @@ TEST_F(EngineBasicTest, TestList) {
 
   auto RPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
-    auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
     size_t sz;

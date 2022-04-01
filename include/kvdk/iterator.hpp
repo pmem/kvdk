@@ -30,6 +30,8 @@ class Iterator {
   virtual std::string Value() = 0;
 
   virtual IteratorType Type() const = 0;
+
+  virtual ~Iterator() = default;
 };
 
 class ListIterator {

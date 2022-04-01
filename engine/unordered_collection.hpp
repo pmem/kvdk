@@ -288,6 +288,8 @@ class UnorderedIterator final : public Iterator {
     return std::string(view_value.data(), view_value.size());
   }
 
+  virtual ~UnorderedIterator() = default;
+
  private:
   // Proceed to next DlistDataRecord, can start from
   // DlistHeadRecord, DlistDataRecord

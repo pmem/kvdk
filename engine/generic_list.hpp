@@ -147,8 +147,8 @@ class GenericList final : public Collection {
     // For assert
     bool valid() const {
       return (curr == nullptr ||
-              curr->entry.meta.type == ListElem && curr->Validate() &&
-                  Collection::ExtractID(curr->Key()) == owner->ID());
+              (curr->entry.meta.type == ListElem && curr->Validate() &&
+               Collection::ExtractID(curr->Key()) == owner->ID()));
     }
   };
 

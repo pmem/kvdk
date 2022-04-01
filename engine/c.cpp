@@ -340,7 +340,6 @@ void KVDKDestroyIterator(KVDKEngine* engine, KVDKIterator* iterator) {
         delete iterator->rep;
         break;
       }
-
       default:
         std::abort();
     }

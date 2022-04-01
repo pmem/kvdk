@@ -82,7 +82,6 @@ TEST_F(EngineCAPITestBase, List) {
 
   auto LPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
-    auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     for (size_t j = 0; j < count; j++) {
@@ -98,7 +97,6 @@ TEST_F(EngineCAPITestBase, List) {
 
   auto RPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
-    auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     for (size_t j = 0; j < count; j++) {
