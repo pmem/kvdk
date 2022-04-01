@@ -217,14 +217,15 @@ KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
                       char** new_value, size_t* new_value_len,
                       ModifyFunc modify, void* modify_args,
                       const KVDKWriteOptions* write_option) {
-  auto modify_func = [&](StringView value) {
+  auto modify_func = [&](StringView value, void* args) {
     modify(value.data(), value.size(), new_value, new_value_len, modify_args);
     std::string result(*new_value, *new_value_len);
     return result;
   };
   std::string modify_result;
-  KVDKStatus s = engine->rep->Modify(StringView(key, key_len), &modify_result,
-                                     modify_func, write_option->rep);
+  KVDKStatus s =
+      engine->rep->Modify(StringView(key, key_len), &modify_result, modify_func,
+                          modify_args, write_option->rep);
   assert(s != KVDKStatus::Ok ||
          (modify_result.size() == *new_value_len &&
           memcmp(modify_result.data(), *new_value, modify_result.size()) == 0));

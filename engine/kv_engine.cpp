@@ -1214,7 +1214,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
 }
 
 Status KVEngine::Modify(const StringView key, std::string* new_value,
-                        ModifyFunction modify_func,
+                        ModifyFunction modify_func, void* modify_args,
                         const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (write_options.ttl_time <= 0 ||
@@ -1246,7 +1246,7 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
   if (ret.s == Status::Ok) {
     StringRecord* old_record = ret.entry.GetIndex().string_record;
 
-    std::string modified_value = modify_func(old_record->Value());
+    std::string modified_value = modify_func(old_record->Value(), modify_args);
     if (!CheckValueSize(modified_value)) {
       return Status::InvalidDataSize;
     }
@@ -1429,8 +1429,10 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         ul.unlock();
         res.s = Modify(
             str, &val,
-            [](const StringView& val) { return string_view_2_string(val); },
-            write_option);
+            [](const StringView& val, void*) {
+              return string_view_2_string(val);
+            },
+            nullptr, write_option);
         break;
       }
       case PointerType::Skiplist: {
