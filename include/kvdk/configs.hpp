@@ -7,15 +7,9 @@
 #include <string>
 
 #include "comparator.hpp"
-#include "namespace.hpp"
+#include "types.hpp"
 
 namespace KVDK_NAMESPACE {
-
-// used for expire
-// TODO: use INT_MAX for kPersistTime, remove kInvalidTTLTime, typedef for TTL
-// and ExpiredTime
-constexpr int64_t kPersistTime = INT64_MAX;
-constexpr int64_t kExpiredTime = 0;
 
 enum class LogLevel : uint8_t {
   All = 0,
@@ -150,8 +144,8 @@ struct WriteOptions {
   WriteOptions(int64_t _ttl_time, bool _key_exist)
       : ttl_time(_ttl_time), key_exist(_key_exist) {}
   // expired time in milliseconod, should be kPersistTime for no expiration
-  // data.
-  int64_t ttl_time = kPersistTime;
+  // data, or >= 0 as the ttl
+  int64_t ttl_time = kPersistTTL;
   bool key_exist = false;
 };
 

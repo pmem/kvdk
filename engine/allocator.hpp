@@ -4,8 +4,7 @@
 
 #pragma once
 
-#include "kvdk/namespace.hpp"
-#include "structures.hpp"
+#include "alias.hpp"
 
 namespace KVDK_NAMESPACE {
 struct SpaceEntry {

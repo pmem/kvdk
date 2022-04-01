@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "kvdk/namespace.hpp"
+#include "../alias.hpp"
 #include "skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -123,8 +123,10 @@ class SortedCollectionRebuilder {
   };
 
   KVEngine* kv_engine_;
+  CheckPoint checkpoint_;
+  bool segment_based_rebuild_;
+  uint64_t num_rebuild_threads_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
-  SpinMutex lock_;
   std::unordered_map<DLRecord*, RebuildSegment> recovery_segments_{};
   // skiplists that need to rebuild index
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>
@@ -133,9 +135,7 @@ class SortedCollectionRebuilder {
   // destroyed
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>
       invalid_skiplists_{};
-  uint64_t num_rebuild_threads_;
-  bool segment_based_rebuild_;
-  CheckPoint checkpoint_;
+  SpinMutex lock_;
   CollectionIDType max_recovered_id_ = 0;
   // Select elements as a segment start point for segment based rebuild every
   // kRestoreSkiplistStride elements per skiplist

@@ -4,9 +4,6 @@
 
 #include "data_record.hpp"
 
-#include "alias.hpp"
-#include "libpmem.h"
-
 namespace KVDK_NAMESPACE {
 // use buffer to acc nt-write
 thread_local std::string thread_data_buffer;
@@ -27,9 +24,9 @@ StringRecord* StringRecord::PersistStringRecord(
   } else {
     data_cpy_target = addr;
   }
-  StringRecord* record = StringRecord::ConstructStringRecord(
-      data_cpy_target, record_size, timestamp, type, older_version_record, key,
-      value, expired_time);
+  StringRecord::ConstructStringRecord(data_cpy_target, record_size, timestamp,
+                                      type, older_version_record, key, value,
+                                      expired_time);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();
@@ -58,9 +55,9 @@ DLRecord* DLRecord::PersistDLRecord(void* addr, uint32_t record_size,
   } else {
     data_cpy_target = addr;
   }
-  DLRecord* record = DLRecord::ConstructDLRecord(
-      data_cpy_target, record_size, timestamp, type, older_version_record, prev,
-      next, key, value, expired_time);
+  DLRecord::ConstructDLRecord(data_cpy_target, record_size, timestamp, type,
+                              older_version_record, prev, next, key, value,
+                              expired_time);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();

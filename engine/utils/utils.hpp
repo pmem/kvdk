@@ -9,35 +9,26 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <x86intrin.h>
 
 #include <atomic>
 #include <cassert>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <string>
 #include <vector>
 
-#include "libpmemobj++/string_view.hpp"
-
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 #undef XXH_INLINE_ALL
 
-#include <x86intrin.h>
-
-#include <atomic>
-
 #include "../alias.hpp"
 #include "../macros.hpp"
 #include "codec.hpp"
-#include "kvdk/configs.hpp"
-#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 

@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "kvdk/namespace.hpp"
+#include "../alias.hpp"
 #include "skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -21,6 +21,8 @@ class SortedIterator : public Iterator {
         current_(nullptr),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot) {}
+
+  virtual ~SortedIterator() = default;
 
   virtual void Seek(const std::string& key) override {
     assert(skiplist_);
@@ -71,6 +73,8 @@ class SortedIterator : public Iterator {
     if (!Valid()) return "";
     return string_view_2_string(current_->Value());
   }
+
+  IteratorType Type() const final { return IteratorType::SortedIterator; }
 
  private:
   friend KVEngine;

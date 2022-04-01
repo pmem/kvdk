@@ -1,5 +1,4 @@
-#ifndef EXTD_XORSHIFT_ENGINE_HPP
-#define EXTD_XORSHIFT_ENGINE_HPP
+#pragma once
 
 #include <immintrin.h>
 #include <x86intrin.h>
@@ -59,5 +58,3 @@ class xorshift_engine {
 };
 
 }  // namespace extd
-
-#endif  // EXTD_XORSHIFT_ENGINE_HPP

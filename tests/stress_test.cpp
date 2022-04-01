@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2021 Intel Corporation
  */
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -14,9 +16,7 @@
 
 #include "../engine/alias.hpp"
 #include "../engine/kv_engine.hpp"
-#include "gtest/gtest.h"
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 #include "test_util.h"
 
 using kvdk::StringView;
@@ -283,7 +283,6 @@ class ShadowKVEngine {
     {
       std::cout << "[Testing] Checking by Get" << std::endl;
       ProgressBar pbar{std::cout, "", possible_state.size(), 1000, true};
-      size_t progress = 0;
       while (!possible_state_copy.empty()) {
         auto key = possible_state_copy.begin()->first;
 

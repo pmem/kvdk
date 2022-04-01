@@ -7,7 +7,6 @@
 #include <future>
 
 #include "../kv_engine.hpp"
-#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 SortedCollectionRebuilder::SortedCollectionRebuilder(
@@ -201,7 +200,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   fs.clear();
   GlobalLogger.Info("link dram nodes\n");
 
-  int i = 0;
+  size_t i = 0;
   for (auto& s : rebuild_skiplits_) {
     i++;
     fs.push_back(std::async(&SortedCollectionRebuilder::linkHighDramNodes, this,
@@ -252,7 +251,6 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
     if (iter == recovery_segments_.end()) {
       HashEntry hash_entry;
       DataEntry data_entry;
-      HashEntry* entry_ptr = nullptr;
       StringView internal_key = next_record->Key();
 
       auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
@@ -331,7 +329,6 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
   SkiplistNode* cur_node = start_node;
   SkiplistNode* next_node = cur_node->RelaxedNext(height - 1).RawPointer();
   assert(start_node && start_node->Height() >= height);
-  bool finish = false;
   while (true) {
     if (next_node == nullptr) {
       cur_node->RelaxedSetNext(height, nullptr);
@@ -478,7 +475,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 
 Status SortedCollectionRebuilder::listBasedIndexRebuild() {
   std::vector<std::future<Status>> fs;
-  int i = 0;
+  size_t i = 0;
   for (auto skiplist : rebuild_skiplits_) {
     i++;
     fs.push_back(std::async(&SortedCollectionRebuilder::rebuildSkiplistIndex,
@@ -596,8 +593,8 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
   return Status::Ok;
 }
 
-DLRecord* SortedCollectionRebuilder::findValidVersion(
-    DLRecord* pmem_record, std::vector<DLRecord*>* invalid_version_records) {
+DLRecord* SortedCollectionRebuilder::findValidVersion(DLRecord* pmem_record,
+                                                      std::vector<DLRecord*>*) {
   if (!recoverToCheckpoint()) {
     return pmem_record;
   }

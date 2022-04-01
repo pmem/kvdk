@@ -215,6 +215,8 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
 }
 
 int score_cmp(const char* a, size_t a_len, const char* b, size_t b_len) {
+  assert(strlen(a) == a_len);
+  assert(strlen(b) == b_len);
   double scorea = atof(a);
   double scoreb = atof(b);
   if (scorea == scoreb)
@@ -361,13 +363,13 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key";
     strcat(key, nums[i]);
-    KVDKStatus s = KVDKLPush(kvdk_engine, list_collection,
-                             strlen(list_collection), key, strlen(key));
+    KVDKStatus s = KVDKListPushFront(kvdk_engine, list_collection,
+                                     strlen(list_collection), key, strlen(key));
     assert(s == Ok);
     size_t key_len_res;
     char* key_res;
-    s = KVDKLPop(kvdk_engine, list_collection, strlen(list_collection),
-                 &key_res, &key_len_res);
+    s = KVDKListPopFront(kvdk_engine, list_collection, strlen(list_collection),
+                         &key_res, &key_len_res);
     assert(s == Ok);
     int cmp = CmpCompare(key_res, key_len_res, key, strlen(key));
     assert(cmp == 0);
@@ -377,13 +379,13 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
   for (int i = 0; i < 10; ++i) {
     char key[10] = "value";
     strcat(key, nums[i]);
-    KVDKStatus s = KVDKRPush(kvdk_engine, list_collection,
-                             strlen(list_collection), key, strlen(key));
+    KVDKStatus s = KVDKListPushBack(kvdk_engine, list_collection,
+                                    strlen(list_collection), key, strlen(key));
     assert(s == Ok);
     size_t key_len_res;
     char* key_res;
-    s = KVDKRPop(kvdk_engine, list_collection, strlen(list_collection),
-                 &key_res, &key_len_res);
+    s = KVDKListPopBack(kvdk_engine, list_collection, strlen(list_collection),
+                        &key_res, &key_len_res);
     assert(s == Ok);
     int cmp = CmpCompare(key_res, key_len_res, key, strlen(key));
     assert(cmp == 0);

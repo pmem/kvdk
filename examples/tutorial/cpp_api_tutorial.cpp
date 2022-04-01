@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
 
 #define DEBUG  // For assert
 
@@ -287,7 +286,6 @@ static void test_customer_sorted_func() {
 
   int i = 0;
   for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
-    size_t key_len, value_len;
     std::string key = iter->Key();
     std::string value = iter->Value();
     if (key != expected_array[i].number_key) {

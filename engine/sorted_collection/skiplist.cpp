@@ -63,7 +63,6 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
   SkiplistNode* prev = start_node;
   PointerWithTag<SkiplistNode, SkiplistNode::NodeStatus> next;
   for (uint8_t i = start_height; i >= end_height; i--) {
-    uint64_t round = 0;
     while (1) {
       next = prev->Next(i);
       // prev is logically deleted, roll back to prev height.
@@ -427,7 +426,6 @@ SkiplistNode* Skiplist::NewNodeBuild(DLRecord* pmem_record) {
 
 std::string Skiplist::EncodeSortedCollectionValue(
     CollectionIDType id, const SortedCollectionConfigs& s_configs) {
-  const size_t num_config_fields = 1;
   std::string value_str;
 
   AppendUint64(&value_str, id);
@@ -554,7 +552,10 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(
       internal_key, "");
   ret.write_record = delete_record;
 
-  assert(splice.prev_pmem_record->next == existing_offset);
+  kvdk_assert(prev_record->next == existing_offset,
+              "wrong linkage in skiplist delete after acquiring lock");
+  kvdk_assert(next_record->prev == existing_offset,
+              "wrong linkage in skiplist delete after acquiring lock");
 
   linkDLRecord(prev_record, next_record, delete_record);
 
@@ -654,7 +655,6 @@ Skiplist::WriteResult Skiplist::setImplWithHash(
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
-  SpinMutex* inserting_key_lock = locked_hash_hint.spin;
   HashEntry* entry_ptr = nullptr;
   HashEntry hash_entry;
   std::unique_lock<SpinMutex> prev_record_lock;

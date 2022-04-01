@@ -4,8 +4,7 @@
 
 #pragma once
 
-#include <ctype.h>
-
+#include <cinttypes>
 #include <string>
 
 #include "../alias.hpp"

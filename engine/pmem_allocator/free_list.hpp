@@ -7,9 +7,9 @@
 #include <memory>
 #include <set>
 
+#include "../alias.hpp"
 #include "../allocator.hpp"
 #include "../utils/utils.hpp"
-#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -53,10 +53,9 @@ class SpaceMap {
     uint8_t token_;
   };
 
-  // how many blocks share a lock
-  const uint32_t lock_granularity_;
   std::vector<Token> map_;
   // every lock_granularity_ bytes share a spin lock
+  const uint32_t lock_granularity_;
   std::vector<SpinMutex> map_spins_;
 };
 
@@ -213,14 +212,14 @@ class Freelist {
   const uint64_t num_segment_blocks_;
   const uint32_t block_size_;
   const uint32_t max_classified_b_size_;
-  SpaceMap space_map_;
-  Array<FlistThreadCache> flist_thread_cache_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;
+  SpaceMap space_map_;
+  Array<FlistThreadCache> flist_thread_cache_;
+  PMEMAllocator* pmem_allocator_;
   // Store all large free space entries that larger than max_classified_b_size_
   std::set<SpaceEntry, SpaceCmp> large_entries_;
   SpinMutex large_entries_spin_;
-  PMEMAllocator* pmem_allocator_;
 };
 
 }  // namespace KVDK_NAMESPACE

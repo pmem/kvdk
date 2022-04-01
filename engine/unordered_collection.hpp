@@ -8,7 +8,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include "../extern/libpmemobj++/string_view.hpp"
+#include "alias.hpp"
 #include "dlinked_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
@@ -226,6 +226,8 @@ class UnorderedIterator final : public Iterator {
     throw std::runtime_error{"UnorderedIterator does not support Seek()!"};
   }
 
+  IteratorType Type() const final { return IteratorType::HashIterator; }
+
   /// Seek to First DlistDataRecord if exists,
   /// otherwise Valid() will return false.
   virtual void SeekToFirst() final {
@@ -278,10 +280,15 @@ class UnorderedIterator final : public Iterator {
   /// return value in DlistDataRecord
   /// throw runtime_error if !Valid()
   inline virtual std::string Value() override {
-    kvdk_assert(Valid(), "Accessing data with invalid UnorderedIterator!");
+    if (!Valid()) {
+      kvdk_assert(false, "Accessing data with invalid UnorderedIterator!");
+      return std::string{};
+    }
     auto view_value = internal_iterator->Value();
     return std::string(view_value.data(), view_value.size());
   }
+
+  virtual ~UnorderedIterator() = default;
 
  private:
   // Proceed to next DlistDataRecord, can start from

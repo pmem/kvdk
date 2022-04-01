@@ -7,6 +7,7 @@
 #include <atomic>
 #include <unordered_set>
 
+#include "alias.hpp"
 #include "kvdk/engine.hpp"
 #include "utils/utils.hpp"
 
@@ -31,9 +32,9 @@ class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
   void Release(const Thread& t);
 
  private:
+  uint32_t max_threads_;
   std::atomic<uint32_t> ids_;
   std::unordered_set<uint32_t> usable_id_;
-  uint32_t max_threads_;
   SpinMutex spin_;
 };
 

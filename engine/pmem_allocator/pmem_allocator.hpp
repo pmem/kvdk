@@ -11,12 +11,12 @@
 #include <set>
 #include <vector>
 
+#include "../alias.hpp"
 #include "../allocator.hpp"
 #include "../data_record.hpp"
 #include "../structures.hpp"
 #include "../version/version_controller.hpp"
 #include "free_list.hpp"
-#include "kvdk/namespace.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -30,7 +30,7 @@ constexpr uint64_t kMinPaddingBlocks = 8;
 // maximum allocated data size should smaller than a segment.
 class PMEMAllocator : public Allocator {
  public:
-  ~PMEMAllocator();
+  virtual ~PMEMAllocator();
 
   static PMEMAllocator* NewPMEMAllocator(
       const std::string& pmem_file, uint64_t pmem_size,
@@ -169,14 +169,14 @@ class PMEMAllocator : public Allocator {
   // Mark and persist a space entry on PMem
   void persistSpaceEntry(PMemOffsetType offset, uint64_t size);
 
-  // Protect PMem offset head
-  SpinMutex offset_head_lock_;
-  uint64_t offset_head_;
+  char* pmem_;
   std::vector<PAllocThreadCache, AlignedAllocator<PAllocThreadCache>>
       palloc_thread_cache_;
   const uint32_t block_size_;
   const uint64_t segment_size_;
-  char* pmem_;
+  // Protect PMem offset head
+  SpinMutex offset_head_lock_;
+  uint64_t offset_head_;
   uint64_t pmem_size_;
   Freelist free_list_;
   // For quickly get corresponding block size of a requested data size
