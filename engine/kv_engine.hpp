@@ -195,10 +195,24 @@ class KVEngine : public Engine {
     HashEntry* entry_ptr{nullptr};
   };
 
-  // Look up the key,
-  // return Status::NotFound is key is not found or has expired.
-  // return Status::WrongType if type_mask does not match.
-  // return Status::Ok otherwise.
+  // Look up the first level key (e.g. collections or string, not collection
+  // elems)
+  //
+  // Store a copy of hash entry in LookupResult::entry, and a pointer to the
+  // hash entry in LookupResult::entry_ptr
+  // If allocate_hash_entry_if_missing is true and key not found, then store
+  // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
+  //
+  // return status:
+  // Status::NotFound is key is not found.
+  // Status::WrongType if type_mask does not match.
+  // Status::Expired if key has been expired
+  // Status::MemoryOverflow if allocate_hash_entry_if_missing is true but
+  // failed to allocate new hash entry
+  // Status::Ok on success.
+  //
+  // Notice: key should be locked if set allocate_hash_entry_if_missing to true
+  template <bool allocate_hash_entry_if_missing>
   LookupResult lookupKey(StringView key, uint16_t type_mask);
 
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
@@ -263,7 +277,7 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
-    LookupResult res = lookupKey(collection_name, record_type);
+    LookupResult res = lookupKey<false>(collection_name, record_type);
     if (res.s == Status::Expired) {
       // TODO(zhichen): will open the following code when completing collection
       // deletion.
@@ -287,15 +301,10 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status registerCollection(CollectionType* coll) {
     RecordType type = collectionType<CollectionType>();
-    HashTable::KeyHashHint hint = hash_table_->GetHint(coll->Name());
-    HashEntry hash_entry;
-    HashEntry* entry_ptr = nullptr;
-    Status s =
-        hash_table_->SearchForWrite(hint, coll->Name(), PrimaryRecordType,
-                                    &entry_ptr, &hash_entry, nullptr);
-    if (s != Status::NotFound) {
-      if (hash_entry.GetRecordType() != type) {
-        return Status::WrongType;
+    auto ret = lookupKey<true>(coll->Name(), PrimaryRecordType);
+    if (ret.s != Status::NotFound) {
+      if (ret.s == Status::WrongType) {
+        return ret.s;
       }
       kvdk_assert(false, "Collection already registered!");
       return Status::Abort;
@@ -303,7 +312,8 @@ class KVEngine : public Engine {
 
     PointerType ptype = pointerType(type);
     kvdk_assert(ptype != PointerType::Invalid, "Invalid pointer type!");
-    hash_table_->Insert(hint, entry_ptr, type, coll, ptype);
+    hash_table_->Insert(hash_table_->GetHint(coll->Name()), ret.entry_ptr, type,
+                        coll, ptype);
     return Status::Ok;
   }
 

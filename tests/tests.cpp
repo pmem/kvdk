@@ -377,6 +377,103 @@ class EngineBasicTest : public testing::Test {
   int cnt;
 };
 
+TEST_F(EngineBasicTest, TestUniqueKey) {
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string sorted_collection("sorted_collection");
+  std::string unordered_collection("unordered_collection");
+  std::string list("list");
+  std::string str("str");
+  std::string elem_key("elem");
+  std::string val("val");
+
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  ASSERT_EQ(engine->Set(str, val), Status::Ok);
+  ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
+  ASSERT_EQ(engine->HSet(unordered_collection, elem_key, val), Status::Ok);
+  ASSERT_EQ(engine->ListPushBack(list, elem_key), Status::Ok);
+
+  std::string got_val;
+  // Test string
+  for (const std::string& string_key :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s = string_key == str ? Status::Ok : Status::WrongType;
+    std::string new_val("new_str_val");
+    // Set
+    ASSERT_EQ(engine->Set(string_key, new_val), ret_s);
+    // Get
+    ASSERT_EQ(engine->Get(string_key, &got_val), ret_s);
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val, new_val);
+    }
+    // Delete
+    ASSERT_EQ(engine->Delete(string_key), ret_s);
+  }
+
+  // Test sorted
+  for (const std::string& collection_name :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s =
+        collection_name == sorted_collection ? Status::Ok : Status::WrongType;
+    std::string new_val("new_sorted_val");
+    // Create
+    ASSERT_EQ(engine->CreateSortedCollection(collection_name), ret_s);
+    // Set
+    ASSERT_EQ(engine->SSet(collection_name, elem_key, new_val), ret_s);
+    // Get
+    ASSERT_EQ(engine->SGet(collection_name, elem_key, &got_val), ret_s);
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val, new_val);
+    }
+    // Delete elem
+    ASSERT_EQ(engine->SDelete(collection_name, elem_key), ret_s);
+  }
+
+  // Test unordered
+  for (const std::string& collection_name :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s = collection_name == unordered_collection ? Status::Ok
+                                                           : Status::WrongType;
+    std::string new_val("new_unordered_val");
+    // Set
+    ASSERT_EQ(engine->HSet(collection_name, elem_key, new_val), ret_s);
+    // Get
+    ASSERT_EQ(engine->HGet(collection_name, elem_key, &got_val), ret_s);
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val, new_val);
+    }
+    // Delete
+    ASSERT_EQ(engine->HDelete(collection_name, elem_key), ret_s);
+  }
+
+  // Test list
+  for (const std::string& collection_name :
+       {sorted_collection, unordered_collection, list, str}) {
+    Status ret_s = collection_name == list ? Status::Ok : Status ::WrongType;
+    std::string new_val_back("new_back_val");
+    std::string new_val_front("new_front_val");
+    size_t length;
+    std::string got_val_back;
+    std::string got_val_front;
+
+    // Push
+    ASSERT_EQ(engine->ListPushBack(collection_name, new_val_back), ret_s);
+    ASSERT_EQ(engine->ListPushFront(collection_name, new_val_front), ret_s);
+    // Pop
+    ASSERT_EQ(engine->ListPopBack(collection_name, &got_val_back), ret_s);
+    ASSERT_EQ(engine->ListPopFront(collection_name, &got_val_front), ret_s);
+    // Length
+    ASSERT_EQ(engine->ListLength(collection_name, &length), ret_s);
+
+    if (ret_s == Status::Ok) {
+      ASSERT_EQ(got_val_back, new_val_back);
+      ASSERT_EQ(got_val_front, new_val_front);
+      ASSERT_EQ(length, 1);
+    }
+  }
+}
+
 TEST_F(EngineBasicTest, TestThreadManager) {
   int max_access_threads = 1;
   configs.max_access_threads = max_access_threads;
