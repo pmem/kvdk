@@ -14,7 +14,7 @@ DEFINE_string(kvdk_path, "/mnt/pmem0/kvdk", "The path of the kvdk pmem file.");
 DEFINE_int64(kvdk_max_access_threads, 48,
              "The max access threads number in kvdk.");
 
-PMemKVDK::PMemKVDK(const std::string& db_path) {
+PMemKVDK::PMemKVDK(const std::string&) {
   path_ = FLAGS_kvdk_path;
   collection_ = FLAGS_kvdk_collection;
 
