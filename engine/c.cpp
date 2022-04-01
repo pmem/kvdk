@@ -31,7 +31,7 @@ struct KVDKConfigs {
 };
 
 struct KVDKEngine {
-  Engine* rep;
+  std::unique_ptr<Engine> rep;
 };
 
 struct KVDKWriteBatch {
@@ -123,7 +123,7 @@ KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
     return s;
   }
   *kv_engine = new KVDKEngine;
-  (*kv_engine)->rep = engine;
+  (*kv_engine)->rep.reset(engine);
   return s;
 }
 
@@ -142,10 +142,7 @@ void KVDKReleaseSnapshot(KVDKEngine* engine, KVDKSnapshot* snapshot) {
   delete snapshot;
 }
 
-void KVDKCloseEngine(KVDKEngine* engine) {
-  delete engine->rep;
-  delete engine;
-}
+void KVDKCloseEngine(KVDKEngine* engine) { delete engine; }
 
 void KVDKRemovePMemContents(const char* name) {
   std::string res = "rm -rf " + std::string(name) + "\n";
@@ -359,15 +356,15 @@ unsigned char KVDKIterValid(KVDKIterator* iter) { return iter->rep->Valid(); }
 
 void KVDKIterNext(KVDKIterator* iter) { iter->rep->Next(); }
 
-void KVDKIterPre(KVDKIterator* iter) { iter->rep->Prev(); }
+void KVDKIterPrev(KVDKIterator* iter) { iter->rep->Prev(); }
 
-const char* KVDKIterKey(KVDKIterator* iter, size_t* key_len) {
+char* KVDKIterKey(KVDKIterator* iter, size_t* key_len) {
   std::string key_str = iter->rep->Key();
   *key_len = key_str.size();
   return CopyStringToChar(key_str);
 }
 
-const char* KVDKIterValue(KVDKIterator* iter, size_t* val_len) {
+char* KVDKIterValue(KVDKIterator* iter, size_t* val_len) {
   std::string val_str = iter->rep->Value();
   *val_len = val_str.size();
   return CopyStringToChar(val_str);

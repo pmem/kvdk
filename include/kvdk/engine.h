@@ -169,10 +169,10 @@ extern void KVDKIterSeekToFirst(KVDKIterator* iter);
 extern void KVDKIterSeekToLast(KVDKIterator* iter);
 extern void KVDKIterSeek(KVDKIterator* iter, const char* str, size_t str_len);
 extern void KVDKIterNext(KVDKIterator* iter);
-extern void KVDKIterPre(KVDKIterator* iter);
+extern void KVDKIterPrev(KVDKIterator* iter);
 extern unsigned char KVDKIterValid(KVDKIterator* iter);
-extern const char* KVDKIterKey(KVDKIterator* iter, size_t* key_len);
-extern const char* KVDKIterValue(KVDKIterator* iter, size_t* val_len);
+extern char* KVDKIterKey(KVDKIterator* iter, size_t* key_len);
+extern char* KVDKIterValue(KVDKIterator* iter, size_t* val_len);
 
 /* ttl_time is negetive or positive number, If ttl_time == INT64_MAX,
  * the key is persistent; If ttl_time <=0, the key is expired immediately.
