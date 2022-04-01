@@ -32,7 +32,7 @@ Status ThreadManager::MaybeInitThread(Thread& t) {
       }
     }
     int id = ids_.fetch_add(1, std::memory_order_relaxed);
-    if (id >= max_threads_) {
+    if (static_cast<unsigned>(id) >= max_threads_) {
       return Status::TooManyAccessThreads;
     }
     t.id = id;
@@ -43,7 +43,7 @@ Status ThreadManager::MaybeInitThread(Thread& t) {
 
 void ThreadManager::Release(const Thread& t) {
   if (t.id >= 0) {
-    assert(t.id < max_threads_);
+    assert(static_cast<unsigned>(t.id) < max_threads_);
     std::lock_guard<SpinMutex> lg(spin_);
     usable_id_.insert(t.id);
   }

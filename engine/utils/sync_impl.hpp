@@ -8,7 +8,7 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
-#pragma one
+#pragma once
 
 #include <assert.h>
 

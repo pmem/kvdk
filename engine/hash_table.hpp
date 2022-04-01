@@ -56,8 +56,8 @@ struct alignas(16) HashEntry {
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
             PointerType index_type, HashEntryStatus entry_status)
-      : header_({key_hash_prefix, record_type, index_type, entry_status}),
-        index_(_index) {}
+      : index_(_index),
+        header_({key_hash_prefix, record_type, index_type, entry_status}) {}
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
@@ -200,14 +200,14 @@ class HashTable {
     return bucket / num_buckets_per_slot_;
   }
 
-  std::vector<uint64_t> hash_bucket_entries_;
   const uint64_t hash_bucket_num_;
   const uint32_t num_buckets_per_slot_;
   const uint32_t hash_bucket_size_;
+  ChunkBasedAllocator dram_allocator_;
+  std::shared_ptr<PMEMAllocator> pmem_allocator_;
   const uint64_t num_entries_per_bucket_;
   Array<Slot> slots_;
-  std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  ChunkBasedAllocator dram_allocator_;
+  std::vector<uint64_t> hash_bucket_entries_;
   void* main_buckets_;
 };
 
@@ -221,8 +221,8 @@ struct SlotIterator {
   // lock current access slot
   std::unique_lock<SpinMutex> iter_lock_slot_;
   // current slot id
-  uint64_t current_slot_id;
   HashTable* hash_table_;
+  uint64_t current_slot_id;
 
   void GetBucketRangeAndLockSlot() {
     // release prev slot lock.

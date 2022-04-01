@@ -42,10 +42,10 @@ struct Vertex {
 };
 
 struct Edge {
+  uint32_t weight{0UL};
   Vertex src;  // source vertex
   Vertex dst;  // destination vertex
 
-  uint32_t weight;
   uint32_t out_direction;  // decide the current edge's direction
                            // 0 : src <-- dst
                            // 1 : src --> dst
@@ -54,7 +54,7 @@ struct Edge {
 
   Edge() : weight(0), out_direction(1) {}
   Edge(uint64_t src_id, uint64_t dst_id)
-      : src(src_id), dst(dst_id), weight(0), out_direction(1) {}
+      : src(src_id), dst(dst_id), out_direction(1) {}
   Edge(uint32_t w, const Vertex& first, const Vertex& second,
        uint32_t direction, const std::string& info)
       : weight(w),
@@ -170,7 +170,8 @@ class GraphSimulator {
   Status BFSInternal(const Vertex& vertex, const int& n_depth);
 
   static inline bool CheckEdgeExists(const Vertex& src, const Vertex& dst,
-                                     const int& direction, const Edge& edge) {
+                                     const uint32_t& direction,
+                                     const Edge& edge) {
     return src == edge.src && dst == edge.dst &&
            direction == edge.out_direction;
   }

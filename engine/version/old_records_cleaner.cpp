@@ -216,10 +216,12 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
   DataEntry* data_entry =
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record);
   switch (data_entry->meta.type) {
-    case StringDataRecord:
+    case StringDataRecord: {
       kvdk_assert(old_delete_record.record_index.hash_entry.RawPointer()
                       ->IsExpiredStatus(),
                   "ths string data record should be expired.");
+      [[gnu::fallthrough]];
+    }
     case StringDeleteRecord: {
       kvdk_assert(
           old_delete_record.record_index.hash_entry.RawPointer() != nullptr &&
