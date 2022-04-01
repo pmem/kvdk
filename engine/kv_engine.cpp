@@ -2228,7 +2228,7 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
     return s;
   }
 
-  kvdk_assert (list->Size() != 0, "");
+  kvdk_assert(list->Size() != 0, "");
   auto sw = list->Front()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
@@ -2253,7 +2253,7 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
     return s;
   }
 
-  kvdk_assert (list->Size() != 0, "");
+  kvdk_assert(list->Size() != 0, "");
   auto sw = list->Back()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopBack([&](DLRecord* rec) { purgeAndFree(rec); });
