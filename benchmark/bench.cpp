@@ -30,8 +30,8 @@ DEFINE_uint64(num_operations, (1 << 30),
 
 DEFINE_bool(fill, false, "Fill num_kv uniform kv pairs to a new instance");
 
-DEFINE_uint64(timeout, 30,
-              "Time to benchmark, this is valid only if fill=false");
+DEFINE_int64(timeout, 30,
+             "Time to benchmark, this is valid only if fill=false");
 
 DEFINE_uint64(value_size, 120, "Value size of KV");
 
@@ -439,7 +439,7 @@ void ProcessBenchmarkConfigs() {
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
     operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
-    for (size_t i = 0; i < FLAGS_max_access_threads; i++) {
+    for (int i = 0; i < FLAGS_max_access_threads; i++) {
       ranges.emplace_back(i * operations_per_thread,
                           (i + 1) * operations_per_thread);
     }
@@ -490,7 +490,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  int write_threads =
+  size_t write_threads =
       FLAGS_fill ? FLAGS_threads
                  : FLAGS_threads - FLAGS_read_ratio * 100 * FLAGS_threads / 100;
   int read_threads = FLAGS_threads - write_threads;
@@ -520,10 +520,10 @@ int main(int argc, char** argv) {
   std::cout << "Init " << read_threads << " readers "
             << "and " << write_threads << " writers." << std::endl;
 
-  for (int i = 0; i < write_threads; i++) {
+  for (size_t i = 0; i < write_threads; i++) {
     ts.emplace_back(DBWrite, i);
   }
-  for (int i = write_threads; i < FLAGS_threads; i++) {
+  for (size_t i = write_threads; i < FLAGS_threads; i++) {
     ts.emplace_back(FLAGS_scan ? DBScan : DBRead, i);
   }
 
@@ -558,8 +558,8 @@ int main(int argc, char** argv) {
               << std::setw(field_width) << read_cnt[idx]
               << std::setw(field_width) << write_cnt[idx] << std::endl;
 
-    int num_finished =
-        std::accumulate(has_finished.begin(), has_finished.end(), 0);
+    size_t num_finished =
+        std::accumulate(has_finished.begin(), has_finished.end(), 0UL);
 
     if (num_finished == 0 || idx < 2) {
       last_effective_idx = idx;
@@ -578,7 +578,7 @@ int main(int argc, char** argv) {
   std::cout << "Benchmark finished." << std::endl;
   printf("finish bench\n");
 
-  for (int i = 0; i < FLAGS_threads; i++) {
+  for (size_t i = 0; i < FLAGS_threads; i++) {
     ts[i].join();
   }
 
@@ -651,7 +651,7 @@ int main(int argc, char** argv) {
       double l999 = 0;
       double l9999 = 0;
       for (std::uint64_t i = 1; i <= MAX_LAT; i++) {
-        for (auto j = 0; j < write_threads; j++) {
+        for (size_t j = 0; j < write_threads; j++) {
           cur += write_latencies[j][i];
           total += write_latencies[j][i] * i;
           if (l50 == 0 && (double)cur / wo > 0.5) {

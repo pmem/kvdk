@@ -23,7 +23,7 @@
 
 typedef kvdk::Status Status;
 
-static void SimpleLoger(const std::string& content) {
+inline void SimpleLoger(const std::string& content) {
   fprintf(stdout, "[GRAPH-BENCH]%s \n", content.c_str());
 }
 
@@ -40,6 +40,7 @@ class KVEngine {
     virtual void Next() = 0;
     virtual void Prev() = 0;
     virtual bool Valid() = 0;
+    virtual ~Iterator() = default;
 
     virtual std::string Key() = 0;
     virtual std::string Value() = 0;
@@ -115,7 +116,7 @@ class MemoryEngine : public KVEngine {
     explicit MemoryIterator(std::map<std::string, std::string>::iterator start,
                             std::map<std::string, std::string>::iterator end)
         : iter_(start), end_(end) {}
-    ~MemoryIterator() = default;
+    virtual ~MemoryIterator() = default;
 
     void Seek(const std::string& key) override {
       while (iter_->first != key) {
@@ -147,7 +148,7 @@ class MemoryEngine : public KVEngine {
 };
 
 // Construct the engine's map with their engine name.
-static void Initial() {
+inline void Initial() {
   static bool init = false;
   if (!init) {
     static EngineImplRegister<KVEngine, PMemKVDK> pmem_kvdk("kvdk");
