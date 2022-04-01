@@ -98,7 +98,6 @@ void KVEngine::terminateBackgroundWorks() {
   {
     std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
     bg_work_signals_.terminating = true;
-    bg_work_signals_.old_records_cleaner_cv.notify_all();
     bg_work_signals_.dram_cleaner_cv.notify_all();
     bg_work_signals_.pmem_allocator_organizer_cv.notify_all();
     bg_work_signals_.pmem_usage_reporter_cv.notify_all();
@@ -2033,9 +2032,9 @@ void KVEngine::delayFree(const OldDataRecord& old_data_record) {
   old_records_cleaner_.PushToCache(old_data_record);
   // To avoid too many cached old records pending clean, we try to clean cached
   // records while pushing new one
-  if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
-      !bg_cleaner_processing_) {
-    bg_work_signals_.old_records_cleaner_cv.notify_all();
+  if (!need_clean_records_ &&
+      old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords) {
+    need_clean_records_ = true;
   } else {
     old_records_cleaner_.TryCleanCachedOldRecords(
         kLimitForegroundCleanOldRecords);
@@ -2046,9 +2045,9 @@ void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
   old_records_cleaner_.PushToCache(old_delete_record);
   // To avoid too many cached old records pending clean, we try to clean cached
   // records while pushing new one
-  if (old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords &&
-      !bg_cleaner_processing_) {
-    bg_work_signals_.old_records_cleaner_cv.notify_all();
+  if (!need_clean_records_ &&
+      old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords) {
+    need_clean_records_ = true;
   } else {
     old_records_cleaner_.TryCleanCachedOldRecords(
         kLimitForegroundCleanOldRecords);
@@ -2056,19 +2055,10 @@ void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
 }
 
 void KVEngine::backgroundOldRecordCleaner() {
-  auto interval = std::chrono::milliseconds{
-      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
+  TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundOldRecordCleaner::NothingToDo",
+                           nullptr);
   while (!bg_work_signals_.terminating) {
-    bg_cleaner_processing_ = false;
-    {
-      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
-      if (!bg_work_signals_.terminating) {
-        bg_work_signals_.old_records_cleaner_cv.wait_for(ul, interval);
-      }
-    }
-    bg_cleaner_processing_ = true;
-    CleanExpired();
-    old_records_cleaner_.TryGlobalClean();
+    CleanOutDated();
   }
 }
 
@@ -2113,7 +2103,9 @@ void KVEngine::backgroundDramCleaner() {
   }
 }
 
-void KVEngine::CleanExpired() {
+void KVEngine::CleanOutDated() {
+  int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
+  std::deque<OldDeleteRecord> expired_record_queue;
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
@@ -2121,8 +2113,6 @@ void KVEngine::CleanExpired() {
     auto bucket_iter = slot_iter.Begin();
     auto end_bucket_iter = slot_iter.End();
     auto new_ts = version_controller_.GetCurrentTimestamp();
-    std::deque<OldDeleteRecord> expired_record_queue;
-    uint64_t need_clean_num = 0;
     while (bucket_iter != end_bucket_iter) {
       switch (bucket_iter->GetIndexType()) {
         case PointerType::StringRecord: {
@@ -2134,8 +2124,8 @@ void KVEngine::CleanExpired() {
             expired_record_queue.push_back(OldDeleteRecord{
                 bucket_iter->GetIndex().ptr, &(*bucket_iter),
                 PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
-            need_clean_num++;
           }
+          break;
         }
         case PointerType::UnorderedCollection:
         case PointerType::List:
@@ -2148,13 +2138,28 @@ void KVEngine::CleanExpired() {
       }
       bucket_iter++;
     }
-    old_records_cleaner_.PushToGloble(expired_record_queue);
+
+    if (!expired_record_queue.empty() &&
+        (expired_record_queue.size() >= kMaxCachedOldRecords)) {
+      old_records_cleaner_.PushToGlobal(expired_record_queue);
+      expired_record_queue.clear();
+    }
+    if (std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now() - start_ts)
+                .count() > interval ||
+        need_clean_records_) {
+      need_clean_records_ = true;
+      old_records_cleaner_.TryGlobalClean();
+      need_clean_records_ = false;
+      start_ts = std::chrono::system_clock::now();
+    }
     slot_iter.Next();
   }
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::system_clock::now() - start_ts);
+  if (!expired_record_queue.empty()) {
+    old_records_cleaner_.PushToGlobal(expired_record_queue);
+    expired_record_queue.clear();
+  }
 }
-
 }  // namespace KVDK_NAMESPACE
 
 // List
