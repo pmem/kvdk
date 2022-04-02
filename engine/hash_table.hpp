@@ -299,7 +299,8 @@ struct SlotIterator {
         entry_idx_++;
         if (entry_idx_ > 0 &&
             entry_idx_ % hash_table->num_entries_per_bucket_ == 0) {
-          bucket_ptr_ = bucket_ptr_ + hash_table->hash_bucket_size_ - 8;
+          memcpy_8(&bucket_ptr_,
+                   bucket_ptr_ + hash_table->hash_bucket_size_ - 8);
           _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
         }
       }
