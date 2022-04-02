@@ -118,8 +118,8 @@ KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
   Engine* engine;
   KVDKStatus s =
       Engine::Open(std::string(name), &engine, config->rep, log_file);
+  *kv_engine = nullptr;
   if (s != KVDKStatus::Ok) {
-    *kv_engine = nullptr;
     return s;
   }
   *kv_engine = new KVDKEngine;
@@ -220,7 +220,6 @@ KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
   auto modify_func = [&](StringView value, void* args) {
     modify(value.data(), value.size(), new_value, new_value_len, args);
     std::string result(*new_value, *new_value_len);
-    free(*new_value);
     return result;
   };
   std::string modify_result;

@@ -16,14 +16,14 @@
 class EngineCAPITestBase : public testing::Test {
  protected:
   KVDKEngine* engine{nullptr};
-  KVDKConfigs* configs{KVDKCreateConfigs()};
+  KVDKConfigs* configs;
   const std::string db_path{"/mnt/pmem0/kvdk_c_api_test_" +
                             std::to_string(__rdtsc())};
 
   virtual void SetUp() override {
+    configs = KVDKCreateConfigs();
     KVDKSetConfigs(configs, 32, (4UL << 30), false, 64, (1UL << 20), 128, 1024,
                    1);
-    KVDKOpen(db_path.c_str(), configs, stdout, &engine);
     ASSERT_EQ(KVDKOpen(db_path.c_str(), configs, stdout, &engine),
               KVDKStatus::Ok)
         << "Fail to open the KVDK instance";

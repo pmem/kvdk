@@ -215,8 +215,8 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
 }
 
 int score_cmp(const char* a, size_t a_len, const char* b, size_t b_len) {
-  assert(strlen(a) == a_len);
-  assert(strlen(b) == b_len);
+  (void)(a_len);
+  (void)(b_len);
   double scorea = atof(a);
   double scoreb = atof(b);
   if (scorea == scoreb)
@@ -547,6 +547,7 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
   assert(new_num == 5);
   printf("Successfully increase num by %d\n", incr_by);
   free(new_val);
+  KVDKDestroyWriteOptions(write_option);
 }
 
 int main() {
