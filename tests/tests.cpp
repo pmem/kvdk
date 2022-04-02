@@ -712,13 +712,15 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
 }
 
 TEST_F(EngineBasicTest, TestStringModify) {
-  auto num_plus = [](StringView value) {
+  auto IncN = [](StringView value, void* n_pointer) {
     uint64_t num = std::stoul(std::string(value.data(), value.size()));
-    return std::to_string(num + 1);
+    uint64_t plus_by = *(static_cast<uint64_t*>(n_pointer));
+    return std::to_string(num + plus_by);
   };
 
   int num_threads = 16;
   int ops_per_thread = 1000;
+  uint64_t incr_by = 1;
   configs.max_access_threads = num_threads;
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -726,22 +728,23 @@ TEST_F(EngineBasicTest, TestStringModify) {
   std::string plus_key = "plus";
   std::string tmp_value;
   ASSERT_EQ(engine->Set(plus_key, "0", WriteOptions()), Status::Ok);
-  ASSERT_EQ(engine->Modify("not_exist_key", &tmp_value, num_plus),
+  ASSERT_EQ(engine->Modify("not_exist_key", &tmp_value, IncN, &incr_by),
             Status::NotFound);
   engine->ReleaseAccessThread();
 
-  auto modify = [&](int) {
+  auto TestModify = [&](int) {
     std::string modify_result;
     std::uint64_t prev_num = 0;
     for (int i = 0; i < ops_per_thread; i++) {
-      ASSERT_EQ(engine->Modify(plus_key, &modify_result, num_plus), Status::Ok);
+      ASSERT_EQ(engine->Modify(plus_key, &modify_result, IncN, &incr_by),
+                Status::Ok);
       std::uint64_t result_num = std::stoul(modify_result);
       ASSERT_TRUE(result_num > prev_num);
       prev_num = result_num;
     }
   };
 
-  LaunchNThreads(num_threads, modify);
+  LaunchNThreads(num_threads, TestModify);
   std::string val;
   ASSERT_EQ(engine->Get(plus_key, &val), Status::Ok);
   ASSERT_EQ(std::stoi(val), ops_per_thread * num_threads);
@@ -1570,7 +1573,8 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Prev();
     iter->Prev();
-    ----iter2;
+    --iter2;
+    --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListSet(iter, elem), Status::Ok);
@@ -1579,7 +1583,8 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Prev();
     iter->Prev();
-    ----iter2;
+    --iter2;
+    --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     ASSERT_EQ(engine->ListErase(iter), Status::Ok);
     iter2 = list_copy.erase(iter2);

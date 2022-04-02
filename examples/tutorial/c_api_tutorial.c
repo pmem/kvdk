@@ -215,8 +215,6 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
 }
 
 int score_cmp(const char* a, size_t a_len, const char* b, size_t b_len) {
-  assert(strlen(a) == a_len);
-  assert(strlen(b) == b_len);
   double scorea = atof(a);
   double scoreb = atof(b);
   if (scorea == scoreb)
@@ -518,6 +516,37 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
   return;
 }
 
+void IncN(const char* old_val, size_t old_val_len, char** new_val,
+          size_t* new_val_len, void* n_pointer) {
+  assert(n_pointer);
+  assert(old_val_len == sizeof(int));
+  int n = *((int*)n_pointer);
+  *new_val = (char*)malloc(sizeof(int));
+  *new_val_len = sizeof(int);
+  int old_num;
+  memcpy(&old_num, old_val, sizeof(int));
+  int result = old_num + n;
+  memcpy(*new_val, &result, sizeof(int));
+}
+
+void ModifyExample(KVDKEngine* kvdk_engine) {
+  int incr_by = 5;
+  KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
+  int old_num = 0;
+  KVDKStatus s = KVDKSet(kvdk_engine, "key", 3, (char*)&old_num, sizeof(int),
+                         write_option);
+  assert(s == Ok);
+  char* new_val;
+  size_t new_val_size;
+  s = KVDKModify(kvdk_engine, "key", 3, &new_val, &new_val_size, IncN, &incr_by,
+                 write_option);
+  assert(s == Ok);
+  int new_num = *((int*)new_val);
+  assert(new_num == 5);
+  printf("Successfully increase num by %d\n", incr_by);
+  free(new_val);
+}
+
 int main() {
   // Initialize a KVDK instance.
   KVDKConfigs* kvdk_configs = KVDKCreateConfigs();
@@ -531,6 +560,9 @@ int main() {
   KVDKEngine* kvdk_engine;
   KVDKStatus s = KVDKOpen(engine_path, kvdk_configs, stdout, &kvdk_engine);
   assert(s == Ok);
+
+  // Modify Example
+  ModifyExample(kvdk_engine);
 
   // Anonymous Global Collection Example
   AnonymousCollectionExample(kvdk_engine);

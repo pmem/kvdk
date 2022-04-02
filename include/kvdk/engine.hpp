@@ -17,9 +17,6 @@
 namespace kvdk = KVDK_NAMESPACE;
 
 namespace KVDK_NAMESPACE {
-
-using ModifyFunction = std::function<std::string(const StringView& src)>;
-
 // This is the abstraction of a persistent KVDK instance
 class Engine {
  public:
@@ -44,7 +41,7 @@ class Engine {
   // Store modify result in "new_value" and return Ok if key exist and
   // sccessfully update value to modifed one
   virtual Status Modify(const StringView key, std::string* new_value,
-                        ModifyFunction modify_func,
+                        ModifyFunction modify_func, void* modify_args,
                         const WriteOptions& options = WriteOptions()) = 0;
 
   virtual Status BatchWrite(const WriteBatch& write_batch) = 0;

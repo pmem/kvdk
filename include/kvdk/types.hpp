@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cinttypes>
+#include <functional>
 #include <string>
 
 #include "libpmemobj++/string_view.hpp"
@@ -13,6 +14,10 @@ using IndexType = std::int64_t;
 using UnixTimeType = std::int64_t;
 using ExpireTimeType = UnixTimeType;
 using TTLType = std::int64_t;
+
+// Modify old value, result result, used in Engine::Modify
+using ModifyFunction =
+    std::function<std::string(const StringView& old_value, void* args)>;
 
 constexpr ExpireTimeType kPersistTime = INT64_MAX;
 constexpr TTLType kPersistTTL = INT64_MAX;
