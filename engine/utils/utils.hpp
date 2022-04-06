@@ -150,14 +150,13 @@ inline std::string string_view_2_string(const StringView& src) {
 
 inline int compare_string_view(const StringView& src,
                                const StringView& target) {
-  return src.compare(target);
-  // auto size = std::min(src.size(), target.size());
-  // for (uint32_t i = 0; i < size; i++) {
-  //   if (src[i] != target[i]) {
-  //     return src[i] - target[i];
-  //   }
-  // }
-  // return src.size() - target.size();  // Overflow!
+  auto size = std::min(src.size(), target.size());
+  for (uint32_t i = 0; i < size; i++) {
+    if (src[i] != target[i]) {
+      return src[i] - target[i];
+    }
+  }
+  return src.size() - target.size();  // Overflow!
 }
 
 inline bool equal_string_view(const StringView& src, const StringView& target) {
@@ -170,29 +169,17 @@ inline bool equal_string_view(const StringView& src, const StringView& target) {
 class SpinMutex {
  private:
   std::atomic_flag locked = ATOMIC_FLAG_INIT;
-  std::thread::id owner{};
 
  public:
   SpinMutex() = default;
 
   void lock() {
-    size_t cnt = 0;
     while (locked.test_and_set(std::memory_order_acquire)) {
-      ++cnt;
-      if (cnt % (1UL << 20) == 0)
-      {
-        std::cout << "Owned by\t" << owner << "\t"
-                  << "Required by\t" << std::this_thread::get_id() << std::endl;
-      }
-      
       asm volatile("pause");
     }
-    owner = std::this_thread::get_id();
   }
 
-  void unlock() { locked.clear(std::memory_order_release);
-    owner = std::thread::id{};
-  }
+  void unlock() { locked.clear(std::memory_order_release); }
 
   bool try_lock() {
     if (locked.test_and_set(std::memory_order_acquire)) {
