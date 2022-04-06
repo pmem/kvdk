@@ -250,9 +250,9 @@ bool Skiplist::lockRecordPosition(const DLRecord* record,
       continue;
     }
 
-    assert(record->prev == prev_offset);
-    assert(record->next == next_offset);
-    assert(next->prev == pmem_allocator->addr2offset(record));
+    kvdk_assert(record->prev == prev_offset, "");
+    kvdk_assert(record->next == next_offset, "");
+    kvdk_assert(next->prev == pmem_allocator->addr2offset(record), "");
 
     return true;
   }
@@ -393,8 +393,8 @@ bool Skiplist::Purge(DLRecord* purging_record,
   PMemOffsetType next_offset = purging_record->next;
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
-  assert(prev->next == purging_offset);
-  assert(next->prev == purging_offset);
+  kvdk_assert(prev->next == purging_offset, "");
+  kvdk_assert(next->prev == purging_offset, "");
   // For repair in recovery due to crashes during pointers changing, we should
   // first unlink deleting entry from next's prev.(It is the reverse process
   // of insertion)

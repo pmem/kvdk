@@ -51,7 +51,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
 
   // params config
   std::vector<uint64_t> num_segment_blocks{1024, 2 * 1024, 2 * 1024 * 1024};
-  std::vector<uint32_t> block_sizes{16, 32, 64};
+  std::vector<uint32_t> block_sizes{32, 64};
   std::vector<uint32_t> num_threads = {1, 16};
 
   for (size_t i = 0; i < num_segment_blocks.size(); ++i) {

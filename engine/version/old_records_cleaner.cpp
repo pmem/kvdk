@@ -252,7 +252,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       bool need_purge = false;
       switch (delete_record_index_type) {
         case PointerType::HashEntry: {
-          DLRecord* hash_indexed_pmem_record;
+          DLRecord* hash_indexed_pmem_record{};
           HashEntry* hash_entry_ref = static_cast<HashEntry*>(
               old_delete_record.record_index.hash_entry.RawPointer());
           auto hash_index_type = hash_entry_ref->GetIndexType();
