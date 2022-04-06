@@ -83,7 +83,7 @@ class ProgressBar {
  public:
   explicit ProgressBar(std::ostream& out, std::string tag,
                        size_t total_progress, size_t report_interval,
-                       bool enabled = true, size_t bar_length = 50)
+                       bool enabled, size_t bar_length = 50)
       : out_stream_{out},
         tag_{tag},
         total_progress_{total_progress},
