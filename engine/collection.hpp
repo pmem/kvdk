@@ -39,7 +39,7 @@ class Collection {
   }
 
   inline static CollectionIDType DecodeID(const StringView& string_id) {
-    CollectionIDType id;
+    CollectionIDType id{};
     bool ret = DecodeUint64(string_id, &id);
     kvdk_assert(ret, "size of string id does not match CollectionIDType size!");
     return id;
