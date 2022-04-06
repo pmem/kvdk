@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2021 Intel Corporation
  */
+
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
+#include <x86intrin.h>
 
 #include <algorithm>
 #include <deque>
@@ -14,10 +17,13 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../engine/alias.hpp"
-#include "../engine/kv_engine.hpp"
 #include "kvdk/engine.hpp"
+#include "kvdk/types.hpp"
 #include "test_util.h"
+
+DEFINE_bool(
+    verbose, false,
+    "If set true, stress test will print a progress bar for operations");
 
 using kvdk::StringView;
 
@@ -164,7 +170,7 @@ class ShadowKVEngine {
     // states and values before calling operateKVEngine() are
     // no longer possible.
     {
-      ProgressBar pbar{std::cout, "", n_thread, 1, true};
+      ProgressBar pbar{std::cout, "", n_thread, 1, FLAGS_verbose};
       for (size_t tid = 0; tid < n_thread; tid++) {
         for (auto const& sop : task_queues[tid]) {
           possible_state.erase(sop.key);
@@ -175,7 +181,7 @@ class ShadowKVEngine {
 
     // Squash every task queue and merge into possible_state
     {
-      ProgressBar pbar{std::cout, "", n_thread, 1, true};
+      ProgressBar pbar{std::cout, "", n_thread, 1, FLAGS_verbose};
       for (size_t tid = 0; tid < n_thread; tid++) {
         StagedChanges squashed_changes{task_queues[tid].size() * 2};
         for (auto const& sop : task_queues[tid]) {
@@ -210,14 +216,14 @@ class ShadowKVEngine {
   void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const& keys,
                        std::vector<ValueType> const& values) {
     task_queues[tid] = generateOperations(keys, values, false);
-    operateKVEngine(tid, (tid == 0));
+    operateKVEngine(tid, (tid == 0) ? FLAGS_verbose : false);
   }
 
   // Modify KVEngine by Set and Delete
   void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const& keys,
                           std::vector<ValueType> const& values) {
     task_queues[tid] = generateOperations(keys, values, true);
-    operateKVEngine(tid, (tid == 0));
+    operateKVEngine(tid, (tid == 0) ? FLAGS_verbose : false);
   }
 
   // Check KVEngine by iterating through it.
@@ -241,7 +247,8 @@ class ShadowKVEngine {
         }
       }
 
-      ProgressBar pbar{std::cout, "", possible_state.size(), 1000, true};
+      ProgressBar pbar{std::cout, "", possible_state.size(), 1000,
+                       FLAGS_verbose};
       while (iterator->Valid()) {
         auto key = iterator->Key();
         auto value = iterator->Value();
@@ -282,7 +289,8 @@ class ShadowKVEngine {
     PossibleStates possible_state_copy{possible_state};
     {
       std::cout << "[Testing] Checking by Get" << std::endl;
-      ProgressBar pbar{std::cout, "", possible_state.size(), 1000, true};
+      ProgressBar pbar{std::cout, "", possible_state.size(), 1000,
+                       FLAGS_verbose};
       while (!possible_state_copy.empty()) {
         auto key = possible_state_copy.begin()->first;
 
@@ -626,7 +634,8 @@ class EngineTestBase : public testing::Test {
 
     std::cout << "[Testing] Generating string for keys and values" << std::endl;
     {
-      ProgressBar progress_gen_kv{std::cout, "", n_kv_per_thread, true};
+      ProgressBar progress_gen_kv{std::cout, "", n_kv_per_thread, 1,
+                                  FLAGS_verbose};
       for (size_t i = 0; i < n_kv_per_thread; i++) {
         value_pool.push_back(GetRandomString(sz_value_min, sz_value_max));
         for (size_t tid = 0; tid < n_thread; tid++) {
@@ -641,7 +650,8 @@ class EngineTestBase : public testing::Test {
     std::cout << "[Testing] Generating string_view for keys and values"
               << std::endl;
     {
-      ProgressBar progress_gen_kv_view{std::cout, "", n_thread, true};
+      ProgressBar progress_gen_kv_view{std::cout, "", n_thread, 1,
+                                       FLAGS_verbose};
       for (size_t tid = 0; tid < n_thread; tid++) {
         for (size_t i = 0; i < n_kv_per_thread; i++) {
           grouped_keys[tid].emplace_back(key_pool[i * n_thread + tid]);
@@ -882,5 +892,6 @@ TEST_F(EngineHotspotTest, StringMultipleHotspot) {
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
+  google::ParseCommandLineFlags(&argc, &argv, true);
   return RUN_ALL_TESTS();
 }
