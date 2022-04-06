@@ -49,6 +49,7 @@ class HashesOperator {
 };
 
 class SortedOperator {
+
   kvdk::Engine*& engine;
   CollectionNameType collection_name;
 
@@ -57,12 +58,18 @@ class SortedOperator {
   SortedOperator(kvdk::Engine*& e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
   kvdk::Status operator()(KeyType key, std::string* value_got) {
+      std::thread::id tid = std::this_thread::get_id();
+
     return engine->SGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
+      std::thread::id tid = std::this_thread::get_id();
+
     return engine->SSet(collection_name, key, value);
   }
   kvdk::Status operator()(KeyType key) {
+      std::thread::id tid = std::this_thread::get_id();
+
     return engine->SDelete(collection_name, key);
   }
 };
