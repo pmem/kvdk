@@ -16,12 +16,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <string>
-#include <thread>
 #include <vector>
 
 #define XXH_INLINE_ALL
@@ -156,7 +154,7 @@ inline int compare_string_view(const StringView& src,
       return src[i] - target[i];
     }
   }
-  return src.size() - target.size();  // Overflow!
+  return src.size() - target.size();
 }
 
 inline bool equal_string_view(const StringView& src, const StringView& target) {
