@@ -196,7 +196,9 @@ class Freelist {
   class SpaceCmp {
    public:
     bool operator()(const SpaceEntry& s1, const SpaceEntry& s2) const {
-      return s1.size > s2.size;
+      if (s1.size > s2.size) return true;
+      if (s1.size == s2.size && s1.offset < s2.offset) return true;
+      return false;
     }
   };
 

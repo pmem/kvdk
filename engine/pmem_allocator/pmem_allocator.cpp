@@ -117,8 +117,10 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
 
   uint64_t segment_size = block_size * num_segment_blocks;
 
-  if (pmem_size < segment_size) {
-    GlobalLogger.Error("Pmem file size should be larger than segment_size\n");
+  if (pmem_size < segment_size * max_access_threads) {
+    GlobalLogger.Error(
+        "pmem file too small, should larger than pmem_segment_blocks * "
+        "pmem_block_size * max_access_threads\n");
     return nullptr;
   }
 
@@ -296,9 +298,6 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   persistSpaceEntry(space_entry.offset, space_entry.size);
   palloc_thread_cache.segment_entry.offset += space_entry.size;
   palloc_thread_cache.segment_entry.size -= space_entry.size;
-  // printf("thread %ld: %ld %ld\n", access_thread.id,
-  //        palloc_thread_cache.segment_entry.offset,
-  //        palloc_thread_cache.segment_entry.size);
   LogAllocation(access_thread.id, space_entry.size);
   return space_entry;
 }
