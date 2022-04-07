@@ -238,6 +238,7 @@ bool Freelist::Get(uint32_t size, SpaceEntry* space_entry) {
         continue;
       }
     }
+
     if (flist_thread_cache.active_entry_offsets[i].size() != 0) {
       space_entry->offset = flist_thread_cache.active_entry_offsets[i].back();
       flist_thread_cache.active_entry_offsets[i].pop_back();

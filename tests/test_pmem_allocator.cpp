@@ -39,6 +39,7 @@ class EnginePMemAllocatorTest : public testing::Test {
   }
 
   virtual void TearDown() {  // delete db_path
+    access_thread.Release();
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", pmem_path.c_str());
     int res __attribute__((unused)) = system(cmd);
@@ -56,7 +57,6 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
   for (auto num_segment_block : num_segment_blocks) {
     for (auto block_size : block_sizes) {
       for (auto num_thread : num_threads) {
-        // a thread holds a segment;
         // init pmem allocator and thread_manager.
         thread_manager_.reset(new ThreadManager(num_thread));
         PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
@@ -92,10 +92,8 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         thread_manager_->MaybeInitThread(access_thread);
         int alloc_cnt = 0;
         while (true) {
-          SpaceEntry space_entry;
-          space_entry = pmem_alloc->Allocate(alloc_size);
+          SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size);
           alloc_cnt++;
-
           if ((uint64_t)pmem_alloc->PMemUsageInBytes() >= pmem_size) break;
           ASSERT_EQ(space_entry.size != 0, true);
         }
@@ -152,7 +150,6 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
     SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[3]);
     ASSERT_NE(space_entry.size, 0);
   }
-
   delete pmem_alloc;
 }
 
@@ -161,7 +158,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemAllocFreeList) {
   uint32_t num_thread = 1;
   uint64_t num_segment_block = 32;
   uint64_t block_size = 64;
-  uint64_t pmem_size = num_segment_block * block_size;
+  uint64_t pmem_size = num_segment_block * block_size * num_thread;
   std::deque<SpaceEntry> records;
   thread_manager_.reset(new ThreadManager(num_thread));
   PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(

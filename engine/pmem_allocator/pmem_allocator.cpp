@@ -24,7 +24,7 @@ PMEMAllocator::PMEMAllocator(char* pmem, uint64_t pmem_size,
       offset_head_(0),
       pmem_size_(pmem_size),
       free_list_(num_segment_blocks, block_size, max_access_threads,
-                 pmem_size_ / block_size_ / num_segment_blocks *
+                 pmem_size / block_size / num_segment_blocks *
                      num_segment_blocks /*num blocks*/,
                  this),
       version_controller_(version_controller) {
