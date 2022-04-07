@@ -52,21 +52,20 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
   // params config
   std::vector<uint64_t> num_segment_blocks{1024, 2 * 1024, 2 * 1024 * 1024};
   std::vector<uint32_t> block_sizes{32, 64};
-  uint32_t single_thread = 1;
+  uint32_t num_thread = 1;
 
   for (auto num_segment_block : num_segment_blocks) {
     for (auto block_size : block_sizes) {
-      thread_manager_.reset(new ThreadManager(single_thread));
+      thread_manager_.reset(new ThreadManager(num_thread));
+      remove(pmem_path.c_str());
+      PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
+          pmem_path, pmem_size, num_segment_block, block_size, num_thread, true,
+          false, nullptr);
+      ASSERT_NE(pmem_alloc, nullptr);
       // Test function.
       auto TestPmemAlloc = [&](size_t) {
-        std::vector<SpaceEntry> records;
         thread_manager_->MaybeInitThread(access_thread);
-        remove(pmem_path.c_str());
-        PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
-            pmem_path, pmem_size, num_segment_block, block_size, single_thread,
-            true, false, nullptr);
-        ASSERT_NE(pmem_alloc, nullptr);
-
+        std::vector<SpaceEntry> records;
         uint64_t kvpairs = pmem_size / block_size;
         for (uint64_t j = 0; j < kvpairs; ++j) {
           auto space_entry = pmem_alloc->Allocate(alloc_size);
@@ -86,15 +85,15 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         // again allocate pmem
         while (true) {
           auto space_entry = pmem_alloc->Allocate(alloc_size);
-          ASSERT_EQ(space_entry.size != 0, true);
+          ASSERT_NE(space_entry.size, 0);
           if (pmem_alloc->PMemUsageInBytes() == alloc_bytes) break;
           alloc_cnt++;
         }
         ASSERT_EQ(kvpairs, alloc_cnt);
-        delete pmem_alloc;
       };
 
-      LaunchNThreads(single_thread, TestPmemAlloc);
+      LaunchNThreads(num_thread, TestPmemAlloc);
+      delete pmem_alloc;
     }
   }
 }

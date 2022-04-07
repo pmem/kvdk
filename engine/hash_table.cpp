@@ -28,6 +28,7 @@ HashTable* HashTable::NewHashTable(
     } else {
       table->main_buckets_ =
           table->dram_allocator_.offset2addr(main_buckets_space.offset);
+      memset(table->main_buckets_, 0, hash_bucket_size * hash_bucket_num);
       kvdk_assert((uint64_t)table->main_buckets_ % sizeof(HashEntry) == 0,
                   "hash table bucket address should aligned to hash entry size "
                   "in create new hash table");
