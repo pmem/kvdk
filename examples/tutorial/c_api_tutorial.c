@@ -545,6 +545,7 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
   assert(new_num == 5);
   printf("Successfully increase num by %d\n", incr_by);
   free(new_val);
+  KVDKDestroyWriteOptions(write_option);
 }
 
 int main() {

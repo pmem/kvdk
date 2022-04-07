@@ -21,6 +21,8 @@ void SpaceMap::Set(uint64_t offset, uint64_t length) {
   std::lock_guard<SpinMutex> lg(*last_lock);
   auto to_set = length > INT8_MAX ? INT8_MAX : length;
   map_[cur] = Token(true, to_set);
+  // printf("map: %ld %ld %ld %ld\n", cur, to_set, map_[cur].Size(),
+  //        map_[cur].IsStart());
   length -= to_set;
   if (length > 0) {
     std::unique_ptr<std::lock_guard<SpinMutex>> lg(nullptr);
@@ -238,7 +240,6 @@ bool Freelist::Get(uint32_t size, SpaceEntry* space_entry) {
         continue;
       }
     }
-
     if (flist_thread_cache.active_entry_offsets[i].size() != 0) {
       space_entry->offset = flist_thread_cache.active_entry_offsets[i].back();
       flist_thread_cache.active_entry_offsets[i].pop_back();
@@ -263,6 +264,7 @@ bool Freelist::Get(uint32_t size, SpaceEntry* space_entry) {
       auto large_entry = large_entries_.begin();
       auto entry_size = large_entry->size;
       auto entry_offset = large_entry->offset;
+      // printf("entry: %ld %ld %ld %ld\n", large_entry->size, large_entry->offset,entry_size,  entry_offset);
       assert(entry_size % block_size_ == 0);
       assert(entry_offset % block_size_ == 0);
       auto entry_b_size = entry_size / block_size_;
