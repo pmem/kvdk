@@ -52,23 +52,21 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
   // params config
   std::vector<uint64_t> num_segment_blocks{1024, 2 * 1024, 2 * 1024 * 1024};
   std::vector<uint32_t> block_sizes{32, 64};
-  std::vector<uint32_t> num_threads = {1, 16};
+  uint32_t num_thread = 1;
 
-  for (size_t i = 0; i < num_segment_blocks.size(); ++i) {
-    for (auto num_thread : num_threads) {
+  for (auto num_segment_block : num_segment_blocks) {
+    for (auto block_size : block_sizes) {
       thread_manager_.reset(new ThreadManager(num_thread));
-
+      remove(pmem_path.c_str());
+      PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
+          pmem_path, pmem_size, num_segment_block, block_size, num_thread, true,
+          false, nullptr);
+      ASSERT_NE(pmem_alloc, nullptr);
       // Test function.
       auto TestPmemAlloc = [&](size_t) {
-        std::vector<SpaceEntry> records;
         thread_manager_->MaybeInitThread(access_thread);
-        remove(pmem_path.c_str());
-        PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
-            pmem_path, pmem_size, num_segment_blocks[i], block_sizes[i],
-            num_thread, true, false, nullptr);
-        ASSERT_NE(pmem_alloc, nullptr);
-
-        uint64_t kvpairs = pmem_size / block_sizes[i];
+        std::vector<SpaceEntry> records;
+        uint64_t kvpairs = pmem_size / block_size;
         for (uint64_t j = 0; j < kvpairs; ++j) {
           auto space_entry = pmem_alloc->Allocate(alloc_size);
           records.push_back(space_entry);
@@ -86,14 +84,16 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         uint64_t alloc_cnt = 1;
         // again allocate pmem
         while (true) {
+          auto space_entry = pmem_alloc->Allocate(alloc_size);
+          ASSERT_NE(space_entry.size, 0);
           if (pmem_alloc->PMemUsageInBytes() == alloc_bytes) break;
           alloc_cnt++;
         }
         ASSERT_EQ(kvpairs, alloc_cnt);
-        delete pmem_alloc;
       };
 
       LaunchNThreads(num_thread, TestPmemAlloc);
+      delete pmem_alloc;
     }
   }
 }
