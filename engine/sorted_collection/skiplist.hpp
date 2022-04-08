@@ -244,6 +244,14 @@ class Skiplist : public Collection {
     return prev->next == offset && next->prev == offset;
   }
 
+  static bool CheckReocrdNextLinkage(DLRecord* record,
+                                     PMEMAllocator* pmem_allocator) {
+    uint64_t offset = pmem_allocator->addr2offset_checked(record);
+    DLRecord* next =
+        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
+    return next->prev == offset;
+  }
+
   // Purge a dl record from its skiplist by remove it from linkage
   //
   // purged_record:existing record to purge

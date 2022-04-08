@@ -289,7 +289,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         case PointerType::Empty: {
           // This record is not indexed by hash table and skiplist node, so we
           // check linkage to determine if its already been purged
-          if (Skiplist::CheckRecordLinkage(
+          if (Skiplist::CheckReocrdNextLinkage(
                   static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
                   kv_engine_->pmem_allocator_.get())) {
             need_purge = true;
