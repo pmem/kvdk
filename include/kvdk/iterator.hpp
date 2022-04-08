@@ -55,4 +55,23 @@ class ListIterator {
   virtual ~ListIterator() = default;
 };
 
+class HashIterator {
+ public:
+  virtual void SeekToFirst() = 0;
+
+  virtual void SeekToLast() = 0;
+
+  virtual bool Valid() const = 0;
+
+  virtual void Next() = 0;
+
+  virtual void Prev() = 0;
+
+  virtual std::string Key() const = 0;
+
+  virtual std::string Value() const = 0;
+
+  virtual ~HashIterator() = default;
+};
+
 }  // namespace KVDK_NAMESPACE

@@ -14,7 +14,6 @@
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
-#include "simple_list.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -34,6 +33,12 @@ class Skiplist;
 class SkiplistNode;
 class UnorderedCollection;
 
+template <RecordType ListType, RecordType DataType>
+class GenericList;
+
+using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
+using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
+
 struct alignas(16) HashEntry {
  public:
   friend class HashTable;
@@ -49,6 +54,7 @@ struct alignas(16) HashEntry {
     Skiplist* skiplist;
     UnorderedCollection* p_unordered_collection;
     List* list;
+    HashList* hlist;
   };
   static_assert(sizeof(Index) == 8);
 

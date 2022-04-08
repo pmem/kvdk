@@ -21,6 +21,7 @@
 #include "alias.hpp"
 #include "collection.hpp"
 #include "data_record.hpp"
+#include "lock_table.hpp"
 #include "macros.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "utils/utils.hpp"
@@ -41,10 +42,13 @@ class GenericList final : public Collection {
   // Last Element in List, nullptr indicates empty List
   DLRecord* last{nullptr};
   // Size of list
-  size_t sz{0U};
+  std::atomic_uint64_t sz{0U};
   // Recursive mutex to lock the List
   using LockType = std::recursive_mutex;
   LockType mu;
+  // Lock table to lock individual elements
+  // Redis List don't use lock_table, Redis Hash does.
+  LockTable* lock_table{nullptr};
 
  public:
   class Iterator {
@@ -130,6 +134,12 @@ class GenericList final : public Collection {
       return curr;
     }
 
+    std::uint64_t Hash() const {
+      void const* addr =
+          (curr == nullptr) ? static_cast<void const*>(owner) : curr;
+      return XXH3_64bits(&addr, sizeof(void const*));
+    }
+
    private:
     friend bool operator==(Iterator const& lhs, Iterator const& rhs) {
       return (lhs.owner == rhs.owner) && (lhs.curr == rhs.curr);
@@ -163,21 +173,22 @@ class GenericList final : public Collection {
   GenericList& operator=(GenericList&&) = delete;
   ~GenericList() = default;
 
-  // Initialize a List with pmem base address p_base, pre-space space,
+  // Initialize a List with PMEMAllocator a, pre-space space,
   // Creation time, List name and id.
   void Init(PMEMAllocator* a, SpaceEntry space, TimeStampType timestamp,
-            StringView key, CollectionIDType id) {
+            StringView key, CollectionIDType id, LockTable* lt) {
     collection_name_.assign(key.data(), key.size());
     collection_id_ = id;
     alloc = a;
     list_record = DLRecord::PersistDLRecord(
         addressOf(space.offset), space.size, timestamp, RecordType::ListRecord,
         NullPMemOffset, NullPMemOffset, NullPMemOffset, key, ID2String(id));
+    lock_table = lt;
   }
 
   template <typename ListDeleter>
   void Destroy(ListDeleter list_deleter) {
-    kvdk_assert(sz == 0 && list_record != nullptr && first == nullptr &&
+    kvdk_assert(Size() == 0 && list_record != nullptr && first == nullptr &&
                     last == nullptr,
                 "Only initialized empty List can be destroyed!");
     list_deleter(list_record);
@@ -190,7 +201,7 @@ class GenericList final : public Collection {
   // Restore a List with its ListRecord, first and last element and size
   // This function is used by GenericListBuilder to restore the List
   void Restore(PMEMAllocator* a, DLRecord* list_rec, DLRecord* fi, DLRecord* la,
-               size_t n) {
+               size_t n, LockTable* lt = nullptr) {
     auto key = list_rec->Key();
     collection_name_.assign(key.data(), key.size());
     kvdk_assert(list_rec->Value().size() == sizeof(CollectionIDType), "");
@@ -199,7 +210,8 @@ class GenericList final : public Collection {
     list_record = list_rec;
     first = fi;
     last = la;
-    sz = n;
+    sz.store(n);
+    lock_table = lt;
   }
 
   LockType* Mutex() { return &mu; }
@@ -221,7 +233,7 @@ class GenericList final : public Collection {
     return Status::Ok;
   }
 
-  size_t Size() const { return sz; }
+  size_t Size() const { return sz.load(); }
 
   Iterator Front() const { return ++Head(); }
 
@@ -231,6 +243,7 @@ class GenericList final : public Collection {
 
   Iterator Tail() const { return Iterator{this}; }
 
+  // For Redis List only
   Iterator Seek(std::int64_t index) {
     if (index >= 0) {
       auto iter = Front();
@@ -249,10 +262,11 @@ class GenericList final : public Collection {
     }
   }
 
+  // For Redis List only
   template <typename ElemDeleter>
   Iterator Erase(Iterator pos, ElemDeleter elem_deleter) {
     kvdk_assert(pos != Head(), "Cannot erase Head()");
-    kvdk_assert(sz >= 1, "Cannot erase from empty List!");
+    kvdk_assert(Size() >= 1, "Cannot erase from empty List!");
     kvdk_assert(ExtractID(pos->Key()) == ID(), "Erase from wrong List!");
 
     Iterator prev{pos};
@@ -260,7 +274,7 @@ class GenericList final : public Collection {
     Iterator next{pos};
     ++next;
 
-    if (sz == 1) {
+    if (Size() == 1) {
       kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
       first = nullptr;
       last = nullptr;
@@ -285,49 +299,92 @@ class GenericList final : public Collection {
     return next;
   }
 
+  // For Redis Hash only
+  template <typename ElemDeleter>
+  void Erase(DLRecord* rec, ElemDeleter elem_deleter) {
+    kvdk_assert(lock_table != nullptr, "");
+    Iterator pos{this, rec};
+
+    Iterator prev{pos};
+    --prev;
+    while (true) {
+      lock_table->Lock(prev.Hash());
+      Iterator prev_copy{pos};
+      --prev_copy;
+      if (prev != prev_copy) {
+        lock_table->Unlock(prev.Hash());
+        prev = prev_copy;
+        continue;
+      }
+      break;
+    }
+    Erase(pos, elem_deleter);
+
+    lock_table->Unlock(prev.Hash());
+  }
+
+  // For Redis List only
   template <typename ElemDeleter>
   void PopFront(ElemDeleter elem_deleter) {
     Erase(Front(), elem_deleter);
   }
 
+  // For Redis List only
   template <typename ElemDeleter>
   void PopBack(ElemDeleter elem_deleter) {
     Erase(Back(), elem_deleter);
   }
 
+  // For Redis List only
   Iterator EmplaceBefore(SpaceEntry space, Iterator pos,
                          TimeStampType timestamp, StringView key,
                          StringView value) {
     Iterator prev{pos};
     --prev;
     Iterator next{pos};
+
     emplace_between(space, prev, next, timestamp, key, value);
     ++sz;
     return Iterator{this, addressOf(space.offset)};
   }
 
-  Iterator EmplaceAfter(SpaceEntry space, Iterator pos, TimeStampType timestamp,
-                        StringView key, StringView value) {
-    Iterator prev{pos};
-    Iterator next{pos};
-    ++next;
-    emplace_between(space, prev, next, timestamp, key, value);
-    ++sz;
-    return Iterator{this, addressOf(space.offset)};
-  }
-
+  // For Redis List and Redis Hash
   void PushFront(SpaceEntry space, TimeStampType timestamp, StringView key,
                  StringView value) {
+    if (lock_table != nullptr) {
+      lock_table->Lock(Head().Hash());
+    }
+
     emplace_between(space, Head(), Front(), timestamp, key, value);
     ++sz;
+
+    if (lock_table != nullptr) {
+      lock_table->Unlock(Head().Hash());
+    }
   }
 
+  // For Redis List and Redis Hash
   void PushBack(SpaceEntry space, TimeStampType timestamp, StringView key,
                 StringView value) {
+    while (lock_table != nullptr) {
+      Iterator back = Back();
+      lock_table->Lock(back.Hash());
+      if (back != Back()) {
+        lock_table->Unlock(back.Hash());
+        continue;
+      }
+      break;
+    }
+
     emplace_between(space, Back(), Tail(), timestamp, key, value);
     ++sz;
+
+    if (lock_table != nullptr) {
+      lock_table->Unlock(Back().Hash());
+    }
   }
 
+  // For Redis List only
   template <typename ElemDeleter>
   Iterator Replace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
                    StringView key, StringView value, ElemDeleter elem_deleter) {
@@ -339,6 +396,31 @@ class GenericList final : public Collection {
     emplace_between(space, prev, next, timestamp, key, value);
     elem_deleter(pos.Address());
     return Iterator{this, addressOf(space.offset)};
+  }
+
+  // For Redis Hash only
+  template <typename ElemDeleter>
+  void Replace(SpaceEntry space, DLRecord* rec, TimeStampType timestamp,
+               StringView key, StringView value, ElemDeleter elem_deleter) {
+    kvdk_assert(lock_table != nullptr, "");
+    Iterator pos{this, rec};
+
+    Iterator prev{pos};
+    --prev;
+    while (true) {
+      lock_table->Lock(prev.Hash());
+      Iterator prev_copy{pos};
+      --prev_copy;
+      if (prev != prev_copy) {
+        lock_table->Unlock(prev.Hash());
+        prev = prev_copy;
+        continue;
+      }
+      break;
+    }
+    Replace(space, pos, timestamp, key, value, elem_deleter);
+
+    lock_table->Unlock(prev.Hash());
   }
 
  private:
@@ -362,7 +444,7 @@ class GenericList final : public Collection {
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
 
-    if (sz == 0) {
+    if (Size() == 0) {
       kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
       first = record;
       last = record;

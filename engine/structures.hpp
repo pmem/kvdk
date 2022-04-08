@@ -31,6 +31,8 @@ enum class PointerType : uint8_t {
   List = 7,
   // Point to a hash entry of hash table
   HashEntry = 8,
+  // Hash
+  HashList = 9,
   // Empty which point to nothing
   Empty = 100,
 };

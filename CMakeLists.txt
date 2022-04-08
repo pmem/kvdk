@@ -50,6 +50,7 @@ set(SOURCES
         engine/utils/sync_point.cpp
         engine/engine.cpp
         engine/kv_engine.cpp
+        engine/kv_engine_hash.cpp
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp
@@ -65,7 +66,7 @@ set(SOURCES
         engine/version/old_records_cleaner.cpp
         )
 
-# .a library
+# .so library
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
 target_link_libraries(engine PUBLIC pthread pmem gflags hwloc atomic)

@@ -17,6 +17,7 @@
 #include <iostream>
 
 #include "alias.hpp"
+#include "collection.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "macros.hpp"

@@ -22,8 +22,10 @@
 #include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
+#include "hash_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
+#include "lock_table.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "simple_list.hpp"
@@ -188,6 +190,13 @@ class KVEngine : public Engine {
                  StringView elem) final;
   std::unique_ptr<ListIterator> ListMakeIterator(StringView key) final;
 
+  // Hash
+  Status HashLength(StringView key, size_t* len) final;
+  Status HashGet(StringView key, StringView field, std::string* value) final;
+  Status HashSet(StringView key, StringView field, StringView value) final;
+  Status HashDelete(StringView key, StringView field) final;
+  std::unique_ptr<HashIterator> HashMakeIterator(StringView key) final;
+
  private:
   struct LookupResult {
     Status s{Status::NotSupported};
@@ -215,6 +224,34 @@ class KVEngine : public Engine {
   template <bool allocate_hash_entry_if_missing>
   LookupResult lookupKey(StringView key, uint16_t type_mask);
 
+  template <bool allocate_hash_entry_if_missing>
+  LookupResult lookupImpl(StringView key, uint16_t type_mask);
+
+  // Lockless, caller should lock the key aforehand.
+  // Remove key from HashTable. It's up to caller to handle the erased key
+  LookupResult removeKey(StringView key) {
+    return removeImpl(key, PrimaryRecordType);
+  }
+
+  LookupResult removeImpl(StringView key, uint16_t type_mask) {
+    LookupResult result;
+    auto hint = hash_table_->GetHint(key);
+    result.s = hash_table_->SearchForRead(
+        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+    if (result.s != Status::Ok) {
+      return result;
+    }
+    hash_table_->Erase(result.entry_ptr);
+    return result;
+  }
+
+  // ret must be return value of lookupImpl<true> or lookupKey<true>
+  void insertImpl(LookupResult ret, StringView key, RecordType type,
+                  void* addr) {
+    auto hint = hash_table_->GetHint(key);
+    hash_table_->Insert(hint, ret.entry_ptr, type, addr, PointerType(type));
+  }
+
   std::shared_ptr<UnorderedCollection> createUnorderedCollection(
       StringView const collection_name);
 
@@ -223,6 +260,7 @@ class KVEngine : public Engine {
     static_assert(std::is_same<CollectionType, UnorderedCollection>::value ||
                       std::is_same<CollectionType, Skiplist>::value ||
                       std::is_same<CollectionType, List>::value ||
+                      std::is_same<CollectionType, HashList>::value ||
                       std::is_same<CollectionType, StringRecord>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, UnorderedCollection>::value
@@ -231,7 +269,9 @@ class KVEngine : public Engine {
                      ? RecordType::SortedHeaderRecord
                      : std::is_same<CollectionType, List>::value
                            ? RecordType::ListRecord
-                           : RecordType::Empty;
+                           : std::is_same<CollectionType, HashList>::value
+                                 ? RecordType::HashRecord
+                                 : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -259,6 +299,9 @@ class KVEngine : public Engine {
       }
       case RecordType::ListRecord: {
         return PointerType::List;
+      }
+      case RecordType::HashRecord: {
+        return PointerType::HashList;
       }
       case RecordType::DlistHeadRecord:
       case RecordType::ListElem:
@@ -293,10 +336,6 @@ class KVEngine : public Engine {
     return res.s;
   }
 
-  enum class QueueOpPosition { Left, Right };
-  Status xPush(StringView const collection_name, StringView const value,
-               QueueOpPosition push_pos);
-
   // Lockless. It's up to caller to lock the HashTable
   template <typename CollectionType>
   Status registerCollection(CollectionType* coll) {
@@ -315,26 +354,6 @@ class KVEngine : public Engine {
     hash_table_->Insert(hash_table_->GetHint(coll->Name()), ret.entry_ptr, type,
                         coll, ptype);
     return Status::Ok;
-  }
-
-  struct RemoveResult {
-    Status s{Status::NotSupported};
-    HashEntry entry{};
-  };
-
-  // Lockless, caller should lock the key aforehand.
-  // Remove key from HashTable. It's up to caller to handle the erased key
-  RemoveResult removeKey(const StringView key) {
-    RemoveResult result;
-    HashTable::KeyHashHint hint = hash_table_->GetHint(key);
-    HashEntry* entry_ptr = nullptr;
-    result.s = hash_table_->SearchForWrite(hint, key, PrimaryRecordType,
-                                           &entry_ptr, &result.entry, nullptr);
-    if (result.s != Status::Ok) {
-      return result;
-    }
-    hash_table_->Erase(entry_ptr);
-    return result;
   }
 
   Status MaybeInitPendingBatchFile();
@@ -382,8 +401,7 @@ class KVEngine : public Engine {
 
   Status RestoreDlistRecords(DLRecord* pmp_record);
 
-  List* listCreate(StringView key);
-
+  /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
   // Guarantees always return a valid List and lockes it if returns Status::Ok
   Status listFind(StringView key, List** list, bool init_nx,
@@ -397,6 +415,18 @@ class KVEngine : public Engine {
 
   Status listDestroy(List* list);
 
+  /// Hash helper funtions
+  Status hashListFind(StringView key, HashList** hlist, bool init_nx);
+
+  Status hashListRestoreElem(DLRecord* rec);
+
+  Status hashListRestoreList(DLRecord* rec);
+
+  Status hashListRegisterRecovered();
+
+  Status hashListDestroy(HashList* list);
+
+  /// Other
   Status CheckConfigs(const Configs& configs);
 
   void FreeSkiplistDramNodes();
@@ -518,6 +548,10 @@ class KVEngine : public Engine {
 
   std::vector<std::unique_ptr<List>> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
+
+  std::vector<std::unique_ptr<HashList>> hash_lists_;
+  std::unique_ptr<HashListBuilder> hash_list_builder_;
+  std::unique_ptr<LockTable> hash_list_locks_;
 
   std::mutex list_mu_;
 

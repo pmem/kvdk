@@ -1575,17 +1575,8 @@ Status KVEngine::Set(const StringView key, const StringView value,
 namespace KVDK_NAMESPACE {
 template <bool allocate_hash_entry_if_missing>
 KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
-  LookupResult result;
-  auto hint = hash_table_->GetHint(key);
-  if (!allocate_hash_entry_if_missing) {
-    result.s =
-        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
-                                   &result.entry_ptr, &result.entry, nullptr);
-  } else {
-    result.s =
-        hash_table_->SearchForWrite(hint, key, PrimaryRecordType,
-                                    &result.entry_ptr, &result.entry, nullptr);
-  }
+  LookupResult result =
+      lookupImpl<allocate_hash_entry_if_missing>(key, PrimaryRecordType);
 
   if (result.s != Status::Ok) {
     kvdk_assert(
@@ -1626,7 +1617,22 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
     result.s = type_match ? Status::Ok : Status::WrongType;
   }
   return result;
-}  // namespace KVDK_NAMESPACE
+}
+
+template <bool allocate_hash_entry_if_missing>
+KVEngine::LookupResult KVEngine::lookupImpl(StringView key,
+                                            uint16_t type_mask) {
+  LookupResult result;
+  auto hint = hash_table_->GetHint(key);
+  if (!allocate_hash_entry_if_missing) {
+    result.s = hash_table_->SearchForRead(
+        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+  } else {
+    result.s = hash_table_->SearchForWrite(
+        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+  }
+  return result;
+}
 
 std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
     StringView const collection_name) {
@@ -2321,21 +2327,6 @@ std::unique_ptr<ListIterator> KVEngine::ListMakeIterator(StringView key) {
   return std::unique_ptr<ListIteratorImpl>{new ListIteratorImpl{list}};
 }
 
-List* KVEngine::listCreate(StringView key) {
-  std::uint64_t ts = version_controller_.GetCurrentTimestamp();
-  CollectionIDType id = list_id_.fetch_add(1);
-  List* list = new List{};
-  auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
-                                         sizeof(CollectionIDType));
-  if (space.size == 0) {
-    return nullptr;
-  }
-  list->Init(pmem_allocator_.get(), space, ts, key, id);
-  std::lock_guard<std::mutex> guard{list_mu_};
-  lists_.emplace_back(list);
-  return list;
-}
-
 Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
   list_builder_->AddListElem(pmp_record);
   return Status::Ok;
@@ -2418,9 +2409,18 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
       return Status::Ok;
     }
     // No other thread have created one, create one here.
-    (*list) = listCreate(key);
-    if ((*list) == nullptr) {
+    std::uint64_t ts = version_controller_.GetCurrentTimestamp();
+    CollectionIDType id = list_id_.fetch_add(1);
+    auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
+                                           sizeof(CollectionIDType));
+    if (space.size == 0) {
       return Status::PmemOverflow;
+    }
+    *list = new List{};
+    (*list)->Init(pmem_allocator_.get(), space, ts, key, id);
+    {
+      std::lock_guard<std::mutex> guard2{list_mu_};
+      lists_.emplace_back(*list);
     }
     guard = (*list)->AcquireLock();
     return registerCollection(*list);

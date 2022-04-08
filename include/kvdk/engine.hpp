@@ -182,6 +182,18 @@ class Engine {
   // on destruction of ListIterator
   virtual std::unique_ptr<ListIterator> ListMakeIterator(StringView key) = 0;
 
+  /// Hash APIs ///////////////////////////////////////////////////////////////
+
+  virtual Status HashLength(StringView key, size_t* len) = 0;
+  virtual Status HashGet(StringView key, StringView field,
+                         std::string* value) = 0;
+  virtual Status HashSet(StringView key, StringView field,
+                         StringView value) = 0;
+  virtual Status HashDelete(StringView key, StringView field) = 0;
+  virtual std::unique_ptr<HashIterator> HashMakeIterator(StringView key) = 0;
+
+  /// Other ///////////////////////////////////////////////////////////////////
+
   // Get a snapshot of the instance at this moment.
   // If set make_checkpoint to true, a persistent checkpoint will be made until
   // this snapshot is released. You can recover KVDK instance to the checkpoint
