@@ -688,7 +688,7 @@ class EngineStressTest : public EngineTestBase {
     sz_value_max = 1024;
   }
   // Shared among EngineStressTest
-  const size_t n_reboot = 1;
+  const size_t n_reboot = 3;
 };
 
 TEST_F(EngineStressTest, HashesHSetOnly) {
