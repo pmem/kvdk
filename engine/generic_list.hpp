@@ -373,11 +373,12 @@ class GenericList final : public Collection {
   // For Redis List and Redis Hash
   void PushBack(SpaceEntry space, TimeStampType timestamp, StringView key,
                 StringView value) {
+    Iterator back = Back();
     while (lock_table != nullptr) {
-      Iterator back = Back();
       lock_table->Lock(back.Hash());
       if (back != Back()) {
         lock_table->Unlock(back.Hash());
+        back = Back();
         continue;
       }
       break;
@@ -386,7 +387,7 @@ class GenericList final : public Collection {
     emplace_between(space, Back(), Tail(), timestamp, key, value);
 
     if (lock_table != nullptr) {
-      lock_table->Unlock(Back().Hash());
+      lock_table->Unlock(back.Hash());
     }
   }
 
