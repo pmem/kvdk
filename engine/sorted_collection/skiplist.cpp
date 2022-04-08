@@ -247,6 +247,7 @@ bool Skiplist::lockRecordPosition(const DLRecord* record,
     // As the record is already locked, so we don't need to check its next
     if (record->prev != prev_offset ||
         prev->next != pmem_allocator->addr2offset(record)) {
+      *prev_record_lock = std::unique_lock<SpinMutex>();
       continue;
     }
 
@@ -309,7 +310,7 @@ bool Skiplist::lockInsertPosition(
     return res;
   };
   if (!check_linkage()) {
-    prev_record_lock->unlock();
+    *prev_record_lock = std::unique_lock<SpinMutex>();
     return false;
   }
 
@@ -521,8 +522,12 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(
     return ret;
   }
 
-  // try to write delete record
   ret.existing_record = splice.next_pmem_record;
+  if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
+    ret.dram_node = splice.nexts[1];
+  }
+
+  // try to write delete record
   std::unique_lock<SpinMutex> prev_record_lock;
   if (!lockRecordPosition(ret.existing_record, locked_key_lock,
                           &prev_record_lock)) {
@@ -559,8 +564,8 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(
 
   linkDLRecord(prev_record, next_record, delete_record);
 
-  if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
-    splice.nexts[1]->record = delete_record;
+  if (ret.dram_node) {
+    ret.dram_node->record = delete_record;
   }
   return ret;
 }
