@@ -56,6 +56,9 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   TimeStampType ts = version_controller_.GetCurrentTimestamp();
   auto space = pmem_allocator_->Allocate(sizeof(DLRecord) +
                                          internal_key.size() + value.size());
+  if (space.size == 0) {
+    return Status::PmemOverflow;
+  }
   void* addr = pmem_allocator_->offset2addr_checked(space.offset);
   if (result.s == Status::NotFound) {
     if (std::hash<std::thread::id>{}(std::this_thread::get_id()) % 2 == 0) {
