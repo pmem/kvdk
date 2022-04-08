@@ -201,7 +201,7 @@ class GenericList final : public Collection {
   // Restore a List with its ListRecord, first and last element and size
   // This function is used by GenericListBuilder to restore the List
   void Restore(PMEMAllocator* a, DLRecord* list_rec, DLRecord* fi, DLRecord* la,
-               size_t n, LockTable* lt = nullptr) {
+               size_t n, LockTable* lt) {
     auto key = list_rec->Key();
     collection_name_.assign(key.data(), key.size());
     kvdk_assert(list_rec->Value().size() == sizeof(CollectionIDType), "");
@@ -493,9 +493,9 @@ class GenericListBuilder final {
   using List = GenericList<ListType, DataType>;
 
   PMEMAllocator* alloc;
-  size_t n_worker{0};
-  std::mutex mu;
-  std::vector<std::unique_ptr<List>>* rebuilded_lists{nullptr};
+  size_t n_worker;
+  std::vector<std::unique_ptr<List>>* rebuilded_lists;
+  LockTable* lock_table;
 
   // Resevoir for middle points
   // Middle points can be used for multi-thread interating through Lists
@@ -565,8 +565,8 @@ class GenericListBuilder final {
  public:
   explicit GenericListBuilder(PMEMAllocator* a,
                               std::vector<std::unique_ptr<List>>* lists,
-                              size_t num_worker)
-      : alloc{a}, n_worker{num_worker}, rebuilded_lists{lists} {
+                              size_t num_worker, LockTable* lt)
+      : alloc{a}, n_worker{num_worker}, rebuilded_lists{lists}, lock_table{lt} {
     kvdk_assert(lists != nullptr && lists->empty(), "");
     kvdk_assert(n_worker != 0, "");
     kvdk_assert(rebuilded_lists != nullptr, "Empty input!");
@@ -631,7 +631,7 @@ class GenericListBuilder final {
           kvdk_assert(primer.unique == nullptr, "");
           kvdk_assert(primer.size.load() == 0, "");
           rebuilded_lists->back()->Restore(alloc, primer.list_record, nullptr,
-                                           nullptr, 0);
+                                           nullptr, 0, lock_table);
           break;
         }
         case 1: {
@@ -641,7 +641,8 @@ class GenericListBuilder final {
           kvdk_assert(primer.unique != nullptr, "");
           kvdk_assert(primer.size.load() == 1, "");
           rebuilded_lists->back()->Restore(alloc, primer.list_record,
-                                           primer.unique, primer.unique, 1);
+                                           primer.unique, primer.unique, 1,
+                                           lock_table);
           break;
         }
         default: {
@@ -651,7 +652,7 @@ class GenericListBuilder final {
           kvdk_assert(primer.unique == nullptr, "");
           rebuilded_lists->back()->Restore(alloc, primer.list_record,
                                            primer.first, primer.last,
-                                           primer.size.load());
+                                           primer.size.load(), lock_table);
           break;
         }
       }

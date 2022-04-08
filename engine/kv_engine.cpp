@@ -751,7 +751,12 @@ Status KVEngine::Recovery() {
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
 
-  list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_, 1U});
+  list_builder_.reset(
+      new ListBuilder{pmem_allocator_.get(), &lists_, 1U, nullptr});
+
+  hash_list_locks_.reset(new LockTable{1UL << 20});
+  hash_list_builder_.reset(new HashListBuilder{
+      pmem_allocator_.get(), &hash_lists_, 1U, hash_list_locks_.get()});
 
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
@@ -798,6 +803,15 @@ Status KVEngine::Recovery() {
   }
   list_builder_.reset(nullptr);
   GlobalLogger.Info("Rebuild Lists done\n");
+
+  hash_list_builder_->RebuildLists();
+  hash_list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
+  s = hashListRegisterRecovered();
+  if (s != Status::Ok) {
+    return s;
+  }
+  hash_list_builder_.reset(nullptr);
+  GlobalLogger.Info("Rebuild HashLists done\n");
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
@@ -2417,7 +2431,7 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
       return Status::PmemOverflow;
     }
     *list = new List{};
-    (*list)->Init(pmem_allocator_.get(), space, ts, key, id);
+    (*list)->Init(pmem_allocator_.get(), space, ts, key, id, nullptr);
     {
       std::lock_guard<std::mutex> guard2{list_mu_};
       lists_.emplace_back(*list);
