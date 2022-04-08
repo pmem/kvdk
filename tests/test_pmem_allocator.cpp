@@ -38,12 +38,16 @@ class EnginePMemAllocatorTest : public testing::Test {
     int res __attribute__((unused)) = system(cmd);
   }
 
-  virtual void TearDown() {  // delete db_path
+  void RemovePathAndReleaseThread() {
+    // Release thread.
     access_thread.Release();
+    // delete db_path.
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", pmem_path.c_str());
     int res __attribute__((unused)) = system(cmd);
   }
+
+  virtual void TearDown() { RemovePathAndReleaseThread(); }
 };
 
 TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
@@ -99,7 +103,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         }
         ASSERT_EQ(pmem_size / block_size, alloc_cnt);
         delete pmem_alloc;
-        TearDown();
+        RemovePathAndReleaseThread();
       }
     }
   }

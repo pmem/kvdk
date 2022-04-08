@@ -220,6 +220,7 @@ class Freelist {
   Array<FlistThreadCache> flist_thread_cache_;
   PMEMAllocator* pmem_allocator_;
   // Store all large free space entries that larger than max_classified_b_size_
+  // TODO: use multimap instead of set
   std::set<SpaceEntry, SpaceCmp> large_entries_;
   SpinMutex large_entries_spin_;
 };

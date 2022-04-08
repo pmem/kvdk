@@ -244,15 +244,13 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       if (palloc_thread_cache.free_entry.size >= aligned_size) {
         // Padding remaining space
         auto extra_space = palloc_thread_cache.free_entry.size - aligned_size;
-        if (extra_space >= block_size_) {
+        if (extra_space > 0) {
           assert(extra_space % block_size_ == 0);
           // Mark splited space entry size on PMem, we should firstly mark the
           // 2st part for correctness in recovery
           persistSpaceEntry(
               palloc_thread_cache.free_entry.offset + aligned_size,
               extra_space);
-        } else {
-          aligned_size = palloc_thread_cache.free_entry.size;
         }
 
         space_entry = palloc_thread_cache.free_entry;
