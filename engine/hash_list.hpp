@@ -28,7 +28,7 @@ class HashIteratorImpl final : public HashIterator {
       kvdk_assert(false, "Accessing data with invalid ListIterator!");
       return std::string{};
     }
-    auto sw = rep->Key();
+    auto sw = Collection::ExtractUserKey(rep->Key());
     return std::string{sw.data(), sw.size()};
   }
 

@@ -4,10 +4,10 @@
 
 #include "hash_table.hpp"
 
-#include "simple_list.hpp"
 #include "sorted_collection/skiplist.hpp"
+#include "simple_list.hpp"
+#include "hash_list.hpp"
 #include "thread_manager.hpp"
-#include "unordered_collection.hpp"
 
 namespace KVDK_NAMESPACE {
 HashTable* HashTable::NewHashTable(
@@ -53,7 +53,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
         data_entry_key = index_.string_record->Key();
         break;
       }
-      case PointerType::UnorderedCollectionElement:
+      case PointerType::HashElem:
       case PointerType::DLRecord: {
         pmem_record = index_.dl_record;
         data_entry_key = index_.dl_record->Key();
@@ -63,8 +63,8 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
         data_entry_key = index_.list->Name();
         break;
       }
-      case PointerType::UnorderedCollection: {
-        data_entry_key = index_.p_unordered_collection->Name();
+      case PointerType::HashList: {
+        data_entry_key = index_.hlist->Name();
         break;
       }
       case PointerType::SkiplistNode: {

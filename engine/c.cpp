@@ -6,64 +6,9 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "alias.hpp"
-#include "kvdk/configs.hpp"
-#include "kvdk/engine.h"
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
-#include "kvdk/status.h"
-#include "kvdk/write_batch.hpp"
-
-using kvdk::StringView;
-
-using kvdk::Configs;
-using kvdk::Engine;
-using kvdk::Iterator;
-using kvdk::ListIterator;
-using kvdk::Snapshot;
-using kvdk::SortedCollectionConfigs;
-using kvdk::WriteBatch;
-using kvdk::WriteOptions;
+#include "c/kvdk_c.hpp"
 
 extern "C" {
-struct KVDKConfigs {
-  Configs rep;
-};
-
-struct KVDKEngine {
-  std::unique_ptr<Engine> rep;
-};
-
-struct KVDKWriteBatch {
-  WriteBatch rep;
-};
-struct KVDKIterator {
-  KVDKIteratorType type;
-  Iterator* rep;
-};
-
-struct KVDKListIterator {
-  std::unique_ptr<ListIterator> rep;
-};
-
-struct KVDKSnapshot {
-  Snapshot* rep;
-};
-
-struct KVDKWriteOptions {
-  WriteOptions rep;
-};
-
-struct KVDKSortedCollectionConfigs {
-  SortedCollectionConfigs rep;
-};
-
-static char* CopyStringToChar(const std::string& str) {
-  char* result = static_cast<char*>(malloc(str.size()));
-  memcpy(result, str.data(), str.size());
-  return result;
-}
-
 KVDKConfigs* KVDKCreateConfigs() { return new KVDKConfigs; }
 
 void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
@@ -267,51 +212,6 @@ KVDKStatus KVDKSortedDelete(KVDKEngine* engine, const char* collection,
                               StringView(key, key_len));
 }
 
-KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* collection,
-                       size_t collection_len, const char* key, size_t key_len,
-                       const char* val, size_t val_len) {
-  return engine->rep->HSet(StringView(collection, collection_len),
-                           StringView(key, key_len), StringView(val, val_len));
-}
-
-KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* collection,
-                          size_t collection_len, const char* key,
-                          size_t key_len) {
-  return engine->rep->HDelete(StringView(collection, collection_len),
-                              StringView(key, key_len));
-}
-
-KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
-                       size_t collection_len, const char* key, size_t key_len,
-                       size_t* val_len, char** val) {
-  std::string val_str;
-  *val = nullptr;
-  KVDKStatus s = engine->rep->HGet(StringView(collection, collection_len),
-                                   StringView(key, key_len), &val_str);
-  if (s != KVDKStatus::Ok) {
-    *val_len = 0;
-    return s;
-  }
-  *val_len = val_str.size();
-  *val = CopyStringToChar(val_str);
-  return s;
-}
-
-KVDKIterator* KVDKCreateUnorderedIterator(KVDKEngine* engine,
-                                          const char* collection,
-                                          size_t collection_len) {
-  KVDKIterator* result = new KVDKIterator;
-  result->rep = (engine->rep->NewUnorderedIterator(
-                     StringView{collection, collection_len}))
-                    .release();
-  if (!result->rep) {
-    delete result;
-    return nullptr;
-  }
-  result->type = KVDKIteratorType::HashIterator;
-  return result;
-}
-
 KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
                                        const char* collection,
                                        size_t collection_len,
@@ -324,24 +224,12 @@ KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
     delete result;
     return nullptr;
   }
-  result->type = KVDKIteratorType::SortedIterator;
   return result;
 }
 
 void KVDKDestroyIterator(KVDKEngine* engine, KVDKIterator* iterator) {
   if (iterator != nullptr) {
-    switch (iterator->type) {
-      case KVDKIteratorType::SortedIterator: {
-        engine->rep->ReleaseSortedIterator(iterator->rep);
-        break;
-      }
-      case KVDKIteratorType::HashIterator: {
-        delete iterator->rep;
-        break;
-      }
-      default:
-        std::abort();
-    }
+    engine->rep->ReleaseSortedIterator(iterator->rep);
   }
   delete iterator;
 }

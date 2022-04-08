@@ -33,7 +33,6 @@
 #include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
-#include "unordered_collection.hpp"
 #include "utils/utils.hpp"
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
@@ -99,16 +98,6 @@ class KVEngine : public Engine {
   Iterator* NewSortedIterator(const StringView collection,
                               Snapshot* snapshot) override;
   void ReleaseSortedIterator(Iterator* sorted_iterator) override;
-
-  // Unordered Collection
-  Status HGet(StringView const collection_name, StringView const key,
-              std::string* value) override;
-  Status HSet(StringView const collection_name, StringView const key,
-              StringView const value) override;
-  Status HDelete(StringView const collection_name,
-                 StringView const key) override;
-  std::unique_ptr<Iterator> NewUnorderedIterator(
-      StringView const collection_name) override;
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
@@ -252,20 +241,15 @@ class KVEngine : public Engine {
     hash_table_->Insert(hint, ret.entry_ptr, type, addr, PointerType(type));
   }
 
-  std::shared_ptr<UnorderedCollection> createUnorderedCollection(
-      StringView const collection_name);
-
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
-    static_assert(std::is_same<CollectionType, UnorderedCollection>::value ||
+    static_assert(
                       std::is_same<CollectionType, Skiplist>::value ||
                       std::is_same<CollectionType, List>::value ||
                       std::is_same<CollectionType, HashList>::value ||
                       std::is_same<CollectionType, StringRecord>::value,
                   "Invalid type!");
-    return std::is_same<CollectionType, UnorderedCollection>::value
-               ? RecordType::DlistRecord
-               : std::is_same<CollectionType, Skiplist>::value
+    return std::is_same<CollectionType, Skiplist>::value
                      ? RecordType::SortedHeaderRecord
                      : std::is_same<CollectionType, List>::value
                            ? RecordType::ListRecord
@@ -291,19 +275,15 @@ class KVEngine : public Engine {
       case RecordType::SortedHeaderRecord: {
         return PointerType::Skiplist;
       }
-      case RecordType::DlistDataRecord: {
-        return PointerType::UnorderedCollectionElement;
-      }
-      case RecordType::DlistRecord: {
-        return PointerType::UnorderedCollection;
-      }
       case RecordType::ListRecord: {
         return PointerType::List;
       }
       case RecordType::HashRecord: {
         return PointerType::HashList;
       }
-      case RecordType::DlistHeadRecord:
+      case RecordType::HashElem: {
+        return PointerType::HashElem;
+      }
       case RecordType::ListElem:
       default: {
         /// TODO: Remove Expire Flag
@@ -398,8 +378,6 @@ class KVEngine : public Engine {
   Status RestoreCheckpoint();
 
   Status PersistOrRecoverImmutableConfigs();
-
-  Status RestoreDlistRecords(DLRecord* pmp_record);
 
   /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
@@ -543,8 +521,6 @@ class KVEngine : public Engine {
   std::shared_ptr<HashTable> hash_table_;
 
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
-  std::vector<std::shared_ptr<UnorderedCollection>>
-      vec_sp_unordered_collections_;
 
   std::vector<std::unique_ptr<List>> lists_;
   std::unique_ptr<ListBuilder> list_builder_;

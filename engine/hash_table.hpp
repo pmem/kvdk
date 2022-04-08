@@ -31,7 +31,6 @@ struct HashHeader {
 
 class Skiplist;
 class SkiplistNode;
-class UnorderedCollection;
 
 template <RecordType ListType, RecordType DataType>
 class GenericList;
@@ -52,7 +51,6 @@ struct alignas(16) HashEntry {
     StringRecord* string_record;
     DLRecord* dl_record;
     Skiplist* skiplist;
-    UnorderedCollection* p_unordered_collection;
     List* list;
     HashList* hlist;
   };

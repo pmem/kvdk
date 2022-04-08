@@ -46,6 +46,7 @@ endif()
 
 # source files
 set(SOURCES
+        engine/c/kvdk_hash.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
         engine/engine.cpp
@@ -61,7 +62,6 @@ set(SOURCES
         engine/thread_manager.cpp
         engine/pmem_allocator/free_list.cpp
         engine/c.cpp
-        engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/version/old_records_cleaner.cpp
         )

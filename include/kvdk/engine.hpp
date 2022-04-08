@@ -93,14 +93,6 @@ class Engine {
   // on any error.
   virtual Status SDelete(const StringView collection, const StringView key) = 0;
 
-  virtual Status HSet(const StringView collection, const StringView key,
-                      const StringView value) = 0;
-
-  virtual Status HGet(const StringView collection, const StringView key,
-                      std::string* value) = 0;
-
-  virtual Status HDelete(const StringView collection, const StringView key) = 0;
-
   /// List APIs ///////////////////////////////////////////////////////////////
 
   // Total elements in List.
@@ -226,9 +218,6 @@ class Engine {
 
   // Release a sorted iterator
   virtual void ReleaseSortedIterator(Iterator*) = 0;
-
-  virtual std::unique_ptr<Iterator> NewUnorderedIterator(
-      StringView const collection_name) = 0;
 
   // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.

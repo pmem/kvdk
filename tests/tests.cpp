@@ -136,18 +136,18 @@ class EngineBasicTest : public testing::Test {
     auto UnorderedSetFunc = [&](const std::string& collection,
                                 const std::string& key,
                                 const std::string& value) -> Status {
-      return engine->HSet(collection, key, value);
+      return engine->HashSet(collection, key, value);
     };
 
     auto UnorderedGetFunc = [&](const std::string& collection,
                                 const std::string& key,
                                 std::string* value) -> Status {
-      return engine->HGet(collection, key, value);
+      return engine->HashGet(collection, key, value);
     };
 
     auto UnorderedDeleteFunc = [&](const std::string& collection,
                                    const std::string& key) -> Status {
-      return engine->HDelete(collection, key);
+      return engine->HashDelete(collection, key);
     };
 
     auto Local_XSetXGetXDelete = [&](uint64_t id) {
@@ -285,7 +285,7 @@ class EngineBasicTest : public testing::Test {
         new_collection += std::to_string(id);
       }
 
-      auto iter = engine->NewUnorderedIterator(new_collection);
+      auto iter = engine->HashMakeIterator(new_collection);
       ASSERT_TRUE(iter != nullptr);
       // forward iterator
       iter->SeekToFirst();
@@ -391,7 +391,7 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
             Status::Ok);
   ASSERT_EQ(engine->Set(str, val), Status::Ok);
   ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
-  ASSERT_EQ(engine->HSet(unordered_collection, elem_key, val), Status::Ok);
+  ASSERT_EQ(engine->HashSet(unordered_collection, elem_key, val), Status::Ok);
   ASSERT_EQ(engine->ListPushBack(list, elem_key), Status::Ok);
 
   std::string got_val;
@@ -437,14 +437,14 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
                                                            : Status::WrongType;
     std::string new_val("new_unordered_val");
     // Set
-    ASSERT_EQ(engine->HSet(collection_name, elem_key, new_val), ret_s);
+    ASSERT_EQ(engine->HashSet(collection_name, elem_key, new_val), ret_s);
     // Get
-    ASSERT_EQ(engine->HGet(collection_name, elem_key, &got_val), ret_s);
+    ASSERT_EQ(engine->HashGet(collection_name, elem_key, &got_val), ret_s);
     if (ret_s == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
     // Delete
-    ASSERT_EQ(engine->HDelete(collection_name, elem_key), ret_s);
+    ASSERT_EQ(engine->HashDelete(collection_name, elem_key), ret_s);
   }
 
   // Test list
@@ -1198,18 +1198,18 @@ TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
   auto UnorderedSetFunc = [&](const std::string& collection,
                               const std::string& key,
                               const std::string& value) -> Status {
-    return engine->HSet(collection, key, value);
+    return engine->HashSet(collection, key, value);
   };
 
   auto UnorderedGetFunc = [&](const std::string& collection,
                               const std::string& key,
                               std::string* value) -> Status {
-    return engine->HGet(collection, key, value);
+    return engine->HashGet(collection, key, value);
   };
 
   auto UnorderedDeleteFunc = [&](const std::string& collection,
                                  const std::string& key) -> Status {
-    return engine->HDelete(collection, key);
+    return engine->HashDelete(collection, key);
   };
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -1263,22 +1263,22 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
     std::string value_got;
     for (size_t j = 0; j < count; j++) {
       // Insert first kv-pair in global collection
-      ASSERT_EQ(engine->HSet(global_collection_name,
+      ASSERT_EQ(engine->HashSet(global_collection_name,
                              global_kvs_inserting[tid][j].first,
                              global_kvs_inserting[tid][j].second),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(global_collection_name,
+      ASSERT_EQ(engine->HashGet(global_collection_name,
                              global_kvs_inserting[tid][j].first, &value_got),
                 Status::Ok);
       ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
 
       // Update first kv-pair in global collection
       global_kvs_inserting[tid][j].second += updated_value_suffix;
-      ASSERT_EQ(engine->HSet(global_collection_name,
+      ASSERT_EQ(engine->HashSet(global_collection_name,
                              global_kvs_inserting[tid][j].first,
                              global_kvs_inserting[tid][j].second),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(global_collection_name,
+      ASSERT_EQ(engine->HashGet(global_collection_name,
                              global_kvs_inserting[tid][j].first, &value_got),
                 Status::Ok);
       ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
@@ -1289,22 +1289,22 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
       }
 
       // Insert second kv-pair in global collection
-      ASSERT_EQ(engine->HSet(global_collection_name,
+      ASSERT_EQ(engine->HashSet(global_collection_name,
                              global_kvs_inserting[tid][j + count].first,
                              global_kvs_inserting[tid][j + count].second),
                 Status::Ok);
       ASSERT_EQ(
-          engine->HGet(global_collection_name,
+          engine->HashGet(global_collection_name,
                        global_kvs_inserting[tid][j + count].first, &value_got),
           Status::Ok);
       ASSERT_EQ(value_got, global_kvs_inserting[tid][j + count].second);
 
       // Delete second kv-pair in global collection
-      ASSERT_EQ(engine->HDelete(global_collection_name,
+      ASSERT_EQ(engine->HashDelete(global_collection_name,
                                 global_kvs_inserting[tid][j + count].first),
                 Status::Ok);
       ASSERT_EQ(
-          engine->HGet(global_collection_name,
+          engine->HashGet(global_collection_name,
                        global_kvs_inserting[tid][j + count].first, &value_got),
           Status::NotFound);
     }
@@ -1314,22 +1314,22 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
     std::string value_got;
     for (size_t j = 0; j < count; j++) {
       // Insert first kv-pair in global collection
-      ASSERT_EQ(engine->HSet(tlocal_collection_names[tid],
+      ASSERT_EQ(engine->HashSet(tlocal_collection_names[tid],
                              tlocal_kvs_inserting[tid][j].first,
                              tlocal_kvs_inserting[tid][j].second),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
+      ASSERT_EQ(engine->HashGet(tlocal_collection_names[tid],
                              tlocal_kvs_inserting[tid][j].first, &value_got),
                 Status::Ok);
       ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j].second);
 
       // Update first kv-pair in global collection
       tlocal_kvs_inserting[tid][j].second += updated_value_suffix;
-      ASSERT_EQ(engine->HSet(tlocal_collection_names[tid],
+      ASSERT_EQ(engine->HashSet(tlocal_collection_names[tid],
                              tlocal_kvs_inserting[tid][j].first,
                              tlocal_kvs_inserting[tid][j].second),
                 Status::Ok);
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
+      ASSERT_EQ(engine->HashGet(tlocal_collection_names[tid],
                              tlocal_kvs_inserting[tid][j].first, &value_got),
                 Status::Ok);
       ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j].second);
@@ -1337,22 +1337,22 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
                                         tlocal_kvs_inserting[tid][j].second);
 
       // Insert second kv-pair in global collection
-      ASSERT_EQ(engine->HSet(tlocal_collection_names[tid],
+      ASSERT_EQ(engine->HashSet(tlocal_collection_names[tid],
                              tlocal_kvs_inserting[tid][j + count].first,
                              tlocal_kvs_inserting[tid][j + count].second),
                 Status::Ok);
       ASSERT_EQ(
-          engine->HGet(tlocal_collection_names[tid],
+          engine->HashGet(tlocal_collection_names[tid],
                        tlocal_kvs_inserting[tid][j + count].first, &value_got),
           Status::Ok);
       ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j + count].second);
 
       // Delete second kv-pair in global collection
-      ASSERT_EQ(engine->HDelete(tlocal_collection_names[tid],
+      ASSERT_EQ(engine->HashDelete(tlocal_collection_names[tid],
                                 tlocal_kvs_inserting[tid][j + count].first),
                 Status::Ok);
       ASSERT_EQ(
-          engine->HGet(tlocal_collection_names[tid],
+          engine->HashGet(tlocal_collection_names[tid],
                        tlocal_kvs_inserting[tid][j + count].first, &value_got),
           Status::NotFound);
     }
@@ -1367,7 +1367,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
     auto global_kvs_remaining_copy{global_kvs_remaining};
 
     auto iter_global_collection =
-        engine->NewUnorderedIterator(global_collection_name);
+        engine->HashMakeIterator(global_collection_name);
     ASSERT_TRUE(iter_global_collection != nullptr);
     for (iter_global_collection->SeekToFirst(); iter_global_collection->Valid();
          iter_global_collection->Next()) {
@@ -1388,7 +1388,7 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
     auto tlocal_kvs_remaining_copy{tlocal_kvs_remaining[tid]};
 
     auto iter_tlocal_collection =
-        engine->NewUnorderedIterator(tlocal_collection_names[tid]);
+        engine->HashMakeIterator(tlocal_collection_names[tid]);
     ASSERT_TRUE(iter_tlocal_collection != nullptr);
     for (iter_tlocal_collection->SeekToFirst(); iter_tlocal_collection->Valid();
          iter_tlocal_collection->Next()) {
@@ -1407,13 +1407,13 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   auto HGetGlobal = [&](size_t tid) {
     std::string value_got;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->HGet(global_collection_name,
+      ASSERT_EQ(engine->HashGet(global_collection_name,
                              global_kvs_inserting[tid][j].first, &value_got),
                 Status::Ok);
       ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
 
       ASSERT_EQ(
-          engine->HGet(global_collection_name,
+          engine->HashGet(global_collection_name,
                        global_kvs_inserting[tid][j + count].first, &value_got),
           Status::NotFound);
     }
@@ -1422,13 +1422,13 @@ TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
   auto HGetThreadLocal = [&](size_t tid) {
     std::string value_got;
     for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
+      ASSERT_EQ(engine->HashGet(tlocal_collection_names[tid],
                              tlocal_kvs_inserting[tid][j].first, &value_got),
                 Status::Ok);
       ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j].second);
 
       ASSERT_EQ(
-          engine->HGet(tlocal_collection_names[tid],
+          engine->HashGet(tlocal_collection_names[tid],
                        tlocal_kvs_inserting[tid][j + count].first, &value_got),
           Status::NotFound);
     }
@@ -1969,17 +1969,17 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For hashes collection
   {
-    ASSERT_EQ(engine->HSet(hashes_collection, "hashes" + key, "hashes" + val),
+    ASSERT_EQ(engine->HashSet(hashes_collection, "hashes" + key, "hashes" + val),
               Status::Ok);
     // Set expired time for collection, max_ttl_time is overflow.
     ASSERT_EQ(engine->Expire(hashes_collection, max_ttl_time),
               Status::InvalidArgument);
-    ASSERT_EQ(engine->HSet(hashes_collection, "hashes2" + key, "hashes2" + val),
+    ASSERT_EQ(engine->HashSet(hashes_collection, "hashes2" + key, "hashes2" + val),
               Status::Ok);
 
     // reset expired time for collection
     ASSERT_EQ(engine->Expire(hashes_collection, normal_ttl_time), Status::Ok);
-    ASSERT_EQ(engine->HGet(hashes_collection, "hashes" + key, &got_val),
+    ASSERT_EQ(engine->HashGet(hashes_collection, "hashes" + key, &got_val),
               Status::Ok);
     ASSERT_EQ(got_val, "hashes" + val);
     // get collection ttl time

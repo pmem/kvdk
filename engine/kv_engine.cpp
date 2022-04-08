@@ -314,10 +314,8 @@ Status KVEngine::RestoreData() {
       case RecordType::SortedHeaderRecord:
       case RecordType::StringDataRecord:
       case RecordType::StringDeleteRecord:
-      case RecordType::DlistRecord:
-      case RecordType::DlistHeadRecord:
-      case RecordType::DlistTailRecord:
-      case RecordType::DlistDataRecord:
+      case RecordType::HashRecord:
+      case RecordType::HashElem:
       case RecordType::ListRecord:
       case RecordType::ListElem: {
         if (!ValidateRecord(recovering_pmem_record)) {
@@ -381,19 +379,20 @@ Status KVEngine::RestoreData() {
             data_entry_cached);
         break;
       }
-      case RecordType::DlistRecord:
-      case RecordType::DlistHeadRecord:
-      case RecordType::DlistTailRecord:
-      case RecordType::DlistDataRecord: {
-        s = RestoreDlistRecords(static_cast<DLRecord*>(recovering_pmem_record));
-        break;
-      }
       case RecordType::ListRecord: {
         s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::ListElem: {
         s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
+        break;
+      }
+      case RecordType::HashRecord: {
+        s = hashListRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
+        break;
+      }
+      case RecordType::HashElem: {
+        s = hashListRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       default: {
@@ -432,9 +431,7 @@ bool KVEngine::ValidateRecordAndGetValue(void* data_record,
     }
     case RecordType::SortedDataRecord:
     case RecordType::SortedDeleteRecord:
-    case RecordType::SortedHeaderRecord:
-    case RecordType::DlistDataRecord:
-    case RecordType::DlistRecord: {
+    case RecordType::SortedHeaderRecord: {
       DLRecord* dl_record = static_cast<DLRecord*>(data_record);
       if (dl_record->Validate(expected_checksum)) {
         auto v = dl_record->Value();
@@ -464,10 +461,8 @@ bool KVEngine::ValidateRecord(void* data_record) {
     case RecordType::SortedDataRecord:
     case RecordType::SortedHeaderRecord:
     case RecordType::SortedDeleteRecord:
-    case RecordType::DlistDataRecord:
-    case RecordType::DlistRecord:
-    case RecordType::DlistHeadRecord:
-    case RecordType::DlistTailRecord:
+    case RecordType::HashRecord:
+    case RecordType::HashElem:
     case RecordType::ListRecord:
     case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
@@ -828,46 +823,6 @@ Status KVEngine::Recovery() {
 
   version_controller_.Init(latest_version_ts);
   old_records_cleaner_.TryGlobalClean();
-
-  return Status::Ok;
-}
-
-Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
-                             uint16_t type_mask) {
-  DataEntry data_entry;
-  while (1) {
-    HashEntry hash_entry;
-    HashEntry* entry_ptr = nullptr;
-    bool is_found = hash_table_->SearchForRead(
-                        hash_table_->GetHint(key), key, type_mask, &entry_ptr,
-                        &hash_entry, &data_entry) == Status::Ok;
-    if (!is_found || (hash_entry.GetRecordType() & DeleteRecordType)) {
-      return Status::NotFound;
-    }
-    kvdk_assert(hash_entry.GetRecordType() == DlistDataRecord,
-                "Wrong type in hash get impl");
-    DLRecord* pmem_record = hash_entry.GetIndex().dl_record;
-
-    // Copy PMem data record to dram buffer
-    auto record_size = pmem_record->GetRecordSize();
-    // Region of data_entry.header.record_size may be corrupted by a write
-    // operation if the original reading space entry is merged with the adjacent
-    // one by pmem allocator
-    if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
-      continue;
-    }
-
-    // TODO. remove checksum validation when unordered_collection supports mvcc
-    void* data_buffer = malloc(record_size);
-    memcpy(data_buffer, pmem_record, record_size);
-    // If the pmem data record is corrupted or modified during get, redo search
-    bool valid = ValidateRecordAndGetValue(data_buffer,
-                                           data_entry.header.checksum, value);
-    free(data_buffer);
-    if (valid) {
-      break;
-    }
-  }
 
   return Status::Ok;
 }
@@ -1382,17 +1337,14 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
         expire_time = res.entry_ptr->GetIndex().skiplist->GetExpireTime();
         break;
       }
-      case PointerType::UnorderedCollection: {
-        expire_time =
-            res.entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
-        break;
-      }
-
       case PointerType::List: {
         expire_time = res.entry_ptr->GetIndex().list->GetExpireTime();
         break;
       }
-
+      case PointerType::HashList : {
+        expire_time = res.entry_ptr->GetIndex().hlist->GetExpireTime();
+        break;
+      }
       case PointerType::StringRecord: {
         expire_time = res.entry_ptr->GetIndex().string_record->GetExpireTime();
         break;
@@ -1453,11 +1405,8 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         res.s = res.entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
         break;
       }
-      case PointerType::UnorderedCollection: {
-        UnorderedCollection* pcoll =
-            res.entry.GetIndex().p_unordered_collection;
-        /// TODO: put these unregister and delete work in findKey()
-        res.s = pcoll->SetExpireTime(expired_time);
+      case PointerType::HashList: {
+        res.s = res.entry_ptr->GetIndex().hlist->SetExpireTime(expired_time);
         break;
       }
       case PointerType::List: {
@@ -1585,7 +1534,7 @@ Status KVEngine::Set(const StringView key, const StringView value,
 
 }  // namespace KVDK_NAMESPACE
 
-// UnorderedCollection
+// lookupKey
 namespace KVDK_NAMESPACE {
 template <bool allocate_hash_entry_if_missing>
 KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
@@ -1611,12 +1560,12 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
       expired = result.entry.GetIndex().string_record->HasExpired();
       break;
     }
-    case RecordType::DlistRecord:
+    case RecordType::HashRecord:
     case RecordType::ListRecord:
     case RecordType::SortedHeaderRecord: {
-      expired = TimeUtils::CheckIsExpired(
-          static_cast<Collection*>(result.entry.GetIndex().ptr)
-              ->GetExpireTime());
+
+      expired = 
+          static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired();
       break;
     }
     default: {
@@ -1646,334 +1595,6 @@ KVEngine::LookupResult KVEngine::lookupImpl(StringView key,
         hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
   }
   return result;
-}
-
-std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
-    StringView const collection_name) {
-  TimeStampType ts = version_controller_.GetCurrentTimestamp();
-  CollectionIDType id = list_id_.fetch_add(1);
-  std::string name(collection_name.data(), collection_name.size());
-  std::shared_ptr<UnorderedCollection> sp_uncoll =
-      std::make_shared<UnorderedCollection>(
-          hash_table_.get(), pmem_allocator_.get(), name, id, ts);
-  return sp_uncoll;
-}
-
-Status KVEngine::HGet(StringView const collection_name, StringView const key,
-                      std::string* value) {
-  Status s = MaybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  UnorderedCollection* p_uncoll;
-  s = FindCollection(collection_name, &p_uncoll, RecordType::DlistRecord);
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  std::string internal_key = p_uncoll->InternalKey(key);
-  return HashGetImpl(internal_key, value, RecordType::DlistDataRecord);
-}
-
-Status KVEngine::HSet(StringView const collection_name, StringView const key,
-                      StringView const value) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  UnorderedCollection* p_collection;
-
-  // Find UnorederedCollection, create if none exists
-  {
-    s = FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-    if (s == Status::NotFound) {
-      HashTable::KeyHashHint hint_collection =
-          hash_table_->GetHint(collection_name);
-      // Lock and find again in case other threads have created the
-      // UnorderedCollection
-      std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
-      auto ret = lookupKey<true>(collection_name, RecordType::DlistRecord);
-      if (ret.s == Status::NotFound) {
-        auto sp_collection = createUnorderedCollection(collection_name);
-
-        p_collection = sp_collection.get();
-        {
-          std::lock_guard<std::mutex> lg{list_mu_};
-          vec_sp_unordered_collections_.push_back(sp_collection);
-        }
-
-        hash_table_->Insert(hint_collection, ret.entry_ptr,
-                            RecordType::DlistRecord, p_collection,
-                            PointerType::UnorderedCollection);
-        ret.s = Status::Ok;
-      } else if (ret.s == Status::Ok) {
-        p_collection = ret.entry.GetIndex().p_unordered_collection;
-        // Todo: handle expired
-      }
-      s = ret.s;
-    }
-
-    if (s != Status::Ok) {
-      return s;
-    }
-  }
-
-  // Emplace the new DlistDataRecord
-  {
-    auto internal_key = p_collection->InternalKey(key);
-    HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-
-    int n_try = 0;
-    while (true) {
-      ++n_try;
-
-      std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
-
-      TimeStampType ts = version_controller_.GetCurrentTimestamp();
-
-      HashEntry hash_entry_record;
-      HashEntry* p_hash_entry_record = nullptr;
-      Status search_result = hash_table_->SearchForWrite(
-          hint_record, internal_key, RecordType::DlistDataRecord,
-          &p_hash_entry_record, &hash_entry_record, nullptr);
-
-      ModifyReturn emplace_result{};
-      switch (search_result) {
-        case Status::NotFound: {
-          emplace_result = p_collection->Emplace(ts, key, value, lock_record);
-          break;
-        }
-        case Status::Ok: {
-          DLRecord* pmp_old_record = hash_entry_record.GetIndex().dl_record;
-          emplace_result = p_collection->Replace(pmp_old_record, ts, key, value,
-                                                 lock_record);
-          // Additional check
-          if (emplace_result.success) {
-            kvdk_assert(pmem_allocator_->addr2offset_checked(pmp_old_record) ==
-                            emplace_result.offset_old,
-                        "Updated a record, but HashEntry in HashTable is "
-                        "inconsistent with data on PMem!");
-
-            DLRecord* pmp_new_record =
-                pmem_allocator_->offset2addr_checked<DLRecord>(
-                    emplace_result.offset_new);
-            kvdk_assert(
-                pmp_old_record->entry.meta.timestamp <
-                    pmp_new_record->entry.meta.timestamp,
-                "Old record has newer timestamp than newly inserted record!");
-            purgeAndFree(pmp_old_record);
-          }
-          break;
-        }
-        default: {
-          kvdk_assert(false,
-                      "Invalid search result when trying to insert "
-                      "a new DlistDataRecord!");
-        }
-      }
-
-      if (!emplace_result.success) {
-        // Retry
-        continue;
-      } else {
-        // Successfully emplaced the new record
-        DLRecord* pmp_new_record =
-            pmem_allocator_->offset2addr_checked<DLRecord>(
-                emplace_result.offset_new);
-        hash_table_->Insert(hint_record, p_hash_entry_record,
-                            RecordType::DlistDataRecord, pmp_new_record,
-                            PointerType::UnorderedCollectionElement);
-        return Status::Ok;
-      }
-    }
-  }
-}
-
-Status KVEngine::HDelete(StringView const collection_name,
-                         StringView const key) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  UnorderedCollection* p_collection;
-  s = FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-  if (s == Status::Ok) {
-    // Erase DlistDataRecord if found one.
-    auto internal_key = p_collection->InternalKey(key);
-    HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-
-    int n_try = 0;
-    while (true) {
-      ++n_try;
-      std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
-
-      HashEntry hash_entry;
-      HashEntry* p_hash_entry = nullptr;
-      Status search_result = hash_table_->SearchForWrite(
-          hint_record, internal_key, RecordType::DlistDataRecord, &p_hash_entry,
-          &hash_entry, nullptr);
-
-      ModifyReturn erase_result{};
-      switch (search_result) {
-        case Status::NotFound: {
-          return Status::Ok;
-        }
-        case Status::Ok: {
-          DLRecord* pmp_old_record = hash_entry.GetIndex().dl_record;
-
-          erase_result = p_collection->Erase(pmp_old_record, lock_record);
-          if (erase_result.success) {
-            hash_table_->Erase(p_hash_entry);
-            purgeAndFree(pmp_old_record);
-            return Status::Ok;
-          } else {
-            // !erase_result.success
-            continue;
-          }
-          break;
-        }
-        default: {
-          kvdk_assert(false,
-                      "Invalid search result when trying to erase "
-                      "a DlistDataRecord!");
-        }
-      }
-    }
-  } else {
-    return s == Status::NotFound ? Ok : s;
-  }
-}
-
-std::unique_ptr<Iterator> KVEngine::NewUnorderedIterator(
-    StringView const collection_name) {
-  UnorderedCollection* p_collection;
-  Status s =
-      FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-  return (s == Status::Ok)
-             ? std::unique_ptr<UnorderedIterator>(
-                   new UnorderedIterator{p_collection->shared_from_this()})
-             : nullptr;
-}
-
-Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
-  switch (pmp_record->entry.meta.type) {
-    case RecordType::DlistRecord: {
-      UnorderedCollection* p_collection = nullptr;
-      std::lock_guard<std::mutex> lg{list_mu_};
-      {
-        std::shared_ptr<UnorderedCollection> sp_collection =
-            std::make_shared<UnorderedCollection>(
-                hash_table_.get(), pmem_allocator_.get(), pmp_record);
-        p_collection = sp_collection.get();
-        vec_sp_unordered_collections_.emplace_back(sp_collection);
-        CollectionIDType id = p_collection->ID();
-        auto old = list_id_.load();
-        while (id >= old && !list_id_.compare_exchange_strong(old, id + 1)) {
-        }
-      }
-
-      std::string collection_name = p_collection->Name();
-      HashTable::KeyHashHint hint_collection =
-          hash_table_->GetHint(collection_name);
-      std::unique_lock<SpinMutex> guard{*hint_collection.spin};
-
-      HashEntry hash_entry_collection;
-      HashEntry* p_hash_entry_collection = nullptr;
-      Status s = hash_table_->SearchForWrite(
-          hint_collection, collection_name, RecordType::DlistRecord,
-          &p_hash_entry_collection, &hash_entry_collection, nullptr);
-      hash_table_->Insert(hint_collection, p_hash_entry_collection,
-                          RecordType::DlistRecord, p_collection,
-                          PointerType::UnorderedCollection);
-      kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
-      return Status::Ok;
-    }
-    case RecordType::DlistHeadRecord: {
-      kvdk_assert(pmp_record->prev == kNullPMemOffset &&
-                      checkDLRecordLinkageRight(pmp_record),
-                  "Bad linkage found when RestoreDlistRecords. Broken head.");
-      return Status::Ok;
-    }
-    case RecordType::DlistTailRecord: {
-      kvdk_assert(pmp_record->next == kNullPMemOffset &&
-                      checkDLRecordLinkageLeft(pmp_record),
-                  "Bad linkage found when RestoreDlistRecords. Broken tail.");
-      return Status::Ok;
-    }
-    case RecordType::DlistDataRecord: {
-      bool linked = checkLinkage(static_cast<DLRecord*>(pmp_record));
-      if (!linked) {
-        GlobalLogger.Error("Bad linkage!\n");
-#if KVDK_DEBUG_LEVEL == 0
-        GlobalLogger.Error(
-            "Bad linkage can only be repaired when KVDK_DEBUG_LEVEL > 0!\n");
-        std::abort();
-#endif
-        return Status::Ok;
-      }
-
-      auto internal_key = pmp_record->Key();
-      HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-      std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
-
-      HashEntry hash_entry_record;
-      HashEntry* p_hash_entry_record = nullptr;
-      Status search_status = hash_table_->SearchForWrite(
-          hint_record, internal_key, RecordType::DlistDataRecord,
-          &p_hash_entry_record, &hash_entry_record, nullptr);
-
-      switch (search_status) {
-        case Status::NotFound: {
-          hash_table_->Insert(hint_record, p_hash_entry_record,
-                              pmp_record->entry.meta.type, pmp_record,
-                              PointerType::UnorderedCollectionElement);
-          return Status::Ok;
-        }
-        case Status::Ok: {
-          DLRecord* pmp_old_record = hash_entry_record.GetIndex().dl_record;
-          if (pmp_old_record->entry.meta.timestamp <
-              pmp_record->entry.meta.timestamp) {
-            if (checkDLRecordLinkageRight((DLRecord*)pmp_old_record) ||
-                checkDLRecordLinkageLeft((DLRecord*)pmp_old_record)) {
-              assert(false && "Old record is linked in Dlinkedlist!");
-              throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
-            }
-            hash_table_->Insert(hint_record, p_hash_entry_record,
-                                pmp_record->entry.meta.type, pmp_record,
-                                PointerType::UnorderedCollectionElement);
-            purgeAndFree(pmp_old_record);
-
-          } else if (pmp_old_record->entry.meta.timestamp ==
-                     pmp_record->entry.meta.timestamp) {
-            GlobalLogger.Info("Met two DlistRecord with same timestamp");
-            purgeAndFree(pmp_record);
-
-          } else {
-            if (checkDLRecordLinkageRight((DLRecord*)pmp_record) ||
-                checkDLRecordLinkageLeft((DLRecord*)pmp_record)) {
-              assert(false && "Old record is linked in Dlinkedlist!");
-              throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
-            }
-            purgeAndFree(pmp_record);
-          }
-          return Status::Ok;
-        }
-        default: {
-          kvdk_assert(false,
-                      "Invalid search result when trying to insert a new "
-                      "DlistDataRecord!\n");
-          return search_status;
-        }
-      }
-    }
-    default: {
-      kvdk_assert(false, "Wrong type in RestoreDlistRecords!\n");
-      return Status::Abort;
-    }
-  }
 }
 
 }  // namespace KVDK_NAMESPACE
@@ -2102,7 +1723,7 @@ void KVEngine::CleanOutDated() {
           }
           break;
         }
-        case PointerType::UnorderedCollection:
+        case PointerType::HashList:
         case PointerType::List:
         case PointerType::Skiplist: {
           // TODO(zhichen): check expired. and push into collection cleaner.

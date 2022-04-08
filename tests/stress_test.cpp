@@ -44,13 +44,13 @@ class HashesOperator {
   HashesOperator(kvdk::Engine*& e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
   kvdk::Status operator()(KeyType key, std::string* value_got) {
-    return engine->HGet(collection_name, key, value_got);
+    return engine->HashGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
-    return engine->HSet(collection_name, key, value);
+    return engine->HashSet(collection_name, key, value);
   }
   kvdk::Status operator()(KeyType key) {
-    return engine->HDelete(collection_name, key);
+    return engine->HashDelete(collection_name, key);
   }
 };
 
@@ -228,7 +228,8 @@ class ShadowKVEngine {
 
   // Check KVEngine by iterating through it.
   // Iterated KVs are looked up in possible_state.
-  void CheckIterator(kvdk::Iterator* iterator, IteratingDirection direction) {
+  template<typename Iterator>
+  void CheckIterator(Iterator* iterator, IteratingDirection direction) {
     PossibleStates possible_state_copy{possible_state};
 
     // Iterating forward or backward.
@@ -568,10 +569,10 @@ class EngineTestBase : public testing::Test {
               << std::endl;
     shadow_hashes_engines[collection_name]->CheckGetter();
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->NewUnorderedIterator(collection_name).get(),
+        engine->HashMakeIterator(collection_name).get(),
         kvdk_testing::IteratingDirection::Forward);
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->NewUnorderedIterator(collection_name).get(),
+        engine->HashMakeIterator(collection_name).get(),
         kvdk_testing::IteratingDirection::Backward);
   }
 

@@ -25,11 +25,6 @@ enum RecordType : uint16_t {
   HashRecord = (1 << 5),
   HashElem = (1 << 6),
 
-  DlistHeadRecord,
-  DlistTailRecord,
-  DlistRecord,
-  DlistDataRecord,
-
   ListRecord = (1 << 9),
   ListElem = (1 << 10),
 
