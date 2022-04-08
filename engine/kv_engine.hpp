@@ -238,24 +238,23 @@ class KVEngine : public Engine {
   void insertImpl(LookupResult ret, StringView key, RecordType type,
                   void* addr) {
     auto hint = hash_table_->GetHint(key);
-    hash_table_->Insert(hint, ret.entry_ptr, type, addr, PointerType(type));
+    hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
   }
 
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
-    static_assert(
-                      std::is_same<CollectionType, Skiplist>::value ||
+    static_assert(std::is_same<CollectionType, Skiplist>::value ||
                       std::is_same<CollectionType, List>::value ||
                       std::is_same<CollectionType, HashList>::value ||
                       std::is_same<CollectionType, StringRecord>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
-                     ? RecordType::SortedHeaderRecord
-                     : std::is_same<CollectionType, List>::value
-                           ? RecordType::ListRecord
-                           : std::is_same<CollectionType, HashList>::value
-                                 ? RecordType::HashRecord
-                                 : RecordType::Empty;
+               ? RecordType::SortedHeaderRecord
+               : std::is_same<CollectionType, List>::value
+                     ? RecordType::ListRecord
+                     : std::is_same<CollectionType, HashList>::value
+                           ? RecordType::HashRecord
+                           : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {

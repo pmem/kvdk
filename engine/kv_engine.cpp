@@ -1341,7 +1341,7 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
         expire_time = res.entry_ptr->GetIndex().list->GetExpireTime();
         break;
       }
-      case PointerType::HashList : {
+      case PointerType::HashList: {
         expire_time = res.entry_ptr->GetIndex().hlist->GetExpireTime();
         break;
       }
@@ -1563,8 +1563,7 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
     case RecordType::HashRecord:
     case RecordType::ListRecord:
     case RecordType::SortedHeaderRecord: {
-
-      expired = 
+      expired =
           static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired();
       break;
     }

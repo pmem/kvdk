@@ -4,9 +4,9 @@
 
 #include "hash_table.hpp"
 
-#include "sorted_collection/skiplist.hpp"
-#include "simple_list.hpp"
 #include "hash_list.hpp"
+#include "simple_list.hpp"
+#include "sorted_collection/skiplist.hpp"
 #include "thread_manager.hpp"
 
 namespace KVDK_NAMESPACE {

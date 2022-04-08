@@ -48,14 +48,14 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   auto internal_key = hlist->InternalKey(field);
   auto guard = hash_table_->AcquireLock(internal_key);
   LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
-  if (result.s != Status::Ok || result.s != Status::NotFound) {
+  if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
 
   /// TODO: delayFree instead of purgeAndFree
   TimeStampType ts = version_controller_.GetCurrentTimestamp();
-  auto space =
-      pmem_allocator_->Allocate(sizeof(DLRecord) + field.size() + value.size());
+  auto space = pmem_allocator_->Allocate(sizeof(DLRecord) +
+                                         internal_key.size() + value.size());
   void* addr = pmem_allocator_->offset2addr_checked(space.offset);
   if (result.s == Status::NotFound) {
     hlist->PushFront(space, ts, field, value);
@@ -137,7 +137,7 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
   // Uninitialized or Inactive, initialize new one
   {
     auto guard2 = hash_table_->AcquireLock(key);
-    auto result = lookupKey<false>(key, RecordType::ListRecord);
+    auto result = lookupKey<false>(key, RecordType::HashRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound) {
       return result.s;
     }
@@ -166,7 +166,21 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
 }
 
 Status KVEngine::hashListRestoreElem(DLRecord* rec) {
-  hash_list_builder_->AddListElem(rec);
+  if (!hash_list_builder_->AddListElem(rec)) {
+    // Broken record, don't put in HashTable.
+    // Rebuilder will delete it after recovery is done.
+    return Status::Ok;
+  }
+
+  auto internal_key = rec->Key();
+  auto guard = hash_table_->AcquireLock(internal_key);
+  LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
+  if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
+    return result.s;
+  }
+  kvdk_assert(result.s == Status::NotFound, "Impossible!");
+  insertImpl(result, internal_key, RecordType::HashElem, rec);
+
   return Status::Ok;
 }
 

@@ -18,9 +18,9 @@ using kvdk::StringView;
 
 using kvdk::Configs;
 using kvdk::Engine;
+using kvdk::HashIterator;
 using kvdk::Iterator;
 using kvdk::ListIterator;
-using kvdk::HashIterator;
 using kvdk::Snapshot;
 using kvdk::SortedCollectionConfigs;
 using kvdk::WriteBatch;
@@ -69,4 +69,4 @@ static char* CopyStringToChar(const std::string& str) {
   return result;
 }
 
-} // extern "C"
+}  // extern "C"

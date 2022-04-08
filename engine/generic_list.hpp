@@ -157,7 +157,7 @@ class GenericList final : public Collection {
     // For assert
     bool valid() const {
       return (curr == nullptr ||
-              (curr->entry.meta.type == ListElem && curr->Validate() &&
+              (curr->entry.meta.type == DataType && curr->Validate() &&
                Collection::ExtractID(curr->Key()) == owner->ID()));
     }
   };
@@ -181,7 +181,7 @@ class GenericList final : public Collection {
     collection_id_ = id;
     alloc = a;
     list_record = DLRecord::PersistDLRecord(
-        addressOf(space.offset), space.size, timestamp, RecordType::ListRecord,
+        addressOf(space.offset), space.size, timestamp, ListType,
         NullPMemOffset, NullPMemOffset, NullPMemOffset, key, ID2String(id));
     lock_table = lt;
   }
@@ -263,6 +263,7 @@ class GenericList final : public Collection {
   }
 
   // For Redis List only
+  /// TODO: ensure every API is thread-safe.
   template <typename ElemDeleter>
   Iterator Erase(Iterator pos, ElemDeleter elem_deleter) {
     kvdk_assert(pos != Head(), "Cannot erase Head()");
@@ -273,6 +274,8 @@ class GenericList final : public Collection {
     --prev;
     Iterator next{pos};
     ++next;
+
+    kvdk_assert(prev.valid() && next.valid(), "");
 
     if (Size() == 1) {
       kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
@@ -309,9 +312,14 @@ class GenericList final : public Collection {
     --prev;
     while (true) {
       lock_table->Lock(prev.Hash());
+      if (!lock_table->TryLock(pos.Hash())) {
+        lock_table->Unlock(prev.Hash());
+        continue;
+      }
       Iterator prev_copy{pos};
       --prev_copy;
       if (prev != prev_copy) {
+        lock_table->Unlock(pos.Hash());
         lock_table->Unlock(prev.Hash());
         prev = prev_copy;
         continue;
@@ -320,6 +328,7 @@ class GenericList final : public Collection {
     }
     Erase(pos, elem_deleter);
 
+    lock_table->Unlock(pos.Hash());
     lock_table->Unlock(prev.Hash());
   }
 
@@ -409,9 +418,14 @@ class GenericList final : public Collection {
     --prev;
     while (true) {
       lock_table->Lock(prev.Hash());
+      if (!lock_table->TryLock(pos.Hash())) {
+        lock_table->Unlock(prev.Hash());
+        continue;
+      }
       Iterator prev_copy{pos};
       --prev_copy;
       if (prev != prev_copy) {
+        lock_table->Unlock(pos.Hash());
         lock_table->Unlock(prev.Hash());
         prev = prev_copy;
         continue;
@@ -420,6 +434,7 @@ class GenericList final : public Collection {
     }
     Replace(space, pos, timestamp, key, value, elem_deleter);
 
+    lock_table->Unlock(pos.Hash());
     lock_table->Unlock(prev.Hash());
   }
 
@@ -572,38 +587,40 @@ class GenericListBuilder final {
     kvdk_assert(rebuilded_lists != nullptr, "Empty input!");
   }
 
-  void AddListRecord(DLRecord* lrec) {
+  bool AddListRecord(DLRecord* lrec) {
+    kvdk_assert(lrec->entry.meta.type == ListType, "");
     kvdk_assert(lrec->Value().size() == sizeof(CollectionIDType), "");
     CollectionIDType id = Collection::ExtractID(lrec->Value());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
-    kvdk_assert(primers.at(id).list_record == nullptr, "");
-    primers.at(id).list_record = lrec;
+    auto& primer = primers.at(id);
+    kvdk_assert(primer.list_record == nullptr, "");
+    primer.list_record = lrec;
     primers_lock.unlock_shared();
+    return true;
   }
 
-  void AddListElem(DLRecord* elem) {
+  bool AddListElem(DLRecord* elem) {
     kvdk_assert(elem->entry.meta.type == DataType, "");
     switch (typeOf(elem)) {
       case ListRecordType::Unique: {
-        addUniqueElem(elem);
-        break;
+        return addUniqueElem(elem);
       }
       case ListRecordType::First: {
-        addFirstElem(elem);
-        break;
+        return addFirstElem(elem);
       }
       case ListRecordType::Last: {
-        addLastElem(elem);
-        break;
+        return addLastElem(elem);
       }
       case ListRecordType::Middle: {
-        addMiddleElem(elem);
-        break;
+        return addMiddleElem(elem);
+      }
+      default: {
+        kvdk_assert(false, "Unreachable");
+        std::abort();
       }
     }
-    return;
   }
 
   template <typename Func>
@@ -709,7 +726,7 @@ class GenericListBuilder final {
     }
   }
 
-  void addUniqueElem(DLRecord* elem) {
+  bool addUniqueElem(DLRecord* elem) {
     kvdk_assert(elem->prev == NullPMemOffset && elem->next == NullPMemOffset,
                 "Not UniqueElem!");
 
@@ -717,76 +734,86 @@ class GenericListBuilder final {
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
-    kvdk_assert(primers.at(id).unique == nullptr, "");
-    kvdk_assert(primers.at(id).first == nullptr, "");
-    kvdk_assert(primers.at(id).last == nullptr, "");
-    primers.at(id).unique = elem;
-    primers.at(id).size.fetch_add(1U);
+    auto& primer = primers.at(id);
+    kvdk_assert(primer.unique == nullptr, "");
+    kvdk_assert(primer.first == nullptr, "");
+    kvdk_assert(primer.last == nullptr, "");
+    primer.unique = elem;
+    primer.size.fetch_add(1U);
     primers_lock.unlock_shared();
+
+    return true;
   }
 
-  void addFirstElem(DLRecord* elem) {
+  bool addFirstElem(DLRecord* elem) {
     kvdk_assert(elem->prev == NullPMemOffset && elem->next != NullPMemOffset,
                 "Not FirstElem!");
 
     if (!isValidFirst(elem)) {
       std::lock_guard<std::mutex> guard{brokens_lock};
       brokens.push_back(elem);
-      return;
+      return false;
     }
 
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
-    kvdk_assert(primers.at(id).first == nullptr, "");
-    kvdk_assert(primers.at(id).unique == nullptr, "");
-    primers.at(id).first = elem;
-    primers.at(id).size.fetch_add(1U);
+    auto& primer = primers.at(id);
+    kvdk_assert(primer.first == nullptr, "");
+    kvdk_assert(primer.unique == nullptr, "");
+    primer.first = elem;
+    primer.size.fetch_add(1U);
     primers_lock.unlock_shared();
+
+    return true;
   }
 
-  void addLastElem(DLRecord* elem) {
+  bool addLastElem(DLRecord* elem) {
     kvdk_assert(elem->next == NullPMemOffset && elem->prev != NullPMemOffset,
                 "Not LastElem!");
 
     if (!isValidLast(elem)) {
       std::lock_guard<std::mutex> guard{brokens_lock};
       brokens.push_back(elem);
-      return;
+      return false;
     }
 
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
-    kvdk_assert(primers.at(id).last == nullptr, "");
-    kvdk_assert(primers.at(id).unique == nullptr, "");
-    primers.at(id).last = elem;
-    primers.at(id).size.fetch_add(1U);
+    auto& primer = primers.at(id);
+    kvdk_assert(primer.last == nullptr, "");
+    kvdk_assert(primer.unique == nullptr, "");
+    primer.last = elem;
+    primer.size.fetch_add(1U);
     primers_lock.unlock_shared();
+
+    return true;
   }
 
-  // Reservoir algorithm
-  void addMiddleElem(DLRecord* elem) {
+  bool addMiddleElem(DLRecord* elem) {
     kvdk_assert(elem->prev != NullPMemOffset && elem->next != NullPMemOffset,
                 "Not MiddleElem!");
 
     if (!maybeTryFixMiddle(elem)) {
       std::lock_guard<std::mutex> guard{brokens_lock};
       brokens.push_back(elem);
-      return;
+      return false;
     }
 
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
     primers_lock.lock_shared();
-    primers.at(id).size.fetch_add(1U);
+    auto& primer = primers.at(id);
+    primer.size.fetch_add(1U);
     primers_lock.unlock_shared();
 
     thread_local std::default_random_engine rengine{get_seed()};
 
+    // Reservoir algorithm to add middle points for potential use
     auto cnt = mpoint_cnt.fetch_add(1U);
     auto pos = cnt % NMiddlePoints;
     auto k = cnt / NMiddlePoints;
@@ -795,7 +822,7 @@ class GenericListBuilder final {
                                     static_cast<double>(k + 1)}(rengine)) {
       mpoints.at(pos) = elem;
     }
-    return;
+    return true;
   }
 
   bool isValidFirst(DLRecord* elem) {

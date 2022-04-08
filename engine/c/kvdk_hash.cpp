@@ -10,7 +10,7 @@ KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
   std::string val_str;
   *val = nullptr;
   KVDKStatus s = engine->rep->HashGet(StringView(collection, collection_len),
-                                   StringView(key, key_len), &val_str);
+                                      StringView(key, key_len), &val_str);
   if (s != KVDKStatus::Ok) {
     *val_len = 0;
     return s;
@@ -24,14 +24,15 @@ KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* collection,
                        size_t collection_len, const char* key, size_t key_len,
                        const char* val, size_t val_len) {
   return engine->rep->HashSet(StringView(collection, collection_len),
-                           StringView(key, key_len), StringView(val, val_len));
+                              StringView(key, key_len),
+                              StringView(val, val_len));
 }
 
 KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* collection,
                           size_t collection_len, const char* key,
                           size_t key_len) {
   return engine->rep->HashDelete(StringView(collection, collection_len),
-                              StringView(key, key_len));
+                                 StringView(key, key_len));
 }
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
@@ -74,7 +75,7 @@ void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** elem_data,
 }
 
 void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** elem_data,
-                              size_t* elem_len) {
+                            size_t* elem_len) {
   *elem_data = nullptr;
   *elem_len = 0;
   std::string buffer = iter->rep->Key();
@@ -82,4 +83,4 @@ void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** elem_data,
   *elem_len = buffer.size();
 }
 
-} // extern "C"
+}  // extern "C"

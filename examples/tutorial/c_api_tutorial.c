@@ -345,15 +345,15 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
       kvdk_engine, hash_collection, strlen(hash_collection));
   assert(kvdk_iter != NULL);
   int cnt = 0;
-  for (KVDKHashIteratorSeekToFirst(kvdk_iter); KVDKHashIteratorIsValid(kvdk_iter);
-       KVDKHashIteratorNext(kvdk_iter)) {
+  for (KVDKHashIteratorSeekToFirst(kvdk_iter);
+       KVDKHashIteratorIsValid(kvdk_iter); KVDKHashIteratorNext(kvdk_iter)) {
     ++cnt;
   }
   assert(cnt == 9);
 
   cnt = 0;
-  for (KVDKHashIteratorSeekToLast(kvdk_iter); KVDKHashIteratorIsValid(kvdk_iter);
-       KVDKHashIteratorPrev(kvdk_iter)) {
+  for (KVDKHashIteratorSeekToLast(kvdk_iter);
+       KVDKHashIteratorIsValid(kvdk_iter); KVDKHashIteratorPrev(kvdk_iter)) {
     ++cnt;
   }
   printf("Successfully performed Get Set Delete Iterate on HashList.\n");

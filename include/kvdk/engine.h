@@ -132,7 +132,7 @@ extern void KVDKHashIteratorSeekToFirst(KVDKHashIterator* iter);
 extern void KVDKHashIteratorSeekToLast(KVDKHashIterator* iter);
 extern int KVDKHashIteratorIsValid(KVDKHashIterator* iter);
 extern void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** elem_data,
-                                     size_t* elem_len);
+                                   size_t* elem_len);
 extern void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** elem_data,
                                      size_t* elem_len);
 

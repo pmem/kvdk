@@ -228,7 +228,7 @@ class ShadowKVEngine {
 
   // Check KVEngine by iterating through it.
   // Iterated KVs are looked up in possible_state.
-  template<typename Iterator>
+  template <typename Iterator>
   void CheckIterator(Iterator* iterator, IteratingDirection direction) {
     PossibleStates possible_state_copy{possible_state};
 
