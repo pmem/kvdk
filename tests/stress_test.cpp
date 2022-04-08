@@ -688,7 +688,7 @@ class EngineStressTest : public EngineTestBase {
     sz_value_max = 1024;
   }
   // Shared among EngineStressTest
-  const size_t n_reboot = 3;
+  const size_t n_reboot = 1;
 };
 
 TEST_F(EngineStressTest, HashesHSetOnly) {
@@ -757,7 +757,7 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
     InitializeSorted(global_collection_name);
-    
+
     kvdk::SortedCollectionConfigs s_configs;
     s_configs.index_with_hashtable = index_with_hashtable;
     ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, s_configs),
