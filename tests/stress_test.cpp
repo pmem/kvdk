@@ -726,42 +726,56 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
 }
 
 TEST_F(EngineStressTest, SortedSetsSSetOnly) {
-  std::string global_collection_name{"SortedCollection"};
-  InitializeSorted(global_collection_name);
+  for (int index_with_hashtable : {0, 1}) {
+    std::string global_collection_name{"SortedCollection" +
+                                       index_with_hashtable};
+    InitializeSorted(global_collection_name);
 
-  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name),
-            kvdk::Status::Ok);
+    kvdk::SortedCollectionConfigs s_configs;
+    s_configs.index_with_hashtable = index_with_hashtable;
+    ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, s_configs),
+              kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for "
-            << n_reboot << " times." << std::endl;
-  for (size_t i = 0; i < n_reboot; i++) {
-    std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
+    std::cout << "[Testing] Modify, check, reboot and check engine for "
+              << n_reboot << " times." << std::endl;
+    std::cout << "Sorted collection index with hashtable: "
+              << index_with_hashtable << std::endl;
+    for (size_t i = 0; i < n_reboot; i++) {
+      std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
-    SortedSetsAllSSet(global_collection_name);
-    CheckSortedSetsCollection(global_collection_name);
+      SortedSetsAllSSet(global_collection_name);
+      CheckSortedSetsCollection(global_collection_name);
 
-    RebootDB();
-    CheckSortedSetsCollection(global_collection_name);
+      RebootDB();
+      CheckSortedSetsCollection(global_collection_name);
+    }
   }
 }
 
 TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
-  std::string global_collection_name{"SortedCollection"};
-  InitializeSorted(global_collection_name);
+  for (int index_with_hashtable : {0, 1}) {
+    std::string global_collection_name{"SortedCollection" +
+                                       index_with_hashtable};
+    InitializeSorted(global_collection_name);
 
-  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name),
-            kvdk::Status::Ok);
+    kvdk::SortedCollectionConfigs s_configs;
+    s_configs.index_with_hashtable = index_with_hashtable;
+    ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, s_configs),
+              kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for "
-            << n_reboot << " times." << std::endl;
-  for (size_t i = 0; i < n_reboot; i++) {
-    std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
+    std::cout << "[Testing] Modify, check, reboot and check engine for "
+              << n_reboot << " times." << std::endl;
+    std::cout << "Sorted collection index with hashtable: "
+              << index_with_hashtable << std::endl;
+    for (size_t i = 0; i < n_reboot; i++) {
+      std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
-    SortedSetsEvenSSetOddSDelete(global_collection_name);
-    CheckSortedSetsCollection(global_collection_name);
+      SortedSetsEvenSSetOddSDelete(global_collection_name);
+      CheckSortedSetsCollection(global_collection_name);
 
-    RebootDB();
-    CheckSortedSetsCollection(global_collection_name);
+      RebootDB();
+      CheckSortedSetsCollection(global_collection_name);
+    }
   }
 }
 
@@ -849,25 +863,32 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
 }
 
 TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
-  std::string global_collection_name{"SortedCollection"};
-  InitializeSorted(global_collection_name);
+  for (int index_with_hashtable : {0, 1}) {
+    std::string global_collection_name{"SortedCollection" +
+                                       index_with_hashtable};
+    InitializeSorted(global_collection_name);
 
-  ASSERT_EQ(engine->CreateSortedCollection(global_collection_name),
-            kvdk::Status::Ok);
+    kvdk::SortedCollectionConfigs s_configs;
+    s_configs.index_with_hashtable = index_with_hashtable;
+    ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, s_configs),
+              kvdk::Status::Ok);
 
-  std::cout << "[Testing] Modify, check, reboot and check engine for "
-            << n_reboot << " times." << std::endl;
-  for (size_t i = 0; i < n_reboot; i++) {
-    std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
+    std::cout << "[Testing] Modify, check, reboot and check engine for "
+              << n_reboot << " times." << std::endl;
+    std::cout << "Sorted collection index with hashtable: "
+              << index_with_hashtable << std::endl;
+    for (size_t i = 0; i < n_reboot; i++) {
+      std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
-    for (size_t i = 0; i < n_repeat; i++) {
-      SortedSetsAllSSet(global_collection_name);
-      CheckSortedSetsCollection(global_collection_name);
-      SortedSetsEvenSSetOddSDelete(global_collection_name);
+      for (size_t i = 0; i < n_repeat; i++) {
+        SortedSetsAllSSet(global_collection_name);
+        CheckSortedSetsCollection(global_collection_name);
+        SortedSetsEvenSSetOddSDelete(global_collection_name);
+        CheckSortedSetsCollection(global_collection_name);
+      }
+      RebootDB();
       CheckSortedSetsCollection(global_collection_name);
     }
-    RebootDB();
-    CheckSortedSetsCollection(global_collection_name);
   }
 }
 
