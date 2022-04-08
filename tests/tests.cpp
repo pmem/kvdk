@@ -1342,13 +1342,15 @@ TEST_F(EngineBasicTest, TestHash) {
   };
 
   for (size_t i = 0; i < 3; i++) {
+    Reboot();
     LaunchNThreads(num_threads, HSet);
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
     LaunchNThreads(num_threads, HashLength);
-    Reboot();
+    LaunchNThreads(num_threads, HSet);
     LaunchNThreads(num_threads, HGet);
+    LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
     LaunchNThreads(num_threads, HashLength);
   }

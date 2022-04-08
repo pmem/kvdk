@@ -59,14 +59,13 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   void* addr = pmem_allocator_->offset2addr_checked(space.offset);
   if (result.s == Status::NotFound) {
     hlist->PushFront(space, ts, field, value);
-    insertImpl(result, internal_key, RecordType::HashElem, addr);
-    return Status::Ok;
   } else {
     DLRecord* old_rec = result.entry.GetIndex().dl_record;
     hlist->Replace(space, old_rec, ts, field, value,
                    [&](DLRecord* rec) { purgeAndFree(rec); });
-    return Status::Ok;
   }
+  insertImpl(result, internal_key, RecordType::HashElem, addr);
+  return Status::Ok;
 }
 
 Status KVEngine::HashDelete(StringView key, StringView field) {

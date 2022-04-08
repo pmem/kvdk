@@ -353,7 +353,6 @@ class GenericList final : public Collection {
     Iterator next{pos};
 
     emplace_between(space, prev, next, timestamp, key, value);
-    ++sz;
     return Iterator{this, addressOf(space.offset)};
   }
 
@@ -365,7 +364,6 @@ class GenericList final : public Collection {
     }
 
     emplace_between(space, Head(), Front(), timestamp, key, value);
-    ++sz;
 
     if (lock_table != nullptr) {
       lock_table->Unlock(Head().Hash());
@@ -386,7 +384,6 @@ class GenericList final : public Collection {
     }
 
     emplace_between(space, Back(), Tail(), timestamp, key, value);
-    ++sz;
 
     if (lock_table != nullptr) {
       lock_table->Unlock(Back().Hash());
@@ -402,7 +399,34 @@ class GenericList final : public Collection {
     --prev;
     Iterator next{pos};
     ++next;
-    emplace_between(space, prev, next, timestamp, key, value);
+
+    kvdk_assert(++++Iterator{prev} == next, "Should only replace");
+
+    PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
+    PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
+    DLRecord* record = DLRecord::PersistDLRecord(
+        addressOf(space.offset), space.size, timestamp, DataType,
+        NullPMemOffset, prev_off, next_off, InternalKey(key), value);
+
+    if (Size() == 0) {
+      kvdk_assert(false, "Impossible!");
+    } else if (prev == Head() && next == Tail()) {
+      // PushFront()
+      first = record;
+      last = record;
+      first = record;
+    } else if (next == Tail()) {
+      // PushBack()
+      kvdk_assert(prev != Head(), "");
+      prev->PersistNextNT(space.offset);
+      last = record;
+    } else {
+      // Emplace between two elements on PMem
+      kvdk_assert(prev != Head() && next != Tail(), "");
+      prev->PersistNextNT(space.offset);
+      next->PersistPrevNT(space.offset);
+    }
+
     elem_deleter(pos.Address());
     return Iterator{this, addressOf(space.offset)};
   }
@@ -447,11 +471,11 @@ class GenericList final : public Collection {
     return alloc->addr2offset_checked(rec);
   }
 
+  /// TODO: is this helper function necessary?
   Iterator emplace_between(SpaceEntry space, Iterator prev, Iterator next,
                            TimeStampType timestamp, StringView key,
                            StringView value) {
-    kvdk_assert(++Iterator{prev} == next || ++++Iterator{prev} == next,
-                "Should only insert or replace");
+    kvdk_assert(++Iterator{prev} == next, "Should only insert");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -480,6 +504,7 @@ class GenericList final : public Collection {
       next->PersistPrevNT(space.offset);
     }
 
+    ++sz;
     return (next == Tail()) ? --next : ++prev;
   }
 
