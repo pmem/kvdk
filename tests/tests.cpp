@@ -1280,7 +1280,7 @@ TEST_F(EngineBasicTest, TestHash) {
   auto HSet = [&](size_t tid) {
     umap& local_copy = local_copies[tid];
     for (size_t j = 0; j < count; j++) {
-      std::string field{std::to_string(j) + "_" + GetRandomString(10)};
+      std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
       std::string value{GetRandomString(120)};
       ASSERT_EQ(engine->HashSet(key, field, value), Status::Ok);
       local_copy[field] = value;
@@ -1292,7 +1292,7 @@ TEST_F(EngineBasicTest, TestHash) {
     for (auto const& kv : local_copy) {
       std::string resp;
       ASSERT_EQ(engine->HashGet(key, kv.first, &resp), Status::Ok);
-      ASSERT_EQ(resp, kv.second);
+      ASSERT_EQ(resp, kv.second) << "Field:\t" << kv.first << "\n";
     }
   };
 
@@ -1308,10 +1308,11 @@ TEST_F(EngineBasicTest, TestHash) {
   auto HashLength = [&](size_t) {
     size_t len = 0;
     ASSERT_EQ(engine->HashLength(key, &len), Status::Ok);
+    size_t cnt = 0;
     for (size_t tid = 0; tid < num_threads; tid++) {
-      len -= local_copies[tid].size();
+      cnt += local_copies[tid].size();
     }
-    ASSERT_EQ(len, 0);
+    ASSERT_EQ(len, cnt);
   };
 
   auto HashIterate = [&](size_t) {

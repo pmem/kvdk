@@ -214,7 +214,18 @@ class KVEngine : public Engine {
   LookupResult lookupKey(StringView key, uint16_t type_mask);
 
   template <bool allocate_hash_entry_if_missing>
-  LookupResult lookupImpl(StringView key, uint16_t type_mask);
+  LookupResult lookupImpl(StringView key, uint16_t type_mask) {
+    LookupResult result;
+    auto hint = hash_table_->GetHint(key);
+    if (!allocate_hash_entry_if_missing) {
+      result.s = hash_table_->SearchForRead(
+          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+    } else {
+      result.s = hash_table_->SearchForWrite(
+          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+    }
+    return result;
+  }
 
   // Lockless, caller should lock the key aforehand.
   // Remove key from HashTable. It's up to caller to handle the erased key
