@@ -419,9 +419,11 @@ class KVEngine : public Engine {
 
   void FreeSkiplistDramNodes();
 
-  inline void delayFree(const OldDeleteRecord&);
+  void delayFree(const OldDeleteRecord&);
 
-  inline void delayFree(const OldDataRecord&);
+  void delayFree(const OldDataRecord&);
+
+  void delayFree(void* addr, TimeStampType ts);
 
   inline std::string data_file() { return data_file(dir_); }
 

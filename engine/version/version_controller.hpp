@@ -71,6 +71,34 @@ class SnapshotList {
 // kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
  public:
+  class Token {
+    VersionController* owner_;
+    TimeStampType ts_{};
+
+   public:
+    Token(VersionController* o) : owner_{o} {
+      owner_->HoldLocalSnapshot();
+      ts_ = owner_->version_thread_cache_[access_thread.id]
+                .holding_snapshot.timestamp;
+    };
+    Token(Token const&) = delete;
+    Token& operator=(Token const&) = delete;
+    Token(Token&& other) : owner_{nullptr} { *this = std::move(other); }
+    Token& operator=(Token&& other) {
+      kvdk_assert(owner_ == nullptr, "");
+      kvdk_assert(other.owner_ != nullptr, "");
+      std::swap(owner_, other.owner_);
+      std::swap(ts_, other.ts_);
+    }
+    ~Token() {
+      if (owner_ != nullptr) {
+        owner_->ReleaseLocalSnapshot();
+      }
+    }
+    TimeStampType Timestamp() { return ts_; }
+  };
+
+ public:
   VersionController(uint64_t max_access_threads)
       : version_thread_cache_(max_access_threads) {}
 
@@ -87,6 +115,8 @@ class VersionController {
     version_thread_cache_[access_thread.id].holding_snapshot.timestamp =
         GetCurrentTimestamp();
   }
+
+  Token GetToken() { return Token{this}; }
 
   inline void ReleaseLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 && static_cast<size_t>(access_thread.id) <

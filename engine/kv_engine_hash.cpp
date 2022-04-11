@@ -10,6 +10,7 @@ Status KVEngine::HashLength(StringView key, size_t* len) {
   if (s != Status::Ok) {
     return s;
   }
+  auto token = version_controller_.GetToken();
   *len = hlist->Size();
   return Status::Ok;
 }
@@ -24,6 +25,7 @@ Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
   if (s != Status::Ok) {
     return s;
   }
+  auto token = version_controller_.GetToken();
   LookupResult result =
       lookupImpl<false>(hlist->InternalKey(field), RecordType::HashElem);
   if (result.s != Status::Ok) {
@@ -52,8 +54,8 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
     return result.s;
   }
 
-  /// TODO: delayFree instead of purgeAndFree
-  TimeStampType ts = version_controller_.GetCurrentTimestamp();
+  auto token = version_controller_.GetToken();
+  TimeStampType ts = token.Timestamp();
   auto space = pmem_allocator_->Allocate(sizeof(DLRecord) +
                                          internal_key.size() + value.size());
   if (space.size == 0) {
@@ -62,16 +64,18 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   void* addr = pmem_allocator_->offset2addr_checked(space.offset);
   if (result.s == Status::NotFound) {
     if (std::hash<std::thread::id>{}(std::this_thread::get_id()) % 2 == 0) {
-      hlist->PushFront(space, ts, field, value);
+      hlist->PushFrontLocked(space, ts, field, value);
     } else {
-      hlist->PushBack(space, ts, field, value);
+      hlist->PushBackLocked(space, ts, field, value);
     }
+    insertImpl(result, internal_key, RecordType::HashElem, addr);
   } else {
     DLRecord* old_rec = result.entry.GetIndex().dl_record;
-    hlist->Replace(space, old_rec, ts, field, value,
-                   [&](DLRecord* rec) { purgeAndFree(rec); });
+    insertImpl(result, internal_key, RecordType::HashElem, addr);
+    guard.unlock();
+    hlist->ReplaceLocked(space, old_rec, ts, field, value,
+                         [&](DLRecord* rec) { delayFree(rec, ts); });
   }
-  insertImpl(result, internal_key, RecordType::HashElem, addr);
   return Status::Ok;
 }
 
@@ -98,8 +102,10 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
   if (ret.s != Status::Ok) {
     return ret.s;
   }
-  hlist->Erase(ret.entry.GetIndex().dl_record,
-               [&](DLRecord* rec) { purgeAndFree(rec); });
+  auto token = version_controller_.GetToken();
+  TimeStampType ts = token.Timestamp();
+  hlist->EraseLocked(ret.entry.GetIndex().dl_record,
+                     [&](DLRecord* rec) { delayFree(rec, ts); });
   return Status::Ok;
 }
 
@@ -214,14 +220,19 @@ Status KVEngine::hashListRegisterRecovered() {
 Status KVEngine::hashListDestroy(HashList* hlist) {
   kvdk_assert(hlist->Valid(), "");
   while (hlist->Size() != 0) {
+    auto token = version_controller_.GetToken();
+    TimeStampType ts = token.Timestamp();
     auto internal_key = hlist->Front()->Key();
     auto guard = hash_table_->AcquireLock(internal_key);
     LookupResult ret = removeImpl(internal_key, RecordType::HashElem);
+    guard.unlock();
     kvdk_assert(ret.s == Status::Ok, "");
     kvdk_assert(ret.entry.GetIndex().dl_record == hlist->Front().Address(), "");
-    hlist->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
+    hlist->PopFront([&](DLRecord* rec) { delayFree(rec, ts); });
   }
-  hlist->Destroy([&](DLRecord* rec) { purgeAndFree(rec); });
+  auto token = version_controller_.GetToken();
+  TimeStampType ts = token.Timestamp();
+  hlist->Destroy([&](DLRecord* rec) { delayFree(rec, ts); });
   return Status::Ok;
 }
 

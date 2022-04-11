@@ -325,6 +325,7 @@ Status KVEngine::RestoreData() {
         }
         break;
       }
+      case RecordType::Deleted:
       case RecordType::Padding:
       case RecordType::Empty: {
         data_entry_cached.meta.type = RecordType::Padding;
@@ -1634,6 +1635,12 @@ void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
   }
 }
 
+void KVEngine::delayFree(void* addr, TimeStampType ts) {
+  old_records_cleaner_.DelayFree(addr, ts);
+  old_records_cleaner_.TryCleanCachedOldRecords(
+      kLimitForegroundCleanOldRecords);
+}
+
 void KVEngine::backgroundOldRecordCleaner() {
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundOldRecordCleaner::NothingToDo",
                            nullptr);
@@ -1874,7 +1881,7 @@ Status KVEngine::ListInsert(std::unique_ptr<ListIterator> const& pos,
     return Status::PmemOverflow;
   }
 
-  iter->Rep() = list->EmplaceBefore(
+  iter->Rep() = list->Emplace(
       space, iter->Rep(), version_controller_.GetCurrentTimestamp(), "", elem);
   return Status::Ok;
 }

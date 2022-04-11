@@ -8,6 +8,19 @@
 #include "../sorted_collection/skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
+
+void OldRecordsCleaner::DelayFree(void* addr, TimeStampType ts) {
+  kvdk_assert(static_cast<DataEntry*>(addr)->meta.type == RecordType::Deleted,
+              "");
+  kvdk_assert(access_thread.id >= 0, "");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  std::lock_guard<SpinMutex> guard{tc.old_records_lock};
+  DataEntry* data_entry = static_cast<DataEntry*>(addr);
+  SpaceEntry entry{kv_engine_->pmem_allocator_->addr2offset_checked(addr),
+                   data_entry->header.record_size};
+  tc.pending_free_space_entries.push_back(PendingFreeSpaceEntry{entry, ts});
+}
+
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &
@@ -143,44 +156,44 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
               "un-initialized access thread");
   auto& tc = cleaner_thread_cache_[access_thread.id];
-  if (tc.old_data_records.size() > 0 || tc.old_delete_records.size() > 0) {
-    maybeUpdateOldestSnapshot();
-    std::unique_lock<SpinMutex> ul(tc.old_records_lock);
-    for (int limit = num_limit_clean;
-         tc.old_delete_records.size() > 0 &&
-         tc.old_delete_records.front().release_time <
-             clean_all_data_record_ts_ &&
-         limit > 0;
-         limit--) {
-      // To avoid access invalid data, an old delete record can be freed only if
-      // no holding snapshot is older than its purging time
-      tc.pending_free_space_entries.emplace_back(PendingFreeSpaceEntry{
-          purgeOldDeleteRecord(tc.old_delete_records.front()),
-          kv_engine_->version_controller_.GetCurrentTimestamp()});
-      tc.old_delete_records.pop_front();
-    }
+  if (tc.old_data_records.empty() && tc.old_delete_records.empty()) {
+    return;
+  }
 
-    TimeStampType oldest_refer_ts =
-        kv_engine_->version_controller_.OldestSnapshotTS();
-    for (int limit = num_limit_clean;
-         tc.old_data_records.size() > 0 &&
-         tc.old_data_records.front().release_time < oldest_refer_ts &&
-         limit > 0;
-         limit--) {
-      kv_engine_->pmem_allocator_->Free(
-          purgeOldDataRecord(tc.old_data_records.front()));
-      tc.old_data_records.pop_front();
-    }
+  maybeUpdateOldestSnapshot();
+  std::unique_lock<SpinMutex> ul(tc.old_records_lock);
+  for (int limit = num_limit_clean;
+       tc.old_delete_records.size() > 0 &&
+       tc.old_delete_records.front().release_time < clean_all_data_record_ts_ &&
+       limit > 0;
+       limit--) {
+    // To avoid access invalid data, an old delete record can be freed only if
+    // no holding snapshot is older than its purging time
+    tc.pending_free_space_entries.emplace_back(PendingFreeSpaceEntry{
+        purgeOldDeleteRecord(tc.old_delete_records.front()),
+        kv_engine_->version_controller_.GetCurrentTimestamp()});
+    tc.old_delete_records.pop_front();
+  }
 
-    for (int limit = num_limit_clean;
-         tc.pending_free_space_entries.size() > 0 &&
-         tc.pending_free_space_entries.front().release_time < oldest_refer_ts &&
-         limit > 0;
-         limit--) {
-      kv_engine_->pmem_allocator_->Free(
-          tc.pending_free_space_entries.front().entry);
-      tc.pending_free_space_entries.pop_front();
-    }
+  TimeStampType oldest_refer_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  for (int limit = num_limit_clean;
+       tc.old_data_records.size() > 0 &&
+       tc.old_data_records.front().release_time < oldest_refer_ts && limit > 0;
+       limit--) {
+    kv_engine_->pmem_allocator_->Free(
+        purgeOldDataRecord(tc.old_data_records.front()));
+    tc.old_data_records.pop_front();
+  }
+
+  for (int limit = num_limit_clean;
+       tc.pending_free_space_entries.size() > 0 &&
+       tc.pending_free_space_entries.front().release_time < oldest_refer_ts &&
+       limit > 0;
+       limit--) {
+    kv_engine_->pmem_allocator_->Free(
+        tc.pending_free_space_entries.front().entry);
+    tc.pending_free_space_entries.pop_front();
   }
 }
 

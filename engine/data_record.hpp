@@ -6,6 +6,7 @@
 
 #include <immintrin.h>
 #include <libpmem.h>
+#include <x86intrin.h>
 
 #include "alias.hpp"
 #include "kvdk/configs.hpp"
@@ -27,6 +28,8 @@ enum RecordType : uint16_t {
 
   ListRecord = (1 << 9),
   ListElem = (1 << 10),
+
+  Deleted = (1 << 14),
 
   Padding = (1 << 15),
 };
@@ -159,6 +162,7 @@ struct StringRecord {
   void PersistExpireTimeCLWB(ExpireTimeType time) {
     expired_time = time;
     _mm_clwb(&expired_time);
+    _mm_mfence();
   }
 
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
@@ -226,6 +230,12 @@ struct DLRecord {
 
   void Destroy() { entry.Destroy(); }
 
+  void MarkAsDeleted() {
+    entry.meta.type = RecordType::Deleted;
+    _mm_clwb(&entry.meta.type);
+    _mm_mfence();
+  }
+
   bool Validate() {
     if (ValidateRecordSize()) {
       return Checksum() == entry.header.checksum;
@@ -268,17 +278,20 @@ struct DLRecord {
   void PersistNextCLWB(PMemOffsetType offset) {
     next = offset;
     _mm_clwb(&next);
+    _mm_mfence();
   }
 
   void PersistPrevCLWB(PMemOffsetType offset) {
     prev = offset;
     _mm_clwb(&prev);
+    _mm_mfence();
   }
 
   void PersistExpireTimeCLWB(ExpireTimeType time) {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     expired_time = time;
     _mm_clwb(&expired_time);
+    _mm_mfence();
   }
 
   ExpireTimeType GetExpireTime() const {

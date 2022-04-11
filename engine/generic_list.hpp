@@ -64,8 +64,10 @@ class GenericList final : public Collection {
     // just for convention this state has two names
     // Tail() for iterating forward
     // Head() for iterating backward
-    explicit Iterator(GenericList const* o) : owner{o} {
-      kvdk_assert(owner != nullptr, "Invalid iterator!");
+    explicit Iterator(GenericList const* o) : Iterator{o, nullptr} {}
+
+    explicit Iterator(GenericList const* o, DLRecord* c) : owner{o}, curr{c} {
+      kvdk_assert(check(), "");
     }
 
     Iterator() = delete;
@@ -76,8 +78,9 @@ class GenericList final : public Collection {
     ~Iterator() = default;
 
     /// Increment and Decrement operators
+    // Don't skip Delete Records, its up to caller to handle the situation.
     Iterator& operator++() {
-      kvdk_assert(valid(), "");
+      kvdk_assert(check(), "");
       if (curr == nullptr) {
         // Head(), goto Front()
         // Front() == Tail() if List is empty.
@@ -89,7 +92,7 @@ class GenericList final : public Collection {
         // Back(), goto Tail()
         curr = nullptr;
       }
-      kvdk_assert(valid(), "");
+      kvdk_assert(check(), "");
       return *this;
     }
 
@@ -100,7 +103,7 @@ class GenericList final : public Collection {
     }
 
     Iterator& operator--() {
-      kvdk_assert(valid(), "");
+      kvdk_assert(check(), "");
       if (curr == nullptr) {
         // Tail(), goto Back()
         // Back() == Head() if List is empty.
@@ -113,7 +116,7 @@ class GenericList final : public Collection {
         // Front(), goto Head()
         curr = nullptr;
       }
-      kvdk_assert(valid(), "");
+      kvdk_assert(check(), "");
       return *this;
     }
 
@@ -130,7 +133,7 @@ class GenericList final : public Collection {
     PMemOffsetType Offset() const { return owner->offsetOf(Address()); }
 
     DLRecord* Address() const {
-      kvdk_assert(curr != nullptr && valid(), "");
+      kvdk_assert(curr != nullptr && check(), "");
       return curr;
     }
 
@@ -138,6 +141,10 @@ class GenericList final : public Collection {
       void const* addr =
           (curr == nullptr) ? static_cast<void const*>(owner) : curr;
       return XXH3_64bits(&addr, sizeof(void const*));
+    }
+
+    bool Deleted() const {
+      return (curr != nullptr && curr->entry.meta.type == RecordType::Deleted);
     }
 
    private:
@@ -149,16 +156,22 @@ class GenericList final : public Collection {
       return !(lhs == rhs);
     }
 
-    friend GenericList;
-    Iterator(GenericList const* o, DLRecord* c) : owner{o}, curr{c} {
-      kvdk_assert(curr != nullptr && valid(), "");
-    }
-
-    // For assert
-    bool valid() const {
-      return (curr == nullptr ||
-              (curr->entry.meta.type == DataType && curr->Validate() &&
-               Collection::ExtractID(curr->Key()) == owner->ID()));
+    // Returns true if iterator stays in a possible state,
+    // including iterator points to
+    //  Head()/Tail()
+    //  A Delete Record
+    //  A Normal Record
+    bool check() const {
+      if (curr == nullptr) {
+        return true;
+      }
+      if (Collection::ExtractID(curr->Key()) != owner->ID()) {
+        return false;
+      }
+      if (Deleted()) {
+        return true;
+      }
+      return (curr->entry.meta.type == DataType && curr->Validate());
     }
   };
 
@@ -262,49 +275,13 @@ class GenericList final : public Collection {
     }
   }
 
-  // For Redis List only
-  /// TODO: ensure every API is thread-safe.
   template <typename ElemDeleter>
   Iterator Erase(Iterator pos, ElemDeleter elem_deleter) {
-    kvdk_assert(pos != Head(), "Cannot erase Head()");
-    kvdk_assert(Size() >= 1, "Cannot erase from empty List!");
-    kvdk_assert(ExtractID(pos->Key()) == ID(), "Erase from wrong List!");
-
-    Iterator prev{pos};
-    --prev;
-    Iterator next{pos};
-    ++next;
-
-    kvdk_assert(prev.valid() && next.valid(), "");
-
-    if (Size() == 1) {
-      kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
-      first = nullptr;
-      last = nullptr;
-    } else if (prev == Head()) {
-      // Erase Front()
-      kvdk_assert(next != Tail(), "");
-      first = next.Address();
-      next->PersistPrevNT(NullPMemOffset);
-    } else if (next == Tail()) {
-      // Erase Back()
-      kvdk_assert(prev != Head(), "");
-      last = prev.Address();
-      prev->PersistNextNT(NullPMemOffset);
-    } else {
-      kvdk_assert(prev != Head() && next != Tail(), "");
-      // Reverse procedure of emplace_between() between two elements
-      next->PersistPrevNT(prev.Offset());
-      prev->PersistNextNT(next.Offset());
-    }
-    elem_deleter(pos.Address());
-    --sz;
-    return next;
+    return erase_impl(pos, elem_deleter);
   }
 
-  // For Redis Hash only
   template <typename ElemDeleter>
-  void Erase(DLRecord* rec, ElemDeleter elem_deleter) {
+  void EraseLocked(DLRecord* rec, ElemDeleter elem_deleter) {
     kvdk_assert(lock_table != nullptr, "");
     Iterator pos{this, rec};
 
@@ -321,53 +298,52 @@ class GenericList final : public Collection {
       }
       break;
     }
-    Erase(pos, elem_deleter);
+    erase_impl(pos, elem_deleter);
     lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
   }
 
-  // For Redis List only
   template <typename ElemDeleter>
   void PopFront(ElemDeleter elem_deleter) {
-    Erase(Front(), elem_deleter);
+    erase_impl(Front(), elem_deleter);
   }
 
   // For Redis List only
   template <typename ElemDeleter>
   void PopBack(ElemDeleter elem_deleter) {
-    Erase(Back(), elem_deleter);
+    erase_impl(Back(), elem_deleter);
   }
 
   // For Redis List only
-  Iterator EmplaceBefore(SpaceEntry space, Iterator pos,
-                         TimeStampType timestamp, StringView key,
-                         StringView value) {
-    Iterator prev{pos};
-    --prev;
-    Iterator next{pos};
-
-    emplace_between(space, prev, next, timestamp, key, value);
-    return Iterator{this, addressOf(space.offset)};
+  Iterator Emplace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
+                   StringView key, StringView value) {
+    return emplace_impl(space, pos, timestamp, key, value);
   }
 
-  // For Redis List and Redis Hash
   void PushFront(SpaceEntry space, TimeStampType timestamp, StringView key,
                  StringView value) {
-    if (lock_table != nullptr) {
-      lock_table->Lock(Head().Hash());
-    }
+    emplace_impl(space, Front(), timestamp, key, value);
+  }
 
-    emplace_between(space, Head(), Front(), timestamp, key, value);
-
-    if (lock_table != nullptr) {
-      lock_table->Unlock(Head().Hash());
-    }
+  void PushFrontLocked(SpaceEntry space, TimeStampType timestamp,
+                       StringView key, StringView value) {
+    kvdk_assert(lock_table != nullptr, "");
+    lock_table->Lock(Head().Hash());
+    emplace_impl(space, Front(), timestamp, key, value);
+    lock_table->Unlock(Head().Hash());
   }
 
   // For Redis List and Redis Hash
   void PushBack(SpaceEntry space, TimeStampType timestamp, StringView key,
                 StringView value) {
+    emplace_impl(space, Tail(), timestamp, key, value);
+  }
+
+  // For Redis List and Redis Hash
+  void PushBackLocked(SpaceEntry space, TimeStampType timestamp, StringView key,
+                      StringView value) {
     Iterator back = Back();
-    while (lock_table != nullptr) {
+    kvdk_assert(lock_table != nullptr, "");
+    while (true) {
       lock_table->Lock(back.Hash());
       if (back != Back()) {
         lock_table->Unlock(back.Hash());
@@ -377,61 +353,21 @@ class GenericList final : public Collection {
       break;
     }
 
-    emplace_between(space, Back(), Tail(), timestamp, key, value);
+    emplace_impl(space, Tail(), timestamp, key, value);
 
-    if (lock_table != nullptr) {
-      lock_table->Unlock(back.Hash());
-    }
+    lock_table->Unlock(back.Hash());
   }
 
-  // For Redis List only
   template <typename ElemDeleter>
   Iterator Replace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
                    StringView key, StringView value, ElemDeleter elem_deleter) {
-    kvdk_assert(ExtractID(pos->Key()) == ID(), "Wrong List!");
-    Iterator prev{pos};
-    --prev;
-    Iterator next{pos};
-    ++next;
-
-    kvdk_assert(++++Iterator{prev} == next, "Should only replace");
-
-    PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
-    PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
-    DLRecord* record = DLRecord::PersistDLRecord(
-        addressOf(space.offset), space.size, timestamp, DataType,
-        NullPMemOffset, prev_off, next_off, InternalKey(key), value);
-
-    kvdk_assert(Size() >= 1, "");
-    if (Size() == 1) {
-      kvdk_assert(prev == Head() && next == Tail(), "");
-      first = record;
-      last = record;
-    } else if (next == Tail()) {
-      // Replace Last
-      kvdk_assert(prev != Head(), "");
-      prev->PersistNextNT(space.offset);
-      last = record;
-    } else if (prev == Head()) {
-      // Replace First
-      kvdk_assert(next != Tail(), "");
-      next->PersistPrevNT(space.offset);
-      first = record;
-    } else {
-      // Replace Middle
-      kvdk_assert(prev != Head() && next != Tail(), "");
-      prev->PersistNextNT(space.offset);
-      next->PersistPrevNT(space.offset);
-    }
-
-    elem_deleter(pos.Address());
-    return Iterator{this, addressOf(space.offset)};
+    return replace_impl(space, pos, timestamp, key, value, elem_deleter);
   }
 
-  // For Redis Hash only
   template <typename ElemDeleter>
-  void Replace(SpaceEntry space, DLRecord* rec, TimeStampType timestamp,
-               StringView key, StringView value, ElemDeleter elem_deleter) {
+  void ReplaceLocked(SpaceEntry space, DLRecord* rec, TimeStampType timestamp,
+                     StringView key, StringView value,
+                     ElemDeleter elem_deleter) {
     kvdk_assert(lock_table != nullptr, "");
     Iterator pos{this, rec};
     Iterator prev{pos};
@@ -448,7 +384,7 @@ class GenericList final : public Collection {
       }
       break;
     }
-    Replace(space, pos, timestamp, key, value, elem_deleter);
+    replace_impl(space, pos, timestamp, key, value, elem_deleter);
     lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
   }
 
@@ -461,11 +397,14 @@ class GenericList final : public Collection {
     return alloc->addr2offset_checked(rec);
   }
 
-  /// TODO: is this helper function necessary?
-  Iterator emplace_between(SpaceEntry space, Iterator prev, Iterator next,
-                           TimeStampType timestamp, StringView key,
-                           StringView value) {
-    kvdk_assert(++Iterator{prev} == next, "Should only insert");
+  Iterator emplace_impl(SpaceEntry space, Iterator next,
+                        TimeStampType timestamp, StringView key,
+                        StringView value) {
+    kvdk_assert(next == Tail() || ExtractID(next->Key()) == ID(),
+                "Wrong List!");
+    Iterator prev{next};
+    --prev;
+    kvdk_assert(!next.Deleted() && !prev.Deleted(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -496,6 +435,89 @@ class GenericList final : public Collection {
 
     ++sz;
     return (next == Tail()) ? --next : ++prev;
+  }
+
+  template <typename ElemDeleter>
+  Iterator erase_impl(Iterator pos, ElemDeleter elem_deleter) {
+    kvdk_assert(pos != Head(), "Cannot erase Head()");
+    kvdk_assert(Size() >= 1, "Cannot erase from empty List!");
+    kvdk_assert(ExtractID(pos->Key()) == ID(), "Erase from wrong List!");
+
+    Iterator prev{pos};
+    --prev;
+    Iterator next{pos};
+    ++next;
+
+    kvdk_assert(!prev.Deleted() && !next.Deleted(), "");
+
+    if (Size() == 1) {
+      kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
+      first = nullptr;
+      last = nullptr;
+    } else if (prev == Head()) {
+      // Erase Front()
+      kvdk_assert(next != Tail(), "");
+      first = next.Address();
+      next->PersistPrevNT(NullPMemOffset);
+    } else if (next == Tail()) {
+      // Erase Back()
+      kvdk_assert(prev != Head(), "");
+      last = prev.Address();
+      prev->PersistNextNT(NullPMemOffset);
+    } else {
+      kvdk_assert(prev != Head() && next != Tail(), "");
+      // Reverse procedure of emplace_impl() between two elements
+      next->PersistPrevNT(prev.Offset());
+      prev->PersistNextNT(next.Offset());
+    }
+    pos->MarkAsDeleted();
+    elem_deleter(pos.Address());
+    --sz;
+    return next;
+  }
+
+  template <typename ElemDeleter>
+  Iterator replace_impl(SpaceEntry space, Iterator pos, TimeStampType timestamp,
+                        StringView key, StringView value,
+                        ElemDeleter elem_deleter) {
+    kvdk_assert(ExtractID(pos->Key()) == ID(), "Wrong List!");
+    Iterator prev{pos};
+    --prev;
+    Iterator next{pos};
+    ++next;
+    kvdk_assert(!prev.Deleted() && !next.Deleted(), "");
+
+    PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
+    PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
+    DLRecord* record = DLRecord::PersistDLRecord(
+        addressOf(space.offset), space.size, timestamp, DataType,
+        NullPMemOffset, prev_off, next_off, InternalKey(key), value);
+
+    kvdk_assert(Size() >= 1, "");
+    if (Size() == 1) {
+      kvdk_assert(prev == Head() && next == Tail(), "");
+      first = record;
+      last = record;
+    } else if (next == Tail()) {
+      // Replace Last
+      kvdk_assert(prev != Head(), "");
+      prev->PersistNextNT(space.offset);
+      last = record;
+    } else if (prev == Head()) {
+      // Replace First
+      kvdk_assert(next != Tail(), "");
+      next->PersistPrevNT(space.offset);
+      first = record;
+    } else {
+      // Replace Middle
+      kvdk_assert(prev != Head() && next != Tail(), "");
+      prev->PersistNextNT(space.offset);
+      next->PersistPrevNT(space.offset);
+    }
+
+    pos->MarkAsDeleted();
+    elem_deleter(pos.Address());
+    return Iterator{this, addressOf(space.offset)};
   }
 
   friend std::ostream& operator<<(std::ostream& out, GenericList const& list) {
@@ -841,31 +863,11 @@ class GenericListBuilder final {
   }
 
   bool isValidFirst(DLRecord* elem) {
-    if (addressOf(elem->next)->prev == NullPMemOffset) {
-      // Interrupted PushFront()/PopFront()
-      return false;
-    } else if (addressOf(elem->next)->prev == offsetOf(elem)) {
-      return true;
-    } else {
-      // Interrupted ReplaceFront()
-      kvdk_assert(addressOf(addressOf(elem->next)->prev)->next == elem->next,
-                  "");
-      return false;
-    }
+    return (addressOf(elem->next)->prev == offsetOf(elem));
   }
 
   bool isValidLast(DLRecord* elem) {
-    if (addressOf(elem->prev)->next == NullPMemOffset) {
-      // Interrupted PushBack()/PopBack()
-      return false;
-    } else if (addressOf(elem->prev)->next == offsetOf(elem)) {
-      return true;
-    } else {
-      // Interrupted ReplaceBack()
-      kvdk_assert(addressOf(addressOf(elem->prev)->next)->prev == elem->prev,
-                  "");
-      return false;
-    }
+    return (addressOf(elem->prev)->next == offsetOf(elem));
   }
 
   // Check for discarded Middle
