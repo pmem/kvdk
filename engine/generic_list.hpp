@@ -311,25 +311,18 @@ class GenericList final : public Collection {
     Iterator prev{pos};
     --prev;
     while (true) {
-      lock_table->Lock(prev.Hash());
-      if (!lock_table->TryLock(pos.Hash())) {
-        lock_table->Unlock(prev.Hash());
-        continue;
-      }
+      lock_table->MultiLock({prev.Hash(), pos.Hash()});
       Iterator prev_copy{pos};
       --prev_copy;
       if (prev != prev_copy) {
-        lock_table->Unlock(pos.Hash());
-        lock_table->Unlock(prev.Hash());
+        lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
         prev = prev_copy;
         continue;
       }
       break;
     }
     Erase(pos, elem_deleter);
-
-    lock_table->Unlock(pos.Hash());
-    lock_table->Unlock(prev.Hash());
+    lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
   }
 
   // For Redis List only
@@ -438,29 +431,22 @@ class GenericList final : public Collection {
                StringView key, StringView value, ElemDeleter elem_deleter) {
     kvdk_assert(lock_table != nullptr, "");
     Iterator pos{this, rec};
-
     Iterator prev{pos};
     --prev;
     while (true) {
-      lock_table->Lock(prev.Hash());
-      if (!lock_table->TryLock(pos.Hash())) {
-        lock_table->Unlock(prev.Hash());
-        continue;
-      }
+      lock_table->MultiLock({prev.Hash(), pos.Hash()});
+
       Iterator prev_copy{pos};
       --prev_copy;
       if (prev != prev_copy) {
-        lock_table->Unlock(pos.Hash());
-        lock_table->Unlock(prev.Hash());
+        lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
         prev = prev_copy;
         continue;
       }
       break;
     }
     Replace(space, pos, timestamp, key, value, elem_deleter);
-
-    lock_table->Unlock(pos.Hash());
-    lock_table->Unlock(prev.Hash());
+    lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
   }
 
  private:
