@@ -712,42 +712,59 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
 }
 
 TEST_F(EngineBasicTest, TestStringModify) {
-  auto IncN = [](StringView value, void* n_pointer) {
-    uint64_t num = std::stoul(std::string(value.data(), value.size()));
-    uint64_t plus_by = *(static_cast<uint64_t*>(n_pointer));
-    return std::to_string(num + plus_by);
+  struct IncNArgs {
+    size_t incr_by;
+    size_t result;
+  };
+  auto IncN = [](const StringView& key, const std::string* old_val,
+                 std::string* new_value, void* modify_args) {
+    assert(modify_args);
+    IncNArgs* args = static_cast<IncNArgs*>(modify_args);
+    size_t old_num;
+    if (old_val == nullptr) {
+      // if key not exist, start from 0
+      old_num = 0;
+    } else {
+      if (old_val->size() != sizeof(size_t)) {
+        return ModifyOperation::ModifyAbort;
+      } else {
+        memcpy(&old_num, old_val->data(), sizeof(size_t));
+      }
+    }
+    args->result = old_num + args->incr_by;
+
+    new_value->resize(sizeof(size_t));
+    memcpy(&new_value[0], &args->result, sizeof(size_t));
+    return ModifyOperation::ModifyUpdate;
   };
 
   int num_threads = 16;
   int ops_per_thread = 1000;
-  uint64_t incr_by = 1;
+  uint64_t incr_by = 5;
   configs.max_access_threads = num_threads;
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string plus_key = "plus";
   std::string tmp_value;
-  ASSERT_EQ(engine->Set(plus_key, "0", WriteOptions()), Status::Ok);
-  ASSERT_EQ(engine->Modify("not_exist_key", &tmp_value, IncN, &incr_by),
-            Status::NotFound);
   engine->ReleaseAccessThread();
 
   auto TestModify = [&](int) {
-    std::string modify_result;
-    std::uint64_t prev_num = 0;
+    IncNArgs args{5, 0};
     for (int i = 0; i < ops_per_thread; i++) {
-      ASSERT_EQ(engine->Modify(plus_key, &modify_result, IncN, &incr_by),
-                Status::Ok);
-      std::uint64_t result_num = std::stoul(modify_result);
-      ASSERT_TRUE(result_num > prev_num);
-      prev_num = result_num;
+      size_t prev_num = args.result;
+      ASSERT_EQ(engine->Modify(plus_key, IncN, &args), Status::Ok);
+      ASSERT_TRUE(args.result > prev_num);
     }
   };
 
   LaunchNThreads(num_threads, TestModify);
   std::string val;
+  size_t val_num;
   ASSERT_EQ(engine->Get(plus_key, &val), Status::Ok);
-  ASSERT_EQ(std::stoi(val), ops_per_thread * num_threads);
+  ASSERT_EQ(val.size(), sizeof(size_t));
+  memcpy(&val_num, val.data(), sizeof(size_t));
+  ASSERT_EQ(val_num, ops_per_thread * num_threads * incr_by);
   delete engine;
 }
 

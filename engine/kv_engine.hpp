@@ -83,9 +83,8 @@ class KVEngine : public Engine {
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
 
-  Status Modify(const StringView key, std::string* new_value,
-                ModifyFunction modify_func, void* modify_args,
-                const WriteOptions& options) override;
+  Status Modify(const StringView key, ModifyFunction modify_func,
+                void* modify_args, const WriteOptions& options) override;
 
   // Sorted Collection
   Status SGet(const StringView collection, const StringView user_key,

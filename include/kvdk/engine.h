@@ -13,6 +13,7 @@ extern "C" {
 #include <stdio.h>
 
 #include "status.h"
+#include "types.h"
 
 typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
@@ -23,8 +24,10 @@ typedef struct KVDKListIterator KVDKListIterator;
 typedef struct KVDKSnapshot KVDKSnapshot;
 typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
 // Used in KVDKModify, modify old_val and store result to new_val
-typedef void (*ModifyFunc)(const char* old_val, size_t old_val_len,
-                           char** new_val, size_t* new_val_len, void* args);
+typedef int (*ModifyFunc)(const char* key, size_t key_len, const char* old_val,
+                          size_t old_val_len, char** new_val,
+                          size_t* new_val_len, void* args);
+typedef void (*DeallocateFunc)(void*);
 
 KVDKConfigs* KVDKCreateConfigs(void);
 extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
@@ -93,9 +96,9 @@ extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
 //
 // Return Ok if key exists and update old_val to new_value successful
 extern KVDKStatus KVDKModify(KVDKEngine* engine, const char* key,
-                             size_t key_len, char** new_value,
-                             size_t* new_value_len, ModifyFunc modify,
+                             size_t key_len, ModifyFunc modify,
                              void* modify_args,
+                             DeallocateFunc modify_deallocate,
                              const KVDKWriteOptions* write_option);
 
 // For Named Global Collection
