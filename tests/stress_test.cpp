@@ -4,7 +4,6 @@
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <x86intrin.h>
 
 #include <algorithm>
 #include <deque>
@@ -24,6 +23,9 @@
 DEFINE_bool(
     verbose, false,
     "If set true, stress test will print a progress bar for operations");
+
+DEFINE_string(subfix, "",
+              "Subfix of PMem directory used by test case to avoid conflicts");
 
 using kvdk::StringView;
 
@@ -403,8 +405,7 @@ class EngineTestBase : public testing::Test {
   kvdk::Configs configs;
   kvdk::Status status;
 
-  const std::string path_db{"/mnt/pmem0/kvdk_stress_test_" +
-                            std::to_string(__rdtsc())};
+  const std::string path_db{"/mnt/pmem0/kvdk_stress_test_" + FLAGS_subfix};
 
   /// The following parameters are used to configure the test.
   /// Override SetUpParameters to provide different parameters

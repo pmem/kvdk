@@ -402,20 +402,23 @@ class GenericList final : public Collection {
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
 
-    if (Size() == 0) {
-      kvdk_assert(false, "Impossible!");
-    } else if (prev == Head() && next == Tail()) {
-      // PushFront()
+    kvdk_assert(Size() >= 1, "");
+    if (Size() == 1) {
+      kvdk_assert(prev == Head() && next == Tail(), "");
       first = record;
       last = record;
-      first = record;
     } else if (next == Tail()) {
-      // PushBack()
+      // Replace Last
       kvdk_assert(prev != Head(), "");
       prev->PersistNextNT(space.offset);
       last = record;
+    } else if (prev == Head()) {
+      // Replace First
+      kvdk_assert(next != Tail(), "");
+      next->PersistPrevNT(space.offset);
+      first = record;
     } else {
-      // Emplace between two elements on PMem
+      // Replace Middle
       kvdk_assert(prev != Head() && next != Tail(), "");
       prev->PersistNextNT(space.offset);
       next->PersistPrevNT(space.offset);
