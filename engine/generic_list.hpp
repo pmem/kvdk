@@ -126,16 +126,21 @@ class GenericList final : public Collection {
       return old;
     }
 
-    DLRecord& operator*() const { return *Address(); }
+    // It's valid to access address or offset of deleted record,
+    // but invalid to access its contents.
+    DLRecord* operator->() const {
+      kvdk_assert(!Deleted(), "");
+      return Address();
+    }
 
-    DLRecord* operator->() const { return Address(); }
-
-    PMemOffsetType Offset() const { return owner->offsetOf(Address()); }
+    DLRecord& operator*() const { return *operator->(); }
 
     DLRecord* Address() const {
       kvdk_assert(curr != nullptr && check(), "");
       return curr;
     }
+
+    PMemOffsetType Offset() const { return owner->offsetOf(Address()); }
 
     std::uint64_t Hash() const {
       void const* addr =
@@ -280,8 +285,10 @@ class GenericList final : public Collection {
     return erase_impl(pos, elem_deleter);
   }
 
+  // EraseWithLock() presumes that DLRecord* rec is secured by caller,
+  // only one thread is calling EraseWithLock() on rec and rec is valid.
   template <typename ElemDeleter>
-  void EraseLocked(DLRecord* rec, ElemDeleter elem_deleter) {
+  void EraseWithLock(DLRecord* rec, ElemDeleter elem_deleter) {
     kvdk_assert(lock_table != nullptr, "");
     Iterator pos{this, rec};
 
@@ -307,13 +314,11 @@ class GenericList final : public Collection {
     erase_impl(Front(), elem_deleter);
   }
 
-  // For Redis List only
   template <typename ElemDeleter>
   void PopBack(ElemDeleter elem_deleter) {
     erase_impl(Back(), elem_deleter);
   }
 
-  // For Redis List only
   Iterator Emplace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
                    StringView key, StringView value) {
     return emplace_impl(space, pos, timestamp, key, value);
@@ -324,8 +329,8 @@ class GenericList final : public Collection {
     emplace_impl(space, Front(), timestamp, key, value);
   }
 
-  void PushFrontLocked(SpaceEntry space, TimeStampType timestamp,
-                       StringView key, StringView value) {
+  void PushFrontWithLock(SpaceEntry space, TimeStampType timestamp,
+                         StringView key, StringView value) {
     kvdk_assert(lock_table != nullptr, "");
     lock_table->Lock(Head().Hash());
     emplace_impl(space, Front(), timestamp, key, value);
@@ -339,8 +344,8 @@ class GenericList final : public Collection {
   }
 
   // For Redis List and Redis Hash
-  void PushBackLocked(SpaceEntry space, TimeStampType timestamp, StringView key,
-                      StringView value) {
+  void PushBackWithLock(SpaceEntry space, TimeStampType timestamp,
+                        StringView key, StringView value) {
     Iterator back = Back();
     kvdk_assert(lock_table != nullptr, "");
     while (true) {
@@ -364,10 +369,12 @@ class GenericList final : public Collection {
     return replace_impl(space, pos, timestamp, key, value, elem_deleter);
   }
 
+  // ReplaceWithLock() presumes that DLRecord* rec is secured by caller,
+  // only one thread is calling ReplaceWithLock() on rec and rec is valid.
   template <typename ElemDeleter>
-  void ReplaceLocked(SpaceEntry space, DLRecord* rec, TimeStampType timestamp,
-                     StringView key, StringView value,
-                     ElemDeleter elem_deleter) {
+  void ReplaceWithLock(SpaceEntry space, DLRecord* rec, TimeStampType timestamp,
+                       StringView key, StringView value,
+                       ElemDeleter elem_deleter) {
     kvdk_assert(lock_table != nullptr, "");
     Iterator pos{this, rec};
     Iterator prev{pos};

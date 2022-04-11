@@ -191,6 +191,13 @@ class KVEngine : public Engine {
     Status s{Status::NotSupported};
     HashEntry entry{};
     HashEntry* entry_ptr{nullptr};
+
+    LookupResult& operator=(LookupResult const& other) {
+      s = other.s;
+      memcpy_16(&entry, &other.entry);
+      entry_ptr = other.entry_ptr;
+      return *this;
+    }
   };
 
   // Look up the first level key (e.g. collections or string, not collection

@@ -64,17 +64,16 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   void* addr = pmem_allocator_->offset2addr_checked(space.offset);
   if (result.s == Status::NotFound) {
     if (std::hash<std::thread::id>{}(std::this_thread::get_id()) % 2 == 0) {
-      hlist->PushFrontLocked(space, ts, field, value);
+      hlist->PushFrontWithLock(space, ts, field, value);
     } else {
-      hlist->PushBackLocked(space, ts, field, value);
+      hlist->PushBackWithLock(space, ts, field, value);
     }
     insertImpl(result, internal_key, RecordType::HashElem, addr);
   } else {
     DLRecord* old_rec = result.entry.GetIndex().dl_record;
-    insertImpl(result, internal_key, RecordType::HashElem, addr);
-    guard.unlock();
-    hlist->ReplaceLocked(space, old_rec, ts, field, value,
+    hlist->ReplaceWithLock(space, old_rec, ts, field, value,
                          [&](DLRecord* rec) { delayFree(rec, ts); });
+    insertImpl(result, internal_key, RecordType::HashElem, addr);
   }
   return Status::Ok;
 }
@@ -92,10 +91,11 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
     return s;
   }
 
-  auto guard = hash_table_->AcquireLock(hlist->InternalKey(field));
-  LookupResult ret =
-      removeImpl(hlist->InternalKey(field), RecordType::HashElem);
-  guard.unlock();
+  LookupResult ret;
+  {
+    auto guard = hash_table_->AcquireLock(hlist->InternalKey(field));
+    ret = removeImpl(hlist->InternalKey(field), RecordType::HashElem);
+  }
   if (ret.s == Status::NotFound) {
     return Status::Ok;
   }
@@ -104,7 +104,7 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
   }
   auto token = version_controller_.GetToken();
   TimeStampType ts = token.Timestamp();
-  hlist->EraseLocked(ret.entry.GetIndex().dl_record,
+  hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
                      [&](DLRecord* rec) { delayFree(rec, ts); });
   return Status::Ok;
 }
@@ -223,9 +223,11 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     auto token = version_controller_.GetToken();
     TimeStampType ts = token.Timestamp();
     auto internal_key = hlist->Front()->Key();
-    auto guard = hash_table_->AcquireLock(internal_key);
-    LookupResult ret = removeImpl(internal_key, RecordType::HashElem);
-    guard.unlock();
+    LookupResult ret;
+    {
+      auto guard = hash_table_->AcquireLock(internal_key);
+      ret = removeImpl(internal_key, RecordType::HashElem);
+    }
     kvdk_assert(ret.s == Status::Ok, "");
     kvdk_assert(ret.entry.GetIndex().dl_record == hlist->Front().Address(), "");
     hlist->PopFront([&](DLRecord* rec) { delayFree(rec, ts); });

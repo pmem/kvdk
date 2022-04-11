@@ -10,6 +10,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -116,6 +117,16 @@ class ShadowKVEngine {
           ((state == State::Existing) && (value == other.value)) ||
           (state == State::Deleted);
       return match_state && match_value;
+    }
+
+    friend std::ostream& operator<<(std::ostream& out,
+                                    StateAndValue const& vstate) {
+      out << "State: "
+          << (vstate.state == StateAndValue::State::Deleted ? "Deleted"
+                                                            : "Existing")
+          << "\t"
+          << "Value: " << vstate.value << "\n";
+      return out;
     }
   };
 
@@ -372,15 +383,19 @@ class ShadowKVEngine {
     for (auto iter = ranges.first; iter != ranges.second; ++iter) {
       match = (match || (vstate == iter->second));
     }
+    std::stringstream ss;
+    if (!match) {
+      for (auto iter = ranges.first; iter != ranges.second; ++iter) {
+        ss << iter->second << "\n";
+      }
+    }
+
     ASSERT_TRUE(match) << "Key and State supplied is not possible:\n"
-                       << "Supplied Key, State and Value is:\n"
                        << "Key: " << key << "\n"
-                       << "State: "
-                       << (vstate.state == StateAndValue::State::Deleted
-                               ? "Deleted"
-                               : "Existing")
-                       << "\n"
-                       << "Value: " << vstate.value << "\n";
+                       << "Supplied:\n"
+                       << vstate << "\n"
+                       << "Possible:\n"
+                       << ss.str() << "\n";
   }
 
   static OperationQueue generateOperations(std::vector<KeyType> const& keys,
