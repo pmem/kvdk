@@ -3,6 +3,10 @@
 #include "kvdk_c.hpp"
 
 extern "C" {
+KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
+                          size_t key_len, size_t* len) {
+  return engine->rep->HashLength(StringView{key_data, key_len}, len);
+}
 
 KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
                        size_t collection_len, const char* key, size_t key_len,
