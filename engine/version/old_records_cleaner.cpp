@@ -10,8 +10,7 @@
 namespace KVDK_NAMESPACE {
 
 void OldRecordsCleaner::DelayFree(void* addr, TimeStampType ts) {
-  kvdk_assert(static_cast<DataEntry*>(addr)->meta.type == RecordType::Deleted,
-              "");
+  kvdk_assert(static_cast<DLRecord*>(addr)->IsDirty(), "");
   kvdk_assert(access_thread.id >= 0, "");
   auto& tc = cleaner_thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> guard{tc.old_records_lock};

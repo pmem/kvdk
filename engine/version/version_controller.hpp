@@ -89,6 +89,7 @@ class VersionController {
       kvdk_assert(other.owner_ != nullptr, "");
       std::swap(owner_, other.owner_);
       std::swap(ts_, other.ts_);
+      return *this;
     }
     ~Token() {
       if (owner_ != nullptr) {

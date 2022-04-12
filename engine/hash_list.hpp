@@ -2,6 +2,7 @@
 
 #include "generic_list.hpp"
 #include "kvdk/iterator.hpp"
+#include "version/version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
 using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
@@ -44,13 +45,15 @@ class HashIteratorImpl final : public HashIterator {
   ~HashIteratorImpl() final = default;
 
  public:
-  HashIteratorImpl(HashList* l) : list{l}, rep{l->Front()} {
+  HashIteratorImpl(HashList* l, VersionController::Token&& token)
+      : list{l}, rep{l->Front()}, token{std::move(token)} {
     kvdk_assert(list != nullptr, "");
   }
 
  private:
   HashList* list;
   HashList::Iterator rep;
+  VersionController::Token token;
 };
 
 }  // namespace KVDK_NAMESPACE

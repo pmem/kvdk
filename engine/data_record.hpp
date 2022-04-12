@@ -25,11 +25,11 @@ enum RecordType : uint16_t {
 
   HashRecord = (1 << 5),
   HashElem = (1 << 6),
+  HashDirtyElem = (1 << 7),
 
   ListRecord = (1 << 9),
   ListElem = (1 << 10),
-
-  Deleted = (1 << 14),
+  ListDirtyElem = (1 << 11),
 
   Padding = (1 << 15),
 };
@@ -230,10 +230,28 @@ struct DLRecord {
 
   void Destroy() { entry.Destroy(); }
 
-  void MarkAsDeleted() {
-    entry.meta.type = RecordType::Deleted;
+  void MarkAsDirty() {
+    switch (entry.meta.type) {
+      case RecordType::ListElem: {
+        entry.meta.type = RecordType::ListDirtyElem;
+        break;
+      }
+      case RecordType::HashElem: {
+        entry.meta.type = RecordType::HashDirtyElem;
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unsupported!");
+        std::abort();
+      }
+    }
     _mm_clwb(&entry.meta.type);
     _mm_mfence();
+  }
+
+  bool IsDirty() {
+    return (entry.meta.type == RecordType::ListDirtyElem) ||
+           (entry.meta.type == RecordType::HashDirtyElem);
   }
 
   bool Validate() {

@@ -3,7 +3,6 @@
  */
 
 #pragma once
-
 #include <immintrin.h>
 #include <x86intrin.h>
 
@@ -48,6 +47,14 @@ class GenericList final : public Collection {
   LockTable* lock_table{nullptr};
 
  public:
+  // Deletion of a node in GenericList takes two steps.
+  // First, the node is unlinked from list and MarkAsDirty(),
+  // which can be detected by Iterator::Dirty().
+  // Iterator may go to a Dirty() node by operator++() or operator--().
+  // It's safe to read data on this Dirty() node.
+  // After any Iterator or lockless read threads can no longer access
+  // this unlinked node, which is guaranteed by the snapshot system,
+  // the node is Free()d by PMemAllocator.
   class Iterator {
    private:
     // owner must be initialized with a List
@@ -108,7 +115,6 @@ class GenericList final : public Collection {
       } else if (curr->prev != NullPMemOffset) {
         // Not Front(), goto prev
         curr = owner->addressOf(curr->prev);
-
       } else {
         // Front(), goto Head()
         curr = nullptr;
@@ -125,12 +131,9 @@ class GenericList final : public Collection {
 
     // It's valid to access address or offset of deleted record,
     // but invalid to access its contents.
-    DLRecord* operator->() const {
-      kvdk_assert(!Deleted(), "");
-      return Address();
-    }
+    DLRecord* operator->() const { return Address(); }
 
-    DLRecord& operator*() const { return *operator->(); }
+    DLRecord& operator*() const { return *Address(); }
 
     DLRecord* Address() const {
       kvdk_assert(curr != nullptr && check(), "");
@@ -145,9 +148,7 @@ class GenericList final : public Collection {
       return XXH3_64bits(&addr, sizeof(void const*));
     }
 
-    bool Deleted() const {
-      return (curr != nullptr && curr->entry.meta.type == RecordType::Deleted);
-    }
+    bool Dirty() const { return (curr != nullptr && curr->IsDirty()); }
 
    private:
     friend bool operator==(Iterator const& lhs, Iterator const& rhs) {
@@ -170,10 +171,13 @@ class GenericList final : public Collection {
       if (Collection::ExtractID(curr->Key()) != owner->ID()) {
         return false;
       }
-      if (Deleted()) {
+      if (curr->entry.meta.type == DataType && curr->Validate()) {
         return true;
       }
-      return (curr->entry.meta.type == DataType && curr->Validate());
+      if (Dirty()) {
+        return true;
+      }
+      return false;
     }
   };
 
@@ -287,8 +291,7 @@ class GenericList final : public Collection {
   void EraseWithLock(DLRecord* rec, ElemDeleter elem_deleter) {
     Iterator pos{this, rec};
     std::vector<LockTable::ULockType> guard;
-    Iterator prev = lockPosAndPrev(pos, guard);
-    --prev;
+    lockPosAndPrev(pos, guard);
     erase_impl(pos, elem_deleter);
   }
 
@@ -312,6 +315,7 @@ class GenericList final : public Collection {
     emplace_impl(space, Front(), timestamp, key, value);
   }
 
+  /// TODO: lock new element and prev?
   void PushFrontWithLock(SpaceEntry space, TimeStampType timestamp,
                          StringView key, StringView value) {
     kvdk_assert(lock_table != nullptr, "");
@@ -377,7 +381,7 @@ class GenericList final : public Collection {
                 "Wrong List!");
     Iterator prev{next};
     --prev;
-    kvdk_assert(!next.Deleted() && !prev.Deleted(), "");
+    kvdk_assert(!next.Dirty() && !prev.Dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -421,7 +425,7 @@ class GenericList final : public Collection {
     Iterator next{pos};
     ++next;
 
-    kvdk_assert(!prev.Deleted() && !next.Deleted(), "");
+    kvdk_assert(!prev.Dirty() && !next.Dirty(), "");
 
     if (Size() == 1) {
       kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
@@ -443,7 +447,7 @@ class GenericList final : public Collection {
       next->PersistPrevNT(prev.Offset());
       prev->PersistNextNT(next.Offset());
     }
-    pos->MarkAsDeleted();
+    pos->MarkAsDirty();
     elem_deleter(pos.Address());
     --sz;
     return next;
@@ -458,7 +462,7 @@ class GenericList final : public Collection {
     --prev;
     Iterator next{pos};
     ++next;
-    kvdk_assert(!prev.Deleted() && !next.Deleted(), "");
+    kvdk_assert(!prev.Dirty() && !next.Dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -488,27 +492,28 @@ class GenericList final : public Collection {
       next->PersistPrevNT(space.offset);
     }
 
-    pos->MarkAsDeleted();
+    pos->MarkAsDirty();
     elem_deleter(pos.Address());
     return Iterator{this, addressOf(space.offset)};
   }
 
-  std::string serialize(DLRecord* rec) {
+  std::string serialize(DLRecord* rec) const {
     std::stringstream ss;
     ss << "Type:\t" << to_hex(rec->entry.meta.type) << "\t"
        << "Prev:\t" << to_hex(rec->prev) << "\t"
        << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
        << "Next:\t" << to_hex(rec->next) << "\t"
        << "ID:\t" << to_hex(ExtractID(rec->Key())) << "\t"
+       << "Valid:\t" << rec->Validate() << "\t"
        << "Key: " << ExtractUserKey(rec->Key()) << "\t"
-       << "Value: " << rec->Value() << "\n";
+       << "Value: " << rec->Value();
     return ss.str();
   }
 
   friend std::ostream& operator<<(std::ostream& out, GenericList const& list) {
     out << "Contents of List:\n";
     for (Iterator iter = list.Front(); iter != list.Tail(); iter++) {
-      out << list.serialize(iter.Address());
+      out << list.serialize(iter.Address()) << "\n";
     }
     return out;
   }

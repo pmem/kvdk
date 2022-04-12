@@ -325,7 +325,8 @@ Status KVEngine::RestoreData() {
         }
         break;
       }
-      case RecordType::Deleted:
+      case RecordType::ListDirtyElem:
+      case RecordType::HashDirtyElem:
       case RecordType::Padding:
       case RecordType::Empty: {
         data_entry_cached.meta.type = RecordType::Padding;
