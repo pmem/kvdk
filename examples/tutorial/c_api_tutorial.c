@@ -542,6 +542,9 @@ int IncN(const char* key, size_t key_len, const char* old_val,
   if (old_val == NULL) {
     old_num = 0;
   } else {
+    if (old_val_len != sizeof(int)) {
+      return KVDK_MODIFY_ABORT;
+    }
     assert(old_val_len == sizeof(int));
     memcpy(&old_num, old_val, sizeof(int));
   }
@@ -553,23 +556,33 @@ int IncN(const char* key, size_t key_len, const char* old_val,
 
 void ModifyExample(KVDKEngine* kvdk_engine) {
   KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
+  char* incr_key = "incr";
+  char* wrong_value_key = "wrong";
   IncNArgs args;
   args.incr_by = 5;
+
+  KVDKStatus s = KVDKSet(kvdk_engine, wrong_value_key, strlen(wrong_value_key),
+                         "a", 1, write_option);
+  assert(s == Ok);
+  s = KVDKModify(kvdk_engine, wrong_value_key, strlen(wrong_value_key), IncN,
+                 &args, free, write_option);
+  assert(s == Abort);
+
   int recycle = 100;
-  for (size_t i = 0; i < recycle; i++) {
-    KVDKStatus s =
-        KVDKModify(kvdk_engine, "key", 3, IncN, &args, free, write_option);
+  for (size_t i = 1; i <= recycle; i++) {
+    KVDKStatus s = KVDKModify(kvdk_engine, incr_key, strlen(incr_key), IncN,
+                              &args, free, write_option);
     assert(s == Ok);
-    assert(args.result == args.incr_by * recycle);
+    assert(args.result == args.incr_by * i);
 
     char* val;
     size_t val_len;
-    s = KVDKGet(kvdk_engine, "key", 3, &val_len, &val);
+    s = KVDKGet(kvdk_engine, incr_key, strlen(incr_key), &val_len, &val);
     assert(s == Ok);
     assert(val_len == sizeof(int));
     int current_num;
     memcpy(&current_num, val, sizeof(int));
-    assert(current_num == args.incr_by * recycle);
+    assert(current_num == args.incr_by * i);
   }
 
   printf("Successfully increase num by %d\n", args.incr_by);

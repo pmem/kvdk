@@ -1307,7 +1307,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunction modify_func,
       break;
     }
     case ModifyOperation::Abort: {
-      break;
+      return Status::Abort;
     }
   }
 

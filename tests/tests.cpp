@@ -744,15 +744,18 @@ TEST_F(EngineBasicTest, TestStringModify) {
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  std::string plus_key = "plus";
-  std::string tmp_value;
+  std::string incr_key = "plus";
+
+  std::string wrong_value_key = "wrong_value";
+  ASSERT_EQ(engine->Set(wrong_value_key, std::string(10, 'a')), Status::Ok);
   engine->ReleaseAccessThread();
 
   auto TestModify = [&](int) {
     IncNArgs args{5, 0};
+    ASSERT_EQ(engine->Modify(wrong_value_key, IncN, &args), Status::Abort);
     for (int i = 0; i < ops_per_thread; i++) {
       size_t prev_num = args.result;
-      ASSERT_EQ(engine->Modify(plus_key, IncN, &args), Status::Ok);
+      ASSERT_EQ(engine->Modify(incr_key, IncN, &args), Status::Ok);
       ASSERT_TRUE(args.result > prev_num);
     }
   };
@@ -760,7 +763,7 @@ TEST_F(EngineBasicTest, TestStringModify) {
   LaunchNThreads(num_threads, TestModify);
   std::string val;
   size_t val_num;
-  ASSERT_EQ(engine->Get(plus_key, &val), Status::Ok);
+  ASSERT_EQ(engine->Get(incr_key, &val), Status::Ok);
   ASSERT_EQ(val.size(), sizeof(size_t));
   memcpy(&val_num, val.data(), sizeof(size_t));
   ASSERT_EQ(val_num, ops_per_thread * num_threads * incr_by);
