@@ -1420,8 +1420,8 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
                                   version_controller_.GetCurrentTimestamp(),
                                   hint.spin});
       }
-      return Status::NotFound;
     }
+    return Status::NotFound;
   }
 
   if (res.s == Status::Ok) {
