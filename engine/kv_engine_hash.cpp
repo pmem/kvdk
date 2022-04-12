@@ -72,7 +72,7 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   } else {
     DLRecord* old_rec = result.entry.GetIndex().dl_record;
     hlist->ReplaceWithLock(space, old_rec, ts, field, value,
-                         [&](DLRecord* rec) { delayFree(rec, ts); });
+                           [&](DLRecord* rec) { delayFree(rec, ts); });
     insertImpl(result, internal_key, RecordType::HashElem, addr);
   }
   return Status::Ok;
@@ -105,7 +105,7 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
   auto token = version_controller_.GetToken();
   TimeStampType ts = token.Timestamp();
   hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
-                     [&](DLRecord* rec) { delayFree(rec, ts); });
+                       [&](DLRecord* rec) { delayFree(rec, ts); });
   return Status::Ok;
 }
 

@@ -15,6 +15,7 @@
 #include <iostream>
 #include <mutex>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -191,7 +192,7 @@ class GenericList final : public Collection {
   GenericList& operator=(GenericList&&) = delete;
   ~GenericList() = default;
 
-  // Initialize a List with PMEMAllocator a, pre-space space,
+  // Initialize a List with PMEMAllocator a, pre-allocated space,
   // Creation time, List name and id.
   void Init(PMEMAllocator* a, SpaceEntry space, TimeStampType timestamp,
             StringView key, CollectionIDType id, LockTable* lt) {
@@ -527,20 +528,22 @@ class GenericList final : public Collection {
     return Iterator{this, addressOf(space.offset)};
   }
 
-  friend std::ostream& operator<<(std::ostream& out, GenericList const& list) {
-    auto printElem = [&](DLRecord* record) {
-      out << "Type:\t" << to_hex(record->entry.meta.type) << "\t"
-          << "Prev:\t" << to_hex(record->prev) << "\t"
-          << "Offset:\t" << to_hex(list.offsetOf(record)) << "\t"
-          << "Next:\t" << to_hex(record->next) << "\t"
-          << "ID:\t" << to_hex(Collection::ExtractID(record->Key())) << "\t"
-          << "Key: " << Collection::ExtractUserKey(record->Key()) << "\t"
-          << "Value: " << record->Value() << "\n";
-    };
+  std::string serialize(DLRecord* rec) {
+    std::stringstream ss;
+    ss << "Type:\t" << to_hex(rec->entry.meta.type) << "\t"
+       << "Prev:\t" << to_hex(rec->prev) << "\t"
+       << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
+       << "Next:\t" << to_hex(rec->next) << "\t"
+       << "ID:\t" << to_hex(ExtractID(rec->Key())) << "\t"
+       << "Key: " << ExtractUserKey(rec->Key()) << "\t"
+       << "Value: " << rec->Value() << "\n";
+    return ss.str();
+  }
 
+  friend std::ostream& operator<<(std::ostream& out, GenericList const& list) {
     out << "Contents of List:\n";
     for (Iterator iter = list.Front(); iter != list.Tail(); iter++) {
-      printElem(iter.Address());
+      out << list.serialize(iter.Address());
     }
     return out;
   }
