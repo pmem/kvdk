@@ -71,32 +71,60 @@ class SnapshotList {
 // kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
  public:
-  class Token {
-    VersionController* owner_;
+  class LocalToken {
+    VersionController* owner_{nullptr};
     TimeStampType ts_{};
 
    public:
-    Token(VersionController* o) : owner_{o} {
+    LocalToken(VersionController* o) : owner_{o} {
       owner_->HoldLocalSnapshot();
       ts_ = owner_->version_thread_cache_[access_thread.id]
                 .holding_snapshot.timestamp;
     };
-    Token(Token const&) = delete;
-    Token& operator=(Token const&) = delete;
-    Token(Token&& other) : owner_{nullptr} { *this = std::move(other); }
-    Token& operator=(Token&& other) {
+    LocalToken(LocalToken const&) = delete;
+    LocalToken& operator=(LocalToken const&) = delete;
+    LocalToken(LocalToken&& other) { *this = std::move(other); }
+    LocalToken& operator=(LocalToken&& other) {
       kvdk_assert(owner_ == nullptr, "");
       kvdk_assert(other.owner_ != nullptr, "");
       std::swap(owner_, other.owner_);
       std::swap(ts_, other.ts_);
       return *this;
     }
-    ~Token() {
+    ~LocalToken() {
       if (owner_ != nullptr) {
         owner_->ReleaseLocalSnapshot();
       }
     }
     TimeStampType Timestamp() { return ts_; }
+  };
+
+  class GlobalToken {
+    VersionController* owner_{nullptr};
+    SnapshotImpl* snap_{nullptr};
+
+   public:
+    GlobalToken(VersionController* o) : owner_{o} {
+      snap_ = owner_->NewGlobalSnapshot();
+    };
+    GlobalToken(GlobalToken const&) = delete;
+    GlobalToken& operator=(GlobalToken const&) = delete;
+    GlobalToken(GlobalToken&& other) { *this = std::move(other); }
+    GlobalToken& operator=(GlobalToken&& other) {
+      kvdk_assert(owner_ == nullptr, "");
+      kvdk_assert(other.owner_ != nullptr, "");
+      kvdk_assert(snap_ == nullptr, "");
+      kvdk_assert(other.snap_ != nullptr, "");
+      std::swap(owner_, other.owner_);
+      std::swap(snap_, other.snap_);
+      return *this;
+    }
+    ~GlobalToken() {
+      if (owner_ != nullptr) {
+        owner_->ReleaseSnapshot(snap_);
+      }
+    }
+    TimeStampType Timestamp() { return snap_->GetTimestamp(); }
   };
 
  public:
@@ -109,15 +137,21 @@ class VersionController {
     UpdatedOldestSnapshot();
   }
 
+  LocalToken GetLocalToken() { return LocalToken{this}; }
+
+  GlobalToken GetGlobalToken() { return GlobalToken{this}; }
+
   inline void HoldLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 && static_cast<size_t>(access_thread.id) <
                                              version_thread_cache_.size(),
                 "Uninitialized thread in NewLocalSnapshot");
+    kvdk_assert(
+        version_thread_cache_[access_thread.id].holding_snapshot.timestamp ==
+            kMaxTimestamp,
+        "Previous LocalSnapshot not released yet!");
     version_thread_cache_[access_thread.id].holding_snapshot.timestamp =
         GetCurrentTimestamp();
   }
-
-  Token GetToken() { return Token{this}; }
 
   inline void ReleaseLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 && static_cast<size_t>(access_thread.id) <
