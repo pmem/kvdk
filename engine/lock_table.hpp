@@ -6,9 +6,12 @@
 namespace KVDK_NAMESPACE {
 
 class LockTable {
+ public:
   using HashType = std::uint64_t;
   using MutexType = std::recursive_mutex;
   using ULockType = std::unique_lock<MutexType>;
+
+ private:
   std::vector<MutexType> mutexes;
 
  public:
@@ -50,8 +53,8 @@ class LockTable {
     return guard;
   }
 
-  void MultiGuard(std::initializer_list<HashType> hashes) {
-    MultiGuard(std::vector<HashType>{hashes});
+  std::vector<ULockType> MultiGuard(std::initializer_list<HashType> hashes) {
+    return MultiGuard(std::vector<HashType>{hashes});
   }
 
   MutexType* Mutex(HashType hash) { return &mutexes[hash % mutexes.size()]; }

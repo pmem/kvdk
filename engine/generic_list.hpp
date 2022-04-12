@@ -5,19 +5,15 @@
 #pragma once
 
 #include <immintrin.h>
-#include <libpmem.h>
 #include <x86intrin.h>
 
 #include <array>
 #include <atomic>
-#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <random>
 #include <sstream>
-#include <stdexcept>
-#include <unordered_map>
 
 #include "alias.hpp"
 #include "collection.hpp"
@@ -289,23 +285,10 @@ class GenericList final : public Collection {
   // only one thread is calling EraseWithLock() on rec and rec is valid.
   template <typename ElemDeleter>
   void EraseWithLock(DLRecord* rec, ElemDeleter elem_deleter) {
-    kvdk_assert(lock_table != nullptr, "");
     Iterator pos{this, rec};
-
-    Iterator prev{pos};
+    std::vector<LockTable::ULockType> guard;
+    Iterator prev = lockPosAndPrev(pos, guard);
     --prev;
-    auto guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
-    while (true) {
-      Iterator prev_copy{pos};
-      --prev_copy;
-      if (prev != prev_copy) {
-        guard.clear();
-        prev = prev_copy;
-        guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
-        continue;
-      }
-      break;
-    }
     erase_impl(pos, elem_deleter);
   }
 
@@ -342,7 +325,6 @@ class GenericList final : public Collection {
     emplace_impl(space, Tail(), timestamp, key, value);
   }
 
-  // For Redis List and Redis Hash
   void PushBackWithLock(SpaceEntry space, TimeStampType timestamp,
                         StringView key, StringView value) {
     Iterator back = Back();
@@ -356,9 +338,7 @@ class GenericList final : public Collection {
       }
       break;
     }
-
     emplace_impl(space, Tail(), timestamp, key, value);
-
     lock_table->Unlock(back.Hash());
   }
 
@@ -374,22 +354,10 @@ class GenericList final : public Collection {
   void ReplaceWithLock(SpaceEntry space, DLRecord* rec, TimeStampType timestamp,
                        StringView key, StringView value,
                        ElemDeleter elem_deleter) {
-    kvdk_assert(lock_table != nullptr, "");
     Iterator pos{this, rec};
-    Iterator prev{pos};
+    std::vector<LockTable::ULockType> guard;
+    Iterator prev = lockPosAndPrev(pos, guard);
     --prev;
-    auto guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
-    while (true) {
-      Iterator prev_copy{pos};
-      --prev_copy;
-      if (prev != prev_copy) {
-        guard.clear();
-        prev = prev_copy;
-        guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
-        continue;
-      }
-      break;
-    }
     replace_impl(space, pos, timestamp, key, value, elem_deleter);
   }
 
@@ -543,6 +511,27 @@ class GenericList final : public Collection {
       out << list.serialize(iter.Address());
     }
     return out;
+  }
+
+  Iterator lockPosAndPrev(Iterator pos,
+                          std::vector<LockTable::ULockType>& guard) {
+    kvdk_assert(guard.empty(), "");
+    Iterator prev{pos};
+    --prev;
+    guard = lock_table->MultiGuard({prev.Hash(), pos.Hash()});
+    while (true) {
+      Iterator prev_copy{pos};
+      --prev_copy;
+      if (prev != prev_copy) {
+        guard.clear();
+        prev = prev_copy;
+        guard = lock_table->MultiGuard({prev.Hash(), pos.Hash()});
+        continue;
+      }
+      kvdk_assert(++prev_copy == pos, "");
+      break;
+    }
+    return prev;
   }
 };
 
