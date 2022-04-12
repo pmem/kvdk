@@ -40,7 +40,7 @@ enum class ModifyOperation : int {
 // return ModifyOperation::Delete indicates to delete the kv from engine
 // return ModifyOperation::Abort indicates the existing kv should not be
 // modified and abort the operation
-using ModifyFunction = std::function<ModifyOperation(
+using ModifyFunc = std::function<ModifyOperation(
     const StringView& key, const std::string* old_value, std::string* new_value,
     void* args)>;
 

@@ -39,13 +39,13 @@ class Engine {
   // Modify value of existing key in the engine
   //
   // * modify_func: customized function to modify existing value of key. See
-  // definition of ModifyFunction (types.hpp) for more details.
+  // definition of ModifyFunc (types.hpp) for more details.
   // * modify_args: customized arguments of modify_func.
   //
   // Return Status::Ok if modify success.
   // Return Status::Abort if modify function abort modifying.
   // Return other non-Ok status on any error.
-  virtual Status Modify(const StringView key, ModifyFunction modify_func,
+  virtual Status Modify(const StringView key, ModifyFunc modify_func,
                         void* modify_args,
                         const WriteOptions& options = WriteOptions()) = 0;
 

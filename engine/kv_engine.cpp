@@ -1213,7 +1213,7 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   return Status::Ok;
 }
 
-Status KVEngine::Modify(const StringView key, ModifyFunction modify_func,
+Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
                         void* modify_args, const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (write_options.ttl_time <= 0 ||
