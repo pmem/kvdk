@@ -262,7 +262,6 @@ class GenericList final : public Collection {
 
   Iterator Tail() const { return Iterator{this}; }
 
-  // For Redis List only
   Iterator Seek(std::int64_t index) {
     if (index >= 0) {
       auto iter = Front();
@@ -295,19 +294,19 @@ class GenericList final : public Collection {
 
     Iterator prev{pos};
     --prev;
+    auto guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
     while (true) {
-      lock_table->MultiLock({prev.Hash(), pos.Hash()});
       Iterator prev_copy{pos};
       --prev_copy;
       if (prev != prev_copy) {
-        lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
+        guard.clear();
         prev = prev_copy;
+        guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
         continue;
       }
       break;
     }
     erase_impl(pos, elem_deleter);
-    lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
   }
 
   template <typename ElemDeleter>
@@ -338,7 +337,6 @@ class GenericList final : public Collection {
     lock_table->Unlock(Head().Hash());
   }
 
-  // For Redis List and Redis Hash
   void PushBack(SpaceEntry space, TimeStampType timestamp, StringView key,
                 StringView value) {
     emplace_impl(space, Tail(), timestamp, key, value);
@@ -380,20 +378,19 @@ class GenericList final : public Collection {
     Iterator pos{this, rec};
     Iterator prev{pos};
     --prev;
+    auto guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
     while (true) {
-      lock_table->MultiLock({prev.Hash(), pos.Hash()});
-
       Iterator prev_copy{pos};
       --prev_copy;
       if (prev != prev_copy) {
-        lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
+        guard.clear();
         prev = prev_copy;
+        guard = lock_table->MultiGuard(prev.Hash(), pos.Hash());
         continue;
       }
       break;
     }
     replace_impl(space, pos, timestamp, key, value, elem_deleter);
-    lock_table->MultiUnlock({prev.Hash(), pos.Hash()});
   }
 
  private:
