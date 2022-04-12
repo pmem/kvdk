@@ -1458,9 +1458,11 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
     }
     // Update hash entry status to TTL
-    hash_table_->UpdateEntryStatus(res.entry_ptr, expired_time == kPersistTime
-                                                      ? HashEntryStatus::Persist
+    if (res.s == Status::Ok) {
+      hash_table_->UpdateEntryStatus(
+          res.entry_ptr, expired_time == kPersistTime ? HashEntryStatus::Persist
                                                       : HashEntryStatus::TTL);
+    }
   }
   return res.s;
 }
