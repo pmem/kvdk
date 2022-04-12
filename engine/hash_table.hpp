@@ -67,6 +67,10 @@ struct alignas(16) HashEntry {
 
   RecordType GetRecordType() const { return header_.record_type; }
 
+  TimeStampType GetTimeStamp() const {
+    return static_cast<DataEntry*>(index_.ptr)->meta.timestamp;
+  }
+
   bool IsExpiredStatus() {
     return header_.entry_status == HashEntryStatus::Expired;
   }
@@ -200,6 +204,7 @@ class HashTable {
     return bucket / num_buckets_per_slot_;
   }
 
+ private:
   const uint64_t hash_bucket_num_;
   const uint32_t num_buckets_per_slot_;
   const uint32_t hash_bucket_size_;

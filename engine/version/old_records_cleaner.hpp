@@ -82,15 +82,19 @@ class OldRecordsCleaner {
 
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OldDeleteRecord& old_delete_record);
-  void PushToGlobal(const std::deque<OldDeleteRecord>& old_delete_records);
+  void PushSpaceToGlobal(
+      const PendingFreeSpaceEntries& pending_free_space_entry);
   // Try to clean global old records
-  void TryGlobalClean();
+  void TryGlobalClean(TimeStampType oldest_snapshot_ts);
   void TryCleanCachedOldRecords(size_t num_limit_clean);
   uint64_t NumCachedOldRecords() {
     assert(access_thread.id >= 0);
     auto& tc = cleaner_thread_cache_[access_thread.id];
     return tc.old_delete_records.size() + tc.old_data_records.size();
   }
+
+  SpaceEntry PurgeOutDatedRecord(HashEntry* hash_entry,
+                                 const SpinMutex* key_lock);
 
  private:
   struct CleanerThreadCache {
@@ -103,7 +107,6 @@ class OldRecordsCleaner {
 
   void maybeUpdateOldestSnapshot();
   SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
-  SpaceEntry purgeOldDeleteRecord(OldDeleteRecord& old_delete_record);
 
   KVEngine* kv_engine_;
 

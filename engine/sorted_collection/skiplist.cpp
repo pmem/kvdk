@@ -903,4 +903,5 @@ void Skiplist::destroyRecords() {
 
   pmem_allocator_->BatchFree(to_free);
 }
+
 }  // namespace KVDK_NAMESPACE

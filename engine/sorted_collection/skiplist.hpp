@@ -327,6 +327,9 @@ class Skiplist : public Collection {
     return 0;
   }
 
+  SpaceEntry PurgeSortedDeleteRecord(HashEntry* hash_entry,
+                                     const SpinMutex* key_lock);
+
  private:
   WriteResult setImplNoHash(const StringView& key, const StringView& value,
                             const SpinMutex* locked_key_lock,

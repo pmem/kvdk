@@ -1238,9 +1238,9 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
   // push it into cleaner
   if (ret.s == Status::Expired && ret.entry_ptr->IsTTLStatus()) {
     hash_table_->UpdateEntryStatus(ret.entry_ptr, HashEntryStatus::Expired);
-    ul.unlock();
-    delayFree(OldDeleteRecord{ret.entry.GetIndex().ptr, ret.entry_ptr,
-                              PointerType::HashEntry, new_ts, hint.spin});
+    // ul.unlock();
+    // delayFree(OldDeleteRecord{ret.entry.GetIndex().ptr, ret.entry_ptr,
+    //                           PointerType::HashEntry, new_ts, hint.spin});
     return Status::NotFound;
   }
   if (ret.s == Status::Ok) {
@@ -1413,10 +1413,11 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
     // deletion.
     if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
       hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
-      ul.unlock();
-      delayFree(OldDeleteRecord{
-          res.entry_ptr->GetIndex().ptr, res.entry_ptr, PointerType::HashEntry,
-          version_controller_.GetCurrentTimestamp(), hint.spin});
+      // ul.unlock();
+      // delayFree(OldDeleteRecord{
+      //     res.entry_ptr->GetIndex().ptr, res.entry_ptr,
+      //     PointerType::HashEntry, version_controller_.GetCurrentTimestamp(),
+      //     hint.spin});
     }
     return Status::NotFound;
   }
@@ -1492,8 +1493,9 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
     ul.unlock();
     delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
     // Free this delete record to recycle PMem and DRAM space
-    delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr, PointerType::HashEntry,
-                              new_ts, hint.spin));
+    // delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr,
+    // PointerType::HashEntry,
+    //                           new_ts, hint.spin));
   }
 
   return ret.s == Status::NotFound ? Status::Ok : ret.s;
@@ -2058,9 +2060,9 @@ void KVEngine::backgroundDramCleaner() {
   }
 }
 
-void KVEngine::CleanOutDated() {
+/*void KVEngine::CleanOutDated() {
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
-  std::deque<OldDeleteRecord> expired_record_queue;
+  // std::deque<OldDeleteRecord> expired_record_queue;
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
@@ -2076,9 +2078,9 @@ void KVEngine::CleanOutDated() {
             hash_table_->UpdateEntryStatus(&(*bucket_iter),
                                            HashEntryStatus::Expired);
             // push expired cleaner
-            expired_record_queue.push_back(OldDeleteRecord{
-                bucket_iter->GetIndex().ptr, &(*bucket_iter),
-                PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
+            // expired_record_queue.push_back(OldDeleteRecord{
+            //     bucket_iter->GetIndex().ptr, &(*bucket_iter),
+            //     PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
           }
           break;
         }
@@ -2094,11 +2096,11 @@ void KVEngine::CleanOutDated() {
       bucket_iter++;
     }
 
-    if (!expired_record_queue.empty() &&
-        (expired_record_queue.size() >= kMaxCachedOldRecords)) {
-      old_records_cleaner_.PushToGlobal(expired_record_queue);
-      expired_record_queue.clear();
-    }
+    // if (!expired_record_queue.empty() &&
+    //     (expired_record_queue.size() >= kMaxCachedOldRecords)) {
+    //   old_records_cleaner_.PushToGlobal(expired_record_queue);
+    //   expired_record_queue.clear();
+    // }
     if (std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now() - start_ts)
                 .count() > interval ||
@@ -2110,11 +2112,81 @@ void KVEngine::CleanOutDated() {
     }
     slot_iter.Next();
   }
-  if (!expired_record_queue.empty()) {
-    old_records_cleaner_.PushToGlobal(expired_record_queue);
-    expired_record_queue.clear();
+  // if (!expired_record_queue.empty()) {
+  //   old_records_cleaner_.PushToGlobal(expired_record_queue);
+  //   expired_record_queue.clear();
+  // }
+}*/
+
+static bool CheckEntryExpired(const HashEntry& hash_entry) {
+  switch (hash_entry.GetIndexType()) {
+    case PointerType::StringRecord:
+      return hash_entry.GetIndex().string_record->HasExpired();
+    case PointerType::Skiplist:
+      return hash_entry.GetIndex().skiplist->HasExpired();
+    case PointerType::List:
+      return hash_entry.GetIndex().p_unordered_collection->HasExpired();
+    default:
+      return false;
   }
 }
+
+void KVEngine::CleanOutDated() {
+  int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
+  PendingFreeSpaceEntries space_pending;
+  // Iterate hash table
+  auto start_ts = std::chrono::system_clock::now();
+  auto slot_iter = hash_table_->GetSlotIterator();
+  while (slot_iter.Valid()) {
+    TimeStampType new_ts =
+        version_controller_.GetLocalSnapshot().GetTimestamp();
+    version_controller_.UpdatedOldestSnapshot();
+    TimeStampType oldest_snapshot_ts = version_controller_.OldestSnapshotTS();
+
+    auto bucket_iter = slot_iter.Begin();
+    auto end_bucket_iter = slot_iter.End();
+
+    while (bucket_iter != end_bucket_iter) {
+      // If the record is expired, update its hash entry status.
+      if (bucket_iter->IsTTLStatus() && CheckEntryExpired(*bucket_iter)) {
+        hash_table_->UpdateEntryStatus(&(*bucket_iter),
+                                       HashEntryStatus::Expired);
+      }
+
+      // deal with expired(deleted) record, check snapshot, and then purge them.
+      if (bucket_iter->IsExpiredStatus() &&
+          (bucket_iter->GetTimeStamp() < oldest_snapshot_ts)) {
+        space_pending.entries.emplace_back(
+            old_records_cleaner_.PurgeOutDatedRecord(&(*bucket_iter),
+                                                     slot_iter.GetSlotLock()));
+      }
+      bucket_iter++;
+    }
+
+    if (!space_pending.entries.empty() &&
+        (space_pending.entries.size() >= kMaxCachedOldRecords)) {
+      space_pending.release_time = new_ts;
+      old_records_cleaner_.PushSpaceToGlobal(space_pending);
+      space_pending.entries.clear();
+    }
+
+    if (std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now() - start_ts)
+                .count() > interval ||
+        need_clean_records_) {
+      need_clean_records_ = true;
+      old_records_cleaner_.TryGlobalClean(oldest_snapshot_ts);
+      need_clean_records_ = false;
+      start_ts = std::chrono::system_clock::now();
+    }
+    slot_iter.Next();
+  }
+  // if (!expired_record_queue.empty()) {
+  //   old_records_cleaner_.PushToGlobal(expired_record_queue);
+  //   expired_record_queue.clear();
+  // }
+}
+
 }  // namespace KVDK_NAMESPACE
 
 // List

@@ -29,8 +29,6 @@ enum class PointerType : uint8_t {
   UnorderedCollectionElement = 6,
   // Point to a dram List object
   List = 7,
-  // Point to a hash entry of hash table
-  HashEntry = 8,
   // Empty which point to nothing
   Empty = 100,
 };
