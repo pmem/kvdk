@@ -215,7 +215,7 @@ KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
 }
 
 KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
-                      ModifyFunc modify, void* modify_args,
+                      KVDKModifyFunc modify, void* modify_args,
                       DeallocateFunc modify_deallocate,
                       const KVDKWriteOptions* write_option) {
   auto modify_func = [&](const StringView& key, const std::string* old_value,
@@ -225,7 +225,7 @@ KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
     auto result =
         modify(key.data(), key.size(), old_value ? old_value->data() : nullptr,
                old_value ? old_value->size() : 0, &nv, &nv_len, args);
-    if (result == KVDK_MODIFY_UPDATE) {
+    if (result == KVDK_MODIFY_WRITE) {
       assert(nv != nullptr);
       new_value->assign(nv, nv_len);
     }

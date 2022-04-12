@@ -548,7 +548,7 @@ int IncN(const char* key, size_t key_len, const char* old_val,
 
   args->result = old_num + args->incr_by;
   memcpy(*new_val, &args->result, sizeof(int));
-  return KVDK_MODIFY_UPDATE;
+  return KVDK_MODIFY_WRITE;
 }
 
 void ModifyExample(KVDKEngine* kvdk_engine) {

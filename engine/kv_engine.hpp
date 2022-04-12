@@ -277,7 +277,7 @@ class KVEngine : public Engine {
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
     LookupResult res = lookupKey<false>(collection_name, record_type);
-    if (res.s == Status::Expired) {
+    if (res.s == Status::Outdated) {
       // TODO(zhichen): will open the following code when completing collection
       // deletion.
       // delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,

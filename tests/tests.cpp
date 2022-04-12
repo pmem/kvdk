@@ -726,16 +726,15 @@ TEST_F(EngineBasicTest, TestStringModify) {
       old_num = 0;
     } else {
       if (old_val->size() != sizeof(size_t)) {
-        return ModifyOperation::ModifyAbort;
+        return ModifyOperation::Abort;
       } else {
         memcpy(&old_num, old_val->data(), sizeof(size_t));
       }
     }
     args->result = old_num + args->incr_by;
 
-    new_value->resize(sizeof(size_t));
-    memcpy(&new_value[0], &args->result, sizeof(size_t));
-    return ModifyOperation::ModifyUpdate;
+    new_value->assign((char*)&args->result, sizeof(size_t));
+    return ModifyOperation::Write;
   };
 
   int num_threads = 16;
