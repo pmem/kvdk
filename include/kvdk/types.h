@@ -32,4 +32,4 @@ typedef int (*KVDKModifyFunc)(const char* key, size_t key_len,
                               const char* old_val, size_t old_val_len,
                               char** new_val, size_t* new_val_len, void* args);
 // Used in KVDKModify, indicate how to free allocated space in KVDKModifyFunc
-typedef void (*DeallocateFunc)(void*);
+typedef void (*KVDKFreeFunc)(void*);

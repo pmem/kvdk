@@ -88,7 +88,7 @@ extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
 // * modify_func: customized function to modify existing value of key. See
 // definition of KVDKModifyFunc (types.h) for more details.
 // * modify_args: customized arguments of modify_func.
-// * deallocate_func: function to free allocated space for new value in
+// * free_func: function to free allocated space for new value in
 // modify_func, pall NULL if not need to free
 //
 // Return Ok if modify success.
@@ -96,7 +96,7 @@ extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
 // Return other non-Ok status on any error.
 extern KVDKStatus KVDKModify(KVDKEngine* engine, const char* key,
                              size_t key_len, KVDKModifyFunc modify_func,
-                             void* modify_args, DeallocateFunc deallocate_func,
+                             void* modify_args, KVDKFreeFunc free_func,
                              const KVDKWriteOptions* write_option);
 
 // For Named Global Collection
