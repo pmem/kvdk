@@ -89,7 +89,7 @@ extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
 // definition of KVDKModifyFunc (types.h) for more details.
 // * modify_args: customized arguments of modify_func.
 // * modify_deallocate: function to free allocated space for new value in
-// modify_func
+// modify_func, pall NULL if not need to free
 //
 // Return Ok if modify success.
 // Return Abort if modify function abort modifying.
