@@ -8,35 +8,36 @@ KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
   return engine->rep->HashLength(StringView{key_data, key_len}, len);
 }
 
-KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
-                       size_t collection_len, const char* key, size_t key_len,
-                       size_t* val_len, char** val) {
+KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data, size_t key_len,
+                       const char* field_data, size_t field_len,
+                       char** val_data, size_t* val_len) {
   std::string val_str;
-  *val = nullptr;
-  KVDKStatus s = engine->rep->HashGet(StringView(collection, collection_len),
-                                      StringView(key, key_len), &val_str);
+  *val_data = nullptr;
+  KVDKStatus s =
+      engine->rep->HashGet(StringView(key_data, key_len),
+                           StringView(field_data, field_len), &val_str);
   if (s != KVDKStatus::Ok) {
     *val_len = 0;
     return s;
   }
   *val_len = val_str.size();
-  *val = CopyStringToChar(val_str);
+  *val_data = CopyStringToChar(val_str);
   return s;
 }
 
-KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* collection,
-                       size_t collection_len, const char* key, size_t key_len,
-                       const char* val, size_t val_len) {
-  return engine->rep->HashSet(StringView(collection, collection_len),
-                              StringView(key, key_len),
-                              StringView(val, val_len));
+KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* key_data, size_t key_len,
+                       const char* field_data, size_t field_len,
+                       const char* val_data, size_t val_len) {
+  return engine->rep->HashSet(StringView(key_data, key_len),
+                              StringView(field_data, field_len),
+                              StringView(val_data, val_len));
 }
 
-KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* collection,
-                          size_t collection_len, const char* key,
-                          size_t key_len) {
-  return engine->rep->HashDelete(StringView(collection, collection_len),
-                                 StringView(key, key_len));
+KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
+                          size_t key_len, const char* field_data,
+                          size_t field_len) {
+  return engine->rep->HashDelete(StringView(key_data, key_len),
+                                 StringView(field_data, field_len));
 }
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,

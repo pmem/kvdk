@@ -330,7 +330,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
     size_t val_len;
     char* val;
     s = KVDKHashGet(kvdk_engine, hash_collection, strlen(hash_collection), key,
-                    strlen(key), &val_len, &val);
+                    strlen(key), &val, &val_len);
     assert(s == Ok);
     int cmp = CmpCompare(val, val_len, value, strlen(value));
     assert(cmp == 0);
@@ -511,7 +511,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     assert(s == Ok);
     sleep(1);
     s = KVDKHashGet(kvdk_engine, hash_collection, strlen(hash_collection), key,
-                    strlen(key), &val_len, &got_val);
+                    strlen(key), &got_val, &val_len);
     assert(s == NotFound);
     printf("Successfully expire hash\n");
   }

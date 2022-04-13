@@ -114,15 +114,17 @@ extern KVDKStatus KVDKSortedGet(KVDKEngine* engine, const char* collection,
 /// Hash //////////////////////////////////////////////////////////////////////
 extern KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
                                  size_t key_len, size_t* len);
-extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
-                              size_t collection_len, const char* key,
-                              size_t key_len, size_t* val_len, char** val);
-extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* collection,
-                              size_t collection_len, const char* key,
-                              size_t key_len, const char* val, size_t val_len);
-extern KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* collection,
-                                 size_t collection_len, const char* key,
-                                 size_t key_len);
+extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data,
+                              size_t key_len, const char* field_data,
+                              size_t field_len, char** val_data,
+                              size_t* val_len);
+extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* key_data,
+                              size_t key_len, const char* field_data,
+                              size_t field_len, const char* val_data,
+                              size_t val_len);
+extern KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
+                                 size_t key_len, const char* field_data,
+                                 size_t field_len);
 /// HashIterator //////////////////////////////////////////////////////////////
 extern KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                                 char const* key_data,

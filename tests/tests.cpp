@@ -1271,7 +1271,6 @@ TEST_F(EngineBasicTest, TestHash) {
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  std::vector<std::string> key_vec(num_threads);
   std::string key{"Hash"};
   using umap = std::unordered_map<std::string, std::string>;
   std::vector<umap> local_copies(num_threads);
