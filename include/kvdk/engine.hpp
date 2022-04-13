@@ -36,12 +36,17 @@ class Engine {
   virtual Status Set(const StringView key, const StringView value,
                      const WriteOptions& options = WriteOptions()) = 0;
 
-  // Modify value of existing key in the engine according to "modify_func"
+  // Modify value of existing key in the engine
   //
-  // Store modify result in "new_value" and return Ok if key exist and
-  // sccessfully update value to modifed one
-  virtual Status Modify(const StringView key, std::string* new_value,
-                        ModifyFunction modify_func, void* modify_args,
+  // * modify_func: customized function to modify existing value of key. See
+  // definition of ModifyFunc (types.hpp) for more details.
+  // * modify_args: customized arguments of modify_func.
+  //
+  // Return Status::Ok if modify success.
+  // Return Status::Abort if modify function abort modifying.
+  // Return other non-Ok status on any error.
+  virtual Status Modify(const StringView key, ModifyFunc modify_func,
+                        void* modify_args,
                         const WriteOptions& options = WriteOptions()) = 0;
 
   virtual Status BatchWrite(const WriteBatch& write_batch) = 0;

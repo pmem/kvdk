@@ -12,6 +12,7 @@
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
 #include "kvdk/status.h"
+#include "kvdk/types.hpp"
 #include "kvdk/write_batch.hpp"
 
 using kvdk::StringView;
@@ -214,21 +215,28 @@ KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
 }
 
 KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
-                      char** new_value, size_t* new_value_len,
-                      ModifyFunc modify, void* modify_args,
+                      KVDKModifyFunc modify_func, void* modify_args,
+                      KVDKFreeFunc free_func,
                       const KVDKWriteOptions* write_option) {
-  auto modify_func = [&](StringView value, void* args) {
-    modify(value.data(), value.size(), new_value, new_value_len, args);
-    std::string result(*new_value, *new_value_len);
-    return result;
+  auto cpp_modify_func = [&](const StringView& key,
+                             const std::string* old_value,
+                             std::string* new_value, void* args) {
+    char* nv;
+    size_t nv_len;
+    auto result = modify_func(
+        key.data(), key.size(), old_value ? old_value->data() : nullptr,
+        old_value ? old_value->size() : 0, &nv, &nv_len, args);
+    if (result == KVDK_MODIFY_WRITE) {
+      assert(nv != nullptr);
+      new_value->assign(nv, nv_len);
+    }
+    if (nv != nullptr && free_func != nullptr) {
+      free_func(nv);
+    }
+    return kvdk::ModifyOperation(result);
   };
-  std::string modify_result;
-  KVDKStatus s =
-      engine->rep->Modify(StringView(key, key_len), &modify_result, modify_func,
-                          modify_args, write_option->rep);
-  assert(s != KVDKStatus::Ok ||
-         (modify_result.size() == *new_value_len &&
-          memcmp(modify_result.data(), *new_value, modify_result.size()) == 0));
+  KVDKStatus s = engine->rep->Modify(StringView(key, key_len), cpp_modify_func,
+                                     modify_args, write_option->rep);
   return s;
 }
 

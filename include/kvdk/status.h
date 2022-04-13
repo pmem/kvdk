@@ -24,7 +24,7 @@ extern "C" {
 #define FOREACH_ENUM(GEN)   \
   GEN(Ok)                   \
   GEN(NotFound)             \
-  GEN(Expired)              \
+  GEN(Outdated)             \
   GEN(WrongType)            \
   GEN(OperationFail)        \
   GEN(OutOfRange)           \

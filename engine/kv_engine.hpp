@@ -83,8 +83,7 @@ class KVEngine : public Engine {
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
 
-  Status Modify(const StringView key, std::string* new_value,
-                ModifyFunction modify_func, void* modify_args,
+  Status Modify(const StringView key, ModifyFunc modify_func, void* modify_args,
                 const WriteOptions& options) override;
 
   // Sorted Collection
@@ -278,7 +277,7 @@ class KVEngine : public Engine {
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
     LookupResult res = lookupKey<false>(collection_name, record_type);
-    if (res.s == Status::Expired) {
+    if (res.s == Status::Outdated) {
       // TODO(zhichen): will open the following code when completing collection
       // deletion.
       // delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
