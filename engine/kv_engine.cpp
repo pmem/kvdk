@@ -1443,18 +1443,21 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   std::unique_lock<SpinMutex> ul(*hint.spin);
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
   LookupResult res = lookupKey<false>(str, ExpirableRecordType);
-  if (ttl_time <= 0 /*immediately expired*/ ||
-      (res.s == Status::Outdated && res.entry_ptr->IsTTLStatus())) {
-    // Push the expired record into cleaner and update hash entry status with
-    // HashEntryStatus::Expired.
-    // TODO(zhichen): This `if` will be removed when completing collection
-    // deletion.
-    if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
-      hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
-      ul.unlock();
-      delayFree(OldDeleteRecord{
-          res.entry_ptr->GetIndex().ptr, res.entry_ptr, PointerType::HashEntry,
-          version_controller_.GetCurrentTimestamp(), hint.spin});
+
+  if (res.s == Status::Outdated) {
+    if (res.entry_ptr->IsTTLStatus()) {
+      // Push the expired record into cleaner and update hash entry status with
+      // HashEntryStatus::Expired.
+      // TODO(zhichen): This `if` will be removed when completing collection
+      // deletion.
+      if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
+        hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
+        ul.unlock();
+        delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr, res.entry_ptr,
+                                  PointerType::HashEntry,
+                                  version_controller_.GetCurrentTimestamp(),
+                                  hint.spin});
+      }
     }
     return Status::NotFound;
   }
@@ -1493,13 +1496,12 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         return Status::NotSupported;
       }
     }
-  }
-
-  // Update hash entry status to TTL
-  if (res.s == Status::Ok) {
-    hash_table_->UpdateEntryStatus(res.entry_ptr, expired_time == kPersistTime
-                                                      ? HashEntryStatus::Persist
+    // Update hash entry status to TTL
+    if (res.s == Status::Ok) {
+      hash_table_->UpdateEntryStatus(
+          res.entry_ptr, expired_time == kPersistTime ? HashEntryStatus::Persist
                                                       : HashEntryStatus::TTL);
+    }
   }
   return res.s;
 }
