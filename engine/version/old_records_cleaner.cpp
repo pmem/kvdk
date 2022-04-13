@@ -18,6 +18,17 @@ void OldRecordsCleaner::DelayFree(void* addr, TimeStampType ts) {
   SpaceEntry entry{kv_engine_->pmem_allocator_->addr2offset_checked(addr),
                    data_entry->header.record_size};
   tc.pending_free_space_entries.push_back(PendingFreeSpaceEntry{entry, ts});
+
+  /// TODO: a thread may quit before all pending free entries are Free()d
+  /// GlobalClean() should collect those entries and Free() them.
+  maybeUpdateOldestSnapshot();
+  TimeStampType earliest_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  while (tc.pending_free_space_entries.front().release_time < earliest_ts) {
+    kv_engine_->pmem_allocator_->Free(
+        tc.pending_free_space_entries.front().entry);
+    tc.pending_free_space_entries.pop_front();
+  }
 }
 
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {

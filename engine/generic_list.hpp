@@ -142,6 +142,11 @@ class GenericList final : public Collection {
 
     PMemOffsetType Offset() const { return owner->offsetOf(Address()); }
 
+    static std::uint64_t Hash(void const* addr) {
+      kvdk_assert(addr != nullptr, "");
+      return XXH3_64bits(&addr, sizeof(void const*));
+    }
+
     std::uint64_t Hash() const {
       void const* addr =
           (curr == nullptr) ? static_cast<void const*>(owner) : curr;
@@ -290,7 +295,7 @@ class GenericList final : public Collection {
   template <typename ElemDeleter>
   void EraseWithLock(DLRecord* rec, ElemDeleter elem_deleter) {
     Iterator pos{this, rec};
-    std::vector<LockTable::ULockType> guard;
+    LockTable::GuardType guard;
     lockPosAndPrev(pos, guard);
     erase_impl(pos, elem_deleter);
   }
@@ -315,13 +320,14 @@ class GenericList final : public Collection {
     emplace_impl(space, Front(), timestamp, key, value);
   }
 
-  /// TODO: lock new element and prev?
+  // If new element is not locked, Delete() next may happens before
+  // emplace_impl() returns, which is troublesome.
+  // Thus we must lock the newly inserted element.
   void PushFrontWithLock(SpaceEntry space, TimeStampType timestamp,
                          StringView key, StringView value) {
-    kvdk_assert(lock_table != nullptr, "");
-    lock_table->Lock(Head().Hash());
+    auto pos_hash = Iterator::Hash(addressOf(space.offset));
+    auto guard = lock_table->MultiGuard({Head().Hash(), pos_hash});
     emplace_impl(space, Front(), timestamp, key, value);
-    lock_table->Unlock(Head().Hash());
   }
 
   void PushBack(SpaceEntry space, TimeStampType timestamp, StringView key,
@@ -331,19 +337,19 @@ class GenericList final : public Collection {
 
   void PushBackWithLock(SpaceEntry space, TimeStampType timestamp,
                         StringView key, StringView value) {
+    std::uint64_t pos_hash = Iterator::Hash(addressOf(space.offset));
     Iterator back = Back();
-    kvdk_assert(lock_table != nullptr, "");
+    LockTable::GuardType guard;
     while (true) {
-      lock_table->Lock(back.Hash());
+      guard = lock_table->MultiGuard({back.Hash(), pos_hash});
       if (back != Back()) {
-        lock_table->Unlock(back.Hash());
+        guard.clear();
         back = Back();
         continue;
       }
       break;
     }
     emplace_impl(space, Tail(), timestamp, key, value);
-    lock_table->Unlock(back.Hash());
   }
 
   template <typename ElemDeleter>
@@ -359,7 +365,7 @@ class GenericList final : public Collection {
                        StringView key, StringView value,
                        ElemDeleter elem_deleter) {
     Iterator pos{this, rec};
-    std::vector<LockTable::ULockType> guard;
+    LockTable::GuardType guard;
     Iterator prev = lockPosAndPrev(pos, guard);
     --prev;
     replace_impl(space, pos, timestamp, key, value, elem_deleter);
@@ -518,8 +524,7 @@ class GenericList final : public Collection {
     return out;
   }
 
-  Iterator lockPosAndPrev(Iterator pos,
-                          std::vector<LockTable::ULockType>& guard) {
+  Iterator lockPosAndPrev(Iterator pos, LockTable::GuardType& guard) {
     kvdk_assert(guard.empty(), "");
     Iterator prev{pos};
     --prev;

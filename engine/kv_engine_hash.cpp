@@ -63,13 +63,11 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   }
   void* addr = pmem_allocator_->offset2addr_checked(space.offset);
   if (result.s == Status::NotFound) {
-    // if (std::hash<std::thread::id>{}(std::this_thread::get_id()) % 2 == 0) {
-    //   hlist->PushFrontWithLock(space, ts, field, value);
-    // } else {
-    //   hlist->PushBackWithLock(space, ts, field, value);
-    // }
-    hlist->PushFrontWithLock(space, ts, field, value);
-    // hlist->PushBackWithLock(space, ts, field, value);
+    if (std::hash<StringView>{}(field) % 2 == 0) {
+      hlist->PushFrontWithLock(space, ts, field, value);
+    } else {
+      hlist->PushBackWithLock(space, ts, field, value);
+    }
     insertImpl(result, internal_key, RecordType::HashElem, addr);
   } else {
     DLRecord* old_rec = result.entry.GetIndex().dl_record;
