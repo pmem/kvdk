@@ -23,10 +23,10 @@
 
 DEFINE_bool(
     verbose, false,
-    "If set true, stress test will print a progress bar for operations");
+    "If set true, stress test will print a progress bar for operations.");
 
-DEFINE_string(subfix, "",
-              "Subfix of PMem directory used by test case to avoid conflicts");
+DEFINE_string(path, "/mnt/pmem0/kvdk_stress_test",
+              "Path of KVDK instance on PMem.");
 
 using kvdk::StringView;
 
@@ -420,8 +420,6 @@ class EngineTestBase : public testing::Test {
   kvdk::Configs configs;
   kvdk::Status status;
 
-  const std::string path_db{"/mnt/pmem0/kvdk_stress_test_" + FLAGS_subfix};
-
   /// The following parameters are used to configure the test.
   /// Override SetUpParameters to provide different parameters
   /// Default configure parameters
@@ -481,7 +479,7 @@ class EngineTestBase : public testing::Test {
 
     prepareKVPairs();
 
-    status = kvdk::Engine::Open(path_db, &engine, configs, stderr);
+    status = kvdk::Engine::Open(FLAGS_path, &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
@@ -493,7 +491,7 @@ class EngineTestBase : public testing::Test {
   void RebootDB() {
     delete engine;
 
-    status = kvdk::Engine::Open(path_db, &engine, configs, stderr);
+    status = kvdk::Engine::Open(FLAGS_path, &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
@@ -626,7 +624,7 @@ class EngineTestBase : public testing::Test {
 
  private:
   void purgeDB() {
-    std::string cmd = "rm -rf " + path_db + "\n";
+    std::string cmd = "rm -rf " + FLAGS_path + "\n";
     [[gnu::unused]] int _sink = system(cmd.data());
   }
 
