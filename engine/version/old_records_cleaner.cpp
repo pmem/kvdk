@@ -9,7 +9,7 @@
 
 namespace KVDK_NAMESPACE {
 
-void OldRecordsCleaner::DelayFree(void* addr, TimeStampType ts) {
+void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   kvdk_assert(static_cast<DLRecord*>(addr)->IsDirty(), "");
   kvdk_assert(access_thread.id >= 0, "");
   auto& tc = cleaner_thread_cache_[access_thread.id];
@@ -24,7 +24,7 @@ void OldRecordsCleaner::DelayFree(void* addr, TimeStampType ts) {
   maybeUpdateOldestSnapshot();
   TimeStampType earliest_ts =
       kv_engine_->version_controller_.OldestSnapshotTS();
-  constexpr size_t kMaxFreePending = 64;
+  constexpr size_t kMaxFreePending = 16;
   for (size_t i = 0; i < kMaxFreePending; i++) {
     if (tc.pending_free_space_entries.empty()) {
       break;

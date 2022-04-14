@@ -1686,7 +1686,7 @@ void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
 
 void KVEngine::delayFree(void* addr, TimeStampType ts) {
   /// TODO: avoid deadlock in cleaner to help Free() deleted records
-  old_records_cleaner_.DelayFree(addr, ts);
+  old_records_cleaner_.PushToPendingFree(addr, ts);
 }
 
 void KVEngine::backgroundOldRecordCleaner() {
