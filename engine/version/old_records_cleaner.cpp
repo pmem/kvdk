@@ -24,7 +24,14 @@ void OldRecordsCleaner::DelayFree(void* addr, TimeStampType ts) {
   maybeUpdateOldestSnapshot();
   TimeStampType earliest_ts =
       kv_engine_->version_controller_.OldestSnapshotTS();
-  while (tc.pending_free_space_entries.front().release_time < earliest_ts) {
+  constexpr size_t kMaxFreePending = 64;
+  for (size_t i = 0; i < kMaxFreePending; i++) {
+    if (tc.pending_free_space_entries.empty()) {
+      break;
+    }
+    if (tc.pending_free_space_entries.front().release_time >= earliest_ts) {
+      break;
+    }
     kv_engine_->pmem_allocator_->Free(
         tc.pending_free_space_entries.front().entry);
     tc.pending_free_space_entries.pop_front();

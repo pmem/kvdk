@@ -71,6 +71,10 @@ class SnapshotList {
 // kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
  public:
+  // LocalToken is used by kvdk functions such as Get(), SGet() and HashGet()
+  // internally to guarantee lockless reads will always read out valid data.
+  // LocalToken is thread_local,
+  // and one thread can hold atmost one at same time.
   class LocalToken {
     VersionController* owner_{nullptr};
     TimeStampType ts_{};
@@ -99,6 +103,8 @@ class VersionController {
     TimeStampType Timestamp() { return ts_; }
   };
 
+  // GlobalToken is hold internally by iterators.
+  // Create GlobalToken is more costly then InteralToken.
   class GlobalToken {
     VersionController* owner_{nullptr};
     SnapshotImpl* snap_{nullptr};
@@ -139,7 +145,9 @@ class VersionController {
 
   LocalToken GetLocalToken() { return LocalToken{this}; }
 
-  GlobalToken GetGlobalToken() { return GlobalToken{this}; }
+  std::shared_ptr<GlobalToken> GetGlobalToken() {
+    return std::make_shared<GlobalToken>(this);
+  }
 
   inline void HoldLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 && static_cast<size_t>(access_thread.id) <

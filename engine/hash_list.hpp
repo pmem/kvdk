@@ -44,18 +44,19 @@ class HashIteratorImpl final : public HashIterator {
 
   ~HashIteratorImpl() final = default;
 
+ private:
+  using AccessToken = std::shared_ptr<VersionController::GlobalToken>;
+
  public:
-  HashIteratorImpl(HashList* l, VersionController::GlobalToken&& token)
-      : list{l}, rep{l->Front()}, token{std::move(token)} {
+  HashIteratorImpl(HashList* l, AccessToken t)
+      : list{l}, rep{l->Front()}, token{t} {
     kvdk_assert(list != nullptr, "");
   }
 
  private:
   HashList* list;
   HashList::Iterator rep;
-  /// TODO: HashIterator should hold a global token and should not use token in
-  /// thread cache.
-  VersionController::GlobalToken token;
+  AccessToken token;
 };
 
 }  // namespace KVDK_NAMESPACE
