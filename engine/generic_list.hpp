@@ -366,8 +366,7 @@ class GenericList final : public Collection {
                        ElemDeleter elem_deleter) {
     Iterator pos{this, rec};
     LockTable::GuardType guard;
-    Iterator prev = lockPosAndPrev(pos, guard);
-    --prev;
+    lockPosAndPrev(pos, guard);
     replace_impl(space, pos, timestamp, key, value, elem_deleter);
   }
 
@@ -524,7 +523,7 @@ class GenericList final : public Collection {
     return out;
   }
 
-  Iterator lockPosAndPrev(Iterator pos, LockTable::GuardType& guard) {
+  void lockPosAndPrev(Iterator pos, LockTable::GuardType& guard) {
     kvdk_assert(guard.empty(), "");
     Iterator prev{pos};
     --prev;
@@ -541,7 +540,6 @@ class GenericList final : public Collection {
       kvdk_assert(++prev_copy == pos, "");
       break;
     }
-    return prev;
   }
 };
 
