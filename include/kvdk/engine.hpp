@@ -177,7 +177,7 @@ class Engine {
   //    otherwise return ListIterator to First element of List
   // Internally ListIterator holds an recursive of List, which is relased
   // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListMakeIterator(StringView key) = 0;
+  virtual std::unique_ptr<ListIterator> ListCreateIterator(StringView key) = 0;
 
   /// Hash APIs ///////////////////////////////////////////////////////////////
 
@@ -187,7 +187,10 @@ class Engine {
   virtual Status HashSet(StringView key, StringView field,
                          StringView value) = 0;
   virtual Status HashDelete(StringView key, StringView field) = 0;
-  virtual std::unique_ptr<HashIterator> HashMakeIterator(StringView key) = 0;
+  // Warning: HashIterator internally holds a snapshot,
+  // prevents some resources from being freed.
+  // The HashIterator should be destroyed as long as it is no longer used.
+  virtual std::unique_ptr<HashIterator> HashCreateIterator(StringView key) = 0;
 
   /// Other ///////////////////////////////////////////////////////////////////
 

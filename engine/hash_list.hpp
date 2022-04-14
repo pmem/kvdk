@@ -45,7 +45,7 @@ class HashIteratorImpl final : public HashIterator {
   ~HashIteratorImpl() final = default;
 
  private:
-  using AccessToken = std::shared_ptr<VersionController::GlobalToken>;
+  using AccessToken = std::shared_ptr<VersionController::GlobalSnapshotHolder>;
 
  public:
   HashIteratorImpl(HashList* l, AccessToken t)

@@ -1200,7 +1200,7 @@ TEST_F(EngineBasicTest, TestList) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
-    auto iter = engine->ListMakeIterator(key);
+    auto iter = engine->ListCreateIterator(key);
     ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
     if (iter != nullptr) {
       iter->Seek(0);
@@ -1230,7 +1230,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
-    auto iter = engine->ListMakeIterator(key);
+    auto iter = engine->ListCreateIterator(key);
     ASSERT_NE(iter, nullptr);
 
     iter->Seek(insert_pos);
@@ -1342,7 +1342,7 @@ TEST_F(EngineBasicTest, TestHash) {
       }
     }
 
-    auto iter = engine->HashMakeIterator(key);
+    auto iter = engine->HashCreateIterator(key);
 
     ASSERT_NE(iter, nullptr);
     size_t cnt = 0;

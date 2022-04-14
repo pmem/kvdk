@@ -176,14 +176,14 @@ class KVEngine : public Engine {
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
   Status ListSet(std::unique_ptr<ListIterator> const& pos,
                  StringView elem) final;
-  std::unique_ptr<ListIterator> ListMakeIterator(StringView key) final;
+  std::unique_ptr<ListIterator> ListCreateIterator(StringView key) final;
 
   // Hash
   Status HashLength(StringView key, size_t* len) final;
   Status HashGet(StringView key, StringView field, std::string* value) final;
   Status HashSet(StringView key, StringView field, StringView value) final;
   Status HashDelete(StringView key, StringView field) final;
-  std::unique_ptr<HashIterator> HashMakeIterator(StringView key) final;
+  std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
 
  private:
   struct LookupResult {

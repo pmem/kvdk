@@ -10,7 +10,6 @@ namespace KVDK_NAMESPACE {
 class LockTable {
  public:
   using HashType = std::uint64_t;
-  // using MutexType = std::recursive_mutex;
   using MutexType = SpinMutex;
   using ULockType = std::unique_lock<MutexType>;
   using GuardType = std::vector<ULockType>;

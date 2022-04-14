@@ -42,7 +42,7 @@ KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len) {
-  auto rep = engine->rep->HashMakeIterator(StringView{key_data, key_len});
+  auto rep = engine->rep->HashCreateIterator(StringView{key_data, key_len});
   if (rep == nullptr) {
     return nullptr;
   }

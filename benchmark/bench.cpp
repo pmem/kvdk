@@ -273,7 +273,7 @@ void DBScan(int tid) {
         break;
       }
       case DataType::Hashes: {
-        auto iter = engine->HashMakeIterator(collections[cid]);
+        auto iter = engine->HashCreateIterator(collections[cid]);
         if (iter) {
           for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             key = iter->Key();

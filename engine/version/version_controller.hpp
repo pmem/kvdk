@@ -71,31 +71,33 @@ class SnapshotList {
 // kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
  public:
-  // LocalToken is used by kvdk functions such as Get(), SGet() and HashGet()
-  // internally to guarantee lockless reads will always read out valid data.
-  // LocalToken is thread_local,
-  // and one thread can hold atmost one at same time.
-  class LocalToken {
+  // LocalSnapshotHolder is used by kvdk functions such as Get(), SGet() and
+  // HashGet() internally to guarantee lockless reads will always read out valid
+  // data. LocalSnapshotHolder is thread_local, and one thread can hold atmost
+  // one at same time.
+  class LocalSnapshotHolder {
     VersionController* owner_{nullptr};
     TimeStampType ts_{};
 
    public:
-    LocalToken(VersionController* o) : owner_{o} {
+    LocalSnapshotHolder(VersionController* o) : owner_{o} {
       owner_->HoldLocalSnapshot();
       ts_ = owner_->version_thread_cache_[access_thread.id]
                 .holding_snapshot.timestamp;
     };
-    LocalToken(LocalToken const&) = delete;
-    LocalToken& operator=(LocalToken const&) = delete;
-    LocalToken(LocalToken&& other) { *this = std::move(other); }
-    LocalToken& operator=(LocalToken&& other) {
+    LocalSnapshotHolder(LocalSnapshotHolder const&) = delete;
+    LocalSnapshotHolder& operator=(LocalSnapshotHolder const&) = delete;
+    LocalSnapshotHolder(LocalSnapshotHolder&& other) {
+      *this = std::move(other);
+    }
+    LocalSnapshotHolder& operator=(LocalSnapshotHolder&& other) {
       kvdk_assert(owner_ == nullptr, "");
       kvdk_assert(other.owner_ != nullptr, "");
       std::swap(owner_, other.owner_);
       std::swap(ts_, other.ts_);
       return *this;
     }
-    ~LocalToken() {
+    ~LocalSnapshotHolder() {
       if (owner_ != nullptr) {
         owner_->ReleaseLocalSnapshot();
       }
@@ -103,20 +105,22 @@ class VersionController {
     TimeStampType Timestamp() { return ts_; }
   };
 
-  // GlobalToken is hold internally by iterators.
-  // Create GlobalToken is more costly then InteralToken.
-  class GlobalToken {
+  // GlobalSnapshotHolder is hold internally by iterators.
+  // Create GlobalSnapshotHolder is more costly then InteralToken.
+  class GlobalSnapshotHolder {
     VersionController* owner_{nullptr};
     SnapshotImpl* snap_{nullptr};
 
    public:
-    GlobalToken(VersionController* o) : owner_{o} {
+    GlobalSnapshotHolder(VersionController* o) : owner_{o} {
       snap_ = owner_->NewGlobalSnapshot();
     };
-    GlobalToken(GlobalToken const&) = delete;
-    GlobalToken& operator=(GlobalToken const&) = delete;
-    GlobalToken(GlobalToken&& other) { *this = std::move(other); }
-    GlobalToken& operator=(GlobalToken&& other) {
+    GlobalSnapshotHolder(GlobalSnapshotHolder const&) = delete;
+    GlobalSnapshotHolder& operator=(GlobalSnapshotHolder const&) = delete;
+    GlobalSnapshotHolder(GlobalSnapshotHolder&& other) {
+      *this = std::move(other);
+    }
+    GlobalSnapshotHolder& operator=(GlobalSnapshotHolder&& other) {
       kvdk_assert(owner_ == nullptr, "");
       kvdk_assert(other.owner_ != nullptr, "");
       kvdk_assert(snap_ == nullptr, "");
@@ -125,7 +129,7 @@ class VersionController {
       std::swap(snap_, other.snap_);
       return *this;
     }
-    ~GlobalToken() {
+    ~GlobalSnapshotHolder() {
       if (owner_ != nullptr) {
         owner_->ReleaseSnapshot(snap_);
       }
@@ -143,10 +147,12 @@ class VersionController {
     UpdatedOldestSnapshot();
   }
 
-  LocalToken GetLocalToken() { return LocalToken{this}; }
+  LocalSnapshotHolder GetLocalSnapshotHolder() {
+    return LocalSnapshotHolder{this};
+  }
 
-  std::shared_ptr<GlobalToken> GetGlobalToken() {
-    return std::make_shared<GlobalToken>(this);
+  std::shared_ptr<GlobalSnapshotHolder> GetGlobalSnapshotToken() {
+    return std::make_shared<GlobalSnapshotHolder>(this);
   }
 
   inline void HoldLocalSnapshot() {

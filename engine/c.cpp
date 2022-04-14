@@ -344,7 +344,7 @@ KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
 
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len) {
-  auto rep = engine->rep->ListMakeIterator(StringView{key_data, key_len});
+  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len});
   if (rep == nullptr) {
     return nullptr;
   }

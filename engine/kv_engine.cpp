@@ -1635,6 +1635,7 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
 // Snapshot, delayFree and background work
 namespace KVDK_NAMESPACE {
 
+/// TODO: move this into VersionController.
 Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
   TimeStampType snapshot_ts = static_cast<SnapshotImpl*>(ret)->GetTimestamp();
@@ -1987,7 +1988,7 @@ Status KVEngine::ListSet(std::unique_ptr<ListIterator> const& pos,
   return Status::Ok;
 }
 
-std::unique_ptr<ListIterator> KVEngine::ListMakeIterator(StringView key) {
+std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(StringView key) {
   if (!CheckKeySize(key)) {
     return nullptr;
   }

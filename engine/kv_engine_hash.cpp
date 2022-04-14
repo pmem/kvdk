@@ -10,7 +10,7 @@ Status KVEngine::HashLength(StringView key, size_t* len) {
   if (s != Status::Ok) {
     return s;
   }
-  auto token = version_controller_.GetLocalToken();
+  auto token = version_controller_.GetLocalSnapshotHolder();
   *len = hlist->Size();
   return Status::Ok;
 }
@@ -25,7 +25,7 @@ Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
   if (s != Status::Ok) {
     return s;
   }
-  auto token = version_controller_.GetLocalToken();
+  auto token = version_controller_.GetLocalSnapshotHolder();
   LookupResult result =
       lookupImpl<false>(hlist->InternalKey(field), RecordType::HashElem);
   if (result.s != Status::Ok) {
@@ -54,7 +54,7 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
     return result.s;
   }
 
-  auto token = version_controller_.GetLocalToken();
+  auto token = version_controller_.GetLocalSnapshotHolder();
   TimeStampType ts = token.Timestamp();
   auto space = pmem_allocator_->Allocate(sizeof(DLRecord) +
                                          internal_key.size() + value.size());
@@ -102,14 +102,14 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
   if (ret.s != Status::Ok) {
     return ret.s;
   }
-  auto token = version_controller_.GetLocalToken();
+  auto token = version_controller_.GetLocalSnapshotHolder();
   TimeStampType ts = token.Timestamp();
   hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
                        [&](DLRecord* rec) { delayFree(rec, ts); });
   return Status::Ok;
 }
 
-std::unique_ptr<HashIterator> KVEngine::HashMakeIterator(StringView key) {
+std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
   if (!CheckKeySize(key)) {
     return nullptr;
   }
@@ -118,8 +118,8 @@ std::unique_ptr<HashIterator> KVEngine::HashMakeIterator(StringView key) {
   if (s != Status::Ok) {
     return nullptr;
   }
-  return std::unique_ptr<HashIteratorImpl>{
-      new HashIteratorImpl{hlist, version_controller_.GetGlobalToken()}};
+  return std::unique_ptr<HashIteratorImpl>{new HashIteratorImpl{
+      hlist, version_controller_.GetGlobalSnapshotToken()}};
 }
 
 Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
@@ -221,7 +221,7 @@ Status KVEngine::hashListRegisterRecovered() {
 Status KVEngine::hashListDestroy(HashList* hlist) {
   kvdk_assert(hlist->Valid(), "");
   while (hlist->Size() != 0) {
-    auto token = version_controller_.GetLocalToken();
+    auto token = version_controller_.GetLocalSnapshotHolder();
     TimeStampType ts = token.Timestamp();
     auto internal_key = hlist->Front()->Key();
     LookupResult ret;
@@ -233,7 +233,7 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     kvdk_assert(ret.entry.GetIndex().dl_record == hlist->Front().Address(), "");
     hlist->PopFront([&](DLRecord* rec) { delayFree(rec, ts); });
   }
-  auto token = version_controller_.GetLocalToken();
+  auto token = version_controller_.GetLocalSnapshotHolder();
   TimeStampType ts = token.Timestamp();
   hlist->Destroy([&](DLRecord* rec) { delayFree(rec, ts); });
   return Status::Ok;
