@@ -239,8 +239,6 @@ void DBScan(int tid) {
   std::string key(8, ' ');
   std::string value_sink;
 
-  size_t const scan_length = 100;
-
   for (size_t operations = 0, operations_counted = 0;
        operations < operations_per_thread;) {
     if (has_timed_out) {
@@ -255,9 +253,7 @@ void DBScan(int tid) {
       case DataType::Sorted: {
         auto iter = engine->NewSortedIterator(collections[cid]);
         if (iter) {
-          iter->Seek(key);
-          for (size_t i = 0; (i < scan_length) && (iter->Valid());
-               i++, iter->Next()) {
+          for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             key = iter->Key();
             value_sink = iter->Value();
             ++operations;

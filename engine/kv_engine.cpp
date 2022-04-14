@@ -780,7 +780,7 @@ Status KVEngine::Recovery() {
   list_id_ = ret.max_id + 1;
   skiplists_.swap(ret.rebuild_skiplits);
 
-#ifdef KVDK_DEBUG_CHECK
+#if KVDK_DEBUG_LEVEL > 0
   for (auto skiplist : skiplists_) {
     Status s = skiplist.second->CheckIndex();
     if (s != Status::Ok) {
