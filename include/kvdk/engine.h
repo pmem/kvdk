@@ -13,6 +13,7 @@ extern "C" {
 #include <stdio.h>
 
 #include "status.h"
+#include "types.h"
 
 typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
@@ -23,9 +24,6 @@ typedef struct KVDKListIterator KVDKListIterator;
 typedef struct KVDKHashIterator KVDKHashIterator;
 typedef struct KVDKSnapshot KVDKSnapshot;
 typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
-// Used in KVDKModify, modify old_val and store result to new_val
-typedef void (*ModifyFunc)(const char* old_val, size_t old_val_len,
-                           char** new_val, size_t* new_val_len, void* args);
 
 KVDKConfigs* KVDKCreateConfigs(void);
 extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
@@ -86,17 +84,20 @@ extern KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
 extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
                              size_t key_len);
 
-// Modify value of existing "key" according to modify function, and update
-// existing value with modify result
+// Modify value of existing key in the engine
 //
-// modify: a function to modify existing value. old_val is existing value, store
-// modify result in new_val
+// * modify_func: customized function to modify existing value of key. See
+// definition of KVDKModifyFunc (types.h) for more details.
+// * modify_args: customized arguments of modify_func.
+// * free_func: function to free allocated space for new value in
+// modify_func, pall NULL if not need to free
 //
-// Return Ok if key exists and update old_val to new_value successful
+// Return Ok if modify success.
+// Return Abort if modify function abort modifying.
+// Return other non-Ok status on any error.
 extern KVDKStatus KVDKModify(KVDKEngine* engine, const char* key,
-                             size_t key_len, char** new_value,
-                             size_t* new_value_len, ModifyFunc modify,
-                             void* modify_args,
+                             size_t key_len, KVDKModifyFunc modify_func,
+                             void* modify_args, KVDKFreeFunc free_func,
                              const KVDKWriteOptions* write_option);
 
 // For Named Global Collection

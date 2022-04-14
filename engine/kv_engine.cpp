@@ -851,7 +851,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
     value->assign(string_record->Value().data(), string_record->Value().size());
     return Status::Ok;
   } else {
-    return ret.s == Status::Expired ? Status::NotFound : ret.s;
+    return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
 }
 
@@ -1184,14 +1184,14 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   return Status::Ok;
 }
 
-Status KVEngine::Modify(const StringView key, std::string* new_value,
-                        ModifyFunction modify_func, void* modify_args,
-                        const WriteOptions& write_options) {
+Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
+                        void* modify_args, const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (write_options.ttl_time <= 0 ||
       !TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
+
   ExpireTimeType expired_time = write_options.ttl_time == kPersistTime
                                     ? kPersistTime
                                     : write_options.ttl_time + base_time;
@@ -1200,51 +1200,89 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
   if (s != Status::Ok) {
     return s;
   }
+
   auto hint = hash_table_->GetHint(key);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   version_controller_.HoldLocalSnapshot();
   defer(version_controller_.ReleaseLocalSnapshot());
   TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
-  auto ret = lookupKey<false>(key, static_cast<RecordType>(StringRecordType));
+  auto ret = lookupKey<true>(key, static_cast<RecordType>(StringRecordType));
+
+  StringRecord* existing_record = nullptr;
+  std::string existing_value;
+  std::string new_value;
   // push it into cleaner
-  if (ret.s == Status::Expired && ret.entry_ptr->IsTTLStatus()) {
-    hash_table_->UpdateEntryStatus(ret.entry_ptr, HashEntryStatus::Expired);
-    ul.unlock();
-    delayFree(OldDeleteRecord{ret.entry.GetIndex().ptr, ret.entry_ptr,
-                              PointerType::HashEntry, new_ts, hint.spin});
-    return Status::NotFound;
-  }
   if (ret.s == Status::Ok) {
-    StringRecord* old_record = ret.entry.GetIndex().string_record;
-
-    std::string modified_value = modify_func(old_record->Value(), modify_args);
-    if (!CheckValueSize(modified_value)) {
-      return Status::InvalidDataSize;
-    }
-
-    auto requested_size =
-        key.size() + modified_value.size() + sizeof(StringRecord);
-    SpaceEntry space_entry = pmem_allocator_->Allocate(requested_size);
-    if (space_entry.size == 0) {
-      return Status::PmemOverflow;
-    }
-
-    kvdk_assert(new_ts > old_record->GetTimestamp(),
-                "old record has newer timestamp");
-    StringRecord* new_record_ptr =
-        pmem_allocator_->offset2addr<StringRecord>(space_entry.offset);
-    StringRecord::PersistStringRecord(
-        new_record_ptr, space_entry.size, new_ts, StringDataRecord,
-        pmem_allocator_->addr2offset_checked(old_record), key, modified_value,
-        expired_time);
-
-    hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record_ptr,
-                        PointerType::StringRecord);
-    ul.unlock();
-    delayFree(OldDataRecord({old_record, new_ts}));
-    new_value->assign(modified_value);
+    existing_record = ret.entry.GetIndex().string_record;
+    existing_value.assign(existing_record->Value().data(),
+                          existing_record->Value().size());
+  } else if (ret.s == Status::Outdated) {
+    existing_record = ret.entry.GetIndex().string_record;
+  } else if (ret.s == Status::NotFound) {
+    // nothing todo
+  } else {
+    return ret.s;
   }
-  return ret.s;
+
+  auto modify_operation =
+      modify_func(key, ret.s == Status::Ok ? &existing_value : nullptr,
+                  &new_value, modify_args);
+  switch (modify_operation) {
+    case ModifyOperation::Write: {
+      if (!CheckValueSize(new_value)) {
+        return Status::InvalidDataSize;
+      }
+      SpaceEntry space_entry =
+          pmem_allocator_->Allocate(StringRecord::RecordSize(key, new_value));
+      if (space_entry.size == 0) {
+        return Status::PmemOverflow;
+      }
+
+      StringRecord* new_record =
+          pmem_allocator_->offset2addr_checked<StringRecord>(
+              space_entry.offset);
+      StringRecord::PersistStringRecord(
+          new_record, space_entry.size, new_ts, StringDataRecord,
+          existing_record == nullptr
+              ? kNullPMemOffset
+              : pmem_allocator_->addr2offset_checked(existing_record),
+          key, new_value, expired_time);
+      hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
+                          PointerType::StringRecord);
+      if (ret.s == Status::Ok) {
+        ul.unlock();
+        delayFree(OldDataRecord{existing_record, new_ts});
+      }
+      break;
+    }
+    case ModifyOperation::Delete: {
+      if (ret.s == Status::Ok) {
+        SpaceEntry space_entry =
+            pmem_allocator_->Allocate(StringRecord::RecordSize(key, ""));
+        if (space_entry.size == 0) {
+          return Status::PmemOverflow;
+        }
+
+        void* pmem_ptr =
+            pmem_allocator_->offset2addr_checked(space_entry.offset);
+        StringRecord::PersistStringRecord(
+            pmem_ptr, space_entry.size, new_ts, StringDeleteRecord,
+            pmem_allocator_->addr2offset_checked(existing_record), key, "");
+        hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
+                            PointerType::StringRecord);
+        ul.unlock();
+        delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
+        delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr,
+                                  PointerType::HashEntry, new_ts, hint.spin));
+      }
+      break;
+    }
+    case ModifyOperation::Abort: {
+      return Status::Abort;
+    }
+  }
+
+  return Status::Ok;
 }
 
 Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
@@ -1358,7 +1396,7 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
     // return ttl time
     *ttl_time = TimeUtils::ExpireTimeToTTL(expire_time);
   }
-  return res.s == Status::Expired ? Status::NotFound : res.s;
+  return res.s == Status::Outdated ? Status::NotFound : res.s;
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
@@ -1373,32 +1411,36 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   std::unique_lock<SpinMutex> ul(*hint.spin);
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
   LookupResult res = lookupKey<false>(str, ExpirableRecordType);
-  if (ttl_time <= 0 /*immediately expired*/ ||
-      (res.s == Status::Expired && res.entry_ptr->IsTTLStatus())) {
-    // Push the expired record into cleaner and update hash entry status with
-    // HashEntryStatus::Expired.
-    // TODO(zhichen): This `if` will be removed when completing collection
-    // deletion.
-    if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
-      hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
-      ul.unlock();
-      delayFree(OldDeleteRecord{
-          res.entry_ptr->GetIndex().ptr, res.entry_ptr, PointerType::HashEntry,
-          version_controller_.GetCurrentTimestamp(), hint.spin});
+
+  if (res.s == Status::Outdated) {
+    if (res.entry_ptr->IsTTLStatus()) {
+      // Push the expired record into cleaner and update hash entry status with
+      // HashEntryStatus::Expired.
+      // TODO(zhichen): This `if` will be removed when completing collection
+      // deletion.
+      if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
+        hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
+        ul.unlock();
+        delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr, res.entry_ptr,
+                                  PointerType::HashEntry,
+                                  version_controller_.GetCurrentTimestamp(),
+                                  hint.spin});
+      }
     }
     return Status::NotFound;
   }
 
   if (res.s == Status::Ok) {
-    std::string val;
     WriteOptions write_option{ttl_time, false};
     switch (res.entry_ptr->GetIndexType()) {
       case PointerType::StringRecord: {
         ul.unlock();
         res.s = Modify(
-            str, &val,
-            [](const StringView& val, void*) {
-              return string_view_2_string(val);
+            str,
+            [](const StringView& key, const std::string* old_val,
+               std::string* new_val, void*) {
+              new_val->assign(*old_val);
+              return ModifyOperation::Write;
             },
             nullptr, write_option);
         break;
@@ -1419,13 +1461,12 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         return Status::NotSupported;
       }
     }
-  }
-
-  // Update hash entry status to TTL
-  if (res.s == Status::Ok) {
-    hash_table_->UpdateEntryStatus(res.entry_ptr, expired_time == kPersistTime
-                                                      ? HashEntryStatus::Persist
+    // Update hash entry status to TTL
+    if (res.s == Status::Ok) {
+      hash_table_->UpdateEntryStatus(
+          res.entry_ptr, expired_time == kPersistTime ? HashEntryStatus::Persist
                                                       : HashEntryStatus::TTL);
+    }
   }
   return res.s;
 }
@@ -1487,10 +1528,13 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   if (ret.s == Status::MemoryOverflow || ret.s == Status::WrongType) {
     return ret.s;
   }
-  bool existing = ret.s == Status::Ok || ret.s == Status::Expired;
-  kvdk_assert((!existing && ret.s == Status::NotFound) ||
-                  (existing &&
-                   new_ts > ret.entry.GetIndex().string_record->GetTimestamp()),
+
+  kvdk_assert(ret.s == Status::NotFound || ret.s == Status::Ok ||
+                  ret.s == Status::Outdated,
+              "Wrong return status in lookupKey in StringSetImpl");
+  StringRecord* existing_record =
+      ret.s == Status::NotFound ? nullptr : ret.entry.GetIndex().string_record;
+  kvdk_assert(!existing_record || new_ts > existing_record->GetTimestamp(),
               "existing record has newer timestamp or wrong return status in "
               "string set");
 
@@ -1504,15 +1548,18 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
       pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
   StringRecord::PersistStringRecord(
       new_record, space_entry.size, new_ts, StringDataRecord,
-      existing ? pmem_allocator_->addr2offset_checked(
-                     ret.entry.GetIndex().string_record)
-               : kNullPMemOffset,
-      key, value, expired_time);
+      pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
 
   hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
                       PointerType::StringRecord);
   // Free existing record
-  if (existing && !ret.entry.IsExpiredStatus() /*Check if expired_key already handled by background cleaner*/) {
+  bool need_free =
+      existing_record && ret.entry.GetRecordType() != StringDeleteRecord &&
+      !ret.entry.IsExpiredStatus() /*Check if expired_key already handled by
+                                       background cleaner*/
+      ;
+
+  if (need_free) {
     ul.unlock();
     delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
   }
@@ -1555,7 +1602,7 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
 
   switch (record_type) {
     case RecordType::StringDeleteRecord: {
-      result.s = type_match ? Status::NotFound : Status::WrongType;
+      result.s = type_match ? Status::Outdated : Status::WrongType;
       return result;
     }
     case RecordType::StringDataRecord: {
@@ -1576,7 +1623,7 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
   }
 
   if (expired) {
-    result.s = type_match ? Status::Expired : Status::NotFound;
+    result.s = type_match ? Status::Outdated : Status::NotFound;
   } else {
     result.s = type_match ? Status::Ok : Status::WrongType;
   }

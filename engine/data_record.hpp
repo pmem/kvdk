@@ -169,6 +169,10 @@ struct StringRecord {
 
   RecordType GetRecordType() const { return entry.meta.type; }
 
+  static uint32_t RecordSize(const StringView& key, const StringView& value) {
+    return key.size() + value.size() + sizeof(StringRecord);
+  }
+
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
                RecordType _record_type, PMemOffsetType _older_version_record,

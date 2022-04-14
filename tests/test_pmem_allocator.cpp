@@ -38,11 +38,16 @@ class EnginePMemAllocatorTest : public testing::Test {
     int res __attribute__((unused)) = system(cmd);
   }
 
-  virtual void TearDown() {  // delete db_path
+  void RemovePathAndReleaseThread() {
+    // Release thread.
+    access_thread.Release();
+    // delete db_path.
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", pmem_path.c_str());
     int res __attribute__((unused)) = system(cmd);
   }
+
+  virtual void TearDown() { RemovePathAndReleaseThread(); }
 };
 
 TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
@@ -51,56 +56,62 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
 
   // params config
   std::vector<uint64_t> num_segment_blocks{1024, 2 * 1024, 2 * 1024 * 1024};
-  std::vector<uint32_t> block_sizes{32, 64};
-  std::vector<uint32_t> num_threads = {1, 16};
-
-  for (size_t i = 0; i < num_segment_blocks.size(); ++i) {
-    for (auto num_thread : num_threads) {
-      thread_manager_.reset(new ThreadManager(num_thread));
-
-      // Test function.
-      auto TestPmemAlloc = [&](size_t) {
-        std::vector<SpaceEntry> records;
-        thread_manager_->MaybeInitThread(access_thread);
-        remove(pmem_path.c_str());
+  std::vector<uint32_t> block_sizes{32, 64, 128};
+  std::vector<uint32_t> num_threads{1, 16};
+  for (auto num_segment_block : num_segment_blocks) {
+    for (auto block_size : block_sizes) {
+      for (auto num_thread : num_threads) {
+        // init pmem allocator and thread_manager.
+        thread_manager_.reset(new ThreadManager(num_thread));
         PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(
-            pmem_path, pmem_size, num_segment_blocks[i], block_sizes[i],
-            num_thread, true, false, nullptr);
-        ASSERT_NE(pmem_alloc, nullptr);
-
-        uint64_t kvpairs = pmem_size / block_sizes[i];
-        for (uint64_t j = 0; j < kvpairs; ++j) {
-          auto space_entry = pmem_alloc->Allocate(alloc_size);
-          records.push_back(space_entry);
+            pmem_path, pmem_size, num_segment_block, block_size, num_thread,
+            true, false, nullptr);
+        if (block_size * num_segment_block * num_thread > pmem_size) {
+          ASSERT_EQ(pmem_alloc, nullptr);
+          continue;
+        } else {
+          ASSERT_NE(pmem_alloc, nullptr);
         }
 
-        auto alloc_bytes = pmem_alloc->PMemUsageInBytes();
-
-        for (uint64_t j = 0; j < records.size(); ++j) {
-          pmem_alloc->Free(records[j]);
-        }
+        // Test function: allocate all pmem, and free all under multi-threaded
+        // scenario.
+        auto TestPmemAlloc = [&](size_t) {
+          thread_manager_->MaybeInitThread(access_thread);
+          std::vector<SpaceEntry> records;
+          for (uint64_t j = 0; j < num_segment_block; ++j) {
+            auto space_entry = pmem_alloc->Allocate(alloc_size);
+            records.push_back(space_entry);
+          }
+          for (uint64_t j = 0; j < records.size(); ++j) {
+            pmem_alloc->Free(records[j]);
+          }
+        };
+        LaunchNThreads(num_thread, TestPmemAlloc);
 
         ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), 0LL);
-        records.clear();
+        pmem_alloc->BackgroundWork();
+        access_thread.Release();
 
-        uint64_t alloc_cnt = 1;
-        // again allocate pmem
+        // Then allocate all pmem.
+        thread_manager_->MaybeInitThread(access_thread);
+        int alloc_cnt = 0;
         while (true) {
-          if (pmem_alloc->PMemUsageInBytes() == alloc_bytes) break;
+          SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size);
           alloc_cnt++;
+          if ((uint64_t)pmem_alloc->PMemUsageInBytes() >= pmem_size) break;
+          ASSERT_EQ(space_entry.size != 0, true);
         }
-        ASSERT_EQ(kvpairs, alloc_cnt);
+        ASSERT_EQ(pmem_size / block_size, alloc_cnt);
         delete pmem_alloc;
-      };
-
-      LaunchNThreads(num_thread, TestPmemAlloc);
+        RemovePathAndReleaseThread();
+      }
     }
   }
 }
 
 TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   uint32_t num_thread = 16;
-  uint64_t pmem_size = 64ULL << 10;
+  uint64_t pmem_size = 1ULL << 20;
   uint64_t num_segment_block = 1024;
   uint64_t block_size = 64;
   std::vector<uint64_t> alloc_size{8 * 64, 8 * 64, 16 * 64, 32 * 64};
@@ -143,16 +154,15 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
     SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[3]);
     ASSERT_NE(space_entry.size, 0);
   }
-
   delete pmem_alloc;
 }
 
 // TODO: Add more cases
 TEST_F(EnginePMemAllocatorTest, TestPMemAllocFreeList) {
   uint32_t num_thread = 1;
-  uint64_t num_segment_block = 4 * kMinPaddingBlocks;
+  uint64_t num_segment_block = 32;
   uint64_t block_size = 64;
-  uint64_t pmem_size = num_segment_block * block_size;
+  uint64_t pmem_size = num_segment_block * block_size * num_thread;
   std::deque<SpaceEntry> records;
   thread_manager_.reset(new ThreadManager(num_thread));
   PMEMAllocator* pmem_alloc = PMEMAllocator::NewPMEMAllocator(

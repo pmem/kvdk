@@ -272,11 +272,12 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       auto delete_record_index_type =
           old_delete_record.record_index.skiplist_node.GetTag();
       SkiplistNode* dram_node = nullptr;
+      HashEntry* hash_entry_ref = nullptr;
       bool need_purge = false;
       switch (delete_record_index_type) {
         case PointerType::HashEntry: {
           DLRecord* hash_indexed_pmem_record{};
-          HashEntry* hash_entry_ref = static_cast<HashEntry*>(
+          hash_entry_ref = static_cast<HashEntry*>(
               old_delete_record.record_index.hash_entry.RawPointer());
           auto hash_index_type = hash_entry_ref->GetIndexType();
           if (hash_index_type == PointerType::DLRecord) {
@@ -297,7 +298,6 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           if (hash_indexed_pmem_record ==
               old_delete_record.pmem_delete_record) {
             need_purge = true;
-            kv_engine_->hash_table_->Erase(hash_entry_ref);
           }
           break;
         }
@@ -312,7 +312,10 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         case PointerType::Empty: {
           // This record is not indexed by hash table and skiplist node, so we
           // check linkage to determine if its already been purged
-          if (Skiplist::CheckRecordLinkage(
+          //
+          // We only check the next linkage, as the delete record is already
+          // been locked, its next linkage will not be changed by other threads.
+          if (Skiplist::CheckReocrdNextLinkage(
                   static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
                   kv_engine_->pmem_allocator_.get())) {
             need_purge = true;
@@ -324,12 +327,16 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         }
       }
       if (need_purge) {
-        while (!Skiplist::Purge(
-            static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
-            old_delete_record.key_lock, dram_node,
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get())) {
+        if (!Skiplist::Purge(
+                static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
+                old_delete_record.key_lock, dram_node,
+                kv_engine_->pmem_allocator_.get(),
+                kv_engine_->hash_table_.get())) {
           // lock conflict, retry
           goto handle_sorted_delete_record;
+        } else if (hash_entry_ref) {
+          // Erase hash entry after successfully purge record
+          kv_engine_->hash_table_->Erase(hash_entry_ref);
         }
       }
       return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),

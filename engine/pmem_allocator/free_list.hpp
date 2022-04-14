@@ -196,7 +196,9 @@ class Freelist {
   class SpaceCmp {
    public:
     bool operator()(const SpaceEntry& s1, const SpaceEntry& s2) const {
-      return s1.size > s2.size;
+      if (s1.size > s2.size) return true;
+      if (s1.size == s2.size && s1.offset < s2.offset) return true;
+      return false;
     }
   };
 
@@ -218,6 +220,7 @@ class Freelist {
   Array<FlistThreadCache> flist_thread_cache_;
   PMEMAllocator* pmem_allocator_;
   // Store all large free space entries that larger than max_classified_b_size_
+  // TODO: use multimap instead of set
   std::set<SpaceEntry, SpaceCmp> large_entries_;
   SpinMutex large_entries_spin_;
 };

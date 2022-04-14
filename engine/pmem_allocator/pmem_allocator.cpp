@@ -115,6 +115,27 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
     return nullptr;
   }
 
+  uint64_t segment_size = block_size * num_segment_blocks;
+
+  if (pmem_size < segment_size * max_access_threads) {
+    GlobalLogger.Error(
+        "pmem file too small, should larger than pmem_segment_blocks * "
+        "pmem_block_size * max_access_threads\n");
+    return nullptr;
+  }
+
+  // num_segment_blocks and block_size are persisted and never changes.
+  // No need to worry user modify those parameters so that records may be
+  // skipped.
+  size_t sz_wasted = pmem_size % (segment_size);
+  if (sz_wasted != 0) {
+    GlobalLogger.Error(
+        "Pmem file size not aligned with segment size, pmem file size is %llu, "
+        "segment_size is %llu\n",
+        pmem_size, block_size * num_segment_blocks);
+    return nullptr;
+  }
+
   PMEMAllocator* allocator = nullptr;
   // We need to allocate a byte map in pmem allocator which require a large
   // memory, so we catch exception here
@@ -128,15 +149,6 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
     return nullptr;
   }
 
-  // num_segment_blocks and block_size are persisted and never changes.
-  // No need to worry user modify those parameters so that records may be
-  // skipped.
-  size_t sz_wasted = pmem_size % (block_size * num_segment_blocks);
-  if (sz_wasted != 0) {
-    GlobalLogger.Error(
-        "Pmem file size not aligned with segment size, %llu space is wasted.\n",
-        sz_wasted);
-  }
   GlobalLogger.Info("Map pmem space done\n");
 
   if (!pmem_file_exist && populate_space_on_new_file) {
@@ -232,15 +244,13 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       if (palloc_thread_cache.free_entry.size >= aligned_size) {
         // Padding remaining space
         auto extra_space = palloc_thread_cache.free_entry.size - aligned_size;
-        if (extra_space >= kMinPaddingBlocks * block_size_) {
+        if (extra_space > 0) {
           assert(extra_space % block_size_ == 0);
           // Mark splited space entry size on PMem, we should firstly mark the
           // 2st part for correctness in recovery
           persistSpaceEntry(
               palloc_thread_cache.free_entry.offset + aligned_size,
               extra_space);
-        } else {
-          aligned_size = palloc_thread_cache.free_entry.size;
         }
 
         space_entry = palloc_thread_cache.free_entry;
@@ -278,7 +288,6 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       return space_entry;
     }
   }
-
   space_entry = palloc_thread_cache.segment_entry;
   space_entry.size = aligned_size;
 

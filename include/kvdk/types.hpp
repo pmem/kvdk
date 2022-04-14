@@ -5,6 +5,7 @@
 #include <string>
 
 #include "libpmemobj++/string_view.hpp"
+#include "types.h"
 
 namespace KVDK_NAMESPACE {
 using StringView = pmem::obj::string_view;
@@ -15,9 +16,33 @@ using UnixTimeType = std::int64_t;
 using ExpireTimeType = UnixTimeType;
 using TTLType = std::int64_t;
 
-// Modify old value, result result, used in Engine::Modify
-using ModifyFunction =
-    std::function<std::string(const StringView& old_value, void* args)>;
+enum class ModifyOperation : int {
+  Write = KVDK_MODIFY_WRITE,
+  Delete = KVDK_MODIFY_DELETE,
+  Abort = KVDK_MODIFY_ABORT,
+};
+
+// Customized modify function used in Engine::Modify, indicate how to modify
+// existing value
+//
+// Below is args of the function, "input" is passed by KVDK engine, and the
+// function is responsible to fill outputs in "output" args.
+//
+// *(input) key: associated key of modify operation
+// *(input) old_value: existing value of key, or nullptr if key not exist
+// *(output) new_value: store new value after modifying "existing_value". Caller
+// is responsible to fill the modify result here if the function returns
+// ModifyOperation::Write.
+// * args: customer args
+//
+// return ModifyOperation::Write indicates to update existing value to
+// "new_value"
+// return ModifyOperation::Delete indicates to delete the kv from engine
+// return ModifyOperation::Abort indicates the existing kv should not be
+// modified and abort the operation
+using ModifyFunc = std::function<ModifyOperation(
+    const StringView& key, const std::string* old_value, std::string* new_value,
+    void* args)>;
 
 constexpr ExpireTimeType kPersistTime = INT64_MAX;
 constexpr TTLType kPersistTTL = INT64_MAX;
