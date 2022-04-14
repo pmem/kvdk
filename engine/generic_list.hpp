@@ -71,7 +71,7 @@ class GenericList final : public Collection {
     explicit Iterator(GenericList const* o) : Iterator{o, nullptr} {}
 
     explicit Iterator(GenericList const* o, DLRecord* c) : owner{o}, curr{c} {
-      kvdk_assert(check(), "");
+      debug_check();
     }
 
     Iterator() = delete;
@@ -84,7 +84,7 @@ class GenericList final : public Collection {
     /// Increment and Decrement operators
     // Don't skip Delete Records, its up to caller to handle the situation.
     Iterator& operator++() {
-      kvdk_assert(check(), "");
+      debug_check();
       if (curr == nullptr) {
         // Head(), goto Front()
         // Front() == Tail() if List is empty.
@@ -96,7 +96,7 @@ class GenericList final : public Collection {
         // Back(), goto Tail()
         curr = nullptr;
       }
-      kvdk_assert(check(), "");
+      debug_check();
       return *this;
     }
 
@@ -107,7 +107,7 @@ class GenericList final : public Collection {
     }
 
     Iterator& operator--() {
-      kvdk_assert(check(), "");
+      debug_check();
       if (curr == nullptr) {
         // Tail(), goto Back()
         // Back() == Head() if List is empty.
@@ -119,7 +119,7 @@ class GenericList final : public Collection {
         // Front(), goto Head()
         curr = nullptr;
       }
-      kvdk_assert(check(), "");
+      debug_check();
       return *this;
     }
 
@@ -136,7 +136,8 @@ class GenericList final : public Collection {
     DLRecord& operator*() const { return *Address(); }
 
     DLRecord* Address() const {
-      kvdk_assert(curr != nullptr && check(), "");
+      kvdk_assert(curr != nullptr, "");
+      debug_check();
       return curr;
     }
 
@@ -169,20 +170,16 @@ class GenericList final : public Collection {
     //  Head()/Tail()
     //  A Delete Record
     //  A Normal Record
-    bool check() const {
+    void debug_check() const {
+#if KVDK_DEBUG_LEVEL > 0
       if (curr == nullptr) {
-        return true;
+        return;
       }
-      if (Collection::ExtractID(curr->Key()) != owner->ID()) {
-        return false;
-      }
-      if (curr->entry.meta.type == DataType && curr->Validate()) {
-        return true;
-      }
-      if (Dirty()) {
-        return true;
-      }
-      return false;
+      kvdk_assert(Collection::ExtractID(curr->Key()) != owner->ID(), "");
+      kvdk_assert(
+          (curr->entry.meta.type == DataType && curr->Validate()) || Dirty(),
+          "")
+#endif  // KVDK_DEBUG_LEVEL > 0
     }
   };
 
