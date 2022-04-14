@@ -31,7 +31,6 @@ endif ()
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions(KVDK_DEBUG_LEVEL=0)
 else ()
-    add_compile_definitions(KVDK_DEBUG_CHECK)
     add_compile_definitions(KVDK_DEBUG_LEVEL=1)
 endif ()
 
