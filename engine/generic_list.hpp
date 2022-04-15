@@ -48,7 +48,7 @@ class GenericList final : public Collection {
 
  public:
   // Deletion of a node in GenericList takes two steps.
-  // First, the node is unlinked from list and MarkAsDirty(),
+  // First, the node is unlinked from list and markAsDirty(),
   // which can be detected by Iterator::Dirty().
   // Iterator may go to a Dirty() node by operator++() or operator--().
   // It's safe to read data on this Dirty() node.
@@ -154,7 +154,7 @@ class GenericList final : public Collection {
       return XXH3_64bits(&addr, sizeof(void const*));
     }
 
-    bool Dirty() const { return (curr != nullptr && curr->IsDirty()); }
+    bool Dirty() const { return (curr != nullptr && owner->isDirty(curr)); }
 
    private:
     friend bool operator==(Iterator const& lhs, Iterator const& rhs) {
@@ -175,10 +175,10 @@ class GenericList final : public Collection {
       if (curr == nullptr) {
         return;
       }
-      kvdk_assert(Collection::ExtractID(curr->Key()) != owner->ID(), "");
+      kvdk_assert(Collection::ExtractID(curr->Key()) == owner->ID(), "");
       kvdk_assert(
           (curr->entry.meta.type == DataType && curr->Validate()) || Dirty(),
-          "")
+          "");
 #endif  // KVDK_DEBUG_LEVEL > 0
     }
   };
@@ -450,7 +450,7 @@ class GenericList final : public Collection {
       next->PersistPrevNT(prev.Offset());
       prev->PersistNextNT(next.Offset());
     }
-    pos->MarkAsDirty();
+    markAsDirty(pos.Address());
     elem_deleter(pos.Address());
     --sz;
     return next;
@@ -494,8 +494,7 @@ class GenericList final : public Collection {
       prev->PersistNextNT(space.offset);
       next->PersistPrevNT(space.offset);
     }
-
-    pos->MarkAsDirty();
+    markAsDirty(pos.Address());
     elem_deleter(pos.Address());
     return Iterator{this, addressOf(space.offset)};
   }
@@ -538,6 +537,32 @@ class GenericList final : public Collection {
       kvdk_assert(++prev_copy == pos, "");
       break;
     }
+  }
+
+  void markAsDirty(DLRecord* rec) {
+    auto& entry = rec->entry;
+    switch (entry.meta.type) {
+      case RecordType::ListElem: {
+        entry.meta.type = RecordType::ListDirtyElem;
+        break;
+      }
+      case RecordType::HashElem: {
+        entry.meta.type = RecordType::HashDirtyElem;
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unsupported!");
+        std::abort();
+      }
+    }
+    _mm_clwb(&entry.meta.type);
+    _mm_mfence();
+  }
+
+  bool isDirty(DLRecord* rec) const {
+    auto& entry = rec->entry;
+    return (entry.meta.type == RecordType::ListDirtyElem) ||
+           (entry.meta.type == RecordType::HashDirtyElem);
   }
 };
 

@@ -234,30 +234,6 @@ struct DLRecord {
 
   void Destroy() { entry.Destroy(); }
 
-  void MarkAsDirty() {
-    switch (entry.meta.type) {
-      case RecordType::ListElem: {
-        entry.meta.type = RecordType::ListDirtyElem;
-        break;
-      }
-      case RecordType::HashElem: {
-        entry.meta.type = RecordType::HashDirtyElem;
-        break;
-      }
-      default: {
-        kvdk_assert(false, "Unsupported!");
-        std::abort();
-      }
-    }
-    _mm_clwb(&entry.meta.type);
-    _mm_mfence();
-  }
-
-  bool IsDirty() {
-    return (entry.meta.type == RecordType::ListDirtyElem) ||
-           (entry.meta.type == RecordType::HashDirtyElem);
-  }
-
   bool Validate() {
     if (ValidateRecordSize()) {
       return Checksum() == entry.header.checksum;
