@@ -220,7 +220,8 @@ class GenericList final : public Collection {
   bool Valid() const { return (list_record != nullptr); }
 
   // Restore a List with its ListRecord, first and last element and size
-  // This function is used by GenericListBuilder to restore the List
+  // This function is used by GenericListBuilder to restore the List.
+  // Don't Restore() after Init()
   void Restore(PMEMAllocator* a, DLRecord* list_rec, DLRecord* fi, DLRecord* la,
                size_t n, LockTable* lt) {
     auto key = list_rec->Key();

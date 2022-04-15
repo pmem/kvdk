@@ -251,9 +251,12 @@ void DBScan(int tid) {
 
     switch (bench_data_type) {
       case DataType::Sorted: {
+        size_t const scan_length = 100;
         auto iter = engine->NewSortedIterator(collections[cid]);
         if (iter) {
-          for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+          iter->Seek(key);
+          for (size_t i = 0; (i < scan_length) && (iter->Valid());
+               i++, iter->Next()) {
             key = iter->Key();
             value_sink = iter->Value();
             ++operations;

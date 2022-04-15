@@ -150,8 +150,9 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
   // Uninitialized or Inactive, initialize new one
   {
     auto guard2 = hash_table_->AcquireLock(key);
-    auto result = lookupKey<false>(key, RecordType::HashRecord);
-    if (result.s != Status::Ok && result.s != Status::NotFound) {
+    auto result = lookupKey<true>(key, RecordType::HashRecord);
+    if (result.s != Status::Ok && result.s != Status::NotFound &&
+        result.s != Status::Outdated) {
       return result.s;
     }
     if (result.s == Status::Ok) {
@@ -174,7 +175,8 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
       std::lock_guard<std::mutex> guard2{list_mu_};
       hash_lists_.emplace_back(*hlist);
     }
-    return registerCollection(*hlist);
+    insertImpl(result, key, RecordType::HashRecord, *hlist);
+    return Status::Ok;
   }
 }
 

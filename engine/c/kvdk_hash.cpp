@@ -42,13 +42,13 @@ KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len) {
-  auto rep = engine->rep->HashCreateIterator(StringView{key_data, key_len});
-  if (rep == nullptr) {
+  auto iter = engine->rep->HashCreateIterator(StringView{key_data, key_len});
+  if (iter == nullptr) {
     return nullptr;
   }
-  KVDKHashIterator* iter = new KVDKHashIterator;
-  iter->rep.swap(rep);
-  return iter;
+  KVDKHashIterator* hash_iter = new KVDKHashIterator;
+  hash_iter->rep.swap(iter);
+  return hash_iter;
 }
 
 void KVDKHashIteratorDestroy(KVDKHashIterator* iter) { delete iter; }
