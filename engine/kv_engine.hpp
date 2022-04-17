@@ -497,7 +497,7 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  // void backgroundWorkCoordinator();
+  void backgroundDestoryCollections();
 
   void startBackgroundWorks();
 
@@ -515,7 +515,7 @@ class KVEngine : public Engine {
   std::vector<std::shared_ptr<UnorderedCollection>>
       vec_sp_unordered_collections_;
 
-  std::vector<std::unique_ptr<List>> lists_;
+  std::set<std::unique_ptr<List>> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 
   std::mutex list_mu_;

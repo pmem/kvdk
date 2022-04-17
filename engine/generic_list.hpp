@@ -13,6 +13,7 @@
 #include <deque>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <random>
 #include <stdexcept>
@@ -403,6 +404,14 @@ class GenericList final : public Collection {
     }
     return out;
   }
+
+  friend bool operator<(const std::unique_ptr<GenericList>& a,
+                        const std::unique_ptr<GenericList>& b) {
+    if (a->GetExpireTime() < b->GetExpireTime()) return true;
+    if (a->GetExpireTime() == b->GetExpireTime() && a->ID() < b->ID())
+      return true;
+    return false;
+  }
 };
 
 template <RecordType ListType, RecordType DataType>
@@ -413,7 +422,7 @@ class GenericListBuilder final {
   PMEMAllocator* alloc;
   size_t n_worker{0};
   std::mutex mu;
-  std::vector<std::unique_ptr<List>>* rebuilded_lists{nullptr};
+  std::set<std::unique_ptr<List>>* rebuilded_lists{nullptr};
 
   // Resevoir for middle points
   // Middle points can be used for multi-thread interating through Lists
@@ -482,7 +491,7 @@ class GenericListBuilder final {
 
  public:
   explicit GenericListBuilder(PMEMAllocator* a,
-                              std::vector<std::unique_ptr<List>>* lists,
+                              std::set<std::unique_ptr<List>>* lists,
                               size_t num_worker)
       : alloc{a}, n_worker{num_worker}, rebuilded_lists{lists} {
     kvdk_assert(lists != nullptr && lists->empty(), "");
@@ -540,7 +549,7 @@ class GenericListBuilder final {
         continue;
       }
 
-      rebuilded_lists->emplace_back(new List{});
+      std::unique_ptr<List> restore_list(new List);
       switch (primer.size.load()) {
         case 0: {
           // Empty List
@@ -548,8 +557,7 @@ class GenericListBuilder final {
           kvdk_assert(primer.last == nullptr, "");
           kvdk_assert(primer.unique == nullptr, "");
           kvdk_assert(primer.size.load() == 0, "");
-          rebuilded_lists->back()->Restore(alloc, primer.list_record, nullptr,
-                                           nullptr, 0);
+          restore_list->Restore(alloc, primer.list_record, nullptr, nullptr, 0);
           break;
         }
         case 1: {
@@ -558,8 +566,8 @@ class GenericListBuilder final {
           kvdk_assert(primer.last == nullptr, "");
           kvdk_assert(primer.unique != nullptr, "");
           kvdk_assert(primer.size.load() == 1, "");
-          rebuilded_lists->back()->Restore(alloc, primer.list_record,
-                                           primer.unique, primer.unique, 1);
+          restore_list->Restore(alloc, primer.list_record, primer.unique,
+                                primer.unique, 1);
           break;
         }
         default: {
@@ -567,12 +575,12 @@ class GenericListBuilder final {
           kvdk_assert(primer.first != nullptr, "");
           kvdk_assert(primer.last != nullptr, "");
           kvdk_assert(primer.unique == nullptr, "");
-          rebuilded_lists->back()->Restore(alloc, primer.list_record,
-                                           primer.first, primer.last,
-                                           primer.size.load());
+          restore_list->Restore(alloc, primer.list_record, primer.first,
+                                primer.last, primer.size.load());
           break;
         }
       }
+      rebuilded_lists->insert(std::move(restore_list));
     }
   }
 

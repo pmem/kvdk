@@ -92,6 +92,7 @@ void KVEngine::startBackgroundWorks() {
   bg_threads_.emplace_back(&KVEngine::backgroundOldRecordCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundDestoryCollections, this);
 }
 
 void KVEngine::terminateBackgroundWorks() {
@@ -1489,7 +1490,17 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         break;
       }
       case PointerType::List: {
-        res.s = res.entry_ptr->GetIndex().list->SetExpireTime(expired_time);
+        List* list = res.entry_ptr->GetIndex().list;
+        res.s = list->SetExpireTime(expired_time);
+        {
+          std::unique_lock<std::mutex> guard(list_mu_);
+          std::unique_ptr<List> tmp_list(list);
+          auto it = lists_.find(tmp_list);
+          assert(it != lists_.end());
+          tmp_list.release();
+          lists_.erase(it);
+          lists_.insert(std::move(tmp_list));
+        }
         break;
       }
       default: {
@@ -1551,6 +1562,10 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   ExpireTimeType expired_time =
       TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
 
+  HashEntryStatus entry_status = expired_time != kPersistTime
+                                     ? HashEntryStatus::TTL
+                                     : HashEntryStatus::Persist;
+
   auto hint = hash_table_->GetHint(key);
   TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
   std::unique_lock<SpinMutex> ul(*hint.spin);
@@ -1586,7 +1601,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
       pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
 
   hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
-                      PointerType::StringRecord);
+                      PointerType::StringRecord, entry_status);
   // Free existing record
   bool need_free =
       existing_record && ret.entry.GetRecordType() != StringDeleteRecord &&
@@ -1594,7 +1609,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
                                        background cleaner*/
       ;
 
-  if (need_free) {
+  if (need_free && !ret.entry.IsExpiredStatus()) {
     ul.unlock();
     delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
   }
@@ -2105,6 +2120,29 @@ void KVEngine::backgroundDramCleaner() {
   }
 }
 
+void KVEngine::backgroundDestoryCollections() {
+  while (!bg_work_signals_.terminating) {
+    if (lists_.empty()) return;
+    auto now_time = TimeUtils::millisecond_time();
+    std::unique_lock<std::mutex> guard{list_mu_};
+    auto min_ttl_list = lists_.begin();
+    if ((*min_ttl_list)->GetExpireTime() <= now_time) {
+      List* destory_list = (*min_ttl_list).get();
+      lists_.erase(min_ttl_list);
+      guard.unlock();
+      auto guard2 = hash_table_->AcquireLock(destory_list->Name());
+      LookupResult result =
+          lookupKey<false>(destory_list->Name(), RecordType::ListRecord);
+      if (result.s == Status::Ok &&
+          result.entry_ptr->GetIndex().list == destory_list) {
+        hash_table_->Erase(result.entry_ptr);
+      }
+      listDestroy(destory_list);
+    } else {
+    }
+  }
+}
+
 void KVEngine::CleanOutDated() {
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
   std::deque<OldDeleteRecord> expired_record_queue;
@@ -2146,10 +2184,12 @@ void KVEngine::CleanOutDated() {
       old_records_cleaner_.PushToGlobal(expired_record_queue);
       expired_record_queue.clear();
     }
+
     if (std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now() - start_ts)
                 .count() > interval ||
         need_clean_records_) {
+      slot_iter.GetSlotLock()->unlock();
       need_clean_records_ = true;
       old_records_cleaner_.TryGlobalClean();
       need_clean_records_ = false;
@@ -2379,7 +2419,7 @@ List* KVEngine::listCreate(StringView key) {
   }
   list->Init(pmem_allocator_.get(), space, ts, key, id);
   std::lock_guard<std::mutex> guard{list_mu_};
-  lists_.emplace_back(list);
+  lists_.insert(std::unique_ptr<List>(list));
   return list;
 }
 
@@ -2410,6 +2450,15 @@ Status KVEngine::listRegisterRecovered() {
 }
 
 Status KVEngine::listDestroy(List* list) {
+  {
+    std::unique_lock<std::mutex> guard(list_mu_);
+    std::unique_ptr<List> tmp_list(list);
+    auto it = lists_.find(tmp_list);
+    tmp_list.release();
+    assert(it != lists_.end());
+    lists_.erase(it);
+  }
+
   while (list->Size() > 0) {
     list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
   }
