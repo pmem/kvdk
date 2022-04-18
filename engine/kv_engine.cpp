@@ -327,6 +327,8 @@ Status KVEngine::RestoreData() {
       }
       case RecordType::ListDirtyElem:
       case RecordType::HashDirtyElem:
+      case RecordType::ListDirtyRecord:
+      case RecordType::HashDirtyRecord:
       case RecordType::Padding:
       case RecordType::Empty: {
         data_entry_cached.meta.type = RecordType::Padding;
@@ -2029,12 +2031,26 @@ Status KVEngine::listRegisterRecovered() {
   return Status::Ok;
 }
 
-Status KVEngine::listDestroy(List* list) {
+template <typename DelayFree>
+Status KVEngine::listDestroy(List* list, DelayFree delay_free) {
+  // Currently, every list operation locks the whole list
+  // and delay_free is not necessary.
+  // We use delay_free here so that we can enable some lockless
+  // operations in the future.
   while (list->Size() > 0) {
-    list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
+    auto token = version_controller_.GetLocalSnapshotHolder();
+    list->PopFront(
+        [&](DLRecord* elem) { delay_free(elem, token.Timestamp()); });
   }
-  list->Destroy([&](DLRecord* lrec) { purgeAndFree(lrec); });
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  list->Destroy([&](DLRecord* lrec) { delay_free(lrec, token.Timestamp()); });
   return Status::Ok;
+}
+
+Status KVEngine::listDestroy(List* list) {
+  // Lambda to help resolve symbol
+  return listDestroy(
+      list, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); });
 }
 
 Status KVEngine::listFind(StringView key, List** list, bool init_nx,

@@ -220,7 +220,8 @@ Status KVEngine::hashListRegisterRecovered() {
   return Status::Ok;
 }
 
-Status KVEngine::hashListDestroy(HashList* hlist) {
+template <typename DelayFree>
+Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free) {
   kvdk_assert(hlist->Valid(), "");
   while (hlist->Size() != 0) {
     auto token = version_controller_.GetLocalSnapshotHolder();
@@ -233,12 +234,18 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     }
     kvdk_assert(ret.s == Status::Ok, "");
     kvdk_assert(ret.entry.GetIndex().dl_record == hlist->Front().Address(), "");
-    hlist->PopFront([&](DLRecord* rec) { delayFree(rec, ts); });
+    hlist->PopFront([&](DLRecord* rec) { delay_free(rec, ts); });
   }
   auto token = version_controller_.GetLocalSnapshotHolder();
   TimeStampType ts = token.Timestamp();
-  hlist->Destroy([&](DLRecord* rec) { delayFree(rec, ts); });
+  hlist->Destroy([&](DLRecord* rec) { delay_free(rec, ts); });
   return Status::Ok;
+}
+
+Status KVEngine::hashListDestroy(HashList* hlist) {
+  // Lambda to help resolve symbol
+  return hashListDestroy(
+      hlist, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); });
 }
 
 }  // namespace KVDK_NAMESPACE

@@ -24,12 +24,14 @@ enum RecordType : uint16_t {
   SortedHeaderRecord = (1 << 4),
 
   HashRecord = (1 << 5),
-  HashElem = (1 << 6),
-  HashDirtyElem = (1 << 7),
+  HashDirtyRecord = (1 << 6),
+  HashElem = (1 << 7),
+  HashDirtyElem = (1 << 8),
 
   ListRecord = (1 << 9),
-  ListElem = (1 << 10),
-  ListDirtyElem = (1 << 11),
+  ListDirtyRecord = (1 << 10),
+  ListElem = (1 << 11),
+  ListDirtyElem = (1 << 12),
 
   Padding = (1 << 15),
 };
