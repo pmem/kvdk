@@ -2452,6 +2452,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
     auto hash_table = test_kvengine->GetHashTable();
     auto slot_iter = hash_table->GetSlotIterator();
     while (slot_iter.Valid()) {
+      slot_iter.LockSlot();
       auto bucket_iter = slot_iter.Begin();
       auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
