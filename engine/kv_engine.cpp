@@ -1537,7 +1537,8 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
                               new_ts, hint.spin));
   }
 
-  return ret.s == Status::NotFound ? Status::Ok : ret.s;
+  return (ret.s == Status::NotFound || ret.s == Status::Outdated) ? Status::Ok
+                                                                  : ret.s;
 }
 
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
