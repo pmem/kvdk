@@ -328,9 +328,16 @@ KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
   return s;
 }
 
-KVDKStatus KVDKListInsert(KVDKEngine* engine, KVDKListIterator* pos,
-                          char const* elem_data, size_t elem_len) {
-  return engine->rep->ListInsert(pos->rep, StringView{elem_data, elem_len});
+KVDKStatus KVDKListInsertBefore(KVDKEngine* engine, KVDKListIterator* pos,
+                                char const* elem_data, size_t elem_len) {
+  return engine->rep->ListInsertBefore(pos->rep,
+                                       StringView{elem_data, elem_len});
+}
+
+KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, KVDKListIterator* pos,
+                               char const* elem_data, size_t elem_len) {
+  return engine->rep->ListInsertAfter(pos->rep,
+                                      StringView{elem_data, elem_len});
 }
 
 KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos) {

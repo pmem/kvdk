@@ -171,8 +171,10 @@ class KVEngine : public Engine {
   Status ListPushBack(StringView key, StringView elem) final;
   Status ListPopFront(StringView key, std::string* elem) final;
   Status ListPopBack(StringView key, std::string* elem) final;
-  Status ListInsert(std::unique_ptr<ListIterator> const& pos,
-                    StringView elem) final;
+  Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
+                          StringView elem) final;
+  Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
+                         StringView elem) final;
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
   Status ListSet(std::unique_ptr<ListIterator> const& pos,
                  StringView elem) final;

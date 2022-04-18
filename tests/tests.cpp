@@ -1238,7 +1238,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(iter->Value(), *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(engine->ListInsert(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListInsertBefore(iter, elem), Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
     ASSERT_EQ(iter->Value(), *iter2);
 

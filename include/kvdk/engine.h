@@ -157,8 +157,11 @@ extern KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
 extern KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
                                   size_t key_len, char** elem_data,
                                   size_t* elem_len);
-extern KVDKStatus KVDKListInsert(KVDKEngine* engine, KVDKListIterator* pos,
-                                 char const* elem_data, size_t elem_len);
+extern KVDKStatus KVDKListInsertBefore(KVDKEngine* engine,
+                                       KVDKListIterator* pos,
+                                       char const* elem_data, size_t elem_len);
+extern KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, KVDKListIterator* pos,
+                                      char const* elem_data, size_t elem_len);
 extern KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos);
 extern KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
                               char const* elem_data, size_t elem_len);
