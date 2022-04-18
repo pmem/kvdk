@@ -88,12 +88,12 @@ class KVEngine : public Engine {
                 const WriteOptions& options) override;
 
   // Sorted Collection
-  Status SGet(const StringView collection, const StringView user_key,
-              std::string* value) override;
-  Status SSet(const StringView collection, const StringView user_key,
-              const StringView value) override;
-  Status SDelete(const StringView collection,
-                 const StringView user_key) override;
+  Status SortedGet(const StringView collection, const StringView user_key,
+                   std::string* value) override;
+  Status SortedSet(const StringView collection, const StringView user_key,
+                   const StringView value) override;
+  Status SortedDelete(const StringView collection,
+                      const StringView user_key) override;
   Iterator* NewSortedIterator(const StringView collection,
                               Snapshot* snapshot) override;
   void ReleaseSortedIterator(Iterator* sorted_iterator) override;

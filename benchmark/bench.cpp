@@ -195,7 +195,7 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Sorted: {
-        s = engine->SSet(collections[cid], key, value);
+        s = engine->SortedSet(collections[cid], key, value);
         break;
       }
       case DataType::Hashes: {
@@ -330,7 +330,7 @@ void DBRead(int tid) {
         break;
       }
       case DataType::Sorted: {
-        s = engine->SGet(collections[cid], key, &value_sink);
+        s = engine->SortedGet(collections[cid], key, &value_sink);
         break;
       }
       case DataType::Hashes: {

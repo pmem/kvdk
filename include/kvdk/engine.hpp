@@ -84,19 +84,20 @@ class Engine {
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return Ok
   // on successful persistence, return non-Ok on any error.
-  virtual Status SSet(const StringView collection, const StringView key,
-                      const StringView value) = 0;
+  virtual Status SortedSet(const StringView collection, const StringView key,
+                           const StringView value) = 0;
 
   // Search the SORTED-type KV of "key" in sorted collection "collection"
   // and store the corresponding value to *value on success. If the
   // "collection"/"key" did not exist, return NotFound.
-  virtual Status SGet(const StringView collection, const StringView key,
-                      std::string* value) = 0;
+  virtual Status SortedGet(const StringView collection, const StringView key,
+                           std::string* value) = 0;
 
   // Remove SORTED-type KV of "key" in the sorted collection "collection".
   // Return Ok on success or the "collection"/"key" did not exist, return non-Ok
   // on any error.
-  virtual Status SDelete(const StringView collection, const StringView key) = 0;
+  virtual Status SortedDelete(const StringView collection,
+                              const StringView key) = 0;
 
   /// List APIs ///////////////////////////////////////////////////////////////
 
