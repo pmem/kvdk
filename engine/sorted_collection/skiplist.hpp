@@ -235,8 +235,8 @@ class Skiplist : public Collection {
 
   static bool IsSkiplistRecord(DLRecord* record) {
     return record->entry.meta.type == SortedHeaderRecord ||
-           record->entry.meta.type == SortedHeaderRecord ||
-           record->entry.meta.type == SortedHeaderRecord;
+           record->entry.meta.type == SortedDataRecord ||
+           record->entry.meta.type == SortedDeleteRecord;
   }
 
   // Check if record correctly linked on list
