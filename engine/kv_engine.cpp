@@ -1224,9 +1224,8 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
     return ret.s;
   }
 
-  auto modify_operation =
-      modify_func(key, ret.s == Status::Ok ? &existing_value : nullptr,
-                  &new_value, modify_args);
+  auto modify_operation = modify_func(
+      ret.s == Status::Ok ? &existing_value : nullptr, &new_value, modify_args);
   switch (modify_operation) {
     case ModifyOperation::Write: {
       if (!CheckValueSize(new_value)) {
@@ -1437,8 +1436,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         ul.unlock();
         res.s = Modify(
             str,
-            [](const StringView&, const std::string* old_val,
-               std::string* new_val, void*) {
+            [](const std::string* old_val, std::string* new_val, void*) {
               new_val->assign(*old_val);
               return ModifyOperation::Write;
             },
