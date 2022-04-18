@@ -212,6 +212,7 @@ class GenericList final : public Collection {
     kvdk_assert(Size() == 0 && list_record != nullptr && first == nullptr &&
                     last == nullptr,
                 "Only initialized empty List can be destroyed!");
+    markAsDirty(list_record);
     list_deleter(list_record);
     list_record = nullptr;
     alloc = nullptr;
@@ -548,6 +549,14 @@ class GenericList final : public Collection {
       }
       case RecordType::HashElem: {
         entry.meta.type = RecordType::HashDirtyElem;
+        break;
+      }
+      case RecordType::ListRecord: {
+        entry.meta.type = RecordType::ListDirtyRecord;
+        break;
+      }
+      case RecordType::HashRecord: {
+        entry.meta.type = RecordType::HashDirtyRecord;
         break;
       }
       default: {

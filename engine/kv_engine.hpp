@@ -407,6 +407,9 @@ class KVEngine : public Engine {
 
   Status listRegisterRecovered();
 
+  template <typename DelayFree>
+  Status listDestroy(List* list, DelayFree delay_free);
+
   Status listDestroy(List* list);
 
   /// Hash helper funtions
@@ -417,6 +420,9 @@ class KVEngine : public Engine {
   Status hashListRestoreList(DLRecord* rec);
 
   Status hashListRegisterRecovered();
+
+  template <typename DelayFree>
+  Status hashListDestroy(HashList* list, DelayFree delay_free);
 
   Status hashListDestroy(HashList* list);
 
