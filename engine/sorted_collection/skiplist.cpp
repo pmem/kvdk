@@ -193,15 +193,23 @@ Status Skiplist::CheckIndex() {
                                             next_record->entry.meta.type,
                                             &entry_ptr, &hash_entry, nullptr);
       if (s != Status::Ok) {
+        GlobalLogger.Error(
+            "Check skiplist index error: record not exist in hash table\n");
         return Status::Abort;
       }
 
       if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
         if (hash_entry.GetIndex().skiplist_node != next_node) {
+          GlobalLogger.Error(
+              "Check skiplist index error: Dram node miss-match with hash "
+              "table\n");
           return Status::Abort;
         }
       } else {
         if (hash_entry.GetIndex().dl_record != next_record) {
+          GlobalLogger.Error(
+              "Check skiplist index error: Dlrecord miss-match with hash "
+              "table\n");
           return Status::Abort;
         }
       }
@@ -211,6 +219,8 @@ Status Skiplist::CheckIndex() {
     if (next_node && next_node->record == next_record) {
       for (uint8_t i = 1; i <= next_node->Height(); i++) {
         if (splice.prevs[i]->RelaxedNext(i).RawPointer() != next_node) {
+          GlobalLogger.Error(
+              "Check skiplist index error: node linkage error\n");
           return Status::Abort;
         }
         splice.prevs[i] = next_node;

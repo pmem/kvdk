@@ -501,18 +501,24 @@ bool SortedCollectionRebuilder::checkRecordLinkage(DLRecord* record) {
 
 bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-  uint64_t offset = pmem_allocator->addr2offset_checked(record);
-  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
-  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-  if (prev->next != offset && next->prev != offset) {
-    return false;
+
+  // The next linkage is correct. If the prev linkage is correct too, the record
+  // linkage is ok. If the prev linkage is not correct, it will be repaired by
+  // the correct prodecessor soon, so directly return true here.
+  if (Skiplist::CheckReocrdNextLinkage(record, pmem_allocator)) {
+    return true;
   }
-  // Repair un-finished write
-  if (next->prev != offset) {
-    next->prev = offset;
-    pmem_persist(&next->prev, 8);
+
+  // If only prev linkage is correct, then repair the next linkage
+  if (Skiplist::CheckRecordPrevLinkage(record, pmem_allocator)) {
+    DLRecord* next =
+        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
+    next->prev = pmem_allocator->addr2offset_checked(record);
+    pmem_persist(&next->prev, sizeof(PMemOffsetType));
+    return true;
   }
-  return true;
+
+  return false;
 }
 
 void SortedCollectionRebuilder::cleanInvalidRecords() {
@@ -521,7 +527,8 @@ void SortedCollectionRebuilder::cleanInvalidRecords() {
   // clean unlinked records
   for (auto& thread_cache : rebuilder_thread_cache_) {
     for (DLRecord* pmem_record : thread_cache.unlinked_records) {
-      if (!checkRecordLinkage(pmem_record)) {
+      if (!Skiplist::IsSkiplistRecord(pmem_record) ||
+          !checkRecordLinkage(pmem_record)) {
         pmem_record->Destroy();
         to_free.emplace_back(
             kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),
@@ -601,8 +608,8 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(DLRecord* pmem_record,
   DLRecord* curr = pmem_record;
   while (curr != nullptr &&
          curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
-    curr = kv_engine_->pmem_allocator_->offset2addr<DLRecord>(
-        curr->older_version_offset);
+    curr =
+        kv_engine_->pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
     kvdk_assert(curr == nullptr || curr->Validate(),
                 "Broken checkpoint: invalid older version sorted record");
     kvdk_assert(

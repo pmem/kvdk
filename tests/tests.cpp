@@ -639,7 +639,7 @@ TEST_F(EngineBasicTest, TestStringModify) {
     size_t incr_by;
     size_t result;
   };
-  auto IncN = [](const StringView& key, const std::string* old_val,
+  auto IncN = [](const StringView&, const std::string* old_val,
                  std::string* new_value, void* modify_args) {
     assert(modify_args);
     IncNArgs* args = static_cast<IncNArgs*>(modify_args);
@@ -2198,6 +2198,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
     auto hash_table = test_kvengine->GetHashTable();
     auto slot_iter = hash_table->GetSlotIterator();
     while (slot_iter.Valid()) {
+      auto slot_lock = slot_iter.AcquireSlotLock();
       auto bucket_iter = slot_iter.Begin();
       auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {

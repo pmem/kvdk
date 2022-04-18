@@ -784,7 +784,7 @@ Status KVEngine::Recovery() {
   for (auto skiplist : skiplists_) {
     Status s = skiplist.second->CheckIndex();
     if (s != Status::Ok) {
-      GlobalLogger.Info("Check skiplist index error\n");
+      GlobalLogger.Error("Check skiplist index error\n");
       return s;
     }
   }
@@ -1437,7 +1437,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         ul.unlock();
         res.s = Modify(
             str,
-            [](const StringView& key, const std::string* old_val,
+            [](const StringView&, const std::string* old_val,
                std::string* new_val, void*) {
               new_val->assign(*old_val);
               return ModifyOperation::Write;
@@ -1502,7 +1502,8 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
                               new_ts, hint.spin));
   }
 
-  return ret.s == Status::NotFound ? Status::Ok : ret.s;
+  return (ret.s == Status::NotFound || ret.s == Status::Outdated) ? Status::Ok
+                                                                  : ret.s;
 }
 
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
@@ -1745,33 +1746,37 @@ void KVEngine::CleanOutDated() {
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
   while (slot_iter.Valid()) {
-    auto bucket_iter = slot_iter.Begin();
-    auto end_bucket_iter = slot_iter.End();
-    auto new_ts = version_controller_.GetCurrentTimestamp();
-    while (bucket_iter != end_bucket_iter) {
-      switch (bucket_iter->GetIndexType()) {
-        case PointerType::StringRecord: {
-          if (bucket_iter->IsTTLStatus() &&
-              bucket_iter->GetIndex().string_record->HasExpired()) {
-            hash_table_->UpdateEntryStatus(&(*bucket_iter),
-                                           HashEntryStatus::Expired);
-            // push expired cleaner
-            expired_record_queue.push_back(OldDeleteRecord{
-                bucket_iter->GetIndex().ptr, &(*bucket_iter),
-                PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
+    {  // Slot lock section
+      auto slot_lock(slot_iter.AcquireSlotLock());
+      auto bucket_iter = slot_iter.Begin();
+      auto end_bucket_iter = slot_iter.End();
+      auto new_ts = version_controller_.GetCurrentTimestamp();
+      while (bucket_iter != end_bucket_iter) {
+        switch (bucket_iter->GetIndexType()) {
+          case PointerType::StringRecord: {
+            if (bucket_iter->IsTTLStatus() &&
+                bucket_iter->GetIndex().string_record->HasExpired()) {
+              hash_table_->UpdateEntryStatus(&(*bucket_iter),
+                                             HashEntryStatus::Expired);
+              // push expired cleaner
+              expired_record_queue.push_back(OldDeleteRecord{
+                  bucket_iter->GetIndex().ptr, &(*bucket_iter),
+                  PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
+            }
+            break;
           }
-          break;
+          case PointerType::HashList:
+          case PointerType::List:
+          case PointerType::Skiplist: {
+            // TODO(zhichen): check expired. and push into collection cleaner.
+            break;
+          }
+          default:
+            break;
         }
-        case PointerType::HashList:
-        case PointerType::List:
-        case PointerType::Skiplist: {
-          // TODO(zhichen): check expired. and push into collection cleaner.
-          break;
-        }
-        default:
-          break;
+        bucket_iter++;
       }
-      bucket_iter++;
+      slot_iter.Next();
     }
 
     if (!expired_record_queue.empty() &&
@@ -1788,7 +1793,6 @@ void KVEngine::CleanOutDated() {
       need_clean_records_ = false;
       start_ts = std::chrono::system_clock::now();
     }
-    slot_iter.Next();
   }
   if (!expired_record_queue.empty()) {
     old_records_cleaner_.PushToGlobal(expired_record_queue);
