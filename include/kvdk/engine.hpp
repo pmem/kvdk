@@ -81,9 +81,11 @@ class Engine {
       const StringView collection_name,
       const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
 
+  virtual Status DestroySortedCollection(const StringView collection_name) = 0;
+
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
-  // to hold "value", if "collection" not exist, it will be created, return Ok
-  // on successful persistence, return non-Ok on any error.
+  // to hold "value", if "collection" not exist, it will be created, return
+  // Ok on successful persistence, return non-Ok on any error.
   virtual Status SortedSet(const StringView collection, const StringView key,
                            const StringView value) = 0;
 

@@ -88,6 +88,10 @@ class KVEngine : public Engine {
                 const WriteOptions& options) override;
 
   // Sorted Collection
+  Status CreateSortedCollection(
+      const StringView collection_name,
+      const SortedCollectionConfigs& configs) override;
+  Status DestroySortedCollection(const StringView collection_name) override;
   Status SortedGet(const StringView collection, const StringView user_key,
                    std::string* value) override;
   Status SortedSet(const StringView collection, const StringView user_key,
@@ -160,10 +164,6 @@ class KVEngine : public Engine {
                           Comparator comp_func) {
     return comparators_.RegisterComparator(collection_name, comp_func);
   }
-
-  Status CreateSortedCollection(
-      const StringView collection_name,
-      const SortedCollectionConfigs& configs) override;
 
   // List
   Status ListLength(StringView key, size_t* sz) final;
@@ -274,11 +274,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeaderRecord
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
