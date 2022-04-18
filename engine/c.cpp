@@ -371,9 +371,24 @@ void KVDKListIteratorSeekPos(KVDKListIterator* iter, long pos) {
   iter->rep->Seek(pos);
 }
 
-void KVDKListIteratorSeekElem(KVDKListIterator* iter, char const* elem_data,
+void KVDKListIteratorPrevElem(KVDKListIterator* iter, char const* elem_data,
                               size_t elem_len) {
-  iter->rep->Seek(StringView{elem_data, elem_len});
+  iter->rep->Prev(StringView{elem_data, elem_len});
+}
+
+void KVDKListIteratorNextElem(KVDKListIterator* iter, char const* elem_data,
+                              size_t elem_len) {
+  iter->rep->Next(StringView{elem_data, elem_len});
+}
+
+void KVDKListIteratorSeekToFirstElem(KVDKListIterator* iter,
+                                     char const* elem_data, size_t elem_len) {
+  iter->rep->SeekToFirst(StringView{elem_data, elem_len});
+}
+
+void KVDKListIteratorSeekToLastElem(KVDKListIterator* iter,
+                                    char const* elem_data, size_t elem_len) {
+  iter->rep->SeekToLast(StringView{elem_data, elem_len});
 }
 
 int KVDKListIteratorIsValid(KVDKListIterator* iter) {
