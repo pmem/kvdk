@@ -313,17 +313,12 @@ struct SlotIterator {
     setBucketRange();
   }
 
-  void LockSlot() {
-    // Release prev slot and lock the current one
-    iter_lock_slot_ = std::unique_lock<SpinMutex>(
-        hash_table_->slots_[current_slot_id].spin, std::defer_lock);
-    iter_lock_slot_.lock();
+  std::unique_lock<SpinMutex> AcquireSlotLock() {
+    SpinMutex* slot_lock = GetSlotLock();
+    return std::unique_lock<SpinMutex>(*slot_lock);
   }
 
-  void UnlockSlot() { iter_lock_slot_ = std::unique_lock<SpinMutex>(); }
-
   void Next() {
-    UnlockSlot();
     current_slot_id++;
     if (current_slot_id < hash_table_->slots_.size()) {
       setBucketRange();
@@ -338,7 +333,9 @@ struct SlotIterator {
 
   BucketIterator End() { return BucketIterator{this, iter_end_bucket_idx_}; }
 
-  SpinMutex* GetSlotLock() { return iter_lock_slot_.mutex(); }
+  SpinMutex* GetSlotLock() {
+    return &hash_table_->slots_[current_slot_id].spin;
+  }
 };
 
 }  // namespace KVDK_NAMESPACE

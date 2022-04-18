@@ -608,8 +608,8 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(DLRecord* pmem_record,
   DLRecord* curr = pmem_record;
   while (curr != nullptr &&
          curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
-    curr = kv_engine_->pmem_allocator_->offset2addr<DLRecord>(
-        curr->older_version_record);
+    curr =
+        kv_engine_->pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
     kvdk_assert(curr == nullptr || curr->Validate(),
                 "Broken checkpoint: invalid older version sorted record");
     kvdk_assert(
