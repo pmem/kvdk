@@ -23,16 +23,16 @@ enum class PointerType : uint8_t {
   SkiplistNode = 3,
   // Point to a dram Skiplist object
   Skiplist = 4,
-  // Point to a UnorderedCollection object on DRAM
-  UnorderedCollection = 5,
-  // Point to a element of UnorderedCollection
-  UnorderedCollectionElement = 6,
-  // Point to a dram List object
+  // Hash
+  HashList = 5,
+  // Element in Hash
+  HashElem = 6,
+  // List
   List = 7,
   // Point to a hash entry of hash table
   HashEntry = 8,
   // Empty which point to nothing
-  Empty = 100,
+  Empty = 10,
 };
 
 // A pointer with additional information on high 16 bits

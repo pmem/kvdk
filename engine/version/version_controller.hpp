@@ -71,6 +71,73 @@ class SnapshotList {
 // kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
  public:
+  // LocalSnapshotHolder is used by kvdk functions such as Get(), SGet() and
+  // HashGet() internally to guarantee lockless reads will always read out valid
+  // data. LocalSnapshotHolder is thread_local, and one thread can hold atmost
+  // one at same time.
+  class LocalSnapshotHolder {
+    VersionController* owner_{nullptr};
+    TimeStampType ts_{};
+
+   public:
+    LocalSnapshotHolder(VersionController* o) : owner_{o} {
+      owner_->HoldLocalSnapshot();
+      ts_ = owner_->version_thread_cache_[access_thread.id]
+                .holding_snapshot.timestamp;
+    };
+    LocalSnapshotHolder(LocalSnapshotHolder const&) = delete;
+    LocalSnapshotHolder& operator=(LocalSnapshotHolder const&) = delete;
+    LocalSnapshotHolder(LocalSnapshotHolder&& other) {
+      *this = std::move(other);
+    }
+    LocalSnapshotHolder& operator=(LocalSnapshotHolder&& other) {
+      kvdk_assert(owner_ == nullptr, "");
+      kvdk_assert(other.owner_ != nullptr, "");
+      std::swap(owner_, other.owner_);
+      std::swap(ts_, other.ts_);
+      return *this;
+    }
+    ~LocalSnapshotHolder() {
+      if (owner_ != nullptr) {
+        owner_->ReleaseLocalSnapshot();
+      }
+    }
+    TimeStampType Timestamp() { return ts_; }
+  };
+
+  // GlobalSnapshotHolder is hold internally by iterators.
+  // Create GlobalSnapshotHolder is more costly then InteralToken.
+  class GlobalSnapshotHolder {
+    VersionController* owner_{nullptr};
+    SnapshotImpl* snap_{nullptr};
+
+   public:
+    GlobalSnapshotHolder(VersionController* o) : owner_{o} {
+      snap_ = owner_->NewGlobalSnapshot();
+    };
+    GlobalSnapshotHolder(GlobalSnapshotHolder const&) = delete;
+    GlobalSnapshotHolder& operator=(GlobalSnapshotHolder const&) = delete;
+    GlobalSnapshotHolder(GlobalSnapshotHolder&& other) {
+      *this = std::move(other);
+    }
+    GlobalSnapshotHolder& operator=(GlobalSnapshotHolder&& other) {
+      kvdk_assert(owner_ == nullptr, "");
+      kvdk_assert(other.owner_ != nullptr, "");
+      kvdk_assert(snap_ == nullptr, "");
+      kvdk_assert(other.snap_ != nullptr, "");
+      std::swap(owner_, other.owner_);
+      std::swap(snap_, other.snap_);
+      return *this;
+    }
+    ~GlobalSnapshotHolder() {
+      if (owner_ != nullptr) {
+        owner_->ReleaseSnapshot(snap_);
+      }
+    }
+    TimeStampType Timestamp() { return snap_->GetTimestamp(); }
+  };
+
+ public:
   VersionController(uint64_t max_access_threads)
       : version_thread_cache_(max_access_threads) {}
 
@@ -80,10 +147,22 @@ class VersionController {
     UpdatedOldestSnapshot();
   }
 
+  LocalSnapshotHolder GetLocalSnapshotHolder() {
+    return LocalSnapshotHolder{this};
+  }
+
+  std::shared_ptr<GlobalSnapshotHolder> GetGlobalSnapshotToken() {
+    return std::make_shared<GlobalSnapshotHolder>(this);
+  }
+
   inline void HoldLocalSnapshot() {
     kvdk_assert(access_thread.id >= 0 && static_cast<size_t>(access_thread.id) <
                                              version_thread_cache_.size(),
                 "Uninitialized thread in NewLocalSnapshot");
+    kvdk_assert(
+        version_thread_cache_[access_thread.id].holding_snapshot.timestamp ==
+            kMaxTimestamp,
+        "Previous LocalSnapshot not released yet!");
     version_thread_cache_[access_thread.id].holding_snapshot.timestamp =
         GetCurrentTimestamp();
   }

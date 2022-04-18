@@ -80,6 +80,7 @@ class OldRecordsCleaner {
     assert(kv_engine_ != nullptr);
   }
 
+  void PushToPendingFree(void* addr, TimeStampType ts);
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OldDeleteRecord& old_delete_record);
   void PushToGlobal(const std::deque<OldDeleteRecord>& old_delete_records);

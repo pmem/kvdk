@@ -199,7 +199,7 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Hashes: {
-        s = engine->HSet(collections[cid], key, value);
+        s = engine->HashSet(collections[cid], key, value);
         break;
       }
       case DataType::List: {
@@ -239,8 +239,6 @@ void DBScan(int tid) {
   std::string key(8, ' ');
   std::string value_sink;
 
-  size_t const scan_length = 100;
-
   for (size_t operations = 0, operations_counted = 0;
        operations < operations_per_thread;) {
     if (has_timed_out) {
@@ -253,6 +251,7 @@ void DBScan(int tid) {
 
     switch (bench_data_type) {
       case DataType::Sorted: {
+        size_t const scan_length = 100;
         auto iter = engine->NewSortedIterator(collections[cid]);
         if (iter) {
           iter->Seek(key);
@@ -273,7 +272,7 @@ void DBScan(int tid) {
         break;
       }
       case DataType::Hashes: {
-        auto iter = engine->NewUnorderedIterator(collections[cid]);
+        auto iter = engine->HashCreateIterator(collections[cid]);
         if (iter) {
           for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             key = iter->Key();
@@ -285,7 +284,7 @@ void DBScan(int tid) {
             }
           }
         } else {
-          throw std::runtime_error{"Error creating UnorderedIterator"};
+          throw std::runtime_error{"Error creating HashIterator"};
         }
         break;
       }
@@ -335,7 +334,7 @@ void DBRead(int tid) {
         break;
       }
       case DataType::Hashes: {
-        s = engine->HGet(collections[cid], key, &value_sink);
+        s = engine->HashGet(collections[cid], key, &value_sink);
         break;
       }
       case DataType::List: {

@@ -6,6 +6,7 @@
 
 #include <immintrin.h>
 #include <libpmem.h>
+#include <x86intrin.h>
 
 #include "alias.hpp"
 #include "kvdk/configs.hpp"
@@ -22,13 +23,13 @@ enum RecordType : uint16_t {
   SortedDeleteRecord = (1 << 3),
   SortedHeaderRecord = (1 << 4),
 
-  DlistDataRecord = (1 << 5),
-  DlistHeadRecord = (1 << 6),
-  DlistTailRecord = (1 << 7),
-  DlistRecord = (1 << 8),
+  HashRecord = (1 << 5),
+  HashElem = (1 << 6),
+  HashDirtyElem = (1 << 7),
 
   ListRecord = (1 << 9),
   ListElem = (1 << 10),
+  ListDirtyElem = (1 << 11),
 
   Padding = (1 << 15),
 };
@@ -37,17 +38,15 @@ const uint16_t SortedRecordType =
     (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);
 
 const uint16_t DLRecordType =
-    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord |
-     DlistDataRecord | DlistHeadRecord | DlistTailRecord | DlistRecord |
-     ListElem | ListRecord);
+    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord | HashRecord |
+     HashElem | ListElem | ListRecord);
 
 const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
 
 const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
 const uint16_t ExpirableRecordType =
-    (RecordType::StringDataRecord | RecordType::SortedHeaderRecord |
-     RecordType::ListRecord | RecordType::DlistRecord);
+    (StringDataRecord | SortedHeaderRecord | ListRecord | HashRecord);
 
 const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
 
@@ -162,6 +161,7 @@ struct StringRecord {
   void PersistExpireTimeCLWB(ExpireTimeType time) {
     expired_time = time;
     _mm_clwb(&expired_time);
+    _mm_mfence();
   }
 
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
@@ -277,17 +277,20 @@ struct DLRecord {
   void PersistNextCLWB(PMemOffsetType offset) {
     next = offset;
     _mm_clwb(&next);
+    _mm_mfence();
   }
 
   void PersistPrevCLWB(PMemOffsetType offset) {
     prev = offset;
     _mm_clwb(&prev);
+    _mm_mfence();
   }
 
   void PersistExpireTimeCLWB(ExpireTimeType time) {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     expired_time = time;
     _mm_clwb(&expired_time);
+    _mm_mfence();
   }
 
   ExpireTimeType GetExpireTime() const {

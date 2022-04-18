@@ -21,6 +21,7 @@ typedef struct KVDKWriteOptions KVDKWriteOptions;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
 typedef struct KVDKIterator KVDKIterator;
 typedef struct KVDKListIterator KVDKListIterator;
+typedef struct KVDKHashIterator KVDKHashIterator;
 typedef struct KVDKSnapshot KVDKSnapshot;
 typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
 
@@ -111,21 +112,39 @@ extern KVDKStatus KVDKSortedGet(KVDKEngine* engine, const char* collection,
                                 size_t collection_len, const char* key,
                                 size_t key_len, size_t* val_len, char** val);
 
-// For Hash Collection
-extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* collection,
-                              size_t collection_len, const char* key,
-                              size_t key_len, const char* val, size_t val_len);
-extern KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* collection,
-                                 size_t collection_len, const char* key,
-                                 size_t key_len);
-extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
-                              size_t collection_len, const char* key,
-                              size_t key_len, size_t* val_len, char** val);
+/// Hash //////////////////////////////////////////////////////////////////////
+extern KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
+                                 size_t key_len, size_t* len);
+extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data,
+                              size_t key_len, const char* field_data,
+                              size_t field_len, char** val_data,
+                              size_t* val_len);
+extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* key_data,
+                              size_t key_len, const char* field_data,
+                              size_t field_len, const char* val_data,
+                              size_t val_len);
+extern KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
+                                 size_t key_len, const char* field_data,
+                                 size_t field_len);
+/// HashIterator //////////////////////////////////////////////////////////////
+extern KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
+                                                char const* key_data,
+                                                size_t key_len);
+extern void KVDKHashIteratorDestroy(KVDKHashIterator* iter);
+extern void KVDKHashIteratorPrev(KVDKHashIterator* iter);
+extern void KVDKHashIteratorNext(KVDKHashIterator* iter);
+extern void KVDKHashIteratorSeekToFirst(KVDKHashIterator* iter);
+extern void KVDKHashIteratorSeekToLast(KVDKHashIterator* iter);
+extern int KVDKHashIteratorIsValid(KVDKHashIterator* iter);
+extern void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** elem_data,
+                                   size_t* elem_len);
+extern void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** elem_data,
+                                     size_t* elem_len);
 
 /// List //////////////////////////////////////////////////////////////////////
 
 extern KVDKStatus KVDKListLength(KVDKEngine* engine, char const* key_data,
-                                 size_t key_len, size_t* sz);
+                                 size_t key_len, size_t* len);
 extern KVDKStatus KVDKListPushFront(KVDKEngine* engine, char const* key_data,
                                     size_t key_len, char const* elem_data,
                                     size_t elem_len);
@@ -159,9 +178,6 @@ extern int KVDKListIteratorIsValid(KVDKListIterator* iter);
 extern void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
                                      size_t* elem_len);
 
-extern KVDKIterator* KVDKCreateUnorderedIterator(KVDKEngine* engine,
-                                                 const char* collection,
-                                                 size_t collection_len);
 extern KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
                                               const char* collection,
                                               size_t collection_len,

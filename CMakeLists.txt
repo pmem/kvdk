@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 11)
 
 option(COVERAGE "code coverage" OFF)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd -mclwb")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -31,7 +31,6 @@ endif ()
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions(KVDK_DEBUG_LEVEL=0)
 else ()
-    add_compile_definitions(KVDK_DEBUG_CHECK)
     add_compile_definitions(KVDK_DEBUG_LEVEL=1)
 endif ()
 
@@ -46,10 +45,12 @@ endif()
 
 # source files
 set(SOURCES
+        engine/c/kvdk_hash.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
         engine/engine.cpp
         engine/kv_engine.cpp
+        engine/kv_engine_hash.cpp
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp
@@ -60,12 +61,11 @@ set(SOURCES
         engine/thread_manager.cpp
         engine/pmem_allocator/free_list.cpp
         engine/c.cpp
-        engine/unordered_collection.cpp
         engine/data_record.cpp
         engine/version/old_records_cleaner.cpp
         )
 
-# .a library
+# .so library
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
 target_link_libraries(engine PUBLIC pthread pmem gflags hwloc atomic)
