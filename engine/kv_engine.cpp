@@ -1469,7 +1469,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         ul.unlock();
         res.s = Modify(
             str,
-            [](const StringView& key, const std::string* old_val,
+            [](const StringView&, const std::string* old_val,
                std::string* new_val, void*) {
               new_val->assign(*old_val);
               return ModifyOperation::Write;

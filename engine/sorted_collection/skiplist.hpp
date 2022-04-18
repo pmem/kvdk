@@ -234,9 +234,9 @@ class Skiplist : public Collection {
   void CleanObsoletedNodes();
 
   static bool IsSkiplistRecord(DLRecord* record) {
-    return record->entry.meta.type == SortedHeaderRecord ||
-           record->entry.meta.type == SortedDataRecord ||
-           record->entry.meta.type == SortedDeleteRecord;
+    auto type = record->entry.meta.type;
+    return type == SortedDataRecord || type == SortedDeleteRecord ||
+           type == SortedHeaderRecord;
   }
 
   // Check if record correctly linked on list
