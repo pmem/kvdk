@@ -98,7 +98,7 @@ static_assert(sizeof(DataEntry) <= kMinPMemBlockSize);
 struct StringRecord {
  public:
   DataEntry entry;
-  PMemOffsetType older_version_record;
+  PMemOffsetType old_version;
   ExpireTimeType expired_time;
   char data[0];
 
@@ -109,21 +109,20 @@ struct StringRecord {
   // should larger than sizeof(StringRecord) + key size + value size
   static StringRecord* ConstructStringRecord(
       void* target_address, uint32_t _record_size, TimeStampType _timestamp,
-      RecordType _record_type, PMemOffsetType _older_version_record,
+      RecordType _record_type, PMemOffsetType _old_version,
       const StringView& _key, const StringView& _value,
       ExpireTimeType _expired_time) {
     StringRecord* record = new (target_address)
-        StringRecord(_record_size, _timestamp, _record_type,
-                     _older_version_record, _key, _value, _expired_time);
+        StringRecord(_record_size, _timestamp, _record_type, _old_version, _key,
+                     _value, _expired_time);
     return record;
   }
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord* PersistStringRecord(
       void* addr, uint32_t record_size, TimeStampType timestamp,
-      RecordType type, PMemOffsetType older_version_record,
-      const StringView& key, const StringView& value,
-      ExpireTimeType expired_time = kPersistTime);
+      RecordType type, PMemOffsetType old_version, const StringView& key,
+      const StringView& value, ExpireTimeType expired_time = kPersistTime);
 
   void Destroy() { entry.Destroy(); }
 
@@ -175,12 +174,12 @@ struct StringRecord {
 
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
-               RecordType _record_type, PMemOffsetType _older_version_record,
+               RecordType _record_type, PMemOffsetType _old_version,
                const StringView& _key, const StringView& _value,
                ExpireTimeType _expired_time)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        older_version_record(_older_version_record),
+        old_version(_old_version),
         expired_time(_expired_time) {
     assert(_record_type == StringDataRecord ||
            _record_type == StringDeleteRecord);
@@ -209,7 +208,7 @@ struct StringRecord {
 struct DLRecord {
  public:
   DataEntry entry;
-  PMemOffsetType older_version_offset;
+  PMemOffsetType old_version;
   PMemOffsetType prev;
   PMemOffsetType next;
   ExpireTimeType expired_time;
@@ -221,14 +220,16 @@ struct DLRecord {
   //
   // target_address: pre-allocated space to store constructed record, it
   // should no smaller than sizeof(DLRecord) + key size + value size
-  static DLRecord* ConstructDLRecord(
-      void* target_address, uint32_t record_size, TimeStampType timestamp,
-      RecordType record_type, PMemOffsetType older_version_record,
-      uint64_t prev, uint64_t next, const StringView& key,
-      const StringView& value, ExpireTimeType expired_time) {
+  static DLRecord* ConstructDLRecord(void* target_address, uint32_t record_size,
+                                     TimeStampType timestamp,
+                                     RecordType record_type,
+                                     PMemOffsetType old_version, uint64_t prev,
+                                     uint64_t next, const StringView& key,
+                                     const StringView& value,
+                                     ExpireTimeType expired_time) {
     DLRecord* record = new (target_address)
-        DLRecord(record_size, timestamp, record_type, older_version_record,
-                 prev, next, key, value, expired_time);
+        DLRecord(record_size, timestamp, record_type, old_version, prev, next,
+                 key, value, expired_time);
     return record;
   }
 
@@ -298,7 +299,7 @@ struct DLRecord {
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
                                    TimeStampType timestamp, RecordType type,
-                                   PMemOffsetType older_version_record,
+                                   PMemOffsetType old_version,
                                    PMemOffsetType prev, PMemOffsetType next,
                                    const StringView& key,
                                    const StringView& value,
@@ -308,12 +309,12 @@ struct DLRecord {
 
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,
-           RecordType _record_type, PMemOffsetType _older_version_record,
+           RecordType _record_type, PMemOffsetType _old_version,
            PMemOffsetType _prev, PMemOffsetType _next, const StringView& _key,
            const StringView& _value, ExpireTimeType _expired_time)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        older_version_offset(_older_version_record),
+        old_version(_old_version),
         prev(_prev),
         next(_next),
         expired_time(_expired_time) {
