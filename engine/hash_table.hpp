@@ -224,11 +224,7 @@ struct SlotIterator {
   HashTable* hash_table_;
   uint64_t current_slot_id;
 
-  void GetBucketRangeAndLockSlot() {
-    // release prev slot lock.
-    iter_lock_slot_ = std::unique_lock<SpinMutex>(
-        hash_table_->slots_[current_slot_id].spin, std::defer_lock);
-    iter_lock_slot_.lock();
+  void setBucketRange() {
     iter_start_bucket_idx_ =
         current_slot_id * hash_table_->num_buckets_per_slot_;
     iter_end_bucket_idx_ =
@@ -314,12 +310,23 @@ struct SlotIterator {
 
   SlotIterator(HashTable* hash_table)
       : hash_table_(hash_table), current_slot_id(0) {
-    GetBucketRangeAndLockSlot();
+    setBucketRange();
   }
+
+  void LockSlot() {
+    // Release prev slot and lock the current one
+    iter_lock_slot_ = std::unique_lock<SpinMutex>(
+        hash_table_->slots_[current_slot_id].spin, std::defer_lock);
+    iter_lock_slot_.lock();
+  }
+
+  void UnlockSlot() { iter_lock_slot_ = std::unique_lock<SpinMutex>(); }
+
   void Next() {
+    UnlockSlot();
     current_slot_id++;
     if (current_slot_id < hash_table_->slots_.size()) {
-      GetBucketRangeAndLockSlot();
+      setBucketRange();
     }
   }
 

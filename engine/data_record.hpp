@@ -209,7 +209,7 @@ struct StringRecord {
 struct DLRecord {
  public:
   DataEntry entry;
-  PMemOffsetType older_version_offset;
+  PMemOffsetType older_version_record;
   PMemOffsetType prev;
   PMemOffsetType next;
   ExpireTimeType expired_time;
@@ -313,7 +313,7 @@ struct DLRecord {
            const StringView& _value, ExpireTimeType _expired_time)
       : entry(0, _record_size, _timestamp, _record_type, _key.size(),
               _value.size()),
-        older_version_offset(_older_version_record),
+        older_version_record(_older_version_record),
         prev(_prev),
         next(_next),
         expired_time(_expired_time) {

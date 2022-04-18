@@ -782,7 +782,7 @@ Status KVEngine::Recovery() {
   for (auto skiplist : skiplists_) {
     Status s = skiplist.second->CheckIndex();
     if (s != Status::Ok) {
-      GlobalLogger.Info("Check skiplist index error\n");
+      GlobalLogger.Error("Check skiplist index error\n");
       return s;
     }
   }
@@ -2112,6 +2112,7 @@ void KVEngine::CleanOutDated() {
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
   while (slot_iter.Valid()) {
+    slot_iter.LockSlot();
     auto bucket_iter = slot_iter.Begin();
     auto end_bucket_iter = slot_iter.End();
     auto new_ts = version_controller_.GetCurrentTimestamp();
@@ -2140,6 +2141,8 @@ void KVEngine::CleanOutDated() {
       }
       bucket_iter++;
     }
+    // Unlock slot before call background cleaner to avoid deadlock
+    slot_iter.UnlockSlot();
 
     if (!expired_record_queue.empty() &&
         (expired_record_queue.size() >= kMaxCachedOldRecords)) {
