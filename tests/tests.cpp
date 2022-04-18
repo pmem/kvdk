@@ -639,8 +639,8 @@ TEST_F(EngineBasicTest, TestStringModify) {
     size_t incr_by;
     size_t result;
   };
-  auto IncN = [](const StringView&, const std::string* old_val,
-                 std::string* new_value, void* modify_args) {
+  auto IncN = [](const std::string* old_val, std::string* new_value,
+                 void* modify_args) {
     assert(modify_args);
     IncNArgs* args = static_cast<IncNArgs*>(modify_args);
     size_t old_num;

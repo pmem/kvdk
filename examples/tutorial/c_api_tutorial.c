@@ -527,9 +527,8 @@ typedef struct {
   int result;
 } IncNArgs;
 
-int IncN(const char* key, size_t key_len, const char* old_val,
-         size_t old_val_len, char** new_val, size_t* new_val_len,
-         void* args_pointer) {
+int IncN(const char* old_val, size_t old_val_len, char** new_val,
+         size_t* new_val_len, void* args_pointer) {
   assert(args_pointer);
   IncNArgs* args = (IncNArgs*)args_pointer;
   *new_val = (char*)malloc(sizeof(int));
@@ -569,7 +568,7 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
   assert(s == Abort);
 
   int recycle = 100;
-  for (size_t i = 1; i <= recycle; i++) {
+  for (int i = 1; i <= recycle; i++) {
     KVDKStatus s = KVDKModify(kvdk_engine, incr_key, strlen(incr_key), IncN,
                               &args, free, write_option);
     assert(s == Ok);
