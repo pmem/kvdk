@@ -172,8 +172,8 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
     (*hlist)->Init(pmem_allocator_.get(), space, ts, key, id,
                    hash_list_locks_.get());
     {
-      std::lock_guard<std::mutex> guard2{list_mu_};
-      hash_lists_.emplace_back(*hlist);
+      std::lock_guard<std::mutex> guard2{hlists_mu_};
+      hash_lists_.emplace(*hlist);
     }
     insertImpl(result, key, RecordType::HashRecord, *hlist);
     return Status::Ok;
@@ -218,34 +218,6 @@ Status KVEngine::hashListRegisterRecovered() {
   while (max_id >= old && !list_id_.compare_exchange_strong(old, max_id + 1)) {
   }
   return Status::Ok;
-}
-
-template <typename DelayFree>
-Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free) {
-  kvdk_assert(hlist->Valid(), "");
-  while (hlist->Size() != 0) {
-    auto token = version_controller_.GetLocalSnapshotHolder();
-    TimeStampType ts = token.Timestamp();
-    auto internal_key = hlist->Front()->Key();
-    LookupResult ret;
-    {
-      auto guard = hash_table_->AcquireLock(internal_key);
-      ret = removeImpl(internal_key, RecordType::HashElem);
-    }
-    kvdk_assert(ret.s == Status::Ok, "");
-    kvdk_assert(ret.entry.GetIndex().dl_record == hlist->Front().Address(), "");
-    hlist->PopFront([&](DLRecord* rec) { delay_free(rec, ts); });
-  }
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType ts = token.Timestamp();
-  hlist->Destroy([&](DLRecord* rec) { delay_free(rec, ts); });
-  return Status::Ok;
-}
-
-Status KVEngine::hashListDestroy(HashList* hlist) {
-  // Lambda to help resolve symbol
-  return hashListDestroy(
-      hlist, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); });
 }
 
 }  // namespace KVDK_NAMESPACE

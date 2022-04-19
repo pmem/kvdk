@@ -41,6 +41,18 @@ void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   }
 }
 
+bool OldRecordsCleaner::TryGlobalPendingFree(
+    const PendingFreeSpaceEntries& pending_free_space_entries) {
+  kv_engine_->version_controller_.UpdatedOldestSnapshot();
+  TimeStampType oldest_snapshot_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  if (pending_free_space_entries.release_time <= oldest_snapshot_ts) {
+    kv_engine_->pmem_allocator_->BatchFree(pending_free_space_entries.entries);
+    return true;
+  }
+  return false;
+}
+
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &

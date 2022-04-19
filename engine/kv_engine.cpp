@@ -92,7 +92,7 @@ void KVEngine::startBackgroundWorks() {
   bg_threads_.emplace_back(&KVEngine::backgroundOldRecordCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
-  // bg_threads_.emplace_back(&KVEngine::backgroundDestoryCollections, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundDestoryCollections, this);
 }
 
 void KVEngine::terminateBackgroundWorks() {
@@ -1463,8 +1463,8 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
       case PointerType::List: {
         List* list = res.entry_ptr->GetIndex().list;
-        std::shared_ptr<List> tmp_list = list->shared_from_this();
         {
+          std::shared_ptr<List> tmp_list = list->shared_from_this();
           std::unique_lock<std::mutex> guard(lists_mu_);
           lists_.erase(tmp_list);
           res.s = list->SetExpireTime(expired_time);
@@ -1765,13 +1765,16 @@ void KVEngine::backgroundDestoryCollections() {
   auto delete_list = [&](List* list) {
     PendingFreeSpaceEntries space_entries;
     space_entries.release_time = version_controller_.GetCurrentTimestamp();
-    listDestroy(list, [&](void* addr, TimeStampType ts) {
-      DataEntry* data_entry = static_cast<DataEntry*>(addr);
-      space_entries.entries.emplace_back(
-          SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                     data_entry->header.record_size});
-      space_entries.release_time = std::max(space_entries.release_time, ts);
-    });
+    listDestroy(
+        list,
+        [&](void* addr, TimeStampType ts) {
+          DataEntry* data_entry = static_cast<DataEntry*>(addr);
+          space_entries.entries.emplace_back(
+              SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
+                         data_entry->header.record_size});
+          space_entries.release_time = std::max(space_entries.release_time, ts);
+        },
+        false);
     list_space_entries.emplace_back(std::move(space_entries));
     if (old_records_cleaner_.TryGlobalPendingFree(list_space_entries.front())) {
       list_space_entries.pop_front();
@@ -1780,13 +1783,16 @@ void KVEngine::backgroundDestoryCollections() {
   auto delete_hash = [&](HashList* hashlist) {
     PendingFreeSpaceEntries space_entries;
     space_entries.release_time = version_controller_.GetCurrentTimestamp();
-    hashListDestroy(hashlist, [&](void* addr, TimeStampType ts) {
-      DataEntry* data_entry = static_cast<DataEntry*>(addr);
-      space_entries.entries.emplace_back(
-          SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                     data_entry->header.record_size});
-      space_entries.release_time = std::max(space_entries.release_time, ts);
-    });
+    hashListDestroy(
+        hashlist,
+        [&](void* addr, TimeStampType ts) {
+          DataEntry* data_entry = static_cast<DataEntry*>(addr);
+          space_entries.entries.emplace_back(
+              SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
+                         data_entry->header.record_size});
+          space_entries.release_time = std::max(space_entries.release_time, ts);
+        },
+        false);
     hash_space_entries.emplace_back(std::move(space_entries));
     if (old_records_cleaner_.TryGlobalPendingFree(list_space_entries.front())) {
       hash_space_entries.pop_front();
@@ -1828,8 +1834,9 @@ void KVEngine::backgroundDestoryCollections() {
           result.entry_ptr->GetIndex().list == destroy_list) {
         hash_table_->Erase(result.entry_ptr);
       }
-      destroy_collections.emplace_back(
+      destroy_collections.push_back(
           std::async(std::launch::deferred, delete_list, destroy_list));
+      printf("***: %ld\n", destroy_collections.size());
     }
 
     if (destroy_hash) {
@@ -1840,8 +1847,9 @@ void KVEngine::backgroundDestoryCollections() {
           result.entry_ptr->GetIndex().hlist == destroy_hash) {
         hash_table_->Erase(result.entry_ptr);
       }
-      destroy_collections.emplace_back(
+      destroy_collections.push_back(
           std::async(std::launch::deferred, delete_hash, destroy_hash));
+      printf("####: %ld\n", destroy_collections.size());
     }
 
     // TODO: add skiplist
@@ -1895,7 +1903,6 @@ void KVEngine::CleanOutDated() {
             std::chrono::system_clock::now() - start_ts)
                 .count() > interval ||
         need_clean_records_) {
-      slot_iter.GetSlotLock()->unlock();
       need_clean_records_ = true;
       old_records_cleaner_.TryGlobalClean();
       need_clean_records_ = false;
@@ -2140,30 +2147,32 @@ Status KVEngine::listRegisterRecovered() {
 }
 
 template <typename DelayFree>
-Status KVEngine::listDestroy(List* list, DelayFree delay_free) {
+Status KVEngine::listDestroy(List* list, DelayFree delay_free, bool local) {
   // Currently, every list operation locks the whole list
   // and delay_free is not necessary.
   // We use delay_free here so that we can enable some lockless
   // operations in the future.
   while (list->Size() > 0) {
-    auto token = version_controller_.GetLocalSnapshotHolder();
-    list->PopFront(
-        [&](DLRecord* elem) { delay_free(elem, token.Timestamp()); });
+    auto ts = local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
+                    : version_controller_.GetGlobalSnapshotToken()->Timestamp();
+    list->PopFront([&](DLRecord* elem) { delay_free(elem, ts); });
   }
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  list->Destroy([&](DLRecord* lrec) { delay_free(lrec, token.Timestamp()); });
+  auto ts = local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
+                  : version_controller_.GetGlobalSnapshotToken()->Timestamp();
+  list->Destroy([&](DLRecord* lrec) { delay_free(lrec, ts); });
   return Status::Ok;
 }
 
 Status KVEngine::listDestroy(List* list) {
-  std::shared_ptr<List> tmp_list = list->shared_from_this();
   {
+    std::shared_ptr<List> tmp_list = list->shared_from_this();
     std::unique_lock<std::mutex> guard(lists_mu_);
     lists_.erase(tmp_list);
   }
   // Lambda to help resolve symbol
   return listDestroy(
-      list, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); });
+      list, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); },
+      true);
 }
 
 Status KVEngine::listFind(StringView key, List** list, bool init_nx,
@@ -2233,11 +2242,13 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
 }
 
 template <typename DelayFree>
-Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free) {
+Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free,
+                                 bool local) {
   kvdk_assert(hlist->Valid(), "");
   while (hlist->Size() != 0) {
-    auto token = version_controller_.GetLocalSnapshotHolder();
-    TimeStampType ts = token.Timestamp();
+    TimeStampType ts =
+        local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
+              : version_controller_.GetGlobalSnapshotToken()->Timestamp();
     auto internal_key = hlist->Front()->Key();
     LookupResult ret;
     {
@@ -2248,8 +2259,9 @@ Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free) {
     kvdk_assert(ret.entry.GetIndex().dl_record == hlist->Front().Address(), "");
     hlist->PopFront([&](DLRecord* rec) { delay_free(rec, ts); });
   }
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType ts = token.Timestamp();
+  TimeStampType ts =
+      local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
+            : version_controller_.GetGlobalSnapshotToken()->Timestamp();
   hlist->Destroy([&](DLRecord* rec) { delay_free(rec, ts); });
   return Status::Ok;
 }
@@ -2262,7 +2274,8 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
   }
   // Lambda to help resolve symbol
   return hashListDestroy(
-      hlist, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); });
+      hlist, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); },
+      true);
 }
 
 }  // namespace KVDK_NAMESPACE

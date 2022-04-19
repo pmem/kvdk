@@ -1685,7 +1685,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   std::string list_collection = "ListCollection";
   std::string sorted_collection = "SortedCollection";
   std::string hashes_collection = "HashesCollection";
-  int64_t normal_ttl_time = 10000; /* 10s */
+  int64_t normal_ttl_time = 50000; /* 50s */
   int64_t max_ttl_time = INT64_MAX - 1;
 
   // For string
@@ -1784,6 +1784,58 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestBackgroundDestoryCollections) {
+  size_t n_thread_writing = 16;
+  configs.max_access_threads = n_thread_writing;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  TTLType ttl = 1000;  // 1s
+  int cnt = 100;
+  size_t num_thread = 4;
+
+  auto list0_push = [&](size_t id) {
+    std::string list_key0 = "listkey0" + std::to_string(id);
+    for (int i = 0; i < cnt; ++i) {
+      ASSERT_EQ(
+          engine->ListPushFront(list_key0, "list_elem" + std::to_string(i)),
+          Status::Ok);
+    }
+    ASSERT_EQ(engine->Expire(list_key0, ttl), Status::Ok);
+  };
+  auto list1_push = [&](size_t id) {
+    std::string list_key1 = "listkey1" + std::to_string(id);
+    for (int i = 0; i < cnt; ++i) {
+      ASSERT_EQ(
+          engine->ListPushFront(list_key1, "list_elem" + std::to_string(i)),
+          Status::Ok);
+    }
+  };
+  auto hash0_push = [&](size_t id) {
+    std::string hash_key0 = "hashkey0" + std::to_string(id);
+    for (int i = 0; i < cnt; ++i) {
+      std::string str = std::to_string(i);
+      ASSERT_EQ(
+          engine->HashSet(hash_key0, "hash_elem" + str, "hash_value" + str),
+          Status::Ok);
+    }
+    ASSERT_EQ(engine->Expire(hash_key0, ttl), Status::Ok);
+  };
+
+  LaunchNThreads(num_thread, list0_push);
+  LaunchNThreads(num_thread, list1_push);
+  LaunchNThreads(num_thread, hash0_push);
+
+  sleep(2);
+  for (size_t i = 0; i < num_thread; ++i) {
+    std::string str = std::to_string(i);
+    TTLType got_ttl;
+    ASSERT_EQ(engine->GetTTL("hashkey0" + str, &got_ttl), Status::NotFound);
+    ASSERT_EQ(engine->GetTTL("listkey0" + str, &got_ttl), Status::NotFound);
+    ASSERT_EQ(engine->GetTTL("listkey1" + str, &got_ttl), Status::Ok);
+  }
+
+  delete engine;
+}
 // ========================= Sync Point ======================================
 
 #if KVDK_DEBUG_LEVEL > 0

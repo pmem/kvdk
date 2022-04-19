@@ -10,7 +10,6 @@
 #include <atomic>
 #include <iomanip>
 #include <iostream>
-#include <map>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -524,14 +523,6 @@ class GenericList final
     return out;
   }
 
-  friend bool operator<(const std::shared_ptr<GenericList>& a,
-                        const std::shared_ptr<GenericList>& b) {
-    if (a->GetExpireTime() < b->GetExpireTime()) return true;
-    if (a->GetExpireTime() == b->GetExpireTime() && a->ID() < b->ID())
-      return true;
-    return false;
-  }
-
   void lockPosAndPrev(Iterator pos, LockTable::GuardType& guard) {
     kvdk_assert(guard.empty(), "");
     Iterator prev{pos};
@@ -587,13 +578,26 @@ class GenericList final
 };
 
 template <RecordType ListType, RecordType DataType>
+struct TTLCmp {
+ public:
+  bool operator()(
+      const std::shared_ptr<GenericList<ListType, DataType>>& a,
+      const std::shared_ptr<GenericList<ListType, DataType>>& b) const {
+    if (a->GetExpireTime() < b->GetExpireTime()) return true;
+    if (a->GetExpireTime() == b->GetExpireTime() && a->ID() < b->ID())
+      return true;
+    return false;
+  }
+};
+
+template <RecordType ListType, RecordType DataType>
 class GenericListBuilder final {
   static constexpr size_t NMiddlePoints = 1024;
   using List = GenericList<ListType, DataType>;
 
   PMEMAllocator* alloc;
   size_t n_worker;
-  std::set<std::shared_ptr<List>>* rebuilded_lists;
+  std::set<std::shared_ptr<List>, TTLCmp<ListType, DataType>>* rebuilded_lists;
   LockTable* lock_table;
   // Resevoir for middle points
   // Middle points can be used for multi-thread interating through Lists
@@ -661,9 +665,10 @@ class GenericListBuilder final {
   // complicate the recovery procedure
 
  public:
-  explicit GenericListBuilder(PMEMAllocator* a,
-                              std::set<std::shared_ptr<List>>* lists,
-                              size_t num_worker, LockTable* lt)
+  explicit GenericListBuilder(
+      PMEMAllocator* a,
+      std::set<std::shared_ptr<List>, TTLCmp<ListType, DataType>>* lists,
+      size_t num_worker, LockTable* lt)
       : alloc{a}, n_worker{num_worker}, rebuilded_lists{lists}, lock_table{lt} {
     kvdk_assert(lists != nullptr && lists->empty(), "");
     kvdk_assert(n_worker != 0, "");

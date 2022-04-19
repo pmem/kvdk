@@ -408,7 +408,7 @@ class KVEngine : public Engine {
   Status listRegisterRecovered();
 
   template <typename DelayFree>
-  Status listDestroy(List* list, DelayFree delay_free);
+  Status listDestroy(List* list, DelayFree delay_free, bool local);
 
   Status listDestroy(List* list);
 
@@ -422,7 +422,7 @@ class KVEngine : public Engine {
   Status hashListRegisterRecovered();
 
   template <typename DelayFree>
-  Status hashListDestroy(HashList* list, DelayFree delay_free);
+  Status hashListDestroy(HashList* list, DelayFree delay_free, bool local);
 
   Status hashListDestroy(HashList* list);
 
@@ -546,14 +546,20 @@ class KVEngine : public Engine {
 
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
 
-  std::set<std::unique_ptr<List>> lists_;
+  std::set<std::shared_ptr<List>,
+           TTLCmp<RecordType::ListRecord, RecordType::ListElem>>
+      lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 
-  std::vector<std::unique_ptr<HashList>> hash_lists_;
+  std::set<std::shared_ptr<HashList>,
+           TTLCmp<RecordType::HashRecord, RecordType::HashElem>>
+      hash_lists_;
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
 
-  std::mutex list_mu_;
+  std::mutex skiplists_mu_;
+  std::mutex lists_mu_;
+  std::mutex hlists_mu_;
 
   std::string dir_;
   std::string pending_batch_dir_;
