@@ -4,13 +4,13 @@
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <x86intrin.h>
 
 #include <algorithm>
 #include <deque>
 #include <functional>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -23,7 +23,10 @@
 
 DEFINE_bool(
     verbose, false,
-    "If set true, stress test will print a progress bar for operations");
+    "If set true, stress test will print a progress bar for operations.");
+
+DEFINE_string(path, "/mnt/pmem0/kvdk_stress_test",
+              "Path of KVDK instance on PMem.");
 
 using kvdk::StringView;
 
@@ -44,13 +47,13 @@ class HashesOperator {
   HashesOperator(kvdk::Engine*& e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
   kvdk::Status operator()(KeyType key, std::string* value_got) {
-    return engine->HGet(collection_name, key, value_got);
+    return engine->HashGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
-    return engine->HSet(collection_name, key, value);
+    return engine->HashSet(collection_name, key, value);
   }
   kvdk::Status operator()(KeyType key) {
-    return engine->HDelete(collection_name, key);
+    return engine->HashDelete(collection_name, key);
   }
 };
 
@@ -114,6 +117,16 @@ class ShadowKVEngine {
           ((state == State::Existing) && (value == other.value)) ||
           (state == State::Deleted);
       return match_state && match_value;
+    }
+
+    friend std::ostream& operator<<(std::ostream& out,
+                                    StateAndValue const& vstate) {
+      out << "State: "
+          << (vstate.state == StateAndValue::State::Deleted ? "Deleted"
+                                                            : "Existing")
+          << "\t"
+          << "Value: " << vstate.value << "\n";
+      return out;
     }
   };
 
@@ -228,7 +241,8 @@ class ShadowKVEngine {
 
   // Check KVEngine by iterating through it.
   // Iterated KVs are looked up in possible_state.
-  void CheckIterator(kvdk::Iterator* iterator, IteratingDirection direction) {
+  template <typename Iterator>
+  void CheckIterator(Iterator* iterator, IteratingDirection direction) {
     PossibleStates possible_state_copy{possible_state};
 
     // Iterating forward or backward.
@@ -369,15 +383,19 @@ class ShadowKVEngine {
     for (auto iter = ranges.first; iter != ranges.second; ++iter) {
       match = (match || (vstate == iter->second));
     }
+    std::stringstream ss;
+    if (!match) {
+      for (auto iter = ranges.first; iter != ranges.second; ++iter) {
+        ss << iter->second << "\n";
+      }
+    }
+
     ASSERT_TRUE(match) << "Key and State supplied is not possible:\n"
-                       << "Supplied Key, State and Value is:\n"
                        << "Key: " << key << "\n"
-                       << "State: "
-                       << (vstate.state == StateAndValue::State::Deleted
-                               ? "Deleted"
-                               : "Existing")
-                       << "\n"
-                       << "Value: " << vstate.value << "\n";
+                       << "Supplied:\n"
+                       << vstate << "\n"
+                       << "Possible:\n"
+                       << ss.str() << "\n";
   }
 
   static OperationQueue generateOperations(std::vector<KeyType> const& keys,
@@ -401,9 +419,6 @@ class EngineTestBase : public testing::Test {
   kvdk::Engine* engine = nullptr;
   kvdk::Configs configs;
   kvdk::Status status;
-
-  const std::string path_db{"/mnt/pmem0/kvdk_stress_test_" +
-                            std::to_string(__rdtsc())};
 
   /// The following parameters are used to configure the test.
   /// Override SetUpParameters to provide different parameters
@@ -464,7 +479,7 @@ class EngineTestBase : public testing::Test {
 
     prepareKVPairs();
 
-    status = kvdk::Engine::Open(path_db, &engine, configs, stderr);
+    status = kvdk::Engine::Open(FLAGS_path, &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
@@ -476,7 +491,7 @@ class EngineTestBase : public testing::Test {
   void RebootDB() {
     delete engine;
 
-    status = kvdk::Engine::Open(path_db, &engine, configs, stderr);
+    status = kvdk::Engine::Open(FLAGS_path, &engine, configs, stderr);
     ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to open the KVDK instance";
   }
 
@@ -568,10 +583,10 @@ class EngineTestBase : public testing::Test {
               << std::endl;
     shadow_hashes_engines[collection_name]->CheckGetter();
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->NewUnorderedIterator(collection_name).get(),
+        engine->HashCreateIterator(collection_name).get(),
         kvdk_testing::IteratingDirection::Forward);
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->NewUnorderedIterator(collection_name).get(),
+        engine->HashCreateIterator(collection_name).get(),
         kvdk_testing::IteratingDirection::Backward);
   }
 
@@ -609,7 +624,7 @@ class EngineTestBase : public testing::Test {
 
  private:
   void purgeDB() {
-    std::string cmd = "rm -rf " + path_db + "\n";
+    std::string cmd = "rm -rf " + FLAGS_path + "\n";
     [[gnu::unused]] int _sink = system(cmd.data());
   }
 

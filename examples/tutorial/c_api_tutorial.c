@@ -330,7 +330,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
     size_t val_len;
     char* val;
     s = KVDKHashGet(kvdk_engine, hash_collection, strlen(hash_collection), key,
-                    strlen(key), &val_len, &val);
+                    strlen(key), &val, &val_len);
     assert(s == Ok);
     int cmp = CmpCompare(val, val_len, value, strlen(value));
     assert(cmp == 0);
@@ -340,25 +340,25 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   s = KVDKHashDelete(kvdk_engine, hash_collection, strlen(hash_collection),
                      "key8", strlen("key8"));
   assert(s == Ok);
-  // create sorted iterator
-  KVDKIterator* kvdk_iter = KVDKCreateUnorderedIterator(
+  // create hash iterator
+  KVDKHashIterator* kvdk_iter = KVDKHashIteratorCreate(
       kvdk_engine, hash_collection, strlen(hash_collection));
   assert(kvdk_iter != NULL);
   int cnt = 0;
-  for (KVDKIterSeekToFirst(kvdk_iter); KVDKIterValid(kvdk_iter);
-       KVDKIterNext(kvdk_iter)) {
+  for (KVDKHashIteratorSeekToFirst(kvdk_iter);
+       KVDKHashIteratorIsValid(kvdk_iter); KVDKHashIteratorNext(kvdk_iter)) {
     ++cnt;
   }
   assert(cnt == 9);
 
   cnt = 0;
-  for (KVDKIterSeekToLast(kvdk_iter); KVDKIterValid(kvdk_iter);
-       KVDKIterPrev(kvdk_iter)) {
+  for (KVDKHashIteratorSeekToLast(kvdk_iter);
+       KVDKHashIteratorIsValid(kvdk_iter); KVDKHashIteratorPrev(kvdk_iter)) {
     ++cnt;
   }
   printf("Successfully performed Get Set Delete Iterate on HashList.\n");
   assert(cnt == 9);
-  KVDKDestroyIterator(kvdk_engine, kvdk_iter);
+  KVDKHashIteratorDestroy(kvdk_iter);
 }
 
 void ListsCollectionExample(KVDKEngine* kvdk_engine) {
@@ -511,7 +511,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     assert(s == Ok);
     sleep(1);
     s = KVDKHashGet(kvdk_engine, hash_collection, strlen(hash_collection), key,
-                    strlen(key), &val_len, &got_val);
+                    strlen(key), &got_val, &val_len);
     assert(s == NotFound);
     printf("Successfully expire hash\n");
   }
@@ -527,9 +527,8 @@ typedef struct {
   int result;
 } IncNArgs;
 
-int IncN(const char* key, size_t key_len, const char* old_val,
-         size_t old_val_len, char** new_val, size_t* new_val_len,
-         void* args_pointer) {
+int IncN(const char* old_val, size_t old_val_len, char** new_val,
+         size_t* new_val_len, void* args_pointer) {
   assert(args_pointer);
   IncNArgs* args = (IncNArgs*)args_pointer;
   *new_val = (char*)malloc(sizeof(int));
@@ -569,7 +568,7 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
   assert(s == Abort);
 
   int recycle = 100;
-  for (size_t i = 1; i <= recycle; i++) {
+  for (int i = 1; i <= recycle; i++) {
     KVDKStatus s = KVDKModify(kvdk_engine, incr_key, strlen(incr_key), IncN,
                               &args, free, write_option);
     assert(s == Ok);

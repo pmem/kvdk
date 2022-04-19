@@ -80,6 +80,7 @@ class OldRecordsCleaner {
     assert(kv_engine_ != nullptr);
   }
 
+  void PushToPendingFree(void* addr, TimeStampType ts);
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OldDeleteRecord& old_delete_record);
   void PushToGlobal(const std::deque<OldDeleteRecord>& old_delete_records);
@@ -102,7 +103,11 @@ class OldRecordsCleaner {
   const uint64_t kLimitCachedDeleteRecords = 1000000;
 
   void maybeUpdateOldestSnapshot();
+  // Purge a old data record and free space
   SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
+  // Purge a old delete record and free space
+  // Notice: this function will acquire slot lock in hash table, so deadlock may
+  // occur if call this function while holding other locks
   SpaceEntry purgeOldDeleteRecord(OldDeleteRecord& old_delete_record);
 
   KVEngine* kv_engine_;

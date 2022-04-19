@@ -14,7 +14,6 @@
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
-#include "simple_list.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -32,7 +31,12 @@ struct HashHeader {
 
 class Skiplist;
 class SkiplistNode;
-class UnorderedCollection;
+
+template <RecordType ListType, RecordType DataType>
+class GenericList;
+
+using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
+using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
 
 struct alignas(16) HashEntry {
  public:
@@ -47,8 +51,8 @@ struct alignas(16) HashEntry {
     StringRecord* string_record;
     DLRecord* dl_record;
     Skiplist* skiplist;
-    UnorderedCollection* p_unordered_collection;
     List* list;
+    HashList* hlist;
   };
   static_assert(sizeof(Index) == 8);
 
@@ -224,11 +228,7 @@ struct SlotIterator {
   HashTable* hash_table_;
   uint64_t current_slot_id;
 
-  void GetBucketRangeAndLockSlot() {
-    // release prev slot lock.
-    iter_lock_slot_ = std::unique_lock<SpinMutex>(
-        hash_table_->slots_[current_slot_id].spin, std::defer_lock);
-    iter_lock_slot_.lock();
+  void setBucketRange() {
     iter_start_bucket_idx_ =
         current_slot_id * hash_table_->num_buckets_per_slot_;
     iter_end_bucket_idx_ =
@@ -314,12 +314,18 @@ struct SlotIterator {
 
   SlotIterator(HashTable* hash_table)
       : hash_table_(hash_table), current_slot_id(0) {
-    GetBucketRangeAndLockSlot();
+    setBucketRange();
   }
+
+  std::unique_lock<SpinMutex> AcquireSlotLock() {
+    SpinMutex* slot_lock = GetSlotLock();
+    return std::unique_lock<SpinMutex>(*slot_lock);
+  }
+
   void Next() {
     current_slot_id++;
     if (current_slot_id < hash_table_->slots_.size()) {
-      GetBucketRangeAndLockSlot();
+      setBucketRange();
     }
   }
 
@@ -331,7 +337,9 @@ struct SlotIterator {
 
   BucketIterator End() { return BucketIterator{this, iter_end_bucket_idx_}; }
 
-  SpinMutex* GetSlotLock() { return iter_lock_slot_.mutex(); }
+  SpinMutex* GetSlotLock() {
+    return &hash_table_->slots_[current_slot_id].spin;
+  }
 };
 
 }  // namespace KVDK_NAMESPACE

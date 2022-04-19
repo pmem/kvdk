@@ -98,14 +98,6 @@ class Engine {
   // on any error.
   virtual Status SDelete(const StringView collection, const StringView key) = 0;
 
-  virtual Status HSet(const StringView collection, const StringView key,
-                      const StringView value) = 0;
-
-  virtual Status HGet(const StringView collection, const StringView key,
-                      std::string* value) = 0;
-
-  virtual Status HDelete(const StringView collection, const StringView key) = 0;
-
   /// List APIs ///////////////////////////////////////////////////////////////
 
   // Total elements in List.
@@ -185,7 +177,22 @@ class Engine {
   //    otherwise return ListIterator to First element of List
   // Internally ListIterator holds an recursive of List, which is relased
   // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListMakeIterator(StringView key) = 0;
+  virtual std::unique_ptr<ListIterator> ListCreateIterator(StringView key) = 0;
+
+  /// Hash APIs ///////////////////////////////////////////////////////////////
+
+  virtual Status HashLength(StringView key, size_t* len) = 0;
+  virtual Status HashGet(StringView key, StringView field,
+                         std::string* value) = 0;
+  virtual Status HashSet(StringView key, StringView field,
+                         StringView value) = 0;
+  virtual Status HashDelete(StringView key, StringView field) = 0;
+  // Warning: HashIterator internally holds a snapshot,
+  // prevents some resources from being freed.
+  // The HashIterator should be destroyed as long as it is no longer used.
+  virtual std::unique_ptr<HashIterator> HashCreateIterator(StringView key) = 0;
+
+  /// Other ///////////////////////////////////////////////////////////////////
 
   // Get a snapshot of the instance at this moment.
   // If set make_checkpoint to true, a persistent checkpoint will be made until
@@ -219,9 +226,6 @@ class Engine {
 
   // Release a sorted iterator
   virtual void ReleaseSortedIterator(Iterator*) = 0;
-
-  virtual std::unique_ptr<Iterator> NewUnorderedIterator(
-      StringView const collection_name) = 0;
 
   // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.

@@ -8,6 +8,39 @@
 #include "../sorted_collection/skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
+
+void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
+  kvdk_assert(
+      static_cast<DLRecord*>(addr)->entry.meta.type &
+          (ListDirtyElem | ListDirtyRecord | HashDirtyElem | HashDirtyRecord),
+      "");
+  kvdk_assert(access_thread.id >= 0, "");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  std::lock_guard<SpinMutex> guard{tc.old_records_lock};
+  DataEntry* data_entry = static_cast<DataEntry*>(addr);
+  SpaceEntry entry{kv_engine_->pmem_allocator_->addr2offset_checked(addr),
+                   data_entry->header.record_size};
+  tc.pending_free_space_entries.push_back(PendingFreeSpaceEntry{entry, ts});
+
+  /// TODO: a thread may quit before all pending free entries are Free()d
+  /// GlobalClean() should collect those entries and Free() them.
+  maybeUpdateOldestSnapshot();
+  TimeStampType earliest_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  constexpr size_t kMaxFreePending = 16;
+  for (size_t i = 0; i < kMaxFreePending; i++) {
+    if (tc.pending_free_space_entries.empty()) {
+      break;
+    }
+    if (tc.pending_free_space_entries.front().release_time >= earliest_ts) {
+      break;
+    }
+    kv_engine_->pmem_allocator_->Free(
+        tc.pending_free_space_entries.front().entry);
+    tc.pending_free_space_entries.pop_front();
+  }
+}
+
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &
@@ -143,44 +176,44 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
               "un-initialized access thread");
   auto& tc = cleaner_thread_cache_[access_thread.id];
-  if (tc.old_data_records.size() > 0 || tc.old_delete_records.size() > 0) {
-    maybeUpdateOldestSnapshot();
-    std::unique_lock<SpinMutex> ul(tc.old_records_lock);
-    for (int limit = num_limit_clean;
-         tc.old_delete_records.size() > 0 &&
-         tc.old_delete_records.front().release_time <
-             clean_all_data_record_ts_ &&
-         limit > 0;
-         limit--) {
-      // To avoid access invalid data, an old delete record can be freed only if
-      // no holding snapshot is older than its purging time
-      tc.pending_free_space_entries.emplace_back(PendingFreeSpaceEntry{
-          purgeOldDeleteRecord(tc.old_delete_records.front()),
-          kv_engine_->version_controller_.GetCurrentTimestamp()});
-      tc.old_delete_records.pop_front();
-    }
+  if (tc.old_data_records.empty() && tc.old_delete_records.empty()) {
+    return;
+  }
 
-    TimeStampType oldest_refer_ts =
-        kv_engine_->version_controller_.OldestSnapshotTS();
-    for (int limit = num_limit_clean;
-         tc.old_data_records.size() > 0 &&
-         tc.old_data_records.front().release_time < oldest_refer_ts &&
-         limit > 0;
-         limit--) {
-      kv_engine_->pmem_allocator_->Free(
-          purgeOldDataRecord(tc.old_data_records.front()));
-      tc.old_data_records.pop_front();
-    }
+  maybeUpdateOldestSnapshot();
+  std::unique_lock<SpinMutex> ul(tc.old_records_lock);
+  for (int limit = num_limit_clean;
+       tc.old_delete_records.size() > 0 &&
+       tc.old_delete_records.front().release_time < clean_all_data_record_ts_ &&
+       limit > 0;
+       limit--) {
+    // To avoid access invalid data, an old delete record can be freed only if
+    // no holding snapshot is older than its purging time
+    tc.pending_free_space_entries.emplace_back(PendingFreeSpaceEntry{
+        purgeOldDeleteRecord(tc.old_delete_records.front()),
+        kv_engine_->version_controller_.GetCurrentTimestamp()});
+    tc.old_delete_records.pop_front();
+  }
 
-    for (int limit = num_limit_clean;
-         tc.pending_free_space_entries.size() > 0 &&
-         tc.pending_free_space_entries.front().release_time < oldest_refer_ts &&
-         limit > 0;
-         limit--) {
-      kv_engine_->pmem_allocator_->Free(
-          tc.pending_free_space_entries.front().entry);
-      tc.pending_free_space_entries.pop_front();
-    }
+  TimeStampType oldest_refer_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  for (int limit = num_limit_clean;
+       tc.old_data_records.size() > 0 &&
+       tc.old_data_records.front().release_time < oldest_refer_ts && limit > 0;
+       limit--) {
+    kv_engine_->pmem_allocator_->Free(
+        purgeOldDataRecord(tc.old_data_records.front()));
+    tc.old_data_records.pop_front();
+  }
+
+  for (int limit = num_limit_clean;
+       tc.pending_free_space_entries.size() > 0 &&
+       tc.pending_free_space_entries.front().release_time < oldest_refer_ts &&
+       limit > 0;
+       limit--) {
+    kv_engine_->pmem_allocator_->Free(
+        tc.pending_free_space_entries.front().entry);
+    tc.pending_free_space_entries.pop_front();
   }
 }
 
@@ -245,65 +278,61 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
     }
     case SortedDeleteRecord: {
     handle_sorted_delete_record : {
-      std::lock_guard<SpinMutex> lg(*old_delete_record.key_lock);
-      auto delete_record_index_type =
-          old_delete_record.record_index.skiplist_node.GetTag();
-      SkiplistNode* dram_node = nullptr;
-      HashEntry* hash_entry_ref = nullptr;
-      bool need_purge = false;
-      switch (delete_record_index_type) {
-        case PointerType::HashEntry: {
-          DLRecord* hash_indexed_pmem_record{};
-          hash_entry_ref = static_cast<HashEntry*>(
-              old_delete_record.record_index.hash_entry.RawPointer());
-          auto hash_index_type = hash_entry_ref->GetIndexType();
-          if (hash_index_type == PointerType::DLRecord) {
-            if (hash_entry_ref->GetIndex().dl_record ==
-                old_delete_record.pmem_delete_record) {
-              hash_indexed_pmem_record = hash_entry_ref->GetIndex().dl_record;
+      std::unique_lock<SpinMutex> ul(*old_delete_record.key_lock);
+      // We check linkage to determine if the delete record already been
+      // unlinked by updates. We only check the next linkage, as the record is
+      // already been locked, its next record will not be changed.
+      bool record_on_list = Skiplist::CheckReocrdNextLinkage(
+          static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
+          kv_engine_->pmem_allocator_.get());
+      if (record_on_list) {
+        // record still on list, we clear its index and unlink it from list
+        auto delete_record_index_type =
+            old_delete_record.record_index.skiplist_node.GetTag();
+        SkiplistNode* dram_node = nullptr;
+        HashEntry* hash_entry_ref = nullptr;
+        switch (delete_record_index_type) {
+          case PointerType::HashEntry: {
+            hash_entry_ref = static_cast<HashEntry*>(
+                old_delete_record.record_index.hash_entry.RawPointer());
+            auto hash_index_type = hash_entry_ref->GetIndexType();
+            if (hash_index_type == PointerType::SkiplistNode) {
+              dram_node = hash_entry_ref->GetIndex().skiplist_node;
+              kvdk_assert(
+                  dram_node->record == old_delete_record.pmem_delete_record,
+                  "On-list old delete record of skiplist no pointed by its "
+                  "dram node");
+            } else {
+              kvdk_assert(hash_index_type == PointerType::DLRecord,
+                          "Wrong hash index type in cleaner");
+              kvdk_assert(
+                  hash_entry_ref->GetIndex().dl_record ==
+                      old_delete_record.pmem_delete_record,
+                  "On-list old delete record of skiplist no pointed by its "
+                  "hash entry")
             }
-          } else if (hash_index_type == PointerType::SkiplistNode) {
-            dram_node = hash_entry_ref->GetIndex().skiplist_node;
-            hash_indexed_pmem_record = dram_node->record;
-          } else {
-            // Hash entry of this key already been cleaned. This happens if
-            // another delete record of this key inserted in hash table and
-            // cleaned before this record
             break;
           }
 
-          if (hash_indexed_pmem_record ==
-              old_delete_record.pmem_delete_record) {
-            need_purge = true;
+          case PointerType::SkiplistNode: {
+            dram_node = static_cast<SkiplistNode*>(
+                old_delete_record.record_index.skiplist_node.RawPointer());
+            kvdk_assert(
+                dram_node->record == old_delete_record.pmem_delete_record,
+                "On-list old delete record of skiplist no pointed by its dram "
+                "node");
+            break;
           }
-          break;
-        }
-        case PointerType::SkiplistNode: {
-          dram_node = static_cast<SkiplistNode*>(
-              old_delete_record.record_index.skiplist_node.RawPointer());
-          if (dram_node->record == old_delete_record.pmem_delete_record) {
-            need_purge = true;
+
+          case PointerType::Empty: {
+            break;  // nothing to do
           }
-          break;
-        }
-        case PointerType::Empty: {
-          // This record is not indexed by hash table and skiplist node, so we
-          // check linkage to determine if its already been purged
-          //
-          // We only check the next linkage, as the delete record is already
-          // been locked, its next linkage will not be changed by other threads.
-          if (Skiplist::CheckReocrdNextLinkage(
-                  static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
-                  kv_engine_->pmem_allocator_.get())) {
-            need_purge = true;
+
+          default: {
+            kvdk_assert(false, "never should reach");
           }
-          break;
         }
-        default: {
-          kvdk_assert(false, "never should reach");
-        }
-      }
-      if (need_purge) {
+
         if (!Skiplist::Purge(
                 static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
                 old_delete_record.key_lock, dram_node,
@@ -316,8 +345,9 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           kv_engine_->hash_table_->Erase(hash_entry_ref);
         }
       }
-      return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
-                        data_entry->header.record_size);
+      return SpaceEntry(
+          kv_engine_->pmem_allocator_->addr2offset_checked(data_entry),
+          data_entry->header.record_size);
     }
     }
     default: {

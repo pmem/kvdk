@@ -4,12 +4,9 @@
 
 #pragma once
 
-#include "iterator.h"
 #include "types.hpp"
 
 namespace KVDK_NAMESPACE {
-
-using IteratorType = KVDKIteratorType;
 
 class Iterator {
  public:
@@ -28,8 +25,6 @@ class Iterator {
   virtual std::string Key() = 0;
 
   virtual std::string Value() = 0;
-
-  virtual IteratorType Type() const = 0;
 
   virtual ~Iterator() = default;
 };
@@ -53,6 +48,25 @@ class ListIterator {
   virtual std::string Value() const = 0;
 
   virtual ~ListIterator() = default;
+};
+
+class HashIterator {
+ public:
+  virtual void SeekToFirst() = 0;
+
+  virtual void SeekToLast() = 0;
+
+  virtual bool Valid() const = 0;
+
+  virtual void Next() = 0;
+
+  virtual void Prev() = 0;
+
+  virtual std::string Key() const = 0;
+
+  virtual std::string Value() const = 0;
+
+  virtual ~HashIterator() = default;
 };
 
 }  // namespace KVDK_NAMESPACE

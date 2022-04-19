@@ -74,15 +74,13 @@ class SortedIterator : public Iterator {
     return string_view_2_string(current_->Value());
   }
 
-  IteratorType Type() const final { return IteratorType::SortedIterator; }
-
  private:
   friend KVEngine;
   DLRecord* findValidVersion(DLRecord* pmem_record) {
     DLRecord* curr = pmem_record;
     TimeStampType ts = snapshot_->GetTimestamp();
     while (curr != nullptr && curr->entry.meta.timestamp > ts) {
-      curr = pmem_allocator_->offset2addr<DLRecord>(curr->older_version_offset);
+      curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),
                   "Broken checkpoint: invalid older version sorted record");
       kvdk_assert(

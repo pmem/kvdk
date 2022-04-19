@@ -41,8 +41,7 @@ enum class ModifyOperation : int {
 // return ModifyOperation::Abort indicates the existing kv should not be
 // modified and abort the operation
 using ModifyFunc = std::function<ModifyOperation(
-    const StringView& key, const std::string* old_value, std::string* new_value,
-    void* args)>;
+    const std::string* old_value, std::string* new_value, void* args)>;
 
 constexpr ExpireTimeType kPersistTime = INT64_MAX;
 constexpr TTLType kPersistTTL = INT64_MAX;

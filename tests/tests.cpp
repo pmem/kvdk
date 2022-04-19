@@ -8,6 +8,7 @@
 #include <future>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "../engine/kv_engine.hpp"
@@ -132,36 +133,6 @@ class EngineBasicTest : public testing::Test {
     LaunchNThreads(configs.max_access_threads, global_func);
   }
 
-  void TestLocalUnorderedCollection(const std::string& collection) {
-    auto UnorderedSetFunc = [&](const std::string& collection,
-                                const std::string& key,
-                                const std::string& value) -> Status {
-      return engine->HSet(collection, key, value);
-    };
-
-    auto UnorderedGetFunc = [&](const std::string& collection,
-                                const std::string& key,
-                                std::string* value) -> Status {
-      return engine->HGet(collection, key, value);
-    };
-
-    auto UnorderedDeleteFunc = [&](const std::string& collection,
-                                   const std::string& key) -> Status {
-      return engine->HDelete(collection, key);
-    };
-
-    auto Local_XSetXGetXDelete = [&](uint64_t id) {
-      std::string thread_local_collection = collection + std::to_string(id);
-
-      TestEmptyKey(thread_local_collection, UnorderedSetFunc, UnorderedGetFunc,
-                   UnorderedDeleteFunc);
-
-      CreateBasicOperationTest(thread_local_collection, UnorderedSetFunc,
-                               UnorderedGetFunc, UnorderedDeleteFunc, id);
-    };
-    LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
-  }
-
   void TestGlobalSortedCollection(const std::string& collection,
                                   const SortedCollectionConfigs& s_configs) {
     auto SortedSetFunc = [&](const std::string& collection,
@@ -276,54 +247,6 @@ class EngineBasicTest : public testing::Test {
     LaunchNThreads(configs.max_access_threads, IteratingThrough);
   }
 
-  void TestUnorderedIterator(const std::string& collection,
-                             bool is_local = false) {
-    auto IteratingThrough = [&](uint32_t id) {
-      int entries = 0;
-      std::string new_collection = collection;
-      if (is_local) {
-        new_collection += std::to_string(id);
-      }
-
-      auto iter = engine->NewUnorderedIterator(new_collection);
-      ASSERT_TRUE(iter != nullptr);
-      // forward iterator
-      iter->SeekToFirst();
-      if (iter->Valid()) {
-        ++entries;
-        std::string prev = iter->Key();
-        iter->Next();
-        while (iter->Valid()) {
-          ++entries;
-          std::string k = iter->Key();
-          iter->Next();
-          prev = k;
-        }
-      }
-      if (is_local) {
-        ASSERT_EQ(cnt, entries);
-      } else {
-        ASSERT_EQ(cnt * configs.max_access_threads, entries);
-      }
-
-      // backward iterator
-      iter->SeekToLast();
-      if (iter->Valid()) {
-        --entries;
-        std::string next = iter->Key();
-        iter->Prev();
-        while (iter->Valid()) {
-          --entries;
-          std::string k = iter->Key();
-          iter->Prev();
-          next = k;
-        }
-      }
-      ASSERT_EQ(entries, 0);
-    };
-    LaunchNThreads(configs.max_access_threads, IteratingThrough);
-  }
-
  private:
   void TestEmptyKey(const std::string& collection, SetOpsFunc SetFunc,
                     GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc) {
@@ -391,7 +314,7 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
             Status::Ok);
   ASSERT_EQ(engine->Set(str, val), Status::Ok);
   ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
-  ASSERT_EQ(engine->HSet(unordered_collection, elem_key, val), Status::Ok);
+  ASSERT_EQ(engine->HashSet(unordered_collection, elem_key, val), Status::Ok);
   ASSERT_EQ(engine->ListPushBack(list, elem_key), Status::Ok);
 
   std::string got_val;
@@ -437,14 +360,14 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
                                                            : Status::WrongType;
     std::string new_val("new_unordered_val");
     // Set
-    ASSERT_EQ(engine->HSet(collection_name, elem_key, new_val), ret_s);
+    ASSERT_EQ(engine->HashSet(collection_name, elem_key, new_val), ret_s);
     // Get
-    ASSERT_EQ(engine->HGet(collection_name, elem_key, &got_val), ret_s);
+    ASSERT_EQ(engine->HashGet(collection_name, elem_key, &got_val), ret_s);
     if (ret_s == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
     // Delete
-    ASSERT_EQ(engine->HDelete(collection_name, elem_key), ret_s);
+    ASSERT_EQ(engine->HashDelete(collection_name, elem_key), ret_s);
   }
 
   // Test list
@@ -716,8 +639,8 @@ TEST_F(EngineBasicTest, TestStringModify) {
     size_t incr_by;
     size_t result;
   };
-  auto IncN = [](const StringView& key, const std::string* old_val,
-                 std::string* new_value, void* modify_args) {
+  auto IncN = [](const std::string* old_val, std::string* new_value,
+                 void* modify_args) {
     assert(modify_args);
     IncNArgs* args = static_cast<IncNArgs*>(modify_args);
     size_t old_num;
@@ -1202,277 +1125,6 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestLocalUnorderedCollection) {
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  do {
-    TestLocalUnorderedCollection("thread_unordered");
-    TestUnorderedIterator("thread_unordered", true);
-  } while (ChangeConfig());
-  delete engine;
-}
-
-TEST_F(EngineBasicTest, TestGlobalUnorderedCollection) {
-  auto UnorderedSetFunc = [&](const std::string& collection,
-                              const std::string& key,
-                              const std::string& value) -> Status {
-    return engine->HSet(collection, key, value);
-  };
-
-  auto UnorderedGetFunc = [&](const std::string& collection,
-                              const std::string& key,
-                              std::string* value) -> Status {
-    return engine->HGet(collection, key, value);
-  };
-
-  auto UnorderedDeleteFunc = [&](const std::string& collection,
-                                 const std::string& key) -> Status {
-    return engine->HDelete(collection, key);
-  };
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  do {
-    TestGlobalCollection("global_unordered", UnorderedSetFunc, UnorderedGetFunc,
-                         UnorderedDeleteFunc, Types::Hash);
-    TestUnorderedIterator("global_unordered", false);
-  } while (ChangeConfig());
-  delete engine;
-}
-
-TEST_F(EngineBasicTest, TestUnorderedCollectionRestore) {
-  size_t count = 100;
-  size_t num_threads = 16;
-
-  configs.max_access_threads = num_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  // kv-pairs for insertion.
-  // Remaining kvs in kv engine are also stored in global/tlocal_kvs_remaining
-  std::vector<std::vector<std::pair<std::string, std::string>>>
-      global_kvs_inserting(num_threads);
-  std::vector<std::vector<std::pair<std::string, std::string>>>
-      tlocal_kvs_inserting(num_threads);
-  std::mutex lock_global_kvs_remaining;
-  std::map<std::string, std::string> global_kvs_remaining;
-  std::vector<std::map<std::string, std::string>> tlocal_kvs_remaining(
-      num_threads);
-
-  std::string global_collection_name = "global_uncoll";
-  std::vector<std::string> tlocal_collection_names(num_threads);
-  std::string updated_value_suffix = "_new";
-  for (size_t tid = 0; tid < num_threads; tid++) {
-    tlocal_collection_names[tid] = "local_uncoll_t" + std::to_string(tid);
-    for (size_t j = 0; j < count * 2; j++) {
-      std::string global_key = std::string{"global_key_t"} +
-                               std::to_string(tid) + "_key_" +
-                               std::to_string(j);
-      global_kvs_inserting[tid].emplace_back(global_key, GetRandomString(1024));
-
-      std::string thread_local_key =
-          std::string{"local_key_"} + std::to_string(j);
-      tlocal_kvs_inserting[tid].emplace_back(thread_local_key,
-                                             GetRandomString(1024));
-    }
-  }
-
-  auto HSetHGetHDeleteGlobal = [&](size_t tid) {
-    std::string value_got;
-    for (size_t j = 0; j < count; j++) {
-      // Insert first kv-pair in global collection
-      ASSERT_EQ(engine->HSet(global_collection_name,
-                             global_kvs_inserting[tid][j].first,
-                             global_kvs_inserting[tid][j].second),
-                Status::Ok);
-      ASSERT_EQ(engine->HGet(global_collection_name,
-                             global_kvs_inserting[tid][j].first, &value_got),
-                Status::Ok);
-      ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
-
-      // Update first kv-pair in global collection
-      global_kvs_inserting[tid][j].second += updated_value_suffix;
-      ASSERT_EQ(engine->HSet(global_collection_name,
-                             global_kvs_inserting[tid][j].first,
-                             global_kvs_inserting[tid][j].second),
-                Status::Ok);
-      ASSERT_EQ(engine->HGet(global_collection_name,
-                             global_kvs_inserting[tid][j].first, &value_got),
-                Status::Ok);
-      ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
-      {
-        std::lock_guard<std::mutex> lg{lock_global_kvs_remaining};
-        global_kvs_remaining.emplace(global_kvs_inserting[tid][j].first,
-                                     global_kvs_inserting[tid][j].second);
-      }
-
-      // Insert second kv-pair in global collection
-      ASSERT_EQ(engine->HSet(global_collection_name,
-                             global_kvs_inserting[tid][j + count].first,
-                             global_kvs_inserting[tid][j + count].second),
-                Status::Ok);
-      ASSERT_EQ(
-          engine->HGet(global_collection_name,
-                       global_kvs_inserting[tid][j + count].first, &value_got),
-          Status::Ok);
-      ASSERT_EQ(value_got, global_kvs_inserting[tid][j + count].second);
-
-      // Delete second kv-pair in global collection
-      ASSERT_EQ(engine->HDelete(global_collection_name,
-                                global_kvs_inserting[tid][j + count].first),
-                Status::Ok);
-      ASSERT_EQ(
-          engine->HGet(global_collection_name,
-                       global_kvs_inserting[tid][j + count].first, &value_got),
-          Status::NotFound);
-    }
-  };
-
-  auto HSetHGetHDeleteThreadLocal = [&](size_t tid) {
-    std::string value_got;
-    for (size_t j = 0; j < count; j++) {
-      // Insert first kv-pair in global collection
-      ASSERT_EQ(engine->HSet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j].first,
-                             tlocal_kvs_inserting[tid][j].second),
-                Status::Ok);
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j].first, &value_got),
-                Status::Ok);
-      ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j].second);
-
-      // Update first kv-pair in global collection
-      tlocal_kvs_inserting[tid][j].second += updated_value_suffix;
-      ASSERT_EQ(engine->HSet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j].first,
-                             tlocal_kvs_inserting[tid][j].second),
-                Status::Ok);
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j].first, &value_got),
-                Status::Ok);
-      ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j].second);
-      tlocal_kvs_remaining[tid].emplace(tlocal_kvs_inserting[tid][j].first,
-                                        tlocal_kvs_inserting[tid][j].second);
-
-      // Insert second kv-pair in global collection
-      ASSERT_EQ(engine->HSet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j + count].first,
-                             tlocal_kvs_inserting[tid][j + count].second),
-                Status::Ok);
-      ASSERT_EQ(
-          engine->HGet(tlocal_collection_names[tid],
-                       tlocal_kvs_inserting[tid][j + count].first, &value_got),
-          Status::Ok);
-      ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j + count].second);
-
-      // Delete second kv-pair in global collection
-      ASSERT_EQ(engine->HDelete(tlocal_collection_names[tid],
-                                tlocal_kvs_inserting[tid][j + count].first),
-                Status::Ok);
-      ASSERT_EQ(
-          engine->HGet(tlocal_collection_names[tid],
-                       tlocal_kvs_inserting[tid][j + count].first, &value_got),
-          Status::NotFound);
-    }
-  };
-
-  // Setup engine
-  LaunchNThreads(num_threads, HSetHGetHDeleteGlobal);
-  LaunchNThreads(num_threads, HSetHGetHDeleteThreadLocal);
-
-  auto IteratingThroughGlobal = [&](size_t) {
-    size_t n_entry = 0;
-    auto global_kvs_remaining_copy{global_kvs_remaining};
-
-    auto iter_global_collection =
-        engine->NewUnorderedIterator(global_collection_name);
-    ASSERT_TRUE(iter_global_collection != nullptr);
-    for (iter_global_collection->SeekToFirst(); iter_global_collection->Valid();
-         iter_global_collection->Next()) {
-      ++n_entry;
-      auto key = iter_global_collection->Key();
-      auto value = iter_global_collection->Value();
-      auto iter_found = global_kvs_remaining_copy.find(key);
-      ASSERT_NE(iter_found, global_kvs_remaining_copy.end());
-      ASSERT_EQ(value, iter_found->second);
-      global_kvs_remaining_copy.erase(key);
-    }
-    ASSERT_EQ(n_entry, num_threads * count);
-    ASSERT_TRUE(global_kvs_remaining_copy.empty());
-  };
-
-  auto IteratingThroughThreadLocal = [&](size_t tid) {
-    size_t n_entry = 0;
-    auto tlocal_kvs_remaining_copy{tlocal_kvs_remaining[tid]};
-
-    auto iter_tlocal_collection =
-        engine->NewUnorderedIterator(tlocal_collection_names[tid]);
-    ASSERT_TRUE(iter_tlocal_collection != nullptr);
-    for (iter_tlocal_collection->SeekToFirst(); iter_tlocal_collection->Valid();
-         iter_tlocal_collection->Next()) {
-      ++n_entry;
-      auto key = iter_tlocal_collection->Key();
-      auto value = iter_tlocal_collection->Value();
-      auto iter_found = tlocal_kvs_remaining_copy.find(key);
-      ASSERT_NE(iter_found, tlocal_kvs_remaining_copy.end());
-      ASSERT_EQ(value, iter_found->second);
-      tlocal_kvs_remaining_copy.erase(key);
-    }
-    ASSERT_EQ(n_entry, count);
-    ASSERT_TRUE(tlocal_kvs_remaining_copy.empty());
-  };
-
-  auto HGetGlobal = [&](size_t tid) {
-    std::string value_got;
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->HGet(global_collection_name,
-                             global_kvs_inserting[tid][j].first, &value_got),
-                Status::Ok);
-      ASSERT_EQ(value_got, global_kvs_inserting[tid][j].second);
-
-      ASSERT_EQ(
-          engine->HGet(global_collection_name,
-                       global_kvs_inserting[tid][j + count].first, &value_got),
-          Status::NotFound);
-    }
-  };
-
-  auto HGetThreadLocal = [&](size_t tid) {
-    std::string value_got;
-    for (size_t j = 0; j < count; j++) {
-      ASSERT_EQ(engine->HGet(tlocal_collection_names[tid],
-                             tlocal_kvs_inserting[tid][j].first, &value_got),
-                Status::Ok);
-      ASSERT_EQ(value_got, tlocal_kvs_inserting[tid][j].second);
-
-      ASSERT_EQ(
-          engine->HGet(tlocal_collection_names[tid],
-                       tlocal_kvs_inserting[tid][j + count].first, &value_got),
-          Status::NotFound);
-    }
-  };
-
-  LaunchNThreads(num_threads, IteratingThroughGlobal);
-  LaunchNThreads(num_threads, IteratingThroughThreadLocal);
-  LaunchNThreads(num_threads, HGetGlobal);
-  LaunchNThreads(num_threads, HGetThreadLocal);
-
-  delete engine;
-
-  // reopen and restore engine
-  configs.max_access_threads = 1;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  LaunchNThreads(1, IteratingThroughGlobal);
-  LaunchNThreads(1, IteratingThroughThreadLocal);
-  LaunchNThreads(1, HGetGlobal);
-  LaunchNThreads(1, HGetThreadLocal);
-
-  delete engine;
-}
-
 TEST_F(EngineBasicTest, TestList) {
   size_t num_threads = 16;
   size_t count = 1000;
@@ -1548,7 +1200,7 @@ TEST_F(EngineBasicTest, TestList) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
-    auto iter = engine->ListMakeIterator(key);
+    auto iter = engine->ListCreateIterator(key);
     ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
     if (iter != nullptr) {
       iter->Seek(0);
@@ -1578,7 +1230,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
-    auto iter = engine->ListMakeIterator(key);
+    auto iter = engine->ListCreateIterator(key);
     ASSERT_NE(iter, nullptr);
 
     iter->Seek(insert_pos);
@@ -1629,6 +1281,98 @@ TEST_F(EngineBasicTest, TestList) {
     Reboot();
   }
 
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestHash) {
+  size_t num_threads = 16;
+  size_t count = 1000;
+  configs.max_access_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string key{"Hash"};
+  using umap = std::unordered_map<std::string, std::string>;
+  std::vector<umap> local_copies(num_threads);
+  std::mutex mu;
+
+  auto HSet = [&](size_t tid) {
+    umap& local_copy = local_copies[tid];
+    for (size_t j = 0; j < count; j++) {
+      std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
+      std::string value{GetRandomString(120)};
+      ASSERT_EQ(engine->HashSet(key, field, value), Status::Ok);
+      local_copy[field] = value;
+    }
+  };
+
+  auto HGet = [&](size_t tid) {
+    umap const& local_copy = local_copies[tid];
+    for (auto const& kv : local_copy) {
+      std::string resp;
+      ASSERT_EQ(engine->HashGet(key, kv.first, &resp), Status::Ok);
+      ASSERT_EQ(resp, kv.second) << "Field:\t" << kv.first << "\n";
+    }
+  };
+
+  auto HDelete = [&](size_t tid) {
+    umap& local_copy = local_copies[tid];
+    for (size_t i = 0; i < count / 2; i++) {
+      auto iter = local_copy.begin();
+      ASSERT_EQ(engine->HashDelete(key, iter->first), Status::Ok);
+      local_copy.erase(iter);
+    }
+  };
+
+  auto HashLength = [&](size_t) {
+    size_t len = 0;
+    ASSERT_EQ(engine->HashLength(key, &len), Status::Ok);
+    size_t cnt = 0;
+    for (size_t tid = 0; tid < num_threads; tid++) {
+      cnt += local_copies[tid].size();
+    }
+    ASSERT_EQ(len, cnt);
+  };
+
+  auto HashIterate = [&](size_t) {
+    umap combined;
+    for (size_t tid = 0; tid < num_threads; tid++) {
+      umap const& local_copy = local_copies[tid];
+      for (auto const& kv : local_copy) {
+        combined[kv.first] = kv.second;
+      }
+    }
+
+    auto iter = engine->HashCreateIterator(key);
+
+    ASSERT_NE(iter, nullptr);
+    size_t cnt = 0;
+    for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+      ++cnt;
+      ASSERT_EQ(combined[iter->Key()], iter->Value());
+    }
+    ASSERT_EQ(cnt, combined.size());
+
+    cnt = 0;
+    for (iter->SeekToLast(); iter->Valid(); iter->Prev()) {
+      ++cnt;
+      ASSERT_EQ(combined[iter->Key()], iter->Value());
+    }
+    ASSERT_EQ(cnt, combined.size());
+  };
+
+  for (size_t i = 0; i < 3; i++) {
+    Reboot();
+    LaunchNThreads(num_threads, HSet);
+    LaunchNThreads(num_threads, HGet);
+    LaunchNThreads(num_threads, HDelete);
+    LaunchNThreads(num_threads, HashIterate);
+    LaunchNThreads(num_threads, HashLength);
+    LaunchNThreads(num_threads, HSet);
+    LaunchNThreads(num_threads, HGet);
+    LaunchNThreads(num_threads, HDelete);
+    LaunchNThreads(num_threads, HashIterate);
+    LaunchNThreads(num_threads, HashLength);
+  }
   delete engine;
 }
 
@@ -1988,17 +1732,19 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For hashes collection
   {
-    ASSERT_EQ(engine->HSet(hashes_collection, "hashes" + key, "hashes" + val),
-              Status::Ok);
+    ASSERT_EQ(
+        engine->HashSet(hashes_collection, "hashes" + key, "hashes" + val),
+        Status::Ok);
     // Set expired time for collection, max_ttl_time is overflow.
     ASSERT_EQ(engine->Expire(hashes_collection, max_ttl_time),
               Status::InvalidArgument);
-    ASSERT_EQ(engine->HSet(hashes_collection, "hashes2" + key, "hashes2" + val),
-              Status::Ok);
+    ASSERT_EQ(
+        engine->HashSet(hashes_collection, "hashes2" + key, "hashes2" + val),
+        Status::Ok);
 
     // reset expired time for collection
     ASSERT_EQ(engine->Expire(hashes_collection, normal_ttl_time), Status::Ok);
-    ASSERT_EQ(engine->HGet(hashes_collection, "hashes" + key, &got_val),
+    ASSERT_EQ(engine->HashGet(hashes_collection, "hashes" + key, &got_val),
               Status::Ok);
     ASSERT_EQ(got_val, "hashes" + val);
     // get collection ttl time
@@ -2452,6 +2198,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
     auto hash_table = test_kvengine->GetHashTable();
     auto slot_iter = hash_table->GetSlotIterator();
     while (slot_iter.Valid()) {
+      auto slot_lock = slot_iter.AcquireSlotLock();
       auto bucket_iter = slot_iter.Begin();
       auto end_bucket_iter = slot_iter.End();
       while (bucket_iter != end_bucket_iter) {
