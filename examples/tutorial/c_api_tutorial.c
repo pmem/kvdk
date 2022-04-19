@@ -534,10 +534,6 @@ typedef struct {
 int IncN(const char* old_val, size_t old_val_len, char** new_val,
          size_t* new_val_len, void* args_pointer) {
   assert(args_pointer);
-  // unused
-  (void)key;
-  (void)key_len;
-
   IncNArgs* args = (IncNArgs*)args_pointer;
   *new_val = (char*)malloc(sizeof(int));
   if (*new_val == NULL) {

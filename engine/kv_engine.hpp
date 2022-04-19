@@ -273,7 +273,7 @@ class KVEngine : public Engine {
                       std::is_same<CollectionType, StringRecord>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
-               ? RecordType::SortedHeaderRecord
+               ? RecordType::SortedHeader
            : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
            : std::is_same<CollectionType, HashList>::value
                ? RecordType::HashRecord
@@ -289,12 +289,12 @@ class KVEngine : public Engine {
       case RecordType::StringDeleteRecord: {
         return PointerType::StringRecord;
       }
-      case RecordType::SortedDataRecord:
-      case RecordType::SortedDeleteRecord: {
+      case RecordType::SortedElem:
+      case RecordType::SortedElemDelete: {
         kvdk_assert(false, "Not supported!");
         return PointerType::Invalid;
       }
-      case RecordType::SortedHeaderRecord: {
+      case RecordType::SortedHeader: {
         return PointerType::Skiplist;
       }
       case RecordType::ListRecord: {

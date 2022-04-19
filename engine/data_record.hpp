@@ -19,36 +19,36 @@ enum RecordType : uint16_t {
   StringDataRecord = (1 << 0),
   StringDeleteRecord = (1 << 1),
 
-  SortedDataRecord = (1 << 2),
-  SortedDeleteRecord = (1 << 3),
-  SortedHeaderRecord = (1 << 4),
+  SortedElem = (1 << 2),
+  SortedElemDelete = (1 << 3),
+  SortedHeader = (1 << 4),
+  SortedHeaderDelete = (1 << 5),
 
-  HashRecord = (1 << 5),
-  HashDirtyRecord = (1 << 6),
-  HashElem = (1 << 7),
-  HashDirtyElem = (1 << 8),
+  HashRecord = (1 << 6),
+  HashDirtyRecord = (1 << 7),
+  HashElem = (1 << 8),
+  HashDirtyElem = (1 << 9),
 
-  ListRecord = (1 << 9),
-  ListDirtyRecord = (1 << 10),
-  ListElem = (1 << 11),
-  ListDirtyElem = (1 << 12),
+  ListRecord = (1 << 10),
+  ListDirtyRecord = (1 << 11),
+  ListElem = (1 << 12),
+  ListDirtyElem = (1 << 13),
 
   Padding = (1 << 15),
 };
 
 const uint16_t SortedRecordType =
-    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord);
+    (SortedElem | SortedElemDelete | SortedHeader);
 
-const uint16_t DLRecordType =
-    (SortedDataRecord | SortedDeleteRecord | SortedHeaderRecord | HashRecord |
-     HashElem | ListElem | ListRecord);
+const uint16_t DLRecordType = (SortedElem | SortedElemDelete | SortedHeader |
+                               HashRecord | HashElem | ListElem | ListRecord);
 
-const uint16_t DeleteRecordType = (StringDeleteRecord | SortedDeleteRecord);
+const uint16_t DeleteRecordType = (StringDeleteRecord | SortedElemDelete);
 
 const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
 const uint16_t ExpirableRecordType =
-    (StringDataRecord | SortedHeaderRecord | ListRecord | HashRecord);
+    (StringDataRecord | SortedHeader | ListRecord | HashRecord);
 
 const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
 

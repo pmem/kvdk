@@ -97,7 +97,7 @@ class SortedIterator : public Iterator {
     while (Valid()) {
       DLRecord* valid_version_record = findValidVersion(current_);
       if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.type == SortedDeleteRecord) {
+          valid_version_record->entry.meta.type == SortedElemDelete) {
         current_ =
             forward
                 ? pmem_allocator_->offset2addr_checked<DLRecord>(current_->next)

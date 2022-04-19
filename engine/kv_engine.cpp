@@ -199,7 +199,7 @@ Status KVEngine::CreateSortedCollection(
   version_controller_.HoldLocalSnapshot();
   defer(version_controller_.ReleaseLocalSnapshot());
   TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
-  auto ret = lookupKey<true>(collection_name, SortedHeaderRecord);
+  auto ret = lookupKey<true>(collection_name, SortedHeader);
   if (ret.s == NotFound) {
     auto comparator = comparators_.GetComparator(s_configs.comparator_name);
     if (comparator == nullptr) {
@@ -220,7 +220,7 @@ Status KVEngine::CreateSortedCollection(
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
-        new_ts, SortedHeaderRecord, kNullPMemOffset, space_entry.offset,
+        new_ts, SortedHeader, kNullPMemOffset, space_entry.offset,
         space_entry.offset, collection_name, value_str);
 
     auto skiplist = std::make_shared<Skiplist>(
@@ -230,7 +230,7 @@ Status KVEngine::CreateSortedCollection(
       std::lock_guard<std::mutex> lg(skiplists_mu_);
       skiplists_.insert({id, skiplist});
     }
-    hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderRecord, skiplist.get(),
+    hash_table_->Insert(hint, ret.entry_ptr, SortedHeader, skiplist.get(),
                         PointerType::Skiplist);
   } else {
     // Todo (jiayu): handle expired skiplist
@@ -241,11 +241,14 @@ Status KVEngine::CreateSortedCollection(
   return Status::Ok;
 }
 
+Status KVEngine::DestroySortedCollection(const StringView collection_name) {
+  return Status::Ok;
+}
+
 Iterator* KVEngine::NewSortedIterator(const StringView collection,
                                       Snapshot* snapshot) {
   Skiplist* skiplist;
-  Status s =
-      FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
+  Status s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
   bool create_snapshot = snapshot == nullptr;
   if (create_snapshot) {
     snapshot = GetSnapshot(false);
@@ -310,9 +313,9 @@ Status KVEngine::RestoreData() {
     segment_recovering.offset += data_entry_cached.header.record_size;
 
     switch (data_entry_cached.meta.type) {
-      case RecordType::SortedDataRecord:
-      case RecordType::SortedDeleteRecord:
-      case RecordType::SortedHeaderRecord:
+      case RecordType::SortedElem:
+      case RecordType::SortedElemDelete:
+      case RecordType::SortedHeader:
       case RecordType::StringDataRecord:
       case RecordType::StringDeleteRecord:
       case RecordType::HashRecord:
@@ -366,13 +369,13 @@ Status KVEngine::RestoreData() {
                  engine_thread_cache.newest_restored_ts);
 
     switch (data_entry_cached.meta.type) {
-      case RecordType::SortedDataRecord:
-      case RecordType::SortedDeleteRecord: {
+      case RecordType::SortedElem:
+      case RecordType::SortedElemDelete: {
         s = RestoreSkiplistRecord(
             static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordType::SortedHeaderRecord: {
+      case RecordType::SortedHeader: {
         s = RestoreSkiplistHeader(
             static_cast<DLRecord*>(recovering_pmem_record));
         break;
@@ -434,9 +437,9 @@ bool KVEngine::ValidateRecordAndGetValue(void* data_record,
       }
       return false;
     }
-    case RecordType::SortedDataRecord:
-    case RecordType::SortedDeleteRecord:
-    case RecordType::SortedHeaderRecord: {
+    case RecordType::SortedElem:
+    case RecordType::SortedElemDelete:
+    case RecordType::SortedHeader: {
       DLRecord* dl_record = static_cast<DLRecord*>(data_record);
       if (dl_record->Validate(expected_checksum)) {
         auto v = dl_record->Value();
@@ -463,9 +466,9 @@ bool KVEngine::ValidateRecord(void* data_record) {
     case RecordType::StringDeleteRecord: {
       return static_cast<StringRecord*>(data_record)->Validate();
     }
-    case RecordType::SortedDataRecord:
-    case RecordType::SortedHeaderRecord:
-    case RecordType::SortedDeleteRecord:
+    case RecordType::SortedElem:
+    case RecordType::SortedHeader:
+    case RecordType::SortedElemDelete:
     case RecordType::HashRecord:
     case RecordType::HashElem:
     case RecordType::ListRecord:
@@ -898,7 +901,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
         if (ret.write_record != nullptr) {
           kvdk_assert(
               ret.existing_record != nullptr &&
-                  ret.existing_record->entry.meta.type == SortedDataRecord,
+                  ret.existing_record->entry.meta.type == SortedElem,
               "Wrong existing record type while insert a delete reocrd for "
               "sorted collection");
           delayFree(OldDataRecord{ret.existing_record, new_ts});
@@ -949,7 +952,7 @@ Status KVEngine::SSetImpl(Skiplist* skiplist, const StringView& user_key,
         break;
       case Status::Ok:
         if (ret.existing_record &&
-            ret.existing_record->entry.meta.type == SortedDataRecord) {
+            ret.existing_record->entry.meta.type == SortedElem) {
           ul.unlock();
           delayFree(OldDataRecord{ret.existing_record, new_ts});
         }
@@ -970,7 +973,7 @@ Status KVEngine::SortedSet(const StringView collection,
   }
 
   Skiplist* skiplist = nullptr;
-  s = FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
+  s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
   if (s != Status::Ok) {
     return s;
   }
@@ -1049,7 +1052,7 @@ Status KVEngine::SortedDelete(const StringView collection,
   }
 
   Skiplist* skiplist = nullptr;
-  s = FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
+  s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
   if (s != Status::Ok) {
     return s == Status::NotFound ? Status::Ok : s;
   }
@@ -1356,7 +1359,7 @@ Status KVEngine::SortedGet(const StringView collection,
     return s;
   }
   Skiplist* skiplist = nullptr;
-  s = FindCollection(collection, &skiplist, RecordType::SortedHeaderRecord);
+  s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
 
   if (s != Status::Ok) {
     return s;
@@ -1627,7 +1630,7 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
     }
     case RecordType::HashRecord:
     case RecordType::ListRecord:
-    case RecordType::SortedHeaderRecord: {
+    case RecordType::SortedHeader: {
       expired =
           static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired();
       break;

@@ -44,7 +44,7 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 }
 
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
-  assert(header_record->entry.meta.type == SortedHeaderRecord);
+  assert(header_record->entry.meta.type == SortedHeader);
 
   std::string collection_name = string_view_2_string(header_record->Key());
   CollectionIDType id;
@@ -110,8 +110,8 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 }
 
 Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
-  kvdk_assert(record->entry.meta.type == SortedDataRecord ||
-                  record->entry.meta.type == SortedDeleteRecord,
+  kvdk_assert(record->entry.meta.type == SortedElem ||
+                  record->entry.meta.type == SortedElemDelete,
               "wrong record type in RestoreSkiplistRecord");
   bool linked_record = checkAndRepairRecordLinkage(record);
 
@@ -227,7 +227,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
   Status s;
   // First insert hash index for the start node
   if (build_hash_index &&
-      start_node->record->entry.meta.type != SortedHeaderRecord) {
+      start_node->record->entry.meta.type != SortedHeader) {
     s = insertHashIndex(start_node->record->Key(), start_node,
                         PointerType::SkiplistNode);
     if (s != Status::Ok) {
@@ -242,7 +242,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
     DLRecord* next_record =
         kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
             cur_record->next);
-    if (next_record->entry.meta.type == SortedHeaderRecord) {
+    if (next_record->entry.meta.type == SortedHeader) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
     }
@@ -305,7 +305,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
     } else {
       // link end node of this segment to adjacent segment
       if (iter->second.start_node->record->entry.meta.type !=
-          SortedHeaderRecord) {
+          SortedHeader) {
         cur_node->RelaxedSetNext(1, iter->second.start_node);
       } else {
         cur_node->RelaxedSetNext(1, nullptr);
@@ -560,15 +560,15 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
   uint16_t search_type_mask;
   RecordType record_type;
   if (index_type == PointerType::DLRecord) {
-    search_type_mask = SortedDataRecord | SortedDeleteRecord;
+    search_type_mask = SortedElem | SortedElemDelete;
     record_type = static_cast<DLRecord*>(index_ptr)->entry.meta.type;
   } else if (index_type == PointerType::SkiplistNode) {
-    search_type_mask = SortedDataRecord | SortedDeleteRecord;
+    search_type_mask = SortedElem | SortedElemDelete;
     record_type =
         static_cast<SkiplistNode*>(index_ptr)->record->entry.meta.type;
   } else if (index_type == PointerType::Skiplist) {
-    search_type_mask = SortedHeaderRecord;
-    record_type = SortedHeaderRecord;
+    search_type_mask = SortedHeader;
+    record_type = SortedHeader;
   }
 
   HashEntry* entry_ptr = nullptr;
