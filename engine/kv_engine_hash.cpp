@@ -221,13 +221,10 @@ Status KVEngine::hashListRegisterRecovered() {
 }
 
 template <typename DelayFree>
-Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free,
-                                 bool local) {
+Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free) {
   kvdk_assert(hlist->Valid(), "");
   while (hlist->Size() != 0) {
-    TimeStampType ts =
-        local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
-              : version_controller_.GetGlobalSnapshotToken()->Timestamp();
+    TimeStampType ts = version_controller_.GetCurrentTimestamp();
     auto internal_key = hlist->Front()->Key();
     LookupResult ret;
     {
@@ -244,9 +241,7 @@ Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free,
     hash_lists_.erase(hlist);
   }
 
-  TimeStampType ts =
-      local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
-            : version_controller_.GetGlobalSnapshotToken()->Timestamp();
+  TimeStampType ts = version_controller_.GetCurrentTimestamp();
   hlist->Destroy([&](DLRecord* rec) { delay_free(rec, ts); });
   delete hlist;
   return Status::Ok;
@@ -255,8 +250,7 @@ Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free,
 Status KVEngine::hashListDestroy(HashList* hlist) {
   // Lambda to help resolve symbol
   return hashListDestroy(
-      hlist, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); },
-      true);
+      hlist, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); });
 }
 
 Status KVEngine::destroyExpiredHash(
@@ -264,16 +258,13 @@ Status KVEngine::destroyExpiredHash(
     std::deque<PendingFreeSpaceEntries>* hash_space_entries) {
   PendingFreeSpaceEntries space_entries;
   space_entries.release_time = version_controller_.GetCurrentTimestamp();
-  Status s = hashListDestroy(
-      hashlist,
-      [&](void* addr, TimeStampType ts) {
-        DataEntry* data_entry = static_cast<DataEntry*>(addr);
-        space_entries.entries.emplace_back(
-            SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                       data_entry->header.record_size});
-        space_entries.release_time = std::max(space_entries.release_time, ts);
-      },
-      false);
+  Status s = hashListDestroy(hashlist, [&](void* addr, TimeStampType ts) {
+    DataEntry* data_entry = static_cast<DataEntry*>(addr);
+    space_entries.entries.emplace_back(
+        SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
+                   data_entry->header.record_size});
+    space_entries.release_time = std::max(space_entries.release_time, ts);
+  });
   if (s == Status::Ok && !space_entries.entries.empty()) {
     hash_space_entries->emplace_back(std::move(space_entries));
     if (old_records_cleaner_.TryFreePendingSpace(hash_space_entries->front())) {

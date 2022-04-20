@@ -236,11 +236,7 @@ class KVEngine : public Engine {
   // Lockless, caller should lock the key aforehand.
   // Remove key from HashTable. It's up to caller to handle the erased key
   LookupResult removeKey(StringView key) {
-    LookupResult result = removeImpl(key, PrimaryRecordType);
-    if (result.s == Status::Ok) {
-      hash_table_->Erase(result.entry_ptr);
-    }
-    return result;
+    return removeImpl(key, PrimaryRecordType);
   }
 
   LookupResult removeImpl(StringView key, uint16_t type_mask) {
@@ -248,6 +244,10 @@ class KVEngine : public Engine {
     auto hint = hash_table_->GetHint(key);
     result.s = hash_table_->SearchForRead(
         hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+    if (result.s != Status::Ok) {
+      return result;
+    }
+    hash_table_->Erase(result.entry_ptr);
     return result;
   }
 
@@ -408,7 +408,7 @@ class KVEngine : public Engine {
   Status listRegisterRecovered();
 
   template <typename DelayFree>
-  Status listDestroy(List* list, DelayFree delay_free, bool local);
+  Status listDestroy(List* list, DelayFree delay_free);
 
   Status listDestroy(List* list);
 
@@ -422,7 +422,7 @@ class KVEngine : public Engine {
   Status hashListRegisterRecovered();
 
   template <typename DelayFree>
-  Status hashListDestroy(HashList* list, DelayFree delay_free, bool local);
+  Status hashListDestroy(HashList* list, DelayFree delay_free);
 
   Status hashListDestroy(HashList* list);
 
@@ -530,7 +530,7 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  void releaseCollections();
+  void deleteCollections();
 
   Status destroyExpiredHash(
       HashList* hashlist,

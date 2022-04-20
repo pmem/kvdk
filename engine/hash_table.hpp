@@ -71,9 +71,7 @@ struct alignas(16) HashEntry {
 
   RecordType GetRecordType() const { return header_.record_type; }
 
-  bool IsExpiredStatus() {
-    return header_.entry_status == KeyStatus::Expired;
-  }
+  bool IsExpiredStatus() { return header_.entry_status == KeyStatus::Expired; }
 
   bool IsTTLStatus() { return header_.entry_status == KeyStatus::Volatile; }
 
