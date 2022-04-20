@@ -44,59 +44,46 @@ Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
 }
 
 Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
-  if (!CheckKeySize(key) || !CheckKeySize(field) || !CheckValueSize(value)) {
-    return Status::InvalidDataSize;
-  }
-  if (MaybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
-
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  HashList* hlist;
-  Status s = hashListFind(key, &hlist, true);
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  auto internal_key = hlist->InternalKey(field);
-  auto guard = hash_table_->AcquireLock(internal_key);
-  LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
-  if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
-    return result.s;
-  }
-
-  TimeStampType ts = token.Timestamp();
-  auto space = pmem_allocator_->Allocate(sizeof(DLRecord) +
-                                         internal_key.size() + value.size());
-  if (space.size == 0) {
-    return Status::PmemOverflow;
-  }
-  void* addr = pmem_allocator_->offset2addr_checked(space.offset);
-  if (result.s == Status::NotFound) {
-    if (std::hash<StringView>{}(field) % 2 == 0) {
-      hlist->PushFrontWithLock(space, ts, field, value);
-    } else {
-      hlist->PushBackWithLock(space, ts, field, value);
-    }
-    insertImpl(result, internal_key, RecordType::HashElem, addr);
-  } else {
-    DLRecord* old_rec = result.entry.GetIndex().dl_record;
-    hlist->ReplaceWithLock(space, old_rec, ts, field, value,
-                           [&](DLRecord* rec) { delayFree(rec, ts); });
-    insertImpl(result, internal_key, RecordType::HashElem, addr);
-  }
-  return Status::Ok;
+  auto set_func = [&](StringView const*, StringView* new_val, void*) {
+    *new_val = value;
+    return ModifyOperation::Write;
+  };
+  return hashModifyImpl(key, field, set_func, nullptr);
 }
 
 Status KVEngine::HashDelete(StringView key, StringView field) {
-  auto delete_func = [](std::string const*, std::string*, void*) {
+  auto delete_func = [](StringView const*, StringView*, void*) {
     return ModifyOperation::Delete;
   };
-  return HashModify(key, field, delete_func, nullptr);
+  return hashModifyImpl(key, field, delete_func, nullptr);
 }
 
 Status KVEngine::HashModify(StringView key, StringView field,
                             ModifyFunc modify_func, void* cb_args) {
+  std::string buffer;
+  auto modify = [&](StringView const* old_value, StringView* new_value,
+                    void* args) {
+    ModifyOperation op;
+    if (old_value != nullptr) {
+      std::string old_val{old_value->data(), old_value->size()};
+      op = modify_func(&old_val, &buffer, args);
+    } else {
+      op = modify_func(nullptr, &buffer, args);
+    }
+    *new_value = buffer;
+    return op;
+  };
+  return hashModifyImpl(key, field, modify, cb_args);
+}
+
+// ModifyFuncImpl accepts
+// StringView const* old_value
+// StringView* new_value
+// void* args
+// returns ModifyOperation
+template <typename ModifyFuncImpl>
+Status KVEngine::hashModifyImpl(StringView key, StringView field,
+                                ModifyFuncImpl modify_func, void* cb_args) {
   if (!CheckKeySize(key) || !CheckKeySize(field)) {
     return Status::InvalidDataSize;
   }
@@ -104,94 +91,138 @@ Status KVEngine::HashModify(StringView key, StringView field,
     return Status::TooManyAccessThreads;
   }
 
+  HashList* hlist = nullptr;
+  StringView new_value;
+  std::string internal_key;
+  LookupResult result;
   auto token = version_controller_.GetLocalSnapshotHolder();
-  HashList* hlist;
+
+  // Write to HashList and HashTable. It's up to caller to ensure HashList
+  // exists and to lock the HashTable.
+  auto Insert = [&]() {
+    if (!CheckValueSize(new_value)) {
+      return Status::InvalidDataSize;
+    }
+
+    auto internal_key = hlist->InternalKey(field);
+    LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
+
+    TimeStampType ts = token.Timestamp();
+    auto space = pmem_allocator_->Allocate(
+        sizeof(DLRecord) + internal_key.size() + new_value.size());
+    if (space.size == 0) {
+      return Status::PmemOverflow;
+    }
+    void* addr = pmem_allocator_->offset2addr_checked(space.offset);
+    kvdk_assert(result.s == Status::NotFound, "");
+    if (std::hash<StringView>{}(field) % 2 == 0) {
+      hlist->PushFrontWithLock(space, ts, field, new_value);
+    } else {
+      hlist->PushBackWithLock(space, ts, field, new_value);
+    }
+    insertImpl(result, internal_key, RecordType::HashElem, addr);
+    return Status::Ok;
+  };
+
+  // Write to HashList and HashTable. It's up to caller to ensure field exists
+  // and lock the HashTable.
+  auto Update = [&]() {
+    if (!CheckValueSize(new_value)) {
+      return Status::InvalidDataSize;
+    }
+    TimeStampType ts = token.Timestamp();
+    auto space = pmem_allocator_->Allocate(
+        sizeof(DLRecord) + internal_key.size() + new_value.size());
+    if (space.size == 0) {
+      return Status::PmemOverflow;
+    }
+    void* addr = pmem_allocator_->offset2addr_checked(space.offset);
+    kvdk_assert(result.s == Status::Ok, "");
+    DLRecord* old_rec = result.entry.GetIndex().dl_record;
+    hlist->ReplaceWithLock(space, old_rec, ts, field, new_value,
+                           [&](DLRecord* rec) { delayFree(rec, ts); });
+    insertImpl(result, internal_key, RecordType::HashElem, addr);
+    return Status::Ok;
+  };
+
+  // Erase from HashList and HashTable. It's up to caller to ensure HashList
+  // exists and to lock the HashTable.
+  auto Delete = [&]() {
+    LookupResult ret =
+        removeImpl(hlist->InternalKey(field), RecordType::HashElem);
+    if (ret.s != Status::Ok) {
+      return ret.s;
+    }
+    TimeStampType ts = token.Timestamp();
+    hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
+                         [&](DLRecord* rec) { delayFree(rec, ts); });
+    return Status::Ok;
+  };
+
   Status s = hashListFind(key, &hlist, false);
   if (s != Status::Ok && s != Status::NotFound) {
     return s;
   }
 
-  std::string new_value;
-  std::unique_lock<SpinMutex> guard;
-  ModifyOperation op;
-  DLRecord* old_rec = nullptr;
-  LookupResult result;
-  std::string internal_key;
   if (s == Status::NotFound) {
-    result.s = Status::NotFound;
-    op = modify_func(nullptr, &new_value, cb_args);
+    switch (modify_func(nullptr, &new_value, cb_args)) {
+      case ModifyOperation::Write: {
+        s = hashListFind(key, &hlist, true);
+        if (s != Status::Ok) {
+          return s;
+        }
+        internal_key = hlist->InternalKey(field);
+        auto guard = hash_table_->AcquireLock(internal_key);
+        result = lookupImpl<true>(internal_key, RecordType::HashElem);
+        Insert();
+        return Status::Ok;
+      }
+      case ModifyOperation::Delete: {
+        return Status::Ok;
+      }
+      case ModifyOperation::Abort: {
+        return Status::Abort;
+      }
+      default: {
+        kvdk_assert(false, "Invalid Operation!");
+        return Status::Abort;
+      }
+    }
   } else {
     internal_key = hlist->InternalKey(field);
-    guard = hash_table_->AcquireLock(internal_key);
+    auto guard = hash_table_->AcquireLock(internal_key);
     result = lookupImpl<true>(internal_key, RecordType::HashElem);
     if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
       return result.s;
     }
-    if (result.s == Status::NotFound) {
-      op = modify_func(nullptr, &new_value, cb_args);
-    } else {
-      std::string old_value;
-      old_rec = result.entry.GetIndex().dl_record;
-      StringView sw = old_rec->Value();
-      old_value.assign(sw.data(), sw.size());
-      op = modify_func(&old_value, &new_value, cb_args);
+    StringView old_value;
+    StringView* p_old_value = nullptr;
+    if (result.s == Status::Ok) {
+      DLRecord* old_rec = result.entry.GetIndex().dl_record;
+      old_value = old_rec->Value();
+      p_old_value = &old_value;
     }
-  }
-
-  switch (op) {
-    case ModifyOperation::Write: {
-      if (!CheckValueSize(new_value)) {
-        return Status::InvalidDataSize;
-      }
-
-      HashList* hlist;
-      Status s = hashListFind(key, &hlist, true);
-      if (s != Status::Ok) {
-        return s;
-      }
-
-      TimeStampType ts = token.Timestamp();
-      auto space = pmem_allocator_->Allocate(
-          sizeof(DLRecord) + internal_key.size() + new_value.size());
-      if (space.size == 0) {
-        return Status::PmemOverflow;
-      }
-      void* addr = pmem_allocator_->offset2addr_checked(space.offset);
-      if (result.s == Status::NotFound) {
-        if (std::hash<StringView>{}(field) % 2 == 0) {
-          hlist->PushFrontWithLock(space, ts, field, new_value);
+    switch (modify_func(p_old_value, &new_value, cb_args)) {
+      case ModifyOperation::Write: {
+        if (result.s == Status::NotFound) {
+          Insert();
         } else {
-          hlist->PushBackWithLock(space, ts, field, new_value);
+          kvdk_assert(result.s == Status::Ok, "");
+          Update();
         }
-        insertImpl(result, internal_key, RecordType::HashElem, addr);
-      } else {
-        DLRecord* old_rec = result.entry.GetIndex().dl_record;
-        hlist->ReplaceWithLock(space, old_rec, ts, field, new_value,
-                               [&](DLRecord* rec) { delayFree(rec, ts); });
-        insertImpl(result, internal_key, RecordType::HashElem, addr);
-      }
-      return Status::Ok;
-    }
-    case ModifyOperation::Delete: {
-      if (result.s == Status::NotFound) {
         return Status::Ok;
       }
-      LookupResult ret =
-          removeImpl(hlist->InternalKey(field), RecordType::HashElem);
-      if (ret.s != Status::Ok) {
-        return ret.s;
+      case ModifyOperation::Delete: {
+        Delete();
+        return Status::Ok;
       }
-      TimeStampType ts = token.Timestamp();
-      hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
-                           [&](DLRecord* rec) { delayFree(rec, ts); });
-      return Status::Ok;
-    }
-    case ModifyOperation::Abort: {
-      return Status::Abort;
-    }
-    default: {
-      kvdk_assert(false, "Invalid Operation!");
-      return Status::Abort;
+      case ModifyOperation::Abort: {
+        return Status::Abort;
+      }
+      default: {
+        kvdk_assert(false, "Invalid Operation!");
+        return Status::Abort;
+      }
     }
   }
 }

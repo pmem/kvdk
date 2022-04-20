@@ -2,8 +2,8 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <x86intrin.h>
 
 #include <future>
 #include <string>
@@ -16,6 +16,9 @@
 #include "../engine/utils/sync_point.hpp"
 #include "kvdk/engine.hpp"
 #include "test_util.h"
+
+DEFINE_string(path, "/mnt/pmem0/kvdk_unit_test",
+              "Path of KVDK instance on PMem.");
 
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
@@ -52,8 +55,8 @@ class EngineBasicTest : public testing::Test {
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
     configs.max_access_threads = 1;
-    db_path = "/mnt/pmem0/kvdk-test-" + std::to_string(__rdtsc());
-    backup_path = "/mnt/pmem0/kvdk-test-backup-" + std::to_string(__rdtsc());
+    db_path = FLAGS_path;
+    backup_path = FLAGS_path + "_backup";
     char cmd[1024];
     sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
             backup_path.c_str());

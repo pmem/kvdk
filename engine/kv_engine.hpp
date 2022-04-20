@@ -428,6 +428,10 @@ class KVEngine : public Engine {
 
   Status hashListDestroy(HashList* list);
 
+  template <typename ModifyFuncImpl>
+  Status hashModifyImpl(StringView key, StringView field,
+                        ModifyFuncImpl modify_func, void* cb_args);
+
   /// Other
   Status CheckConfigs(const Configs& configs);
 

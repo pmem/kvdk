@@ -392,6 +392,7 @@ class GenericList final : public Collection {
     DLRecord* record = DLRecord::PersistDLRecord(
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
+    kvdk_assert(record->Validate(), "");
 
     if (Size() == 0) {
       kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
