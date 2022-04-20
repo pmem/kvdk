@@ -38,7 +38,6 @@ extern void KVDKDestroyConfigs(KVDKConfigs* kv_config);
 extern KVDKWriteOptions* KVDKCreateWriteOptions(void);
 extern void KVDKDestroyWriteOptions(KVDKWriteOptions*);
 extern void KVDKWriteOptionsSetTTLTime(KVDKWriteOptions*, int64_t);
-extern void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions*, unsigned char);
 
 extern KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs();
 extern void KVDKSetSortedCollectionConfigs(KVDKSortedCollectionConfigs* configs,

@@ -1677,8 +1677,8 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   std::string got_val;
   int64_t ttl_time;
-  WriteOptions write_options1{1, false};
-  WriteOptions write_options2{INT64_MAX / 1000, false};
+  WriteOptions write_options1{1};
+  WriteOptions write_options2{INT64_MAX / 1000};
   std::string key = "expired_key";
   std::string val(10, 'a');
   std::string val2(10, 'b');
@@ -2241,8 +2241,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       std::string key = std::to_string(i) + "stringk";
       std::string val = std::to_string(i) + "stringval";
       std::string got_val;
-      ASSERT_EQ(engine->Set(key, val, WriteOptions{INT32_MAX, false}),
-                Status::Ok);
+      ASSERT_EQ(engine->Set(key, val, WriteOptions{INT32_MAX}), Status::Ok);
     }
   };
   auto ExpiredClean = [&]() {

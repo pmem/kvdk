@@ -183,6 +183,8 @@ class KVEngine : public Engine {
   Status HashGet(StringView key, StringView field, std::string* value) final;
   Status HashSet(StringView key, StringView field, StringView value) final;
   Status HashDelete(StringView key, StringView field) final;
+  Status HashModify(StringView key, StringView field, ModifyFunc modify_func,
+                    void* cb_args) final;
   std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
 
  private:

@@ -1432,7 +1432,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   }
 
   if (res.s == Status::Ok) {
-    WriteOptions write_option{ttl_time, false};
+    WriteOptions write_option{ttl_time};
     switch (res.entry_ptr->GetIndexType()) {
       case PointerType::StringRecord: {
         ul.unlock();
