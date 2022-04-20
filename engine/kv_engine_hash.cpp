@@ -104,7 +104,6 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
       return Status::InvalidDataSize;
     }
 
-    auto internal_key = hlist->InternalKey(field);
     LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
 
     TimeStampType ts = token.Timestamp();
