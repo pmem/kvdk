@@ -3,6 +3,7 @@
 #include <cinttypes>
 #include <functional>
 #include <string>
+#include <string_view>
 
 #include "libpmemobj++/string_view.hpp"
 #include "types.h"

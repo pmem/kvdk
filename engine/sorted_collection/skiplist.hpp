@@ -184,6 +184,8 @@ class Skiplist : public Collection {
 
   Status SetExpireTime(ExpireTimeType expired_time) final;
 
+  Status MarkAsDeleted();
+
   // Set "key, value" to the skiplist
   //
   // key_hash_hint_locked: hash table hint of the setting key, the lock of hint
@@ -452,6 +454,7 @@ class Skiplist : public Collection {
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   std::shared_ptr<HashTable> hash_table_;
   bool index_with_hashtable_;
+  bool deleted_;
   SkiplistNode* header_;
   // nodes that unlinked on every height
   std::vector<SkiplistNode*> obsolete_nodes_;

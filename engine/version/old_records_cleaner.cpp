@@ -288,6 +288,29 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
                         data_entry->header.record_size);
     }
+    case SortedHeader: {
+      kvdk_assert(old_delete_record.record_index.hash_entry.RawPointer()
+                      ->IsExpiredStatus(),
+                  "sorted header should be expired in cleaner");
+      [[gnu::fallthrough]];
+    }
+    case SortedHeaderDelete: {
+      std::unique_lock<SpinMutex> ul(*old_delete_record.key_lock);
+      kvdk_assert(old_delete_record.record_index.hash_entry.GetTag() ==
+                      PointerType::HashEntry,
+                  "skiplist header should be indexed by hash entry");
+      HashEntry* hash_entry_ref =
+          old_delete_record.record_index.hash_entry.RawPointer();
+      if (hash_entry_ref->GetIndexType() == PointerType::Skiplist) {
+        Skiplist* old_skiplist = hash_entry_ref->GetIndex().skiplist;
+        if (old_skiplist->Header()->record ==
+            old_delete_record.pmem_delete_record) {
+          kv_engine_->hash_table_->Erase(hash_entry_ref);
+          ul.unlock();
+          old_skiplist->Destroy();
+        }
+      }
+    }
     case SortedElemDelete: {
     handle_sorted_delete_record : {
       std::unique_lock<SpinMutex> ul(*old_delete_record.key_lock);

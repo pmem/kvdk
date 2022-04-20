@@ -242,19 +242,61 @@ Status KVEngine::CreateSortedCollection(
 }
 
 Status KVEngine::DestroySortedCollection(const StringView collection_name) {
-  return Status::Ok;
+  auto hint = hash_table_->GetHint(collection_name);
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
+  auto new_ts = snapshot_holder.Timestamp();
+  auto ret = lookupKey<false>(collection_name,
+                              static_cast<uint16_t>(RecordType::SortedHeader));
+  if (ret.s == Status::Ok) {
+    Skiplist* skiplist = ret.entry.GetIndex().skiplist;
+    DLRecord* header = skiplist->Header()->record;
+    skiplist->MarkAsDeleted();
+    StringView value = header->Value();
+    auto request_size =
+        sizeof(DLRecord) + collection_name.size() + value.size();
+    SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
+    if (space_entry.size == 0) {
+      return Status::PmemOverflow;
+    }
+    DLRecord* pmem_record = DLRecord::PersistDLRecord(
+        pmem_allocator_->offset2addr_checked(space_entry.offset),
+        space_entry.size, new_ts, SortedHeaderDelete,
+        pmem_allocator_->addr2offset_checked(header), header->prev,
+        header->next, collection_name, value);
+    bool success =
+        Skiplist::Replace(header, pmem_record, hint.spin, skiplist->Header(),
+                          pmem_allocator_.get(), hash_table_.get());
+    kvdk_assert(
+        success,
+        "replace skiplist header must be success as no extra lock required");
+    hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderDelete, skiplist,
+                        PointerType::Skiplist);
+    ul.unlock();
+    delayFree(OldDeleteRecord(pmem_record, ret.entry_ptr,
+                              PointerType::HashEntry, new_ts, hint.spin));
+    delayFree(OldDataRecord{header, new_ts});
+  } else if (ret.s == Status::Outdated || ret.s == Status::NotFound) {
+    ret.s = Status::Ok;
+  }
+  return ret.s;
 }
 
 Iterator* KVEngine::NewSortedIterator(const StringView collection,
                                       Snapshot* snapshot) {
   Skiplist* skiplist;
-  Status s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
+  // find collection
+  auto res = lookupKey<false>(collection, SortedHeader);
+  if (res.s == Status::Ok) {
+    skiplist = res.entry_ptr->GetIndex().skiplist;
+  }
+
   bool create_snapshot = snapshot == nullptr;
   if (create_snapshot) {
     snapshot = GetSnapshot(false);
   }
 
-  return s == Status::Ok
+  return res.s == Status::Ok
              ? new SortedIterator(skiplist, pmem_allocator_,
                                   static_cast<SnapshotImpl*>(snapshot),
                                   create_snapshot)
