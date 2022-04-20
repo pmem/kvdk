@@ -1685,7 +1685,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   std::string list_collection = "ListCollection";
   std::string sorted_collection = "SortedCollection";
   std::string hashes_collection = "HashesCollection";
-  int64_t normal_ttl_time = 50000; /* 50s */
+  int64_t normal_ttl_time = 10000; /* 10s */
   int64_t max_ttl_time = INT64_MAX - 1;
 
   // For string
@@ -1784,7 +1784,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBackgroundDestoryCollections) {
+TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
   size_t n_thread_writing = 16;
   configs.max_access_threads = n_thread_writing;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),

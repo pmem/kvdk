@@ -48,7 +48,7 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Waiting bg threads exit ... \n");
   closing_ = true;
   terminateBackgroundWorks();
-
+  releaseCollections();
   ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
 }
@@ -92,7 +92,7 @@ void KVEngine::startBackgroundWorks() {
   bg_threads_.emplace_back(&KVEngine::backgroundOldRecordCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
-  bg_threads_.emplace_back(&KVEngine::backgroundDestoryCollections, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundDestroyCollections, this);
 }
 
 void KVEngine::terminateBackgroundWorks() {
@@ -1417,11 +1417,11 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   if (res.s == Status::Outdated) {
     if (res.entry_ptr->IsTTLStatus()) {
       // Push the expired record into cleaner and update hash entry status with
-      // HashEntryStatus::Expired.
+      // KeyStatus::Expired.
       // TODO(zhichen): This `if` will be removed when completing collection
       // deletion.
       if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
-        hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
+        hash_table_->UpdateEntryStatus(res.entry_ptr, KeyStatus::Expired);
         ul.unlock();
         delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr, res.entry_ptr,
                                   PointerType::HashEntry,
@@ -1452,24 +1452,18 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
       case PointerType::HashList: {
         HashList* hlist = res.entry_ptr->GetIndex().hlist;
-        {
-          std::shared_ptr<HashList> tmp_hlist = hlist->shared_from_this();
-          std::unique_lock<std::mutex> guard(hlists_mu_);
-          hash_lists_.erase(tmp_hlist);
-          res.s = hlist->SetExpireTime(expired_time);
-          hash_lists_.insert(hlist->shared_from_this());
-        }
+        std::unique_lock<std::mutex> guard(hlists_mu_);
+        hash_lists_.erase(hlist);
+        res.s = hlist->SetExpireTime(expired_time);
+        hash_lists_.insert(hlist);
         break;
       }
       case PointerType::List: {
         List* list = res.entry_ptr->GetIndex().list;
-        {
-          std::shared_ptr<List> tmp_list = list->shared_from_this();
-          std::unique_lock<std::mutex> guard(lists_mu_);
-          lists_.erase(tmp_list);
-          res.s = list->SetExpireTime(expired_time);
-          lists_.emplace(list->shared_from_this());
-        }
+        std::unique_lock<std::mutex> guard(lists_mu_);
+        lists_.erase(list);
+        res.s = list->SetExpireTime(expired_time);
+        lists_.emplace(list);
         break;
       }
       default: {
@@ -1478,9 +1472,10 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
     }
     // Update hash entry status to TTL
     if (res.s == Status::Ok) {
-      hash_table_->UpdateEntryStatus(
-          res.entry_ptr, expired_time == kPersistTime ? HashEntryStatus::Persist
-                                                      : HashEntryStatus::TTL);
+      hash_table_->UpdateEntryStatus(res.entry_ptr,
+                                     expired_time == kPersistTime
+                                         ? KeyStatus::Persist
+                                         : KeyStatus::Volatile);
     }
   }
   return res.s;
@@ -1532,9 +1527,9 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   ExpireTimeType expired_time =
       TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
 
-  HashEntryStatus entry_status = expired_time != kPersistTime
-                                     ? HashEntryStatus::TTL
-                                     : HashEntryStatus::Persist;
+  KeyStatus entry_status = expired_time != kPersistTime
+                                     ? KeyStatus::Volatile
+                                     : KeyStatus::Persist;
 
   auto hint = hash_table_->GetHint(key);
   TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
@@ -1758,59 +1753,53 @@ void KVEngine::backgroundDramCleaner() {
   }
 }
 
-void KVEngine::backgroundDestoryCollections() {
-  std::deque<PendingFreeSpaceEntries> list_space_entries;
-  std::deque<PendingFreeSpaceEntries> hash_space_entries;
-  std::deque<PendingFreeSpaceEntries> skiplist_space_entries;
-  auto delete_list = [&](List* list) {
-    PendingFreeSpaceEntries space_entries;
-    space_entries.release_time = version_controller_.GetCurrentTimestamp();
-    listDestroy(
-        list,
-        [&](void* addr, TimeStampType ts) {
-          DataEntry* data_entry = static_cast<DataEntry*>(addr);
-          space_entries.entries.emplace_back(
-              SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                         data_entry->header.record_size});
-          space_entries.release_time = std::max(space_entries.release_time, ts);
-        },
-        false);
-    list_space_entries.emplace_back(std::move(space_entries));
-    if (old_records_cleaner_.TryGlobalPendingFree(list_space_entries.front())) {
-      list_space_entries.pop_front();
+Status KVEngine::destroyExpiredList(
+    List* list, std::deque<PendingFreeSpaceEntries>* list_space_entries) {
+  PendingFreeSpaceEntries space_entries;
+  space_entries.release_time = version_controller_.GetCurrentTimestamp();
+  Status s = listDestroy(
+      list,
+      [&](void* addr, TimeStampType ts) {
+        DataEntry* data_entry = static_cast<DataEntry*>(addr);
+        space_entries.entries.emplace_back(
+            SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
+                       data_entry->header.record_size});
+        space_entries.release_time = std::max(space_entries.release_time, ts);
+      },
+      false);
+  if (s == Status::Ok && !space_entries.entries.empty()) {
+    list_space_entries->emplace_back(std::move(space_entries));
+    if (old_records_cleaner_.TryFreePendingSpace(list_space_entries->front())) {
+      list_space_entries->pop_front();
     }
-  };
-  auto delete_hash = [&](HashList* hashlist) {
-    PendingFreeSpaceEntries space_entries;
-    space_entries.release_time = version_controller_.GetCurrentTimestamp();
-    hashListDestroy(
-        hashlist,
-        [&](void* addr, TimeStampType ts) {
-          DataEntry* data_entry = static_cast<DataEntry*>(addr);
-          space_entries.entries.emplace_back(
-              SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                         data_entry->header.record_size});
-          space_entries.release_time = std::max(space_entries.release_time, ts);
-        },
-        false);
-    hash_space_entries.emplace_back(std::move(space_entries));
-    if (old_records_cleaner_.TryGlobalPendingFree(list_space_entries.front())) {
-      hash_space_entries.pop_front();
-    }
-  };
+  }
+  return s;
+}
+
+void KVEngine::releaseCollections() {
+  for (auto list : lists_) {
+    delete list;
+  }
+
+  for (auto hlist : hash_lists_) {
+    delete hlist;
+  }
+};
+void KVEngine::backgroundDestroyCollections() {
+  std::deque<PendingFreeSpaceEntries> list_space_entries, hash_space_entries,
+      skiplist_space_entries;
+
   while (!bg_work_signals_.terminating) {
-    auto now_time = TimeUtils::millisecond_time();
-    std::vector<std::future<void>> destroy_collections;
+    std::vector<std::future<Status>> destroy_collections;
     List* destroy_list{nullptr};
     HashList* destroy_hash{nullptr};
-
+    auto now_time = TimeUtils::millisecond_time();
     {
       std::unique_lock<std::mutex> guard{lists_mu_};
       if (!lists_.empty()) {
         auto min_ttl_list = lists_.begin();
         if ((*min_ttl_list)->GetExpireTime() <= now_time) {
-          destroy_list = (*min_ttl_list).get();
-          lists_.erase(min_ttl_list);
+          destroy_list = (*min_ttl_list);
         }
       }
     }
@@ -1820,34 +1809,37 @@ void KVEngine::backgroundDestoryCollections() {
       if (!hash_lists_.empty()) {
         auto min_ttl_hash = hash_lists_.begin();
         if ((*min_ttl_hash)->GetExpireTime() <= now_time) {
-          destroy_hash = (*min_ttl_hash).get();
-          hash_lists_.erase(min_ttl_hash);
+          destroy_hash = (*min_ttl_hash);
         }
       }
     }
 
     if (destroy_list) {
       auto guard2 = hash_table_->AcquireLock(destroy_list->Name());
-      LookupResult result =
-          lookupKey<false>(destroy_list->Name(), RecordType::ListRecord);
+      LookupResult result = removeImpl(destroy_list->Name(), PrimaryRecordType);
+      // Check situation: a thread erase list from hash table, when the other
+      // thread insert the same name list.
       if (result.s == Status::Ok &&
           result.entry_ptr->GetIndex().list == destroy_list) {
         hash_table_->Erase(result.entry_ptr);
       }
       destroy_collections.push_back(
-          std::async(std::launch::deferred, delete_list, destroy_list));
+          std::async(std::launch::deferred, &KVEngine::destroyExpiredList, this,
+                     destroy_list, &list_space_entries));
     }
 
     if (destroy_hash) {
       auto guard2 = hash_table_->AcquireLock(destroy_hash->Name());
-      LookupResult result =
-          lookupKey<false>(destroy_hash->Name(), RecordType::HashRecord);
+      LookupResult result = removeImpl(destroy_hash->Name(), PrimaryRecordType);
+      // Check situation: a thread erase hash from hash table, when the other
+      // thread insert the same name hash.
       if (result.s == Status::Ok &&
           result.entry_ptr->GetIndex().hlist == destroy_hash) {
         hash_table_->Erase(result.entry_ptr);
       }
       destroy_collections.push_back(
-          std::async(std::launch::deferred, delete_hash, destroy_hash));
+          std::async(std::launch::deferred, &KVEngine::destroyExpiredHash, this,
+                     destroy_hash, &hash_space_entries));
     }
 
     // TODO: add skiplist
@@ -1855,7 +1847,7 @@ void KVEngine::backgroundDestoryCollections() {
       destroy_collection.get();
     }
   }
-}  // namespace KVDK_NAMESPACE
+}
 
 void KVEngine::CleanOutDated() {
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
@@ -1875,7 +1867,7 @@ void KVEngine::CleanOutDated() {
             if (bucket_iter->IsTTLStatus() &&
                 bucket_iter->GetIndex().string_record->HasExpired()) {
               hash_table_->UpdateEntryStatus(&(*bucket_iter),
-                                             HashEntryStatus::Expired);
+                                             KeyStatus::Expired);
               // push expired cleaner
               expired_record_queue.push_back(OldDeleteRecord{
                   bucket_iter->GetIndex().ptr, &(*bucket_iter),
@@ -2132,7 +2124,7 @@ Status KVEngine::listRegisterRecovered() {
   CollectionIDType max_id = 0;
   for (auto const& list : lists_) {
     auto guard = hash_table_->AcquireLock(list->Name());
-    Status s = registerCollection(list.get());
+    Status s = registerCollection(list);
     if (s != Status::Ok) {
       return s;
     }
@@ -2157,16 +2149,16 @@ Status KVEngine::listDestroy(List* list, DelayFree delay_free, bool local) {
   }
   auto ts = local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
                   : version_controller_.GetGlobalSnapshotToken()->Timestamp();
+  {
+    std::unique_lock<std::mutex> guard(lists_mu_);
+    lists_.erase(list);
+  }
   list->Destroy([&](DLRecord* lrec) { delay_free(lrec, ts); });
+  delete list;
   return Status::Ok;
 }
 
 Status KVEngine::listDestroy(List* list) {
-  {
-    std::shared_ptr<List> tmp_list = list->shared_from_this();
-    std::unique_lock<std::mutex> guard(lists_mu_);
-    lists_.erase(tmp_list);
-  }
   // Lambda to help resolve symbol
   return listDestroy(
       list, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); },
@@ -2237,43 +2229,6 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
     guard = (*list)->AcquireLock();
     return registerCollection(*list);
   }
-}
-
-template <typename DelayFree>
-Status KVEngine::hashListDestroy(HashList* hlist, DelayFree delay_free,
-                                 bool local) {
-  kvdk_assert(hlist->Valid(), "");
-  while (hlist->Size() != 0) {
-    TimeStampType ts =
-        local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
-              : version_controller_.GetGlobalSnapshotToken()->Timestamp();
-    auto internal_key = hlist->Front()->Key();
-    LookupResult ret;
-    {
-      auto guard = hash_table_->AcquireLock(internal_key);
-      ret = removeImpl(internal_key, RecordType::HashElem);
-    }
-    kvdk_assert(ret.s == Status::Ok, "");
-    kvdk_assert(ret.entry.GetIndex().dl_record == hlist->Front().Address(), "");
-    hlist->PopFront([&](DLRecord* rec) { delay_free(rec, ts); });
-  }
-  TimeStampType ts =
-      local ? version_controller_.GetLocalSnapshotHolder().Timestamp()
-            : version_controller_.GetGlobalSnapshotToken()->Timestamp();
-  hlist->Destroy([&](DLRecord* rec) { delay_free(rec, ts); });
-  return Status::Ok;
-}
-
-Status KVEngine::hashListDestroy(HashList* hlist) {
-  std::shared_ptr<HashList> tmp_hlist = hlist->shared_from_this();
-  {
-    std::unique_lock<std::mutex> guard(hlists_mu_);
-    hash_lists_.erase(tmp_hlist);
-  }
-  // Lambda to help resolve symbol
-  return hashListDestroy(
-      hlist, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); },
-      true);
 }
 
 }  // namespace KVDK_NAMESPACE

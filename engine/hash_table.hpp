@@ -17,16 +17,16 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class HashEntryStatus : uint8_t {
+enum class KeyStatus : uint8_t {
   Persist = 0,
-  TTL = 1 << 0,  // expirable
+  Volatile = 1 << 0,  // expirable
   Expired = 1 << 1,
 };
 struct HashHeader {
   uint32_t key_prefix;
   RecordType record_type;
   PointerType index_type;
-  HashEntryStatus entry_status;
+  KeyStatus entry_status;
 };
 
 class Skiplist;
@@ -59,7 +59,7 @@ struct alignas(16) HashEntry {
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
-            PointerType index_type, HashEntryStatus entry_status)
+            PointerType index_type, KeyStatus entry_status)
       : index_(_index),
         header_({key_hash_prefix, record_type, index_type, entry_status}) {}
 
@@ -72,10 +72,10 @@ struct alignas(16) HashEntry {
   RecordType GetRecordType() const { return header_.record_type; }
 
   bool IsExpiredStatus() {
-    return header_.entry_status == HashEntryStatus::Expired;
+    return header_.entry_status == KeyStatus::Expired;
   }
 
-  bool IsTTLStatus() { return header_.entry_status == HashEntryStatus::TTL; }
+  bool IsTTLStatus() { return header_.entry_status == KeyStatus::Volatile; }
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
@@ -87,7 +87,7 @@ struct alignas(16) HashEntry {
   // Make this hash entry empty while its content been deleted
   void clear() { header_.index_type = PointerType::Empty; }
 
-  void updateEntryStatus(HashEntryStatus entry_status) {
+  void updateEntryStatus(KeyStatus entry_status) {
     header_.entry_status = entry_status;
   }
 
@@ -162,7 +162,7 @@ class HashTable {
   // TODO: remove the default param.
   void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
               void* index, PointerType index_type,
-              HashEntryStatus entry_status = HashEntryStatus::Persist);
+              KeyStatus entry_status = KeyStatus::Persist);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
@@ -170,7 +170,7 @@ class HashTable {
     entry_ptr->clear();
   }
 
-  void UpdateEntryStatus(HashEntry* entry_ptr, HashEntryStatus entry_status) {
+  void UpdateEntryStatus(HashEntry* entry_ptr, KeyStatus entry_status) {
     assert(entry_ptr != nullptr);
     entry_ptr->updateEntryStatus(entry_status);
   }

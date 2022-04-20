@@ -27,9 +27,7 @@ namespace KVDK_NAMESPACE {
 constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 
 template <RecordType ListType, RecordType DataType>
-class GenericList final
-    : public Collection,
-      public std::enable_shared_from_this<GenericList<ListType, DataType>> {
+class GenericList final : public Collection {
  private:
   // For offset-address translation
   PMEMAllocator* alloc{nullptr};
@@ -578,26 +576,13 @@ class GenericList final
 };
 
 template <RecordType ListType, RecordType DataType>
-struct TTLCmp {
- public:
-  bool operator()(
-      const std::shared_ptr<GenericList<ListType, DataType>>& a,
-      const std::shared_ptr<GenericList<ListType, DataType>>& b) const {
-    if (a->GetExpireTime() < b->GetExpireTime()) return true;
-    if (a->GetExpireTime() == b->GetExpireTime() && a->ID() < b->ID())
-      return true;
-    return false;
-  }
-};
-
-template <RecordType ListType, RecordType DataType>
 class GenericListBuilder final {
   static constexpr size_t NMiddlePoints = 1024;
   using List = GenericList<ListType, DataType>;
 
   PMEMAllocator* alloc;
   size_t n_worker;
-  std::set<std::shared_ptr<List>, TTLCmp<ListType, DataType>>* rebuilded_lists;
+  std::set<List*, Collection::TTLCmp>* rebuilded_lists;
   LockTable* lock_table;
   // Resevoir for middle points
   // Middle points can be used for multi-thread interating through Lists
@@ -665,10 +650,9 @@ class GenericListBuilder final {
   // complicate the recovery procedure
 
  public:
-  explicit GenericListBuilder(
-      PMEMAllocator* a,
-      std::set<std::shared_ptr<List>, TTLCmp<ListType, DataType>>* lists,
-      size_t num_worker, LockTable* lt)
+  explicit GenericListBuilder(PMEMAllocator* a,
+                              std::set<List*, Collection::TTLCmp>* lists,
+                              size_t num_worker, LockTable* lt)
       : alloc{a}, n_worker{num_worker}, rebuilded_lists{lists}, lock_table{lt} {
     kvdk_assert(lists != nullptr && lists->empty(), "");
     kvdk_assert(n_worker != 0, "");
@@ -958,6 +942,6 @@ class GenericListBuilder final {
       }
     }
   }
-};  // namespace KVDK_NAMESPACE
+};
 
 }  // namespace KVDK_NAMESPACE

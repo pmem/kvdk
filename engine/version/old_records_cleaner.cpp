@@ -41,7 +41,7 @@ void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   }
 }
 
-bool OldRecordsCleaner::TryGlobalPendingFree(
+bool OldRecordsCleaner::TryFreePendingSpace(
     const PendingFreeSpaceEntries& pending_free_space_entries) {
   kv_engine_->version_controller_.UpdatedOldestSnapshot();
   TimeStampType oldest_snapshot_ts =

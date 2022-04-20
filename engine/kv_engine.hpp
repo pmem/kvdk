@@ -236,7 +236,11 @@ class KVEngine : public Engine {
   // Lockless, caller should lock the key aforehand.
   // Remove key from HashTable. It's up to caller to handle the erased key
   LookupResult removeKey(StringView key) {
-    return removeImpl(key, PrimaryRecordType);
+    LookupResult result = removeImpl(key, PrimaryRecordType);
+    if (result.s == Status::Ok) {
+      hash_table_->Erase(result.entry_ptr);
+    }
+    return result;
   }
 
   LookupResult removeImpl(StringView key, uint16_t type_mask) {
@@ -244,10 +248,6 @@ class KVEngine : public Engine {
     auto hint = hash_table_->GetHint(key);
     result.s = hash_table_->SearchForRead(
         hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-    if (result.s != Status::Ok) {
-      return result;
-    }
-    hash_table_->Erase(result.entry_ptr);
     return result;
   }
 
@@ -530,7 +530,16 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  void backgroundDestoryCollections();
+  void releaseCollections();
+
+  Status destroyExpiredHash(
+      HashList* hashlist,
+      std::deque<PendingFreeSpaceEntries>* hash_space_entries);
+
+  Status destroyExpiredList(
+      List* list, std::deque<PendingFreeSpaceEntries>* list_space_entries);
+
+  void backgroundDestroyCollections();
 
   void startBackgroundWorks();
 
@@ -546,14 +555,10 @@ class KVEngine : public Engine {
 
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
 
-  std::set<std::shared_ptr<List>,
-           TTLCmp<RecordType::ListRecord, RecordType::ListElem>>
-      lists_;
+  std::set<List*, Collection::TTLCmp> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 
-  std::set<std::shared_ptr<HashList>,
-           TTLCmp<RecordType::HashRecord, RecordType::HashElem>>
-      hash_lists_;
+  std::set<HashList*, Collection::TTLCmp> hash_lists_;
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
 
