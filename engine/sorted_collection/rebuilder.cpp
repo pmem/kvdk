@@ -191,7 +191,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       }
     }
   }
-
+  linked_headers_.clear();
   return s;
 }
 
