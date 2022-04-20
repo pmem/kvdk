@@ -5,6 +5,9 @@ Status KVEngine::HashLength(StringView key, size_t* len) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
@@ -19,6 +22,9 @@ Status KVEngine::HashLength(StringView key, size_t* len) {
 Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
   if (!CheckKeySize(key) || !CheckKeySize(field)) {
     return Status::InvalidDataSize;
+  }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
   }
 
   auto token = version_controller_.GetLocalSnapshotHolder();
@@ -40,6 +46,9 @@ Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
 Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
   if (!CheckKeySize(key) || !CheckKeySize(field) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
+  }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
   }
 
   auto token = version_controller_.GetLocalSnapshotHolder();
@@ -83,6 +92,9 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
   if (!CheckKeySize(key) || !CheckKeySize(field)) {
     return Status::InvalidDataSize;
   }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
@@ -113,82 +125,83 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
 
 Status KVEngine::HashModify(StringView key, StringView field,
                             ModifyFunc modify_func, void* cb_args) {
-  {
-    if (!CheckKeySize(key) || !CheckKeySize(field)) {
-      return Status::InvalidDataSize;
-    }
+  if (!CheckKeySize(key) || !CheckKeySize(field)) {
+    return Status::InvalidDataSize;
+  }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
 
-    auto token = version_controller_.GetLocalSnapshotHolder();
-    HashList* hlist;
-    Status s = hashListFind(key, &hlist, true);
-    if (s != Status::Ok) {
-      return s;
-    }
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  HashList* hlist;
+  Status s = hashListFind(key, &hlist, true);
+  if (s != Status::Ok) {
+    return s;
+  }
 
-    auto internal_key = hlist->InternalKey(field);
-    auto guard = hash_table_->AcquireLock(internal_key);
-    LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
-    if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
-      return result.s;
-    }
+  auto internal_key = hlist->InternalKey(field);
+  auto guard = hash_table_->AcquireLock(internal_key);
+  LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
+  if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
+    return result.s;
+  }
 
-    DLRecord* old_rec = result.entry.GetIndex().dl_record;
-    std::string new_value;
-    std::string old_value;
-    if (result.s == Status::Ok) {
-      StringView sw = old_rec->Value();
-      old_value.assign(sw.data(), sw.size());
-    }
-    std::string* p_old_value = result.s == Status::Ok ? &old_value : nullptr;
+  DLRecord* old_rec = result.entry.GetIndex().dl_record;
+  std::string new_value;
+  std::string old_value;
+  if (result.s == Status::Ok) {
+    StringView sw = old_rec->Value();
+    old_value.assign(sw.data(), sw.size());
+  }
+  std::string* p_old_value = result.s == Status::Ok ? &old_value : nullptr;
 
-    switch (modify_func(p_old_value, &new_value, cb_args)) {
-      case ModifyOperation::Write: {
-        if (!CheckValueSize(new_value)) {
-          return Status::InvalidDataSize;
-        }
-        TimeStampType ts = token.Timestamp();
-        auto space = pmem_allocator_->Allocate(
-            sizeof(DLRecord) + internal_key.size() + new_value.size());
-        if (space.size == 0) {
-          return Status::PmemOverflow;
-        }
-        void* addr = pmem_allocator_->offset2addr_checked(space.offset);
-        if (result.s == Status::NotFound) {
-          if (std::hash<StringView>{}(field) % 2 == 0) {
-            hlist->PushFrontWithLock(space, ts, field, new_value);
-          } else {
-            hlist->PushBackWithLock(space, ts, field, new_value);
-          }
-          insertImpl(result, internal_key, RecordType::HashElem, addr);
+  switch (modify_func(p_old_value, &new_value, cb_args)) {
+    case ModifyOperation::Write: {
+      if (!CheckValueSize(new_value)) {
+        return Status::InvalidDataSize;
+      }
+      TimeStampType ts = token.Timestamp();
+      auto space = pmem_allocator_->Allocate(
+          sizeof(DLRecord) + internal_key.size() + new_value.size());
+      if (space.size == 0) {
+        return Status::PmemOverflow;
+      }
+      void* addr = pmem_allocator_->offset2addr_checked(space.offset);
+      if (result.s == Status::NotFound) {
+        if (std::hash<StringView>{}(field) % 2 == 0) {
+          hlist->PushFrontWithLock(space, ts, field, new_value);
         } else {
-          DLRecord* old_rec = result.entry.GetIndex().dl_record;
-          hlist->ReplaceWithLock(space, old_rec, ts, field, new_value,
-                                 [&](DLRecord* rec) { delayFree(rec, ts); });
-          insertImpl(result, internal_key, RecordType::HashElem, addr);
+          hlist->PushBackWithLock(space, ts, field, new_value);
         }
+        insertImpl(result, internal_key, RecordType::HashElem, addr);
+      } else {
+        DLRecord* old_rec = result.entry.GetIndex().dl_record;
+        hlist->ReplaceWithLock(space, old_rec, ts, field, new_value,
+                               [&](DLRecord* rec) { delayFree(rec, ts); });
+        insertImpl(result, internal_key, RecordType::HashElem, addr);
+      }
+      return Status::Ok;
+    }
+    case ModifyOperation::Delete: {
+      if (result.s == Status::NotFound) {
         return Status::Ok;
       }
-      case ModifyOperation::Delete: {
-        if (result.s == Status::NotFound) {
-          return Status::Ok;
-        }
-        LookupResult ret =
-            removeImpl(hlist->InternalKey(field), RecordType::HashElem);
-        if (ret.s != Status::Ok) {
-          return ret.s;
-        }
-        TimeStampType ts = token.Timestamp();
-        hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
-                             [&](DLRecord* rec) { delayFree(rec, ts); });
-        return Status::Ok;
+      LookupResult ret =
+          removeImpl(hlist->InternalKey(field), RecordType::HashElem);
+      if (ret.s != Status::Ok) {
+        return ret.s;
       }
-      case ModifyOperation::Abort: {
-        return Status::Abort;
-      }
-      default: {
-        kvdk_assert(false, "Invalid Operation!");
-        return Status::Abort;
-      }
+      TimeStampType ts = token.Timestamp();
+      hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
+                           [&](DLRecord* rec) { delayFree(rec, ts); });
+      return Status::Ok;
+    }
+    case ModifyOperation::Abort: {
+      return Status::Abort;
+    }
+    default: {
+      kvdk_assert(false, "Invalid Operation!");
+      return Status::Abort;
     }
   }
 }
@@ -197,6 +210,10 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
   if (!CheckKeySize(key)) {
     return nullptr;
   }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return nullptr;
+  }
+
   HashList* hlist;
   Status s = hashListFind(key, &hlist, false);
   if (s != Status::Ok) {
@@ -207,9 +224,6 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
 }
 
 Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
-  if (MaybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
   {
     auto result = lookupKey<false>(key, RecordType::HashRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound) {

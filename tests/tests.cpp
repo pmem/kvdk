@@ -1360,6 +1360,37 @@ TEST_F(EngineBasicTest, TestHash) {
     ASSERT_EQ(cnt, combined.size());
   };
 
+  std::string counter{"counter"};
+  auto HashModify = [&](size_t) {
+    struct FetchAddArgs {
+      size_t old;
+      size_t n;
+    };
+    auto FetchAdd = [](const std::string* old_val, std::string* new_value,
+                       void* args) {
+      FetchAddArgs* fa_args = static_cast<FetchAddArgs*>(args);
+      if (old_val != nullptr) {
+        try {
+          fa_args->old = std::stoul(*old_val);
+        } catch (std::invalid_argument const&) {
+          return ModifyOperation::Abort;
+        } catch (std::out_of_range const&) {
+          return ModifyOperation::Abort;
+        }
+      } else {
+        fa_args->old = 0;
+      }
+      new_value->assign(std::to_string(fa_args->old + fa_args->n));
+      return ModifyOperation::Write;
+    };
+
+    FetchAddArgs args;
+    args.n = 1;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->HashModify(key, counter, FetchAdd, &args), Status::Ok);
+    }
+  };
+
   for (size_t i = 0; i < 3; i++) {
     Reboot();
     LaunchNThreads(num_threads, HSet);
@@ -1373,6 +1404,11 @@ TEST_F(EngineBasicTest, TestHash) {
     LaunchNThreads(num_threads, HashIterate);
     LaunchNThreads(num_threads, HashLength);
   }
+  LaunchNThreads(num_threads, HashModify);
+  std::string resp;
+  ASSERT_EQ(engine->HashGet(key, counter, &resp), Status::Ok);
+  ASSERT_EQ(resp, std::to_string(num_threads * count));
+
   delete engine;
 }
 
