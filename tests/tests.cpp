@@ -1366,7 +1366,7 @@ TEST_F(EngineBasicTest, TestHash) {
       size_t old;
       size_t n;
     };
-    auto FetchAdd = [](const std::string* old_val, std::string* new_value,
+    auto FetchAdd = [](std::string const* old_val, std::string* new_value,
                        void* args) {
       FetchAddArgs* fa_args = static_cast<FetchAddArgs*>(args);
       if (old_val != nullptr) {

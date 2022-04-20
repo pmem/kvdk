@@ -89,38 +89,10 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
 }
 
 Status KVEngine::HashDelete(StringView key, StringView field) {
-  if (!CheckKeySize(key) || !CheckKeySize(field)) {
-    return Status::InvalidDataSize;
-  }
-  if (MaybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
-
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  HashList* hlist;
-  Status s = hashListFind(key, &hlist, false);
-  if (s == Status::NotFound) {
-    return Status::Ok;
-  }
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  LookupResult ret;
-  {
-    auto guard = hash_table_->AcquireLock(hlist->InternalKey(field));
-    ret = removeImpl(hlist->InternalKey(field), RecordType::HashElem);
-  }
-  if (ret.s == Status::NotFound) {
-    return Status::Ok;
-  }
-  if (ret.s != Status::Ok) {
-    return ret.s;
-  }
-  TimeStampType ts = token.Timestamp();
-  hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
-                       [&](DLRecord* rec) { delayFree(rec, ts); });
-  return Status::Ok;
+  auto delete_func = [](std::string const*, std::string*, void*) {
+    return ModifyOperation::Delete;
+  };
+  return HashModify(key, field, delete_func, nullptr);
 }
 
 Status KVEngine::HashModify(StringView key, StringView field,
@@ -134,32 +106,50 @@ Status KVEngine::HashModify(StringView key, StringView field,
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
-  Status s = hashListFind(key, &hlist, true);
-  if (s != Status::Ok) {
+  Status s = hashListFind(key, &hlist, false);
+  if (s != Status::Ok && s != Status::NotFound) {
     return s;
   }
 
-  auto internal_key = hlist->InternalKey(field);
-  auto guard = hash_table_->AcquireLock(internal_key);
-  LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
-  if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
-    return result.s;
-  }
-
-  DLRecord* old_rec = result.entry.GetIndex().dl_record;
   std::string new_value;
-  std::string old_value;
-  if (result.s == Status::Ok) {
-    StringView sw = old_rec->Value();
-    old_value.assign(sw.data(), sw.size());
+  std::unique_lock<SpinMutex> guard;
+  ModifyOperation op;
+  DLRecord* old_rec = nullptr;
+  LookupResult result;
+  std::string internal_key;
+  if (s == Status::NotFound) {
+    result.s = Status::NotFound;
+    op = modify_func(nullptr, &new_value, cb_args);
+  } else {
+    internal_key = hlist->InternalKey(field);
+    guard = hash_table_->AcquireLock(internal_key);
+    result = lookupImpl<true>(internal_key, RecordType::HashElem);
+    if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
+      return result.s;
+    }
+    if (result.s == Status::NotFound) {
+      op = modify_func(nullptr, &new_value, cb_args);
+    } else {
+      std::string old_value;
+      old_rec = result.entry.GetIndex().dl_record;
+      StringView sw = old_rec->Value();
+      old_value.assign(sw.data(), sw.size());
+      op = modify_func(&old_value, &new_value, cb_args);
+    }
   }
-  std::string* p_old_value = result.s == Status::Ok ? &old_value : nullptr;
 
-  switch (modify_func(p_old_value, &new_value, cb_args)) {
+  switch (op) {
     case ModifyOperation::Write: {
       if (!CheckValueSize(new_value)) {
         return Status::InvalidDataSize;
       }
+
+      HashList* hlist;
+      Status s = hashListFind(key, &hlist, true);
+      if (s != Status::Ok) {
+        return s;
+      }
+
       TimeStampType ts = token.Timestamp();
       auto space = pmem_allocator_->Allocate(
           sizeof(DLRecord) + internal_key.size() + new_value.size());
@@ -226,7 +216,8 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
 Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
   {
     auto result = lookupKey<false>(key, RecordType::HashRecord);
-    if (result.s != Status::Ok && result.s != Status::NotFound) {
+    if (result.s != Status::Ok && result.s != Status::NotFound &&
+        result.s != Status::Outdated) {
       return result.s;
     }
     if (result.s == Status::Ok) {
