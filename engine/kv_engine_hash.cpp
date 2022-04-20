@@ -44,6 +44,13 @@ Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
 }
 
 Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
+  if (!CheckKeySize(key) || !CheckKeySize(field)) {
+    return Status::InvalidDataSize;
+  }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
+
   auto set_func = [&](StringView const*, StringView* new_val, void*) {
     *new_val = value;
     return ModifyOperation::Write;
@@ -55,6 +62,10 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
   if (!CheckKeySize(key) || !CheckKeySize(field)) {
     return Status::InvalidDataSize;
   }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
+
   HashList* hlist;
   Status s = hashListFind(key, &hlist, false);
   if (s == Status::NotFound) {
@@ -84,6 +95,13 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
 
 Status KVEngine::HashModify(StringView key, StringView field,
                             ModifyFunc modify_func, void* cb_args) {
+  if (!CheckKeySize(key) || !CheckKeySize(field)) {
+    return Status::InvalidDataSize;
+  }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
+
   std::string buffer;
   auto modify = [&](StringView const* old_value, StringView* new_value,
                     void* args) {
@@ -108,13 +126,6 @@ Status KVEngine::HashModify(StringView key, StringView field,
 template <typename ModifyFuncImpl>
 Status KVEngine::hashModifyImpl(StringView key, StringView field,
                                 ModifyFuncImpl modify_func, void* cb_args) {
-  if (!CheckKeySize(key) || !CheckKeySize(field)) {
-    return Status::InvalidDataSize;
-  }
-  if (MaybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
-
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
   Status s = hashListFind(key, &hlist, true);
