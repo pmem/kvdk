@@ -1836,7 +1836,6 @@ void KVEngine::backgroundDestoryCollections() {
       }
       destroy_collections.push_back(
           std::async(std::launch::deferred, delete_list, destroy_list));
-      printf("***: %ld\n", destroy_collections.size());
     }
 
     if (destroy_hash) {
@@ -1849,7 +1848,6 @@ void KVEngine::backgroundDestoryCollections() {
       }
       destroy_collections.push_back(
           std::async(std::launch::deferred, delete_hash, destroy_hash));
-      printf("####: %ld\n", destroy_collections.size());
     }
 
     // TODO: add skiplist
