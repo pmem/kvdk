@@ -1319,9 +1319,11 @@ TEST_F(EngineBasicTest, TestHash) {
 
   auto HDelete = [&](size_t tid) {
     umap& local_copy = local_copies[tid];
+    std::string sink;
     for (size_t i = 0; i < count / 2; i++) {
       auto iter = local_copy.begin();
       ASSERT_EQ(engine->HashDelete(key, iter->first), Status::Ok);
+      ASSERT_EQ(engine->HashGet(key, iter->first, &sink), Status::NotFound);
       local_copy.erase(iter);
     }
   };

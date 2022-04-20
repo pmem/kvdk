@@ -237,6 +237,9 @@ class KVEngine : public Engine {
 
   // Lockless, caller should lock the key aforehand.
   // Remove key from HashTable. It's up to caller to handle the erased key
+  // Returns Status::Ok if key is found and removed,
+  // Returns Status::NotFound or Status::Outdated as is returnd by
+  // SearchForRead()
   LookupResult removeKey(StringView key) {
     return removeImpl(key, PrimaryRecordType);
   }
