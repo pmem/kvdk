@@ -104,8 +104,6 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
       return Status::InvalidDataSize;
     }
 
-    LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
-
     TimeStampType ts = token.Timestamp();
     auto space = pmem_allocator_->Allocate(
         sizeof(DLRecord) + internal_key.size() + new_value.size());
