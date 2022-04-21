@@ -170,7 +170,9 @@ class Skiplist : public Collection {
 
   ~Skiplist();
 
-  SkiplistNode* Header() { return header_; }
+  SkiplistNode* HeaderNode() { return header_; }
+
+  DLRecord* HeaderRecord() { return header_->record; }
 
   bool IndexWithHashtable() { return index_with_hashtable_; }
 
@@ -495,7 +497,7 @@ struct Splice {
       if (start_height > kMaxHeight || prevs[start_height] == nullptr) {
         assert(seeking_list != nullptr);
         start_height = kMaxHeight;
-        start_node = seeking_list->Header();
+        start_node = seeking_list->HeaderNode();
       } else if (prevs[start_height]->Next(start_height).GetTag() ==
                  SkiplistNode::NodeStatus::Deleted) {
         // If prev on this height has been deleted, roll back to higher height
