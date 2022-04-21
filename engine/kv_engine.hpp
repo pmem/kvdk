@@ -294,6 +294,7 @@ class KVEngine : public Engine {
         kvdk_assert(false, "Not supported!");
         return PointerType::Invalid;
       }
+      case RecordType::SortedHeaderDelete:
       case RecordType::SortedHeader: {
         return PointerType::Skiplist;
       }

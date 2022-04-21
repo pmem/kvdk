@@ -37,8 +37,9 @@ enum RecordType : uint16_t {
   Padding = (1 << 15),
 };
 
-const uint16_t SortedRecordType =
-    (SortedElem | SortedElemDelete | SortedHeader | SortedHeaderDelete);
+const uint16_t SortedHeaderType = (SortedHeader | SortedHeaderDelete);
+
+const uint16_t SortedElemType = (SortedElem | SortedElemDelete);
 
 const uint16_t DLRecordType =
     (SortedElem | SortedElemDelete | SortedHeader | SortedHeaderDelete |

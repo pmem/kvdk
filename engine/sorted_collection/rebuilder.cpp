@@ -281,7 +281,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
                                                       bool build_hash_index) {
   Status s;
   // First insert hash index for the start node
-  if (build_hash_index && start_node->record->entry.meta.type != SortedHeader) {
+  if (build_hash_index &&
+      (start_node->record->entry.meta.type & SortedHeaderType) == 0) {
     s = insertHashIndex(start_node->record->Key(), start_node,
                         PointerType::SkiplistNode);
     if (s != Status::Ok) {
@@ -296,7 +297,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
     DLRecord* next_record =
         kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
             cur_record->next);
-    if (next_record->entry.meta.type == SortedHeader) {
+    if (next_record->entry.meta.type & SortedHeaderType) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
     }
@@ -358,7 +359,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       }
     } else {
       // link end node of this segment to adjacent segment
-      if (iter->second.start_node->record->entry.meta.type != SortedHeader) {
+      if ((iter->second.start_node->record->entry.meta.type &
+           SortedHeaderType) == 0) {
         cur_node->RelaxedSetNext(1, iter->second.start_node);
       } else {
         cur_node->RelaxedSetNext(1, nullptr);
@@ -614,14 +616,14 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
   uint16_t search_type_mask;
   RecordType record_type;
   if (index_type == PointerType::DLRecord) {
-    search_type_mask = SortedElem | SortedElemDelete;
+    search_type_mask = SortedElemType;
     record_type = static_cast<DLRecord*>(index_ptr)->entry.meta.type;
   } else if (index_type == PointerType::SkiplistNode) {
-    search_type_mask = SortedElem | SortedElemDelete;
+    search_type_mask = SortedElemType;
     record_type =
         static_cast<SkiplistNode*>(index_ptr)->record->entry.meta.type;
   } else if (index_type == PointerType::Skiplist) {
-    search_type_mask = SortedHeader;
+    search_type_mask = SortedHeaderType;
     record_type = SortedHeader;
   }
 

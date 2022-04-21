@@ -367,6 +367,7 @@ Status KVEngine::RestoreData() {
       case RecordType::SortedElem:
       case RecordType::SortedElemDelete:
       case RecordType::SortedHeader:
+      case RecordType::SortedHeaderDelete:
       case RecordType::StringDataRecord:
       case RecordType::StringDeleteRecord:
       case RecordType::HashRecord:
@@ -426,6 +427,7 @@ Status KVEngine::RestoreData() {
             static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
+      case RecordType::SortedHeaderDelete:
       case RecordType::SortedHeader: {
         s = RestoreSkiplistHeader(
             static_cast<DLRecord*>(recovering_pmem_record));
@@ -519,6 +521,7 @@ bool KVEngine::ValidateRecord(void* data_record) {
     }
     case RecordType::SortedElem:
     case RecordType::SortedHeader:
+    case RecordType::SortedHeaderDelete:
     case RecordType::SortedElemDelete:
     case RecordType::HashRecord:
     case RecordType::HashElem:
@@ -1678,11 +1681,8 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
   bool expired;
 
   switch (record_type) {
+    case RecordType::SortedHeaderDelete:
     case RecordType::StringDeleteRecord: {
-      result.s = type_match ? Status::Outdated : Status::WrongType;
-      return result;
-    }
-    case RecordType::SortedHeaderDelete: {
       result.s = type_match ? Status::Outdated : Status::WrongType;
       return result;
     }
