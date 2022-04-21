@@ -309,9 +309,15 @@ class GenericList final : public Collection {
     erase_impl(Back(), elem_deleter);
   }
 
-  Iterator Emplace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
-                   StringView key, StringView value) {
+  Iterator EmplaceBefore(SpaceEntry space, Iterator pos,
+                         TimeStampType timestamp, StringView key,
+                         StringView value) {
     return emplace_impl(space, pos, timestamp, key, value);
+  }
+
+  Iterator EmplaceAfter(SpaceEntry space, Iterator pos, TimeStampType timestamp,
+                        StringView key, StringView value) {
+    return emplace_impl(space, ++pos, timestamp, key, value);
   }
 
   void PushFront(SpaceEntry space, TimeStampType timestamp, StringView key,

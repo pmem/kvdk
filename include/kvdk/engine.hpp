@@ -151,8 +151,18 @@ class Engine {
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted. pos is unchanged but is invalid.
   //    Status::Ok if operation succeeded. pos points to inserted element.
-  virtual Status ListInsert(std::unique_ptr<ListIterator> const& pos,
-                            StringView elem) = 0;
+  virtual Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
+                                  StringView elem) = 0;
+
+  // Insert an element after element indexed by ListIterator pos
+  // Return:
+  //    Status::InvalidDataSize if elem is too long. pos is unchanged.
+  //    Status::PMemOverflow if PMem exhausted. pos is unchanged.
+  //    Status::NotFound if List of the ListIterator has expired or been
+  //    deleted. pos is unchanged but is invalid.
+  //    Status::Ok if operation succeeded. pos points to inserted element.
+  virtual Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
+                                 StringView elem) = 0;
 
   // Remove the element indexed by ListIterator pos
   // Return:

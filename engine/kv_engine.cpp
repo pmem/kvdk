@@ -2023,8 +2023,8 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   return Status::Ok;
 }
 
-Status KVEngine::ListInsert(std::unique_ptr<ListIterator> const& pos,
-                            StringView elem) {
+Status KVEngine::ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
+                                  StringView elem) {
   if (!CheckValueSize(elem)) {
     return Status::InvalidDataSize;
   }
@@ -2045,7 +2045,34 @@ Status KVEngine::ListInsert(std::unique_ptr<ListIterator> const& pos,
     return Status::PmemOverflow;
   }
 
-  iter->Rep() = list->Emplace(
+  iter->Rep() = list->EmplaceBefore(
+      space, iter->Rep(), version_controller_.GetCurrentTimestamp(), "", elem);
+  return Status::Ok;
+}
+
+Status KVEngine::ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
+                                 StringView elem) {
+  if (!CheckValueSize(elem)) {
+    return Status::InvalidDataSize;
+  }
+  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos.get());
+  kvdk_assert(iter != nullptr, "Invalid iterator!");
+
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(iter->Owner()->Name(), &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+  kvdk_assert(list == iter->Owner(), "Iterator outdated!");
+
+  auto space = pmem_allocator_->Allocate(
+      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
+  if (space.size == 0) {
+    return Status::PmemOverflow;
+  }
+
+  iter->Rep() = list->EmplaceAfter(
       space, iter->Rep(), version_controller_.GetCurrentTimestamp(), "", elem);
   return Status::Ok;
 }
