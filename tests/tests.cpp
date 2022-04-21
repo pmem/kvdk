@@ -29,6 +29,8 @@ using SetOpsFunc =
 using DeleteOpsFunc = std::function<Status(const std::string& collection,
                                            const std::string& key)>;
 
+using DestroyFunc = std::function<Status(const std::string& collection)>;
+
 using GetOpsFunc = std::function<Status(
     const std::string& collection, const std::string& key, std::string* value)>;
 
@@ -155,6 +157,16 @@ class EngineBasicTest : public testing::Test {
       return engine->SortedDelete(collection, key);
     };
 
+    auto SortedDestroyFunc = [&](const std::string& collection) {
+      return engine->DestroySortedCollection(collection);
+    };
+
+    ASSERT_EQ(engine->CreateSortedCollection(collection, s_configs),
+              Status::Ok);
+
+    TestDestroy(collection, SortedDestroyFunc, SortedSetFunc, SortedGetFunc,
+                SortedDeleteFunc);
+                
     ASSERT_EQ(engine->CreateSortedCollection(collection, s_configs),
               Status::Ok);
 
@@ -184,7 +196,11 @@ class EngineBasicTest : public testing::Test {
       return engine->SortedDelete(collection, key);
     };
 
-    auto Local_XSetXGetXDelete = [&](uint64_t id) {
+    auto SortedDestroyFunc = [&](const std::string& collection) {
+      return engine->DestroySortedCollection(collection);
+    };
+
+    auto AccessTest = [&](uint64_t id) {
       std::string thread_local_collection = collection + std::to_string(id);
       ASSERT_EQ(
           engine->CreateSortedCollection(thread_local_collection, s_configs),
@@ -193,10 +209,17 @@ class EngineBasicTest : public testing::Test {
       TestEmptyKey(thread_local_collection, SortedSetFunc, SortedGetFunc,
                    SortedDeleteFunc);
 
+      TestDestroy(thread_local_collection, SortedDestroyFunc, SortedSetFunc,
+                  SortedGetFunc, SortedDeleteFunc);
+
+      ASSERT_EQ(
+          engine->CreateSortedCollection(thread_local_collection, s_configs),
+          Status::Ok);
+
       CreateBasicOperationTest(thread_local_collection, SortedSetFunc,
                                SortedGetFunc, SortedDeleteFunc, id);
     };
-    LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
+    LaunchNThreads(configs.max_access_threads, AccessTest);
   }
 
   void TestSortedIterator(const std::string& collection,
@@ -261,6 +284,21 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
     ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
     engine->ReleaseAccessThread();
+  }
+
+  void TestDestroy(const std::string& collection, DestroyFunc DestroyFunc,
+                   SetOpsFunc SetFunc, GetOpsFunc GetFunc,
+                   DeleteOpsFunc DeleteFunc) {
+    std::string key{"test_key"};
+    std::string val{"test_val"};
+    std::string got_val;
+    ASSERT_EQ(SetFunc(collection, key, val), Status::Ok);
+    ASSERT_EQ(GetFunc(collection, key, &got_val), Status::Ok);
+    ASSERT_EQ(val, got_val);
+    ASSERT_EQ(DestroyFunc(collection), Status::Ok);
+    ASSERT_EQ(SetFunc(collection, key, val), Status::NotFound);
+    ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
+    ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
   }
 
   void CreateBasicOperationTest(const std::string& collection,

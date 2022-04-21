@@ -56,7 +56,7 @@ bool OldRecordsCleaner::TryFreePendingSpace(
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &
-          (StringDataRecord | SortedElem),
+          (StringDataRecord | SortedElem | SortedHeader),
       "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
@@ -69,7 +69,7 @@ void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
 void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record)->meta.type &
-          (StringDeleteRecord | SortedElemDelete | ExpirableRecordType),
+          (DeleteRecordType | ExpirableRecordType),
       "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
@@ -245,6 +245,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDataRecord(
   DataEntry* data_entry =
       static_cast<DataEntry*>(old_data_record.pmem_data_record);
   switch (data_entry->meta.type) {
+    case SortedHeader:
     case StringDataRecord:
     case SortedElem: {
       data_entry->Destroy();
@@ -303,13 +304,14 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           old_delete_record.record_index.hash_entry.RawPointer();
       if (hash_entry_ref->GetIndexType() == PointerType::Skiplist) {
         Skiplist* old_skiplist = hash_entry_ref->GetIndex().skiplist;
-        if (old_skiplist->Header()->record ==
+        if (old_skiplist->HeaderRecord() ==
             old_delete_record.pmem_delete_record) {
           kv_engine_->hash_table_->Erase(hash_entry_ref);
           ul.unlock();
           old_skiplist->Destroy();
         }
       }
+      // TODO return space entry
     }
     case SortedElemDelete: {
     handle_sorted_delete_record : {

@@ -368,8 +368,8 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
-                  const StringView& value);
+  Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
+                       const StringView& value);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 

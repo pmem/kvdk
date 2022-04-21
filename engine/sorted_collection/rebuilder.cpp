@@ -147,9 +147,10 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       std::lock_guard<SpinMutex> lg(*hint.spin);
 
       if (valid_version_record != header_record) {
-        bool success = Skiplist::Replace(
-            header_record, valid_version_record, hint.spin, skiplist->Header(),
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get());
+        bool success = Skiplist::Replace(header_record, valid_version_record,
+                                         hint.spin, skiplist->HeaderNode(),
+                                         kv_engine_->pmem_allocator_.get(),
+                                         kv_engine_->hash_table_.get());
         kvdk_assert(success,
                     "SortedCollectionRebuilder::initRebuildLists run in single "
                     "thread, so no lock contention should happen");
@@ -178,7 +179,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         }
         if (segment_based_rebuild_) {
           // Always use header as a recovery segment
-          addRecoverySegment(skiplist->Header());
+          addRecoverySegment(skiplist->HeaderNode());
         }
 
         // Always build hash index for skiplist
@@ -413,7 +414,7 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
 Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
   Splice splice(skiplist);
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
-    splice.prevs[i] = skiplist->Header();
+    splice.prevs[i] = skiplist->HeaderNode();
   }
 
   SkiplistNode* next_node = splice.prevs[1]->RelaxedNext(1).RawPointer();
@@ -450,15 +451,15 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
   Splice splice(skiplist);
   HashEntry hash_entry;
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
-    splice.prevs[i] = skiplist->Header();
-    splice.prev_pmem_record = skiplist->Header()->record;
+    splice.prevs[i] = skiplist->HeaderNode();
+    splice.prev_pmem_record = skiplist->HeaderRecord();
   }
 
   while (true) {
     uint64_t next_offset = splice.prev_pmem_record->next;
     DLRecord* next_record =
         kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
-    if (next_record == skiplist->Header()->record) {
+    if (next_record == skiplist->HeaderRecord()) {
       break;
     }
 

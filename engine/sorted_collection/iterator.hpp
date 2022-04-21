@@ -33,19 +33,19 @@ class SortedIterator : public Iterator {
   }
 
   virtual void SeekToFirst() override {
-    uint64_t first = skiplist_->Header()->record->next;
+    uint64_t first = skiplist_->HeaderRecord()->next;
     current_ = pmem_allocator_->offset2addr<DLRecord>(first);
     skipInvalidRecords(true);
   }
 
   virtual void SeekToLast() override {
-    uint64_t last = skiplist_->Header()->record->prev;
+    uint64_t last = skiplist_->HeaderRecord()->prev;
     current_ = pmem_allocator_->offset2addr<DLRecord>(last);
     skipInvalidRecords(false);
   }
 
   virtual bool Valid() override {
-    return (current_ != nullptr && current_ != skiplist_->Header()->record);
+    return (current_ != nullptr && current_ != skiplist_->HeaderRecord());
   }
 
   virtual void Next() override {

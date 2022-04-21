@@ -86,7 +86,7 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
           // this node has been deleted, so seek from header
           kvdk_assert(result_splice->seeking_list != nullptr,
                       "skiplist must be set for seek operation!");
-          return SeekNode(key, result_splice->seeking_list->Header(),
+          return SeekNode(key, result_splice->seeking_list->HeaderNode(),
                           kMaxHeight, end_height, result_splice);
         }
         continue;
@@ -151,7 +151,7 @@ void Skiplist::Seek(const StringView& key, Splice* result_splice) {
   DLRecord* next_record = nullptr;
   while (1) {
     next_record = pmem_allocator_->offset2addr<DLRecord>(prev_record->next);
-    if (next_record == Header()->record) {
+    if (next_record == HeaderRecord()) {
       break;
     }
 
@@ -909,7 +909,7 @@ void Skiplist::destroyRecords() {
             auto hash_index = entry_ptr->GetIndex();
             switch (entry_ptr->GetIndexType()) {
               case PointerType::Skiplist:
-                hash_indexed_record = hash_index.skiplist->Header()->record;
+                hash_indexed_record = hash_index.skiplist->HeaderRecord();
                 break;
               case PointerType::SkiplistNode:
                 hash_indexed_record = hash_index.skiplist_node->record;

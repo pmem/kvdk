@@ -38,19 +38,22 @@ enum RecordType : uint16_t {
 };
 
 const uint16_t SortedRecordType =
-    (SortedElem | SortedElemDelete | SortedHeader);
+    (SortedElem | SortedElemDelete | SortedHeader | SortedHeaderDelete);
 
-const uint16_t DLRecordType = (SortedElem | SortedElemDelete | SortedHeader |
-                               HashRecord | HashElem | ListElem | ListRecord);
+const uint16_t DLRecordType =
+    (SortedElem | SortedElemDelete | SortedHeader | SortedHeaderDelete |
+     HashRecord | HashElem | ListElem | ListRecord);
 
-const uint16_t DeleteRecordType = (StringDeleteRecord | SortedElemDelete);
+const uint16_t DeleteRecordType =
+    (StringDeleteRecord | SortedElemDelete | SortedHeaderDelete);
 
 const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
 const uint16_t ExpirableRecordType =
     (StringDataRecord | SortedHeader | ListRecord | HashRecord);
 
-const uint16_t PrimaryRecordType = (ExpirableRecordType | StringDeleteRecord);
+const uint16_t PrimaryRecordType =
+    (ExpirableRecordType | StringDeleteRecord | SortedHeaderDelete);
 
 struct DataHeader {
   DataHeader() = default;

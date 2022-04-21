@@ -241,7 +241,7 @@ class Skiplist : public Collection {
   static bool IsSkiplistRecord(DLRecord* record) {
     auto type = record->entry.meta.type;
     return type == SortedElem || type == SortedElemDelete ||
-           type == SortedHeader;
+           type == SortedHeader || type == SortedHeaderDelete;
   }
 
   // Check if record correctly linked on list
@@ -360,6 +360,7 @@ class Skiplist : public Collection {
         return ExtractID(record->Key());
         break;
       case RecordType::SortedHeader:
+      case RecordType::SortedHeaderDelete:
         return DecodeID(record->Value());
       default:
         GlobalLogger.Error("Wrong record type %d in SkiplistID",

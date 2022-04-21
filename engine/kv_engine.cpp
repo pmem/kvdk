@@ -196,9 +196,8 @@ Status KVEngine::CreateSortedCollection(
 
   auto hint = hash_table_->GetHint(collection_name);
   std::lock_guard<SpinMutex> lg(*hint.spin);
-  version_controller_.HoldLocalSnapshot();
-  defer(version_controller_.ReleaseLocalSnapshot());
-  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+  TimeStampType new_ts = holder.Timestamp();
   auto ret =
       lookupKey<true>(collection_name, SortedHeader | SortedHeaderDelete);
   if (ret.s == NotFound || ret.s == Outdated) {
@@ -246,6 +245,12 @@ Status KVEngine::CreateSortedCollection(
 }
 
 Status KVEngine::DestroySortedCollection(const StringView collection_name) {
+  auto s = MaybeInitAccessThread();
+  defer(ReleaseAccessThread());
+  if (s != Status::Ok) {
+    return s;
+  }
+
   auto hint = hash_table_->GetHint(collection_name);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
@@ -254,8 +259,8 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
                               static_cast<uint16_t>(RecordType::SortedHeader));
   if (ret.s == Status::Ok) {
     Skiplist* skiplist = ret.entry.GetIndex().skiplist;
-    DLRecord* header = skiplist->HeaderNode()->record;
-    skiplist->MarkAsDeleted();
+    DLRecord* header = skiplist->HeaderRecord();
+    assert(header->entry.meta.type == SortedHeader);
     StringView value = header->Value();
     auto request_size =
         sizeof(DLRecord) + collection_name.size() + value.size();
@@ -891,9 +896,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
-
-  version_controller_.HoldLocalSnapshot();
-  defer(version_controller_.ReleaseLocalSnapshot());
+  auto holder = version_controller_.GetLocalSnapshotHolder();
   auto ret = lookupKey<false>(key, StringDataRecord | StringDeleteRecord);
   if (ret.s == Status::Ok) {
     StringRecord* string_record = ret.entry.GetIndex().string_record;
@@ -1015,10 +1018,15 @@ Status KVEngine::SortedSet(const StringView collection,
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
-  if (s != Status::Ok) {
-    return s;
+
+  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  if (ret.s != Status::Ok) {
+    return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
+
+  kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,
+              "pointer type of skiplist in hash entry should be skiplist");
+  skiplist = ret.entry.GetIndex().skiplist;
   return SortedSetImpl(skiplist, user_key, value);
 }
 
@@ -1096,10 +1104,16 @@ Status KVEngine::SortedDelete(const StringView collection,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
-  if (s != Status::Ok) {
-    return s == Status::NotFound ? Status::Ok : s;
+  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  // GlobalLogger.Debug("ret.s is %d\n", ret.s);
+  if (ret.s != Status::Ok) {
+    return (ret.s == Status::Outdated || ret.s == Status::NotFound) ? Status::Ok
+                                                                    : ret.s;
   }
+
+  kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,
+              "pointer type of skiplist in hash entry should be skiplist");
+  skiplist = ret.entry.GetIndex().skiplist;
 
   return SDeleteImpl(skiplist, user_key);
 }
@@ -1180,9 +1194,8 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     ul_locks.emplace_back(const_cast<SpinMutex&>(*l));
   }
 
-  version_controller_.HoldLocalSnapshot();
-  defer(version_controller_.ReleaseLocalSnapshot());
-  TimeStampType ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+  TimeStampType ts = holder.Timestamp();
   for (size_t i = 0; i < write_batch.Size(); i++) {
     batch_hints[i].timestamp = ts;
   }
@@ -1253,9 +1266,8 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
   auto hint = hash_table_->GetHint(key);
   std::unique_lock<SpinMutex> ul(*hint.spin);
-  version_controller_.HoldLocalSnapshot();
-  defer(version_controller_.ReleaseLocalSnapshot());
-  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+  TimeStampType new_ts = holder.Timestamp();
   auto ret = lookupKey<true>(key, static_cast<RecordType>(StringRecordType));
 
   StringRecord* existing_record = nullptr;
@@ -1407,11 +1419,14 @@ Status KVEngine::SortedGet(const StringView collection,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  s = FindCollection(collection, &skiplist, RecordType::SortedHeader);
-
-  if (s != Status::Ok) {
-    return s;
+  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  if (ret.s != Status::Ok) {
+    return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
+
+  kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,
+              "pointer type of skiplist in hash entry should be skiplist");
+  skiplist = ret.entry.GetIndex().skiplist;
 
   assert(skiplist);
   return skiplist->Get(user_key, value);
@@ -1534,9 +1549,8 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
 Status KVEngine::StringDeleteImpl(const StringView& key) {
   auto hint = hash_table_->GetHint(key);
   std::unique_lock<SpinMutex> ul(*hint.spin);
-  version_controller_.HoldLocalSnapshot();
-  defer(version_controller_.ReleaseLocalSnapshot());
-  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+  TimeStampType new_ts = holder.Timestamp();
 
   auto ret = lookupKey<false>(key, StringDeleteRecord | StringDataRecord);
   if (ret.s == Status::Ok) {
@@ -1583,9 +1597,8 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   auto hint = hash_table_->GetHint(key);
   TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
   std::unique_lock<SpinMutex> ul(*hint.spin);
-  version_controller_.HoldLocalSnapshot();
-  defer(version_controller_.ReleaseLocalSnapshot());
-  TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+  TimeStampType new_ts = holder.Timestamp();
 
   // Lookup key in hashtable
   auto ret = lookupKey<true>(key, StringDataRecord | StringDeleteRecord);
@@ -1671,6 +1684,7 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
     }
     case RecordType::SortedHeaderDelete: {
       result.s = type_match ? Status::Outdated : Status::WrongType;
+      return result;
     }
     case RecordType::StringDataRecord: {
       expired = result.entry.GetIndex().string_record->HasExpired();
