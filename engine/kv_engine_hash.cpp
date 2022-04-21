@@ -55,7 +55,7 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
     *new_val = value;
     return ModifyOperation::Write;
   };
-  return hashModifyImpl(key, field, set_func, nullptr);
+  return hashModifyImpl(key, field, set_func, nullptr, false);
 }
 
 Status KVEngine::HashDelete(StringView key, StringView field) {
@@ -66,31 +66,16 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
     return Status::TooManyAccessThreads;
   }
 
+  auto delete_func = [&](StringView const*, StringView*, void*) {
+    return ModifyOperation::Delete;
+  };
   HashList* hlist;
-  Status s = hashListFind(key, &hlist, false);
+
+  Status s = hashModifyImpl(key, field, delete_func, nullptr, true);
   if (s == Status::NotFound) {
     return Status::Ok;
   }
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  LookupResult ret;
-  {
-    auto guard = hash_table_->AcquireLock(hlist->InternalKey(field));
-    ret = removeImpl(hlist->InternalKey(field), RecordType::HashElem);
-  }
-  if (ret.s == Status::NotFound) {
-    return Status::Ok;
-  }
-  if (ret.s != Status::Ok) {
-    return ret.s;
-  }
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType ts = token.Timestamp();
-  hlist->EraseWithLock(ret.entry.GetIndex().dl_record,
-                       [&](DLRecord* rec) { delayFree(rec, ts); });
-  return Status::Ok;
+  return s;
 }
 
 Status KVEngine::HashModify(StringView key, StringView field,
@@ -115,20 +100,18 @@ Status KVEngine::HashModify(StringView key, StringView field,
     *new_value = buffer;
     return op;
   };
-  return hashModifyImpl(key, field, modify, cb_args);
+  return hashModifyImpl(key, field, modify, cb_args, false);
 }
 
-// ModifyFuncImpl accepts
-// StringView const* old_value
-// StringView* new_value
-// void* args
-// returns ModifyOperation
 template <typename ModifyFuncImpl>
 Status KVEngine::hashModifyImpl(StringView key, StringView field,
-                                ModifyFuncImpl modify_func, void* cb_args) {
+                                ModifyFuncImpl modify_func, void* cb_args,
+                                bool delete_impl) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
-  Status s = hashListFind(key, &hlist, true);
+  // HashDelete() does not need to initialize a new HashList if none exists.
+  // HashModify() and HashSet() will always initialize a new HashList.
+  Status s = hashListFind(key, &hlist, !delete_impl);
   if (s != Status::Ok) {
     return s;
   }
