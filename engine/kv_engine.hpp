@@ -530,7 +530,16 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  // void backgroundWorkCoordinator();
+  void deleteCollections();
+
+  Status destroyExpiredHash(
+      HashList* hashlist,
+      std::deque<PendingFreeSpaceEntries>* hash_space_entries);
+
+  Status destroyExpiredList(
+      List* list, std::deque<PendingFreeSpaceEntries>* list_space_entries);
+
+  void backgroundDestroyCollections();
 
   void startBackgroundWorks();
 
@@ -546,14 +555,16 @@ class KVEngine : public Engine {
 
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
 
-  std::vector<std::unique_ptr<List>> lists_;
+  std::set<List*, Collection::TTLCmp> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 
-  std::vector<std::unique_ptr<HashList>> hash_lists_;
+  std::set<HashList*, Collection::TTLCmp> hash_lists_;
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
 
-  std::mutex list_mu_;
+  std::mutex skiplists_mu_;
+  std::mutex lists_mu_;
+  std::mutex hlists_mu_;
 
   std::string dir_;
   std::string pending_batch_dir_;

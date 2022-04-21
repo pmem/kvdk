@@ -582,8 +582,10 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
     int current_num;
     memcpy(&current_num, val, sizeof(int));
     assert(current_num == args.incr_by * i);
+    free(val);
   }
 
+  KVDKDestroyWriteOptions(write_option);
   printf("Successfully increase num by %d\n", args.incr_by);
 }
 
