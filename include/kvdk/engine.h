@@ -125,6 +125,11 @@ extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* key_data,
 extern KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
                                  size_t key_len, const char* field_data,
                                  size_t field_len);
+extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
+                                 size_t key_len, const char* field_data,
+                                 size_t field_len, KVDKModifyFunc modify_func,
+                                 void* args, KVDKFreeFunc free_func);
+
 /// HashIterator //////////////////////////////////////////////////////////////
 extern KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                                 char const* key_data,

@@ -69,7 +69,6 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
   auto delete_func = [&](StringView const*, StringView*, void*) {
     return ModifyOperation::Delete;
   };
-  HashList* hlist;
 
   Status s = hashModifyImpl(key, field, delete_func, nullptr, true);
   if (s == Status::NotFound) {
@@ -103,9 +102,9 @@ Status KVEngine::HashModify(StringView key, StringView field,
   return hashModifyImpl(key, field, modify, cb_args, false);
 }
 
-template <typename ModifyFuncImpl>
+template <typename ModifyFunction>
 Status KVEngine::hashModifyImpl(StringView key, StringView field,
-                                ModifyFuncImpl modify_func, void* cb_args,
+                                ModifyFunction modify_func, void* cb_args,
                                 bool delete_impl) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
@@ -175,6 +174,9 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
     }
     case ModifyOperation::Abort: {
       return Status::Abort;
+    }
+    case ModifyOperation::Noop: {
+      return Status::Ok;
     }
     default: {
       kvdk_assert(false, "Invalid Operation!");

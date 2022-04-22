@@ -431,12 +431,12 @@ class KVEngine : public Engine {
 
   Status hashListDestroy(HashList* list);
 
-  // ModifyFuncImpl should have signature
+  // ModifyFunction should have signature
   // ModifyOperation(StringView const* old, StringView* new, void* args).
   // delete_impl is true only when HashDelete calls it.
-  template <typename ModifyFuncImpl>
+  template <typename ModifyFunction>
   Status hashModifyImpl(StringView key, StringView field,
-                        ModifyFuncImpl modify_func, void* cb_args,
+                        ModifyFunction modify_func, void* cb_args,
                         bool delete_impl);
 
   /// Other

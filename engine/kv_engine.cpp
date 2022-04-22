@@ -1281,6 +1281,9 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
     case ModifyOperation::Abort: {
       return Status::Abort;
     }
+    case ModifyOperation::Noop: {
+      return Status::Ok;
+    }
   }
 
   return Status::Ok;

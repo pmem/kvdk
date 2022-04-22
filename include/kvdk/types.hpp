@@ -20,6 +20,7 @@ enum class ModifyOperation : int {
   Write = KVDK_MODIFY_WRITE,
   Delete = KVDK_MODIFY_DELETE,
   Abort = KVDK_MODIFY_ABORT,
+  Noop = KVDK_MODIFY_NOOP
 };
 
 // Customized modify function used in Engine::Modify, indicate how to modify
