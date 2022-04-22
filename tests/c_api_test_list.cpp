@@ -155,7 +155,7 @@ TEST_F(EngineCAPITestBase, List) {
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(KVDKListInsert(engine, iter, elem.data(), elem.size()),
+    ASSERT_EQ(KVDKListInsertBefore(engine, iter, elem.data(), elem.size()),
               KVDKStatus::Ok);
     iter2 = list_copy.insert(iter2, elem);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);

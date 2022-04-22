@@ -62,6 +62,16 @@ class Collection {
     return std::string{reinterpret_cast<char*>(&id), sizeof(CollectionIDType)};
   }
 
+  struct TTLCmp {
+   public:
+    bool operator()(const Collection* a, const Collection* b) const {
+      if (a->GetExpireTime() < b->GetExpireTime()) return true;
+      if (a->GetExpireTime() == b->GetExpireTime() && a->ID() < b->ID())
+        return true;
+      return false;
+    }
+  };
+
  protected:
   inline static std::string makeInternalKey(const StringView& user_key,
                                             uint64_t list_id) {

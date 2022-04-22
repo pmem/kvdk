@@ -81,6 +81,8 @@ class OldRecordsCleaner {
   }
 
   void PushToPendingFree(void* addr, TimeStampType ts);
+  bool TryFreePendingSpace(
+      const PendingFreeSpaceEntries& pending_free_space_entries);
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OldDeleteRecord& old_delete_record);
   void PushToGlobal(const std::deque<OldDeleteRecord>& old_delete_records);

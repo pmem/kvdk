@@ -31,19 +31,25 @@ class Iterator {
 
 class ListIterator {
  public:
-  virtual void Seek(StringView key) = 0;
-
   virtual void Seek(IndexType pos) = 0;
 
   virtual void SeekToFirst() = 0;
 
+  virtual void SeekToFirst(StringView elem) = 0;
+
   virtual void SeekToLast() = 0;
 
-  virtual bool Valid() const = 0;
+  virtual void SeekToLast(StringView elem) = 0;
 
   virtual void Next() = 0;
 
+  virtual void Next(StringView elem) = 0;
+
   virtual void Prev() = 0;
+
+  virtual void Prev(StringView elem) = 0;
+
+  virtual bool Valid() const = 0;
 
   virtual std::string Value() const = 0;
 
