@@ -165,7 +165,7 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
     strcat(expected_key, sorted_nums[i]);
     strcat(expected_value, sorted_nums[i]);
     size_t key_len, val_len;
-    char *key_res, val_res;
+    char *key_res, *val_res;
     KVDKSortedIteratorKey(kvdk_iter, &key_res, &key_len);
     KVDKSortedIteratorValue(kvdk_iter, &val_res, &val_len);
     if (CmpCompare(key_res, key_len, end, strlen(end)) > 0) {
@@ -194,9 +194,9 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
     strcat(expected_key, sorted_nums[i]);
     strcat(expected_value, sorted_nums[i]);
     size_t key_len, val_len;
-    char *key_res, val_res;
+    char *key_res, *val_res;
     KVDKSortedIteratorKey(kvdk_iter, &key_res, &key_len);
-    KVDKSortedIteratorValue(kvdk_iter, val_res, &val_len);
+    KVDKSortedIteratorValue(kvdk_iter, &val_res, &val_len);
     if (CmpCompare(key_res, key_len, end, strlen(end)) < 0) {
       free(key_res);
       free(val_res);
@@ -269,7 +269,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   for (KVDKSortedIteratorSeekToFirst(iter); KVDKSortedIteratorValid(iter);
        KVDKSortedIteratorNext(iter)) {
     size_t key_len, value_len;
-    char *key, value;
+    char *key, *value;
     KVDKSortedIteratorKey(iter, &key, &key_len);
     KVDKSortedIteratorValue(iter, &value, &value_len);
     if (CmpCompare(key, key_len, expected_array[i].number_key,
