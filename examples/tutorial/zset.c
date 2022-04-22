@@ -20,7 +20,7 @@ int ScoreCmp(const char* score_key_a, size_t a_len, const char* score_key_b,
 }
 
 // Store score key in sorted collection to index score->member
-void encodeScoreKey(int64_t score, const char* member, size_t member_len,
+void EncodeScoreKey(int64_t score, const char* member, size_t member_len,
                     char** score_key, size_t* score_key_len) {
   *score_key_len = sizeof(int64_t) + member_len;
   *score_key = (char*)malloc(*score_key_len);
@@ -29,7 +29,7 @@ void encodeScoreKey(int64_t score, const char* member, size_t member_len,
 }
 
 // Store member with string type to index member->score
-void encodeStringKey(const char* collection, size_t collection_len,
+void EncodeStringKey(const char* collection, size_t collection_len,
                      const char* member, size_t member_len, char** string_key,
                      size_t* string_key_len) {
   *string_key_len = collection_len + member_len;
@@ -39,7 +39,7 @@ void encodeStringKey(const char* collection, size_t collection_len,
 }
 
 // notice: we set member as a view of score key (which means no ownership)
-void decodeScoreKey(char* score_key, size_t score_key_len, char** member,
+void DecodeScoreKey(char* score_key, size_t score_key_len, char** member,
                     size_t* member_len, int64_t* score) {
   assert(score_key_len > sizeof(int64_t));
   memcpy(score, score_key, sizeof(int64_t));
@@ -47,7 +47,7 @@ void decodeScoreKey(char* score_key, size_t score_key_len, char** member,
   *member_len = score_key_len - sizeof(int64_t);
 }
 
-void print_member_score(size_t index, char* member, size_t member_len,
+void PrintMemberScore(size_t index, char* member, size_t member_len,
                         int64_t score) {
   char member_c_str[member_len + 1];
   memcpy(member_c_str, member, member_len);
@@ -65,8 +65,8 @@ KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
   char* string_key;
   size_t score_key_len;
   size_t string_key_len;
-  encodeScoreKey(score, member, member_len, &score_key, &score_key_len);
-  encodeStringKey(collection, collection_len, member, member_len, &string_key,
+  EncodeScoreKey(score, member, member_len, &score_key, &score_key_len);
+  EncodeStringKey(collection, collection_len, member, member_len, &string_key,
                   &string_key_len);
 
   KVDKStatus s = KVDKSortedSet(engine, collection, collection_len, score_key,
@@ -116,8 +116,8 @@ KVDKStatus KVDKZPopMin(KVDKEngine* engine, const char* collection,
     size_t member_len;
     int64_t score;
     KVDKSortedIteratorKey(iter, &score_key, &score_key_len);
-    decodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
-    encodeStringKey(collection, collection_len, member, member_len, &string_key,
+    DecodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
+    EncodeStringKey(collection, collection_len, member, member_len, &string_key,
                     &string_key_len);
     s = KVDKSortedDelete(engine, collection, collection_len, score_key,
                          score_key_len);
@@ -127,7 +127,7 @@ KVDKStatus KVDKZPopMin(KVDKEngine* engine, const char* collection,
 
     if (s == Ok) {
       // do anything with poped key, like print
-      print_member_score(cnt++, member, member_len, score);
+      PrintMemberScore(cnt++, member, member_len, score);
       (void)member;
     }
 
@@ -163,8 +163,8 @@ KVDKStatus KVDKZPopMax(KVDKEngine* engine, const char* collection,
     size_t member_len;
     int64_t score;
     KVDKSortedIteratorKey(iter, &score_key, &score_key_len);
-    decodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
-    encodeStringKey(collection, collection_len, member, member_len, &string_key,
+    DecodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
+    EncodeStringKey(collection, collection_len, member, member_len, &string_key,
                     &string_key_len);
     s = KVDKSortedDelete(engine, collection, collection_len, score_key,
                          score_key_len);
@@ -174,7 +174,7 @@ KVDKStatus KVDKZPopMax(KVDKEngine* engine, const char* collection,
 
     if (s == Ok) {
       // do anything with poped key, like print
-      print_member_score(cnt++, member, member_len, score);
+      PrintMemberScore(cnt++, member, member_len, score);
       (void)member;
     }
 
@@ -208,10 +208,10 @@ KVDKStatus KVDKZRange(KVDKEngine* engine, const char* collection,
     char* member;
     size_t member_len;
     int64_t score;
-    decodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
+    DecodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
     if (score < max_score) {
       // do any thing with in-range key, like print;
-      print_member_score(cnt++, member, member_len, score);
+      PrintMemberScore(cnt++, member, member_len, score);
       free(score_key);
     } else {
       free(score_key);
