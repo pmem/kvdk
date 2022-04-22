@@ -1,4 +1,8 @@
-// Single thread example of redis zset with KVDK c api
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021 Intel Corporation
+ */
+
+// This is a example of single-thread redis zset implementation with kvdk c api
 
 #include "assert.h"
 #include "kvdk/engine.h"
