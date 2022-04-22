@@ -254,16 +254,67 @@ void KVDKIterNext(KVDKIterator* iter) { iter->rep->Next(); }
 
 void KVDKIterPrev(KVDKIterator* iter) { iter->rep->Prev(); }
 
-char* KVDKIterKey(KVDKIterator* iter, size_t* key_len) {
+void KVDKIterKey(KVDKIterator* iter, char** key, size_t* key_len) {
   std::string key_str = iter->rep->Key();
   *key_len = key_str.size();
-  return CopyStringToChar(key_str);
+  *key = CopyStringToChar(key_str);
 }
 
-char* KVDKIterValue(KVDKIterator* iter, size_t* val_len) {
+void KVDKIterValue(KVDKIterator* iter, char** value, size_t* val_len) {
   std::string val_str = iter->rep->Value();
   *val_len = val_str.size();
-  return CopyStringToChar(val_str);
+  *value = CopyStringToChar(val_str);
+}
+
+KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
+                    size_t collection_len, int64_t score, const char* member,
+                    size_t member_len, KVDKWriteOptions* write_option) {
+  size_t combined_score_len = member_len + sizeof(int64_t);
+  size_t combined_member_len = collection_len + member_len;
+  char combined_score_key[combined_score_len];
+  char combined_member_key[combined_member_len];
+  memcpy(combined_score_key, &score, sizeof(int64_t));
+  memcpy(combined_score_key + sizeof(int64_t), member, member_len);
+  memcpy(combined_member_key, collection, collection_len);
+  memcpy(combined_member_key + collection_len, member, member_len);
+  KVDKStatus s = KVDKSortedSet(engine, collection, collection_len,
+                               combined_score_key, combined_score_len, "", 0);
+  if (s == NotFound) {
+    KVDKSortedCollectionConfigs* s_config = KVDKCreateSortedCollectionConfigs();
+    s = KVDKCreateSortedCollection(engine, collection, collection_len,
+                                   s_config);
+    if (s == Ok) {
+      s = KVDKSortedSet(engine, collection, collection_len, combined_score_key,
+                        combined_score_len, "", 0);
+    }
+  }
+  if (s == Ok) {
+    s = KVDKSet(engine, combined_member_key, combined_member_len, (char*)&score,
+                sizeof(int64_t), write_option);
+  }
+  return s;
+}
+
+KVDKStatus KVDKPopMin(KVDKEngine* engine, const char* collection,
+                      size_t collection_len, size_t n) {
+  KVDKStatus s;
+  KVDKIterator* iter =
+      KVDKCreateSortedIterator(engine, collection, collection_len, nullptr);
+  if (iter == nullptr) {
+    return Ok;
+  }
+
+  for (KVDKIterSeekToFirst(iter); KVDKIterValid(iter) && n > 0;
+       KVDKIterNext(iter)) {
+    size_t key_len;
+    char* key;
+    KVDKIterKey(iter, &key, &key_len);
+    s = KVDKSortedDelete(engine, collection, collection_len, key, key_len);
+    if (s != Ok) {
+      return s;
+    }
+    free(key);
+  }
 }
 
 KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str, size_t str_len,
