@@ -11,12 +11,28 @@
 
 #define NUM_MEMBERS 7
 
+int StrCompare(const char* a, size_t a_len, const char* b, size_t b_len) {
+  int n = (a_len < b_len) ? a_len : b_len;
+  int cmp = memcmp(a, b, n);
+  if (cmp == 0) {
+    if (a_len < b_len)
+      cmp = -1;
+    else if (a_len > b_len)
+      cmp = 1;
+  }
+  return cmp;
+}
+
 const char* comp_name = "score_comp";
 int ScoreCmp(const char* score_key_a, size_t a_len, const char* score_key_b,
              size_t b_len) {
   assert(a_len >= sizeof(int64_t));
   assert(b_len >= sizeof(int64_t));
-  return (*(int64_t*)score_key_a) - (*(int64_t*)score_key_b);
+  int cmp = (*(int64_t*)score_key_a) - (*(int64_t*)score_key_b);
+  return cmp == 0 ? StrCompare(
+                        score_key_a + sizeof(int64_t), a_len - sizeof(int64_t),
+                        score_key_b + sizeof(int64_t), b_len - sizeof(int64_t))
+                  : cmp;
 }
 
 // Store score key in sorted collection to index score->member
@@ -211,7 +227,7 @@ KVDKStatus KVDKZRange(KVDKEngine* engine, const char* collection,
     size_t member_len;
     int64_t score;
     DecodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
-    if (score < max_score) {
+    if (score <= max_score) {
       // do any thing with in-range key, like print;
       PrintMemberScore(cnt++, member, member_len, score);
       free(score_key);
@@ -237,10 +253,10 @@ void ZSetTest(KVDKEngine* engine) {
     assert(s == Ok);
   }
 
-  assert(KVDKZRange(engine, zset_name, zset_name_len, 1, 7) == Ok);
+  assert(KVDKZRange(engine, zset_name, zset_name_len, 1, 6) == Ok);
   assert(KVDKZPopMax(engine, zset_name, zset_name_len, 2) == Ok);
   assert(KVDKZPopMin(engine, zset_name, zset_name_len, 2) == Ok);
-  assert(KVDKZRange(engine, zset_name, zset_name_len, 1, 7) == Ok);
+  assert(KVDKZRange(engine, zset_name, zset_name_len, 1, 6) == Ok);
   KVDKDestroyWriteOptions(write_option);
 }
 
