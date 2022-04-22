@@ -311,7 +311,7 @@ static void test_expire() {
     std::string key = "stringkey";
     std::string val = "stringval";
     // case: set expire time
-    s = engine->Set(key, val, kvdk::WriteOptions{100, false});
+    s = engine->Set(key, val, kvdk::WriteOptions{100});
     assert(s == kvdk::Status::Ok);
     s = engine->Get(key, &got_val);
     assert(s == kvdk::Status::Ok);

@@ -185,6 +185,8 @@ class KVEngine : public Engine {
   Status HashGet(StringView key, StringView field, std::string* value) final;
   Status HashSet(StringView key, StringView field, StringView value) final;
   Status HashDelete(StringView key, StringView field) final;
+  Status HashModify(StringView key, StringView field, ModifyFunc modify_func,
+                    void* cb_args) final;
   std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
 
  private:
@@ -237,6 +239,9 @@ class KVEngine : public Engine {
 
   // Lockless, caller should lock the key aforehand.
   // Remove key from HashTable. It's up to caller to handle the erased key
+  // Returns Status::Ok if key is found and removed,
+  // Returns Status::NotFound or Status::Outdated as is returnd by
+  // SearchForRead()
   LookupResult removeKey(StringView key) {
     return removeImpl(key, PrimaryRecordType);
   }
@@ -427,6 +432,14 @@ class KVEngine : public Engine {
   Status hashListDestroy(HashList* list, DelayFree delay_free);
 
   Status hashListDestroy(HashList* list);
+
+  // ModifyFunction should have signature
+  // ModifyOperation(StringView const* old, StringView* new, void* args).
+  // delete_impl is true only when HashDelete calls it.
+  template <typename ModifyFunction>
+  Status hashModifyImpl(StringView key, StringView field,
+                        ModifyFunction modify_func, void* cb_args,
+                        bool delete_impl);
 
   /// Other
   Status CheckConfigs(const Configs& configs);

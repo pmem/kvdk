@@ -197,6 +197,8 @@ class Engine {
   virtual Status HashSet(StringView key, StringView field,
                          StringView value) = 0;
   virtual Status HashDelete(StringView key, StringView field) = 0;
+  virtual Status HashModify(StringView key, StringView field,
+                            ModifyFunc modify_func, void* cb_args) = 0;
   // Warning: HashIterator internally holds a snapshot,
   // prevents some resources from being freed.
   // The HashIterator should be destroyed as long as it is no longer used.

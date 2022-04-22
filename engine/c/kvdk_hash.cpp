@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstring>
 
 #include "kvdk_c.hpp"
@@ -38,6 +39,36 @@ KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
                           size_t field_len) {
   return engine->rep->HashDelete(StringView(key_data, key_len),
                                  StringView(field_data, field_len));
+}
+
+extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
+                                 size_t key_len, const char* field_data,
+                                 size_t field_len, KVDKModifyFunc modify_func,
+                                 void* args, KVDKFreeFunc free_func) {
+  auto ModifyFunc = [&](const std::string* old_value, std::string* new_value,
+                        void* arg) {
+    int op;
+    char* new_val_data;
+    size_t new_val_len;
+    if (old_value != nullptr) {
+      op = modify_func(old_value->data(), old_value->size(), &new_val_data,
+                       &new_val_len, arg);
+    } else {
+      op = modify_func(nullptr, 0, &new_val_data, &new_val_len, arg);
+    }
+    if (op == KVDK_MODIFY_WRITE) {
+      assert(new_val_data != nullptr);
+      new_value->assign(new_val_data, new_val_len);
+    }
+    if (free_func != nullptr && new_val_data != nullptr) {
+      free_func(new_val_data);
+    }
+    return static_cast<kvdk::ModifyOperation>(op);
+  };
+  KVDKStatus s = engine->rep->HashModify(StringView{key_data, key_len},
+                                         StringView{field_data, field_len},
+                                         ModifyFunc, args);
+  return s;
 }
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,

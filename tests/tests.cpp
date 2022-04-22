@@ -2,8 +2,8 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <x86intrin.h>
 
 #include <future>
 #include <string>
@@ -16,6 +16,9 @@
 #include "../engine/utils/sync_point.hpp"
 #include "kvdk/engine.hpp"
 #include "test_util.h"
+
+DEFINE_string(path, "/mnt/pmem0/kvdk_unit_test",
+              "Path of KVDK instance on PMem.");
 
 using namespace KVDK_NAMESPACE;
 static const uint64_t str_pool_length = 1024000;
@@ -52,8 +55,8 @@ class EngineBasicTest : public testing::Test {
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
     configs.max_access_threads = 1;
-    db_path = "/mnt/pmem0/kvdk-test-" + std::to_string(__rdtsc());
-    backup_path = "/mnt/pmem0/kvdk-test-backup-" + std::to_string(__rdtsc());
+    db_path = FLAGS_path;
+    backup_path = FLAGS_path + "_backup";
     char cmd[1024];
     sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
             backup_path.c_str());
@@ -1316,9 +1319,11 @@ TEST_F(EngineBasicTest, TestHash) {
 
   auto HDelete = [&](size_t tid) {
     umap& local_copy = local_copies[tid];
+    std::string sink;
     for (size_t i = 0; i < count / 2; i++) {
       auto iter = local_copy.begin();
       ASSERT_EQ(engine->HashDelete(key, iter->first), Status::Ok);
+      ASSERT_EQ(engine->HashGet(key, iter->first, &sink), Status::NotFound);
       local_copy.erase(iter);
     }
   };
@@ -1360,6 +1365,37 @@ TEST_F(EngineBasicTest, TestHash) {
     ASSERT_EQ(cnt, combined.size());
   };
 
+  std::string counter{"counter"};
+  auto HashModify = [&](size_t) {
+    struct FetchAddArgs {
+      size_t old;
+      size_t n;
+    };
+    auto FetchAdd = [](std::string const* old_val, std::string* new_value,
+                       void* args) {
+      FetchAddArgs* fa_args = static_cast<FetchAddArgs*>(args);
+      if (old_val != nullptr) {
+        try {
+          fa_args->old = std::stoul(*old_val);
+        } catch (std::invalid_argument const&) {
+          return ModifyOperation::Abort;
+        } catch (std::out_of_range const&) {
+          return ModifyOperation::Abort;
+        }
+      } else {
+        fa_args->old = 0;
+      }
+      new_value->assign(std::to_string(fa_args->old + fa_args->n));
+      return ModifyOperation::Write;
+    };
+
+    FetchAddArgs args;
+    args.n = 1;
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(engine->HashModify(key, counter, FetchAdd, &args), Status::Ok);
+    }
+  };
+
   for (size_t i = 0; i < 3; i++) {
     Reboot();
     LaunchNThreads(num_threads, HSet);
@@ -1373,6 +1409,11 @@ TEST_F(EngineBasicTest, TestHash) {
     LaunchNThreads(num_threads, HashIterate);
     LaunchNThreads(num_threads, HashLength);
   }
+  LaunchNThreads(num_threads, HashModify);
+  std::string resp;
+  ASSERT_EQ(engine->HashGet(key, counter, &resp), Status::Ok);
+  ASSERT_EQ(resp, std::to_string(num_threads * count));
+
   delete engine;
 }
 
@@ -1677,8 +1718,8 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   std::string got_val;
   int64_t ttl_time;
-  WriteOptions write_options1{1, false};
-  WriteOptions write_options2{INT64_MAX / 1000, false};
+  WriteOptions write_options1{1};
+  WriteOptions write_options2{INT64_MAX / 1000};
   std::string key = "expired_key";
   std::string val(10, 'a');
   std::string val2(10, 'b');
@@ -2293,8 +2334,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       std::string key = std::to_string(i) + "stringk";
       std::string val = std::to_string(i) + "stringval";
       std::string got_val;
-      ASSERT_EQ(engine->Set(key, val, WriteOptions{INT32_MAX, false}),
-                Status::Ok);
+      ASSERT_EQ(engine->Set(key, val, WriteOptions{INT32_MAX}), Status::Ok);
     }
   };
   auto ExpiredClean = [&]() {
@@ -2354,5 +2394,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
+  google::ParseCommandLineFlags(&argc, &argv, true);
   return RUN_ALL_TESTS();
 }
