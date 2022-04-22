@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../alias.hpp"
+#include "../collection.hpp"
 #include "../hash_table.hpp"
 #include "../thread_manager.hpp"
 #include "../utils/utils.hpp"
@@ -24,6 +25,7 @@ struct OldDataRecord {
   TimeStampType release_time;
 };
 
+// Delete record of strings and collection elems
 struct OldDeleteRecord {
   union RecordIndex {
     RecordIndex(void* ptr, PointerType type)
@@ -52,6 +54,15 @@ struct OldDeleteRecord {
   // The tag of pointer indicates the type of pointer, like hash ptr or skiplist
   // node
   RecordIndex record_index;
+};
+
+struct OutdatedCollection {
+  OutdatedCollection(Collection* c, TimeStampType rt)
+      : collection(c), release_time(rt) {}
+  Collection* collection;
+  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
+  // could safely destroy the collection
+  TimeStampType release_time;
 };
 
 struct PendingFreeSpaceEntries {
@@ -85,11 +96,16 @@ class OldRecordsCleaner {
       const PendingFreeSpaceEntries& pending_free_space_entries);
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OldDeleteRecord& old_delete_record);
+  void PushToCache(const OutdatedCollection& outdated_collection);
   void PushToGlobal(const std::deque<OldDeleteRecord>& old_delete_records);
+  void PushToGlobal(std::deque<OutdatedCollection>&& outdated_collections);
   // Try to clean global old records
   void TryGlobalClean();
+  // Try to clean cached old records, notice we do not destroy outdated
+  // collections here as is too expensive for a foreground thread
   void TryCleanCachedOldRecords(size_t num_limit_clean);
   uint64_t NumCachedOldRecords() {
+    // TODO jiayu: calculate length of outdated collection
     assert(access_thread.id >= 0);
     auto& tc = cleaner_thread_cache_[access_thread.id];
     return tc.old_delete_records.size() + tc.old_data_records.size();
@@ -100,6 +116,7 @@ class OldRecordsCleaner {
     std::deque<OldDeleteRecord> old_delete_records{};
     std::deque<OldDataRecord> old_data_records{};
     std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};
+    std::deque<OutdatedCollection> outdated_collections{};
     SpinMutex old_records_lock;
   };
   const uint64_t kLimitCachedDeleteRecords = 1000000;
@@ -118,6 +135,7 @@ class OldRecordsCleaner {
 
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
   std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
+  std::vector<std::deque<OutdatedCollection>> global_outdated_collections_;
   std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };

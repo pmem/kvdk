@@ -450,7 +450,19 @@ class KVEngine : public Engine {
 
   void delayFree(const OldDataRecord&);
 
+  void delayFree(const OutdatedCollection&);
+
   void delayFree(void* addr, TimeStampType ts);
+
+  void removeSkiplist(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(skiplists_mu_);
+    skiplists_.erase(id);
+  }
+
+  void addSkiplistToMap(std::shared_ptr<Skiplist> skiplist) {
+    std::lock_guard<std::mutex> lg(skiplists_mu_);
+    skiplists_.emplace(skiplist->ID(), skiplist);
+  }
 
   inline std::string data_file() { return data_file(dir_); }
 

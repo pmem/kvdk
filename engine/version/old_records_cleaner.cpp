@@ -73,17 +73,30 @@ void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
       "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
-  kvdk_assert(access_thread.id >= 0,
-              "call OldRecordsCleaner::Push with uninitialized access thread");
 
   auto& tc = cleaner_thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> lg(tc.old_records_lock);
   tc.old_delete_records.emplace_back(old_delete_record);
 }
 
+void OldRecordsCleaner::PushToCache(
+    const OutdatedCollection& outdated_collection) {
+  kvdk_assert(access_thread.id >= 0,
+              "call OldRecordsCleaner::Push with uninitialized access thread");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  std::lock_guard<SpinMutex> lg(tc.old_records_lock);
+  tc.outdated_collections.emplace_back(outdated_collection);
+}
+
 void OldRecordsCleaner::PushToGlobal(
     const std::deque<OldDeleteRecord>& old_delete_records) {
   global_old_delete_records_.emplace_back(old_delete_records);
+}
+
+void OldRecordsCleaner::PushToGlobal(
+    std::deque<OutdatedCollection>&& outdated_collections) {
+  global_outdated_collections_.emplace_back(
+      std::forward<std::deque<OutdatedCollection>>(outdated_collections));
 }
 
 void OldRecordsCleaner::TryGlobalClean() {
@@ -119,6 +132,19 @@ void OldRecordsCleaner::TryGlobalClean() {
     }
   }
 
+  // Fetch thread cached outdated collections, the workflow is as same as old
+  // delete record
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto& cleaner_thread_cache = cleaner_thread_cache_[i];
+    if (cleaner_thread_cache.outdated_collections.size() > 0) {
+      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
+      global_outdated_collections_.emplace_back();
+      global_outdated_collections_.back().swap(
+          cleaner_thread_cache.outdated_collections);
+      break;
+    }
+  }
+
   for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
     auto& cleaner_thread_cache = cleaner_thread_cache_[i];
     if (cleaner_thread_cache.old_data_records.size() > 0) {
@@ -141,6 +167,23 @@ void OldRecordsCleaner::TryGlobalClean() {
   }
 
   clean_all_data_record_ts_ = oldest_snapshot_ts;
+
+  // Destroy deleted skiplists
+  for (auto& outdated_collections : global_outdated_collections_) {
+    auto oc_iter = outdated_collections.begin();
+    while (oc_iter != outdated_collections.end()) {
+      if (oc_iter->release_time < clean_all_data_record_ts_) {
+        // For now, we only use this for skiplist
+        CollectionIDType id = oc_iter->collection->ID();
+        static_cast<Skiplist*>(oc_iter->collection)->Destroy();
+        kv_engine_->removeSkiplist(id);
+        oc_iter++;
+      } else {
+        break;
+      }
+    }
+    outdated_collections.erase(outdated_collections.begin(), oc_iter);
+  }
 
   // Find purge-able delete records
   // To avoid access invalid data, an old delete record can be freed only if
@@ -288,30 +331,6 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       // we don't need to purge a delete record
       return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
                         data_entry->header.record_size);
-    }
-    case SortedHeader: {
-      kvdk_assert(old_delete_record.record_index.hash_entry.RawPointer()
-                      ->IsExpiredStatus(),
-                  "sorted header should be expired in cleaner");
-      [[gnu::fallthrough]];
-    }
-    case SortedHeaderDelete: {
-      std::unique_lock<SpinMutex> ul(*old_delete_record.key_lock);
-      kvdk_assert(old_delete_record.record_index.hash_entry.GetTag() ==
-                      PointerType::HashEntry,
-                  "skiplist header should be indexed by hash entry");
-      HashEntry* hash_entry_ref =
-          old_delete_record.record_index.hash_entry.RawPointer();
-      if (hash_entry_ref->GetIndexType() == PointerType::Skiplist) {
-        Skiplist* old_skiplist = hash_entry_ref->GetIndex().skiplist;
-        if (old_skiplist->HeaderRecord() ==
-            old_delete_record.pmem_delete_record) {
-          kv_engine_->hash_table_->Erase(hash_entry_ref);
-          ul.unlock();
-          old_skiplist->Destroy();
-        }
-      }
-      // TODO return space entry
     }
     case SortedElemDelete: {
     handle_sorted_delete_record : {

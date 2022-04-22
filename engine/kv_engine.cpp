@@ -229,10 +229,7 @@ Status KVEngine::CreateSortedCollection(
     auto skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
         pmem_allocator_, hash_table_, s_configs.index_with_hashtable);
-    {
-      std::lock_guard<std::mutex> lg(skiplists_mu_);
-      skiplists_.insert({id, skiplist});
-    }
+    addSkiplistToMap(skiplist);
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeader, skiplist.get(),
                         PointerType::Skiplist);
   } else {
@@ -1765,6 +1762,19 @@ void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
   }
 }
 
+void KVEngine::delayFree(const OutdatedCollection& outdated_collection) {
+  old_records_cleaner_.PushToCache(outdated_collection);
+  // To avoid too many cached old records pending clean, we try to clean cached
+  // records while pushing new one
+  if (!need_clean_records_ &&
+      old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords) {
+    need_clean_records_ = true;
+  } else {
+    old_records_cleaner_.TryCleanCachedOldRecords(
+        kLimitForegroundCleanOldRecords);
+  }
+}
+
 void KVEngine::delayFree(void* addr, TimeStampType ts) {
   /// TODO: avoid deadlock in cleaner to help Free() deleted records
   old_records_cleaner_.PushToPendingFree(addr, ts);
@@ -1927,6 +1937,7 @@ void KVEngine::backgroundDestroyCollections() {
 void KVEngine::CleanOutDated() {
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
   std::deque<OldDeleteRecord> expired_record_queue;
+  std::deque<OutdatedCollection> expired_collection_queue;
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
@@ -1950,6 +1961,16 @@ void KVEngine::CleanOutDated() {
             }
             break;
           }
+          case PointerType::Skiplist: {
+            if (bucket_iter->IsTTLStatus() &&
+                bucket_iter->GetIndex().skiplist->HasExpired()) {
+              // push expired to cleaner and clear hash entry
+              expired_collection_queue.emplace_back(
+                  bucket_iter->GetIndex().skiplist,
+                  version_controller_.GetCurrentTimestamp());
+              hash_table_->Erase(&(*bucket_iter));
+            }
+          }
           default:
             break;
         }
@@ -1962,6 +1983,11 @@ void KVEngine::CleanOutDated() {
         (expired_record_queue.size() >= kMaxCachedOldRecords)) {
       old_records_cleaner_.PushToGlobal(expired_record_queue);
       expired_record_queue.clear();
+    }
+
+    if (!expired_collection_queue.empty()) {
+      old_records_cleaner_.PushToGlobal(std::move(expired_collection_queue));
+      expired_collection_queue.clear();
     }
 
     if (std::chrono::duration_cast<std::chrono::seconds>(
