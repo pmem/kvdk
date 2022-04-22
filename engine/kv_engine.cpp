@@ -1514,10 +1514,15 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         break;
       }
       case PointerType::Skiplist: {
+        auto new_ts = snapshot_holder.Timestamp();
         auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
-            expired_time, snapshot_holder.Timestamp(), hint.spin);
+            expired_time, new_ts, hint.spin);
         if (ret.s == Status::Fail) {
           return Expire(str, ttl_time);
+        }
+
+        if (ret.s == Status::Ok) {
+          delayFree(OldDataRecord{ret.existing_record, new_ts});
         }
         res.s = ret.s;
         break;
