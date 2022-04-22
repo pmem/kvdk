@@ -5,6 +5,16 @@
 #include "malloc.h"
 #include "string.h"
 
+#define NUM_MEMBERS 7
+
+const char* comp_name = "score_comp";
+int ScoreCmp(const char* score_key_a, size_t a_len, const char* score_key_b,
+             size_t b_len) {
+  assert(a_len >= sizeof(int64_t));
+  assert(b_len >= sizeof(int64_t));
+  return (*(int64_t*)score_key_a) - (*(int64_t*)score_key_b);
+}
+
 // Store score key in sorted collection to index score->member
 void encodeScoreKey(int64_t score, const char* member, size_t member_len,
                     char** score_key, size_t* score_key_len) {
@@ -33,9 +43,20 @@ void decodeScoreKey(char* score_key, size_t score_key_len, char** member,
   *member_len = score_key_len - sizeof(int64_t);
 }
 
+void print_member_score(size_t index, char* member, size_t member_len,
+                        int64_t score) {
+  char member_c_str[member_len + 1];
+  memcpy(member_c_str, member, member_len);
+  member_c_str[member_len] = '\0';
+  printf("(%lu)\"%s\"\n", 2 * index + 1, member_c_str);
+  printf("(%lu)\"%ld\"\n", 2 * index + 2, score);
+}
+
 KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
                     size_t collection_len, int64_t score, const char* member,
                     size_t member_len, KVDKWriteOptions* write_option) {
+  printf("ZADD %s %ld %s\n", collection, score, member);
+
   char* score_key;
   char* string_key;
   size_t score_key_len;
@@ -48,12 +69,14 @@ KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
                                score_key_len, "", 0);
   if (s == NotFound) {
     KVDKSortedCollectionConfigs* s_config = KVDKCreateSortedCollectionConfigs();
+    KVDKSetSortedCollectionConfigs(s_config, comp_name, strlen(comp_name));
     s = KVDKCreateSortedCollection(engine, collection, collection_len,
                                    s_config);
     if (s == Ok) {
       s = KVDKSortedSet(engine, collection, collection_len, score_key,
                         score_key_len, "", 0);
     }
+    KVDKDestroySortedCollectionConfigs(s_config);
   }
 
   if (s == Ok) {
@@ -63,51 +86,68 @@ KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
 
   free(score_key);
   free(string_key);
+
   return s;
 }
 
 KVDKStatus KVDKZPopMin(KVDKEngine* engine, const char* collection,
                        size_t collection_len, size_t n) {
+  printf("ZPOPMIN %s %lu\n", collection, n);
+
   KVDKStatus s;
   KVDKSortedIterator* iter =
       KVDKKVDKSortedIteratorCreate(engine, collection, collection_len, NULL);
   if (iter == NULL) {
     return Ok;
   }
+  size_t cnt = 0;
 
   for (KVDKSortedIteratorSeekToFirst(iter);
        KVDKSortedIteratorValid(iter) && n > 0; KVDKSortedIteratorNext(iter)) {
     char* score_key;
     char* string_key;
+    char* member;
     size_t score_key_len;
     size_t string_key_len;
+    size_t member_len;
+    int64_t score;
     KVDKSortedIteratorKey(iter, &score_key, &score_key_len);
-    encodeStringKey(collection, collection_len,
-                    score_key + sizeof(int64_t) /* maybe use decode function */,
-                    score_key_len - sizeof(int64_t), &string_key,
+    decodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
+    encodeStringKey(collection, collection_len, member, member_len, &string_key,
                     &string_key_len);
     s = KVDKSortedDelete(engine, collection, collection_len, score_key,
                          score_key_len);
     if (s == Ok) {
       s = KVDKDelete(engine, string_key, string_key_len);
     }
+
+    if (s == Ok) {
+      // do anything with poped key, like print
+      print_member_score(cnt++, member, member_len, score);
+      (void)member;
+    }
+
     free(score_key);
     free(string_key);
-    if (s != Ok) {
-      return s;
+    if (s != Ok || cnt == n) {
+      break;
     }
   }
-  return Ok;
+  KVDKSortedIteratorDestroy(engine, iter);
+  return s;
 }
 
 KVDKStatus KVDKZPopMax(KVDKEngine* engine, const char* collection,
                        size_t collection_len, size_t n) {
+  printf("ZPOPMAX %s %lu\n", collection, n);
+
   KVDKStatus s;
   KVDKSortedIterator* iter =
       KVDKKVDKSortedIteratorCreate(engine, collection, collection_len, NULL);
   if (iter == NULL) {
     return Ok;
   }
+  size_t cnt = 0;
 
   for (KVDKKVDKSortedIteratorSeekToLast(iter);
        KVDKSortedIteratorValid(iter) && n > 0; KVDKSortedIteratorPrev(iter)) {
@@ -130,26 +170,31 @@ KVDKStatus KVDKZPopMax(KVDKEngine* engine, const char* collection,
 
     if (s == Ok) {
       // do anything with poped key, like print
+      print_member_score(cnt++, member, member_len, score);
       (void)member;
     }
 
     free(score_key);
     free(string_key);
-    if (s != Ok) {
-      return s;
+    if (s != Ok || cnt == n) {
+      break;
     }
   }
-  return Ok;
+  KVDKSortedIteratorDestroy(engine, iter);
+  return s;
 }
 
 KVDKStatus KVDKZRange(KVDKEngine* engine, const char* collection,
                       size_t collection_len, int64_t min_score,
                       int64_t max_score) {
+  printf("ZRANGE %s %ld %ld\n", collection, min_score, max_score);
+
   KVDKSortedIterator* iter =
       KVDKKVDKSortedIteratorCreate(engine, collection, collection_len, NULL);
   if (iter == NULL) {
     return Ok;
   }
+  size_t cnt = 0;
 
   for (KVDKSortedIteratorSeek(iter, (char*)&min_score, sizeof(int64_t));
        KVDKSortedIteratorValid(iter); KVDKSortedIteratorNext(iter)) {
@@ -162,15 +207,50 @@ KVDKStatus KVDKZRange(KVDKEngine* engine, const char* collection,
     decodeScoreKey(score_key, score_key_len, &member, &member_len, &score);
     if (score < max_score) {
       // do any thing with in-range key, like print;
-      (void)member;
+      print_member_score(cnt++, member, member_len, score);
       free(score_key);
     } else {
       free(score_key);
       break;
     }
   }
-
+  KVDKSortedIteratorDestroy(engine, iter);
   return Ok;
 }
 
-int main() {}
+void ZSetTest(KVDKEngine* engine) {
+  const char* zset_name = "zset";
+  const size_t zset_name_len = strlen(zset_name);
+  char* members[NUM_MEMBERS] = {"one",  "two",          "three", "four",
+                                "five", "another_five", "six"};
+  int64_t scores[NUM_MEMBERS] = {1, 2, 3, 4, 5, 5, 6};
+  KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
+  for (size_t i = 0; i < NUM_MEMBERS; i++) {
+    KVDKStatus s = KVDKZAdd(engine, zset_name, zset_name_len, scores[i],
+                            members[i], strlen(members[i]), write_option);
+    assert(s == Ok);
+  }
+
+  assert(KVDKZRange(engine, zset_name, zset_name_len, 1, 7) == Ok);
+  assert(KVDKZPopMax(engine, zset_name, zset_name_len, 2) == Ok);
+  assert(KVDKZPopMin(engine, zset_name, zset_name_len, 2) == Ok);
+  assert(KVDKZRange(engine, zset_name, zset_name_len, 1, 7) == Ok);
+  KVDKDestroyWriteOptions(write_option);
+}
+
+int main() {
+  KVDKConfigs* kvdk_configs = KVDKCreateConfigs();
+  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 128u,
+                 1ull << 10, 1 << 4);
+  const char* engine_path = "/mnt/pmem0/kvdk_zset_example";
+  KVDKRemovePMemContents(engine_path);
+  KVDKEngine* kvdk_engine;
+  KVDKStatus s = KVDKOpen(engine_path, kvdk_configs, stdout, &kvdk_engine);
+  assert(s == Ok);
+  KVDKRegisterCompFunc(kvdk_engine, comp_name, strlen(comp_name), ScoreCmp);
+  ZSetTest(kvdk_engine);
+
+  KVDKDestroyConfigs(kvdk_configs);
+  KVDKCloseEngine(kvdk_engine);
+  return 0;
+}

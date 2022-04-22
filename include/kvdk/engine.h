@@ -33,6 +33,10 @@ extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
                            uint64_t pmem_segment_blocks,
                            uint32_t hash_bucket_size, uint64_t hash_bucket_num,
                            uint32_t num_buckets_per_slot);
+extern void KVDKConfigRegisterCompFunc(
+    KVDKConfigs* kv_config, const char* compara_name, size_t compara_len,
+    int (*compare)(const char* src, size_t src_len, const char* target,
+                   size_t target_len));
 extern void KVDKDestroyConfigs(KVDKConfigs* kv_config);
 
 extern KVDKWriteOptions* KVDKCreateWriteOptions(void);

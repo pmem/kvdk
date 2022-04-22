@@ -26,6 +26,19 @@ void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
   kv_config->rep.populate_pmem_space = populate_pmem_space;
 }
 
+void KVDKConfigRegisterCompFunc(KVDKConfigs* kv_config,
+                                const char* compara_name, size_t compara_len,
+                                int (*compare)(const char* src, size_t src_len,
+                                               const char* target,
+                                               size_t target_len)) {
+  auto comp_func = [compare](const StringView& src,
+                             const StringView& target) -> int {
+    return compare(src.data(), src.size(), target.data(), target.size());
+  };
+  kv_config->rep.comparator.RegisterComparator(
+      StringView(compara_name, compara_len), comp_func);
+}
+
 void KVDKDestroyConfigs(KVDKConfigs* kv_config) { delete kv_config; }
 
 KVDKWriteOptions* KVDKCreateWriteOptions(void) { return new KVDKWriteOptions; }
