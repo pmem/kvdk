@@ -52,11 +52,6 @@ void KVDKWriteOptionsSetTTLTime(KVDKWriteOptions* kv_options,
   kv_options->rep.ttl_time = ttl_time;
 }
 
-KVDK_LIBRARY_API void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions* kv_options,
-                                                  unsigned char key_exist) {
-  kv_options->rep.key_exist = key_exist;
-}
-
 KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs() {
   return new KVDKSortedCollectionConfigs;
 }

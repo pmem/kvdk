@@ -14,7 +14,7 @@
 // Modify this path if necessary.
 const char* pmem_path = "/mnt/pmem0/tutorial_kvdk_example";
 
-static int CmpCompare(const char* a, size_t alen, const char* b, size_t blen) {
+static int StrCmp(const char* a, size_t alen, const char* b, size_t blen) {
   int n = (alen < blen) ? alen : blen;
   int r = memcmp(a, b, n);
   if (r == 0) {
@@ -47,18 +47,18 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);
-  cmp = CmpCompare(read_v1, read_v1_len, value1, value1_len);
+  cmp = StrCmp(read_v1, read_v1_len, value1, value1_len);
   assert(cmp == 0);
   free(read_v1);
   s = KVDKSet(kvdk_engine, key1, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);
-  cmp = CmpCompare(read_v1, read_v1_len, value2, value2_len);
+  cmp = StrCmp(read_v1, read_v1_len, value2, value2_len);
   assert(cmp == 0);
   s = KVDKGet(kvdk_engine, key2, key2_len, &read_v2_len, &read_v2);
   assert(s == Ok);
-  cmp = CmpCompare(read_v2, read_v2_len, value2, value2_len);
+  cmp = StrCmp(read_v2, read_v2_len, value2, value2_len);
   assert(cmp == 0);
   s = KVDKDelete(kvdk_engine, key1, key1_len);
   assert(s == Ok);
@@ -102,7 +102,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   s = KVDKSortedGet(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), &read_v1_len, &read_v1);
   assert(s == Ok);
-  cmp = CmpCompare(read_v1, read_v1_len, value1, strlen(value1));
+  cmp = StrCmp(read_v1, read_v1_len, value1, strlen(value1));
   assert(cmp == 0);
   free(read_v1);
   s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
@@ -111,12 +111,12 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   s = KVDKSortedGet(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), &read_v1_len, &read_v1);
   assert(s == Ok);
-  cmp = CmpCompare(read_v1, read_v1_len, value2, strlen(value2));
+  cmp = StrCmp(read_v1, read_v1_len, value2, strlen(value2));
   assert(cmp == 0);
   s = KVDKSortedGet(kvdk_engine, collection2, strlen(collection2), key2,
                     strlen(key2), &read_v2_len, &read_v2);
   assert(s == Ok);
-  cmp = CmpCompare(read_v2, read_v2_len, value2, strlen(value2));
+  cmp = StrCmp(read_v2, read_v2_len, value2, strlen(value2));
   assert(cmp == 0);
   s = KVDKSortedDelete(kvdk_engine, collection1, strlen(collection1), key1,
                        strlen(key1));
@@ -168,14 +168,14 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
     char *key_res, *val_res;
     KVDKSortedIteratorKey(kvdk_iter, &key_res, &key_len);
     KVDKSortedIteratorValue(kvdk_iter, &val_res, &val_len);
-    if (CmpCompare(key_res, key_len, end, strlen(end)) > 0) {
+    if (StrCmp(key_res, key_len, end, strlen(end)) > 0) {
       free(key_res);
       free(val_res);
       break;
     }
-    int cmp = CmpCompare(key_res, key_len, expected_key, strlen(expected_key));
+    int cmp = StrCmp(key_res, key_len, expected_key, strlen(expected_key));
     assert(cmp == 0);
-    cmp = CmpCompare(val_res, val_len, expected_value, strlen(expected_value));
+    cmp = StrCmp(val_res, val_len, expected_value, strlen(expected_value));
     assert(cmp == 0);
     free(key_res);
     free(val_res);
@@ -197,14 +197,14 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
     char *key_res, *val_res;
     KVDKSortedIteratorKey(kvdk_iter, &key_res, &key_len);
     KVDKSortedIteratorValue(kvdk_iter, &val_res, &val_len);
-    if (CmpCompare(key_res, key_len, end, strlen(end)) < 0) {
+    if (StrCmp(key_res, key_len, end, strlen(end)) < 0) {
       free(key_res);
       free(val_res);
       break;
     }
-    int cmp = CmpCompare(key_res, key_len, expected_key, strlen(expected_key));
+    int cmp = StrCmp(key_res, key_len, expected_key, strlen(expected_key));
     assert(cmp == 0);
-    cmp = CmpCompare(val_res, val_len, expected_value, strlen(expected_value));
+    cmp = StrCmp(val_res, val_len, expected_value, strlen(expected_value));
     assert(cmp == 0);
     free(key_res);
     free(val_res);
@@ -272,13 +272,13 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
     char *key, *value;
     KVDKSortedIteratorKey(iter, &key, &key_len);
     KVDKSortedIteratorValue(iter, &value, &value_len);
-    if (CmpCompare(key, key_len, expected_array[i].number_key,
-                   strlen(expected_array[i].number_key)) != 0) {
+    if (StrCmp(key, key_len, expected_array[i].number_key,
+               strlen(expected_array[i].number_key)) != 0) {
       printf("sort key error, current key: %s , but expected key: %s\n", key,
              expected_array[i].number_key);
     }
-    if (CmpCompare(value, value_len, expected_array[i].value,
-                   strlen(expected_array[i].value)) != 0) {
+    if (StrCmp(value, value_len, expected_array[i].value,
+               strlen(expected_array[i].value)) != 0) {
       printf("sort value error, current value: %s , but expected value: %s\n",
              value, expected_array[i].value);
     }
@@ -308,11 +308,11 @@ void BatchWriteAnonCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, strlen(key1), &read_v1_len, &read_v1);
   assert(s == Ok);
-  int cmp = CmpCompare(read_v1, read_v1_len, value2, strlen(value2));
+  int cmp = StrCmp(read_v1, read_v1_len, value2, strlen(value2));
   assert(cmp == 0);
   s = KVDKGet(kvdk_engine, key2, strlen(key2), &read_v2_len, &read_v2);
   assert(s == Ok);
-  cmp = CmpCompare(read_v2, read_v2_len, value2, strlen(value2));
+  cmp = StrCmp(read_v2, read_v2_len, value2, strlen(value2));
   assert(cmp == 0);
   printf("Successfully performed BatchWrite on anonymous global collection.\n");
   KVDKWriteBatchDestory(kvdk_wb);
@@ -336,7 +336,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
     s = KVDKHashGet(kvdk_engine, hash_collection, strlen(hash_collection), key,
                     strlen(key), &val, &val_len);
     assert(s == Ok);
-    int cmp = CmpCompare(val, val_len, value, strlen(value));
+    int cmp = StrCmp(val, val_len, value, strlen(value));
     assert(cmp == 0);
     free(val);
   }
@@ -379,7 +379,7 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
     s = KVDKListPopFront(kvdk_engine, list_collection, strlen(list_collection),
                          &key_res, &key_len_res);
     assert(s == Ok);
-    int cmp = CmpCompare(key_res, key_len_res, key, strlen(key));
+    int cmp = StrCmp(key_res, key_len_res, key, strlen(key));
     assert(cmp == 0);
     free(key_res);
   }
@@ -395,7 +395,7 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
     s = KVDKListPopBack(kvdk_engine, list_collection, strlen(list_collection),
                         &key_res, &key_len_res);
     assert(s == Ok);
-    int cmp = CmpCompare(key_res, key_len_res, key, strlen(key));
+    int cmp = StrCmp(key_res, key_len_res, key, strlen(key));
     assert(cmp == 0);
     free(key_res);
   }
@@ -418,7 +418,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     assert(s == Ok);
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
     assert(s == Ok);
-    int cmp = CmpCompare(got_val, val_len, val, strlen(val));
+    int cmp = StrCmp(got_val, val_len, val, strlen(val));
     assert(cmp == 0);
     free(got_val);
     s = KVDKGetTTL(kvdk_engine, key, strlen(key), &ttl_time);
@@ -588,9 +588,95 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
     assert(current_num == args.incr_by * i);
     free(val);
   }
-
   KVDKDestroyWriteOptions(write_option);
   printf("Successfully increase num by %d\n", args.incr_by);
+}
+
+typedef struct {
+  char const* data;
+  size_t len;
+  size_t ret;
+} HSetArgs;
+// new_data is not touched as long as caller does not pass a free_func to
+// KVDKHashModify This avoids a malloc() in HSetNXFunc and a free() in
+// KVDKHashModify()
+int HSetNXFunc(char const* old_data, size_t old_len, char** new_data,
+               size_t* new_len, void* args) {
+  HSetArgs* my_args = (HSetArgs*)args;
+  if (old_data == NULL) {
+    assert(old_len == 0);
+    *new_data = (char*)my_args->data;
+    *new_len = my_args->len;
+    my_args->ret = 1;
+    return KVDK_MODIFY_WRITE;
+  } else {
+    my_args->ret = 0;
+    return KVDK_MODIFY_NOOP;
+  }
+}
+int HSetFunc(char const* old_data, size_t old_len, char** new_data,
+             size_t* new_len, void* args) {
+  HSetArgs* my_args = (HSetArgs*)args;
+  *new_data = (char*)my_args->data;
+  *new_len = my_args->len;
+  if (old_data == NULL) {
+    assert(old_len == 0);
+    my_args->ret = 1;
+  } else {
+    my_args->ret = 0;
+  }
+  return KVDK_MODIFY_WRITE;
+}
+
+void HashModifyExample(KVDKEngine* engine) {
+  char const* key = "my_hash";
+  char const* field = "my_field";
+  char const* value1 = "hello";
+  char const* value2 = "my_field";
+  char* resp_data;
+  size_t resp_len;
+
+  HSetArgs args;
+  args.data = value1;
+  args.len = strlen(value1);
+  KVDKStatus s = KVDKHashModify(engine, key, strlen(key), field, strlen(field),
+                                HSetNXFunc, &args, NULL);
+  assert(s == Ok);
+  assert(args.ret == 1);
+  s = KVDKHashGet(engine, key, strlen(key), field, strlen(field), &resp_data,
+                  &resp_len);
+  assert(s == Ok);
+  assert(resp_len == strlen(value1));
+  assert(StrCmp(resp_data, resp_len, value1, strlen(value1)) == 0);
+  free(resp_data);
+
+  args.data = value2;
+  args.len = strlen(value2);
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetNXFunc,
+                     &args, NULL);
+  assert(s == Ok);
+  assert(args.ret == 0);  // Fail to set since the field already exists
+  s = KVDKHashGet(engine, key, strlen(key), field, strlen(field), &resp_data,
+                  &resp_len);
+  assert(s == Ok);
+  assert(resp_len == strlen(value1));
+  assert(StrCmp(resp_data, resp_len, value1, strlen(value1)) ==
+         0);  // field is untouched
+  free(resp_data);
+
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetFunc,
+                     &args, NULL);
+  assert(s == Ok);
+  assert(args.ret == 0);  // Update, no field added
+  s = KVDKHashGet(engine, key, strlen(key), field, strlen(field), &resp_data,
+                  &resp_len);
+  assert(s == Ok);
+  assert(resp_len == strlen(value2));
+  assert(StrCmp(resp_data, resp_len, value2, strlen(value2)) ==
+         0);  // field is updated
+  free(resp_data);
+
+  printf("Successfully excecuted HSET and HSETNX.\n");
 }
 
 int main() {
@@ -632,6 +718,8 @@ int main() {
 
   // Expire Example
   ExpireExample(kvdk_engine);
+
+  HashModifyExample(kvdk_engine);
 
   KVDKDestroyConfigs(kvdk_configs);
   KVDKCloseEngine(kvdk_engine);

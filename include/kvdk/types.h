@@ -6,6 +6,7 @@
 #define KVDK_MODIFY_WRITE 0
 #define KVDK_MODIFY_DELETE 1
 #define KVDK_MODIFY_ABORT 2
+#define KVDK_MODIFY_NOOP 3
 
 // Customized modify function used in KVDKModify, indicate how to modify
 // existing value
