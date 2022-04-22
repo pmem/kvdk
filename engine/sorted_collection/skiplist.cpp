@@ -51,10 +51,37 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
 };
 
 Status Skiplist::SetExpireTime(ExpireTimeType expired_time) {
-  // TODO: use a new record
   header_->record->expired_time = expired_time;
   pmem_persist(&header_->record->expired_time, sizeof(ExpireTimeType));
   return Status::Ok;
+}
+
+Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
+                                              TimeStampType timestamp,
+                                              SpinMutex* locked_header_lock) {
+  WriteResult ret;
+  DLRecord* header = HeaderRecord();
+  auto request_size =
+      sizeof(DLRecord) + header->Key().size() + header->Value().size();
+  SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
+  if (space_entry.size == 0) {
+    ret.s = Status::PmemOverflow;
+    return ret;
+  }
+  DLRecord* pmem_record = DLRecord::PersistDLRecord(
+      pmem_allocator_->offset2addr_checked(space_entry.offset),
+      space_entry.size, timestamp, SortedHeader,
+      pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
+      header->Key(), header->Value(), expired_time);
+  if (!Skiplist::Replace(header, pmem_record, locked_header_lock, HeaderNode(),
+                         pmem_allocator_.get(), hash_table_.get())) {
+    ret.s = Status::Fail;
+    return ret;
+  }
+  ret.existing_record = header;
+  ret.dram_node = HeaderNode();
+  ret.write_record = pmem_record;
+  return ret;
 }
 
 Status Skiplist::MarkAsDeleted() {

@@ -184,6 +184,12 @@ class Skiplist : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
+  // TODO jiayu: use lock table for skiplist so will don't need to pass outsider
+  // locks for write operations, and write operations wont fail anymore
+  WriteResult SetExpireTime(ExpireTimeType expired_time,
+                            TimeStampType timestamp,
+                            SpinMutex* locked_header_lock);
+
   Status SetExpireTime(ExpireTimeType expired_time) final;
 
   Status MarkAsDeleted();

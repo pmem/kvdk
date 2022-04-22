@@ -1477,6 +1477,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
 
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
+  auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
   LookupResult res = lookupKey<false>(str, ExpirableRecordType);
 
@@ -1513,7 +1514,12 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         break;
       }
       case PointerType::Skiplist: {
-        res.s = res.entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
+        auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
+            expired_time, snapshot_holder.Timestamp(), hint.spin);
+        if (ret.s == Status::Fail) {
+          return Expire(str, ttl_time);
+        }
+        res.s = ret.s;
         break;
       }
       case PointerType::HashList: {
@@ -1862,6 +1868,7 @@ void KVEngine::deleteCollections() {
     hash_it = hash_lists_.erase(hash_it);
   }
 };
+
 void KVEngine::backgroundDestroyCollections() {
   std::deque<PendingFreeSpaceEntries> list_space_entries, hash_space_entries,
       skiplist_space_entries;
