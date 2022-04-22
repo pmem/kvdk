@@ -39,7 +39,7 @@ struct KVDKEngine {
 struct KVDKWriteBatch {
   WriteBatch rep;
 };
-struct KVDKIterator {
+struct KVDKSortedIterator {
   Iterator* rep;
 };
 

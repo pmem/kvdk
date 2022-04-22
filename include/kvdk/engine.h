@@ -19,7 +19,7 @@ typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
 typedef struct KVDKWriteOptions KVDKWriteOptions;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
-typedef struct KVDKIterator KVDKIterator;
+typedef struct KVDKSortedIterator KVDKSortedIterator;
 typedef struct KVDKListIterator KVDKListIterator;
 typedef struct KVDKHashIterator KVDKHashIterator;
 typedef struct KVDKSnapshot KVDKSnapshot;
@@ -189,19 +189,23 @@ extern int KVDKListIteratorIsValid(KVDKListIterator* iter);
 extern void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
                                      size_t* elem_len);
 
-extern KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
-                                              const char* collection,
-                                              size_t collection_len,
-                                              KVDKSnapshot* snapshot);
-extern void KVDKDestroyIterator(KVDKEngine* engine, KVDKIterator* iterator);
-extern void KVDKIterSeekToFirst(KVDKIterator* iter);
-extern void KVDKIterSeekToLast(KVDKIterator* iter);
-extern void KVDKIterSeek(KVDKIterator* iter, const char* str, size_t str_len);
-extern void KVDKIterNext(KVDKIterator* iter);
-extern void KVDKIterPrev(KVDKIterator* iter);
-extern unsigned char KVDKIterValid(KVDKIterator* iter);
-extern void KVDKIterKey(KVDKIterator* iter, char** key, size_t* key_len);
-extern void KVDKIterValue(KVDKIterator* iter, char** value, size_t* val_len);
+extern KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
+                                                        const char* collection,
+                                                        size_t collection_len,
+                                                        KVDKSnapshot* snapshot);
+extern void KVDKSortedIteratorDestroy(KVDKEngine* engine,
+                                      KVDKSortedIterator* iterator);
+extern void KVDKSortedIteratorSeekToFirst(KVDKSortedIterator* iter);
+extern void KVDKKVDKSortedIteratorSeekToLast(KVDKSortedIterator* iter);
+extern void KVDKSortedIteratorSeek(KVDKSortedIterator* iter, const char* str,
+                                   size_t str_len);
+extern void KVDKSortedIteratorNext(KVDKSortedIterator* iter);
+extern void KVDKSortedIteratorPrev(KVDKSortedIterator* iter);
+extern unsigned char KVDKSortedIteratorValid(KVDKSortedIterator* iter);
+extern void KVDKSortedIteratorKey(KVDKSortedIterator* iter, char** key,
+                                  size_t* key_len);
+extern void KVDKSortedIteratorValue(KVDKSortedIterator* iter, char** value,
+                                    size_t* val_len);
 
 /* ttl_time is negetive or positive number, If ttl_time == INT64_MAX,
  * the key is persistent; If ttl_time <=0, the key is expired immediately.
