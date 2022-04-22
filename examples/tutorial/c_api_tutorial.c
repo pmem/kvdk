@@ -251,7 +251,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   KVDKRegisterCompFunc(kvdk_engine, comp_name, strlen(comp_name), score_cmp);
   // create sorted collection
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
-  KVDKSetSortedCollectionConfigs(s_configs, comp_name, strlen(comp_name));
+  KVDKSetSortedCollectionConfigs(s_configs, comp_name, strlen(comp_name), 1);
   KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, collection,
                                             strlen(collection), s_configs);
   assert(s == Ok);

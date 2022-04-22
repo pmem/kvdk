@@ -48,7 +48,7 @@ void DecodeScoreKey(char* score_key, size_t score_key_len, char** member,
 }
 
 void PrintMemberScore(size_t index, char* member, size_t member_len,
-                        int64_t score) {
+                      int64_t score) {
   char member_c_str[member_len + 1];
   memcpy(member_c_str, member, member_len);
   member_c_str[member_len] = '\0';
@@ -73,7 +73,9 @@ KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
                                score_key_len, "", 0);
   if (s == NotFound) {
     KVDKSortedCollectionConfigs* s_config = KVDKCreateSortedCollectionConfigs();
-    KVDKSetSortedCollectionConfigs(s_config, comp_name, strlen(comp_name));
+    KVDKSetSortedCollectionConfigs(
+        s_config, comp_name, strlen(comp_name),
+        0 /*we do not need hash index for score part*/);
     s = KVDKCreateSortedCollection(engine, collection, collection_len,
                                    s_config);
     if (s == Ok) {

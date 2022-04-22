@@ -63,8 +63,10 @@ KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs() {
 
 void KVDKSetSortedCollectionConfigs(KVDKSortedCollectionConfigs* configs,
                                     const char* comp_func_name,
-                                    size_t comp_func_len) {
+                                    size_t comp_func_len,
+                                    int index_with_hashtable) {
   configs->rep.comparator_name = std::string(comp_func_name, comp_func_len);
+  configs->rep.index_with_hashtable = index_with_hashtable;
 }
 
 void KVDKDestroySortedCollectionConfigs(KVDKSortedCollectionConfigs* configs) {

@@ -47,7 +47,8 @@ extern void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions*, unsigned char);
 extern KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs();
 extern void KVDKSetSortedCollectionConfigs(KVDKSortedCollectionConfigs* configs,
                                            const char* comp_func_name,
-                                           size_t comp_func_len);
+                                           size_t comp_func_len,
+                                           int index_with_hashtable);
 extern void KVDKDestroySortedCollectionConfigs(
     KVDKSortedCollectionConfigs* configs);
 
