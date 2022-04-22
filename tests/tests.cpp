@@ -166,7 +166,7 @@ class EngineBasicTest : public testing::Test {
 
     TestDestroy(collection, SortedDestroyFunc, SortedSetFunc, SortedGetFunc,
                 SortedDeleteFunc);
-                
+
     ASSERT_EQ(engine->CreateSortedCollection(collection, s_configs),
               Status::Ok);
 
