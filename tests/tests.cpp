@@ -2354,7 +2354,6 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
   for (auto& t : ts) t.join();
   delete engine;
 }
-#endif
 
 TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   SyncPoint::GetInstance()->DisableProcessing();
@@ -2497,6 +2496,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
     for (auto& t : ts) t.join();
   }
 }
+#endif
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
