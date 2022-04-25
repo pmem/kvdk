@@ -90,11 +90,13 @@ void OldRecordsCleaner::PushToCache(
 
 void OldRecordsCleaner::PushToGlobal(
     const std::deque<OldDeleteRecord>& old_delete_records) {
+  std::lock_guard<SpinMutex> lg(lock_);
   global_old_delete_records_.emplace_back(old_delete_records);
 }
 
 void OldRecordsCleaner::PushToGlobal(
     std::deque<OutdatedCollection>&& outdated_collections) {
+  std::lock_guard<SpinMutex> lg(lock_);
   global_outdated_collections_.emplace_back(
       std::forward<std::deque<OutdatedCollection>>(outdated_collections));
 }
@@ -110,6 +112,8 @@ void OldRecordsCleaner::TryGlobalClean() {
   kv_engine_->version_controller_.UpdatedOldestSnapshot();
   TimeStampType oldest_snapshot_ts =
       kv_engine_->version_controller_.OldestSnapshotTS();
+
+  std::lock_guard<SpinMutex> lg(lock_);
 
   // Fetch thread cached old records
   // Notice: As we can purge old delete records only after the older data

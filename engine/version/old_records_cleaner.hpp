@@ -134,6 +134,7 @@ class OldRecordsCleaner {
 
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
+  SpinMutex lock_;
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
   std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
   std::vector<std::deque<OutdatedCollection>> global_outdated_collections_;

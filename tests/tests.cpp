@@ -2421,16 +2421,10 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
         ASSERT_EQ(engine->CreateSortedCollection(sorted_collection, s_configs),
                   Status::Ok);
         ASSERT_EQ(engine->SSet(sorted_collection, key, val), Status::Ok);
-      }
-    }
-  };
-
-  auto ExpireSorted = [&]() {
-    for (int i = 0; i < cnt; ++i) {
-      for (int index_with_hashtable : {0, 1}) {
-        std::string sorted_collection =
-            std::to_string(i) + "sorted" + std::to_string(index_with_hashtable);
-        ASSERT_EQ(engine->Expire(sorted_collection, 1), Status::Ok);
+        bool set_expire = fast_random_64() % 2 == 0;
+        if (set_expire) {
+          ASSERT_EQ(engine->Expire(sorted_collection, 1), Status::Ok);
+        }
       }
     }
   };
@@ -2446,11 +2440,12 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
         int64_t ttl_time;
         Status s = engine->GetTTL(sorted_collection, &ttl_time);
         if (s == Status::Ok) {
-          if (ttl_time > 1) {
-            ASSERT_EQ(INT32_MAX / 10000, ttl_time / 10000);
+          if (ttl_time = kPersistTime) {
             ASSERT_EQ(engine->SGet(sorted_collection, key, &got_val),
                       Status::Ok);
             ASSERT_EQ(got_val, val);
+          } else {
+            ASSERT_TRUE(ttl_time <= 1);
           }
         } else {
           ASSERT_EQ(s, Status::NotFound);
@@ -2468,12 +2463,9 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   };
 
   {
-    // Test expired
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(SetString));
     ts.emplace_back(std::thread(ExpireString));
-    ts.emplace_back(std::thread(SetSorted));
-    ts.emplace_back(std::thread(ExpireSorted));
     sleep(2);
     ts.emplace_back(std::thread(ExpiredClean));
     for (auto& t : ts) t.join();
@@ -2484,17 +2476,22 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   }
 
   {
-    // Test non-expired
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(SetString));
     ts.emplace_back(std::thread(ExpireString));
-    ts.emplace_back(std::thread(SetSorted));
-    ts.emplace_back(std::thread(ExpireSorted));
     ts.emplace_back(std::thread(ExpiredClean));
     ts.emplace_back(std::thread(GetString));
-    ts.emplace_back(std::thread(GetSorted));
     for (auto& t : ts) t.join();
   }
+
+  {
+    SetSorted();
+    auto t = std::thread(ExpiredClean);
+    GetSorted();
+    t.join();
+  }
+
+  delete engine;
 }
 #endif
 

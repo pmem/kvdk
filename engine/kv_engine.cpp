@@ -249,7 +249,7 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
   if (s != Status::Ok) {
     return s;
   }
-
+destroy_impl : {
   auto hint = hash_table_->GetHint(collection_name);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
@@ -272,12 +272,11 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
         space_entry.size, new_ts, SortedHeaderDelete,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection_name, value);
-    bool success = Skiplist::Replace(header, pmem_record, hint.spin,
-                                     skiplist->HeaderNode(),
-                                     pmem_allocator_.get(), hash_table_.get());
-    kvdk_assert(
-        success,
-        "replace skiplist header must be success as no extra lock required");
+    if (!Skiplist::Replace(header, pmem_record, hint.spin,
+                           skiplist->HeaderNode(), pmem_allocator_.get(),
+                           hash_table_.get())) {
+      goto destroy_impl;
+    }
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderDelete, skiplist,
                         PointerType::Skiplist);
     ul.unlock();
@@ -288,6 +287,7 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
     ret.s = Status::Ok;
   }
   return ret.s;
+}
 }
 
 Iterator* KVEngine::NewSortedIterator(const StringView collection,
@@ -1470,6 +1470,11 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
   int64_t base_time = TimeUtils::millisecond_time();
   if (!TimeUtils::CheckTTL(ttl_time, base_time)) {
     return Status::InvalidArgument;
@@ -1482,7 +1487,6 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
   LookupResult res = lookupKey<false>(str, ExpirableRecordType);
-
   if (res.s == Status::Outdated) {
     if (res.entry_ptr->IsTTLStatus()) {
       // Push the expired record into cleaner and update hash entry status with
@@ -1519,6 +1523,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         auto new_ts = snapshot_holder.Timestamp();
         auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
             expired_time, new_ts, hint.spin);
+        ul.unlock();
         if (ret.s == Status::Fail) {
           return Expire(str, ttl_time);
         }
