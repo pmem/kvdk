@@ -175,7 +175,7 @@ void OldRecordsCleaner::TryGlobalClean() {
       if (oc_iter->release_time < clean_all_data_record_ts_) {
         // For now, we only use this for skiplist
         CollectionIDType id = oc_iter->collection->ID();
-        static_cast<Skiplist*>(oc_iter->collection)->Destroy();
+        oc_iter->collection->Destroy();
         kv_engine_->removeSkiplist(id);
         oc_iter++;
       } else {

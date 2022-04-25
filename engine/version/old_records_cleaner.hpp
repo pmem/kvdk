@@ -56,10 +56,11 @@ struct OldDeleteRecord {
   RecordIndex record_index;
 };
 
+// We only use this for skiplist now
 struct OutdatedCollection {
-  OutdatedCollection(Collection* c, TimeStampType rt)
+  OutdatedCollection(Skiplist* c, TimeStampType rt)
       : collection(c), release_time(rt) {}
-  Collection* collection;
+  Skiplist* collection;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely destroy the collection
   TimeStampType release_time;
