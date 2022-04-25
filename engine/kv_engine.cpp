@@ -194,6 +194,7 @@ Status KVEngine::CreateSortedCollection(
     return Status::InvalidDataSize;
   }
 
+  // TODO jiayu: package sorted collection creation and destroy in Skiplist class
   auto hint = hash_table_->GetHint(collection_name);
   std::lock_guard<SpinMutex> lg(*hint.spin);
   auto holder = version_controller_.GetLocalSnapshotHolder();

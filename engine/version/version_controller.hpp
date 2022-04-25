@@ -159,10 +159,6 @@ class VersionController {
     kvdk_assert(access_thread.id >= 0 && static_cast<size_t>(access_thread.id) <
                                              version_thread_cache_.size(),
                 "Uninitialized thread in NewLocalSnapshot");
-    kvdk_assert(
-        version_thread_cache_[access_thread.id].holding_snapshot.timestamp ==
-            kMaxTimestamp,
-        "Previous LocalSnapshot not released yet!");
     version_thread_cache_[access_thread.id].holding_snapshot.timestamp =
         GetCurrentTimestamp();
   }

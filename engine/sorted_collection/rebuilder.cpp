@@ -147,19 +147,19 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       std::lock_guard<SpinMutex> lg(*hint.spin);
 
       if (valid_version_record != header_record) {
-        bool success = Skiplist::Replace(header_record, valid_version_record,
-                                         hint.spin, skiplist->HeaderNode(),
-                                         kv_engine_->pmem_allocator_.get(),
-                                         kv_engine_->hash_table_.get());
+        bool success = Skiplist::Replace(
+            header_record, valid_version_record, hint.spin, nullptr,
+            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get());
         kvdk_assert(success,
                     "SortedCollectionRebuilder::initRebuildLists run in single "
                     "thread, so no lock contention should happen");
         addUnlinkedRecord(header_record);
       }
 
+      GlobalLogger.Debug("header type %d\n", header_record->entry.meta.type);
       bool outdated =
           valid_version_record->entry.meta.type == SortedHeaderDelete ||
-          TimeUtils::CheckIsExpired(header_record->GetExpireTime());
+          TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
@@ -659,14 +659,18 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
 
 DLRecord* SortedCollectionRebuilder::findValidVersion(DLRecord* pmem_record,
                                                       std::vector<DLRecord*>*) {
+  kvdk_assert(pmem_record != nullptr,
+              "pass nullptr to SortedCollectionRebuilder::findValidVersion");
   if (!recoverToCheckpoint()) {
     return pmem_record;
   }
+  CollectionIDType id = Skiplist::SkiplistID(pmem_record);
   DLRecord* curr = pmem_record;
   while (curr != nullptr &&
          curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
     curr =
         kv_engine_->pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
+
     kvdk_assert(curr == nullptr || curr->Validate(),
                 "Broken checkpoint: invalid older version sorted record");
     kvdk_assert(
@@ -674,6 +678,10 @@ DLRecord* SortedCollectionRebuilder::findValidVersion(DLRecord* pmem_record,
         "Broken checkpoint: key of older version sorted data is "
         "not same as new "
         "version");
+
+    if (curr && Skiplist::SkiplistID(curr) != id) {
+      curr = nullptr;
+    }
   }
   return curr;
 }

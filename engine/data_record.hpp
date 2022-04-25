@@ -300,7 +300,8 @@ struct DLRecord {
   }
 
   ExpireTimeType GetExpireTime() const {
-    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
+    kvdk_assert(entry.meta.type & ExpirableRecordType,
+                "Call DLRecord::GetExpireTime with an unexpirable type");
     return expired_time;
   }
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }

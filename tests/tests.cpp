@@ -544,6 +544,9 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
   Iterator* snapshot_iter =
       engine->NewSortedIterator(sorted_collection, snapshot);
+  // Destroyed collection still should be accessable by snapshot_iter
+  engine->DestroySortedCollection(sorted_collection);
+
   uint64_t snapshot_iter_cnt = 0;
   snapshot_iter->SeekToFirst();
   while (snapshot_iter->Valid()) {
@@ -2369,6 +2372,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
   for (auto& t : ts) t.join();
   delete engine;
 }
+#endif
 
 TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   SyncPoint::GetInstance()->DisableProcessing();
@@ -2384,22 +2388,20 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   configs.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
+
   int cnt = 100;
+
   auto SetString = [&]() {
     for (int i = 0; i < cnt; ++i) {
       std::string key = std::to_string(i) + "stringk";
       std::string val = std::to_string(i) + "stringval";
-      std::string got_val;
       ASSERT_EQ(engine->Set(key, val, WriteOptions{INT32_MAX}), Status::Ok);
     }
-  };
-  auto ExpiredClean = [&]() {
-    auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->CleanOutDated();
   };
 
   auto ExpireString = [&]() {
     for (int i = 0; i < cnt; ++i) {
+      // string
       std::string key = std::to_string(i) + "stringk";
       std::string got_val;
       if (engine->Get(key, &got_val) == Status::Ok) {
@@ -2410,6 +2412,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 
   auto GetString = [&]() {
     for (int i = 0; i < cnt; ++i) {
+      // string
       std::string key = std::to_string(i) + "stringk";
       std::string got_val;
       int64_t ttl_time;
@@ -2419,34 +2422,99 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
           ASSERT_EQ(INT32_MAX / 10000, ttl_time / 10000);
         }
       } else {
-        ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::NotFound);
+        ASSERT_EQ(s, Status::NotFound);
         ASSERT_EQ(ttl_time, kInvalidTTL);
       }
     }
   };
 
+  auto SetSorted = [&]() {
+    for (int i = 0; i < cnt; ++i) {
+      for (int index_with_hashtable : {0, 1}) {
+        std::string sorted_collection =
+            std::to_string(i) + "sorted" + std::to_string(index_with_hashtable);
+        std::string key = std::to_string(i) + "sortedk";
+        std::string val = std::to_string(i) + "sortedval";
+        SortedCollectionConfigs s_configs;
+        s_configs.index_with_hashtable = index_with_hashtable;
+        ASSERT_EQ(engine->CreateSortedCollection(sorted_collection, s_configs),
+                  Status::Ok);
+        ASSERT_EQ(engine->SortedSet(sorted_collection, key, val), Status::Ok);
+      }
+    }
+  };
+
+  auto ExpireSorted = [&]() {
+    for (int i = 0; i < cnt; ++i) {
+      for (int index_with_hashtable : {0, 1}) {
+        std::string sorted_collection =
+            std::to_string(i) + "sorted" + std::to_string(index_with_hashtable);
+        ASSERT_EQ(engine->Expire(sorted_collection, 1), Status::Ok);
+      }
+    }
+  };
+
+  auto GetSorted = [&]() {
+    for (int i = 0; i < cnt; ++i) {
+      for (int index_with_hashtable : {0, 1}) {
+        std::string sorted_collection =
+            std::to_string(i) + "sorted" + std::to_string(index_with_hashtable);
+        std::string key = std::to_string(i) + "sortedk";
+        std::string val = std::to_string(i) + "sortedval";
+        std::string got_val;
+        int64_t ttl_time;
+        Status s = engine->GetTTL(sorted_collection, &ttl_time);
+        if (s == Status::Ok) {
+          if (ttl_time > 1) {
+            ASSERT_EQ(INT32_MAX / 10000, ttl_time / 10000);
+            ASSERT_EQ(engine->SortedGet(sorted_collection, key, &got_val),
+                      Status::Ok);
+            ASSERT_EQ(got_val, val);
+          }
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          ASSERT_EQ(ttl_time, kInvalidTTL);
+          ASSERT_EQ(engine->SortedGet(sorted_collection, key, &got_val),
+                    Status::NotFound);
+        }
+      }
+    }
+  };
+
+  auto ExpiredClean = [&]() {
+    auto test_kvengine = static_cast<KVEngine*>(engine);
+    test_kvengine->CleanOutDated();
+  };
+
   {
+    // Test expired
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(SetString));
     ts.emplace_back(std::thread(ExpireString));
+    ts.emplace_back(std::thread(SetSorted));
+    ts.emplace_back(std::thread(ExpireSorted));
     sleep(2);
     ts.emplace_back(std::thread(ExpiredClean));
     for (auto& t : ts) t.join();
 
     // check
     GetString();
+    GetSorted();
   }
 
   {
+    // Test non-expired
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(SetString));
     ts.emplace_back(std::thread(ExpireString));
+    ts.emplace_back(std::thread(SetSorted));
+    ts.emplace_back(std::thread(ExpireSorted));
     ts.emplace_back(std::thread(ExpiredClean));
     ts.emplace_back(std::thread(GetString));
+    ts.emplace_back(std::thread(GetSorted));
     for (auto& t : ts) t.join();
   }
 }
-#endif
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);

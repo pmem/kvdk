@@ -52,6 +52,7 @@ class SortedCollectionRebuilder {
     SkiplistNode* start_node;
   };
 
+  // Build skiplist struct and index for valid headers
   Status initRebuildLists();
 
   bool recoverToCheckpoint() { return checkpoint_.Valid(); }
