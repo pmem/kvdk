@@ -128,7 +128,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   free(read_v2);
   KVDKDestroySortedCollectionConfigs(s_configs);
   printf(
-      "Successfully performed SortedGet, SortedSet, SortedDelete "
+      "Successfully performed SGet, SSet, SDelete "
       "operations on named "
       "collections.\n");
 }

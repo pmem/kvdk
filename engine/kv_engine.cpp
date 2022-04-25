@@ -1010,8 +1010,8 @@ Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
   return Status::Ok;
 }
 
-Status KVEngine::SortedSet(const StringView collection,
-                           const StringView user_key, const StringView value) {
+Status KVEngine::SSet(const StringView collection, const StringView user_key,
+                      const StringView value) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -1096,8 +1096,8 @@ Status KVEngine::CheckConfigs(const Configs& configs) {
   return Status::Ok;
 }
 
-Status KVEngine::SortedDelete(const StringView collection,
-                              const StringView user_key) {
+Status KVEngine::SDelete(const StringView collection,
+                         const StringView user_key) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -1409,8 +1409,8 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
   return Status::Ok;
 }
 
-Status KVEngine::SortedGet(const StringView collection,
-                           const StringView user_key, std::string* value) {
+Status KVEngine::SGet(const StringView collection, const StringView user_key,
+                      std::string* value) {
   Status s = MaybeInitAccessThread();
 
   if (s != Status::Ok) {
