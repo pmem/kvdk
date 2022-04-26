@@ -522,9 +522,6 @@ class KVEngine : public Engine {
 
   void terminateBackgroundWorks();
 
-  std::deque<std::pair<TimeStampType, List*>> removeOutdatedLists();
-  std::deque<std::pair<TimeStampType, HashList*>> removeOutdatedHashLists();
-
   Array<EngineThreadCache> engine_thread_cache_;
 
   // restored kvs in reopen
@@ -533,18 +530,17 @@ class KVEngine : public Engine {
 
   std::shared_ptr<HashTable> hash_table_;
 
+  std::mutex skiplists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
 
+  std::mutex lists_mu_;
   std::set<List*, Collection::TTLCmp> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 
+  std::mutex hlists_mu_;
   std::set<HashList*, Collection::TTLCmp> hash_lists_;
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
-
-  std::mutex skiplists_mu_;
-  std::mutex lists_mu_;
-  std::mutex hlists_mu_;
 
   std::string dir_;
   std::string pending_batch_dir_;
@@ -554,6 +550,7 @@ class KVEngine : public Engine {
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
+
   std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;

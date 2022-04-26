@@ -1219,89 +1219,66 @@ void KVEngine::deleteCollections() {
   }
 };
 
-std::deque<std::pair<TimeStampType, List*>> KVEngine::removeOutdatedLists() {
-  std::deque<std::pair<TimeStampType, List*>> pending_lists;
-  while (true) {
-    List* list = nullptr;
-    {
-      std::lock_guard<std::mutex> guard{lists_mu_};
-      if (lists_.empty()) {
-        break;
-      }
-      list = *lists_.begin();
-      if (!list->HasExpired()) {
-        break;
-      }
-    }
-    // Remove from HashTable
-    {
-      auto key = list->Name();
-      auto guard = hash_table_->AcquireLock(key);
-      LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
-      kvdk_assert(ret.s == Status::Outdated, "");
-      kvdk_assert(ret.entry_ptr->GetIndex().list == list, "");
-      removeKeyOrElem(ret);
-    }
-    // Remove from lists_
-    {
-      std::lock_guard<std::mutex> guard{lists_mu_};
-      lists_.erase(list);
-    }
-    pending_lists.emplace_back(version_controller_.GetCurrentTimestamp(), list);
-  }
-  return pending_lists;
-}
-
-std::deque<std::pair<TimeStampType, HashList*>>
-KVEngine::removeOutdatedHashLists() {
-  std::deque<std::pair<TimeStampType, HashList*>> pending_hash_lists;
-  while (true) {
-    HashList* hlist = nullptr;
-    {
-      std::lock_guard<std::mutex> guard{hlists_mu_};
-      if (hash_lists_.empty()) {
-        break;
-      }
-      hlist = *hash_lists_.begin();
-      if (!hlist->HasExpired()) {
-        break;
-      }
-    }
-    // Remove from HashTable
-    {
-      auto key = hlist->Name();
-      auto guard = hash_table_->AcquireLock(key);
-      LookupResult ret = lookupKey<false>(key, RecordType::HashRecord);
-      kvdk_assert(ret.s == Status::Outdated, "");
-      kvdk_assert(ret.entry_ptr->GetIndex().hlist == hlist, "");
-      removeKeyOrElem(ret);
-    }
-    // Remove from hash_lists_
-    {
-      std::lock_guard<std::mutex> guard{hlists_mu_};
-      hash_lists_.erase(hlist);
-    }
-    pending_hash_lists.emplace_back(version_controller_.GetCurrentTimestamp(),
-                                    hlist);
-  }
-  return pending_hash_lists;
-}
-
 void KVEngine::backgroundDestroyCollections() {
-  std::deque<std::pair<TimeStampType, List*>> pending_lists;
-  std::deque<std::pair<TimeStampType, HashList*>> pending_hash_lists;
+  std::deque<std::pair<TimeStampType, List*>> outdated_lists_;
+  std::deque<std::pair<TimeStampType, HashList*>> outdated_hash_lists_;
+  std::vector<std::future<Status>> workers;
 
   while (!bg_work_signals_.terminating) {
-    std::vector<std::future<Status>> workers;
-    auto lists = removeOutdatedLists();
-    while (!lists.empty()) {
-      pending_lists.emplace_back(lists.front());
-      lists.pop_front();
+    // Handle one List
+    {
+      List* list = nullptr;
+      {
+        std::lock_guard<std::mutex> guard{lists_mu_};
+        if (!lists_.empty()) {
+          list = *lists_.begin();
+          if (list->HasExpired()) {
+            lists_.erase(list);
+            outdated_lists_.emplace_back(
+                version_controller_.GetCurrentTimestamp(), list);
+          } else {
+            list = nullptr;
+          }
+        }
+      }
+      if (list != nullptr) {
+        // Remove from HashTable if outdated list is still on it.
+        auto key = list->Name();
+        auto guard = hash_table_->AcquireLock(key);
+        LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
+        if (ret.entry.GetIndex().list == list) {
+          kvdk_assert(ret.s == Status::Outdated, "");
+          removeKeyOrElem(ret);
+        }
+      }
     }
-    auto hlists = removeOutdatedHashLists();
-    while (!hlists.empty()) {
-      pending_hash_lists.emplace_back(hlists.front());
-      hlists.pop_front();
+
+    // Handle one HashList
+    {
+      HashList* hlist = nullptr;
+      {
+        std::lock_guard<std::mutex> guard{hlists_mu_};
+        if (!hash_lists_.empty()) {
+          hlist = *hash_lists_.begin();
+          if (hlist->HasExpired()) {
+            hash_lists_.erase(hlist);
+            outdated_hash_lists_.emplace_back(
+                version_controller_.GetCurrentTimestamp(), hlist);
+          } else {
+            hlist = nullptr;
+          }
+        }
+      }
+      if (hlist != nullptr) {
+        // Remove from HashTable if outdated HashList is still on it.
+        auto key = hlist->Name();
+        auto guard = hash_table_->AcquireLock(key);
+        LookupResult ret = lookupKey<false>(key, RecordType::HashRecord);
+        if (ret.entry.GetIndex().hlist == hlist) {
+          kvdk_assert(ret.s == Status::Outdated, "");
+          removeKeyOrElem(ret);
+        }
+      }
     }
 
     auto DestroyList = [&](List* list) {
@@ -1334,23 +1311,27 @@ void KVEngine::backgroundDestroyCollections() {
       return s;
     };
 
-    if (!pending_lists.empty() || !pending_hash_lists.empty()) {
+    if (!outdated_hash_lists_.empty() || !outdated_lists_.empty()) {
       version_controller_.UpdatedOldestSnapshot();
     }
     TimeStampType earliest_access = version_controller_.OldestSnapshotTS();
 
-    if (!pending_lists.empty() &&
-        pending_lists.front().first < earliest_access) {
-      workers.emplace_back(std::async(std::launch::deferred, DestroyList,
-                                      pending_lists.front().second));
-      pending_lists.pop_front();
+    if (!outdated_lists_.empty()) {
+      auto& ts_list = outdated_lists_.front();
+      if (ts_list.first < earliest_access) {
+        workers.emplace_back(
+            std::async(std::launch::deferred, DestroyList, ts_list.second));
+        outdated_lists_.pop_front();
+      }
     }
 
-    if (!pending_hash_lists.empty() &&
-        pending_hash_lists.front().first < earliest_access) {
-      workers.emplace_back(std::async(std::launch::deferred, DestroyHash,
-                                      pending_hash_lists.front().second));
-      pending_hash_lists.pop_front();
+    if (!outdated_hash_lists_.empty()) {
+      auto& ts_hlist = outdated_hash_lists_.front();
+      if (ts_hlist.first < earliest_access) {
+        workers.emplace_back(
+            std::async(std::launch::deferred, DestroyHash, ts_hlist.second));
+        outdated_hash_lists_.pop_front();
+      }
     }
 
     // TODO: add skiplist
@@ -1358,6 +1339,7 @@ void KVEngine::backgroundDestroyCollections() {
       // TODO: use this Status.
       worker.get();
     }
+    workers.clear();
   }
 }
 
