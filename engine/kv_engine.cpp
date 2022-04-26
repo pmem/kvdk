@@ -1481,7 +1481,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   }
 
   ExpireTimeType expired_time = TimeUtils::TTLToExpireTime(ttl_time, base_time);
-
+start_expire : {
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
@@ -1489,8 +1489,8 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   LookupResult res = lookupKey<false>(str, ExpirableRecordType);
   if (res.s == Status::Outdated) {
     if (res.entry_ptr->IsTTLStatus()) {
-      // Push the expired record into cleaner and update hash entry status with
-      // KeyStatus::Expired.
+      // Push the expired record into cleaner and update hash entry status
+      // with KeyStatus::Expired.
       // TODO(zhichen): This `if` will be removed when completing collection
       // deletion.
       if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
@@ -1510,6 +1510,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
     switch (res.entry_ptr->GetIndexType()) {
       case PointerType::StringRecord: {
         ul.unlock();
+        version_controller_.ReleaseLocalSnapshot();
         res.s = Modify(
             str,
             [](const std::string* old_val, std::string* new_val, void*) {
@@ -1523,9 +1524,8 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         auto new_ts = snapshot_holder.Timestamp();
         auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
             expired_time, new_ts, hint.spin);
-        ul.unlock();
         if (ret.s == Status::Fail) {
-          return Expire(str, ttl_time);
+          goto start_expire;
         }
 
         if (ret.s == Status::Ok) {
@@ -1563,7 +1563,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   }
   return res.s;
 }
-
+}
 Status KVEngine::StringDeleteImpl(const StringView& key) {
   auto hint = hash_table_->GetHint(key);
   std::unique_lock<SpinMutex> ul(*hint.spin);
