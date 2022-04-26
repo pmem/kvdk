@@ -2458,7 +2458,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
         int64_t ttl_time;
         Status s = engine->GetTTL(sorted_collection, &ttl_time);
         if (s == Status::Ok) {
-          if (ttl_time = kPersistTime) {
+          if (ttl_time == kPersistTime) {
             ASSERT_EQ(engine->SortedGet(sorted_collection, key, &got_val),
                       Status::Ok);
             ASSERT_EQ(got_val, val);
