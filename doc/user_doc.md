@@ -175,7 +175,7 @@ int main()
 
 ## Reads and Writes in a Named Collection
 
-A KVDK instance provides SortedGet, SortedSet, SortedDelete methods to query/modify/delete sorted entries. 
+A KVDK instance provides SortedGet, SortedSet, SortedDelete methods to query/modify/delete sorted entries.
 
 The following code performs a series of SortedGet, SortedSet and SortedDelete operations, which also initialize a named collection implicitly.
 
