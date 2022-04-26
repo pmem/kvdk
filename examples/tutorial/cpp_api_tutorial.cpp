@@ -155,8 +155,8 @@ static void test_iterator() {
   for (int i = 0; i < 10; ++i) {
     // Collection "my_sorted_collection" is implicitly created in first
     // iteration
-    status =
-        engine->SortedSet(sorted_collection, kv_pairs[i].first, kv_pairs[i].second);
+    status = engine->SortedSet(sorted_collection, kv_pairs[i].first,
+                               kv_pairs[i].second);
     assert(status == kvdk::Status::Ok);
   }
   // Sort kv_pairs for checking the order of "my_sorted_collection".

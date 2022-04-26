@@ -515,7 +515,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
                 Status::Ok);
       ASSERT_EQ(engine->SortedDelete(sorted_collection, key2), Status::Ok);
       ASSERT_EQ(engine->SortedSet(sorted_collection, key3, key3), Status::Ok);
-      ASSERT_EQ(engine->SortedSet(sorted_collection_after_snapshot, key1, key1), Ok);
+      ASSERT_EQ(engine->SortedSet(sorted_collection_after_snapshot, key1, key1),
+                Ok);
     }
   };
 
@@ -607,17 +608,20 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
                   Status::NotFound);
         ASSERT_EQ(got_v1, key1);
         ASSERT_EQ(got_v2, key2);
-        ASSERT_EQ(backup_engine->SortedGet(sorted_collection_after_snapshot, key1,
-                                      &got_v1),
+        ASSERT_EQ(backup_engine->SortedGet(sorted_collection_after_snapshot,
+                                           key1, &got_v1),
                   Status::NotFound);
-        ASSERT_EQ(engine->SortedGet(sorted_collection, key1, &got_v1), Status::Ok);
-        ASSERT_EQ(engine->SortedGet(sorted_collection, key2, &got_v2), Status::Ok);
+        ASSERT_EQ(engine->SortedGet(sorted_collection, key1, &got_v1),
+                  Status::Ok);
+        ASSERT_EQ(engine->SortedGet(sorted_collection, key2, &got_v2),
+                  Status::Ok);
         ASSERT_EQ(engine->SortedGet(sorted_collection, key3, &got_v3),
                   Status::NotFound);
         ASSERT_EQ(got_v1, key1);
         ASSERT_EQ(got_v2, key2);
-        ASSERT_EQ(engine->SortedGet(sorted_collection_after_snapshot, key1, &got_v1),
-                  Status::NotFound);
+        ASSERT_EQ(
+            engine->SortedGet(sorted_collection_after_snapshot, key1, &got_v1),
+            Status::NotFound);
       }
     }
 
@@ -981,7 +985,8 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
           ASSERT_EQ(engine->SortedSet(global_skiplist, key, overall_val),
                     Status::Ok);
           ASSERT_EQ(engine->SortedSet(t_skiplist, key, t_val), Status::Ok);
-          ASSERT_EQ(engine->SortedGet(global_skiplist, key, &got_val), Status::Ok);
+          ASSERT_EQ(engine->SortedGet(global_skiplist, key, &got_val),
+                    Status::Ok);
           ASSERT_EQ(got_val, overall_val);
           ASSERT_EQ(engine->SortedGet(t_skiplist, key, &got_val), Status::Ok);
           ASSERT_EQ(got_val, t_val);
@@ -1137,7 +1142,8 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 
       auto key = key_prefix + std::to_string(i);
       auto average_val = std::to_string(i);
-      ASSERT_EQ(engine->SortedSet(average_skiplist, key, average_val), Status::Ok);
+      ASSERT_EQ(engine->SortedSet(average_skiplist, key, average_val),
+                Status::Ok);
       ASSERT_EQ(engine->SortedGet(average_skiplist, key, &got_val), Status::Ok);
       ASSERT_EQ(got_val, average_val);
       auto r_val = std::to_string(i * 2);
@@ -1149,7 +1155,8 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
         ASSERT_EQ(engine->SortedDelete(r_skiplist, key), Status::Ok);
         ASSERT_EQ(engine->SortedGet(average_skiplist, key, &got_val),
                   Status::NotFound);
-        ASSERT_EQ(engine->SortedGet(r_skiplist, key, &got_val), Status::NotFound);
+        ASSERT_EQ(engine->SortedGet(r_skiplist, key, &got_val),
+                  Status::NotFound);
       }
     }
   };
@@ -1534,14 +1541,17 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
         if (id % 2 == 0) {
           // Even Write
           if (id % 4 == 0) {
-            ASSERT_EQ(engine->SortedSet(collection_name, key, val1), Status::Ok);
+            ASSERT_EQ(engine->SortedSet(collection_name, key, val1),
+                      Status::Ok);
           } else {
-            ASSERT_EQ(engine->SortedSet(collection_name, key, val2), Status::Ok);
+            ASSERT_EQ(engine->SortedSet(collection_name, key, val2),
+                      Status::Ok);
           }
         } else {
           // Odd Read
           std::string got_val;
-          ASSERT_EQ(engine->SortedGet(collection_name, key, &got_val), Status::Ok);
+          ASSERT_EQ(engine->SortedGet(collection_name, key, &got_val),
+                    Status::Ok);
           bool match = false;
           match = match || (got_val == val1);
           match = match || (got_val == val2);
@@ -1628,7 +1638,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     auto Write = [&](size_t) {
       for (size_t j = 0; j < count; j++) {
         ASSERT_EQ(engine->SortedSet(collections[i], key_values[j].first,
-                               key_values[j].second),
+                                    key_values[j].second),
                   Status::Ok);
       }
     };
@@ -1687,9 +1697,10 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
       ASSERT_EQ(engine->Set("stringkey" + std::to_string(id), "stringval"),
                 Status::Ok);
     } else {
-      ASSERT_EQ(engine->SortedSet(collection_name, "sortedkey" + std::to_string(id),
-                             "sortedval"),
-                Status::Ok);
+      ASSERT_EQ(
+          engine->SortedSet(collection_name, "sortedkey" + std::to_string(id),
+                            "sortedval"),
+          Status::Ok);
     }
   };
   LaunchNThreads(threads, MixedSet);
@@ -1793,13 +1804,15 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   {
     Status s = engine->CreateSortedCollection(sorted_collection);
     ASSERT_EQ(s, Status::Ok);
-    ASSERT_EQ(engine->SortedSet(sorted_collection, "sorted" + key, "sorted" + val),
-              Status::Ok);
+    ASSERT_EQ(
+        engine->SortedSet(sorted_collection, "sorted" + key, "sorted" + val),
+        Status::Ok);
     // Set expired time for collection
     ASSERT_EQ(engine->Expire(sorted_collection, max_ttl_time),
               Status::InvalidArgument);
-    ASSERT_EQ(engine->SortedSet(sorted_collection, "sorted2" + key, "sorted2" + val),
-              Status::Ok);
+    ASSERT_EQ(
+        engine->SortedSet(sorted_collection, "sorted2" + key, "sorted2" + val),
+        Status::Ok);
     ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::Ok);
     // check sorted_collection is persist;
     ASSERT_EQ(ttl_time, kPersistTTL);
@@ -2131,7 +2144,8 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
         }
       });
   SyncPoint::GetInstance()->SetCallBack(
-      "Test::SortedSet::Update::Finish", [&](void*) { update_num.fetch_add(1); });
+      "Test::SortedSet::Update::Finish",
+      [&](void*) { update_num.fetch_add(1); });
   SyncPoint::GetInstance()->EnableProcessing();
 
   std::string collection_name = "SortedRecoverySyncPoint";
@@ -2142,10 +2156,11 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
     for (int i = 0; i < cnt; ++i) {
       if (i % 2 == 0) {
         engine->SortedSet(collection_name, "key" + std::to_string(i),
-                     "val" + std::to_string(i));
+                          "val" + std::to_string(i));
       } else {
         std::string new_val = "val*" + std::to_string(i);
-        engine->SortedSet(collection_name, "key" + std::to_string(i - 1), new_val);
+        engine->SortedSet(collection_name, "key" + std::to_string(i - 1),
+                          new_val);
         TEST_SYNC_POINT("Test::SortedSet::Update::Finish");
       }
     }
@@ -2236,10 +2251,13 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
     ASSERT_EQ(forward_num, backward_num);
 
     std::string got_val;
-    ASSERT_EQ(engine->SortedGet(collection_name, keylists[0], &got_val), Status::Ok);
-    ASSERT_EQ(engine->SortedGet(collection_name, keylists[2], &got_val), Status::Ok);
+    ASSERT_EQ(engine->SortedGet(collection_name, keylists[0], &got_val),
+              Status::Ok);
+    ASSERT_EQ(engine->SortedGet(collection_name, keylists[2], &got_val),
+              Status::Ok);
     ASSERT_EQ(got_val, "val" + keylists[2]);
-    ASSERT_EQ(engine->SortedGet(collection_name, keylists[1], &got_val), Status::Ok);
+    ASSERT_EQ(engine->SortedGet(collection_name, keylists[1], &got_val),
+              Status::Ok);
     ASSERT_EQ(got_val, "val" + keylists[1]);
 
     // Again delete "C".

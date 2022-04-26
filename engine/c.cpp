@@ -201,7 +201,8 @@ KVDKStatus KVDKSortedSet(KVDKEngine* engine, const char* collection,
                          size_t collection_len, const char* key, size_t key_len,
                          const char* val, size_t val_len) {
   return engine->rep->SortedSet(StringView(collection, collection_len),
-                           StringView(key, key_len), StringView(val, val_len));
+                                StringView(key, key_len),
+                                StringView(val, val_len));
 }
 
 KVDKStatus KVDKSortedGet(KVDKEngine* engine, const char* collection,
@@ -211,7 +212,7 @@ KVDKStatus KVDKSortedGet(KVDKEngine* engine, const char* collection,
 
   *val = nullptr;
   KVDKStatus s = engine->rep->SortedGet(StringView(collection, collection_len),
-                                   StringView(key, key_len), &val_str);
+                                        StringView(key, key_len), &val_str);
   if (s != KVDKStatus::Ok) {
     *val_len = 0;
     return s;
@@ -225,7 +226,7 @@ KVDKStatus KVDKSortedDelete(KVDKEngine* engine, const char* collection,
                             size_t collection_len, const char* key,
                             size_t key_len) {
   return engine->rep->SortedDelete(StringView(collection, collection_len),
-                              StringView(key, key_len));
+                                   StringView(key, key_len));
 }
 
 KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
