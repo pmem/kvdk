@@ -2287,11 +2287,15 @@ Status KVEngine::listRegisterRecovered() {
   for (List* list : lists_) {
     auto key = list->Name();
     auto guard = hash_table_->AcquireLock(key);
-    auto result = lookupKey<true>(key, RecordType::ListRecord);
-    if (result.s == Status::NotFound) {
-      return result.s;
+    auto ret = lookupKey<true>(key, RecordType::ListRecord);
+    kvdk_assert(ret.s == Status::NotFound, "");
+    if (ret.s == Status::Ok) {
+      return Status::Abort;
     }
-    insertKeyOrElem(result, key, RecordType::ListRecord, list);
+    if (ret.s != Status::NotFound) {
+      return ret.s;
+    }
+    insertKeyOrElem(ret, key, RecordType::ListRecord, list);
     max_id = std::max(max_id, list->ID());
   }
   auto old = list_id_.load();

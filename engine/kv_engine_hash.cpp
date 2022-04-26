@@ -280,6 +280,10 @@ Status KVEngine::hashListRegisterRecovered() {
     auto key = hlist->Name();
     auto guard = hash_table_->AcquireLock(key);
     LookupResult ret = lookupKey<true>(key, RecordType::HashRecord);
+    kvdk_assert(ret.s == Status::NotFound, "");
+    if (ret.s == Status::Ok) {
+      return Status::Abort;
+    }
     if (ret.s != Status::NotFound) {
       return ret.s;
     }
