@@ -56,7 +56,7 @@ bool OldRecordsCleaner::TryFreePendingSpace(
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &
-          (StringDataRecord | SortedDataRecord),
+          (StringDataRecord | SortedElem | SortedHeader),
       "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
@@ -69,10 +69,8 @@ void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
 void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_delete_record.pmem_delete_record)->meta.type &
-          (StringDeleteRecord | SortedDeleteRecord | ExpirableRecordType),
+          (DeleteRecordType | ExpirableRecordType),
       "Wrong type in OldRecordsCleaner::Push");
-  kvdk_assert(access_thread.id >= 0,
-              "call OldRecordsCleaner::Push with uninitialized access thread");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
 
@@ -81,9 +79,26 @@ void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
   tc.old_delete_records.emplace_back(old_delete_record);
 }
 
+void OldRecordsCleaner::PushToCache(
+    const OutdatedCollection& outdated_collection) {
+  kvdk_assert(access_thread.id >= 0,
+              "call OldRecordsCleaner::Push with uninitialized access thread");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  std::lock_guard<SpinMutex> lg(tc.old_records_lock);
+  tc.outdated_collections.emplace_back(outdated_collection);
+}
+
 void OldRecordsCleaner::PushToGlobal(
     const std::deque<OldDeleteRecord>& old_delete_records) {
+  std::lock_guard<SpinMutex> lg(lock_);
   global_old_delete_records_.emplace_back(old_delete_records);
+}
+
+void OldRecordsCleaner::PushToGlobal(
+    std::deque<OutdatedCollection>&& outdated_collections) {
+  std::lock_guard<SpinMutex> lg(lock_);
+  global_outdated_collections_.emplace_back(
+      std::forward<std::deque<OutdatedCollection>>(outdated_collections));
 }
 
 void OldRecordsCleaner::TryGlobalClean() {
@@ -97,6 +112,8 @@ void OldRecordsCleaner::TryGlobalClean() {
   kv_engine_->version_controller_.UpdatedOldestSnapshot();
   TimeStampType oldest_snapshot_ts =
       kv_engine_->version_controller_.OldestSnapshotTS();
+
+  std::lock_guard<SpinMutex> lg(lock_);
 
   // Fetch thread cached old records
   // Notice: As we can purge old delete records only after the older data
@@ -115,6 +132,19 @@ void OldRecordsCleaner::TryGlobalClean() {
       global_old_delete_records_.emplace_back();
       global_old_delete_records_.back().swap(
           cleaner_thread_cache.old_delete_records);
+      break;
+    }
+  }
+
+  // Fetch thread cached outdated collections, the workflow is as same as old
+  // delete record
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto& cleaner_thread_cache = cleaner_thread_cache_[i];
+    if (cleaner_thread_cache.outdated_collections.size() > 0) {
+      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
+      global_outdated_collections_.emplace_back();
+      global_outdated_collections_.back().swap(
+          cleaner_thread_cache.outdated_collections);
       break;
     }
   }
@@ -141,6 +171,23 @@ void OldRecordsCleaner::TryGlobalClean() {
   }
 
   clean_all_data_record_ts_ = oldest_snapshot_ts;
+
+  // Destroy deleted skiplists
+  for (auto& outdated_collections : global_outdated_collections_) {
+    auto oc_iter = outdated_collections.begin();
+    while (oc_iter != outdated_collections.end()) {
+      if (oc_iter->release_time < clean_all_data_record_ts_) {
+        // For now, we only use this for skiplist
+        CollectionIDType id = oc_iter->collection->ID();
+        oc_iter->collection->Destroy();
+        kv_engine_->removeSkiplist(id);
+        oc_iter++;
+      } else {
+        break;
+      }
+    }
+    outdated_collections.erase(outdated_collections.begin(), oc_iter);
+  }
 
   // Find purge-able delete records
   // To avoid access invalid data, an old delete record can be freed only if
@@ -245,8 +292,9 @@ SpaceEntry OldRecordsCleaner::purgeOldDataRecord(
   DataEntry* data_entry =
       static_cast<DataEntry*>(old_data_record.pmem_data_record);
   switch (data_entry->meta.type) {
+    case SortedHeader:
     case StringDataRecord:
-    case SortedDataRecord: {
+    case SortedElem: {
       data_entry->Destroy();
       return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
                         data_entry->header.record_size);
@@ -288,7 +336,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
                         data_entry->header.record_size);
     }
-    case SortedDeleteRecord: {
+    case SortedElemDelete: {
     handle_sorted_delete_record : {
       std::unique_lock<SpinMutex> ul(*old_delete_record.key_lock);
       // We check linkage to determine if the delete record already been

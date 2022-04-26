@@ -51,6 +51,8 @@ set(SOURCES
         engine/engine.cpp
         engine/kv_engine.cpp
         engine/kv_engine_hash.cpp
+        engine/kv_engine_sorted.cpp
+        engine/kv_engine_string.cpp
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp

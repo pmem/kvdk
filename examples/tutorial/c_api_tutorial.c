@@ -576,7 +576,7 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
     KVDKStatus s = KVDKModify(kvdk_engine, incr_key, strlen(incr_key), IncN,
                               &args, free, write_option);
     assert(s == Ok);
-    assert(args.result == args.incr_by * i);
+    assert(args.result == args.incr_by * (int)i);
 
     char* val;
     size_t val_len;

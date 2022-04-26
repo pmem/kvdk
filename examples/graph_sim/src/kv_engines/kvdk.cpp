@@ -39,7 +39,7 @@ PMemKVDK::~PMemKVDK() { delete db_; }
 Status PMemKVDK::Put(const std::string& key, const std::string& value) {
   Status s;
   if (!collection_.empty()) {
-    s = db_->SSet(collection_, key, value);
+    s = db_->SortedSet(collection_, key, value);
   } else {
     s = db_->Set(key, value);
   }
@@ -52,7 +52,7 @@ Status PMemKVDK::Put(const std::string& key, const std::string& value) {
 Status PMemKVDK::Get(const std::string& key, std::string* value) {
   Status s;
   if (!collection_.empty()) {
-    s = db_->SGet(collection_, key, value);
+    s = db_->SortedGet(collection_, key, value);
   } else {
     s = db_->Get(key, value);
   }
@@ -60,7 +60,7 @@ Status PMemKVDK::Get(const std::string& key, std::string* value) {
 }
 
 Status PMemKVDK::Delete(const std::string& key) {
-  return (!collection_.empty()) ? db_->SDelete(collection_, key)
+  return (!collection_.empty()) ? db_->SortedDelete(collection_, key)
                                 : db_->Delete(key);
 }
 
