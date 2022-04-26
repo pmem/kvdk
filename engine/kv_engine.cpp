@@ -651,13 +651,6 @@ Status KVEngine::Recovery() {
     return s;
   }
   list_builder_.reset(nullptr);
-  {
-    auto outdated_lists = removeOutdatedLists();
-    for (std::pair<TimeStampType, List*> const& list : outdated_lists) {
-      /// TODO: No need to purge.
-      listDestroy(list.second, [&](DLRecord* elem) { purgeAndFree(elem); });
-    }
-  }
   GlobalLogger.Info("Rebuild Lists done\n");
 
   hash_list_builder_->RebuildLists();
@@ -667,14 +660,6 @@ Status KVEngine::Recovery() {
     return s;
   }
   hash_list_builder_.reset(nullptr);
-  {
-    auto outdated_hlists = removeOutdatedHashLists();
-    for (std::pair<TimeStampType, HashList*> const& hlist : outdated_hlists) {
-      /// TODO: No need to purge.
-      hashListDestroy(hlist.second,
-                      [&](DLRecord* elem) { purgeAndFree(elem); });
-    }
-  }
   GlobalLogger.Info("Rebuild HashLists done\n");
 
   uint64_t latest_version_ts = 0;

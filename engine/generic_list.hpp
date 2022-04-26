@@ -411,26 +411,25 @@ class GenericList final : public Collection {
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
     kvdk_assert(record->Validate(), "");
-    Iterator new_rec{this, record};
 
     if (prev == Head() && next == Tail()) {
-      first = new_rec.Address();
-      last = new_rec.Address();
+      first = record;
+      last = record;
     } else if (prev == Head()) {
       // PushFront()
-      next->PersistPrevNT(new_rec.Offset());
-      first = new_rec.Address();
+      next->PersistPrevNT(space.offset);
+      first = record;
     } else if (next == Tail()) {
       // PushBack()
-      prev->PersistNextNT(new_rec.Offset());
-      last = new_rec.Address();
+      prev->PersistNextNT(space.offset);
+      last = record;
     } else {
       // Emplace between two elements on PMem
-      prev->PersistNextNT(new_rec.Offset());
-      next->PersistPrevNT(new_rec.Offset());
+      prev->PersistNextNT(space.offset);
+      next->PersistPrevNT(space.offset);
     }
     ++sz;
-    return new_rec;
+    return Iterator{this, record};
   }
 
   template <typename DelayFree>
@@ -485,25 +484,24 @@ class GenericList final : public Collection {
     DLRecord* record = DLRecord::PersistDLRecord(
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
-    Iterator new_rec{this, record};
     if (prev == Head() && next == Tail()) {
-      first = new_rec.Address();
-      last = new_rec.Address();
+      first = record;
+      last = record;
     } else if (prev == Head()) {
       // Replace Front()
-      first = new_rec.Address();
-      next->PersistPrevNT(new_rec.Offset());
+      first = record;
+      next->PersistPrevNT(space.offset);
     } else if (next == Tail()) {
       // Replace Back()
-      last = new_rec.Address();
-      prev->PersistNextNT(new_rec.Offset());
+      last = record;
+      prev->PersistNextNT(space.offset);
     } else {
-      prev->PersistNextNT(new_rec.Offset());
-      next->PersistPrevNT(new_rec.Offset());
+      prev->PersistNextNT(space.offset);
+      next->PersistPrevNT(space.offset);
     }
     markRecordAsDirty(pos.Address());
     delay_free(pos.Address());
-    return new_rec;
+    return Iterator{this, record};
   }
 
   std::string serialize(DLRecord* rec) const {
