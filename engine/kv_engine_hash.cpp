@@ -303,7 +303,7 @@ Status KVEngine::hashListDestroy(HashList* hlist,
     {
       auto guard = hash_table_->AcquireLock(internal_key);
       kvdk_assert(hlist->Front()->Key() == internal_key, "");
-      LookupResult ret = lookupKey<false>(internal_key, RecordType::HashElem);
+      LookupResult ret = lookupElem<false>(internal_key, RecordType::HashElem);
       kvdk_assert(ret.s == Status::Ok, "");
       removeKeyOrElem(ret);
       hlist->PopFront([&](DLRecord* rec) { free_func(rec); });
