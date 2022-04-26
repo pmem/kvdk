@@ -1254,7 +1254,7 @@ std::deque<std::pair<TimeStampType, List*>> KVEngine::removeOutdatedLists() {
 
 std::deque<std::pair<TimeStampType, HashList*>>
 KVEngine::removeOutdatedHashLists() {
-  std::deque<std::pair<TimeStampType, HashList*>> pending_hlists;
+  std::deque<std::pair<TimeStampType, HashList*>> pending_hash_lists;
   while (true) {
     HashList* hlist = nullptr;
     {
@@ -1281,18 +1281,18 @@ KVEngine::removeOutdatedHashLists() {
       std::lock_guard<std::mutex> guard{hlists_mu_};
       hash_lists_.erase(hlist);
     }
-    pending_hlists.emplace_back(version_controller_.GetCurrentTimestamp(),
-                                hlist);
+    pending_hash_lists.emplace_back(version_controller_.GetCurrentTimestamp(),
+                                    hlist);
   }
-  return pending_hlists;
+  return pending_hash_lists;
 }
 
 void KVEngine::backgroundDestroyCollections() {
   std::deque<std::pair<TimeStampType, List*>> pending_lists;
-  std::deque<std::pair<TimeStampType, HashList*>> pending_hlists;
+  std::deque<std::pair<TimeStampType, HashList*>> pending_hash_lists;
 
   while (!bg_work_signals_.terminating) {
-    std::vector<std::future<Status>> destroy_collections;
+    std::vector<std::future<Status>> workers;
     auto lists = removeOutdatedLists();
     while (!lists.empty()) {
       pending_lists.emplace_back(lists.front());
@@ -1300,7 +1300,7 @@ void KVEngine::backgroundDestroyCollections() {
     }
     auto hlists = removeOutdatedHashLists();
     while (!hlists.empty()) {
-      pending_hlists.emplace_back(hlists.front());
+      pending_hash_lists.emplace_back(hlists.front());
       hlists.pop_front();
     }
 
@@ -1334,34 +1334,29 @@ void KVEngine::backgroundDestroyCollections() {
       return s;
     };
 
-    if (!pending_lists.empty() || !pending_hlists.empty()) {
+    if (!pending_lists.empty() || !pending_hash_lists.empty()) {
       version_controller_.UpdatedOldestSnapshot();
     }
+    TimeStampType earliest_access = version_controller_.OldestSnapshotTS();
 
-    while (!pending_lists.empty()) {
-      if (pending_lists.front().first <
-          version_controller_.OldestSnapshotTS()) {
-        List* list = pending_lists.front().second;
-        destroy_collections.emplace_back(
-            std::async(std::launch::deferred, DestroyList, list));
-        pending_lists.pop_front();
-      }
+    if (!pending_lists.empty() &&
+        pending_lists.front().first < earliest_access) {
+      workers.emplace_back(std::async(std::launch::deferred, DestroyList,
+                                      pending_lists.front().second));
+      pending_lists.pop_front();
     }
 
-    while (!pending_hlists.empty()) {
-      if (pending_hlists.front().first <
-          version_controller_.OldestSnapshotTS()) {
-        HashList* hlist = pending_hlists.front().second;
-        pending_hlists.pop_front();
-        destroy_collections.emplace_back(
-            std::async(std::launch::deferred, DestroyHash, hlist));
-      }
+    if (!pending_hash_lists.empty() &&
+        pending_hash_lists.front().first < earliest_access) {
+      workers.emplace_back(std::async(std::launch::deferred, DestroyHash,
+                                      pending_hash_lists.front().second));
+      pending_hash_lists.pop_front();
     }
 
     // TODO: add skiplist
-    for (auto& destroy_collection : destroy_collections) {
+    for (auto& worker : workers) {
       // TODO: use this Status.
-      destroy_collection.get();
+      worker.get();
     }
   }
 }
