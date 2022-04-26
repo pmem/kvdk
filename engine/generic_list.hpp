@@ -48,7 +48,7 @@ class GenericList final : public Collection {
 
  public:
   // Deletion of a node in GenericList takes two steps.
-  // First, the node is unlinked from list and markAsis_dirty(),
+  // First, the node is unlinked from list and markAsDirty(),
   // which can be detected by Iterator::is_dirty().
   // Iterator may go to a is_dirty() node by operator++() or operator--().
   // It's safe to read data on this is_dirty() node.
@@ -236,7 +236,7 @@ class GenericList final : public Collection {
     kvdk_assert(list_record != nullptr, "Destroy() uninitialized.");
     kvdk_assert(Size() == 0, "Only empty list can be Destroy()ed");
     kvdk_assert(!IsRecordDirty(list_record), "double Destroy()!");
-    markRecordAsDirty(list_record);
+    MarkRecordAsDirty(list_record);
     delay_free(list_record);
   }
 
@@ -287,12 +287,40 @@ class GenericList final : public Collection {
     }
   }
 
-  bool IsRecordDirty(DLRecord* rec) const {
+  static bool IsRecordDirty(DLRecord* rec) {
     auto& entry = rec->entry;
     return (entry.meta.type == RecordType::ListDirtyElem) ||
            (entry.meta.type == RecordType::HashDirtyElem) ||
            (entry.meta.type == RecordType::ListDirtyRecord) ||
            (entry.meta.type == RecordType::HashDirtyRecord);
+  }
+
+  static void MarkRecordAsDirty(DLRecord* rec) {
+    auto& entry = rec->entry;
+    switch (entry.meta.type) {
+      case RecordType::ListElem: {
+        entry.meta.type = RecordType::ListDirtyElem;
+        break;
+      }
+      case RecordType::HashElem: {
+        entry.meta.type = RecordType::HashDirtyElem;
+        break;
+      }
+      case RecordType::ListRecord: {
+        entry.meta.type = RecordType::ListDirtyRecord;
+        break;
+      }
+      case RecordType::HashRecord: {
+        entry.meta.type = RecordType::HashDirtyRecord;
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unsupported!");
+        std::abort();
+      }
+    }
+    _mm_clwb(&entry.meta.type);
+    _mm_mfence();
   }
 
   template <typename DelayFree>
@@ -411,26 +439,25 @@ class GenericList final : public Collection {
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
     kvdk_assert(record->Validate(), "");
-    Iterator new_rec{this, record};
 
     if (prev == Head() && next == Tail()) {
-      first = new_rec.Address();
-      last = new_rec.Address();
+      first = record;
+      last = record;
     } else if (prev == Head()) {
       // PushFront()
-      next->PersistPrevNT(new_rec.Offset());
-      first = new_rec.Address();
+      next->PersistPrevNT(space.offset);
+      first = record;
     } else if (next == Tail()) {
       // PushBack()
-      prev->PersistNextNT(new_rec.Offset());
-      last = new_rec.Address();
+      prev->PersistNextNT(space.offset);
+      last = record;
     } else {
       // Emplace between two elements on PMem
-      prev->PersistNextNT(new_rec.Offset());
-      next->PersistPrevNT(new_rec.Offset());
+      prev->PersistNextNT(space.offset);
+      next->PersistPrevNT(space.offset);
     }
     ++sz;
-    return new_rec;
+    return Iterator{this, record};
   }
 
   template <typename DelayFree>
@@ -463,7 +490,7 @@ class GenericList final : public Collection {
       next->PersistPrevNT(prev.Offset());
       prev->PersistNextNT(next.Offset());
     }
-    markRecordAsDirty(pos.Address());
+    MarkRecordAsDirty(pos.Address());
     delay_free(pos.Address());
     --sz;
     return next;
@@ -485,25 +512,24 @@ class GenericList final : public Collection {
     DLRecord* record = DLRecord::PersistDLRecord(
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
-    Iterator new_rec{this, record};
     if (prev == Head() && next == Tail()) {
-      first = new_rec.Address();
-      last = new_rec.Address();
+      first = record;
+      last = record;
     } else if (prev == Head()) {
       // Replace Front()
-      first = new_rec.Address();
-      next->PersistPrevNT(new_rec.Offset());
+      first = record;
+      next->PersistPrevNT(space.offset);
     } else if (next == Tail()) {
       // Replace Back()
-      last = new_rec.Address();
-      prev->PersistNextNT(new_rec.Offset());
+      last = record;
+      prev->PersistNextNT(space.offset);
     } else {
-      prev->PersistNextNT(new_rec.Offset());
-      next->PersistPrevNT(new_rec.Offset());
+      prev->PersistNextNT(space.offset);
+      next->PersistPrevNT(space.offset);
     }
-    markRecordAsDirty(pos.Address());
+    MarkRecordAsDirty(pos.Address());
     delay_free(pos.Address());
-    return new_rec;
+    return Iterator{this, record};
   }
 
   std::string serialize(DLRecord* rec) const {
@@ -544,34 +570,6 @@ class GenericList final : public Collection {
       kvdk_assert(++prev_copy == pos, "");
       break;
     }
-  }
-
-  void markRecordAsDirty(DLRecord* rec) {
-    auto& entry = rec->entry;
-    switch (entry.meta.type) {
-      case RecordType::ListElem: {
-        entry.meta.type = RecordType::ListDirtyElem;
-        break;
-      }
-      case RecordType::HashElem: {
-        entry.meta.type = RecordType::HashDirtyElem;
-        break;
-      }
-      case RecordType::ListRecord: {
-        entry.meta.type = RecordType::ListDirtyRecord;
-        break;
-      }
-      case RecordType::HashRecord: {
-        entry.meta.type = RecordType::HashDirtyRecord;
-        break;
-      }
-      default: {
-        kvdk_assert(false, "Unsupported!");
-        std::abort();
-      }
-    }
-    _mm_clwb(&entry.meta.type);
-    _mm_mfence();
   }
 };
 
@@ -741,8 +739,8 @@ class GenericListBuilder final {
     }
   }
 
-  template <typename Deleter>
-  void CleanBrokens(Deleter deleter) {
+  template <typename FreeFunc>
+  void CleanBrokens(FreeFunc free_func) {
     for (DLRecord* elem : brokens) {
       switch (typeOf(elem)) {
         case ListRecordType::Unique: {
@@ -762,7 +760,8 @@ class GenericListBuilder final {
           break;
         }
       }
-      deleter(elem);
+      List::MarkRecordAsDirty(elem);
+      free_func(elem);
     }
   }
 
