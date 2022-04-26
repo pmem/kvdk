@@ -170,7 +170,9 @@ class Skiplist : public Collection {
 
   ~Skiplist();
 
-  SkiplistNode* Header() { return header_; }
+  SkiplistNode* HeaderNode() { return header_; }
+
+  DLRecord* HeaderRecord() { return header_->record; }
 
   bool IndexWithHashtable() { return index_with_hashtable_; }
 
@@ -182,7 +184,15 @@ class Skiplist : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
+  // TODO jiayu: use lock table for skiplist so will don't need to pass outsider
+  // locks for write operations, and write operations wont fail anymore
+  WriteResult SetExpireTime(ExpireTimeType expired_time,
+                            TimeStampType timestamp,
+                            SpinMutex* locked_header_lock);
+
   Status SetExpireTime(ExpireTimeType expired_time) final;
+
+  Status MarkAsDeleted();
 
   // Set "key, value" to the skiplist
   //
@@ -236,8 +246,8 @@ class Skiplist : public Collection {
 
   static bool IsSkiplistRecord(DLRecord* record) {
     auto type = record->entry.meta.type;
-    return type == SortedDataRecord || type == SortedDeleteRecord ||
-           type == SortedHeaderRecord;
+    return type == SortedElem || type == SortedElemDelete ||
+           type == SortedHeader || type == SortedHeaderDelete;
   }
 
   // Check if record correctly linked on list
@@ -351,11 +361,12 @@ class Skiplist : public Collection {
   inline static CollectionIDType SkiplistID(const DLRecord* record) {
     assert(record != nullptr);
     switch (record->entry.meta.type) {
-      case RecordType::SortedDataRecord:
-      case RecordType::SortedDeleteRecord:
+      case RecordType::SortedElem:
+      case RecordType::SortedElemDelete:
         return ExtractID(record->Key());
         break;
-      case RecordType::SortedHeaderRecord:
+      case RecordType::SortedHeader:
+      case RecordType::SortedHeaderDelete:
         return DecodeID(record->Value());
       default:
         GlobalLogger.Error("Wrong record type %d in SkiplistID",
@@ -452,6 +463,7 @@ class Skiplist : public Collection {
   std::shared_ptr<PMEMAllocator> pmem_allocator_;
   std::shared_ptr<HashTable> hash_table_;
   bool index_with_hashtable_;
+  bool deleted_;
   SkiplistNode* header_;
   // nodes that unlinked on every height
   std::vector<SkiplistNode*> obsolete_nodes_;
@@ -492,7 +504,7 @@ struct Splice {
       if (start_height > kMaxHeight || prevs[start_height] == nullptr) {
         assert(seeking_list != nullptr);
         start_height = kMaxHeight;
-        start_node = seeking_list->Header();
+        start_node = seeking_list->HeaderNode();
       } else if (prevs[start_height]->Next(start_height).GetTag() ==
                  SkiplistNode::NodeStatus::Deleted) {
         // If prev on this height has been deleted, roll back to higher height

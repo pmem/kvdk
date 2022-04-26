@@ -52,6 +52,9 @@ class SortedCollectionRebuilder {
     SkiplistNode* start_node;
   };
 
+  // Build skiplist struct and index for valid headers
+  Status initRebuildLists();
+
   bool recoverToCheckpoint() { return checkpoint_.Valid(); }
 
   // Find the version of pmem_record under checkpoint version if checkpoint
@@ -128,6 +131,7 @@ class SortedCollectionRebuilder {
   uint64_t num_rebuild_threads_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
   std::unordered_map<DLRecord*, RebuildSegment> recovery_segments_{};
+  std::vector<DLRecord*> linked_headers_;
   // skiplists that need to rebuild index
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>
       rebuild_skiplits_{};

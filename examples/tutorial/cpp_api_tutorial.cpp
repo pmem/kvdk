@@ -126,7 +126,8 @@ static void test_named_coll() {
   assert(status == kvdk::Status::Ok);
 
   printf(
-      "Successfully performed SGet, SSet, SDelete operations on named "
+      "Successfully performed SGet, SSet, SDelete operations on "
+      "named "
       "collections.\n");
   return;
 }

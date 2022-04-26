@@ -88,6 +88,10 @@ class KVEngine : public Engine {
                 const WriteOptions& options) override;
 
   // Sorted Collection
+  Status CreateSortedCollection(
+      const StringView collection_name,
+      const SortedCollectionConfigs& configs) override;
+  Status DestroySortedCollection(const StringView collection_name) override;
   Status SGet(const StringView collection, const StringView user_key,
               std::string* value) override;
   Status SSet(const StringView collection, const StringView user_key,
@@ -160,10 +164,6 @@ class KVEngine : public Engine {
                           Comparator comp_func) {
     return comparators_.RegisterComparator(collection_name, comp_func);
   }
-
-  Status CreateSortedCollection(
-      const StringView collection_name,
-      const SortedCollectionConfigs& configs) override;
 
   // List
   Status ListLength(StringView key, size_t* sz) final;
@@ -273,7 +273,7 @@ class KVEngine : public Engine {
                       std::is_same<CollectionType, StringRecord>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
-               ? RecordType::SortedHeaderRecord
+               ? RecordType::SortedHeader
                : std::is_same<CollectionType, List>::value
                      ? RecordType::ListRecord
                      : std::is_same<CollectionType, HashList>::value
@@ -290,12 +290,13 @@ class KVEngine : public Engine {
       case RecordType::StringDeleteRecord: {
         return PointerType::StringRecord;
       }
-      case RecordType::SortedDataRecord:
-      case RecordType::SortedDeleteRecord: {
+      case RecordType::SortedElem:
+      case RecordType::SortedElemDelete: {
         kvdk_assert(false, "Not supported!");
         return PointerType::Invalid;
       }
-      case RecordType::SortedHeaderRecord: {
+      case RecordType::SortedHeaderDelete:
+      case RecordType::SortedHeader: {
         return PointerType::Skiplist;
       }
       case RecordType::ListRecord: {
@@ -369,8 +370,8 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status SSetImpl(Skiplist* skiplist, const StringView& collection_key,
-                  const StringView& value);
+  Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
+                       const StringView& value);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
@@ -450,7 +451,19 @@ class KVEngine : public Engine {
 
   void delayFree(const OldDataRecord&);
 
+  void delayFree(const OutdatedCollection&);
+
   void delayFree(void* addr, TimeStampType ts);
+
+  void removeSkiplist(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(skiplists_mu_);
+    skiplists_.erase(id);
+  }
+
+  void addSkiplistToMap(std::shared_ptr<Skiplist> skiplist) {
+    std::lock_guard<std::mutex> lg(skiplists_mu_);
+    skiplists_.emplace(skiplist->ID(), skiplist);
+  }
 
   inline std::string data_file() { return data_file(dir_); }
 

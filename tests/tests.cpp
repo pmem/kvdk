@@ -29,6 +29,8 @@ using SetOpsFunc =
 using DeleteOpsFunc = std::function<Status(const std::string& collection,
                                            const std::string& key)>;
 
+using DestroyFunc = std::function<Status(const std::string& collection)>;
+
 using GetOpsFunc = std::function<Status(
     const std::string& collection, const std::string& key, std::string* value)>;
 
@@ -155,6 +157,16 @@ class EngineBasicTest : public testing::Test {
       return engine->SDelete(collection, key);
     };
 
+    auto SortedDestroyFunc = [&](const std::string& collection) {
+      return engine->DestroySortedCollection(collection);
+    };
+
+    ASSERT_EQ(engine->CreateSortedCollection(collection, s_configs),
+              Status::Ok);
+
+    TestDestroy(collection, SortedDestroyFunc, SortedSetFunc, SortedGetFunc,
+                SortedDeleteFunc);
+
     ASSERT_EQ(engine->CreateSortedCollection(collection, s_configs),
               Status::Ok);
 
@@ -184,7 +196,11 @@ class EngineBasicTest : public testing::Test {
       return engine->SDelete(collection, key);
     };
 
-    auto Local_XSetXGetXDelete = [&](uint64_t id) {
+    auto SortedDestroyFunc = [&](const std::string& collection) {
+      return engine->DestroySortedCollection(collection);
+    };
+
+    auto AccessTest = [&](uint64_t id) {
       std::string thread_local_collection = collection + std::to_string(id);
       ASSERT_EQ(
           engine->CreateSortedCollection(thread_local_collection, s_configs),
@@ -193,10 +209,17 @@ class EngineBasicTest : public testing::Test {
       TestEmptyKey(thread_local_collection, SortedSetFunc, SortedGetFunc,
                    SortedDeleteFunc);
 
+      TestDestroy(thread_local_collection, SortedDestroyFunc, SortedSetFunc,
+                  SortedGetFunc, SortedDeleteFunc);
+
+      ASSERT_EQ(
+          engine->CreateSortedCollection(thread_local_collection, s_configs),
+          Status::Ok);
+
       CreateBasicOperationTest(thread_local_collection, SortedSetFunc,
                                SortedGetFunc, SortedDeleteFunc, id);
     };
-    LaunchNThreads(configs.max_access_threads, Local_XSetXGetXDelete);
+    LaunchNThreads(configs.max_access_threads, AccessTest);
   }
 
   void TestSortedIterator(const std::string& collection,
@@ -261,6 +284,21 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
     ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
     engine->ReleaseAccessThread();
+  }
+
+  void TestDestroy(const std::string& collection, DestroyFunc DestroyFunc,
+                   SetOpsFunc SetFunc, GetOpsFunc GetFunc,
+                   DeleteOpsFunc DeleteFunc) {
+    std::string key{"test_key"};
+    std::string val{"test_val"};
+    std::string got_val;
+    ASSERT_EQ(SetFunc(collection, key, val), Status::Ok);
+    ASSERT_EQ(GetFunc(collection, key, &got_val), Status::Ok);
+    ASSERT_EQ(val, got_val);
+    ASSERT_EQ(DestroyFunc(collection), Status::Ok);
+    ASSERT_EQ(SetFunc(collection, key, val), Status::NotFound);
+    ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
+    ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
   }
 
   void CreateBasicOperationTest(const std::string& collection,
@@ -505,6 +543,9 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
   Iterator* snapshot_iter =
       engine->NewSortedIterator(sorted_collection, snapshot);
+  // Destroyed collection still should be accessable by snapshot_iter
+  engine->DestroySortedCollection(sorted_collection);
+
   uint64_t snapshot_iter_cnt = 0;
   snapshot_iter->SeekToFirst();
   while (snapshot_iter->Valid()) {
@@ -2328,22 +2369,20 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   configs.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
+
   int cnt = 100;
+
   auto SetString = [&]() {
     for (int i = 0; i < cnt; ++i) {
       std::string key = std::to_string(i) + "stringk";
       std::string val = std::to_string(i) + "stringval";
-      std::string got_val;
       ASSERT_EQ(engine->Set(key, val, WriteOptions{INT32_MAX}), Status::Ok);
     }
-  };
-  auto ExpiredClean = [&]() {
-    auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->CleanOutDated();
   };
 
   auto ExpireString = [&]() {
     for (int i = 0; i < cnt; ++i) {
+      // string
       std::string key = std::to_string(i) + "stringk";
       std::string got_val;
       if (engine->Get(key, &got_val) == Status::Ok) {
@@ -2354,6 +2393,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 
   auto GetString = [&]() {
     for (int i = 0; i < cnt; ++i) {
+      // string
       std::string key = std::to_string(i) + "stringk";
       std::string got_val;
       int64_t ttl_time;
@@ -2363,10 +2403,63 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
           ASSERT_EQ(INT32_MAX / 10000, ttl_time / 10000);
         }
       } else {
-        ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::NotFound);
+        ASSERT_EQ(s, Status::NotFound);
         ASSERT_EQ(ttl_time, kInvalidTTL);
       }
     }
+  };
+
+  auto SetSorted = [&]() {
+    for (int i = 0; i < cnt; ++i) {
+      for (int index_with_hashtable : {0, 1}) {
+        std::string sorted_collection =
+            std::to_string(i) + "sorted" + std::to_string(index_with_hashtable);
+        std::string key = std::to_string(i) + "sortedk";
+        std::string val = std::to_string(i) + "sortedval";
+        SortedCollectionConfigs s_configs;
+        s_configs.index_with_hashtable = index_with_hashtable;
+        ASSERT_EQ(engine->CreateSortedCollection(sorted_collection, s_configs),
+                  Status::Ok);
+        ASSERT_EQ(engine->SSet(sorted_collection, key, val), Status::Ok);
+        bool set_expire = fast_random_64() % 2 == 0;
+        if (set_expire) {
+          ASSERT_EQ(engine->Expire(sorted_collection, 1), Status::Ok);
+        }
+      }
+    }
+  };
+
+  auto GetSorted = [&]() {
+    for (int i = 0; i < cnt; ++i) {
+      for (int index_with_hashtable : {0, 1}) {
+        std::string sorted_collection =
+            std::to_string(i) + "sorted" + std::to_string(index_with_hashtable);
+        std::string key = std::to_string(i) + "sortedk";
+        std::string val = std::to_string(i) + "sortedval";
+        std::string got_val;
+        int64_t ttl_time;
+        Status s = engine->GetTTL(sorted_collection, &ttl_time);
+        if (s == Status::Ok) {
+          if (ttl_time = kPersistTime) {
+            ASSERT_EQ(engine->SGet(sorted_collection, key, &got_val),
+                      Status::Ok);
+            ASSERT_EQ(got_val, val);
+          } else {
+            ASSERT_TRUE(ttl_time <= 1);
+          }
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          ASSERT_EQ(ttl_time, kInvalidTTL);
+          ASSERT_EQ(engine->SGet(sorted_collection, key, &got_val),
+                    Status::NotFound);
+        }
+      }
+    }
+  };
+
+  auto ExpiredClean = [&]() {
+    auto test_kvengine = static_cast<KVEngine*>(engine);
+    test_kvengine->CleanOutDated();
   };
 
   {
@@ -2389,6 +2482,15 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
     ts.emplace_back(std::thread(GetString));
     for (auto& t : ts) t.join();
   }
+
+  {
+    SetSorted();
+    auto t = std::thread(ExpiredClean);
+    GetSorted();
+    t.join();
+  }
+
+  delete engine;
 }
 #endif
 

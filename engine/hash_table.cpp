@@ -75,7 +75,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
       }
       case PointerType::Skiplist: {
         Skiplist* skiplist = index_.skiplist;
-        pmem_record = skiplist->Header()->record;
+        pmem_record = skiplist->HeaderRecord();
         data_entry_key = skiplist->Name();
         break;
       }
