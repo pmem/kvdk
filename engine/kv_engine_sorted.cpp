@@ -4,7 +4,6 @@
 
 #include "kv_engine.hpp"
 #include "sorted_collection/iterator.hpp"
-#include "sorted_collection/skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::CreateSortedCollection(
