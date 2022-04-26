@@ -92,12 +92,12 @@ class KVEngine : public Engine {
       const StringView collection_name,
       const SortedCollectionConfigs& configs) override;
   Status DestroySortedCollection(const StringView collection_name) override;
-  Status SGet(const StringView collection, const StringView user_key,
-              std::string* value) override;
-  Status SSet(const StringView collection, const StringView user_key,
-              const StringView value) override;
-  Status SDelete(const StringView collection,
-                 const StringView user_key) override;
+  Status SortedGet(const StringView collection, const StringView user_key,
+                   std::string* value) override;
+  Status SortedSet(const StringView collection, const StringView user_key,
+                   const StringView value) override;
+  Status SortedDelete(const StringView collection,
+                      const StringView user_key) override;
   Iterator* NewSortedIterator(const StringView collection,
                               Snapshot* snapshot) override;
   void ReleaseSortedIterator(Iterator* sorted_iterator) override;
@@ -274,11 +274,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -379,16 +378,12 @@ class KVEngine : public Engine {
 
   Status RestoreData();
 
-  Status RestoreSkiplistHeader(DLRecord* pmem_record);
+  Status restoreSortedHeader(DLRecord* header);
 
-  Status RestoreStringRecord(StringRecord* pmem_record,
+  Status restoreSortedElem(DLRecord* elem);
+
+  Status restoreStringRecord(StringRecord* pmem_record,
                              const DataEntry& cached_entry);
-
-  Status RestoreSkiplistRecord(DLRecord* pmem_record);
-
-  // Check if a doubly linked record has been successfully inserted, and try
-  // repair un-finished prev pointer
-  bool CheckAndRepairDLRecord(DLRecord* record);
 
   bool ValidateRecord(void* data_record);
 

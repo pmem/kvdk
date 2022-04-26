@@ -86,47 +86,47 @@ static void test_named_coll() {
   // Insert key1-value1 into "my_collection_1".
   // Implicitly create a collection named "my_collection_1" in which
   // key1-value1 is stored.
-  status = engine->SSet(collection1, key1, value1);
+  status = engine->SortedSet(collection1, key1, value1);
   assert(status == kvdk::Status::Ok);
 
   // Get value1 by key1 in collection "my_collection_1"
-  status = engine->SGet(collection1, key1, &v);
+  status = engine->SortedGet(collection1, key1, &v);
   assert(status == kvdk::Status::Ok);
   assert(v == value1);
 
   // Insert key1-value2 into "my_collection_2".
   // Implicitly create a collection named "my_collection_2" in which
   // key1-value2 is stored.
-  status = engine->SSet(collection2, key1, value2);
+  status = engine->SortedSet(collection2, key1, value2);
   assert(status == kvdk::Status::Ok);
 
   // Get value2 by key1 in collection "my_collection_2"
-  status = engine->SGet(collection2, key1, &v);
+  status = engine->SortedGet(collection2, key1, &v);
   assert(status == kvdk::Status::Ok);
   assert(v == value2);
 
   // Get value1 by key1 in collection "my_collection_1"
   // key1-value2 is stored in "my_collection_2"
   // Thus key1-value1 stored in "my_collection_1" is unaffected by operation
-  // engine->SSet(collection2, key1, value2).
-  status = engine->SGet(collection1, key1, &v);
+  // engine->SortedSet(collection2, key1, value2).
+  status = engine->SortedGet(collection1, key1, &v);
   assert(status == kvdk::Status::Ok);
   assert(v == value1);
 
   // Insert key2-value2 into collection "my_collection_2"
   // Collection "my_collection_2" already exists and no implicit collection
   // creation occurs.
-  status = engine->SSet(collection2, key2, value2);
+  status = engine->SortedSet(collection2, key2, value2);
   assert(status == kvdk::Status::Ok);
 
   // Delete key1-value1 in collection "my_collection_1"
   // Although "my_collection_1" has no elements now, the collection itself is
   // not deleted though.
-  status = engine->SDelete(collection1, key1);
+  status = engine->SortedDelete(collection1, key1);
   assert(status == kvdk::Status::Ok);
 
   printf(
-      "Successfully performed SGet, SSet, SDelete operations on "
+      "Successfully performed SortedGet, SortedSet, SortedDelete operations on "
       "named "
       "collections.\n");
   return;
@@ -156,7 +156,7 @@ static void test_iterator() {
     // Collection "my_sorted_collection" is implicitly created in first
     // iteration
     status =
-        engine->SSet(sorted_collection, kv_pairs[i].first, kv_pairs[i].second);
+        engine->SortedSet(sorted_collection, kv_pairs[i].first, kv_pairs[i].second);
     assert(status == kvdk::Status::Ok);
   }
   // Sort kv_pairs for checking the order of "my_sorted_collection".
@@ -278,7 +278,7 @@ static void test_customer_sorted_func() {
   kvdk::Status s = engine->CreateSortedCollection(collection, s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
-    s = engine->SSet(collection, array[i].number_key, array[i].value);
+    s = engine->SortedSet(collection, array[i].number_key, array[i].value);
     assert(s == Ok);
   }
   auto iter = engine->NewSortedIterator(collection);
@@ -347,7 +347,7 @@ static void test_expire() {
     s = engine->GetTTL(sorted_collection, &ttl_time);
     assert(s == kvdk::Status::Ok);
     assert(ttl_time == kvdk::kPersistTime);
-    s = engine->SSet(sorted_collection, key, val);
+    s = engine->SortedSet(sorted_collection, key, val);
     assert(s == kvdk::Status::Ok);
     // case: set expire_time
     s = engine->Expire(sorted_collection, INT32_MAX);
@@ -361,7 +361,7 @@ static void test_expire() {
     s = engine->Expire(sorted_collection, 1);
     assert(s == kvdk::Status::Ok);
     sleep(1);
-    s = engine->SGet(sorted_collection, key, &got_val);
+    s = engine->SortedGet(sorted_collection, key, &got_val);
     assert(s == kvdk::Status::NotFound);
     printf("Successfully expire sorted\n");
   }

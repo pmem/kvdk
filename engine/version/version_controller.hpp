@@ -71,7 +71,7 @@ class SnapshotList {
 // kvdk instance, and a global snapshot list that actively created by user
 class VersionController {
  public:
-  // LocalSnapshotHolder is used by kvdk functions such as Get(), SGet() and
+  // LocalSnapshotHolder is used by kvdk functions such as Get(), SortedGet() and
   // HashGet() internally to guarantee lockless reads will always read out valid
   // data. LocalSnapshotHolder is thread_local, and one thread can hold atmost
   // one at same time.
