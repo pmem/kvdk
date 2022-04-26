@@ -6,7 +6,6 @@
 #include "utils/sync_point.hpp"
 
 namespace KVDK_NAMESPACE {
-
 Status KVEngine::Set(const StringView key, const StringView value,
                      const WriteOptions& options) {
   Status s = MaybeInitAccessThread();
@@ -80,7 +79,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
   std::unique_lock<SpinMutex> ul(*hint.spin);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
-  auto ret = lookupKey<true>(key, static_cast<RecordType>(StringRecordType));
+  auto ret = lookupKey<true>(key, StringRecordType);
 
   StringRecord* existing_record = nullptr;
   std::string existing_value;
