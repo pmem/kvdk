@@ -7,6 +7,108 @@
 
 namespace KVDK_NAMESPACE {
 
+Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
+                        void* modify_args, const WriteOptions& write_options) {
+  int64_t base_time = TimeUtils::millisecond_time();
+  if (write_options.ttl_time <= 0 ||
+      !TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
+    return Status::InvalidArgument;
+  }
+
+  ExpireTimeType expired_time = write_options.ttl_time == kPersistTime
+                                    ? kPersistTime
+                                    : write_options.ttl_time + base_time;
+
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  auto hint = hash_table_->GetHint(key);
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+  TimeStampType new_ts = holder.Timestamp();
+  auto ret = lookupKey<true>(key, StringRecordType);
+
+  StringRecord* existing_record = nullptr;
+  std::string existing_value;
+  std::string new_value;
+  // push it into cleaner
+  if (ret.s == Status::Ok) {
+    existing_record = ret.entry.GetIndex().string_record;
+    existing_value.assign(existing_record->Value().data(),
+                          existing_record->Value().size());
+  } else if (ret.s == Status::Outdated) {
+    existing_record = ret.entry.GetIndex().string_record;
+  } else if (ret.s == Status::NotFound) {
+    // nothing todo
+  } else {
+    return ret.s;
+  }
+
+  auto modify_operation = modify_func(
+      ret.s == Status::Ok ? &existing_value : nullptr, &new_value, modify_args);
+  switch (modify_operation) {
+    case ModifyOperation::Write: {
+      if (!CheckValueSize(new_value)) {
+        return Status::InvalidDataSize;
+      }
+      SpaceEntry space_entry =
+          pmem_allocator_->Allocate(StringRecord::RecordSize(key, new_value));
+      if (space_entry.size == 0) {
+        return Status::PmemOverflow;
+      }
+
+      StringRecord* new_record =
+          pmem_allocator_->offset2addr_checked<StringRecord>(
+              space_entry.offset);
+      StringRecord::PersistStringRecord(
+          new_record, space_entry.size, new_ts, StringDataRecord,
+          existing_record == nullptr
+              ? kNullPMemOffset
+              : pmem_allocator_->addr2offset_checked(existing_record),
+          key, new_value, expired_time);
+      hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
+                          PointerType::StringRecord);
+      if (ret.s == Status::Ok) {
+        ul.unlock();
+        delayFree(OldDataRecord{existing_record, new_ts});
+      }
+      break;
+    }
+    case ModifyOperation::Delete: {
+      if (ret.s == Status::Ok) {
+        SpaceEntry space_entry =
+            pmem_allocator_->Allocate(StringRecord::RecordSize(key, ""));
+        if (space_entry.size == 0) {
+          return Status::PmemOverflow;
+        }
+
+        void* pmem_ptr =
+            pmem_allocator_->offset2addr_checked(space_entry.offset);
+        StringRecord::PersistStringRecord(
+            pmem_ptr, space_entry.size, new_ts, StringDeleteRecord,
+            pmem_allocator_->addr2offset_checked(existing_record), key, "");
+        hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
+                            PointerType::StringRecord);
+        ul.unlock();
+        delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
+        delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr,
+                                  PointerType::HashEntry, new_ts, hint.spin));
+      }
+      break;
+    }
+    case ModifyOperation::Abort: {
+      return Status::Abort;
+    }
+    case ModifyOperation::Noop: {
+      return Status::Ok;
+    }
+  }
+
+  return Status::Ok;
+}
+
 Status KVEngine::Set(const StringView key, const StringView value,
                      const WriteOptions& options) {
   Status s = MaybeInitAccessThread();
