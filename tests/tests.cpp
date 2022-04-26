@@ -2472,7 +2472,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 
     // check
     GetString();
-    GetSorted();
   }
 
   {
