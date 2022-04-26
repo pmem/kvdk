@@ -230,7 +230,7 @@ class KVEngine : public Engine {
   LookupResult lookupImpl(StringView key, uint16_t type_mask);
 
   void removeKeyOrElem(LookupResult ret) {
-    kvdk_assert(ret.s == Status::Ok, "");
+    kvdk_assert(ret.s == Status::Ok || ret.s == Status::Outdated, "");
     hash_table_->Erase(ret.entry_ptr);
   }
 

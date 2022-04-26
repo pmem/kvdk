@@ -1816,9 +1816,7 @@ void KVEngine::deleteCollections() {
 };
 
 std::deque<std::pair<TimeStampType, List*>> KVEngine::removeOutdatedLists() {
-  auto now = TimeUtils::millisecond_time();
   std::deque<std::pair<TimeStampType, List*>> pending_lists;
-
   while (true) {
     List* list = nullptr;
     {
@@ -1827,7 +1825,7 @@ std::deque<std::pair<TimeStampType, List*>> KVEngine::removeOutdatedLists() {
         break;
       }
       list = *lists_.begin();
-      if (list->GetExpireTime() > now) {
+      if (!list->HasExpired()) {
         break;
       }
     }
@@ -1836,7 +1834,7 @@ std::deque<std::pair<TimeStampType, List*>> KVEngine::removeOutdatedLists() {
       auto key = list->Name();
       auto guard = hash_table_->AcquireLock(key);
       LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
-      kvdk_assert(ret.s == Status::Ok, "");
+      kvdk_assert(ret.s == Status::Outdated, "");
       kvdk_assert(ret.entry_ptr->GetIndex().list == list, "");
       removeKeyOrElem(ret);
     }
@@ -1852,9 +1850,7 @@ std::deque<std::pair<TimeStampType, List*>> KVEngine::removeOutdatedLists() {
 
 std::deque<std::pair<TimeStampType, HashList*>>
 KVEngine::removeOutdatedHashLists() {
-  auto now = TimeUtils::millisecond_time();
   std::deque<std::pair<TimeStampType, HashList*>> pending_hlists;
-
   while (true) {
     HashList* hlist = nullptr;
     {
@@ -1863,7 +1859,7 @@ KVEngine::removeOutdatedHashLists() {
         break;
       }
       hlist = *hash_lists_.begin();
-      if (hlist->GetExpireTime() > now) {
+      if (!hlist->HasExpired()) {
         break;
       }
     }
@@ -1872,11 +1868,11 @@ KVEngine::removeOutdatedHashLists() {
       auto key = hlist->Name();
       auto guard = hash_table_->AcquireLock(key);
       LookupResult ret = lookupKey<false>(key, RecordType::HashRecord);
-      kvdk_assert(ret.s == Status::Ok, "");
+      kvdk_assert(ret.s == Status::Outdated, "");
       kvdk_assert(ret.entry_ptr->GetIndex().hlist == hlist, "");
       removeKeyOrElem(ret);
     }
-    // Remove from lists_
+    // Remove from hash_lists_
     {
       std::lock_guard<std::mutex> guard{hlists_mu_};
       hash_lists_.erase(hlist);
