@@ -1078,11 +1078,9 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
   }
   return result;
 }
-// Somehow unnecessary, but where are they instantiated?
-// template KVEngine::LookupResult KVEngine::lookupKey<true>(StringView,
-//                                                             uint16_t);
-// template KVEngine::LookupResult KVEngine::lookupKey<false>(StringView,
-//                                                             uint16_t);
+template KVEngine::LookupResult KVEngine::lookupKey<true>(StringView, uint16_t);
+template KVEngine::LookupResult KVEngine::lookupKey<false>(StringView,
+                                                           uint16_t);
 
 }  // namespace KVDK_NAMESPACE
 
