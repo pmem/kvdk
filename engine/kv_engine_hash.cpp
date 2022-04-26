@@ -263,7 +263,7 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
 
   auto internal_key = rec->Key();
   auto guard = hash_table_->AcquireLock(internal_key);
-  LookupResult result = lookupImpl<true>(internal_key, RecordType::HashElem);
+  LookupResult result = lookupElem<true>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
