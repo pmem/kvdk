@@ -66,13 +66,13 @@ class SortedOperator {
   SortedOperator(kvdk::Engine*& e, CollectionNameType cn)
       : engine{e}, collection_name{cn} {}
   kvdk::Status operator()(KeyType key, std::string* value_got) {
-    return engine->SGet(collection_name, key, value_got);
+    return engine->SortedGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
-    return engine->SSet(collection_name, key, value);
+    return engine->SortedSet(collection_name, key, value);
   }
   kvdk::Status operator()(KeyType key) {
-    return engine->SDelete(collection_name, key);
+    return engine->SortedDelete(collection_name, key);
   }
 };
 
