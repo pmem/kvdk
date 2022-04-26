@@ -48,10 +48,10 @@ class GenericList final : public Collection {
 
  public:
   // Deletion of a node in GenericList takes two steps.
-  // First, the node is unlinked from list and markAsDirty(),
-  // which can be detected by Iterator::Dirty().
-  // Iterator may go to a Dirty() node by operator++() or operator--().
-  // It's safe to read data on this Dirty() node.
+  // First, the node is unlinked from list and markAsis_dirty(),
+  // which can be detected by Iterator::is_dirty().
+  // Iterator may go to a is_dirty() node by operator++() or operator--().
+  // It's safe to read data on this is_dirty() node.
   // After any Iterator or lockless read threads can no longer access
   // this unlinked node, which is guaranteed by the snapshot system,
   // the node is Free()d by PMemAllocator.
@@ -154,9 +154,9 @@ class GenericList final : public Collection {
       return XXH3_64bits(&addr, sizeof(void const*));
     }
 
-    bool Dirty() const { return (curr != nullptr && owner->isDirty(curr)); }
-
    private:
+    friend GenericList;
+
     friend bool operator==(Iterator const& lhs, Iterator const& rhs) {
       return (lhs.owner == rhs.owner) && (lhs.curr == rhs.curr);
     }
@@ -172,19 +172,23 @@ class GenericList final : public Collection {
     //  A Normal Record
     void debug_check() const {
 #if KVDK_DEBUG_LEVEL > 0
-      if (curr == nullptr) {
+      if (owner == nullptr || curr == nullptr) {
         return;
       }
       kvdk_assert(Collection::ExtractID(curr->Key()) == owner->ID(), "");
       kvdk_assert(
-          (curr->entry.meta.type == DataType && curr->Validate()) || Dirty(),
+          (curr->entry.meta.type == DataType && curr->Validate()) || is_dirty(),
           "");
 #endif  // KVDK_DEBUG_LEVEL > 0
+    }
+
+    bool is_dirty() const {
+      return (curr != nullptr && owner->IsRecordDirty(curr));
     }
   };
 
  public:
-  // Default to an empty list with no name and 0 as id
+  // Connstruct an empty List on DRAM with no name and 0 as id
   // Must Init() or Restore() before further use.
   GenericList() : Collection{"", CollectionIDType{}} {}
 
@@ -192,9 +196,12 @@ class GenericList final : public Collection {
   GenericList(GenericList&&) = delete;
   GenericList& operator=(GenericList const&) = delete;
   GenericList& operator=(GenericList&&) = delete;
-  ~GenericList() = default;
+  ~GenericList() {
+    list_record = nullptr;
+    alloc = nullptr;
+  }
 
-  // Initialize a List with PMEMAllocator a, pre-allocated space,
+  // Initialize a List on PMem with PMEMAllocator a, pre-allocated space,
   // Creation time, List name and id.
   void Init(PMEMAllocator* a, SpaceEntry space, TimeStampType timestamp,
             StringView key, CollectionIDType id, LockTable* lt) {
@@ -207,22 +214,8 @@ class GenericList final : public Collection {
     lock_table = lt;
   }
 
-  template <typename ListDeleter>
-  void Destroy(ListDeleter list_deleter) {
-    kvdk_assert(Size() == 0 && list_record != nullptr && first == nullptr &&
-                    last == nullptr,
-                "Only initialized empty List can be destroyed!");
-    markAsDirty(list_record);
-    list_deleter(list_record);
-    list_record = nullptr;
-    alloc = nullptr;
-  }
-
-  bool Valid() const { return (list_record != nullptr); }
-
-  // Restore a List with its ListRecord, first and last element and size
-  // This function is used by GenericListBuilder to restore the List.
-  // Don't Restore() after Init()
+  // Restore a List already on PMem with its ListRecord, first and last element
+  // and size This function is used by GenericListBuilder to restore the List.
   void Restore(PMEMAllocator* a, DLRecord* list_rec, DLRecord* fi, DLRecord* la,
                size_t n, LockTable* lt) {
     auto key = list_rec->Key();
@@ -235,6 +228,16 @@ class GenericList final : public Collection {
     last = la;
     sz.store(n);
     lock_table = lt;
+  }
+
+  // Destroy the PMem record of an Empty List.
+  template <typename DelayFree>
+  void Destroy(DelayFree delay_free) {
+    kvdk_assert(list_record != nullptr, "Destroy() uninitialized.");
+    kvdk_assert(Size() == 0, "Only empty list can be Destroy()ed");
+    kvdk_assert(!IsRecordDirty(list_record), "double Destroy()!");
+    markRecordAsDirty(list_record);
+    delay_free(list_record);
   }
 
   LockType* Mutex() { return &mu; }
@@ -284,29 +287,37 @@ class GenericList final : public Collection {
     }
   }
 
-  template <typename ElemDeleter>
-  Iterator Erase(Iterator pos, ElemDeleter elem_deleter) {
-    return erase_impl(pos, elem_deleter);
+  bool IsRecordDirty(DLRecord* rec) const {
+    auto& entry = rec->entry;
+    return (entry.meta.type == RecordType::ListDirtyElem) ||
+           (entry.meta.type == RecordType::HashDirtyElem) ||
+           (entry.meta.type == RecordType::ListDirtyRecord) ||
+           (entry.meta.type == RecordType::HashDirtyRecord);
+  }
+
+  template <typename DelayFree>
+  Iterator Erase(Iterator pos, DelayFree delay_free) {
+    return erase_impl(pos, delay_free);
   }
 
   // EraseWithLock() presumes that DLRecord* rec is secured by caller,
   // only one thread is calling EraseWithLock() on rec and rec is valid.
-  template <typename ElemDeleter>
-  void EraseWithLock(DLRecord* rec, ElemDeleter elem_deleter) {
+  template <typename DelayFree>
+  Iterator EraseWithLock(DLRecord* rec, DelayFree delay_free) {
     Iterator pos{this, rec};
     LockTable::GuardType guard;
     lockPosAndPrev(pos, guard);
-    erase_impl(pos, elem_deleter);
+    return erase_impl(pos, delay_free);
   }
 
-  template <typename ElemDeleter>
-  void PopFront(ElemDeleter elem_deleter) {
-    erase_impl(Front(), elem_deleter);
+  template <typename DelayFree>
+  void PopFront(DelayFree delay_free) {
+    erase_impl(Front(), delay_free);
   }
 
-  template <typename ElemDeleter>
-  void PopBack(ElemDeleter elem_deleter) {
-    erase_impl(Back(), elem_deleter);
+  template <typename DelayFree>
+  void PopBack(DelayFree delay_free) {
+    erase_impl(Back(), delay_free);
   }
 
   Iterator EmplaceBefore(SpaceEntry space, Iterator pos,
@@ -357,23 +368,24 @@ class GenericList final : public Collection {
     emplace_impl(space, Tail(), timestamp, key, value);
   }
 
-  template <typename ElemDeleter>
+  template <typename DelayFree>
   Iterator Replace(SpaceEntry space, Iterator pos, TimeStampType timestamp,
-                   StringView key, StringView value, ElemDeleter elem_deleter) {
-    return replace_impl(space, pos, timestamp, key, value, elem_deleter);
+                   StringView key, StringView value, DelayFree delay_free) {
+    return replace_impl(space, pos, timestamp, key, value, delay_free);
   }
 
   // ReplaceWithLock() presumes that DLRecord* rec is secured by caller,
   // only one thread is calling ReplaceWithLock() on rec and rec is valid.
-  template <typename ElemDeleter>
-  void ReplaceWithLock(SpaceEntry space, DLRecord* rec, TimeStampType timestamp,
-                       StringView key, StringView value,
-                       ElemDeleter elem_deleter) {
-    Iterator pos{this, rec};
+  template <typename DelayFree>
+  Iterator ReplaceWithLock(SpaceEntry space, Iterator pos,
+                           TimeStampType timestamp, StringView key,
+                           StringView value, DelayFree delay_free) {
     LockTable::GuardType guard;
     lockPosAndPrev(pos, guard);
-    replace_impl(space, pos, timestamp, key, value, elem_deleter);
+    return replace_impl(space, pos, timestamp, key, value, delay_free);
   }
+
+  Iterator MakeIterator(DLRecord* rec) { return Iterator{this, rec}; }
 
  private:
   inline DLRecord* addressOf(PMemOffsetType offset) const {
@@ -391,7 +403,7 @@ class GenericList final : public Collection {
                 "Wrong List!");
     Iterator prev{next};
     --prev;
-    kvdk_assert(!next.Dirty() && !prev.Dirty(), "");
+    kvdk_assert(!next.is_dirty() && !prev.is_dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -399,34 +411,30 @@ class GenericList final : public Collection {
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
     kvdk_assert(record->Validate(), "");
+    Iterator new_rec{this, record};
 
-    if (Size() == 0) {
-      kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
-      first = record;
-      last = record;
+    if (prev == Head() && next == Tail()) {
+      first = new_rec.Address();
+      last = new_rec.Address();
     } else if (prev == Head()) {
       // PushFront()
-      kvdk_assert(next != Tail(), "");
-      next->PersistPrevNT(space.offset);
-      first = record;
+      next->PersistPrevNT(new_rec.Offset());
+      first = new_rec.Address();
     } else if (next == Tail()) {
       // PushBack()
-      kvdk_assert(prev != Head(), "");
-      prev->PersistNextNT(space.offset);
-      last = record;
+      prev->PersistNextNT(new_rec.Offset());
+      last = new_rec.Address();
     } else {
       // Emplace between two elements on PMem
-      kvdk_assert(prev != Head() && next != Tail(), "");
-      prev->PersistNextNT(space.offset);
-      next->PersistPrevNT(space.offset);
+      prev->PersistNextNT(new_rec.Offset());
+      next->PersistPrevNT(new_rec.Offset());
     }
-
     ++sz;
-    return (next == Tail()) ? --next : ++prev;
+    return new_rec;
   }
 
-  template <typename ElemDeleter>
-  Iterator erase_impl(Iterator pos, ElemDeleter elem_deleter) {
+  template <typename DelayFree>
+  Iterator erase_impl(Iterator pos, DelayFree delay_free) {
     kvdk_assert(pos != Head(), "Cannot erase Head()");
     kvdk_assert(Size() >= 1, "Cannot erase from empty List!");
     kvdk_assert(ExtractID(pos->Key()) == ID(), "Erase from wrong List!");
@@ -436,75 +444,66 @@ class GenericList final : public Collection {
     Iterator next{pos};
     ++next;
 
-    kvdk_assert(!prev.Dirty() && !next.Dirty(), "");
+    kvdk_assert(!prev.is_dirty() && !next.is_dirty(), "");
 
-    if (Size() == 1) {
-      kvdk_assert(prev == Head() && next == Tail(), "Impossible!");
+    kvdk_assert(Size() >= 1, "");
+    if (prev == Head() && next == Tail()) {
       first = nullptr;
       last = nullptr;
     } else if (prev == Head()) {
       // Erase Front()
-      kvdk_assert(next != Tail(), "");
       first = next.Address();
-      next->PersistPrevNT(NullPMemOffset);
+      next->PersistPrevNT(kNullPMemOffset);
     } else if (next == Tail()) {
       // Erase Back()
-      kvdk_assert(prev != Head(), "");
       last = prev.Address();
-      prev->PersistNextNT(NullPMemOffset);
+      prev->PersistNextNT(kNullPMemOffset);
     } else {
-      kvdk_assert(prev != Head() && next != Tail(), "");
       // Reverse procedure of emplace_impl() between two elements
       next->PersistPrevNT(prev.Offset());
       prev->PersistNextNT(next.Offset());
     }
-    markAsDirty(pos.Address());
-    elem_deleter(pos.Address());
+    markRecordAsDirty(pos.Address());
+    delay_free(pos.Address());
     --sz;
     return next;
   }
 
-  template <typename ElemDeleter>
+  template <typename DelayFree>
   Iterator replace_impl(SpaceEntry space, Iterator pos, TimeStampType timestamp,
                         StringView key, StringView value,
-                        ElemDeleter elem_deleter) {
+                        DelayFree delay_free) {
     kvdk_assert(ExtractID(pos->Key()) == ID(), "Wrong List!");
     Iterator prev{pos};
     --prev;
     Iterator next{pos};
     ++next;
-    kvdk_assert(!prev.Dirty() && !next.Dirty(), "");
+    kvdk_assert(!prev.is_dirty() && !next.is_dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
     DLRecord* record = DLRecord::PersistDLRecord(
         addressOf(space.offset), space.size, timestamp, DataType,
         NullPMemOffset, prev_off, next_off, InternalKey(key), value);
-
-    kvdk_assert(Size() >= 1, "");
-    if (Size() == 1) {
-      kvdk_assert(prev == Head() && next == Tail(), "");
-      first = record;
-      last = record;
-    } else if (next == Tail()) {
-      // Replace Last
-      kvdk_assert(prev != Head(), "");
-      prev->PersistNextNT(space.offset);
-      last = record;
+    Iterator new_rec{this, record};
+    if (prev == Head() && next == Tail()) {
+      first = new_rec.Address();
+      last = new_rec.Address();
     } else if (prev == Head()) {
-      // Replace First
-      kvdk_assert(next != Tail(), "");
-      next->PersistPrevNT(space.offset);
-      first = record;
+      // Replace Front()
+      first = new_rec.Address();
+      next->PersistPrevNT(new_rec.Offset());
+    } else if (next == Tail()) {
+      // Replace Back()
+      last = new_rec.Address();
+      prev->PersistNextNT(new_rec.Offset());
     } else {
-      // Replace Middle
-      kvdk_assert(prev != Head() && next != Tail(), "");
-      prev->PersistNextNT(space.offset);
-      next->PersistPrevNT(space.offset);
+      prev->PersistNextNT(new_rec.Offset());
+      next->PersistPrevNT(new_rec.Offset());
     }
-    markAsDirty(pos.Address());
-    elem_deleter(pos.Address());
-    return Iterator{this, addressOf(space.offset)};
+    markRecordAsDirty(pos.Address());
+    delay_free(pos.Address());
+    return new_rec;
   }
 
   std::string serialize(DLRecord* rec) const {
@@ -547,7 +546,7 @@ class GenericList final : public Collection {
     }
   }
 
-  void markAsDirty(DLRecord* rec) {
+  void markRecordAsDirty(DLRecord* rec) {
     auto& entry = rec->entry;
     switch (entry.meta.type) {
       case RecordType::ListElem: {
@@ -573,12 +572,6 @@ class GenericList final : public Collection {
     }
     _mm_clwb(&entry.meta.type);
     _mm_mfence();
-  }
-
-  bool isDirty(DLRecord* rec) const {
-    auto& entry = rec->entry;
-    return (entry.meta.type == RecordType::ListDirtyElem) ||
-           (entry.meta.type == RecordType::HashDirtyElem);
   }
 };
 
@@ -702,12 +695,6 @@ class GenericListBuilder final {
     }
   }
 
-  template <typename Func>
-  void ProcessCachedElems(Func f, void* args) {
-    f(mpoints, args);
-    return;
-  }
-
   void RebuildLists() {
     for (auto const& primer : primers) {
       if (primer.list_record == nullptr) {
@@ -718,7 +705,7 @@ class GenericListBuilder final {
         continue;
       }
 
-      List* restore_list = new List{};
+      List* list = new List{};
       switch (primer.size.load()) {
         case 0: {
           // Empty List
@@ -726,8 +713,8 @@ class GenericListBuilder final {
           kvdk_assert(primer.last == nullptr, "");
           kvdk_assert(primer.unique == nullptr, "");
           kvdk_assert(primer.size.load() == 0, "");
-          restore_list->Restore(alloc, primer.list_record, nullptr, nullptr, 0,
-                                lock_table);
+          list->Restore(alloc, primer.list_record, nullptr, nullptr, 0,
+                        lock_table);
           break;
         }
         case 1: {
@@ -736,8 +723,8 @@ class GenericListBuilder final {
           kvdk_assert(primer.last == nullptr, "");
           kvdk_assert(primer.unique != nullptr, "");
           kvdk_assert(primer.size.load() == 1, "");
-          restore_list->Restore(alloc, primer.list_record, primer.unique,
-                                primer.unique, 1, lock_table);
+          list->Restore(alloc, primer.list_record, primer.unique, primer.unique,
+                        1, lock_table);
           break;
         }
         default: {
@@ -745,17 +732,17 @@ class GenericListBuilder final {
           kvdk_assert(primer.first != nullptr, "");
           kvdk_assert(primer.last != nullptr, "");
           kvdk_assert(primer.unique == nullptr, "");
-          restore_list->Restore(alloc, primer.list_record, primer.first,
-                                primer.last, primer.size.load(), lock_table);
+          list->Restore(alloc, primer.list_record, primer.first, primer.last,
+                        primer.size.load(), lock_table);
           break;
         }
       }
-      rebuilded_lists->emplace(restore_list);
+      rebuilded_lists->emplace(list);
     }
   }
 
-  template <typename ElemDeleter>
-  void CleanBrokens(ElemDeleter elem_deleter) {
+  template <typename Deleter>
+  void CleanBrokens(Deleter deleter) {
     for (DLRecord* elem : brokens) {
       switch (typeOf(elem)) {
         case ListRecordType::Unique: {
@@ -775,7 +762,7 @@ class GenericListBuilder final {
           break;
         }
       }
-      elem_deleter(elem);
+      deleter(elem);
     }
   }
 

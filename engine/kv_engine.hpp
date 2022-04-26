@@ -208,59 +208,36 @@ class KVEngine : public Engine {
   //
   // Store a copy of hash entry in LookupResult::entry, and a pointer to the
   // hash entry in LookupResult::entry_ptr
-  // If allocate_hash_entry_if_missing is true and key not found, then store
+  // If may_insert is true and key not found, then store
   // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
   //
   // return status:
   // Status::NotFound is key is not found.
   // Status::WrongType if type_mask does not match.
   // Status::Expired if key has been expired
-  // Status::MemoryOverflow if allocate_hash_entry_if_missing is true but
+  // Status::MemoryOverflow if may_insert is true but
   // failed to allocate new hash entry
   // Status::Ok on success.
   //
-  // Notice: key should be locked if set allocate_hash_entry_if_missing to true
-  template <bool allocate_hash_entry_if_missing>
+  // Notice: key should be locked if set may_insert to true
+  template <bool may_insert>
   LookupResult lookupKey(StringView key, uint16_t type_mask);
 
-  template <bool allocate_hash_entry_if_missing>
-  LookupResult lookupImpl(StringView key, uint16_t type_mask) {
-    LookupResult result;
-    auto hint = hash_table_->GetHint(key);
-    if (!allocate_hash_entry_if_missing) {
-      result.s = hash_table_->SearchForRead(
-          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-    } else {
-      result.s = hash_table_->SearchForWrite(
-          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-    }
-    return result;
-  }
+  template <bool may_insert>
+  LookupResult lookupElem(StringView key, uint16_t type_mask);
 
-  // Lockless, caller should lock the key aforehand.
-  // Remove key from HashTable. It's up to caller to handle the erased key
-  // Returns Status::Ok if key is found and removed,
-  // Returns Status::NotFound or Status::Outdated as is returnd by
-  // SearchForRead()
-  LookupResult removeKey(StringView key) {
-    return removeImpl(key, PrimaryRecordType);
-  }
+  template <bool may_insert>
+  LookupResult lookupImpl(StringView key, uint16_t type_mask);
 
-  LookupResult removeImpl(StringView key, uint16_t type_mask) {
-    LookupResult result;
-    auto hint = hash_table_->GetHint(key);
-    result.s = hash_table_->SearchForRead(
-        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-    if (result.s != Status::Ok) {
-      return result;
-    }
-    hash_table_->Erase(result.entry_ptr);
-    return result;
+  void removeKeyOrElem(LookupResult ret) {
+    kvdk_assert(ret.s == Status::Ok, "");
+    hash_table_->Erase(ret.entry_ptr);
   }
 
   // ret must be return value of lookupImpl<true> or lookupKey<true>
-  void insertImpl(LookupResult ret, StringView key, RecordType type,
-                  void* addr) {
+  // key must be the key in previous lookupKey function call.
+  void insertKeyOrElem(LookupResult ret, StringView key, RecordType type,
+                       void* addr) {
     auto hint = hash_table_->GetHint(key);
     hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
   }
@@ -339,26 +316,6 @@ class KVEngine : public Engine {
     return res.s;
   }
 
-  // Lockless. It's up to caller to lock the HashTable
-  template <typename CollectionType>
-  Status registerCollection(CollectionType* coll) {
-    RecordType type = collectionType<CollectionType>();
-    auto ret = lookupKey<true>(coll->Name(), PrimaryRecordType);
-    if (ret.s != Status::NotFound) {
-      if (ret.s == Status::WrongType) {
-        return ret.s;
-      }
-      kvdk_assert(false, "Collection already registered!");
-      return Status::Abort;
-    }
-
-    PointerType ptype = pointerType(type);
-    kvdk_assert(ptype != PointerType::Invalid, "Invalid pointer type!");
-    hash_table_->Insert(hash_table_->GetHint(coll->Name()), ret.entry_ptr, type,
-                        coll, ptype);
-    return Status::Ok;
-  }
-
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const StringView& key, const StringView& value,
@@ -414,13 +371,24 @@ class KVEngine : public Engine {
 
   Status listRegisterRecovered();
 
-  template <typename DelayFree>
-  Status listDestroy(List* list, DelayFree delay_free);
+  // Should only be called by Cleaner when the List is no longer
+  // accessible to any other thread.
+  Status listDestroy(List* list, std::function<void(DLRecord*)> free_func);
 
   Status listDestroy(List* list);
 
   /// Hash helper funtions
   Status hashListFind(StringView key, HashList** hlist, bool init_nx);
+
+  // ModifyFunction should have signature
+  // ModifyOperation(StringView const* old, StringView* new, void* args).
+  // for ModifyOperation::Delete and Noop, return Status of the field.
+  // for ModifyOperation::Write, return the Status of the Write.
+  // for ModifyOperation::Abort, return Status::Abort.
+  enum class hashModifyImplCaller { HashGet, HashSet, HashModify, HashDelete };
+  template <hashModifyImplCaller caller, typename ModifyFunction>
+  Status hashModifyImpl(StringView key, StringView field,
+                        ModifyFunction modify_func, void* cb_args);
 
   Status hashListRestoreElem(DLRecord* rec);
 
@@ -428,18 +396,11 @@ class KVEngine : public Engine {
 
   Status hashListRegisterRecovered();
 
-  template <typename DelayFree>
-  Status hashListDestroy(HashList* list, DelayFree delay_free);
-
-  Status hashListDestroy(HashList* list);
-
-  // ModifyFunction should have signature
-  // ModifyOperation(StringView const* old, StringView* new, void* args).
-  // delete_impl is true only when HashDelete calls it.
-  template <typename ModifyFunction>
-  Status hashModifyImpl(StringView key, StringView field,
-                        ModifyFunction modify_func, void* cb_args,
-                        bool delete_impl);
+  // Destroy a HashList already removed from HashTable
+  // Should only be called by Cleaner when the HashList is no longer
+  // accessible to any other thread.
+  Status hashListDestroy(HashList* hlist,
+                         std::function<void(DLRecord*)> free_func);
 
   /// Other
   Status CheckConfigs(const Configs& configs);
@@ -547,18 +508,14 @@ class KVEngine : public Engine {
 
   void deleteCollections();
 
-  Status destroyExpiredHash(
-      HashList* hashlist,
-      std::deque<PendingFreeSpaceEntries>* hash_space_entries);
-
-  Status destroyExpiredList(
-      List* list, std::deque<PendingFreeSpaceEntries>* list_space_entries);
-
   void backgroundDestroyCollections();
 
   void startBackgroundWorks();
 
   void terminateBackgroundWorks();
+
+  std::deque<std::pair<TimeStampType, List*>> removeOutdatedLists();
+  std::deque<std::pair<TimeStampType, HashList*>> removeOutdatedHashLists();
 
   Array<EngineThreadCache> engine_thread_cache_;
 
