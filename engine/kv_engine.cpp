@@ -1223,121 +1223,103 @@ void KVEngine::backgroundDestroyCollections() {
   std::vector<std::future<Status>> workers;
 
   while (!bg_work_signals_.terminating) {
-    // Handle one List
+    // Scan for one expired List
     {
-      List* list = nullptr;
+      List* expired_list = nullptr;
       {
         std::lock_guard<std::mutex> guard{lists_mu_};
-        if (!lists_.empty()) {
-          list = *lists_.begin();
-          if (list->HasExpired()) {
-            lists_.erase(list);
-            outdated_lists_.emplace_back(
-                version_controller_.GetCurrentTimestamp(), list);
-          } else {
-            list = nullptr;
-          }
+        if (!lists_.empty() && (*lists_.begin())->HasExpired()) {
+          expired_list = *lists_.begin();
         }
       }
-      if (list != nullptr) {
+      if (expired_list != nullptr) {
         // Remove from HashTable if outdated list is still on it.
-        auto key = list->Name();
-        auto guard = hash_table_->AcquireLock(key);
-        LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
-        if (ret.entry.GetIndex().list == list) {
-          kvdk_assert(ret.s == Status::Outdated, "");
-          removeKeyOrElem(ret);
+        {
+          auto key = expired_list->Name();
+          auto guard = hash_table_->AcquireLock(key);
+          LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
+          // Make sure the List has indeed expired
+          if (expired_list->HasExpired()) {
+            if (ret.entry.GetIndex().list == expired_list) {
+              kvdk_assert(ret.s == Status::Outdated, "");
+              removeKeyOrElem(ret);
+              guard.unlock();
+            }
+            std::lock_guard<std::mutex> guard{lists_mu_};
+            lists_.erase(expired_list);
+            outdated_lists_.emplace_back(
+                version_controller_.GetCurrentTimestamp(), expired_list);
+          }
         }
       }
     }
 
-    // Handle one HashList
+    // Scan for one expired HashList
     {
-      HashList* hlist = nullptr;
+      HashList* expired_hlist = nullptr;
       {
         std::lock_guard<std::mutex> guard{hlists_mu_};
-        if (!hash_lists_.empty()) {
-          hlist = *hash_lists_.begin();
-          if (hlist->HasExpired()) {
-            hash_lists_.erase(hlist);
+        if (!hash_lists_.empty() && (*hash_lists_.begin())->HasExpired()) {
+          expired_hlist = *hash_lists_.begin();
+        }
+      }
+      if (expired_hlist != nullptr) {
+        // Remove from HashTable if outdated list is still on it.
+        {
+          auto key = expired_hlist->Name();
+          auto guard = hash_table_->AcquireLock(key);
+          LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
+          // Make sure the HashList has indeed expired
+          if (expired_hlist->HasExpired()) {
+            if (ret.entry.GetIndex().hlist == expired_hlist) {
+              kvdk_assert(ret.s == Status::Outdated, "");
+              removeKeyOrElem(ret);
+              guard.unlock();
+            }
+            std::lock_guard<std::mutex> guard{lists_mu_};
+            hash_lists_.erase(expired_hlist);
             outdated_hash_lists_.emplace_back(
-                version_controller_.GetCurrentTimestamp(), hlist);
-          } else {
-            hlist = nullptr;
+                version_controller_.GetCurrentTimestamp(), expired_hlist);
           }
         }
       }
-      if (hlist != nullptr) {
-        // Remove from HashTable if outdated HashList is still on it.
-        auto key = hlist->Name();
-        auto guard = hash_table_->AcquireLock(key);
-        LookupResult ret = lookupKey<false>(key, RecordType::HashRecord);
-        if (ret.entry.GetIndex().hlist == hlist) {
-          kvdk_assert(ret.s == Status::Outdated, "");
-          removeKeyOrElem(ret);
+    }
+
+    // Clean expired Lists and HashLists that are alreay removed from HashTable
+    // and std::set.
+    {
+      if (!outdated_hash_lists_.empty() || !outdated_lists_.empty()) {
+        version_controller_.UpdatedOldestSnapshot();
+      }
+      TimeStampType earliest_access = version_controller_.OldestSnapshotTS();
+
+      if (!outdated_lists_.empty()) {
+        auto& ts_list = outdated_lists_.front();
+        if (ts_list.first < earliest_access) {
+          workers.emplace_back(std::async(std::launch::deferred,
+                                          &KVEngine::listDestroy, this,
+                                          ts_list.second));
+          outdated_lists_.pop_front();
         }
       }
-    }
 
-    auto DestroyList = [&](List* list) {
-      std::vector<SpaceEntry> entries;
-      // Since DestroyList is only called after it's no longer visible,
-      // entries can be directly Free()d
-      auto PushPending = [&](DLRecord* rec) {
-        SpaceEntry space{pmem_allocator_->addr2offset_checked(rec),
-                         rec->entry.header.record_size};
-        entries.push_back(space);
-      };
-      Status s = listDestroy(list, PushPending);
-      pmem_allocator_->BatchFree(entries);
-      kvdk_assert(s == Status::Ok, "");
-      return s;
-    };
-
-    auto DestroyHash = [&](HashList* hlist) {
-      std::vector<SpaceEntry> entries;
-      // Since DestroyList is only called after it's no longer visible,
-      // entries can be directly Free()d
-      auto PushPending = [&](DLRecord* rec) {
-        SpaceEntry space{pmem_allocator_->addr2offset_checked(rec),
-                         rec->entry.header.record_size};
-        entries.push_back(space);
-      };
-      Status s = hashListDestroy(hlist, PushPending);
-      pmem_allocator_->BatchFree(entries);
-      kvdk_assert(s == Status::Ok, "");
-      return s;
-    };
-
-    if (!outdated_hash_lists_.empty() || !outdated_lists_.empty()) {
-      version_controller_.UpdatedOldestSnapshot();
-    }
-    TimeStampType earliest_access = version_controller_.OldestSnapshotTS();
-
-    if (!outdated_lists_.empty()) {
-      auto& ts_list = outdated_lists_.front();
-      if (ts_list.first < earliest_access) {
-        workers.emplace_back(
-            std::async(std::launch::deferred, DestroyList, ts_list.second));
-        outdated_lists_.pop_front();
+      if (!outdated_hash_lists_.empty()) {
+        auto& ts_hlist = outdated_hash_lists_.front();
+        if (ts_hlist.first < earliest_access) {
+          workers.emplace_back(std::async(std::launch::deferred,
+                                          &KVEngine::hashListDestroy, this,
+                                          ts_hlist.second));
+          outdated_hash_lists_.pop_front();
+        }
       }
-    }
 
-    if (!outdated_hash_lists_.empty()) {
-      auto& ts_hlist = outdated_hash_lists_.front();
-      if (ts_hlist.first < earliest_access) {
-        workers.emplace_back(
-            std::async(std::launch::deferred, DestroyHash, ts_hlist.second));
-        outdated_hash_lists_.pop_front();
+      // TODO: add skiplist
+      for (auto& worker : workers) {
+        // TODO: use this Status.
+        worker.get();
       }
+      workers.clear();
     }
-
-    // TODO: add skiplist
-    for (auto& worker : workers) {
-      // TODO: use this Status.
-      worker.get();
-    }
-    workers.clear();
   }
 }
 
@@ -1695,16 +1677,18 @@ Status KVEngine::listRegisterRecovered() {
   return Status::Ok;
 }
 
-Status KVEngine::listDestroy(List* list,
-                             std::function<void(DLRecord*)> free_func) {
-  // Currently, every list operation locks the whole list
-  // and delay_free is not necessary.
-  // We use delay_free here so that we can enable some lockless
-  // operations in the future.
+Status KVEngine::listDestroy(List* list) {
+  std::vector<SpaceEntry> entries;
+  auto PushPending = [&](DLRecord* rec) {
+    SpaceEntry space{pmem_allocator_->addr2offset_checked(rec),
+                     rec->entry.header.record_size};
+    entries.push_back(space);
+  };
   while (list->Size() > 0) {
-    list->PopFront([&](DLRecord* elem) { free_func(elem); });
+    list->PopFront(PushPending);
   }
-  list->Destroy([&](DLRecord* lrec) { free_func(lrec); });
+  list->Destroy(PushPending);
+  pmem_allocator_->BatchFree(entries);
   delete list;
   return Status::Ok;
 }

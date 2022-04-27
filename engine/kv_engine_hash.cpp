@@ -300,8 +300,15 @@ Status KVEngine::hashListRegisterRecovered() {
   return Status::Ok;
 }
 
-Status KVEngine::hashListDestroy(HashList* hlist,
-                                 std::function<void(DLRecord*)> free_func) {
+Status KVEngine::hashListDestroy(HashList* hlist) {
+  // Since hashListDestroy is only called after it's no longer visible,
+  // entries can be directly Free()d
+  std::vector<SpaceEntry> entries;
+  auto PushPending = [&](DLRecord* rec) {
+    SpaceEntry space{pmem_allocator_->addr2offset_checked(rec),
+                     rec->entry.header.record_size};
+    entries.push_back(space);
+  };
   while (hlist->Size() != 0) {
     auto internal_key = hlist->Front()->Key();
     {
@@ -310,10 +317,11 @@ Status KVEngine::hashListDestroy(HashList* hlist,
       LookupResult ret = lookupElem<false>(internal_key, RecordType::HashElem);
       kvdk_assert(ret.s == Status::Ok, "");
       removeKeyOrElem(ret);
-      hlist->PopFront([&](DLRecord* rec) { free_func(rec); });
+      hlist->PopFront(PushPending);
     }
   }
-  hlist->Destroy([&](DLRecord* rec) { free_func(rec); });
+  hlist->Destroy(PushPending);
+  pmem_allocator_->BatchFree(entries);
   delete hlist;
   return Status::Ok;
 }

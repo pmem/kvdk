@@ -367,10 +367,8 @@ class KVEngine : public Engine {
 
   Status listRegisterRecovered();
 
-  // Should only be called by Cleaner when the List is no longer
+  // Should only be called when the List is no longer
   // accessible to any other thread.
-  Status listDestroy(List* list, std::function<void(DLRecord*)> free_func);
-
   Status listDestroy(List* list);
 
   /// Hash helper funtions
@@ -393,10 +391,9 @@ class KVEngine : public Engine {
   Status hashListRegisterRecovered();
 
   // Destroy a HashList already removed from HashTable
-  // Should only be called by Cleaner when the HashList is no longer
+  // Should only be called when the HashList is no longer
   // accessible to any other thread.
-  Status hashListDestroy(HashList* hlist,
-                         std::function<void(DLRecord*)> free_func);
+  Status hashListDestroy(HashList* hlist);
 
   /// Other
   Status CheckConfigs(const Configs& configs);
