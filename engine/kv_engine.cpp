@@ -1438,7 +1438,7 @@ Status KVEngine::ListPushFront(StringView key, StringView elem) {
     return s;
   }
 
-  auto space = pmem_allocator_->Allocate(
+  SpaceEntry space = pmem_allocator_->Allocate(
       sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
   if (space.size == 0) {
     return Status::PmemOverflow;
@@ -1463,7 +1463,7 @@ Status KVEngine::ListPushBack(StringView key, StringView elem) {
     return s;
   }
 
-  auto space = pmem_allocator_->Allocate(
+  SpaceEntry space = pmem_allocator_->Allocate(
       sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
   if (space.size == 0) {
     return Status::PmemOverflow;
@@ -1489,7 +1489,7 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
   }
 
   kvdk_assert(list->Size() != 0, "");
-  auto sw = list->Front()->Value();
+  StringView sw = list->Front()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopFront([&](DLRecord* rec) { delayFree(rec); });
   return Status::Ok;
@@ -1511,7 +1511,7 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   }
 
   kvdk_assert(list->Size() != 0, "");
-  auto sw = list->Back()->Value();
+  StringView sw = list->Back()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopBack([&](DLRecord* rec) { delayFree(rec); });
   return Status::Ok;
@@ -1537,7 +1537,7 @@ Status KVEngine::ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
   }
   kvdk_assert(list == iter->Owner(), "Iterator outdated!");
 
-  auto space = pmem_allocator_->Allocate(
+  SpaceEntry space = pmem_allocator_->Allocate(
       sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
   if (space.size == 0) {
     return Status::PmemOverflow;
@@ -1568,7 +1568,7 @@ Status KVEngine::ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
   }
   kvdk_assert(list == iter->Owner(), "Iterator outdated!");
 
-  auto space = pmem_allocator_->Allocate(
+  SpaceEntry space = pmem_allocator_->Allocate(
       sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
   if (space.size == 0) {
     return Status::PmemOverflow;
@@ -1622,7 +1622,7 @@ Status KVEngine::ListSet(std::unique_ptr<ListIterator> const& pos,
   }
   kvdk_assert(list == iter->Owner(), "Iterator outdated!");
 
-  auto space = pmem_allocator_->Allocate(
+  SpaceEntry space = pmem_allocator_->Allocate(
       sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
   if (space.size == 0) {
     return Status::PmemOverflow;
@@ -1669,7 +1669,7 @@ Status KVEngine::listRegisterRecovered() {
     }
     max_id = std::max(max_id, list->ID());
   }
-  auto old = list_id_.load();
+  CollectionIDType old = list_id_.load();
   while (max_id >= old && !list_id_.compare_exchange_strong(old, max_id + 1)) {
   }
   return Status::Ok;
@@ -1694,7 +1694,7 @@ Status KVEngine::listDestroy(List* list) {
 Status KVEngine::listFind(StringView key, List** list, bool init_nx,
                           std::unique_lock<std::recursive_mutex>& guard) {
   {
-    auto result = lookupKey<false>(key, RecordType::ListRecord);
+    LookupResult result = lookupKey<false>(key, RecordType::ListRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound) {
       return result.s;
     }
@@ -1712,7 +1712,7 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
   // Uninitialized or Deleted, initialize new one
   {
     auto guard2 = hash_table_->AcquireLock(key);
-    auto result = lookupKey<true>(key, RecordType::ListRecord);
+    LookupResult result = lookupKey<true>(key, RecordType::ListRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound) {
       return result.s;
     }
@@ -1724,8 +1724,8 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
     // No other thread have created one, create one here.
     std::uint64_t ts = version_controller_.GetCurrentTimestamp();
     CollectionIDType id = list_id_.fetch_add(1);
-    auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
-                                           sizeof(CollectionIDType));
+    SpaceEntry space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
+                                                 sizeof(CollectionIDType));
     if (space.size == 0) {
       return Status::PmemOverflow;
     }

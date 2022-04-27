@@ -331,7 +331,7 @@ class KVEngine : public Engine {
     insertKeyOrElem(ret, coll->Name(), type, coll);
     return Status::Ok;
   }
-  
+
   Status MaybeInitPendingBatchFile();
 
   Status StringSetImpl(const StringView& key, const StringView& value,

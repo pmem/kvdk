@@ -132,7 +132,7 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
         return Status::InvalidDataSize;
       }
       TimeStampType ts = token.Timestamp();
-      auto space = pmem_allocator_->Allocate(
+      SpaceEntry space = pmem_allocator_->Allocate(
           sizeof(DLRecord) + internal_key.size() + new_value.size());
       if (space.size == 0) {
         return Status::PmemOverflow;
@@ -205,7 +205,7 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
 
   // Lockless lookup for the collection
   {
-    auto result = lookupKey<false>(key, RecordType::HashRecord);
+    LookupResult result = lookupKey<false>(key, RecordType::HashRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound &&
         result.s != Status::Outdated) {
       return result.s;
@@ -224,7 +224,7 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
   // Collection is first erased from HashTable then Destroy()ed.
   {
     auto guard2 = hash_table_->AcquireLock(key);
-    auto result = lookupKey<true>(key, RecordType::HashRecord);
+    LookupResult result = lookupKey<true>(key, RecordType::HashRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound &&
         result.s != Status::Outdated) {
       return result.s;
@@ -234,8 +234,8 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
       return Status::Ok;
     }
     // No other thread have created one, create one here.
-    auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
-                                           sizeof(CollectionIDType));
+    SpaceEntry space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
+                                                 sizeof(CollectionIDType));
     if (space.size == 0) {
       return Status::PmemOverflow;
     }
@@ -258,7 +258,7 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
     return Status::Ok;
   }
 
-  auto internal_key = rec->Key();
+  StringView internal_key = rec->Key();
   auto guard = hash_table_->AcquireLock(internal_key);
   LookupResult result = lookupElem<true>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
@@ -277,7 +277,7 @@ Status KVEngine::hashListRestoreList(DLRecord* rec) {
 
 Status KVEngine::hashListRegisterRecovered() {
   CollectionIDType max_id = 0;
-  for (auto& hlist : hash_lists_) {
+  for (HashList* hlist : hash_lists_) {
     auto guard = hash_table_->AcquireLock(hlist->Name());
     Status s = registerCollection(hlist);
     if (s == Status::Ok) {
@@ -285,7 +285,7 @@ Status KVEngine::hashListRegisterRecovered() {
     }
     max_id = std::max(max_id, hlist->ID());
   }
-  auto old = list_id_.load();
+  CollectionIDType old = list_id_.load();
   while (max_id >= old && !list_id_.compare_exchange_strong(old, max_id + 1)) {
   }
   return Status::Ok;
@@ -301,7 +301,7 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     entries.push_back(space);
   };
   while (hlist->Size() != 0) {
-    auto internal_key = hlist->Front()->Key();
+    StringView internal_key = hlist->Front()->Key();
     {
       auto guard = hash_table_->AcquireLock(internal_key);
       kvdk_assert(hlist->Front()->Key() == internal_key, "");
