@@ -13,6 +13,7 @@
 #include <mutex>
 #include <random>
 #include <sstream>
+#include <thread>
 
 #include "alias.hpp"
 #include "collection.hpp"
@@ -588,6 +589,7 @@ class GenericListBuilder final {
   using List = GenericList<ListType, DataType>;
 
   PMEMAllocator* alloc;
+  // Number of workers to count List elements
   size_t n_worker;
   std::set<List*, Collection::TTLCmp>* rebuilded_lists;
   LockTable* lock_table;
@@ -598,7 +600,6 @@ class GenericListBuilder final {
 
   struct ListPrimer {
     DLRecord* list_record{nullptr};
-    DLRecord* unique{nullptr};
     DLRecord* first{nullptr};
     DLRecord* last{nullptr};
     std::atomic_uint64_t size{0U};
@@ -606,7 +607,6 @@ class GenericListBuilder final {
     ListPrimer() = default;
     ListPrimer(ListPrimer const& other)
         : list_record{other.list_record},
-          unique{other.unique},
           first{other.first},
           last{other.last},
           size{other.size.load()} {}
@@ -709,48 +709,18 @@ class GenericListBuilder final {
   }
 
   void RebuildLists() {
+    countListElems();
     for (auto const& primer : primers) {
       if (primer.list_record == nullptr) {
         kvdk_assert(primer.first == nullptr, "");
         kvdk_assert(primer.last == nullptr, "");
-        kvdk_assert(primer.unique == nullptr, "");
         kvdk_assert(primer.size.load() == 0U, "");
         continue;
       }
-
-      List* restore_list = new List{};
-      switch (primer.size.load()) {
-        case 0: {
-          // Empty List
-          kvdk_assert(primer.first == nullptr, "");
-          kvdk_assert(primer.last == nullptr, "");
-          kvdk_assert(primer.unique == nullptr, "");
-          kvdk_assert(primer.size.load() == 0, "");
-          restore_list->Restore(alloc, primer.list_record, nullptr, nullptr, 0,
-                                lock_table);
-          break;
-        }
-        case 1: {
-          // 1-elem List
-          kvdk_assert(primer.first == nullptr, "");
-          kvdk_assert(primer.last == nullptr, "");
-          kvdk_assert(primer.unique != nullptr, "");
-          kvdk_assert(primer.size.load() == 1, "");
-          restore_list->Restore(alloc, primer.list_record, primer.unique,
-                                primer.unique, 1, lock_table);
-          break;
-        }
-        default: {
-          // k-elem List
-          kvdk_assert(primer.first != nullptr, "");
-          kvdk_assert(primer.last != nullptr, "");
-          kvdk_assert(primer.unique == nullptr, "");
-          restore_list->Restore(alloc, primer.list_record, primer.first,
-                                primer.last, primer.size.load(), lock_table);
-          break;
-        }
-      }
-      rebuilded_lists->emplace(restore_list);
+      List* list = new List{};
+      list->Restore(alloc, primer.list_record, primer.first, primer.last,
+                    primer.size.load(), lock_table);
+      rebuilded_lists->emplace(list);
     }
   }
 
@@ -811,14 +781,12 @@ class GenericListBuilder final {
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
-    primers_lock.lock_shared();
+    auto guard = LockShared(primers_lock);
     auto& primer = primers.at(id);
-    kvdk_assert(primer.unique == nullptr, "");
     kvdk_assert(primer.first == nullptr, "");
     kvdk_assert(primer.last == nullptr, "");
-    primer.unique = elem;
-    primer.size.fetch_add(1U);
-    primers_lock.unlock_shared();
+    primer.first = elem;
+    primer.last = elem;
 
     return true;
   }
@@ -836,13 +804,10 @@ class GenericListBuilder final {
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
-    primers_lock.lock_shared();
+    auto guard = LockShared(primers_lock);
     auto& primer = primers.at(id);
     kvdk_assert(primer.first == nullptr, "");
-    kvdk_assert(primer.unique == nullptr, "");
     primer.first = elem;
-    primer.size.fetch_add(1U);
-    primers_lock.unlock_shared();
 
     return true;
   }
@@ -860,13 +825,10 @@ class GenericListBuilder final {
     CollectionIDType id = Collection::ExtractID(elem->Key());
     maybeResizePrimers(id);
 
-    primers_lock.lock_shared();
+    auto guard = LockShared(primers_lock);
     auto& primer = primers.at(id);
     kvdk_assert(primer.last == nullptr, "");
-    kvdk_assert(primer.unique == nullptr, "");
     primer.last = elem;
-    primer.size.fetch_add(1U);
-    primers_lock.unlock_shared();
 
     return true;
   }
@@ -880,14 +842,6 @@ class GenericListBuilder final {
       brokens.push_back(elem);
       return false;
     }
-
-    CollectionIDType id = Collection::ExtractID(elem->Key());
-    maybeResizePrimers(id);
-
-    primers_lock.lock_shared();
-    auto& primer = primers.at(id);
-    primer.size.fetch_add(1U);
-    primers_lock.unlock_shared();
 
     thread_local std::default_random_engine rengine{get_seed()};
 
@@ -947,6 +901,48 @@ class GenericListBuilder final {
       for (size_t i = primers.size(); i < (id + 1) * 3 / 2; i++) {
         primers.emplace_back();
       }
+    }
+  }
+
+  void countListElems() {
+    std::unordered_set<DLRecord*> start_points;
+    for (auto const& primer : primers) {
+      if (primer.list_record == nullptr) {
+        continue;
+      }
+      start_points.emplace(primer.first);
+    }
+    for (DLRecord* mpoint : mpoints) {
+      start_points.emplace(mpoint);
+    }
+
+    std::vector<std::vector<DLRecord*>> workloads{n_worker};
+    size_t j = 0;
+    for (DLRecord* rec : start_points) {
+      if (rec != nullptr) {
+        workloads[j++ % workloads.size()].push_back(rec);
+      }
+    }
+    auto CountElems = [&](std::vector<DLRecord*> const& work_load) {
+      for (DLRecord* rec : work_load) {
+        while (true) {
+          primers.at(Collection::ExtractID(rec->Key())).size.fetch_add(1U);
+          if (rec->next == NullPMemOffset) {
+            break;
+          }
+          rec = addressOf(rec->next);
+          if (start_points.find(rec) != start_points.end()) {
+            break;
+          }
+        }
+      }
+    };
+    std::vector<std::thread> workers;
+    for (auto const& workload : workloads) {
+      workers.emplace_back(CountElems, workload);
+    }
+    for (auto& worker : workers) {
+      worker.join();
     }
   }
 };
