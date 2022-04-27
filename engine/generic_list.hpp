@@ -923,7 +923,7 @@ class GenericListBuilder final {
       } else {
         // Interrupted Replace/Emplace(newer),
         // repair newer record into List
-        addressOf(elem->next)->PersistNextNT(offsetOf(elem));
+        addressOf(elem->next)->PersistPrevNT(offsetOf(elem));
         return false;
       }
     } else {
