@@ -1268,7 +1268,7 @@ void KVEngine::backgroundDestroyCollections() {
         {
           auto key = expired_hlist->Name();
           auto guard = hash_table_->AcquireLock(key);
-          LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
+          LookupResult ret = lookupKey<false>(key, RecordType::HashRecord);
           // Make sure the HashList has indeed expired
           if (expired_hlist->HasExpired()) {
             if (ret.entry.GetIndex().hlist == expired_hlist) {
