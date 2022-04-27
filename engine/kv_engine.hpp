@@ -109,7 +109,7 @@ class KVEngine : public Engine {
   };
 
   // Used by test case.
-  const std::shared_ptr<HashTable>& GetHashTable() { return hash_table_; }
+  HashTable* GetHashTable() { return hash_table_.get(); }
 
   void CleanOutDated();
 
@@ -573,7 +573,7 @@ class KVEngine : public Engine {
   std::atomic<uint64_t> restored_{0};
   std::atomic<CollectionIDType> list_id_{0};
 
-  std::shared_ptr<HashTable> hash_table_;
+  std::unique_ptr<HashTable> hash_table_;
 
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
 
@@ -593,7 +593,7 @@ class KVEngine : public Engine {
   std::string pending_batch_dir_;
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;
-  std::shared_ptr<PMEMAllocator> pmem_allocator_;
+  std::unique_ptr<PMEMAllocator> pmem_allocator_;
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;

@@ -198,7 +198,7 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
   }
 
   return res.s == Status::Ok
-             ? new SortedIterator(skiplist, pmem_allocator_,
+             ? new SortedIterator(skiplist, pmem_allocator_.get(),
                                   static_cast<SnapshotImpl*>(snapshot),
                                   create_snapshot)
              : nullptr;

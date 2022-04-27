@@ -161,7 +161,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
                             ThreadManager(configs_.max_access_threads));
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.hash_bucket_size,
-      configs_.num_buckets_per_slot, pmem_allocator_,
+      configs_.num_buckets_per_slot, pmem_allocator_.get(),
       configs_.max_access_threads));
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
       thread_manager_ == nullptr) {
