@@ -1242,16 +1242,14 @@ void KVEngine::backgroundDestroyCollections() {
         auto guard = hash_table_->AcquireLock(key);
         LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
         // Make sure the List has indeed expired, it may have been updated.
-        if (expired_list->HasExpired()) {
-          // Remove from HashTable if outdated list is still on it.
-          if (ret.entry.GetIndex().list == expired_list) {
-            kvdk_assert(ret.s == Status::Outdated, "");
-            removeKeyOrElem(ret);
-            // We can safely unlock HashTable here,
-            // as the List is already removed from HashTable
-            // and is no longer visible to Expire()
-            guard.unlock();
-          }
+        if (ret.s == Status::Outdated) {
+          expired_list = ret.entry.GetIndex().list;
+          removeKeyOrElem(ret);
+          std::lock_guard<std::mutex> guard{lists_mu_};
+          lists_.erase(expired_list);
+          outdated_lists_.emplace_back(
+              version_controller_.GetCurrentTimestamp(), expired_list);
+        } else if (ret.s == Status::NotFound) {
           std::lock_guard<std::mutex> guard{lists_mu_};
           lists_.erase(expired_list);
           outdated_lists_.emplace_back(
@@ -1274,14 +1272,15 @@ void KVEngine::backgroundDestroyCollections() {
         auto guard = hash_table_->AcquireLock(key);
         LookupResult ret = lookupKey<false>(key, RecordType::HashRecord);
         // Make sure the HashList has indeed expired
-        if (expired_hlist->HasExpired()) {
-          // Remove from HashTable if outdated hlist is still on it.
-          if (ret.entry.GetIndex().hlist == expired_hlist) {
-            kvdk_assert(ret.s == Status::Outdated, "");
-            removeKeyOrElem(ret);
-            guard.unlock();
-          }
-          std::lock_guard<std::mutex> guard{lists_mu_};
+        if (ret.s == Status::Outdated) {
+          expired_hlist = ret.entry.GetIndex().hlist;
+          removeKeyOrElem(ret);
+          std::lock_guard<std::mutex> guard{hlists_mu_};
+          hash_lists_.erase(expired_hlist);
+          outdated_hash_lists_.emplace_back(
+              version_controller_.GetCurrentTimestamp(), expired_hlist);
+        } else if (ret.s == Status::NotFound) {
+          std::lock_guard<std::mutex> guard{hlists_mu_};
           hash_lists_.erase(expired_hlist);
           outdated_hash_lists_.emplace_back(
               version_controller_.GetCurrentTimestamp(), expired_hlist);

@@ -390,15 +390,15 @@ class KVEngine : public Engine {
   /// Hash helper funtions
   Status hashListFind(StringView key, HashList** hlist, bool init_nx);
 
-  // ModifyFunction should have signature
+  // CallBack should have signature
   // ModifyOperation(StringView const* old, StringView* new, void* args).
   // for ModifyOperation::Delete and Noop, return Status of the field.
   // for ModifyOperation::Write, return the Status of the Write.
   // for ModifyOperation::Abort, return Status::Abort.
-  enum class hashModifyImplCaller { HashGet, HashSet, HashModify, HashDelete };
-  template <hashModifyImplCaller caller, typename ModifyFunction>
-  Status hashModifyImpl(StringView key, StringView field,
-                        ModifyFunction modify_func, void* cb_args);
+  enum class hashElemOpImplCaller { HashGet, HashSet, HashModify, HashDelete };
+  template <hashElemOpImplCaller caller, typename CallBack>
+  Status hashElemOpImpl(StringView key, StringView field, CallBack cb,
+                        void* cb_args);
 
   Status hashListRestoreElem(DLRecord* rec);
 

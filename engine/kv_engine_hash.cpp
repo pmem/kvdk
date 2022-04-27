@@ -30,7 +30,7 @@ Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
     }
     return ModifyOperation::Noop;
   };
-  return hashModifyImpl<hashModifyImplCaller::HashGet>(key, field, get_func,
+  return hashElemOpImpl<hashElemOpImplCaller::HashGet>(key, field, get_func,
                                                        nullptr);
 }
 
@@ -40,7 +40,7 @@ Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
     return ModifyOperation::Write;
   };
 
-  return hashModifyImpl<hashModifyImplCaller::HashSet>(key, field, set_func,
+  return hashElemOpImpl<hashElemOpImplCaller::HashSet>(key, field, set_func,
                                                        nullptr);
 }
 
@@ -49,7 +49,7 @@ Status KVEngine::HashDelete(StringView key, StringView field) {
     return ModifyOperation::Delete;
   };
 
-  Status s = hashModifyImpl<hashModifyImplCaller::HashDelete>(
+  Status s = hashElemOpImpl<hashElemOpImplCaller::HashDelete>(
       key, field, delete_func, nullptr);
   if (s == Status::NotFound) {
     return Status::Ok;
@@ -73,13 +73,13 @@ Status KVEngine::HashModify(StringView key, StringView field,
     return op;
   };
 
-  return hashModifyImpl<hashModifyImplCaller::HashModify>(key, field, modify,
+  return hashElemOpImpl<hashElemOpImplCaller::HashModify>(key, field, modify,
                                                           cb_args);
 }
 
-template <KVEngine::hashModifyImplCaller caller, typename ModifyFunction>
-Status KVEngine::hashModifyImpl(StringView key, StringView field,
-                                ModifyFunction modify_func, void* cb_args) {
+template <KVEngine::hashElemOpImplCaller caller, typename CallBack>
+Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
+                                void* cb_args) {
   if (!CheckKeySize(key) || !CheckKeySize(field)) {
     return Status::InvalidDataSize;
   }
@@ -87,9 +87,9 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
     return Status::TooManyAccessThreads;
   }
 
-  constexpr bool may_set = (caller == hashModifyImplCaller::HashModify ||
-                            caller == hashModifyImplCaller::HashSet);
-  constexpr bool hash_get = (caller == hashModifyImplCaller::HashGet);
+  constexpr bool may_set = (caller == hashElemOpImplCaller::HashModify ||
+                            caller == hashElemOpImplCaller::HashSet);
+  constexpr bool hash_get = (caller == hashElemOpImplCaller::HashGet);
 
   // This token guarantees a valid view of the hlist and its elements.
   auto token = version_controller_.GetLocalSnapshotHolder();
@@ -123,10 +123,10 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
     p_old_value = &old_value;
   }
 
-  switch (modify_func(p_old_value, &new_value, cb_args)) {
+  switch (cb(p_old_value, &new_value, cb_args)) {
     case ModifyOperation::Write: {
-      kvdk_assert(caller == hashModifyImplCaller::HashModify ||
-                      caller == hashModifyImplCaller::HashSet,
+      kvdk_assert(caller == hashElemOpImplCaller::HashModify ||
+                      caller == hashElemOpImplCaller::HashSet,
                   "");
       if (!CheckValueSize(new_value)) {
         return Status::InvalidDataSize;
@@ -155,8 +155,8 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
       return Status::Ok;
     }
     case ModifyOperation::Delete: {
-      kvdk_assert(caller == hashModifyImplCaller::HashModify ||
-                      caller == hashModifyImplCaller::HashDelete,
+      kvdk_assert(caller == hashElemOpImplCaller::HashModify ||
+                      caller == hashElemOpImplCaller::HashDelete,
                   "");
       if (result.s == Status::Ok) {
         removeKeyOrElem(result);
@@ -166,13 +166,13 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
       return result.s;
     }
     case ModifyOperation::Noop: {
-      kvdk_assert(caller == hashModifyImplCaller::HashModify ||
-                      caller == hashModifyImplCaller::HashGet,
+      kvdk_assert(caller == hashElemOpImplCaller::HashModify ||
+                      caller == hashElemOpImplCaller::HashGet,
                   "");
       return result.s;
     }
     case ModifyOperation::Abort: {
-      kvdk_assert(caller == hashModifyImplCaller::HashModify, "");
+      kvdk_assert(caller == hashElemOpImplCaller::HashModify, "");
       return Status::Abort;
     }
     default: {
