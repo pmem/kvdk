@@ -135,9 +135,10 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     if (valid_version_record == nullptr) {
       skiplist =
           std::
-              make_shared<Skiplist>(
-                  header_record, collection_name, id, comparator,
-                  kv_engine_->pmem_allocator_, kv_engine_->hash_table_, false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+              make_shared<Skiplist>(header_record, collection_name, id,
+                                    comparator, kv_engine_->pmem_allocator_,
+                                    kv_engine_->hash_table_,
+                                    kv_engine_->skiplist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
         std::lock_guard<SpinMutex> lg(lock_);
         invalid_skiplists_[id] = skiplist;
@@ -148,8 +149,9 @@ Status SortedCollectionRebuilder::initRebuildLists() {
 
       if (valid_version_record != header_record) {
         bool success = Skiplist::Replace(
-            header_record, valid_version_record, hint.spin, nullptr,
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get());
+            header_record, valid_version_record, nullptr,
+            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
+            kv_engine_->skiplist_locks_.get());
         kvdk_assert(success,
                     "SortedCollectionRebuilder::initRebuildLists run in single "
                     "thread, so no lock contention should happen");
@@ -163,7 +165,8 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
-            kv_engine_->pmem_allocator_, kv_engine_->hash_table_, false);
+            kv_engine_->pmem_allocator_, kv_engine_->hash_table_,
+            kv_engine_->skiplist_locks_.get(), false);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           invalid_skiplists_[id] = skiplist;
@@ -172,7 +175,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
             kv_engine_->pmem_allocator_, kv_engine_->hash_table_,
-            s_configs.index_with_hashtable);
+            kv_engine_->skiplist_locks_.get(), s_configs.index_with_hashtable);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           rebuild_skiplits_[id] = skiplist;
@@ -313,18 +316,19 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
         std::lock_guard<SpinMutex> lg(*hash_hint.spin);
         DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
         if (valid_version_record == nullptr) {
-          if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
+          if (!Skiplist::Purge(next_record, nullptr,
                                kv_engine_->pmem_allocator_.get(),
-                               kv_engine_->hash_table_.get())) {
+                               kv_engine_->hash_table_.get(),
+                               kv_engine_->skiplist_locks_.get())) {
             continue;
           }
           addUnlinkedRecord(next_record);
         } else {
           if (valid_version_record != next_record) {
-            if (!Skiplist::Replace(next_record, valid_version_record,
-                                   hash_hint.spin, nullptr,
+            if (!Skiplist::Replace(next_record, valid_version_record, nullptr,
                                    kv_engine_->pmem_allocator_.get(),
-                                   kv_engine_->hash_table_.get())) {
+                                   kv_engine_->hash_table_.get(),
+                                   kv_engine_->skiplist_locks_.get())) {
               continue;
             }
             addUnlinkedRecord(next_record);
@@ -472,9 +476,10 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
       DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
       if (valid_version_record == nullptr) {
         // purge invalid version record from list
-        if (!Skiplist::Purge(next_record, hash_hint.spin, nullptr,
+        if (!Skiplist::Purge(next_record, nullptr,
                              kv_engine_->pmem_allocator_.get(),
-                             kv_engine_->hash_table_.get())) {
+                             kv_engine_->hash_table_.get(),
+                             kv_engine_->skiplist_locks_.get())) {
           asm volatile("pause");
           continue;
         }
@@ -482,10 +487,10 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
       } else {
         if (valid_version_record != next_record) {
           // repair linkage of checkpoint version
-          if (!Skiplist::Replace(next_record, valid_version_record,
-                                 hash_hint.spin, nullptr,
+          if (!Skiplist::Replace(next_record, valid_version_record, nullptr,
                                  kv_engine_->pmem_allocator_.get(),
-                                 kv_engine_->hash_table_.get())) {
+                                 kv_engine_->hash_table_.get(),
+                                 kv_engine_->skiplist_locks_.get())) {
             continue;
           }
           addUnlinkedRecord(next_record);

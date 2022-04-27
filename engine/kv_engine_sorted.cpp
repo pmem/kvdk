@@ -55,7 +55,8 @@ Status KVEngine::CreateSortedCollection(
 
     auto skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
-        pmem_allocator_, hash_table_, s_configs.index_with_hashtable);
+        pmem_allocator_, hash_table_, skiplist_locks_.get(),
+        s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeader, skiplist.get(),
                         PointerType::Skiplist);
@@ -97,9 +98,9 @@ destroy_impl : {
         space_entry.size, new_ts, SortedHeaderDelete,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection_name, value);
-    if (!Skiplist::Replace(header, pmem_record, hint.spin,
-                           skiplist->HeaderNode(), pmem_allocator_.get(),
-                           hash_table_.get())) {
+    if (!Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
+                           pmem_allocator_.get(), hash_table_.get(),
+                           skiplist_locks_.get())) {
       goto destroy_impl;
     }
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderDelete, skiplist,
@@ -231,7 +232,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
     std::unique_lock<SpinMutex> ul(*hint.spin);
     TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
 
-    auto ret = skiplist->Delete(user_key, hint, new_ts);
+    auto ret = skiplist->Delete(user_key, new_ts);
     switch (ret.s) {
       case Status::Fail:
         continue;
@@ -282,7 +283,7 @@ Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
   while (1) {
     std::unique_lock<SpinMutex> ul(*hint.spin);
     TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
-    auto ret = skiplist->Set(user_key, value, hint, new_ts);
+    auto ret = skiplist->Set(user_key, value, new_ts);
     switch (ret.s) {
       case Status::Fail:
         continue;

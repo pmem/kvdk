@@ -593,6 +593,7 @@ Status KVEngine::Recovery() {
     return s;
   }
 
+  skiplist_locks_.reset(new LockTable{1UL << 20});
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
@@ -960,7 +961,7 @@ start_expire : {
       case PointerType::Skiplist: {
         auto new_ts = snapshot_holder.Timestamp();
         auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
-            expired_time, new_ts, hint.spin);
+            expired_time, new_ts);
         if (ret.s == Status::Fail) {
           goto start_expire;
         }

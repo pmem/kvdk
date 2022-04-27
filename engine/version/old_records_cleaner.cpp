@@ -395,9 +395,9 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
 
         if (!Skiplist::Purge(
                 static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
-                old_delete_record.key_lock, dram_node,
-                kv_engine_->pmem_allocator_.get(),
-                kv_engine_->hash_table_.get())) {
+                dram_node, kv_engine_->pmem_allocator_.get(),
+                kv_engine_->hash_table_.get(),
+                kv_engine_->skiplist_locks_.get())) {
           // lock conflict, retry
           goto handle_sorted_delete_record;
         } else if (hash_entry_ref) {

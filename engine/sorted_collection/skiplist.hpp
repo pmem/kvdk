@@ -14,6 +14,7 @@
 #include "../alias.hpp"
 #include "../collection.hpp"
 #include "../hash_table.hpp"
+#include "../lock_table.hpp"
 #include "../structures.hpp"
 #include "../utils/utils.hpp"
 #include "kvdk/engine.hpp"
@@ -166,7 +167,8 @@ class Skiplist : public Collection {
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
            Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
-           std::shared_ptr<HashTable> hash_table, bool index_with_hashtable);
+           std::shared_ptr<HashTable> hash_table, LockTable* lock_table,
+           bool index_with_hashtable);
 
   ~Skiplist();
 
@@ -187,8 +189,7 @@ class Skiplist : public Collection {
   // TODO jiayu: use lock table for skiplist so will don't need to pass outsider
   // locks for write operations, and write operations wont fail anymore
   WriteResult SetExpireTime(ExpireTimeType expired_time,
-                            TimeStampType timestamp,
-                            SpinMutex* locked_header_lock);
+                            TimeStampType timestamp);
 
   Status SetExpireTime(ExpireTimeType expired_time) final;
 
@@ -204,7 +205,6 @@ class Skiplist : public Collection {
   // updated pmem record if it existed, return Fail if there is thread
   // contension
   WriteResult Set(const StringView& key, const StringView& value,
-                  const HashTable::KeyHashHint& key_hash_hint_locked,
                   TimeStampType timestamp);
 
   // Get value of "key" from the skiplist
@@ -218,9 +218,7 @@ class Skiplist : public Collection {
   //
   // Return Ok on success, with the writed pmem delete record, its dram node and
   // deleted pmem record if existed, return Fail if there is thread contension
-  WriteResult Delete(const StringView& key,
-                     const HashTable::KeyHashHint& key_hash_hint_locked,
-                     TimeStampType timestamp);
+  WriteResult Delete(const StringView& key, TimeStampType timestamp);
 
   // Seek position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
@@ -308,10 +306,9 @@ class Skiplist : public Collection {
   // this function
   //
   // Return true on success, return false on fail.
-  static bool Purge(DLRecord* purging_record,
-                    const SpinMutex* purging_record_lock,
-                    SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
-                    HashTable* hash_table);
+  static bool Purge(DLRecord* purging_record, SkiplistNode* dram_node,
+                    PMEMAllocator* pmem_allocator, HashTable* hash_table,
+                    LockTable* lock_table);
 
   // Replace "old_record" from its skiplist with "replacing_record", please make
   // sure the key order is correct after replace
@@ -325,8 +322,8 @@ class Skiplist : public Collection {
   //
   // Return true on success, return false on fail.
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
-                      const SpinMutex* old_record_lock, SkiplistNode* dram_node,
-                      PMEMAllocator* pmem_allocator, HashTable* hash_table);
+                      SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
+                      HashTable* hash_table, LockTable* lock_table);
 
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
@@ -378,19 +375,14 @@ class Skiplist : public Collection {
 
  private:
   WriteResult setImplNoHash(const StringView& key, const StringView& value,
-                            const SpinMutex* locked_key_lock,
                             TimeStampType timestamp);
 
   WriteResult setImplWithHash(const StringView& key, const StringView& value,
-                              const HashTable::KeyHashHint& locked_hash_hint,
                               TimeStampType timestamp);
 
-  WriteResult deleteImplNoHash(const StringView& key,
-                               const SpinMutex* locked_key_lock,
-                               TimeStampType timestamp);
+  WriteResult deleteImplNoHash(const StringView& key, TimeStampType timestamp);
 
   WriteResult deleteImplWithHash(const StringView& key,
-                                 const HashTable::KeyHashHint& locked_hash_hint,
                                  TimeStampType timestamp);
 
   // Link DLRecord "linking" between "prev" and "next"
@@ -407,25 +399,21 @@ class Skiplist : public Collection {
   // The "insert_key" should be already locked before call this function
   bool lockInsertPosition(const StringView& inserting_key,
                           DLRecord* prev_record, DLRecord* next_record,
-                          const SpinMutex* inserting_key_lock,
-                          std::unique_lock<SpinMutex>* prev_record_lock);
+                          LockTable::ULockType* prev_record_lock);
 
   // lock skiplist position of "record" by locking its prev DLRecord and manage
   // the lock with "prev_record_lock".
   //
   // The key of "record" itself should be already locked before call
   // this function
-  static bool lockRecordPosition(const DLRecord* record,
-                                 const SpinMutex* record_key_lock,
-                                 std::unique_lock<SpinMutex>* prev_record_lock,
-                                 PMEMAllocator* pmem_allocator,
-                                 HashTable* hash_table);
+  static LockTable::GuardType lockRecordPosition(const DLRecord* record,
+                                                 PMEMAllocator* pmem_allocator,
+                                                 HashTable* hash_table,
+                                                 LockTable* lock_table);
 
-  bool lockRecordPosition(const DLRecord* record,
-                          const SpinMutex* record_key_lock,
-                          std::unique_lock<SpinMutex>* prev_record_lock) {
-    return lockRecordPosition(record, record_key_lock, prev_record_lock,
-                              pmem_allocator_.get(), hash_table_.get());
+  LockTable::GuardType lockRecordPosition(const DLRecord* record) {
+    return lockRecordPosition(record, pmem_allocator_.get(), hash_table_.get(),
+                              record_locks_);
   }
 
   bool validateDLRecord(const DLRecord* record) {
@@ -476,6 +464,8 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
+  // locks to protect linkage modification
+  LockTable* record_locks_;
 };
 
 // A helper struct for locating a skiplist position
