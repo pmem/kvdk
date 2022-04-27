@@ -22,8 +22,10 @@
 #include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
+#include "hash_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
+#include "lock_table.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "simple_list.hpp"
@@ -31,7 +33,7 @@
 #include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
-#include "unordered_collection.hpp"
+#include "thread_pool.hpp"
 #include "utils/utils.hpp"
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
@@ -83,8 +85,7 @@ class KVEngine : public Engine {
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
 
-  Status Modify(const StringView key, std::string* new_value,
-                ModifyFunction modify_func, void* modify_args,
+  Status Modify(const StringView key, ModifyFunc modify_func, void* modify_args,
                 const WriteOptions& options) override;
 
   // Sorted Collection
@@ -97,16 +98,6 @@ class KVEngine : public Engine {
   Iterator* NewSortedIterator(const StringView collection,
                               Snapshot* snapshot) override;
   void ReleaseSortedIterator(Iterator* sorted_iterator) override;
-
-  // Unordered Collection
-  Status HGet(StringView const collection_name, StringView const key,
-              std::string* value) override;
-  Status HSet(StringView const collection_name, StringView const key,
-              StringView const value) override;
-  Status HDelete(StringView const collection_name,
-                 StringView const key) override;
-  std::unique_ptr<Iterator> NewUnorderedIterator(
-      StringView const collection_name) override;
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
@@ -181,18 +172,36 @@ class KVEngine : public Engine {
   Status ListPushBack(StringView key, StringView elem) final;
   Status ListPopFront(StringView key, std::string* elem) final;
   Status ListPopBack(StringView key, std::string* elem) final;
-  Status ListInsert(std::unique_ptr<ListIterator> const& pos,
-                    StringView elem) final;
+  Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
+                          StringView elem) final;
+  Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
+                         StringView elem) final;
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
   Status ListSet(std::unique_ptr<ListIterator> const& pos,
                  StringView elem) final;
-  std::unique_ptr<ListIterator> ListMakeIterator(StringView key) final;
+  std::unique_ptr<ListIterator> ListCreateIterator(StringView key) final;
+
+  // Hash
+  Status HashLength(StringView key, size_t* len) final;
+  Status HashGet(StringView key, StringView field, std::string* value) final;
+  Status HashSet(StringView key, StringView field, StringView value) final;
+  Status HashDelete(StringView key, StringView field) final;
+  Status HashModify(StringView key, StringView field, ModifyFunc modify_func,
+                    void* cb_args) final;
+  std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
 
  private:
   struct LookupResult {
     Status s{Status::NotSupported};
     HashEntry entry{};
     HashEntry* entry_ptr{nullptr};
+
+    LookupResult& operator=(LookupResult const& other) {
+      s = other.s;
+      memcpy_16(&entry, &other.entry);
+      entry_ptr = other.entry_ptr;
+      return *this;
+    }
   };
 
   // Look up the first level key (e.g. collections or string, not collection
@@ -215,22 +224,61 @@ class KVEngine : public Engine {
   template <bool allocate_hash_entry_if_missing>
   LookupResult lookupKey(StringView key, uint16_t type_mask);
 
-  std::shared_ptr<UnorderedCollection> createUnorderedCollection(
-      StringView const collection_name);
+  template <bool allocate_hash_entry_if_missing>
+  LookupResult lookupImpl(StringView key, uint16_t type_mask) {
+    LookupResult result;
+    auto hint = hash_table_->GetHint(key);
+    if (!allocate_hash_entry_if_missing) {
+      result.s = hash_table_->SearchForRead(
+          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+    } else {
+      result.s = hash_table_->SearchForWrite(
+          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+    }
+    return result;
+  }
+
+  // Lockless, caller should lock the key aforehand.
+  // Remove key from HashTable. It's up to caller to handle the erased key
+  // Returns Status::Ok if key is found and removed,
+  // Returns Status::NotFound or Status::Outdated as is returnd by
+  // SearchForRead()
+  LookupResult removeKey(StringView key) {
+    return removeImpl(key, PrimaryRecordType);
+  }
+
+  LookupResult removeImpl(StringView key, uint16_t type_mask) {
+    LookupResult result;
+    auto hint = hash_table_->GetHint(key);
+    result.s = hash_table_->SearchForRead(
+        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
+    if (result.s != Status::Ok) {
+      return result;
+    }
+    hash_table_->Erase(result.entry_ptr);
+    return result;
+  }
+
+  // ret must be return value of lookupImpl<true> or lookupKey<true>
+  void insertImpl(LookupResult ret, StringView key, RecordType type,
+                  void* addr) {
+    auto hint = hash_table_->GetHint(key);
+    hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
+  }
 
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
-    static_assert(std::is_same<CollectionType, UnorderedCollection>::value ||
-                      std::is_same<CollectionType, Skiplist>::value ||
+    static_assert(std::is_same<CollectionType, Skiplist>::value ||
                       std::is_same<CollectionType, List>::value ||
+                      std::is_same<CollectionType, HashList>::value ||
                       std::is_same<CollectionType, StringRecord>::value,
                   "Invalid type!");
-    return std::is_same<CollectionType, UnorderedCollection>::value
-               ? RecordType::DlistRecord
-               : std::is_same<CollectionType, Skiplist>::value
-                     ? RecordType::SortedHeaderRecord
-                     : std::is_same<CollectionType, List>::value
-                           ? RecordType::ListRecord
+    return std::is_same<CollectionType, Skiplist>::value
+               ? RecordType::SortedHeaderRecord
+               : std::is_same<CollectionType, List>::value
+                     ? RecordType::ListRecord
+                     : std::is_same<CollectionType, HashList>::value
+                           ? RecordType::HashRecord
                            : RecordType::Empty;
   }
 
@@ -251,16 +299,15 @@ class KVEngine : public Engine {
       case RecordType::SortedHeaderRecord: {
         return PointerType::Skiplist;
       }
-      case RecordType::DlistDataRecord: {
-        return PointerType::UnorderedCollectionElement;
-      }
-      case RecordType::DlistRecord: {
-        return PointerType::UnorderedCollection;
-      }
       case RecordType::ListRecord: {
         return PointerType::List;
       }
-      case RecordType::DlistHeadRecord:
+      case RecordType::HashRecord: {
+        return PointerType::HashList;
+      }
+      case RecordType::HashElem: {
+        return PointerType::HashElem;
+      }
       case RecordType::ListElem:
       default: {
         /// TODO: Remove Expire Flag
@@ -278,7 +325,7 @@ class KVEngine : public Engine {
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
     LookupResult res = lookupKey<false>(collection_name, record_type);
-    if (res.s == Status::Expired) {
+    if (res.s == Status::Outdated) {
       // TODO(zhichen): will open the following code when completing collection
       // deletion.
       // delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
@@ -292,10 +339,6 @@ class KVEngine : public Engine {
             : nullptr;
     return res.s;
   }
-
-  enum class QueueOpPosition { Left, Right };
-  Status xPush(StringView const collection_name, StringView const value,
-               QueueOpPosition push_pos);
 
   // Lockless. It's up to caller to lock the HashTable
   template <typename CollectionType>
@@ -315,26 +358,6 @@ class KVEngine : public Engine {
     hash_table_->Insert(hash_table_->GetHint(coll->Name()), ret.entry_ptr, type,
                         coll, ptype);
     return Status::Ok;
-  }
-
-  struct RemoveResult {
-    Status s{Status::NotSupported};
-    HashEntry entry{};
-  };
-
-  // Lockless, caller should lock the key aforehand.
-  // Remove key from HashTable. It's up to caller to handle the erased key
-  RemoveResult removeKey(const StringView key) {
-    RemoveResult result;
-    HashTable::KeyHashHint hint = hash_table_->GetHint(key);
-    HashEntry* entry_ptr = nullptr;
-    result.s = hash_table_->SearchForWrite(hint, key, PrimaryRecordType,
-                                           &entry_ptr, &result.entry, nullptr);
-    if (result.s != Status::Ok) {
-      return result;
-    }
-    hash_table_->Erase(entry_ptr);
-    return result;
   }
 
   Status MaybeInitPendingBatchFile();
@@ -380,10 +403,7 @@ class KVEngine : public Engine {
 
   Status PersistOrRecoverImmutableConfigs();
 
-  Status RestoreDlistRecords(DLRecord* pmp_record);
-
-  List* listCreate(StringView key);
-
+  /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
   // Guarantees always return a valid List and lockes it if returns Status::Ok
   Status listFind(StringView key, List** list, bool init_nx,
@@ -395,15 +415,43 @@ class KVEngine : public Engine {
 
   Status listRegisterRecovered();
 
+  template <typename DelayFree>
+  Status listDestroy(List* list, DelayFree delay_free);
+
   Status listDestroy(List* list);
 
+  /// Hash helper funtions
+  Status hashListFind(StringView key, HashList** hlist, bool init_nx);
+
+  Status hashListRestoreElem(DLRecord* rec);
+
+  Status hashListRestoreList(DLRecord* rec);
+
+  Status hashListRegisterRecovered();
+
+  template <typename DelayFree>
+  Status hashListDestroy(HashList* list, DelayFree delay_free);
+
+  Status hashListDestroy(HashList* list);
+
+  // ModifyFunction should have signature
+  // ModifyOperation(StringView const* old, StringView* new, void* args).
+  // delete_impl is true only when HashDelete calls it.
+  template <typename ModifyFunction>
+  Status hashModifyImpl(StringView key, StringView field,
+                        ModifyFunction modify_func, void* cb_args,
+                        bool delete_impl);
+
+  /// Other
   Status CheckConfigs(const Configs& configs);
 
   void FreeSkiplistDramNodes();
 
-  inline void delayFree(const OldDeleteRecord&);
+  void delayFree(const OldDeleteRecord&);
 
-  inline void delayFree(const OldDataRecord&);
+  void delayFree(const OldDataRecord&);
+
+  void delayFree(void* addr, TimeStampType ts);
 
   inline std::string data_file() { return data_file(dir_); }
 
@@ -498,7 +546,16 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  // void backgroundWorkCoordinator();
+  void deleteCollections();
+
+  Status destroyExpiredHash(
+      HashList* hashlist,
+      std::deque<PendingFreeSpaceEntries>* hash_space_entries);
+
+  Status destroyExpiredList(
+      List* list, std::deque<PendingFreeSpaceEntries>* list_space_entries);
+
+  void backgroundDestroyCollections();
 
   void startBackgroundWorks();
 
@@ -513,13 +570,17 @@ class KVEngine : public Engine {
   std::shared_ptr<HashTable> hash_table_;
 
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
-  std::vector<std::shared_ptr<UnorderedCollection>>
-      vec_sp_unordered_collections_;
 
-  std::vector<std::unique_ptr<List>> lists_;
+  std::set<List*, Collection::TTLCmp> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 
-  std::mutex list_mu_;
+  std::set<HashList*, Collection::TTLCmp> hash_lists_;
+  std::unique_ptr<HashListBuilder> hash_list_builder_;
+  std::unique_ptr<LockTable> hash_list_locks_;
+
+  std::mutex skiplists_mu_;
+  std::mutex lists_mu_;
+  std::mutex hlists_mu_;
 
   std::string dir_;
   std::string pending_batch_dir_;
@@ -553,6 +614,8 @@ class KVEngine : public Engine {
   std::mutex checkpoint_lock_;
 
   BackgroundWorkSignals bg_work_signals_;
+
+  ThreadPool thread_pool_{4};
 };
 
 }  // namespace KVDK_NAMESPACE

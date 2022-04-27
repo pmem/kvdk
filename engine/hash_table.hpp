@@ -14,25 +14,29 @@
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
-#include "simple_list.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class HashEntryStatus : uint8_t {
+enum class KeyStatus : uint8_t {
   Persist = 0,
-  TTL = 1 << 0,  // expirable
+  Volatile = 1 << 0,  // expirable
   Expired = 1 << 1,
 };
 struct HashHeader {
   uint32_t key_prefix;
   RecordType record_type;
   PointerType index_type;
-  HashEntryStatus entry_status;
+  KeyStatus entry_status;
 };
 
 class Skiplist;
 class SkiplistNode;
-class UnorderedCollection;
+
+template <RecordType ListType, RecordType DataType>
+class GenericList;
+
+using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
+using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
 
 struct alignas(16) HashEntry {
  public:
@@ -47,15 +51,15 @@ struct alignas(16) HashEntry {
     StringRecord* string_record;
     DLRecord* dl_record;
     Skiplist* skiplist;
-    UnorderedCollection* p_unordered_collection;
     List* list;
+    HashList* hlist;
   };
   static_assert(sizeof(Index) == 8);
 
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
-            PointerType index_type, HashEntryStatus entry_status)
+            PointerType index_type, KeyStatus entry_status)
       : index_(_index),
         header_({key_hash_prefix, record_type, index_type, entry_status}) {}
 
@@ -71,11 +75,13 @@ struct alignas(16) HashEntry {
     return static_cast<DataEntry*>(index_.ptr)->meta.timestamp;
   }
 
-  bool IsExpiredStatus() {
-    return header_.entry_status == HashEntryStatus::Expired;
+  bool IsExpiredStatus() const {
+    return header_.entry_status == KeyStatus::Expired;
   }
 
-  bool IsTTLStatus() { return header_.entry_status == HashEntryStatus::TTL; }
+  bool IsTTLStatus() const {
+    return header_.entry_status == KeyStatus::Volatile;
+  }
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
@@ -87,7 +93,7 @@ struct alignas(16) HashEntry {
   // Make this hash entry empty while its content been deleted
   void clear() { header_.index_type = PointerType::Empty; }
 
-  void updateEntryStatus(HashEntryStatus entry_status) {
+  void updateEntryStatus(KeyStatus entry_status) {
     header_.entry_status = entry_status;
   }
 
@@ -162,7 +168,7 @@ class HashTable {
   // TODO: remove the default param.
   void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
               void* index, PointerType index_type,
-              HashEntryStatus entry_status = HashEntryStatus::Persist);
+              KeyStatus entry_status = KeyStatus::Persist);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
@@ -170,7 +176,7 @@ class HashTable {
     entry_ptr->clear();
   }
 
-  void UpdateEntryStatus(HashEntry* entry_ptr, HashEntryStatus entry_status) {
+  void UpdateEntryStatus(HashEntry* entry_ptr, KeyStatus entry_status) {
     assert(entry_ptr != nullptr);
     entry_ptr->updateEntryStatus(entry_status);
   }
@@ -229,11 +235,7 @@ struct SlotIterator {
   HashTable* hash_table_;
   uint64_t current_slot_id;
 
-  void GetBucketRangeAndLockSlot() {
-    // release prev slot lock.
-    iter_lock_slot_ = std::unique_lock<SpinMutex>(
-        hash_table_->slots_[current_slot_id].spin, std::defer_lock);
-    iter_lock_slot_.lock();
+  void setBucketRange() {
     iter_start_bucket_idx_ =
         current_slot_id * hash_table_->num_buckets_per_slot_;
     iter_end_bucket_idx_ =
@@ -319,12 +321,18 @@ struct SlotIterator {
 
   SlotIterator(HashTable* hash_table)
       : hash_table_(hash_table), current_slot_id(0) {
-    GetBucketRangeAndLockSlot();
+    setBucketRange();
   }
+
+  std::unique_lock<SpinMutex> AcquireSlotLock() {
+    SpinMutex* slot_lock = GetSlotLock();
+    return std::unique_lock<SpinMutex>(*slot_lock);
+  }
+
   void Next() {
     current_slot_id++;
     if (current_slot_id < hash_table_->slots_.size()) {
-      GetBucketRangeAndLockSlot();
+      setBucketRange();
     }
   }
 
@@ -336,7 +344,9 @@ struct SlotIterator {
 
   BucketIterator End() { return BucketIterator{this, iter_end_bucket_idx_}; }
 
-  SpinMutex* GetSlotLock() { return iter_lock_slot_.mutex(); }
+  SpinMutex* GetSlotLock() {
+    return &hash_table_->slots_[current_slot_id].spin;
+  }
 };
 
 }  // namespace KVDK_NAMESPACE

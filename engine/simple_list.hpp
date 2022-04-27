@@ -13,27 +13,50 @@ using ListBuilder =
 
 class ListIteratorImpl final : public ListIterator {
  public:
-  void Seek(StringView elem) final {
-    SeekToFirst();
-    while (Valid() && elem != rep->Value()) {
-      ++rep;
-    }
-  }
-
   void Seek(IndexType pos) final { rep = list->Seek(pos); }
 
   void SeekToFirst() final { rep = list->Front(); }
 
   void SeekToLast() final { rep = list->Back(); }
 
+  void Next() final { ++rep; }
+
+  void Prev() final { --rep; }
+
+  void SeekToFirst(StringView elem) final {
+    SeekToFirst();
+    while (Valid() && elem != rep->Value()) {
+      ++rep;
+    }
+  }
+
+  void SeekToLast(StringView elem) final {
+    SeekToLast();
+    while (Valid() && elem != rep->Value()) {
+      --rep;
+    }
+  }
+
+  void Next(StringView elem) final {
+    if (!Valid()) return;
+    ++rep;
+    while (Valid() && elem != rep->Value()) {
+      ++rep;
+    }
+  }
+
+  void Prev(StringView elem) final {
+    if (!Valid()) return;
+    --rep;
+    while (Valid() && elem != rep->Value()) {
+      --rep;
+    }
+  }
+
   bool Valid() const final {
     // list->Head() == list->Tail()
     return (rep != list->Tail());
   }
-
-  void Next() final { ++rep; }
-
-  void Prev() final { --rep; }
 
   std::string Value() const final {
     if (!Valid()) {

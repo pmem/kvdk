@@ -11,6 +11,8 @@
 
 #include "alias.hpp"
 #include "kvdk/status.hpp"
+#include "macros.hpp"
+#include "utils/codec.hpp"
 
 namespace KVDK_NAMESPACE {
 /// TODO: (ziyan) add expire_time field to Collection.
@@ -59,6 +61,16 @@ class Collection {
   inline static std::string ID2String(CollectionIDType id) {
     return std::string{reinterpret_cast<char*>(&id), sizeof(CollectionIDType)};
   }
+
+  struct TTLCmp {
+   public:
+    bool operator()(const Collection* a, const Collection* b) const {
+      if (a->GetExpireTime() < b->GetExpireTime()) return true;
+      if (a->GetExpireTime() == b->GetExpireTime() && a->ID() < b->ID())
+        return true;
+      return false;
+    }
+  };
 
  protected:
   inline static std::string makeInternalKey(const StringView& user_key,

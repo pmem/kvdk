@@ -36,12 +36,17 @@ class Engine {
   virtual Status Set(const StringView key, const StringView value,
                      const WriteOptions& options = WriteOptions()) = 0;
 
-  // Modify value of existing key in the engine according to "modify_func"
+  // Modify value of existing key in the engine
   //
-  // Store modify result in "new_value" and return Ok if key exist and
-  // sccessfully update value to modifed one
-  virtual Status Modify(const StringView key, std::string* new_value,
-                        ModifyFunction modify_func, void* modify_args,
+  // * modify_func: customized function to modify existing value of key. See
+  // definition of ModifyFunc (types.hpp) for more details.
+  // * modify_args: customized arguments of modify_func.
+  //
+  // Return Status::Ok if modify success.
+  // Return Status::Abort if modify function abort modifying.
+  // Return other non-Ok status on any error.
+  virtual Status Modify(const StringView key, ModifyFunc modify_func,
+                        void* modify_args,
                         const WriteOptions& options = WriteOptions()) = 0;
 
   virtual Status BatchWrite(const WriteBatch& write_batch) = 0;
@@ -92,14 +97,6 @@ class Engine {
   // Return Ok on success or the "collection"/"key" did not exist, return non-Ok
   // on any error.
   virtual Status SDelete(const StringView collection, const StringView key) = 0;
-
-  virtual Status HSet(const StringView collection, const StringView key,
-                      const StringView value) = 0;
-
-  virtual Status HGet(const StringView collection, const StringView key,
-                      std::string* value) = 0;
-
-  virtual Status HDelete(const StringView collection, const StringView key) = 0;
 
   /// List APIs ///////////////////////////////////////////////////////////////
 
@@ -154,8 +151,18 @@ class Engine {
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted. pos is unchanged but is invalid.
   //    Status::Ok if operation succeeded. pos points to inserted element.
-  virtual Status ListInsert(std::unique_ptr<ListIterator> const& pos,
-                            StringView elem) = 0;
+  virtual Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
+                                  StringView elem) = 0;
+
+  // Insert an element after element indexed by ListIterator pos
+  // Return:
+  //    Status::InvalidDataSize if elem is too long. pos is unchanged.
+  //    Status::PMemOverflow if PMem exhausted. pos is unchanged.
+  //    Status::NotFound if List of the ListIterator has expired or been
+  //    deleted. pos is unchanged but is invalid.
+  //    Status::Ok if operation succeeded. pos points to inserted element.
+  virtual Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
+                                 StringView elem) = 0;
 
   // Remove the element indexed by ListIterator pos
   // Return:
@@ -180,7 +187,24 @@ class Engine {
   //    otherwise return ListIterator to First element of List
   // Internally ListIterator holds an recursive of List, which is relased
   // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListMakeIterator(StringView key) = 0;
+  virtual std::unique_ptr<ListIterator> ListCreateIterator(StringView key) = 0;
+
+  /// Hash APIs ///////////////////////////////////////////////////////////////
+
+  virtual Status HashLength(StringView key, size_t* len) = 0;
+  virtual Status HashGet(StringView key, StringView field,
+                         std::string* value) = 0;
+  virtual Status HashSet(StringView key, StringView field,
+                         StringView value) = 0;
+  virtual Status HashDelete(StringView key, StringView field) = 0;
+  virtual Status HashModify(StringView key, StringView field,
+                            ModifyFunc modify_func, void* cb_args) = 0;
+  // Warning: HashIterator internally holds a snapshot,
+  // prevents some resources from being freed.
+  // The HashIterator should be destroyed as long as it is no longer used.
+  virtual std::unique_ptr<HashIterator> HashCreateIterator(StringView key) = 0;
+
+  /// Other ///////////////////////////////////////////////////////////////////
 
   // Get a snapshot of the instance at this moment.
   // If set make_checkpoint to true, a persistent checkpoint will be made until
@@ -214,9 +238,6 @@ class Engine {
 
   // Release a sorted iterator
   virtual void ReleaseSortedIterator(Iterator*) = 0;
-
-  virtual std::unique_ptr<Iterator> NewUnorderedIterator(
-      StringView const collection_name) = 0;
 
   // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.

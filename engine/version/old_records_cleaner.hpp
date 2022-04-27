@@ -80,17 +80,18 @@ class OldRecordsCleaner {
     assert(kv_engine_ != nullptr);
   }
 
+  void PushToPendingFree(void* addr, TimeStampType ts);
+  bool TryFreePendingSpace(
+      const PendingFreeSpaceEntries& pending_free_space_entries);
   void PushToCache(const OldDataRecord& old_data_record);
-  void PushToCache(const OldDeleteRecord& old_delete_record);
-  void PushSpaceToGlobal(
-      const PendingFreeSpaceEntries& pending_free_space_entry);
   // Try to clean global old records
   void TryGlobalClean(TimeStampType oldest_snapshot_ts);
   void TryCleanCachedOldRecords(size_t num_limit_clean);
+  void TryGlobalCleanDataRecords(TimeStampType oldest_snapshot_ts);
   uint64_t NumCachedOldRecords() {
     assert(access_thread.id >= 0);
     auto& tc = cleaner_thread_cache_[access_thread.id];
-    return tc.old_delete_records.size() + tc.old_data_records.size();
+    return tc.old_data_records.size();
   }
 
   SpaceEntry PurgeOutDatedRecord(HashEntry* hash_entry,
@@ -98,7 +99,6 @@ class OldRecordsCleaner {
 
  private:
   struct CleanerThreadCache {
-    std::deque<OldDeleteRecord> old_delete_records{};
     std::deque<OldDataRecord> old_data_records{};
     std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};
     SpinMutex old_records_lock;
@@ -106,14 +106,19 @@ class OldRecordsCleaner {
   const uint64_t kLimitCachedDeleteRecords = 1000000;
 
   void maybeUpdateOldestSnapshot();
+  // Purge a old data record and free space
   SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
+
+  // Purge a old delete record and free space
+  // Notice: this function will acquire slot lock in hash table, so deadlock may
+  // occur if call this function while holding other locks
+  // SpaceEntry purgeOldDeleteRecord(OldDeleteRecord& old_delete_record);
 
   KVEngine* kv_engine_;
 
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
-  std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
   std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };

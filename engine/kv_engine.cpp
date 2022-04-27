@@ -48,7 +48,7 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Waiting bg threads exit ... \n");
   closing_ = true;
   terminateBackgroundWorks();
-
+  deleteCollections();
   ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
 }
@@ -92,6 +92,7 @@ void KVEngine::startBackgroundWorks() {
   bg_threads_.emplace_back(&KVEngine::backgroundOldRecordCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
+  bg_threads_.emplace_back(&KVEngine::backgroundDestroyCollections, this);
 }
 
 void KVEngine::terminateBackgroundWorks() {
@@ -226,7 +227,7 @@ Status KVEngine::CreateSortedCollection(
         pmem_record, string_view_2_string(collection_name), id, comparator,
         pmem_allocator_, hash_table_, s_configs.index_with_hashtable);
     {
-      std::lock_guard<std::mutex> lg(list_mu_);
+      std::lock_guard<std::mutex> lg(skiplists_mu_);
       skiplists_.insert({id, skiplist});
     }
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderRecord, skiplist.get(),
@@ -314,10 +315,8 @@ Status KVEngine::RestoreData() {
       case RecordType::SortedHeaderRecord:
       case RecordType::StringDataRecord:
       case RecordType::StringDeleteRecord:
-      case RecordType::DlistRecord:
-      case RecordType::DlistHeadRecord:
-      case RecordType::DlistTailRecord:
-      case RecordType::DlistDataRecord:
+      case RecordType::HashRecord:
+      case RecordType::HashElem:
       case RecordType::ListRecord:
       case RecordType::ListElem: {
         if (!ValidateRecord(recovering_pmem_record)) {
@@ -327,6 +326,10 @@ Status KVEngine::RestoreData() {
         }
         break;
       }
+      case RecordType::ListDirtyElem:
+      case RecordType::HashDirtyElem:
+      case RecordType::ListDirtyRecord:
+      case RecordType::HashDirtyRecord:
       case RecordType::Padding:
       case RecordType::Empty: {
         data_entry_cached.meta.type = RecordType::Padding;
@@ -381,19 +384,20 @@ Status KVEngine::RestoreData() {
             data_entry_cached);
         break;
       }
-      case RecordType::DlistRecord:
-      case RecordType::DlistHeadRecord:
-      case RecordType::DlistTailRecord:
-      case RecordType::DlistDataRecord: {
-        s = RestoreDlistRecords(static_cast<DLRecord*>(recovering_pmem_record));
-        break;
-      }
       case RecordType::ListRecord: {
         s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::ListElem: {
         s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
+        break;
+      }
+      case RecordType::HashRecord: {
+        s = hashListRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
+        break;
+      }
+      case RecordType::HashElem: {
+        s = hashListRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       default: {
@@ -432,9 +436,7 @@ bool KVEngine::ValidateRecordAndGetValue(void* data_record,
     }
     case RecordType::SortedDataRecord:
     case RecordType::SortedDeleteRecord:
-    case RecordType::SortedHeaderRecord:
-    case RecordType::DlistDataRecord:
-    case RecordType::DlistRecord: {
+    case RecordType::SortedHeaderRecord: {
       DLRecord* dl_record = static_cast<DLRecord*>(data_record);
       if (dl_record->Validate(expected_checksum)) {
         auto v = dl_record->Value();
@@ -464,10 +466,8 @@ bool KVEngine::ValidateRecord(void* data_record) {
     case RecordType::SortedDataRecord:
     case RecordType::SortedHeaderRecord:
     case RecordType::SortedDeleteRecord:
-    case RecordType::DlistDataRecord:
-    case RecordType::DlistRecord:
-    case RecordType::DlistHeadRecord:
-    case RecordType::DlistTailRecord:
+    case RecordType::HashRecord:
+    case RecordType::HashElem:
     case RecordType::ListRecord:
     case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
@@ -751,7 +751,12 @@ Status KVEngine::Recovery() {
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
 
-  list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_, 1U});
+  list_builder_.reset(
+      new ListBuilder{pmem_allocator_.get(), &lists_, 1U, nullptr});
+
+  hash_list_locks_.reset(new LockTable{1UL << 20});
+  hash_list_builder_.reset(new HashListBuilder{
+      pmem_allocator_.get(), &hash_lists_, 1U, hash_list_locks_.get()});
 
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
@@ -778,11 +783,11 @@ Status KVEngine::Recovery() {
   list_id_ = ret.max_id + 1;
   skiplists_.swap(ret.rebuild_skiplits);
 
-#ifdef KVDK_DEBUG_CHECK
+#if KVDK_DEBUG_LEVEL > 0
   for (auto skiplist : skiplists_) {
     Status s = skiplist.second->CheckIndex();
     if (s != Status::Ok) {
-      GlobalLogger.Info("Check skiplist index error\n");
+      GlobalLogger.Error("Check skiplist index error\n");
       return s;
     }
   }
@@ -799,6 +804,15 @@ Status KVEngine::Recovery() {
   list_builder_.reset(nullptr);
   GlobalLogger.Info("Rebuild Lists done\n");
 
+  hash_list_builder_->RebuildLists();
+  hash_list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
+  s = hashListRegisterRecovered();
+  if (s != Status::Ok) {
+    return s;
+  }
+  hash_list_builder_.reset(nullptr);
+  GlobalLogger.Info("Rebuild HashLists done\n");
+
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
     for (size_t i = 0; i < engine_thread_cache_.size(); i++) {
@@ -813,47 +827,7 @@ Status KVEngine::Recovery() {
   remove(backup_mark_file().c_str());
 
   version_controller_.Init(latest_version_ts);
-  old_records_cleaner_.TryGlobalClean();
-
-  return Status::Ok;
-}
-
-Status KVEngine::HashGetImpl(const StringView& key, std::string* value,
-                             uint16_t type_mask) {
-  DataEntry data_entry;
-  while (1) {
-    HashEntry hash_entry;
-    HashEntry* entry_ptr = nullptr;
-    bool is_found = hash_table_->SearchForRead(
-                        hash_table_->GetHint(key), key, type_mask, &entry_ptr,
-                        &hash_entry, &data_entry) == Status::Ok;
-    if (!is_found || (hash_entry.GetRecordType() & DeleteRecordType)) {
-      return Status::NotFound;
-    }
-    kvdk_assert(hash_entry.GetRecordType() == DlistDataRecord,
-                "Wrong type in hash get impl");
-    DLRecord* pmem_record = hash_entry.GetIndex().dl_record;
-
-    // Copy PMem data record to dram buffer
-    auto record_size = pmem_record->GetRecordSize();
-    // Region of data_entry.header.record_size may be corrupted by a write
-    // operation if the original reading space entry is merged with the adjacent
-    // one by pmem allocator
-    if (record_size > configs_.pmem_segment_blocks * configs_.pmem_block_size) {
-      continue;
-    }
-
-    // TODO. remove checksum validation when unordered_collection supports mvcc
-    void* data_buffer = malloc(record_size);
-    memcpy(data_buffer, pmem_record, record_size);
-    // If the pmem data record is corrupted or modified during get, redo search
-    bool valid = ValidateRecordAndGetValue(data_buffer,
-                                           data_entry.header.checksum, value);
-    free(data_buffer);
-    if (valid) {
-      break;
-    }
-  }
+  // old_records_cleaner_.TryGlobalClean();
 
   return Status::Ok;
 }
@@ -880,7 +854,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
     value->assign(string_record->Value().data(), string_record->Value().size());
     return Status::Ok;
   } else {
-    return ret.s == Status::Expired ? Status::NotFound : ret.s;
+    return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
 }
 
@@ -928,21 +902,10 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
               "Wrong existing record type while insert a delete reocrd for "
               "sorted collection");
           delayFree(OldDataRecord{ret.existing_record, new_ts});
-          if (ret.hash_entry_ptr != nullptr) {
-            // delete record indexed by hash table
-            delayFree(OldDeleteRecord(ret.write_record, ret.hash_entry_ptr,
-                                      PointerType::HashEntry, new_ts,
-                                      hint.spin));
-          } else if (ret.dram_node != nullptr) {
-            // no hash index, by a skiplist node points to delete record
-            delayFree(OldDeleteRecord(ret.write_record, ret.dram_node,
-                                      PointerType::SkiplistNode, new_ts,
-                                      hint.spin));
-          } else {
-            // delete record nor pointed by hash entry nor skiplist node
-            delayFree(OldDeleteRecord(ret.write_record, nullptr,
-                                      PointerType::Empty, new_ts, hint.spin));
-          }
+
+          // For delete record, we markde it's hash status as `Expired`.
+          hash_table_->UpdateEntryStatus(ret.hash_entry_ptr,
+                                         KeyStatus::Expired);
         }
         return ret.s;
       default:
@@ -1202,9 +1165,10 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
       delayFree(OldDataRecord{batch_hints[i].data_record_to_free, ts});
     }
     if (batch_hints[i].delete_record_to_free != nullptr) {
-      delayFree(OldDeleteRecord(
-          batch_hints[i].delete_record_to_free, batch_hints[i].hash_entry_ptr,
-          PointerType::HashEntry, ts, batch_hints[i].hash_hint.spin));
+      // delayFree(OldDeleteRecord(
+      //     batch_hints[i].delete_record_to_free,
+      //     batch_hints[i].hash_entry_ptr, PointerType::HashEntry, ts,
+      //     batch_hints[i].hash_hint.spin));
     }
     if (batch_hints[i].space_not_used) {
       pmem_allocator_->Free(batch_hints[i].allocated_space);
@@ -1213,14 +1177,14 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   return Status::Ok;
 }
 
-Status KVEngine::Modify(const StringView key, std::string* new_value,
-                        ModifyFunction modify_func, void* modify_args,
-                        const WriteOptions& write_options) {
+Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
+                        void* modify_args, const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (write_options.ttl_time <= 0 ||
       !TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
+
   ExpireTimeType expired_time = write_options.ttl_time == kPersistTime
                                     ? kPersistTime
                                     : write_options.ttl_time + base_time;
@@ -1229,51 +1193,92 @@ Status KVEngine::Modify(const StringView key, std::string* new_value,
   if (s != Status::Ok) {
     return s;
   }
+
   auto hint = hash_table_->GetHint(key);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   version_controller_.HoldLocalSnapshot();
   defer(version_controller_.ReleaseLocalSnapshot());
   TimeStampType new_ts = version_controller_.GetLocalSnapshot().GetTimestamp();
-  auto ret = lookupKey<false>(key, static_cast<RecordType>(StringRecordType));
+  auto ret = lookupKey<true>(key, static_cast<RecordType>(StringRecordType));
+
+  StringRecord* existing_record = nullptr;
+  std::string existing_value;
+  std::string new_value;
   // push it into cleaner
-  if (ret.s == Status::Expired && ret.entry_ptr->IsTTLStatus()) {
-    hash_table_->UpdateEntryStatus(ret.entry_ptr, HashEntryStatus::Expired);
-    // ul.unlock();
-    // delayFree(OldDeleteRecord{ret.entry.GetIndex().ptr, ret.entry_ptr,
-    //                           PointerType::HashEntry, new_ts, hint.spin});
-    return Status::NotFound;
-  }
   if (ret.s == Status::Ok) {
-    StringRecord* old_record = ret.entry.GetIndex().string_record;
-
-    std::string modified_value = modify_func(old_record->Value(), modify_args);
-    if (!CheckValueSize(modified_value)) {
-      return Status::InvalidDataSize;
-    }
-
-    auto requested_size =
-        key.size() + modified_value.size() + sizeof(StringRecord);
-    SpaceEntry space_entry = pmem_allocator_->Allocate(requested_size);
-    if (space_entry.size == 0) {
-      return Status::PmemOverflow;
-    }
-
-    kvdk_assert(new_ts > old_record->GetTimestamp(),
-                "old record has newer timestamp");
-    StringRecord* new_record_ptr =
-        pmem_allocator_->offset2addr<StringRecord>(space_entry.offset);
-    StringRecord::PersistStringRecord(
-        new_record_ptr, space_entry.size, new_ts, StringDataRecord,
-        pmem_allocator_->addr2offset_checked(old_record), key, modified_value,
-        expired_time);
-
-    hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record_ptr,
-                        PointerType::StringRecord);
-    ul.unlock();
-    delayFree(OldDataRecord({old_record, new_ts}));
-    new_value->assign(modified_value);
+    existing_record = ret.entry.GetIndex().string_record;
+    existing_value.assign(existing_record->Value().data(),
+                          existing_record->Value().size());
+  } else if (ret.s == Status::Outdated) {
+    existing_record = ret.entry.GetIndex().string_record;
+  } else if (ret.s == Status::NotFound) {
+    // nothing todo
+  } else {
+    return ret.s;
   }
-  return ret.s;
+
+  auto modify_operation = modify_func(
+      ret.s == Status::Ok ? &existing_value : nullptr, &new_value, modify_args);
+  switch (modify_operation) {
+    case ModifyOperation::Write: {
+      if (!CheckValueSize(new_value)) {
+        return Status::InvalidDataSize;
+      }
+      SpaceEntry space_entry =
+          pmem_allocator_->Allocate(StringRecord::RecordSize(key, new_value));
+      if (space_entry.size == 0) {
+        return Status::PmemOverflow;
+      }
+
+      StringRecord* new_record =
+          pmem_allocator_->offset2addr_checked<StringRecord>(
+              space_entry.offset);
+      StringRecord::PersistStringRecord(
+          new_record, space_entry.size, new_ts, StringDataRecord,
+          existing_record == nullptr
+              ? kNullPMemOffset
+              : pmem_allocator_->addr2offset_checked(existing_record),
+          key, new_value, expired_time);
+      hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
+                          PointerType::StringRecord);
+      if (ret.s == Status::Ok) {
+        ul.unlock();
+        delayFree(OldDataRecord{existing_record, new_ts});
+      }
+      break;
+    }
+    case ModifyOperation::Delete: {
+      if (ret.s == Status::Ok) {
+        SpaceEntry space_entry =
+            pmem_allocator_->Allocate(StringRecord::RecordSize(key, ""));
+        if (space_entry.size == 0) {
+          return Status::PmemOverflow;
+        }
+
+        void* pmem_ptr =
+            pmem_allocator_->offset2addr_checked(space_entry.offset);
+        StringRecord::PersistStringRecord(
+            pmem_ptr, space_entry.size, new_ts, StringDeleteRecord,
+            pmem_allocator_->addr2offset_checked(existing_record), key, "");
+        hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
+                            PointerType::StringRecord);
+        ul.unlock();
+        delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
+        // delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr,
+        //                           PointerType::HashEntry, new_ts,
+        //                           hint.spin));
+      }
+      break;
+    }
+    case ModifyOperation::Abort: {
+      return Status::Abort;
+    }
+    case ModifyOperation::Noop: {
+      return Status::Ok;
+    }
+  }
+
+  return Status::Ok;
 }
 
 Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
@@ -1368,17 +1373,14 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
         expire_time = res.entry_ptr->GetIndex().skiplist->GetExpireTime();
         break;
       }
-      case PointerType::UnorderedCollection: {
-        expire_time =
-            res.entry_ptr->GetIndex().p_unordered_collection->GetExpireTime();
-        break;
-      }
-
       case PointerType::List: {
         expire_time = res.entry_ptr->GetIndex().list->GetExpireTime();
         break;
       }
-
+      case PointerType::HashList: {
+        expire_time = res.entry_ptr->GetIndex().hlist->GetExpireTime();
+        break;
+      }
       case PointerType::StringRecord: {
         expire_time = res.entry_ptr->GetIndex().string_record->GetExpireTime();
         break;
@@ -1390,7 +1392,7 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
     // return ttl time
     *ttl_time = TimeUtils::ExpireTimeToTTL(expire_time);
   }
-  return res.s == Status::Expired ? Status::NotFound : res.s;
+  return res.s == Status::Outdated ? Status::NotFound : res.s;
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
@@ -1405,33 +1407,36 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   std::unique_lock<SpinMutex> ul(*hint.spin);
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
   LookupResult res = lookupKey<false>(str, ExpirableRecordType);
-  if (ttl_time <= 0 /*immediately expired*/ ||
-      (res.s == Status::Expired && res.entry_ptr->IsTTLStatus())) {
-    // Push the expired record into cleaner and update hash entry status with
-    // HashEntryStatus::Expired.
-    // TODO(zhichen): This `if` will be removed when completing collection
-    // deletion.
-    if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
-      hash_table_->UpdateEntryStatus(res.entry_ptr, HashEntryStatus::Expired);
-      // ul.unlock();
-      // delayFree(OldDeleteRecord{
-      //     res.entry_ptr->GetIndex().ptr, res.entry_ptr,
-      //     PointerType::HashEntry, version_controller_.GetCurrentTimestamp(),
-      //     hint.spin});
+
+  if (res.s == Status::Outdated) {
+    if (res.entry_ptr->IsTTLStatus()) {
+      // Push the expired record into cleaner and update hash entry status with
+      // KeyStatus::Expired.
+      // TODO(zhichen): This `if` will be removed when completing collection
+      // deletion.
+      if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
+        hash_table_->UpdateEntryStatus(res.entry_ptr, KeyStatus::Expired);
+        // ul.unlock();
+        // delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
+        // res.entry_ptr,
+        //                           PointerType::HashEntry,
+        //                           version_controller_.GetCurrentTimestamp(),
+        //                           hint.spin});
+      }
     }
     return Status::NotFound;
   }
 
   if (res.s == Status::Ok) {
-    std::string val;
-    WriteOptions write_option{ttl_time, false};
+    WriteOptions write_option{ttl_time};
     switch (res.entry_ptr->GetIndexType()) {
       case PointerType::StringRecord: {
         ul.unlock();
         res.s = Modify(
-            str, &val,
-            [](const StringView& val, void*) {
-              return string_view_2_string(val);
+            str,
+            [](const std::string* old_val, std::string* new_val, void*) {
+              new_val->assign(*old_val);
+              return ModifyOperation::Write;
             },
             nullptr, write_option);
         break;
@@ -1440,28 +1445,32 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         res.s = res.entry_ptr->GetIndex().skiplist->SetExpireTime(expired_time);
         break;
       }
-      case PointerType::UnorderedCollection: {
-        UnorderedCollection* pcoll =
-            res.entry.GetIndex().p_unordered_collection;
-        /// TODO: put these unregister and delete work in findKey()
-        res.s = pcoll->SetExpireTime(expired_time);
+      case PointerType::HashList: {
+        HashList* hlist = res.entry_ptr->GetIndex().hlist;
+        std::unique_lock<std::mutex> guard(hlists_mu_);
+        hash_lists_.erase(hlist);
+        res.s = hlist->SetExpireTime(expired_time);
+        hash_lists_.insert(hlist);
         break;
       }
       case PointerType::List: {
-        res.s = res.entry_ptr->GetIndex().list->SetExpireTime(expired_time);
+        List* list = res.entry_ptr->GetIndex().list;
+        std::unique_lock<std::mutex> guard(lists_mu_);
+        lists_.erase(list);
+        res.s = list->SetExpireTime(expired_time);
+        lists_.emplace(list);
         break;
       }
       default: {
         return Status::NotSupported;
       }
     }
-  }
-
-  // Update hash entry status to TTL
-  if (res.s == Status::Ok) {
-    hash_table_->UpdateEntryStatus(res.entry_ptr, expired_time == kPersistTime
-                                                      ? HashEntryStatus::Persist
-                                                      : HashEntryStatus::TTL);
+    // Update hash entry status to TTL
+    if (res.s == Status::Ok) {
+      hash_table_->UpdateEntryStatus(res.entry_ptr, expired_time == kPersistTime
+                                                        ? KeyStatus::Persist
+                                                        : KeyStatus::Volatile);
+    }
   }
   return res.s;
 }
@@ -1490,15 +1499,22 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
                                       key, "");
     hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
                         PointerType::StringRecord);
+
+    // For delete record, we marked it's hash entry as expired.
+    hash_table_->UpdateEntryStatus(ret.entry_ptr, KeyStatus::Expired);
+
     ul.unlock();
+
     delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
+
     // Free this delete record to recycle PMem and DRAM space
     // delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr,
     // PointerType::HashEntry,
     //                           new_ts, hint.spin));
   }
 
-  return ret.s == Status::NotFound ? Status::Ok : ret.s;
+  return (ret.s == Status::NotFound || ret.s == Status::Outdated) ? Status::Ok
+                                                                  : ret.s;
 }
 
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
@@ -1512,6 +1528,9 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   ExpireTimeType expired_time =
       TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
 
+  KeyStatus entry_status =
+      expired_time != kPersistTime ? KeyStatus::Volatile : KeyStatus::Persist;
+
   auto hint = hash_table_->GetHint(key);
   TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
   std::unique_lock<SpinMutex> ul(*hint.spin);
@@ -1524,10 +1543,13 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   if (ret.s == Status::MemoryOverflow || ret.s == Status::WrongType) {
     return ret.s;
   }
-  bool existing = ret.s == Status::Ok || ret.s == Status::Expired;
-  kvdk_assert((!existing && ret.s == Status::NotFound) ||
-                  (existing &&
-                   new_ts > ret.entry.GetIndex().string_record->GetTimestamp()),
+
+  kvdk_assert(ret.s == Status::NotFound || ret.s == Status::Ok ||
+                  ret.s == Status::Outdated,
+              "Wrong return status in lookupKey in StringSetImpl");
+  StringRecord* existing_record =
+      ret.s == Status::NotFound ? nullptr : ret.entry.GetIndex().string_record;
+  kvdk_assert(!existing_record || new_ts > existing_record->GetTimestamp(),
               "existing record has newer timestamp or wrong return status in "
               "string set");
 
@@ -1541,15 +1563,18 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
       pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
   StringRecord::PersistStringRecord(
       new_record, space_entry.size, new_ts, StringDataRecord,
-      existing ? pmem_allocator_->addr2offset_checked(
-                     ret.entry.GetIndex().string_record)
-               : kNullPMemOffset,
-      key, value, expired_time);
+      pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
 
   hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
-                      PointerType::StringRecord);
+                      PointerType::StringRecord, entry_status);
   // Free existing record
-  if (existing && !ret.entry.IsExpiredStatus() /*Check if expired_key already handled by background cleaner*/) {
+  bool need_free =
+      existing_record && ret.entry.GetRecordType() != StringDeleteRecord &&
+      !ret.entry.IsExpiredStatus() /*Check if expired_key already handled by
+                                       background cleaner*/
+      ;
+
+  if (need_free) {
     ul.unlock();
     delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
   }
@@ -1573,21 +1598,12 @@ Status KVEngine::Set(const StringView key, const StringView value,
 
 }  // namespace KVDK_NAMESPACE
 
-// UnorderedCollection
+// lookupKey
 namespace KVDK_NAMESPACE {
 template <bool allocate_hash_entry_if_missing>
 KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
-  LookupResult result;
-  auto hint = hash_table_->GetHint(key);
-  if (!allocate_hash_entry_if_missing) {
-    result.s =
-        hash_table_->SearchForRead(hint, key, PrimaryRecordType,
-                                   &result.entry_ptr, &result.entry, nullptr);
-  } else {
-    result.s =
-        hash_table_->SearchForWrite(hint, key, PrimaryRecordType,
-                                    &result.entry_ptr, &result.entry, nullptr);
-  }
+  LookupResult result =
+      lookupImpl<allocate_hash_entry_if_missing>(key, PrimaryRecordType);
 
   if (result.s != Status::Ok) {
     kvdk_assert(
@@ -1601,19 +1617,18 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
 
   switch (record_type) {
     case RecordType::StringDeleteRecord: {
-      result.s = type_match ? Status::NotFound : Status::WrongType;
+      result.s = type_match ? Status::Outdated : Status::WrongType;
       return result;
     }
     case RecordType::StringDataRecord: {
       expired = result.entry.GetIndex().string_record->HasExpired();
       break;
     }
-    case RecordType::DlistRecord:
+    case RecordType::HashRecord:
     case RecordType::ListRecord:
     case RecordType::SortedHeaderRecord: {
-      expired = TimeUtils::CheckIsExpired(
-          static_cast<Collection*>(result.entry.GetIndex().ptr)
-              ->GetExpireTime());
+      expired =
+          static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired();
       break;
     }
     default: {
@@ -1623,339 +1638,11 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
   }
 
   if (expired) {
-    result.s = type_match ? Status::Expired : Status::NotFound;
+    result.s = type_match ? Status::Outdated : Status::NotFound;
   } else {
     result.s = type_match ? Status::Ok : Status::WrongType;
   }
   return result;
-}  // namespace KVDK_NAMESPACE
-
-std::shared_ptr<UnorderedCollection> KVEngine::createUnorderedCollection(
-    StringView const collection_name) {
-  TimeStampType ts = version_controller_.GetCurrentTimestamp();
-  CollectionIDType id = list_id_.fetch_add(1);
-  std::string name(collection_name.data(), collection_name.size());
-  std::shared_ptr<UnorderedCollection> sp_uncoll =
-      std::make_shared<UnorderedCollection>(
-          hash_table_.get(), pmem_allocator_.get(), name, id, ts);
-  return sp_uncoll;
-}
-
-Status KVEngine::HGet(StringView const collection_name, StringView const key,
-                      std::string* value) {
-  Status s = MaybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  UnorderedCollection* p_uncoll;
-  s = FindCollection(collection_name, &p_uncoll, RecordType::DlistRecord);
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  std::string internal_key = p_uncoll->InternalKey(key);
-  return HashGetImpl(internal_key, value, RecordType::DlistDataRecord);
-}
-
-Status KVEngine::HSet(StringView const collection_name, StringView const key,
-                      StringView const value) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  UnorderedCollection* p_collection;
-
-  // Find UnorederedCollection, create if none exists
-  {
-    s = FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-    if (s == Status::NotFound) {
-      HashTable::KeyHashHint hint_collection =
-          hash_table_->GetHint(collection_name);
-      // Lock and find again in case other threads have created the
-      // UnorderedCollection
-      std::unique_lock<SpinMutex> lock_collection{*hint_collection.spin};
-      auto ret = lookupKey<true>(collection_name, RecordType::DlistRecord);
-      if (ret.s == Status::NotFound) {
-        auto sp_collection = createUnorderedCollection(collection_name);
-
-        p_collection = sp_collection.get();
-        {
-          std::lock_guard<std::mutex> lg{list_mu_};
-          vec_sp_unordered_collections_.push_back(sp_collection);
-        }
-
-        hash_table_->Insert(hint_collection, ret.entry_ptr,
-                            RecordType::DlistRecord, p_collection,
-                            PointerType::UnorderedCollection);
-        ret.s = Status::Ok;
-      } else if (ret.s == Status::Ok) {
-        p_collection = ret.entry.GetIndex().p_unordered_collection;
-        // Todo: handle expired
-      }
-      s = ret.s;
-    }
-
-    if (s != Status::Ok) {
-      return s;
-    }
-  }
-
-  // Emplace the new DlistDataRecord
-  {
-    auto internal_key = p_collection->InternalKey(key);
-    HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-
-    int n_try = 0;
-    while (true) {
-      ++n_try;
-
-      std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
-
-      TimeStampType ts = version_controller_.GetCurrentTimestamp();
-
-      HashEntry hash_entry_record;
-      HashEntry* p_hash_entry_record = nullptr;
-      Status search_result = hash_table_->SearchForWrite(
-          hint_record, internal_key, RecordType::DlistDataRecord,
-          &p_hash_entry_record, &hash_entry_record, nullptr);
-
-      ModifyReturn emplace_result{};
-      switch (search_result) {
-        case Status::NotFound: {
-          emplace_result = p_collection->Emplace(ts, key, value, lock_record);
-          break;
-        }
-        case Status::Ok: {
-          DLRecord* pmp_old_record = hash_entry_record.GetIndex().dl_record;
-          emplace_result = p_collection->Replace(pmp_old_record, ts, key, value,
-                                                 lock_record);
-          // Additional check
-          if (emplace_result.success) {
-            kvdk_assert(pmem_allocator_->addr2offset_checked(pmp_old_record) ==
-                            emplace_result.offset_old,
-                        "Updated a record, but HashEntry in HashTable is "
-                        "inconsistent with data on PMem!");
-
-            DLRecord* pmp_new_record =
-                pmem_allocator_->offset2addr_checked<DLRecord>(
-                    emplace_result.offset_new);
-            kvdk_assert(
-                pmp_old_record->entry.meta.timestamp <
-                    pmp_new_record->entry.meta.timestamp,
-                "Old record has newer timestamp than newly inserted record!");
-            purgeAndFree(pmp_old_record);
-          }
-          break;
-        }
-        default: {
-          kvdk_assert(false,
-                      "Invalid search result when trying to insert "
-                      "a new DlistDataRecord!");
-        }
-      }
-
-      if (!emplace_result.success) {
-        // Retry
-        continue;
-      } else {
-        // Successfully emplaced the new record
-        DLRecord* pmp_new_record =
-            pmem_allocator_->offset2addr_checked<DLRecord>(
-                emplace_result.offset_new);
-        hash_table_->Insert(hint_record, p_hash_entry_record,
-                            RecordType::DlistDataRecord, pmp_new_record,
-                            PointerType::UnorderedCollectionElement);
-        return Status::Ok;
-      }
-    }
-  }
-}
-
-Status KVEngine::HDelete(StringView const collection_name,
-                         StringView const key) {
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  UnorderedCollection* p_collection;
-  s = FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-  if (s == Status::Ok) {
-    // Erase DlistDataRecord if found one.
-    auto internal_key = p_collection->InternalKey(key);
-    HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-
-    int n_try = 0;
-    while (true) {
-      ++n_try;
-      std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
-
-      HashEntry hash_entry;
-      HashEntry* p_hash_entry = nullptr;
-      Status search_result = hash_table_->SearchForWrite(
-          hint_record, internal_key, RecordType::DlistDataRecord, &p_hash_entry,
-          &hash_entry, nullptr);
-
-      ModifyReturn erase_result{};
-      switch (search_result) {
-        case Status::NotFound: {
-          return Status::Ok;
-        }
-        case Status::Ok: {
-          DLRecord* pmp_old_record = hash_entry.GetIndex().dl_record;
-
-          erase_result = p_collection->Erase(pmp_old_record, lock_record);
-          if (erase_result.success) {
-            hash_table_->Erase(p_hash_entry);
-            purgeAndFree(pmp_old_record);
-            return Status::Ok;
-          } else {
-            // !erase_result.success
-            continue;
-          }
-          break;
-        }
-        default: {
-          kvdk_assert(false,
-                      "Invalid search result when trying to erase "
-                      "a DlistDataRecord!");
-        }
-      }
-    }
-  } else {
-    return s == Status::NotFound ? Ok : s;
-  }
-}
-
-std::unique_ptr<Iterator> KVEngine::NewUnorderedIterator(
-    StringView const collection_name) {
-  UnorderedCollection* p_collection;
-  Status s =
-      FindCollection(collection_name, &p_collection, RecordType::DlistRecord);
-  return (s == Status::Ok)
-             ? std::unique_ptr<UnorderedIterator>(
-                   new UnorderedIterator{p_collection->shared_from_this()})
-             : nullptr;
-}
-
-Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
-  switch (pmp_record->entry.meta.type) {
-    case RecordType::DlistRecord: {
-      UnorderedCollection* p_collection = nullptr;
-      std::lock_guard<std::mutex> lg{list_mu_};
-      {
-        std::shared_ptr<UnorderedCollection> sp_collection =
-            std::make_shared<UnorderedCollection>(
-                hash_table_.get(), pmem_allocator_.get(), pmp_record);
-        p_collection = sp_collection.get();
-        vec_sp_unordered_collections_.emplace_back(sp_collection);
-        CollectionIDType id = p_collection->ID();
-        auto old = list_id_.load();
-        while (id >= old && !list_id_.compare_exchange_strong(old, id + 1)) {
-        }
-      }
-
-      std::string collection_name = p_collection->Name();
-      HashTable::KeyHashHint hint_collection =
-          hash_table_->GetHint(collection_name);
-      std::unique_lock<SpinMutex> guard{*hint_collection.spin};
-
-      HashEntry hash_entry_collection;
-      HashEntry* p_hash_entry_collection = nullptr;
-      Status s = hash_table_->SearchForWrite(
-          hint_collection, collection_name, RecordType::DlistRecord,
-          &p_hash_entry_collection, &hash_entry_collection, nullptr);
-      hash_table_->Insert(hint_collection, p_hash_entry_collection,
-                          RecordType::DlistRecord, p_collection,
-                          PointerType::UnorderedCollection);
-      kvdk_assert((s == Status::NotFound), "Impossible situation occurs!");
-      return Status::Ok;
-    }
-    case RecordType::DlistHeadRecord: {
-      kvdk_assert(pmp_record->prev == kNullPMemOffset &&
-                      checkDLRecordLinkageRight(pmp_record),
-                  "Bad linkage found when RestoreDlistRecords. Broken head.");
-      return Status::Ok;
-    }
-    case RecordType::DlistTailRecord: {
-      kvdk_assert(pmp_record->next == kNullPMemOffset &&
-                      checkDLRecordLinkageLeft(pmp_record),
-                  "Bad linkage found when RestoreDlistRecords. Broken tail.");
-      return Status::Ok;
-    }
-    case RecordType::DlistDataRecord: {
-      bool linked = checkLinkage(static_cast<DLRecord*>(pmp_record));
-      if (!linked) {
-        GlobalLogger.Error("Bad linkage!\n");
-#if KVDK_DEBUG_LEVEL == 0
-        GlobalLogger.Error(
-            "Bad linkage can only be repaired when KVDK_DEBUG_LEVEL > 0!\n");
-        std::abort();
-#endif
-        return Status::Ok;
-      }
-
-      auto internal_key = pmp_record->Key();
-      HashTable::KeyHashHint hint_record = hash_table_->GetHint(internal_key);
-      std::unique_lock<SpinMutex> lock_record{*hint_record.spin};
-
-      HashEntry hash_entry_record;
-      HashEntry* p_hash_entry_record = nullptr;
-      Status search_status = hash_table_->SearchForWrite(
-          hint_record, internal_key, RecordType::DlistDataRecord,
-          &p_hash_entry_record, &hash_entry_record, nullptr);
-
-      switch (search_status) {
-        case Status::NotFound: {
-          hash_table_->Insert(hint_record, p_hash_entry_record,
-                              pmp_record->entry.meta.type, pmp_record,
-                              PointerType::UnorderedCollectionElement);
-          return Status::Ok;
-        }
-        case Status::Ok: {
-          DLRecord* pmp_old_record = hash_entry_record.GetIndex().dl_record;
-          if (pmp_old_record->entry.meta.timestamp <
-              pmp_record->entry.meta.timestamp) {
-            if (checkDLRecordLinkageRight((DLRecord*)pmp_old_record) ||
-                checkDLRecordLinkageLeft((DLRecord*)pmp_old_record)) {
-              assert(false && "Old record is linked in Dlinkedlist!");
-              throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
-            }
-            hash_table_->Insert(hint_record, p_hash_entry_record,
-                                pmp_record->entry.meta.type, pmp_record,
-                                PointerType::UnorderedCollectionElement);
-            purgeAndFree(pmp_old_record);
-
-          } else if (pmp_old_record->entry.meta.timestamp ==
-                     pmp_record->entry.meta.timestamp) {
-            GlobalLogger.Info("Met two DlistRecord with same timestamp");
-            purgeAndFree(pmp_record);
-
-          } else {
-            if (checkDLRecordLinkageRight((DLRecord*)pmp_record) ||
-                checkDLRecordLinkageLeft((DLRecord*)pmp_record)) {
-              assert(false && "Old record is linked in Dlinkedlist!");
-              throw std::runtime_error{"Old record is linked in Dlinkedlist!"};
-            }
-            purgeAndFree(pmp_record);
-          }
-          return Status::Ok;
-        }
-        default: {
-          kvdk_assert(false,
-                      "Invalid search result when trying to insert a new "
-                      "DlistDataRecord!\n");
-          return search_status;
-        }
-      }
-    }
-    default: {
-      kvdk_assert(false, "Wrong type in RestoreDlistRecords!\n");
-      return Status::Abort;
-    }
-  }
 }
 
 }  // namespace KVDK_NAMESPACE
@@ -1963,6 +1650,7 @@ Status KVEngine::RestoreDlistRecords(DLRecord* pmp_record) {
 // Snapshot, delayFree and background work
 namespace KVDK_NAMESPACE {
 
+/// TODO: move this into VersionController.
 Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
   TimeStampType snapshot_ts = static_cast<SnapshotImpl*>(ret)->GetTimestamp();
@@ -1998,22 +1686,29 @@ void KVEngine::delayFree(const OldDataRecord& old_data_record) {
   }
 }
 
-void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
-  old_records_cleaner_.PushToCache(old_delete_record);
-  // To avoid too many cached old records pending clean, we try to clean cached
-  // records while pushing new one
-  if (!need_clean_records_ &&
-      old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords) {
-    need_clean_records_ = true;
-  } else {
-    old_records_cleaner_.TryCleanCachedOldRecords(
-        kLimitForegroundCleanOldRecords);
-  }
+// void KVEngine::delayFree(const OldDeleteRecord& old_delete_record) {
+//   old_records_cleaner_.PushToCache(old_delete_record);
+//   // To avoid too many cached old records pending clean, we try to clean
+//   cached
+//   // records while pushing new one
+//   if (!need_clean_records_ &&
+//       old_records_cleaner_.NumCachedOldRecords() > kMaxCachedOldRecords) {
+//     need_clean_records_ = true;
+//   } else {
+//     old_records_cleaner_.TryCleanCachedOldRecords(
+//         kLimitForegroundCleanOldRecords);
+//   }
+// }
+
+void KVEngine::delayFree(void* addr, TimeStampType ts) {
+  /// TODO: avoid deadlock in cleaner to help Free() deleted records
+  old_records_cleaner_.PushToPendingFree(addr, ts);
 }
 
 void KVEngine::backgroundOldRecordCleaner() {
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundOldRecordCleaner::NothingToDo",
                            nullptr);
+
   while (!bg_work_signals_.terminating) {
     CleanOutDated();
   }
@@ -2060,131 +1755,162 @@ void KVEngine::backgroundDramCleaner() {
   }
 }
 
-/*void KVEngine::CleanOutDated() {
-  int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
-  // std::deque<OldDeleteRecord> expired_record_queue;
-  // Iterate hash table
-  auto start_ts = std::chrono::system_clock::now();
-  auto slot_iter = hash_table_->GetSlotIterator();
-  while (slot_iter.Valid()) {
-    auto bucket_iter = slot_iter.Begin();
-    auto end_bucket_iter = slot_iter.End();
-    auto new_ts = version_controller_.GetCurrentTimestamp();
-    while (bucket_iter != end_bucket_iter) {
-      switch (bucket_iter->GetIndexType()) {
-        case PointerType::StringRecord: {
-          if (bucket_iter->IsTTLStatus() &&
-              bucket_iter->GetIndex().string_record->HasExpired()) {
-            hash_table_->UpdateEntryStatus(&(*bucket_iter),
-                                           HashEntryStatus::Expired);
-            // push expired cleaner
-            // expired_record_queue.push_back(OldDeleteRecord{
-            //     bucket_iter->GetIndex().ptr, &(*bucket_iter),
-            //     PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
-          }
-          break;
-        }
-        case PointerType::UnorderedCollection:
-        case PointerType::List:
-        case PointerType::Skiplist: {
-          // TODO(zhichen): check expired. and push into collection cleaner.
-          break;
-        }
-        default:
-          break;
-      }
-      bucket_iter++;
+Status KVEngine::destroyExpiredList(
+    List* list, std::deque<PendingFreeSpaceEntries>* list_space_entries) {
+  PendingFreeSpaceEntries space_entries;
+  space_entries.release_time = version_controller_.GetCurrentTimestamp();
+  Status s = listDestroy(list, [&](void* addr, TimeStampType ts) {
+    DataEntry* data_entry = static_cast<DataEntry*>(addr);
+    space_entries.entries.emplace_back(
+        SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
+                   data_entry->header.record_size});
+    space_entries.release_time = std::max(space_entries.release_time, ts);
+  });
+  if (s == Status::Ok && !space_entries.entries.empty()) {
+    list_space_entries->emplace_back(std::move(space_entries));
+    if (old_records_cleaner_.TryFreePendingSpace(list_space_entries->front())) {
+      list_space_entries->pop_front();
     }
-
-    // if (!expired_record_queue.empty() &&
-    //     (expired_record_queue.size() >= kMaxCachedOldRecords)) {
-    //   old_records_cleaner_.PushToGlobal(expired_record_queue);
-    //   expired_record_queue.clear();
-    // }
-    if (std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now() - start_ts)
-                .count() > interval ||
-        need_clean_records_) {
-      need_clean_records_ = true;
-      old_records_cleaner_.TryGlobalClean();
-      need_clean_records_ = false;
-      start_ts = std::chrono::system_clock::now();
-    }
-    slot_iter.Next();
   }
-  // if (!expired_record_queue.empty()) {
-  //   old_records_cleaner_.PushToGlobal(expired_record_queue);
-  //   expired_record_queue.clear();
-  // }
-}*/
+  return s;
+}
 
-static bool CheckEntryExpired(const HashEntry& hash_entry) {
+void KVEngine::deleteCollections() {
+  std::set<List*>::iterator list_it = lists_.begin();
+  while (list_it != lists_.end()) {
+    delete *list_it;
+    list_it = lists_.erase(list_it);
+  }
+
+  std::set<HashList*>::iterator hash_it = hash_lists_.begin();
+  while (hash_it != hash_lists_.end()) {
+    delete *hash_it;
+    hash_it = hash_lists_.erase(hash_it);
+  }
+}
+
+void KVEngine::backgroundDestroyCollections() {
+  std::deque<PendingFreeSpaceEntries> list_space_entries, hash_space_entries,
+      skiplist_space_entries;
+
+  while (!bg_work_signals_.terminating) {
+    std::vector<std::future<Status>> destroy_collections;
+    List* destroy_list{nullptr};
+    HashList* destroy_hash{nullptr};
+    auto now_time = TimeUtils::millisecond_time();
+    {
+      std::unique_lock<std::mutex> guard{lists_mu_};
+      if (!lists_.empty()) {
+        auto min_ttl_list = lists_.begin();
+        if ((*min_ttl_list)->GetExpireTime() <= now_time) {
+          destroy_list = (*min_ttl_list);
+        }
+      }
+    }
+
+    {
+      std::unique_lock<std::mutex> guard{hlists_mu_};
+      if (!hash_lists_.empty()) {
+        auto min_ttl_hash = hash_lists_.begin();
+        if ((*min_ttl_hash)->GetExpireTime() <= now_time) {
+          destroy_hash = (*min_ttl_hash);
+        }
+      }
+    }
+
+    if (destroy_list) {
+      auto list_key = destroy_list->Name();
+      auto guard2 = hash_table_->AcquireLock(list_key);
+      LookupResult result;
+      result.s = hash_table_->SearchForRead(
+          hash_table_->GetHint(list_key), list_key, RecordType::ListRecord,
+          &result.entry_ptr, &result.entry, nullptr);
+      // Check situation: a thread erase list from hash table, when the other
+      // thread insert the same name list.
+      if (result.s == Status::Ok &&
+          result.entry_ptr->GetIndex().list == destroy_list) {
+        hash_table_->Erase(result.entry_ptr);
+      }
+      destroy_collections.push_back(
+          std::async(std::launch::deferred, &KVEngine::destroyExpiredList, this,
+                     destroy_list, &list_space_entries));
+    }
+
+    if (destroy_hash) {
+      auto hash_key = destroy_hash->Name();
+      auto guard2 = hash_table_->AcquireLock(hash_key);
+      LookupResult result;
+      result.s = hash_table_->SearchForRead(
+          hash_table_->GetHint(hash_key), hash_key, RecordType::HashRecord,
+          &result.entry_ptr, &result.entry, nullptr);
+      // Check situation: a thread erase hash from hash table, when the other
+      // thread insert the same name hash.
+      if (result.s == Status::Ok &&
+          result.entry_ptr->GetIndex().hlist == destroy_hash) {
+        hash_table_->Erase(result.entry_ptr);
+      }
+      destroy_collections.push_back(
+          std::async(std::launch::deferred, &KVEngine::destroyExpiredHash, this,
+                     destroy_hash, &hash_space_entries));
+    }
+
+    // TODO: add skiplist
+    for (auto& destroy_collection : destroy_collections) {
+      destroy_collection.get();
+    }
+  }
+}
+
+static bool CheckExpired(const HashEntry& hash_entry) {
   switch (hash_entry.GetIndexType()) {
-    case PointerType::StringRecord:
-      return hash_entry.GetIndex().string_record->HasExpired();
-    case PointerType::Skiplist:
-      return hash_entry.GetIndex().skiplist->HasExpired();
-    case PointerType::List:
-      return hash_entry.GetIndex().p_unordered_collection->HasExpired();
+    case PointerType::StringRecord: {
+      return !hash_entry.IsExpiredStatus() &&
+             hash_entry.GetIndex().string_record->HasExpired();
+    }
+    case PointerType::Skiplist: {
+      return !hash_entry.IsExpiredStatus() &&
+             hash_entry.GetIndex().skiplist->HasExpired();
+    }
     default:
       return false;
   }
 }
 
+// Producer: Similar with `Producer-Cosumer` thread model.
 void KVEngine::CleanOutDated() {
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
-  PendingFreeSpaceEntries space_pending;
+  version_controller_.UpdatedOldestSnapshot();
+  TimeStampType oldest_snapshot_ts = version_controller_.OldestSnapshotTS();
+
+  // clean all old records
+  old_records_cleaner_.TryGlobalCleanDataRecords(oldest_snapshot_ts);
+
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
   auto slot_iter = hash_table_->GetSlotIterator();
   while (slot_iter.Valid()) {
-    TimeStampType new_ts =
-        version_controller_.GetLocalSnapshot().GetTimestamp();
-    version_controller_.UpdatedOldestSnapshot();
-    TimeStampType oldest_snapshot_ts = version_controller_.OldestSnapshotTS();
+    {  // Slot lock section
+      auto slot_lock(slot_iter.AcquireSlotLock());
+      auto bucket_iter = slot_iter.Begin();
+      auto end_bucket_iter = slot_iter.End();
+      // auto new_ts = version_controller_.GetCurrentTimestamp();
+      while (bucket_iter != end_bucket_iter) {
+        // Check expired.
+        if (CheckExpired(*bucket_iter)) {
+          hash_table_->UpdateEntryStatus(&(*bucket_iter), KeyStatus::Expired);
+        }
 
-    auto bucket_iter = slot_iter.Begin();
-    auto end_bucket_iter = slot_iter.End();
-
-    while (bucket_iter != end_bucket_iter) {
-      // If the record is expired, update its hash entry status.
-      if (bucket_iter->IsTTLStatus() && CheckEntryExpired(*bucket_iter)) {
-        hash_table_->UpdateEntryStatus(&(*bucket_iter),
-                                       HashEntryStatus::Expired);
+        // If no snapshot holds the record, we erased it from hash table.
+        if (bucket_iter->IsExpiredStatus() &&
+            bucket_iter->GetTimeStamp() < oldest_snapshot_ts) {
+          hash_table_->Erase(&(*bucket_iter));
+          thread_pool_.commit();
+        }
+        bucket_iter++;
       }
-
-      // deal with expired(deleted) record, check snapshot, and then purge them.
-      if (bucket_iter->IsExpiredStatus() &&
-          (bucket_iter->GetTimeStamp() < oldest_snapshot_ts)) {
-        space_pending.entries.emplace_back(
-            old_records_cleaner_.PurgeOutDatedRecord(&(*bucket_iter),
-                                                     slot_iter.GetSlotLock()));
-      }
-      bucket_iter++;
+      slot_iter.Next();
     }
-
-    if (!space_pending.entries.empty() &&
-        (space_pending.entries.size() >= kMaxCachedOldRecords)) {
-      space_pending.release_time = new_ts;
-      old_records_cleaner_.PushSpaceToGlobal(space_pending);
-      space_pending.entries.clear();
-    }
-
-    if (std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now() - start_ts)
-                .count() > interval ||
-        need_clean_records_) {
-      need_clean_records_ = true;
-      old_records_cleaner_.TryGlobalClean(oldest_snapshot_ts);
-      need_clean_records_ = false;
-      start_ts = std::chrono::system_clock::now();
-    }
-    slot_iter.Next();
   }
-  // if (!expired_record_queue.empty()) {
-  //   old_records_cleaner_.PushToGlobal(expired_record_queue);
-  //   expired_record_queue.clear();
-  // }
 }
 
 }  // namespace KVDK_NAMESPACE
@@ -2299,8 +2025,8 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   return Status::Ok;
 }
 
-Status KVEngine::ListInsert(std::unique_ptr<ListIterator> const& pos,
-                            StringView elem) {
+Status KVEngine::ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
+                                  StringView elem) {
   if (!CheckValueSize(elem)) {
     return Status::InvalidDataSize;
   }
@@ -2322,6 +2048,33 @@ Status KVEngine::ListInsert(std::unique_ptr<ListIterator> const& pos,
   }
 
   iter->Rep() = list->EmplaceBefore(
+      space, iter->Rep(), version_controller_.GetCurrentTimestamp(), "", elem);
+  return Status::Ok;
+}
+
+Status KVEngine::ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
+                                 StringView elem) {
+  if (!CheckValueSize(elem)) {
+    return Status::InvalidDataSize;
+  }
+  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos.get());
+  kvdk_assert(iter != nullptr, "Invalid iterator!");
+
+  std::unique_lock<std::recursive_mutex> guard;
+  List* list;
+  Status s = listFind(iter->Owner()->Name(), &list, false, guard);
+  if (s != Status::Ok) {
+    return s;
+  }
+  kvdk_assert(list == iter->Owner(), "Iterator outdated!");
+
+  auto space = pmem_allocator_->Allocate(
+      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
+  if (space.size == 0) {
+    return Status::PmemOverflow;
+  }
+
+  iter->Rep() = list->EmplaceAfter(
       space, iter->Rep(), version_controller_.GetCurrentTimestamp(), "", elem);
   return Status::Ok;
 }
@@ -2380,7 +2133,7 @@ Status KVEngine::ListSet(std::unique_ptr<ListIterator> const& pos,
   return Status::Ok;
 }
 
-std::unique_ptr<ListIterator> KVEngine::ListMakeIterator(StringView key) {
+std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(StringView key) {
   if (!CheckKeySize(key)) {
     return nullptr;
   }
@@ -2391,21 +2144,6 @@ std::unique_ptr<ListIterator> KVEngine::ListMakeIterator(StringView key) {
     return nullptr;
   }
   return std::unique_ptr<ListIteratorImpl>{new ListIteratorImpl{list}};
-}
-
-List* KVEngine::listCreate(StringView key) {
-  std::uint64_t ts = version_controller_.GetCurrentTimestamp();
-  CollectionIDType id = list_id_.fetch_add(1);
-  List* list = new List{};
-  auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
-                                         sizeof(CollectionIDType));
-  if (space.size == 0) {
-    return nullptr;
-  }
-  list->Init(pmem_allocator_.get(), space, ts, key, id);
-  std::lock_guard<std::mutex> guard{list_mu_};
-  lists_.emplace_back(list);
-  return list;
 }
 
 Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
@@ -2422,7 +2160,7 @@ Status KVEngine::listRegisterRecovered() {
   CollectionIDType max_id = 0;
   for (auto const& list : lists_) {
     auto guard = hash_table_->AcquireLock(list->Name());
-    Status s = registerCollection(list.get());
+    Status s = registerCollection(list);
     if (s != Status::Ok) {
       return s;
     }
@@ -2434,12 +2172,30 @@ Status KVEngine::listRegisterRecovered() {
   return Status::Ok;
 }
 
-Status KVEngine::listDestroy(List* list) {
+template <typename DelayFree>
+Status KVEngine::listDestroy(List* list, DelayFree delay_free) {
+  // Currently, every list operation locks the whole list
+  // and delay_free is not necessary.
+  // We use delay_free here so that we can enable some lockless
+  // operations in the future.
   while (list->Size() > 0) {
-    list->PopFront([&](DLRecord* elem) { purgeAndFree(elem); });
+    auto ts = version_controller_.GetCurrentTimestamp();
+    list->PopFront([&](DLRecord* elem) { delay_free(elem, ts); });
   }
-  list->Destroy([&](DLRecord* lrec) { purgeAndFree(lrec); });
+  auto ts = version_controller_.GetCurrentTimestamp();
+  {
+    std::unique_lock<std::mutex> guard(lists_mu_);
+    lists_.erase(list);
+  }
+  list->Destroy([&](DLRecord* lrec) { delay_free(lrec, ts); });
+  delete list;
   return Status::Ok;
+}
+
+Status KVEngine::listDestroy(List* list) {
+  // Lambda to help resolve symbol
+  return listDestroy(
+      list, [this](void* addr, TimeStampType ts) { delayFree(addr, ts); });
 }
 
 Status KVEngine::listFind(StringView key, List** list, bool init_nx,
@@ -2490,9 +2246,18 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
       return Status::Ok;
     }
     // No other thread have created one, create one here.
-    (*list) = listCreate(key);
-    if ((*list) == nullptr) {
+    std::uint64_t ts = version_controller_.GetCurrentTimestamp();
+    CollectionIDType id = list_id_.fetch_add(1);
+    auto space = pmem_allocator_->Allocate(sizeof(DLRecord) + key.size() +
+                                           sizeof(CollectionIDType));
+    if (space.size == 0) {
       return Status::PmemOverflow;
+    }
+    *list = new List{};
+    (*list)->Init(pmem_allocator_.get(), space, ts, key, id, nullptr);
+    {
+      std::lock_guard<std::mutex> guard2{lists_mu_};
+      lists_.emplace(*list);
     }
     guard = (*list)->AcquireLock();
     return registerCollection(*list);

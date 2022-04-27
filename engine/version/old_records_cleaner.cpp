@@ -8,6 +8,51 @@
 #include "../sorted_collection/skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
+
+void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
+  kvdk_assert(
+      static_cast<DLRecord*>(addr)->entry.meta.type &
+          (ListDirtyElem | ListDirtyRecord | HashDirtyElem | HashDirtyRecord),
+      "");
+  kvdk_assert(access_thread.id >= 0, "");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  std::lock_guard<SpinMutex> guard{tc.old_records_lock};
+  DataEntry* data_entry = static_cast<DataEntry*>(addr);
+  SpaceEntry entry{kv_engine_->pmem_allocator_->addr2offset_checked(addr),
+                   data_entry->header.record_size};
+  tc.pending_free_space_entries.push_back(PendingFreeSpaceEntry{entry, ts});
+
+  /// TODO: a thread may quit before all pending free entries are Free()d
+  /// GlobalClean() should collect those entries and Free() them.
+  maybeUpdateOldestSnapshot();
+  TimeStampType earliest_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  constexpr size_t kMaxFreePending = 16;
+  for (size_t i = 0; i < kMaxFreePending; i++) {
+    if (tc.pending_free_space_entries.empty()) {
+      break;
+    }
+    if (tc.pending_free_space_entries.front().release_time >= earliest_ts) {
+      break;
+    }
+    kv_engine_->pmem_allocator_->Free(
+        tc.pending_free_space_entries.front().entry);
+    tc.pending_free_space_entries.pop_front();
+  }
+}
+
+bool OldRecordsCleaner::TryFreePendingSpace(
+    const PendingFreeSpaceEntries& pending_free_space_entries) {
+  kv_engine_->version_controller_.UpdatedOldestSnapshot();
+  TimeStampType oldest_snapshot_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  if (pending_free_space_entries.release_time <= oldest_snapshot_ts) {
+    kv_engine_->pmem_allocator_->BatchFree(pending_free_space_entries.entries);
+    return true;
+  }
+  return false;
+}
+
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &
@@ -21,29 +66,24 @@ void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   tc.old_data_records.emplace_back(old_data_record);
 }
 
-void OldRecordsCleaner::PushToCache(const OldDeleteRecord& old_delete_record) {
-  kvdk_assert(
-      static_cast<DataEntry*>(old_delete_record.pmem_delete_record)->meta.type &
-          (StringDeleteRecord | SortedDeleteRecord | ExpirableRecordType),
-      "Wrong type in OldRecordsCleaner::Push");
-  kvdk_assert(access_thread.id >= 0,
-              "call OldRecordsCleaner::Push with uninitialized access thread");
-  kvdk_assert(access_thread.id >= 0,
-              "call OldRecordsCleaner::Push with uninitialized access thread");
-
-  auto& tc = cleaner_thread_cache_[access_thread.id];
-  std::lock_guard<SpinMutex> lg(tc.old_records_lock);
-  tc.old_delete_records.emplace_back(old_delete_record);
-}
-
-void OldRecordsCleaner::PushSpaceToGlobal(
-    const PendingFreeSpaceEntries& space_pending) {
-  global_pending_free_space_entries_.emplace_back(space_pending);
-}
-
 void OldRecordsCleaner::TryGlobalClean(TimeStampType oldest_snapshot_ts) {
+  clean_all_data_record_ts_ = oldest_snapshot_ts;
+  auto iter = global_pending_free_space_entries_.begin();
+  while (iter != global_pending_free_space_entries_.end()) {
+    if (iter->release_time < oldest_snapshot_ts) {
+      kv_engine_->pmem_allocator_->BatchFree(iter->entries);
+      iter++;
+    } else {
+      break;
+    }
+  }
+  global_pending_free_space_entries_.erase(
+      global_pending_free_space_entries_.begin(), iter);
+}
+
+void OldRecordsCleaner::TryGlobalCleanDataRecords(
+    TimeStampType oldest_snapshot_ts) {
   std::vector<SpaceEntry> space_to_free;
-  // records that can't be freed this time
   std::deque<OldDataRecord> data_record_refered;
 
   for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
@@ -67,24 +107,9 @@ void OldRecordsCleaner::TryGlobalClean(TimeStampType oldest_snapshot_ts) {
     }
   }
 
-  clean_all_data_record_ts_ = oldest_snapshot_ts;
-
-  auto iter = global_pending_free_space_entries_.begin();
-  while (iter != global_pending_free_space_entries_.end()) {
-    if (iter->release_time < oldest_snapshot_ts) {
-      kv_engine_->pmem_allocator_->BatchFree(iter->entries);
-      iter++;
-    } else {
-      break;
-    }
-  }
-  global_pending_free_space_entries_.erase(
-      global_pending_free_space_entries_.begin(), iter);
-
   if (space_to_free.size() > 0) {
     kv_engine_->pmem_allocator_->BatchFree(space_to_free);
   }
-
   global_old_data_records_.clear();
   global_old_data_records_.emplace_back(data_record_refered);
 }
@@ -94,44 +119,32 @@ void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
               "call KVEngine::handleThreadLocalPendingFreeRecords in a "
               "un-initialized access thread");
   auto& tc = cleaner_thread_cache_[access_thread.id];
-  if (tc.old_data_records.size() > 0 || tc.old_delete_records.size() > 0) {
-    maybeUpdateOldestSnapshot();
-    std::unique_lock<SpinMutex> ul(tc.old_records_lock);
-    for (int limit = num_limit_clean;
-         tc.old_delete_records.size() > 0 &&
-         tc.old_delete_records.front().release_time <
-             clean_all_data_record_ts_ &&
-         limit > 0;
-         limit--) {
-      // To avoid access invalid data, an old delete record can be freed only if
-      // no holding snapshot is older than its purging time
-      tc.pending_free_space_entries.emplace_back(PendingFreeSpaceEntry{
-          purgeOldDeleteRecord(tc.old_delete_records.front()),
-          kv_engine_->version_controller_.GetCurrentTimestamp()});
-      tc.old_delete_records.pop_front();
-    }
+  if (tc.old_data_records.empty()) {
+    return;
+  }
 
-    TimeStampType oldest_refer_ts =
-        kv_engine_->version_controller_.OldestSnapshotTS();
-    for (int limit = num_limit_clean;
-         tc.old_data_records.size() > 0 &&
-         tc.old_data_records.front().release_time < oldest_refer_ts &&
-         limit > 0;
-         limit--) {
-      kv_engine_->pmem_allocator_->Free(
-          purgeOldDataRecord(tc.old_data_records.front()));
-      tc.old_data_records.pop_front();
-    }
+  maybeUpdateOldestSnapshot();
+  std::unique_lock<SpinMutex> ul(tc.old_records_lock);
 
-    for (int limit = num_limit_clean;
-         tc.pending_free_space_entries.size() > 0 &&
-         tc.pending_free_space_entries.front().release_time < oldest_refer_ts &&
-         limit > 0;
-         limit--) {
-      kv_engine_->pmem_allocator_->Free(
-          tc.pending_free_space_entries.front().entry);
-      tc.pending_free_space_entries.pop_front();
-    }
+  TimeStampType oldest_refer_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+  for (int limit = num_limit_clean;
+       tc.old_data_records.size() > 0 &&
+       tc.old_data_records.front().release_time < oldest_refer_ts && limit > 0;
+       limit--) {
+    kv_engine_->pmem_allocator_->Free(
+        purgeOldDataRecord(tc.old_data_records.front()));
+    tc.old_data_records.pop_front();
+  }
+
+  for (int limit = num_limit_clean;
+       tc.pending_free_space_entries.size() > 0 &&
+       tc.pending_free_space_entries.front().release_time < oldest_refer_ts &&
+       limit > 0;
+       limit--) {
+    kv_engine_->pmem_allocator_->Free(
+        tc.pending_free_space_entries.front().entry);
+    tc.pending_free_space_entries.pop_front();
   }
 }
 
@@ -164,46 +177,6 @@ SpaceEntry OldRecordsCleaner::purgeOldDataRecord(
 
 SpaceEntry OldRecordsCleaner::PurgeOutDatedRecord(HashEntry* hash_entry,
                                                   const SpinMutex* key_lock) {
-  kvdk_assert(hash_entry != nullptr,
-              "hash index not stored in old delete record of string");
-  DataEntry* data_entry = static_cast<DataEntry*>(hash_entry->GetIndex().ptr);
-  switch (data_entry->meta.type) {
-    case StringDataRecord:
-    case StringDeleteRecord: {
-      kv_engine_->hash_table_->Erase(hash_entry);
-      // we don't need to purge a delete record
-      return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
-                        data_entry->header.record_size);
-    }
-    case SortedDeleteRecord: {
-      while (1) {
-        DLRecord* hash_indexed_pmem_record = nullptr;
-        SkiplistNode* dram_node = nullptr;
-        if (hash_entry->GetIndexType() == PointerType::DLRecord) {
-          hash_indexed_pmem_record = hash_entry->GetIndex().dl_record;
-        } else if (hash_entry->GetIndexType() == PointerType::SkiplistNode) {
-          dram_node = hash_entry->GetIndex().skiplist_node;
-          hash_indexed_pmem_record = dram_node->record;
-        }
-        if (!Skiplist::Purge(static_cast<DLRecord*>(hash_indexed_pmem_record),
-                             key_lock, dram_node,
-                             kv_engine_->pmem_allocator_.get(),
-                             kv_engine_->hash_table_.get())) {
-          continue;
-        } else {
-          kv_engine_->hash_table_->Erase(hash_entry);
-          break;
-        }
-      }
-      DataEntry* data_entry =
-          static_cast<DataEntry*>(hash_entry->GetIndex().ptr);
-      return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
-                        data_entry->header.record_size);
-    }
-    default: {
-      std::abort();
-    }
-  }
 }
 
 }  // namespace KVDK_NAMESPACE

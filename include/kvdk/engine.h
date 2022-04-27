@@ -13,18 +13,17 @@ extern "C" {
 #include <stdio.h>
 
 #include "status.h"
+#include "types.h"
 
 typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
 typedef struct KVDKWriteOptions KVDKWriteOptions;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
-typedef struct KVDKIterator KVDKIterator;
+typedef struct KVDKSortedIterator KVDKSortedIterator;
 typedef struct KVDKListIterator KVDKListIterator;
+typedef struct KVDKHashIterator KVDKHashIterator;
 typedef struct KVDKSnapshot KVDKSnapshot;
 typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
-// Used in KVDKModify, modify old_val and store result to new_val
-typedef void (*ModifyFunc)(const char* old_val, size_t old_val_len,
-                           char** new_val, size_t* new_val_len, void* args);
 
 KVDKConfigs* KVDKCreateConfigs(void);
 extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
@@ -34,17 +33,21 @@ extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
                            uint64_t pmem_segment_blocks,
                            uint32_t hash_bucket_size, uint64_t hash_bucket_num,
                            uint32_t num_buckets_per_slot);
+extern void KVDKConfigRegisterCompFunc(
+    KVDKConfigs* kv_config, const char* compara_name, size_t compara_len,
+    int (*compare)(const char* src, size_t src_len, const char* target,
+                   size_t target_len));
 extern void KVDKDestroyConfigs(KVDKConfigs* kv_config);
 
 extern KVDKWriteOptions* KVDKCreateWriteOptions(void);
 extern void KVDKDestroyWriteOptions(KVDKWriteOptions*);
 extern void KVDKWriteOptionsSetTTLTime(KVDKWriteOptions*, int64_t);
-extern void KVDKWriteOptionsSetKeyExist(KVDKWriteOptions*, unsigned char);
 
 extern KVDKSortedCollectionConfigs* KVDKCreateSortedCollectionConfigs();
 extern void KVDKSetSortedCollectionConfigs(KVDKSortedCollectionConfigs* configs,
                                            const char* comp_func_name,
-                                           size_t comp_func_len);
+                                           size_t comp_func_len,
+                                           int index_with_hashtable);
 extern void KVDKDestroySortedCollectionConfigs(
     KVDKSortedCollectionConfigs* configs);
 
@@ -85,17 +88,20 @@ extern KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
 extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
                              size_t key_len);
 
-// Modify value of existing "key" according to modify function, and update
-// existing value with modify result
+// Modify value of existing key in the engine
 //
-// modify: a function to modify existing value. old_val is existing value, store
-// modify result in new_val
+// * modify_func: customized function to modify existing value of key. See
+// definition of KVDKModifyFunc (types.h) for more details.
+// * modify_args: customized arguments of modify_func.
+// * free_func: function to free allocated space for new value in
+// modify_func, pall NULL if not need to free
 //
-// Return Ok if key exists and update old_val to new_value successful
+// Return Ok if modify success.
+// Return Abort if modify function abort modifying.
+// Return other non-Ok status on any error.
 extern KVDKStatus KVDKModify(KVDKEngine* engine, const char* key,
-                             size_t key_len, char** new_value,
-                             size_t* new_value_len, ModifyFunc modify,
-                             void* modify_args,
+                             size_t key_len, KVDKModifyFunc modify_func,
+                             void* modify_args, KVDKFreeFunc free_func,
                              const KVDKWriteOptions* write_option);
 
 // For Named Global Collection
@@ -110,21 +116,44 @@ extern KVDKStatus KVDKSortedGet(KVDKEngine* engine, const char* collection,
                                 size_t collection_len, const char* key,
                                 size_t key_len, size_t* val_len, char** val);
 
-// For Hash Collection
-extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* collection,
-                              size_t collection_len, const char* key,
-                              size_t key_len, const char* val, size_t val_len);
-extern KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* collection,
-                                 size_t collection_len, const char* key,
-                                 size_t key_len);
-extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* collection,
-                              size_t collection_len, const char* key,
-                              size_t key_len, size_t* val_len, char** val);
+/// Hash //////////////////////////////////////////////////////////////////////
+extern KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
+                                 size_t key_len, size_t* len);
+extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data,
+                              size_t key_len, const char* field_data,
+                              size_t field_len, char** val_data,
+                              size_t* val_len);
+extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* key_data,
+                              size_t key_len, const char* field_data,
+                              size_t field_len, const char* val_data,
+                              size_t val_len);
+extern KVDKStatus KVDKHashDelete(KVDKEngine* engine, const char* key_data,
+                                 size_t key_len, const char* field_data,
+                                 size_t field_len);
+extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
+                                 size_t key_len, const char* field_data,
+                                 size_t field_len, KVDKModifyFunc modify_func,
+                                 void* args, KVDKFreeFunc free_func);
+
+/// HashIterator //////////////////////////////////////////////////////////////
+extern KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
+                                                char const* key_data,
+                                                size_t key_len);
+extern void KVDKHashIteratorDestroy(KVDKHashIterator* iter);
+extern void KVDKHashIteratorPrev(KVDKHashIterator* iter);
+extern void KVDKHashIteratorNext(KVDKHashIterator* iter);
+extern void KVDKHashIteratorSeekToFirst(KVDKHashIterator* iter);
+extern void KVDKHashIteratorSeekToLast(KVDKHashIterator* iter);
+extern int KVDKHashIteratorIsValid(KVDKHashIterator* iter);
+extern void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** elem_data,
+                                   size_t* elem_len);
+extern void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** elem_data,
+                                     size_t* elem_len);
 
 /// List //////////////////////////////////////////////////////////////////////
 
 extern KVDKStatus KVDKListLength(KVDKEngine* engine, char const* key_data,
-                                 size_t key_len, size_t* sz);
+                                 size_t key_len, size_t* len);
 extern KVDKStatus KVDKListPushFront(KVDKEngine* engine, char const* key_data,
                                     size_t key_len, char const* elem_data,
                                     size_t elem_len);
@@ -137,8 +166,11 @@ extern KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
 extern KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
                                   size_t key_len, char** elem_data,
                                   size_t* elem_len);
-extern KVDKStatus KVDKListInsert(KVDKEngine* engine, KVDKListIterator* pos,
-                                 char const* elem_data, size_t elem_len);
+extern KVDKStatus KVDKListInsertBefore(KVDKEngine* engine,
+                                       KVDKListIterator* pos,
+                                       char const* elem_data, size_t elem_len);
+extern KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, KVDKListIterator* pos,
+                                      char const* elem_data, size_t elem_len);
 extern KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos);
 extern KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
                               char const* elem_data, size_t elem_len);
@@ -149,31 +181,40 @@ extern KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
 extern void KVDKListIteratorDestroy(KVDKListIterator* iter);
 extern void KVDKListIteratorPrev(KVDKListIterator* iter);
 extern void KVDKListIteratorNext(KVDKListIterator* iter);
+extern void KVDKListIteratorPrevElem(KVDKListIterator* iter,
+                                     char const* elem_data, size_t elem_len);
+extern void KVDKListIteratorNextElem(KVDKListIterator* iter,
+                                     char const* elem_data, size_t elem_len);
 extern void KVDKListIteratorSeekToFirst(KVDKListIterator* iter);
 extern void KVDKListIteratorSeekToLast(KVDKListIterator* iter);
+extern void KVDKListIteratorSeekToFirstElem(KVDKListIterator* iter,
+                                            char const* elem_data,
+                                            size_t elem_len);
+extern void KVDKListIteratorSeekToLastElem(KVDKListIterator* iter,
+                                           char const* elem_data,
+                                           size_t elem_len);
 extern void KVDKListIteratorSeekPos(KVDKListIterator* iter, long pos);
-extern void KVDKListIteratorSeekElem(KVDKListIterator* iter,
-                                     char const* elem_data, size_t elem_len);
 extern int KVDKListIteratorIsValid(KVDKListIterator* iter);
 extern void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
                                      size_t* elem_len);
 
-extern KVDKIterator* KVDKCreateUnorderedIterator(KVDKEngine* engine,
-                                                 const char* collection,
-                                                 size_t collection_len);
-extern KVDKIterator* KVDKCreateSortedIterator(KVDKEngine* engine,
-                                              const char* collection,
-                                              size_t collection_len,
-                                              KVDKSnapshot* snapshot);
-extern void KVDKDestroyIterator(KVDKEngine* engine, KVDKIterator* iterator);
-extern void KVDKIterSeekToFirst(KVDKIterator* iter);
-extern void KVDKIterSeekToLast(KVDKIterator* iter);
-extern void KVDKIterSeek(KVDKIterator* iter, const char* str, size_t str_len);
-extern void KVDKIterNext(KVDKIterator* iter);
-extern void KVDKIterPrev(KVDKIterator* iter);
-extern unsigned char KVDKIterValid(KVDKIterator* iter);
-extern char* KVDKIterKey(KVDKIterator* iter, size_t* key_len);
-extern char* KVDKIterValue(KVDKIterator* iter, size_t* val_len);
+extern KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
+                                                        const char* collection,
+                                                        size_t collection_len,
+                                                        KVDKSnapshot* snapshot);
+extern void KVDKSortedIteratorDestroy(KVDKEngine* engine,
+                                      KVDKSortedIterator* iterator);
+extern void KVDKSortedIteratorSeekToFirst(KVDKSortedIterator* iter);
+extern void KVDKKVDKSortedIteratorSeekToLast(KVDKSortedIterator* iter);
+extern void KVDKSortedIteratorSeek(KVDKSortedIterator* iter, const char* str,
+                                   size_t str_len);
+extern void KVDKSortedIteratorNext(KVDKSortedIterator* iter);
+extern void KVDKSortedIteratorPrev(KVDKSortedIterator* iter);
+extern unsigned char KVDKSortedIteratorValid(KVDKSortedIterator* iter);
+extern void KVDKSortedIteratorKey(KVDKSortedIterator* iter, char** key,
+                                  size_t* key_len);
+extern void KVDKSortedIteratorValue(KVDKSortedIterator* iter, char** value,
+                                    size_t* val_len);
 
 /* ttl_time is negetive or positive number, If ttl_time == INT64_MAX,
  * the key is persistent; If ttl_time <=0, the key is expired immediately.

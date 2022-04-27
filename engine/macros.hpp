@@ -8,18 +8,15 @@
   std::hex << std::setfill('0') << std::setw(sizeof(decltype(x)) * 2) << x \
            << std::dec
 
-#if KVDK_DEBUG_LEVEL > 0
+#ifndef KVDK_DEBUG_LEVEL
+#pragma GCC warning "KVDK_DEBUG_LEVEL not defined, defaulted to 0"
+#define KVDK_DEBUG_LEVEL 0
+#endif
+
 #define kvdk_assert(cond, msg)                                           \
   {                                                                      \
-    if (!(cond)) {                                                       \
+    if (KVDK_DEBUG_LEVEL > 0 && !(cond)) {                               \
       throw std::runtime_error{__FILE__ ":" + std::to_string(__LINE__) + \
                                ":\t" + std::string{msg}};                \
     }                                                                    \
   }
-#else
-#define kvdk_assert(cond, msg) \
-  {                            \
-    (void)(cond);              \
-    (void)(msg);               \
-  }
-#endif
