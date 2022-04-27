@@ -844,16 +844,20 @@ class GenericListBuilder final {
     }
 
     thread_local std::default_random_engine rengine{get_seed()};
-
-    // Reservoir algorithm to add middle points for potential use
-    auto cnt = mpoint_cnt.fetch_add(1U);
-    auto pos = cnt % NMiddlePoints;
-    auto k = cnt / NMiddlePoints;
-    // k-th point has posibility 1/(k+1) to replace previous point in reservoir
-    if (std::bernoulli_distribution{1.0 /
-                                    static_cast<double>(k + 1)}(rengine)) {
-      mpoints.at(pos) = elem;
+    thread_local size_t local_cnt = 0;
+    if (local_cnt++ % 1024 == 0) {
+      // Reservoir algorithm to add middle points
+      auto cnt = mpoint_cnt.fetch_add(1U);
+      auto pos = cnt % NMiddlePoints;
+      auto k = cnt / NMiddlePoints;
+      // k-th point has posibility 1/(k+1) to replace previous point in
+      // reservoir
+      if (std::bernoulli_distribution{1.0 /
+                                      static_cast<double>(k + 1)}(rengine)) {
+        mpoints.at(pos) = elem;
+      }
     }
+
     return true;
   }
 
