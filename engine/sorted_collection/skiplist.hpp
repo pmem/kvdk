@@ -197,13 +197,13 @@ class Skiplist : public Collection {
 
   // Set "key, value" to the skiplist
   //
-  // key_hash_hint_locked: hash table hint of the setting key, the lock of hint
-  // should already been locked
   // timestamp: kvdk engine timestamp of this operation
   //
   // Return Ok on success, with the writed pmem record, its dram node and
   // updated pmem record if it existed, return Fail if there is thread
   // contension
+  //
+  // Notice: the setting key should already been locked by engine
   WriteResult Set(const StringView& key, const StringView& value,
                   TimeStampType timestamp);
 
@@ -218,6 +218,8 @@ class Skiplist : public Collection {
   //
   // Return Ok on success, with the writed pmem delete record, its dram node and
   // deleted pmem record if existed, return Fail if there is thread contension
+  //
+  // Notice: the deleting key should already been locked by engine
   WriteResult Delete(const StringView& key, TimeStampType timestamp);
 
   // Seek position of "key" on both dram and PMem node in the skiplist, and
@@ -302,10 +304,10 @@ class Skiplist : public Collection {
   // purged_record:existing record to purge
   // dram_node:dram node of purging record, if it's a height 0 record, then
   // pass nullptr
-  // purging_record_lock: lock of purging_record, should be locked before call
-  // this function
   //
   // Return true on success, return false on fail.
+  //
+  // Notice: key of the purging record should already been locked by engine
   static bool Purge(DLRecord* purging_record, SkiplistNode* dram_node,
                     PMEMAllocator* pmem_allocator, HashTable* hash_table,
                     LockTable* lock_table);
@@ -317,10 +319,10 @@ class Skiplist : public Collection {
   // replacing_record: new reocrd to replace the older one
   // dram_node:dram node of old record, if it's a height 0 record, then
   // pass nullptr
-  // old_record_lock: lock of old_record, should be locked before call
-  // this function
   //
   // Return true on success, return false on fail.
+  //
+  // Notice: key of the replacing record should already been locked by engine
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
                       SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
                       HashTable* hash_table, LockTable* lock_table);
@@ -393,19 +395,17 @@ class Skiplist : public Collection {
     return linkDLRecord(prev, next, linking, pmem_allocator_.get());
   }
 
-  // lock skiplist position to insert "key" by locking
-  // prev DLRecord and manage the lock with "prev_record_lock".
+  // lock skiplist position to insert "key" by locking prev DLRecord and manage
+  // the lock with "prev_record_lock".
   //
-  // The "insert_key" should be already locked before call this function
+  // Return true on success, return false if linkage of prev_record and
+  // next_record changed before succefully acquire lock
   bool lockInsertPosition(const StringView& inserting_key,
                           DLRecord* prev_record, DLRecord* next_record,
                           LockTable::ULockType* prev_record_lock);
 
-  // lock skiplist position of "record" by locking its prev DLRecord and manage
-  // the lock with "prev_record_lock".
-  //
-  // The key of "record" itself should be already locked before call
-  // this function
+  // lock skiplist position of "record" by locking its prev DLRecord and the
+  // record itself
   static LockTable::GuardType lockRecordPosition(const DLRecord* record,
                                                  PMEMAllocator* pmem_allocator,
                                                  HashTable* hash_table,
