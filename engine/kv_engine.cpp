@@ -629,7 +629,9 @@ Status KVEngine::Recovery() {
   if (ret.s != Status::Ok) {
     return ret.s;
   }
-  list_id_ = ret.max_id + 1;
+  if (list_id_.load() <= ret.max_id) {
+    list_id_.store(ret.max_id + 1);
+  }
   skiplists_.swap(ret.rebuild_skiplits);
 
 #if KVDK_DEBUG_LEVEL > 0
@@ -1664,7 +1666,7 @@ Status KVEngine::listRegisterRecovered() {
   for (List* list : lists_) {
     auto guard = hash_table_->AcquireLock(list->Name());
     Status s = registerCollection(list);
-    if (s == Status::Ok) {
+    if (s != Status::Ok) {
       return s;
     }
     max_id = std::max(max_id, list->ID());

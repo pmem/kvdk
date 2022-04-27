@@ -280,7 +280,7 @@ Status KVEngine::hashListRegisterRecovered() {
   for (HashList* hlist : hash_lists_) {
     auto guard = hash_table_->AcquireLock(hlist->Name());
     Status s = registerCollection(hlist);
-    if (s == Status::Ok) {
+    if (s != Status::Ok) {
       return s;
     }
     max_id = std::max(max_id, hlist->ID());
