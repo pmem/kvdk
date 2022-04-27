@@ -241,6 +241,22 @@ class KVEngine : public Engine {
     hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
   }
 
+  // Lockless. It's up to caller to lock the HashTable
+  template <typename CollectionType>
+  Status registerCollection(CollectionType* coll) {
+    RecordType type = collectionType<CollectionType>();
+    auto ret = lookupKey<true>(coll->Name(), type);
+    if (ret.s == Status::Ok) {
+      kvdk_assert(false, "Collection already registered!");
+      return Status::Abort;
+    }
+    if (ret.s != Status::NotFound) {
+      return ret.s;
+    }
+    insertKeyOrElem(ret, coll->Name(), type, coll);
+    return Status::Ok;
+  }
+
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
     static_assert(std::is_same<CollectionType, Skiplist>::value ||

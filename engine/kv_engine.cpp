@@ -1662,17 +1662,11 @@ Status KVEngine::listRestoreList(DLRecord* pmp_record) {
 Status KVEngine::listRegisterRecovered() {
   CollectionIDType max_id = 0;
   for (List* list : lists_) {
-    auto key = list->Name();
-    auto guard = hash_table_->AcquireLock(key);
-    auto ret = lookupKey<true>(key, RecordType::ListRecord);
-    kvdk_assert(ret.s == Status::NotFound, "");
-    if (ret.s == Status::Ok) {
-      return Status::Abort;
+    auto guard = hash_table_->AcquireLock(list->Name());
+    Status s = registerCollection(list);
+    if (s == Status::Ok) {
+      return s;
     }
-    if (ret.s != Status::NotFound) {
-      return ret.s;
-    }
-    insertKeyOrElem(ret, key, RecordType::ListRecord, list);
     max_id = std::max(max_id, list->ID());
   }
   auto old = list_id_.load();

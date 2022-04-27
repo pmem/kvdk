@@ -87,7 +87,7 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
     return Status::TooManyAccessThreads;
   }
 
-  constexpr bool init_nx = (caller == hashModifyImplCaller::HashModify ||
+  constexpr bool may_set = (caller == hashModifyImplCaller::HashModify ||
                             caller == hashModifyImplCaller::HashSet);
   constexpr bool hash_get = (caller == hashModifyImplCaller::HashGet);
 
@@ -97,7 +97,7 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
   // none exists. HashModify() and HashSet() will always initialize a new
   // HashList.
   HashList* hlist;
-  Status s = hashListFind(key, &hlist, init_nx);
+  Status s = hashListFind(key, &hlist, may_set);
   if (s != Status::Ok) {
     // Fail to create List for HashModify() or HashSet(),
     // or NotFound for HashDelete() or HashGet()
@@ -110,8 +110,7 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
     guard = hash_table_->AcquireLock(internal_key);
   }
 
-  LookupResult result =
-      lookupElem<!hash_get>(internal_key, RecordType::HashElem);
+  LookupResult result = lookupElem<may_set>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
@@ -191,18 +190,18 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
     return nullptr;
   }
 
-  auto token = version_controller_.GetLocalSnapshotHolder();
+  auto snapshot = version_controller_.GetGlobalSnapshotToken();
   HashList* hlist;
   Status s = hashListFind(key, &hlist, false);
   if (s != Status::Ok) {
     return nullptr;
   }
-  return std::unique_ptr<HashIteratorImpl>{new HashIteratorImpl{
-      hlist, version_controller_.GetGlobalSnapshotToken()}};
+  return std::unique_ptr<HashIteratorImpl>{
+      new HashIteratorImpl{hlist, std::move(snapshot)}};
 }
 
 Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
-  // Callers should acquire the access token.
+  // Callers should acquire the access token or snapshot.
 
   // Lockless lookup for the collection
   {
@@ -248,8 +247,8 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
       hash_lists_.emplace(*hlist);
     }
     insertKeyOrElem(result, key, RecordType::HashRecord, *hlist);
-    return Status::Ok;
   }
+  return Status::Ok;
 }
 
 Status KVEngine::hashListRestoreElem(DLRecord* rec) {
@@ -279,17 +278,11 @@ Status KVEngine::hashListRestoreList(DLRecord* rec) {
 Status KVEngine::hashListRegisterRecovered() {
   CollectionIDType max_id = 0;
   for (auto& hlist : hash_lists_) {
-    auto key = hlist->Name();
-    auto guard = hash_table_->AcquireLock(key);
-    LookupResult ret = lookupKey<true>(key, RecordType::HashRecord);
-    kvdk_assert(ret.s == Status::NotFound, "");
-    if (ret.s == Status::Ok) {
-      return Status::Abort;
+    auto guard = hash_table_->AcquireLock(hlist->Name());
+    Status s = registerCollection(hlist);
+    if (s == Status::Ok) {
+      return s;
     }
-    if (ret.s != Status::NotFound) {
-      return ret.s;
-    }
-    insertKeyOrElem(ret, key, RecordType::HashRecord, hlist);
     max_id = std::max(max_id, hlist->ID());
   }
   auto old = list_id_.load();
