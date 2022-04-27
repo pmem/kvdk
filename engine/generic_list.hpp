@@ -638,23 +638,18 @@ class GenericListBuilder final {
   //    Discard the unlinked node
   // 3. Replace Failure
   //    a. Node not linked from its prev and next purged directly
-  //    b. Node not linked from prev but linked from next is linked from prev
-  //       This node is older
-  //    c. Node linked from prev but not linked from next is saved to broken
-  //       This node is newer
+  //    b. Node not linked from prev but linked from next, this node is older
+  //       and is saved to broken
   //       After all nodes repaired, this node is unlinked from prev and next
   //       and can be purged
+  //    c. Node linked from prev but not linked from next, this node is newer
+  //       and is repaired into List
   // 4. Insertion/Erase Failure
   //    a. Node not linked from its prev and next purged directly
-  //    b. Node not linked from prev but linked from next is linked from prev
-  //    c. Node linked from prev but not linked from next is saved to broken
-  //       After all nodes repaired, this node is unlinked from prev and next
-  //       and can be purged
+  //    b. Node linked from prev but not linked from next is repaired into List
   // In conclusion,
-  // All unsuccessful Emplace/Push/Replace(before fully linked) will rollback
-  // All unsuccessful Erase/Pop will be finished
-  // This way, we avoid generating duplicate First/Last elements, which will
-  // complicate the recovery procedure
+  //    After a node is half linked into List, it will be repaired into List.
+  //    This prevents dirty reads from iterator.
 
  public:
   explicit GenericListBuilder(PMEMAllocator* a,
@@ -926,16 +921,18 @@ class GenericListBuilder final {
         // Normal Middle
         return true;
       } else {
-        // Interrupted Replace/Emplace(newer), discard
+        // Interrupted Replace/Emplace(newer),
+        // repair newer record into List
+        addressOf(elem->next)->PersistNextNT(offsetOf(elem));
         return false;
       }
     } else {
       if (offsetOf(elem) == addressOf(elem->next)->prev) {
-        // Interrupted Replace/Emplace(older), repair into List
-        addressOf(elem->prev)->PersistNextNT(offsetOf(elem));
-        return true;
+        // Interrupted Replace/Emplace(older),
+        // discard older record
+        return false;
       } else {
-        // Un-purged, discard
+        // Not linked into List, discard
         return false;
       }
     }
