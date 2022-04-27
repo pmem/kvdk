@@ -1150,7 +1150,7 @@ void KVEngine::delayFree(const OutdatedCollection& outdated_collection) {
 
 void KVEngine::delayFree(DLRecord* addr) {
   /// TODO: avoid deadlock in cleaner to help Free() deleted records
-  old_records_cleaner_.PushToPendingFree(addr, get_timestamp());
+  old_records_cleaner_.PushToPendingFree(addr, getTimestamp());
 }
 
 void KVEngine::directFree(DLRecord* addr) {
@@ -1625,7 +1625,7 @@ Status KVEngine::ListSet(std::unique_ptr<ListIterator> const& pos,
   if (space.size == 0) {
     return Status::PmemOverflow;
   }
-  iter->Rep() = list->Replace(space, iter->Rep(), get_timestamp(), "", elem,
+  iter->Rep() = list->Replace(space, iter->Rep(), getTimestamp(), "", elem,
                               [&](DLRecord* rec) { delayFree(rec); });
   return Status::Ok;
 }

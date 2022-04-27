@@ -426,7 +426,7 @@ class KVEngine : public Engine {
 
   void directFree(DLRecord* addr);
 
-  TimeStampType get_timestamp() {
+  TimeStampType getTimestamp() {
     return version_controller_.GetCurrentTimestamp();
   }
 

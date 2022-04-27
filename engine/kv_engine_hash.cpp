@@ -240,7 +240,7 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
       return Status::PmemOverflow;
     }
     *hlist = new HashList{};
-    (*hlist)->Init(pmem_allocator_.get(), space, get_timestamp(), key,
+    (*hlist)->Init(pmem_allocator_.get(), space, getTimestamp(), key,
                    list_id_.fetch_add(1), hash_list_locks_.get());
     {
       std::lock_guard<std::mutex> guard2{hlists_mu_};
