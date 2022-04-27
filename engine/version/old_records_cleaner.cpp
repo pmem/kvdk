@@ -395,7 +395,7 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
         Skiplist::Purge(
             static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
             dram_node, kv_engine_->pmem_allocator_.get(),
-            kv_engine_->hash_table_.get(), kv_engine_->skiplist_locks_.get());
+            kv_engine_->skiplist_locks_.get());
 
         if (hash_entry_ref) {
           // Erase hash entry after successfully purge record

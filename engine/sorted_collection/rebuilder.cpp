@@ -151,7 +151,6 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       if (valid_version_record != header_record) {
         Skiplist::Replace(header_record, valid_version_record, nullptr,
                           kv_engine_->pmem_allocator_.get(),
-                          kv_engine_->hash_table_.get(),
                           kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(header_record);
       }
@@ -314,14 +313,12 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
       if (valid_version_record == nullptr) {
         Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
-                        kv_engine_->hash_table_.get(),
                         kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(next_record);
       } else {
         if (valid_version_record != next_record) {
           Skiplist::Replace(next_record, valid_version_record, nullptr,
                             kv_engine_->pmem_allocator_.get(),
-                            kv_engine_->hash_table_.get(),
                             kv_engine_->skiplist_locks_.get());
           addUnlinkedRecord(next_record);
         }
@@ -465,7 +462,6 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     if (valid_version_record == nullptr) {
       // purge invalid version record from list
       Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
-                      kv_engine_->hash_table_.get(),
                       kv_engine_->skiplist_locks_.get());
       addUnlinkedRecord(next_record);
     } else {
@@ -473,7 +469,6 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         // repair linkage of checkpoint version
         Skiplist::Replace(next_record, valid_version_record, nullptr,
                           kv_engine_->pmem_allocator_.get(),
-                          kv_engine_->hash_table_.get(),
                           kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(next_record);
       }

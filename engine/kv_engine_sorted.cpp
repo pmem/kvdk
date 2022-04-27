@@ -98,8 +98,7 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection_name, value);
     Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
-                      pmem_allocator_.get(), hash_table_.get(),
-                      skiplist_locks_.get());
+                      pmem_allocator_.get(), skiplist_locks_.get());
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderDelete, skiplist,
                         PointerType::Skiplist);
     ul.unlock();

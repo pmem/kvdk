@@ -73,7 +73,7 @@ Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
       pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
       header->Key(), header->Value(), expired_time);
   Skiplist::Replace(header, pmem_record, HeaderNode(), pmem_allocator_,
-                    hash_table_, record_locks_);
+                    record_locks_);
   ret.existing_record = header;
   ret.dram_node = HeaderNode();
   ret.write_record = pmem_record;
@@ -266,7 +266,6 @@ Status Skiplist::CheckIndex() {
 
 LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
                                                   PMEMAllocator* pmem_allocator,
-                                                  HashTable* hash_table,
                                                   LockTable* lock_table) {
   while (1) {
     PMemOffsetType record_offset = pmem_allocator->addr2offset_checked(record);
@@ -278,15 +277,15 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
     auto guard = lock_table->MultiGuard({prev_offset, record_offset});
 
     // Check if the list has changed before we successfully acquire lock.
-    // As the record is already locked, so we don't need to check its next
-    if (record->prev != prev_offset ||
-        prev->next != pmem_allocator->addr2offset(record)) {
+    if (record->prev != prev_offset || prev->next != record_offset ||
+        record->next != next_offset || next->prev != record_offset) {
       continue;
     }
 
     kvdk_assert(record->prev == prev_offset, "");
     kvdk_assert(record->next == next_offset, "");
-    kvdk_assert(next->prev == pmem_allocator->addr2offset(record), "");
+    kvdk_assert(next->prev == record_offset, "");
+    kvdk_assert(prev->next == record_offset, "");
 
     return guard;
   }
@@ -372,9 +371,8 @@ Skiplist::WriteResult Skiplist::Set(const StringView& key,
 
 bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
                        SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
-                       HashTable* hash_table, LockTable* lock_table) {
-  auto guard =
-      lockRecordPosition(old_record, pmem_allocator, hash_table, lock_table);
+                       LockTable* lock_table) {
+  auto guard = lockRecordPosition(old_record, pmem_allocator, lock_table);
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
@@ -398,10 +396,8 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
 }
 
 bool Skiplist::Purge(DLRecord* purging_record, SkiplistNode* dram_node,
-                     PMEMAllocator* pmem_allocator, HashTable* hash_table,
-                     LockTable* lock_table) {
-  auto guard = lockRecordPosition(purging_record, pmem_allocator, hash_table,
-                                  lock_table);
+                     PMEMAllocator* pmem_allocator, LockTable* lock_table) {
+  auto guard = lockRecordPosition(purging_record, pmem_allocator, lock_table);
 
   // Modify linkage to drop deleted record
   PMemOffsetType purging_offset = pmem_allocator->addr2offset(purging_record);
@@ -871,8 +867,7 @@ void Skiplist::destroyRecords() {
       std::lock_guard<SpinMutex> lg(*hash_hint.spin);
       // We need to purge destroyed records one by one in case engine crashed
       // during destroy
-      Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, hash_table_,
-                      record_locks_);
+      Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, record_locks_);
 
       if (IndexWithHashtable()) {
         HashEntry* entry_ptr = nullptr;

@@ -186,8 +186,8 @@ class HashTable {
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
         hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(max_access_threads),
         pmem_allocator_(pmem_allocator),
+        dram_allocator_(max_access_threads),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)),
         slots_(hash_bucket_num / num_buckets_per_slot),
