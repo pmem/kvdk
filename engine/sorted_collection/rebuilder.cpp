@@ -148,13 +148,10 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       std::lock_guard<SpinMutex> lg(*hint.spin);
 
       if (valid_version_record != header_record) {
-        bool success = Skiplist::Replace(
-            header_record, valid_version_record, nullptr,
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
-            kv_engine_->skiplist_locks_.get());
-        kvdk_assert(success,
-                    "SortedCollectionRebuilder::initRebuildLists run in single "
-                    "thread, so no lock contention should happen");
+        Skiplist::Replace(header_record, valid_version_record, nullptr,
+                          kv_engine_->pmem_allocator_.get(),
+                          kv_engine_->hash_table_.get(),
+                          kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(header_record);
       }
 
@@ -312,54 +309,45 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       StringView internal_key = next_record->Key();
 
       auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
-      while (true) {
-        std::lock_guard<SpinMutex> lg(*hash_hint.spin);
-        DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
-        if (valid_version_record == nullptr) {
-          if (!Skiplist::Purge(next_record, nullptr,
-                               kv_engine_->pmem_allocator_.get(),
-                               kv_engine_->hash_table_.get(),
-                               kv_engine_->skiplist_locks_.get())) {
-            continue;
-          }
+      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+      DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
+      if (valid_version_record == nullptr) {
+        Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
+                        kv_engine_->hash_table_.get(),
+                        kv_engine_->skiplist_locks_.get());
+        addUnlinkedRecord(next_record);
+      } else {
+        if (valid_version_record != next_record) {
+          Skiplist::Replace(next_record, valid_version_record, nullptr,
+                            kv_engine_->pmem_allocator_.get(),
+                            kv_engine_->hash_table_.get(),
+                            kv_engine_->skiplist_locks_.get());
           addUnlinkedRecord(next_record);
-        } else {
-          if (valid_version_record != next_record) {
-            if (!Skiplist::Replace(next_record, valid_version_record, nullptr,
-                                   kv_engine_->pmem_allocator_.get(),
-                                   kv_engine_->hash_table_.get(),
-                                   kv_engine_->skiplist_locks_.get())) {
-              continue;
-            }
-            addUnlinkedRecord(next_record);
-          }
-
-          assert(valid_version_record != nullptr);
-          SkiplistNode* dram_node =
-              Skiplist::NewNodeBuild(valid_version_record);
-          if (dram_node != nullptr) {
-            cur_node->RelaxedSetNext(1, dram_node);
-            dram_node->RelaxedSetNext(1, nullptr);
-            cur_node = dram_node;
-          }
-
-          if (build_hash_index) {
-            if (dram_node) {
-              s = insertHashIndex(internal_key, dram_node,
-                                  PointerType::SkiplistNode);
-            } else {
-              s = insertHashIndex(internal_key, valid_version_record,
-                                  PointerType::DLRecord);
-            }
-
-            if (s != Status::Ok) {
-              return s;
-            }
-          }
-
-          cur_record = valid_version_record;
         }
-        break;
+
+        assert(valid_version_record != nullptr);
+        SkiplistNode* dram_node = Skiplist::NewNodeBuild(valid_version_record);
+        if (dram_node != nullptr) {
+          cur_node->RelaxedSetNext(1, dram_node);
+          dram_node->RelaxedSetNext(1, nullptr);
+          cur_node = dram_node;
+        }
+
+        if (build_hash_index) {
+          if (dram_node) {
+            s = insertHashIndex(internal_key, dram_node,
+                                PointerType::SkiplistNode);
+          } else {
+            s = insertHashIndex(internal_key, valid_version_record,
+                                PointerType::DLRecord);
+          }
+
+          if (s != Status::Ok) {
+            return s;
+          }
+        }
+
+        cur_record = valid_version_record;
       }
     } else {
       // link end node of this segment to adjacent segment
@@ -471,63 +459,54 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 
     StringView internal_key = next_record->Key();
     auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
-    while (true) {
-      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
-      DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
-      if (valid_version_record == nullptr) {
-        // purge invalid version record from list
-        if (!Skiplist::Purge(next_record, nullptr,
-                             kv_engine_->pmem_allocator_.get(),
-                             kv_engine_->hash_table_.get(),
-                             kv_engine_->skiplist_locks_.get())) {
-          asm volatile("pause");
-          continue;
-        }
+    std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+    DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
+    if (valid_version_record == nullptr) {
+      // purge invalid version record from list
+      Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
+                      kv_engine_->hash_table_.get(),
+                      kv_engine_->skiplist_locks_.get());
+      addUnlinkedRecord(next_record);
+    } else {
+      if (valid_version_record != next_record) {
+        // repair linkage of checkpoint version
+        Skiplist::Replace(next_record, valid_version_record, nullptr,
+                          kv_engine_->pmem_allocator_.get(),
+                          kv_engine_->hash_table_.get(),
+                          kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(next_record);
-      } else {
-        if (valid_version_record != next_record) {
-          // repair linkage of checkpoint version
-          if (!Skiplist::Replace(next_record, valid_version_record, nullptr,
-                                 kv_engine_->pmem_allocator_.get(),
-                                 kv_engine_->hash_table_.get(),
-                                 kv_engine_->skiplist_locks_.get())) {
-            continue;
-          }
-          addUnlinkedRecord(next_record);
-        }
-
-        // Rebuild dram node
-        assert(valid_version_record != nullptr);
-        SkiplistNode* dram_node = Skiplist::NewNodeBuild(valid_version_record);
-
-        if (dram_node != nullptr) {
-          auto height = dram_node->Height();
-          for (uint8_t i = 1; i <= height; i++) {
-            splice.prevs[i]->RelaxedSetNext(i, dram_node);
-            dram_node->RelaxedSetNext(i, nullptr);
-            splice.prevs[i] = dram_node;
-          }
-        }
-
-        // Rebuild hash index
-        if (skiplist->IndexWithHashtable()) {
-          Status s;
-          if (dram_node) {
-            s = insertHashIndex(internal_key, dram_node,
-                                PointerType::SkiplistNode);
-          } else {
-            s = insertHashIndex(internal_key, valid_version_record,
-                                PointerType::DLRecord);
-          }
-
-          if (s != Status::Ok) {
-            return s;
-          }
-        }
-
-        splice.prev_pmem_record = valid_version_record;
       }
-      break;
+
+      // Rebuild dram node
+      assert(valid_version_record != nullptr);
+      SkiplistNode* dram_node = Skiplist::NewNodeBuild(valid_version_record);
+
+      if (dram_node != nullptr) {
+        auto height = dram_node->Height();
+        for (uint8_t i = 1; i <= height; i++) {
+          splice.prevs[i]->RelaxedSetNext(i, dram_node);
+          dram_node->RelaxedSetNext(i, nullptr);
+          splice.prevs[i] = dram_node;
+        }
+      }
+
+      // Rebuild hash index
+      if (skiplist->IndexWithHashtable()) {
+        Status s;
+        if (dram_node) {
+          s = insertHashIndex(internal_key, dram_node,
+                              PointerType::SkiplistNode);
+        } else {
+          s = insertHashIndex(internal_key, valid_version_record,
+                              PointerType::DLRecord);
+        }
+
+        if (s != Status::Ok) {
+          return s;
+        }
+      }
+
+      splice.prev_pmem_record = valid_version_record;
     }
   }
   return Status::Ok;

@@ -75,7 +75,6 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
   if (s != Status::Ok) {
     return s;
   }
-destroy_impl : {
   auto hint = hash_table_->GetHint(collection_name);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
@@ -98,11 +97,9 @@ destroy_impl : {
         space_entry.size, new_ts, SortedHeaderDelete,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection_name, value);
-    if (!Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
-                           pmem_allocator_.get(), hash_table_.get(),
-                           skiplist_locks_.get())) {
-      goto destroy_impl;
-    }
+    Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
+                      pmem_allocator_.get(), hash_table_.get(),
+                      skiplist_locks_.get());
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeaderDelete, skiplist,
                         PointerType::Skiplist);
     ul.unlock();
@@ -113,7 +110,6 @@ destroy_impl : {
     ret.s = Status::Ok;
   }
   return ret.s;
-}
 }
 
 Status KVEngine::SortedGet(const StringView collection,
@@ -234,8 +230,6 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
 
     auto ret = skiplist->Delete(user_key, new_ts);
     switch (ret.s) {
-      case Status::Fail:
-        continue;
       case Status::PmemOverflow:
         return ret.s;
       case Status::Ok:
@@ -285,8 +279,6 @@ Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
     TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
     auto ret = skiplist->Set(user_key, value, new_ts);
     switch (ret.s) {
-      case Status::Fail:
-        continue;
       case Status::PmemOverflow:
         break;
       case Status::Ok:

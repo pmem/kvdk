@@ -919,7 +919,6 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   }
 
   ExpireTimeType expired_time = TimeUtils::TTLToExpireTime(ttl_time, base_time);
-start_expire : {
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
@@ -962,9 +961,6 @@ start_expire : {
         auto new_ts = snapshot_holder.Timestamp();
         auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
             expired_time, new_ts);
-        if (ret.s == Status::Fail) {
-          goto start_expire;
-        }
 
         if (ret.s == Status::Ok) {
           delayFree(OldDataRecord{ret.existing_record, new_ts});
@@ -1000,7 +996,6 @@ start_expire : {
     }
   }
   return res.s;
-}
 }
 }  // namespace KVDK_NAMESPACE
 
