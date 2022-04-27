@@ -924,7 +924,7 @@ class GenericListBuilder final {
         // Interrupted Replace/Emplace(newer),
         // repair newer record into List
         addressOf(elem->next)->PersistPrevNT(offsetOf(elem));
-        return false;
+        return true;
       }
     } else {
       if (offsetOf(elem) == addressOf(elem->next)->prev) {
