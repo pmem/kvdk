@@ -224,46 +224,35 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
 
   auto hint = hash_table_->GetHint(collection_key);
 
-  while (1) {
-    std::unique_lock<SpinMutex> ul(*hint.spin);
-    TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
 
-    auto ret = skiplist->Delete(user_key, new_ts);
-    switch (ret.s) {
-      case Status::PmemOverflow:
-        return ret.s;
-      case Status::Ok:
-        ul.unlock();
-        if (ret.write_record != nullptr) {
-          kvdk_assert(
-              ret.existing_record != nullptr &&
-                  ret.existing_record->entry.meta.type == SortedElem,
-              "Wrong existing record type while insert a delete reocrd for "
-              "sorted collection");
-          delayFree(OldDataRecord{ret.existing_record, new_ts});
-          if (ret.hash_entry_ptr != nullptr) {
-            // delete record indexed by hash table
-            delayFree(OldDeleteRecord(ret.write_record, ret.hash_entry_ptr,
-                                      PointerType::HashEntry, new_ts,
-                                      hint.spin));
-          } else if (ret.dram_node != nullptr) {
-            // no hash index, by a skiplist node points to delete record
-            delayFree(OldDeleteRecord(ret.write_record, ret.dram_node,
-                                      PointerType::SkiplistNode, new_ts,
-                                      hint.spin));
-          } else {
-            // delete record nor pointed by hash entry nor skiplist node
-            delayFree(OldDeleteRecord(ret.write_record, nullptr,
-                                      PointerType::Empty, new_ts, hint.spin));
-          }
-        }
-        return ret.s;
-      default:
-        std::abort();
+  auto ret = skiplist->Delete(user_key, new_ts);
+  ul.unlock();
+  if (ret.s == Status::Ok) {
+    if (ret.write_record != nullptr) {
+      kvdk_assert(ret.existing_record != nullptr &&
+                      ret.existing_record->entry.meta.type == SortedElem,
+                  "Wrong existing record type while insert a delete reocrd for "
+                  "sorted collection");
+      delayFree(OldDataRecord{ret.existing_record, new_ts});
+      if (ret.hash_entry_ptr != nullptr) {
+        // delete record indexed by hash table
+        delayFree(OldDeleteRecord(ret.write_record, ret.hash_entry_ptr,
+                                  PointerType::HashEntry, new_ts, hint.spin));
+      } else if (ret.dram_node != nullptr) {
+        // no hash index, by a skiplist node points to delete record
+        delayFree(OldDeleteRecord(ret.write_record, ret.dram_node,
+                                  PointerType::SkiplistNode, new_ts,
+                                  hint.spin));
+      } else {
+        // delete record nor pointed by hash entry nor skiplist node
+        delayFree(OldDeleteRecord(ret.write_record, nullptr, PointerType::Empty,
+                                  new_ts, hint.spin));
+      }
     }
-    break;
   }
-  return Status::Ok;
+  return ret.s;
 }
 
 Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
@@ -274,26 +263,18 @@ Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
   }
 
   auto hint = hash_table_->GetHint(collection_key);
-  while (1) {
-    std::unique_lock<SpinMutex> ul(*hint.spin);
-    TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
-    auto ret = skiplist->Set(user_key, value, new_ts);
-    switch (ret.s) {
-      case Status::PmemOverflow:
-        break;
-      case Status::Ok:
-        if (ret.existing_record &&
-            ret.existing_record->entry.meta.type == SortedElem) {
-          ul.unlock();
-          delayFree(OldDataRecord{ret.existing_record, new_ts});
-        }
-        break;
-      default:
-        std::abort();  // never shoud reach
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
+  auto ret = skiplist->Set(user_key, value, new_ts);
+
+  if (ret.s == Status::Ok) {
+    if (ret.existing_record &&
+        ret.existing_record->entry.meta.type == SortedElem) {
+      ul.unlock();
+      delayFree(OldDataRecord{ret.existing_record, new_ts});
     }
-    return ret.s;
   }
-  return Status::Ok;
+  return ret.s;
 }
 
 Status KVEngine::restoreSortedHeader(DLRecord* header) {
