@@ -928,9 +928,17 @@ class GenericListBuilder final {
       }
     }
     auto CountElems = [&](std::vector<DLRecord*> const& work_load) {
+      std::unordered_map<CollectionIDType, size_t> cache{1024};
       for (DLRecord* rec : work_load) {
         while (true) {
-          primers.at(Collection::ExtractID(rec->Key())).size.fetch_add(1U);
+          CollectionIDType id = Collection::ExtractID(rec->Key());
+          ++cache[id];
+          if (cache.load_factor() > 0.7) {
+            for (auto const& pair : cache) {
+              primers.at(pair.first).size.fetch_add(pair.second);
+            }
+            cache.clear();
+          }
           if (rec->next == NullPMemOffset) {
             break;
           }
@@ -939,6 +947,9 @@ class GenericListBuilder final {
             break;
           }
         }
+      }
+      for (auto const& pair : cache) {
+        primers.at(pair.first).size.fetch_add(pair.second);
       }
     };
     std::vector<std::thread> workers;
