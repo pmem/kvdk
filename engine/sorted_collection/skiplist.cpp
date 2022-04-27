@@ -269,12 +269,11 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
                                                   HashTable* hash_table,
                                                   LockTable* lock_table) {
   while (1) {
-    DLRecord* prev =
-        pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
-    DLRecord* next = pmem_allocator->offset2addr<DLRecord>(record->next);
     PMemOffsetType record_offset = pmem_allocator->addr2offset_checked(record);
-    PMemOffsetType prev_offset = pmem_allocator->addr2offset_checked(prev);
-    PMemOffsetType next_offset = pmem_allocator->addr2offset_checked(next);
+    PMemOffsetType prev_offset = record->prev;
+    PMemOffsetType next_offset = record->next;
+    DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
+    DLRecord* next = pmem_allocator->offset2addr<DLRecord>(next_offset);
 
     auto guard = lock_table->MultiGuard({prev_offset, record_offset});
 
