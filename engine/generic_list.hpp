@@ -26,6 +26,9 @@ namespace KVDK_NAMESPACE {
 
 constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 
+template <RecordType, RecordType>
+class GenericListBuilder;
+
 template <RecordType ListType, RecordType DataType>
 class GenericList final : public Collection {
  private:
@@ -49,9 +52,9 @@ class GenericList final : public Collection {
  public:
   // Deletion of a node in GenericList takes two steps.
   // First, the node is unlinked from list and markAsDirty(),
-  // which can be detected by Iterator::is_dirty().
-  // Iterator may go to a is_dirty() node by operator++() or operator--().
-  // It's safe to read data on this is_dirty() node.
+  // which can be detected by Iterator::dirty().
+  // Iterator may go to a dirty() node by operator++() or operator--().
+  // It's safe to read data on this dirty() node.
   // After any Iterator or lockless read threads can no longer access
   // this unlinked node, which is guaranteed by the snapshot system,
   // the node is Free()d by PMemAllocator.
@@ -172,18 +175,18 @@ class GenericList final : public Collection {
     //  A Normal Record
     void debug_check() const {
 #if KVDK_DEBUG_LEVEL > 0
-      if (owner == nullptr || curr == nullptr) {
+      if (curr == nullptr) {
         return;
       }
       kvdk_assert(Collection::ExtractID(curr->Key()) == owner->ID(), "");
       kvdk_assert(
-          (curr->entry.meta.type == DataType && curr->Validate()) || is_dirty(),
+          (curr->entry.meta.type == DataType && curr->Validate()) || dirty(),
           "");
 #endif  // KVDK_DEBUG_LEVEL > 0
     }
 
-    bool is_dirty() const {
-      return (curr != nullptr && owner->IsRecordDirty(curr));
+    bool dirty() const {
+      return (curr != nullptr && owner->isRecordDirty(curr));
     }
   };
 
@@ -214,6 +217,16 @@ class GenericList final : public Collection {
     lock_table = lt;
   }
 
+  // Destroy the PMem record of an Empty List.
+  template <typename DelayFree>
+  void Destroy(DelayFree delay_free) {
+    kvdk_assert(list_record != nullptr, "Destroy() uninitialized.");
+    kvdk_assert(Size() == 0, "Only empty list can be Destroy()ed");
+    kvdk_assert(!isRecordDirty(list_record), "double Destroy()!");
+    markRecordAsDirty(list_record);
+    delay_free(list_record);
+  }
+
   // Restore a List already on PMem with its ListRecord, first and last element
   // and size This function is used by GenericListBuilder to restore the List.
   void Restore(PMEMAllocator* a, DLRecord* list_rec, DLRecord* fi, DLRecord* la,
@@ -228,16 +241,6 @@ class GenericList final : public Collection {
     last = la;
     sz.store(n);
     lock_table = lt;
-  }
-
-  // Destroy the PMem record of an Empty List.
-  template <typename DelayFree>
-  void Destroy(DelayFree delay_free) {
-    kvdk_assert(list_record != nullptr, "Destroy() uninitialized.");
-    kvdk_assert(Size() == 0, "Only empty list can be Destroy()ed");
-    kvdk_assert(!IsRecordDirty(list_record), "double Destroy()!");
-    MarkRecordAsDirty(list_record);
-    delay_free(list_record);
   }
 
   LockType* Mutex() { return &mu; }
@@ -285,42 +288,6 @@ class GenericList final : public Collection {
       }
       return iter;
     }
-  }
-
-  static bool IsRecordDirty(DLRecord* rec) {
-    auto& entry = rec->entry;
-    return (entry.meta.type == RecordType::ListDirtyElem) ||
-           (entry.meta.type == RecordType::HashDirtyElem) ||
-           (entry.meta.type == RecordType::ListDirtyRecord) ||
-           (entry.meta.type == RecordType::HashDirtyRecord);
-  }
-
-  static void MarkRecordAsDirty(DLRecord* rec) {
-    auto& entry = rec->entry;
-    switch (entry.meta.type) {
-      case RecordType::ListElem: {
-        entry.meta.type = RecordType::ListDirtyElem;
-        break;
-      }
-      case RecordType::HashElem: {
-        entry.meta.type = RecordType::HashDirtyElem;
-        break;
-      }
-      case RecordType::ListRecord: {
-        entry.meta.type = RecordType::ListDirtyRecord;
-        break;
-      }
-      case RecordType::HashRecord: {
-        entry.meta.type = RecordType::HashDirtyRecord;
-        break;
-      }
-      default: {
-        kvdk_assert(false, "Unsupported!");
-        std::abort();
-      }
-    }
-    _mm_clwb(&entry.meta.type);
-    _mm_mfence();
   }
 
   template <typename DelayFree>
@@ -431,7 +398,7 @@ class GenericList final : public Collection {
                 "Wrong List!");
     Iterator prev{next};
     --prev;
-    kvdk_assert(!next.is_dirty() && !prev.is_dirty(), "");
+    kvdk_assert(!next.dirty() && !prev.dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -471,7 +438,7 @@ class GenericList final : public Collection {
     Iterator next{pos};
     ++next;
 
-    kvdk_assert(!prev.is_dirty() && !next.is_dirty(), "");
+    kvdk_assert(!prev.dirty() && !next.dirty(), "");
 
     kvdk_assert(Size() >= 1, "");
     if (prev == Head() && next == Tail()) {
@@ -480,17 +447,17 @@ class GenericList final : public Collection {
     } else if (prev == Head()) {
       // Erase Front()
       first = next.Address();
-      next->PersistPrevNT(kNullPMemOffset);
+      next->PersistPrevNT(NullPMemOffset);
     } else if (next == Tail()) {
       // Erase Back()
       last = prev.Address();
-      prev->PersistNextNT(kNullPMemOffset);
+      prev->PersistNextNT(NullPMemOffset);
     } else {
       // Reverse procedure of emplace_impl() between two elements
       next->PersistPrevNT(prev.Offset());
       prev->PersistNextNT(next.Offset());
     }
-    MarkRecordAsDirty(pos.Address());
+    markRecordAsDirty(pos.Address());
     delay_free(pos.Address());
     --sz;
     return next;
@@ -505,7 +472,7 @@ class GenericList final : public Collection {
     --prev;
     Iterator next{pos};
     ++next;
-    kvdk_assert(!prev.is_dirty() && !next.is_dirty(), "");
+    kvdk_assert(!prev.dirty() && !next.dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -527,7 +494,7 @@ class GenericList final : public Collection {
       prev->PersistNextNT(space.offset);
       next->PersistPrevNT(space.offset);
     }
-    MarkRecordAsDirty(pos.Address());
+    markRecordAsDirty(pos.Address());
     delay_free(pos.Address());
     return Iterator{this, record};
   }
@@ -570,6 +537,44 @@ class GenericList final : public Collection {
       kvdk_assert(++prev_copy == pos, "");
       break;
     }
+  }
+
+  friend class GenericListBuilder<ListType, DataType>;
+
+  static void markRecordAsDirty(DLRecord* rec) {
+    auto& entry = rec->entry;
+    switch (entry.meta.type) {
+      case RecordType::ListElem: {
+        entry.meta.type = RecordType::ListDirtyElem;
+        break;
+      }
+      case RecordType::HashElem: {
+        entry.meta.type = RecordType::HashDirtyElem;
+        break;
+      }
+      case RecordType::ListRecord: {
+        entry.meta.type = RecordType::ListDirtyRecord;
+        break;
+      }
+      case RecordType::HashRecord: {
+        entry.meta.type = RecordType::HashDirtyRecord;
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unsupported!");
+        std::abort();
+      }
+    }
+    _mm_clwb(&entry.meta.type);
+    _mm_mfence();
+  }
+
+  static bool isRecordDirty(DLRecord* rec) {
+    auto& entry = rec->entry;
+    return (entry.meta.type == RecordType::ListDirtyElem) ||
+           (entry.meta.type == RecordType::HashDirtyElem) ||
+           (entry.meta.type == RecordType::ListDirtyRecord) ||
+           (entry.meta.type == RecordType::HashDirtyRecord);
   }
 };
 
@@ -760,7 +765,7 @@ class GenericListBuilder final {
           break;
         }
       }
-      List::MarkRecordAsDirty(elem);
+      List::markRecordAsDirty(elem);
       free_func(elem);
     }
   }

@@ -645,7 +645,7 @@ Status KVEngine::Recovery() {
   sorted_rebuilder_.reset(nullptr);
 
   list_builder_->RebuildLists();
-  list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
+  list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
   s = listRegisterRecovered();
   if (s != Status::Ok) {
     return s;
@@ -654,7 +654,7 @@ Status KVEngine::Recovery() {
   GlobalLogger.Info("Rebuild Lists done\n");
 
   hash_list_builder_->RebuildLists();
-  hash_list_builder_->CleanBrokens([&](DLRecord* elem) { purgeAndFree(elem); });
+  hash_list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
   s = hashListRegisterRecovered();
   if (s != Status::Ok) {
     return s;
@@ -1149,9 +1149,14 @@ void KVEngine::delayFree(const OutdatedCollection& outdated_collection) {
   }
 }
 
-void KVEngine::delayFree(void* addr, TimeStampType ts) {
+void KVEngine::delayFree(DLRecord* addr) {
   /// TODO: avoid deadlock in cleaner to help Free() deleted records
-  old_records_cleaner_.PushToPendingFree(addr, ts);
+  old_records_cleaner_.PushToPendingFree(addr, get_timestamp());
+}
+
+void KVEngine::directFree(DLRecord* addr) {
+  pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
+                                   addr->entry.header.record_size});
 }
 
 void KVEngine::backgroundOldRecordCleaner() {
@@ -1486,7 +1491,7 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
   kvdk_assert(list->Size() != 0, "");
   auto sw = list->Front()->Value();
   elem->assign(sw.data(), sw.size());
-  list->PopFront([&](DLRecord* rec) { purgeAndFree(rec); });
+  list->PopFront([&](DLRecord* rec) { delayFree(rec); });
   return Status::Ok;
 }
 
@@ -1508,7 +1513,7 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   kvdk_assert(list->Size() != 0, "");
   auto sw = list->Back()->Value();
   elem->assign(sw.data(), sw.size());
-  list->PopBack([&](DLRecord* rec) { purgeAndFree(rec); });
+  list->PopBack([&](DLRecord* rec) { delayFree(rec); });
   return Status::Ok;
 }
 
@@ -1592,7 +1597,7 @@ Status KVEngine::ListErase(std::unique_ptr<ListIterator> const& pos) {
   kvdk_assert(iter->Valid(), "Trying to erase invalid iterator!");
 
   iter->Rep() =
-      list->Erase(iter->Rep(), [&](DLRecord* rec) { purgeAndFree(rec); });
+      list->Erase(iter->Rep(), [&](DLRecord* rec) { delayFree(rec); });
   return Status::Ok;
 }
 
@@ -1622,9 +1627,8 @@ Status KVEngine::ListSet(std::unique_ptr<ListIterator> const& pos,
   if (space.size == 0) {
     return Status::PmemOverflow;
   }
-  iter->Rep() = list->Replace(space, iter->Rep(),
-                              version_controller_.GetCurrentTimestamp(), "",
-                              elem, [&](DLRecord* rec) { purgeAndFree(rec); });
+  iter->Rep() = list->Replace(space, iter->Rep(), get_timestamp(), "", elem,
+                              [&](DLRecord* rec) { delayFree(rec); });
   return Status::Ok;
 }
 

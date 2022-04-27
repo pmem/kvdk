@@ -150,7 +150,7 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
         DLRecord* old_rec = result.entry.GetIndex().dl_record;
         auto pos = hlist->MakeIterator(old_rec);
         hlist->ReplaceWithLock(space, pos, ts, field, new_value,
-                               [&](DLRecord* rec) { delayFree(rec, ts); });
+                               [&](DLRecord* rec) { delayFree(rec); });
       }
       insertKeyOrElem(result, internal_key, RecordType::HashElem, addr);
       return Status::Ok;
@@ -161,9 +161,8 @@ Status KVEngine::hashModifyImpl(StringView key, StringView field,
                   "");
       if (result.s == Status::Ok) {
         removeKeyOrElem(result);
-        hlist->EraseWithLock(
-            result.entry.GetIndex().dl_record,
-            [&](DLRecord* rec) { delayFree(rec, token.Timestamp()); });
+        hlist->EraseWithLock(result.entry.GetIndex().dl_record,
+                             [&](DLRecord* rec) { delayFree(rec); });
       }
       return result.s;
     }
@@ -242,8 +241,7 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
       return Status::PmemOverflow;
     }
     *hlist = new HashList{};
-    (*hlist)->Init(pmem_allocator_.get(), space,
-                   version_controller_.GetCurrentTimestamp(), key,
+    (*hlist)->Init(pmem_allocator_.get(), space, get_timestamp(), key,
                    list_id_.fetch_add(1), hash_list_locks_.get());
     {
       std::lock_guard<std::mutex> guard2{hlists_mu_};

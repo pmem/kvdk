@@ -406,7 +406,13 @@ class KVEngine : public Engine {
 
   void delayFree(const OutdatedCollection&);
 
-  void delayFree(void* addr, TimeStampType ts);
+  void delayFree(DLRecord* addr);
+
+  void directFree(DLRecord* addr);
+
+  TimeStampType get_timestamp() {
+    return version_controller_.GetCurrentTimestamp();
+  }
 
   void removeSkiplist(CollectionIDType id) {
     std::lock_guard<std::mutex> lg(skiplists_mu_);
