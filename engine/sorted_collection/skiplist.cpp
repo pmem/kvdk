@@ -34,9 +34,8 @@ Skiplist::~Skiplist() {
 }
 
 Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-                   Comparator comparator,
-                   std::shared_ptr<PMEMAllocator> pmem_allocator,
-                   std::shared_ptr<HashTable> hash_table, LockTable* lock_table,
+                   Comparator comparator, PMEMAllocator* pmem_allocator,
+                   HashTable* hash_table, LockTable* lock_table,
                    bool index_with_hashtable)
     : Collection(name, id),
       comparator_(comparator),
@@ -73,8 +72,8 @@ Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
       space_entry.size, timestamp, SortedHeader,
       pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
       header->Key(), header->Value(), expired_time);
-  Skiplist::Replace(header, pmem_record, HeaderNode(), pmem_allocator_.get(),
-                    hash_table_.get(), record_locks_);
+  Skiplist::Replace(header, pmem_record, HeaderNode(), pmem_allocator_,
+                    hash_table_, record_locks_);
   ret.existing_record = header;
   ret.dram_node = HeaderNode();
   ret.write_record = pmem_record;
@@ -873,8 +872,8 @@ void Skiplist::destroyRecords() {
       std::lock_guard<SpinMutex> lg(*hash_hint.spin);
       // We need to purge destroyed records one by one in case engine crashed
       // during destroy
-      Skiplist::Purge(to_destroy, nullptr, pmem_allocator_.get(),
-                      hash_table_.get(), record_locks_);
+      Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, hash_table_,
+                      record_locks_);
 
       if (IndexWithHashtable()) {
         HashEntry* entry_ptr = nullptr;

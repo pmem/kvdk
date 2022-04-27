@@ -136,8 +136,9 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       skiplist =
           std::
               make_shared<Skiplist>(header_record, collection_name, id,
-                                    comparator, kv_engine_->pmem_allocator_,
-                                    kv_engine_->hash_table_,
+                                    comparator,
+                                    kv_engine_->pmem_allocator_.get(),
+                                    kv_engine_->hash_table_.get(),
                                     kv_engine_->skiplist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
         std::lock_guard<SpinMutex> lg(lock_);
@@ -162,7 +163,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
-            kv_engine_->pmem_allocator_, kv_engine_->hash_table_,
+            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
             kv_engine_->skiplist_locks_.get(), false);
         {
           std::lock_guard<SpinMutex> lg(lock_);
@@ -171,7 +172,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       } else {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
-            kv_engine_->pmem_allocator_, kv_engine_->hash_table_,
+            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
             kv_engine_->skiplist_locks_.get(), s_configs.index_with_hashtable);
         {
           std::lock_guard<SpinMutex> lg(lock_);

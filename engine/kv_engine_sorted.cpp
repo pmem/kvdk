@@ -55,7 +55,7 @@ Status KVEngine::CreateSortedCollection(
 
     auto skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
-        pmem_allocator_, hash_table_, skiplist_locks_.get(),
+        pmem_allocator_.get(), hash_table_.get(), skiplist_locks_.get(),
         s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
     hash_table_->Insert(hint, ret.entry_ptr, SortedHeader, skiplist.get(),

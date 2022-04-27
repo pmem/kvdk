@@ -166,8 +166,8 @@ class Skiplist : public Collection {
   };
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-           Comparator comparator, std::shared_ptr<PMEMAllocator> pmem_allocator,
-           std::shared_ptr<HashTable> hash_table, LockTable* lock_table,
+           Comparator comparator, PMEMAllocator* pmem_allocator,
+           HashTable* hash_table, LockTable* lock_table,
            bool index_with_hashtable);
 
   ~Skiplist();
@@ -392,7 +392,7 @@ class Skiplist : public Collection {
                            PMEMAllocator* pmem_allocator);
 
   inline void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
-    return linkDLRecord(prev, next, linking, pmem_allocator_.get());
+    return linkDLRecord(prev, next, linking, pmem_allocator_);
   }
 
   // lock skiplist position to insert "key" by locking prev DLRecord and manage
@@ -412,7 +412,7 @@ class Skiplist : public Collection {
                                                  LockTable* lock_table);
 
   LockTable::GuardType lockRecordPosition(const DLRecord* record) {
-    return lockRecordPosition(record, pmem_allocator_.get(), hash_table_.get(),
+    return lockRecordPosition(record, pmem_allocator_, hash_table_,
                               record_locks_);
   }
 
@@ -448,8 +448,11 @@ class Skiplist : public Collection {
   void destroyNodes();
 
   Comparator comparator_ = compare_string_view;
-  std::shared_ptr<PMEMAllocator> pmem_allocator_;
-  std::shared_ptr<HashTable> hash_table_;
+  PMEMAllocator* pmem_allocator_;
+  // TODO: use specified hash table for each skiplist
+  HashTable* hash_table_;
+  // locks to protect modification of records
+  LockTable* record_locks_;
   bool index_with_hashtable_;
   bool deleted_;
   SkiplistNode* header_;
@@ -464,8 +467,6 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
-  // locks to protect linkage modification
-  LockTable* record_locks_;
 };
 
 // A helper struct for locating a skiplist position
