@@ -444,6 +444,11 @@ class Skiplist : public Collection {
 
   void destroyNodes();
 
+  static LockTable::HashType lockIndex(DLRecord* record) {
+    kvdk_assert(record != nullptr, "");
+    return XXH3_64bits(record, sizeof(DLRecord*));
+  }
+
   Comparator comparator_ = compare_string_view;
   PMEMAllocator* pmem_allocator_;
   // TODO: use specified hash table for each skiplist
