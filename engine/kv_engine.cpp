@@ -161,7 +161,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
                             ThreadManager(configs_.max_access_threads));
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.hash_bucket_size,
-      configs_.num_buckets_per_slot, pmem_allocator_,
+      configs_.num_buckets_per_slot, pmem_allocator_.get(),
       configs_.max_access_threads));
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
       thread_manager_ == nullptr) {
@@ -593,6 +593,7 @@ Status KVEngine::Recovery() {
     return s;
   }
 
+  skiplist_locks_.reset(new LockTable{1UL << 20});
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
@@ -918,7 +919,6 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   }
 
   ExpireTimeType expired_time = TimeUtils::TTLToExpireTime(ttl_time, base_time);
-start_expire : {
   HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   std::unique_lock<SpinMutex> ul(*hint.spin);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
@@ -960,10 +960,7 @@ start_expire : {
       case PointerType::Skiplist: {
         auto new_ts = snapshot_holder.Timestamp();
         auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
-            expired_time, new_ts, hint.spin);
-        if (ret.s == Status::Fail) {
-          goto start_expire;
-        }
+            expired_time, new_ts);
 
         if (ret.s == Status::Ok) {
           delayFree(OldDataRecord{ret.existing_record, new_ts});
@@ -999,7 +996,6 @@ start_expire : {
     }
   }
   return res.s;
-}
 }
 }  // namespace KVDK_NAMESPACE
 

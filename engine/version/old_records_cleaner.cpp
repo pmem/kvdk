@@ -337,7 +337,6 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
                         data_entry->header.record_size);
     }
     case SortedElemDelete: {
-    handle_sorted_delete_record : {
       std::unique_lock<SpinMutex> ul(*old_delete_record.key_lock);
       // We check linkage to determine if the delete record already been
       // unlinked by updates. We only check the next linkage, as the record is
@@ -393,14 +392,12 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           }
         }
 
-        if (!Skiplist::Purge(
-                static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
-                old_delete_record.key_lock, dram_node,
-                kv_engine_->pmem_allocator_.get(),
-                kv_engine_->hash_table_.get())) {
-          // lock conflict, retry
-          goto handle_sorted_delete_record;
-        } else if (hash_entry_ref) {
+        Skiplist::Purge(
+            static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
+            dram_node, kv_engine_->pmem_allocator_.get(),
+            kv_engine_->skiplist_locks_.get());
+
+        if (hash_entry_ref) {
           // Erase hash entry after successfully purge record
           kv_engine_->hash_table_->Erase(hash_entry_ref);
         }
@@ -408,7 +405,6 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
       return SpaceEntry(
           kv_engine_->pmem_allocator_->addr2offset_checked(data_entry),
           data_entry->header.record_size);
-    }
     }
     default: {
       std::abort();
