@@ -6,6 +6,7 @@ target_link_libraries(dbtest PUBLIC engine gtest gtest_main)
 # C API test
 add_executable(c_api_test 
                c_api_test_list.cpp
+               c_api_test_hash.cpp
                )
 target_link_libraries(c_api_test PUBLIC engine gtest gtest_main)
 

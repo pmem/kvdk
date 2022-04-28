@@ -109,7 +109,7 @@ class KVEngine : public Engine {
   };
 
   // Used by test case.
-  const std::shared_ptr<HashTable>& GetHashTable() { return hash_table_; }
+  HashTable* GetHashTable() { return hash_table_.get(); }
 
   void CleanOutDated();
 
@@ -207,59 +207,36 @@ class KVEngine : public Engine {
   //
   // Store a copy of hash entry in LookupResult::entry, and a pointer to the
   // hash entry in LookupResult::entry_ptr
-  // If allocate_hash_entry_if_missing is true and key not found, then store
+  // If may_insert is true and key not found, then store
   // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
   //
   // return status:
   // Status::NotFound is key is not found.
   // Status::WrongType if type_mask does not match.
   // Status::Expired if key has been expired
-  // Status::MemoryOverflow if allocate_hash_entry_if_missing is true but
+  // Status::MemoryOverflow if may_insert is true but
   // failed to allocate new hash entry
   // Status::Ok on success.
   //
-  // Notice: key should be locked if set allocate_hash_entry_if_missing to true
-  template <bool allocate_hash_entry_if_missing>
+  // Notice: key should be locked if set may_insert to true
+  template <bool may_insert>
   LookupResult lookupKey(StringView key, uint16_t type_mask);
 
-  template <bool allocate_hash_entry_if_missing>
-  LookupResult lookupImpl(StringView key, uint16_t type_mask) {
-    LookupResult result;
-    auto hint = hash_table_->GetHint(key);
-    if (!allocate_hash_entry_if_missing) {
-      result.s = hash_table_->SearchForRead(
-          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-    } else {
-      result.s = hash_table_->SearchForWrite(
-          hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-    }
-    return result;
-  }
+  template <bool may_insert>
+  LookupResult lookupElem(StringView key, uint16_t type_mask);
 
-  // Lockless, caller should lock the key aforehand.
-  // Remove key from HashTable. It's up to caller to handle the erased key
-  // Returns Status::Ok if key is found and removed,
-  // Returns Status::NotFound or Status::Outdated as is returnd by
-  // SearchForRead()
-  LookupResult removeKey(StringView key) {
-    return removeImpl(key, PrimaryRecordType);
-  }
+  template <bool may_insert>
+  LookupResult lookupImpl(StringView key, uint16_t type_mask);
 
-  LookupResult removeImpl(StringView key, uint16_t type_mask) {
-    LookupResult result;
-    auto hint = hash_table_->GetHint(key);
-    result.s = hash_table_->SearchForRead(
-        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-    if (result.s != Status::Ok) {
-      return result;
-    }
-    hash_table_->Erase(result.entry_ptr);
-    return result;
+  void removeKeyOrElem(LookupResult ret) {
+    kvdk_assert(ret.s == Status::Ok || ret.s == Status::Outdated, "");
+    hash_table_->Erase(ret.entry_ptr);
   }
 
   // ret must be return value of lookupImpl<true> or lookupKey<true>
-  void insertImpl(LookupResult ret, StringView key, RecordType type,
-                  void* addr) {
+  // key must be the key in previous lookupKey function call.
+  void insertKeyOrElem(LookupResult ret, StringView key, RecordType type,
+                       void* addr) {
     auto hint = hash_table_->GetHint(key);
     hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
   }
@@ -343,19 +320,15 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status registerCollection(CollectionType* coll) {
     RecordType type = collectionType<CollectionType>();
-    auto ret = lookupKey<true>(coll->Name(), PrimaryRecordType);
-    if (ret.s != Status::NotFound) {
-      if (ret.s == Status::WrongType) {
-        return ret.s;
-      }
+    auto ret = lookupKey<true>(coll->Name(), type);
+    if (ret.s == Status::Ok) {
       kvdk_assert(false, "Collection already registered!");
       return Status::Abort;
     }
-
-    PointerType ptype = pointerType(type);
-    kvdk_assert(ptype != PointerType::Invalid, "Invalid pointer type!");
-    hash_table_->Insert(hash_table_->GetHint(coll->Name()), ret.entry_ptr, type,
-                        coll, ptype);
+    if (ret.s != Status::NotFound) {
+      return ret.s;
+    }
+    insertKeyOrElem(ret, coll->Name(), type, coll);
     return Status::Ok;
   }
 
@@ -410,13 +383,22 @@ class KVEngine : public Engine {
 
   Status listRegisterRecovered();
 
-  template <typename DelayFree>
-  Status listDestroy(List* list, DelayFree delay_free);
-
+  // Should only be called when the List is no longer
+  // accessible to any other thread.
   Status listDestroy(List* list);
 
   /// Hash helper funtions
   Status hashListFind(StringView key, HashList** hlist, bool init_nx);
+
+  // CallBack should have signature
+  // ModifyOperation(StringView const* old, StringView* new, void* args).
+  // for ModifyOperation::Delete and Noop, return Status of the field.
+  // for ModifyOperation::Write, return the Status of the Write.
+  // for ModifyOperation::Abort, return Status::Abort.
+  enum class hashElemOpImplCaller { HashGet, HashSet, HashModify, HashDelete };
+  template <hashElemOpImplCaller caller, typename CallBack>
+  Status hashElemOpImpl(StringView key, StringView field, CallBack cb,
+                        void* cb_args);
 
   Status hashListRestoreElem(DLRecord* rec);
 
@@ -424,18 +406,10 @@ class KVEngine : public Engine {
 
   Status hashListRegisterRecovered();
 
-  template <typename DelayFree>
-  Status hashListDestroy(HashList* list, DelayFree delay_free);
-
-  Status hashListDestroy(HashList* list);
-
-  // ModifyFunction should have signature
-  // ModifyOperation(StringView const* old, StringView* new, void* args).
-  // delete_impl is true only when HashDelete calls it.
-  template <typename ModifyFunction>
-  Status hashModifyImpl(StringView key, StringView field,
-                        ModifyFunction modify_func, void* cb_args,
-                        bool delete_impl);
+  // Destroy a HashList already removed from HashTable
+  // Should only be called when the HashList is no longer
+  // accessible to any other thread.
+  Status hashListDestroy(HashList* hlist);
 
   /// Other
   Status CheckConfigs(const Configs& configs);
@@ -448,7 +422,13 @@ class KVEngine : public Engine {
 
   void delayFree(const OutdatedCollection&);
 
-  void delayFree(void* addr, TimeStampType ts);
+  void delayFree(DLRecord* addr);
+
+  void directFree(DLRecord* addr);
+
+  TimeStampType getTimestamp() {
+    return version_controller_.GetCurrentTimestamp();
+  }
 
   void removeSkiplist(CollectionIDType id) {
     std::lock_guard<std::mutex> lg(skiplists_mu_);
@@ -555,13 +535,6 @@ class KVEngine : public Engine {
 
   void deleteCollections();
 
-  Status destroyExpiredHash(
-      HashList* hashlist,
-      std::deque<PendingFreeSpaceEntries>* hash_space_entries);
-
-  Status destroyExpiredList(
-      List* list, std::deque<PendingFreeSpaceEntries>* list_space_entries);
-
   void backgroundDestroyCollections();
 
   void startBackgroundWorks();
@@ -574,29 +547,30 @@ class KVEngine : public Engine {
   std::atomic<uint64_t> restored_{0};
   std::atomic<CollectionIDType> list_id_{0};
 
-  std::shared_ptr<HashTable> hash_table_;
+  std::unique_ptr<HashTable> hash_table_;
 
+  std::mutex skiplists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
 
+  std::mutex lists_mu_;
   std::set<List*, Collection::TTLCmp> lists_;
   std::unique_ptr<ListBuilder> list_builder_;
 
+  std::mutex hlists_mu_;
   std::set<HashList*, Collection::TTLCmp> hash_lists_;
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
-
-  std::mutex skiplists_mu_;
-  std::mutex lists_mu_;
-  std::mutex hlists_mu_;
+  std::unique_ptr<LockTable> skiplist_locks_;
 
   std::string dir_;
   std::string pending_batch_dir_;
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;
-  std::shared_ptr<PMEMAllocator> pmem_allocator_;
+  std::unique_ptr<PMEMAllocator> pmem_allocator_;
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;
+
   std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;

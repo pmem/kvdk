@@ -20,6 +20,10 @@ class LockTable {
  public:
   LockTable(size_t n) : mutexes{n} {}
 
+  std::unique_lock<MutexType> AcquireLock(HashType hash) {
+    return std::unique_lock<MutexType>(*Mutex(hash));
+  }
+
   void Lock(HashType hash) { Mutex(hash)->lock(); }
 
   void Unlock(HashType hash) { Mutex(hash)->unlock(); }

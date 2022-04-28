@@ -1191,6 +1191,7 @@ TEST_F(EngineBasicTest, TestList) {
     }
   }
   std::vector<std::list<std::string>> list_copy_vec(num_threads);
+
   auto LPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
@@ -1203,6 +1204,7 @@ TEST_F(EngineBasicTest, TestList) {
       ASSERT_EQ(sz, list_copy.size());
     }
   };
+
   auto RPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
