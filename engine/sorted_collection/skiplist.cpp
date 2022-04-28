@@ -274,8 +274,7 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
     DLRecord* next = pmem_allocator->offset2addr<DLRecord>(next_offset);
 
-    auto guard =
-        lock_table->MultiGuard({lockIndex(prev), lockIndex(next)});
+    auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(next)});
 
     // Check if the list has changed before we successfully acquire lock.
     if (record->prev != prev_offset || prev->next != record_offset ||
@@ -299,7 +298,7 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
       pmem_allocator_->addr2offset_checked(prev_record);
   PMemOffsetType next_offset =
       pmem_allocator_->addr2offset_checked(next_record);
-  *prev_record_lock = record_locks_->AcquireLock(lockIndex(prev_record));
+  *prev_record_lock = record_locks_->AcquireLock(recordHash(prev_record));
 
   // Check if the linkage has changed before we successfully acquire lock.
   auto check_linkage = [&]() {
