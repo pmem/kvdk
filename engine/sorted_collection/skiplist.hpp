@@ -444,9 +444,9 @@ class Skiplist : public Collection {
 
   void destroyNodes();
 
-  static LockTable::HashType recordHash(DLRecord* record) {
+  static LockTable::HashType recordHash(const DLRecord* record) {
     kvdk_assert(record != nullptr, "");
-    return XXH3_64bits(record, sizeof(DLRecord*));
+    return XXH3_64bits(record, sizeof(const DLRecord*));
   }
 
   Comparator comparator_ = compare_string_view;

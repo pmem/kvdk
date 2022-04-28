@@ -274,7 +274,7 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
     DLRecord* next = pmem_allocator->offset2addr<DLRecord>(next_offset);
 
-    auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(next)});
+    auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
 
     // Check if the list has changed before we successfully acquire lock.
     if (record->prev != prev_offset || prev->next != record_offset ||
