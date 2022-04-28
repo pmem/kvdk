@@ -191,6 +191,55 @@ class SpinMutex {
   SpinMutex& operator=(const SpinMutex& s) = delete;
 };
 
+template <typename SharedMutex>
+class SharedLock {
+ public:
+  explicit SharedLock(SharedMutex& mu) : device{&mu} { device->lock_shared(); }
+
+  ~SharedLock() {
+    if (device != nullptr) {
+      device->unlock_shared();
+    }
+  }
+
+  SharedLock(SharedLock const& other) : device{other.device} {
+    device->lock_shared();
+  }
+
+  SharedLock& operator=(SharedLock const& other) {
+    if (device != nullptr) {
+      device->unlock_shared();
+    }
+    device = other.device;
+    device->lock_shared();
+    return *this;
+  }
+
+  SharedLock(SharedLock&& other) : device{nullptr} { swap(other); }
+
+  SharedLock& operator=(SharedLock&& other) {
+    if (device != nullptr) {
+      device->unlock_shared();
+      device = nullptr;
+    }
+    swap(other);
+    return *this;
+  }
+
+  void swap(SharedLock& other) {
+    using std::swap;
+    swap(device, other.device);
+  }
+
+ private:
+  SharedMutex* device;
+};
+
+template <typename SharedMutex>
+SharedLock<SharedMutex> LockShared(SharedMutex& mu) {
+  return SharedLock<SharedMutex>{mu};
+}
+
 class RWLock {
   static constexpr std::int64_t reader_val{1};
   static constexpr std::int64_t writer_val{

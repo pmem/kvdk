@@ -598,12 +598,13 @@ Status KVEngine::Recovery() {
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
 
-  list_builder_.reset(
-      new ListBuilder{pmem_allocator_.get(), &lists_, 1U, nullptr});
+  list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
+                                      configs_.max_access_threads, nullptr});
 
   hash_list_locks_.reset(new LockTable{1UL << 20});
-  hash_list_builder_.reset(new HashListBuilder{
-      pmem_allocator_.get(), &hash_lists_, 1U, hash_list_locks_.get()});
+  hash_list_builder_.reset(
+      new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
+                          configs_.max_access_threads, hash_list_locks_.get()});
 
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
