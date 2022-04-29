@@ -56,7 +56,7 @@ bool OldRecordsCleaner::TryFreePendingSpace(
 void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   kvdk_assert(
       static_cast<DataEntry*>(old_data_record.pmem_data_record)->meta.type &
-          (StringDataRecord | SortedDataRecord),
+          (StringDataRecord | SortedElem | SortedHeader),
       "Wrong type in OldRecordsCleaner::Push");
   kvdk_assert(access_thread.id >= 0,
               "call OldRecordsCleaner::Push with uninitialized access thread");
@@ -66,11 +66,58 @@ void OldRecordsCleaner::PushToCache(const OldDataRecord& old_data_record) {
   tc.old_data_records.emplace_back(old_data_record);
 }
 
-void OldRecordsCleaner::TryGlobalClean(TimeStampType oldest_snapshot_ts) {
-  clean_all_data_record_ts_ = oldest_snapshot_ts;
+void OldRecordsCleaner::PushToGlobal(
+    std::deque<OutdatedCollection>&& outdated_collections) {
+  global_outdated_collections_.emplace_back(
+      std::forward<std::deque<OutdatedCollection>>(outdated_collections));
+}
+
+void OldRecordsCleaner::TryGlobalClean() {
+  // Fetch thread cached outdated collections, the workflow is as same as old
+  // delete record
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto& cleaner_thread_cache = cleaner_thread_cache_[i];
+    if (cleaner_thread_cache.outdated_collections.size() > 0) {
+      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
+      global_outdated_collections_.emplace_back();
+      global_outdated_collections_.back().swap(
+          cleaner_thread_cache.outdated_collections);
+      break;
+    }
+  }
+
+  // Destroy deleted skiplists
+  for (auto& outdated_collections : global_outdated_collections_) {
+    auto oc_iter = outdated_collections.begin();
+    for (; oc_iter != outdated_collections.end(); ++oc_iter) {
+      if (oc_iter->release_time < clean_all_data_record_ts_) {
+        auto outdated_collection = oc_iter->collection;
+        oc_iter = outdated_collections.erase(oc_iter);
+        thread_pool_.commit(
+            [&](PointerWithTag<Collection, PointerType> outdated_collection) {
+              Collection* collection_ptr = outdated_collection.RawPointer();
+              switch (outdated_collection.GetTag()) {
+                case PointerType::Skiplist: {
+                  static_cast<Skiplist*>(collection_ptr)->Destroy();
+                  kv_engine_->removeSkiplist(collection_ptr->ID());
+                  break;
+                }
+                case PointerType::List:
+                  break;
+                case PointerType::HashList:
+                  break;
+                default:
+                  break;
+              }
+            },
+            outdated_collection);
+      }
+    }
+  }
+
   auto iter = global_pending_free_space_entries_.begin();
   while (iter != global_pending_free_space_entries_.end()) {
-    if (iter->release_time < oldest_snapshot_ts) {
+    if (iter->release_time < clean_all_data_record_ts_) {
       kv_engine_->pmem_allocator_->BatchFree(iter->entries);
       iter++;
     } else {
@@ -81,37 +128,13 @@ void OldRecordsCleaner::TryGlobalClean(TimeStampType oldest_snapshot_ts) {
       global_pending_free_space_entries_.begin(), iter);
 }
 
-void OldRecordsCleaner::TryGlobalCleanDataRecords(
-    TimeStampType oldest_snapshot_ts) {
-  std::vector<SpaceEntry> space_to_free;
-  std::deque<OldDataRecord> data_record_refered;
-
-  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
-    auto& cleaner_thread_cache = cleaner_thread_cache_[i];
-    if (cleaner_thread_cache.old_data_records.size() > 0) {
-      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
-      global_old_data_records_.emplace_back();
-      global_old_data_records_.back().swap(
-          cleaner_thread_cache.old_data_records);
-    }
-  }
-
-  // Find free-able data records
-  for (auto& data_records : global_old_data_records_) {
-    for (auto& record : data_records) {
-      if (record.release_time <= oldest_snapshot_ts) {
-        space_to_free.emplace_back(purgeOldDataRecord(record));
-      } else {
-        data_record_refered.emplace_back(record);
-      }
-    }
-  }
-
-  if (space_to_free.size() > 0) {
-    kv_engine_->pmem_allocator_->BatchFree(space_to_free);
-  }
-  global_old_data_records_.clear();
-  global_old_data_records_.emplace_back(data_record_refered);
+void OldRecordsCleaner::PushToCache(
+    const OutdatedCollection& outdated_collection) {
+  kvdk_assert(access_thread.id >= 0,
+              "call OldRecordsCleaner::Push with uninitialized access thread");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  std::lock_guard<SpinMutex> lg(tc.old_records_lock);
+  tc.outdated_collections.emplace_back(outdated_collection);
 }
 
 void OldRecordsCleaner::TryCleanCachedOldRecords(size_t num_limit_clean) {
@@ -164,8 +187,9 @@ SpaceEntry OldRecordsCleaner::purgeOldDataRecord(
   DataEntry* data_entry =
       static_cast<DataEntry*>(old_data_record.pmem_data_record);
   switch (data_entry->meta.type) {
+    case SortedHeader:
     case StringDataRecord:
-    case SortedDataRecord: {
+    case SortedElem: {
       data_entry->Destroy();
       return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
                         data_entry->header.record_size);
@@ -175,8 +199,103 @@ SpaceEntry OldRecordsCleaner::purgeOldDataRecord(
   }
 }
 
-SpaceEntry OldRecordsCleaner::PurgeOutDatedRecord(HashEntry* hash_entry,
-                                                  const SpinMutex* key_lock) {
+SpaceEntry OldRecordsCleaner::PurgeStringRecord(void* pmem_record) {
+  DataEntry* data_entry = static_cast<DataEntry*>(pmem_record);
+  kvdk_assert(data_entry->meta.type == StringDataRecord ||
+                  data_entry->meta.type == StringDeleteRecord,
+              "the outdated string record type should be `StringDataRecord` "
+              "and `StringDeleteRecord`");
+  return SpaceEntry(kv_engine_->pmem_allocator_->addr2offset(data_entry),
+                    data_entry->header.record_size);
 }
 
+SpaceEntry OldRecordsCleaner::PurgeSortedRecord(SkiplistNode* dram_node,
+                                                void* pmem_record) {
+  DataEntry* data_entry = static_cast<DataEntry*>(pmem_record);
+  auto hint = kv_engine_->hash_table_->GetHint(
+      static_cast<DLRecord*>(pmem_record)->Key());
+handle_sorted_delete_record : {
+  std::unique_lock<SpinMutex> ul(*hint.spin);
+  // We check linkage to determine if the delete record already been
+  // unlinked by updates. We only check the next linkage, as the record is
+  // already been locked, its next record will not be changed.
+  bool record_on_list = Skiplist::CheckReocrdNextLinkage(
+      static_cast<DLRecord*>(pmem_record), kv_engine_->pmem_allocator_.get());
+  if (record_on_list) {
+    if (!Skiplist::Purge(static_cast<DLRecord*>(pmem_record), hint.spin,
+                         dram_node, kv_engine_->pmem_allocator_.get(),
+                         kv_engine_->hash_table_.get())) {
+      goto handle_sorted_delete_record;
+    }
+  }
+  return SpaceEntry(
+      kv_engine_->pmem_allocator_->addr2offset_checked(data_entry),
+      data_entry->header.record_size);
+}
+}
+
+void OldRecordsCleaner::PushToTaskQueue(
+    const std::vector<std::pair<void*, PointerType>>& outdated_records) {
+  thread_pool_.commit(
+      [&](const std::vector<std::pair<void*, PointerType>>& records) {
+        PendingFreeSpaceEntries space_entries;
+        for (auto& record_pair : records) {
+          switch (record_pair.second) {
+            case PointerType::StringRecord:
+              space_entries.entries.emplace_back(
+                  PurgeStringRecord(record_pair.first));
+              break;
+            case PointerType::SkiplistNode: {
+              SkiplistNode* skiplist_node =
+                  static_cast<SkiplistNode*>(record_pair.first);
+              space_entries.entries.emplace_back(
+                  PurgeSortedRecord(skiplist_node, skiplist_node->record));
+              break;
+            }
+            case PointerType::DLRecord: {
+              space_entries.entries.emplace_back(
+                  PurgeSortedRecord(nullptr, record_pair.first));
+              break;
+            }
+            default:
+              break;
+          }
+        }
+        space_entries.release_time =
+            kv_engine_->version_controller_.GetCurrentTimestamp();
+
+        {
+          std::unique_lock<SpinMutex> lock_space_pool(lock_);
+          global_pending_free_space_entries_.emplace_back(
+              std::move(space_entries));
+        }
+      },
+      outdated_records);
+}
+
+void OldRecordsCleaner::TryCleanDataRecords() {
+  std::vector<SpaceEntry> space_to_free;
+  // records that can't be freed this time
+  std::deque<OldDataRecord> data_record_refered;
+  PendingFreeSpaceEntries space_pending;
+  // Update recorded oldest snapshot up to state so we can know which records
+  // can be freed
+  kv_engine_->version_controller_.UpdatedOldestSnapshot();
+  TimeStampType oldest_snapshot_ts =
+      kv_engine_->version_controller_.OldestSnapshotTS();
+
+  std::lock_guard<SpinMutex> lg(lock_);
+
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto& cleaner_thread_cache = cleaner_thread_cache_[i];
+    if (cleaner_thread_cache.old_data_records.size() > 0) {
+      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
+      global_old_data_records_.emplace_back();
+      global_old_data_records_.back().swap(
+          cleaner_thread_cache.old_data_records);
+    }
+  }
+
+  clean_all_data_record_ts_ = oldest_snapshot_ts;
+}
 }  // namespace KVDK_NAMESPACE

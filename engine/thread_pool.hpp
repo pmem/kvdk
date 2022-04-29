@@ -16,10 +16,12 @@
 namespace KVDK_NAMESPACE {
 class ThreadPool {
  public:
-  ThreadPool(size_t);
+  ThreadPool(int);
   template <class F, class... Args>
   auto commit(F&& f, Args&&... args)
       -> std::future<typename std::result_of<F(Args...)>::type>;
+
+  bool Busy() { return busy_thread_num < all_thread_num; }
   ~ThreadPool();
 
  private:
@@ -32,11 +34,14 @@ class ThreadPool {
   std::mutex queue_mutex;
   std::condition_variable condition;
   bool stop;
+  std::atomic_int busy_thread_num;
+  int all_thread_num;
 };
 
 // the constructor just launches some amount of workers
-inline ThreadPool::ThreadPool(size_t threads) : stop(false) {
-  for (size_t i = 0; i < threads; ++i)
+inline ThreadPool::ThreadPool(int threads)
+    : stop(false), busy_thread_num{0}, all_thread_num(threads) {
+  for (int i = 0; i < threads; ++i)
     workers.emplace_back([this] {
       for (;;) {
         std::function<void()> task;
@@ -50,7 +55,9 @@ inline ThreadPool::ThreadPool(size_t threads) : stop(false) {
           this->tasks.pop();
         }
 
+        busy_thread_num++;
         task();
+        busy_thread_num--;
       }
     });
 }
