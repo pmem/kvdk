@@ -86,7 +86,7 @@ class SortedCollectionRebuilder {
   // segment
   //
   // Used in segment based index rebuild
-  Status rebuildSegmentIndex(SkiplistNode* start_node, bool build_hash_index);
+  Status rebuildSegmentIndex(SkiplistNode* start_node, Skiplist* segment_owner);
 
   // Link high level dram nodes of a skiplist after build the first level
   //

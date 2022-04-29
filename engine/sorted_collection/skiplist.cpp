@@ -37,7 +37,8 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
                    Comparator comparator, PMEMAllocator* pmem_allocator,
                    HashTable* hash_table, LockTable* lock_table,
                    bool index_with_hashtable)
-    : Collection(name, id),
+    : size_(0),
+      Collection(name, id),
       comparator_(comparator),
       pmem_allocator_(pmem_allocator),
       hash_table_(hash_table),
@@ -352,21 +353,31 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
 
 Skiplist::WriteResult Skiplist::Delete(const StringView& key,
                                        TimeStampType timestamp) {
+  Skiplist::WriteResult ret;
   if (IndexWithHashtable()) {
-    return deleteImplWithHash(key, timestamp);
+    ret = deleteImplWithHash(key, timestamp);
   } else {
-    return deleteImplNoHash(key, timestamp);
+    ret = deleteImplNoHash(key, timestamp);
   }
+  if (ret.existing_record != nullptr) {
+    UpdateSize(-1);
+  }
+  return ret;
 }
 
 Skiplist::WriteResult Skiplist::Set(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
+  Skiplist::WriteResult ret;
   if (IndexWithHashtable()) {
-    return setImplWithHash(key, value, timestamp);
+    ret = setImplWithHash(key, value, timestamp);
   } else {
-    return setImplNoHash(key, value, timestamp);
+    ret = setImplNoHash(key, value, timestamp);
   }
+  if (ret.existing_record == nullptr) {
+    UpdateSize(1);
+  }
+  return ret;
 }
 
 bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
@@ -905,5 +916,13 @@ void Skiplist::destroyRecords() {
   }
 
   pmem_allocator_->BatchFree(to_free);
+}
+
+size_t Skiplist::Size() { return size_.load(std::memory_order_relaxed); }
+
+void Skiplist::UpdateSize(int64_t delta) {
+  kvdk_assert(delta >= 0 || size_.load() >= std::abs(delta),
+              "Update skiplist size to negative");
+  size_.fetch_add(delta, std::memory_order_relaxed);
 }
 }  // namespace KVDK_NAMESPACE

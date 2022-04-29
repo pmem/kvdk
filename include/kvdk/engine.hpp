@@ -83,6 +83,11 @@ class Engine {
 
   virtual Status DestroySortedCollection(const StringView collection_name) = 0;
 
+  // Get number of elements in a sorted collection
+  //
+  // Return Ok on success, return NotFound if collection not exist
+  virtual Status SortedSize(const StringView collection, size_t* size) = 0;
+
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return
   // Ok on successful persistence, return non-Ok on any error.
