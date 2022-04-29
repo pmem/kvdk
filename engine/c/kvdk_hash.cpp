@@ -101,22 +101,22 @@ int KVDKHashIteratorIsValid(KVDKHashIterator* iter) {
   return (valid ? 1 : 0);
 }
 
-void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** elem_data,
-                              size_t* elem_len) {
-  *elem_data = nullptr;
-  *elem_len = 0;
+void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** value_data,
+                              size_t* value_len) {
+  *value_data = nullptr;
+  *value_len = 0;
   std::string buffer = iter->rep->Value();
-  *elem_data = CopyStringToChar(buffer);
-  *elem_len = buffer.size();
+  *value_data = CopyStringToChar(buffer);
+  *value_len = buffer.size();
 }
 
-void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** elem_data,
-                            size_t* elem_len) {
-  *elem_data = nullptr;
-  *elem_len = 0;
+void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** field_data,
+                            size_t* field_len) {
+  *field_data = nullptr;
+  *field_len = 0;
   std::string buffer = iter->rep->Key();
-  *elem_data = CopyStringToChar(buffer);
-  *elem_len = buffer.size();
+  *field_data = CopyStringToChar(buffer);
+  *field_len = buffer.size();
 }
 
 }  // extern "C"

@@ -13,8 +13,7 @@ class KVEngine;
 
 class SortedIterator : public Iterator {
  public:
-  SortedIterator(Skiplist* skiplist,
-                 std::shared_ptr<PMEMAllocator> pmem_allocator,
+  SortedIterator(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
                  SnapshotImpl* snapshot, bool own_snapshot)
       : skiplist_(skiplist),
         pmem_allocator_(pmem_allocator),
@@ -111,7 +110,7 @@ class SortedIterator : public Iterator {
   }
 
   Skiplist* skiplist_;
-  std::shared_ptr<PMEMAllocator> pmem_allocator_;
+  const PMEMAllocator* pmem_allocator_;
   DLRecord* current_;
   SnapshotImpl* snapshot_;
   bool own_snapshot_;

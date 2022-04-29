@@ -139,6 +139,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
     kvdk_assert(string_record->GetRecordType() == StringDataRecord,
                 "Got wrong data type in string get");
     kvdk_assert(string_record->Validate(), "Corrupted data in string get");
+
     value->assign(string_record->Value().data(), string_record->Value().size());
     return Status::Ok;
   } else {
@@ -228,6 +229,9 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
               "existing record has newer timestamp or wrong return status in "
               "string set");
 
+  std::string val1(1024, 'a');
+  std::string val2(1023, 'b');
+
   // Persist key-value pair to PMem
   uint32_t requested_size = value.size() + key.size() + sizeof(StringRecord);
   SpaceEntry space_entry = pmem_allocator_->Allocate(requested_size);
@@ -242,6 +246,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
 
   hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
                       PointerType::StringRecord, entry_status);
+
   // Free existing record
   bool need_free =
       existing_record && ret.entry.GetRecordType() != StringDeleteRecord &&
@@ -251,7 +256,8 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
 
   if (need_free) {
     ul.unlock();
-    delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
+    delayFree(OldDataRecord{ret.entry.GetIndex().string_record,
+                            version_controller_.GetCurrentTimestamp()});
   }
 
   return Status::Ok;

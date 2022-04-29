@@ -10,11 +10,11 @@
 #include "thread_manager.hpp"
 
 namespace KVDK_NAMESPACE {
-HashTable* HashTable::NewHashTable(
-    uint64_t hash_bucket_num, uint32_t hash_bucket_size,
-    uint32_t num_buckets_per_slot,
-    std::shared_ptr<PMEMAllocator> pmem_allocator,
-    uint32_t max_access_threads) {
+HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
+                                   uint32_t hash_bucket_size,
+                                   uint32_t num_buckets_per_slot,
+                                   const PMEMAllocator* pmem_allocator,
+                                   uint32_t max_access_threads) {
   HashTable* table = new (std::nothrow)
       HashTable(hash_bucket_num, hash_bucket_size, num_buckets_per_slot,
                 pmem_allocator, max_access_threads);

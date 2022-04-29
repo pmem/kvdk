@@ -306,6 +306,9 @@ struct DLRecord {
                 "Call DLRecord::GetExpireTime with an unexpirable type");
     return expired_time;
   }
+
+  TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
+
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
 
   // Construct and persist a dl record to PMem address "addr"

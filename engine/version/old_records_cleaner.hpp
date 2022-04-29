@@ -63,14 +63,12 @@ class OldRecordsCleaner {
   }
 
   void PushToPendingFree(void* addr, TimeStampType ts);
-  bool TryFreePendingSpace(
-      const PendingFreeSpaceEntries& pending_free_space_entries);
   void PushToCache(const OldDataRecord& old_data_record);
   void PushToCache(const OutdatedCollection& outdated_collection);
   void PushToGlobal(std::deque<OutdatedCollection>&& outdated_collections);
   void TryCleanCachedOldRecords(size_t num_limit_clean);
-  void TryCleanDataRecords();
   void TryGlobalClean();
+
   uint64_t NumCachedOldRecords() {
     // TODO jiayu: calculate length of outdated collection
     assert(access_thread.id >= 0);
@@ -78,13 +76,21 @@ class OldRecordsCleaner {
     return tc.old_data_records.size();
   }
 
-  void PushToTaskQueue(
+  void PushToGlobal(
       const std::vector<std::pair<void*, PointerType>>& outdated_records);
+
+  void StartTimeClean(int64_t interval);
+
+  void StopClean() { thread_pool_.Stop(); }
 
  private:
   SpaceEntry PurgeStringRecord(void* pmem_record);
 
   SpaceEntry PurgeSortedRecord(SkiplistNode* dram_node, void* pmem_record);
+
+  void CleanDataRecords();
+
+  void CleanCollections();
 
  private:
   struct CleanerThreadCache {
@@ -96,6 +102,7 @@ class OldRecordsCleaner {
   const uint64_t kLimitCachedDeleteRecords = 10000;
 
   void maybeUpdateOldestSnapshot();
+
   // Purge a old data record and free space
   SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
 
@@ -103,13 +110,18 @@ class OldRecordsCleaner {
 
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
-  SpinMutex lock_;
+  SpinMutex collection_lock_;
+  SpinMutex data_record_lock_;
+
   std::vector<std::deque<OldDataRecord>> global_old_data_records_;
-  std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   std::vector<std::deque<OutdatedCollection>> global_outdated_collections_;
+
+  Array<std::deque<PendingFreeSpaceEntries>> pending_free_space_entries_{
+      kMaxThreadNum};
+
   TimeStampType clean_all_data_record_ts_{0};
 
-  ThreadPool thread_pool_{4};
+  ThreadPool thread_pool_{kMaxThreadNum};
 };
 
 }  // namespace KVDK_NAMESPACE

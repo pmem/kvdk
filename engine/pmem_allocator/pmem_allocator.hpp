@@ -45,12 +45,12 @@ class PMEMAllocator : public Allocator {
   void Free(const SpaceEntry& entry) override;
 
   // translate block_offset of allocated space to address
-  inline void* offset2addr_checked(PMemOffsetType offset) {
+  inline void* offset2addr_checked(PMemOffsetType offset) const {
     assert(validate_offset(offset) && "Trying to access invalid offset");
     return pmem_ + offset;
   }
 
-  inline void* offset2addr(PMemOffsetType offset) {
+  inline void* offset2addr(PMemOffsetType offset) const {
     if (validate_offset(offset)) {
       return pmem_ + offset;
     }
@@ -58,24 +58,24 @@ class PMEMAllocator : public Allocator {
   }
 
   template <typename T>
-  inline T* offset2addr_checked(PMemOffsetType offset) {
+  inline T* offset2addr_checked(PMemOffsetType offset) const {
     return static_cast<T*>(offset2addr_checked(offset));
   }
 
   template <typename T>
-  inline T* offset2addr(PMemOffsetType block_offset) {
+  inline T* offset2addr(PMemOffsetType block_offset) const {
     return static_cast<T*>(offset2addr(block_offset));
   }
 
   // translate address of allocated space to block_offset
-  inline PMemOffsetType addr2offset_checked(const void* addr) {
+  inline PMemOffsetType addr2offset_checked(const void* addr) const {
     assert((char*)addr >= pmem_);
     PMemOffsetType offset = (char*)addr - pmem_;
     assert(validate_offset(offset) && "Trying to create invalid offset");
     return offset;
   }
 
-  inline PMemOffsetType addr2offset(const void* addr) {
+  inline PMemOffsetType addr2offset(const void* addr) const {
     if (addr) {
       PMemOffsetType offset = (char*)addr - pmem_;
       if (validate_offset(offset)) {
@@ -85,7 +85,7 @@ class PMEMAllocator : public Allocator {
     return kNullPMemOffset;
   }
 
-  inline bool validate_offset(uint64_t offset) {
+  inline bool validate_offset(uint64_t offset) const {
     return offset < pmem_size_ && offset != kNullPMemOffset;
   }
 

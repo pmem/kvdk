@@ -71,10 +71,6 @@ struct alignas(16) HashEntry {
 
   RecordType GetRecordType() const { return header_.record_type; }
 
-  TimeStampType GetTimeStamp() const {
-    return static_cast<DataEntry*>(index_.ptr)->meta.timestamp;
-  }
-
   bool IsExpiredStatus() const {
     return header_.entry_status == KeyStatus::Expired;
   }
@@ -127,7 +123,7 @@ class HashTable {
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
                                  uint32_t hash_bucket_size,
                                  uint32_t num_buckets_per_slot,
-                                 std::shared_ptr<PMEMAllocator> pmem_allocator,
+                                 const PMEMAllocator* pmem_allocator,
                                  uint32_t max_access_threads);
 
   KeyHashHint GetHint(const StringView& key) {
@@ -189,14 +185,13 @@ class HashTable {
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
-            uint32_t num_buckets_per_slot,
-            std::shared_ptr<PMEMAllocator> pmem_allocator,
+            uint32_t num_buckets_per_slot, const PMEMAllocator* pmem_allocator,
             uint32_t max_access_threads)
       : hash_bucket_num_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
         hash_bucket_size_(hash_bucket_size),
-        dram_allocator_(max_access_threads),
         pmem_allocator_(pmem_allocator),
+        dram_allocator_(max_access_threads),
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)),
         slots_(hash_bucket_num / num_buckets_per_slot),
@@ -214,8 +209,8 @@ class HashTable {
   const uint64_t hash_bucket_num_;
   const uint32_t num_buckets_per_slot_;
   const uint32_t hash_bucket_size_;
+  const PMEMAllocator* pmem_allocator_;
   ChunkBasedAllocator dram_allocator_;
-  std::shared_ptr<PMEMAllocator> pmem_allocator_;
   const uint64_t num_entries_per_bucket_;
   Array<Slot> slots_;
   std::vector<uint64_t> hash_bucket_entries_;

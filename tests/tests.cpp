@@ -17,7 +17,7 @@
 #include "kvdk/engine.hpp"
 #include "test_util.h"
 
-DEFINE_string(path, "/mnt/pmem0/kvdk_unit_test",
+DEFINE_string(path, "/mnt/pmem1/kvdk_unit_test",
               "Path of KVDK instance on PMem.");
 
 using namespace KVDK_NAMESPACE;
@@ -1191,6 +1191,7 @@ TEST_F(EngineBasicTest, TestList) {
     }
   }
   std::vector<std::list<std::string>> list_copy_vec(num_threads);
+
   auto LPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
@@ -1203,6 +1204,7 @@ TEST_F(EngineBasicTest, TestList) {
       ASSERT_EQ(sz, list_copy.size());
     }
   };
+
   auto RPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
@@ -1496,17 +1498,19 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
         bool match = false;
         match = match || (got_val == val1);
         match = match || (got_val == val2);
+
         if (!match) {
-          std::string msg;
-          msg.append("Wrong value!\n");
-          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
-          msg.append("Actual result is:\n");
-          msg.append(got_val);
-          msg.append("\n");
-          msg.append("Length: ");
-          msg.append(std::to_string(got_val.size()));
-          msg.append("\n");
-          GlobalLogger.Error(msg.data());
+          // std::string msg;
+          // msg.append("Wrong value!\n");
+          // msg.append("The value should be 1024 of a's or 1023 of b's.\n");
+          // msg.append("Actual result is:\n");
+          // msg.append(got_val);
+          // msg.append("\n");
+          // msg.append("\n");
+          // msg.append("Length: ");
+          // msg.append(std::to_string(got_val.size()));
+          // msg.append("\n");
+          // GlobalLogger.Error(msg.data());
         }
         ASSERT_TRUE(match);
       }
@@ -2379,6 +2383,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   SyncPoint::GetInstance()->SetCallBack(
       "KVEngine::backgroundOldRecordCleaner::NothingToDo", [&](void* arg) {
         if (arg == nullptr) {
+          sleep(10);
           return;
         }
       });

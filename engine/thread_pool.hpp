@@ -14,83 +14,119 @@
 #include <vector>
 
 namespace KVDK_NAMESPACE {
+
+constexpr uint64_t kMaxThreadNum = 4;
+constexpr uint64_t kMinThreadNum = 4;
+constexpr uint64_t kMaxQueueNum = 512;
+
 class ThreadPool {
  public:
-  ThreadPool(int);
-  template <class F, class... Args>
-  auto commit(F&& f, Args&&... args)
-      -> std::future<typename std::result_of<F(Args...)>::type>;
+  std::chrono::seconds timeout{10};
 
-  bool Busy() { return busy_thread_num < all_thread_num; }
-  ~ThreadPool();
+ public:
+  // Temp means a thread is temporary, when it always waits task wthin
+  // timeout(second), it will be recycled.
+  enum class ThreadStatus { kDefault, kTemp };
 
- private:
-  // need to keep track of threads so we can join them
-  std::vector<std::thread> workers;
-  // the task queue
-  std::queue<std::function<void()> > tasks;
+  ThreadPool(int threads = kMinThreadNum) : stop_(false) {
+    for (; thread_id_ < threads; ++thread_id_) {
+      AddWorker(ThreadStatus::kDefault);
+    }
+  }
 
-  // synchronization
-  std::mutex queue_mutex;
-  std::condition_variable condition;
-  bool stop;
-  std::atomic_int busy_thread_num;
-  int all_thread_num;
-};
+  template <class F>
+  std::future<void> PushTaskQueue(const F& f) {
+    auto task = std::make_shared<std::packaged_task<void(size_t)>>(f);
 
-// the constructor just launches some amount of workers
-inline ThreadPool::ThreadPool(int threads)
-    : stop(false), busy_thread_num{0}, all_thread_num(threads) {
-  for (int i = 0; i < threads; ++i)
-    workers.emplace_back([this] {
+    if (workers_.size() < kMaxThreadNum && Busy()) {
+      AddWorker(ThreadStatus::kTemp);
+    }
+
+    std::future<void> res = task->get_future();
+    {
+      std::unique_lock<std::mutex> lock(queue_mtx_);
+
+      kvdk_assert(!stop_, "push task into stopped thread pool");
+      if (stop_) {
+        GlobalLogger.Error("push task into stopped thread pool");
+        return res;
+      }
+
+      tasks_.emplace([task](size_t thread_id) { (*task)(thread_id); });
+    }
+    task_condition_.notify_one();
+    return res;
+  }
+
+  void AddWorker(ThreadStatus thread_status) {
+    std::thread new_thread([this, thread_status] {
       for (;;) {
-        std::function<void()> task;
-
+        std::function<void(size_t)> task;
         {
-          std::unique_lock<std::mutex> lock(this->queue_mutex);
-          this->condition.wait(
-              lock, [this] { return this->stop || !this->tasks.empty(); });
-          if (this->stop && this->tasks.empty()) return;
-          task = std::move(this->tasks.front());
-          this->tasks.pop();
-        }
+          std::unique_lock<std::mutex> lock(this->queue_mtx_);
+          idle_thread_num_++;
+          if (thread_status == ThreadStatus::kDefault) {
+            this->task_condition_.wait(
+                lock, [this] { return this->stop_ || !this->tasks_.empty(); });
+          } else {
+            this->task_condition_.wait_for(lock, timeout, [this] {
+              return this->stop_ || !this->tasks_.empty();
+            });
+            // time out
+            if (!(this->stop_ || !this->tasks_.empty())) {
+              break;
+            }
+          }
 
-        busy_thread_num++;
-        task();
-        busy_thread_num--;
+          if (this->stop_) break;
+
+          task = std::move(this->tasks_.front());
+          this->tasks_.pop();
+          idle_thread_num_--;
+        }
+        // excute function
+        task(this->thread_id_);
       }
     });
-}
 
-// add new work item to the pool
-template <class F, class... Args>
-auto ThreadPool::commit(F&& f, Args&&... args)
-    -> std::future<typename std::result_of<F(Args...)>::type> {
-  using return_type = typename std::result_of<F(Args...)>::type;
+    if (new_thread.joinable()) {
+      new_thread.detach();
+    }
 
-  auto task = std::make_shared<std::packaged_task<return_type()> >(
-      std::bind(std::forward<F>(f), std::forward<Args>(args)...));
-
-  std::future<return_type> res = task->get_future();
-  {
-    std::unique_lock<std::mutex> lock(queue_mutex);
-
-    // don't allow commiting after stopping the pool
-    if (stop) throw std::runtime_error("commit on stopped ThreadPool");
-
-    tasks.emplace([task]() { (*task)(); });
+    workers_.emplace_back(std::move(new_thread));
   }
-  condition.notify_one();
-  return res;
-}
 
-// the destructor joins all threads
-inline ThreadPool::~ThreadPool() {
-  {
-    std::unique_lock<std::mutex> lock(queue_mutex);
-    stop = true;
+  void Stop() { shutDown(); }
+
+  bool Busy() {
+    return idle_thread_num_.load() == 0 && tasks_.size() >= kMaxQueueNum;
   }
-  condition.notify_all();
-  for (std::thread& worker : workers) worker.join();
-}
+
+  ~ThreadPool() {
+    if (!stop_) {
+      shutDown();
+    }
+  }
+
+ private:
+  void shutDown() {
+    {
+      std::unique_lock<std::mutex> lock(queue_mtx_);
+      stop_ = true;
+    }
+    task_condition_.notify_all();
+  }
+
+ private:
+  std::vector<std::thread> workers_;
+  std::queue<std::function<void(size_t)>> tasks_;
+
+  // synchronization
+  std::mutex queue_mtx_;
+  std::condition_variable task_condition_;
+  bool stop_;
+  std::atomic_int idle_thread_num_{0};
+  int thread_id_{0};
+};
+
 }  // namespace KVDK_NAMESPACE
