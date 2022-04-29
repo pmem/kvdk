@@ -91,6 +91,7 @@ class KVEngine : public Engine {
       const StringView collection_name,
       const SortedCollectionConfigs& configs) override;
   Status DestroySortedCollection(const StringView collection_name) override;
+  Status SortedSize(const StringView collection, size_t* size) override;
   Status SortedGet(const StringView collection, const StringView user_key,
                    std::string* value) override;
   Status SortedSet(const StringView collection, const StringView user_key,

@@ -111,6 +111,28 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
   return ret.s;
 }
 
+Status KVEngine::SortedSize(const StringView collection, size_t* size) {
+  Status s = MaybeInitAccessThread();
+
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+
+  Skiplist* skiplist = nullptr;
+  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  if (ret.s != Status::Ok) {
+    return ret.s == Status::Outdated ? Status::NotFound : ret.s;
+  }
+
+  kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,
+              "pointer type of skiplist in hash entry should be skiplist");
+  skiplist = ret.entry.GetIndex().skiplist;
+  *size = skiplist->Size();
+  return Status::Ok;
+}
+
 Status KVEngine::SortedGet(const StringView collection,
                            const StringView user_key, std::string* value) {
   Status s = MaybeInitAccessThread();

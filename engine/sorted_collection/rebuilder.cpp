@@ -155,7 +155,6 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         addUnlinkedRecord(header_record);
       }
 
-      GlobalLogger.Debug("header type %d\n", header_record->entry.meta.type);
       bool outdated =
           valid_version_record->entry.meta.type == SortedHeaderDelete ||
           TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
@@ -228,11 +227,8 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
                 iter->second.start_node->record)) != invalid_skiplists_.end(),
             "Start record of a recovery segment should belong to a skiplist");
       } else {
-        bool build_hash_index =
-            rebuild_skiplist_iter->second->IndexWithHashtable();
-
-        Status s =
-            rebuildSegmentIndex(iter->second.start_node, build_hash_index);
+        Status s = rebuildSegmentIndex(iter->second.start_node,
+                                       rebuild_skiplist_iter->second.get());
         if (s != Status::Ok) {
           return s;
         }
@@ -278,15 +274,21 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
 }
 
 Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
-                                                      bool build_hash_index) {
+                                                      Skiplist* segment_owner) {
   Status s;
+  bool build_hash_index = segment_owner->IndexWithHashtable();
+  size_t num_elems = 0;
   // First insert hash index for the start node
-  if (build_hash_index &&
-      (start_node->record->entry.meta.type & SortedHeaderType) == 0) {
-    s = insertHashIndex(start_node->record->Key(), start_node,
-                        PointerType::SkiplistNode);
-    if (s != Status::Ok) {
-      return s;
+  if (start_node->record != segment_owner->HeaderRecord()) {
+    kvdk_assert((start_node->record->entry.meta.type & SortedHeaderType) == 0,
+                "Wrong start node of skiplist segment");
+    num_elems++;
+    if (build_hash_index) {
+      s = insertHashIndex(start_node->record->Key(), start_node,
+                          PointerType::SkiplistNode);
+      if (s != Status::Ok) {
+        return s;
+      }
     }
   }
 
@@ -297,7 +299,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
     DLRecord* next_record =
         kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
             cur_record->next);
-    if (next_record->entry.meta.type & SortedHeaderType) {
+    if (next_record == segment_owner->HeaderRecord()) {
       cur_node->RelaxedSetNext(1, nullptr);
       break;
     }
@@ -344,7 +346,10 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
             return s;
           }
         }
-
+        // Todo: only keep elem on list after recovery
+        if (valid_version_record->entry.meta.type == SortedElem) {
+          num_elems++;
+        }
         cur_record = valid_version_record;
       }
     } else {
@@ -358,6 +363,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       break;
     }
   }
+  segment_owner->UpdateSize(num_elems);
   return Status::Ok;
 }
 
@@ -440,6 +446,8 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     return s;
   }
 
+  size_t num_elems = 0;
+
   Splice splice(skiplist);
   HashEntry hash_entry;
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
@@ -501,10 +509,15 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
           return s;
         }
       }
+      // Todo: only keep elem on list after recovery
+      if (valid_version_record->entry.meta.type == SortedElem) {
+        num_elems++;
+      }
 
       splice.prev_pmem_record = valid_version_record;
     }
   }
+  skiplist->UpdateSize(num_elems);
   return Status::Ok;
 }
 

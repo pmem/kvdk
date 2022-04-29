@@ -197,6 +197,11 @@ KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key, size_t key_len) {
   return engine->rep->Delete(StringView(key, key_len));
 }
 
+KVDKStatus KVDKSortedSize(KVDKEngine* engine, const char* collection,
+                          size_t collection_len, size_t* size) {
+  return engine->rep->SortedSize(StringView(collection, collection_len), size);
+}
+
 KVDKStatus KVDKSortedSet(KVDKEngine* engine, const char* collection,
                          size_t collection_len, const char* key, size_t key_len,
                          const char* val, size_t val_len) {

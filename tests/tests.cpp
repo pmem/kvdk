@@ -231,6 +231,10 @@ class EngineBasicTest : public testing::Test {
         new_collection += std::to_string(id);
       }
 
+      size_t collection_size;
+      ASSERT_EQ(engine->SortedSize(new_collection, &collection_size),
+                Status::Ok);
+
       auto iter = engine->NewSortedIterator(new_collection);
       ASSERT_TRUE(iter != nullptr);
       // forward iterator
@@ -247,6 +251,7 @@ class EngineBasicTest : public testing::Test {
           prev = k;
         }
       }
+      ASSERT_EQ(collection_size, entries);
       if (is_local) {
         ASSERT_EQ(cnt, entries);
       } else {
@@ -1037,6 +1042,9 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
           }
         }
 
+        size_t t_skiplist_size;
+        ASSERT_EQ(engine->SortedSize(t_skiplist, &t_skiplist_size), Status::Ok);
+
         auto iter = engine->NewSortedIterator(t_skiplist);
         ASSERT_TRUE(iter != nullptr);
         int data_entries_scan = 0;
@@ -1054,6 +1062,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
           }
         }
         ASSERT_EQ(data_entries_scan, count / 2);
+        ASSERT_EQ(data_entries_scan, t_skiplist_size);
 
         iter->SeekToLast();
         if (iter->Valid()) {
@@ -1072,6 +1081,9 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         engine->ReleaseSortedIterator(iter);
       }
 
+      size_t global_skiplist_size;
+      ASSERT_EQ(engine->SortedSize(global_skiplist, &global_skiplist_size),
+                Status::Ok);
       int data_entries_scan = 0;
       auto iter = engine->NewSortedIterator(global_skiplist);
       ASSERT_TRUE(iter != nullptr);
@@ -1089,6 +1101,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         }
       }
       ASSERT_EQ(data_entries_scan, (count / 2) * num_threads);
+      ASSERT_EQ(global_skiplist_size, data_entries_scan);
 
       iter->SeekToLast();
       if (iter->Valid()) {
