@@ -37,8 +37,8 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
                    Comparator comparator, PMEMAllocator* pmem_allocator,
                    HashTable* hash_table, LockTable* lock_table,
                    bool index_with_hashtable)
-    : size_(0),
-      Collection(name, id),
+    : Collection(name, id),
+      size_(0),
       comparator_(comparator),
       pmem_allocator_(pmem_allocator),
       hash_table_(hash_table),
@@ -921,7 +921,7 @@ void Skiplist::destroyRecords() {
 size_t Skiplist::Size() { return size_.load(std::memory_order_relaxed); }
 
 void Skiplist::UpdateSize(int64_t delta) {
-  kvdk_assert(delta >= 0 || size_.load() >= std::abs(delta),
+  kvdk_assert(delta >= 0 || size_.load() >= static_cast<size_t>(-delta),
               "Update skiplist size to negative");
   size_.fetch_add(delta, std::memory_order_relaxed);
 }
