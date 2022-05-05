@@ -129,6 +129,13 @@ KVDKStatus KVDKCreateSortedCollection(KVDKEngine* engine,
   return s;
 }
 
+extern KVDKStatus KVDKDestroySortedCollection(KVDKEngine* engine,
+                                              const char* collection_name,
+                                              size_t collection_len) {
+  return engine->rep->DestroySortedCollection(
+      StringView(collection_name, collection_len));
+}
+
 KVDKWriteBatch* KVDKWriteBatchCreate(void) { return new KVDKWriteBatch; }
 
 void KVDKWriteBatchDelete(KVDKWriteBatch* wb, const char* key, size_t key_len) {
