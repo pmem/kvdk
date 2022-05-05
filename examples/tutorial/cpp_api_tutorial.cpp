@@ -396,7 +396,7 @@ static void test_expire() {
     assert(s == kvdk::Status::NotFound);
 
     s = engine->HashDestroy(hash_collection);
-    assert(s == kvdk::Status::Ok);
+    assert(s == kvdk::Status::NotFound);
     printf("Successfully expire hash\n");
   }
 
