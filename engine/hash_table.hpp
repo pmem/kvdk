@@ -31,6 +31,7 @@ struct HashHeader {
 
 class Skiplist;
 class SkiplistNode;
+struct BucketIterator;
 
 template <RecordType ListType, RecordType DataType>
 class GenericList;
@@ -95,6 +96,14 @@ struct alignas(16) HashEntry {
 };
 static_assert(sizeof(HashEntry) == 16);
 
+constexpr size_t kNumEntryPerBucket = (128 - sizeof(void*)) / sizeof(HashEntry);
+struct HashBucket {
+  HashEntry hash_entries[kNumEntryPerBucket];
+  HashBucket* next{nullptr};
+  char padding[128 - sizeof(hash_entries) - sizeof(next)];
+};
+static_assert(sizeof(HashBucket) == 128);
+
 struct HashCache {
   HashEntry* entry_ptr = nullptr;
 };
@@ -109,6 +118,7 @@ struct SlotIterator;
 class HashTable {
  public:
   friend class SlotIterator;
+  friend class BucketIterator;
   struct KeyHashHint {
     uint64_t key_hash_value;
     uint32_t bucket;
@@ -191,7 +201,8 @@ class HashTable {
         num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
                                 sizeof(HashEntry)),
         slots_(hash_bucket_num / num_buckets_per_slot),
-        hash_bucket_entries_(hash_bucket_num, 0) {}
+        hash_bucket_entries_(hash_bucket_num, 0),
+        hash_buckets_(hash_bucket_num_) {}
 
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
     return key_hash_value & (hash_bucket_num_ - 1);
@@ -201,6 +212,8 @@ class HashTable {
     return bucket / num_buckets_per_slot_;
   }
 
+  Status allocate(BucketIterator& bucket_iter);
+
   const uint64_t hash_bucket_num_;
   const uint32_t num_buckets_per_slot_;
   const uint32_t hash_bucket_size_;
@@ -208,6 +221,7 @@ class HashTable {
   ChunkBasedAllocator dram_allocator_;
   const uint64_t num_entries_per_bucket_;
   Array<Slot> slots_;
+  Array<HashBucket> hash_buckets_;
   std::vector<uint64_t> hash_bucket_entries_;
   void* main_buckets_;
 };
@@ -336,6 +350,72 @@ struct SlotIterator {
 
   SpinMutex* GetSlotLock() {
     return &hash_table_->slots_[current_slot_id].spin;
+  }
+};
+
+class BucketIterator {
+ private:
+  friend class HashTable;
+  HashTable* hash_table_;
+  HashBucket* bucket_ptr_;
+  uint64_t bucket_idx_;
+  uint64_t entry_idx_;
+
+ public:
+  BucketIterator(HashTable* hash_table, uint64_t bucket_idx)
+      : hash_table_(hash_table),
+        bucket_ptr_(nullptr),
+        bucket_idx_(bucket_idx),
+        entry_idx_(0) {
+    GetBucket();
+  }
+
+  bool Valid() {
+    return entry_idx_ < hash_table_->hash_bucket_entries_[bucket_idx_];
+  }
+
+  HashEntry& operator*() {
+    return bucket_ptr_->hash_entries[entry_idx_ % kNumEntryPerBucket];
+  }
+
+  HashEntry* operator->() { return &operator*(); }
+
+  BucketIterator& operator++() {
+    Next();
+    return *this;
+  }
+
+  BucketIterator operator++(int) {
+    auto tmp = *this;
+    ++*this;
+    return tmp;
+  }
+
+  friend bool operator==(const BucketIterator& a, const BucketIterator& b) {
+    return a.hash_table_ && b.hash_table_ && a.bucket_idx_ == b.bucket_idx_ &&
+           a.entry_idx_ == b.entry_idx_;
+  }
+
+  friend bool operator!=(const BucketIterator& a, const BucketIterator& b) {
+    return !(a == b);
+  }
+
+ private:
+  // Get valid bucket, which has hash entries.
+  void GetBucket() {
+    assert(bucket_idx_ < hash_table_->hash_buckets_.size());
+    bucket_ptr_ = &hash_table_->hash_buckets_[bucket_idx_];
+    _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
+  }
+
+  void Next() {
+    if (entry_idx_ < hash_table_->hash_bucket_entries_[bucket_idx_]) {
+      entry_idx_++;
+      if (entry_idx_ > 0 && entry_idx_ % kNumEntryPerBucket == 0) {
+        bucket_ptr_ = bucket_ptr_->next;
+        _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
+      }
+    }
   }
 };
 

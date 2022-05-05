@@ -1324,6 +1324,7 @@ void KVEngine::backgroundDestroyCollections() {
 }
 
 void KVEngine::CleanOutDated() {
+  return;
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
   std::deque<OldDeleteRecord> expired_record_queue;
   std::deque<OutdatedCollection> expired_collection_queue;
