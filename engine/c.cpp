@@ -305,6 +305,14 @@ KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str, size_t str_len,
 
 // List
 extern "C" {
+KVDKStatus KVDKListCreate(KVDKEngine* engine, char const* key_data,
+                          size_t key_len) {
+  return engine->rep->ListCreate(StringView{key_data, key_len});
+}
+KVDKStatus KVDKListDestroy(KVDKEngine* engine, char const* key_data,
+                           size_t key_len) {
+  return engine->rep->ListDestroy(StringView{key_data, key_len});
+}
 KVDKStatus KVDKListLength(KVDKEngine* engine, char const* key_data,
                           size_t key_len, size_t* len) {
   return engine->rep->ListLength(StringView{key_data, key_len}, len);

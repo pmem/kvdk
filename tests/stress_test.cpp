@@ -476,6 +476,7 @@ class EngineTestBase : public testing::Test {
     configs.hash_bucket_size = sz_hash_bucket;
     configs.pmem_segment_blocks = n_blocks_per_segment;
     configs.background_work_interval = t_background_work_interval;
+    configs.max_access_threads = n_thread + 1;
 
     prepareKVPairs();
 
@@ -613,6 +614,7 @@ class EngineTestBase : public testing::Test {
   }
 
   void InitializeHashes(std::string const& collection_name) {
+    ASSERT_EQ(engine->HashCreate(collection_name), kvdk::Status::Ok);
     shadow_hashes_engines[collection_name].reset(
         new ShadowHashes{engine, collection_name, n_thread});
   }

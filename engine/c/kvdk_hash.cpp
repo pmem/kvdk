@@ -4,6 +4,15 @@
 #include "kvdk_c.hpp"
 
 extern "C" {
+KVDKStatus KVDKHashCreate(KVDKEngine* engine, char const* key_data,
+                          size_t key_len) {
+  return engine->rep->HashCreate(StringView{key_data, key_len});
+}
+KVDKStatus KVDKHashDestroy(KVDKEngine* engine, char const* key_data,
+                           size_t key_len) {
+  return engine->rep->HashDestroy(StringView{key_data, key_len});
+}
+
 KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
                           size_t key_len, size_t* len) {
   return engine->rep->HashLength(StringView{key_data, key_len}, len);
