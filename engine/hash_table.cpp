@@ -105,7 +105,6 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
   uint64_t entries = hash_bucket_entries_[hint.bucket];
-  bool found = false;
 
   // search cache
   *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
@@ -118,24 +117,25 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   }
 
   // iterate hash entrys in the bucket
-  BucketIterator iter(this, hint.bucket);
+  HashTableBucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
-    atomic_load_16(hash_entry_snap, &*iter);
+    *entry_ptr = &*iter;
+    atomic_load_16(hash_entry_snap, *entry_ptr);
     if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
                                data_entry_meta)) {
-      *entry_ptr = &*iter;
       slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
       return Status::Ok;
     }
-    if (iter->Empty()) {
-      reusable_entry = &*iter;
+    if ((*entry_ptr)->Empty()) {
+      reusable_entry = *entry_ptr;
     }
     iter++;
   }
 
   if (reusable_entry == nullptr) {
     allocate(iter);
-    *entry_ptr = &*iter;
+    assert(iter.Valid());
+    *entry_ptr = &(*iter);
   } else {
     *entry_ptr = reusable_entry;
   }
@@ -153,7 +153,6 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
   HashBucket* bucket_ptr = &hash_buckets_[hint.bucket];
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
-  uint64_t entries = hash_bucket_entries_[hint.bucket];
 
   // search cache
   *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
@@ -166,9 +165,9 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
   }
 
   // iterate hash entrys in the bucket
-  BucketIterator iter(this, hint.bucket);
+  HashTableBucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
-    *entry_ptr = &*iter;
+    *entry_ptr = &(*iter);
     atomic_load_16(hash_entry_snap, *entry_ptr);
     if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
                                data_entry_meta)) {
@@ -189,12 +188,14 @@ void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
-Status HashTable::allocate(BucketIterator& bucket_iter) {
+Status HashTable::allocate(HashTableBucketIterator& bucket_iter) {
   kvdk_assert(bucket_iter.hash_table_ == this &&
                   bucket_iter.entry_idx_ ==
                       hash_bucket_entries_[bucket_iter.bucket_idx_],
               "Only allocate new hash entry at end of hash bucket");
-  if (hash_bucket_entries_[bucket_iter.bucket_idx_] % kNumEntryPerBucket == 0) {
+  assert(bucket_iter.bucket_ptr_ != nullptr);
+  if (hash_bucket_entries_[bucket_iter.bucket_idx_] > 0 &&
+      hash_bucket_entries_[bucket_iter.bucket_idx_] % kNumEntryPerBucket == 0) {
     auto space = dram_allocator_.Allocate(128);
     if (space.size == 0) {
       GlobalLogger.Error("MemoryOverflow!\n");

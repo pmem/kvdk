@@ -675,7 +675,7 @@ TEST_F(EngineBasicTest, TestBasicStringOperations) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   do {
-    TestString(1);
+    TestString(configs.max_access_threads);
   } while (ChangeConfig());
   delete engine;
 }
