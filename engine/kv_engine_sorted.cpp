@@ -215,13 +215,15 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
   auto res = lookupKey<false>(collection, SortedHeader);
   if (res.s == Status::Ok) {
     skiplist = res.entry_ptr->GetIndex().skiplist;
+    return new SortedIterator(skiplist, pmem_allocator_.get(),
+                              static_cast<SnapshotImpl*>(snapshot),
+                              create_snapshot);
+  } else {
+    if (create_snapshot) {
+      ReleaseSnapshot(snapshot);
+    }
+    return nullptr;
   }
-
-  return res.s == Status::Ok
-             ? new SortedIterator(skiplist, pmem_allocator_.get(),
-                                  static_cast<SnapshotImpl*>(snapshot),
-                                  create_snapshot)
-             : nullptr;
 }
 
 void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
