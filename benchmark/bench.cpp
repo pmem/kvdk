@@ -575,7 +575,7 @@ int main(int argc, char** argv) {
   std::cout << "Benchmark finished." << std::endl;
   printf("finish bench\n");
 
-  for (size_t i = 0; i < FLAGS_threads; i++) {
+  for (size_t i = 0; i < ts.size(); i++) {
     ts[i].join();
   }
 
