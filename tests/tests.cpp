@@ -123,19 +123,28 @@ class EngineBasicTest : public testing::Test {
   }
 
   // Set/Get/Delete
-  void TestGlobalCollection(const std::string& collection, SetOpsFunc SetFunc,
-                            GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc,
-                            Types type) {
-    // Maybe having create collection for all collection types.
-    if (type == Types::Sorted) {
-      ASSERT_EQ(engine->CreateSortedCollection(collection), Status::Ok);
-    }
-    TestEmptyKey(collection, SetFunc, GetFunc, DeleteFunc);
-    auto global_func = [=](uint64_t id) {
-      this->CreateBasicOperationTest(collection, SetFunc, GetFunc, DeleteFunc,
-                                     id);
+  void TestString(uint64_t n_threads) {
+    auto StringSetFunc = [&](const std::string&, const std::string& key,
+                             const std::string& value) -> Status {
+      return engine->Set(key, value);
     };
-    LaunchNThreads(configs.max_access_threads, global_func);
+
+    auto StringGetFunc = [&](const std::string&, const std::string& key,
+                             std::string* value) -> Status {
+      return engine->Get(key, value);
+    };
+
+    auto StringDeleteFunc = [&](const std::string&,
+                                const std::string& key) -> Status {
+      return engine->Delete(key);
+    };
+
+    TestEmptyKey("", StringSetFunc, StringGetFunc, StringDeleteFunc);
+    auto global_func = [=](uint64_t id) {
+      this->CreateBasicOperationTest("", StringSetFunc, StringGetFunc,
+                                     StringDeleteFunc, id);
+    };
+    LaunchNThreads(n_threads, global_func);
   }
 
   void TestGlobalSortedCollection(const std::string& collection,
@@ -663,26 +672,10 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 }
 
 TEST_F(EngineBasicTest, TestBasicStringOperations) {
-  auto StringSetFunc = [&](const std::string&, const std::string& key,
-                           const std::string& value) -> Status {
-    return engine->Set(key, value);
-  };
-
-  auto StringGetFunc = [&](const std::string&, const std::string& key,
-                           std::string* value) -> Status {
-    return engine->Get(key, value);
-  };
-
-  auto StringDeleteFunc = [&](const std::string&,
-                              const std::string& key) -> Status {
-    return engine->Delete(key);
-  };
-
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   do {
-    TestGlobalCollection("global_string", StringSetFunc, StringGetFunc,
-                         StringDeleteFunc, Types::String);
+    TestString(1);
   } while (ChangeConfig());
   delete engine;
 }
