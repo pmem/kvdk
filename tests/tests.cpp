@@ -1237,13 +1237,15 @@ TEST_F(EngineBasicTest, TestList) {
     std::string value_got;
     size_t sz;
     for (size_t j = 0; j < count; j++) {
+      if (list_copy.empty()) {
+        ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::NotFound);
+        break;
+      }
       ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.front(), value_got);
       list_copy.pop_front();
-      // Empty list is deleted!
-      ASSERT_TRUE((engine->ListLength(key, &sz) == Status::NotFound &&
-                   list_copy.empty()) ||
-                  sz == list_copy.size());
+      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(sz, list_copy.size());
     }
   };
 
@@ -1253,12 +1255,15 @@ TEST_F(EngineBasicTest, TestList) {
     std::string value_got;
     size_t sz;
     for (size_t j = 0; j < count; j++) {
+      if (list_copy.empty()) {
+        ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::NotFound);
+        break;
+      }
       ASSERT_EQ(engine->ListPopBack(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.back(), value_got);
       list_copy.pop_back();
-      ASSERT_TRUE((engine->ListLength(key, &sz) == Status::NotFound &&
-                   list_copy.empty()) ||
-                  sz == list_copy.size());
+      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(sz, list_copy.size());
     }
   };
 
@@ -1329,6 +1334,8 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   for (size_t i = 0; i < 3; i++) {
+    LaunchNThreads(num_threads, LPop);
+    LaunchNThreads(num_threads, RPop);
     LaunchNThreads(num_threads, LPush);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, RPush);

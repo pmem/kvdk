@@ -1482,8 +1482,10 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
   if (s != Status::Ok) {
     return s;
   }
+  if (list->Size() == 0) {
+    return Status::NotFound;
+  }
 
-  kvdk_assert(list->Size() != 0, "");
   StringView sw = list->Front()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopFront([&](DLRecord* rec) { delayFree(rec); });
@@ -1504,8 +1506,10 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   if (s != Status::Ok) {
     return s;
   }
+  if (list->Size() == 0) {
+    return Status::NotFound;
+  }
 
-  kvdk_assert(list->Size() != 0, "");
   StringView sw = list->Back()->Value();
   elem->assign(sw.data(), sw.size());
   list->PopBack([&](DLRecord* rec) { delayFree(rec); });
