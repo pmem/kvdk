@@ -1726,50 +1726,48 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
   // Hash Table Iterator
   // scan hash table with locked slot.
   {
-    auto slot_iter = hash_table->GetSlotIterator();
-    while (slot_iter.Valid()) {
-      auto bucket_iter = slot_iter.Begin();
-      auto end_bucket_iter = slot_iter.End();
-      while (bucket_iter != end_bucket_iter) {
-        switch (bucket_iter->GetIndexType()) {
+    auto hashtable_iter = hash_table->GetIterator();
+    while (hashtable_iter.Valid()) {
+      auto slot_iter = hashtable_iter.Slot();
+      while (slot_iter.Valid()) {
+        switch (slot_iter->GetIndexType()) {
           case PointerType::StringRecord: {
             total_entry_num++;
             ASSERT_EQ(string_view_2_string(
-                          bucket_iter->GetIndex().string_record->Value()),
+                          slot_iter->GetIndex().string_record->Value()),
                       "stringval");
             break;
           }
           case PointerType::Skiplist: {
             total_entry_num++;
             ASSERT_EQ(
-                string_view_2_string(bucket_iter->GetIndex().skiplist->Name()),
+                string_view_2_string(slot_iter->GetIndex().skiplist->Name()),
                 collection_name);
             break;
           }
           case PointerType::SkiplistNode: {
             total_entry_num++;
-            ASSERT_EQ(
-                string_view_2_string(
-                    bucket_iter->GetIndex().skiplist_node->record->Value()),
-                "sortedval");
+            ASSERT_EQ(string_view_2_string(
+                          slot_iter->GetIndex().skiplist_node->record->Value()),
+                      "sortedval");
             break;
           }
           case PointerType::DLRecord: {
             total_entry_num++;
-            ASSERT_EQ(string_view_2_string(
-                          bucket_iter->GetIndex().dl_record->Value()),
-                      "sortedval");
+            ASSERT_EQ(
+                string_view_2_string(slot_iter->GetIndex().dl_record->Value()),
+                "sortedval");
             break;
           }
           default:
-            ASSERT_EQ((bucket_iter->GetIndexType() == PointerType::Invalid) ||
-                          (bucket_iter->GetIndexType() == PointerType::Empty),
+            ASSERT_EQ((slot_iter->GetIndexType() == PointerType::Invalid) ||
+                          (slot_iter->GetIndexType() == PointerType::Empty),
                       true);
             break;
         }
-        bucket_iter++;
+        slot_iter++;
       }
-      slot_iter.Next();
+      hashtable_iter.Next();
     }
     ASSERT_EQ(total_entry_num, threads + 1);
   }
@@ -2363,21 +2361,20 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
   auto HashTableScan = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     auto hash_table = test_kvengine->GetHashTable();
-    auto slot_iter = hash_table->GetSlotIterator();
-    while (slot_iter.Valid()) {
-      auto slot_lock = slot_iter.AcquireSlotLock();
-      auto bucket_iter = slot_iter.Begin();
-      auto end_bucket_iter = slot_iter.End();
-      while (bucket_iter != end_bucket_iter) {
-        if (bucket_iter->GetIndexType() == PointerType::StringRecord) {
+    auto hashtable_iter = hash_table->GetIterator();
+    while (hashtable_iter.Valid()) {
+      auto slot_lock = hashtable_iter.AcquireSlotLock();
+      auto slot_iter = hashtable_iter.Slot();
+      while (slot_iter.Valid()) {
+        if (slot_iter->GetIndexType() == PointerType::StringRecord) {
           TEST_SYNC_POINT("ScanHashTable");
           sleep(2);
-          ASSERT_EQ(bucket_iter->GetIndex().string_record->Key(), key);
-          ASSERT_EQ(bucket_iter->GetIndex().string_record->Value(), val);
+          ASSERT_EQ(slot_iter->GetIndex().string_record->Key(), key);
+          ASSERT_EQ(slot_iter->GetIndex().string_record->Value(), val);
         }
-        bucket_iter++;
+        slot_iter++;
       }
-      slot_iter.Next();
+      hashtable_iter.Next();
     }
   };
 

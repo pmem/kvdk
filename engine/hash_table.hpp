@@ -31,7 +31,7 @@ struct HashHeader {
 
 class Skiplist;
 class SkiplistNode;
-struct HashTableBucketIterator;
+struct BucketIterator;
 
 template <RecordType ListType, RecordType DataType>
 class GenericList;
@@ -116,12 +116,12 @@ struct Slot {
   SpinMutex spin;
 };
 
-struct SlotIterator;
+struct HashTableIterator;
 
 class HashTable {
  public:
-  friend class SlotIterator;
-  friend class HashTableBucketIterator;
+  friend class HashTableIterator;
+  friend class BucketIterator;
   struct KeyHashHint {
     uint64_t key_hash_value;
     uint32_t bucket;
@@ -190,7 +190,7 @@ class HashTable {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
 
-  SlotIterator GetSlotIterator();
+  HashTableIterator GetIterator();
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
@@ -215,7 +215,7 @@ class HashTable {
     return bucket / num_buckets_per_slot_;
   }
 
-  Status allocate(HashTableBucketIterator& bucket_iter);
+  Status allocate(BucketIterator& bucket_iter);
 
   const uint64_t hash_bucket_num_;
   const uint32_t num_buckets_per_slot_;
@@ -229,7 +229,7 @@ class HashTable {
   void* main_buckets_;
 };
 
-class HashTableBucketIterator {
+class BucketIterator {
  private:
   friend class HashTable;
   HashTable* hash_table_;
@@ -238,8 +238,8 @@ class HashTableBucketIterator {
   HashBucket* bucket_ptr_;
 
  public:
-  HashTableBucketIterator(HashTable* hash_table /* should be non-null */,
-                          uint64_t bucket_idx)
+  BucketIterator(HashTable* hash_table /* should be non-null */,
+                 uint64_t bucket_idx)
       : hash_table_(hash_table),
         bucket_idx_(bucket_idx),
         entry_idx_(0),
@@ -250,7 +250,7 @@ class HashTableBucketIterator {
     }
   }
 
-  HashTableBucketIterator(const HashTableBucketIterator&) = default;
+  BucketIterator(const BucketIterator&) = default;
 
   bool Valid() {
     return bucket_ptr_ != nullptr &&
@@ -263,36 +263,18 @@ class HashTableBucketIterator {
 
   HashEntry* operator->() { return &operator*(); }
 
-  HashTableBucketIterator& operator++() {
+  BucketIterator& operator++() {
     next();
     return *this;
   }
 
-  HashTableBucketIterator operator++(int) {
-    HashTableBucketIterator tmp{*this};
+  BucketIterator operator++(int) {
+    BucketIterator tmp{*this};
     this->operator++();
     return tmp;
   }
 
-  friend bool operator==(const HashTableBucketIterator& a,
-                         const HashTableBucketIterator& b) {
-    return a.hash_table_ && b.hash_table_ && a.bucket_idx_ == b.bucket_idx_ &&
-           a.entry_idx_ == b.entry_idx_;
-  }
-
-  friend bool operator!=(const HashTableBucketIterator& a,
-                         const HashTableBucketIterator& b) {
-    return !(a == b);
-  }
-
  private:
-  // Get valid bucket, which has hash entries.
-  void getBucket() {
-    assert(bucket_idx_ < hash_table_->hash_buckets_.size());
-    bucket_ptr_ = &hash_table_->hash_buckets_[bucket_idx_];
-    assert(bucket_ptr_ != nullptr);
-  }
-
   void next() {
     if (Valid()) {
       entry_idx_++;
@@ -304,38 +286,27 @@ class HashTableBucketIterator {
   }
 };
 
-struct SlotIterator {
+// Iterate all slots in a hashtable
+struct HashTableIterator {
  private:
-  // The range of slot id is [0, hash table slot number).The range of bucket id
-  // corresponding to the current slot is [slot_id*num_buckets_per_slot_,
-  // (slot_id+1)*num_buckets_per_slot_).
-  uint64_t iter_start_bucket_idx_;
-  uint64_t iter_end_bucket_idx_;
   // lock current access slot
   std::unique_lock<SpinMutex> iter_lock_slot_;
   // current slot id
   HashTable* hash_table_;
   uint64_t current_slot_id_;
 
-  void setBucketRange() {
-    iter_start_bucket_idx_ =
-        current_slot_id_ * hash_table_->num_buckets_per_slot_;
-    iter_end_bucket_idx_ =
-        (current_slot_id_ + 1) * hash_table_->num_buckets_per_slot_;
-  }
-
  public:
-  class BucketIterator {
+  class SlotIterator {
    private:
     HashTable* hash_table_;
     uint64_t current_bucket_;
     uint64_t start_bucket_;
     uint64_t end_bucket_;
-    HashTableBucketIterator bucket_iter_;
+    BucketIterator bucket_iter_;
 
    public:
-    BucketIterator(HashTable* hash_table /* should be non null */,
-                   uint64_t slot_idx)
+    SlotIterator(HashTable* hash_table /* should be non null */,
+                 uint64_t slot_idx)
         : hash_table_(hash_table),
           start_bucket_(hash_table_->num_buckets_per_slot_ * slot_idx),
           end_bucket_(start_bucket_ + hash_table_->num_buckets_per_slot_),
@@ -348,25 +319,25 @@ struct SlotIterator {
 
     HashEntry* operator->() { return &operator*(); }
 
-    BucketIterator& operator++() {
+    SlotIterator& operator++() {
       Next();
       return *this;
     }
 
-    BucketIterator operator++(int) {
+    SlotIterator operator++(int) {
       auto tmp = *this;
       ++*this;
       return tmp;
     }
 
-    friend bool operator==(const BucketIterator& a, const BucketIterator& b) {
+    friend bool operator==(const SlotIterator& a, const SlotIterator& b) {
       return a.hash_table_ && b.hash_table_ &&
              a.current_bucket_ == b.current_bucket_ &&
              a.start_bucket_ == b.start_bucket_ &&
              a.end_bucket_ == b.end_bucket_;
     }
 
-    friend bool operator!=(const BucketIterator& a, const BucketIterator& b) {
+    friend bool operator!=(const SlotIterator& a, const SlotIterator& b) {
       return !(a == b);
     }
 
@@ -381,7 +352,7 @@ struct SlotIterator {
       if (!bucket_iter_.Valid()) {
         current_bucket_++;
         while (current_bucket_ < end_bucket_) {
-          bucket_iter_ = HashTableBucketIterator(hash_table_, current_bucket_);
+          bucket_iter_ = BucketIterator(hash_table_, current_bucket_);
           if (bucket_iter_.Valid()) {
             return;
           }
@@ -400,10 +371,8 @@ struct SlotIterator {
     }
   };
 
-  SlotIterator(HashTable* hash_table)
-      : hash_table_(hash_table), current_slot_id_(0) {
-    setBucketRange();
-  }
+  HashTableIterator(HashTable* hash_table)
+      : hash_table_(hash_table), current_slot_id_(0) {}
 
   std::unique_lock<SpinMutex> AcquireSlotLock() {
     SpinMutex* slot_lock = GetSlotLock();
@@ -411,19 +380,14 @@ struct SlotIterator {
   }
 
   void Next() {
-    current_slot_id_++;
-    if (current_slot_id_ < hash_table_->slots_.size()) {
-      setBucketRange();
+    if (Valid()) {
+      current_slot_id_++;
     }
   }
 
   bool Valid() { return current_slot_id_ < hash_table_->slots_.size(); }
 
-  BucketIterator Begin() { return BucketIterator{hash_table_, 0}; }
-
-  BucketIterator End() {
-    return BucketIterator{hash_table_, hash_table_->slots_.size()};
-  }
+  SlotIterator Slot() { return SlotIterator{hash_table_, current_slot_id_}; }
 
   SpinMutex* GetSlotLock() {
     return &hash_table_->slots_[current_slot_id_].spin;

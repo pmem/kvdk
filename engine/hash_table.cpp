@@ -117,7 +117,7 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   }
 
   // iterate hash entrys in the bucket
-  HashTableBucketIterator iter(this, hint.bucket);
+  BucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
     *entry_ptr = &*iter;
     atomic_load_16(hash_entry_snap, *entry_ptr);
@@ -165,7 +165,7 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
   }
 
   // iterate hash entrys in the bucket
-  HashTableBucketIterator iter(this, hint.bucket);
+  BucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
     *entry_ptr = &(*iter);
     atomic_load_16(hash_entry_snap, *entry_ptr);
@@ -188,7 +188,7 @@ void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
-Status HashTable::allocate(HashTableBucketIterator& bucket_iter) {
+Status HashTable::allocate(BucketIterator& bucket_iter) {
   kvdk_assert(bucket_iter.hash_table_ == this &&
                   bucket_iter.entry_idx_ ==
                       hash_bucket_entries_[bucket_iter.bucket_idx_],
@@ -211,6 +211,6 @@ Status HashTable::allocate(HashTableBucketIterator& bucket_iter) {
   return Status::Ok;
 }
 
-SlotIterator HashTable::GetSlotIterator() { return SlotIterator{this}; }
+HashTableIterator HashTable::GetIterator() { return HashTableIterator{this}; }
 
 }  // namespace KVDK_NAMESPACE

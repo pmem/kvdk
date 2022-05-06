@@ -1324,49 +1324,47 @@ void KVEngine::backgroundDestroyCollections() {
 }
 
 void KVEngine::CleanOutDated() {
-  return;
   int64_t interval = static_cast<int64_t>(configs_.background_work_interval);
   std::deque<OldDeleteRecord> expired_record_queue;
   std::deque<OutdatedCollection> expired_collection_queue;
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
-  auto slot_iter = hash_table_->GetSlotIterator();
-  while (slot_iter.Valid()) {
+  auto hashtable_iter = hash_table_->GetIterator();
+  while (hashtable_iter.Valid()) {
     {  // Slot lock section
-      auto slot_lock(slot_iter.AcquireSlotLock());
-      auto bucket_iter = slot_iter.Begin();
-      auto end_bucket_iter = slot_iter.End();
+      auto slot_lock(hashtable_iter.AcquireSlotLock());
+      auto slot_iter = hashtable_iter.Slot();
       auto new_ts = version_controller_.GetCurrentTimestamp();
-      while (bucket_iter != end_bucket_iter) {
-        switch (bucket_iter->GetIndexType()) {
+      while (slot_iter.Valid()) {
+        switch (slot_iter->GetIndexType()) {
           case PointerType::StringRecord: {
-            if (bucket_iter->IsTTLStatus() &&
-                bucket_iter->GetIndex().string_record->HasExpired()) {
-              hash_table_->UpdateEntryStatus(&(*bucket_iter),
-                                             KeyStatus::Expired);
+            if (slot_iter->IsTTLStatus() &&
+                slot_iter->GetIndex().string_record->HasExpired()) {
+              hash_table_->UpdateEntryStatus(&(*slot_iter), KeyStatus::Expired);
               // push expired cleaner
-              expired_record_queue.push_back(OldDeleteRecord{
-                  bucket_iter->GetIndex().ptr, &(*bucket_iter),
-                  PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
+              expired_record_queue.push_back(
+                  OldDeleteRecord{slot_iter->GetIndex().ptr, &(*slot_iter),
+                                  PointerType::HashEntry, new_ts,
+                                  hashtable_iter.GetSlotLock()});
             }
             break;
           }
           case PointerType::Skiplist: {
-            if (bucket_iter->IsTTLStatus() &&
-                bucket_iter->GetIndex().skiplist->HasExpired()) {
+            if (slot_iter->IsTTLStatus() &&
+                slot_iter->GetIndex().skiplist->HasExpired()) {
               // push expired to cleaner and clear hash entry
               expired_collection_queue.emplace_back(
-                  bucket_iter->GetIndex().skiplist,
+                  slot_iter->GetIndex().skiplist,
                   version_controller_.GetCurrentTimestamp());
-              hash_table_->Erase(&(*bucket_iter));
+              hash_table_->Erase(&(*slot_iter));
             }
           }
           default:
             break;
         }
-        bucket_iter++;
+        slot_iter++;
       }
-      slot_iter.Next();
+      hashtable_iter.Next();
     }
 
     if (!expired_record_queue.empty() &&
