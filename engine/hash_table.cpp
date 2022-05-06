@@ -131,7 +131,10 @@ HashTable::LookupResult HashTable::Search(const StringView& key,
       if (ret.s != Status::Ok) {
         return ret;
       }
-      assert(iter.Valid());
+      kvdk_assert(
+          iter.Valid(),
+          "HashBucketIterator should be valid after allocate new entry");
+      kvdk_assert(iter->Empty(), "newly allocated hash entry should be empty");
       ret.entry_ptr = &(*iter);
     } else {
       ret.entry_ptr = empty_entry;
