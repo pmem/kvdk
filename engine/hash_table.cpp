@@ -11,7 +11,6 @@
 
 namespace KVDK_NAMESPACE {
 HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
-                                   uint32_t hash_bucket_size,
                                    uint32_t num_buckets_per_slot,
                                    const PMEMAllocator* pmem_allocator,
                                    uint32_t max_access_threads) {
@@ -19,9 +18,8 @@ HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
   // We catch exception here as we may need to allocate large memory for hash
   // table here
   try {
-    table =
-        new HashTable(hash_bucket_num, hash_bucket_size, num_buckets_per_slot,
-                      pmem_allocator, max_access_threads);
+    table = new HashTable(hash_bucket_num, num_buckets_per_slot, pmem_allocator,
+                          max_access_threads);
     return table;
   } catch (std::bad_alloc& b) {
     GlobalLogger.Error("No enough dram to create global hash table: b\n",
@@ -104,7 +102,6 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   HashBucket* bucket_ptr = &hash_buckets_[hint.bucket];
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);
   uint32_t key_hash_prefix = hint.key_hash_value >> 32;
-  uint64_t entries = hash_bucket_entries_[hint.bucket];
 
   // search cache
   *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
@@ -133,7 +130,7 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   }
 
   if (reusable_entry == nullptr) {
-    allocate(iter);
+    allocateEntry(iter);
     assert(iter.Valid());
     *entry_ptr = &(*iter);
   } else {
@@ -188,7 +185,7 @@ void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
-Status HashTable::allocate(BucketIterator& bucket_iter) {
+Status HashTable::allocateEntry(BucketIterator& bucket_iter) {
   kvdk_assert(bucket_iter.hash_table_ == this &&
                   bucket_iter.entry_idx_ ==
                       hash_bucket_entries_[bucket_iter.bucket_idx_],
@@ -196,7 +193,7 @@ Status HashTable::allocate(BucketIterator& bucket_iter) {
   assert(bucket_iter.bucket_ptr_ != nullptr);
   if (hash_bucket_entries_[bucket_iter.bucket_idx_] > 0 &&
       hash_bucket_entries_[bucket_iter.bucket_idx_] % kNumEntryPerBucket == 0) {
-    auto space = dram_allocator_.Allocate(128);
+    auto space = dram_allocator_.Allocate(kHashBucketSize);
     if (space.size == 0) {
       GlobalLogger.Error("MemoryOverflow!\n");
       return Status::MemoryOverflow;

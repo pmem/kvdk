@@ -96,16 +96,22 @@ struct alignas(16) HashEntry {
 };
 static_assert(sizeof(HashEntry) == 16);
 
-constexpr size_t kNumEntryPerBucket = (128 - sizeof(void*)) / sizeof(HashEntry);
+// Size of each hash bucket
+//
+// It should be larger than hans entry size (which is 16) plus 8 (the pointer
+// to next bucket). It is recommended to set it align to cache line
+constexpr size_t kHashBucketSize = 128;
+constexpr size_t kNumEntryPerBucket =
+    (kHashBucketSize - sizeof(void*)) / sizeof(HashEntry);
 struct HashBucket {
   HashBucket() {
     memset(hash_entries, 0, sizeof(HashEntry) * kNumEntryPerBucket);
   }
   HashEntry hash_entries[kNumEntryPerBucket];
   HashBucket* next{nullptr};
-  char padding[128 - sizeof(hash_entries) - sizeof(next)];
+  char padding[kHashBucketSize - sizeof(hash_entries) - sizeof(next)];
 };
-static_assert(sizeof(HashBucket) == 128);
+static_assert(sizeof(HashBucket) == kHashBucketSize);
 
 struct HashCache {
   HashEntry* entry_ptr = nullptr;
@@ -130,7 +136,6 @@ class HashTable {
   };
 
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
-                                 uint32_t hash_bucket_size,
                                  uint32_t num_buckets_per_slot,
                                  const PMEMAllocator* pmem_allocator,
                                  uint32_t max_access_threads);
@@ -193,39 +198,33 @@ class HashTable {
   HashTableIterator GetIterator();
 
  private:
-  HashTable(uint64_t hash_bucket_num, uint32_t hash_bucket_size,
-            uint32_t num_buckets_per_slot, const PMEMAllocator* pmem_allocator,
-            uint32_t max_access_threads)
-      : hash_bucket_num_(hash_bucket_num),
+  HashTable(uint64_t hash_bucket_num, uint32_t num_buckets_per_slot,
+            const PMEMAllocator* pmem_allocator, uint32_t max_access_threads)
+      : num_hash_buckets_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
-        hash_bucket_size_(hash_bucket_size),
         pmem_allocator_(pmem_allocator),
         dram_allocator_(max_access_threads),
-        num_entries_per_bucket_((hash_bucket_size_ - 8 /* next pointer */) /
-                                sizeof(HashEntry)),
         slots_(hash_bucket_num / num_buckets_per_slot),
         hash_bucket_entries_(hash_bucket_num, 0),
-        hash_buckets_(hash_bucket_num_) {}
+        hash_buckets_(num_hash_buckets_) {}
 
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
-    return key_hash_value & (hash_bucket_num_ - 1);
+    return key_hash_value & (num_hash_buckets_ - 1);
   }
 
   inline uint32_t get_slot_num(uint32_t bucket) {
     return bucket / num_buckets_per_slot_;
   }
 
-  Status allocate(BucketIterator& bucket_iter);
+  Status allocateEntry(BucketIterator& bucket_iter);
 
-  const uint64_t hash_bucket_num_;
+  const uint64_t num_hash_buckets_;
   const uint32_t num_buckets_per_slot_;
-  const uint32_t hash_bucket_size_;
   const PMEMAllocator* pmem_allocator_;
   ChunkBasedAllocator dram_allocator_;
-  const uint64_t num_entries_per_bucket_;
   Array<Slot> slots_;
-  Array<HashBucket> hash_buckets_;
   std::vector<uint64_t> hash_bucket_entries_;
+  Array<HashBucket> hash_buckets_;
   void* main_buckets_;
 };
 
@@ -299,9 +298,9 @@ struct HashTableIterator {
   class SlotIterator {
    private:
     HashTable* hash_table_;
-    uint64_t current_bucket_;
     uint64_t start_bucket_;
     uint64_t end_bucket_;
+    uint64_t current_bucket_;
     BucketIterator bucket_iter_;
 
    public:
@@ -326,24 +325,13 @@ struct HashTableIterator {
 
     SlotIterator operator++(int) {
       auto tmp = *this;
-      ++*this;
+      this->operator++();
       return tmp;
     }
 
-    friend bool operator==(const SlotIterator& a, const SlotIterator& b) {
-      return a.hash_table_ && b.hash_table_ &&
-             a.current_bucket_ == b.current_bucket_ &&
-             a.start_bucket_ == b.start_bucket_ &&
-             a.end_bucket_ == b.end_bucket_;
-    }
-
-    friend bool operator!=(const SlotIterator& a, const SlotIterator& b) {
-      return !(a == b);
-    }
-
     bool Valid() {
-      return current_bucket_ < end_bucket_ &&
-             current_bucket_ >= start_bucket_ && bucket_iter_.Valid();
+      return bucket_iter_.Valid() && current_bucket_ < end_bucket_ &&
+             current_bucket_ >= start_bucket_;
     }
 
    private:

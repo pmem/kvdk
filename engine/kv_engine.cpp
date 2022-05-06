@@ -160,9 +160,8 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   thread_manager_.reset(new (std::nothrow)
                             ThreadManager(configs_.max_access_threads));
   hash_table_.reset(HashTable::NewHashTable(
-      configs_.hash_bucket_num, configs_.hash_bucket_size,
-      configs_.num_buckets_per_slot, pmem_allocator_.get(),
-      configs_.max_access_threads));
+      configs_.hash_bucket_num, configs_.num_buckets_per_slot,
+      pmem_allocator_.get(), configs_.max_access_threads));
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
       thread_manager_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
@@ -717,11 +716,6 @@ Status KVEngine::CheckConfigs(const Configs& configs) {
     GlobalLogger.Error(
         "pmem file too small, should larger than pmem_segment_blocks * "
         "pmem_block_size * max_access_threads\n");
-    return Status::InvalidConfiguration;
-  }
-
-  if (configs.hash_bucket_size < sizeof(HashEntry) + 8) {
-    GlobalLogger.Error("hash bucket too small\n");
     return Status::InvalidConfiguration;
   }
 

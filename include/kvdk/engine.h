@@ -31,7 +31,7 @@ extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
                            unsigned char populate_pmem_space,
                            uint32_t pmem_block_size,
                            uint64_t pmem_segment_blocks,
-                           uint32_t hash_bucket_size, uint64_t hash_bucket_num,
+                           uint64_t hash_bucket_num,
                            uint32_t num_buckets_per_slot);
 extern void KVDKConfigRegisterCompFunc(
     KVDKConfigs* kv_config, const char* compara_name, size_t compara_len,
