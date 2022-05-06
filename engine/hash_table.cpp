@@ -91,6 +91,58 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
   return false;
 }
 
+template <bool may_insert>
+HashTable::LookupResult HashTable::Search(const StringView& key,
+                                          uint16_t type_mask) {
+  LookupResult ret;
+  HashEntry* empty_entry = nullptr;
+  ret.hint = GetHint(key);
+
+  HashBucket* bucket_ptr = &hash_buckets_[ret.hint.bucket];
+  _mm_prefetch(bucket_ptr, _MM_HINT_T0);
+  uint32_t key_hash_prefix = ret.hint.key_hash_value >> 32;
+
+  // search cache
+  ret.entry_ptr = slots_[ret.hint.slot].hash_cache.entry_ptr;
+  if (ret.entry_ptr != nullptr) {
+    atomic_load_16(&ret.entry, ret.entry_ptr);
+    if (ret.entry.Match(key, key_hash_prefix, type_mask, nullptr)) {
+      return ret;
+    }
+  }
+
+  // iterate hash entrys in the bucket
+  HashBucketIterator iter(this, ret.hint.bucket);
+  while (iter.Valid()) {
+    ret.entry_ptr = &*iter;
+    atomic_load_16(&ret.entry, ret.entry_ptr);
+    if (ret.entry.Match(key, key_hash_prefix, type_mask, nullptr)) {
+      slots_[ret.hint.slot].hash_cache.entry_ptr = ret.entry_ptr;
+      return ret;
+    }
+    if (ret.entry_ptr->Empty()) {
+      empty_entry = ret.entry_ptr;
+    }
+    iter++;
+  }
+
+  if (may_insert) {
+    if (empty_entry == nullptr) {
+      ret.s = allocateEntry(iter);
+      if (ret.s != Status::Ok) {
+        return ret;
+      }
+      assert(iter.Valid());
+      ret.entry_ptr = &(*iter);
+    } else {
+      ret.entry_ptr = empty_entry;
+    }
+  }
+
+  ret.s = NotFound;
+  return ret;
+}
+
 Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
                                  uint16_t type_mask, HashEntry** entry_ptr,
                                  HashEntry* hash_entry_snap,
@@ -114,7 +166,7 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
   }
 
   // iterate hash entrys in the bucket
-  BucketIterator iter(this, hint.bucket);
+  HashBucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
     *entry_ptr = &*iter;
     atomic_load_16(hash_entry_snap, *entry_ptr);
@@ -162,7 +214,7 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
   }
 
   // iterate hash entrys in the bucket
-  BucketIterator iter(this, hint.bucket);
+  HashBucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
     *entry_ptr = &(*iter);
     atomic_load_16(hash_entry_snap, *entry_ptr);
@@ -185,7 +237,7 @@ void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
   atomic_store_16(entry_ptr, &new_hash_entry);
 }
 
-Status HashTable::allocateEntry(BucketIterator& bucket_iter) {
+Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
   kvdk_assert(bucket_iter.hash_table_ == this &&
                   bucket_iter.entry_idx_ ==
                       hash_bucket_entries_[bucket_iter.bucket_idx_],
