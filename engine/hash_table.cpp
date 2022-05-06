@@ -110,7 +110,7 @@ HashTable::LookupResult HashTable::Search(const StringView& key,
     }
   }
 
-  // iterate hash entrys in the bucket
+  // iterate hash entries in the bucket
   HashBucketIterator iter(this, ret.hint.bucket);
   while (iter.Valid()) {
     ret.entry_ptr = &*iter;
@@ -164,7 +164,7 @@ Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
     }
   }
 
-  // iterate hash entrys in the bucket
+  // iterate hash entries in the bucket
   HashBucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
     *entry_ptr = &*iter;
@@ -212,7 +212,7 @@ Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
     }
   }
 
-  // iterate hash entrys in the bucket
+  // iterate hash entries in the bucket
   HashBucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
     *entry_ptr = &(*iter);
