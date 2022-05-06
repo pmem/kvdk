@@ -107,77 +107,6 @@ struct HashBucket {
 };
 static_assert(sizeof(HashBucket) == 128);
 
-class HashTableBucketIterator {
- private:
-  friend class HashTable;
-  HashTable* hash_table_;
-  HashBucket* bucket_ptr_;
-  uint64_t bucket_idx_;
-  uint64_t entry_idx_;
-
- public:
-  HashTableBucketIterator(HashTable* hash_table, uint64_t bucket_idx)
-      : hash_table_(hash_table),
-        bucket_ptr_(nullptr),
-        bucket_idx_(bucket_idx),
-        entry_idx_(0) {
-    getBucket();
-  }
-
-  HashTableBucketIterator(const HashTableBucketIterator&) = default;
-
-  bool Valid() {
-    return entry_idx_ < hash_table_->hash_bucket_entries_[bucket_idx_];
-  }
-
-  HashEntry& operator*() {
-    return bucket_ptr_->hash_entries[entry_idx_ % kNumEntryPerBucket];
-  }
-
-  HashEntry* operator->() { return &operator*(); }
-
-  HashTableBucketIterator& operator++() {
-    next();
-    return *this;
-  }
-
-  HashTableBucketIterator operator++(int) {
-    HashTableBucketIterator tmp{*this};
-    this->operator++();
-    return tmp;
-  }
-
-  friend bool operator==(const HashTableBucketIterator& a,
-                         const HashTableBucketIterator& b) {
-    return a.hash_table_ && b.hash_table_ && a.bucket_idx_ == b.bucket_idx_ &&
-           a.entry_idx_ == b.entry_idx_;
-  }
-
-  friend bool operator!=(const HashTableBucketIterator& a,
-                         const HashTableBucketIterator& b) {
-    return !(a == b);
-  }
-
- private:
-  // Get valid bucket, which has hash entries.
-  void getBucket() {
-    assert(bucket_idx_ < hash_table_->hash_buckets_.size());
-    bucket_ptr_ = &hash_table_->hash_buckets_[bucket_idx_];
-    assert(bucket_ptr_ != nullptr);
-    _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
-  }
-
-  void next() {
-    if (Valid()) {
-      entry_idx_++;
-      if (entry_idx_ % kNumEntryPerBucket == 0 && Valid()) {
-        bucket_ptr_ = bucket_ptr_->next;
-        _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
-      }
-    }
-  }
-};
-
 struct HashCache {
   HashEntry* entry_ptr = nullptr;
 };
@@ -300,9 +229,84 @@ class HashTable {
   void* main_buckets_;
 };
 
+class HashTableBucketIterator {
+ private:
+  friend class HashTable;
+  HashTable* hash_table_;
+  uint64_t bucket_idx_;
+  uint64_t entry_idx_;
+  HashBucket* bucket_ptr_;
+
+ public:
+  HashTableBucketIterator(HashTable* hash_table /* should be non-null */,
+                          uint64_t bucket_idx)
+      : hash_table_(hash_table),
+        bucket_idx_(bucket_idx),
+        entry_idx_(0),
+        bucket_ptr_(nullptr) {
+    if (bucket_idx_ < hash_table_->hash_buckets_.size()) {
+      bucket_ptr_ = &hash_table_->hash_buckets_[bucket_idx_];
+      _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
+    }
+  }
+
+  HashTableBucketIterator(const HashTableBucketIterator&) = default;
+
+  bool Valid() {
+    return bucket_ptr_ != nullptr &&
+           entry_idx_ < hash_table_->hash_bucket_entries_[bucket_idx_];
+  }
+
+  HashEntry& operator*() {
+    return bucket_ptr_->hash_entries[entry_idx_ % kNumEntryPerBucket];
+  }
+
+  HashEntry* operator->() { return &operator*(); }
+
+  HashTableBucketIterator& operator++() {
+    next();
+    return *this;
+  }
+
+  HashTableBucketIterator operator++(int) {
+    HashTableBucketIterator tmp{*this};
+    this->operator++();
+    return tmp;
+  }
+
+  friend bool operator==(const HashTableBucketIterator& a,
+                         const HashTableBucketIterator& b) {
+    return a.hash_table_ && b.hash_table_ && a.bucket_idx_ == b.bucket_idx_ &&
+           a.entry_idx_ == b.entry_idx_;
+  }
+
+  friend bool operator!=(const HashTableBucketIterator& a,
+                         const HashTableBucketIterator& b) {
+    return !(a == b);
+  }
+
+ private:
+  // Get valid bucket, which has hash entries.
+  void getBucket() {
+    assert(bucket_idx_ < hash_table_->hash_buckets_.size());
+    bucket_ptr_ = &hash_table_->hash_buckets_[bucket_idx_];
+    assert(bucket_ptr_ != nullptr);
+  }
+
+  void next() {
+    if (Valid()) {
+      entry_idx_++;
+      if (entry_idx_ % kNumEntryPerBucket == 0 && Valid()) {
+        bucket_ptr_ = bucket_ptr_->next;
+        _mm_prefetch(bucket_ptr_, _MM_HINT_T0);
+      }
+    }
+  }
+};
+
 struct SlotIterator {
  private:
-  // The range of bucket id is [0, hash_bucket_num_).The range of bucket id
+  // The range of slot id is [0, hash table slot number).The range of bucket id
   // corresponding to the current slot is [slot_id*num_buckets_per_slot_,
   // (slot_id+1)*num_buckets_per_slot_).
   uint64_t iter_start_bucket_idx_;
@@ -311,31 +315,34 @@ struct SlotIterator {
   std::unique_lock<SpinMutex> iter_lock_slot_;
   // current slot id
   HashTable* hash_table_;
-  uint64_t current_slot_id;
+  uint64_t current_slot_id_;
 
   void setBucketRange() {
     iter_start_bucket_idx_ =
-        current_slot_id * hash_table_->num_buckets_per_slot_;
+        current_slot_id_ * hash_table_->num_buckets_per_slot_;
     iter_end_bucket_idx_ =
-        (current_slot_id + 1) * hash_table_->num_buckets_per_slot_;
+        (current_slot_id_ + 1) * hash_table_->num_buckets_per_slot_;
   }
 
  public:
   class BucketIterator {
    private:
     HashTable* hash_table_;
-    uint64_t slot_idx_;
-    uint64_t bucket_idx_;
+    uint64_t current_bucket_;
     uint64_t start_bucket_;
     uint64_t end_bucket_;
     HashTableBucketIterator bucket_iter_;
 
    public:
-    BucketIterator(HashTable* hash_table, uint64_t slot_idx)
+    BucketIterator(HashTable* hash_table /* should be non null */,
+                   uint64_t slot_idx)
         : hash_table_(hash_table),
-          slot_idx_(slot_idx),
-          bucket_idx_(hash_table->num_buckets_per_slot_ * slot_idx_),
-          bucket_iter_(hash_table, bucket_idx_) {}
+          start_bucket_(hash_table_->num_buckets_per_slot_ * slot_idx),
+          end_bucket_(start_bucket_ + hash_table_->num_buckets_per_slot_),
+          current_bucket_(start_bucket_),
+          bucket_iter_(hash_table_, current_bucket_) {
+      getBucket();
+    }
 
     HashEntry& operator*() { return *bucket_iter_; }
 
@@ -353,25 +360,48 @@ struct SlotIterator {
     }
 
     friend bool operator==(const BucketIterator& a, const BucketIterator& b) {
-      return a.hash_table_ && b.hash_table_ && a.bucket_idx_ == b.bucket_idx_ &&
-             a.slot_idx_ == b.slot_idx_;
+      return a.hash_table_ && b.hash_table_ &&
+             a.current_bucket_ == b.current_bucket_ &&
+             a.start_bucket_ == b.start_bucket_ &&
+             a.end_bucket_ == b.end_bucket_;
     }
 
     friend bool operator!=(const BucketIterator& a, const BucketIterator& b) {
       return !(a == b);
     }
 
-    bool Valid() { return bucket_idx_ < end_bucket_; }
+    bool Valid() {
+      return current_bucket_ < end_bucket_ &&
+             current_bucket_ >= start_bucket_ && bucket_iter_.Valid();
+    }
 
    private:
-    // Get valid bucket, which has hash entries.
-    void getBucket() {}
+    // Locate to bucket with hash entries from current
+    void getBucket() {
+      if (!bucket_iter_.Valid()) {
+        current_bucket_++;
+        while (current_bucket_ < end_bucket_) {
+          bucket_iter_ = HashTableBucketIterator(hash_table_, current_bucket_);
+          if (bucket_iter_.Valid()) {
+            return;
+          }
+          current_bucket_++;
+        }
+      }
+    }
 
-    void Next() {}
+    void Next() {
+      if (Valid()) {
+        bucket_iter_++;
+        if (!bucket_iter_.Valid()) {
+          getBucket();
+        }
+      }
+    }
   };
 
   SlotIterator(HashTable* hash_table)
-      : hash_table_(hash_table), current_slot_id(0) {
+      : hash_table_(hash_table), current_slot_id_(0) {
     setBucketRange();
   }
 
@@ -381,22 +411,22 @@ struct SlotIterator {
   }
 
   void Next() {
-    current_slot_id++;
-    if (current_slot_id < hash_table_->slots_.size()) {
+    current_slot_id_++;
+    if (current_slot_id_ < hash_table_->slots_.size()) {
       setBucketRange();
     }
   }
 
-  bool Valid() { return current_slot_id < hash_table_->slots_.size(); }
+  bool Valid() { return current_slot_id_ < hash_table_->slots_.size(); }
 
-  BucketIterator Begin() {
-    return BucketIterator{this, iter_start_bucket_idx_};
+  BucketIterator Begin() { return BucketIterator{hash_table_, 0}; }
+
+  BucketIterator End() {
+    return BucketIterator{hash_table_, hash_table_->slots_.size()};
   }
 
-  BucketIterator End() { return BucketIterator{this, iter_end_bucket_idx_}; }
-
   SpinMutex* GetSlotLock() {
-    return &hash_table_->slots_[current_slot_id].spin;
+    return &hash_table_->slots_[current_slot_id_].spin;
   }
 };
 }  // namespace KVDK_NAMESPACE
