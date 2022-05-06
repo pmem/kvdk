@@ -20,7 +20,6 @@ HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
   try {
     table = new HashTable(hash_bucket_num, num_buckets_per_slot, pmem_allocator,
                           max_access_threads);
-    return table;
   } catch (std::bad_alloc& b) {
     GlobalLogger.Error("No enough dram to create global hash table: b\n",
                        b.what());
