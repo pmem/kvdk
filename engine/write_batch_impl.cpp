@@ -7,17 +7,20 @@ namespace KVDK_NAMESPACE {
 std::string BatchWriteLog::Serialize() {
   kvdk_assert(stage == Stage::Initializing, "");
 
-  size_t total_bytes = sizeof(Stage) + sizeof(size_t) * 4 +
-                       sizeof(StringEntry) * string_ops.size() +
-                       sizeof(SortedEntry) * sorted_ops.size() +
-                       sizeof(HashEntry) * hash_ops.size();
+  size_t total_bytes;
+  total_bytes =
+      sizeof(total_bytes) + sizeof(timestamp) + sizeof(stage) +
+      sizeof(string_ops.size()) + string_ops.size() * sizeof(StringEntry) +
+      sizeof(sorted_ops.size()) + sorted_ops.size() * sizeof(SortedEntry) +
+      sizeof(hash_ops.size()) + hash_ops.size() * sizeof(HashEntry);
 
   std::string ret;
   ret.reserve(total_bytes);
   size_t pos = 0;
 
-  AppendPOD(&ret, stage);
   AppendPOD(&ret, total_bytes);
+  AppendPOD(&ret, timestamp);
+  AppendPOD(&ret, stage);
 
   AppendPOD(&ret, string_ops.size());
   for (size_t i = 0; i < string_ops.size(); i++) {
@@ -42,7 +45,12 @@ std::string BatchWriteLog::Serialize() {
 void BatchWriteLog::Deserialize(char const* src) {
   kvdk_assert(string_ops.empty() && sorted_ops.empty() && hash_ops.empty(), "");
 
-  StringView sw{src, sizeof(Stage) + sizeof(size_t)};
+  size_t total_bytes = *reinterpret_cast<size_t const*>(src);
+
+  StringView sw{src, sizeof(total_bytes)};
+
+  total_bytes = FetchPOD<size_t>(&sw);
+  timestamp = FetchPOD<size_t>(&sw);
   stage = FetchPOD<Stage>(&sw);
 
   if (stage == Stage::Initializing || stage == Stage::Committed) {
@@ -53,9 +61,6 @@ void BatchWriteLog::Deserialize(char const* src) {
     kvdk_assert(false, "Invalid Stage, invalid Log!");
     return;
   }
-
-  size_t total_bytes = FetchPOD<size_t>(&sw);
-  sw = StringView{sw.data(), total_bytes - sizeof(Stage) - sizeof(size_t)};
 
   string_ops.resize(FetchPOD<size_t>(&sw));
   for (size_t i = 0; i < string_ops.size(); i++) {

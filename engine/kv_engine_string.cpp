@@ -356,4 +356,19 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
 
   return Status::Ok;
 }
+
+Status KVEngine::stringBatchWrite(WriteBatchImpl::StringOpBatch const& batch,
+                                  BatchWriteLog::StringLog const& log) {
+  return Status::NotSupported;
+}
+
+Status KVEngine::stringBatchCommit(WriteBatchImpl::StringOpBatch const& batch,
+                                   BatchWriteLog::StringLog const& log) {
+  return Status::NotSupported;
+}
+
+Status KVEngine::stringBatchRollback(BatchWriteLog::StringLog const& log) {
+  return Status::NotSupported;
+}
+
 }  // namespace KVDK_NAMESPACE

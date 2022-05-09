@@ -147,8 +147,8 @@ class BatchWriteLog {
   }
 
   // Format of the BatchWriteLog
-  // Stage | total_bytes | N | StringEntry*N | M | SortedEntry*M | K |
-  // HashEntry*K
+  // total_bytes | Stage | timestamp | N | StringEntry*N | M | SortedEntry*M | K
+  // | HashEntry*K
   std::string Serialize();
 
   void Deserialize(char const* src);
@@ -182,6 +182,7 @@ class BatchWriteLog {
 
  private:
   Stage stage{Stage::Initializing};
+  TimeStampType timestamp;
   StringLog string_ops;
   SortedLog sorted_ops;
   HashLog hash_ops;

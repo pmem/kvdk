@@ -318,4 +318,18 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
   return Status::Ok;
 }
 
+Status KVEngine::hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch,
+                                    BatchWriteLog::HashLog const& log) {
+  return Status::NotSupported;
+}
+
+Status KVEngine::hashListBatchCommit(WriteBatchImpl::HashOpBatch const& batch,
+                                     BatchWriteLog::HashLog const& log) {
+  return Status::NotSupported;
+}
+
+Status KVEngine::hashListBatchRollback(BatchWriteLog::HashLog const& log) {
+  return Status::NotSupported;
+}
+
 }  // namespace KVDK_NAMESPACE
