@@ -18,9 +18,9 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
 elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
 elseif (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer")
+elseif (CMAKE_BUILD_TYPE STREQUAL "Debug") # -fsanitize=address -fsanitize-address-use-after-scope
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra  -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -fno-omit-frame-pointer")
 elseif (CMAKE_BUILD_TYPE STREQUAL "FastDebug")
     set(CMAKE_CXX_FLAGS "-g -O2 -march=native")
     set(CMAKE_C_FLAGS "-g -O2 -march=native")
@@ -53,6 +53,7 @@ set(SOURCES
         engine/kv_engine_hash.cpp
         engine/kv_engine_sorted.cpp
         engine/kv_engine_string.cpp
+        engine/kv_engine_cleaner.cpp
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp

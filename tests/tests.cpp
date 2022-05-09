@@ -17,7 +17,7 @@
 #include "kvdk/engine.hpp"
 #include "test_util.h"
 
-DEFINE_string(path, "/mnt/pmem1/kvdk_unit_test",
+DEFINE_string(path, "/mnt/pmem0/kvdk_unit_test",
               "Path of KVDK instance on PMem.");
 
 using namespace KVDK_NAMESPACE;
@@ -231,6 +231,10 @@ class EngineBasicTest : public testing::Test {
         new_collection += std::to_string(id);
       }
 
+      size_t collection_size;
+      ASSERT_EQ(engine->SortedSize(new_collection, &collection_size),
+                Status::Ok);
+
       auto iter = engine->NewSortedIterator(new_collection);
       ASSERT_TRUE(iter != nullptr);
       // forward iterator
@@ -247,6 +251,7 @@ class EngineBasicTest : public testing::Test {
           prev = k;
         }
       }
+      ASSERT_EQ(collection_size, entries);
       if (is_local) {
         ASSERT_EQ(cnt, entries);
       } else {
@@ -1037,6 +1042,9 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
           }
         }
 
+        size_t t_skiplist_size;
+        ASSERT_EQ(engine->SortedSize(t_skiplist, &t_skiplist_size), Status::Ok);
+
         auto iter = engine->NewSortedIterator(t_skiplist);
         ASSERT_TRUE(iter != nullptr);
         int data_entries_scan = 0;
@@ -1054,6 +1062,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
           }
         }
         ASSERT_EQ(data_entries_scan, count / 2);
+        ASSERT_EQ(data_entries_scan, t_skiplist_size);
 
         iter->SeekToLast();
         if (iter->Valid()) {
@@ -1072,6 +1081,9 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         engine->ReleaseSortedIterator(iter);
       }
 
+      size_t global_skiplist_size;
+      ASSERT_EQ(engine->SortedSize(global_skiplist, &global_skiplist_size),
+                Status::Ok);
       int data_entries_scan = 0;
       auto iter = engine->NewSortedIterator(global_skiplist);
       ASSERT_TRUE(iter != nullptr);
@@ -1089,6 +1101,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         }
       }
       ASSERT_EQ(data_entries_scan, (count / 2) * num_threads);
+      ASSERT_EQ(global_skiplist_size, data_entries_scan);
 
       iter->SeekToLast();
       if (iter->Valid()) {
@@ -1224,13 +1237,15 @@ TEST_F(EngineBasicTest, TestList) {
     std::string value_got;
     size_t sz;
     for (size_t j = 0; j < count; j++) {
+      if (list_copy.empty()) {
+        ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::NotFound);
+        break;
+      }
       ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.front(), value_got);
       list_copy.pop_front();
-      // Empty list is deleted!
-      ASSERT_TRUE((engine->ListLength(key, &sz) == Status::NotFound &&
-                   list_copy.empty()) ||
-                  sz == list_copy.size());
+      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(sz, list_copy.size());
     }
   };
 
@@ -1240,12 +1255,15 @@ TEST_F(EngineBasicTest, TestList) {
     std::string value_got;
     size_t sz;
     for (size_t j = 0; j < count; j++) {
+      if (list_copy.empty()) {
+        ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::NotFound);
+        break;
+      }
       ASSERT_EQ(engine->ListPopBack(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.back(), value_got);
       list_copy.pop_back();
-      ASSERT_TRUE((engine->ListLength(key, &sz) == Status::NotFound &&
-                   list_copy.empty()) ||
-                  sz == list_copy.size());
+      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(sz, list_copy.size());
     }
   };
 
@@ -1316,6 +1334,8 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   for (size_t i = 0; i < 3; i++) {
+    LaunchNThreads(num_threads, LPop);
+    LaunchNThreads(num_threads, RPop);
     LaunchNThreads(num_threads, LPush);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, RPush);
@@ -1500,17 +1520,17 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
         match = match || (got_val == val2);
 
         if (!match) {
-          // std::string msg;
-          // msg.append("Wrong value!\n");
-          // msg.append("The value should be 1024 of a's or 1023 of b's.\n");
-          // msg.append("Actual result is:\n");
-          // msg.append(got_val);
-          // msg.append("\n");
-          // msg.append("\n");
-          // msg.append("Length: ");
-          // msg.append(std::to_string(got_val.size()));
-          // msg.append("\n");
-          // GlobalLogger.Error(msg.data());
+          std::string msg;
+          msg.append("Wrong value!\n");
+          msg.append("The value should be 1024 of a's or 1023 of b's.\n");
+          msg.append("Actual result is:\n");
+          msg.append(got_val);
+          msg.append("\n");
+          msg.append("\n");
+          msg.append("Length: ");
+          msg.append(std::to_string(got_val.size()));
+          msg.append("\n");
+          GlobalLogger.Error(msg.data());
         }
         ASSERT_TRUE(match);
       }

@@ -115,6 +115,11 @@ class ThreadPool {
       stop_ = true;
     }
     task_condition_.notify_all();
+    for (auto& work : workers_) {
+      if (work.joinable()) {
+        work.join();
+      }
+    }
   }
 
  private:

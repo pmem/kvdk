@@ -57,7 +57,6 @@ void KVEngine::CleanOutDated() {
                       RecordType::SortedElemDelete &&
                   bucket_iter->GetIndex().skiplist_node->GetTimestamp() <
                       version_controller_.OldestSnapshotTS()) {
-                printf("111\n");
                 outdated_records.emplace_back(std::make_pair(
                     bucket_iter->GetIndex().ptr, PointerType::SkiplistNode));
                 clean_num++;
@@ -70,7 +69,6 @@ void KVEngine::CleanOutDated() {
                       RecordType::SortedElemDelete &&
                   bucket_iter->GetIndex().dl_record->GetTimestamp() <
                       version_controller_.OldestSnapshotTS()) {
-                printf("222\n");
                 clean_num++;
                 outdated_records.emplace_back(std::make_pair(
                     bucket_iter->GetIndex().ptr, PointerType::DLRecord));
@@ -87,7 +85,6 @@ void KVEngine::CleanOutDated() {
               if (bucket_iter->IsExpiredStatus() &&
                   bucket_iter->GetIndex().skiplist->GetTimestamp() <
                       version_controller_.OldestSnapshotTS()) {
-                printf("333\n");
                 outdated_collections.emplace_back(
                     (Collection*)bucket_iter->GetIndex().ptr,
                     PointerType::Skiplist, release_time);
@@ -140,7 +137,6 @@ void KVEngine::CleanOutDated() {
     }
 
     if (outdated_records.size() >= kMaxCachedOldRecords) {
-      printf("444444444\n");
       std::vector<std::pair<void*, PointerType>> tmp_records;
       outdated_records.swap(tmp_records);
       // Could purge for expired records.
@@ -148,7 +144,6 @@ void KVEngine::CleanOutDated() {
     }
 
     if (!outdated_collections.empty()) {
-      printf("5555555555\n");
       std::deque<OutdatedCollection> tmp_collections;
       outdated_collections.swap(tmp_collections);
       old_records_cleaner_.PushToGlobal(std::move(tmp_collections));
@@ -165,9 +160,9 @@ void KVEngine::CleanOutDated() {
   auto duration = std::chrono::duration_cast<std::chrono::seconds>(
       std::chrono::system_clock::now() - start_ts);
 
-  std::cout << "total num: " << total_num << " clean num: " << clean_num
-            << "collection num: " << collection_num
-            << " cost time: " << duration.count() << "s\n";
+  // std::cout << "total num: " << total_num << " clean num: " << clean_num
+  //           << "collection num: " << collection_num
+  //           << " cost time: " << duration.count() << "s\n";
 }
 
 }  // namespace KVDK_NAMESPACE

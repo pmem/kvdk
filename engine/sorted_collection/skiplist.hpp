@@ -252,6 +252,11 @@ class Skiplist : public Collection {
 
   void CleanObsoletedNodes();
 
+  // Return number of elements in skiplist
+  size_t Size();
+
+  void UpdateSize(int64_t delta);
+
   static bool IsSkiplistRecord(DLRecord* record) {
     auto type = record->entry.meta.type;
     return type == SortedElem || type == SortedElemDelete ||
@@ -460,6 +465,7 @@ class Skiplist : public Collection {
     return XXH3_64bits(record, sizeof(const DLRecord*));
   }
 
+  std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;
   PMEMAllocator* pmem_allocator_;
   // TODO: use specified hash table for each skiplist

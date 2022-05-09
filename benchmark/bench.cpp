@@ -108,14 +108,16 @@ std::atomic_uint64_t read_ops{0};
 std::atomic_uint64_t write_ops{0};
 std::atomic_uint64_t read_not_found{0};
 std::atomic_uint64_t read_cnt{UINT64_MAX};
-std::vector<std::vector<std::uint64_t>> read_latencies;
-std::vector<std::vector<std::uint64_t>> write_latencies;
 std::vector<std::string> collections;
 Engine* engine;
 std::string value_pool;
 size_t operations_per_thread;
 bool has_timed_out;
 std::vector<int> has_finished;  // std::vector<bool> is a trap!
+// Record operation latencies of access threads. Latencies of write threads
+// stored in first part of the vector, latencies of read threads stored in
+// second part
+std::vector<std::vector<std::uint64_t>> latencies;
 
 std::vector<PaddedEngine> random_engines;
 std::vector<PaddedRangeIterators> ranges;
@@ -167,13 +169,13 @@ void DBWrite(int tid) {
   WriteBatch batch;
   for (size_t operations = 0; operations < operations_per_thread;
        ++operations) {
+    // generate key
+    std::uint64_t num = generate_key(tid);
+    std::uint64_t cid = num % FLAGS_num_collection;
     if (has_timed_out) {
       break;
     }
 
-    // generate key
-    std::uint64_t num = generate_key(tid);
-    std::uint64_t cid = num % FLAGS_num_collection;
     memcpy(&key[0], &num, 8);
     StringView value = StringView(value_pool.data(), generate_value_size(tid));
 
@@ -184,7 +186,7 @@ void DBWrite(int tid) {
     switch (bench_data_type) {
       case DataType::String: {
         if (FLAGS_batch_size == 0) {
-          s = engine->Set(key, value, WriteOptions());
+          s = engine->Set(key, value, WriteOptions(1));
         } else {
           batch.Put(key, std::string(value.data(), value.size()));
           if (batch.Size() == FLAGS_batch_size) {
@@ -220,7 +222,7 @@ void DBWrite(int tid) {
       if (lat / 100 >= MAX_LAT) {
         throw std::runtime_error{"Write latency overflow"};
       }
-      write_latencies[tid][lat / 100]++;
+      latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {
@@ -356,7 +358,7 @@ void DBRead(int tid) {
         fprintf(stderr, "Read latency overflow: %ld us\n", lat / 100);
         std::abort();
       }
-      read_latencies[tid][lat / 100]++;
+      latencies[tid][lat / 100]++;
     }
 
     if (s != Status::Ok) {
@@ -495,9 +497,7 @@ int main(int argc, char** argv) {
 
   if (FLAGS_latency) {
     printf("calculate latencies\n");
-    read_latencies.resize(read_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
-    write_latencies.resize(write_threads,
-                           std::vector<std::uint64_t>(MAX_LAT + 1, 0));
+    latencies.resize(FLAGS_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
   }
 
   if (bench_data_type == DataType::Sorted) {
@@ -575,8 +575,17 @@ int main(int argc, char** argv) {
   std::cout << "Benchmark finished." << std::endl;
   printf("finish bench\n");
 
-  for (size_t i = 0; i < FLAGS_threads; i++) {
+  for (size_t i = 0; i < ts.size(); i++) {
     ts[i].join();
+  }
+
+  if (FLAGS_num_collection > 0) {
+    for (auto col : collections) {
+      auto s = engine->Expire(col, 1);
+      if (s != Status::Ok) {
+        printf("**********\n");
+      }
+    }
   }
 
   size_t time_elapsed;
@@ -602,7 +611,7 @@ int main(int argc, char** argv) {
 
   if (FLAGS_latency) {
     auto ro = read_ops.load();
-    if (ro > 0 && read_latencies.size() > 0) {
+    if (ro > 0 && read_threads > 0) {
       double total = 0;
       double avg = 0;
       double cur = 0;
@@ -613,8 +622,8 @@ int main(int argc, char** argv) {
       double l9999 = 0;
       for (std::uint64_t i = 1; i <= MAX_LAT; i++) {
         for (auto j = 0; j < read_threads; j++) {
-          cur += read_latencies[j][i];
-          total += read_latencies[j][i] * i;
+          cur += latencies[write_threads + j][i];
+          total += latencies[write_threads + j][i] * i;
           if (l50 == 0 && (double)cur / ro > 0.5) {
             l50 = (double)i / 10;
           } else if (l99 == 0 && (double)cur / ro > 0.99) {
@@ -638,7 +647,7 @@ int main(int argc, char** argv) {
     }
 
     auto wo = write_ops.load();
-    if (wo > 0 && write_latencies.size() > 0) {
+    if (wo > 0 && write_threads > 0) {
       double total = 0;
       double avg = 0;
       double cur = 0;
@@ -649,8 +658,8 @@ int main(int argc, char** argv) {
       double l9999 = 0;
       for (std::uint64_t i = 1; i <= MAX_LAT; i++) {
         for (size_t j = 0; j < write_threads; j++) {
-          cur += write_latencies[j][i];
-          total += write_latencies[j][i] * i;
+          cur += latencies[j][i];
+          total += latencies[j][i] * i;
           if (l50 == 0 && (double)cur / wo > 0.5) {
             l50 = (double)i / 10;
           } else if (l99 == 0 && (double)cur / wo > 0.99) {

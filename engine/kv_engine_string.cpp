@@ -72,7 +72,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
                           PointerType::StringRecord);
       if (ret.s == Status::Ok) {
         ul.unlock();
-        delayFree(OldDataRecord{existing_record, new_ts});
+        delayFree(OldDataRecord{existing_record, new_ts}); // current ts.
       }
       break;
     }

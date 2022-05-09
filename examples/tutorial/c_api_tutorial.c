@@ -124,8 +124,20 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   s = KVDKSortedDelete(kvdk_engine, collection2, strlen(collection2), key2,
                        strlen(key2));
   assert(s == Ok);
+  s = KVDKDestroySortedCollection(kvdk_engine, collection1,
+                                  strlen(collection1));
+  assert(s == Ok);
+  s = KVDKDestroySortedCollection(kvdk_engine, collection2,
+                                  strlen(collection2));
+  assert(s == Ok);
+  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+                    strlen(key1), value1, strlen(value1));
+  assert(s == NotFound);
   free(read_v1);
   free(read_v2);
+  s = KVDKSortedGet(kvdk_engine, collection1, strlen(collection1), key2,
+                    strlen(key2), &read_v2_len, &read_v2);
+  assert(s == NotFound);
   KVDKDestroySortedCollectionConfigs(s_configs);
   printf(
       "Successfully performed SortedGet, SortedSet, SortedDelete "

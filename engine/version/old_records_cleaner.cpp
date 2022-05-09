@@ -301,6 +301,7 @@ void OldRecordsCleaner::CleanCollections() {
           break;
         }
       }
+      outdated_collections.erase(outdated_collections.begin(), oc_iter);
     }
   }
 }
@@ -310,10 +311,8 @@ void OldRecordsCleaner::StartTimeClean(int64_t interval) {
     while (!kv_engine_->closing_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(interval));
       if (!kv_engine_->closing_) {
-        printf("$$$$$$$$$$\n");
         CleanDataRecords();
         CleanCollections();
-        printf("^^^^^^^^^\n");
       }
     }
   }).detach();
