@@ -859,8 +859,7 @@ void Skiplist::destroyRecords() {
       next_destroy =
           pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
       StringView key = to_destroy->Key();
-      auto hash_hint = hash_table_->GetHint(key);
-      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+      auto ul = hash_table_->AcquireLock(key);
       // We need to purge destroyed records one by one in case engine crashed
       // during destroy
       Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, record_locks_);

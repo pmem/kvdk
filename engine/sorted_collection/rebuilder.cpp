@@ -145,8 +145,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         invalid_skiplists_[id] = skiplist;
       }
     } else {
-      auto hint = kv_engine_->hash_table_->GetHint(collection_name);
-      std::lock_guard<SpinMutex> lg(*hint.spin);
+      auto ul = kv_engine_->hash_table_->AcquireLock(collection_name);
 
       if (valid_version_record != header_record) {
         Skiplist::Replace(header_record, valid_version_record, nullptr,
@@ -310,8 +309,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       DataEntry data_entry;
       StringView internal_key = next_record->Key();
 
-      auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
-      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+      auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
       DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
       if (valid_version_record == nullptr) {
         Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
@@ -464,8 +462,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     }
 
     StringView internal_key = next_record->Key();
-    auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
-    std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+    auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
     DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
     if (valid_version_record == nullptr) {
       // purge invalid version record from list

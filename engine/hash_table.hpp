@@ -160,6 +160,7 @@ class HashTable {
                                  const PMEMAllocator* pmem_allocator,
                                  uint32_t max_access_threads);
 
+  // TODO: jiayu make this private after reimplementing batch write
   KeyHashHint GetHint(const StringView& key) {
     KeyHashHint hint;
     uint64_t hash_val = hash_str(key.data(), key.size());

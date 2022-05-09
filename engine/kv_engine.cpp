@@ -871,7 +871,6 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
 
 Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
-  HashTable::KeyHashHint hint = hash_table_->GetHint(str);
   auto ul = hash_table_->AcquireLock(str);
   auto res = lookupKey<false>(str, ExpirableRecordType);
 
