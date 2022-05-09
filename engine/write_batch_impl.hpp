@@ -1,5 +1,12 @@
+#pragma once
+
+#include <x86intrin.h>
+
+#include <cstring>
+
 #include "alias.hpp"
 #include "kvdk/write_batch.hpp"
+#include "utils/codec.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -141,114 +148,9 @@ class BatchWriteLog {
 
   // Format of the BatchWriteLog
   // Stage | total_bytes | N | StringOp*N | M | SortedOp*M | K | HashOp*K
-  std::string Serialize() {
-    kvdk_assert(stage == Stage::Initializing, "");
+  std::string Serialize();
 
-    size_t string_cnt = string_ops.size();
-    size_t string_sz = string_cnt * sizeof(StringOp);
-
-    size_t sorted_cnt = sorted_ops.size();
-    size_t sorted_sz = sorted_cnt * sizeof(SortedOp);
-
-    size_t hash_cnt = hash_ops.size();
-    size_t hash_sz = hash_cnt * sizeof(HashOp);
-
-    size_t total_bytes = sizeof(Stage) + sizeof(size_t) * 4 + string_sz +
-                         sorted_sz + hash_sz + sizeof(char);
-
-    std::string ret(total_bytes, ' ');
-    size_t pos = 0;
-
-    memcpy(&ret[pos], &stage, sizeof(Stage));
-    pos += sizeof(Stage);
-
-    memcpy(&ret[pos], &total_bytes, sizeof(size_t));
-    pos += sizeof(size_t);
-
-    memcpy(&ret[pos], &string_cnt, sizeof(size_t));
-    pos += sizeof(size_t);
-    memcpy(&ret[pos], &string_ops[0], string_sz);
-    pos += string_sz;
-
-    memcpy(&ret[pos], &sorted_cnt, sizeof(size_t));
-    pos += sizeof(size_t);
-    memcpy(&ret[pos], &sorted_ops[0], sorted_sz);
-    pos += sorted_sz;
-
-    memcpy(&ret[pos], &hash_cnt, sizeof(size_t));
-    pos += sizeof(size_t);
-    memcpy(&ret[pos], &hash_ops[0], hash_sz);
-    pos += hash_sz;
-
-    kvdk_assert(pos == total_bytes, "");
-
-    return ret;
-  }
-
-  void Deserialize(char const* src) {
-    kvdk_assert(string_ops.empty() && sorted_ops.empty() && hash_ops.empty(),
-                "");
-
-    size_t pos = 0;
-
-    memcpy(&stage, &src[pos], sizeof(Stage));
-    pos += sizeof(Stage);
-
-    if (stage == Stage::Initializing || stage == Stage::Committed) {
-      // No need to deserialize furthermore.
-      return;
-    }
-    if (stage != Stage::Processing) {
-      kvdk_assert(false, "Invalid Stage, invalid Log!");
-      return;
-    }
-
-    size_t total_bytes;
-    memcpy(&total_bytes, &src[pos], sizeof(size_t));
-    pos += sizeof(size_t);
-
-    {
-      size_t string_cnt;
-      kvdk_assert(pos + sizeof(size_t) < total_bytes, "");
-      memcpy(&string_cnt, &src[pos], sizeof(size_t));
-      pos += sizeof(size_t);
-
-      size_t string_sz = string_cnt * sizeof(StringOp);
-      kvdk_assert(pos + string_sz < total_bytes, "");
-      std::vector<StringOp> temp(string_cnt);
-      memcpy(&temp[0], &src[pos], string_sz);
-      string_ops.swap(temp);
-      pos += string_sz;
-    }
-
-    {
-      size_t sorted_cnt;
-      kvdk_assert(pos + sizeof(size_t) < total_bytes, "");
-      memcpy(&sorted_cnt, &src[pos], sizeof(size_t));
-      pos += sizeof(size_t);
-
-      size_t sorted_sz = sorted_cnt * sizeof(SortedOp);
-      kvdk_assert(pos + sorted_sz < total_bytes, "");
-      std::vector<SortedOp> temp(sorted_cnt);
-      memcpy(&temp[0], &src[pos], sorted_sz);
-      sorted_ops.swap(temp);
-      pos += sorted_sz;
-    }
-
-    {
-      size_t hash_cnt;
-      kvdk_assert(pos + sizeof(size_t) < total_bytes, "");
-      memcpy(&hash_cnt, &src[pos], sizeof(size_t));
-      pos += sizeof(size_t);
-
-      size_t hash_sz = hash_cnt * sizeof(HashOp);
-      kvdk_assert(pos + hash_sz == total_bytes, "");
-      std::vector<HashOp> temp(hash_cnt);
-      memcpy(&temp[0], &src[pos], hash_sz);
-      hash_ops.swap(temp);
-      pos += hash_sz;
-    }
-  }
+  void Deserialize(char const* src);
 
   static void Persist(char* dst, std::string const& seq) {
     kvdk_assert(
@@ -266,6 +168,7 @@ class BatchWriteLog {
     _mm_clflush(dst);
     _mm_mfence();
   }
+
   static void MarkCommitted(char* dst) {
     *reinterpret_cast<Stage*>(dst) = Stage::Committed;
     _mm_clflush(dst);

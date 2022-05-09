@@ -58,6 +58,7 @@ set(SOURCES
         engine/sorted_collection/skiplist.cpp
         engine/sorted_collection/rebuilder.cpp
         engine/write_batch.cpp
+        engine/write_batch_impl.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
