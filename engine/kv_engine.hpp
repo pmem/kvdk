@@ -339,10 +339,11 @@ class KVEngine : public Engine {
   // BatchWrite takes 3 stages
   // Stage 1: Preparation
   //  BatchWrite() sort the keys and remove duplicants,
-  //  Then lock the keys/fields in HashTable
+  //  lock the keys/fields in HashTable,
+  //  and allocate spaces and persist BatchWriteLog
   // Stage 2: Execute
   //  Batches are dispatched to different data types
-  //  Each data type allocates spaces and update keys/fields
+  //  Each data type update keys/fields
   //  Outdated records are not purged in this stage.
   // Stage 3: Commit
   //  Each data type commits its batch, clean up outdated data.
@@ -356,18 +357,22 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status stringBatchWrite(WriteBatchImpl::StringOpBatch const& batch);
-  Status stringBatchCommit(WriteBatchImpl::StringOpBatch const& batch);
-  Status stringBatchRollback(BatchWriteLog::StringOpBatch const& batch);
+  Status stringBatchWrite(WriteBatchImpl::StringOpBatch const& batch,
+                          BatchWriteLog::StringLog const& log);
+  Status stringBatchCommit(WriteBatchImpl::StringOpBatch const& batch,
+                           BatchWriteLog::StringLog const& log);
+  Status stringBatchRollback(BatchWriteLog::StringLog const& log);
 
   Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
-  Status sortedBatchWrite(WriteBatchImpl::SortedOpBatch const& batch);
-  Status sortedBatchCommit(WriteBatchImpl::StringOpBatch const& batch);
-  Status sortedBatchRollback(BatchWriteLog::SortedOpBatch const& batch);
+  Status sortedBatchWrite(WriteBatchImpl::SortedOpBatch const& batch,
+                          BatchWriteLog::SortedLog const& log);
+  Status sortedBatchCommit(WriteBatchImpl::SortedOpBatch const& batch,
+                           BatchWriteLog::SortedLog const& log);
+  Status sortedBatchRollback(BatchWriteLog::SortedLog const& log);
 
   Status Recovery();
 
@@ -433,9 +438,11 @@ class KVEngine : public Engine {
   // accessible to any other thread.
   Status hashListDestroy(HashList* hlist);
 
-  Status hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch);
-  Status hashListBatchCommit(WriteBatchImpl::StringOpBatch const& batch);
-  Status hashListBatchRollback(BatchWriteLog::HashOpBatch const& batch);
+  Status hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch,
+                            BatchWriteLog::HashLog const& log);
+  Status hashListBatchCommit(WriteBatchImpl::HashOpBatch const& batch,
+                             BatchWriteLog::HashLog const& log);
+  Status hashListBatchRollback(BatchWriteLog::HashLog const& log);
 
   /// Other
   Status CheckConfigs(const Configs& configs);
