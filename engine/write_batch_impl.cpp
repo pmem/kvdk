@@ -57,28 +57,19 @@ void BatchWriteLog::Deserialize(char const* src) {
   size_t total_bytes = FetchPOD<size_t>(&sw);
   sw = StringView{sw.data(), total_bytes - sizeof(Stage) - sizeof(size_t)};
 
-  {
-    std::vector<StringOp> temp(FetchPOD<size_t>(&sw));
-    for (size_t i = 0; i < temp.size(); i++) {
-      temp[i] = FetchPOD<StringOp>(&sw);
-    }
-    string_ops.swap(temp);
+  string_ops.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < string_ops.size(); i++) {
+    string_ops[i] = FetchPOD<StringOp>(&sw);
   }
 
-  {
-    std::vector<SortedOp> temp(FetchPOD<size_t>(&sw));
-    for (size_t i = 0; i < temp.size(); i++) {
-      temp[i] = FetchPOD<SortedOp>(&sw);
-    }
-    sorted_ops.swap(temp);
+  sorted_ops.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < string_ops.size(); i++) {
+    sorted_ops[i] = FetchPOD<SortedOp>(&sw);
   }
 
-  {
-    std::vector<HashOp> temp(FetchPOD<size_t>(&sw));
-    for (size_t i = 0; i < temp.size(); i++) {
-      temp[i] = FetchPOD<HashOp>(&sw);
-    }
-    hash_ops.swap(temp);
+  hash_ops.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < string_ops.size(); i++) {
+    hash_ops[i] = FetchPOD<HashOp>(&sw);
   }
 
   kvdk_assert(sw.size() == 0, "");
