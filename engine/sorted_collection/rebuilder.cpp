@@ -625,9 +625,8 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
 
   switch (lookup_result.s) {
     case Status::NotFound: {
-      kv_engine_->hash_table_->Insert(lookup_result.hint,
-                                      lookup_result.entry_ptr, record_type,
-                                      index_ptr, index_type);
+      kv_engine_->hash_table_->Insert(lookup_result, record_type, index_ptr,
+                                      index_type);
       return Status::Ok;
     }
     case Status::Ok: {

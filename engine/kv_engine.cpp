@@ -929,10 +929,11 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
         hash_table_->UpdateEntryStatus(res.entry_ptr, KeyStatus::Expired);
         ul.unlock();
+        SpinMutex* hash_lock = ul.release();
         delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr, res.entry_ptr,
                                   PointerType::HashEntry,
                                   version_controller_.GetCurrentTimestamp(),
-                                  res.hint.spin});
+                                  hash_lock});
       }
     }
     return Status::NotFound;
@@ -998,16 +999,10 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
 // lookupKey
 namespace KVDK_NAMESPACE {
 template <bool may_insert>
-HashTable::LookupResult KVEngine::lookupImpl(StringView key,
-                                             uint16_t type_mask) {
-  return hash_table_->Lookup<may_insert>(key, type_mask);
-}
-
-template <bool may_insert>
 HashTable::LookupResult KVEngine::lookupElem(StringView key,
                                              uint16_t type_mask) {
   kvdk_assert(type_mask & (HashElem | SortedElemType), "");
-  return lookupImpl<may_insert>(key, type_mask);
+  return hash_table_->Lookup<may_insert>(key, type_mask);
 }
 
 template HashTable::LookupResult KVEngine::lookupElem<true>(StringView,
@@ -1018,7 +1013,7 @@ template HashTable::LookupResult KVEngine::lookupElem<false>(StringView,
 template <bool may_insert>
 HashTable::LookupResult KVEngine::lookupKey(StringView key,
                                             uint16_t type_mask) {
-  auto result = lookupImpl<may_insert>(key, PrimaryRecordType);
+  auto result = hash_table_->Lookup<may_insert>(key, PrimaryRecordType);
 
   if (result.s != Status::Ok) {
     kvdk_assert(
@@ -1722,7 +1717,8 @@ Status KVEngine::listFind(StringView key, List** list, bool init_nx,
       lists_.emplace(*list);
     }
     guard = (*list)->AcquireLock();
-    insertKeyOrElem(result, key, RecordType::ListRecord, *list);
+    hash_table_->Insert(result, RecordType::ListRecord, *list,
+                        pointerType(RecordType::ListRecord));
   }
   return Status::Ok;
 }

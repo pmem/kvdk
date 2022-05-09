@@ -151,7 +151,8 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
         hlist->ReplaceWithLock(space, pos, ts, field, new_value,
                                [&](DLRecord* rec) { delayFree(rec); });
       }
-      insertKeyOrElem(result, internal_key, RecordType::HashElem, addr);
+      hash_table_->Insert(result, RecordType::HashElem, addr,
+                          pointerType(RecordType::HashElem));
       return Status::Ok;
     }
     case ModifyOperation::Delete: {
@@ -247,7 +248,8 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
       std::lock_guard<std::mutex> guard2{hlists_mu_};
       hash_lists_.emplace(*hlist);
     }
-    insertKeyOrElem(result, key, RecordType::HashRecord, *hlist);
+    hash_table_->Insert(result, RecordType::HashRecord, *hlist,
+                        pointerType(RecordType::HashRecord));
   }
   return Status::Ok;
 }
@@ -266,7 +268,8 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
     return result.s;
   }
   kvdk_assert(result.s == Status::NotFound, "Impossible!");
-  insertKeyOrElem(result, internal_key, RecordType::HashElem, rec);
+  hash_table_->Insert(result, RecordType::HashElem, rec,
+                      pointerType(RecordType::HashElem));
 
   return Status::Ok;
 }

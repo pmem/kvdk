@@ -642,13 +642,11 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
   // until here, new record is already inserted to list
   assert(ret.write_record != nullptr);
   if (ret.dram_node == nullptr) {
-    hash_table_->Insert(lookup_result.hint, lookup_result.entry_ptr,
-                        SortedElemDelete, ret.write_record,
+    hash_table_->Insert(lookup_result, SortedElemDelete, ret.write_record,
                         PointerType::DLRecord);
   } else {
     ret.dram_node->record = ret.write_record;
-    hash_table_->Insert(lookup_result.hint, lookup_result.entry_ptr,
-                        SortedElemDelete, ret.dram_node,
+    hash_table_->Insert(lookup_result, SortedElemDelete, ret.dram_node,
                         PointerType::SkiplistNode);
   }
 
@@ -722,12 +720,12 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
   // until here, new record is already inserted to list
   assert(ret.write_record != nullptr);
   if (ret.dram_node == nullptr) {
-    hash_table_->Insert(lookup_result.hint, lookup_result.entry_ptr, SortedElem,
-                        ret.write_record, PointerType::DLRecord);
+    hash_table_->Insert(lookup_result, SortedElem, ret.write_record,
+                        PointerType::DLRecord);
   } else {
     ret.dram_node->record = ret.write_record;
-    hash_table_->Insert(lookup_result.hint, lookup_result.entry_ptr, SortedElem,
-                        ret.dram_node, PointerType::SkiplistNode);
+    hash_table_->Insert(lookup_result, SortedElem, ret.dram_node,
+                        PointerType::SkiplistNode);
   }
 
   return ret;

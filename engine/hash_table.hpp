@@ -137,10 +137,10 @@ class HashTable {
   };
 
   struct LookupResult {
+   public:
     Status s{Status::Ok};
     HashEntry entry{};
     HashEntry* entry_ptr{nullptr};
-    KeyHashHint hint;
 
     LookupResult& operator=(LookupResult const& other) {
       s = other.s;
@@ -148,6 +148,10 @@ class HashTable {
       entry_ptr = other.entry_ptr;
       return *this;
     }
+
+   private:
+    friend class HashTable;
+    KeyHashHint hint;
   };
 
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
@@ -183,10 +187,10 @@ class HashTable {
   LookupResult Lookup(const StringView& key, uint16_t type_mask);
 
   // Insert a hash entry to hash table
-  // @param entry_ptr: position to insert, it's get from SearchForWrite()
-  // TODO: remove the default param.
-  void Insert(const KeyHashHint& hint, HashEntry* entry_ptr, RecordType type,
-              void* index, PointerType index_type,
+  // * insert_position: indicate the the postion to insert new entry, it should
+  // be return of Lookup of the inserting key
+  void Insert(const LookupResult& insert_position, RecordType type, void* index,
+              PointerType index_type,
               KeyStatus entry_status = KeyStatus::Persist);
 
   // Erase a hash entry so it can be reused in future

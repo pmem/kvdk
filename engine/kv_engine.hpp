@@ -213,20 +213,9 @@ class KVEngine : public Engine {
   template <bool may_insert>
   HashTable::LookupResult lookupElem(StringView key, uint16_t type_mask);
 
-  template <bool may_insert>
-  HashTable::LookupResult lookupImpl(StringView key, uint16_t type_mask);
-
   void removeKeyOrElem(HashTable::LookupResult ret) {
     kvdk_assert(ret.s == Status::Ok || ret.s == Status::Outdated, "");
     hash_table_->Erase(ret.entry_ptr);
-  }
-
-  // ret must be return value of lookupImpl<true> or lookupKey<true>
-  // key must be the key in previous lookupKey function call.
-  void insertKeyOrElem(HashTable::LookupResult ret, StringView key,
-                       RecordType type, void* addr) {
-    auto hint = hash_table_->GetHint(key);
-    hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
   }
 
   template <typename CollectionType>
@@ -315,7 +304,7 @@ class KVEngine : public Engine {
     if (ret.s != Status::NotFound) {
       return ret.s;
     }
-    insertKeyOrElem(ret, coll->Name(), type, coll);
+    hash_table_->Insert(ret, type, coll, pointerType(type));
     return Status::Ok;
   }
 

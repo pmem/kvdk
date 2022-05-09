@@ -151,12 +151,12 @@ template HashTable::LookupResult HashTable::Lookup<true>(const StringView&,
 template HashTable::LookupResult HashTable::Lookup<false>(const StringView&,
                                                           uint16_t);
 
-void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
-                       RecordType type, void* index, PointerType index_type,
+void HashTable::Insert(const LookupResult& insert_position, RecordType type,
+                       void* index, PointerType index_type,
                        KeyStatus entry_status) {
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type,
-                           entry_status);
-  atomic_store_16(entry_ptr, &new_hash_entry);
+  HashEntry new_hash_entry(insert_position.hint.key_hash_value >> 32, type,
+                           index, index_type, entry_status);
+  atomic_store_16(insert_position.entry_ptr, &new_hash_entry);
 }
 
 Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
