@@ -336,6 +336,16 @@ class KVEngine : public Engine {
 
   Status MaybeInitPendingBatchFile();
 
+  // BatchWrite takes 3 stages
+  // Stage 1: Preparation
+  //  BatchWrite() sort the keys and remove duplicants,
+  //  Then lock the keys/fields in HashTable
+  // Stage 2: Execute
+  //  Batches are dispatched to different data types
+  //  Each data type allocates spaces and update keys/fields
+  //  Outdated records are not purged in this stage.
+  // Stage 3: Commit
+  //  Each data type commits its batch, clean up outdated data.
   Status BatchWrite(WriteBatch2 const& batch) final;
 
   Status StringSetImpl(const StringView& key, const StringView& value,
@@ -347,6 +357,7 @@ class KVEngine : public Engine {
                               BatchWriteHint& batch_hint);
 
   Status stringBatchWrite(WriteBatchImpl::StringOpBatch const& batch);
+  Status stringBatchCommit(WriteBatchImpl::StringOpBatch const& batch);
   Status stringBatchRollback(BatchWriteLog::StringOpBatch const& batch);
 
   Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
@@ -355,6 +366,7 @@ class KVEngine : public Engine {
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
   Status sortedBatchWrite(WriteBatchImpl::SortedOpBatch const& batch);
+  Status sortedBatchCommit(WriteBatchImpl::StringOpBatch const& batch);
   Status sortedBatchRollback(BatchWriteLog::SortedOpBatch const& batch);
 
   Status Recovery();
@@ -422,6 +434,7 @@ class KVEngine : public Engine {
   Status hashListDestroy(HashList* hlist);
 
   Status hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch);
+  Status hashListBatchCommit(WriteBatchImpl::StringOpBatch const& batch);
   Status hashListBatchRollback(BatchWriteLog::HashOpBatch const& batch);
 
   /// Other
