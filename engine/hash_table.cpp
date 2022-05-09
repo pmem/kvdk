@@ -151,55 +151,6 @@ template HashTable::LookupResult HashTable::Lookup<true>(const StringView&,
 template HashTable::LookupResult HashTable::Lookup<false>(const StringView&,
                                                           uint16_t);
 
-Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
-                                 uint16_t type_mask, HashEntry** entry_ptr,
-                                 HashEntry* hash_entry_snap,
-                                 DataEntry* data_entry_meta) {
-  assert(entry_ptr);
-  assert((*entry_ptr) == nullptr);
-  HashEntry* reusable_entry = nullptr;
-
-  HashBucket* bucket_ptr = &hash_buckets_[hint.bucket];
-  _mm_prefetch(bucket_ptr, _MM_HINT_T0);
-  uint32_t key_hash_prefix = hint.key_hash_value >> 32;
-
-  // search cache
-  *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
-  if (*entry_ptr != nullptr) {
-    atomic_load_16(hash_entry_snap, *entry_ptr);
-    if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
-                               data_entry_meta)) {
-      return Status::Ok;
-    }
-  }
-
-  // iterate hash entries in the bucket
-  HashBucketIterator iter(this, hint.bucket);
-  while (iter.Valid()) {
-    *entry_ptr = &*iter;
-    atomic_load_16(hash_entry_snap, *entry_ptr);
-    if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
-                               data_entry_meta)) {
-      slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
-      return Status::Ok;
-    }
-    if ((*entry_ptr)->Empty()) {
-      reusable_entry = *entry_ptr;
-    }
-    iter++;
-  }
-
-  if (reusable_entry == nullptr) {
-    allocateEntry(iter);
-    assert(iter.Valid());
-    *entry_ptr = &(*iter);
-  } else {
-    *entry_ptr = reusable_entry;
-  }
-
-  return Status::NotFound;
-}
-
 void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
                        RecordType type, void* index, PointerType index_type,
                        KeyStatus entry_status) {

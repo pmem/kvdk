@@ -269,31 +269,25 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   }
   auto view = pmem_record->Key();
   std::string key{view.data(), view.size()};
-  DataEntry existing_data_entry;
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
+  auto ul = hash_table_->AcquireLock(key);
+  auto lookup_result = hash_table_->Lookup<true>(key, StringRecordType);
 
-  auto hint = hash_table_->GetHint(key);
-  std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s =
-      hash_table_->SearchForWrite(hint, key, StringRecordType, &entry_ptr,
-                                  &hash_entry, &existing_data_entry);
-
-  if (s == Status::MemoryOverflow) {
-    return s;
+  if (lookup_result.s == Status::MemoryOverflow) {
+    return lookup_result.s;
   }
 
-  bool found = s == Status::Ok;
-  if (found &&
-      existing_data_entry.meta.timestamp >= cached_entry.meta.timestamp) {
+  if (lookup_result.s == Status::Ok &&
+      lookup_result.entry.GetIndex().string_record->GetTimestamp() >=
+          cached_entry.meta.timestamp) {
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
 
-  hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, pmem_record,
+  hash_table_->Insert(lookup_result.hint, lookup_result.entry_ptr,
+                      cached_entry.meta.type, pmem_record,
                       PointerType::StringRecord);
-  if (found) {
-    purgeAndFree(hash_entry.GetIndex().ptr);
+  if (lookup_result.s == Status::Ok) {
+    purgeAndFree(lookup_result.entry.GetIndex().ptr);
   }
 
   return Status::Ok;
@@ -301,22 +295,15 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
 
 Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
                                       BatchWriteHint& batch_hint) {
-  DataEntry data_entry;
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-
   {
-    auto& hash_hint = batch_hint.hash_hint;
-    // hash table for the hint should be alread locked, so we do not lock it
-    // here
-    Status s =
-        hash_table_->SearchForWrite(hash_hint, kv.key, StringRecordType,
-                                    &entry_ptr, &hash_entry, &data_entry);
-    if (s == Status::MemoryOverflow) {
-      return s;
+    // key should be alread locked, so we do not acquire lock here
+    auto lookup_result = hash_table_->Lookup<true>(kv.key, StringRecordType);
+
+    if (lookup_result.s == Status::MemoryOverflow) {
+      return lookup_result.s;
     }
-    batch_hint.hash_entry_ptr = entry_ptr;
-    bool found = s == Status::Ok;
+    batch_hint.hash_entry_ptr = lookup_result.entry_ptr;
+    bool found = lookup_result.s == Status::Ok;
 
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord && !found) {
@@ -324,32 +311,37 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
       return Status::Ok;
     }
 
-    kvdk_assert(!found || batch_hint.timestamp >= data_entry.meta.timestamp,
-                "ts of new data smaller than existing data in batch write");
+    kvdk_assert(
+        !found ||
+            batch_hint.timestamp >=
+                lookup_result.entry.GetIndex().string_record->GetTimestamp(),
+        "ts of new data smaller than existing data in batch write");
 
-    void* block_base =
+    void* new_pmem_ptr =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
     TEST_SYNC_POINT(
         "KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
 
     StringRecord::PersistStringRecord(
-        block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
+        new_pmem_ptr, batch_hint.allocated_space.size, batch_hint.timestamp,
         static_cast<RecordType>(kv.type),
         found ? pmem_allocator_->addr2offset_checked(
-                    hash_entry.GetIndex().string_record)
+                    lookup_result.entry.GetIndex().string_record)
               : kNullPMemOffset,
         kv.key, kv.type == StringDataRecord ? kv.value : "");
 
-    hash_table_->Insert(hash_hint, entry_ptr, (RecordType)kv.type, block_base,
+    hash_table_->Insert(lookup_result.hint, lookup_result.entry_ptr,
+                        (RecordType)kv.type, new_pmem_ptr,
                         PointerType::StringRecord);
 
     if (found) {
       if (kv.type == StringDeleteRecord) {
-        batch_hint.delete_record_to_free = block_base;
+        batch_hint.delete_record_to_free = new_pmem_ptr;
       }
-      if (hash_entry.GetRecordType() == StringDataRecord) {
-        batch_hint.data_record_to_free = hash_entry.GetIndex().string_record;
+      if (lookup_result.entry.GetRecordType() == StringDataRecord) {
+        batch_hint.data_record_to_free =
+            lookup_result.entry.GetIndex().string_record;
       }
     }
   }

@@ -182,19 +182,6 @@ class HashTable {
   template <bool may_insert>
   LookupResult Lookup(const StringView& key, uint16_t type_mask);
 
-  // Lookup key in hash table for write operations
-  //
-  // type_mask: which data types to search
-  // entry_ptr: store hash entry position to write. It's either hash entry
-  // position of "key" to update if it's existing, or a clear position to insert
-  // new hash entry
-  // hash_entry_snap: store a hash entry copy of searching key
-  // data_entry_meta: store a copy of data entry metadata part of searching key
-  // hint: make sure hint.spin is hold
-  Status SearchForWrite(const KeyHashHint& hint, const StringView& key,
-                        uint16_t type_mask, HashEntry** entry_ptr,
-                        HashEntry* hash_entry_snap, DataEntry* data_entry_meta);
-
   // Insert a hash entry to hash table
   // @param entry_ptr: position to insert, it's get from SearchForWrite()
   // TODO: remove the default param.

@@ -620,14 +620,13 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
     record_type = SortedHeader;
   }
 
-  HashEntry* entry_ptr = nullptr;
-  HashEntry hash_entry;
-  auto hash_hint = kv_engine_->hash_table_->GetHint(key);
-  Status s = kv_engine_->hash_table_->SearchForWrite(
-      hash_hint, key, search_type_mask, &entry_ptr, &hash_entry, nullptr);
-  switch (s) {
+  auto lookup_result =
+      kv_engine_->hash_table_->Lookup<true>(key, search_type_mask);
+
+  switch (lookup_result.s) {
     case Status::NotFound: {
-      kv_engine_->hash_table_->Insert(hash_hint, entry_ptr, record_type,
+      kv_engine_->hash_table_->Insert(lookup_result.hint,
+                                      lookup_result.entry_ptr, record_type,
                                       index_ptr, index_type);
       return Status::Ok;
     }
@@ -640,7 +639,7 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
     }
 
     case Status::MemoryOverflow: {
-      return s;
+      return lookup_result.s;
     }
 
     default:
