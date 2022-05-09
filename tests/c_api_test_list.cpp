@@ -16,6 +16,8 @@ TEST_F(EngineCAPITestBase, List) {
   std::vector<std::string> key_vec(num_threads);
   for (size_t i = 0; i < num_threads; i++) {
     key_vec[i] = "List_" + std::to_string(i);
+    ASSERT_EQ(KVDKListCreate(engine, key_vec[i].data(), key_vec[i].size()),
+              KVDKStatus::Ok);
     for (size_t j = 0; j < count; j++) {
       elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }

@@ -138,6 +138,10 @@ extern void KVDKSortedIteratorValue(KVDKSortedIterator* iter, char** value,
                                     size_t* val_len);
 
 /// Hash //////////////////////////////////////////////////////////////////////
+extern KVDKStatus KVDKHashCreate(KVDKEngine* engine, char const* key_data,
+                                 size_t key_len);
+extern KVDKStatus KVDKHashDestroy(KVDKEngine* engine, char const* key_data,
+                                  size_t key_len);
 extern KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
                                  size_t key_len, size_t* len);
 extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data,
@@ -172,7 +176,10 @@ extern void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** value_data,
                                      size_t* value_len);
 
 /// List //////////////////////////////////////////////////////////////////////
-
+extern KVDKStatus KVDKListCreate(KVDKEngine* engine, char const* key_data,
+                                 size_t key_len);
+extern KVDKStatus KVDKListDestroy(KVDKEngine* engine, char const* key_data,
+                                  size_t key_len);
 extern KVDKStatus KVDKListLength(KVDKEngine* engine, char const* key_data,
                                  size_t key_len, size_t* len);
 extern KVDKStatus KVDKListPushFront(KVDKEngine* engine, char const* key_data,
