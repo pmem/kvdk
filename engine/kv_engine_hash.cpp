@@ -110,7 +110,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
     guard = hash_table_->AcquireLock(internal_key);
   }
 
-  LookupResult result = lookupElem<may_set>(internal_key, RecordType::HashElem);
+  auto result = lookupElem<may_set>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
@@ -205,7 +205,7 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
 
   // Lockless lookup for the collection
   {
-    LookupResult result = lookupKey<false>(key, RecordType::HashRecord);
+    auto result = lookupKey<false>(key, RecordType::HashRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound &&
         result.s != Status::Outdated) {
       return result.s;
@@ -224,7 +224,7 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist, bool init_nx) {
   // Collection is first erased from HashTable then Destroy()ed.
   {
     auto guard2 = hash_table_->AcquireLock(key);
-    LookupResult result = lookupKey<true>(key, RecordType::HashRecord);
+    auto result = lookupKey<true>(key, RecordType::HashRecord);
     if (result.s != Status::Ok && result.s != Status::NotFound &&
         result.s != Status::Outdated) {
       return result.s;
@@ -261,7 +261,7 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
 
   StringView internal_key = rec->Key();
   auto guard = hash_table_->AcquireLock(internal_key);
-  LookupResult result = lookupElem<true>(internal_key, RecordType::HashElem);
+  auto result = lookupElem<true>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
@@ -306,7 +306,7 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     {
       auto guard = hash_table_->AcquireLock(internal_key);
       kvdk_assert(hlist->Front()->Key() == internal_key, "");
-      LookupResult ret = lookupElem<false>(internal_key, RecordType::HashElem);
+      auto ret = lookupElem<false>(internal_key, RecordType::HashElem);
       kvdk_assert(ret.s == Status::Ok, "");
       removeKeyOrElem(ret);
       hlist->PopFront(PushPending);

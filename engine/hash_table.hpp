@@ -137,7 +137,7 @@ class HashTable {
   };
 
   struct LookupResult {
-    Status s{Status::NotSupported};
+    Status s{Status::Ok};
     HashEntry entry{};
     HashEntry* entry_ptr{nullptr};
     KeyHashHint hint;
@@ -165,11 +165,12 @@ class HashTable {
   }
 
   // Look up key in hashtable
-  //
   // Store a copy of hash entry in LookupResult::entry, and a pointer to the
-  // hash entry in LookupResult::entry_ptr
+  // hash entry on hash table in LookupResult::entry_ptr
   // If may_insert is true and key not found, then store
   // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
+  //
+  // * type_mask: which data types to search
   //
   // return status:
   // Status::NotFound is key is not found.
@@ -179,20 +180,9 @@ class HashTable {
   //
   // Notice: key should be locked if set may_insert to true
   template <bool may_insert>
-  LookupResult Search(const StringView& key, uint16_t type_mask);
+  LookupResult Lookup(const StringView& key, uint16_t type_mask);
 
-  // Search key in hash table for read operations
-  //
-  // type_mask: which data types to search
-  // entry_ptr: store hash entry position of "key" if found
-  // hash_entry_snap: store a hash entry copy of searching key for lock-free
-  // read, as hash entry maybe modified by write operations
-  // data_entry_meta: store a copy of data entry metadata part of searching key
-  Status SearchForRead(const KeyHashHint& hint, const StringView& key,
-                       uint16_t type_mask, HashEntry** entry_ptr,
-                       HashEntry* hash_entry_snap, DataEntry* data_entry_meta);
-
-  // Search key in hash table for write operations
+  // Lookup key in hash table for write operations
   //
   // type_mask: which data types to search
   // entry_ptr: store hash entry position to write. It's either hash entry

@@ -190,19 +190,6 @@ class KVEngine : public Engine {
   std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
 
  private:
-  struct LookupResult {
-    Status s{Status::NotSupported};
-    HashEntry entry{};
-    HashEntry* entry_ptr{nullptr};
-
-    LookupResult& operator=(LookupResult const& other) {
-      s = other.s;
-      memcpy_16(&entry, &other.entry);
-      entry_ptr = other.entry_ptr;
-      return *this;
-    }
-  };
-
   // Look up the first level key (e.g. collections or string, not collection
   // elems)
   //
@@ -221,23 +208,23 @@ class KVEngine : public Engine {
   //
   // Notice: key should be locked if set may_insert to true
   template <bool may_insert>
-  LookupResult lookupKey(StringView key, uint16_t type_mask);
+  HashTable::LookupResult lookupKey(StringView key, uint16_t type_mask);
 
   template <bool may_insert>
-  LookupResult lookupElem(StringView key, uint16_t type_mask);
+  HashTable::LookupResult lookupElem(StringView key, uint16_t type_mask);
 
   template <bool may_insert>
-  LookupResult lookupImpl(StringView key, uint16_t type_mask);
+  HashTable::LookupResult lookupImpl(StringView key, uint16_t type_mask);
 
-  void removeKeyOrElem(LookupResult ret) {
+  void removeKeyOrElem(HashTable::LookupResult ret) {
     kvdk_assert(ret.s == Status::Ok || ret.s == Status::Outdated, "");
     hash_table_->Erase(ret.entry_ptr);
   }
 
   // ret must be return value of lookupImpl<true> or lookupKey<true>
   // key must be the key in previous lookupKey function call.
-  void insertKeyOrElem(LookupResult ret, StringView key, RecordType type,
-                       void* addr) {
+  void insertKeyOrElem(HashTable::LookupResult ret, StringView key,
+                       RecordType type, void* addr) {
     auto hint = hash_table_->GetHint(key);
     hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
   }
@@ -251,11 +238,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -301,7 +287,7 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
-    LookupResult res = lookupKey<false>(collection_name, record_type);
+    auto res = lookupKey<false>(collection_name, record_type);
     if (res.s == Status::Outdated) {
       // TODO(zhichen): will open the following code when completing collection
       // deletion.
