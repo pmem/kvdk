@@ -72,10 +72,20 @@ inline void AppendPOD(std::string* dst, T const& value) {
 }
 
 template <typename T>
-inline T FetchPOD(StringView* src) {
-  kvdk_assert(src->size() >= sizeof(T), "");
-  T ret = *reinterpret_cast<T const*>(src->data());
+inline bool FetchPOD(StringView* src, T* ret) {
+  if (src->size() < sizeof(T)) {
+    return false;
+  }
+  *ret = *reinterpret_cast<T const*>(src->data());
   *src = StringView{src->data() + sizeof(T), src->size() - sizeof(T)};
+  return true;
+}
+
+template <typename T>
+inline T FetchPOD(StringView* src) {
+  T ret;
+  bool success = FetchPOD(src, &ret);
+  kvdk_assert(success, "");
   return ret;
 }
 
