@@ -51,6 +51,8 @@ class Engine {
 
   virtual Status BatchWrite(const WriteBatch& write_batch) = 0;
 
+  virtual Status BatchWrite(WriteBatch2 const& batch) = 0;
+
   // Search the STRING-type KV of "key" and store the corresponding value to
   // *value on success. If the "key" does not exist, return NotFound.
   virtual Status Get(const StringView key, std::string* value) = 0;

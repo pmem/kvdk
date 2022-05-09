@@ -36,6 +36,7 @@
 #include "utils/utils.hpp"
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
+#include "write_batch_impl.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
@@ -335,6 +336,8 @@ class KVEngine : public Engine {
 
   Status MaybeInitPendingBatchFile();
 
+  Status BatchWrite(WriteBatch2 const& batch) final;
+
   Status StringSetImpl(const StringView& key, const StringView& value,
                        const WriteOptions& write_options);
 
@@ -343,10 +346,16 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
+  Status stringBatchWrite(WriteBatchImpl::StringOpBatch const& batch);
+  Status stringBatchRollback(BatchWriteLog::StringOpBatch const& batch);
+
   Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
+
+  Status sortedBatchWrite(WriteBatchImpl::SortedOpBatch const& batch);
+  Status sortedBatchRollback(BatchWriteLog::SortedOpBatch const& batch);
 
   Status Recovery();
 
@@ -411,6 +420,9 @@ class KVEngine : public Engine {
   // Should only be called when the HashList is no longer
   // accessible to any other thread.
   Status hashListDestroy(HashList* hlist);
+
+  Status hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch);
+  Status hashListBatchRollback(BatchWriteLog::HashOpBatch const& batch);
 
   /// Other
   Status CheckConfigs(const Configs& configs);

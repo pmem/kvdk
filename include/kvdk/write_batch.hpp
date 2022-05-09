@@ -28,4 +28,21 @@ struct WriteBatch {
 
   std::vector<KV> kvs;
 };
+
+class WriteBatch2 {
+  virtual void StringPut(std::string const& key, std::string const& value) = 0;
+  virtual void StringDelete(std::string const& key) = 0;
+
+  virtual void SortedPut(std::string const& key, std::string const& field,
+                         std::string const& value) = 0;
+  virtual void SortedDelete(std::string const& key,
+                            std::string const& field) = 0;
+
+  virtual void HashPut(std::string const& key, std::string const& field,
+                       std::string const& value) = 0;
+  virtual void HashDelete(std::string const& key, std::string const& field) = 0;
+
+  virtual void Clear() = 0;
+};
+
 }  // namespace KVDK_NAMESPACE
