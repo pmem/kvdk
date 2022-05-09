@@ -95,28 +95,28 @@ HashTable::LookupResult HashTable::Lookup(const StringView& key,
                                           uint16_t type_mask) {
   LookupResult ret;
   HashEntry* empty_entry = nullptr;
-  ret.hint = GetHint(key);
+  auto hint = GetHint(key);
+  ret.key_hash_prefix = hint.key_hash_prefix;
 
-  HashBucket* bucket_ptr = &hash_buckets_[ret.hint.bucket];
+  HashBucket* bucket_ptr = &hash_buckets_[hint.bucket];
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);
-  uint32_t key_hash_prefix = ret.hint.key_hash_value >> 32;
 
   // search cache
-  ret.entry_ptr = slots_[ret.hint.slot].hash_cache.entry_ptr;
+  ret.entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
   if (ret.entry_ptr != nullptr) {
     atomic_load_16(&ret.entry, ret.entry_ptr);
-    if (ret.entry.Match(key, key_hash_prefix, type_mask, nullptr)) {
+    if (ret.entry.Match(key, hint.key_hash_prefix, type_mask, nullptr)) {
       return ret;
     }
   }
 
   // iterate hash entries in the bucket
-  HashBucketIterator iter(this, ret.hint.bucket);
+  HashBucketIterator iter(this, hint.bucket);
   while (iter.Valid()) {
     ret.entry_ptr = &*iter;
     atomic_load_16(&ret.entry, ret.entry_ptr);
-    if (ret.entry.Match(key, key_hash_prefix, type_mask, nullptr)) {
-      slots_[ret.hint.slot].hash_cache.entry_ptr = ret.entry_ptr;
+    if (ret.entry.Match(key, hint.key_hash_prefix, type_mask, nullptr)) {
+      slots_[hint.slot].hash_cache.entry_ptr = ret.entry_ptr;
       return ret;
     }
     if (ret.entry_ptr->Empty()) {
@@ -154,8 +154,8 @@ template HashTable::LookupResult HashTable::Lookup<false>(const StringView&,
 void HashTable::Insert(const LookupResult& insert_position, RecordType type,
                        void* index, PointerType index_type,
                        KeyStatus entry_status) {
-  HashEntry new_hash_entry(insert_position.hint.key_hash_value >> 32, type,
-                           index, index_type, entry_status);
+  HashEntry new_hash_entry(insert_position.key_hash_prefix, type, index,
+                           index_type, entry_status);
   atomic_store_16(insert_position.entry_ptr, &new_hash_entry);
 }
 

@@ -130,9 +130,10 @@ class HashTable {
   friend class HashSlotIterator;
   friend class HashBucketIterator;
   struct KeyHashHint {
-    uint64_t key_hash_value;
     uint32_t bucket;
     uint32_t slot;
+    // hash value stored on hash entry
+    uint32_t key_hash_prefix;
     SpinMutex* spin;
   };
 
@@ -151,7 +152,7 @@ class HashTable {
 
    private:
     friend class HashTable;
-    KeyHashHint hint;
+    uint32_t key_hash_prefix;
   };
 
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
@@ -161,8 +162,9 @@ class HashTable {
 
   KeyHashHint GetHint(const StringView& key) {
     KeyHashHint hint;
-    hint.key_hash_value = hash_str(key.data(), key.size());
-    hint.bucket = get_bucket_num(hint.key_hash_value);
+    uint64_t hash_val = hash_str(key.data(), key.size());
+    hint.key_hash_prefix = hash_val >> 32;
+    hint.bucket = get_bucket_num(hash_val);
     hint.slot = get_slot_num(hint.bucket);
     hint.spin = &slots_[hint.slot].spin;
     return hint;
