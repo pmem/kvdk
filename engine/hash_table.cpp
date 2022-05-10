@@ -11,29 +11,21 @@
 
 namespace KVDK_NAMESPACE {
 HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
-                                   uint32_t hash_bucket_size,
                                    uint32_t num_buckets_per_slot,
                                    const PMEMAllocator* pmem_allocator,
                                    uint32_t max_access_threads) {
-  HashTable* table = new (std::nothrow)
-      HashTable(hash_bucket_num, hash_bucket_size, num_buckets_per_slot,
-                pmem_allocator, max_access_threads);
-  if (table) {
-    auto main_buckets_space =
-        table->dram_allocator_.Allocate(hash_bucket_size * hash_bucket_num);
-    if (main_buckets_space.size == 0) {
-      GlobalLogger.Error("No enough dram to create global hash table\n");
-      delete table;
-      table = nullptr;
-    } else {
-      table->main_buckets_ =
-          table->dram_allocator_.offset2addr(main_buckets_space.offset);
-      memset(table->main_buckets_, 0, hash_bucket_size * hash_bucket_num);
-      kvdk_assert((uint64_t)table->main_buckets_ % sizeof(HashEntry) == 0,
-                  "hash table bucket address should aligned to hash entry size "
-                  "in create new hash table");
-    }
+  HashTable* table;
+  // We catch exception here as we may need to allocate large memory for hash
+  // table here
+  try {
+    table = new HashTable(hash_bucket_num, num_buckets_per_slot, pmem_allocator,
+                          max_access_threads);
+  } catch (std::bad_alloc& b) {
+    GlobalLogger.Error("No enough dram to create global hash table: b\n",
+                       b.what());
+    table = nullptr;
   }
+
   return table;
 }
 
@@ -98,146 +90,98 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
   return false;
 }
 
-Status HashTable::SearchForWrite(const KeyHashHint& hint, const StringView& key,
-                                 uint16_t type_mask, HashEntry** entry_ptr,
-                                 HashEntry* hash_entry_snap,
-                                 DataEntry* data_entry_meta) {
-  assert(entry_ptr);
-  assert((*entry_ptr) == nullptr);
-  HashEntry* reusable_entry = nullptr;
-  char* bucket_ptr =
-      (char*)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
+template <bool may_insert>
+HashTable::LookupResult HashTable::Lookup(const StringView& key,
+                                          uint16_t type_mask) {
+  LookupResult ret;
+  HashEntry* empty_entry = nullptr;
+  auto hint = GetHint(key);
+  ret.key_hash_prefix = hint.key_hash_prefix;
+
+  HashBucket* bucket_ptr = &hash_buckets_[hint.bucket];
   _mm_prefetch(bucket_ptr, _MM_HINT_T0);
 
-  uint32_t key_hash_prefix = hint.key_hash_value >> 32;
-  uint64_t entries = hash_bucket_entries_[hint.bucket];
-  bool found = false;
-
   // search cache
-  *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
-  if (*entry_ptr != nullptr) {
-    atomic_load_16(hash_entry_snap, *entry_ptr);
-    if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
-                               data_entry_meta)) {
-      found = true;
+  ret.entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
+  if (ret.entry_ptr != nullptr) {
+    atomic_load_16(&ret.entry, ret.entry_ptr);
+    if (ret.entry.Match(key, hint.key_hash_prefix, type_mask, nullptr)) {
+      return ret;
     }
   }
 
-  if (!found) {
-    // iterate hash entries
-    *entry_ptr = (HashEntry*)bucket_ptr;
-    uint64_t i = 0;
-    for (i = 0; i < entries; i++) {
-      if (i > 0 && i % num_entries_per_bucket_ == 0) {
-        // next bucket
-        memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
-        _mm_prefetch(bucket_ptr, _MM_HINT_T0);
-      }
-      *entry_ptr = (HashEntry*)bucket_ptr + (i % num_entries_per_bucket_);
-
-      atomic_load_16(hash_entry_snap, *entry_ptr);
-      if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
-                                 data_entry_meta)) {
-        slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
-        found = true;
-        break;
-      }
-
-      if ((*entry_ptr)->Empty()) {
-        reusable_entry = *entry_ptr;
-      }
+  // iterate hash entries in the bucket
+  HashBucketIterator iter(this, hint.bucket);
+  while (iter.Valid()) {
+    ret.entry_ptr = &*iter;
+    atomic_load_16(&ret.entry, ret.entry_ptr);
+    if (ret.entry.Match(key, hint.key_hash_prefix, type_mask, nullptr)) {
+      slots_[hint.slot].hash_cache.entry_ptr = ret.entry_ptr;
+      return ret;
     }
+    if (ret.entry_ptr->Empty()) {
+      empty_entry = ret.entry_ptr;
+    }
+    iter++;
+  }
 
-    if (!found) {
-      // reach end of buckets, reuse entry or allocate a new bucket
-      if (i > 0 && i % num_entries_per_bucket_ == 0) {
-        if (reusable_entry != nullptr) {
-          *entry_ptr = reusable_entry;
-        } else {
-          auto space = dram_allocator_.Allocate(hash_bucket_size_);
-          if (space.size == 0) {
-            GlobalLogger.Error("Memory overflow!\n");
-            return Status::MemoryOverflow;
-          }
-          void* next_off = dram_allocator_.offset2addr(space.offset);
-          kvdk_assert((uint64_t)next_off % sizeof(HashEntry) == 0,
-                      "hash table bucket address should aligned to hash entry "
-                      "size in allocate new bucket");
-          memset(next_off, 0, space.size);
-          memcpy_8(bucket_ptr + hash_bucket_size_ - 8, &next_off);
-          *entry_ptr = (HashEntry*)next_off;
-        }
-      } else {
-        *entry_ptr = (HashEntry*)bucket_ptr + (i % num_entries_per_bucket_);
+  if (may_insert) {
+    if (empty_entry == nullptr) {
+      ret.s = allocateEntry(iter);
+      if (ret.s != Status::Ok) {
+        kvdk_assert(ret.s == Status::MemoryOverflow, "");
+        return ret;
       }
+      kvdk_assert(
+          iter.Valid(),
+          "HashBucketIterator should be valid after allocate new entry");
+      kvdk_assert(iter->Empty(), "newly allocated hash entry should be empty");
+      ret.entry_ptr = &(*iter);
+    } else {
+      ret.entry_ptr = empty_entry;
     }
   }
 
-  if (!found && (*entry_ptr) != reusable_entry) {
-    (*entry_ptr)->clear();
-    hash_bucket_entries_[hint.bucket]++;
-  }
-
-  return found ? Status::Ok : Status::NotFound;
+  ret.s = NotFound;
+  return ret;
 }
 
-Status HashTable::SearchForRead(const KeyHashHint& hint, const StringView& key,
-                                uint16_t type_mask, HashEntry** entry_ptr,
-                                HashEntry* hash_entry_snap,
-                                DataEntry* data_entry_meta) {
-  assert(entry_ptr);
-  *entry_ptr = nullptr;
-  char* bucket_ptr =
-      (char*)main_buckets_ + (uint64_t)hint.bucket * hash_bucket_size_;
-  _mm_prefetch(bucket_ptr, _MM_HINT_T0);
+template HashTable::LookupResult HashTable::Lookup<true>(const StringView&,
+                                                         uint16_t);
+template HashTable::LookupResult HashTable::Lookup<false>(const StringView&,
+                                                          uint16_t);
 
-  uint32_t key_hash_prefix = hint.key_hash_value >> 32;
-  uint64_t entries = hash_bucket_entries_[hint.bucket];
-
-  // search cache
-  *entry_ptr = slots_[hint.slot].hash_cache.entry_ptr;
-  if (*entry_ptr != nullptr) {
-    atomic_load_16(hash_entry_snap, *entry_ptr);
-    if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
-                               data_entry_meta)) {
-      return Status::Ok;
-    }
-  }
-
-  // iterate hash entrys
-  for (uint64_t i = 0; i < entries; i++) {
-    if (i > 0 && i % num_entries_per_bucket_ == 0) {
-      // next bucket
-      memcpy_8(&bucket_ptr, bucket_ptr + hash_bucket_size_ - 8);
-      _mm_prefetch(bucket_ptr, _MM_HINT_T0);
-    }
-    *entry_ptr = (HashEntry*)bucket_ptr + (i % num_entries_per_bucket_);
-    while (1) {
-      atomic_load_16(hash_entry_snap, *entry_ptr);
-      if (hash_entry_snap->Match(key, key_hash_prefix, type_mask,
-                                 data_entry_meta)) {
-        slots_[hint.slot].hash_cache.entry_ptr = *entry_ptr;
-        return Status::Ok;
-      } else {
-        // check if hash entry modified by another write thread during
-        // match hash entry
-        if (memcmp(hash_entry_snap, *(entry_ptr), sizeof(HashEntry)) == 0) {
-          break;
-        }
-      }
-    }
-  }
-  return Status::NotFound;
-}
-
-void HashTable::Insert(const KeyHashHint& hint, HashEntry* entry_ptr,
-                       RecordType type, void* index, PointerType index_type,
+void HashTable::Insert(const LookupResult& insert_position, RecordType type,
+                       void* index, PointerType index_type,
                        KeyStatus entry_status) {
-  HashEntry new_hash_entry(hint.key_hash_value >> 32, type, index, index_type,
-                           entry_status);
-  atomic_store_16(entry_ptr, &new_hash_entry);
+  HashEntry new_hash_entry(insert_position.key_hash_prefix, type, index,
+                           index_type, entry_status);
+  atomic_store_16(insert_position.entry_ptr, &new_hash_entry);
 }
 
-SlotIterator HashTable::GetSlotIterator() { return SlotIterator{this}; }
+Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
+  kvdk_assert(bucket_iter.hash_table_ == this &&
+                  bucket_iter.entry_idx_ ==
+                      hash_bucket_entries_[bucket_iter.bucket_idx_],
+              "Only allocate new hash entry at end of hash bucket");
+  assert(bucket_iter.bucket_ptr_ != nullptr);
+  if (hash_bucket_entries_[bucket_iter.bucket_idx_] > 0 &&
+      hash_bucket_entries_[bucket_iter.bucket_idx_] % kNumEntryPerBucket == 0) {
+    auto space = dram_allocator_.Allocate(kHashBucketSize);
+    if (space.size == 0) {
+      GlobalLogger.Error("MemoryOverflow!\n");
+      return Status::MemoryOverflow;
+    }
+    bucket_iter.bucket_ptr_->next =
+        dram_allocator_.offset2addr<HashBucket>(space.offset);
+    bucket_iter.bucket_ptr_ = bucket_iter.bucket_ptr_->next;
+  }
+  bucket_iter.entry_idx_ = hash_bucket_entries_[bucket_iter.bucket_idx_]++;
+  bucket_iter->clear();
+  kvdk_assert(bucket_iter.Valid(), "");
+  return Status::Ok;
+}
+
+HashTableIterator HashTable::GetIterator() { return HashTableIterator{this}; }
 
 }  // namespace KVDK_NAMESPACE
