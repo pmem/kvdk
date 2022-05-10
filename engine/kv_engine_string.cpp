@@ -68,8 +68,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
               ? kNullPMemOffset
               : pmem_allocator_->addr2offset_checked(existing_record),
           key, new_value, expired_time);
-      hash_table_->Insert(lookup_result, StringDataRecord, new_record,
-                          PointerType::StringRecord);
+      insertKeyOrElem(lookup_result, StringDataRecord, new_record);
       if (lookup_result.s == Status::Ok) {
         ul.unlock();
         delayFree(OldDataRecord{existing_record, new_ts});
@@ -89,8 +88,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
         StringRecord::PersistStringRecord(
             pmem_ptr, space_entry.size, new_ts, StringDeleteRecord,
             pmem_allocator_->addr2offset_checked(existing_record), key, "");
-        hash_table_->Insert(lookup_result, StringDeleteRecord, pmem_ptr,
-                            PointerType::StringRecord);
+        insertKeyOrElem(lookup_result, StringDeleteRecord, pmem_ptr);
         ul.unlock();
         SpinMutex* hash_lock = ul.release();
         delayFree(OldDataRecord{lookup_result.entry.GetIndex().string_record,
@@ -184,8 +182,7 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
         pmem_allocator_->addr2offset_checked(
             lookup_result.entry.GetIndex().string_record),
         key, "");
-    hash_table_->Insert(lookup_result, StringDeleteRecord, pmem_ptr,
-                        PointerType::StringRecord);
+    insertKeyOrElem(lookup_result, StringDeleteRecord, pmem_ptr);
     ul.unlock();
 
     SpinMutex* hash_lock = ul.release();
@@ -253,8 +250,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
       new_record, space_entry.size, new_ts, StringDataRecord,
       pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
 
-  hash_table_->Insert(lookup_result, StringDataRecord, new_record,
-                      PointerType::StringRecord, entry_status);
+  insertKeyOrElem(lookup_result, StringDataRecord, new_record, entry_status);
   // Free existing record
   bool need_free =
       existing_record &&
@@ -296,8 +292,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
     return Status::Ok;
   }
 
-  hash_table_->Insert(lookup_result, cached_entry.meta.type, pmem_record,
-                      PointerType::StringRecord);
+  insertKeyOrElem(lookup_result, cached_entry.meta.type, pmem_record);
   if (lookup_result.s == Status::Ok) {
     purgeAndFree(lookup_result.entry.GetIndex().ptr);
   }
@@ -343,8 +338,7 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
               : kNullPMemOffset,
         kv.key, kv.type == StringDataRecord ? kv.value : "");
 
-    hash_table_->Insert(lookup_result, (RecordType)kv.type, new_pmem_ptr,
-                        PointerType::StringRecord);
+    insertKeyOrElem(lookup_result, (RecordType)kv.type, new_pmem_ptr);
 
     if (found) {
       if (kv.type == StringDeleteRecord) {

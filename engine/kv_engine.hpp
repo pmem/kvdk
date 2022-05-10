@@ -222,9 +222,8 @@ class KVEngine : public Engine {
   // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
   //
   // return status:
-  // Status::Ok if key exist and alive
+  // Status::Ok if key exist
   // Status::NotFound is key is not found.
-  // Status::Outdated if key has been deleted
   // Status::MemoryOverflow if may_insert is true but failed to allocate new
   // hash entry
   //
@@ -237,6 +236,13 @@ class KVEngine : public Engine {
   void removeKeyOrElem(HashTable::LookupResult ret) {
     kvdk_assert(ret.s == Status::Ok || ret.s == Status::Outdated, "");
     hash_table_->Erase(ret.entry_ptr);
+  }
+
+  // insert/update key or elem to hashtable, ret must be return value of
+  // lookupElem or lookupKey
+  void insertKeyOrElem(HashTable::LookupResult ret, RecordType type, void* addr,
+                       KeyStatus entry_status = KeyStatus::Persist) {
+    hash_table_->Insert(ret, type, addr, pointerType(type), entry_status);
   }
 
   template <typename CollectionType>
@@ -325,7 +331,7 @@ class KVEngine : public Engine {
     if (ret.s != Status::NotFound) {
       return ret.s;
     }
-    hash_table_->Insert(ret, type, coll, pointerType(type));
+    insertKeyOrElem(ret, type, coll);
     return Status::Ok;
   }
 

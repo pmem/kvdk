@@ -1401,8 +1401,7 @@ Status KVEngine::ListCreate(StringView key) {
     std::lock_guard<std::mutex> guard2{lists_mu_};
     lists_.emplace(list);
   }
-  hash_table_->Insert(result, RecordType::ListRecord, list,
-                      pointerType(RecordType::ListRecord));
+  insertKeyOrElem(result, RecordType::ListRecord, list);
   return Status::Ok;
 }
 

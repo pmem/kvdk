@@ -58,8 +58,7 @@ Status KVEngine::CreateSortedCollection(
         pmem_allocator_.get(), hash_table_.get(), skiplist_locks_.get(),
         s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
-    hash_table_->Insert(lookup_result, SortedHeader, skiplist.get(),
-                        PointerType::Skiplist);
+    insertKeyOrElem(lookup_result, SortedHeader, skiplist.get());
   } else {
     // Todo (jiayu): handle expired skiplist
     // Todo (jiayu): what if skiplist exists but comparator not match?
@@ -98,8 +97,7 @@ Status KVEngine::DestroySortedCollection(const StringView collection_name) {
         header->next, collection_name, value);
     Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
                       pmem_allocator_.get(), skiplist_locks_.get());
-    hash_table_->Insert(lookup_result, SortedHeaderDelete, skiplist,
-                        PointerType::Skiplist);
+    insertKeyOrElem(lookup_result, SortedHeaderDelete, skiplist);
     ul.unlock();
     SpinMutex* hash_lock = ul.release();
     delayFree(OldDeleteRecord(pmem_record, lookup_result.entry_ptr,
