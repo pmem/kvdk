@@ -5,20 +5,13 @@
 #include <cstring>
 
 #include "alias.hpp"
+#include "hash_table.hpp"
 #include "kvdk/write_batch.hpp"
 #include "utils/codec.hpp"
 
 namespace KVDK_NAMESPACE {
 
 class WriteBatchImpl final : public WriteBatch2 {
- private:
-  template<typename Op>
-  struct WriteArgs : public Op {
-    LookupResult res;
-    SpaceEntry space;
-    TimeStampType ts;
-  };
-
  public:
   enum class Op { Put, Delete };
 
@@ -41,10 +34,6 @@ class WriteBatchImpl final : public WriteBatch2 {
     std::string field;
     std::string value;
   };
-
-  using StringWriteArgs = WriteArgs<StringOp>;
-  using SortedWriteArgs = WriteArgs<SortedOp>;
-  using HashWriteArgs = WriteArgs<HashOp>;
 
   void StringPut(std::string const& key, std::string const& value) final {
     string_ops.emplace_back(StringOp{Op::Put, key, value});
@@ -78,14 +67,50 @@ class WriteBatchImpl final : public WriteBatch2 {
     hash_ops.clear();
   }
 
- private:
   using StringOpBatch = std::vector<StringOp>;
   using SortedOpBatch = std::vector<SortedOp>;
   using HashOpBatch = std::vector<HashOp>;
- 
+
+  StringOpBatch const& StringOps() const { return string_ops; }
+  SortedOpBatch const& SortedOps() const { return sorted_ops; }
+  HashOpBatch const& HashOps() const { return hash_ops; }
+
+ private:
   StringOpBatch string_ops;
   SortedOpBatch sorted_ops;
   HashOpBatch hash_ops;
+};
+
+struct StringWriteArgs {
+  StringView key;
+  StringView value;
+  WriteBatchImpl::Op op;
+  SpaceEntry space;
+  TimeStampType ts;
+  HashTable::LookupResult res;
+  StringRecord* new_rec;
+};
+
+struct SortedWriteArgs {
+  StringView key;
+  StringView field;
+  StringView value;
+  WriteBatchImpl::Op op;
+  SpaceEntry space;
+  TimeStampType ts;
+  HashTable::LookupResult res;
+  PointerWithTag<void*, PointerType> new_rec;
+};
+
+struct HashWriteArgs {
+  StringView key;
+  StringView field;
+  StringView value;
+  WriteBatchImpl::Op op;
+  SpaceEntry space;
+  TimeStampType ts;
+  HashTable::LookupResult res;
+  DLRecord* new_rec;
 };
 
 class BatchWriteLog {
@@ -107,17 +132,17 @@ class BatchWriteLog {
 
   enum class Op : size_t { Put, Delete };
 
-  struct StringEntry {
+  struct StringLogEntry {
     Op op;
     PMemOffsetType offset;
   };
 
-  struct SortedEntry {
+  struct SortedLogEntry {
     Op op;
     PMemOffsetType offset;
   };
 
-  struct HashEntry {
+  struct HashLogEntry {
     Op op;
     PMemOffsetType offset;
   };
@@ -125,27 +150,27 @@ class BatchWriteLog {
   explicit BatchWriteLog() {}
 
   void StringPut(PMemOffsetType offset) {
-    string_ops.emplace_back(StringEntry{Op::Put, offset});
+    string_ops.emplace_back(StringLogEntry{Op::Put, offset});
   }
 
   void StringDelete(PMemOffsetType offset) {
-    string_ops.emplace_back(StringEntry{Op::Delete, offset});
+    string_ops.emplace_back(StringLogEntry{Op::Delete, offset});
   }
 
   void SortedPut(PMemOffsetType offset) {
-    sorted_ops.emplace_back(SortedEntry{Op::Put, offset});
+    sorted_ops.emplace_back(SortedLogEntry{Op::Put, offset});
   }
 
   void SortedDelete(PMemOffsetType offset) {
-    sorted_ops.emplace_back(SortedEntry{Op::Delete, offset});
+    sorted_ops.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
   void HashPut(PMemOffsetType offset) {
-    hash_ops.emplace_back(HashEntry{Op::Put, offset});
+    hash_ops.emplace_back(HashLogEntry{Op::Put, offset});
   }
 
   void HashDelete(PMemOffsetType offset) {
-    hash_ops.emplace_back(HashEntry{Op::Delete, offset});
+    hash_ops.emplace_back(HashLogEntry{Op::Delete, offset});
   }
 
   void Clear() {
@@ -155,8 +180,8 @@ class BatchWriteLog {
   }
 
   // Format of the BatchWriteLog
-  // total_bytes | Stage | timestamp | N | StringEntry*N | M | SortedEntry*M | K
-  // | HashEntry*K
+  // total_bytes | Stage | timestamp | N | StringLogEntry*N | M |
+  // SortedLogEntry*M | K | HashLogEntry*K
   std::string Serialize();
 
   void Deserialize(char const* src);
@@ -184,9 +209,9 @@ class BatchWriteLog {
     _mm_mfence();
   }
 
-  using StringLog = std::vector<StringEntry>;
-  using SortedLog = std::vector<SortedEntry>;
-  using HashLog = std::vector<HashEntry>;
+  using StringLog = std::vector<StringLogEntry>;
+  using SortedLog = std::vector<SortedLogEntry>;
+  using HashLog = std::vector<HashLogEntry>;
 
  private:
   Stage stage{Stage::Initializing};
