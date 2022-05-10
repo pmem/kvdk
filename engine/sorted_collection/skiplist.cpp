@@ -219,27 +219,23 @@ Status Skiplist::CheckIndex() {
     }
     SkiplistNode* next_node = splice.prevs[1]->RelaxedNext(1).RawPointer();
     if (IndexWithHashtable()) {
-      HashEntry hash_entry;
-      HashEntry* entry_ptr = nullptr;
       StringView key = next_record->Key();
-      Status s = hash_table_->SearchForRead(hash_table_->GetHint(key), key,
-                                            next_record->entry.meta.type,
-                                            &entry_ptr, &hash_entry, nullptr);
-      if (s != Status::Ok) {
+      auto ret = hash_table_->Lookup<false>(key, next_record->entry.meta.type);
+      if (ret.s != Status::Ok) {
         GlobalLogger.Error(
             "Check skiplist index error: record not exist in hash table\n");
         return Status::Abort;
       }
 
-      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
-        if (hash_entry.GetIndex().skiplist_node != next_node) {
+      if (ret.entry.GetIndexType() == PointerType::SkiplistNode) {
+        if (ret.entry.GetIndex().skiplist_node != next_node) {
           GlobalLogger.Error(
               "Check skiplist index error: Dram node miss-match with hash "
               "table\n");
           return Status::Abort;
         }
       } else {
-        if (hash_entry.GetIndex().dl_record != next_record) {
+        if (ret.entry.GetIndex().dl_record != next_record) {
           GlobalLogger.Error(
               "Check skiplist index error: Dlrecord miss-match with hash "
               "table\n");
@@ -488,24 +484,20 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
     }
   } else {
     std::string internal_key = InternalKey(key);
-    HashEntry hash_entry;
-    HashEntry* entry_ptr = nullptr;
-    bool is_found = hash_table_->SearchForRead(
-                        hash_table_->GetHint(internal_key), internal_key,
-                        SortedElem | SortedElemDelete, &entry_ptr, &hash_entry,
-                        nullptr) == Status::Ok;
-    if (!is_found) {
+    auto ret =
+        hash_table_->Lookup<false>(internal_key, SortedElem | SortedElemDelete);
+    if (ret.s != Status::Ok) {
       return Status::NotFound;
     }
 
     DLRecord* pmem_record;
-    switch (hash_entry.GetIndexType()) {
+    switch (ret.entry.GetIndexType()) {
       case PointerType::SkiplistNode: {
-        pmem_record = hash_entry.GetIndex().skiplist_node->record;
+        pmem_record = ret.entry.GetIndex().skiplist_node->record;
         break;
       }
       case PointerType::DLRecord: {
-        pmem_record = hash_entry.GetIndex().dl_record;
+        pmem_record = ret.entry.GetIndex().dl_record;
         break;
       }
       default: {
@@ -591,12 +583,9 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
-  HashEntry* entry_ptr = nullptr;
-  HashEntry hash_entry;
-  auto hint = hash_table_->GetHint(internal_key);
-  ret.s = hash_table_->SearchForRead(hint, internal_key,
-                                     SortedElem | SortedElemDelete, &entry_ptr,
-                                     &hash_entry, nullptr);
+  auto lookup_result =
+      hash_table_->Lookup<false>(internal_key, SortedElem | SortedElemDelete);
+  ret.s = lookup_result.s;
 
   switch (ret.s) {
     case Status::NotFound: {
@@ -604,17 +593,17 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
       return ret;
     }
     case Status::Ok: {
-      if (hash_entry.GetRecordType() == SortedElemDelete) {
+      if (lookup_result.entry.GetRecordType() == SortedElemDelete) {
         return ret;
       }
 
-      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
-        ret.dram_node = hash_entry.GetIndex().skiplist_node;
+      if (lookup_result.entry.GetIndexType() == PointerType::SkiplistNode) {
+        ret.dram_node = lookup_result.entry.GetIndex().skiplist_node;
         ret.existing_record = ret.dram_node->record;
       } else {
         ret.dram_node = nullptr;
-        assert(hash_entry.GetIndexType() == PointerType::DLRecord);
-        ret.existing_record = hash_entry.GetIndex().dl_record;
+        assert(lookup_result.entry.GetIndexType() == PointerType::DLRecord);
+        ret.existing_record = lookup_result.entry.GetIndex().dl_record;
       }
       assert(timestamp > ret.existing_record->entry.meta.timestamp);
 
@@ -642,7 +631,7 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
           prev_offset, next_offset, internal_key, "");
       linkDLRecord(prev_record, next_record, delete_record);
       ret.write_record = delete_record;
-      ret.hash_entry_ptr = entry_ptr;
+      ret.hash_entry_ptr = lookup_result.entry_ptr;
 
       break;
     }
@@ -653,11 +642,11 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
   // until here, new record is already inserted to list
   assert(ret.write_record != nullptr);
   if (ret.dram_node == nullptr) {
-    hash_table_->Insert(hint, entry_ptr, SortedElemDelete, ret.write_record,
+    hash_table_->Insert(lookup_result, SortedElemDelete, ret.write_record,
                         PointerType::DLRecord);
   } else {
     ret.dram_node->record = ret.write_record;
-    hash_table_->Insert(hint, entry_ptr, SortedElemDelete, ret.dram_node,
+    hash_table_->Insert(lookup_result, SortedElemDelete, ret.dram_node,
                         PointerType::SkiplistNode);
   }
 
@@ -670,22 +659,18 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
-  auto hint = hash_table_->GetHint(internal_key);
-  HashEntry* entry_ptr = nullptr;
-  HashEntry hash_entry;
-  ret.s = hash_table_->SearchForWrite(hint, internal_key,
-                                      SortedElem | SortedElemDelete, &entry_ptr,
-                                      &hash_entry, nullptr);
+  auto lookup_result =
+      hash_table_->Lookup<true>(internal_key, SortedElem | SortedElemDelete);
 
-  switch (ret.s) {
+  switch (lookup_result.s) {
     case Status::Ok: {
-      if (hash_entry.GetIndexType() == PointerType::SkiplistNode) {
-        ret.dram_node = hash_entry.GetIndex().skiplist_node;
+      if (lookup_result.entry.GetIndexType() == PointerType::SkiplistNode) {
+        ret.dram_node = lookup_result.entry.GetIndex().skiplist_node;
         ret.existing_record = ret.dram_node->record;
       } else {
         ret.dram_node = nullptr;
-        assert(hash_entry.GetIndexType() == PointerType::DLRecord);
-        ret.existing_record = hash_entry.GetIndex().dl_record;
+        assert(lookup_result.entry.GetIndexType() == PointerType::DLRecord);
+        ret.existing_record = lookup_result.entry.GetIndex().dl_record;
       }
       assert(timestamp > ret.existing_record->entry.meta.timestamp);
 
@@ -712,7 +697,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
           space_to_write.size, timestamp, SortedElem, existing_offset,
           prev_offset, next_offset, internal_key, value);
       ret.write_record = new_record;
-      ret.hash_entry_ptr = entry_ptr;
+      ret.hash_entry_ptr = lookup_result.entry_ptr;
       linkDLRecord(prev_record, next_record, new_record);
 
       break;
@@ -735,11 +720,11 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
   // until here, new record is already inserted to list
   assert(ret.write_record != nullptr);
   if (ret.dram_node == nullptr) {
-    hash_table_->Insert(hint, entry_ptr, SortedElem, ret.write_record,
+    hash_table_->Insert(lookup_result, SortedElem, ret.write_record,
                         PointerType::DLRecord);
   } else {
     ret.dram_node->record = ret.write_record;
-    hash_table_->Insert(hint, entry_ptr, SortedElem, ret.dram_node,
+    hash_table_->Insert(lookup_result, SortedElem, ret.dram_node,
                         PointerType::SkiplistNode);
   }
 
@@ -874,22 +859,19 @@ void Skiplist::destroyRecords() {
       next_destroy =
           pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
       StringView key = to_destroy->Key();
-      auto hash_hint = hash_table_->GetHint(key);
-      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+      auto ul = hash_table_->AcquireLock(key);
       // We need to purge destroyed records one by one in case engine crashed
       // during destroy
       Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, record_locks_);
 
       if (IndexWithHashtable()) {
-        HashEntry* entry_ptr = nullptr;
-        HashEntry hash_entry;
-        auto s = hash_table_->SearchForRead(hash_hint, key,
-                                            to_destroy->entry.meta.type,
-                                            &entry_ptr, &hash_entry, nullptr);
-        if (s == Status::Ok) {
-          DLRecord* hash_indexed_record;
-          auto hash_index = entry_ptr->GetIndex();
-          switch (entry_ptr->GetIndexType()) {
+        auto lookup_result =
+            hash_table_->Lookup<false>(key, to_destroy->entry.meta.type);
+
+        if (lookup_result.s == Status::Ok) {
+          DLRecord* hash_indexed_record = nullptr;
+          auto hash_index = lookup_result.entry.GetIndex();
+          switch (lookup_result.entry.GetIndexType()) {
             case PointerType::Skiplist:
               hash_indexed_record = hash_index.skiplist->HeaderRecord();
               break;
@@ -903,7 +885,7 @@ void Skiplist::destroyRecords() {
               kvdk_assert(false, "Wrong hash index type of sorted record");
           }
           if (hash_indexed_record == to_destroy) {
-            hash_table_->Erase(entry_ptr);
+            hash_table_->Erase(lookup_result.entry_ptr);
           }
         }
       }

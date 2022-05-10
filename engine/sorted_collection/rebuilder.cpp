@@ -146,8 +146,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         invalid_skiplists_[id] = skiplist;
       }
     } else {
-      auto hint = kv_engine_->hash_table_->GetHint(collection_name);
-      std::lock_guard<SpinMutex> lg(*hint.spin);
+      auto ul = kv_engine_->hash_table_->AcquireLock(collection_name);
 
       if (valid_version_record != header_record) {
         Skiplist::Replace(header_record, valid_version_record, nullptr,
@@ -311,8 +310,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       DataEntry data_entry;
       StringView internal_key = next_record->Key();
 
-      auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
-      std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+      auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
       DLRecord* valid_version_record = findCheckpointVersion(next_record);
       if (valid_version_record == nullptr ||
           valid_version_record->entry.meta.type == SortedElemDelete) {
@@ -466,8 +464,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     }
 
     StringView internal_key = next_record->Key();
-    auto hash_hint = kv_engine_->hash_table_->GetHint(internal_key);
-    std::lock_guard<SpinMutex> lg(*hash_hint.spin);
+    auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
     DLRecord* valid_version_record = findCheckpointVersion(next_record);
     if (valid_version_record == nullptr ||
         valid_version_record->entry.meta.type == SortedElemDelete) {
@@ -609,8 +606,8 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
                                                   void* index_ptr,
                                                   PointerType index_type) {
   // TODO: ttl
-  uint16_t search_type_mask;
-  RecordType record_type;
+  uint16_t search_type_mask = 0;
+  RecordType record_type = RecordType::Empty;
   if (index_type == PointerType::DLRecord) {
     search_type_mask = SortedElemType;
     record_type = static_cast<DLRecord*>(index_ptr)->entry.meta.type;
@@ -621,17 +618,17 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
   } else if (index_type == PointerType::Skiplist) {
     search_type_mask = SortedHeaderType;
     record_type = SortedHeader;
+  } else {
+    kvdk_assert(false, "Wrong type in sorted collection rebuilder");
   }
 
-  HashEntry* entry_ptr = nullptr;
-  HashEntry hash_entry;
-  auto hash_hint = kv_engine_->hash_table_->GetHint(key);
-  Status s = kv_engine_->hash_table_->SearchForWrite(
-      hash_hint, key, search_type_mask, &entry_ptr, &hash_entry, nullptr);
-  switch (s) {
+  auto lookup_result =
+      kv_engine_->hash_table_->Lookup<true>(key, search_type_mask);
+
+  switch (lookup_result.s) {
     case Status::NotFound: {
-      kv_engine_->hash_table_->Insert(hash_hint, entry_ptr, record_type,
-                                      index_ptr, index_type);
+      kv_engine_->hash_table_->Insert(lookup_result, record_type, index_ptr,
+                                      index_type);
       return Status::Ok;
     }
     case Status::Ok: {
@@ -643,7 +640,7 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
     }
 
     case Status::MemoryOverflow: {
-      return s;
+      return lookup_result.s;
     }
 
     default:

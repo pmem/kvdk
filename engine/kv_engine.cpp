@@ -160,9 +160,8 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   thread_manager_.reset(new (std::nothrow)
                             ThreadManager(configs_.max_access_threads));
   hash_table_.reset(HashTable::NewHashTable(
-      configs_.hash_bucket_num, configs_.hash_bucket_size,
-      configs_.num_buckets_per_slot, pmem_allocator_.get(),
-      configs_.max_access_threads));
+      configs_.hash_bucket_num, configs_.num_buckets_per_slot,
+      pmem_allocator_.get(), configs_.max_access_threads));
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
       thread_manager_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
@@ -720,11 +719,6 @@ Status KVEngine::CheckConfigs(const Configs& configs) {
     return Status::InvalidConfiguration;
   }
 
-  if (configs.hash_bucket_size < sizeof(HashEntry) + 8) {
-    GlobalLogger.Error("hash bucket too small\n");
-    return Status::InvalidConfiguration;
-  }
-
   if (!is_2pown(configs.hash_bucket_num) ||
       !is_2pown(configs.num_buckets_per_slot)) {
     GlobalLogger.Error(
@@ -877,9 +871,8 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
 
 Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
-  HashTable::KeyHashHint hint = hash_table_->GetHint(str);
-  std::unique_lock<SpinMutex> ul(*hint.spin);
-  LookupResult res = lookupKey<false>(str, ExpirableRecordType);
+  auto ul = hash_table_->AcquireLock(str);
+  auto res = lookupKey<false>(str, ExpirableRecordType);
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;
@@ -922,11 +915,10 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   }
 
   ExpireTimeType expired_time = TimeUtils::TTLToExpireTime(ttl_time, base_time);
-  HashTable::KeyHashHint hint = hash_table_->GetHint(str);
-  std::unique_lock<SpinMutex> ul(*hint.spin);
+  auto ul = hash_table_->AcquireLock(str);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
-  LookupResult res = lookupKey<false>(str, ExpirableRecordType);
+  auto res = lookupKey<false>(str, ExpirableRecordType);
   if (res.s == Status::Outdated) {
     if (res.entry_ptr->IsTTLStatus()) {
       // Push the expired record into cleaner and update hash entry status
@@ -936,10 +928,11 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       if (res.entry_ptr->GetIndexType() == PointerType::StringRecord) {
         hash_table_->UpdateEntryStatus(res.entry_ptr, KeyStatus::Expired);
         ul.unlock();
+        SpinMutex* hash_lock = ul.release();
         delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr, res.entry_ptr,
                                   PointerType::HashEntry,
                                   version_controller_.GetCurrentTimestamp(),
-                                  hint.spin});
+                                  hash_lock});
       }
     }
     return Status::NotFound;
@@ -999,34 +992,21 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
 // lookupKey
 namespace KVDK_NAMESPACE {
 template <bool may_insert>
-KVEngine::LookupResult KVEngine::lookupImpl(StringView key,
-                                            uint16_t type_mask) {
-  LookupResult result;
-  auto hint = hash_table_->GetHint(key);
-  if (!may_insert) {
-    result.s = hash_table_->SearchForRead(
-        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-  } else {
-    result.s = hash_table_->SearchForWrite(
-        hint, key, type_mask, &result.entry_ptr, &result.entry, nullptr);
-  }
-  return result;
-}
-
-template <bool may_insert>
-KVEngine::LookupResult KVEngine::lookupElem(StringView key,
-                                            uint16_t type_mask) {
+HashTable::LookupResult KVEngine::lookupElem(StringView key,
+                                             uint16_t type_mask) {
   kvdk_assert(type_mask & (HashElem | SortedElemType), "");
-  return lookupImpl<may_insert>(key, type_mask);
+  return hash_table_->Lookup<may_insert>(key, type_mask);
 }
-template KVEngine::LookupResult KVEngine::lookupElem<true>(StringView,
-                                                           uint16_t);
-template KVEngine::LookupResult KVEngine::lookupElem<false>(StringView,
+
+template HashTable::LookupResult KVEngine::lookupElem<true>(StringView,
                                                             uint16_t);
+template HashTable::LookupResult KVEngine::lookupElem<false>(StringView,
+                                                             uint16_t);
 
 template <bool may_insert>
-KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
-  LookupResult result = lookupImpl<may_insert>(key, PrimaryRecordType);
+HashTable::LookupResult KVEngine::lookupKey(StringView key,
+                                            uint16_t type_mask) {
+  auto result = hash_table_->Lookup<may_insert>(key, PrimaryRecordType);
 
   if (result.s != Status::Ok) {
     kvdk_assert(
@@ -1068,9 +1048,10 @@ KVEngine::LookupResult KVEngine::lookupKey(StringView key, uint16_t type_mask) {
   }
   return result;
 }
-template KVEngine::LookupResult KVEngine::lookupKey<true>(StringView, uint16_t);
-template KVEngine::LookupResult KVEngine::lookupKey<false>(StringView,
+template HashTable::LookupResult KVEngine::lookupKey<true>(StringView,
                                                            uint16_t);
+template HashTable::LookupResult KVEngine::lookupKey<false>(StringView,
+                                                            uint16_t);
 
 }  // namespace KVDK_NAMESPACE
 
@@ -1231,16 +1212,16 @@ void KVEngine::backgroundDestroyCollections() {
       if (expired_list != nullptr) {
         auto key = expired_list->Name();
         auto guard = hash_table_->AcquireLock(key);
-        LookupResult ret = lookupKey<false>(key, RecordType::ListRecord);
+        auto lookup_result = lookupKey<false>(key, RecordType::ListRecord);
         // Make sure the List has indeed expired, it may have been updated.
-        if (ret.s == Status::Outdated) {
-          expired_list = ret.entry.GetIndex().list;
-          removeKeyOrElem(ret);
+        if (lookup_result.s == Status::Outdated) {
+          expired_list = lookup_result.entry.GetIndex().list;
+          removeKeyOrElem(lookup_result);
           std::lock_guard<std::mutex> guard{lists_mu_};
           lists_.erase(expired_list);
           outdated_lists_.emplace_back(
               version_controller_.GetCurrentTimestamp(), expired_list);
-        } else if (ret.s == Status::NotFound) {
+        } else if (lookup_result.s == Status::NotFound) {
           std::lock_guard<std::mutex> guard{lists_mu_};
           lists_.erase(expired_list);
           outdated_lists_.emplace_back(
@@ -1261,16 +1242,16 @@ void KVEngine::backgroundDestroyCollections() {
       if (expired_hlist != nullptr) {
         auto key = expired_hlist->Name();
         auto guard = hash_table_->AcquireLock(key);
-        LookupResult ret = lookupKey<false>(key, RecordType::HashRecord);
+        auto lookup_result = lookupKey<false>(key, RecordType::HashRecord);
         // Make sure the HashList has indeed expired
-        if (ret.s == Status::Outdated) {
-          expired_hlist = ret.entry.GetIndex().hlist;
-          removeKeyOrElem(ret);
+        if (lookup_result.s == Status::Outdated) {
+          expired_hlist = lookup_result.entry.GetIndex().hlist;
+          removeKeyOrElem(lookup_result);
           std::lock_guard<std::mutex> guard{hlists_mu_};
           hash_lists_.erase(expired_hlist);
           outdated_hash_lists_.emplace_back(
               version_controller_.GetCurrentTimestamp(), expired_hlist);
-        } else if (ret.s == Status::NotFound) {
+        } else if (lookup_result.s == Status::NotFound) {
           std::lock_guard<std::mutex> guard{hlists_mu_};
           hash_lists_.erase(expired_hlist);
           outdated_hash_lists_.emplace_back(
@@ -1323,43 +1304,42 @@ void KVEngine::CleanOutDated() {
   std::deque<OutdatedCollection> expired_collection_queue;
   // Iterate hash table
   auto start_ts = std::chrono::system_clock::now();
-  auto slot_iter = hash_table_->GetSlotIterator();
-  while (slot_iter.Valid()) {
+  auto hashtable_iter = hash_table_->GetIterator();
+  while (hashtable_iter.Valid()) {
     {  // Slot lock section
-      auto slot_lock(slot_iter.AcquireSlotLock());
-      auto bucket_iter = slot_iter.Begin();
-      auto end_bucket_iter = slot_iter.End();
+      auto slot_lock(hashtable_iter.AcquireSlotLock());
+      auto slot_iter = hashtable_iter.Slot();
       auto new_ts = version_controller_.GetCurrentTimestamp();
-      while (bucket_iter != end_bucket_iter) {
-        switch (bucket_iter->GetIndexType()) {
+      while (slot_iter.Valid()) {
+        switch (slot_iter->GetIndexType()) {
           case PointerType::StringRecord: {
-            if (bucket_iter->IsTTLStatus() &&
-                bucket_iter->GetIndex().string_record->HasExpired()) {
-              hash_table_->UpdateEntryStatus(&(*bucket_iter),
-                                             KeyStatus::Expired);
+            if (slot_iter->IsTTLStatus() &&
+                slot_iter->GetIndex().string_record->HasExpired()) {
+              hash_table_->UpdateEntryStatus(&(*slot_iter), KeyStatus::Expired);
               // push expired cleaner
-              expired_record_queue.push_back(OldDeleteRecord{
-                  bucket_iter->GetIndex().ptr, &(*bucket_iter),
-                  PointerType::HashEntry, new_ts, slot_iter.GetSlotLock()});
+              expired_record_queue.push_back(
+                  OldDeleteRecord{slot_iter->GetIndex().ptr, &(*slot_iter),
+                                  PointerType::HashEntry, new_ts,
+                                  hashtable_iter.GetSlotLock()});
             }
             break;
           }
           case PointerType::Skiplist: {
-            if (bucket_iter->IsTTLStatus() &&
-                bucket_iter->GetIndex().skiplist->HasExpired()) {
+            if (slot_iter->IsTTLStatus() &&
+                slot_iter->GetIndex().skiplist->HasExpired()) {
               // push expired to cleaner and clear hash entry
               expired_collection_queue.emplace_back(
-                  bucket_iter->GetIndex().skiplist,
+                  slot_iter->GetIndex().skiplist,
                   version_controller_.GetCurrentTimestamp());
-              hash_table_->Erase(&(*bucket_iter));
+              hash_table_->Erase(&(*slot_iter));
             }
           }
           default:
             break;
         }
-        bucket_iter++;
+        slot_iter++;
       }
-      slot_iter.Next();
+      hashtable_iter.Next();
     }
 
     if (!expired_record_queue.empty() &&
@@ -1401,7 +1381,7 @@ Status KVEngine::ListCreate(StringView key) {
   }
 
   auto guard = hash_table_->AcquireLock(key);
-  LookupResult result = lookupKey<true>(key, RecordType::ListRecord);
+  auto result = lookupKey<true>(key, RecordType::ListRecord);
   if (result.s == Status::Ok) {
     return Status::Existed;
   }
@@ -1421,7 +1401,7 @@ Status KVEngine::ListCreate(StringView key) {
     std::lock_guard<std::mutex> guard2{lists_mu_};
     lists_.emplace(list);
   }
-  insertKeyOrElem(result, key, RecordType::ListRecord, list);
+  insertKeyOrElem(result, RecordType::ListRecord, list);
   return Status::Ok;
 }
 
@@ -1757,7 +1737,7 @@ Status KVEngine::listDestroy(List* list) {
 }
 
 Status KVEngine::listFind(StringView key, List** list) {
-  LookupResult result = lookupKey<false>(key, RecordType::ListRecord);
+  auto result = lookupKey<false>(key, RecordType::ListRecord);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }

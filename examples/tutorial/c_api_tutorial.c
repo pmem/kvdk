@@ -710,8 +710,8 @@ void HashModifyExample(KVDKEngine* engine) {
 int main() {
   // Initialize a KVDK instance.
   KVDKConfigs* kvdk_configs = KVDKCreateConfigs();
-  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 128u,
-                 1ull << 10, 1 << 4);
+  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 1ull << 10,
+                 1 << 4);
 
   const char* engine_path = "/mnt/pmem0/tutorial_kvdk_example";
   // Purge old KVDK instance

@@ -14,7 +14,7 @@ Status KVEngine::HashCreate(StringView key) {
   }
 
   auto guard = hash_table_->AcquireLock(key);
-  LookupResult result = lookupKey<true>(key, RecordType::HashRecord);
+  auto result = lookupKey<true>(key, RecordType::HashRecord);
   if (result.s == Status::Ok) {
     return Status::Existed;
   }
@@ -34,7 +34,7 @@ Status KVEngine::HashCreate(StringView key) {
     std::lock_guard<std::mutex> guard2{hlists_mu_};
     hash_lists_.emplace(hlist);
   }
-  insertKeyOrElem(result, key, RecordType::HashRecord, hlist);
+  insertKeyOrElem(result, RecordType::HashRecord, hlist);
   return Status::Ok;
 }
 
@@ -155,7 +155,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
     guard = hash_table_->AcquireLock(internal_key);
   }
 
-  LookupResult result = lookupElem<may_set>(internal_key, RecordType::HashElem);
+  auto result = lookupElem<may_set>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
@@ -196,7 +196,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
         hlist->ReplaceWithLock(space, pos, ts, field, new_value,
                                [&](DLRecord* rec) { delayFree(rec); });
       }
-      insertKeyOrElem(result, internal_key, RecordType::HashElem, addr);
+      insertKeyOrElem(result, RecordType::HashElem, addr);
       return Status::Ok;
     }
     case ModifyOperation::Delete: {
@@ -248,7 +248,7 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
 Status KVEngine::hashListFind(StringView key, HashList** hlist) {
   // Callers should acquire the access token or snapshot.
   // Lockless lookup for the collection
-  LookupResult result = lookupKey<false>(key, RecordType::HashRecord);
+  auto result = lookupKey<false>(key, RecordType::HashRecord);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }
@@ -276,12 +276,12 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
 
   StringView internal_key = rec->Key();
   auto guard = hash_table_->AcquireLock(internal_key);
-  LookupResult result = lookupElem<true>(internal_key, RecordType::HashElem);
+  auto result = lookupElem<true>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
   kvdk_assert(result.s == Status::NotFound, "Impossible!");
-  insertKeyOrElem(result, internal_key, RecordType::HashElem, rec);
+  insertKeyOrElem(result, RecordType::HashElem, rec);
 
   return Status::Ok;
 }
@@ -321,7 +321,7 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     {
       auto guard = hash_table_->AcquireLock(internal_key);
       kvdk_assert(hlist->Front()->Key() == internal_key, "");
-      LookupResult ret = lookupElem<false>(internal_key, RecordType::HashElem);
+      auto ret = lookupElem<false>(internal_key, RecordType::HashElem);
       kvdk_assert(ret.s == Status::Ok, "");
       removeKeyOrElem(ret);
       hlist->PopFront(PushPending);
