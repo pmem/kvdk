@@ -355,7 +355,8 @@ Skiplist::WriteResult Skiplist::Delete(const StringView& key,
   } else {
     ret = deleteImplNoHash(key, timestamp);
   }
-  if (ret.existing_record != nullptr) {
+  if (ret.existing_record != nullptr &&
+      ret.existing_record->entry.meta.type == SortedElem) {
     UpdateSize(-1);
   }
   return ret;
@@ -370,7 +371,8 @@ Skiplist::WriteResult Skiplist::Set(const StringView& key,
   } else {
     ret = setImplNoHash(key, value, timestamp);
   }
-  if (ret.existing_record == nullptr) {
+  if (ret.existing_record == nullptr ||
+      ret.existing_record->entry.meta.type == SortedElemDelete) {
     UpdateSize(1);
   }
   return ret;

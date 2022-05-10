@@ -324,6 +324,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
                             kv_engine_->skiplist_locks_.get());
           addUnlinkedRecord(next_record);
         }
+        num_elems++;
 
         assert(valid_version_record != nullptr);
         SkiplistNode* dram_node = Skiplist::NewNodeBuild(valid_version_record);
@@ -345,10 +346,6 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           if (s != Status::Ok) {
             return s;
           }
-        }
-        // Todo: only keep elem on list after recovery
-        if (valid_version_record->entry.meta.type == SortedElem) {
-          num_elems++;
         }
         cur_record = valid_version_record;
       }
@@ -480,6 +477,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
                           kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(next_record);
       }
+      num_elems++;
 
       // Rebuild dram node
       assert(valid_version_record != nullptr);
@@ -508,10 +506,6 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         if (s != Status::Ok) {
           return s;
         }
-      }
-      // Todo: only keep elem on list after recovery
-      if (valid_version_record->entry.meta.type == SortedElem) {
-        num_elems++;
       }
 
       splice.prev_pmem_record = valid_version_record;
