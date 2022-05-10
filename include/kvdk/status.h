@@ -26,6 +26,7 @@ extern "C" {
   GEN(NotFound)             \
   GEN(Outdated)             \
   GEN(WrongType)            \
+  GEN(Existed)              \
   GEN(OperationFail)        \
   GEN(OutOfRange)           \
   GEN(MemoryOverflow)       \

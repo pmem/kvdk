@@ -61,8 +61,7 @@ class SortedCollectionRebuilder {
   // exist, otherwise return pmem_record itself. Return nullptr if no valid
   // version of pmem_record exist.
   // If invalid_version_records is not null, put all invalid versions into it.
-  DLRecord* findValidVersion(DLRecord* pmem_record,
-                             std::vector<DLRecord*>* invalid_version_records);
+  DLRecord* findCheckpointVersion(DLRecord* pmem_record);
 
   // Rebuild DRAM index based on skiplists, i.e., every recovery thread rebuilds
   // a whole skiplist one by one in parallel

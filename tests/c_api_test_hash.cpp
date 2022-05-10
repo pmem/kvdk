@@ -36,6 +36,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   size_t count = 1000;
 
   std::string key{"Hash"};
+  ASSERT_EQ(KVDKHashCreate(engine, key.data(), key.size()), KVDKStatus::Ok);
   using umap = std::unordered_map<std::string, std::string>;
   std::vector<umap> local_copies(num_threads);
   std::mutex mu;

@@ -108,6 +108,21 @@ class Engine {
 
   /// List APIs ///////////////////////////////////////////////////////////////
 
+  // Create an empty List.
+  // Return:
+  //    Status::WrongType if key is not a List.
+  //    Status::Existed if a List named key already exists.
+  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::Ok if successfully created the List.
+  virtual Status ListCreate(StringView key) = 0;
+
+  // Destroy a List associated with key
+  // Return:
+  //    Status::WrongType if key is not a List.
+  //    Status::Ok if successfully destroyed the List.
+  //    Status::NotFound if key does not exist.
+  virtual Status ListDestroy(StringView key) = 0;
+
   // Total elements in List.
   // Return:
   //    Status::InvalidDataSize if key is too long
@@ -199,6 +214,8 @@ class Engine {
 
   /// Hash APIs ///////////////////////////////////////////////////////////////
 
+  virtual Status HashCreate(StringView key) = 0;
+  virtual Status HashDestroy(StringView key) = 0;
   virtual Status HashLength(StringView key, size_t* len) = 0;
   virtual Status HashGet(StringView key, StringView field,
                          std::string* value) = 0;

@@ -368,7 +368,11 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
             Status::Ok);
   ASSERT_EQ(engine->Set(str, val), Status::Ok);
   ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
+
+  ASSERT_EQ(engine->HashCreate(unordered_collection), Status::Ok);
   ASSERT_EQ(engine->HashSet(unordered_collection, elem_key, val), Status::Ok);
+
+  ASSERT_EQ(engine->ListCreate(list), Status::Ok);
   ASSERT_EQ(engine->ListPushBack(list, elem_key), Status::Ok);
 
   std::string got_val;
@@ -1184,13 +1188,14 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 TEST_F(EngineBasicTest, TestList) {
   size_t num_threads = 16;
   size_t count = 1000;
-  configs.max_access_threads = num_threads;
+  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::vector<std::vector<std::string>> elems_vec(num_threads);
   std::vector<std::string> key_vec(num_threads);
   for (size_t i = 0; i < num_threads; i++) {
     key_vec[i] = "List_" + std::to_string(i);
+    ASSERT_EQ(engine->ListCreate(key_vec[i]), Status::Ok);
     for (size_t j = 0; j < count; j++) {
       elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }
@@ -1352,10 +1357,11 @@ TEST_F(EngineBasicTest, TestList) {
 TEST_F(EngineBasicTest, TestHash) {
   size_t num_threads = 16;
   size_t count = 1000;
-  configs.max_access_threads = num_threads;
+  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key{"Hash"};
+  ASSERT_EQ(engine->HashCreate(key), Status::Ok);
   using umap = std::unordered_map<std::string, std::string>;
   std::vector<umap> local_copies(num_threads);
   std::mutex mu;
@@ -1839,6 +1845,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For hashes collection
   {
+    ASSERT_EQ(engine->HashCreate(hashes_collection), Status::Ok);
     ASSERT_EQ(
         engine->HashSet(hashes_collection, "hashes" + key, "hashes" + val),
         Status::Ok);
@@ -1861,6 +1868,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // For list
   {
+    ASSERT_EQ(engine->ListCreate(list_collection), Status::Ok);
     ASSERT_EQ(engine->ListPushFront(list_collection, "list" + val), Status::Ok);
     // Set expired time for collection
     ASSERT_EQ(engine->Expire(list_collection, max_ttl_time),
@@ -1902,6 +1910,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
   auto list0_push = [&](size_t id) {
     std::string list_key0 = "listkey0" + std::to_string(id);
+    ASSERT_EQ(engine->ListCreate(list_key0), Status::Ok);
     for (int i = 0; i < cnt; ++i) {
       ASSERT_EQ(
           engine->ListPushFront(list_key0, "list_elem" + std::to_string(i)),
@@ -1911,6 +1920,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
   };
   auto list1_push = [&](size_t id) {
     std::string list_key1 = "listkey1" + std::to_string(id);
+    ASSERT_EQ(engine->ListCreate(list_key1), Status::Ok);
     for (int i = 0; i < cnt; ++i) {
       ASSERT_EQ(
           engine->ListPushFront(list_key1, "list_elem" + std::to_string(i)),
@@ -1919,6 +1929,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
   };
   auto hash0_push = [&](size_t id) {
     std::string hash_key0 = "hashkey0" + std::to_string(id);
+    ASSERT_EQ(engine->HashCreate(hash_key0), Status::Ok);
     for (int i = 0; i < cnt; ++i) {
       std::string str = std::to_string(i);
       ASSERT_EQ(

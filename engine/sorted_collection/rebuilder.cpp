@@ -86,7 +86,8 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
                     .visited_skiplists[Skiplist::SkiplistID(record)] %
                 kRestoreSkiplistStride ==
             0 &&
-        findValidVersion(record, nullptr) == record) {
+        findCheckpointVersion(record) == record &&
+        record->entry.meta.type == SortedElem) {
       SkiplistNode* start_node = nullptr;
       while (start_node == nullptr) {
         // Always build dram node for a recovery segment start record
@@ -130,7 +131,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     max_recovered_id_ = std::max(max_recovered_id_, id);
 
     // Check version and rebuild index
-    DLRecord* valid_version_record = findValidVersion(header_record, nullptr);
+    DLRecord* valid_version_record = findCheckpointVersion(header_record);
     std::shared_ptr<Skiplist> skiplist;
     if (valid_version_record == nullptr) {
       skiplist =
@@ -310,8 +311,9 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       StringView internal_key = next_record->Key();
 
       auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
-      DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
-      if (valid_version_record == nullptr) {
+      DLRecord* valid_version_record = findCheckpointVersion(next_record);
+      if (valid_version_record == nullptr ||
+          valid_version_record->entry.meta.type == SortedElemDelete) {
         Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
                         kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(next_record);
@@ -463,8 +465,9 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 
     StringView internal_key = next_record->Key();
     auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
-    DLRecord* valid_version_record = findValidVersion(next_record, nullptr);
-    if (valid_version_record == nullptr) {
+    DLRecord* valid_version_record = findCheckpointVersion(next_record);
+    if (valid_version_record == nullptr ||
+        valid_version_record->entry.meta.type == SortedElemDelete) {
       // purge invalid version record from list
       Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
                       kv_engine_->skiplist_locks_.get());
@@ -645,8 +648,8 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
   return Status::Ok;
 }
 
-DLRecord* SortedCollectionRebuilder::findValidVersion(DLRecord* pmem_record,
-                                                      std::vector<DLRecord*>*) {
+DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
+    DLRecord* pmem_record) {
   kvdk_assert(pmem_record != nullptr,
               "pass nullptr to SortedCollectionRebuilder::findValidVersion");
   if (!recoverToCheckpoint()) {
