@@ -194,8 +194,8 @@ class KVEngine : public Engine {
   std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
 
  private:
-  // Look up the first level key (e.g. collections or string, not collection
-  // elems)
+  // Look up a first level key in hash table(e.g. collections or string, not
+  // collection elems), the first level key should be unique among all types
   //
   // Store a copy of hash entry in LookupResult::entry, and a pointer to the
   // hash entry in LookupResult::entry_ptr
@@ -203,20 +203,37 @@ class KVEngine : public Engine {
   // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
   //
   // return status:
+  // Status::Ok if key exist and alive
   // Status::NotFound is key is not found.
   // Status::WrongType if type_mask does not match.
-  // Status::Expired if key has been expired
-  // Status::MemoryOverflow if may_insert is true but
-  // failed to allocate new hash entry
-  // Status::Ok on success.
+  // Status::Outdated if key has been expired or deleted
+  // Status::MemoryOverflow if may_insert is true but failed to allocate new
+  // hash entry
   //
   // Notice: key should be locked if set may_insert to true
   template <bool may_insert>
   HashTable::LookupResult lookupKey(StringView key, uint16_t type_mask);
 
+  // Look up a collection element in hash table
+  //
+  // Store a copy of hash entry in LookupResult::entry, and a pointer to the
+  // hash entry in LookupResult::entry_ptr
+  // If may_insert is true and key not found, then store
+  // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
+  //
+  // return status:
+  // Status::Ok if key exist and alive
+  // Status::NotFound is key is not found.
+  // Status::Outdated if key has been deleted
+  // Status::MemoryOverflow if may_insert is true but failed to allocate new
+  // hash entry
+  //
+  // Notice: elem should be locked if set may_insert to true
   template <bool may_insert>
   HashTable::LookupResult lookupElem(StringView key, uint16_t type_mask);
 
+  // Remove a key or elem from hash table, ret should be return of
+  // lookupKey/lookupElem
   void removeKeyOrElem(HashTable::LookupResult ret) {
     kvdk_assert(ret.s == Status::Ok || ret.s == Status::Outdated, "");
     hash_table_->Erase(ret.entry_ptr);
