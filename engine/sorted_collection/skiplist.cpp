@@ -869,7 +869,7 @@ void Skiplist::destroyRecords() {
             hash_table_->Lookup<false>(key, to_destroy->entry.meta.type);
 
         if (lookup_result.s == Status::Ok) {
-          DLRecord* hash_indexed_record;
+          DLRecord* hash_indexed_record = nullptr;
           auto hash_index = lookup_result.entry.GetIndex();
           switch (lookup_result.entry.GetIndexType()) {
             case PointerType::Skiplist:

@@ -606,8 +606,8 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
                                                   void* index_ptr,
                                                   PointerType index_type) {
   // TODO: ttl
-  uint16_t search_type_mask;
-  RecordType record_type;
+  uint16_t search_type_mask = 0;
+  RecordType record_type = RecordType::Empty;
   if (index_type == PointerType::DLRecord) {
     search_type_mask = SortedElemType;
     record_type = static_cast<DLRecord*>(index_ptr)->entry.meta.type;
@@ -618,6 +618,8 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
   } else if (index_type == PointerType::Skiplist) {
     search_type_mask = SortedHeaderType;
     record_type = SortedHeader;
+  } else {
+    kvdk_assert(false, "Wrong type in sorted collection rebuilder");
   }
 
   auto lookup_result =
