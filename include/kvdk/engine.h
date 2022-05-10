@@ -101,12 +101,13 @@ extern KVDKStatus KVDKModify(KVDKEngine* engine, const char* key,
 
 /// Sorted
 /// //////////////////////////////////////////////////////////////////////
-extern KVDKStatus KVDKCreateSortedCollection(
-    KVDKEngine* engine, const char* collection_name, size_t collection_len,
-    KVDKSortedCollectionConfigs* configs);
-extern KVDKStatus KVDKDestroySortedCollection(KVDKEngine* engine,
-                                              const char* collection_name,
-                                              size_t collection_len);
+extern KVDKStatus KVDKSortedCreate(KVDKEngine* engine,
+                                   const char* collection_name,
+                                   size_t collection_len,
+                                   KVDKSortedCollectionConfigs* configs);
+extern KVDKStatus KVDKSortedDestroy(KVDKEngine* engine,
+                                    const char* collection_name,
+                                    size_t collection_len);
 extern KVDKStatus KVDKSortedSize(KVDKEngine* engine, const char* collection,
                                  size_t collection_len, size_t* size);
 extern KVDKStatus KVDKSortedSet(KVDKEngine* engine, const char* collection,

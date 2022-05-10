@@ -6,9 +6,8 @@
 #include "sorted_collection/iterator.hpp"
 
 namespace KVDK_NAMESPACE {
-Status KVEngine::CreateSortedCollection(
-    const StringView collection_name,
-    const SortedCollectionConfigs& s_configs) {
+Status KVEngine::SortedCreate(const StringView collection_name,
+                              const SortedCollectionConfigs& s_configs) {
   Status s = MaybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) {
@@ -68,7 +67,7 @@ Status KVEngine::CreateSortedCollection(
   return Status::Ok;
 }
 
-Status KVEngine::DestroySortedCollection(const StringView collection_name) {
+Status KVEngine::SortedDestroy(const StringView collection_name) {
   auto s = MaybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) {
@@ -157,7 +156,7 @@ Status KVEngine::SortedGet(const StringView collection,
   return skiplist->Get(user_key, value);
 }
 
-Status KVEngine::SortedSet(const StringView collection,
+Status KVEngine::SortedPut(const StringView collection,
                            const StringView user_key, const StringView value) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
@@ -284,7 +283,7 @@ Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
 
   auto ul = hash_table_->AcquireLock(collection_key);
   TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
-  auto ret = skiplist->Set(user_key, value, new_ts);
+  auto ret = skiplist->Put(user_key, value, new_ts);
 
   if (ret.s == Status::Ok) {
     if (ret.existing_record &&

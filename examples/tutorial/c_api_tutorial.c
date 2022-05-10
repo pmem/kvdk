@@ -67,7 +67,7 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   free(read_v1);
   free(read_v2);
   printf(
-      "Successfully performed Get, Set, Delete operations on anonymous "
+      "Successfully performed Get, Put, Delete operations on anonymous "
       "global collection.\n");
 
   KVDKDestroyWriteOptions(write_option);
@@ -87,11 +87,11 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   int cmp;
 
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
-  KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, collection1,
-                                            strlen(collection1), s_configs);
+  KVDKStatus s = KVDKSortedCreate(kvdk_engine, collection1, strlen(collection1),
+                                  s_configs);
   assert(s == Ok);
-  s = KVDKCreateSortedCollection(kvdk_engine, collection2, strlen(collection2),
-                                 s_configs);
+  s = KVDKSortedCreate(kvdk_engine, collection2, strlen(collection2),
+                       s_configs);
   assert(s == Ok);
   s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
@@ -124,11 +124,9 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   s = KVDKSortedDelete(kvdk_engine, collection2, strlen(collection2), key2,
                        strlen(key2));
   assert(s == Ok);
-  s = KVDKDestroySortedCollection(kvdk_engine, collection1,
-                                  strlen(collection1));
+  s = KVDKSortedDestroy(kvdk_engine, collection1, strlen(collection1));
   assert(s == Ok);
-  s = KVDKDestroySortedCollection(kvdk_engine, collection2,
-                                  strlen(collection2));
+  s = KVDKSortedDestroy(kvdk_engine, collection2, strlen(collection2));
   assert(s == Ok);
   s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
@@ -140,7 +138,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == NotFound);
   KVDKDestroySortedCollectionConfigs(s_configs);
   printf(
-      "Successfully performed SortedGet, SortedSet, SortedDelete "
+      "Successfully performed SortedGet, SortedPut, SortedDelete "
       "operations on named "
       "collections.\n");
 }
@@ -151,8 +149,8 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
                                  "5", "6", "7", "8", "9"};
   const char* sorted_collection = "sorted_collection";
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
-  KVDKStatus s = KVDKCreateSortedCollection(
-      kvdk_engine, sorted_collection, strlen(sorted_collection), s_configs);
+  KVDKStatus s = KVDKSortedCreate(kvdk_engine, sorted_collection,
+                                  strlen(sorted_collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key", value[10] = "value";
@@ -264,8 +262,8 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   // create sorted collection
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
   KVDKSetSortedCollectionConfigs(s_configs, comp_name, strlen(comp_name), 1);
-  KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, collection,
-                                            strlen(collection), s_configs);
+  KVDKStatus s =
+      KVDKSortedCreate(kvdk_engine, collection, strlen(collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
     s = KVDKSortedSet(kvdk_engine, collection, strlen(collection),
@@ -374,7 +372,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
        KVDKHashIteratorIsValid(kvdk_iter); KVDKHashIteratorPrev(kvdk_iter)) {
     ++cnt;
   }
-  printf("Successfully performed Get Set Delete Iterate on HashList.\n");
+  printf("Successfully performed Get Put Delete Iterate on HashList.\n");
   assert(cnt == 9);
   KVDKHashIteratorDestroy(kvdk_iter);
 
@@ -482,7 +480,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     // case: default persist key.
     KVDKSortedCollectionConfigs* s_configs =
         KVDKCreateSortedCollectionConfigs();
-    s = KVDKCreateSortedCollection(kvdk_engine, sorted_collection,
+    s = KVDKSortedCreate(kvdk_engine, sorted_collection,
                                    strlen(sorted_collection), s_configs);
     assert(s == Ok);
     s = KVDKGetTTL(kvdk_engine, sorted_collection, strlen(sorted_collection),

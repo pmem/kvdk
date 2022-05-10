@@ -38,7 +38,7 @@ KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data, size_t key_len,
 KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* key_data, size_t key_len,
                        const char* field_data, size_t field_len,
                        const char* val_data, size_t val_len) {
-  return engine->rep->HashSet(StringView(key_data, key_len),
+  return engine->rep->HashPut(StringView(key_data, key_len),
                               StringView(field_data, field_len),
                               StringView(val_data, val_len));
 }

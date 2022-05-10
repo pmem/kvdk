@@ -92,8 +92,7 @@ KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
     KVDKSetSortedCollectionConfigs(
         s_config, comp_name, strlen(comp_name),
         0 /*we do not need hash index for score part*/);
-    s = KVDKCreateSortedCollection(engine, collection, collection_len,
-                                   s_config);
+    s = KVDKSortedCreate(engine, collection, collection_len, s_config);
     if (s == Ok) {
       s = KVDKSortedSet(engine, collection, collection_len, score_key,
                         score_key_len, "", 0);

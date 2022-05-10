@@ -108,7 +108,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
   return Status::Ok;
 }
 
-Status KVEngine::Set(const StringView key, const StringView value,
+Status KVEngine::Put(const StringView key, const StringView value,
                      const WriteOptions& options) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {

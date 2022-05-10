@@ -1636,7 +1636,7 @@ Status KVEngine::ListErase(std::unique_ptr<ListIterator> const& pos) {
 }
 
 // Replace the element at pos
-Status KVEngine::ListSet(std::unique_ptr<ListIterator> const& pos,
+Status KVEngine::ListPut(std::unique_ptr<ListIterator> const& pos,
                          StringView elem) {
   if (!CheckValueSize(elem)) {
     return Status::InvalidDataSize;

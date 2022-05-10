@@ -467,7 +467,7 @@ index 000000000..28ae060ed
 +
 +  if (no_key) {
 +    KVDKCollection *collection_ptr;
-+    s = KVDKCreateSortedCollection(engine, &collection_ptr, collection_str,
++    s = KVDKSortedCreate(engine, &collection_ptr, collection_str,
 +                                   collection_len, cmp_name, strlen(cmp_name),
 +                                   VALUE);
 +    if (s != Ok) {
