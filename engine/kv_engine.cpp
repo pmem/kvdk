@@ -869,6 +869,189 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   return Status::Ok;
 }
 
+Status KVEngine::BatchWrite(WriteBatch2 const& batch) {
+  WriteBatchImpl const* batch_impl =
+      dynamic_cast<WriteBatchImpl const*>(&batch);
+  if (batch_impl == nullptr) {
+    return Status::InvalidArgument;
+  }
+
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  return batchWriteImpl(*batch_impl);
+}
+
+Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
+  // Prevent collection from being deleted
+  auto token = version_controller_.GetLocalSnapshotHolder();
+
+  // Lock all keys
+  std::vector<StringView> keys;
+  for (auto const& string_op : batch.StringOps()) {
+    keys.push_back(string_op.key);
+  }
+  for (auto const& sorted_op : batch.SortedOps()) {
+    keys.push_back(sorted_op.field);
+  }
+  for (auto const& hash_op : batch.HashOps()) {
+    keys.push_back(hash_op.field);
+  }
+  auto guard = hash_table_->RangeLock(keys);
+
+  // Lookup keys, allocate space according to result,
+  // and then persist BatchWriteLog
+  BatchWriteLog log;
+  std::vector<StringWriteArgs> string_args;
+  std::vector<SortedWriteArgs> sorted_args;
+  std::vector<HashWriteArgs> hash_args;
+
+  auto ReleaseResources = [&]() {
+    for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
+      pmem_allocator_->Free(iter->space);
+    }
+    for (auto iter = sorted_args.rbegin(); iter != sorted_args.rend(); ++iter) {
+      pmem_allocator_->Free(iter->space);
+    }
+    for (auto iter = string_args.rbegin(); iter != string_args.rend(); ++iter) {
+      pmem_allocator_->Free(iter->space);
+    }
+  };
+  defer(ReleaseResources);
+
+  // Prepare for Strings
+  for (auto const& string_op : batch.StringOps()) {
+    StringWriteArgs args;
+    args.op = string_op.op;
+    args.key = string_op.key;
+    args.value = string_op.value;
+    args.ts = token.Timestamp();
+    args.res = lookupKey<true>(args.key, StringRecordType);
+    if (args.res.s != Status::Ok || args.res.s != Status::NotFound ||
+        args.res.s != Status::Outdated) {
+      return args.res.s;
+    }
+    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+      // No need to do anything for delete a non-existing String
+      continue;
+    }
+    args.space = pmem_allocator_->Allocate(
+        StringRecord::RecordSize(string_op.key, string_op.value));
+    if (args.space.size == 0) {
+      return Status::PmemOverflow;
+    }
+
+    string_args.push_back(args);
+  }
+
+  // Prepare for Sorted Elements
+  for (auto const& sorted_op : batch.SortedOps()) {
+    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
+    if (res.s != Status::Ok || res.s != Status::NotFound ||
+        res.s != Status::Outdated) {
+      return res.s;
+    }
+    if (res.s != Status::Ok) {
+      if (sorted_op.op == WriteBatchImpl::Op::Delete) {
+        // No need to do anything for delete a field from non-existing Skiplist.
+        continue;
+      }
+      // Batch Write to collection not found, return Status::NotFound.
+      return Status::NotFound;
+    }
+    Skiplist* slist = res.entry.GetIndex().skiplist;
+    SortedWriteArgs args;
+    args.op = sorted_op.op;
+    args.key = sorted_op.key;
+    args.field = sorted_op.field;
+    args.value = sorted_op.value;
+    args.ts = token.Timestamp();
+    args.res = lookupElem<true>(slist->InternalKey(args.field), SortedElemType);
+    if (args.res.s != Status::Ok || args.res.s != Status::NotFound) {
+      return args.res.s;
+    }
+    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+      // No need to do anything for delete a non-existing Sorted element
+      continue;
+    }
+    args.space =
+        pmem_allocator_->Allocate(DLRecord::RecordSize(args.field, args.value) +
+                                  sizeof(CollectionIDType));
+    if (args.space.size == 0) {
+      return Status::PmemOverflow;
+    }
+    sorted_args.push_back(args);
+  }
+
+  // Prepare for Hash Elements
+  for (auto const& hash_op : batch.HashOps()) {
+    HashList* hlist;
+    Status s = hashListFind(hash_op.key, &hlist);
+    if (s != Status::Ok || s != Status::NotFound) {
+      return s;
+    }
+    if (s != Status::Ok) {
+      if (hash_op.op == WriteBatchImpl::Op::Delete) {
+        // No need to do anything for delete a field from non-existing Hash Set.
+        continue;
+      }
+      // Batch Write to collection not found, return Status::NotFound.
+      return Status::NotFound;
+    }
+    HashWriteArgs args;
+    args.op = hash_op.op;
+    args.key = hash_op.key;
+    args.field = hash_op.field;
+    args.value = hash_op.value;
+    args.ts = token.Timestamp();
+    args.res = lookupElem<true>(hlist->InternalKey(args.field), HashElem);
+    if (args.res.s != Status::Ok || args.res.s != Status::NotFound) {
+      return args.res.s;
+    }
+    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+      // No need to do anything for delete a non-existing Sorted element
+      continue;
+    }
+    args.space =
+        pmem_allocator_->Allocate(DLRecord::RecordSize(args.field, args.value) +
+                                  sizeof(CollectionIDType));
+    if (args.space.size == 0) {
+      return Status::PmemOverflow;
+    }
+    hash_args.push_back(args);
+  }
+
+  // Write Strings
+  for (auto& string_arg : string_args) {
+    Status s = stringWrite(string_arg);
+    if (s != Status::Ok) {
+      return s;
+    }
+  }
+
+  // Write Sorted Elems
+
+  // Write Hash Elems
+
+  // Commit Strings
+  for (auto const& string_arg : string_args) {
+    Status s = stringCommit(string_arg);
+    if (s != Status::Ok) {
+      return s;
+    }
+  }
+
+  // Commit Sorted Elems
+
+  // Commit Hash Elems
+
+  hash_args.clear();
+  sorted_args.clear();
+  string_args.clear();
+}
+
 Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
   auto ul = hash_table_->AcquireLock(str);

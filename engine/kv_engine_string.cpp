@@ -354,17 +354,31 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
   return Status::Ok;
 }
 
-Status KVEngine::stringWrite(WriteBatchImpl::StringOp const& op, LookupResult const& res, SpaceEntry space, StringRecord** new_rec) {
-  *new_rec = StringRecord::PersistStringRecord(pmem_allocator_->offset2addr_checked(space.offset), space.size, )
-  return Status::NotSupported;
+Status KVEngine::stringWrite(StringWriteArgs& args) {
+  RecordType type = (args.op == WriteBatchImpl::Op::Put)
+                        ? RecordType::StringDataRecord
+                        : RecordType::StringDeleteRecord;
+  void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
+  PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
+      args.res.entry.GetIndex().string_record);
+  args.new_rec = StringRecord::PersistStringRecord(
+      new_addr, args.space.size, args.ts, type, old_off, args.key, args.value);
+  return Status::Ok;
 }
 
-Status KVEngine::stringCommit(WriteBatchImpl::StringOp const& op, LookupResult const& res, StringRecord const* new_rec) {
-  return Status::NotSupported;
+Status KVEngine::stringCommit(StringWriteArgs const& args) {
+  RecordType type = (args.op == WriteBatchImpl::Op::Put)
+                        ? RecordType::StringDataRecord
+                        : RecordType::StringDeleteRecord;
+  insertKeyOrElem(args.res, type, const_cast<StringRecord*>(args.new_rec));
+  return Status::Ok;
 }
 
-Status KVEngine::stringRollbackBatch(BatchWriteLog::StringLog const& log) {
-  return Status::NotSupported;
+Status KVEngine::stringRollback(TimeStampType,
+                                BatchWriteLog::StringLogEntry const& log) {
+  static_cast<DataEntry*>(pmem_allocator_->offset2addr_checked(log.offset))
+      ->Destroy();
+  return Status::Ok;
 }
 
 }  // namespace KVDK_NAMESPACE

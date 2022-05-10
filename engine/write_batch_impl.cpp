@@ -10,9 +10,9 @@ std::string BatchWriteLog::Serialize() {
   size_t total_bytes;
   total_bytes =
       sizeof(total_bytes) + sizeof(timestamp) + sizeof(stage) +
-      sizeof(string_ops.size()) + string_ops.size() * sizeof(StringEntry) +
-      sizeof(sorted_ops.size()) + sorted_ops.size() * sizeof(SortedEntry) +
-      sizeof(hash_ops.size()) + hash_ops.size() * sizeof(HashEntry);
+      sizeof(string_ops.size()) + string_ops.size() * sizeof(StringLogEntry) +
+      sizeof(sorted_ops.size()) + sorted_ops.size() * sizeof(SortedLogEntry) +
+      sizeof(hash_ops.size()) + hash_ops.size() * sizeof(HashLogEntry);
 
   std::string ret;
   ret.reserve(total_bytes);
@@ -63,17 +63,17 @@ void BatchWriteLog::Deserialize(char const* src) {
 
   string_ops.resize(FetchPOD<size_t>(&sw));
   for (size_t i = 0; i < string_ops.size(); i++) {
-    string_ops[i] = FetchPOD<StringEntry>(&sw);
+    string_ops[i] = FetchPOD<StringLogEntry>(&sw);
   }
 
   sorted_ops.resize(FetchPOD<size_t>(&sw));
   for (size_t i = 0; i < string_ops.size(); i++) {
-    sorted_ops[i] = FetchPOD<SortedEntry>(&sw);
+    sorted_ops[i] = FetchPOD<SortedLogEntry>(&sw);
   }
 
   hash_ops.resize(FetchPOD<size_t>(&sw));
   for (size_t i = 0; i < string_ops.size(); i++) {
-    hash_ops[i] = FetchPOD<HashEntry>(&sw);
+    hash_ops[i] = FetchPOD<HashLogEntry>(&sw);
   }
 
   kvdk_assert(sw.size() == 0, "");

@@ -360,20 +360,21 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status stringWrite(WriteBatchImpl::StringOp const& op, TimeStampType ts, LookupResult const& res, SpaceEntry space, StringRecord** new_rec);
-  Status stringCommit(WriteBatchImpl::StringOp const& op, LookupResult const& res, StringRecord const* new_rec);
-  Status stringRollbackBatch(BatchWriteLog::StringLog const& log);
+  Status stringWrite(StringWriteArgs& args);
+  Status stringCommit(StringWriteArgs const& args);
+  Status stringRollback(TimeStampType ts,
+                        BatchWriteLog::StringLogEntry const& entry);
 
   Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
-  Status sortedBatchWrite(WriteBatchImpl::SortedOpBatch const& batch,
-                          BatchWriteLog::SortedLog const& log);
-  Status sortedBatchCommit(WriteBatchImpl::SortedOpBatch const& batch,
-                           BatchWriteLog::SortedLog const& log);
-  Status sortedBatchRollback(BatchWriteLog::SortedLog const& log);
+  // Status sortedBatchWrite(WriteBatchImpl::SortedOpBatch const& batch,
+  //                         BatchWriteLog::SortedLog const& log);
+  // Status sortedBatchCommit(WriteBatchImpl::SortedOpBatch const& batch,
+  //                          BatchWriteLog::SortedLog const& log);
+  // Status sortedBatchRollback(BatchWriteLog::SortedLog const& log);
 
   Status Recovery();
 
@@ -398,6 +399,8 @@ class KVEngine : public Engine {
   Status RestoreCheckpoint();
 
   Status PersistOrRecoverImmutableConfigs();
+
+  Status batchWriteImpl(WriteBatchImpl const& batch);
 
   /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
@@ -442,11 +445,11 @@ class KVEngine : public Engine {
   // accessible to any other thread.
   Status hashListDestroy(HashList* hlist);
 
-  Status hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch,
-                            BatchWriteLog::HashLog const& log);
-  Status hashListBatchCommit(WriteBatchImpl::HashOpBatch const& batch,
-                             BatchWriteLog::HashLog const& log);
-  Status hashListBatchRollback(BatchWriteLog::HashLog const& log);
+  // Status hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch,
+  //                           BatchWriteLog::HashLog const& log);
+  // Status hashListBatchCommit(WriteBatchImpl::HashOpBatch const& batch,
+  //                            BatchWriteLog::HashLog const& log);
+  // Status hashListBatchRollback(BatchWriteLog::HashLog const& log);
 
   /// Other
   Status CheckConfigs(const Configs& configs);

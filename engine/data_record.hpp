@@ -317,6 +317,10 @@ struct DLRecord {
 
   uint32_t GetRecordSize() const { return entry.header.record_size; }
 
+  static uint32_t RecordSize(const StringView& key, const StringView& value) {
+    return sizeof(DLRecord) + key.size() + value.size();
+  }
+
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,
            RecordType _record_type, PMemOffsetType _old_version,
