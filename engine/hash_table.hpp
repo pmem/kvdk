@@ -129,14 +129,6 @@ class HashTable {
   friend class HashTableIterator;
   friend class HashSlotIterator;
   friend class HashBucketIterator;
-  struct KeyHashHint {
-    uint32_t bucket;
-    uint32_t slot;
-    // hash value stored on hash entry
-    uint32_t key_hash_prefix;
-    SpinMutex* spin;
-  };
-
   struct LookupResult {
    public:
     Status s{Status::Ok};
@@ -155,12 +147,15 @@ class HashTable {
     uint32_t key_hash_prefix;
   };
 
-  static HashTable* NewHashTable(uint64_t hash_bucket_num,
-                                 uint32_t num_buckets_per_slot,
-                                 const PMEMAllocator* pmem_allocator,
-                                 uint32_t max_access_threads);
-
   // TODO: jiayu make this private after reimplementing batch write
+  struct KeyHashHint {
+    uint32_t bucket;
+    uint32_t slot;
+    // hash value stored on hash entry
+    uint32_t key_hash_prefix;
+    SpinMutex* spin;
+  };
+
   KeyHashHint GetHint(const StringView& key) {
     KeyHashHint hint;
     uint64_t hash_val = hash_str(key.data(), key.size());
@@ -170,6 +165,11 @@ class HashTable {
     hint.spin = &slots_[hint.slot].spin;
     return hint;
   }
+
+  static HashTable* NewHashTable(uint64_t hash_bucket_num,
+                                 uint32_t num_buckets_per_slot,
+                                 const PMEMAllocator* pmem_allocator,
+                                 uint32_t max_access_threads);
 
   // Look up key in hashtable
   // Store a copy of hash entry in LookupResult::entry, and a pointer to the
