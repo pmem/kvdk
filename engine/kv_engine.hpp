@@ -167,6 +167,8 @@ class KVEngine : public Engine {
   }
 
   // List
+  Status ListCreate(StringView key) final;
+  Status ListDestroy(StringView key) final;
   Status ListLength(StringView key, size_t* sz) final;
   Status ListPushFront(StringView key, StringView elem) final;
   Status ListPushBack(StringView key, StringView elem) final;
@@ -182,6 +184,8 @@ class KVEngine : public Engine {
   std::unique_ptr<ListIterator> ListCreateIterator(StringView key) final;
 
   // Hash
+  Status HashCreate(StringView key) final;
+  Status HashDestroy(StringView key) final;
   Status HashLength(StringView key, size_t* len) final;
   Status HashGet(StringView key, StringView field, std::string* value) final;
   Status HashSet(StringView key, StringView field, StringView value) final;
@@ -401,8 +405,9 @@ class KVEngine : public Engine {
   /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
   // Guarantees always return a valid List and lockes it if returns Status::Ok
-  Status listFind(StringView key, List** list, bool init_nx,
-                  std::unique_lock<std::recursive_mutex>& guard);
+  Status listFind(StringView key, List** list);
+
+  Status listExpire(List* list, ExpireTimeType t);
 
   Status listRestoreElem(DLRecord* pmp_record);
 
@@ -415,7 +420,9 @@ class KVEngine : public Engine {
   Status listDestroy(List* list);
 
   /// Hash helper funtions
-  Status hashListFind(StringView key, HashList** hlist, bool init_nx);
+  Status hashListFind(StringView key, HashList** hlist);
+
+  Status hashListExpire(HashList* hlist, ExpireTimeType t);
 
   // CallBack should have signature
   // ModifyOperation(StringView const* old, StringView* new, void* args).
