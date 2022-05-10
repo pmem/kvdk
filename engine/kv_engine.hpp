@@ -361,11 +361,9 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status stringBatchWrite(WriteBatchImpl::StringOpBatch const& batch,
-                          BatchWriteLog::StringLog const& log);
-  Status stringBatchCommit(WriteBatchImpl::StringOpBatch const& batch,
-                           BatchWriteLog::StringLog const& log);
-  Status stringBatchRollback(BatchWriteLog::StringLog const& log);
+  Status stringWrite(WriteBatchImpl::StringOp const& op, TimeStampType ts, LookupResult const& res, SpaceEntry space, StringRecord** new_rec);
+  Status stringCommit(WriteBatchImpl::StringOp const& op, LookupResult const& res, StringRecord const* new_rec);
+  Status stringRollbackBatch(BatchWriteLog::StringLog const& log);
 
   Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);

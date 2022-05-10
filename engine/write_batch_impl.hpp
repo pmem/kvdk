@@ -11,6 +11,14 @@
 namespace KVDK_NAMESPACE {
 
 class WriteBatchImpl final : public WriteBatch2 {
+ private:
+  template<typename Op>
+  struct WriteArgs : public Op {
+    LookupResult res;
+    SpaceEntry space;
+    TimeStampType ts;
+  };
+
  public:
   enum class Op { Put, Delete };
 
@@ -34,9 +42,9 @@ class WriteBatchImpl final : public WriteBatch2 {
     std::string value;
   };
 
-  using StringOpBatch = std::vector<StringOp>;
-  using SortedOpBatch = std::vector<SortedOp>;
-  using HashOpBatch = std::vector<HashOp>;
+  using StringWriteArgs = WriteArgs<StringOp>;
+  using SortedWriteArgs = WriteArgs<SortedOp>;
+  using HashWriteArgs = WriteArgs<HashOp>;
 
   void StringPut(std::string const& key, std::string const& value) final {
     string_ops.emplace_back(StringOp{Op::Put, key, value});
@@ -70,11 +78,11 @@ class WriteBatchImpl final : public WriteBatch2 {
     hash_ops.clear();
   }
 
-  StringOpBatch const& StringOps() { return string_ops; }
-  SortedOpBatch const& SortedOps() { return sorted_ops; }
-  HashOpBatch const& HashOps() { return hash_ops; }
-
  private:
+  using StringOpBatch = std::vector<StringOp>;
+  using SortedOpBatch = std::vector<SortedOp>;
+  using HashOpBatch = std::vector<HashOp>;
+ 
   StringOpBatch string_ops;
   SortedOpBatch sorted_ops;
   HashOpBatch hash_ops;

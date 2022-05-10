@@ -357,17 +357,16 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
   return Status::Ok;
 }
 
-Status KVEngine::stringBatchWrite(WriteBatchImpl::StringOpBatch const& batch,
-                                  BatchWriteLog::StringLog const& log) {
+Status KVEngine::stringWrite(WriteBatchImpl::StringOp const& op, LookupResult const& res, SpaceEntry space, StringRecord** new_rec) {
+  *new_rec = StringRecord::PersistStringRecord(pmem_allocator_->offset2addr_checked(space.offset), space.size, )
   return Status::NotSupported;
 }
 
-Status KVEngine::stringBatchCommit(WriteBatchImpl::StringOpBatch const& batch,
-                                   BatchWriteLog::StringLog const& log) {
+Status KVEngine::stringCommit(WriteBatchImpl::StringOp const& op, LookupResult const& res, StringRecord const* new_rec) {
   return Status::NotSupported;
 }
 
-Status KVEngine::stringBatchRollback(BatchWriteLog::StringLog const& log) {
+Status KVEngine::stringRollbackBatch(BatchWriteLog::StringLog const& log) {
   return Status::NotSupported;
 }
 

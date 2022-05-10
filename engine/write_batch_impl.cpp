@@ -16,7 +16,6 @@ std::string BatchWriteLog::Serialize() {
 
   std::string ret;
   ret.reserve(total_bytes);
-  size_t pos = 0;
 
   AppendPOD(&ret, total_bytes);
   AppendPOD(&ret, timestamp);
