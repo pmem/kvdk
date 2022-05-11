@@ -48,12 +48,12 @@ class KVEngine : public Engine {
                      const Configs& configs);
 
   static Status Restore(const std::string& engine_path,
-                        const std::string& backup_path, Engine** engine_ptr,
+                        const std::string& backup_file, Engine** engine_ptr,
                         const Configs& configs);
 
   Snapshot* GetSnapshot(bool make_checkpoint) override;
 
-  Status Backup(const pmem::obj::string_view backup_path,
+  Status Backup(const pmem::obj::string_view backup_file,
                 const Snapshot* snapshot) override;
 
   void ReleaseSnapshot(const Snapshot* snapshot) override {
@@ -355,6 +355,8 @@ class KVEngine : public Engine {
 
   Status Recovery();
 
+  Status RestoreBackup(const std::string& backup_file);
+
   Status RestoreData();
 
   Status restoreSortedHeader(DLRecord* header);
@@ -370,8 +372,6 @@ class KVEngine : public Engine {
                                  std::string* value);
 
   Status RestorePendingBatch();
-
-  Status MaybeRestoreBackup();
 
   Status RestoreCheckpoint();
 

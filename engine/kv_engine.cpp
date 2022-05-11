@@ -70,20 +70,21 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
 }
 
 Status KVEngine::Restore(const std::string& engine_path,
-                         const std::string& backup_path, Engine** engine_ptr,
+                         const std::string& backup_file, Engine** engine_ptr,
                          const Configs& configs) {
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(engine_path, configs);
   if (s == Status::Ok) {
-    // restore
+    s = engine->RestoreBackup(backup_file);
   }
 
   if (s == Status::Ok) {
     *engine_ptr = engine;
     engine->startBackgroundWorks();
+    engine->ReportPMemUsage();
   } else {
     GlobalLogger.Error("Restore kvdk instance from backup file %s failed: %d\n",
-                       backup_path.c_str(), s);
+                       backup_file.c_str(), s);
     delete engine;
   }
   return s;
@@ -188,8 +189,11 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,
       pmem_allocator_.get(), configs_.max_access_threads));
+  skiplist_locks_.reset(new LockTable{1UL << 20});
+  hash_list_locks_.reset(new LockTable{1UL << 20});
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
-      thread_manager_ == nullptr) {
+      thread_manager_ == nullptr || skiplist_locks_ == nullptr ||
+      hash_list_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
   }
@@ -434,10 +438,10 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
   return s;
 }
 
-Status KVEngine::Backup(const pmem::obj::string_view backup_path,
+Status KVEngine::Backup(const pmem::obj::string_view backup_file,
                         const Snapshot* snapshot) {
   BackupLog backup;
-  Status s = backup.Init(string_view_2_string(backup_path), configs_);
+  Status s = backup.Init(string_view_2_string(backup_file), configs_);
   if (s != Status::Ok) {
     return s;
   }
@@ -489,44 +493,6 @@ Status KVEngine::RestoreCheckpoint() {
     GlobalLogger.Error("Map persistent checkpoint file %s failed\n",
                        checkpoint_file().c_str());
     return Status::IOError;
-  }
-  return Status::Ok;
-}
-
-Status KVEngine::MaybeRestoreBackup() {
-  size_t mapped_len;
-  int is_pmem;
-  BackupMark* backup_mark = static_cast<BackupMark*>(
-      pmem_map_file(backup_mark_file().c_str(), sizeof(BackupMark),
-                    PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem));
-  if (backup_mark != nullptr) {
-    if (!is_pmem || mapped_len != sizeof(BackupMark)) {
-      GlobalLogger.Error("Map persisted backup mark file %s failed\n",
-                         backup_mark_file().c_str());
-      return Status::IOError;
-    }
-
-    switch (backup_mark->stage) {
-      case BackupMark::Stage::Init: {
-        break;
-      }
-      case BackupMark::Stage::Processing: {
-        GlobalLogger.Error("Recover from a unfinished backup instance\n");
-        return Status::Abort;
-      }
-      case BackupMark::Stage::Finish: {
-        GlobalLogger.Info("Recover from a backup KVDK instance\n");
-        kvdk_assert(persist_checkpoint_->Valid(),
-                    "No valid checkpoint for a backup instance");
-        configs_.recover_to_checkpoint = true;
-        break;
-      }
-      default:
-        GlobalLogger.Error(
-            "Recover from a backup instance with wrong backup stage\n");
-        return Status ::Abort;
-    }
-    pmem_unmap(backup_mark, sizeof(BackupMark));
   }
   return Status::Ok;
 }
@@ -591,6 +557,8 @@ Status KVEngine::RestorePendingBatch() {
   return Status::Ok;
 }
 
+Status KVEngine::RestoreBackup(const std::string&) { return Status::Ok; }
+
 Status KVEngine::Recovery() {
   access_thread.id = 0;
   defer(access_thread.id = -1);
@@ -600,23 +568,15 @@ Status KVEngine::Recovery() {
     s = RestoreCheckpoint();
   }
 
-  if (s == Status::Ok) {
-    s = MaybeRestoreBackup();
-  }
-
   if (s != Status::Ok) {
     return s;
   }
 
-  skiplist_locks_.reset(new LockTable{1UL << 20});
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
-
   list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
                                       configs_.max_access_threads, nullptr});
-
-  hash_list_locks_.reset(new LockTable{1UL << 20});
   hash_list_builder_.reset(
       new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
                           configs_.max_access_threads, hash_list_locks_.get()});
