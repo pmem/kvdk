@@ -44,6 +44,8 @@ class WriteBatch2 {
   virtual void HashDelete(std::string const& key, std::string const& field) = 0;
 
   virtual void Clear() = 0;
+
+  virtual ~WriteBatch2() = default;
 };
 
 }  // namespace KVDK_NAMESPACE

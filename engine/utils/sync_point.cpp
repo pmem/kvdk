@@ -29,6 +29,14 @@ void SyncPoint::LoadDependency(const std::vector<SyncPointPair>& dependencies) {
   sync_impl_->LoadDependency(dependencies);
 }
 
+void SyncPoint::EnableCrashPoint(std::string const& name) {
+  sync_impl_->EnableCrashPoint(name);
+}
+
+void SyncPoint::Crash(std::string const& name, std::string const& msg) {
+  sync_impl_->Crash(name, msg);
+}
+
 void SyncPoint::EnableProcessing() { sync_impl_->EnableProcessing(); }
 
 void SyncPoint::DisableProcessing() { sync_impl_->DisableProcessing(); }

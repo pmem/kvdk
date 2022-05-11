@@ -963,8 +963,10 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     return s;
   }
 
-  // Prevent collection from being deleted
-  auto token = version_controller_.GetLocalSnapshotHolder();
+  // Prevent generating snapshot newer than this WriteBatch
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  // Prevent collection and nodes in double linked lists from being deleted
+  auto access_token = version_controller_.GetLocalSnapshotHolder();
 
   // Lock all keys
   std::vector<StringView> keys;
@@ -1001,7 +1003,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   for (auto const& string_op : batch.StringOps()) {
     StringWriteArgs args;
     args.Assign(string_op);
-    args.ts = token.Timestamp();
+    args.ts = bw_token.Timestamp();
     args.res = lookupKey<true>(args.key, StringRecordType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
         args.res.s != Status::Outdated) {
@@ -1039,7 +1041,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     Skiplist* slist = res.entry.GetIndex().skiplist;
     SortedWriteArgs args;
     args.Assign(sorted_op);
-    args.ts = token.Timestamp();
+    args.ts = bw_token.Timestamp();
     args.res = lookupElem<true>(slist->InternalKey(args.field), SortedElemType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -1076,7 +1078,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     }
     HashWriteArgs args;
     args.Assign(hash_op);
-    args.ts = token.Timestamp();
+    args.ts = bw_token.Timestamp();
     args.res = lookupElem<true>(hlist->InternalKey(args.field), HashElem);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -1146,6 +1148,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       return s;
     }
   }
+
+  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit", "");
 
   BatchWriteLog::MarkCommitted(tc.batch_log);
 

@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -37,6 +38,8 @@ namespace KVDK_NAMESPACE {
  */
 class SyncPoint {
  public:
+  using CrashPoint = typename SyncImpl::CrashPoint;
+
   static SyncPoint* GetInstance();
   SyncPoint(const SyncPoint&) = delete;
   SyncPoint& operator=(const SyncPoint&) = delete;
@@ -49,6 +52,10 @@ class SyncPoint {
 
   void SetCallBack(const std::string& point,
                    const std::function<void(void*)>& callback);
+
+  void EnableCrashPoint(std::string const& name);
+
+  void Crash(std::string const& name, std::string const& msg);
 
   void ClearAllCallBacks();
 
@@ -68,6 +75,8 @@ class SyncPoint {
 #define TEST_SYNC_POINT(x) KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x)
 #define TEST_SYNC_POINT_CALLBACK(x, y) \
   KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x, y)
+#define TEST_CRASH_POINT(name, msg) \
+  KVDK_NAMESPACE::SyncPoint::GetInstance()->Crash(name, msg)
 
 #else
 #define TEST_SYNC_POINT(x)

@@ -826,7 +826,6 @@ TEST_F(EngineBasicTest, TestBatchWrite2) {
   };
 
   auto BatchWrite = [&](size_t tid) {
-    std::string val_resp;
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
@@ -2117,7 +2116,66 @@ TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
+TEST_F(EngineBasicTest, BatchWriteRollBack) {
+  size_t num_threads = 16;
+  configs.max_access_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  size_t batch_size = 100;
+  size_t count = batch_size;
+  std::vector<std::vector<std::string>> keys(num_threads);
+  std::vector<std::vector<std::string>> values(num_threads);
+  for (size_t tid = 0; tid < num_threads; tid++) {
+    for (size_t i = 0; i < count; i++) {
+      keys[tid].push_back(std::to_string(tid) + "_" + std::to_string(i));
+      values[tid].emplace_back();
+    }
+  }
+
+  auto Put = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      values[tid][i] = GetRandomString(120);
+      ASSERT_EQ(engine->Set(keys[tid][i], values[tid][i]), Status::Ok);
+    }
+  };
+
+  // This BatchWrite will not be commited
+  auto BatchWrite = [&](size_t tid) {
+    auto batch = engine->WriteBatchCreate();
+    for (size_t i = 0; i < count; i++) {
+      if (i % 2 == 0) {
+        batch->StringPut(keys[tid][i], values[tid][i]);
+      } else {
+        batch->StringDelete(keys[tid][i]);
+      }
+      ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+    }
+  };
+
+  auto Check = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      std::string val_resp;
+      ASSERT_EQ(engine->Get(keys[tid][i], &val_resp), Status::Ok);
+      ASSERT_EQ(values[tid][i], val_resp);
+    }
+  };
+
+  SyncPoint::GetInstance()->EnableCrashPoint(
+      "KVEngine::batchWriteImpl::BeforeCommit");
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  LaunchNThreads(num_threads, Put);
+  LaunchNThreads(num_threads, Check);
+  LaunchNThreads(num_threads, BatchWrite);
+
+  Reboot();
+
+  LaunchNThreads(num_threads, Check);
+
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestBatchWriteRecoverySyncPoint) {
   Configs test_config = configs;
   test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),

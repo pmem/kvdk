@@ -222,10 +222,6 @@ class BatchWriteLog {
   void Deserialize(char const* src);
 
   static void Persist(char* dst, std::string const& seq) {
-    kvdk_assert(*reinterpret_cast<size_t const*>(&seq[0]) == seq.size(), "");
-    kvdk_assert(*reinterpret_cast<Stage const*>(&seq[sizeof(size_t)]) ==
-                    Stage::Initializing,
-                "");
     memcpy(dst, seq.data(), seq.size());
     for (size_t i = 0; i < seq.size(); i += 64) {
       _mm_clflushopt(&dst[i]);
