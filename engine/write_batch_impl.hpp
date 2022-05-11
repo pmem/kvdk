@@ -174,37 +174,37 @@ class BatchWriteLog {
   explicit BatchWriteLog() {}
 
   void StringPut(PMemOffsetType offset) {
-    string_ops.emplace_back(StringLogEntry{Op::Put, offset});
+    string_logs.emplace_back(StringLogEntry{Op::Put, offset});
   }
 
   void StringDelete(PMemOffsetType offset) {
-    string_ops.emplace_back(StringLogEntry{Op::Delete, offset});
+    string_logs.emplace_back(StringLogEntry{Op::Delete, offset});
   }
 
   void SortedPut(PMemOffsetType offset) {
-    sorted_ops.emplace_back(SortedLogEntry{Op::Put, offset});
+    sorted_logs.emplace_back(SortedLogEntry{Op::Put, offset});
   }
 
   void SortedDelete(PMemOffsetType offset) {
-    sorted_ops.emplace_back(SortedLogEntry{Op::Delete, offset});
+    sorted_logs.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
   void HashPut(PMemOffsetType offset) {
-    hash_ops.emplace_back(HashLogEntry{Op::Put, offset});
+    hash_logs.emplace_back(HashLogEntry{Op::Put, offset});
   }
 
   void HashDelete(PMemOffsetType offset) {
-    hash_ops.emplace_back(HashLogEntry{Op::Delete, offset});
+    hash_logs.emplace_back(HashLogEntry{Op::Delete, offset});
   }
 
   void Clear() {
-    string_ops.clear();
-    sorted_ops.clear();
-    hash_ops.clear();
+    string_logs.clear();
+    sorted_logs.clear();
+    hash_logs.clear();
   }
 
   size_t Size() const {
-    return string_ops.size() + sorted_ops.size() + hash_ops.size();
+    return string_logs.size() + sorted_logs.size() + hash_logs.size();
   }
 
   static size_t Capacity() { return (1UL << 20); }
@@ -222,9 +222,10 @@ class BatchWriteLog {
   void Deserialize(char const* src);
 
   static void Persist(char* dst, std::string const& seq) {
-    kvdk_assert(
-        *reinterpret_cast<Stage const*>(seq.data()) == Stage::Initializing, "");
-    kvdk_assert(*reinterpret_cast<size_t const*>(&seq[1]) == seq.size(), "");
+    kvdk_assert(*reinterpret_cast<size_t const*>(&seq[0]) == seq.size(), "");
+    kvdk_assert(*reinterpret_cast<Stage const*>(&seq[sizeof(size_t)]) ==
+                    Stage::Initializing,
+                "");
     memcpy(dst, seq.data(), seq.size());
     for (size_t i = 0; i < seq.size(); i += 64) {
       _mm_clflushopt(&dst[i]);
@@ -233,12 +234,14 @@ class BatchWriteLog {
   }
 
   static void MarkProcessing(char* dst) {
+    dst = &dst[sizeof(size_t)];
     *reinterpret_cast<Stage*>(dst) = Stage::Processing;
     _mm_clflush(dst);
     _mm_mfence();
   }
 
   static void MarkCommitted(char* dst) {
+    dst = &dst[sizeof(size_t)];
     *reinterpret_cast<Stage*>(dst) = Stage::Committed;
     _mm_clflush(dst);
     _mm_mfence();
@@ -248,12 +251,17 @@ class BatchWriteLog {
   using SortedLog = std::vector<SortedLogEntry>;
   using HashLog = std::vector<HashLogEntry>;
 
+  StringLog const& StringLogs() const { return string_logs; }
+  SortedLog const& SortedLogs() const { return sorted_logs; }
+  HashLog const& HashLogs() const { return hash_logs; }
+  TimeStampType Timestamp() const { return timestamp; }
+
  private:
   Stage stage{Stage::Initializing};
   TimeStampType timestamp;
-  StringLog string_ops;
-  SortedLog sorted_ops;
-  HashLog hash_ops;
+  StringLog string_logs;
+  SortedLog sorted_logs;
+  HashLog hash_logs;
 };
 
 }  // namespace KVDK_NAMESPACE

@@ -366,7 +366,7 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
   return Status::Ok;
 }
 
-Status KVEngine::stringCommit(StringWriteArgs const& args) {
+Status KVEngine::stringPublish(StringWriteArgs const& args) {
   RecordType type = (args.op == WriteBatchImpl::Op::Put)
                         ? RecordType::StringDataRecord
                         : RecordType::StringDeleteRecord;

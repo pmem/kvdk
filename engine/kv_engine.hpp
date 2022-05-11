@@ -339,7 +339,7 @@ class KVEngine : public Engine {
   }
 
   Status MaybeInitPendingBatchFile();
-  Status MaybeInitBatchLogFile();
+  Status maybeInitBatchLogFile();
 
   // BatchWrite takes 3 stages
   // Stage 1: Preparation
@@ -350,9 +350,13 @@ class KVEngine : public Engine {
   //  Batches are dispatched to different data types
   //  Each data type update keys/fields
   //  Outdated records are not purged in this stage.
-  // Stage 3: Commit
+  // Stage 3: Publish
   //  Each data type commits its batch, clean up outdated data.
-  Status BatchWrite(WriteBatch2 const& batch) final;
+  Status BatchWrite(std::unique_ptr<WriteBatch2> const& batch) final;
+
+  std::unique_ptr<WriteBatch2> WriteBatchCreate() final {
+    return std::unique_ptr<WriteBatch2>{new WriteBatchImpl{}};
+  }
 
   Status StringSetImpl(const StringView& key, const StringView& value,
                        const WriteOptions& write_options);
@@ -403,9 +407,9 @@ class KVEngine : public Engine {
 
   Status batchWriteImpl(WriteBatchImpl const& batch);
 
-  Status batchWriteRollback(BatchWriteLog const& log);
-
   Status batchWriteRestoreLogs();
+
+  Status batchWriteRollbackLogs();
 
   /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
@@ -608,6 +612,7 @@ class KVEngine : public Engine {
 
   std::string dir_;
   std::string pending_batch_dir_;
+  std::string batch_log_dir_;
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;
   std::unique_ptr<PMEMAllocator> pmem_allocator_;

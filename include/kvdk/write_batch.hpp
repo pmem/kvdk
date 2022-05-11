@@ -30,6 +30,7 @@ struct WriteBatch {
 };
 
 class WriteBatch2 {
+ public:
   virtual void StringPut(std::string const& key, std::string const& value) = 0;
   virtual void StringDelete(std::string const& key) = 0;
 

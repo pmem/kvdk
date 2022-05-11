@@ -139,6 +139,7 @@ class HashTable {
       s = other.s;
       memcpy_16(&entry, &other.entry);
       entry_ptr = other.entry_ptr;
+      key_hash_prefix = other.key_hash_prefix;
       return *this;
     }
 
@@ -222,7 +223,7 @@ class HashTable {
 
     std::vector<std::unique_lock<SpinMutex>> guard;
     for (auto iter = spins.begin(); iter != end; ++iter) {
-      guard.emplace_back(*iter);
+      guard.emplace_back(**iter);
     }
     return guard;
   }
