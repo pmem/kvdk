@@ -166,7 +166,8 @@ size_t generate_value_size(size_t tid) {
 
 void DBWrite(int tid) {
   std::string key(8, ' ');
-  WriteBatch batch;
+  auto batch2 = engine->WriteBatchCreate();
+  // WriteBatch batch;
   for (size_t operations = 0; operations < operations_per_thread;
        ++operations) {
     if (has_timed_out) {
@@ -188,10 +189,15 @@ void DBWrite(int tid) {
         if (FLAGS_batch_size == 0) {
           s = engine->Set(key, value, WriteOptions());
         } else {
-          batch.Put(key, std::string(value.data(), value.size()));
-          if (batch.Size() == FLAGS_batch_size) {
-            engine->BatchWrite(batch);
-            batch.Clear();
+          batch2->StringPut(key, std::string{value.data(), value.size()});
+          // batch.Put(key, std::string(value.data(), value.size()));
+          // if (batch.Size() == FLAGS_batch_size) {
+          //   engine->BatchWrite(batch);
+          //   batch.Clear();
+          // }
+          if (operations % FLAGS_batch_size == 0) {
+            engine->BatchWrite(batch2);
+            batch2->Clear();
           }
         }
         break;

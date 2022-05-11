@@ -81,4 +81,5 @@ class SyncPoint {
 #else
 #define TEST_SYNC_POINT(x)
 #define TEST_SYNC_POINT_CALLBACK(x, y)
+#define TEST_CRASH_POINT(name, msg)
 #endif
