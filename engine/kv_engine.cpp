@@ -1041,7 +1041,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     args.Assign(sorted_op);
     args.ts = token.Timestamp();
     args.res = lookupElem<true>(slist->InternalKey(args.field), SortedElemType);
-    if (args.res.s != Status::Ok || args.res.s != Status::NotFound) {
+    if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
     }
     if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
@@ -1061,7 +1061,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   for (auto const& hash_op : batch.HashOps()) {
     HashList* hlist;
     Status s = hashListFind(hash_op.key, &hlist);
-    if (s != Status::Ok || s != Status::NotFound) {
+    if (s != Status::Ok && s != Status::NotFound) {
       return s;
     }
     if (s != Status::Ok) {
