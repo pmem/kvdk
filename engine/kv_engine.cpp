@@ -1044,7 +1044,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
     }
-    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       // No need to do anything for delete a non-existing Sorted element
       continue;
     }
@@ -1064,7 +1065,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (s != Status::Ok && s != Status::NotFound) {
       return s;
     }
-    if (s != Status::Ok) {
+    if (s == Status::NotFound) {
       if (hash_op.op == WriteBatchImpl::Op::Delete) {
         // No need to do anything for delete a field from non-existing Hash Set.
         continue;
@@ -1080,7 +1081,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
     }
-    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       // No need to do anything for delete a non-existing Sorted element
       continue;
     }
