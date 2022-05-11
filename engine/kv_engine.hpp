@@ -140,6 +140,7 @@ class KVEngine : public Engine {
     PendingBatch* persisted_pending_batch = nullptr;
     // This thread is doing batch write
     bool batch_writing = false;
+    char* batch_log = nullptr;
 
     // Info used in recovery
     uint64_t newest_restored_ts = 0;
@@ -338,6 +339,7 @@ class KVEngine : public Engine {
   }
 
   Status MaybeInitPendingBatchFile();
+  Status MaybeInitBatchLogFile();
 
   // BatchWrite takes 3 stages
   // Stage 1: Preparation
@@ -361,7 +363,7 @@ class KVEngine : public Engine {
                               BatchWriteHint& batch_hint);
 
   Status stringWrite(StringWriteArgs& args);
-  Status stringCommit(StringWriteArgs const& args);
+  Status stringPublish(StringWriteArgs const& args);
   Status stringRollback(TimeStampType ts,
                         BatchWriteLog::StringLogEntry const& entry);
 
@@ -370,11 +372,10 @@ class KVEngine : public Engine {
 
   Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
-  // Status sortedBatchWrite(WriteBatchImpl::SortedOpBatch const& batch,
-  //                         BatchWriteLog::SortedLog const& log);
-  // Status sortedBatchCommit(WriteBatchImpl::SortedOpBatch const& batch,
-  //                          BatchWriteLog::SortedLog const& log);
-  // Status sortedBatchRollback(BatchWriteLog::SortedLog const& log);
+  Status sortedWrite(SortedWriteArgs& args);
+  Status sortedPublish(SortedWriteArgs const& args);
+  Status sortedRollback(TimeStampType ts,
+                        BatchWriteLog::SortedLogEntry const& entry);
 
   Status Recovery();
 
@@ -401,6 +402,10 @@ class KVEngine : public Engine {
   Status PersistOrRecoverImmutableConfigs();
 
   Status batchWriteImpl(WriteBatchImpl const& batch);
+
+  Status batchWriteRollback(BatchWriteLog const& log);
+
+  Status batchWriteRestoreLogs();
 
   /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
@@ -445,11 +450,10 @@ class KVEngine : public Engine {
   // accessible to any other thread.
   Status hashListDestroy(HashList* hlist);
 
-  // Status hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch,
-  //                           BatchWriteLog::HashLog const& log);
-  // Status hashListBatchCommit(WriteBatchImpl::HashOpBatch const& batch,
-  //                            BatchWriteLog::HashLog const& log);
-  // Status hashListBatchRollback(BatchWriteLog::HashLog const& log);
+  Status hashListWrite(HashWriteArgs& args);
+  Status hashListPublish(HashWriteArgs const& args);
+  Status hashListRollback(TimeStampType ts,
+                          BatchWriteLog::HashLogEntry const& entry);
 
   /// Other
   Status CheckConfigs(const Configs& configs);

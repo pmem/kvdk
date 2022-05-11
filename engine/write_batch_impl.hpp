@@ -67,6 +67,10 @@ class WriteBatchImpl final : public WriteBatch2 {
     hash_ops.clear();
   }
 
+  size_t Size() const {
+    return string_ops.size() + sorted_ops.size() + hash_ops.size();
+  }
+
   using StringOpBatch = std::vector<StringOp>;
   using SortedOpBatch = std::vector<SortedOp>;
   using HashOpBatch = std::vector<HashOp>;
@@ -89,6 +93,12 @@ struct StringWriteArgs {
   TimeStampType ts;
   HashTable::LookupResult res;
   StringRecord* new_rec;
+
+  void Assign(WriteBatchImpl::StringOp const& string_op) {
+    key = string_op.key;
+    value = string_op.value;
+    op = string_op.op;
+  }
 };
 
 struct SortedWriteArgs {
@@ -100,6 +110,13 @@ struct SortedWriteArgs {
   TimeStampType ts;
   HashTable::LookupResult res;
   PointerWithTag<void*, PointerType> new_rec;
+
+  void Assign(WriteBatchImpl::SortedOp const& sorted_op) {
+    key = sorted_op.key;
+    field = sorted_op.field;
+    value = sorted_op.value;
+    op = sorted_op.op;
+  }
 };
 
 struct HashWriteArgs {
@@ -111,6 +128,13 @@ struct HashWriteArgs {
   TimeStampType ts;
   HashTable::LookupResult res;
   DLRecord* new_rec;
+
+  void Assign(WriteBatchImpl::HashOp const& hash_op) {
+    key = hash_op.key;
+    field = hash_op.field;
+    value = hash_op.value;
+    op = hash_op.op;
+  }
 };
 
 class BatchWriteLog {
@@ -177,6 +201,17 @@ class BatchWriteLog {
     string_ops.clear();
     sorted_ops.clear();
     hash_ops.clear();
+  }
+
+  size_t Size() const {
+    return string_ops.size() + sorted_ops.size() + hash_ops.size();
+  }
+
+  static size_t Capacity() { return (1UL << 20); }
+
+  static size_t MaxBytes() {
+    return sizeof(size_t) + sizeof(TimeStampType) + sizeof(Stage) +
+           sizeof(size_t) + Capacity() * sizeof(StringLog);
   }
 
   // Format of the BatchWriteLog

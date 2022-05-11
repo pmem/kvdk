@@ -577,6 +577,31 @@ Status KVEngine::RestorePendingBatch() {
   return Status::Ok;
 }
 
+Status KVEngine::batchWriteRestoreLogs() {
+  DIR* dir = opendir(pending_batch_dir_.c_str());
+  if (dir == NULL) {
+    perror("batchWriteRestoreLogs: opendir fails.");
+    return Status::IOError;
+  }
+  dirent* entry;
+  while ((entry = readdir(dir)) != NULL) {
+    std::string fname = std::string{entry->d_name};
+    if (fname == "." || fname == "..") {
+      continue;
+    }
+    std::uint64_t tid = std::stoul(fname);
+    size_t mapped_len;
+    int is_pmem;
+    void* addr = pmem_map_file(fname.c_str(), BatchWriteLog::MaxBytes(), 0,
+                               0666, &mapped_len, &is_pmem);
+    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
+    engine_thread_cache_[access_thread.id].batch_log = static_cast<char*>(addr);
+  }
+  closedir(dir);
+
+  return Status::Ok;
+}
+
 Status KVEngine::Recovery() {
   auto s = RestorePendingBatch();
 
@@ -763,9 +788,28 @@ Status KVEngine::MaybeInitPendingBatchFile() {
   return Status::Ok;
 }
 
+Status KVEngine::MaybeInitBatchLogFile() {
+  auto& tc = engine_thread_cache_[access_thread.id];
+  if (tc.batch_log == nullptr) {
+    int is_pmem;
+    size_t mapped_len;
+    std::string log_file_name =
+        pending_batch_dir_ + "log_" + std::to_string(access_thread.id);
+    void* addr = pmem_map_file(log_file_name.c_str(), BatchWriteLog::MaxBytes(),
+                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    if (addr == NULL) {
+      perror("MaybeInitBatchLogFile: pmem_map_file fails.");
+      return Status::PMemMapFileError;
+    }
+    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
+    tc.batch_log = static_cast<char*>(addr);
+  }
+  return Status::Ok;
+}
+
 Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
   if (write_batch.Size() > kMaxWriteBatchSize) {
-    return Status::BatchOverflow;
+    return Status::InvalidBatchSize;
   }
 
   Status s = MaybeInitAccessThread();
@@ -876,15 +920,24 @@ Status KVEngine::BatchWrite(WriteBatch2 const& batch) {
     return Status::InvalidArgument;
   }
 
+  return batchWriteImpl(*batch_impl);
+}
+
+Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
+  if (batch.Size() > BatchWriteLog::Capacity()) {
+    return Status::InvalidBatchSize;
+  }
+
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
 
-  return batchWriteImpl(*batch_impl);
-}
+  s = MaybeInitBatchLogFile();
+  if (s != Status::Ok) {
+    return s;
+  }
 
-Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prevent collection from being deleted
   auto token = version_controller_.GetLocalSnapshotHolder();
 
@@ -901,9 +954,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   }
   auto guard = hash_table_->RangeLock(keys);
 
-  // Lookup keys, allocate space according to result,
-  // and then persist BatchWriteLog
-  BatchWriteLog log;
+  // Lookup keys, allocate space according to result.
   std::vector<StringWriteArgs> string_args;
   std::vector<SortedWriteArgs> sorted_args;
   std::vector<HashWriteArgs> hash_args;
@@ -924,9 +975,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prepare for Strings
   for (auto const& string_op : batch.StringOps()) {
     StringWriteArgs args;
-    args.op = string_op.op;
-    args.key = string_op.key;
-    args.value = string_op.value;
+    args.Assign(string_op);
     args.ts = token.Timestamp();
     args.res = lookupKey<true>(args.key, StringRecordType);
     if (args.res.s != Status::Ok || args.res.s != Status::NotFound ||
@@ -957,16 +1006,14 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       if (sorted_op.op == WriteBatchImpl::Op::Delete) {
         // No need to do anything for delete a field from non-existing Skiplist.
         continue;
+      } else {
+        // Batch Write to collection not found, return Status::NotFound.
+        return Status::NotFound;
       }
-      // Batch Write to collection not found, return Status::NotFound.
-      return Status::NotFound;
     }
     Skiplist* slist = res.entry.GetIndex().skiplist;
     SortedWriteArgs args;
-    args.op = sorted_op.op;
-    args.key = sorted_op.key;
-    args.field = sorted_op.field;
-    args.value = sorted_op.value;
+    args.Assign(sorted_op);
     args.ts = token.Timestamp();
     args.res = lookupElem<true>(slist->InternalKey(args.field), SortedElemType);
     if (args.res.s != Status::Ok || args.res.s != Status::NotFound) {
@@ -996,15 +1043,13 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       if (hash_op.op == WriteBatchImpl::Op::Delete) {
         // No need to do anything for delete a field from non-existing Hash Set.
         continue;
+      } else {
+        // Batch Write to collection not found, return Status::NotFound.
+        return Status::NotFound;
       }
-      // Batch Write to collection not found, return Status::NotFound.
-      return Status::NotFound;
     }
     HashWriteArgs args;
-    args.op = hash_op.op;
-    args.key = hash_op.key;
-    args.field = hash_op.field;
-    args.value = hash_op.value;
+    args.Assign(hash_op);
     args.ts = token.Timestamp();
     args.res = lookupElem<true>(hlist->InternalKey(args.field), HashElem);
     if (args.res.s != Status::Ok || args.res.s != Status::NotFound) {
@@ -1023,6 +1068,34 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     hash_args.push_back(args);
   }
 
+  // Preparation done. Persist BatchLog for rollback.
+  BatchWriteLog log;
+  auto& tc = engine_thread_cache_[access_thread.id];
+  for (auto& arg : string_args) {
+    if (arg.op == WriteBatchImpl::Op::Put) {
+      log.StringPut(arg.space.offset);
+    } else {
+      log.StringDelete(arg.space.offset);
+    }
+  }
+  for (auto& arg : sorted_args) {
+    if (arg.op == WriteBatchImpl::Op::Put) {
+      log.SortedPut(arg.space.offset);
+    } else {
+      log.SortedDelete(arg.space.offset);
+    }
+  }
+  for (auto& arg : hash_args) {
+    if (arg.op == WriteBatchImpl::Op::Put) {
+      log.HashPut(arg.space.offset);
+    } else {
+      log.HashDelete(arg.space.offset);
+    }
+  }
+  BatchWriteLog::Persist(tc.batch_log, log.Serialize());
+
+  BatchWriteLog::MarkProcessing(tc.batch_log);
+
   // Write Strings
   for (auto& string_arg : string_args) {
     Status s = stringWrite(string_arg);
@@ -1032,20 +1105,46 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   }
 
   // Write Sorted Elems
-
-  // Write Hash Elems
-
-  // Commit Strings
-  for (auto const& string_arg : string_args) {
-    Status s = stringCommit(string_arg);
+  for (auto& sorted_arg : sorted_args) {
+    Status s = sortedWrite(sorted_arg);
     if (s != Status::Ok) {
       return s;
     }
   }
 
-  // Commit Sorted Elems
+  // Write Hash Elems
+  for (auto& hash_arg : hash_args) {
+    Status s = hashListWrite(hash_arg);
+    if (s != Status::Ok) {
+      return s;
+    }
+  }
 
-  // Commit Hash Elems
+  BatchWriteLog::MarkCommitted(tc.batch_log);
+
+  // Publish stages is where Strings and Collections make BatchWrite
+  // visible to other threads.
+  // This stage allows no failure during runtime,
+  // otherwise dirty read may occur.
+  // Crash is tolerated as BatchWrite will be recovered.
+
+  // Publish Strings to HashTable
+  for (auto const& string_arg : string_args) {
+    Status s = stringPublish(string_arg);
+    kvdk_assert(s == Status::Ok, "");
+  }
+
+  // Publish Sorted Elements to HashTable
+  for (auto& sorted_arg : sorted_args) {
+    Status s = sortedPublish(sorted_arg);
+    kvdk_assert(s == Status::Ok, "");
+  }
+
+  // Publish Hash Elements to HashTable
+  for (auto& hash_arg : hash_args) {
+    Status s = hashListPublish(hash_arg);
+    kvdk_assert(s == Status::Ok, "");
+  }
 
   hash_args.clear();
   sorted_args.clear();

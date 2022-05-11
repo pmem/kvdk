@@ -333,17 +333,16 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
   return Status::Ok;
 }
 
-Status KVEngine::hashListBatchWrite(WriteBatchImpl::HashOpBatch const& batch,
-                                    BatchWriteLog::HashLog const& log) {
+Status KVEngine::hashListWrite(HashWriteArgs& args) {
   return Status::NotSupported;
 }
 
-Status KVEngine::hashListBatchCommit(WriteBatchImpl::HashOpBatch const& batch,
-                                     BatchWriteLog::HashLog const& log) {
+Status KVEngine::hashListPublish(HashWriteArgs const& args) {
   return Status::NotSupported;
 }
 
-Status KVEngine::hashListBatchRollback(BatchWriteLog::HashLog const& log) {
+Status KVEngine::hashListRollback(TimeStampType ts,
+                                  BatchWriteLog::HashLogEntry const& entry) {
   return Status::NotSupported;
 }
 
