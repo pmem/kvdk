@@ -128,8 +128,6 @@ class KVEngine : public Engine {
     SpaceEntry allocated_space{};
     HashTable::KeyHashHint hash_hint{};
     HashEntry* hash_entry_ptr = nullptr;
-    void* data_record_to_free = nullptr;
-    void* delete_record_to_free = nullptr;
     bool space_not_used{false};
   };
 
@@ -303,11 +301,6 @@ class KVEngine : public Engine {
                         CollectionType** collection_ptr, uint64_t record_type) {
     LookupResult res = lookupKey<false>(collection_name, record_type);
     if (res.s == Status::Outdated) {
-      // TODO(zhichen): will open the following code when completing collection
-      // deletion.
-      // delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
-      //                           version_controller_.GetCurrentTimestamp(),
-      //                           res.entry_ptr, hint.spin});
       return Status::NotFound;
     }
     *collection_ptr =
@@ -417,11 +410,15 @@ class KVEngine : public Engine {
 
   void FreeSkiplistDramNodes();
 
-  void delayFree(const OldDeleteRecord&);
+  std::vector<SpaceEntry> purgeOutDatedRecords(
+      const std::vector<std::pair<void*, PointerType>>& outdated_records);
 
-  void delayFree(const OldDataRecord&);
+  SpaceEntry purgeSortedRecord(SkiplistNode* dram_node, DLRecord* pmem_record);
 
-  void delayFree(const OutdatedCollection&);
+  SpaceEntry purgeOldDataRecord(void* record);
+
+  template <typename T>
+  T* updateVersionList(T* record);
 
   void delayFree(DLRecord* addr);
 
@@ -535,8 +532,6 @@ class KVEngine : public Engine {
   void backgroundDramCleaner();
 
   void deleteCollections();
-
-  void backgroundDestroyCollections();
 
   void startBackgroundWorks();
 

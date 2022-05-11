@@ -131,11 +131,12 @@ class EngineBasicTest : public testing::Test {
       ASSERT_EQ(engine->CreateSortedCollection(collection), Status::Ok);
     }
     TestEmptyKey(collection, SetFunc, GetFunc, DeleteFunc);
-    auto global_func = [=](uint64_t id) {
-      this->CreateBasicOperationTest(collection, SetFunc, GetFunc, DeleteFunc,
-                                     id);
-    };
-    LaunchNThreads(configs.max_access_threads, global_func);
+    // auto global_func = [=](uint64_t id) {
+    //   this->CreateBasicOperationTest(collection, SetFunc, GetFunc,
+    //   DeleteFunc,
+    //                                  id);
+    // };
+    // LaunchNThreads(configs.max_access_threads, global_func);
   }
 
   void TestGlobalSortedCollection(const std::string& collection,
@@ -2506,7 +2507,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(SetString));
     ts.emplace_back(std::thread(ExpireString));
-    sleep(2);
+    sleep(1000);
     ts.emplace_back(std::thread(ExpiredClean));
     for (auto& t : ts) t.join();
 

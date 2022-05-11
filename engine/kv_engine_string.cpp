@@ -70,10 +70,6 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
           key, new_value, expired_time);
       hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
                           PointerType::StringRecord);
-      if (ret.s == Status::Ok) {
-        ul.unlock();
-        delayFree(OldDataRecord{existing_record, new_ts});
-      }
       break;
     }
     case ModifyOperation::Delete: {
@@ -91,10 +87,6 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
             pmem_allocator_->addr2offset_checked(existing_record), key, "");
         hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
                             PointerType::StringRecord);
-        ul.unlock();
-        delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
-        delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr,
-                                  PointerType::HashEntry, new_ts, hint.spin));
       }
       break;
     }
@@ -184,11 +176,6 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
                                       key, "");
     hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
                         PointerType::StringRecord);
-    ul.unlock();
-    delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
-    // Free this delete record to recycle PMem and DRAM space
-    delayFree(OldDeleteRecord(pmem_ptr, ret.entry_ptr, PointerType::HashEntry,
-                              new_ts, hint.spin));
   }
 
   return (ret.s == Status::NotFound || ret.s == Status::Outdated) ? Status::Ok
@@ -244,17 +231,6 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
 
   hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
                       PointerType::StringRecord, entry_status);
-  // Free existing record
-  bool need_free =
-      existing_record && ret.entry.GetRecordType() != StringDeleteRecord &&
-      !ret.entry.IsExpiredStatus() /*Check if expired_key already handled by
-                                       background cleaner*/
-      ;
-
-  if (need_free) {
-    ul.unlock();
-    delayFree(OldDataRecord{ret.entry.GetIndex().string_record, new_ts});
-  }
 
   return Status::Ok;
 }
@@ -264,7 +240,6 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   assert(pmem_record->entry.meta.type & StringRecordType);
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
-    purgeAndFree(pmem_record);
     return Status::Ok;
   }
   auto view = pmem_record->Key();
@@ -292,6 +267,8 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
 
   hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, pmem_record,
                       PointerType::StringRecord);
+  pmem_record->PersistOldVersion(kNullPMemOffset);
+
   if (found) {
     purgeAndFree(hash_entry.GetIndex().ptr);
   }
@@ -343,15 +320,6 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
 
     hash_table_->Insert(hash_hint, entry_ptr, (RecordType)kv.type, block_base,
                         PointerType::StringRecord);
-
-    if (found) {
-      if (kv.type == StringDeleteRecord) {
-        batch_hint.delete_record_to_free = block_base;
-      }
-      if (hash_entry.GetRecordType() == StringDataRecord) {
-        batch_hint.data_record_to_free = hash_entry.GetIndex().string_record;
-      }
-    }
   }
 
   return Status::Ok;

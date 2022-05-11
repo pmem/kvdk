@@ -18,54 +18,6 @@
 namespace KVDK_NAMESPACE {
 class KVEngine;
 
-struct OldDataRecord {
-  void* pmem_data_record;
-  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
-  // could safely clear index of this OldDataRecord, and free its space
-  TimeStampType release_time;
-};
-
-// Delete record of strings and collection elems
-struct OldDeleteRecord {
-  union RecordIndex {
-    RecordIndex(void* ptr, PointerType type)
-        : hash_entry((HashEntry*)ptr, type) {}
-    PointerWithTag<HashEntry, PointerType> hash_entry;
-    PointerWithTag<SkiplistNode, PointerType> skiplist_node;
-  };
-
-  OldDeleteRecord(void* _pmem_delete_record, void* _record_index,
-                  PointerType _index_type, TimeStampType _release_time,
-                  SpinMutex* _key_lock)
-      : pmem_delete_record(_pmem_delete_record),
-        release_time(_release_time),
-        key_lock(_key_lock),
-        record_index(_record_index, _index_type) {}
-
-  void* pmem_delete_record;
-  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
-  // could safely clear index of this OldDeleteRecord, and transfer it to
-  // PendingFreeSpaceEntries
-  TimeStampType release_time;
-  SpinMutex* key_lock;
-  // We may need to clean index for delete record, so we need track its index
-  // and key lock
-  //
-  // The tag of pointer indicates the type of pointer, like hash ptr or skiplist
-  // node
-  RecordIndex record_index;
-};
-
-// We only use this for skiplist now
-struct OutdatedCollection {
-  OutdatedCollection(Skiplist* c, TimeStampType rt)
-      : collection(c), release_time(rt) {}
-  Skiplist* collection;
-  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
-  // could safely destroy the collection
-  TimeStampType release_time;
-};
-
 struct PendingFreeSpaceEntries {
   std::vector<SpaceEntry> entries;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
@@ -93,49 +45,26 @@ class OldRecordsCleaner {
   }
 
   void PushToPendingFree(void* addr, TimeStampType ts);
-  void PushToCache(const OldDataRecord& old_data_record);
-  void PushToCache(const OldDeleteRecord& old_delete_record);
-  void PushToCache(const OutdatedCollection& outdated_collection);
-  void PushToGlobal(const std::deque<OldDeleteRecord>& old_delete_records);
-  void PushToGlobal(std::deque<OutdatedCollection>&& outdated_collections);
   // Try to clean global old records
   void TryGlobalClean();
   // Try to clean cached old records, notice we do not destroy outdated
   // collections here as is too expensive for a foreground thread
   void TryCleanCachedOldRecords(size_t num_limit_clean);
-  uint64_t NumCachedOldRecords() {
-    // TODO jiayu: calculate length of outdated collection
-    assert(access_thread.id >= 0);
-    auto& tc = cleaner_thread_cache_[access_thread.id];
-    return tc.old_delete_records.size() + tc.old_data_records.size();
-  }
 
  private:
   struct CleanerThreadCache {
-    std::deque<OldDeleteRecord> old_delete_records{};
-    std::deque<OldDataRecord> old_data_records{};
     std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};
-    std::deque<OutdatedCollection> outdated_collections{};
     SpinMutex old_records_lock;
   };
   const uint64_t kLimitCachedDeleteRecords = 1000000;
 
   void maybeUpdateOldestSnapshot();
-  // Purge a old data record and free space
-  SpaceEntry purgeOldDataRecord(const OldDataRecord& old_data_record);
-  // Purge a old delete record and free space
-  // Notice: this function will acquire slot lock in hash table, so deadlock may
-  // occur if call this function while holding other locks
-  SpaceEntry purgeOldDeleteRecord(OldDeleteRecord& old_delete_record);
 
   KVEngine* kv_engine_;
 
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
   SpinMutex lock_;
-  std::vector<std::deque<OldDataRecord>> global_old_data_records_;
-  std::vector<std::deque<OldDeleteRecord>> global_old_delete_records_;
-  std::vector<std::deque<OutdatedCollection>> global_outdated_collections_;
   std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
   TimeStampType clean_all_data_record_ts_{0};
 };
