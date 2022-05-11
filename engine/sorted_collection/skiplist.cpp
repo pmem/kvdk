@@ -71,8 +71,8 @@ Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
   DLRecord* pmem_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr_checked(space_entry.offset),
       space_entry.size, timestamp, SortedHeader,
-      pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
-      header->Key(), header->Value(), expired_time);
+      pmem_allocator_->addr2offset_checked(header), space_entry.offset,
+      space_entry.offset, header->Key(), header->Value(), expired_time);
   Skiplist::Replace(header, pmem_record, HeaderNode(), pmem_allocator_,
                     record_locks_);
   ret.existing_record = header;
@@ -384,18 +384,24 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
   auto guard = lockRecordPosition(old_record, pmem_allocator, lock_table);
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
-  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
-  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
+  auto old_record_offset = pmem_allocator->addr2offset(old_record);
+  // the skiplist only has header andn nothing elements. so don't change link.
+  if (prev_offset == old_record_offset && next_offset == old_record_offset) {
+    // nothing to change link.
+  } else {
+    DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
+    DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
 
-  kvdk_assert(prev->next == pmem_allocator->addr2offset(old_record),
-              "Bad prev linkage in Skiplist::Replace");
-  kvdk_assert(next->prev == pmem_allocator->addr2offset(old_record),
-              "Bad next linkage in Skiplist::Replace");
-  new_record->prev = prev_offset;
-  pmem_persist(&new_record->prev, sizeof(PMemOffsetType));
-  new_record->next = next_offset;
-  pmem_persist(&new_record->next, sizeof(PMemOffsetType));
-  Skiplist::linkDLRecord(prev, next, new_record, pmem_allocator);
+    kvdk_assert(prev->next == old_record_offset,
+                "Bad prev linkage in Skiplist::Replace");
+    kvdk_assert(next->prev == old_record_offset,
+                "Bad next linkage in Skiplist::Replace");
+    new_record->prev = prev_offset;
+    pmem_persist(&new_record->prev, sizeof(PMemOffsetType));
+    new_record->next = next_offset;
+    pmem_persist(&new_record->next, sizeof(PMemOffsetType));
+    Skiplist::linkDLRecord(prev, next, new_record, pmem_allocator);
+  }
   if (dram_node != nullptr) {
     kvdk_assert(dram_node->record == old_record,
                 "Dram node not belong to old record in Skiplist::Replace");

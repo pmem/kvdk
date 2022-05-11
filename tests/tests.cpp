@@ -1816,6 +1816,15 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
     // reset expired time for string record.
     ASSERT_EQ(engine->Expire(key, normal_ttl_time), Status::Ok);
+
+    // set negative ttl time.
+    std::string expire_key = "expired_key1";
+    std::string expire_val = "expired_val1";
+    ASSERT_EQ(engine->Set(expire_key, expire_val, WriteOptions{}), Status::Ok);
+    ASSERT_EQ(engine->GetTTL(expire_key, &ttl_time), Status::Ok);
+    ASSERT_EQ(ttl_time, kPersistTime);
+    ASSERT_EQ(engine->Expire(expire_key, -30), Status::Ok);
+    ASSERT_EQ(engine->GetTTL(expire_key, &ttl_time), Status::NotFound);
   }
 
   // For sorte collection
@@ -1839,6 +1848,14 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
     sleep(2);
     ASSERT_EQ(engine->SortedGet(sorted_collection, "sorted" + key, &got_val),
               Status::NotFound);
+    ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
+    ASSERT_EQ(ttl_time, kInvalidTTL);
+
+    // set negative or 0 ttl time.
+    ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
+    ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::Ok);
+    ASSERT_EQ(ttl_time, kPersistTime);
+    ASSERT_EQ(engine->Expire(sorted_collection, 0), Status::Ok);
     ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
     ASSERT_EQ(ttl_time, kInvalidTTL);
   }
@@ -1885,17 +1902,21 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   delete engine;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  // Get string record expired time
-  ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
+  // // Get string record expired time
+  // ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
 
   // Get sorted record expired time
   ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
 
-  // Get hashes record expired time
-  ASSERT_EQ(engine->GetTTL(hashes_collection, &ttl_time), Status::Ok);
+  // // Get hashes record expired time
+  // ASSERT_EQ(engine->GetTTL(hashes_collection, &ttl_time), Status::Ok);
+  // ASSERT_EQ(engine->Expire(hashes_collection, INT64_MIN), Status::Ok);
+  // ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
 
-  // Get list record expired time
-  ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
+  // // Get list record expired time
+  // ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
+  // ASSERT_EQ(engine->Expire(hashes_collection, -100), Status::Ok);
+  // ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
   delete engine;
 }
 

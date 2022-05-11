@@ -137,7 +137,7 @@ struct WriteOptions {
   WriteOptions(TTLType _ttl_time = kPersistTTL) : ttl_time(_ttl_time) {}
 
   // expired time in milliseconod, should be kPersistTime for no expiration
-  // data, or >= 0 as the ttl
+  // data, or a certain interge which be in the range [INT64_MIN , INT64_MAX].
   TTLType ttl_time;
 };
 

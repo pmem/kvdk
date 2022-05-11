@@ -334,6 +334,13 @@ static void test_expire() {
     sleep(1);
     s = engine->Get(key, &got_val);
     assert(s == kvdk::Status::NotFound);
+    // case: ttl time is negative.
+    s = engine->Set(key, "Updatedval");
+    assert(s == kvdk::Status::Ok);
+    s = engine->Expire(key, -1);
+    assert(s == kvdk::Status::Ok);
+    s = engine->GetTTL(key, &ttl_time);
+    assert(s == kvdk::Status::NotFound);
     printf("Successfully expire string\n");
   }
 
