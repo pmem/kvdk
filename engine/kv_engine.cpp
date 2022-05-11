@@ -17,6 +17,7 @@
 #include <mutex>
 #include <thread>
 
+#include "backup_log.hpp"
 #include "configs.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
@@ -55,9 +56,34 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
+    s = engine->Recovery();
+  }
+  if (s == Status::Ok) {
     *engine_ptr = engine;
+    engine->startBackgroundWorks();
+    engine->ReportPMemUsage();
   } else {
     GlobalLogger.Error("Init kvdk instance failed: %d\n", s);
+    delete engine;
+  }
+  return s;
+}
+
+Status KVEngine::Restore(const std::string& engine_path,
+                         const std::string& backup_path, Engine** engine_ptr,
+                         const Configs& configs) {
+  KVEngine* engine = new KVEngine(configs);
+  Status s = engine->Init(engine_path, configs);
+  if (s == Status::Ok) {
+    // restore
+  }
+
+  if (s == Status::Ok) {
+    *engine_ptr = engine;
+    engine->startBackgroundWorks();
+  } else {
+    GlobalLogger.Error("Restore kvdk instance from backup file %s failed: %d\n",
+                       backup_path.c_str(), s);
     delete engine;
   }
   return s;
@@ -169,11 +195,6 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   }
 
   RegisterComparator("default", compare_string_view);
-  s = Recovery();
-  startBackgroundWorks();
-
-  ReportPMemUsage();
-  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
   return s;
 }
 
@@ -415,52 +436,45 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
 
 Status KVEngine::Backup(const pmem::obj::string_view backup_path,
                         const Snapshot* snapshot) {
-  std::string path = string_view_2_string(backup_path);
-  GlobalLogger.Info("Backup to %s\n", path.c_str());
-  create_dir_if_missing(path);
-  // TODO: make sure backup_path is empty
-
-  size_t mapped_len;
-  BackupMark* backup_mark = static_cast<BackupMark*>(
-      pmem_map_file(backup_mark_file(path).c_str(), sizeof(BackupMark),
-                    PMEM_FILE_CREATE, 0666, &mapped_len,
-                    nullptr /* we do not care if backup path is on PMem*/));
-
-  if (backup_mark == nullptr || mapped_len != sizeof(BackupMark)) {
-    GlobalLogger.Error("Map backup mark file %s error in Backup\n",
-                       backup_mark_file(path).c_str());
-    return Status::IOError;
-  }
-
-  ImmutableConfigs* imm_configs = static_cast<ImmutableConfigs*>(
-      pmem_map_file(config_file(path).c_str(), sizeof(ImmutableConfigs),
-                    PMEM_FILE_CREATE, 0666, &mapped_len,
-                    nullptr /* we do not care if backup path is on PMem*/));
-  if (imm_configs == nullptr || mapped_len != sizeof(ImmutableConfigs)) {
-    GlobalLogger.Error("Map persistent config file %s error in Backup\n",
-                       config_file(path).c_str());
-    return Status::IOError;
-  }
-
-  CheckPoint* persistent_checkpoint = static_cast<CheckPoint*>(pmem_map_file(
-      checkpoint_file(path).c_str(), sizeof(CheckPoint), PMEM_FILE_CREATE, 0666,
-      &mapped_len, nullptr /* we do not care if checkpoint path is on PMem*/));
-
-  backup_mark->stage = BackupMark::Stage::Processing;
-  msync(backup_mark, sizeof(BackupMark), MS_SYNC);
-
-  imm_configs->PersistImmutableConfigs(configs_);
-  persistent_checkpoint->MakeCheckpoint(snapshot);
-  msync(persistent_checkpoint, sizeof(CheckPoint), MS_SYNC);
-
-  Status s = pmem_allocator_->Backup(data_file(path));
+  BackupLog backup;
+  Status s = backup.Init(string_view_2_string(backup_path), configs_);
   if (s != Status::Ok) {
     return s;
   }
-
-  backup_mark->stage = BackupMark::Stage::Finish;
-  msync(backup_mark, sizeof(BackupMark), MS_SYNC);
-  GlobalLogger.Info("Backup to %s finished\n", path.c_str());
+  TimeStampType backup_ts =
+      static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
+  auto hashtable_iterator = hash_table_->GetIterator();
+  while (hashtable_iterator.Valid()) {
+    auto ul = hashtable_iterator.AcquireSlotLock();
+    auto slot_iter = hashtable_iterator.Slot();
+    while (slot_iter.Valid()) {
+      switch (slot_iter->GetRecordType()) {
+        case StringDataRecord:
+        case StringDeleteRecord: {
+          StringRecord* record = slot_iter->GetIndex().string_record;
+          while (record != nullptr && record->GetTimestamp() > backup_ts) {
+            record =
+                pmem_allocator_->offset2addr<StringRecord>(record->old_version);
+          }
+          if (record && record->GetRecordType() == StringDataRecord) {
+            backup.Append(StringDataRecord, record->Key(), record->Value());
+          } else {
+            kvdk_assert(record == nullptr ||
+                            record->GetRecordType() == StringDeleteRecord,
+                        "");
+          }
+          break;
+        }
+        case SortedHeader:
+        case SortedHeaderDelete: {
+        }
+        default:
+          break;
+      }
+    }
+    hashtable_iterator.Next();
+  }
+  backup.Finish();
   return Status::Ok;
 }
 
@@ -578,6 +592,8 @@ Status KVEngine::RestorePendingBatch() {
 }
 
 Status KVEngine::Recovery() {
+  access_thread.id = 0;
+  defer(access_thread.id = -1);
   auto s = RestorePendingBatch();
 
   if (s == Status::Ok) {
@@ -677,7 +693,7 @@ Status KVEngine::Recovery() {
 
   version_controller_.Init(latest_version_ts);
   old_records_cleaner_.TryGlobalClean();
-
+  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
   return Status::Ok;
 }
 

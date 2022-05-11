@@ -47,6 +47,10 @@ class KVEngine : public Engine {
   static Status Open(const std::string& name, Engine** engine_ptr,
                      const Configs& configs);
 
+  static Status Restore(const std::string& engine_path,
+                        const std::string& backup_path, Engine** engine_ptr,
+                        const Configs& configs);
+
   Snapshot* GetSnapshot(bool make_checkpoint) override;
 
   Status Backup(const pmem::obj::string_view backup_path,
@@ -253,11 +257,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {

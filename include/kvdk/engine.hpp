@@ -20,16 +20,38 @@ namespace KVDK_NAMESPACE {
 // This is the abstraction of a persistent KVDK instance
 class Engine {
  public:
-  // Open a new KVDK instance or restore a existing KVDK instance with the
-  // specified "name". The "name" indicates the dir path that persist the
-  // instance.
+  // Open a new KVDK instance or restore a existing KVDK instance
   //
-  // Stores a pointer to the instance in *engine_ptr on success, write logs
-  // during runtime to log_file if it's not null.
+  // Para:
+  // * engine_path: indicates the dir path that persist the instance
+  // * engine_ptr: store the pointer to restored instance
+  // * configs: engine configs
+  // * log_file: file to print out runtime logs
+  //
+  // Return:
+  // Return Status::Ok on sucess, return other status for any error
   //
   // To close the instance, just delete *engine_ptr.
-  static Status Open(const std::string& name, Engine** engine_ptr,
+  static Status Open(const std::string& engine_path, Engine** engine_ptr,
                      const Configs& configs, FILE* log_file = stdout);
+
+  // Restore a KVDK instance from a backup file.
+  //
+  // Para:
+  // * engine_path: indicates the dir path that persist the instance
+  // * backup_path: the backup file restored from
+  // * engine_ptr: store the pointer to restored instance
+  // * configs: engine configs
+  // * log_file: file to print out runtime logs
+  //
+  // Return:
+  // Return Status::Ok on sucess, return other status for any error
+  //
+  // Notice:
+  // "engine_path" should be an empty dir
+  static Status Restore(const std::string& engine_path,
+                        const std::string& backup_path, Engine** engine_ptr,
+                        const Configs& configs, FILE* log_file = stdout);
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
   // successful persistence, return non-Ok on any error.
@@ -38,10 +60,12 @@ class Engine {
 
   // Modify value of existing key in the engine
   //
+  // Para:
   // * modify_func: customized function to modify existing value of key. See
   // definition of ModifyFunc (types.hpp) for more details.
   // * modify_args: customized arguments of modify_func.
   //
+  // Return:
   // Return Status::Ok if modify success.
   // Return Status::Abort if modify function abort modifying.
   // Return other non-Ok status on any error.
