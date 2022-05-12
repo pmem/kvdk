@@ -558,6 +558,7 @@ Status KVEngine::RestorePendingBatch() {
 }
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
+  CollectionIDType max_id = 0;
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -589,11 +590,20 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
         if (comparator == nullptr) {
           return Status::Abort;
         }
-        // TODO max recovered id
-        // TODO allocate pmem record
-        void* pmem_ptr = nullptr;
+        auto space_entry = pmem_allocator_->Allocate(
+            DLRecord::RecordSize(record.key, record.val));
+        if (space_entry.size == 0) {
+          s = Status::PmemOverflow;
+          break;
+        }
+        DLRecord* header_record = DLRecord::PersistDLRecord(
+            pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
+            version_controller_.GetCurrentTimestamp(), SortedHeader,
+            kNullPMemOffset, space_entry.offset, space_entry.offset, record.key,
+            record.val);
+        max_id = std::max(max_id, id);
         auto skiplist = std::make_shared<Skiplist>(
-            pmem_ptr, record.key, id, comparator, pmem_allocator_.get(),
+            header_record, record.key, id, comparator, pmem_allocator_.get(),
             hash_table_.get(), skiplist_locks_.get(),
             s_configs.index_with_hashtable);
         addSkiplistToMap(skiplist);
