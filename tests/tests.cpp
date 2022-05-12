@@ -965,6 +965,17 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       s_configs.index_with_hashtable = index_with_hashtable;
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
                 Status::Ok);
+      // Test destroy a collction
+      std::string empty_skiplist("empty_skiplist");
+      size_t empty_skiplist_size;
+      ASSERT_EQ(engine->CreateSortedCollection(empty_skiplist, s_configs),
+                Status::Ok);
+      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+                Status::Ok);
+      ASSERT_EQ(empty_skiplist_size, 0);
+      ASSERT_EQ(engine->DestroySortedCollection(empty_skiplist), Status::Ok);
+      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+                Status::NotFound);
       // insert and delete some keys, then re-insert some deleted keys
       int count = 100;
       std::string global_skiplist =
@@ -1014,6 +1025,8 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       // reopen and restore engine and try gets
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
                 Status::Ok);
+      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+                Status::NotFound);
       for (size_t id = 0; id < num_threads; id++) {
         std::string t_skiplist(thread_skiplist + std::to_string(id));
         std::string key_prefix(id, 'a');
@@ -1902,21 +1915,21 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   delete engine;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  // // Get string record expired time
-  // ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
+  // Get string record expired time
+  ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
 
   // Get sorted record expired time
   ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
 
-  // // Get hashes record expired time
-  // ASSERT_EQ(engine->GetTTL(hashes_collection, &ttl_time), Status::Ok);
-  // ASSERT_EQ(engine->Expire(hashes_collection, INT64_MIN), Status::Ok);
-  // ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
+  // Get hashes record expired time
+  ASSERT_EQ(engine->GetTTL(hashes_collection, &ttl_time), Status::Ok);
+  ASSERT_EQ(engine->Expire(hashes_collection, INT64_MIN), Status::Ok);
+  ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
 
-  // // Get list record expired time
-  // ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
-  // ASSERT_EQ(engine->Expire(hashes_collection, -100), Status::Ok);
-  // ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
+  // Get list record expired time
+  ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
+  ASSERT_EQ(engine->Expire(hashes_collection, -100), Status::Ok);
+  ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
   delete engine;
 }
 

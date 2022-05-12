@@ -71,8 +71,8 @@ Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
   DLRecord* pmem_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr_checked(space_entry.offset),
       space_entry.size, timestamp, SortedHeader,
-      pmem_allocator_->addr2offset_checked(header), space_entry.offset,
-      space_entry.offset, header->Key(), header->Value(), expired_time);
+      pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
+      header->Key(), header->Value(), expired_time);
   Skiplist::Replace(header, pmem_record, HeaderNode(), pmem_allocator_,
                     record_locks_);
   ret.existing_record = header;
@@ -385,9 +385,19 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
   auto old_record_offset = pmem_allocator->addr2offset(old_record);
-  // the skiplist only has header andn nothing elements. so don't change link.
   if (prev_offset == old_record_offset && next_offset == old_record_offset) {
-    // nothing to change link.
+    // old record is the only record (the header) in the skiplist, so we make
+    // new record point to itself and break linkage of the old one for recovery
+    kvdk_assert((new_record->entry.meta.type & SortedHeaderType) &&
+                    (old_record->entry.meta.type & SortedHeaderType),
+                "Non-header record shouldn't be the only record in a skiplist");
+    Skiplist::linkDLRecord(new_record, new_record, new_record, pmem_allocator);
+    auto new_record_offset = pmem_allocator->addr2offset(new_record);
+    old_record->PersistPrevNT(new_record_offset);
+    kvdk_assert(
+        !Skiplist::CheckRecordPrevLinkage(old_record, pmem_allocator) &&
+            !Skiplist::CheckReocrdNextLinkage(old_record, pmem_allocator),
+        "");
   } else {
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
     DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
