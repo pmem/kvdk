@@ -355,7 +355,7 @@ class KVEngine : public Engine {
 
   Status Recovery();
 
-  Status RestoreBackup(const std::string& backup_file);
+  Status restoreDataFromBackup(const std::string& backup_file);
 
   Status RestoreData();
 

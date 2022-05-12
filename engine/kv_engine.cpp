@@ -75,7 +75,7 @@ Status KVEngine::Restore(const std::string& engine_path,
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(engine_path, configs);
   if (s == Status::Ok) {
-    s = engine->RestoreBackup(backup_file);
+    s = engine->restoreDataFromBackup(backup_file);
   }
 
   if (s == Status::Ok) {
@@ -557,7 +557,73 @@ Status KVEngine::RestorePendingBatch() {
   return Status::Ok;
 }
 
-Status KVEngine::RestoreBackup(const std::string&) { return Status::Ok; }
+Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+  BackupLog backup;
+  s = backup.Open(backup_file);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto wo = WriteOptions();
+  auto iter = backup.GetIterator();
+  while (iter.Valid()) {
+    auto record = iter.Record();
+    switch (record.type) {
+      case StringDataRecord: {
+        s = Set(record.key, record.val, wo);
+        iter.Next();
+        break;
+      }
+      case SortedHeader: {
+        // Build skiplist
+        CollectionIDType id;
+        SortedCollectionConfigs s_configs;
+        s = Skiplist::DecodeSortedCollectionValue(record.val, id, s_configs);
+        if (s != Status::Ok) {
+          break;
+        }
+        auto comparator = comparators_.GetComparator(s_configs.comparator_name);
+        if (comparator == nullptr) {
+          return Status::Abort;
+        }
+        // TODO max recovered id
+        // TODO allocate pmem record
+        void* pmem_ptr = nullptr;
+        auto skiplist = std::make_shared<Skiplist>(
+            pmem_ptr, record.key, id, comparator, pmem_allocator_.get(),
+            hash_table_.get(), skiplist_locks_.get(),
+            s_configs.index_with_hashtable);
+        addSkiplistToMap(skiplist);
+        // TODO insert to hash table
+        iter.Next();
+        record = iter.Record();
+        // the header is followed by all its elems in backup log
+        while (record.type == SortedElem) {
+          auto ret = skiplist->Set(record.key, record.val,
+                                   version_controller_.GetCurrentTimestamp());
+          s = ret.s;
+          if (s != Status::Ok) {
+            break;
+          }
+          iter.Next();
+          record = iter.Record();
+        }
+        break;
+      }
+      default:
+        GlobalLogger.Error("unsupported record type %u in backup log %s\n",
+                           record.type, backup_file.c_str());
+        return Status::Abort;
+    }
+    if (s != Status::Ok) {
+      return Status::Abort;
+    }
+  }
+  return Status::Ok;
+}
 
 Status KVEngine::Recovery() {
   access_thread.id = 0;

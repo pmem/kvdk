@@ -32,11 +32,21 @@ class BackupLog {
   }
 
  public:
-  struct Record {
+  struct LogRecord {
     RecordType type;
     StringView key;
     StringView val;
   };
+
+  class LogIterator {
+   public:
+    LogRecord Record() { return LogRecord(); }
+    void Next() {}
+    bool Valid() {}
+
+   private:
+  };
+
   ~BackupLog() {
     if (log_file_ >= 0) {
       close(log_file_);
@@ -46,10 +56,7 @@ class BackupLog {
   BackupLog() = default;
   BackupLog(const BackupLog&) = delete;
 
-  class LogIterator {
-   public:
-    void Next();
-  };
+  LogIterator GetIterator() { return LogIterator(); }
 
   // Init a new backup log
   Status Init(const std::string& backup_log, const Configs& configs) {
