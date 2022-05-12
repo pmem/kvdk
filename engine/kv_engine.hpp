@@ -83,7 +83,6 @@ class KVEngine : public Engine {
   Status Set(const StringView key, const StringView value,
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
-  Status BatchWrite(const WriteBatch& write_batch) override;
   Status Modify(const StringView key, ModifyFunc modify_func, void* modify_args,
                 const WriteOptions& options) override;
 
@@ -124,22 +123,9 @@ class KVEngine : public Engine {
         old_records_cleaner_(this, configs.max_access_threads),
         comparators_(configs.comparator){};
 
-  struct BatchWriteHint {
-    TimeStampType timestamp{0};
-    SpaceEntry allocated_space{};
-    HashTable::KeyHashHint hash_hint{};
-    HashEntry* hash_entry_ptr = nullptr;
-    void* data_record_to_free = nullptr;
-    void* delete_record_to_free = nullptr;
-    bool space_not_used{false};
-  };
-
   struct EngineThreadCache {
     EngineThreadCache() = default;
 
-    PendingBatch* persisted_pending_batch = nullptr;
-    // This thread is doing batch write
-    bool batch_writing = false;
     char* batch_log = nullptr;
 
     // Info used in recovery
@@ -338,7 +324,6 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
-  Status MaybeInitPendingBatchFile();
   Status maybeInitBatchLogFile();
 
   // BatchWrite takes 3 stages
@@ -362,9 +347,6 @@ class KVEngine : public Engine {
                        const WriteOptions& write_options);
 
   Status StringDeleteImpl(const StringView& key);
-
-  Status StringBatchWriteImpl(const WriteBatch::KV& kv,
-                              BatchWriteHint& batch_hint);
 
   Status stringWrite(StringWriteArgs& args);
   Status stringPublish(StringWriteArgs const& args);
@@ -494,10 +476,6 @@ class KVEngine : public Engine {
     return format_dir_path(instance_path) + "data";
   }
 
-  inline std::string persisted_pending_block_file(int thread_id) {
-    return pending_batch_dir_ + std::to_string(thread_id);
-  }
-
   inline std::string backup_mark_file() { return backup_mark_file(dir_); }
 
   inline std::string checkpoint_file() { return checkpoint_file(dir_); }
@@ -611,7 +589,6 @@ class KVEngine : public Engine {
   std::unique_ptr<LockTable> skiplist_locks_;
 
   std::string dir_;
-  std::string pending_batch_dir_;
   std::string batch_log_dir_;
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;

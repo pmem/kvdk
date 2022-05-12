@@ -134,23 +134,6 @@ extern KVDKStatus KVDKDestroySortedCollection(KVDKEngine* engine,
       StringView(collection_name, collection_len));
 }
 
-KVDKWriteBatch* KVDKWriteBatchCreate(void) { return new KVDKWriteBatch; }
-
-void KVDKWriteBatchDelete(KVDKWriteBatch* wb, const char* key, size_t key_len) {
-  wb->rep.Delete(std::string(key, key_len));
-}
-
-void KVDKWriteBatchPut(KVDKWriteBatch* wb, const char* key, size_t key_len,
-                       const char* value, size_t value_len) {
-  wb->rep.Put(std::string(key, key_len), std::string(value, value_len));
-}
-
-KVDKStatus KVDKWrite(KVDKEngine* engine, const KVDKWriteBatch* batch) {
-  return engine->rep->BatchWrite(batch->rep);
-}
-
-void KVDKWriteBatchDestory(KVDKWriteBatch* wb) { delete wb; }
-
 KVDKStatus KVDKGet(KVDKEngine* engine, const char* key, size_t key_len,
                    size_t* val_len, char** val) {
   std::string val_str;

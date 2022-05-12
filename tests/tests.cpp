@@ -747,66 +747,6 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  size_t batch_size = 10;
-  size_t count = 500;
-  auto BatchSetDelete = [&](uint32_t id) {
-    std::string key_prefix(std::string(id, 'a'));
-    std::string got_val;
-    WriteBatch batch;
-    int cnt = count;
-    while (cnt--) {
-      for (size_t i = 0; i < batch_size; i++) {
-        auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
-        auto val = std::to_string(i * id);
-        batch.Put(key, val);
-      }
-      ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
-      batch.Clear();
-      for (size_t i = 0; i < batch_size; i++) {
-        if ((i * cnt) % 2 == 1) {
-          auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
-          auto val = std::to_string(i * id);
-          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-          ASSERT_EQ(got_val, val);
-          batch.Delete(key);
-        }
-      }
-      engine->BatchWrite(batch);
-      batch.Clear();
-    }
-  };
-
-  LaunchNThreads(num_threads, BatchSetDelete);
-
-  delete engine;
-
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  for (uint32_t id = 0; id < num_threads; id++) {
-    std::string key_prefix(id, 'a');
-    std::string got_val;
-    int cnt = count;
-    while (cnt--) {
-      for (size_t i = 0; i < batch_size; i++) {
-        auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
-        if ((i * cnt) % 2 == 1) {
-          ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
-        } else {
-          auto val = std::to_string(i * id);
-          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-          ASSERT_EQ(got_val, val);
-        }
-      }
-    }
-  }
-  delete engine;
-}
-
-TEST_F(EngineBasicTest, TestBatchWrite2) {
-  size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
   size_t batch_size = 100;
   size_t count = 100 * batch_size;
   std::vector<std::vector<std::string>> keys(num_threads);

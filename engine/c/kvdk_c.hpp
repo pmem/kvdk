@@ -23,7 +23,7 @@ using kvdk::Iterator;
 using kvdk::ListIterator;
 using kvdk::Snapshot;
 using kvdk::SortedCollectionConfigs;
-using kvdk::WriteBatch;
+using kvdk::WriteBatch2;
 using kvdk::WriteOptions;
 
 extern "C" {
@@ -37,8 +37,9 @@ struct KVDKEngine {
 };
 
 struct KVDKWriteBatch {
-  WriteBatch rep;
+  std::unique_ptr<WriteBatch2> rep;
 };
+
 struct KVDKSortedIterator {
   Iterator* rep;
 };

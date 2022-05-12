@@ -49,8 +49,6 @@ class Engine {
                         void* modify_args,
                         const WriteOptions& options = WriteOptions()) = 0;
 
-  virtual Status BatchWrite(const WriteBatch& write_batch) = 0;
-
   virtual Status BatchWrite(std::unique_ptr<WriteBatch2> const& batch) = 0;
 
   virtual std::unique_ptr<WriteBatch2> WriteBatchCreate() = 0;

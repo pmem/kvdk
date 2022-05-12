@@ -46,6 +46,7 @@ endif()
 # source files
 set(SOURCES
         engine/c/kvdk_hash.cpp
+        engine/c/kvdk_batch.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
         engine/engine.cpp
@@ -57,7 +58,6 @@ set(SOURCES
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp
         engine/sorted_collection/rebuilder.cpp
-        engine/write_batch.cpp
         engine/write_batch_impl.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
@@ -66,7 +66,7 @@ set(SOURCES
         engine/c.cpp
         engine/data_record.cpp
         engine/version/old_records_cleaner.cpp
-        )
+    )
 
 # .so library
 add_library(engine SHARED ${SOURCES})

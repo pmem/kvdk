@@ -117,14 +117,6 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
       return Status::IOError;
     }
 
-    pending_batch_dir_ = dir_ + "pending_batch_files/";
-    res = create_dir_if_missing(pending_batch_dir_);
-    if (res != 0) {
-      GlobalLogger.Error("Create pending batch files dir %s error\n",
-                         pending_batch_dir_.c_str());
-      return Status::IOError;
-    }
-
     batch_log_dir_ = dir_ + "batch_logs/";
     if (create_dir_if_missing(batch_log_dir_) != 0) {
       GlobalLogger.Error("Create batch log dir %s error\n",
@@ -144,14 +136,6 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     // configs_.devdax_meta_dir will be created on a xfs file system with a
     // fsdax namespace
     dir_ = format_dir_path(configs_.devdax_meta_dir);
-    pending_batch_dir_ = dir_ + "pending_batch_files/";
-
-    int res = create_dir_if_missing(pending_batch_dir_);
-    if (res != 0) {
-      GlobalLogger.Error("Create pending batch files dir %s error\n",
-                         pending_batch_dir_.c_str());
-      return Status::IOError;
-    }
 
     batch_log_dir_ = dir_ + "batch_logs/";
     if (create_dir_if_missing(batch_log_dir_) != 0) {
@@ -531,66 +515,6 @@ Status KVEngine::MaybeRestoreBackup() {
   return Status::Ok;
 }
 
-Status KVEngine::RestorePendingBatch() {
-  DIR* dir;
-  dirent* ent;
-  uint64_t persisted_pending_file_size =
-      kMaxWriteBatchSize * 8 /* offsets */ + sizeof(PendingBatch);
-  persisted_pending_file_size =
-      kPMEMMapSizeUnit *
-      (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
-  size_t mapped_len;
-  int is_pmem;
-
-  // Iterate all pending batch files and rollback unfinished batch writes
-  if ((dir = opendir(pending_batch_dir_.c_str())) != nullptr) {
-    while ((ent = readdir(dir)) != nullptr) {
-      std::string file_name = std::string(ent->d_name);
-      if (file_name != "." && file_name != "..") {
-        uint64_t id = std::stoul(file_name);
-        std::string pending_batch_file = persisted_pending_block_file(id);
-
-        PendingBatch* pending_batch = (PendingBatch*)pmem_map_file(
-            pending_batch_file.c_str(), persisted_pending_file_size,
-            PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
-
-        if (pending_batch != nullptr) {
-          if (!is_pmem || mapped_len != persisted_pending_file_size) {
-            GlobalLogger.Error("Map persisted pending batch file %s failed\n",
-                               pending_batch_file.c_str());
-            return Status::IOError;
-          }
-          if (pending_batch->Unfinished()) {
-            uint64_t* invalid_offsets = pending_batch->record_offsets;
-            for (uint32_t i = 0; i < pending_batch->num_kv; i++) {
-              DataEntry* data_entry =
-                  pmem_allocator_->offset2addr<DataEntry>(invalid_offsets[i]);
-              if (data_entry->meta.timestamp == pending_batch->timestamp) {
-                data_entry->meta.type = Padding;
-                pmem_persist(&data_entry->meta.type, 8);
-              }
-            }
-            pending_batch->PersistFinish();
-          }
-
-          if (id < configs_.max_access_threads) {
-            engine_thread_cache_[id].persisted_pending_batch = pending_batch;
-          } else {
-            remove(pending_batch_file.c_str());
-          }
-        }
-      }
-    }
-    closedir(dir);
-  } else {
-    GlobalLogger.Error("Open persisted pending batch dir %s failed\n",
-                       pending_batch_dir_.c_str());
-    return Status::IOError;
-  }
-
-  return Status::Ok;
-}
-
 Status KVEngine::batchWriteRestoreLogs() {
   DIR* dir = opendir(batch_log_dir_.c_str());
   if (dir == NULL) {
@@ -617,17 +541,7 @@ Status KVEngine::batchWriteRestoreLogs() {
 }
 
 Status KVEngine::Recovery() {
-  Status s = RestorePendingBatch();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  s = RestoreCheckpoint();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  s = MaybeRestoreBackup();
+  Status s = RestoreCheckpoint();
   if (s != Status::Ok) {
     return s;
   }
@@ -638,6 +552,11 @@ Status KVEngine::Recovery() {
   }
 
   s = batchWriteRollbackLogs();
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  s = MaybeRestoreBackup();
   if (s != Status::Ok) {
     return s;
   }
@@ -790,29 +709,6 @@ Status KVEngine::CheckConfigs(const Configs& configs) {
   return Status::Ok;
 }
 
-Status KVEngine::MaybeInitPendingBatchFile() {
-  if (engine_thread_cache_[access_thread.id].persisted_pending_batch ==
-      nullptr) {
-    int is_pmem;
-    size_t mapped_len;
-    uint64_t persisted_pending_file_size =
-        kMaxWriteBatchSize * 8 + sizeof(PendingBatch);
-    persisted_pending_file_size =
-        kPMEMMapSizeUnit *
-        (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
-
-    if ((engine_thread_cache_[access_thread.id].persisted_pending_batch =
-             (PendingBatch*)pmem_map_file(
-                 persisted_pending_block_file(access_thread.id).c_str(),
-                 persisted_pending_file_size, PMEM_FILE_CREATE, 0666,
-                 &mapped_len, &is_pmem)) == nullptr ||
-        !is_pmem || mapped_len != persisted_pending_file_size) {
-      return Status::PMemMapFileError;
-    }
-  }
-  return Status::Ok;
-}
-
 Status KVEngine::maybeInitBatchLogFile() {
   auto& tc = engine_thread_cache_[access_thread.id];
   if (tc.batch_log == nullptr) {
@@ -828,112 +724,6 @@ Status KVEngine::maybeInitBatchLogFile() {
     }
     kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
     tc.batch_log = static_cast<char*>(addr);
-  }
-  return Status::Ok;
-}
-
-Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
-  if (write_batch.Size() > kMaxWriteBatchSize) {
-    return Status::InvalidBatchSize;
-  }
-
-  Status s = MaybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  s = MaybeInitPendingBatchFile();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  engine_thread_cache_[access_thread.id].batch_writing = true;
-  defer(engine_thread_cache_[access_thread.id].batch_writing = false;);
-
-  std::set<SpinMutex*> spins_to_lock;
-  std::vector<BatchWriteHint> batch_hints(write_batch.Size());
-  std::vector<uint64_t> space_entry_offsets;
-
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    auto& kv = write_batch.kvs[i];
-    uint32_t requested_size;
-    if (kv.type == StringDataRecord) {
-      requested_size = kv.key.size() + kv.value.size() + sizeof(StringRecord);
-    } else if (kv.type == StringDeleteRecord) {
-      requested_size = kv.key.size() + sizeof(StringRecord);
-    } else {
-      GlobalLogger.Error("only support string type batch write\n");
-      return Status::NotSupported;
-    }
-    batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
-    // No enough space for batch write
-    if (batch_hints[i].allocated_space.size == 0) {
-      return Status::PmemOverflow;
-    }
-    space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
-
-    batch_hints[i].hash_hint = hash_table_->GetHint(kv.key);
-    spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
-  }
-
-  [[gnu::unused]] size_t batch_size = write_batch.Size();
-  TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::AllocateRecord::After",
-                           &batch_size);
-  // lock spin mutex with order to avoid deadlock
-  std::vector<std::unique_lock<SpinMutex>> ul_locks;
-  for (const SpinMutex* l : spins_to_lock) {
-    ul_locks.emplace_back(const_cast<SpinMutex&>(*l));
-  }
-
-  auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType ts = holder.Timestamp();
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    batch_hints[i].timestamp = ts;
-  }
-
-  // Persist batch write status as processing
-  engine_thread_cache_[access_thread.id]
-      .persisted_pending_batch->PersistProcessing(space_entry_offsets, ts);
-
-  // Do batch writes
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    if (write_batch.kvs[i].type == StringDataRecord ||
-        write_batch.kvs[i].type == StringDeleteRecord) {
-      s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
-      TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
-    } else {
-      return Status::NotSupported;
-    }
-
-    // Something wrong
-    // TODO: roll back finished writes (hard to roll back hash table now)
-    if (s != Status::Ok) {
-      assert(s == Status::MemoryOverflow);
-      std::abort();
-    }
-  }
-
-  // Must release all spinlocks before delayFree(),
-  // otherwise may deadlock as delayFree() also try to acquire these spinlocks.
-  ul_locks.clear();
-
-  engine_thread_cache_[access_thread.id]
-      .persisted_pending_batch->PersistFinish();
-
-  // Free outdated kvs
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before", &i);
-    if (batch_hints[i].data_record_to_free != nullptr) {
-      delayFree(OldDataRecord{batch_hints[i].data_record_to_free, ts});
-    }
-    if (batch_hints[i].delete_record_to_free != nullptr) {
-      delayFree(OldDeleteRecord(
-          batch_hints[i].delete_record_to_free, batch_hints[i].hash_entry_ptr,
-          PointerType::HashEntry, ts, batch_hints[i].hash_hint.spin));
-    }
-    if (batch_hints[i].space_not_used) {
-      pmem_allocator_->Free(batch_hints[i].allocated_space);
-    }
   }
   return Status::Ok;
 }
@@ -1413,15 +1203,6 @@ namespace KVDK_NAMESPACE {
 Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
   TimeStampType snapshot_ts = static_cast<SnapshotImpl*>(ret)->GetTimestamp();
-
-  // A snapshot should not contain any ongoing batch write
-  for (size_t i = 0; i < configs_.max_access_threads; i++) {
-    while (engine_thread_cache_[i].batch_writing &&
-           snapshot_ts >=
-               version_controller_.GetLocalSnapshot(i).GetTimestamp()) {
-      asm volatile("pause");
-    }
-  }
 
   if (make_checkpoint) {
     std::lock_guard<std::mutex> lg(checkpoint_lock_);
