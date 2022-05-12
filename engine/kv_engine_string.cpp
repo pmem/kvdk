@@ -24,30 +24,30 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
     return s;
   }
 
-  auto hint = hash_table_->GetHint(key);
-  std::unique_lock<SpinMutex> ul(*hint.spin);
+  auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
-  auto ret = lookupKey<true>(key, StringRecordType);
+  auto lookup_result = lookupKey<true>(key, StringRecordType);
 
   StringRecord* existing_record = nullptr;
   std::string existing_value;
   std::string new_value;
   // push it into cleaner
-  if (ret.s == Status::Ok) {
-    existing_record = ret.entry.GetIndex().string_record;
+  if (lookup_result.s == Status::Ok) {
+    existing_record = lookup_result.entry.GetIndex().string_record;
     existing_value.assign(existing_record->Value().data(),
                           existing_record->Value().size());
-  } else if (ret.s == Status::Outdated) {
-    existing_record = ret.entry.GetIndex().string_record;
-  } else if (ret.s == Status::NotFound) {
+  } else if (lookup_result.s == Status::Outdated) {
+    existing_record = lookup_result.entry.GetIndex().string_record;
+  } else if (lookup_result.s == Status::NotFound) {
     // nothing todo
   } else {
-    return ret.s;
+    return lookup_result.s;
   }
 
-  auto modify_operation = modify_func(
-      ret.s == Status::Ok ? &existing_value : nullptr, &new_value, modify_args);
+  auto modify_operation =
+      modify_func(lookup_result.s == Status::Ok ? &existing_value : nullptr,
+                  &new_value, modify_args);
   switch (modify_operation) {
     case ModifyOperation::Write: {
       if (!CheckValueSize(new_value)) {
@@ -68,12 +68,11 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
               ? kNullPMemOffset
               : pmem_allocator_->addr2offset_checked(existing_record),
           key, new_value, expired_time);
-      hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
-                          PointerType::StringRecord);
+      insertKeyOrElem(lookup_result, StringDataRecord, new_record);
       break;
     }
     case ModifyOperation::Delete: {
-      if (ret.s == Status::Ok) {
+      if (lookup_result.s == Status::Ok) {
         SpaceEntry space_entry =
             pmem_allocator_->Allocate(StringRecord::RecordSize(key, ""));
         if (space_entry.size == 0) {
@@ -85,16 +84,15 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
         StringRecord::PersistStringRecord(
             pmem_ptr, space_entry.size, new_ts, StringDeleteRecord,
             pmem_allocator_->addr2offset_checked(existing_record), key, "");
-        hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
-                            PointerType::StringRecord);
+        insertKeyOrElem(lookup_result, StringDeleteRecord, pmem_ptr);
+        break;
       }
-      break;
-    }
-    case ModifyOperation::Abort: {
-      return Status::Abort;
-    }
-    case ModifyOperation::Noop: {
-      return Status::Ok;
+      case ModifyOperation::Abort: {
+        return Status::Abort;
+      }
+      case ModifyOperation::Noop: {
+        return Status::Ok;
+      }
     }
   }
 
@@ -154,13 +152,13 @@ Status KVEngine::Delete(const StringView key) {
 }
 
 Status KVEngine::StringDeleteImpl(const StringView& key) {
-  auto hint = hash_table_->GetHint(key);
-  std::unique_lock<SpinMutex> ul(*hint.spin);
+  auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
 
-  auto ret = lookupKey<false>(key, StringDeleteRecord | StringDataRecord);
-  if (ret.s == Status::Ok) {
+  auto lookup_result =
+      lookupKey<false>(key, StringDeleteRecord | StringDataRecord);
+  if (lookup_result.s == Status::Ok) {
     // We only write delete record if key exist
     auto request_size = key.size() + sizeof(StringRecord);
     SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
@@ -169,17 +167,18 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
     }
 
     void* pmem_ptr = pmem_allocator_->offset2addr_checked(space_entry.offset);
-    StringRecord::PersistStringRecord(pmem_ptr, space_entry.size, new_ts,
-                                      StringDeleteRecord,
-                                      pmem_allocator_->addr2offset_checked(
-                                          ret.entry.GetIndex().string_record),
-                                      key, "");
-    hash_table_->Insert(hint, ret.entry_ptr, StringDeleteRecord, pmem_ptr,
-                        PointerType::StringRecord);
+    StringRecord::PersistStringRecord(
+        pmem_ptr, space_entry.size, new_ts, StringDeleteRecord,
+        pmem_allocator_->addr2offset_checked(
+            lookup_result.entry.GetIndex().string_record),
+        key, "");
+    insertKeyOrElem(lookup_result, StringDeleteRecord, pmem_ptr);
   }
 
-  return (ret.s == Status::NotFound || ret.s == Status::Outdated) ? Status::Ok
-                                                                  : ret.s;
+  return (lookup_result.s == Status::NotFound ||
+          lookup_result.s == Status::Outdated)
+             ? Status::Ok
+             : lookup_result.s;
 }
 
 Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
@@ -196,23 +195,27 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   KeyStatus entry_status =
       expired_time != kPersistTime ? KeyStatus::Volatile : KeyStatus::Persist;
 
-  auto hint = hash_table_->GetHint(key);
   TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
-  std::unique_lock<SpinMutex> ul(*hint.spin);
+  auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
 
   // Lookup key in hashtable
-  auto ret = lookupKey<true>(key, StringDataRecord | StringDeleteRecord);
-  if (ret.s == Status::MemoryOverflow || ret.s == Status::WrongType) {
-    return ret.s;
+  auto lookup_result =
+      lookupKey<true>(key, StringDataRecord | StringDeleteRecord);
+  if (lookup_result.s == Status::MemoryOverflow ||
+      lookup_result.s == Status::WrongType) {
+    return lookup_result.s;
   }
 
-  kvdk_assert(ret.s == Status::NotFound || ret.s == Status::Ok ||
-                  ret.s == Status::Outdated,
+  kvdk_assert(lookup_result.s == Status::NotFound ||
+                  lookup_result.s == Status::Ok ||
+                  lookup_result.s == Status::Outdated,
               "Wrong return status in lookupKey in StringSetImpl");
   StringRecord* existing_record =
-      ret.s == Status::NotFound ? nullptr : ret.entry.GetIndex().string_record;
+      lookup_result.s == Status::NotFound
+          ? nullptr
+          : lookup_result.entry.GetIndex().string_record;
   kvdk_assert(!existing_record || new_ts > existing_record->GetTimestamp(),
               "existing record has newer timestamp or wrong return status in "
               "string set");
@@ -229,8 +232,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
       new_record, space_entry.size, new_ts, StringDataRecord,
       pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
 
-  hash_table_->Insert(hint, ret.entry_ptr, StringDataRecord, new_record,
-                      PointerType::StringRecord, entry_status);
+  insertKeyOrElem(lookup_result, StringDataRecord, new_record, entry_status);
 
   return Status::Ok;
 }
@@ -242,35 +244,28 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     return Status::Ok;
   }
+
   auto view = pmem_record->Key();
   std::string key{view.data(), view.size()};
-  DataEntry existing_data_entry;
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
+  auto ul = hash_table_->AcquireLock(key);
+  auto lookup_result = hash_table_->Lookup<true>(key, StringRecordType);
 
-  auto hint = hash_table_->GetHint(key);
-  std::lock_guard<SpinMutex> lg(*hint.spin);
-  Status s =
-      hash_table_->SearchForWrite(hint, key, StringRecordType, &entry_ptr,
-                                  &hash_entry, &existing_data_entry);
-
-  if (s == Status::MemoryOverflow) {
-    return s;
+  if (lookup_result.s == Status::MemoryOverflow) {
+    return lookup_result.s;
   }
 
-  bool found = s == Status::Ok;
-  if (found &&
-      existing_data_entry.meta.timestamp >= cached_entry.meta.timestamp) {
+  if (lookup_result.s == Status::Ok &&
+      lookup_result.entry.GetIndex().string_record->GetTimestamp() >=
+          cached_entry.meta.timestamp) {
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
 
-  hash_table_->Insert(hint, entry_ptr, cached_entry.meta.type, pmem_record,
-                      PointerType::StringRecord);
+  insertKeyOrElem(lookup_result, cached_entry.meta.type, pmem_record);
   pmem_record->PersistOldVersion(kNullPMemOffset);
 
-  if (found) {
-    purgeAndFree(hash_entry.GetIndex().ptr);
+  if (lookup_result.s == Status::Ok) {
+    purgeAndFree(lookup_result.entry.GetIndex().ptr);
   }
 
   return Status::Ok;
@@ -278,22 +273,15 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
 
 Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
                                       BatchWriteHint& batch_hint) {
-  DataEntry data_entry;
-  HashEntry hash_entry;
-  HashEntry* entry_ptr = nullptr;
-
   {
-    auto& hash_hint = batch_hint.hash_hint;
-    // hash table for the hint should be alread locked, so we do not lock it
-    // here
-    Status s =
-        hash_table_->SearchForWrite(hash_hint, kv.key, StringRecordType,
-                                    &entry_ptr, &hash_entry, &data_entry);
-    if (s == Status::MemoryOverflow) {
-      return s;
+    // key should be alread locked, so we do not acquire lock here
+    auto lookup_result = hash_table_->Lookup<true>(kv.key, StringRecordType);
+
+    if (lookup_result.s == Status::MemoryOverflow) {
+      return lookup_result.s;
     }
-    batch_hint.hash_entry_ptr = entry_ptr;
-    bool found = s == Status::Ok;
+    batch_hint.hash_entry_ptr = lookup_result.entry_ptr;
+    bool found = lookup_result.s == Status::Ok;
 
     // Deleting kv is not existing
     if (kv.type == StringDeleteRecord && !found) {
@@ -301,25 +289,27 @@ Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
       return Status::Ok;
     }
 
-    kvdk_assert(!found || batch_hint.timestamp >= data_entry.meta.timestamp,
-                "ts of new data smaller than existing data in batch write");
+    kvdk_assert(
+        !found ||
+            batch_hint.timestamp >=
+                lookup_result.entry.GetIndex().string_record->GetTimestamp(),
+        "ts of new data smaller than existing data in batch write");
 
-    void* block_base =
+    void* new_pmem_ptr =
         pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
 
     TEST_SYNC_POINT(
         "KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
 
     StringRecord::PersistStringRecord(
-        block_base, batch_hint.allocated_space.size, batch_hint.timestamp,
+        new_pmem_ptr, batch_hint.allocated_space.size, batch_hint.timestamp,
         static_cast<RecordType>(kv.type),
         found ? pmem_allocator_->addr2offset_checked(
-                    hash_entry.GetIndex().string_record)
+                    lookup_result.entry.GetIndex().string_record)
               : kNullPMemOffset,
         kv.key, kv.type == StringDataRecord ? kv.value : "");
 
-    hash_table_->Insert(hash_hint, entry_ptr, (RecordType)kv.type, block_base,
-                        PointerType::StringRecord);
+    insertKeyOrElem(lookup_result, (RecordType)kv.type, new_pmem_ptr);
   }
 
   return Status::Ok;

@@ -372,6 +372,8 @@ static void test_expire() {
     std::string val = "hashval";
 
     // case: default persist key
+    s = engine->HashCreate(hash_collection);
+    assert(s == kvdk::Status::Ok);
     s = engine->HashSet(hash_collection, key, val);
     assert(s == kvdk::Status::Ok);
     s = engine->GetTTL(hash_collection, &ttl_time);
@@ -391,6 +393,9 @@ static void test_expire() {
     assert(s == kvdk::Status::Ok);
     sleep(1);
     s = engine->HashGet(hash_collection, key, &got_val);
+    assert(s == kvdk::Status::NotFound);
+
+    s = engine->HashDestroy(hash_collection);
     assert(s == kvdk::Status::NotFound);
     printf("Successfully expire hash\n");
   }

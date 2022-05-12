@@ -164,6 +164,8 @@ class KVEngine : public Engine {
   }
 
   // List
+  Status ListCreate(StringView key) final;
+  Status ListDestroy(StringView key) final;
   Status ListLength(StringView key, size_t* sz) final;
   Status ListPushFront(StringView key, StringView elem) final;
   Status ListPushBack(StringView key, StringView elem) final;
@@ -179,6 +181,8 @@ class KVEngine : public Engine {
   std::unique_ptr<ListIterator> ListCreateIterator(StringView key) final;
 
   // Hash
+  Status HashCreate(StringView key) final;
+  Status HashDestroy(StringView key) final;
   Status HashLength(StringView key, size_t* len) final;
   Status HashGet(StringView key, StringView field, std::string* value) final;
   Status HashSet(StringView key, StringView field, StringView value) final;
@@ -188,21 +192,8 @@ class KVEngine : public Engine {
   std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
 
  private:
-  struct LookupResult {
-    Status s{Status::NotSupported};
-    HashEntry entry{};
-    HashEntry* entry_ptr{nullptr};
-
-    LookupResult& operator=(LookupResult const& other) {
-      s = other.s;
-      memcpy_16(&entry, &other.entry);
-      entry_ptr = other.entry_ptr;
-      return *this;
-    }
-  };
-
-  // Look up the first level key (e.g. collections or string, not collection
-  // elems)
+  // Look up a first level key in hash table(e.g. collections or string, not
+  // collection elems), the first level key should be unique among all types
   //
   // Store a copy of hash entry in LookupResult::entry, and a pointer to the
   // hash entry in LookupResult::entry_ptr
@@ -210,34 +201,46 @@ class KVEngine : public Engine {
   // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
   //
   // return status:
+  // Status::Ok if key exist and alive
   // Status::NotFound is key is not found.
   // Status::WrongType if type_mask does not match.
-  // Status::Expired if key has been expired
-  // Status::MemoryOverflow if may_insert is true but
-  // failed to allocate new hash entry
-  // Status::Ok on success.
+  // Status::Outdated if key has been expired or deleted
+  // Status::MemoryOverflow if may_insert is true but failed to allocate new
+  // hash entry
   //
   // Notice: key should be locked if set may_insert to true
   template <bool may_insert>
-  LookupResult lookupKey(StringView key, uint16_t type_mask);
+  HashTable::LookupResult lookupKey(StringView key, uint16_t type_mask);
 
+  // Look up a collection element in hash table
+  //
+  // Store a copy of hash entry in LookupResult::entry, and a pointer to the
+  // hash entry in LookupResult::entry_ptr
+  // If may_insert is true and key not found, then store
+  // pointer of a free-to-write hash entry in LookupResult::entry_ptr.
+  //
+  // return status:
+  // Status::Ok if key exist
+  // Status::NotFound is key is not found.
+  // Status::MemoryOverflow if may_insert is true but failed to allocate new
+  // hash entry
+  //
+  // Notice: elem should be locked if set may_insert to true
   template <bool may_insert>
-  LookupResult lookupElem(StringView key, uint16_t type_mask);
+  HashTable::LookupResult lookupElem(StringView key, uint16_t type_mask);
 
-  template <bool may_insert>
-  LookupResult lookupImpl(StringView key, uint16_t type_mask);
-
-  void removeKeyOrElem(LookupResult ret) {
+  // Remove a key or elem from hash table, ret should be return of
+  // lookupKey/lookupElem
+  void removeKeyOrElem(HashTable::LookupResult ret) {
     kvdk_assert(ret.s == Status::Ok || ret.s == Status::Outdated, "");
     hash_table_->Erase(ret.entry_ptr);
   }
 
-  // ret must be return value of lookupImpl<true> or lookupKey<true>
-  // key must be the key in previous lookupKey function call.
-  void insertKeyOrElem(LookupResult ret, StringView key, RecordType type,
-                       void* addr) {
-    auto hint = hash_table_->GetHint(key);
-    hash_table_->Insert(hint, ret.entry_ptr, type, addr, pointerType(type));
+  // insert/update key or elem to hashtable, ret must be return value of
+  // lookupElem or lookupKey
+  void insertKeyOrElem(HashTable::LookupResult ret, RecordType type, void* addr,
+                       KeyStatus entry_status = KeyStatus::Persist) {
+    hash_table_->Insert(ret, type, addr, pointerType(type), entry_status);
   }
 
   template <typename CollectionType>
@@ -299,7 +302,7 @@ class KVEngine : public Engine {
   template <typename CollectionType>
   Status FindCollection(const StringView collection_name,
                         CollectionType** collection_ptr, uint64_t record_type) {
-    LookupResult res = lookupKey<false>(collection_name, record_type);
+    auto res = lookupKey<false>(collection_name, record_type);
     if (res.s == Status::Outdated) {
       return Status::NotFound;
     }
@@ -322,7 +325,7 @@ class KVEngine : public Engine {
     if (ret.s != Status::NotFound) {
       return ret.s;
     }
-    insertKeyOrElem(ret, coll->Name(), type, coll);
+    insertKeyOrElem(ret, type, coll);
     return Status::Ok;
   }
 
@@ -368,8 +371,9 @@ class KVEngine : public Engine {
   /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
   // Guarantees always return a valid List and lockes it if returns Status::Ok
-  Status listFind(StringView key, List** list, bool init_nx,
-                  std::unique_lock<std::recursive_mutex>& guard);
+  Status listFind(StringView key, List** list);
+
+  Status listExpire(List* list, ExpireTimeType t);
 
   Status listRestoreElem(DLRecord* pmp_record);
 
@@ -382,7 +386,9 @@ class KVEngine : public Engine {
   Status listDestroy(List* list);
 
   /// Hash helper funtions
-  Status hashListFind(StringView key, HashList** hlist, bool init_nx);
+  Status hashListFind(StringView key, HashList** hlist);
+
+  Status hashListExpire(HashList* hlist, ExpireTimeType t);
 
   // CallBack should have signature
   // ModifyOperation(StringView const* old, StringView* new, void* args).
@@ -413,9 +419,9 @@ class KVEngine : public Engine {
   std::vector<SpaceEntry> purgeOutDatedRecords(
       const std::vector<std::pair<void*, PointerType>>& outdated_records);
 
-  SpaceEntry purgeSortedRecord(SkiplistNode* dram_node, DLRecord* pmem_record);
-
   SpaceEntry purgeOldDataRecord(void* record);
+  SpaceEntry purgeSortedRecord(SkiplistNode* dram_node, DLRecord* pmem_record);
+  SpaceEntry purgeStringRecord(StringRecord* pmem_record);
 
   template <typename T>
   T* updateVersionList(T* record);

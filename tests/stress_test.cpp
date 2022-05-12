@@ -426,7 +426,6 @@ class EngineTestBase : public testing::Test {
   bool do_populate_when_initialize;
   size_t sz_pmem_file;
   size_t n_hash_bucket;
-  size_t sz_hash_bucket;
   size_t n_blocks_per_segment;
   size_t t_background_work_interval;
 
@@ -473,9 +472,9 @@ class EngineTestBase : public testing::Test {
     configs.populate_pmem_space = do_populate_when_initialize;
     configs.pmem_file_size = sz_pmem_file;
     configs.hash_bucket_num = n_hash_bucket;
-    configs.hash_bucket_size = sz_hash_bucket;
     configs.pmem_segment_blocks = n_blocks_per_segment;
     configs.background_work_interval = t_background_work_interval;
+    configs.max_access_threads = n_thread + 1;
 
     prepareKVPairs();
 
@@ -613,6 +612,7 @@ class EngineTestBase : public testing::Test {
   }
 
   void InitializeHashes(std::string const& collection_name) {
+    ASSERT_EQ(engine->HashCreate(collection_name), kvdk::Status::Ok);
     shadow_hashes_engines[collection_name].reset(
         new ShadowHashes{engine, collection_name, n_thread});
   }
@@ -687,8 +687,6 @@ class EngineStressTest : public EngineTestBase {
     sz_pmem_file = (64ULL << 30);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
-    // Smaller buckets to increase hash collisions
-    sz_hash_bucket = (3 + 1) * 16;
     n_blocks_per_segment = (1ULL << 10);
     t_background_work_interval = 1;
 
@@ -835,8 +833,6 @@ class EngineHotspotTest : public EngineTestBase {
     sz_pmem_file = (64ULL << 30);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
-    // Small buckets to increase hash collisions
-    sz_hash_bucket = (3 + 1) * 16;
     n_blocks_per_segment = (1ULL << 20);
     t_background_work_interval = 1;
 

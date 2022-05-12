@@ -335,7 +335,9 @@ void BatchWriteAnonCollectionExample(KVDKEngine* kvdk_engine) {
 void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   const char* nums[10] = {"9", "5", "2", "0", "7", "3", "1", "8", "6", "4"};
   const char* hash_collection = "hash_collection";
-  KVDKStatus s;
+  KVDKStatus s =
+      KVDKHashCreate(kvdk_engine, hash_collection, strlen(hash_collection));
+  assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key", value[10] = "value";
     strcat(key, nums[i]);
@@ -375,11 +377,17 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   printf("Successfully performed Get Set Delete Iterate on HashList.\n");
   assert(cnt == 9);
   KVDKHashIteratorDestroy(kvdk_iter);
+
+  s = KVDKHashDestroy(kvdk_engine, hash_collection, strlen(hash_collection));
+  assert(s == Ok);
 }
 
 void ListsCollectionExample(KVDKEngine* kvdk_engine) {
   const char* nums[10] = {"9", "5", "2", "0", "7", "3", "1", "8", "6", "4"};
   const char* list_collection = "list_collection";
+  KVDKStatus s =
+      KVDKListCreate(kvdk_engine, list_collection, strlen(list_collection));
+  assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key";
     strcat(key, nums[i]);
@@ -411,6 +419,10 @@ void ListsCollectionExample(KVDKEngine* kvdk_engine) {
     assert(cmp == 0);
     free(key_res);
   }
+
+  s = KVDKListDestroy(kvdk_engine, list_collection, strlen(list_collection));
+  assert(s == Ok);
+
   printf("Successfully performed RPush RPop LPush LPop on Lists.\n");
 }
 
@@ -499,11 +511,12 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
   }
 
   {
-    const char* hash_collection = "hash_collection";
+    const char* hash_collection = "hash";
     const char* key = "hashkey";
     const char* val = "hashval";
 
-    // case: default persist key
+    s = KVDKHashCreate(kvdk_engine, hash_collection, strlen(hash_collection));
+    assert(s == Ok);
     s = KVDKHashSet(kvdk_engine, hash_collection, strlen(hash_collection), key,
                     strlen(key), val, strlen(val));
     assert(s == Ok);
@@ -529,11 +542,11 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     s = KVDKHashGet(kvdk_engine, hash_collection, strlen(hash_collection), key,
                     strlen(key), &got_val, &val_len);
     assert(s == NotFound);
-    printf("Successfully expire hash\n");
-  }
 
-  {
-    // TODO: add expire list, but now list api has changed.
+    s = KVDKHashDestroy(kvdk_engine, hash_collection, strlen(hash_collection));
+    assert(s == NotFound);
+
+    printf("Successfully expire hash\n");
   }
   return;
 }
@@ -651,8 +664,9 @@ void HashModifyExample(KVDKEngine* engine) {
   HSetArgs args;
   args.data = value1;
   args.len = strlen(value1);
-  KVDKStatus s = KVDKHashModify(engine, key, strlen(key), field, strlen(field),
-                                HSetNXFunc, &args, NULL);
+  KVDKStatus s = KVDKHashCreate(engine, key, strlen(key));
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetNXFunc,
+                     &args, NULL);
   assert(s == Ok);
   assert(args.ret == 1);
   s = KVDKHashGet(engine, key, strlen(key), field, strlen(field), &resp_data,
@@ -687,6 +701,8 @@ void HashModifyExample(KVDKEngine* engine) {
   assert(StrCmp(resp_data, resp_len, value2, strlen(value2)) ==
          0);  // field is updated
   free(resp_data);
+  s = KVDKHashDestroy(engine, key, strlen(key));
+  assert(s == Ok);
 
   printf("Successfully excecuted HSET and HSETNX.\n");
 }
@@ -694,8 +710,8 @@ void HashModifyExample(KVDKEngine* engine) {
 int main() {
   // Initialize a KVDK instance.
   KVDKConfigs* kvdk_configs = KVDKCreateConfigs();
-  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 128u,
-                 1ull << 10, 1 << 4);
+  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 1ull << 10,
+                 1 << 4);
 
   const char* engine_path = "/mnt/pmem0/tutorial_kvdk_example";
   // Purge old KVDK instance

@@ -64,16 +64,10 @@ struct Configs {
   // (pmem_block_size * pmem_segment_blocks)
   uint64_t pmem_segment_blocks = 2 * 1024 * 1024;
 
-  // Size of each hash bucket
-  //
-  // It should be larger than hans entry size (which is 16) plus 8 (the pointer
-  // to next bucket). It is recommended to set it align to cache line
-  uint32_t hash_bucket_size = 128;
-
   // The number of bucket groups in the hash table.
   //
   // It should be 2^n and should smaller than 2^32.
-  // The original hash table size would be (hash_bucket_size *
+  // The original hash table size would be (kHashBucketSize(128 by default) *
   // hash_bucket_num)
   // More buckets means less write contention, faster hash
   // search, but more internal memory fragmentation.

@@ -27,7 +27,7 @@ class ChunkBasedAllocator : Allocator {
   inline void* offset2addr(uint64_t offset) { return (void*)offset; }
   template <typename T>
   inline T* offset2addr(uint64_t offset) {
-    return static_cast<T*>(offset);
+    return static_cast<T*>(offset2addr(offset));
   }
   inline uint64_t addr2offset(void* addr) { return (uint64_t)addr; }
   ChunkBasedAllocator(uint32_t max_access_threads)
