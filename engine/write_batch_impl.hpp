@@ -217,17 +217,10 @@ class BatchWriteLog {
   // Format of the BatchWriteLog
   // total_bytes | Stage | timestamp | N | StringLogEntry*N | M |
   // SortedLogEntry*M | K | HashLogEntry*K
-  std::string Serialize();
+  // dst is expected to have capacity of MaxBytes().
+  void EncodeTo(char* dst);
 
-  void Deserialize(char const* src);
-
-  static void Persist(char* dst, std::string const& seq) {
-    memcpy(dst, seq.data(), seq.size());
-    for (size_t i = 0; i < seq.size(); i += 64) {
-      _mm_clflushopt(&dst[i]);
-    }
-    _mm_mfence();
-  }
+  void DecodeFrom(char const* src);
 
   static void MarkProcessing(char* dst) {
     dst = &dst[sizeof(size_t)];

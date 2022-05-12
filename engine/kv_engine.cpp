@@ -508,7 +508,7 @@ Status KVEngine::MaybeRestoreBackup() {
       default:
         GlobalLogger.Error(
             "Recover from a backup instance with wrong backup stage\n");
-        return Status ::Abort;
+        return Status::Abort;
     }
     pmem_unmap(backup_mark, sizeof(BackupMark));
   }
@@ -528,10 +528,11 @@ Status KVEngine::batchWriteRestoreLogs() {
       continue;
     }
     std::uint64_t tid = std::stoul(fname);
+    std::string log_file_path = batch_log_dir_ + fname;
     size_t mapped_len;
     int is_pmem;
-    void* addr = pmem_map_file(fname.c_str(), BatchWriteLog::MaxBytes(), 0,
-                               0666, &mapped_len, &is_pmem);
+    void* addr = pmem_map_file(log_file_path.c_str(), BatchWriteLog::MaxBytes(),
+                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
     kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
     engine_thread_cache_[tid].batch_log = static_cast<char*>(addr);
   }
@@ -911,7 +912,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       log.HashDelete(arg.space.offset);
     }
   }
-  BatchWriteLog::Persist(tc.batch_log, log.Serialize());
+
+  log.EncodeTo(tc.batch_log);
 
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
@@ -982,7 +984,7 @@ Status KVEngine::batchWriteRollbackLogs() {
     }
 
     BatchWriteLog log;
-    log.Deserialize(seq);
+    log.DecodeFrom(seq);
 
     Status s;
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
