@@ -104,7 +104,19 @@ Status SortedCollectionRebuilder::initRebuildLists() {
   if (s != Status::Ok) {
     return s;
   }
-  for (DLRecord* header_record : linked_headers_) {
+
+  // Keep headers with same key together for recognize outdated ones
+  auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
+    int c = compare_string_view(header1->Key(), header2->Key());
+    if (c == 0) {
+      return header1->entry.meta.timestamp < header2->entry.meta.timestamp;
+    }
+    return c < 0;
+  };
+  std::sort(linked_headers_.begin(), linked_headers_.end(), cmp);
+
+  for (size_t i = 0; i < linked_headers_.size(); i++) {
+    DLRecord* header_record = linked_headers_[i];
     // Decode header
     std::string collection_name = string_view_2_string(header_record->Key());
     CollectionIDType id;
@@ -158,6 +170,11 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       bool outdated =
           valid_version_record->entry.meta.type == SortedHeaderDelete ||
           TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
+      // if there are newer version of this collection
+      outdated = outdated || (i + 1 < linked_headers_.size() &&
+                              equal_string_view(linked_headers_[i + 1]->Key(),
+                                                header_record->Key()));
+
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
