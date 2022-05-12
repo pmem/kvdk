@@ -118,11 +118,12 @@ Status SortedCollectionRebuilder::initRebuildLists() {
 
   for (size_t i = 0; i < linked_headers_.size(); i++) {
     DLRecord* header_record = linked_headers_[i];
-    // If there are newer version of this header, it indicates system crashed
-    // while updating header of a empty skiplist in previous run
     if (i + 1 < linked_headers_.size() &&
         equal_string_view(linked_headers_[i + 1]->Key(),
                           header_record->Key())) {
+      // There are newer version of this header, it indicates system crashed
+      // while updating header of a empty skiplist in previous run before break
+      // header linkage.
       kvdk_assert(
           header_record->prev == header_record->next &&
               header_record->prev == pmem_allocator->addr2offset(header_record),
