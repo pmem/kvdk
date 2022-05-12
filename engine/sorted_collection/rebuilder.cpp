@@ -100,6 +100,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
 }
 
 Status SortedCollectionRebuilder::initRebuildLists() {
+  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
   Status s = kv_engine_->MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -114,23 +115,27 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     return c < 0;
   };
   std::sort(linked_headers_.begin(), linked_headers_.end(), cmp);
-  std::vector<SpaceEntry> outdated_headers;
 
   for (size_t i = 0; i < linked_headers_.size(); i++) {
     DLRecord* header_record = linked_headers_[i];
-    // if there are newer version of this header
+    // If there are newer version of this header, it indicates system crashed
+    // while updating header of a empty skiplist in previous run
     if (i + 1 < linked_headers_.size() &&
         equal_string_view(linked_headers_[i + 1]->Key(),
                           header_record->Key())) {
-      auto header_offset =
-          kv_engine_->pmem_allocator_->addr2offset(header_record);
-      kvdk_assert(header_record->prev == header_record->next &&
-                      header_record->prev == header_offset,
-                  "outdated header record with valid linkage should always "
-                  "point to it self");
-      outdated_headers.emplace_back(header_offset,
-                                    header_record->GetRecordSize());
-      header_record->Destroy();
+      kvdk_assert(
+          header_record->prev == header_record->next &&
+              header_record->prev == pmem_allocator->addr2offset(header_record),
+          "outdated header record with valid linkage should always "
+          "point to it self");
+      // Break the linkage
+      auto newer_offset = pmem_allocator->addr2offset(linked_headers_[i + 1]);
+      header_record->PersistPrevNT(newer_offset);
+      kvdk_assert(
+          !Skiplist::CheckRecordPrevLinkage(header_record, pmem_allocator) &&
+              !Skiplist::CheckReocrdNextLinkage(header_record, pmem_allocator),
+          "");
+      addUnlinkedRecord(header_record);
       continue;
     }
 
@@ -166,8 +171,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       skiplist =
           std::
               make_shared<Skiplist>(header_record, collection_name, id,
-                                    comparator,
-                                    kv_engine_->pmem_allocator_.get(),
+                                    comparator, pmem_allocator,
                                     kv_engine_->hash_table_.get(),
                                     kv_engine_->skiplist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
@@ -179,8 +183,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
 
       if (valid_version_record != header_record) {
         Skiplist::Replace(header_record, valid_version_record, nullptr,
-                          kv_engine_->pmem_allocator_.get(),
-                          kv_engine_->skiplist_locks_.get());
+                          pmem_allocator, kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(header_record);
       }
 
@@ -191,7 +194,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
+            pmem_allocator, kv_engine_->hash_table_.get(),
             kv_engine_->skiplist_locks_.get(), false);
         {
           std::lock_guard<SpinMutex> lg(lock_);
@@ -200,7 +203,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       } else {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
+            pmem_allocator, kv_engine_->hash_table_.get(),
             kv_engine_->skiplist_locks_.get(), s_configs.index_with_hashtable);
         {
           std::lock_guard<SpinMutex> lg(lock_);
@@ -222,7 +225,6 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     }
   }
   linked_headers_.clear();
-  kv_engine_->pmem_allocator_->BatchFree(outdated_headers);
   return s;
 }
 
