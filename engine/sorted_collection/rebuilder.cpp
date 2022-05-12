@@ -114,9 +114,26 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     return c < 0;
   };
   std::sort(linked_headers_.begin(), linked_headers_.end(), cmp);
+  std::vector<SpaceEntry> outdated_headers;
 
   for (size_t i = 0; i < linked_headers_.size(); i++) {
     DLRecord* header_record = linked_headers_[i];
+    // if there are newer version of this header
+    if (i + 1 < linked_headers_.size() &&
+        equal_string_view(linked_headers_[i + 1]->Key(),
+                          header_record->Key())) {
+      auto header_offset =
+          kv_engine_->pmem_allocator_->addr2offset(header_record);
+      kvdk_assert(header_record->prev == header_record->next &&
+                      header_record->prev == header_offset,
+                  "outdated header record with valid linkage should always "
+                  "point to it self");
+      outdated_headers.emplace_back(header_offset,
+                                    header_record->GetRecordSize());
+      header_record->Destroy();
+      continue;
+    }
+
     // Decode header
     std::string collection_name = string_view_2_string(header_record->Key());
     CollectionIDType id;
@@ -170,10 +187,6 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       bool outdated =
           valid_version_record->entry.meta.type == SortedHeaderDelete ||
           TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
-      // if there are newer version of this collection
-      outdated = outdated || (i + 1 < linked_headers_.size() &&
-                              equal_string_view(linked_headers_[i + 1]->Key(),
-                                                header_record->Key()));
 
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
@@ -209,6 +222,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     }
   }
   linked_headers_.clear();
+  kv_engine_->pmem_allocator_->BatchFree(outdated_headers);
   return s;
 }
 
