@@ -171,7 +171,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     std::shared_ptr<Skiplist> skiplist;
     if (valid_version_record == nullptr ||
         Skiplist::SkiplistID(valid_version_record) != id) {
-      // No valid version, or valid version header belong to another linked
+      // No valid version, or valid version header belongs to another linked
       // skiplist with same name
       skiplist =
           std::
