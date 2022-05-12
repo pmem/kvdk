@@ -106,21 +106,22 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     return s;
   }
 
-  // Keep headers with same key together for recognize outdated ones
+  // Keep headers with same id together for recognize outdated ones
   auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
-    int c = compare_string_view(header1->Key(), header2->Key());
-    if (c == 0) {
+    auto id1 = Skiplist::SkiplistID(header1);
+    auto id2 = Skiplist::SkiplistID(header2);
+    if (id1 == id2) {
       return header1->entry.meta.timestamp < header2->entry.meta.timestamp;
     }
-    return c < 0;
+    return id1 < id2;
   };
   std::sort(linked_headers_.begin(), linked_headers_.end(), cmp);
 
   for (size_t i = 0; i < linked_headers_.size(); i++) {
     DLRecord* header_record = linked_headers_[i];
     if (i + 1 < linked_headers_.size() &&
-        equal_string_view(linked_headers_[i + 1]->Key(),
-                          header_record->Key())) {
+        Skiplist::SkiplistID(header_record) ==
+            Skiplist::SkiplistID(linked_headers_[i + 1])) {
       // There are newer version of this header, it indicates system crashed
       // while updating header of a empty skiplist in previous run before break
       // header linkage.
@@ -168,7 +169,14 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     // Check version and rebuild index
     DLRecord* valid_version_record = findCheckpointVersion(header_record);
     std::shared_ptr<Skiplist> skiplist;
-    if (valid_version_record == nullptr) {
+    if (valid_version_record == nullptr ||
+        Skiplist::SkiplistID(valid_version_record) != id) {
+      // No valid version, or valid version header belong to another linked
+      // skiplist with same name
+      kvdk_assert(valid_version_record == nullptr ||
+                      Skiplist::CheckRecordLinkage(valid_version_record,
+                                                   pmem_allocator),
+                  "");
       skiplist =
           std::
               make_shared<Skiplist>(header_record, collection_name, id,
