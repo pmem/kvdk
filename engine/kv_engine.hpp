@@ -331,7 +331,7 @@ class KVEngine : public Engine {
   //  BatchWrite() sort the keys and remove duplicants,
   //  lock the keys/fields in HashTable,
   //  and allocate spaces and persist BatchWriteLog
-  // Stage 2: Execute
+  // Stage 2: Execution
   //  Batches are dispatched to different data types
   //  Each data type update keys/fields
   //  Outdated records are not purged in this stage.

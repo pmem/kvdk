@@ -1202,7 +1202,6 @@ namespace KVDK_NAMESPACE {
 /// TODO: move this into VersionController.
 Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
-  TimeStampType snapshot_ts = static_cast<SnapshotImpl*>(ret)->GetTimestamp();
 
   if (make_checkpoint) {
     std::lock_guard<std::mutex> lg(checkpoint_lock_);
