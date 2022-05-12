@@ -173,10 +173,6 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         Skiplist::SkiplistID(valid_version_record) != id) {
       // No valid version, or valid version header belong to another linked
       // skiplist with same name
-      kvdk_assert(valid_version_record == nullptr ||
-                      Skiplist::CheckRecordLinkage(valid_version_record,
-                                                   pmem_allocator),
-                  "");
       skiplist =
           std::
               make_shared<Skiplist>(header_record, collection_name, id,
