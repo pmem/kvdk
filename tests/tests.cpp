@@ -965,6 +965,17 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       s_configs.index_with_hashtable = index_with_hashtable;
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
                 Status::Ok);
+      // Test destroy a collction
+      std::string empty_skiplist("empty_skiplist");
+      size_t empty_skiplist_size;
+      ASSERT_EQ(engine->CreateSortedCollection(empty_skiplist, s_configs),
+                Status::Ok);
+      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+                Status::Ok);
+      ASSERT_EQ(empty_skiplist_size, 0);
+      ASSERT_EQ(engine->DestroySortedCollection(empty_skiplist), Status::Ok);
+      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+                Status::NotFound);
       // insert and delete some keys, then re-insert some deleted keys
       int count = 100;
       std::string global_skiplist =
@@ -1014,6 +1025,8 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       // reopen and restore engine and try gets
       ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
                 Status::Ok);
+      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+                Status::NotFound);
       for (size_t id = 0; id < num_threads; id++) {
         std::string t_skiplist(thread_skiplist + std::to_string(id));
         std::string key_prefix(id, 'a');
