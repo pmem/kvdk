@@ -10,7 +10,7 @@
 
 namespace KVDK_NAMESPACE {
 
-class WriteBatch2 {
+class WriteBatch {
  public:
   virtual void StringPut(std::string const& key, std::string const& value) = 0;
   virtual void StringDelete(std::string const& key) = 0;
@@ -26,7 +26,7 @@ class WriteBatch2 {
 
   virtual void Clear() = 0;
 
-  virtual ~WriteBatch2() = default;
+  virtual ~WriteBatch() = default;
 };
 
 }  // namespace KVDK_NAMESPACE

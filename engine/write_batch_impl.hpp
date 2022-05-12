@@ -11,7 +11,7 @@
 
 namespace KVDK_NAMESPACE {
 
-class WriteBatchImpl final : public WriteBatch2 {
+class WriteBatchImpl final : public WriteBatch {
  public:
   enum class Op { Put, Delete };
 

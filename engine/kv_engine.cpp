@@ -728,7 +728,7 @@ Status KVEngine::maybeInitBatchLogFile() {
   return Status::Ok;
 }
 
-Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch2> const& batch) {
+Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
   WriteBatchImpl const* batch_impl =
       dynamic_cast<WriteBatchImpl const*>(batch.get());
   if (batch_impl == nullptr) {

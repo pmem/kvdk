@@ -49,9 +49,9 @@ class Engine {
                         void* modify_args,
                         const WriteOptions& options = WriteOptions()) = 0;
 
-  virtual Status BatchWrite(std::unique_ptr<WriteBatch2> const& batch) = 0;
+  virtual Status BatchWrite(std::unique_ptr<WriteBatch> const& batch) = 0;
 
-  virtual std::unique_ptr<WriteBatch2> WriteBatchCreate() = 0;
+  virtual std::unique_ptr<WriteBatch> WriteBatchCreate() = 0;
 
   // Search the STRING-type KV of "key" and store the corresponding value to
   // *value on success. If the "key" does not exist, return NotFound.

@@ -337,10 +337,10 @@ class KVEngine : public Engine {
   //  Outdated records are not purged in this stage.
   // Stage 3: Publish
   //  Each data type commits its batch, clean up outdated data.
-  Status BatchWrite(std::unique_ptr<WriteBatch2> const& batch) final;
+  Status BatchWrite(std::unique_ptr<WriteBatch> const& batch) final;
 
-  std::unique_ptr<WriteBatch2> WriteBatchCreate() final {
-    return std::unique_ptr<WriteBatch2>{new WriteBatchImpl{}};
+  std::unique_ptr<WriteBatch> WriteBatchCreate() final {
+    return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
   }
 
   Status StringSetImpl(const StringView& key, const StringView& value,
