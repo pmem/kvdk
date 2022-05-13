@@ -756,7 +756,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
       values[tid][i] = GetRandomString(120);
-      ASSERT_EQ(engine->Set(keys[tid][i], values[tid][i]), Status::Ok);
+      ASSERT_EQ(engine->Put(keys[tid][i], values[tid][i]), Status::Ok);
     }
   };
 
@@ -769,7 +769,6 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
       } else {
         values[tid][i].clear();
         batch->StringDelete(keys[tid][i]);
-
       }
       if ((i + 1) % batch_size == 0) {
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
@@ -2012,7 +2011,7 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
       values[tid][i] = GetRandomString(120);
-      ASSERT_EQ(engine->Set(keys[tid][i], values[tid][i]), Status::Ok);
+      ASSERT_EQ(engine->Put(keys[tid][i], values[tid][i]), Status::Ok);
     }
   };
 

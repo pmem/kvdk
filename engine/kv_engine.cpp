@@ -805,7 +805,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     args.space = pmem_allocator_->Allocate(
-        StringRecord::RecordSize(string_op.key, string_op.value));
+        StringRecord::RecordSize(args.key, args.value));
     if (args.space.size == 0) {
       return Status::PmemOverflow;
     }
@@ -833,7 +833,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     SortedWriteArgs args;
     args.Assign(sorted_op);
     args.ts = bw_token.Timestamp();
-    args.res = lookupElem<true>(slist->InternalKey(args.field), SortedElemType);
+    std::string internal_key = slist->InternalKey(args.field);
+    args.res = lookupElem<true>(internal_key, SortedElemType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
     }
@@ -842,9 +843,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       // No need to do anything for delete a non-existing Sorted element
       continue;
     }
-    args.space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(args.field, args.value) +
-                                  sizeof(CollectionIDType));
+    args.space = pmem_allocator_->Allocate(
+        DLRecord::RecordSize(internal_key, args.value));
     if (args.space.size == 0) {
       return Status::PmemOverflow;
     }
@@ -870,7 +870,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     HashWriteArgs args;
     args.Assign(hash_op);
     args.ts = bw_token.Timestamp();
-    args.res = lookupElem<true>(hlist->InternalKey(args.field), HashElem);
+    std::string internal_key = hlist->InternalKey(args.field);
+    args.res = lookupElem<true>(internal_key, HashElem);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
     }
@@ -879,9 +880,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       // No need to do anything for delete a non-existing Sorted element
       continue;
     }
-    args.space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(args.field, args.value) +
-                                  sizeof(CollectionIDType));
+    args.space = pmem_allocator_->Allocate(
+        DLRecord::RecordSize(internal_key, args.value));
     if (args.space.size == 0) {
       return Status::PmemOverflow;
     }
