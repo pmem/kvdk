@@ -21,6 +21,7 @@
 #include "configs.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
+#include "sorted_collection/iterator.hpp"
 #include "structures.hpp"
 #include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
@@ -460,7 +461,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_file,
             record =
                 pmem_allocator_->offset2addr<StringRecord>(record->old_version);
           }
-          if (record && record->GetRecordType() == StringDataRecord) {
+          if (record && record->GetRecordType() == StringDataRecord &&
+              !record->HasExpired()) {
             backup.Append(StringDataRecord, record->Key(), record->Value());
           } else {
             kvdk_assert(record == nullptr ||
@@ -471,8 +473,29 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_file,
         }
         case SortedHeader:
         case SortedHeaderDelete: {
+          DLRecord* header = slot_iter->GetIndex().skiplist->HeaderRecord();
+          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+            header =
+                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+          }
+          if (header && header->GetRecordType() == SortedHeader &&
+              !header->HasExpired()) {
+            backup.Append(SortedHeader, header->Key(), header->Value());
+            auto backup_skiplist = getSkiplist(Skiplist::SkiplistID(header));
+            kvdk_assert(backup_skiplist != nullptr,
+                        "Backup skiplist should exist in map");
+            auto skiplist_iter =
+                SortedIterator(skiplist, pmem_allocator_.get(),
+                               static_cast<SnapshotImpl*>(snapshot), false);
+            for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
+                 skiplist_iter.Next()) {
+              backup.Append(SortedElem, skiplist_iter.Key(),
+                            skiplist_iter.Value());
+            }
+          }
         }
         default:
+          // Hash and list backup is not supported yet
           break;
       }
     }

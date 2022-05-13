@@ -449,6 +449,11 @@ class KVEngine : public Engine {
     skiplists_.emplace(skiplist->ID(), skiplist);
   }
 
+  std::shared_ptr<Skiplist> getSkiplist(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(skiplists_mu_);
+    return skiplists_[id];
+  }
+
   inline std::string data_file() { return data_file(dir_); }
 
   inline static std::string data_file(const std::string& instance_path) {
