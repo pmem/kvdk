@@ -337,7 +337,7 @@ class KVEngine : public Engine {
 
   Status MaybeInitPendingBatchFile();
 
-  Status StringSetImpl(const StringView& key, const StringView& value,
+  Status StringPutImpl(const StringView& key, const StringView& value,
                        const WriteOptions& write_options);
 
   Status StringDeleteImpl(const StringView& key);
@@ -345,10 +345,10 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
+  Status SortedPutImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);
 
-  Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
+  Status SortedDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
   Status Recovery();
 

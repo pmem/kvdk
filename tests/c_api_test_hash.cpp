@@ -41,7 +41,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   std::vector<umap> local_copies(num_threads);
   std::mutex mu;
 
-  auto HSet = [&](size_t tid) {
+  auto HPut = [&](size_t tid) {
     umap& local_copy = local_copies[tid];
     for (size_t j = 0; j < count; j++) {
       std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
@@ -156,12 +156,12 @@ TEST_F(EngineCAPITestBase, Hash) {
 
   for (size_t i = 0; i < 3; i++) {
     RebootDB();
-    LaunchNThreads(num_threads, HSet);
+    LaunchNThreads(num_threads, HPut);
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
     LaunchNThreads(num_threads, HashLength);
-    LaunchNThreads(num_threads, HSet);
+    LaunchNThreads(num_threads, HPut);
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);

@@ -527,27 +527,27 @@ class EngineTestBase : public testing::Test {
     shadow_hashes_engines[collection_name]->UpdatePossibleStates();
   }
 
-  void SortedSetsAllSSet(std::string const& collection_name) {
+  void SortedAllPut(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_sorted_engines[collection_name]->EvenXSetOddXSet(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
 
-    std::cout << "[Testing] Execute SortedSetsAllSSet in " << collection_name
+    std::cout << "[Testing] Execute SortedAllPut in " << collection_name
               << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
     shadow_sorted_engines[collection_name]->UpdatePossibleStates();
   }
 
-  void SortedSetsEvenSSetOddSDelete(std::string const& collection_name) {
+  void SortedEvenPutOddDelete(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_sorted_engines[collection_name]->EvenXSetOddXDelete(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
 
-    std::cout << "[Testing] Execute SortedSetsEvenSSetOddSDelete in "
+    std::cout << "[Testing] Execute SortedEvenPutOddDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
     shadow_sorted_engines[collection_name]->UpdatePossibleStates();
@@ -589,7 +589,7 @@ class EngineTestBase : public testing::Test {
         kvdk_testing::IteratingDirection::Backward);
   }
 
-  void CheckSortedSetsCollection(std::string collection_name) {
+  void CheckSortedCollection(std::string collection_name) {
     std::cout << "[Testing] Checking Sorted Collection: " << collection_name
               << std::endl;
     shadow_sorted_engines[collection_name]->CheckGetter();
@@ -738,7 +738,7 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   }
 }
 
-TEST_F(EngineStressTest, SortedSetsSSetOnly) {
+TEST_F(EngineStressTest, SortedPutOnly) {
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -756,16 +756,16 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
     for (size_t i = 0; i < n_reboot; i++) {
       std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
-      SortedSetsAllSSet(global_collection_name);
-      CheckSortedSetsCollection(global_collection_name);
+      SortedAllPut(global_collection_name);
+      CheckSortedCollection(global_collection_name);
 
       RebootDB();
-      CheckSortedSetsCollection(global_collection_name);
+      CheckSortedCollection(global_collection_name);
     }
   }
 }
 
-TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
+TEST_F(EngineStressTest, SortedPutAndDelete) {
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -783,11 +783,11 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
     for (size_t i = 0; i < n_reboot; i++) {
       std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
-      SortedSetsEvenSSetOddSDelete(global_collection_name);
-      CheckSortedSetsCollection(global_collection_name);
+      SortedEvenPutOddDelete(global_collection_name);
+      CheckSortedCollection(global_collection_name);
 
       RebootDB();
-      CheckSortedSetsCollection(global_collection_name);
+      CheckSortedCollection(global_collection_name);
     }
   }
 }
@@ -873,7 +873,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
   }
 }
 
-TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
+TEST_F(EngineHotspotTest, SortedMultipleHotspot) {
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -892,13 +892,13 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
       std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
       for (size_t i = 0; i < n_repeat; i++) {
-        SortedSetsAllSSet(global_collection_name);
-        CheckSortedSetsCollection(global_collection_name);
-        SortedSetsEvenSSetOddSDelete(global_collection_name);
-        CheckSortedSetsCollection(global_collection_name);
+        SortedAllPut(global_collection_name);
+        CheckSortedCollection(global_collection_name);
+        SortedEvenPutOddDelete(global_collection_name);
+        CheckSortedCollection(global_collection_name);
       }
       RebootDB();
-      CheckSortedSetsCollection(global_collection_name);
+      CheckSortedCollection(global_collection_name);
     }
   }
 }

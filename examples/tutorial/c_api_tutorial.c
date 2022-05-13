@@ -626,13 +626,13 @@ typedef struct {
   char const* data;
   size_t len;
   size_t ret;
-} HSetArgs;
+} HPutArgs;
 // new_data is not touched as long as caller does not pass a free_func to
-// KVDKHashModify This avoids a malloc() in HSetNXFunc and a free() in
+// KVDKHashModify This avoids a malloc() in HPutNXFunc and a free() in
 // KVDKHashModify()
-int HSetNXFunc(char const* old_data, size_t old_len, char** new_data,
+int HPutNXFunc(char const* old_data, size_t old_len, char** new_data,
                size_t* new_len, void* args) {
-  HSetArgs* my_args = (HSetArgs*)args;
+  HPutArgs* my_args = (HPutArgs*)args;
   if (old_data == NULL) {
     assert(old_len == 0);
     *new_data = (char*)my_args->data;
@@ -644,9 +644,9 @@ int HSetNXFunc(char const* old_data, size_t old_len, char** new_data,
     return KVDK_MODIFY_NOOP;
   }
 }
-int HSetFunc(char const* old_data, size_t old_len, char** new_data,
+int HPutFunc(char const* old_data, size_t old_len, char** new_data,
              size_t* new_len, void* args) {
-  HSetArgs* my_args = (HSetArgs*)args;
+  HPutArgs* my_args = (HPutArgs*)args;
   *new_data = (char*)my_args->data;
   *new_len = my_args->len;
   if (old_data == NULL) {
@@ -666,11 +666,11 @@ void HashModifyExample(KVDKEngine* engine) {
   char* resp_data;
   size_t resp_len;
 
-  HSetArgs args;
+  HPutArgs args;
   args.data = value1;
   args.len = strlen(value1);
   KVDKStatus s = KVDKHashCreate(engine, key, strlen(key));
-  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetNXFunc,
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HPutNXFunc,
                      &args, NULL);
   assert(s == Ok);
   assert(args.ret == 1);
@@ -683,7 +683,7 @@ void HashModifyExample(KVDKEngine* engine) {
 
   args.data = value2;
   args.len = strlen(value2);
-  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetNXFunc,
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HPutNXFunc,
                      &args, NULL);
   assert(s == Ok);
   assert(args.ret == 0);  // Fail to set since the field already exists
@@ -695,7 +695,7 @@ void HashModifyExample(KVDKEngine* engine) {
          0);  // field is untouched
   free(resp_data);
 
-  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetFunc,
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HPutFunc,
                      &args, NULL);
   assert(s == Ok);
   assert(args.ret == 0);  // Update, no field added

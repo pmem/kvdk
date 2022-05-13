@@ -175,7 +175,7 @@ Status KVEngine::SortedPut(const StringView collection,
   kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,
               "pointer type of skiplist in hash entry should be skiplist");
   skiplist = ret.entry.GetIndex().skiplist;
-  return SortedSetImpl(skiplist, user_key, value);
+  return SortedPutImpl(skiplist, user_key, value);
 }
 
 Status KVEngine::SortedDelete(const StringView collection,
@@ -199,7 +199,7 @@ Status KVEngine::SortedDelete(const StringView collection,
               "pointer type of skiplist in hash entry should be skiplist");
   skiplist = ret.entry.GetIndex().skiplist;
 
-  return SDeleteImpl(skiplist, user_key);
+  return SortedDeleteImpl(skiplist, user_key);
 }
 
 Iterator* KVEngine::NewSortedIterator(const StringView collection,
@@ -236,7 +236,7 @@ void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
   delete iter;
 }
 
-Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
+Status KVEngine::SortedDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key)) {
     return Status::InvalidDataSize;
@@ -274,7 +274,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
   return ret.s;
 }
 
-Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
+Status KVEngine::SortedPutImpl(Skiplist* skiplist, const StringView& user_key,
                                const StringView& value) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
