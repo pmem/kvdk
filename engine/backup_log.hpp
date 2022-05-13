@@ -10,6 +10,7 @@
 #include "data_record.hpp"
 #include "fcntl.h"
 #include "kvdk/configs.hpp"
+#include "sys/mman.h"
 
 namespace KVDK_NAMESPACE {
 
@@ -18,15 +19,19 @@ constexpr size_t kMaxBackupLogBufferSize = 128 << 20;
 class BackupLog {
  private:
   std::string delta_;
-  int log_file_{-1};
+  char* log_file_;
+  size_t file_size_;
+  int fd_{-1};
 
   Status persistDelta() {
-    int ret = write(log_file_, delta_.data(), delta_.size());
-    if (ret != static_cast<int>(delta_.size())) {
+    // TODO: expand map file
+    if (false) {
       GlobalLogger.Error("IOError while persist backup log: %s\n",
                          strerror(errno));
       return Status::IOError;
     }
+    memcpy(log_file_ + file_size_, delta_.data(), delta_.size());
+    file_size_ += delta_.size();
     delta_.clear();
     return Status::Ok;
   }
@@ -34,22 +39,31 @@ class BackupLog {
  public:
   struct LogRecord {
     RecordType type;
-    StringView key;
-    StringView val;
+    std::string key;
+    std::string val;
   };
 
   class LogIterator {
    public:
-    LogRecord Record() { return LogRecord(); }
-    void Next() {}
-    bool Valid() {}
+    LogRecord Record() { return curr_; }
+    void Next() {
+      if (Valid()) {
+        valid_ = FetchUint32(&records_on_file_, (uint32_t*)&curr_.type) &&
+                 FetchFixedString(&records_on_file_, &curr_.key) &&
+                 FetchFixedString(&records_on_file_, &curr_.val);
+      }
+    }
+    bool Valid() { return valid_; }
 
    private:
+    StringView records_on_file_;
+    LogRecord curr_;
+    bool valid_ = true;
   };
 
   ~BackupLog() {
-    if (log_file_ >= 0) {
-      close(log_file_);
+    if (fd_ >= 0) {
+      close(fd_);
     }
   }
 
@@ -60,22 +74,14 @@ class BackupLog {
 
   // Init a new backup log
   Status Init(const std::string& backup_log, const Configs& configs) {
-    log_file_ = open(backup_log.c_str(), O_CREAT | O_RDWR, 0666);
-    if (log_file_ < 0) {
+    fd_ = open(backup_log.c_str(), O_CREAT | O_RDWR, 0666);
+    if (fd_ >= 0) {
+      log_file_ = (char*)mmap(nullptr, 0, PROT_WRITE | PROT_READ, 0666, fd_, 0);
+      file_size_ = 0;
+    };
+    if (log_file_ == nullptr) {
       GlobalLogger.Error("Init bakcup log file %s error: %s\n",
                          backup_log.c_str(), strerror(errno));
-      return Status::IOError;
-    }
-    ImmutableConfigs imm_configs;
-    imm_configs.pmem_block_size = configs.pmem_block_size;
-    imm_configs.pmem_segment_blocks = configs.pmem_segment_blocks;
-    imm_configs.validation_flag = 1;
-    // TODO persist immutable configs
-    int ret = write(log_file_, &imm_configs, sizeof(ImmutableConfigs));
-    if (ret != sizeof(ImmutableConfigs)) {
-      GlobalLogger.Error(
-          "Write immutable configs error while init backup log file %s: %s\n",
-          backup_log.c_str(), strerror(errno));
       return Status::IOError;
     }
     return Status::Ok;
@@ -83,8 +89,12 @@ class BackupLog {
 
   // Open a existing backup log
   Status Open(const std::string& backup_log) {
-    log_file_ = open(backup_log.c_str(), O_RDWR, 0666);
-    if (log_file_ < 0) {
+    fd_ = open(backup_log.c_str(), O_RDWR, 0666);
+    if (fd_ >= 0) {
+      log_file_ = (char*)mmap(nullptr, 0, PROT_WRITE | PROT_READ, 0666, fd_, 0);
+      file_size_ = 0;
+    }
+    if (log_file_ == nullptr) {
       GlobalLogger.Error("Open bakcup log file %s error: %s\n",
                          backup_log.c_str(), strerror(errno));
       return Status::IOError;
@@ -106,7 +116,7 @@ class BackupLog {
     if (s != Status::Ok) {
       return s;
     }
-    fsync(log_file_);
+    fsync(fd_);
     return Status::Ok;
   }
 };
