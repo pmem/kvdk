@@ -442,7 +442,7 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
 Status KVEngine::Backup(const pmem::obj::string_view backup_file,
                         const Snapshot* snapshot) {
   BackupLog backup;
-  Status s = backup.Init(string_view_2_string(backup_file), configs_);
+  Status s = backup.Init(string_view_2_string(backup_file));
   if (s != Status::Ok) {
     return s;
   }
@@ -484,9 +484,9 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_file,
             auto backup_skiplist = getSkiplist(Skiplist::SkiplistID(header));
             kvdk_assert(backup_skiplist != nullptr,
                         "Backup skiplist should exist in map");
-            auto skiplist_iter =
-                SortedIterator(skiplist, pmem_allocator_.get(),
-                               static_cast<SnapshotImpl*>(snapshot), false);
+            auto skiplist_iter = SortedIterator(
+                backup_skiplist.get(), pmem_allocator_.get(),
+                static_cast<const SnapshotImpl*>(snapshot), false);
             for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
                  skiplist_iter.Next()) {
               backup.Append(SortedElem, skiplist_iter.Key(),
@@ -498,6 +498,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_file,
           // Hash and list backup is not supported yet
           break;
       }
+      slot_iter++;
     }
     hashtable_iterator.Next();
   }
@@ -581,7 +582,7 @@ Status KVEngine::RestorePendingBatch() {
 }
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
-  CollectionIDType max_id = 0;
+  // Todo: make this multi-thread
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -597,54 +598,44 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
     auto record = iter.Record();
     switch (record.type) {
       case StringDataRecord: {
-        s = Set(record.key, record.val, wo);
+        s = Put(record.key, record.val, wo);
         iter.Next();
         break;
       }
       case SortedHeader: {
-        // Build skiplist
+        // Maybe reuse id?
         CollectionIDType id;
         SortedCollectionConfigs s_configs;
         s = Skiplist::DecodeSortedCollectionValue(record.val, id, s_configs);
         if (s != Status::Ok) {
           break;
         }
-        auto comparator = comparators_.GetComparator(s_configs.comparator_name);
-        if (comparator == nullptr) {
-          return Status::Abort;
-        }
-        auto space_entry = pmem_allocator_->Allocate(
-            DLRecord::RecordSize(record.key, record.val));
-        if (space_entry.size == 0) {
-          s = Status::PmemOverflow;
+        std::shared_ptr<Skiplist> skiplist = nullptr;
+        s = buildSkiplist(record.key, s_configs, skiplist);
+        if (s != Status::Ok) {
           break;
         }
-        DLRecord* header_record = DLRecord::PersistDLRecord(
-            pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
-            version_controller_.GetCurrentTimestamp(), SortedHeader,
-            kNullPMemOffset, space_entry.offset, space_entry.offset, record.key,
-            record.val);
-        max_id = std::max(max_id, id);
-        auto skiplist = std::make_shared<Skiplist>(
-            header_record, record.key, id, comparator, pmem_allocator_.get(),
-            hash_table_.get(), skiplist_locks_.get(),
-            s_configs.index_with_hashtable);
-        addSkiplistToMap(skiplist);
-        // TODO insert to hash table
         iter.Next();
-        record = iter.Record();
         // the header is followed by all its elems in backup log
-        while (record.type == SortedElem) {
-          auto ret = skiplist->Set(record.key, record.val,
+        while (iter.Valid()) {
+          record = iter.Record();
+          if (record.type != SortedElem) {
+            break;
+          }
+          auto ret = skiplist->Put(record.key, record.val,
                                    version_controller_.GetCurrentTimestamp());
           s = ret.s;
           if (s != Status::Ok) {
             break;
           }
           iter.Next();
-          record = iter.Record();
         }
         break;
+      }
+      case SortedElem: {
+        GlobalLogger.Error("sorted elems not lead by header in backup log %s\n",
+                           backup_file.c_str());
+        return Status::Abort;
       }
       default:
         GlobalLogger.Error("unsupported record type %u in backup log %s\n",

@@ -454,6 +454,10 @@ class KVEngine : public Engine {
     return skiplists_[id];
   }
 
+  Status buildSkiplist(const StringView& name,
+                       const SortedCollectionConfigs& s_configs,
+                       std::shared_ptr<Skiplist>& skiplist);
+
   inline std::string data_file() { return data_file(dir_); }
 
   inline static std::string data_file(const std::string& instance_path) {

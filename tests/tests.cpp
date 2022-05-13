@@ -475,7 +475,6 @@ TEST_F(EngineBasicTest, TestThreadManager) {
 
 // Test iterator/backup/checkpoint on a snapshot
 TEST_F(EngineBasicTest, TestBasicSnapshot) {
-  return;
   uint32_t num_threads = 16;
   int count = 100;
   configs.max_access_threads = num_threads;

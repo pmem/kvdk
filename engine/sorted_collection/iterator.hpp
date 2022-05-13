@@ -14,7 +14,7 @@ class KVEngine;
 class SortedIterator : public Iterator {
  public:
   SortedIterator(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
-                 SnapshotImpl* snapshot, bool own_snapshot)
+                 const SnapshotImpl* snapshot, bool own_snapshot)
       : skiplist_(skiplist),
         pmem_allocator_(pmem_allocator),
         current_(nullptr),
@@ -112,7 +112,7 @@ class SortedIterator : public Iterator {
   Skiplist* skiplist_;
   const PMEMAllocator* pmem_allocator_;
   DLRecord* current_;
-  SnapshotImpl* snapshot_;
+  const SnapshotImpl* snapshot_;
   bool own_snapshot_;
 };
 }  // namespace KVDK_NAMESPACE

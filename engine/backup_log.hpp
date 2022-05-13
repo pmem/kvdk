@@ -24,15 +24,26 @@ class BackupLog {
   int fd_{-1};
 
   Status persistDelta() {
-    // TODO: expand map file
-    if (false) {
-      GlobalLogger.Error("IOError while persist backup log: %s\n",
+    GlobalLogger.Debug("call persist delta\n");
+    if (ftruncate64(fd_, file_size_ + delta_.size())) {
+      GlobalLogger.Error("Allocate space for backup log file error: %s\n",
                          strerror(errno));
       return Status::IOError;
     }
+    log_file_ = (char*)mmap(log_file_, file_size_ + delta_.size(),
+                            PROT_WRITE | PROT_READ, 00666, fd_, 0);
+
+    if (log_file_ == nullptr) {
+      GlobalLogger.Error("Map backup log file error: %s\n", strerror(errno));
+      return Status::IOError;
+    }
+    GlobalLogger.Debug("call persist delta memcpy\n");
     memcpy(log_file_ + file_size_, delta_.data(), delta_.size());
+    GlobalLogger.Debug("call persist delta memcpy ok\n");
     file_size_ += delta_.size();
     delta_.clear();
+    munmap(log_file_, file_size_);
+    GlobalLogger.Debug("call persist delta success\n");
     return Status::Ok;
   }
 
@@ -43,8 +54,16 @@ class BackupLog {
     std::string val;
   };
 
+  // Notice LogIterator would be invalid if append new records to log
   class LogIterator {
    public:
+    LogIterator(StringView records_on_file)
+        : records_on_file_(records_on_file) {
+      valid_ = FetchUint32(&records_on_file_, (uint32_t*)&curr_.type) &&
+               FetchFixedString(&records_on_file_, &curr_.key) &&
+               FetchFixedString(&records_on_file_, &curr_.val);
+    }
+
     LogRecord Record() { return curr_; }
     void Next() {
       if (Valid()) {
@@ -70,10 +89,12 @@ class BackupLog {
   BackupLog() = default;
   BackupLog(const BackupLog&) = delete;
 
-  LogIterator GetIterator() { return LogIterator(); }
+  LogIterator GetIterator() {
+    return LogIterator(StringView(log_file_, file_size_));
+  }
 
   // Init a new backup log
-  Status Init(const std::string& backup_log, const Configs& configs) {
+  Status Init(const std::string& backup_log) {
     fd_ = open(backup_log.c_str(), O_CREAT | O_RDWR, 0666);
     if (fd_ >= 0) {
       log_file_ = (char*)mmap(nullptr, 0, PROT_WRITE | PROT_READ, 0666, fd_, 0);
@@ -116,7 +137,6 @@ class BackupLog {
     if (s != Status::Ok) {
       return s;
     }
-    fsync(fd_);
     return Status::Ok;
   }
 };
