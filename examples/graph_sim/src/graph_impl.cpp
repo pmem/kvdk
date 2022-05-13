@@ -18,7 +18,7 @@ void EdgeList::EdgesListEncode(std::string* result) {
 }
 
 Status EdgeList::EdgeListDecode(std::string* input) {
-  uint64_t edges_num;
+  uint64_t edges_num = 0;
   GetFixed64(input, &edges_num);
 
   // We have the edge's DecodeFrom, so it's easy to decode the edge

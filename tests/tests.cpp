@@ -963,12 +963,12 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       // Test destroy a collction
       std::string empty_skiplist("empty_skiplist");
       size_t empty_skiplist_size;
-      ASSERT_EQ(engine->CreateSortedCollection(empty_skiplist, s_configs),
+      ASSERT_EQ(engine->SortedCreate(empty_skiplist, s_configs),
                 Status::Ok);
       ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
                 Status::Ok);
       ASSERT_EQ(empty_skiplist_size, 0);
-      ASSERT_EQ(engine->DestroySortedCollection(empty_skiplist), Status::Ok);
+      ASSERT_EQ(engine->SortedDestroy(empty_skiplist), Status::Ok);
       ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
                 Status::NotFound);
       // insert and delete some keys, then re-insert some deleted keys
@@ -1858,7 +1858,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
     ASSERT_EQ(ttl_time, kInvalidTTL);
 
     // set negative or 0 ttl time.
-    ASSERT_EQ(engine->CreateSortedCollection(sorted_collection), Status::Ok);
+    ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
     ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::Ok);
     ASSERT_EQ(ttl_time, kPersistTime);
     ASSERT_EQ(engine->Expire(sorted_collection, 0), Status::Ok);
