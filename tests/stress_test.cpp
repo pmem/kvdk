@@ -534,8 +534,8 @@ class EngineTestBase : public testing::Test {
           tid, grouped_keys[tid], grouped_values[tid]);
     };
 
-    std::cout << "[Testing] Execute SortedAllPut in " << collection_name
-              << "." << std::endl;
+    std::cout << "[Testing] Execute SortedAllPut in " << collection_name << "."
+              << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
     shadow_sorted_engines[collection_name]->UpdatePossibleStates();
   }

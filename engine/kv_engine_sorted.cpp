@@ -236,7 +236,8 @@ void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
   delete iter;
 }
 
-Status KVEngine::SortedDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
+Status KVEngine::SortedDeleteImpl(Skiplist* skiplist,
+                                  const StringView& user_key) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key)) {
     return Status::InvalidDataSize;

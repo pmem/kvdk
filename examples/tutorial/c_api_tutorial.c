@@ -481,7 +481,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     KVDKSortedCollectionConfigs* s_configs =
         KVDKCreateSortedCollectionConfigs();
     s = KVDKSortedCreate(kvdk_engine, sorted_collection,
-                                   strlen(sorted_collection), s_configs);
+                         strlen(sorted_collection), s_configs);
     assert(s == Ok);
     s = KVDKGetTTL(kvdk_engine, sorted_collection, strlen(sorted_collection),
                    &ttl_time);

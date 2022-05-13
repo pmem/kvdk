@@ -963,8 +963,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       // Test destroy a collction
       std::string empty_skiplist("empty_skiplist");
       size_t empty_skiplist_size;
-      ASSERT_EQ(engine->SortedCreate(empty_skiplist, s_configs),
-                Status::Ok);
+      ASSERT_EQ(engine->SortedCreate(empty_skiplist, s_configs), Status::Ok);
       ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
                 Status::Ok);
       ASSERT_EQ(empty_skiplist_size, 0);
