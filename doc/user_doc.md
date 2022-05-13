@@ -108,17 +108,17 @@ A string value can be at max 64MB in length by default. The maximum length can b
 ## Collections
 All Key-Value pairs(KV-Pairs) are organized into collections.
 
-There is an anonymous global collection with KV-Pairs directly accessible via Get, Set, Delete operations. The anonymous global collection is unsorted.
+There is an anonymous global collection with KV-Pairs directly accessible via Get, Put, Delete operations. The anonymous global collection is unsorted.
 
 Users can also create named collections.
 
-KVDK currently supports sorted named collections. Users can iterate forward or backward starting from an arbitrary point(at a key or between two keys) by an iterator. Elements can also be directly accessed via SortedGet, SortedSet, SortedDelete operations.
+KVDK currently supports sorted named collections. Users can iterate forward or backward starting from an arbitrary point(at a key or between two keys) by an iterator. Elements can also be directly accessed via SortedGet, SortedPut, SortedDelete operations.
 
 ## Reads and Writes in Anonymous Global Collection
 
-A KVDK instance provides Get, Set, Delete methods to query/modify/delete entries. 
+A KVDK instance provides Get, Put, Delete methods to query/modify/delete entries. 
 
-The following code performs a series of Get, Set and Delete operations.
+The following code performs a series of Get, Put and Delete operations.
 
 ```c++
 int main()
@@ -134,7 +134,7 @@ int main()
     std::string v;
 
     // Insert key1-value1
-    status = engine->Set(key1, value1);
+    status = engine->Put(key1, value1);
     assert(status == kvdk::Status::Ok);
 
     // Get value1 by key1
@@ -143,7 +143,7 @@ int main()
     assert(v == value1);
 
     // Update key1-value1 to key1-value2
-    status = engine->Set(key1, value2);
+    status = engine->Put(key1, value2);
     assert(status == kvdk::Status::Ok);
 
     // Get value2 by key1
@@ -152,7 +152,7 @@ int main()
     assert(v == value2);
 
     // Insert key2-value2
-    status = engine->Set(key2, value2);
+    status = engine->Put(key2, value2);
     assert(status == kvdk::Status::Ok);
 
     // Delete key1-value2
@@ -163,7 +163,7 @@ int main()
     status = engine->Delete(key2);
     assert(status == kvdk::Status::Ok);
 
-    printf("Successfully performed Get, Set, Delete operations on anonymous "
+    printf("Successfully performed Get, Put, Delete operations on anonymous "
            "global collection.\n");
   }
 
@@ -175,9 +175,9 @@ int main()
 
 ## Reads and Writes in a Named Collection
 
-A KVDK instance provides SortedGet, SortedSet, SortedDelete methods to query/modify/delete sorted entries.
+A KVDK instance provides SortedGet, SortedPut, SortedDelete methods to query/modify/delete sorted entries.
 
-The following code performs a series of SortedGet, SortedSet and SortedDelete operations, which also initialize a named collection implicitly.
+The following code performs a series of SortedGet, SortedPut and SortedDelete operations, which also initialize a named collection implicitly.
 
 ```c++
 int main()
@@ -197,7 +197,7 @@ int main()
     // Insert key1-value1 into "my_collection_1".
     // Implicitly create a collection named "my_collection_1" in which
     // key1-value1 is stored.
-    status = engine->SortedSet(collection1, key1, value1);
+    status = engine->SortedPut(collection1, key1, value1);
     assert(status == kvdk::Status::Ok);
 
     // Get value1 by key1 in collection "my_collection_1"
@@ -208,7 +208,7 @@ int main()
     // Insert key1-value2 into "my_collection_2".
     // Implicitly create a collection named "my_collection_2" in which
     // key1-value2 is stored.
-    status = engine->SortedSet(collection2, key1, value2);
+    status = engine->SortedPut(collection2, key1, value2);
     assert(status == kvdk::Status::Ok);
 
     // Get value2 by key1 in collection "my_collection_2"
@@ -219,7 +219,7 @@ int main()
     // Get value1 by key1 in collection "my_collection_1"
     // key1-value2 is stored in "my_collection_2"
     // Thus key1-value1 stored in "my_collection_1" is unaffected by operation
-    // engine->SortedSet(collection2, key1, value2).
+    // engine->SortedPut(collection2, key1, value2).
     status = engine->SortedGet(collection1, key1, &v);
     assert(status == kvdk::Status::Ok);
     assert(v == value1);
@@ -227,7 +227,7 @@ int main()
     // Insert key2-value2 into collection "my_collection_2"
     // Collection "my_collection_2" already exists and no implicit collection
     // creation occurs.
-    status = engine->SortedSet(collection2, key2, value2);
+    status = engine->SortedPut(collection2, key2, value2);
     assert(status == kvdk::Status::Ok);
 
     // Delete key1-value1 in collection "my_collection_1"
@@ -236,7 +236,7 @@ int main()
     status = engine->SortedDelete(collection1, key1);
     assert(status == kvdk::Status::Ok);
 
-    printf("Successfully performed SortedGet, SortedSet, SortedDelete operations on named "
+    printf("Successfully performed SortedGet, SortedPut, SortedDelete operations on named "
            "collections.\n");
   }
 
@@ -275,7 +275,7 @@ int main()
     for (int i = 0; i < 10; ++i) {
       // Collection "my_sorted_collection" is implicitly created in first
       // iteration
-      status = engine->SortedSet(sorted_collection, kv_pairs[i].first,
+      status = engine->SortedPut(sorted_collection, kv_pairs[i].first,
                             kv_pairs[i].second);
       assert(status == kvdk::Status::Ok);
     }
@@ -331,7 +331,7 @@ int main()
 ```
 
 ## Atomic Updates
-KVDK supports organizing a series of Set, Delete operations into a `kvdk::WriteBatch` object as an atomic operation. If KVDK fail to apply the `kvdk::WriteBatch` object as a whole, i.e. the system shuts down during applying the batch, it will roll back to the status right before applying the `kvdk::WriteBatch`.
+KVDK supports organizing a series of Put, Delete operations into a `kvdk::WriteBatch` object as an atomic operation. If KVDK fail to apply the `kvdk::WriteBatch` object as a whole, i.e. the system shuts down during applying the batch, it will roll back to the status right before applying the `kvdk::WriteBatch`.
 
 ```c++
 int main()

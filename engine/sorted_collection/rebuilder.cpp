@@ -100,11 +100,47 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
 }
 
 Status SortedCollectionRebuilder::initRebuildLists() {
+  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
   Status s = kv_engine_->MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
-  for (DLRecord* header_record : linked_headers_) {
+
+  // Keep headers with same id together for recognize outdated ones
+  auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
+    auto id1 = Skiplist::SkiplistID(header1);
+    auto id2 = Skiplist::SkiplistID(header2);
+    if (id1 == id2) {
+      return header1->entry.meta.timestamp < header2->entry.meta.timestamp;
+    }
+    return id1 < id2;
+  };
+  std::sort(linked_headers_.begin(), linked_headers_.end(), cmp);
+
+  for (size_t i = 0; i < linked_headers_.size(); i++) {
+    DLRecord* header_record = linked_headers_[i];
+    if (i + 1 < linked_headers_.size() &&
+        Skiplist::SkiplistID(header_record) ==
+            Skiplist::SkiplistID(linked_headers_[i + 1])) {
+      // There are newer version of this header, it indicates system crashed
+      // while updating header of a empty skiplist in previous run before break
+      // header linkage.
+      kvdk_assert(
+          header_record->prev == header_record->next &&
+              header_record->prev == pmem_allocator->addr2offset(header_record),
+          "outdated header record with valid linkage should always "
+          "point to it self");
+      // Break the linkage
+      auto newer_offset = pmem_allocator->addr2offset(linked_headers_[i + 1]);
+      header_record->PersistPrevNT(newer_offset);
+      kvdk_assert(
+          !Skiplist::CheckRecordPrevLinkage(header_record, pmem_allocator) &&
+              !Skiplist::CheckReocrdNextLinkage(header_record, pmem_allocator),
+          "");
+      addUnlinkedRecord(header_record);
+      continue;
+    }
+
     // Decode header
     std::string collection_name = string_view_2_string(header_record->Key());
     CollectionIDType id;
@@ -133,12 +169,14 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     // Check version and rebuild index
     DLRecord* valid_version_record = findCheckpointVersion(header_record);
     std::shared_ptr<Skiplist> skiplist;
-    if (valid_version_record == nullptr) {
+    if (valid_version_record == nullptr ||
+        Skiplist::SkiplistID(valid_version_record) != id) {
+      // No valid version, or valid version header belongs to another linked
+      // skiplist with same name
       skiplist =
           std::
               make_shared<Skiplist>(header_record, collection_name, id,
-                                    comparator,
-                                    kv_engine_->pmem_allocator_.get(),
+                                    comparator, pmem_allocator,
                                     kv_engine_->hash_table_.get(),
                                     kv_engine_->skiplist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
@@ -150,18 +188,18 @@ Status SortedCollectionRebuilder::initRebuildLists() {
 
       if (valid_version_record != header_record) {
         Skiplist::Replace(header_record, valid_version_record, nullptr,
-                          kv_engine_->pmem_allocator_.get(),
-                          kv_engine_->skiplist_locks_.get());
+                          pmem_allocator, kv_engine_->skiplist_locks_.get());
         addUnlinkedRecord(header_record);
       }
 
       bool outdated =
           valid_version_record->entry.meta.type == SortedHeaderDelete ||
           TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
+
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
+            pmem_allocator, kv_engine_->hash_table_.get(),
             kv_engine_->skiplist_locks_.get(), false);
         {
           std::lock_guard<SpinMutex> lg(lock_);
@@ -170,7 +208,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       } else {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
-            kv_engine_->pmem_allocator_.get(), kv_engine_->hash_table_.get(),
+            pmem_allocator, kv_engine_->hash_table_.get(),
             kv_engine_->skiplist_locks_.get(), s_configs.index_with_hashtable);
         {
           std::lock_guard<SpinMutex> lg(lock_);

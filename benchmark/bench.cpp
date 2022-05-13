@@ -186,7 +186,7 @@ void DBWrite(int tid) {
     switch (bench_data_type) {
       case DataType::String: {
         if (FLAGS_batch_size == 0) {
-          s = engine->Set(key, value, WriteOptions());
+          s = engine->Put(key, value, WriteOptions());
         } else {
           batch->StringPut(key, std::string{value.data(), value.size()});
           if (operations % FLAGS_batch_size == 0) {
@@ -197,11 +197,11 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Sorted: {
-        s = engine->SortedSet(collections[cid], key, value);
+        s = engine->SortedPut(collections[cid], key, value);
         break;
       }
       case DataType::Hashes: {
-        s = engine->HashSet(collections[cid], key, value);
+        s = engine->HashPut(collections[cid], key, value);
         break;
       }
       case DataType::List: {
@@ -226,7 +226,7 @@ void DBWrite(int tid) {
     }
 
     if (s != Status::Ok) {
-      throw std::runtime_error{"Set error"};
+      throw std::runtime_error{"Put error"};
     }
 
     if ((operations + 1) % 1000 == 0) {
@@ -504,7 +504,7 @@ int main(int argc, char** argv) {
     printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
     for (auto col : collections) {
       SortedCollectionConfigs s_configs;
-      Status s = engine->CreateSortedCollection(col, s_configs);
+      Status s = engine->SortedCreate(col, s_configs);
       if (s != Status::Ok) {
         throw std::runtime_error{"Fail to create Sorted collection"};
       }

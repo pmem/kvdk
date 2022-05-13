@@ -27,7 +27,7 @@ PMemKVDK::PMemKVDK(const std::string&) {
     SimpleLoger("KVDK Open failed");
     return;
   }
-  s = db_->CreateSortedCollection(collection_);
+  s = db_->SortedCreate(collection_);
   if (s != kvdk::Status::Ok) {
     SimpleLoger("Create Sorted Collection Failed!");
     return;
@@ -39,12 +39,12 @@ PMemKVDK::~PMemKVDK() { delete db_; }
 Status PMemKVDK::Put(const std::string& key, const std::string& value) {
   Status s;
   if (!collection_.empty()) {
-    s = db_->SortedSet(collection_, key, value);
+    s = db_->SortedPut(collection_, key, value);
   } else {
-    s = db_->Set(key, value);
+    s = db_->Put(key, value);
   }
   if (s != kvdk::Status::Ok) {
-    SimpleLoger("KVDK Set failed");
+    SimpleLoger("KVDK Put failed");
   }
   return s;
 }

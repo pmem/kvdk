@@ -33,7 +33,7 @@ class Engine {
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
   // successful persistence, return non-Ok on any error.
-  virtual Status Set(const StringView key, const StringView value,
+  virtual Status Put(const StringView key, const StringView value,
                      const WriteOptions& options = WriteOptions()) = 0;
 
   // Modify value of existing key in the engine
@@ -67,7 +67,7 @@ class Engine {
    */
   virtual Status GetTTL(const StringView str, int64_t* ttl_time) = 0;
 
-  /* Set the STRING-type or Collection type expired time.
+  /* Put the STRING-type or Collection type expired time.
    * @param ttl_time is negetive or positive number.
    * If ttl_time == INT64_MAX, the key is persistent;
    * If ttl_time <=0, the key is expired immediately;
@@ -79,11 +79,11 @@ class Engine {
   // error.
   virtual Status Delete(const StringView key) = 0;
 
-  virtual Status CreateSortedCollection(
+  virtual Status SortedCreate(
       const StringView collection_name,
       const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
 
-  virtual Status DestroySortedCollection(const StringView collection_name) = 0;
+  virtual Status SortedDestroy(const StringView collection_name) = 0;
 
   // Get number of elements in a sorted collection
   //
@@ -93,7 +93,7 @@ class Engine {
   // Insert a SORTED-type KV to set "key" of sorted collection "collection"
   // to hold "value", if "collection" not exist, it will be created, return
   // Ok on successful persistence, return non-Ok on any error.
-  virtual Status SortedSet(const StringView collection, const StringView key,
+  virtual Status SortedPut(const StringView collection, const StringView key,
                            const StringView value) = 0;
 
   // Search the SORTED-type KV of "key" in sorted collection "collection"
@@ -203,7 +203,7 @@ class Engine {
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted. pos is unchanged but invalid.
   //    Status::Ok if operation succeeded. pos points to updated element.
-  virtual Status ListSet(std::unique_ptr<ListIterator> const& pos,
+  virtual Status ListPut(std::unique_ptr<ListIterator> const& pos,
                          StringView elem) = 0;
 
   // Create an ListIterator from List
@@ -221,7 +221,7 @@ class Engine {
   virtual Status HashLength(StringView key, size_t* len) = 0;
   virtual Status HashGet(StringView key, StringView field,
                          std::string* value) = 0;
-  virtual Status HashSet(StringView key, StringView field,
+  virtual Status HashPut(StringView key, StringView field,
                          StringView value) = 0;
   virtual Status HashDelete(StringView key, StringView field) = 0;
   virtual Status HashModify(StringView key, StringView field,

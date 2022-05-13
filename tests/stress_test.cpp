@@ -50,7 +50,7 @@ class HashesOperator {
     return engine->HashGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
-    return engine->HashSet(collection_name, key, value);
+    return engine->HashPut(collection_name, key, value);
   }
   kvdk::Status operator()(KeyType key) {
     return engine->HashDelete(collection_name, key);
@@ -69,7 +69,7 @@ class SortedOperator {
     return engine->SortedGet(collection_name, key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
-    return engine->SortedSet(collection_name, key, value);
+    return engine->SortedPut(collection_name, key, value);
   }
   kvdk::Status operator()(KeyType key) {
     return engine->SortedDelete(collection_name, key);
@@ -92,7 +92,7 @@ class StringOperator {
     return engine->Get(key, value_got);
   }
   kvdk::Status operator()(KeyType key, ValueType value) {
-    return engine->Set(key, value);
+    return engine->Put(key, value);
   }
   kvdk::Status operator()(KeyType key) { return engine->Delete(key); }
 };
@@ -131,7 +131,7 @@ class ShadowKVEngine {
   };
 
   struct SingleOp {
-    enum class OpType { Get, Set, Delete } op;
+    enum class OpType { Get, Put, Delete } op;
     KeyType key;
     ValueType value;  // Empty for Delete, expected for Get
 
@@ -140,7 +140,7 @@ class ShadowKVEngine {
       out << "Op: "
           << (sop.op == OpType::Get
                   ? "Get"
-                  : (sop.op == OpType::Set ? "Set" : "Delete"))
+                  : (sop.op == OpType::Put ? "Put" : "Delete"))
           << "\n"
           << "Key: " << sop.key << "\n"
           << "Value: " << sop.value << "\n";
@@ -203,7 +203,7 @@ class ShadowKVEngine {
               // Get will not change the state of any KV
               continue;
             }
-            case SingleOp::OpType::Set: {
+            case SingleOp::OpType::Put: {
               squashed_changes[sop.key] =
                   StateAndValue{StateAndValue::State::Existing, sop.value};
               continue;
@@ -225,14 +225,14 @@ class ShadowKVEngine {
     task_queues.resize(n_thread);
   }
 
-  // Modify KVEngine by Set
+  // Modify KVEngine by Put
   void EvenXSetOddXSet(size_t tid, std::vector<KeyType> const& keys,
                        std::vector<ValueType> const& values) {
     task_queues[tid] = generateOperations(keys, values, false);
     operateKVEngine(tid, (tid == 0) ? FLAGS_verbose : false);
   }
 
-  // Modify KVEngine by Set and Delete
+  // Modify KVEngine by Put and Delete
   void EvenXSetOddXDelete(size_t tid, std::vector<KeyType> const& keys,
                           std::vector<ValueType> const& values) {
     task_queues[tid] = generateOperations(keys, values, true);
@@ -357,7 +357,7 @@ class ShadowKVEngine {
               << task.value << "\n";
           break;
         }
-        case SingleOp::OpType::Set: {
+        case SingleOp::OpType::Put: {
           status = engine_operator(task.key, task.value);
           ASSERT_EQ(status, kvdk::Status::Ok) << "Fail to set key\n"
                                               << "Key: " << task.key << "\n";
@@ -404,7 +404,7 @@ class ShadowKVEngine {
     OperationQueue queue(keys.size());
     for (size_t i = 0; i < queue.size(); i++) {
       if (i % 2 == 0 || !interleaved_set_delete) {
-        queue[i] = {SingleOp::OpType::Set, keys[i], values[i]};
+        queue[i] = {SingleOp::OpType::Put, keys[i], values[i]};
       } else {
         queue[i] = {SingleOp::OpType::Delete, keys[i], ValueType{}};
       }
@@ -527,27 +527,27 @@ class EngineTestBase : public testing::Test {
     shadow_hashes_engines[collection_name]->UpdatePossibleStates();
   }
 
-  void SortedSetsAllSSet(std::string const& collection_name) {
+  void SortedAllPut(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_sorted_engines[collection_name]->EvenXSetOddXSet(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
 
-    std::cout << "[Testing] Execute SortedSetsAllSSet in " << collection_name
-              << "." << std::endl;
+    std::cout << "[Testing] Execute SortedAllPut in " << collection_name << "."
+              << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
     shadow_sorted_engines[collection_name]->UpdatePossibleStates();
   }
 
-  void SortedSetsEvenSSetOddSDelete(std::string const& collection_name) {
+  void SortedEvenPutOddDelete(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
       shadow_sorted_engines[collection_name]->EvenXSetOddXDelete(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
 
-    std::cout << "[Testing] Execute SortedSetsEvenSSetOddSDelete in "
+    std::cout << "[Testing] Execute SortedEvenPutOddDelete in "
               << collection_name << "." << std::endl;
     LaunchNThreads(n_thread, ModifyEngine);
     shadow_sorted_engines[collection_name]->UpdatePossibleStates();
@@ -589,7 +589,7 @@ class EngineTestBase : public testing::Test {
         kvdk_testing::IteratingDirection::Backward);
   }
 
-  void CheckSortedSetsCollection(std::string collection_name) {
+  void CheckSortedCollection(std::string collection_name) {
     std::cout << "[Testing] Checking Sorted Collection: " << collection_name
               << std::endl;
     shadow_sorted_engines[collection_name]->CheckGetter();
@@ -738,7 +738,7 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   }
 }
 
-TEST_F(EngineStressTest, SortedSetsSSetOnly) {
+TEST_F(EngineStressTest, SortedPutOnly) {
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -746,7 +746,7 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
 
     kvdk::SortedCollectionConfigs s_configs;
     s_configs.index_with_hashtable = index_with_hashtable;
-    ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, s_configs),
+    ASSERT_EQ(engine->SortedCreate(global_collection_name, s_configs),
               kvdk::Status::Ok);
 
     std::cout << "[Testing] Modify, check, reboot and check engine for "
@@ -756,16 +756,16 @@ TEST_F(EngineStressTest, SortedSetsSSetOnly) {
     for (size_t i = 0; i < n_reboot; i++) {
       std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
-      SortedSetsAllSSet(global_collection_name);
-      CheckSortedSetsCollection(global_collection_name);
+      SortedAllPut(global_collection_name);
+      CheckSortedCollection(global_collection_name);
 
       RebootDB();
-      CheckSortedSetsCollection(global_collection_name);
+      CheckSortedCollection(global_collection_name);
     }
   }
 }
 
-TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
+TEST_F(EngineStressTest, SortedPutAndDelete) {
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -773,7 +773,7 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
 
     kvdk::SortedCollectionConfigs s_configs;
     s_configs.index_with_hashtable = index_with_hashtable;
-    ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, s_configs),
+    ASSERT_EQ(engine->SortedCreate(global_collection_name, s_configs),
               kvdk::Status::Ok);
 
     std::cout << "[Testing] Modify, check, reboot and check engine for "
@@ -783,11 +783,11 @@ TEST_F(EngineStressTest, SortedSetsSSetAndSDelete) {
     for (size_t i = 0; i < n_reboot; i++) {
       std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
-      SortedSetsEvenSSetOddSDelete(global_collection_name);
-      CheckSortedSetsCollection(global_collection_name);
+      SortedEvenPutOddDelete(global_collection_name);
+      CheckSortedCollection(global_collection_name);
 
       RebootDB();
-      CheckSortedSetsCollection(global_collection_name);
+      CheckSortedCollection(global_collection_name);
     }
   }
 }
@@ -873,7 +873,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
   }
 }
 
-TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
+TEST_F(EngineHotspotTest, SortedMultipleHotspot) {
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -881,7 +881,7 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
 
     kvdk::SortedCollectionConfigs s_configs;
     s_configs.index_with_hashtable = index_with_hashtable;
-    ASSERT_EQ(engine->CreateSortedCollection(global_collection_name, s_configs),
+    ASSERT_EQ(engine->SortedCreate(global_collection_name, s_configs),
               kvdk::Status::Ok);
 
     std::cout << "[Testing] Modify, check, reboot and check engine for "
@@ -892,13 +892,13 @@ TEST_F(EngineHotspotTest, SortedSetsMultipleHotspot) {
       std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
 
       for (size_t i = 0; i < n_repeat; i++) {
-        SortedSetsAllSSet(global_collection_name);
-        CheckSortedSetsCollection(global_collection_name);
-        SortedSetsEvenSSetOddSDelete(global_collection_name);
-        CheckSortedSetsCollection(global_collection_name);
+        SortedAllPut(global_collection_name);
+        CheckSortedCollection(global_collection_name);
+        SortedEvenPutOddDelete(global_collection_name);
+        CheckSortedCollection(global_collection_name);
       }
       RebootDB();
-      CheckSortedSetsCollection(global_collection_name);
+      CheckSortedCollection(global_collection_name);
     }
   }
 }
