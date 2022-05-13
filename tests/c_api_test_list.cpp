@@ -171,7 +171,7 @@ TEST_F(EngineCAPITestBase, List) {
     ----iter2;
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
     elem = *iter2 + "_new";
-    ASSERT_EQ(KVDKListSet(engine, iter, elem.data(), elem.size()),
+    ASSERT_EQ(KVDKListPut(engine, iter, elem.data(), elem.size()),
               KVDKStatus::Ok);
     *iter2 = elem;
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);

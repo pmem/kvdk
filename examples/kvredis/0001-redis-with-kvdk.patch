@@ -329,7 +329,7 @@ index 000000000..28ae060ed
 +  size_t val_len;
 +  const char *val_str = RedisModule_StringPtrLen(argv[2], &val_len);
 +
-+  KVDKStatus s = KVDKSet(engine, key_str, key_len, val_str, val_len);
++  KVDKStatus s = KVDKPut(engine, key_str, key_len, val_str, val_len);
 +  if (s != Ok) {
 +    return RedisModule_ReplyWithError(ctx, enum_to_str[s]);
 +  }
@@ -375,7 +375,7 @@ index 000000000..28ae060ed
 +  const char *key_str = RedisModule_StringPtrLen(argv[2], &key_len);
 +  const char *val_str = RedisModule_StringPtrLen(argv[3], &val_len);
 +
-+  KVDKStatus s = KVDKHashSet(engine, collection_str, collection_len, key_str,
++  KVDKStatus s = KVDKHashPut(engine, collection_str, collection_len, key_str,
 +                             key_len, val_str, val_len);
 +  if (s != Ok) {
 +    return RedisModule_ReplyWithError(ctx, enum_to_str[s]);
@@ -426,7 +426,7 @@ index 000000000..28ae060ed
 +  const char *set_str = RedisModule_StringPtrLen(argv[1], &set_len);
 +  const char *key_str = RedisModule_StringPtrLen(argv[2], &key_len);
 +
-+  KVDKStatus s = KVDKHashSet(engine, set_str, set_len, key_str, key_len, "", 0);
++  KVDKStatus s = KVDKHashPut(engine, set_str, set_len, key_str, key_len, "", 0);
 +  if (s != Ok) {
 +    return RedisModule_ReplyWithError(ctx, enum_to_str[s]);
 +  }
@@ -476,7 +476,7 @@ index 000000000..28ae060ed
 +    RedisModule_DictSet(CollectionDict, argv[1], collection_ptr);
 +  }
 +
-+  s = KVDKSortedSet(engine, collection_str, collection_len, key_str, key_len,
++  s = KVDKSortedPut(engine, collection_str, collection_len, key_str, key_len,
 +                    val_str, val_len);
 +  if (s != Ok) {
 +    return RedisModule_ReplyWithError(ctx, enum_to_str[s]);

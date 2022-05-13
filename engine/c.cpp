@@ -165,7 +165,7 @@ KVDKStatus KVDKGet(KVDKEngine* engine, const char* key, size_t key_len,
   return s;
 }
 
-KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
+KVDKStatus KVDKPut(KVDKEngine* engine, const char* key, size_t key_len,
                    const char* val, size_t val_len,
                    const KVDKWriteOptions* write_option) {
   return engine->rep->Put(StringView(key, key_len), StringView(val, val_len),
@@ -206,7 +206,7 @@ KVDKStatus KVDKSortedSize(KVDKEngine* engine, const char* collection,
   return engine->rep->SortedSize(StringView(collection, collection_len), size);
 }
 
-KVDKStatus KVDKSortedSet(KVDKEngine* engine, const char* collection,
+KVDKStatus KVDKSortedPut(KVDKEngine* engine, const char* collection,
                          size_t collection_len, const char* key, size_t key_len,
                          const char* val, size_t val_len) {
   return engine->rep->SortedPut(StringView(collection, collection_len),
@@ -381,7 +381,7 @@ KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos) {
   return engine->rep->ListErase(pos->rep);
 }
 
-KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
+KVDKStatus KVDKListPut(KVDKEngine* engine, KVDKListIterator* pos,
                        char const* elem_data, size_t elem_len) {
   return engine->rep->ListPut(pos->rep, StringView{elem_data, elem_len});
 }

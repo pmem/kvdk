@@ -335,7 +335,7 @@ static void test_expire() {
     s = engine->Get(key, &got_val);
     assert(s == kvdk::Status::NotFound);
     // case: ttl time is negative.
-    s = engine->Set(key, "Updatedval");
+    s = engine->Put(key, "Updatedval");
     assert(s == kvdk::Status::Ok);
     s = engine->Expire(key, -1);
     assert(s == kvdk::Status::Ok);

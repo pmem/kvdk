@@ -1826,7 +1826,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
     // set negative ttl time.
     std::string expire_key = "expired_key1";
     std::string expire_val = "expired_val1";
-    ASSERT_EQ(engine->Set(expire_key, expire_val, WriteOptions{}), Status::Ok);
+    ASSERT_EQ(engine->Put(expire_key, expire_val, WriteOptions{}), Status::Ok);
     ASSERT_EQ(engine->GetTTL(expire_key, &ttl_time), Status::Ok);
     ASSERT_EQ(ttl_time, kPersistTime);
     ASSERT_EQ(engine->Expire(expire_key, -30), Status::Ok);

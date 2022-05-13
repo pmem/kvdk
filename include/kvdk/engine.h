@@ -77,7 +77,7 @@ extern KVDKStatus KVDKWrite(KVDKEngine* engine, const KVDKWriteBatch* batch);
 // For Anonymous Global Collection
 extern KVDKStatus KVDKGet(KVDKEngine* engine, const char* key, size_t key_len,
                           size_t* val_len, char** val);
-extern KVDKStatus KVDKSet(KVDKEngine* engine, const char* key, size_t key_len,
+extern KVDKStatus KVDKPut(KVDKEngine* engine, const char* key, size_t key_len,
                           const char* val, size_t val_len,
                           const KVDKWriteOptions* write_option);
 extern KVDKStatus KVDKDelete(KVDKEngine* engine, const char* key,
@@ -110,7 +110,7 @@ extern KVDKStatus KVDKSortedDestroy(KVDKEngine* engine,
                                     size_t collection_len);
 extern KVDKStatus KVDKSortedSize(KVDKEngine* engine, const char* collection,
                                  size_t collection_len, size_t* size);
-extern KVDKStatus KVDKSortedSet(KVDKEngine* engine, const char* collection,
+extern KVDKStatus KVDKSortedPut(KVDKEngine* engine, const char* collection,
                                 size_t collection_len, const char* key,
                                 size_t key_len, const char* val,
                                 size_t val_len);
@@ -149,7 +149,7 @@ extern KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data,
                               size_t key_len, const char* field_data,
                               size_t field_len, char** val_data,
                               size_t* val_len);
-extern KVDKStatus KVDKHashSet(KVDKEngine* engine, const char* key_data,
+extern KVDKStatus KVDKHashPut(KVDKEngine* engine, const char* key_data,
                               size_t key_len, const char* field_data,
                               size_t field_len, const char* val_data,
                               size_t val_len);
@@ -201,7 +201,7 @@ extern KVDKStatus KVDKListInsertBefore(KVDKEngine* engine,
 extern KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, KVDKListIterator* pos,
                                       char const* elem_data, size_t elem_len);
 extern KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos);
-extern KVDKStatus KVDKListSet(KVDKEngine* engine, KVDKListIterator* pos,
+extern KVDKStatus KVDKListPut(KVDKEngine* engine, KVDKListIterator* pos,
                               char const* elem_data, size_t elem_len);
 /// ListIterator //////////////////////////////////////////////////////////////
 extern KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,

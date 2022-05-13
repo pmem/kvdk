@@ -46,7 +46,7 @@ TEST_F(EngineCAPITestBase, Hash) {
     for (size_t j = 0; j < count; j++) {
       std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
       std::string value{GetRandomString(120)};
-      ASSERT_EQ(KVDKHashSet(engine, key.data(), key.size(), field.data(),
+      ASSERT_EQ(KVDKHashPut(engine, key.data(), key.size(), field.data(),
                             field.size(), value.data(), value.size()),
                 KVDKStatus::Ok);
       local_copy[field] = value;

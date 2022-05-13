@@ -41,16 +41,16 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   int cmp;
   KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
   KVDKStatus s =
-      KVDKSet(kvdk_engine, key1, key1_len, value1, value1_len, write_option);
+      KVDKPut(kvdk_engine, key1, key1_len, value1, value1_len, write_option);
   assert(s == Ok);
-  s = KVDKSet(kvdk_engine, key2, key1_len, value2, value2_len, write_option);
+  s = KVDKPut(kvdk_engine, key2, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);
   cmp = StrCmp(read_v1, read_v1_len, value1, value1_len);
   assert(cmp == 0);
   free(read_v1);
-  s = KVDKSet(kvdk_engine, key1, key1_len, value2, value2_len, write_option);
+  s = KVDKPut(kvdk_engine, key1, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);
@@ -93,10 +93,10 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   s = KVDKSortedCreate(kvdk_engine, collection2, strlen(collection2),
                        s_configs);
   assert(s == Ok);
-  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+  s = KVDKSortedPut(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
   assert(s == Ok);
-  s = KVDKSortedSet(kvdk_engine, collection2, strlen(collection2), key2,
+  s = KVDKSortedPut(kvdk_engine, collection2, strlen(collection2), key2,
                     strlen(key2), value2, strlen(value2));
   assert(s == Ok);
   s = KVDKSortedGet(kvdk_engine, collection1, strlen(collection1), key1,
@@ -105,7 +105,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   cmp = StrCmp(read_v1, read_v1_len, value1, strlen(value1));
   assert(cmp == 0);
   free(read_v1);
-  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+  s = KVDKSortedPut(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value2, strlen(value2));
   assert(s == Ok);
   s = KVDKSortedGet(kvdk_engine, collection1, strlen(collection1), key1,
@@ -128,7 +128,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   s = KVDKSortedDestroy(kvdk_engine, collection2, strlen(collection2));
   assert(s == Ok);
-  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+  s = KVDKSortedPut(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
   assert(s == NotFound);
   free(read_v1);
@@ -156,7 +156,7 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
     char key[10] = "key", value[10] = "value";
     strcat(key, nums[i]);
     strcat(value, nums[i]);
-    s = KVDKSortedSet(kvdk_engine, sorted_collection, strlen(sorted_collection),
+    s = KVDKSortedPut(kvdk_engine, sorted_collection, strlen(sorted_collection),
                       key, strlen(key), value, strlen(value));
     assert(s == Ok);
   }
@@ -266,7 +266,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
       KVDKSortedCreate(kvdk_engine, collection, strlen(collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
-    s = KVDKSortedSet(kvdk_engine, collection, strlen(collection),
+    s = KVDKSortedPut(kvdk_engine, collection, strlen(collection),
                       array[i].number_key, strlen(array[i].number_key),
                       array[i].value, strlen(array[i].value));
     assert(s == Ok);
@@ -340,7 +340,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
     char key[10] = "key", value[10] = "value";
     strcat(key, nums[i]);
     strcat(value, nums[i]);
-    s = KVDKHashSet(kvdk_engine, hash_collection, strlen(hash_collection), key,
+    s = KVDKHashPut(kvdk_engine, hash_collection, strlen(hash_collection), key,
                     strlen(key), value, strlen(value));
     assert(s == Ok);
     size_t val_len;
@@ -436,7 +436,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     // case: set expire time
     KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
     KVDKWriteOptionsSetTTLTime(write_option, 100);
-    s = KVDKSet(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
+    s = KVDKPut(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
     assert(s == Ok);
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
     assert(s == Ok);
@@ -462,7 +462,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     assert(s == NotFound);
     // case: ttl time is negative or 0
     KVDKWriteOptionsSetTTLTime(write_option, 0);
-    s = KVDKSet(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
+    s = KVDKPut(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
     assert(s == Ok);
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
     assert(s == NotFound);
@@ -487,7 +487,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
                    &ttl_time);
     assert(s == Ok);
     assert(ttl_time == INT64_MAX);
-    s = KVDKSortedSet(kvdk_engine, sorted_collection, strlen(sorted_collection),
+    s = KVDKSortedPut(kvdk_engine, sorted_collection, strlen(sorted_collection),
                       key, strlen(key), val, strlen(val));
     assert(s == Ok);
     // case: set expire_time
@@ -522,7 +522,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
 
     s = KVDKHashCreate(kvdk_engine, hash_collection, strlen(hash_collection));
     assert(s == Ok);
-    s = KVDKHashSet(kvdk_engine, hash_collection, strlen(hash_collection), key,
+    s = KVDKHashPut(kvdk_engine, hash_collection, strlen(hash_collection), key,
                     strlen(key), val, strlen(val));
     assert(s == Ok);
     s = KVDKGetTTL(kvdk_engine, hash_collection, strlen(hash_collection),
@@ -594,7 +594,7 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
   IncNArgs args;
   args.incr_by = 5;
 
-  KVDKStatus s = KVDKSet(kvdk_engine, wrong_value_key, strlen(wrong_value_key),
+  KVDKStatus s = KVDKPut(kvdk_engine, wrong_value_key, strlen(wrong_value_key),
                          "a", 1, write_option);
   assert(s == Ok);
   s = KVDKModify(kvdk_engine, wrong_value_key, strlen(wrong_value_key), IncN,
