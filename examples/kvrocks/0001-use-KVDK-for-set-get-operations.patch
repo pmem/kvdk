@@ -136,7 +136,7 @@ index 8bcbf4b..7b0eda5 100644
 -    auto s = storage_->Write(rocksdb::WriteOptions(), &batch);
 -    if (!s.ok()) return s;
 +    if (engine) {
-+        engine->Set(pair.key.ToString(), pair.value.ToString());
++        engine->Put(pair.key.ToString(), pair.value.ToString());
 +    } else {
 +        std::string bytes;
 +        Metadata metadata(kRedisString, false);

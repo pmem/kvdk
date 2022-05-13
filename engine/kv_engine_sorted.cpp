@@ -6,9 +6,8 @@
 #include "sorted_collection/iterator.hpp"
 
 namespace KVDK_NAMESPACE {
-Status KVEngine::CreateSortedCollection(
-    const StringView collection_name,
-    const SortedCollectionConfigs& s_configs) {
+Status KVEngine::SortedCreate(const StringView collection_name,
+                              const SortedCollectionConfigs& s_configs) {
   Status s = MaybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) {
@@ -68,7 +67,7 @@ Status KVEngine::CreateSortedCollection(
   return Status::Ok;
 }
 
-Status KVEngine::DestroySortedCollection(const StringView collection_name) {
+Status KVEngine::SortedDestroy(const StringView collection_name) {
   auto s = MaybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) {
@@ -157,7 +156,7 @@ Status KVEngine::SortedGet(const StringView collection,
   return skiplist->Get(user_key, value);
 }
 
-Status KVEngine::SortedSet(const StringView collection,
+Status KVEngine::SortedPut(const StringView collection,
                            const StringView user_key, const StringView value) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
@@ -176,7 +175,7 @@ Status KVEngine::SortedSet(const StringView collection,
   kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,
               "pointer type of skiplist in hash entry should be skiplist");
   skiplist = ret.entry.GetIndex().skiplist;
-  return SortedSetImpl(skiplist, user_key, value);
+  return SortedPutImpl(skiplist, user_key, value);
 }
 
 Status KVEngine::SortedDelete(const StringView collection,
@@ -200,7 +199,7 @@ Status KVEngine::SortedDelete(const StringView collection,
               "pointer type of skiplist in hash entry should be skiplist");
   skiplist = ret.entry.GetIndex().skiplist;
 
-  return SDeleteImpl(skiplist, user_key);
+  return SortedDeleteImpl(skiplist, user_key);
 }
 
 Iterator* KVEngine::NewSortedIterator(const StringView collection,
@@ -237,7 +236,8 @@ void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
   delete iter;
 }
 
-Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
+Status KVEngine::SortedDeleteImpl(Skiplist* skiplist,
+                                  const StringView& user_key) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key)) {
     return Status::InvalidDataSize;
@@ -275,7 +275,7 @@ Status KVEngine::SDeleteImpl(Skiplist* skiplist, const StringView& user_key) {
   return ret.s;
 }
 
-Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
+Status KVEngine::SortedPutImpl(Skiplist* skiplist, const StringView& user_key,
                                const StringView& value) {
   std::string collection_key(skiplist->InternalKey(user_key));
   if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
@@ -284,7 +284,7 @@ Status KVEngine::SortedSetImpl(Skiplist* skiplist, const StringView& user_key,
 
   auto ul = hash_table_->AcquireLock(collection_key);
   TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
-  auto ret = skiplist->Set(user_key, value, new_ts);
+  auto ret = skiplist->Put(user_key, value, new_ts);
 
   if (ret.s == Status::Ok) {
     if (ret.existing_record &&

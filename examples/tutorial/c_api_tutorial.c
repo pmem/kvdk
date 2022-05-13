@@ -41,16 +41,16 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   int cmp;
   KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
   KVDKStatus s =
-      KVDKSet(kvdk_engine, key1, key1_len, value1, value1_len, write_option);
+      KVDKPut(kvdk_engine, key1, key1_len, value1, value1_len, write_option);
   assert(s == Ok);
-  s = KVDKSet(kvdk_engine, key2, key1_len, value2, value2_len, write_option);
+  s = KVDKPut(kvdk_engine, key2, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);
   cmp = StrCmp(read_v1, read_v1_len, value1, value1_len);
   assert(cmp == 0);
   free(read_v1);
-  s = KVDKSet(kvdk_engine, key1, key1_len, value2, value2_len, write_option);
+  s = KVDKPut(kvdk_engine, key1, key1_len, value2, value2_len, write_option);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, key1_len, &read_v1_len, &read_v1);
   assert(s == Ok);
@@ -67,7 +67,7 @@ void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
   free(read_v1);
   free(read_v2);
   printf(
-      "Successfully performed Get, Set, Delete operations on anonymous "
+      "Successfully performed Get, Put, Delete operations on anonymous "
       "global collection.\n");
 
   KVDKDestroyWriteOptions(write_option);
@@ -87,16 +87,16 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   int cmp;
 
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
-  KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, collection1,
-                                            strlen(collection1), s_configs);
+  KVDKStatus s = KVDKSortedCreate(kvdk_engine, collection1, strlen(collection1),
+                                  s_configs);
   assert(s == Ok);
-  s = KVDKCreateSortedCollection(kvdk_engine, collection2, strlen(collection2),
-                                 s_configs);
+  s = KVDKSortedCreate(kvdk_engine, collection2, strlen(collection2),
+                       s_configs);
   assert(s == Ok);
-  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+  s = KVDKSortedPut(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
   assert(s == Ok);
-  s = KVDKSortedSet(kvdk_engine, collection2, strlen(collection2), key2,
+  s = KVDKSortedPut(kvdk_engine, collection2, strlen(collection2), key2,
                     strlen(key2), value2, strlen(value2));
   assert(s == Ok);
   s = KVDKSortedGet(kvdk_engine, collection1, strlen(collection1), key1,
@@ -105,7 +105,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   cmp = StrCmp(read_v1, read_v1_len, value1, strlen(value1));
   assert(cmp == 0);
   free(read_v1);
-  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+  s = KVDKSortedPut(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value2, strlen(value2));
   assert(s == Ok);
   s = KVDKSortedGet(kvdk_engine, collection1, strlen(collection1), key1,
@@ -124,13 +124,11 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   s = KVDKSortedDelete(kvdk_engine, collection2, strlen(collection2), key2,
                        strlen(key2));
   assert(s == Ok);
-  s = KVDKDestroySortedCollection(kvdk_engine, collection1,
-                                  strlen(collection1));
+  s = KVDKSortedDestroy(kvdk_engine, collection1, strlen(collection1));
   assert(s == Ok);
-  s = KVDKDestroySortedCollection(kvdk_engine, collection2,
-                                  strlen(collection2));
+  s = KVDKSortedDestroy(kvdk_engine, collection2, strlen(collection2));
   assert(s == Ok);
-  s = KVDKSortedSet(kvdk_engine, collection1, strlen(collection1), key1,
+  s = KVDKSortedPut(kvdk_engine, collection1, strlen(collection1), key1,
                     strlen(key1), value1, strlen(value1));
   assert(s == NotFound);
   free(read_v1);
@@ -140,7 +138,7 @@ void SortedCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == NotFound);
   KVDKDestroySortedCollectionConfigs(s_configs);
   printf(
-      "Successfully performed SortedGet, SortedSet, SortedDelete "
+      "Successfully performed SortedGet, SortedPut, SortedDelete "
       "operations on named "
       "collections.\n");
 }
@@ -151,14 +149,14 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
                                  "5", "6", "7", "8", "9"};
   const char* sorted_collection = "sorted_collection";
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
-  KVDKStatus s = KVDKCreateSortedCollection(
-      kvdk_engine, sorted_collection, strlen(sorted_collection), s_configs);
+  KVDKStatus s = KVDKSortedCreate(kvdk_engine, sorted_collection,
+                                  strlen(sorted_collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key", value[10] = "value";
     strcat(key, nums[i]);
     strcat(value, nums[i]);
-    s = KVDKSortedSet(kvdk_engine, sorted_collection, strlen(sorted_collection),
+    s = KVDKSortedPut(kvdk_engine, sorted_collection, strlen(sorted_collection),
                       key, strlen(key), value, strlen(value));
     assert(s == Ok);
   }
@@ -264,11 +262,11 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   // create sorted collection
   KVDKSortedCollectionConfigs* s_configs = KVDKCreateSortedCollectionConfigs();
   KVDKSetSortedCollectionConfigs(s_configs, comp_name, strlen(comp_name), 1);
-  KVDKStatus s = KVDKCreateSortedCollection(kvdk_engine, collection,
-                                            strlen(collection), s_configs);
+  KVDKStatus s =
+      KVDKSortedCreate(kvdk_engine, collection, strlen(collection), s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
-    s = KVDKSortedSet(kvdk_engine, collection, strlen(collection),
+    s = KVDKSortedPut(kvdk_engine, collection, strlen(collection),
                       array[i].number_key, strlen(array[i].number_key),
                       array[i].value, strlen(array[i].value));
     assert(s == Ok);
@@ -342,7 +340,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
     char key[10] = "key", value[10] = "value";
     strcat(key, nums[i]);
     strcat(value, nums[i]);
-    s = KVDKHashSet(kvdk_engine, hash_collection, strlen(hash_collection), key,
+    s = KVDKHashPut(kvdk_engine, hash_collection, strlen(hash_collection), key,
                     strlen(key), value, strlen(value));
     assert(s == Ok);
     size_t val_len;
@@ -374,7 +372,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
        KVDKHashIteratorIsValid(kvdk_iter); KVDKHashIteratorPrev(kvdk_iter)) {
     ++cnt;
   }
-  printf("Successfully performed Get Set Delete Iterate on HashList.\n");
+  printf("Successfully performed Get Put Delete Iterate on HashList.\n");
   assert(cnt == 9);
   KVDKHashIteratorDestroy(kvdk_iter);
 
@@ -438,7 +436,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     // case: set expire time
     KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
     KVDKWriteOptionsSetTTLTime(write_option, 100);
-    s = KVDKSet(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
+    s = KVDKPut(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
     assert(s == Ok);
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
     assert(s == Ok);
@@ -464,7 +462,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     assert(s == NotFound);
     // case: ttl time is negative or 0
     KVDKWriteOptionsSetTTLTime(write_option, 0);
-    s = KVDKSet(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
+    s = KVDKPut(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
     assert(s == Ok);
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
     assert(s == NotFound);
@@ -482,14 +480,14 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     // case: default persist key.
     KVDKSortedCollectionConfigs* s_configs =
         KVDKCreateSortedCollectionConfigs();
-    s = KVDKCreateSortedCollection(kvdk_engine, sorted_collection,
-                                   strlen(sorted_collection), s_configs);
+    s = KVDKSortedCreate(kvdk_engine, sorted_collection,
+                         strlen(sorted_collection), s_configs);
     assert(s == Ok);
     s = KVDKGetTTL(kvdk_engine, sorted_collection, strlen(sorted_collection),
                    &ttl_time);
     assert(s == Ok);
     assert(ttl_time == INT64_MAX);
-    s = KVDKSortedSet(kvdk_engine, sorted_collection, strlen(sorted_collection),
+    s = KVDKSortedPut(kvdk_engine, sorted_collection, strlen(sorted_collection),
                       key, strlen(key), val, strlen(val));
     assert(s == Ok);
     // case: set expire_time
@@ -524,7 +522,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
 
     s = KVDKHashCreate(kvdk_engine, hash_collection, strlen(hash_collection));
     assert(s == Ok);
-    s = KVDKHashSet(kvdk_engine, hash_collection, strlen(hash_collection), key,
+    s = KVDKHashPut(kvdk_engine, hash_collection, strlen(hash_collection), key,
                     strlen(key), val, strlen(val));
     assert(s == Ok);
     s = KVDKGetTTL(kvdk_engine, hash_collection, strlen(hash_collection),
@@ -596,7 +594,7 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
   IncNArgs args;
   args.incr_by = 5;
 
-  KVDKStatus s = KVDKSet(kvdk_engine, wrong_value_key, strlen(wrong_value_key),
+  KVDKStatus s = KVDKPut(kvdk_engine, wrong_value_key, strlen(wrong_value_key),
                          "a", 1, write_option);
   assert(s == Ok);
   s = KVDKModify(kvdk_engine, wrong_value_key, strlen(wrong_value_key), IncN,
@@ -628,13 +626,13 @@ typedef struct {
   char const* data;
   size_t len;
   size_t ret;
-} HSetArgs;
+} HPutArgs;
 // new_data is not touched as long as caller does not pass a free_func to
-// KVDKHashModify This avoids a malloc() in HSetNXFunc and a free() in
+// KVDKHashModify This avoids a malloc() in HPutNXFunc and a free() in
 // KVDKHashModify()
-int HSetNXFunc(char const* old_data, size_t old_len, char** new_data,
+int HPutNXFunc(char const* old_data, size_t old_len, char** new_data,
                size_t* new_len, void* args) {
-  HSetArgs* my_args = (HSetArgs*)args;
+  HPutArgs* my_args = (HPutArgs*)args;
   if (old_data == NULL) {
     assert(old_len == 0);
     *new_data = (char*)my_args->data;
@@ -646,9 +644,9 @@ int HSetNXFunc(char const* old_data, size_t old_len, char** new_data,
     return KVDK_MODIFY_NOOP;
   }
 }
-int HSetFunc(char const* old_data, size_t old_len, char** new_data,
+int HPutFunc(char const* old_data, size_t old_len, char** new_data,
              size_t* new_len, void* args) {
-  HSetArgs* my_args = (HSetArgs*)args;
+  HPutArgs* my_args = (HPutArgs*)args;
   *new_data = (char*)my_args->data;
   *new_len = my_args->len;
   if (old_data == NULL) {
@@ -668,11 +666,11 @@ void HashModifyExample(KVDKEngine* engine) {
   char* resp_data;
   size_t resp_len;
 
-  HSetArgs args;
+  HPutArgs args;
   args.data = value1;
   args.len = strlen(value1);
   KVDKStatus s = KVDKHashCreate(engine, key, strlen(key));
-  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetNXFunc,
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HPutNXFunc,
                      &args, NULL);
   assert(s == Ok);
   assert(args.ret == 1);
@@ -685,7 +683,7 @@ void HashModifyExample(KVDKEngine* engine) {
 
   args.data = value2;
   args.len = strlen(value2);
-  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetNXFunc,
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HPutNXFunc,
                      &args, NULL);
   assert(s == Ok);
   assert(args.ret == 0);  // Fail to set since the field already exists
@@ -697,7 +695,7 @@ void HashModifyExample(KVDKEngine* engine) {
          0);  // field is untouched
   free(resp_data);
 
-  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HSetFunc,
+  s = KVDKHashModify(engine, key, strlen(key), field, strlen(field), HPutFunc,
                      &args, NULL);
   assert(s == Ok);
   assert(args.ret == 0);  // Update, no field added

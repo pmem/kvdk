@@ -141,7 +141,7 @@ TEST_F(EngineCAPITestBase, List) {
     KVDKListIteratorDestroy(iter);
   };
 
-  auto ListInsertSetRemove = [&](size_t tid) {
+  auto ListInsertPutRemove = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
@@ -171,7 +171,7 @@ TEST_F(EngineCAPITestBase, List) {
     ----iter2;
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
     elem = *iter2 + "_new";
-    ASSERT_EQ(KVDKListSet(engine, iter, elem.data(), elem.size()),
+    ASSERT_EQ(KVDKListPut(engine, iter, elem.data(), elem.size()),
               KVDKStatus::Ok);
     *iter2 = elem;
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
@@ -200,7 +200,7 @@ TEST_F(EngineCAPITestBase, List) {
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, LPush);
     for (size_t j = 0; j < 100; j++) {
-      LaunchNThreads(num_threads, ListInsertSetRemove);
+      LaunchNThreads(num_threads, ListInsertPutRemove);
       LaunchNThreads(num_threads, ListIterate);
     }
     RebootDB();

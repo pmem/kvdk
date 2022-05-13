@@ -35,7 +35,7 @@ static void test_anon_coll() {
   kvdk::WriteOptions write_options;
 
   // Insert key1-value1
-  status = engine->Set(key1, value1, write_options);
+  status = engine->Put(key1, value1, write_options);
   assert(status == kvdk::Status::Ok);
 
   // Get value1 by key1
@@ -44,7 +44,7 @@ static void test_anon_coll() {
   assert(v == value1);
 
   // Update key1-value1 to key1-value2
-  status = engine->Set(key1, value2, write_options);
+  status = engine->Put(key1, value2, write_options);
   assert(status == kvdk::Status::Ok);
 
   // Get value2 by key1
@@ -53,7 +53,7 @@ static void test_anon_coll() {
   assert(v == value2);
 
   // Insert key2-value2
-  status = engine->Set(key2, value2, write_options);
+  status = engine->Put(key2, value2, write_options);
   assert(status == kvdk::Status::Ok);
 
   // Delete key1-value2
@@ -65,7 +65,7 @@ static void test_anon_coll() {
   assert(status == kvdk::Status::Ok);
 
   printf(
-      "Successfully performed Get, Set, Delete operations on anonymous "
+      "Successfully performed Get, Put, Delete operations on anonymous "
       "global collection.\n");
   return;
 }
@@ -78,15 +78,15 @@ static void test_named_coll() {
   std::string value1{"value1"};
   std::string value2{"value2"};
   std::string v;
-  status = engine->CreateSortedCollection(collection1);
+  status = engine->SortedCreate(collection1);
   assert(status == kvdk::Status::Ok);
 
-  status = engine->CreateSortedCollection(collection2);
+  status = engine->SortedCreate(collection2);
   assert(status == kvdk::Status::Ok);
   // Insert key1-value1 into "my_collection_1".
   // Implicitly create a collection named "my_collection_1" in which
   // key1-value1 is stored.
-  status = engine->SortedSet(collection1, key1, value1);
+  status = engine->SortedPut(collection1, key1, value1);
   assert(status == kvdk::Status::Ok);
 
   // Get value1 by key1 in collection "my_collection_1"
@@ -97,7 +97,7 @@ static void test_named_coll() {
   // Insert key1-value2 into "my_collection_2".
   // Implicitly create a collection named "my_collection_2" in which
   // key1-value2 is stored.
-  status = engine->SortedSet(collection2, key1, value2);
+  status = engine->SortedPut(collection2, key1, value2);
   assert(status == kvdk::Status::Ok);
 
   // Get value2 by key1 in collection "my_collection_2"
@@ -108,7 +108,7 @@ static void test_named_coll() {
   // Get value1 by key1 in collection "my_collection_1"
   // key1-value2 is stored in "my_collection_2"
   // Thus key1-value1 stored in "my_collection_1" is unaffected by operation
-  // engine->SortedSet(collection2, key1, value2).
+  // engine->SortedPut(collection2, key1, value2).
   status = engine->SortedGet(collection1, key1, &v);
   assert(status == kvdk::Status::Ok);
   assert(v == value1);
@@ -116,7 +116,7 @@ static void test_named_coll() {
   // Insert key2-value2 into collection "my_collection_2"
   // Collection "my_collection_2" already exists and no implicit collection
   // creation occurs.
-  status = engine->SortedSet(collection2, key2, value2);
+  status = engine->SortedPut(collection2, key2, value2);
   assert(status == kvdk::Status::Ok);
 
   // Delete key1-value1 in collection "my_collection_1"
@@ -126,7 +126,7 @@ static void test_named_coll() {
   assert(status == kvdk::Status::Ok);
 
   printf(
-      "Successfully performed SortedGet, SortedSet, SortedDelete operations on "
+      "Successfully performed SortedGet, SortedPut, SortedDelete operations on "
       "named "
       "collections.\n");
   return;
@@ -135,7 +135,7 @@ static void test_named_coll() {
 static void test_iterator() {
   std::string sorted_collection{"my_sorted_collection"};
   // Create Sorted Collection
-  status = engine->CreateSortedCollection(sorted_collection);
+  status = engine->SortedCreate(sorted_collection);
   assert(status == kvdk::Status::Ok);
   // Create toy keys and values.
   std::vector<std::pair<std::string, std::string>> kv_pairs;
@@ -155,7 +155,7 @@ static void test_iterator() {
   for (int i = 0; i < 10; ++i) {
     // Collection "my_sorted_collection" is implicitly created in first
     // iteration
-    status = engine->SortedSet(sorted_collection, kv_pairs[i].first,
+    status = engine->SortedPut(sorted_collection, kv_pairs[i].first,
                                kv_pairs[i].second);
     assert(status == kvdk::Status::Ok);
   }
@@ -275,10 +275,10 @@ static void test_customer_sorted_func() {
   // create sorted collection
   kvdk::SortedCollectionConfigs s_configs;
   s_configs.comparator_name = comp_name;
-  kvdk::Status s = engine->CreateSortedCollection(collection, s_configs);
+  kvdk::Status s = engine->SortedCreate(collection, s_configs);
   assert(s == Ok);
   for (int i = 0; i < 5; ++i) {
-    s = engine->SortedSet(collection, array[i].number_key, array[i].value);
+    s = engine->SortedPut(collection, array[i].number_key, array[i].value);
     assert(s == Ok);
   }
   auto iter = engine->NewSortedIterator(collection);
@@ -312,7 +312,7 @@ static void test_expire() {
     std::string key = "stringkey";
     std::string val = "stringval";
     // case: set expire time
-    s = engine->Set(key, val, kvdk::WriteOptions{100});
+    s = engine->Put(key, val, kvdk::WriteOptions{100});
     assert(s == kvdk::Status::Ok);
     s = engine->Get(key, &got_val);
     assert(s == kvdk::Status::Ok);
@@ -335,7 +335,7 @@ static void test_expire() {
     s = engine->Get(key, &got_val);
     assert(s == kvdk::Status::NotFound);
     // case: ttl time is negative.
-    s = engine->Set(key, "Updatedval");
+    s = engine->Put(key, "Updatedval");
     assert(s == kvdk::Status::Ok);
     s = engine->Expire(key, -1);
     assert(s == kvdk::Status::Ok);
@@ -349,12 +349,12 @@ static void test_expire() {
     std::string key = "sortedkey";
     std::string val = "sortedval";
 
-    s = engine->CreateSortedCollection(sorted_collection);
+    s = engine->SortedCreate(sorted_collection);
     // case: default persist key.
     s = engine->GetTTL(sorted_collection, &ttl_time);
     assert(s == kvdk::Status::Ok);
     assert(ttl_time == kvdk::kPersistTime);
-    s = engine->SortedSet(sorted_collection, key, val);
+    s = engine->SortedPut(sorted_collection, key, val);
     assert(s == kvdk::Status::Ok);
     // case: set expire_time
     s = engine->Expire(sorted_collection, INT32_MAX);
@@ -381,7 +381,7 @@ static void test_expire() {
     // case: default persist key
     s = engine->HashCreate(hash_collection);
     assert(s == kvdk::Status::Ok);
-    s = engine->HashSet(hash_collection, key, val);
+    s = engine->HashPut(hash_collection, key, val);
     assert(s == kvdk::Status::Ok);
     s = engine->GetTTL(hash_collection, &ttl_time);
     assert(s == kvdk::Status::Ok);
