@@ -462,6 +462,12 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     sleep(1);
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
     assert(s == NotFound);
+    // case: ttl time is negative or 0
+    KVDKWriteOptionsSetTTLTime(write_option, 0);
+    s = KVDKSet(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
+    assert(s == Ok);
+    s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
+    assert(s == NotFound);
     // No need to free(got_val)
     printf("Successfully expire string\n");
 
@@ -478,6 +484,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
         KVDKCreateSortedCollectionConfigs();
     s = KVDKCreateSortedCollection(kvdk_engine, sorted_collection,
                                    strlen(sorted_collection), s_configs);
+    assert(s == Ok);
     s = KVDKGetTTL(kvdk_engine, sorted_collection, strlen(sorted_collection),
                    &ttl_time);
     assert(s == Ok);
