@@ -77,11 +77,12 @@ SpaceEntry KVEngine::purgeSortedRecord(SkiplistNode* dram_node,
 }
 
 std::vector<SpaceEntry> KVEngine::purgeOutDatedRecords(
-    const std::vector<std::pair<void*, PointerType>>& outdated_records) {
+    const std::vector<std::pair<void*, RecordType>>& outdated_records) {
   std::vector<SpaceEntry> pending_free_entries;
   for (auto& record_pair : outdated_records) {
     switch (record_pair.second) {
-      case PointerType::StringRecord: {
+      case RecordType::StringDataRecord:
+      case RecordType::StringDeleteRecord: {
         StringRecord* record = static_cast<StringRecord*>(record_pair.first);
         auto old_record = static_cast<StringRecord*>(
             pmem_allocator_->offset2addr(record->old_version));
@@ -93,25 +94,8 @@ std::vector<SpaceEntry> KVEngine::purgeOutDatedRecords(
         pending_free_entries.emplace_back(purgeStringRecord(record));
         break;
       }
-      case PointerType::SkiplistNode: {
-        SkiplistNode* skiplist_node =
-            static_cast<SkiplistNode*>(record_pair.first);
-        DLRecord* dl_record = skiplist_node->record;
-        kvdk_assert(dl_record->entry.meta.type == SortedElemDelete ||
-                        dl_record->entry.meta.type == SortedElem,
-                    "should be sorted element type record");
-        auto old_record = static_cast<DLRecord*>(
-            pmem_allocator_->offset2addr(dl_record->old_version));
-        while (old_record) {
-          pending_free_entries.emplace_back(purgeOldDataRecord(old_record));
-          old_record = static_cast<DLRecord*>(
-              pmem_allocator_->offset2addr(old_record->old_version));
-        }
-        pending_free_entries.emplace_back(
-            purgeSortedRecord(skiplist_node, dl_record));
-        break;
-      }
-      case PointerType::DLRecord: {
+      case RecordType::SortedElem:
+      case RecordType::SortedElemDelete: {
         DLRecord* dl_record = static_cast<DLRecord*>(record_pair.first);
         kvdk_assert(dl_record->entry.meta.type == SortedElemDelete ||
                         dl_record->entry.meta.type == SortedElem,
@@ -127,7 +111,11 @@ std::vector<SpaceEntry> KVEngine::purgeOutDatedRecords(
             purgeSortedRecord(nullptr, dl_record));
         break;
       }
-      case PointerType::Skiplist: {
+      case RecordType::SortedHeader: {
+        
+        break;
+      }
+      case RecordType::SortedHeaderDelete: {
         break;
       }
       default:
@@ -152,7 +140,8 @@ void KVEngine::CleanOutDated() {
     version_controller_.UpdatedOldestSnapshot();
     auto min_snapshot_ts = version_controller_.OldestSnapshotTS();
 
-    std::vector<std::pair<void*, PointerType>> outdated_records;
+    std::vector<std::pair<void*, RecordType>> outdated_records;
+    std::vector<SkiplistNode*> outdated_skiplist_nodes;
     PendingFreeSpaceEntries space_entries;
 
     {  // Slot lock section
@@ -168,14 +157,14 @@ void KVEngine::CleanOutDated() {
                    string_record->GetExpireTime() <= now) &&
                   string_record->GetTimestamp() < min_snapshot_ts) {
                 outdated_records.emplace_back(std::make_pair(
-                    slot_iter->GetIndex().ptr, slot_iter->GetIndexType()));
+                    slot_iter->GetIndex().ptr, string_record->GetRecordType()));
                 hash_table_->Erase(&(*slot_iter));
               } else {
                 auto outdated_record =
                     updateVersionList<StringRecord>(string_record);
                 if (outdated_record) {
                   outdated_records.emplace_back(std::make_pair(
-                      outdated_record, slot_iter->GetIndexType()));
+                      outdated_record, outdated_record->GetRecordType()));
                 }
               }
               break;
@@ -184,14 +173,14 @@ void KVEngine::CleanOutDated() {
               auto dl_record = slot_iter->GetIndex().skiplist_node->record;
               if (slot_iter->GetRecordType() == RecordType::SortedElemDelete &&
                   dl_record->entry.meta.timestamp < min_snapshot_ts) {
-                outdated_records.emplace_back(std::make_pair(
+                outdated_skiplist_nodes.emplace_back(std::make_pair(
                     slot_iter->GetIndex().ptr, slot_iter->GetIndexType()));
                 hash_table_->Erase(&(*slot_iter));
               } else {
                 auto outdated_record = updateVersionList<DLRecord>(dl_record);
                 if (outdated_record) {
                   outdated_records.emplace_back(std::make_pair(
-                      outdated_record, slot_iter->GetIndexType()));
+                      outdated_record, outdated_record->GetRecordType()));
                 }
               }
               break;
@@ -201,13 +190,13 @@ void KVEngine::CleanOutDated() {
               if (slot_iter->GetRecordType() == RecordType::SortedElemDelete &&
                   dl_record->entry.meta.timestamp < min_snapshot_ts) {
                 outdated_records.emplace_back(std::make_pair(
-                    slot_iter->GetIndex().ptr, slot_iter->GetIndexType()));
+                    slot_iter->GetIndex().ptr, dl_record->GetRecordType()));
                 hash_table_->Erase(&(*slot_iter));
               } else {
                 auto outdated_record = updateVersionList<DLRecord>(dl_record);
                 if (outdated_record) {
                   outdated_records.emplace_back(std::make_pair(
-                      outdated_record, slot_iter->GetIndexType()));
+                      outdated_record, dl_record->GetRecordType()));
                 }
               }
               break;
@@ -226,13 +215,13 @@ void KVEngine::CleanOutDated() {
                     pmem_allocator_->offset2addr(head_record->old_version));
                 if (outdated_record) {
                   outdated_records.emplace_back(std::make_pair(
-                      outdated_record, slot_iter->GetIndexType()));
+                      outdated_record, head_record->GetRecordType()));
                 }
               } else {
                 auto outdated_record = updateVersionList<DLRecord>(head_record);
                 if (outdated_record) {
                   outdated_records.emplace_back(std::make_pair(
-                      outdated_record, slot_iter->GetIndexType()));
+                      outdated_record, outdated_record->GetRecordType()));
                 }
               }
               break;

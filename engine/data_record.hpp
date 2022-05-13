@@ -327,6 +327,8 @@ struct DLRecord {
 
   uint32_t GetRecordSize() const { return entry.header.record_size; }
 
+  RecordType GetRecordType() const { return entry.meta.type; }
+
  private:
   DLRecord(uint32_t _record_size, TimeStampType _timestamp,
            RecordType _record_type, PMemOffsetType _old_version,

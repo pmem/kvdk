@@ -417,7 +417,7 @@ class KVEngine : public Engine {
   void FreeSkiplistDramNodes();
 
   std::vector<SpaceEntry> purgeOutDatedRecords(
-      const std::vector<std::pair<void*, PointerType>>& outdated_records);
+      const std::vector<std::pair<void*, RecordType>>& outdated_records);
 
   SpaceEntry purgeOldDataRecord(void* record);
   SpaceEntry purgeSortedRecord(SkiplistNode* dram_node, DLRecord* pmem_record);
