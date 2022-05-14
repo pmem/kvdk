@@ -195,7 +195,7 @@ class Skiplist : public Collection {
 
   Status MarkAsDeleted();
 
-  // Set "key, value" to the skiplist
+  // Put "key, value" to the skiplist
   //
   // timestamp: kvdk engine timestamp of this operation
   //
@@ -204,7 +204,7 @@ class Skiplist : public Collection {
   // contension
   //
   // Notice: the setting key should already been locked by engine
-  WriteResult Set(const StringView& key, const StringView& value,
+  WriteResult Put(const StringView& key, const StringView& value,
                   TimeStampType timestamp);
 
   // Get value of "key" from the skiplist

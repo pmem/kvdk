@@ -10,8 +10,7 @@ namespace KVDK_NAMESPACE {
 Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
                         void* modify_args, const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
-  if (write_options.ttl_time <= 0 ||
-      !TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
+  if (!TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
 
@@ -99,7 +98,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
   return Status::Ok;
 }
 
-Status KVEngine::Set(const StringView key, const StringView value,
+Status KVEngine::Put(const StringView key, const StringView value,
                      const WriteOptions& options) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
@@ -110,7 +109,7 @@ Status KVEngine::Set(const StringView key, const StringView value,
     return Status::InvalidDataSize;
   }
 
-  return StringSetImpl(key, value, options);
+  return StringPutImpl(key, value, options);
 }
 
 Status KVEngine::Get(const StringView key, std::string* value) {
@@ -181,11 +180,10 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
              : lookup_result.s;
 }
 
-Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
+Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
                                const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
-  if (write_options.ttl_time <= 0 ||
-      !TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
+  if (!TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
 
@@ -195,7 +193,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   KeyStatus entry_status =
       expired_time != kPersistTime ? KeyStatus::Volatile : KeyStatus::Persist;
 
-  TEST_SYNC_POINT("KVEngine::StringSetImpl::BeforeLock");
+  TEST_SYNC_POINT("KVEngine::StringPutImpl::BeforeLock");
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
@@ -211,7 +209,7 @@ Status KVEngine::StringSetImpl(const StringView& key, const StringView& value,
   kvdk_assert(lookup_result.s == Status::NotFound ||
                   lookup_result.s == Status::Ok ||
                   lookup_result.s == Status::Outdated,
-              "Wrong return status in lookupKey in StringSetImpl");
+              "Wrong return status in lookupKey in StringPutImpl");
   StringRecord* existing_record =
       lookup_result.s == Status::NotFound
           ? nullptr

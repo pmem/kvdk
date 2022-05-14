@@ -85,24 +85,23 @@ KVDKStatus KVDKZAdd(KVDKEngine* engine, const char* collection,
   EncodeStringKey(collection, collection_len, member, member_len, &string_key,
                   &string_key_len);
 
-  KVDKStatus s = KVDKSortedSet(engine, collection, collection_len, score_key,
+  KVDKStatus s = KVDKSortedPut(engine, collection, collection_len, score_key,
                                score_key_len, "", 0);
   if (s == NotFound) {
     KVDKSortedCollectionConfigs* s_config = KVDKCreateSortedCollectionConfigs();
     KVDKSetSortedCollectionConfigs(
         s_config, comp_name, strlen(comp_name),
         0 /*we do not need hash index for score part*/);
-    s = KVDKCreateSortedCollection(engine, collection, collection_len,
-                                   s_config);
+    s = KVDKSortedCreate(engine, collection, collection_len, s_config);
     if (s == Ok) {
-      s = KVDKSortedSet(engine, collection, collection_len, score_key,
+      s = KVDKSortedPut(engine, collection, collection_len, score_key,
                         score_key_len, "", 0);
     }
     KVDKDestroySortedCollectionConfigs(s_config);
   }
 
   if (s == Ok) {
-    s = KVDKSet(engine, string_key, string_key_len, (char*)&score,
+    s = KVDKPut(engine, string_key, string_key_len, (char*)&score,
                 sizeof(int64_t), write_option);
   }
 

@@ -362,7 +362,7 @@ Skiplist::WriteResult Skiplist::Delete(const StringView& key,
   return ret;
 }
 
-Skiplist::WriteResult Skiplist::Set(const StringView& key,
+Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
   Skiplist::WriteResult ret;

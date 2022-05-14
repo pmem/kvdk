@@ -79,7 +79,7 @@ class KVEngine : public Engine {
 
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
-  Status Set(const StringView key, const StringView value,
+  Status Put(const StringView key, const StringView value,
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
   Status BatchWrite(const WriteBatch& write_batch) override;
@@ -87,14 +87,13 @@ class KVEngine : public Engine {
                 const WriteOptions& options) override;
 
   // Sorted Collection
-  Status CreateSortedCollection(
-      const StringView collection_name,
-      const SortedCollectionConfigs& configs) override;
-  Status DestroySortedCollection(const StringView collection_name) override;
+  Status SortedCreate(const StringView collection_name,
+                      const SortedCollectionConfigs& configs) override;
+  Status SortedDestroy(const StringView collection_name) override;
   Status SortedSize(const StringView collection, size_t* size) override;
   Status SortedGet(const StringView collection, const StringView user_key,
                    std::string* value) override;
-  Status SortedSet(const StringView collection, const StringView user_key,
+  Status SortedPut(const StringView collection, const StringView user_key,
                    const StringView value) override;
   Status SortedDelete(const StringView collection,
                       const StringView user_key) override;
@@ -176,7 +175,7 @@ class KVEngine : public Engine {
   Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
                          StringView elem) final;
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
-  Status ListSet(std::unique_ptr<ListIterator> const& pos,
+  Status ListPut(std::unique_ptr<ListIterator> const& pos,
                  StringView elem) final;
   std::unique_ptr<ListIterator> ListCreateIterator(StringView key) final;
 
@@ -185,7 +184,7 @@ class KVEngine : public Engine {
   Status HashDestroy(StringView key) final;
   Status HashLength(StringView key, size_t* len) final;
   Status HashGet(StringView key, StringView field, std::string* value) final;
-  Status HashSet(StringView key, StringView field, StringView value) final;
+  Status HashPut(StringView key, StringView field, StringView value) final;
   Status HashDelete(StringView key, StringView field) final;
   Status HashModify(StringView key, StringView field, ModifyFunc modify_func,
                     void* cb_args) final;
@@ -331,7 +330,7 @@ class KVEngine : public Engine {
 
   Status MaybeInitPendingBatchFile();
 
-  Status StringSetImpl(const StringView& key, const StringView& value,
+  Status StringPutImpl(const StringView& key, const StringView& value,
                        const WriteOptions& write_options);
 
   Status StringDeleteImpl(const StringView& key);
@@ -339,10 +338,10 @@ class KVEngine : public Engine {
   Status StringBatchWriteImpl(const WriteBatch::KV& kv,
                               BatchWriteHint& batch_hint);
 
-  Status SortedSetImpl(Skiplist* skiplist, const StringView& collection_key,
+  Status SortedPutImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);
 
-  Status SDeleteImpl(Skiplist* skiplist, const StringView& user_key);
+  Status SortedDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
   Status Recovery();
 
@@ -395,7 +394,7 @@ class KVEngine : public Engine {
   // for ModifyOperation::Delete and Noop, return Status of the field.
   // for ModifyOperation::Write, return the Status of the Write.
   // for ModifyOperation::Abort, return Status::Abort.
-  enum class hashElemOpImplCaller { HashGet, HashSet, HashModify, HashDelete };
+  enum class hashElemOpImplCaller { HashGet, HashPut, HashModify, HashDelete };
   template <hashElemOpImplCaller caller, typename CallBack>
   Status hashElemOpImpl(StringView key, StringView field, CallBack cb,
                         void* cb_args);

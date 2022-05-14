@@ -83,13 +83,13 @@ Status KVEngine::HashGet(StringView key, StringView field, std::string* value) {
                                                        nullptr);
 }
 
-Status KVEngine::HashSet(StringView key, StringView field, StringView value) {
+Status KVEngine::HashPut(StringView key, StringView field, StringView value) {
   auto set_func = [&](StringView const*, StringView* new_val, void*) {
     *new_val = value;
     return ModifyOperation::Write;
   };
 
-  return hashElemOpImpl<hashElemOpImplCaller::HashSet>(key, field, set_func,
+  return hashElemOpImpl<hashElemOpImplCaller::HashPut>(key, field, set_func,
                                                        nullptr);
 }
 
@@ -137,7 +137,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
   }
 
   constexpr bool may_set = (caller == hashElemOpImplCaller::HashModify ||
-                            caller == hashElemOpImplCaller::HashSet);
+                            caller == hashElemOpImplCaller::HashPut);
   constexpr bool hash_get = (caller == hashElemOpImplCaller::HashGet);
 
   // This token guarantees a valid view of the hlist and its elements.
@@ -171,7 +171,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
   switch (cb(p_old_value, &new_value, cb_args)) {
     case ModifyOperation::Write: {
       kvdk_assert(caller == hashElemOpImplCaller::HashModify ||
-                      caller == hashElemOpImplCaller::HashSet,
+                      caller == hashElemOpImplCaller::HashPut,
                   "");
       if (!CheckValueSize(new_value)) {
         return Status::InvalidDataSize;
