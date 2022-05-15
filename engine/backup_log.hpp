@@ -31,7 +31,7 @@ class BackupLog {
       return Status::IOError;
     }
     log_file_ = (char*)mmap(log_file_, file_size_ + delta_.size(),
-                            PROT_WRITE | PROT_READ, 00666, fd_, 0);
+                            PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
 
     if (log_file_ == nullptr) {
       GlobalLogger.Error("Map backup log file error: %s\n", strerror(errno));
@@ -97,7 +97,8 @@ class BackupLog {
   Status Init(const std::string& backup_log) {
     fd_ = open(backup_log.c_str(), O_CREAT | O_RDWR, 0666);
     if (fd_ >= 0) {
-      log_file_ = (char*)mmap(nullptr, 0, PROT_WRITE | PROT_READ, 0666, fd_, 0);
+      log_file_ =
+          (char*)mmap(nullptr, 0, PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
       file_size_ = 0;
     };
     if (log_file_ == nullptr) {
@@ -112,8 +113,10 @@ class BackupLog {
   Status Open(const std::string& backup_log) {
     fd_ = open(backup_log.c_str(), O_RDWR, 0666);
     if (fd_ >= 0) {
-      log_file_ = (char*)mmap(nullptr, 0, PROT_WRITE | PROT_READ, 0666, fd_, 0);
-      file_size_ = 0;
+      file_size_ = lseek(fd_, 0, SEEK_END);
+      GlobalLogger.Debug("log file size %lu\n", file_size_);
+      log_file_ = (char*)mmap(nullptr, file_size_, PROT_WRITE | PROT_READ,
+                              MAP_SHARED, fd_, 0);
     }
     if (log_file_ == nullptr) {
       GlobalLogger.Error("Open bakcup log file %s error: %s\n",

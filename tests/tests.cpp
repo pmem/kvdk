@@ -42,6 +42,7 @@ class EngineBasicTest : public testing::Test {
   Configs configs;
   std::string db_path;
   std::string backup_path;
+  std::string backup_log;
   std::string str_pool;
 
   virtual void SetUp() override {
@@ -58,9 +59,10 @@ class EngineBasicTest : public testing::Test {
     configs.max_access_threads = 1;
     db_path = FLAGS_path;
     backup_path = FLAGS_path + "_backup";
+    backup_log = FLAGS_path + ".backup";
     char cmd[1024];
-    sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
-            backup_path.c_str());
+    sprintf(cmd, "rm -rf %s && rm -rf %s && rm -rf %s\n", db_path.c_str(),
+            backup_path.c_str(), backup_log.c_str());
     int res __attribute__((unused)) = system(cmd);
     config_option = OptionConfig::Default;
     cnt = 500;
@@ -75,8 +77,8 @@ class EngineBasicTest : public testing::Test {
   void Destroy() {
     // delete db_path
     char cmd[1024];
-    sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
-            backup_path.c_str());
+    sprintf(cmd, "rm -rf %s && rm -rf %s && rm -rf %s\n", db_path.c_str(),
+            backup_path.c_str(), backup_log.c_str());
     int res __attribute__((unused)) = system(cmd);
   }
 
@@ -549,7 +551,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     snapshot_done = true;
     cv.notify_all();
   }
-  engine->Backup(backup_path, snapshot);
+  engine->Backup(backup_log, snapshot);
   for (auto& t : ths) {
     t.join();
   }
@@ -582,9 +584,9 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     configs.opt_large_sorted_collection_recovery = is_opt;
     Engine* backup_engine;
 
-    ASSERT_EQ(
-        Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
-        Status::Ok);
+    ASSERT_EQ(Engine::Restore(backup_path, backup_log, &backup_engine, configs,
+                              stdout),
+              Status::Ok);
 
     configs.recover_to_checkpoint = true;
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
