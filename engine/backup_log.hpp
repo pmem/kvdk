@@ -23,7 +23,7 @@ enum BackupStage {
   Finished,
 };
 
-// Persist/Read backup of a instead as log-like manner
+// Persist/Read backup of a kvdk instance as log-like manner
 // Format:
 // stage | string record 1 | string record 2 | sorted header record 1 | sorted
 // elems of header 1 | ... sorted header n | sorted elems of header n | ... |

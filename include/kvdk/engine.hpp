@@ -35,11 +35,11 @@ class Engine {
   static Status Open(const std::string& engine_path, Engine** engine_ptr,
                      const Configs& configs, FILE* log_file = stdout);
 
-  // Restore a KVDK instance from a backup file.
+  // Restore a KVDK instance from a backup log file.
   //
   // Para:
   // * engine_path: indicates the dir path that persist the instance
-  // * backup_file: the backup file restored from
+  // * backup_log: the backup log file restored from
   // * engine_ptr: store the pointer to restored instance
   // * configs: engine configs
   // * log_file: file to print out runtime logs
@@ -50,7 +50,7 @@ class Engine {
   // Notice:
   // "engine_path" should be an empty dir
   static Status Restore(const std::string& engine_path,
-                        const std::string& backup_file, Engine** engine_ptr,
+                        const std::string& backup_log, Engine** engine_ptr,
                         const Configs& configs, FILE* log_file = stdout);
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
@@ -266,8 +266,8 @@ class Engine {
   // forbid newer data being freed
   virtual Snapshot* GetSnapshot(bool make_checkpoint) = 0;
 
-  // Make a backup on "snapshot" to "backup_file"
-  virtual Status Backup(const pmem::obj::string_view backup_file,
+  // Make a backup on "snapshot" to "backup_log"
+  virtual Status Backup(const pmem::obj::string_view backup_log,
                         const Snapshot* snapshot) = 0;
 
   // Release a snapshot of the instance

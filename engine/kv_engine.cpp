@@ -71,12 +71,12 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
 }
 
 Status KVEngine::Restore(const std::string& engine_path,
-                         const std::string& backup_file, Engine** engine_ptr,
+                         const std::string& backup_log, Engine** engine_ptr,
                          const Configs& configs) {
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(engine_path, configs);
   if (s == Status::Ok) {
-    s = engine->restoreDataFromBackup(backup_file);
+    s = engine->restoreDataFromBackup(backup_log);
   }
 
   if (s == Status::Ok) {
@@ -84,8 +84,8 @@ Status KVEngine::Restore(const std::string& engine_path,
     engine->startBackgroundWorks();
     engine->ReportPMemUsage();
   } else {
-    GlobalLogger.Error("Restore kvdk instance from backup file %s failed: %d\n",
-                       backup_file.c_str(), s);
+    GlobalLogger.Error("Restore kvdk instance from backup log %s failed: %d\n",
+                       backup_log.c_str(), s);
     delete engine;
   }
   return s;
@@ -439,10 +439,10 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
   return s;
 }
 
-Status KVEngine::Backup(const pmem::obj::string_view backup_file,
+Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                         const Snapshot* snapshot) {
   BackupLog backup;
-  Status s = backup.Init(string_view_2_string(backup_file));
+  Status s = backup.Init(string_view_2_string(backup_log));
   if (s != Status::Ok) {
     return s;
   }
@@ -590,14 +590,14 @@ Status KVEngine::RestorePendingBatch() {
   return Status::Ok;
 }
 
-Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
+Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   // Todo: make this multi-thread
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
   BackupLog backup;
-  s = backup.Open(backup_file);
+  s = backup.Open(backup_log);
   if (s != Status::Ok) {
     return s;
   }
@@ -605,7 +605,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
   auto iter = backup.GetIterator();
   if (iter == nullptr) {
     GlobalLogger.Error("Restore from a not finished backup log %s\n",
-                       backup_file.c_str());
+                       backup_log.c_str());
     return Status::Abort;
   }
   while (iter->Valid()) {
@@ -648,12 +648,12 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
       }
       case SortedElem: {
         GlobalLogger.Error("sorted elems not lead by header in backup log %s\n",
-                           backup_file.c_str());
+                           backup_log.c_str());
         return Status::Abort;
       }
       default:
         GlobalLogger.Error("unsupported record type %u in backup log %s\n",
-                           record.type, backup_file.c_str());
+                           record.type, backup_log.c_str());
         return Status::Abort;
     }
     if (s != Status::Ok) {

@@ -48,12 +48,12 @@ class KVEngine : public Engine {
                      const Configs& configs);
 
   static Status Restore(const std::string& engine_path,
-                        const std::string& backup_file, Engine** engine_ptr,
+                        const std::string& backup_log, Engine** engine_ptr,
                         const Configs& configs);
 
   Snapshot* GetSnapshot(bool make_checkpoint) override;
 
-  Status Backup(const pmem::obj::string_view backup_file,
+  Status Backup(const pmem::obj::string_view backup_log,
                 const Snapshot* snapshot) override;
 
   void ReleaseSnapshot(const Snapshot* snapshot) override {
@@ -355,7 +355,7 @@ class KVEngine : public Engine {
 
   Status Recovery();
 
-  Status restoreDataFromBackup(const std::string& backup_file);
+  Status restoreDataFromBackup(const std::string& backup_log);
 
   Status RestoreData();
 
