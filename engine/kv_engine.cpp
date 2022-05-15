@@ -463,7 +463,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_file,
           }
           if (record && record->GetRecordType() == StringDataRecord &&
               !record->HasExpired()) {
-            backup.Append(StringDataRecord, record->Key(), record->Value());
+            s = backup.Append(StringDataRecord, record->Key(), record->Value());
           } else {
             kvdk_assert(record == nullptr ||
                             record->GetRecordType() == StringDeleteRecord,
@@ -480,23 +480,32 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_file,
           }
           if (header && header->GetRecordType() == SortedHeader &&
               !header->HasExpired()) {
-            backup.Append(SortedHeader, header->Key(), header->Value());
-            auto backup_skiplist = getSkiplist(Skiplist::SkiplistID(header));
-            kvdk_assert(backup_skiplist != nullptr,
-                        "Backup skiplist should exist in map");
-            auto skiplist_iter = SortedIterator(
-                backup_skiplist.get(), pmem_allocator_.get(),
-                static_cast<const SnapshotImpl*>(snapshot), false);
-            for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
-                 skiplist_iter.Next()) {
-              backup.Append(SortedElem, skiplist_iter.Key(),
-                            skiplist_iter.Value());
+            s = backup.Append(SortedHeader, header->Key(), header->Value());
+            if (s == Status::Ok) {
+              // Append skiplist elems following the header
+              auto skiplist = getSkiplist(Skiplist::SkiplistID(header));
+              kvdk_assert(skiplist != nullptr,
+                          "Backup skiplist should exist in map");
+              auto skiplist_iter = SortedIterator(
+                  skiplist.get(), pmem_allocator_.get(),
+                  static_cast<const SnapshotImpl*>(snapshot), false);
+              for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
+                   skiplist_iter.Next()) {
+                s = backup.Append(SortedElem, skiplist_iter.Key(),
+                                  skiplist_iter.Value());
+                if (s != Status::Ok) {
+                  break;
+                }
+              }
             }
           }
         }
         default:
           // Hash and list backup is not supported yet
           break;
+      }
+      if (s != Status::Ok) {
+        return s;
       }
       slot_iter++;
     }
@@ -594,12 +603,17 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
   }
   auto wo = WriteOptions();
   auto iter = backup.GetIterator();
-  while (iter.Valid()) {
-    auto record = iter.Record();
+  if (iter == nullptr) {
+    GlobalLogger.Error("Restore from a not finished backup log %s\n",
+                       backup_file.c_str());
+    return Status::Abort;
+  }
+  while (iter->Valid()) {
+    auto record = iter->Record();
     switch (record.type) {
       case StringDataRecord: {
         s = Put(record.key, record.val, wo);
-        iter.Next();
+        iter->Next();
         break;
       }
       case SortedHeader: {
@@ -615,10 +629,10 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
         if (s != Status::Ok) {
           break;
         }
-        iter.Next();
+        iter->Next();
         // the header is followed by all its elems in backup log
-        while (iter.Valid()) {
-          record = iter.Record();
+        while (iter->Valid()) {
+          record = iter->Record();
           if (record.type != SortedElem) {
             break;
           }
@@ -628,7 +642,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_file) {
           if (s != Status::Ok) {
             break;
           }
-          iter.Next();
+          iter->Next();
         }
         break;
       }
