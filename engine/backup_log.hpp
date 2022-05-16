@@ -187,7 +187,7 @@ class BackupLog {
 
   void changeStage(BackupStage stage) {
     memcpy(persistedStage(), &stage, sizeof(BackupStage));
-    msync(log_file_, sizeof(BackupStage), MS_SYNC);
+    msync(persistedStage(), sizeof(BackupStage), MS_SYNC);
   }
 
   bool finished() { return stage_ == BackupStage::Finished; }
