@@ -515,44 +515,8 @@ Status KVEngine::MaybeRestoreBackup() {
   return Status::Ok;
 }
 
-Status KVEngine::batchWriteRestoreLogs() {
-  DIR* dir = opendir(batch_log_dir_.c_str());
-  if (dir == NULL) {
-    perror("batchWriteRestoreLogs: opendir fails.");
-    return Status::IOError;
-  }
-  dirent* entry;
-  while ((entry = readdir(dir)) != NULL) {
-    std::string fname = std::string{entry->d_name};
-    if (fname == "." || fname == "..") {
-      continue;
-    }
-    std::uint64_t tid = std::stoul(fname);
-    std::string log_file_path = batch_log_dir_ + fname;
-    size_t mapped_len;
-    int is_pmem;
-    void* addr = pmem_map_file(log_file_path.c_str(), BatchWriteLog::MaxBytes(),
-                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
-    if (addr == NULL) {
-      GlobalLogger.Error("Fail to Restore BatchLog file. %s\n",
-                         strerror(errno));
-      return Status::PMemMapFileError;
-    }
-    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
-    engine_thread_cache_[tid].batch_log = static_cast<char*>(addr);
-  }
-  closedir(dir);
-
-  return Status::Ok;
-}
-
 Status KVEngine::Recovery() {
   Status s = RestoreCheckpoint();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  s = batchWriteRestoreLogs();
   if (s != Status::Ok) {
     return s;
   }
@@ -982,14 +946,32 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 }
 
 Status KVEngine::batchWriteRollbackLogs() {
-  for (size_t i = 0; i < engine_thread_cache_.size(); i++) {
-    char* seq = engine_thread_cache_[i].batch_log;
-    if (seq == nullptr) {
+  DIR* dir = opendir(batch_log_dir_.c_str());
+  if (dir == NULL) {
+    GlobalLogger.Error("Fail to opendir in batchWriteRollbackLogs. %s\n",
+                       strerror(errno));
+    return Status::IOError;
+  }
+  dirent* entry;
+  while ((entry = readdir(dir)) != NULL) {
+    std::string fname = std::string{entry->d_name};
+    if (fname == "." || fname == "..") {
       continue;
     }
+    std::string log_file_path = batch_log_dir_ + fname;
+    size_t mapped_len;
+    int is_pmem;
+    void* addr = pmem_map_file(log_file_path.c_str(), BatchWriteLog::MaxBytes(),
+                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    if (addr == NULL) {
+      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
+                         strerror(errno));
+      return Status::PMemMapFileError;
+    }
+    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
 
     BatchWriteLog log;
-    log.DecodeFrom(seq);
+    log.DecodeFrom(static_cast<char*>(addr));
 
     Status s;
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
@@ -1013,7 +995,14 @@ Status KVEngine::batchWriteRollbackLogs() {
         return s;
       }
     }
+    if (pmem_unmap(addr, mapped_len) != 0) {
+      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
+                         strerror(errno));
+      return Status::PMemMapFileError;
+    }
   }
+  closedir(dir);
+
   return Status::Ok;
 }
 

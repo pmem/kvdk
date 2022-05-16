@@ -388,8 +388,6 @@ class KVEngine : public Engine {
 
   Status batchWriteImpl(WriteBatchImpl const& batch);
 
-  Status batchWriteRestoreLogs();
-
   Status batchWriteRollbackLogs();
 
   /// List helper functions
