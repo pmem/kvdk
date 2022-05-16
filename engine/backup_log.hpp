@@ -96,7 +96,7 @@ class BackupLog {
     return Status::Ok;
   }
 
-  // Open a existing backup log read-only
+  // Open a existing backup log
   Status Open(const std::string& backup_log) {
     fd_ = open(backup_log.c_str(), O_RDWR, 0666);
     if (fd_ >= 0) {
@@ -104,6 +104,12 @@ class BackupLog {
       if (file_size_ >= sizeof(BackupStage)) {
         log_file_ = (char*)mmap(nullptr, file_size_, PROT_WRITE | PROT_READ,
                                 MAP_SHARED, fd_, 0);
+      } else {
+        GlobalLogger.Error(
+            "Open backup log file %s error: file size %lu smaller than "
+            "persisted "
+            "stage flag",
+            backup_log.size(), file_size_);
       }
     }
     if (log_file_ == nullptr) {
