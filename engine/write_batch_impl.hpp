@@ -236,6 +236,14 @@ class BatchWriteLog {
     _mm_mfence();
   }
 
+  // For rollback
+  static void MarkInitializing(char* dst) {
+    dst = &dst[sizeof(size_t)];
+    *reinterpret_cast<Stage*>(dst) = Stage::Initializing;
+    _mm_clflush(dst);
+    _mm_mfence();
+  }
+
   using StringLog = std::vector<StringLogEntry>;
   using SortedLog = std::vector<SortedLogEntry>;
   using HashLog = std::vector<HashLogEntry>;

@@ -995,6 +995,7 @@ Status KVEngine::batchWriteRollbackLogs() {
         return s;
       }
     }
+    log.MarkInitializing(static_cast<char*>(addr));
     if (pmem_unmap(addr, mapped_len) != 0) {
       GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
                          strerror(errno));
@@ -1002,6 +1003,8 @@ Status KVEngine::batchWriteRollbackLogs() {
     }
   }
   closedir(dir);
+  std::string cmd{"rm -rf " + batch_log_dir_ + "*"};
+  system(cmd.c_str());
 
   return Status::Ok;
 }
