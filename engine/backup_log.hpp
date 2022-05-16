@@ -136,6 +136,7 @@ class BackupLog {
       changeStage(BackupStage::NotFinished);
     }
     // we do not encapsulate LogRecord here to avoid a memory copy
+    // TODO: use pinable string view in LogRecord
     AppendUint32(&delta_, type);
     AppendFixedString(&delta_, key);
     AppendFixedString(&delta_, val);
