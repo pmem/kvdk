@@ -613,6 +613,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
     uint64_t sorted_iter_cnt = 0;
     auto sorted_iter = engine->NewSortedIterator(sorted_collection);
+    ASSERT_TRUE(sorted_iter != nullptr);
     sorted_iter->SeekToFirst();
     while (sorted_iter->Valid()) {
       ASSERT_TRUE(sorted_iter->Valid());
