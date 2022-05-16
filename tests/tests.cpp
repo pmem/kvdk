@@ -2000,27 +2000,31 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
   size_t batch_size = 100;
   size_t count = batch_size;
   std::vector<std::vector<std::string>> keys(num_threads);
-  std::vector<std::vector<std::string>> values(num_threads);
+  // Keeps track of actual values in engine
+  std::vector<std::vector<std::string>> expected_values(num_threads);
   for (size_t tid = 0; tid < num_threads; tid++) {
     for (size_t i = 0; i < count; i++) {
       keys[tid].push_back(std::to_string(tid) + "_" + std::to_string(i));
-      values[tid].emplace_back();
+      expected_values[tid].emplace_back();
     }
   }
 
+  // Write to engine and update expected_values vector.
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
-      values[tid][i] = GetRandomString(120);
-      ASSERT_EQ(engine->Put(keys[tid][i], values[tid][i]), Status::Ok);
+      std::string value = GetRandomString(120);
+      expected_values[tid][i] = value;
+      ASSERT_EQ(engine->Put(keys[tid][i], value), Status::Ok);
     }
   };
 
-  // This BatchWrite will not be commited
+  // Try BatchWrite, which will not be commited
+  // expected_values vector is not updated.
   auto BatchWrite = [&](size_t tid) {
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
-        batch->StringPut(keys[tid][i], values[tid][i]);
+        batch->StringPut(keys[tid][i], GetRandomString(120));
       } else {
         batch->StringDelete(keys[tid][i]);
       }
@@ -2032,7 +2036,7 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
     for (size_t i = 0; i < count; i++) {
       std::string val_resp;
       ASSERT_EQ(engine->Get(keys[tid][i], &val_resp), Status::Ok);
-      ASSERT_EQ(values[tid][i], val_resp);
+      ASSERT_EQ(expected_values[tid][i], val_resp);
     }
   };
 
@@ -2040,12 +2044,17 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
       "KVEngine::batchWriteImpl::BeforeCommit");
   SyncPoint::GetInstance()->EnableProcessing();
 
+  // Put some KVs
   LaunchNThreads(num_threads, Put);
+  // Check KVs in engine
   LaunchNThreads(num_threads, Check);
+  // Try BatchWrite, crashed by crash point before commitment
+  // the BatchWrite will not be visible after recovery
   LaunchNThreads(num_threads, BatchWrite);
 
   Reboot();
 
+  // Check KVs in engine, the batch is indeed rolled back.
   LaunchNThreads(num_threads, Check);
 
   delete engine;
