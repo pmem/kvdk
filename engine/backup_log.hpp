@@ -34,6 +34,7 @@ class BackupLog {
     RecordType type;
     std::string key;
     std::string val;
+    ExpireTimeType expire_time;
   };
 
   // Iterate log records on a backup log
@@ -43,7 +44,8 @@ class BackupLog {
         : records_on_file_(records_on_file) {
       valid_ = FetchUint32(&records_on_file_, (uint32_t*)&curr_.type) &&
                FetchFixedString(&records_on_file_, &curr_.key) &&
-               FetchFixedString(&records_on_file_, &curr_.val);
+               FetchFixedString(&records_on_file_, &curr_.val) &&
+               FetchUint64(&records_on_file_, (uint64_t*)&curr_.expire_time);
     }
 
     LogRecord Record() { return curr_; }
@@ -51,7 +53,8 @@ class BackupLog {
       if (Valid()) {
         valid_ = FetchUint32(&records_on_file_, (uint32_t*)&curr_.type) &&
                  FetchFixedString(&records_on_file_, &curr_.key) &&
-                 FetchFixedString(&records_on_file_, &curr_.val);
+                 FetchFixedString(&records_on_file_, &curr_.val) &&
+                 FetchUint64(&records_on_file_, (uint64_t*)&curr_.expire_time);
       }
     }
     bool Valid() { return valid_; }
@@ -122,13 +125,15 @@ class BackupLog {
   }
 
   // Append a record to backup log
-  Status Append(RecordType type, const StringView& key, const StringView& val) {
+  Status Append(RecordType type, const StringView& key, const StringView& val,
+                ExpireTimeType expire_time) {
     if (finished()) {
       changeStage(BackupStage::NotFinished);
     }
     AppendUint32(&delta_, type);
     AppendFixedString(&delta_, key);
     AppendFixedString(&delta_, val);
+    AppendUint64(&delta_, expire_time);
     if (delta_.size() >= kMaxBackupLogBufferSize) {
       return persistDelta();
     }

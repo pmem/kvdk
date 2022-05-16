@@ -467,7 +467,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           if (record && record->GetRecordType() == StringDataRecord &&
               !record->HasExpired()) {
-            s = backup.Append(StringDataRecord, record->Key(), record->Value());
+            s = backup.Append(StringDataRecord, record->Key(), record->Value(),
+                              record->GetExpireTime());
           }
           break;
         }
@@ -480,7 +481,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           if (header && header->GetRecordType() == SortedHeader &&
               !header->HasExpired()) {
-            s = backup.Append(SortedHeader, header->Key(), header->Value());
+            s = backup.Append(SortedHeader, header->Key(), header->Value(),
+                              header->GetExpireTime());
             if (s == Status::Ok) {
               // Append skiplist elems following the header
               auto skiplist = getSkiplist(Skiplist::SkiplistID(header));
@@ -492,7 +494,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
                    skiplist_iter.Next()) {
                 s = backup.Append(SortedElem, skiplist_iter.Key(),
-                                  skiplist_iter.Value());
+                                  skiplist_iter.Value(), kPersistTime);
                 if (s != Status::Ok) {
                   break;
                 }
@@ -611,24 +613,29 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   }
   while (iter->Valid()) {
     auto record = iter->Record();
+    bool expired = TimeUtils::CheckIsExpired(record.expire_time);
     switch (record.type) {
       case StringDataRecord: {
-        s = Put(record.key, record.val, wo);
+        if (!expired) {
+          s = Put(record.key, record.val, wo);
+        }
         iter->Next();
         break;
       }
       case SortedHeader: {
         // Maybe reuse id?
-        CollectionIDType id;
-        SortedCollectionConfigs s_configs;
-        s = Skiplist::DecodeSortedCollectionValue(record.val, id, s_configs);
-        if (s != Status::Ok) {
-          break;
-        }
         std::shared_ptr<Skiplist> skiplist = nullptr;
-        s = buildSkiplist(record.key, s_configs, skiplist);
-        if (s != Status::Ok) {
-          break;
+        if (!expired) {
+          CollectionIDType id;
+          SortedCollectionConfigs s_configs;
+          s = Skiplist::DecodeSortedCollectionValue(record.val, id, s_configs);
+          if (s != Status::Ok) {
+            break;
+          }
+          s = buildSkiplist(record.key, s_configs, skiplist);
+          if (s != Status::Ok) {
+            break;
+          }
         }
         iter->Next();
         // the header is followed by all its elems in backup log
@@ -637,11 +644,13 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
           if (record.type != SortedElem) {
             break;
           }
-          auto ret = skiplist->Put(record.key, record.val,
-                                   version_controller_.GetCurrentTimestamp());
-          s = ret.s;
-          if (s != Status::Ok) {
-            break;
+          if (!expired) {
+            auto ret = skiplist->Put(record.key, record.val,
+                                     version_controller_.GetCurrentTimestamp());
+            s = ret.s;
+            if (s != Status::Ok) {
+              break;
+            }
           }
           iter->Next();
         }
