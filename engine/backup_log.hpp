@@ -36,7 +36,7 @@ class BackupLog {
     std::string val;
   };
 
-  // Notice LogIterator would be invalid if append new records to log
+  // Iterate log records on a backup log
   class LogIterator {
    public:
     LogIterator(StringView records_on_file)
@@ -136,7 +136,6 @@ class BackupLog {
   }
 
   Status Finish() {
-    // TODO jiayu add a finish mark or checksum
     Status s = persistDelta();
     if (s != Status::Ok) {
       return s;
@@ -197,6 +196,6 @@ class BackupLog {
   char* log_file_{nullptr};
   size_t file_size_{0};
   int fd_{-1};
-  BackupStage stage_{BackupStage::Finished};
+  BackupStage stage_{BackupStage::NotFinished};
 };
 }  // namespace KVDK_NAMESPACE
