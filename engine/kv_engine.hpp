@@ -372,9 +372,9 @@ class KVEngine : public Engine {
   bool ValidateRecordAndGetValue(void* data_record, uint32_t expected_checksum,
                                  std::string* value);
 
-  Status RestorePendingBatch();
+  Status initOrRestorePendingBatch();
 
-  Status RestoreCheckpoint();
+  Status initOrRestoreCheckpoint();
 
   Status PersistOrRecoverImmutableConfigs();
 

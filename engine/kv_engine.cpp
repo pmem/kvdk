@@ -197,10 +197,10 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     return Status::Abort;
   }
 
-  s = RestorePendingBatch();
+  s = initOrRestorePendingBatch();
 
   if (s == Status::Ok) {
-    s = RestoreCheckpoint();
+    s = initOrRestoreCheckpoint();
   }
 
   RegisterComparator("default", compare_string_view);
@@ -515,7 +515,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
   return Status::Ok;
 }
 
-Status KVEngine::RestoreCheckpoint() {
+Status KVEngine::initOrRestoreCheckpoint() {
   size_t mapped_len;
   int is_pmem;
   persist_checkpoint_ = static_cast<CheckPoint*>(
@@ -530,7 +530,7 @@ Status KVEngine::RestoreCheckpoint() {
   return Status::Ok;
 }
 
-Status KVEngine::RestorePendingBatch() {
+Status KVEngine::initOrRestorePendingBatch() {
   DIR* dir;
   dirent* ent;
   uint64_t persisted_pending_file_size =
