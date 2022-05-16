@@ -533,6 +533,11 @@ Status KVEngine::batchWriteRestoreLogs() {
     int is_pmem;
     void* addr = pmem_map_file(log_file_path.c_str(), BatchWriteLog::MaxBytes(),
                                PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    if (addr == NULL) {
+      GlobalLogger.Error("Fail to Restore BatchLog file. %s\n",
+                         strerror(errno));
+      return Status::PMemMapFileError;
+    }
     kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
     engine_thread_cache_[tid].batch_log = static_cast<char*>(addr);
   }
@@ -720,7 +725,7 @@ Status KVEngine::maybeInitBatchLogFile() {
     void* addr = pmem_map_file(log_file_name.c_str(), BatchWriteLog::MaxBytes(),
                                PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
     if (addr == NULL) {
-      perror("maybeInitBatchLogFile: pmem_map_file fails.");
+      GlobalLogger.Error("Fail to Init BatchLog file. %s\n", strerror(errno));
       return Status::PMemMapFileError;
     }
     kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
