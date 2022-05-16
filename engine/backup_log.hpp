@@ -35,6 +35,20 @@ class BackupLog {
     std::string key;
     std::string val;
     ExpireTimeType expire_time;
+
+    bool DecodeFrom(StringView* str) {
+      FetchUint32(str, (uint32_t*)&type) &&
+          FetchFixedString(str, &key) & FetchFixedString(str, &val) &&
+          FetchUint64(str, (uint64_t*)&expire_time);
+    }
+
+    void EncodeTo(std::string* str) {
+      assert(str != nullptr);
+      AppendUint32(str, type);
+      AppendFixedString(str, key);
+      AppendFixedString(str, val);
+      AppendUint64(str, expire_time);
+    }
   };
 
   // Iterate log records on a backup log
@@ -42,21 +56,16 @@ class BackupLog {
    public:
     LogIterator(StringView records_on_file)
         : records_on_file_(records_on_file) {
-      valid_ = FetchUint32(&records_on_file_, (uint32_t*)&curr_.type) &&
-               FetchFixedString(&records_on_file_, &curr_.key) &&
-               FetchFixedString(&records_on_file_, &curr_.val) &&
-               FetchUint64(&records_on_file_, (uint64_t*)&curr_.expire_time);
+      valid_ = curr_.DecodeFrom(&records_on_file_);
     }
 
     LogRecord Record() { return curr_; }
     void Next() {
       if (Valid()) {
-        valid_ = FetchUint32(&records_on_file_, (uint32_t*)&curr_.type) &&
-                 FetchFixedString(&records_on_file_, &curr_.key) &&
-                 FetchFixedString(&records_on_file_, &curr_.val) &&
-                 FetchUint64(&records_on_file_, (uint64_t*)&curr_.expire_time);
+        valid_ = curr_.DecodeFrom(&records_on_file_);
       }
     }
+
     bool Valid() { return valid_; }
 
    private:
@@ -126,6 +135,7 @@ class BackupLog {
     if (finished()) {
       changeStage(BackupStage::NotFinished);
     }
+    // we do not encapsulate LogRecord here to avoid a memory copy
     AppendUint32(&delta_, type);
     AppendFixedString(&delta_, key);
     AppendFixedString(&delta_, val);
