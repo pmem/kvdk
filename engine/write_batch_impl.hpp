@@ -210,6 +210,8 @@ class BatchWriteLog {
   static size_t Capacity() { return (1UL << 20); }
 
   static size_t MaxBytes() {
+    static_assert(sizeof(StringLog) == sizeof(SortedLog), "");
+    static_assert(sizeof(StringLog) == sizeof(HashLog), "");
     return sizeof(size_t) + sizeof(TimeStampType) + sizeof(Stage) +
            sizeof(size_t) + Capacity() * sizeof(StringLog);
   }
