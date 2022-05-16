@@ -37,9 +37,9 @@ class BackupLog {
     ExpireTimeType expire_time;
 
     bool DecodeFrom(StringView* str) {
-      FetchUint32(str, (uint32_t*)&type) &&
-          FetchFixedString(str, &key) & FetchFixedString(str, &val) &&
-          FetchUint64(str, (uint64_t*)&expire_time);
+      return FetchUint32(str, (uint32_t*)&type) &&
+             FetchFixedString(str, &key) & FetchFixedString(str, &val) &&
+             FetchUint64(str, (uint64_t*)&expire_time);
     }
 
     void EncodeTo(std::string* str) {

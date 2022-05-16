@@ -80,6 +80,25 @@ KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
   return s;
 }
 
+KVDKStatus KVDKBackup(KVDKEngine* engine, char* backup_path,
+                      size_t backup_path_len, KVDKSnapshot* snapshot) {
+  return engine->rep->Backup(StringView(backup_path, backup_path_len),
+                             snapshot->rep);
+}
+
+KVDKStatus KVDKRestore(const char* name, const char* backup_log,
+                       const KVDKConfigs* config, FILE* log_file,
+                       KVDKEngine** kv_engine) {
+  Engine* engine;
+  KVDKStatus s = Engine::Restore(std::string(name), std::string(backup_log),
+                                 &engine, config->rep, log_file);
+  if (s == KVDKStatus::Ok) {
+    *kv_engine = new KVDKEngine;
+    (*kv_engine)->rep.reset(engine);
+  }
+  return s;
+}
+
 void KVDKReleaseAccessThread(KVDKEngine* engine) {
   engine->rep->ReleaseAccessThread();
 }
