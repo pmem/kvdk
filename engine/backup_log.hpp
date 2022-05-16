@@ -65,14 +65,7 @@ class BackupLog {
     bool valid_ = true;
   };
 
-  ~BackupLog() {
-    if (log_file_) {
-      munmap(log_file_, file_size_);
-    }
-    if (fd_ >= 0) {
-      close(fd_);
-    }
-  }
+  ~BackupLog() { closeFile(); }
 
   BackupLog() = default;
   BackupLog(const BackupLog&) = delete;
@@ -93,9 +86,11 @@ class BackupLog {
     if (log_file_ == nullptr) {
       GlobalLogger.Error("Init bakcup log file %s error: %s\n",
                          backup_log.c_str(), strerror(errno));
+      Destroy();
       return Status::IOError;
     }
     changeStage(BackupStage::NotFinished);
+    file_name_ = backup_log;
     return Status::Ok;
   }
 
@@ -121,6 +116,7 @@ class BackupLog {
       return Status::IOError;
     }
     stage_ = *persistedStage();
+    file_name_ = backup_log;
     return Status::Ok;
   }
 
@@ -155,6 +151,12 @@ class BackupLog {
     return finished()
                ? std::unique_ptr<LogIterator>(new LogIterator(logRecordsView()))
                : nullptr;
+  }
+
+  // Destroy backup log file
+  void Destroy() {
+    closeFile();
+    remove(file_name_.c_str());
   }
 
  private:
@@ -197,6 +199,22 @@ class BackupLog {
 
   bool finished() { return stage_ == BackupStage::Finished; }
 
+  void closeFile() {
+    if (log_file_) {
+      munmap(log_file_, file_size_);
+    }
+    if (fd_ >= 0) {
+      close(fd_);
+    }
+    delta_.clear();
+    file_name_.clear();
+    fd_ = -1;
+    file_size_ = 0;
+    stage_ = BackupStage::NotFinished;
+    log_file_ = nullptr;
+  }
+
+  std::string file_name_{};
   std::string delta_{};
   char* log_file_{nullptr};
   size_t file_size_{0};

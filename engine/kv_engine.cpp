@@ -507,6 +507,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           break;
       }
       if (s != Status::Ok) {
+        backup.Destroy();
         return s;
       }
       slot_iter++;
