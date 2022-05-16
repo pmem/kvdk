@@ -33,7 +33,7 @@ extern "C" {
   GEN(PmemOverflow)         \
   GEN(NotSupported)         \
   GEN(PMemMapFileError)     \
-  GEN(BatchOverflow)        \
+  GEN(InvalidBatchSize)     \
   GEN(TooManyAccessThreads) \
   GEN(InvalidDataSize)      \
   GEN(InvalidArgument)      \

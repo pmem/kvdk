@@ -137,6 +137,44 @@ class VersionController {
     TimeStampType Timestamp() { return snap_->GetTimestamp(); }
   };
 
+  class BatchWriteToken {
+    VersionController* owner_{nullptr};
+    TimeStampType ts_{kMaxTimestamp};
+
+   public:
+    BatchWriteToken(VersionController* o)
+        : owner_{o}, ts_{owner_->GetCurrentTimestamp()} {
+      ts_ = owner_->GetCurrentTimestamp();
+      auto& tc = owner_->version_thread_cache_[access_thread.id];
+      kvdk_assert(tc.batch_write_ts == kMaxTimestamp, "");
+      tc.batch_write_ts = ts_;
+    }
+    BatchWriteToken(BatchWriteToken const&) = delete;
+    BatchWriteToken& operator=(BatchWriteToken const&) = delete;
+    BatchWriteToken(BatchWriteToken&& other) { swap(other); }
+    BatchWriteToken& operator=(BatchWriteToken&& other) {
+      swap(other);
+      return *this;
+    }
+    ~BatchWriteToken() {
+      if (owner_ != nullptr) {
+        auto& tc = owner_->version_thread_cache_[access_thread.id];
+        tc.batch_write_ts = kMaxTimestamp;
+      }
+    }
+    TimeStampType Timestamp() { return ts_; }
+
+   private:
+    void swap(BatchWriteToken& other) {
+      kvdk_assert(owner_ == nullptr, "");
+      kvdk_assert(other.owner_ != nullptr, "");
+      kvdk_assert(ts_ == kMaxTimestamp, "");
+      kvdk_assert(other.ts_ != kMaxTimestamp, "");
+      std::swap(owner_, other.owner_);
+      std::swap(ts_, other.ts_);
+    }
+  };
+
  public:
   VersionController(uint64_t max_access_threads)
       : version_thread_cache_(max_access_threads) {}
@@ -150,6 +188,8 @@ class VersionController {
   LocalSnapshotHolder GetLocalSnapshotHolder() {
     return LocalSnapshotHolder{this};
   }
+
+  BatchWriteToken GetBatchWriteToken() { return BatchWriteToken{this}; }
 
   std::shared_ptr<GlobalSnapshotHolder> GetGlobalSnapshotToken() {
     return std::make_shared<GlobalSnapshotHolder>(this);
@@ -189,9 +229,23 @@ class VersionController {
   }
 
   // Create a new global snapshot
-  SnapshotImpl* NewGlobalSnapshot() {
+  SnapshotImpl* NewGlobalSnapshot(bool may_block = true) {
+    TimeStampType ts = GetCurrentTimestamp();
+    if (may_block) {
+      for (size_t i = 0; i < version_thread_cache_.size(); i++) {
+        while (ts >= version_thread_cache_[i].batch_write_ts) {
+          _mm_pause();
+        }
+      }
+    } else {
+      for (size_t i = 0; i < version_thread_cache_.size(); i++) {
+        TimeStampType batch_ts = version_thread_cache_[i].batch_write_ts;
+        ts = std::min(ts, batch_ts - 1);
+      }
+    }
+
     std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
-    return global_snapshots_.New(GetCurrentTimestamp());
+    return global_snapshots_.New(ts);
   }
 
   // Release a global snapshot, it should be created by this instance
@@ -227,6 +281,7 @@ class VersionController {
     VersionThreadCache() : holding_snapshot(kMaxTimestamp) {}
 
     SnapshotImpl holding_snapshot;
+    TimeStampType batch_write_ts{kMaxTimestamp};
     char padding[64 - sizeof(holding_snapshot)];
   };
 

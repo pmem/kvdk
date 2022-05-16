@@ -10,22 +10,23 @@
 
 namespace KVDK_NAMESPACE {
 
-// TODO: implement write batch deduplication
-struct WriteBatch {
-  struct KV {
-    std::string key;
-    std::string value;
-    uint16_t type;
-  };
+class WriteBatch {
+ public:
+  virtual void StringPut(std::string const& key, std::string const& value) = 0;
+  virtual void StringDelete(std::string const& key) = 0;
 
-  void Put(const std::string& key, const std::string& value);
+  virtual void SortedPut(std::string const& key, std::string const& field,
+                         std::string const& value) = 0;
+  virtual void SortedDelete(std::string const& key,
+                            std::string const& field) = 0;
 
-  void Delete(const std::string& key);
+  virtual void HashPut(std::string const& key, std::string const& field,
+                       std::string const& value) = 0;
+  virtual void HashDelete(std::string const& key, std::string const& field) = 0;
 
-  void Clear() { kvs.clear(); }
+  virtual void Clear() = 0;
 
-  size_t Size() const { return kvs.size(); }
-
-  std::vector<KV> kvs;
+  virtual ~WriteBatch() = default;
 };
+
 }  // namespace KVDK_NAMESPACE
