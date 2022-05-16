@@ -65,7 +65,7 @@ class BackupLog {
     bool valid_ = true;
   };
 
-  ~BackupLog() { closeFile(); }
+  ~BackupLog() { Close(); }
 
   BackupLog() = default;
   BackupLog(const BackupLog&) = delete;
@@ -153,9 +153,25 @@ class BackupLog {
                : nullptr;
   }
 
+  // Close backup log file
+  void Close() {
+    if (log_file_) {
+      munmap(log_file_, file_size_);
+    }
+    if (fd_ >= 0) {
+      close(fd_);
+    }
+    delta_.clear();
+    file_name_.clear();
+    fd_ = -1;
+    file_size_ = 0;
+    stage_ = BackupStage::NotFinished;
+    log_file_ = nullptr;
+  }
+
   // Destroy backup log file
   void Destroy() {
-    closeFile();
+    Close();
     remove(file_name_.c_str());
   }
 
@@ -198,21 +214,6 @@ class BackupLog {
   }
 
   bool finished() { return stage_ == BackupStage::Finished; }
-
-  void closeFile() {
-    if (log_file_) {
-      munmap(log_file_, file_size_);
-    }
-    if (fd_ >= 0) {
-      close(fd_);
-    }
-    delta_.clear();
-    file_name_.clear();
-    fd_ = -1;
-    file_size_ = 0;
-    stage_ = BackupStage::NotFinished;
-    log_file_ = nullptr;
-  }
 
   std::string file_name_{};
   std::string delta_{};
