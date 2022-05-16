@@ -18,7 +18,7 @@ namespace KVDK_NAMESPACE {
 
 constexpr size_t kMaxBackupLogBufferSize = 128 << 20;
 
-enum BackupStage {
+enum class BackupStage {
   NotFinished = 0,
   Finished,
 };
