@@ -164,7 +164,7 @@ index 50c08a8..76c4481 100644
  #include "redis_db.h"
  #include "redis_metadata.h"
 +#include "engine.hpp"
-+#include "namespace.hpp"
++#include "types.hpp"
  
  typedef struct {
    Slice key;
@@ -186,7 +186,7 @@ index 8669f72..e3ad5c3 100644
  #include "compaction_checker.h"
  #include "config.h"
 +#include "engine.hpp"
-+#include "namespace.hpp"
++#include "types.hpp"
  
  std::atomic<int>Server::unix_time_ = {0};
  
@@ -202,7 +202,7 @@ index 8669f72..e3ad5c3 100644
 +
 +    KVDK_NAMESPACE::Configs configs;
 +    configs.populate_pmem_space = 0;
-+    configs.max_write_threads = config_->workers;
++    configs.max_access_threads = config_->workers;
 +    configs.pmem_file_size = static_cast<uint64_t>(config_->KVDK.pmem_file_size);
 +    fprintf(stderr, "pmem_file size %lu", configs.pmem_file_size);
 +    KVDK_NAMESPACE::Status s = KVDK_NAMESPACE::Engine::Open(
