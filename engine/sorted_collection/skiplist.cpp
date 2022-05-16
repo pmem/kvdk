@@ -255,6 +255,9 @@ Status Skiplist::CheckIndex() {
         splice.prevs[i] = next_node;
       }
     }
+    if (!CheckRecordLinkage(next_record, pmem_allocator_)) {
+      return Status::Fail;
+    }
     splice.prev_pmem_record = next_record;
   }
 
@@ -717,7 +720,6 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
       ret.write_record = new_record;
       ret.hash_entry_ptr = lookup_result.entry_ptr;
       linkDLRecord(prev_record, next_record, new_record);
-
       break;
     }
     case Status::NotFound: {
@@ -807,6 +809,7 @@ seek_write_position:
   ret.write_record = new_record;
   // link new record to PMem
   linkDLRecord(prev_record, next_record, new_record);
+
   if (!key_exist) {
     // create dram node for new record
     ret.dram_node = Skiplist::NewNodeBuild(new_record);
@@ -848,9 +851,10 @@ void Skiplist::CleanObsoletedNodes() {
 }
 
 void Skiplist::Destroy() {
-  GlobalLogger.Debug("Destroy skiplist %s\n", Name().c_str());
+  GlobalLogger.Debug("Start Destroy skiplist %s\n", Name().c_str());
   destroyRecords();
   destroyNodes();
+  GlobalLogger.Debug("Finish Destroy skiplist %s\n", Name().c_str());
 }
 
 void Skiplist::destroyNodes() {
@@ -877,10 +881,8 @@ void Skiplist::destroyRecords() {
       next_destroy =
           pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
       StringView key = to_destroy->Key();
+
       auto ul = hash_table_->AcquireLock(key);
-      // We need to purge destroyed records one by one in case engine crashed
-      // during destroy
-      Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, record_locks_);
 
       if (IndexWithHashtable()) {
         auto lookup_result =
@@ -907,6 +909,10 @@ void Skiplist::destroyRecords() {
           }
         }
       }
+
+      // We need to purge destroyed records one by one in case engine crashed
+      // during destroy
+      Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, record_locks_);
 
       to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
                            to_destroy->entry.header.record_size);

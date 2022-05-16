@@ -171,8 +171,9 @@ struct StringRecord {
   }
 
   void PersistOldVersion(PMemOffsetType offset) {
-    old_version = offset;
-    pmem_persist(&old_version, sizeof(PMemOffsetType));
+    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
+                    static_cast<long long>(offset));
+    _mm_mfence();
   }
 
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
@@ -305,8 +306,9 @@ struct DLRecord {
   }
 
   void PersistOldVersion(PMemOffsetType offset) {
-    old_version = offset;
-    pmem_persist(&old_version, sizeof(PMemOffsetType));
+    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
+                    static_cast<long long>(offset));
+    _mm_mfence();
   }
 
   ExpireTimeType GetExpireTime() const {
@@ -354,7 +356,7 @@ struct DLRecord {
 
   uint32_t Checksum() {
     // we don't checksum next/prev pointers
-    uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
+    uint32_t meta_checksum_size = sizeof(DataMeta);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
     return get_checksum((char*)&entry.meta, meta_checksum_size) +

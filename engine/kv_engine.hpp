@@ -111,7 +111,7 @@ class KVEngine : public Engine {
   // Used by test case.
   HashTable* GetHashTable() { return hash_table_.get(); }
 
-  void CleanOutDated();
+  void CleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
 
  private:
   friend OldRecordsCleaner;
@@ -416,14 +416,18 @@ class KVEngine : public Engine {
   void FreeSkiplistDramNodes();
 
   std::vector<SpaceEntry> purgeOutDatedRecords(
-      const std::vector<std::pair<void*, RecordType>>& outdated_records);
+      const std::vector<std::pair<void*, PointerType>>& outdated_records);
 
-  SpaceEntry purgeOldDataRecord(void* record);
+  void purgeAndFreeOldRecords(
+      std::vector<std::pair<void*, RecordType>> old_version_records);
+
   SpaceEntry purgeSortedRecord(SkiplistNode* dram_node, DLRecord* pmem_record);
-  SpaceEntry purgeStringRecord(StringRecord* pmem_record);
+
+  void destroyOldStringRecords(PMemOffsetType old_offset);
+  void destroyOldDLRecords(PMemOffsetType old_offset);
 
   template <typename T>
-  T* updateVersionList(T* record);
+  PMemOffsetType updateVersionList(T* record);
 
   void delayFree(DLRecord* addr);
 
@@ -525,7 +529,7 @@ class KVEngine : public Engine {
   }
 
   // Run in background to clean old records regularly
-  void backgroundOldRecordCleaner();
+  void backgroundOldRecordCleaner(size_t start_slot_idx, size_t end_slot_idx);
 
   // Run in background to report PMem usage regularly
   void backgroundPMemUsageReporter();

@@ -291,6 +291,7 @@ class Skiplist : public Collection {
     uint64_t offset = pmem_allocator->addr2offset_checked(record);
     DLRecord* prev =
         pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
+
     auto check_linkage = [&]() { return prev->next == offset; };
 
     auto check_type = [&]() { return IsSkiplistRecord(prev); };

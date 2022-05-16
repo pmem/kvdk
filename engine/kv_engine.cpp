@@ -86,9 +86,19 @@ void KVEngine::startBackgroundWorks() {
   std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
   bg_work_signals_.terminating = false;
   bg_threads_.emplace_back(&KVEngine::backgroundPMemAllocatorOrgnizer, this);
-  bg_threads_.emplace_back(&KVEngine::backgroundOldRecordCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
+
+  auto total_slot_num = hash_table_->GetSlotSize();
+  TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
+                           &total_slot_num);
+  size_t iter_slot_stride = total_slot_num / kCleanerThreadNum;
+
+  for (size_t start_slot_idx = 0; start_slot_idx < total_slot_num;
+       start_slot_idx += iter_slot_stride) {
+    bg_threads_.emplace_back(&KVEngine::backgroundOldRecordCleaner, this,
+                             start_slot_idx, start_slot_idx + iter_slot_stride);
+  }
 }
 
 void KVEngine::terminateBackgroundWorks() {
@@ -1071,14 +1081,6 @@ void KVEngine::delayFree(DLRecord* addr) {
 void KVEngine::directFree(DLRecord* addr) {
   pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
                                    addr->entry.header.record_size});
-}
-
-void KVEngine::backgroundOldRecordCleaner() {
-  TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundOldRecordCleaner::NothingToDo",
-                           nullptr);
-  while (!bg_work_signals_.terminating) {
-    CleanOutDated();
-  }
 }
 
 void KVEngine::backgroundPMemUsageReporter() {
