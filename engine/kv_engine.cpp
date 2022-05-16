@@ -57,7 +57,7 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
-    s = engine->Recovery();
+    s = engine->restoreExistingData();
   }
   if (s == Status::Ok) {
     *engine_ptr = engine;
@@ -464,10 +464,6 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           if (record && record->GetRecordType() == StringDataRecord &&
               !record->HasExpired()) {
             s = backup.Append(StringDataRecord, record->Key(), record->Value());
-          } else {
-            kvdk_assert(record == nullptr ||
-                            record->GetRecordType() == StringDeleteRecord,
-                        "");
           }
           break;
         }
@@ -596,6 +592,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   if (s != Status::Ok) {
     return s;
   }
+  defer(ReleaseAccessThread());
   BackupLog backup;
   s = backup.Open(backup_log);
   if (s != Status::Ok) {
@@ -663,7 +660,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   return Status::Ok;
 }
 
-Status KVEngine::Recovery() {
+Status KVEngine::restoreExistingData() {
   access_thread.id = 0;
   defer(access_thread.id = -1);
   auto s = RestorePendingBatch();
