@@ -154,6 +154,7 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
+  // Init basic components of the engine
   Status Init(const std::string& name, const Configs& configs);
 
   Status HashGetImpl(const StringView& key, std::string* value,
@@ -468,16 +469,10 @@ class KVEngine : public Engine {
     return pending_batch_dir_ + std::to_string(thread_id);
   }
 
-  inline std::string backup_mark_file() { return backup_mark_file(dir_); }
-
   inline std::string checkpoint_file() { return checkpoint_file(dir_); }
 
   inline static std::string checkpoint_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "checkpoint";
-  }
-
-  inline static std::string backup_mark_file(const std::string& instance_path) {
-    return format_dir_path(instance_path) + "backup_mark";
   }
 
   inline std::string config_file() { return config_file(dir_); }

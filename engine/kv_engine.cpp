@@ -134,8 +134,6 @@ void KVEngine::terminateBackgroundWorks() {
 }
 
 Status KVEngine::Init(const std::string& name, const Configs& configs) {
-  access_thread.id = 0;
-  defer(access_thread.id = -1);
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
@@ -197,6 +195,12 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
       hash_list_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
+  }
+
+  s = RestorePendingBatch();
+
+  if (s == Status::Ok) {
+    s = RestoreCheckpoint();
   }
 
   RegisterComparator("default", compare_string_view);
@@ -663,15 +667,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
 Status KVEngine::restoreExistingData() {
   access_thread.id = 0;
   defer(access_thread.id = -1);
-  auto s = RestorePendingBatch();
-
-  if (s == Status::Ok) {
-    s = RestoreCheckpoint();
-  }
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  Status s(Status::Ok);
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
@@ -689,7 +685,7 @@ Status KVEngine::restoreExistingData() {
   }
 
   for (auto& f : fs) {
-    Status s = f.get();
+    s = f.get();
     if (s != Status::Ok) {
       return s;
     }
@@ -750,7 +746,6 @@ Status KVEngine::restoreExistingData() {
 
   persist_checkpoint_->Release();
   pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
-  remove(backup_mark_file().c_str());
 
   version_controller_.Init(latest_version_ts);
   old_records_cleaner_.TryGlobalClean();
