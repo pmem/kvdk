@@ -234,9 +234,8 @@ class BackupLog {
                          strerror(errno));
       return Status::IOError;
     }
-    munmap(log_file_, file_size_);
-    log_file_ = mmap(nullptr, file_size_ + delta_.size(),
-                     PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
+    log_file_ = mremap(log_file_, file_size_, file_size_ + delta_.size(),
+                       MREMAP_MAYMOVE);
 
     if (log_file_ == MAP_FAILED) {
       GlobalLogger.Error("Map backup log file error: %s\n", strerror(errno));
