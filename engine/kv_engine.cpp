@@ -611,7 +611,10 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
 Status KVEngine::restoreExistingData() {
   access_thread.id = 0;
   defer(access_thread.id = -1);
-  Status s(Status::Ok);
+  Status s = batchWriteRollbackLogs();
+  if (s != Status::Ok) {
+    return s;
+  }
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
