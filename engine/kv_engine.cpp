@@ -439,8 +439,10 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
 
 Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                         const Snapshot* snapshot) {
+  std::string backup_log_file = string_view_2_string(backup_log);
   BackupLog backup;
-  Status s = backup.Init(string_view_2_string(backup_log));
+  Status s = backup.Init(backup_log_file);
+  GlobalLogger.Info("Backup instance to %s ...\n", backup_log_file.c_str());
   if (s != Status::Ok) {
     return s;
   }
@@ -509,6 +511,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
     hashtable_iterator.Next();
   }
   backup.Finish();
+  GlobalLogger.Info("Backup instance to %s Finished\n", backup_log_file.c_str());
   return Status::Ok;
 }
 
