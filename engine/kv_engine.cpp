@@ -54,6 +54,7 @@ KVEngine::~KVEngine() {
 
 Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
                       const Configs& configs) {
+  GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
@@ -73,6 +74,9 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
 Status KVEngine::Restore(const std::string& engine_path,
                          const std::string& backup_log, Engine** engine_ptr,
                          const Configs& configs) {
+  GlobalLogger.Info(
+      "Restoring kvdk instance from backup log %s to engine path %s\n",
+      backup_log.c_str(), engine_path.c_str());
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(engine_path, configs);
   if (s == Status::Ok) {
@@ -511,7 +515,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
     hashtable_iterator.Next();
   }
   backup.Finish();
-  GlobalLogger.Info("Backup instance to %s Finished\n", backup_log_file.c_str());
+  GlobalLogger.Info("Backup instance to %s Finished\n",
+                    backup_log_file.c_str());
   return Status::Ok;
 }
 
@@ -549,12 +554,14 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
                        backup_log.c_str());
     return Status::Abort;
   }
+  uint64_t cnt = 0;
   while (iter->Valid()) {
     auto record = iter->Record();
     bool expired = TimeUtils::CheckIsExpired(record.expire_time);
     switch (record.type) {
       case StringDataRecord: {
         if (!expired) {
+          cnt++;
           s = Put(record.key, record.val, wo);
         }
         iter->Next();
@@ -574,6 +581,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
           if (s != Status::Ok) {
             break;
           }
+          cnt++;
         }
         iter->Next();
         // the header is followed by all its elems in backup log
@@ -589,6 +597,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
             if (s != Status::Ok) {
               break;
             }
+            cnt++;
           }
           iter->Next();
         }
@@ -608,6 +617,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
       return Status::Abort;
     }
   }
+  GlobalLogger.Info("Restore %lu records from backup log\n", cnt);
   return Status::Ok;
 }
 

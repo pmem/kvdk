@@ -81,57 +81,93 @@ class BackupLog {
 
   // Init a new backup log
   Status Init(const std::string& backup_log) {
+    Status s = Status::Ok;
     if (file_exist(backup_log)) {
       GlobalLogger.Error("Init backup log %s error: file already exist\n",
                          backup_log.c_str());
-      return Status::Abort;
+      s = Status::Abort;
     }
-    file_name_ = backup_log;
-    fd_ = open(backup_log.c_str(), O_CREAT | O_RDWR, 0666);
-    if (fd_ >= 0 && ftruncate(fd_, sizeof(BackupStage)) == 0) {
+    if (s == Status::Ok) {
+      file_name_ = backup_log;
+      fd_ = open(backup_log.c_str(), O_CREAT | O_RDWR, 0666);
+      if (fd_ < 0) {
+        GlobalLogger.Error("Init bakcup log %s error while opening file: %s\n",
+                           backup_log.c_str(), strerror(errno));
+        s = Status::IOError;
+      }
+    }
+
+    if (s == Status::Ok) {
+      stage_ = BackupStage::NotFinished;
+      file_size_ = write(fd_, &stage_, sizeof(BackupStage));
+      if (file_size_ != sizeof(BackupStage)) {
+        GlobalLogger.Error(
+            "Init bakcup log %s error while writing backup stage: %s\n",
+            backup_log.c_str(), strerror(errno));
+        s = Status::IOError;
+      }
+    }
+
+    if (s == Status::Ok) {
       log_file_ = mmap(nullptr, sizeof(BackupStage), PROT_WRITE | PROT_READ,
                        MAP_SHARED, fd_, 0);
-    };
-    if (log_file_ == MAP_FAILED) {
-      GlobalLogger.Error("Init bakcup log file %s error: %s\n",
-                         backup_log.c_str(), strerror(errno));
-      Destroy();
-      return Status::IOError;
+      if (log_file_ == MAP_FAILED) {
+        GlobalLogger.Error(
+            "Init bakcup log %s error while mapping log file: %s\n",
+            backup_log.c_str(), strerror(errno));
+        log_file_ = nullptr;
+        s = Status::IOError;
+      }
     }
-    file_size_ = sizeof(BackupStage);
-    changeStage(BackupStage::NotFinished);
-    return Status::Ok;
+
+    if (s != Status::Ok) {
+      Destroy();
+    }
+    return s;
   }
 
   // Open a existing backup log
   Status Open(const std::string& backup_log) {
-    size_t file_size = 0;
+    Status s = Status::Ok;
+    file_name_ = backup_log;
     fd_ = open(backup_log.c_str(), O_RDWR, 0666);
-    if (fd_ >= 0) {
-      file_size = lseek(fd_, 0, SEEK_END);
-      if (file_size >= sizeof(BackupStage)) {
-        log_file_ = mmap(nullptr, file_size, PROT_WRITE | PROT_READ, MAP_SHARED,
-                         fd_, 0);
-      } else {
+    if (fd_ < 0) {
+      GlobalLogger.Error("Open bakcup log %s error while opening file: %s\n",
+                         backup_log.c_str(), strerror(errno));
+      s = Status::IOError;
+    }
+
+    if (s == Status::Ok) {
+      file_size_ = lseek(fd_, 0, SEEK_END);
+      if (file_size_ < sizeof(BackupStage)) {
         GlobalLogger.Error(
             "Open backup log file %s error: file size %lu smaller than "
             "persisted "
             "stage flag",
-            backup_log.size(), file_size);
-        Close();
-        return Status::Abort;
+            backup_log.size(), file_size_);
+        s = Status::Abort;
       }
     }
-    if (log_file_ == MAP_FAILED) {
-      Close();
-      GlobalLogger.Error("Open bakcup log file %s error: %s\n",
-                         backup_log.c_str(), strerror(errno));
-      return Status::IOError;
+
+    if (s == Status::Ok) {
+      log_file_ =
+          mmap(nullptr, file_size_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
+      if (log_file_ == MAP_FAILED) {
+        GlobalLogger.Error(
+            "Open bakcup log %s error while mapping log file: %s\n",
+            backup_log.c_str(), strerror(errno));
+        log_file_ = nullptr;
+        s = Status::IOError;
+      } else {
+        stage_ = *persistedStage();
+      }
     }
-    file_size_ = file_size;
-    stage_ = *persistedStage();
-    file_name_ = backup_log;
-    return Status::Ok;
+
+    if (s != Status::Ok) {
+      Close();
+    }
+
+    return s;
   }
 
   // Append a record to backup log
@@ -171,7 +207,7 @@ class BackupLog {
 
   // Close backup log file
   void Close() {
-    if (log_file_ != MAP_FAILED) {
+    if (log_file_ != nullptr) {
       munmap(log_file_, file_size_);
     }
     if (fd_ >= 0) {
@@ -182,7 +218,7 @@ class BackupLog {
     fd_ = -1;
     file_size_ = 0;
     stage_ = BackupStage::NotFinished;
-    log_file_ = MAP_FAILED;
+    log_file_ = nullptr;
   }
 
   // Destroy backup log file
@@ -198,14 +234,13 @@ class BackupLog {
                          strerror(errno));
       return Status::IOError;
     }
-    if (log_file_ != MAP_FAILED) {
-      munmap(log_file_, file_size_);
-    }
-    log_file_ = (char*)mmap(nullptr, file_size_ + delta_.size(),
-                            PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
+    munmap(log_file_, file_size_);
+    log_file_ = mmap(nullptr, file_size_ + delta_.size(),
+                     PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
 
     if (log_file_ == MAP_FAILED) {
       GlobalLogger.Error("Map backup log file error: %s\n", strerror(errno));
+      log_file_ = nullptr;
       return Status::IOError;
     }
     memcpy((char*)log_file_ + file_size_, delta_.data(), delta_.size());
@@ -237,7 +272,7 @@ class BackupLog {
 
   std::string file_name_{};
   std::string delta_{};
-  void* log_file_{MAP_FAILED};
+  void* log_file_{nullptr};
   size_t file_size_{0};
   int fd_{-1};
   BackupStage stage_{BackupStage::NotFinished};
