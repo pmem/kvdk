@@ -17,16 +17,11 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class KeyStatus : uint8_t {
-  Persist = 0,
-  Volatile = 1 << 0,  // expirable
-  Expired = 1 << 1,
-};
+
 struct HashHeader {
   uint32_t key_prefix;
   RecordType record_type;
   PointerType index_type;
-  KeyStatus entry_status;
 };
 
 class Skiplist;
@@ -60,9 +55,9 @@ struct alignas(16) HashEntry {
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
-            PointerType index_type, KeyStatus entry_status)
+            PointerType index_type)
       : index_(_index),
-        header_({key_hash_prefix, record_type, index_type, entry_status}) {}
+        header_({key_hash_prefix, record_type, index_type}) {}
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
@@ -71,10 +66,6 @@ struct alignas(16) HashEntry {
   PointerType GetIndexType() const { return header_.index_type; }
 
   RecordType GetRecordType() const { return header_.record_type; }
-
-  bool IsExpiredStatus() { return header_.entry_status == KeyStatus::Expired; }
-
-  bool IsTTLStatus() { return header_.entry_status == KeyStatus::Volatile; }
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
@@ -85,10 +76,6 @@ struct alignas(16) HashEntry {
  private:
   // Make this hash entry empty while its content been deleted
   void clear() { header_.index_type = PointerType::Empty; }
-
-  void updateEntryStatus(KeyStatus entry_status) {
-    header_.entry_status = entry_status;
-  }
 
  private:
   Index index_;
@@ -139,6 +126,7 @@ class HashTable {
       s = other.s;
       memcpy_16(&entry, &other.entry);
       entry_ptr = other.entry_ptr;
+      key_hash_prefix = other.key_hash_prefix;
       return *this;
     }
 
@@ -193,18 +181,12 @@ class HashTable {
   // * insert_position: indicate the the postion to insert new entry, it should
   // be return of Lookup of the inserting key
   void Insert(const LookupResult& insert_position, RecordType type, void* index,
-              PointerType index_type,
-              KeyStatus entry_status = KeyStatus::Persist);
+              PointerType index_type);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
     assert(entry_ptr != nullptr);
     entry_ptr->clear();
-  }
-
-  void UpdateEntryStatus(HashEntry* entry_ptr, KeyStatus entry_status) {
-    assert(entry_ptr != nullptr);
-    entry_ptr->updateEntryStatus(entry_status);
   }
 
   std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {
@@ -214,6 +196,22 @@ class HashTable {
   HashTableIterator GetIterator(uint64_t start_slot_idx, uint64_t end_slot_idx);
 
   size_t GetSlotSize() { return slots_.size(); }
+
+  std::vector<std::unique_lock<SpinMutex>> RangeLock(
+      std::vector<StringView> const& keys) {
+    std::vector<SpinMutex*> spins;
+    for (auto const& key : keys) {
+      spins.push_back(GetHint(key).spin);
+    }
+    std::sort(spins.begin(), spins.end());
+    auto end = std::unique(spins.begin(), spins.end());
+
+    std::vector<std::unique_lock<SpinMutex>> guard;
+    for (auto iter = spins.begin(); iter != end; ++iter) {
+      guard.emplace_back(**iter);
+    }
+    return guard;
+  }
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t num_buckets_per_slot,

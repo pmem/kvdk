@@ -265,4 +265,16 @@ Status KVEngine::restoreSortedHeader(DLRecord* header) {
 Status KVEngine::restoreSortedElem(DLRecord* elem) {
   return sorted_rebuilder_->AddElement(elem);
 }
+
+Status KVEngine::sortedWrite(SortedWriteArgs&) { return Status::NotSupported; }
+
+Status KVEngine::sortedPublish(SortedWriteArgs const&) {
+  return Status::NotSupported;
+}
+
+Status KVEngine::sortedRollback(TimeStampType,
+                                BatchWriteLog::SortedLogEntry const&) {
+  return Status::NotSupported;
+}
+
 }  // namespace KVDK_NAMESPACE

@@ -190,9 +190,6 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   ExpireTimeType expired_time =
       TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
 
-  KeyStatus entry_status =
-      expired_time != kPersistTime ? KeyStatus::Volatile : KeyStatus::Persist;
-
   TEST_SYNC_POINT("KVEngine::StringPutImpl::BeforeLock");
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
@@ -230,7 +227,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
       new_record, space_entry.size, new_ts, StringDataRecord,
       pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
 
-  insertKeyOrElem(lookup_result, StringDataRecord, new_record, entry_status);
+  insertKeyOrElem(lookup_result, StringDataRecord, new_record);
 
   return Status::Ok;
 }
@@ -240,6 +237,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   assert(pmem_record->entry.meta.type & StringRecordType);
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
+    purgeAndFree(pmem_record);
     return Status::Ok;
   }
 
@@ -269,47 +267,31 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   return Status::Ok;
 }
 
-Status KVEngine::StringBatchWriteImpl(const WriteBatch::KV& kv,
-                                      BatchWriteHint& batch_hint) {
-  {
-    // key should be alread locked, so we do not acquire lock here
-    auto lookup_result = hash_table_->Lookup<true>(kv.key, StringRecordType);
-
-    if (lookup_result.s == Status::MemoryOverflow) {
-      return lookup_result.s;
-    }
-    batch_hint.hash_entry_ptr = lookup_result.entry_ptr;
-    bool found = lookup_result.s == Status::Ok;
-
-    // Deleting kv is not existing
-    if (kv.type == StringDeleteRecord && !found) {
-      batch_hint.space_not_used = true;
-      return Status::Ok;
-    }
-
-    kvdk_assert(
-        !found ||
-            batch_hint.timestamp >=
-                lookup_result.entry.GetIndex().string_record->GetTimestamp(),
-        "ts of new data smaller than existing data in batch write");
-
-    void* new_pmem_ptr =
-        pmem_allocator_->offset2addr(batch_hint.allocated_space.offset);
-
-    TEST_SYNC_POINT(
-        "KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before");
-
-    StringRecord::PersistStringRecord(
-        new_pmem_ptr, batch_hint.allocated_space.size, batch_hint.timestamp,
-        static_cast<RecordType>(kv.type),
-        found ? pmem_allocator_->addr2offset_checked(
-                    lookup_result.entry.GetIndex().string_record)
-              : kNullPMemOffset,
-        kv.key, kv.type == StringDataRecord ? kv.value : "");
-
-    insertKeyOrElem(lookup_result, (RecordType)kv.type, new_pmem_ptr);
-  }
-
+Status KVEngine::stringWrite(StringWriteArgs& args) {
+  RecordType type = (args.op == WriteBatchImpl::Op::Put)
+                        ? RecordType::StringDataRecord
+                        : RecordType::StringDeleteRecord;
+  void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
+  PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
+      args.res.entry.GetIndex().string_record);
+  args.new_rec = StringRecord::PersistStringRecord(
+      new_addr, args.space.size, args.ts, type, old_off, args.key, args.value);
   return Status::Ok;
 }
+
+Status KVEngine::stringPublish(StringWriteArgs const& args) {
+  RecordType type = (args.op == WriteBatchImpl::Op::Put)
+                        ? RecordType::StringDataRecord
+                        : RecordType::StringDeleteRecord;
+  insertKeyOrElem(args.res, type, const_cast<StringRecord*>(args.new_rec));
+  return Status::Ok;
+}
+
+Status KVEngine::stringRollback(TimeStampType,
+                                BatchWriteLog::StringLogEntry const& log) {
+  static_cast<DataEntry*>(pmem_allocator_->offset2addr_checked(log.offset))
+      ->Destroy();
+  return Status::Ok;
+}
+
 }  // namespace KVDK_NAMESPACE

@@ -333,4 +333,15 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
   return Status::Ok;
 }
 
+Status KVEngine::hashListWrite(HashWriteArgs&) { return Status::NotSupported; }
+
+Status KVEngine::hashListPublish(HashWriteArgs const&) {
+  return Status::NotSupported;
+}
+
+Status KVEngine::hashListRollback(TimeStampType,
+                                  BatchWriteLog::HashLogEntry const&) {
+  return Status::NotSupported;
+}
+
 }  // namespace KVDK_NAMESPACE

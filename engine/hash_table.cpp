@@ -152,10 +152,9 @@ template HashTable::LookupResult HashTable::Lookup<false>(const StringView&,
                                                           uint16_t);
 
 void HashTable::Insert(const LookupResult& insert_position, RecordType type,
-                       void* index, PointerType index_type,
-                       KeyStatus entry_status) {
+                       void* index, PointerType index_type) {
   HashEntry new_hash_entry(insert_position.key_hash_prefix, type, index,
-                           index_type, entry_status);
+                           index_type);
   atomic_store_16(insert_position.entry_ptr, &new_hash_entry);
 }
 

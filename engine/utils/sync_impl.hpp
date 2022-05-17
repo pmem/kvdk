@@ -33,6 +33,16 @@ struct SyncPointPair {
 };
 
 struct SyncImpl {
+  class CrashPoint : public std::runtime_error {
+   private:
+    using base = std::runtime_error;
+    using base::what;
+
+   public:
+    CrashPoint() = default;
+    CrashPoint(std::string const& msg) : base{msg} {}
+  };
+
   SyncImpl() : ready_(false) {}
   void LoadDependency(const std::vector<SyncPointPair>& dependencies) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -87,6 +97,20 @@ struct SyncImpl {
     point_table_.insert(point);
   }
 
+  void EnableCrashPoint(std::string const& name) { crash_points_.insert(name); }
+
+  void Crash(std::string const& name, std::string const& msg) {
+    if (!ready_) {
+      return;
+    }
+
+    if (crash_points_.find(name) == crash_points_.end()) {
+      return;
+    }
+
+    throw CrashPoint{msg};
+  }
+
   void ClearAllCallBacks() {
     std::unique_lock<std::mutex> lock(mutex_);
     while (num_callbacks_running_ > 0) {
@@ -124,6 +148,7 @@ struct SyncImpl {
   std::condition_variable cv_;
   std::atomic<bool> ready_;
   std::unordered_set<std::string> point_table_;
+  std::unordered_set<std::string> crash_points_;
   int num_callbacks_running_ = 0;
 
   std::unordered_map<std::string, std::vector<std::string>> consumers_;
