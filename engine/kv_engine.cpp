@@ -1004,7 +1004,7 @@ Status KVEngine::batchWriteRollbackLogs() {
   }
   closedir(dir);
   std::string cmd{"rm -rf " + batch_log_dir_ + "*"};
-  system(cmd.c_str());
+  [[gnu::unused]] int ret = system(cmd.c_str());
 
   return Status::Ok;
 }
