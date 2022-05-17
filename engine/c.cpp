@@ -80,7 +80,7 @@ KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
   return s;
 }
 
-KVDKStatus KVDKBackup(KVDKEngine* engine, char* backup_path,
+KVDKStatus KVDKBackup(KVDKEngine* engine, const char* backup_path,
                       size_t backup_path_len, KVDKSnapshot* snapshot) {
   return engine->rep->Backup(StringView(backup_path, backup_path_len),
                              snapshot->rep);

@@ -2,17 +2,17 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include <fcntl.h>
 #include <stdio.h>
+#include <sys/mman.h>
 
 #include <string>
 
 #include "configs.hpp"
 #include "data_record.hpp"
-#include "fcntl.h"
 #include "kvdk/configs.hpp"
 #include "kvdk/status.hpp"
 #include "logger.hpp"
-#include "sys/mman.h"
 
 namespace KVDK_NAMESPACE {
 
@@ -59,7 +59,7 @@ class BackupLog {
       valid_ = curr_.DecodeFrom(&records_on_file_);
     }
 
-    LogRecord Record() { return curr_; }
+    const LogRecord& Record() { return curr_; }
     void Next() {
       if (Valid()) {
         valid_ = curr_.DecodeFrom(&records_on_file_);
@@ -86,44 +86,49 @@ class BackupLog {
                          backup_log.c_str());
       return Status::Abort;
     }
+    file_name_ = backup_log;
     fd_ = open(backup_log.c_str(), O_CREAT | O_RDWR, 0666);
     if (fd_ >= 0 && ftruncate(fd_, sizeof(BackupStage)) == 0) {
-      log_file_ = (char*)mmap(nullptr, sizeof(BackupStage),
-                              PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
-      file_size_ = sizeof(BackupStage);
+      log_file_ = mmap(nullptr, sizeof(BackupStage), PROT_WRITE | PROT_READ,
+                       MAP_SHARED, fd_, 0);
     };
-    if (log_file_ == nullptr) {
+    if (log_file_ == MAP_FAILED) {
       GlobalLogger.Error("Init bakcup log file %s error: %s\n",
                          backup_log.c_str(), strerror(errno));
       Destroy();
       return Status::IOError;
     }
+    file_size_ = sizeof(BackupStage);
     changeStage(BackupStage::NotFinished);
-    file_name_ = backup_log;
     return Status::Ok;
   }
 
   // Open a existing backup log
   Status Open(const std::string& backup_log) {
+    size_t file_size = 0;
     fd_ = open(backup_log.c_str(), O_RDWR, 0666);
     if (fd_ >= 0) {
-      file_size_ = lseek(fd_, 0, SEEK_END);
-      if (file_size_ >= sizeof(BackupStage)) {
-        log_file_ = (char*)mmap(nullptr, file_size_, PROT_WRITE | PROT_READ,
-                                MAP_SHARED, fd_, 0);
+      file_size = lseek(fd_, 0, SEEK_END);
+      if (file_size >= sizeof(BackupStage)) {
+        log_file_ = mmap(nullptr, file_size, PROT_WRITE | PROT_READ, MAP_SHARED,
+                         fd_, 0);
       } else {
         GlobalLogger.Error(
             "Open backup log file %s error: file size %lu smaller than "
             "persisted "
             "stage flag",
-            backup_log.size(), file_size_);
+            backup_log.size(), file_size);
+        Close();
+        return Status::Abort;
       }
     }
-    if (log_file_ == nullptr) {
+    if (log_file_ == MAP_FAILED) {
+      Close();
       GlobalLogger.Error("Open bakcup log file %s error: %s\n",
                          backup_log.c_str(), strerror(errno));
       return Status::IOError;
     }
+    file_size_ = file_size;
     stage_ = *persistedStage();
     file_name_ = backup_log;
     return Status::Ok;
@@ -166,7 +171,7 @@ class BackupLog {
 
   // Close backup log file
   void Close() {
-    if (log_file_) {
+    if (log_file_ != MAP_FAILED) {
       munmap(log_file_, file_size_);
     }
     if (fd_ >= 0) {
@@ -177,7 +182,7 @@ class BackupLog {
     fd_ = -1;
     file_size_ = 0;
     stage_ = BackupStage::NotFinished;
-    log_file_ = nullptr;
+    log_file_ = MAP_FAILED;
   }
 
   // Destroy backup log file
@@ -193,29 +198,33 @@ class BackupLog {
                          strerror(errno));
       return Status::IOError;
     }
-    munmap(log_file_, file_size_);
-    log_file_ = (char*)mmap(log_file_, file_size_ + delta_.size(),
+    if (log_file_ != MAP_FAILED) {
+      munmap(log_file_, file_size_);
+    }
+    log_file_ = (char*)mmap(nullptr, file_size_ + delta_.size(),
                             PROT_WRITE | PROT_READ, MAP_SHARED, fd_, 0);
 
-    if (log_file_ == nullptr) {
+    if (log_file_ == MAP_FAILED) {
       GlobalLogger.Error("Map backup log file error: %s\n", strerror(errno));
       return Status::IOError;
     }
-    memcpy(log_file_ + file_size_, delta_.data(), delta_.size());
-    msync(log_file_ + file_size_, delta_.size(), MS_SYNC);
+    memcpy((char*)log_file_ + file_size_, delta_.data(), delta_.size());
+    msync((char*)log_file_ + file_size_, delta_.size(), MS_SYNC);
     file_size_ += delta_.size();
     delta_.clear();
     return Status::Ok;
   }
 
   StringView logRecordsView() {
-    kvdk_assert(log_file_ != nullptr && file_size_ >= sizeof(BackupStage), "");
-    return StringView(log_file_ + sizeof(BackupStage),
+    kvdk_assert(log_file_ != MAP_FAILED && file_size_ >= sizeof(BackupStage),
+                "");
+    return StringView((char*)log_file_ + sizeof(BackupStage),
                       file_size_ - sizeof(BackupStage));
   }
 
   BackupStage* persistedStage() {
-    kvdk_assert(log_file_ != nullptr && file_size_ >= sizeof(BackupStage), "");
+    kvdk_assert(log_file_ != MAP_FAILED && file_size_ >= sizeof(BackupStage),
+                "");
     return (BackupStage*)log_file_;
   }
 
@@ -228,7 +237,7 @@ class BackupLog {
 
   std::string file_name_{};
   std::string delta_{};
-  char* log_file_{nullptr};
+  void* log_file_{MAP_FAILED};
   size_t file_size_{0};
   int fd_{-1};
   BackupStage stage_{BackupStage::NotFinished};

@@ -53,7 +53,7 @@ extern void KVDKDestroySortedCollectionConfigs(
 
 extern KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config,
                            FILE* log_file, KVDKEngine** engine);
-extern KVDKStatus KVDKBackup(KVDKEngine* engine, char* backup_path,
+extern KVDKStatus KVDKBackup(KVDKEngine* engine, const char* backup_path,
                              size_t backup_path_len, KVDKSnapshot* snapshot);
 extern KVDKStatus KVDKRestore(const char* name, const char* backup_log,
                               const KVDKConfigs* config, FILE* log_file,
