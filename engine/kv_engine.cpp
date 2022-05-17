@@ -137,17 +137,16 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
-    pending_batch_dir_ = dir_ + "pending_batch_files/";
     int res = create_dir_if_missing(dir_);
     if (res != 0) {
       GlobalLogger.Error("Create engine dir %s error\n", dir_.c_str());
       return Status::IOError;
     }
 
-    res = create_dir_if_missing(pending_batch_dir_);
-    if (res != 0) {
-      GlobalLogger.Error("Create pending batch files dir %s error\n",
-                         pending_batch_dir_.c_str());
+    batch_log_dir_ = dir_ + "batch_logs/";
+    if (create_dir_if_missing(batch_log_dir_) != 0) {
+      GlobalLogger.Error("Create batch log dir %s error\n",
+                         batch_log_dir_.c_str());
       return Status::IOError;
     }
 
@@ -163,12 +162,11 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     // configs_.devdax_meta_dir will be created on a xfs file system with a
     // fsdax namespace
     dir_ = format_dir_path(configs_.devdax_meta_dir);
-    pending_batch_dir_ = dir_ + "pending_batch_files/";
 
-    int res = create_dir_if_missing(pending_batch_dir_);
-    if (res != 0) {
-      GlobalLogger.Error("Create pending batch files dir %s error\n",
-                         pending_batch_dir_.c_str());
+    batch_log_dir_ = dir_ + "batch_logs/";
+    if (create_dir_if_missing(batch_log_dir_) != 0) {
+      GlobalLogger.Error("Create batch log dir %s error\n",
+                         batch_log_dir_.c_str());
       return Status::IOError;
     }
   }
@@ -197,11 +195,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     return Status::Abort;
   }
 
-  s = initOrRestorePendingBatch();
-
-  if (s == Status::Ok) {
-    s = initOrRestoreCheckpoint();
-  }
+  s = initOrRestoreCheckpoint();
 
   RegisterComparator("default", compare_string_view);
   return s;
@@ -533,66 +527,6 @@ Status KVEngine::initOrRestoreCheckpoint() {
   return Status::Ok;
 }
 
-Status KVEngine::initOrRestorePendingBatch() {
-  DIR* dir;
-  dirent* ent;
-  uint64_t persisted_pending_file_size =
-      kMaxWriteBatchSize * 8 /* offsets */ + sizeof(PendingBatch);
-  persisted_pending_file_size =
-      kPMEMMapSizeUnit *
-      (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
-  size_t mapped_len;
-  int is_pmem;
-
-  // Iterate all pending batch files and rollback unfinished batch writes
-  if ((dir = opendir(pending_batch_dir_.c_str())) != nullptr) {
-    while ((ent = readdir(dir)) != nullptr) {
-      std::string file_name = std::string(ent->d_name);
-      if (file_name != "." && file_name != "..") {
-        uint64_t id = std::stoul(file_name);
-        std::string pending_batch_file = persisted_pending_block_file(id);
-
-        PendingBatch* pending_batch = (PendingBatch*)pmem_map_file(
-            pending_batch_file.c_str(), persisted_pending_file_size,
-            PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
-
-        if (pending_batch != nullptr) {
-          if (!is_pmem || mapped_len != persisted_pending_file_size) {
-            GlobalLogger.Error("Map persisted pending batch file %s failed\n",
-                               pending_batch_file.c_str());
-            return Status::IOError;
-          }
-          if (pending_batch->Unfinished()) {
-            uint64_t* invalid_offsets = pending_batch->record_offsets;
-            for (uint32_t i = 0; i < pending_batch->num_kv; i++) {
-              DataEntry* data_entry =
-                  pmem_allocator_->offset2addr<DataEntry>(invalid_offsets[i]);
-              if (data_entry->meta.timestamp == pending_batch->timestamp) {
-                data_entry->meta.type = Padding;
-                pmem_persist(&data_entry->meta.type, 8);
-              }
-            }
-            pending_batch->PersistFinish();
-          }
-
-          if (id < configs_.max_access_threads) {
-            engine_thread_cache_[id].persisted_pending_batch = pending_batch;
-          } else {
-            remove(pending_batch_file.c_str());
-          }
-        }
-      }
-    }
-    closedir(dir);
-  } else {
-    GlobalLogger.Error("Open persisted pending batch dir %s failed\n",
-                       pending_batch_dir_.c_str());
-    return Status::IOError;
-  }
-
-  return Status::Ok;
-}
-
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   // Todo: make this multi-thread
   Status s = MaybeInitAccessThread();
@@ -822,32 +756,38 @@ Status KVEngine::CheckConfigs(const Configs& configs) {
   return Status::Ok;
 }
 
-Status KVEngine::MaybeInitPendingBatchFile() {
-  if (engine_thread_cache_[access_thread.id].persisted_pending_batch ==
-      nullptr) {
+Status KVEngine::maybeInitBatchLogFile() {
+  auto& tc = engine_thread_cache_[access_thread.id];
+  if (tc.batch_log == nullptr) {
     int is_pmem;
     size_t mapped_len;
-    uint64_t persisted_pending_file_size =
-        kMaxWriteBatchSize * 8 + sizeof(PendingBatch);
-    persisted_pending_file_size =
-        kPMEMMapSizeUnit *
-        (size_t)ceil(1.0 * persisted_pending_file_size / kPMEMMapSizeUnit);
-
-    if ((engine_thread_cache_[access_thread.id].persisted_pending_batch =
-             (PendingBatch*)pmem_map_file(
-                 persisted_pending_block_file(access_thread.id).c_str(),
-                 persisted_pending_file_size, PMEM_FILE_CREATE, 0666,
-                 &mapped_len, &is_pmem)) == nullptr ||
-        !is_pmem || mapped_len != persisted_pending_file_size) {
+    std::string log_file_name =
+        batch_log_dir_ + std::to_string(access_thread.id);
+    void* addr = pmem_map_file(log_file_name.c_str(), BatchWriteLog::MaxBytes(),
+                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    if (addr == NULL) {
+      GlobalLogger.Error("Fail to Init BatchLog file. %s\n", strerror(errno));
       return Status::PMemMapFileError;
     }
+    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
+    tc.batch_log = static_cast<char*>(addr);
   }
   return Status::Ok;
 }
 
-Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
-  if (write_batch.Size() > kMaxWriteBatchSize) {
-    return Status::BatchOverflow;
+Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
+  WriteBatchImpl const* batch_impl =
+      dynamic_cast<WriteBatchImpl const*>(batch.get());
+  if (batch_impl == nullptr) {
+    return Status::InvalidArgument;
+  }
+
+  return batchWriteImpl(*batch_impl);
+}
+
+Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
+  if (batch.Size() > BatchWriteLog::Capacity()) {
+    return Status::InvalidBatchSize;
   }
 
   Status s = MaybeInitAccessThread();
@@ -855,99 +795,294 @@ Status KVEngine::BatchWrite(const WriteBatch& write_batch) {
     return s;
   }
 
-  s = MaybeInitPendingBatchFile();
+  s = maybeInitBatchLogFile();
   if (s != Status::Ok) {
     return s;
   }
 
-  engine_thread_cache_[access_thread.id].batch_writing = true;
-  defer(engine_thread_cache_[access_thread.id].batch_writing = false;);
+  // Prevent generating snapshot newer than this WriteBatch
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  // Prevent collection and nodes in double linked lists from being deleted
+  auto access_token = version_controller_.GetLocalSnapshotHolder();
 
-  std::set<SpinMutex*> spins_to_lock;
-  std::vector<BatchWriteHint> batch_hints(write_batch.Size());
-  std::vector<uint64_t> space_entry_offsets;
+  // Lock all keys
+  std::vector<StringView> keys;
+  for (auto const& string_op : batch.StringOps()) {
+    keys.push_back(string_op.key);
+  }
+  for (auto const& sorted_op : batch.SortedOps()) {
+    keys.push_back(sorted_op.field);
+  }
+  for (auto const& hash_op : batch.HashOps()) {
+    keys.push_back(hash_op.field);
+  }
+  auto guard = hash_table_->RangeLock(keys);
 
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    auto& kv = write_batch.kvs[i];
-    uint32_t requested_size;
-    if (kv.type == StringDataRecord) {
-      requested_size = kv.key.size() + kv.value.size() + sizeof(StringRecord);
-    } else if (kv.type == StringDeleteRecord) {
-      requested_size = kv.key.size() + sizeof(StringRecord);
-    } else {
-      GlobalLogger.Error("only support string type batch write\n");
-      return Status::NotSupported;
+  // Lookup keys, allocate space according to result.
+  std::vector<StringWriteArgs> string_args;
+  std::vector<SortedWriteArgs> sorted_args;
+  std::vector<HashWriteArgs> hash_args;
+
+  auto ReleaseResources = [&]() {
+    for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
+      pmem_allocator_->Free(iter->space);
     }
-    batch_hints[i].allocated_space = pmem_allocator_->Allocate(requested_size);
-    // No enough space for batch write
-    if (batch_hints[i].allocated_space.size == 0) {
+    for (auto iter = sorted_args.rbegin(); iter != sorted_args.rend(); ++iter) {
+      pmem_allocator_->Free(iter->space);
+    }
+    for (auto iter = string_args.rbegin(); iter != string_args.rend(); ++iter) {
+      pmem_allocator_->Free(iter->space);
+    }
+  };
+  defer(ReleaseResources());
+
+  // Prepare for Strings
+  for (auto const& string_op : batch.StringOps()) {
+    StringWriteArgs args;
+    args.Assign(string_op);
+    args.ts = bw_token.Timestamp();
+    args.res = lookupKey<true>(args.key, StringRecordType);
+    if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
+        args.res.s != Status::Outdated) {
+      return args.res.s;
+    }
+    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+      // No need to do anything for delete a non-existing String
+      continue;
+    }
+    args.space = pmem_allocator_->Allocate(
+        StringRecord::RecordSize(args.key, args.value));
+    if (args.space.size == 0) {
       return Status::PmemOverflow;
     }
-    space_entry_offsets.emplace_back(batch_hints[i].allocated_space.offset);
 
-    batch_hints[i].hash_hint = hash_table_->GetHint(kv.key);
-    spins_to_lock.emplace(batch_hints[i].hash_hint.spin);
+    string_args.push_back(args);
   }
 
-  [[gnu::unused]] size_t batch_size = write_batch.Size();
-  TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::AllocateRecord::After",
-                           &batch_size);
-  // lock spin mutex with order to avoid deadlock
-  std::vector<std::unique_lock<SpinMutex>> ul_locks;
-  for (const SpinMutex* l : spins_to_lock) {
-    ul_locks.emplace_back(const_cast<SpinMutex&>(*l));
+  // Prepare for Sorted Elements
+  for (auto const& sorted_op : batch.SortedOps()) {
+    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
+    if (res.s != Status::Ok && res.s != Status::NotFound &&
+        res.s != Status::Outdated) {
+      return res.s;
+    }
+    if (res.s != Status::Ok) {
+      if (sorted_op.op == WriteBatchImpl::Op::Delete) {
+        // No need to do anything for delete a field from non-existing Skiplist.
+        continue;
+      } else {
+        // Batch Write to collection not found, return Status::NotFound.
+        return Status::NotFound;
+      }
+    }
+    Skiplist* slist = res.entry.GetIndex().skiplist;
+    SortedWriteArgs args;
+    args.Assign(sorted_op);
+    args.ts = bw_token.Timestamp();
+    std::string internal_key = slist->InternalKey(args.field);
+    args.res = lookupElem<true>(internal_key, SortedElemType);
+    if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
+      return args.res.s;
+    }
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
+      // No need to do anything for delete a non-existing Sorted element
+      continue;
+    }
+    args.space = pmem_allocator_->Allocate(
+        DLRecord::RecordSize(internal_key, args.value));
+    if (args.space.size == 0) {
+      return Status::PmemOverflow;
+    }
+    sorted_args.push_back(args);
   }
 
-  auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType ts = holder.Timestamp();
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    batch_hints[i].timestamp = ts;
+  // Prepare for Hash Elements
+  for (auto const& hash_op : batch.HashOps()) {
+    HashList* hlist;
+    Status s = hashListFind(hash_op.key, &hlist);
+    if (s != Status::Ok && s != Status::NotFound) {
+      return s;
+    }
+    if (s == Status::NotFound) {
+      if (hash_op.op == WriteBatchImpl::Op::Delete) {
+        // No need to do anything for delete a field from non-existing Hash Set.
+        continue;
+      } else {
+        // Batch Write to collection not found, return Status::NotFound.
+        return Status::NotFound;
+      }
+    }
+    HashWriteArgs args;
+    args.Assign(hash_op);
+    args.ts = bw_token.Timestamp();
+    std::string internal_key = hlist->InternalKey(args.field);
+    args.res = lookupElem<true>(internal_key, HashElem);
+    if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
+      return args.res.s;
+    }
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
+      // No need to do anything for delete a non-existing Sorted element
+      continue;
+    }
+    args.space = pmem_allocator_->Allocate(
+        DLRecord::RecordSize(internal_key, args.value));
+    if (args.space.size == 0) {
+      return Status::PmemOverflow;
+    }
+    hash_args.push_back(args);
   }
 
-  // Persist batch write status as processing
-  engine_thread_cache_[access_thread.id]
-      .persisted_pending_batch->PersistProcessing(space_entry_offsets, ts);
-
-  // Do batch writes
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    if (write_batch.kvs[i].type == StringDataRecord ||
-        write_batch.kvs[i].type == StringDeleteRecord) {
-      s = StringBatchWriteImpl(write_batch.kvs[i], batch_hints[i]);
-      TEST_SYNC_POINT_CALLBACK("KVEnigne::BatchWrite::BatchWriteRecord", &i);
+  // Preparation done. Persist BatchLog for rollback.
+  BatchWriteLog log;
+  auto& tc = engine_thread_cache_[access_thread.id];
+  for (auto& arg : string_args) {
+    if (arg.op == WriteBatchImpl::Op::Put) {
+      log.StringPut(arg.space.offset);
     } else {
-      return Status::NotSupported;
+      log.StringDelete(arg.space.offset);
     }
+  }
+  for (auto& arg : sorted_args) {
+    if (arg.op == WriteBatchImpl::Op::Put) {
+      log.SortedPut(arg.space.offset);
+    } else {
+      log.SortedDelete(arg.space.offset);
+    }
+  }
+  for (auto& arg : hash_args) {
+    if (arg.op == WriteBatchImpl::Op::Put) {
+      log.HashPut(arg.space.offset);
+    } else {
+      log.HashDelete(arg.space.offset);
+    }
+  }
 
-    // Something wrong
-    // TODO: roll back finished writes (hard to roll back hash table now)
+  log.EncodeTo(tc.batch_log);
+
+  BatchWriteLog::MarkProcessing(tc.batch_log);
+
+  // Write Strings
+  for (auto& string_arg : string_args) {
+    Status s = stringWrite(string_arg);
     if (s != Status::Ok) {
-      assert(s == Status::MemoryOverflow);
-      std::abort();
+      return s;
     }
   }
 
-  // Must release all spinlocks before delayFree(),
-  // otherwise may deadlock as delayFree() also try to acquire these spinlocks.
-  ul_locks.clear();
-
-  engine_thread_cache_[access_thread.id]
-      .persisted_pending_batch->PersistFinish();
-
-  // Free outdated kvs
-  for (size_t i = 0; i < write_batch.Size(); i++) {
-    TEST_SYNC_POINT_CALLBACK("KVEngine::BatchWrite::purgeAndFree::Before", &i);
-    if (batch_hints[i].data_record_to_free != nullptr) {
-      delayFree(OldDataRecord{batch_hints[i].data_record_to_free, ts});
-    }
-    if (batch_hints[i].delete_record_to_free != nullptr) {
-      delayFree(OldDeleteRecord(
-          batch_hints[i].delete_record_to_free, batch_hints[i].hash_entry_ptr,
-          PointerType::HashEntry, ts, batch_hints[i].hash_hint.spin));
-    }
-    if (batch_hints[i].space_not_used) {
-      pmem_allocator_->Free(batch_hints[i].allocated_space);
+  // Write Sorted Elems
+  for (auto& sorted_arg : sorted_args) {
+    Status s = sortedWrite(sorted_arg);
+    if (s != Status::Ok) {
+      return s;
     }
   }
+
+  // Write Hash Elems
+  for (auto& hash_arg : hash_args) {
+    Status s = hashListWrite(hash_arg);
+    if (s != Status::Ok) {
+      return s;
+    }
+  }
+
+  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit", "");
+
+  BatchWriteLog::MarkCommitted(tc.batch_log);
+
+  // Publish stages is where Strings and Collections make BatchWrite
+  // visible to other threads.
+  // This stage allows no failure during runtime,
+  // otherwise dirty read may occur.
+  // Crash is tolerated as BatchWrite will be recovered.
+
+  // Publish Strings to HashTable
+  for (auto const& string_arg : string_args) {
+    Status s = stringPublish(string_arg);
+    kvdk_assert(s == Status::Ok, "");
+  }
+
+  // Publish Sorted Elements to HashTable
+  for (auto& sorted_arg : sorted_args) {
+    Status s = sortedPublish(sorted_arg);
+    kvdk_assert(s == Status::Ok, "");
+  }
+
+  // Publish Hash Elements to HashTable
+  for (auto& hash_arg : hash_args) {
+    Status s = hashListPublish(hash_arg);
+    kvdk_assert(s == Status::Ok, "");
+  }
+
+  hash_args.clear();
+  sorted_args.clear();
+  string_args.clear();
+
+  return Status::Ok;
+}
+
+Status KVEngine::batchWriteRollbackLogs() {
+  DIR* dir = opendir(batch_log_dir_.c_str());
+  if (dir == NULL) {
+    GlobalLogger.Error("Fail to opendir in batchWriteRollbackLogs. %s\n",
+                       strerror(errno));
+    return Status::IOError;
+  }
+  dirent* entry;
+  while ((entry = readdir(dir)) != NULL) {
+    std::string fname = std::string{entry->d_name};
+    if (fname == "." || fname == "..") {
+      continue;
+    }
+    std::string log_file_path = batch_log_dir_ + fname;
+    size_t mapped_len;
+    int is_pmem;
+    void* addr = pmem_map_file(log_file_path.c_str(), BatchWriteLog::MaxBytes(),
+                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    if (addr == NULL) {
+      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
+                         strerror(errno));
+      return Status::PMemMapFileError;
+    }
+    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
+
+    BatchWriteLog log;
+    log.DecodeFrom(static_cast<char*>(addr));
+
+    Status s;
+    for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
+         ++iter) {
+      s = hashListRollback(log.Timestamp(), *iter);
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+    for (auto iter = log.SortedLogs().rbegin(); iter != log.SortedLogs().rend();
+         ++iter) {
+      s = sortedRollback(log.Timestamp(), *iter);
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+    for (auto iter = log.StringLogs().rbegin(); iter != log.StringLogs().rend();
+         ++iter) {
+      s = stringRollback(log.Timestamp(), *iter);
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+    log.MarkInitializing(static_cast<char*>(addr));
+    if (pmem_unmap(addr, mapped_len) != 0) {
+      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
+                         strerror(errno));
+      return Status::PMemMapFileError;
+    }
+  }
+  closedir(dir);
+  std::string cmd{"rm -rf " + batch_log_dir_ + "*"};
+  [[gnu::unused]] int ret = system(cmd.c_str());
+
   return Status::Ok;
 }
 
@@ -1143,16 +1278,6 @@ namespace KVDK_NAMESPACE {
 /// TODO: move this into VersionController.
 Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
-  TimeStampType snapshot_ts = static_cast<SnapshotImpl*>(ret)->GetTimestamp();
-
-  // A snapshot should not contain any ongoing batch write
-  for (size_t i = 0; i < configs_.max_access_threads; i++) {
-    while (engine_thread_cache_[i].batch_writing &&
-           snapshot_ts >=
-               version_controller_.GetLocalSnapshot(i).GetTimestamp()) {
-      asm volatile("pause");
-    }
-  }
 
   if (make_checkpoint) {
     std::lock_guard<std::mutex> lg(checkpoint_lock_);

@@ -309,12 +309,12 @@ void BatchWriteAnonCollectionExample(KVDKEngine* kvdk_engine) {
   char* read_v1;
   char* read_v2;
   size_t read_v1_len, read_v2_len;
-  KVDKWriteBatch* kvdk_wb = KVDKWriteBatchCreate();
-  KVDKWriteBatchPut(kvdk_wb, key1, strlen(key1), value1, strlen(value1));
-  KVDKWriteBatchPut(kvdk_wb, key2, strlen(key2), value2, strlen(value2));
-  KVDKWriteBatchDelete(kvdk_wb, key1, strlen(key1));
-  KVDKWriteBatchPut(kvdk_wb, key1, strlen(key1), value2, strlen(value1));
-  KVDKStatus s = KVDKWrite(kvdk_engine, kvdk_wb);
+  KVDKWriteBatch* kvdk_wb = KVDKWriteBatchCreate(kvdk_engine);
+  KVDKWriteBatchStringPut(kvdk_wb, key1, strlen(key1), value1, strlen(value1));
+  KVDKWriteBatchStringPut(kvdk_wb, key2, strlen(key2), value2, strlen(value2));
+  KVDKWriteBatchStringDelete(kvdk_wb, key1, strlen(key1));
+  KVDKWriteBatchStringPut(kvdk_wb, key1, strlen(key1), value2, strlen(value1));
+  KVDKStatus s = KVDKBatchWrite(kvdk_engine, kvdk_wb);
   assert(s == Ok);
   s = KVDKGet(kvdk_engine, key1, strlen(key1), &read_v1_len, &read_v1);
   assert(s == Ok);

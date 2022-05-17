@@ -139,6 +139,7 @@ class HashTable {
       s = other.s;
       memcpy_16(&entry, &other.entry);
       entry_ptr = other.entry_ptr;
+      key_hash_prefix = other.key_hash_prefix;
       return *this;
     }
 
@@ -209,6 +210,22 @@ class HashTable {
 
   std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
+  }
+
+  std::vector<std::unique_lock<SpinMutex>> RangeLock(
+      std::vector<StringView> const& keys) {
+    std::vector<SpinMutex*> spins;
+    for (auto const& key : keys) {
+      spins.push_back(GetHint(key).spin);
+    }
+    std::sort(spins.begin(), spins.end());
+    auto end = std::unique(spins.begin(), spins.end());
+
+    std::vector<std::unique_lock<SpinMutex>> guard;
+    for (auto iter = spins.begin(); iter != end; ++iter) {
+      guard.emplace_back(**iter);
+    }
+    return guard;
   }
 
   HashTableIterator GetIterator();

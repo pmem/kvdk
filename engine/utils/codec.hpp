@@ -8,6 +8,7 @@
 #include <string>
 
 #include "../alias.hpp"
+#include "../macros.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -61,6 +62,31 @@ inline bool FetchUint32(StringView* src, uint32_t* value) {
   *src = StringView(src->data() + sizeof(uint32_t),
                     src->size() - sizeof(uint32_t));
   return true;
+}
+
+// POD stands for Plain-old-data.
+// We don't serialize object which may have pointers to other objects.
+template <typename T>
+inline void AppendPOD(std::string* dst, T const& value) {
+  dst->append(reinterpret_cast<char const*>(&value), sizeof(T));
+}
+
+template <typename T>
+inline bool FetchPOD(StringView* src, T* ret) {
+  if (src->size() < sizeof(T)) {
+    return false;
+  }
+  *ret = *reinterpret_cast<T const*>(src->data());
+  *src = StringView{src->data() + sizeof(T), src->size() - sizeof(T)};
+  return true;
+}
+
+template <typename T>
+inline T FetchPOD(StringView* src) {
+  T ret;
+  bool success = FetchPOD(src, &ret);
+  kvdk_assert(success, "");
+  return ret;
 }
 
 inline void AppendFixedString(std::string* dst, const StringView& str) {

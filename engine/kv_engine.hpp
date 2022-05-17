@@ -36,6 +36,7 @@
 #include "utils/utils.hpp"
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
+#include "write_batch_impl.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
@@ -86,7 +87,6 @@ class KVEngine : public Engine {
   Status Put(const StringView key, const StringView value,
              const WriteOptions& write_options) override;
   Status Delete(const StringView key) override;
-  Status BatchWrite(const WriteBatch& write_batch) override;
   Status Modify(const StringView key, ModifyFunc modify_func, void* modify_args,
                 const WriteOptions& options) override;
 
@@ -126,22 +126,10 @@ class KVEngine : public Engine {
         old_records_cleaner_(this, configs.max_access_threads),
         comparators_(configs.comparator){};
 
-  struct BatchWriteHint {
-    TimeStampType timestamp{0};
-    SpaceEntry allocated_space{};
-    HashTable::KeyHashHint hash_hint{};
-    HashEntry* hash_entry_ptr = nullptr;
-    void* data_record_to_free = nullptr;
-    void* delete_record_to_free = nullptr;
-    bool space_not_used{false};
-  };
-
   struct EngineThreadCache {
     EngineThreadCache() = default;
 
-    PendingBatch* persisted_pending_batch = nullptr;
-    // This thread is doing batch write
-    bool batch_writing = false;
+    char* batch_log = nullptr;
 
     // Info used in recovery
     uint64_t newest_restored_ts = 0;
@@ -258,11 +246,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -340,15 +327,34 @@ class KVEngine : public Engine {
     return Status::Ok;
   }
 
-  Status MaybeInitPendingBatchFile();
+  Status maybeInitBatchLogFile();
+
+  // BatchWrite takes 3 stages
+  // Stage 1: Preparation
+  //  BatchWrite() sort the keys and remove duplicants,
+  //  lock the keys/fields in HashTable,
+  //  and allocate spaces and persist BatchWriteLog
+  // Stage 2: Execution
+  //  Batches are dispatched to different data types
+  //  Each data type update keys/fields
+  //  Outdated records are not purged in this stage.
+  // Stage 3: Publish
+  //  Each data type commits its batch, clean up outdated data.
+  Status BatchWrite(std::unique_ptr<WriteBatch> const& batch) final;
+
+  std::unique_ptr<WriteBatch> WriteBatchCreate() final {
+    return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
+  }
 
   Status StringPutImpl(const StringView& key, const StringView& value,
                        const WriteOptions& write_options);
 
   Status StringDeleteImpl(const StringView& key);
 
-  Status StringBatchWriteImpl(const WriteBatch::KV& kv,
-                              BatchWriteHint& batch_hint);
+  Status stringWrite(StringWriteArgs& args);
+  Status stringPublish(StringWriteArgs const& args);
+  Status stringRollback(TimeStampType ts,
+                        BatchWriteLog::StringLogEntry const& entry);
 
   Status SortedPutImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);
@@ -358,6 +364,10 @@ class KVEngine : public Engine {
   Status restoreExistingData();
 
   Status restoreDataFromBackup(const std::string& backup_log);
+  Status sortedWrite(SortedWriteArgs& args);
+  Status sortedPublish(SortedWriteArgs const& args);
+  Status sortedRollback(TimeStampType ts,
+                        BatchWriteLog::SortedLogEntry const& entry);
 
   Status RestoreData();
 
@@ -373,11 +383,13 @@ class KVEngine : public Engine {
   bool ValidateRecordAndGetValue(void* data_record, uint32_t expected_checksum,
                                  std::string* value);
 
-  Status initOrRestorePendingBatch();
-
   Status initOrRestoreCheckpoint();
 
   Status PersistOrRecoverImmutableConfigs();
+
+  Status batchWriteImpl(WriteBatchImpl const& batch);
+
+  Status batchWriteRollbackLogs();
 
   /// List helper functions
   // Find and lock the list. Initialize non-existing if required.
@@ -422,6 +434,11 @@ class KVEngine : public Engine {
   // accessible to any other thread.
   Status hashListDestroy(HashList* hlist);
 
+  Status hashListWrite(HashWriteArgs& args);
+  Status hashListPublish(HashWriteArgs const& args);
+  Status hashListRollback(TimeStampType ts,
+                          BatchWriteLog::HashLogEntry const& entry);
+
   /// Other
   Status CheckConfigs(const Configs& configs);
 
@@ -464,10 +481,6 @@ class KVEngine : public Engine {
 
   inline static std::string data_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "data";
-  }
-
-  inline std::string persisted_pending_block_file(int thread_id) {
-    return pending_batch_dir_ + std::to_string(thread_id);
   }
 
   inline std::string checkpoint_file() { return checkpoint_file(dir_); }
@@ -577,7 +590,7 @@ class KVEngine : public Engine {
   std::unique_ptr<LockTable> skiplist_locks_;
 
   std::string dir_;
-  std::string pending_batch_dir_;
+  std::string batch_log_dir_;
   std::string db_file_;
   std::shared_ptr<ThreadManager> thread_manager_;
   std::unique_ptr<PMEMAllocator> pmem_allocator_;

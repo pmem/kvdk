@@ -37,8 +37,9 @@ struct KVDKEngine {
 };
 
 struct KVDKWriteBatch {
-  WriteBatch rep;
+  std::unique_ptr<WriteBatch> rep;
 };
+
 struct KVDKSortedIterator {
   Iterator* rep;
 };
@@ -63,7 +64,7 @@ struct KVDKSortedCollectionConfigs {
   SortedCollectionConfigs rep;
 };
 
-static char* CopyStringToChar(const std::string& str) {
+inline char* CopyStringToChar(const std::string& str) {
   char* result = static_cast<char*>(malloc(str.size()));
   memcpy(result, str.data(), str.size());
   return result;

@@ -717,58 +717,66 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  size_t batch_size = 10;
-  size_t count = 500;
-  auto BatchPutDelete = [&](uint32_t id) {
-    std::string key_prefix(std::string(id, 'a'));
-    std::string got_val;
-    WriteBatch batch;
-    int cnt = count;
-    while (cnt--) {
-      for (size_t i = 0; i < batch_size; i++) {
-        auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
-        auto val = std::to_string(i * id);
-        batch.Put(key, val);
-      }
-      ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
-      batch.Clear();
-      for (size_t i = 0; i < batch_size; i++) {
-        if ((i * cnt) % 2 == 1) {
-          auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
-          auto val = std::to_string(i * id);
-          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-          ASSERT_EQ(got_val, val);
-          batch.Delete(key);
-        }
-      }
-      engine->BatchWrite(batch);
-      batch.Clear();
+  size_t batch_size = 100;
+  size_t count = 100 * batch_size;
+  std::vector<std::vector<std::string>> keys(num_threads);
+  std::vector<std::vector<std::string>> values(num_threads);
+  for (size_t tid = 0; tid < num_threads; tid++) {
+    for (size_t i = 0; i < count; i++) {
+      keys[tid].push_back(std::to_string(tid) + "_" + std::to_string(i));
+      values[tid].emplace_back();
+    }
+  }
+
+  auto Put = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      values[tid][i] = GetRandomString(120);
+      ASSERT_EQ(engine->Put(keys[tid][i], values[tid][i]), Status::Ok);
     }
   };
 
-  LaunchNThreads(num_threads, BatchPutDelete);
-
-  delete engine;
-
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  for (uint32_t id = 0; id < num_threads; id++) {
-    std::string key_prefix(id, 'a');
-    std::string got_val;
-    int cnt = count;
-    while (cnt--) {
-      for (size_t i = 0; i < batch_size; i++) {
-        auto key = key_prefix + std::to_string(i) + std::to_string(cnt);
-        if ((i * cnt) % 2 == 1) {
-          ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
-        } else {
-          auto val = std::to_string(i * id);
-          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-          ASSERT_EQ(got_val, val);
-        }
+  auto BatchWrite = [&](size_t tid) {
+    auto batch = engine->WriteBatchCreate();
+    for (size_t i = 0; i < count; i++) {
+      if (i % 2 == 0) {
+        values[tid][i] = GetRandomString(120);
+        batch->StringPut(keys[tid][i], values[tid][i]);
+      } else {
+        values[tid][i].clear();
+        batch->StringDelete(keys[tid][i]);
+      }
+      if ((i + 1) % batch_size == 0) {
+        ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
+        batch->Clear();
       }
     }
-  }
+  };
+
+  auto Check = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      std::string val_resp;
+      if (values[tid][i].empty()) {
+        ASSERT_EQ(engine->Get(keys[tid][i], &val_resp), Status::NotFound);
+      } else {
+        ASSERT_EQ(engine->Get(keys[tid][i], &val_resp), Status::Ok);
+        ASSERT_EQ(values[tid][i], val_resp);
+      }
+    }
+  };
+
+  LaunchNThreads(num_threads, Put);
+  LaunchNThreads(num_threads, Check);
+  LaunchNThreads(num_threads, BatchWrite);
+  LaunchNThreads(num_threads, Check);
+
+  Reboot();
+
+  LaunchNThreads(num_threads, Check);
+  LaunchNThreads(num_threads, Put);
+  LaunchNThreads(num_threads, Check);
+  LaunchNThreads(num_threads, BatchWrite);
+  LaunchNThreads(num_threads, Check);
+
   delete engine;
 }
 
@@ -1958,191 +1966,73 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 // ========================= Sync Point ======================================
 
 #if KVDK_DEBUG_LEVEL > 0
-TEST_F(EngineBasicTest, TestBatchWriteSyncPoint) {
-  // SyncPoint
-  // The dependency is, T1->T2->T3/T4
-  // T1: insert {"key8", "val15"}
-  // T2: batch write: {"key0", "val0"}, ....{"key20",""val20}
-  // T3: insert {"key10", "val17"}
-  // T4: delete {"key0", "val0"} {"key3", "val3"} ... {"key18", "val18"}
-  {
-    Configs test_config = configs;
-    test_config.max_access_threads = 16;
-    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
-              Status::Ok);
 
-    int batch_size = 20;
-
-    SyncPoint::GetInstance()->LoadDependency(
-        {{"Test::Put::Finish::1",
-          "KVEngine::BatchWrite::AllocateRecord::After"},
-         {"KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before",
-          "Test::Put::Start::0"},
-         {"KVEngine::BatchWrite::StringBatchWriteImpl::Pesistent::Before",
-          "Test::Delete::Start::0"}});
-    SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::BatchWrite::AllocateRecord::After", [&](void* size) {
-          size_t bsize = *((size_t*)size);
-          ASSERT_EQ(batch_size, bsize);
-        });
-
-    SyncPoint::GetInstance()->EnableProcessing();
-
-    std::vector<std::thread> ts;
-
-    // thread 1
-    ts.emplace_back([&]() {
-      std::string key = "key8";
-      std::string val = "val15";
-      ASSERT_EQ(engine->Put(key, val), Status::Ok);
-      TEST_SYNC_POINT("Test::Put::Finish::1");
-    });
-
-    // thread 2
-    ts.emplace_back([&]() {
-      WriteBatch wb;
-      for (int i = 0; i < batch_size; ++i) {
-        std::string key = "key" + std::to_string(i);
-        std::string val = "val" + std::to_string(i);
-        wb.Put(key, val);
-      }
-      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
-    });
-
-    // thread 3
-    ts.emplace_back([&]() {
-      TEST_SYNC_POINT("Test::Put::Start::0");
-      std::string key = "key10";
-      std::string val = "val17";
-      ASSERT_EQ(engine->Put(key, val), Status::Ok);
-    });
-
-    // thread 4
-    ts.emplace_back([&]() {
-      TEST_SYNC_POINT("Test::Delete::Start::0");
-      for (int i = 0; i < batch_size; i += 3) {
-        std::string key = "key" + std::to_string(i);
-        ASSERT_EQ(engine->Delete(key), Status::Ok);
-      }
-    });
-
-    for (auto& t : ts) {
-      t.join();
-    }
-
-    for (auto i = 0; i < batch_size; ++i) {
-      std::string key = "key" + std::to_string(i);
-      std::string val;
-      auto s = engine->Get(key, &val);
-      if (i % 3 == 0) {
-        ASSERT_EQ(s, Status::NotFound);
-      } else {
-        if (i == 10) {
-          ASSERT_EQ(val, "val17");
-        } else {
-          ASSERT_EQ(val, "val" + std::to_string(i));
-        }
-      }
+TEST_F(EngineBasicTest, BatchWriteRollBack) {
+  size_t num_threads = 16;
+  configs.max_access_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  size_t batch_size = 100;
+  size_t count = batch_size;
+  std::vector<std::vector<std::string>> keys(num_threads);
+  // Keeps track of actual values in engine
+  std::vector<std::vector<std::string>> expected_values(num_threads);
+  for (size_t tid = 0; tid < num_threads; tid++) {
+    for (size_t i = 0; i < count; i++) {
+      keys[tid].push_back(std::to_string(tid) + "_" + std::to_string(i));
+      expected_values[tid].emplace_back();
     }
   }
+
+  // Write to engine and update expected_values vector.
+  auto Put = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      std::string value = GetRandomString(120);
+      expected_values[tid][i] = value;
+      ASSERT_EQ(engine->Put(keys[tid][i], value), Status::Ok);
+    }
+  };
+
+  // Try BatchWrite, which will not be commited
+  // expected_values vector is not updated.
+  auto BatchWrite = [&](size_t tid) {
+    auto batch = engine->WriteBatchCreate();
+    for (size_t i = 0; i < count; i++) {
+      if (i % 2 == 0) {
+        batch->StringPut(keys[tid][i], GetRandomString(120));
+      } else {
+        batch->StringDelete(keys[tid][i]);
+      }
+      ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+    }
+  };
+
+  auto Check = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      std::string val_resp;
+      ASSERT_EQ(engine->Get(keys[tid][i], &val_resp), Status::Ok);
+      ASSERT_EQ(expected_values[tid][i], val_resp);
+    }
+  };
+
+  SyncPoint::GetInstance()->EnableCrashPoint(
+      "KVEngine::batchWriteImpl::BeforeCommit");
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  // Put some KVs
+  LaunchNThreads(num_threads, Put);
+  // Check KVs in engine
+  LaunchNThreads(num_threads, Check);
+  // Try BatchWrite, crashed by crash point before commitment
+  // the BatchWrite will not be visible after recovery
+  LaunchNThreads(num_threads, BatchWrite);
+
+  Reboot();
+
+  // Check KVs in engine, the batch is indeed rolled back.
+  LaunchNThreads(num_threads, Check);
 
   delete engine;
-}
-
-TEST_F(EngineBasicTest, TestBatchWriteRecovrySyncPoint) {
-  Configs test_config = configs;
-  test_config.max_access_threads = 16;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
-            Status::Ok);
-
-  size_t batch_size = 10;
-  {
-    SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Reset();
-    SyncPoint::GetInstance()->SetCallBack(
-        "KVEnigne::BatchWrite::BatchWriteRecord", [&](void* index) {
-          size_t idx = *(size_t*)(index);
-          if (idx == (batch_size / 2)) {
-            throw 1;
-          }
-        });
-    SyncPoint::GetInstance()->EnableProcessing();
-
-    engine->Put("key2", "val2*2");
-    engine->Put("key6", "val6*2");
-    WriteBatch wb;
-    for (size_t i = 0; i < batch_size; ++i) {
-      std::string key = "key" + std::to_string(i);
-      std::string val = "val" + std::to_string(i);
-      wb.Put(key, val);
-    }
-    try {
-      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
-    } catch (...) {
-      delete engine;
-      // reopen engine
-      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
-                Status::Ok);
-      for (size_t i = 0; i < batch_size; ++i) {
-        std::string got_val;
-        std::string key = "key" + std::to_string(i);
-        if (key == "key2") {
-          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-          ASSERT_EQ(got_val, "val2*2");
-        } else if (key == "key6") {
-          ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
-          ASSERT_EQ(got_val, "val6*2");
-        } else {
-          ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
-        }
-      }
-    }
-  }
-
-  // Again write batch (the same key, the different value). Crash before
-  // purgeAndFree
-  {
-    SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Reset();
-    SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::BatchWrite::purgeAndFree::Before", [&](void* index) {
-          size_t idx = *(size_t*)(index);
-          if (idx == 6) {
-            throw 1;
-          }
-        });
-    SyncPoint::GetInstance()->EnableProcessing();
-    WriteBatch wb;
-    for (size_t i = 0; i < batch_size; ++i) {
-      std::string key = "key" + std::to_string(i);
-      std::string val = "val*" + std::to_string(i);
-
-      if (i % 4 == 0) {
-        ASSERT_EQ(engine->Put(key, val), Status::Ok);
-        wb.Delete(key);
-      } else {
-        wb.Put(key, val);
-      }
-    }
-    try {
-      ASSERT_EQ(engine->BatchWrite(wb), Status::Ok);
-    } catch (...) {
-      delete engine;  // reopen engine;
-      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
-                Status::Ok);
-      for (size_t i = 0; i < batch_size; ++i) {
-        std::string got_val;
-        std::string key = "key" + std::to_string(i);
-        Status s = engine->Get(key, &got_val);
-        if (i % 4 == 0) {
-          ASSERT_EQ(s, Status::NotFound);
-        } else {
-          ASSERT_EQ(s, Status::Ok);
-          ASSERT_EQ(got_val, "val*" + std::to_string(i));
-        }
-      }
-    }
-  }
 }
 
 // Example Case One:

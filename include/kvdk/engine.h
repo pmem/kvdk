@@ -71,13 +71,31 @@ extern int KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
                                                size_t target_len));
 
 // For BatchWrite
-extern KVDKWriteBatch* KVDKWriteBatchCreate(void);
-extern void KVDKWriteBatchDestory(KVDKWriteBatch*);
-extern void KVDKWriteBatchDelete(KVDKWriteBatch*, const char* key,
-                                 size_t key_len);
-extern void KVDKWriteBatchPut(KVDKWriteBatch*, const char* key, size_t key_len,
-                              const char* value, size_t value_len);
-extern KVDKStatus KVDKWrite(KVDKEngine* engine, const KVDKWriteBatch* batch);
+extern KVDKWriteBatch* KVDKWriteBatchCreate(KVDKEngine* engine);
+extern void KVDKWriteBatchDestory(KVDKWriteBatch* batch);
+extern void KVDKWRiteBatchClear(KVDKWriteBatch* batch);
+extern void KVDKWriteBatchStringPut(KVDKWriteBatch* batch, char const* key_data,
+                                    size_t key_len, char const* val_data,
+                                    size_t val_len);
+extern void KVDKWriteBatchStringDelete(KVDKWriteBatch* batch,
+                                       char const* key_data, size_t key_len);
+extern void KVDKWriteBatchSortedPut(KVDKWriteBatch* batch, char const* key_data,
+                                    size_t key_len, char const* field_data,
+                                    size_t field_len, char const* val_data,
+                                    size_t val_len);
+extern void KVDKWriteBatchSortedDelete(KVDKWriteBatch* batch,
+                                       char const* key_data, size_t key_len,
+                                       char const* field_data,
+                                       size_t field_len);
+extern void KVDKWriteBatchHashPut(KVDKWriteBatch* batch, char const* key_data,
+                                  size_t key_len, char const* field_data,
+                                  size_t field_len, char const* val_data,
+                                  size_t val_len);
+extern void KVDKWriteBatchHashDelete(KVDKWriteBatch* batch,
+                                     char const* key_data, size_t key_len,
+                                     char const* field_data, size_t field_len);
+extern KVDKStatus KVDKBatchWrite(KVDKEngine* engine,
+                                 KVDKWriteBatch const* batch);
 
 // For Anonymous Global Collection
 extern KVDKStatus KVDKGet(KVDKEngine* engine, const char* key, size_t key_len,

@@ -321,8 +321,8 @@ struct DLRecord {
 
   uint32_t GetRecordSize() const { return entry.header.record_size; }
 
-  static uint32_t RecordSize(const StringView& key, const StringView& val) {
-    return key.size() + val.size() + sizeof(DLRecord);
+  static uint32_t RecordSize(const StringView& key, const StringView& value) {
+    return sizeof(DLRecord) + key.size() + value.size();
   }
 
  private:
