@@ -555,9 +555,11 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
     return Status::Abort;
   }
   uint64_t cnt = 0;
+  GlobalLogger.Info("Start iterating backup log\n");
   while (iter->Valid()) {
     auto record = iter->Record();
     bool expired = TimeUtils::CheckIsExpired(record.expire_time);
+    wo.ttl_time = record.expire_time;
     switch (record.type) {
       case StringDataRecord: {
         if (!expired) {
@@ -578,6 +580,10 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
             break;
           }
           s = buildSkiplist(record.key, s_configs, skiplist);
+          if (s == Status::Ok && wo.ttl_time != kPersistTime) {
+            skiplist->SetExpireTime(wo.ttl_time,
+                                    version_controller_.GetCurrentTimestamp());
+          }
           if (s != Status::Ok) {
             break;
           }
