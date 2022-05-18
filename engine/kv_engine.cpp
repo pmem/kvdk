@@ -846,6 +846,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     Skiplist* slist = skiplists_found[i++];
     if (slist == nullptr) {
       // Delete from non-existing Skiplist, skip;
+      kvdk_assert(sorted_op.op == WriteBatchImpl::Op::Delete, "");
       continue;
     }
     SortedWriteArgs args;
@@ -874,6 +875,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     HashList* hlist = hashlists_found[i++];
     if (hlist == nullptr) {
       // Delete from non-existing HashList, skip;
+      kvdk_assert(hash_op.op == WriteBatchImpl::Op::Delete, "");
       continue;
     }
     HashWriteArgs args;
