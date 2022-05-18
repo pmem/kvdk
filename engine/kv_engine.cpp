@@ -871,6 +871,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   }
 
   // Prepare for Hash Elements
+  i = 0;
   for (auto const& hash_op : batch.HashOps()) {
     HashList* hlist = hashlists_found[i++];
     if (hlist == nullptr) {
