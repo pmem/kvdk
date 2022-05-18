@@ -318,7 +318,22 @@ Status KVEngine::sortedPublish(SortedWriteArgs const&) {
 }
 
 Status KVEngine::sortedRollback(TimeStampType,
-                                BatchWriteLog::SortedLogEntry const&) {
+                                BatchWriteLog::SortedLogEntry const& log) {
+  DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+  if (Skiplist::CheckRecordLinkage(elem, pmem_allocator_.get())) {
+    if (elem->old_version != kNullPMemOffset) {
+      Skiplist::Replace(
+          elem,
+          pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
+          nullptr, pmem_allocator_.get(), skiplist_locks_.get());
+      elem->Destroy();
+    } else {
+      Skiplist::Purge(elem, nullptr, pmem_allocator_.get(),
+                      skiplist_locks_.get());
+    }
+  } else {
+    elem->Destroy();
+  }
   return Status::NotSupported;
 }
 
