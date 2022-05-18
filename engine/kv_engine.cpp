@@ -728,18 +728,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prevent collection and nodes in double linked lists from being deleted
   auto access_token = version_controller_.GetLocalSnapshotHolder();
 
-  // Lock all keys
-  std::vector<StringView> keys;
-  for (auto const& string_op : batch.StringOps()) {
-    keys.push_back(string_op.key);
-  }
-  for (auto const& sorted_op : batch.SortedOps()) {
-    keys.push_back(sorted_op.field);
-  }
-  for (auto const& hash_op : batch.HashOps()) {
-    keys.push_back(hash_op.field);
-  }
-  auto guard = hash_table_->RangeLock(keys);
+  // Keys/internal keys to be locked on HashTable
+  std::vector<StringView> keys_to_lock;
 
   // Lookup keys, allocate space according to result.
   std::vector<StringWriteArgs> string_args;
@@ -764,6 +754,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     StringWriteArgs args;
     args.Assign(string_op);
     args.ts = bw_token.Timestamp();
+    keys_to_lock.push_back(args.key);
     args.res = lookupKey<true>(args.key, StringRecordType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
         args.res.s != Status::Outdated) {
@@ -803,6 +794,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     args.Assign(sorted_op);
     args.ts = bw_token.Timestamp();
     std::string internal_key = slist->InternalKey(args.field);
+    keys_to_lock.push_back(internal_key);
     args.res = lookupElem<true>(internal_key, SortedElemType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -840,6 +832,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     args.Assign(hash_op);
     args.ts = bw_token.Timestamp();
     std::string internal_key = hlist->InternalKey(args.field);
+    keys_to_lock.push_back(internal_key);
     args.res = lookupElem<true>(internal_key, HashElem);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -856,6 +849,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     }
     hash_args.push_back(args);
   }
+
+  auto guard = hash_table_->RangeLock(keys_to_lock);
 
   // Preparation done. Persist BatchLog for rollback.
   BatchWriteLog log;
