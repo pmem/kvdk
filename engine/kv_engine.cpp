@@ -728,8 +728,76 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prevent collection and nodes in double linked lists from being deleted
   auto access_token = version_controller_.GetLocalSnapshotHolder();
 
+  std::vector<Skiplist*> skiplists_found;
+  std::vector<HashList*> hashlists_found;
+  // Lookup Skiplists and Hashes for further operations
+  // If the Collection is not found for Put,
+  // batchWriteImpl returns Status::NotFound.
+  // If Collection is not found for Delete,
+  // the operation is ignored.
+  for (auto const& sorted_op : batch.SortedOps()) {
+    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
+    if (res.s != Status::Ok && res.s != Status::NotFound &&
+        res.s != Status::Outdated) {
+      return res.s;
+    }
+    if (res.s != Status::Ok) {
+      if (sorted_op.op == WriteBatchImpl::Op::Delete) {
+        // No need to do anything for delete a field from non-existing Skiplist.
+        skiplists_found.push_back(nullptr);
+      } else {
+        // Batch Write to collection not found, return Status::NotFound.
+        return Status::NotFound;
+      }
+    } else {
+      skiplists_found.push_back(res.entry.GetIndex().skiplist);
+    }
+  }
+
+  for (auto const& hash_op : batch.HashOps()) {
+    HashList* hlist;
+    Status s = hashListFind(hash_op.key, &hlist);
+    if (s != Status::Ok && s != Status::NotFound) {
+      return s;
+    }
+    if (s == Status::NotFound) {
+      if (hash_op.op == WriteBatchImpl::Op::Delete) {
+        hashlists_found.push_back(nullptr);
+      } else {
+        // Batch Write to collection not found, return Status::NotFound.
+        return Status::NotFound;
+      }
+    } else {
+      hashlists_found.push_back(hlist);
+    }
+  }
+
   // Keys/internal keys to be locked on HashTable
   std::vector<StringView> keys_to_lock;
+  for (auto const& string_op : batch.StringOps()) {
+    keys_to_lock.push_back(string_op.key);
+  }
+  size_t i = 0;
+  for (auto const& sorted_op : batch.SortedOps()) {
+    Skiplist* slist = skiplists_found[i++];
+    if (slist == nullptr) {
+      // Delete from non-existing Skiplist, skip;
+      continue;
+    }
+    keys_to_lock.push_back(slist->InternalKey(sorted_op.field));
+  }
+  i = 0;
+  for (auto const& hash_op : batch.HashOps()) {
+    HashList* hlist = hashlists_found[i++];
+    if (hlist == nullptr) {
+      // Delete from non-existing HashList, skip;
+      continue;
+    }
+    keys_to_lock.push_back(hlist->InternalKey(hash_op.field));
+  }
+
+  auto guard = hash_table_->RangeLock(keys_to_lock);
+  keys_to_lock.clear();
 
   // Lookup keys, allocate space according to result.
   std::vector<StringWriteArgs> string_args;
@@ -754,7 +822,6 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     StringWriteArgs args;
     args.Assign(string_op);
     args.ts = bw_token.Timestamp();
-    keys_to_lock.push_back(args.key);
     args.res = lookupKey<true>(args.key, StringRecordType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
         args.res.s != Status::Outdated) {
@@ -774,27 +841,17 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   }
 
   // Prepare for Sorted Elements
+  i = 0;
   for (auto const& sorted_op : batch.SortedOps()) {
-    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
-    if (res.s != Status::Ok && res.s != Status::NotFound &&
-        res.s != Status::Outdated) {
-      return res.s;
+    Skiplist* slist = skiplists_found[i++];
+    if (slist == nullptr) {
+      // Delete from non-existing Skiplist, skip;
+      continue;
     }
-    if (res.s != Status::Ok) {
-      if (sorted_op.op == WriteBatchImpl::Op::Delete) {
-        // No need to do anything for delete a field from non-existing Skiplist.
-        continue;
-      } else {
-        // Batch Write to collection not found, return Status::NotFound.
-        return Status::NotFound;
-      }
-    }
-    Skiplist* slist = res.entry.GetIndex().skiplist;
     SortedWriteArgs args;
     args.Assign(sorted_op);
     args.ts = bw_token.Timestamp();
     std::string internal_key = slist->InternalKey(args.field);
-    keys_to_lock.push_back(internal_key);
     args.res = lookupElem<true>(internal_key, SortedElemType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -814,25 +871,15 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Prepare for Hash Elements
   for (auto const& hash_op : batch.HashOps()) {
-    HashList* hlist;
-    Status s = hashListFind(hash_op.key, &hlist);
-    if (s != Status::Ok && s != Status::NotFound) {
-      return s;
-    }
-    if (s == Status::NotFound) {
-      if (hash_op.op == WriteBatchImpl::Op::Delete) {
-        // No need to do anything for delete a field from non-existing Hash Set.
-        continue;
-      } else {
-        // Batch Write to collection not found, return Status::NotFound.
-        return Status::NotFound;
-      }
+    HashList* hlist = hashlists_found[i++];
+    if (hlist == nullptr) {
+      // Delete from non-existing HashList, skip;
+      continue;
     }
     HashWriteArgs args;
     args.Assign(hash_op);
     args.ts = bw_token.Timestamp();
     std::string internal_key = hlist->InternalKey(args.field);
-    keys_to_lock.push_back(internal_key);
     args.res = lookupElem<true>(internal_key, HashElem);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -849,8 +896,6 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     }
     hash_args.push_back(args);
   }
-
-  auto guard = hash_table_->RangeLock(keys_to_lock);
 
   // Preparation done. Persist BatchLog for rollback.
   BatchWriteLog log;
