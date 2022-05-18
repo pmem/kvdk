@@ -17,9 +17,11 @@
 #include <mutex>
 #include <thread>
 
+#include "backup_log.hpp"
 #include "configs.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
+#include "sorted_collection/iterator.hpp"
 #include "structures.hpp"
 #include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
@@ -52,12 +54,42 @@ KVEngine::~KVEngine() {
 
 Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
                       const Configs& configs) {
+  GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->Init(name, configs);
   if (s == Status::Ok) {
+    s = engine->restoreExistingData();
+  }
+  if (s == Status::Ok) {
     *engine_ptr = engine;
+    engine->startBackgroundWorks();
+    engine->ReportPMemUsage();
   } else {
     GlobalLogger.Error("Init kvdk instance failed: %d\n", s);
+    delete engine;
+  }
+  return s;
+}
+
+Status KVEngine::Restore(const std::string& engine_path,
+                         const std::string& backup_log, Engine** engine_ptr,
+                         const Configs& configs) {
+  GlobalLogger.Info(
+      "Restoring kvdk instance from backup log %s to engine path %s\n",
+      backup_log.c_str(), engine_path.c_str());
+  KVEngine* engine = new KVEngine(configs);
+  Status s = engine->Init(engine_path, configs);
+  if (s == Status::Ok) {
+    s = engine->restoreDataFromBackup(backup_log);
+  }
+
+  if (s == Status::Ok) {
+    *engine_ptr = engine;
+    engine->startBackgroundWorks();
+    engine->ReportPMemUsage();
+  } else {
+    GlobalLogger.Error("Restore kvdk instance from backup log %s failed: %d\n",
+                       backup_log.c_str(), s);
     delete engine;
   }
   return s;
@@ -106,8 +138,6 @@ void KVEngine::terminateBackgroundWorks() {
 }
 
 Status KVEngine::Init(const std::string& name, const Configs& configs) {
-  access_thread.id = 0;
-  defer(access_thread.id = -1);
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
@@ -160,18 +190,18 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,
       pmem_allocator_.get(), configs_.max_access_threads));
+  skiplist_locks_.reset(new LockTable{1UL << 20});
+  hash_list_locks_.reset(new LockTable{1UL << 20});
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
-      thread_manager_ == nullptr) {
+      thread_manager_ == nullptr || skiplist_locks_ == nullptr ||
+      hash_list_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
   }
 
-  RegisterComparator("default", compare_string_view);
-  s = Recovery();
-  startBackgroundWorks();
+  s = initOrRestoreCheckpoint();
 
-  ReportPMemUsage();
-  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
+  RegisterComparator("default", compare_string_view);
   return s;
 }
 
@@ -411,58 +441,86 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
   return s;
 }
 
-Status KVEngine::Backup(const pmem::obj::string_view backup_path,
+Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                         const Snapshot* snapshot) {
-  std::string path = string_view_2_string(backup_path);
-  GlobalLogger.Info("Backup to %s\n", path.c_str());
-  create_dir_if_missing(path);
-  // TODO: make sure backup_path is empty
-
-  size_t mapped_len;
-  BackupMark* backup_mark = static_cast<BackupMark*>(
-      pmem_map_file(backup_mark_file(path).c_str(), sizeof(BackupMark),
-                    PMEM_FILE_CREATE, 0666, &mapped_len,
-                    nullptr /* we do not care if backup path is on PMem*/));
-
-  if (backup_mark == nullptr || mapped_len != sizeof(BackupMark)) {
-    GlobalLogger.Error("Map backup mark file %s error in Backup\n",
-                       backup_mark_file(path).c_str());
-    return Status::IOError;
-  }
-
-  ImmutableConfigs* imm_configs = static_cast<ImmutableConfigs*>(
-      pmem_map_file(config_file(path).c_str(), sizeof(ImmutableConfigs),
-                    PMEM_FILE_CREATE, 0666, &mapped_len,
-                    nullptr /* we do not care if backup path is on PMem*/));
-  if (imm_configs == nullptr || mapped_len != sizeof(ImmutableConfigs)) {
-    GlobalLogger.Error("Map persistent config file %s error in Backup\n",
-                       config_file(path).c_str());
-    return Status::IOError;
-  }
-
-  CheckPoint* persistent_checkpoint = static_cast<CheckPoint*>(pmem_map_file(
-      checkpoint_file(path).c_str(), sizeof(CheckPoint), PMEM_FILE_CREATE, 0666,
-      &mapped_len, nullptr /* we do not care if checkpoint path is on PMem*/));
-
-  backup_mark->stage = BackupMark::Stage::Processing;
-  msync(backup_mark, sizeof(BackupMark), MS_SYNC);
-
-  imm_configs->PersistImmutableConfigs(configs_);
-  persistent_checkpoint->MakeCheckpoint(snapshot);
-  msync(persistent_checkpoint, sizeof(CheckPoint), MS_SYNC);
-
-  Status s = pmem_allocator_->Backup(data_file(path));
+  std::string backup_log_file = string_view_2_string(backup_log);
+  BackupLog backup;
+  Status s = backup.Init(backup_log_file);
+  GlobalLogger.Info("Backup instance to %s ...\n", backup_log_file.c_str());
   if (s != Status::Ok) {
     return s;
   }
-
-  backup_mark->stage = BackupMark::Stage::Finish;
-  msync(backup_mark, sizeof(BackupMark), MS_SYNC);
-  GlobalLogger.Info("Backup to %s finished\n", path.c_str());
+  TimeStampType backup_ts =
+      static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
+  auto hashtable_iterator = hash_table_->GetIterator();
+  while (hashtable_iterator.Valid()) {
+    auto ul = hashtable_iterator.AcquireSlotLock();
+    auto slot_iter = hashtable_iterator.Slot();
+    while (slot_iter.Valid()) {
+      switch (slot_iter->GetRecordType()) {
+        case StringDataRecord:
+        case StringDeleteRecord: {
+          StringRecord* record = slot_iter->GetIndex().string_record;
+          while (record != nullptr && record->GetTimestamp() > backup_ts) {
+            record =
+                pmem_allocator_->offset2addr<StringRecord>(record->old_version);
+          }
+          if (record && record->GetRecordType() == StringDataRecord &&
+              !record->HasExpired()) {
+            s = backup.Append(StringDataRecord, record->Key(), record->Value(),
+                              record->GetExpireTime());
+          }
+          break;
+        }
+        case SortedHeader:
+        case SortedHeaderDelete: {
+          DLRecord* header = slot_iter->GetIndex().skiplist->HeaderRecord();
+          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+            header =
+                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+          }
+          if (header && header->GetRecordType() == SortedHeader &&
+              !header->HasExpired()) {
+            s = backup.Append(SortedHeader, header->Key(), header->Value(),
+                              header->GetExpireTime());
+            if (s == Status::Ok) {
+              // Append skiplist elems following the header
+              auto skiplist = getSkiplist(Skiplist::SkiplistID(header));
+              kvdk_assert(skiplist != nullptr,
+                          "Backup skiplist should exist in map");
+              auto skiplist_iter = SortedIterator(
+                  skiplist.get(), pmem_allocator_.get(),
+                  static_cast<const SnapshotImpl*>(snapshot), false);
+              for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
+                   skiplist_iter.Next()) {
+                s = backup.Append(SortedElem, skiplist_iter.Key(),
+                                  skiplist_iter.Value(), kPersistTime);
+                if (s != Status::Ok) {
+                  break;
+                }
+              }
+            }
+          }
+        }
+        default:
+          // Hash and list backup is not supported yet
+          break;
+      }
+      if (s != Status::Ok) {
+        backup.Destroy();
+        return s;
+      }
+      slot_iter++;
+    }
+    hashtable_iterator.Next();
+  }
+  backup.Finish();
+  GlobalLogger.Info("Backup instance to %s Finished\n",
+                    backup_log_file.c_str());
   return Status::Ok;
 }
 
-Status KVEngine::RestoreCheckpoint() {
+Status KVEngine::initOrRestoreCheckpoint() {
   size_t mapped_len;
   int is_pmem;
   persist_checkpoint_ = static_cast<CheckPoint*>(
@@ -477,69 +535,111 @@ Status KVEngine::RestoreCheckpoint() {
   return Status::Ok;
 }
 
-Status KVEngine::MaybeRestoreBackup() {
-  size_t mapped_len;
-  int is_pmem;
-  BackupMark* backup_mark = static_cast<BackupMark*>(
-      pmem_map_file(backup_mark_file().c_str(), sizeof(BackupMark),
-                    PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem));
-  if (backup_mark != nullptr) {
-    if (!is_pmem || mapped_len != sizeof(BackupMark)) {
-      GlobalLogger.Error("Map persisted backup mark file %s failed\n",
-                         backup_mark_file().c_str());
-      return Status::IOError;
-    }
-
-    switch (backup_mark->stage) {
-      case BackupMark::Stage::Init: {
+Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
+  // Todo: make this multi-thread
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+  defer(ReleaseAccessThread());
+  BackupLog backup;
+  s = backup.Open(backup_log);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto wo = WriteOptions();
+  auto iter = backup.GetIterator();
+  if (iter == nullptr) {
+    GlobalLogger.Error("Restore from a not finished backup log %s\n",
+                       backup_log.c_str());
+    return Status::Abort;
+  }
+  uint64_t cnt = 0;
+  GlobalLogger.Info("Start iterating backup log\n");
+  while (iter->Valid()) {
+    auto record = iter->Record();
+    bool expired = TimeUtils::CheckIsExpired(record.expire_time);
+    wo.ttl_time = record.expire_time;
+    switch (record.type) {
+      case StringDataRecord: {
+        if (!expired) {
+          cnt++;
+          s = Put(record.key, record.val, wo);
+        }
+        iter->Next();
         break;
       }
-      case BackupMark::Stage::Processing: {
-        GlobalLogger.Error("Recover from a unfinished backup instance\n");
+      case SortedHeader: {
+        // Maybe reuse id?
+        std::shared_ptr<Skiplist> skiplist = nullptr;
+        if (!expired) {
+          CollectionIDType id;
+          SortedCollectionConfigs s_configs;
+          s = Skiplist::DecodeSortedCollectionValue(record.val, id, s_configs);
+          if (s != Status::Ok) {
+            break;
+          }
+          s = buildSkiplist(record.key, s_configs, skiplist);
+          if (s == Status::Ok && wo.ttl_time != kPersistTime) {
+            skiplist->SetExpireTime(wo.ttl_time,
+                                    version_controller_.GetCurrentTimestamp());
+          }
+          if (s != Status::Ok) {
+            break;
+          }
+          cnt++;
+        }
+        iter->Next();
+        // the header is followed by all its elems in backup log
+        while (iter->Valid()) {
+          record = iter->Record();
+          if (record.type != SortedElem) {
+            break;
+          }
+          if (!expired) {
+            auto ret = skiplist->Put(record.key, record.val,
+                                     version_controller_.GetCurrentTimestamp());
+            s = ret.s;
+            if (s != Status::Ok) {
+              break;
+            }
+            cnt++;
+          }
+          iter->Next();
+        }
+        break;
+      }
+      case SortedElem: {
+        GlobalLogger.Error("sorted elems not lead by header in backup log %s\n",
+                           backup_log.c_str());
         return Status::Abort;
-      }
-      case BackupMark::Stage::Finish: {
-        GlobalLogger.Info("Recover from a backup KVDK instance\n");
-        kvdk_assert(persist_checkpoint_->Valid(),
-                    "No valid checkpoint for a backup instance");
-        configs_.recover_to_checkpoint = true;
-        break;
       }
       default:
-        GlobalLogger.Error(
-            "Recover from a backup instance with wrong backup stage\n");
+        GlobalLogger.Error("unsupported record type %u in backup log %s\n",
+                           record.type, backup_log.c_str());
         return Status::Abort;
     }
-    pmem_unmap(backup_mark, sizeof(BackupMark));
+    if (s != Status::Ok) {
+      return Status::Abort;
+    }
   }
+  GlobalLogger.Info("Restore %lu records from backup log\n", cnt);
   return Status::Ok;
 }
 
-Status KVEngine::Recovery() {
-  Status s = RestoreCheckpoint();
+Status KVEngine::restoreExistingData() {
+  access_thread.id = 0;
+  defer(access_thread.id = -1);
+  Status s = batchWriteRollbackLogs();
   if (s != Status::Ok) {
     return s;
   }
 
-  s = batchWriteRollbackLogs();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  s = MaybeRestoreBackup();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  skiplist_locks_.reset(new LockTable{1UL << 20});
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
-
   list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
                                       configs_.max_access_threads, nullptr});
-
-  hash_list_locks_.reset(new LockTable{1UL << 20});
   hash_list_builder_.reset(
       new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
                           configs_.max_access_threads, hash_list_locks_.get()});
@@ -551,7 +651,7 @@ Status KVEngine::Recovery() {
   }
 
   for (auto& f : fs) {
-    Status s = f.get();
+    s = f.get();
     if (s != Status::Ok) {
       return s;
     }
@@ -612,11 +712,10 @@ Status KVEngine::Recovery() {
 
   persist_checkpoint_->Release();
   pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
-  remove(backup_mark_file().c_str());
 
   version_controller_.Init(latest_version_ts);
   old_records_cleaner_.TryGlobalClean();
-
+  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
   return Status::Ok;
 }
 
