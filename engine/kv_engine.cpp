@@ -773,7 +773,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   }
 
   // Keys/internal keys to be locked on HashTable
-  std::vector<StringView> keys_to_lock;
+  std::vector<std::string> keys_to_lock;
   for (auto const& string_op : batch.StringOps()) {
     keys_to_lock.push_back(string_op.key);
   }
