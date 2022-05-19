@@ -168,7 +168,8 @@ class BatchWriteLog {
 
   struct HashLogEntry {
     Op op;
-    PMemOffsetType offset;
+    PMemOffsetType new_offset;
+    PMemOffsetType old_offset;
   };
 
   explicit BatchWriteLog() {}
@@ -210,10 +211,10 @@ class BatchWriteLog {
   static size_t Capacity() { return (1UL << 20); }
 
   static size_t MaxBytes() {
-    static_assert(sizeof(StringLog) == sizeof(SortedLog), "");
-    static_assert(sizeof(StringLog) == sizeof(HashLog), "");
+    static_assert(sizeof(HashLogEntry) >= sizeof(StringLogEntry), "");
+    static_assert(sizeof(HashLogEntry) >= sizeof(SortedLogEntry), "");
     return sizeof(size_t) + sizeof(TimeStampType) + sizeof(Stage) +
-           sizeof(size_t) + Capacity() * sizeof(StringLog);
+           sizeof(size_t) + Capacity() * sizeof(HashLogEntry);
   }
 
   // Format of the BatchWriteLog
