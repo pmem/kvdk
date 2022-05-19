@@ -860,25 +860,35 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Preparation done. Persist BatchLog for rollback.
   BatchWriteLog log;
   auto& tc = engine_thread_cache_[access_thread.id];
-  for (auto& arg : string_args) {
-    if (arg.op == WriteBatchImpl::Op::Put) {
-      log.StringPut(arg.space.offset);
+  for (auto& args : string_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    if (args.op == WriteBatchImpl::Op::Put) {
+      log.StringPut(args.space.offset);
     } else {
-      log.StringDelete(arg.space.offset);
+      log.StringDelete(args.space.offset);
     }
   }
-  for (auto& arg : sorted_args) {
-    if (arg.op == WriteBatchImpl::Op::Put) {
-      log.SortedPut(arg.space.offset);
+  for (auto& args : sorted_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    if (args.op == WriteBatchImpl::Op::Put) {
+      log.SortedPut(args.space.offset);
     } else {
-      log.SortedDelete(arg.space.offset);
+      log.SortedDelete(args.space.offset);
     }
   }
-  for (auto& arg : hash_args) {
-    if (arg.op == WriteBatchImpl::Op::Put) {
-      log.HashPut(arg.space.offset);
+  for (auto& args : hash_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    if (args.op == WriteBatchImpl::Op::Put) {
+      log.HashPut(args.space.offset, pmem_allocator_->addr2offset_checked(
+                                         args.res.entry.GetIndex().dl_record));
     } else {
-      log.HashDelete(arg.space.offset);
+      log.HashDelete(args.space.offset);
     }
   }
 
@@ -887,24 +897,33 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
   // Write Strings
-  for (auto& string_arg : string_args) {
-    Status s = stringWrite(string_arg);
+  for (auto& args : string_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = stringWrite(args);
     if (s != Status::Ok) {
       return s;
     }
   }
 
   // Write Sorted Elems
-  for (auto& sorted_arg : sorted_args) {
-    Status s = sortedWrite(sorted_arg);
+  for (auto& args : sorted_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = sortedWrite(args);
     if (s != Status::Ok) {
       return s;
     }
   }
 
   // Write Hash Elems
-  for (auto& hash_arg : hash_args) {
-    Status s = hashListWrite(hash_arg);
+  for (auto& args : hash_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = hashListWrite(args);
     if (s != Status::Ok) {
       return s;
     }
@@ -921,20 +940,29 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Crash is tolerated as BatchWrite will be recovered.
 
   // Publish Strings to HashTable
-  for (auto const& string_arg : string_args) {
-    Status s = stringPublish(string_arg);
+  for (auto const& args : string_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = stringPublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
   // Publish Sorted Elements to HashTable
-  for (auto& sorted_arg : sorted_args) {
-    Status s = sortedPublish(sorted_arg);
+  for (auto const& args : sorted_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = sortedPublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
   // Publish Hash Elements to HashTable
-  for (auto& hash_arg : hash_args) {
-    Status s = hashListPublish(hash_arg);
+  for (auto& args : hash_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = hashListPublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
