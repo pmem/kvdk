@@ -138,6 +138,7 @@ struct SyncImpl {
     producers_.clear();
     callbacks_.clear();
     point_table_.clear();
+    crash_points_.clear();
     num_callbacks_running_ = 0;
   }
 
