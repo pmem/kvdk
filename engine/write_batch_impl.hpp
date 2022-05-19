@@ -106,6 +106,7 @@ struct SortedWriteArgs {
   StringView field;
   StringView value;
   WriteBatchImpl::Op op;
+  Skiplist* skiplist;
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult res;
@@ -124,9 +125,11 @@ struct HashWriteArgs {
   StringView field;
   StringView value;
   WriteBatchImpl::Op op;
+  HashList* hlist;
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult res;
+  // returned by write, used by publish
   DLRecord* new_rec;
 
   void Assign(WriteBatchImpl::HashOp const& hash_op) {

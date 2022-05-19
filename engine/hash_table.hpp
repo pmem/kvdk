@@ -212,24 +212,10 @@ class HashTable {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
 
+  // StringAlike is std::string or StringView
+  template <typename StringAlike>
   std::vector<std::unique_lock<SpinMutex>> RangeLock(
-      std::vector<StringView> const& keys) {
-    std::vector<SpinMutex*> spins;
-    for (auto const& key : keys) {
-      spins.push_back(GetHint(key).spin);
-    }
-    std::sort(spins.begin(), spins.end());
-    auto end = std::unique(spins.begin(), spins.end());
-
-    std::vector<std::unique_lock<SpinMutex>> guard;
-    for (auto iter = spins.begin(); iter != end; ++iter) {
-      guard.emplace_back(**iter);
-    }
-    return guard;
-  }
-
-  std::vector<std::unique_lock<SpinMutex>> RangeLock(
-      std::vector<std::string> const& keys) {
+      std::vector<StringAlike> const& keys) {
     std::vector<SpinMutex*> spins;
     for (auto const& key : keys) {
       spins.push_back(GetHint(key).spin);
