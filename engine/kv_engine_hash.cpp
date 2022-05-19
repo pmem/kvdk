@@ -363,6 +363,27 @@ Status KVEngine::hashListPublish(HashWriteArgs const& args) {
 }
 
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
+  switch (log.op)
+  {
+    case BatchWriteLog::Op::Delete: {
+      kvdk_assert(log.new_offset== kNullPMemOffset, "");
+      DLRecord* old_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.old_offset));
+      hash_list_builder_->RollbackDeletion(old_rec);
+      break;
+    }
+    case BatchWriteLog::Op::Put: {
+      kvdk_assert(log.old_offset== kNullPMemOffset, "");
+      DLRecord* new_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.new_offset));
+      hash_list_builder_->RollbackDeletion(new_rec);
+      break;
+    }
+    case BatchWriteLog::Op::Replace: {
+      DLRecord* old_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.old_offset));
+      DLRecord* new_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.new_offset));
+      hash_list_builder_->RollbackReplacement(new_rec, old_rec);
+      break;
+    }
+  }
   return Status::NotSupported;
 }
 

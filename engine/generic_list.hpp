@@ -755,13 +755,13 @@ class GenericListBuilder final {
     // Unlink from next, like deletion
     if (addressOf(new_elem->next)->prev == offsetOf(new_elem)) {
       kvdk_assert(addressOf(new_elem->prev)->next == offsetOf(new_elem), "");
-      addressOf(old_elem->next)->PersistPrevNT(new_elem->prev);
+      addressOf(new_elem->next)->PersistPrevNT(new_elem->prev);
     }
 
     // Unlink from prev, like deletion
     if (addressOf(new_elem->prev)->next == offsetOf(new_elem)) {
       kvdk_assert(addressOf(new_elem->next)->prev == new_elem->prev, "");
-      addressOf(old_elem->prev)->PersistNextNT(new_elem->next);
+      addressOf(new_elem->prev)->PersistNextNT(new_elem->next);
     }
 
     List::markRecordAsDirty(new_elem);

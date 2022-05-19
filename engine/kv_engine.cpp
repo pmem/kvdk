@@ -630,10 +630,6 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
 Status KVEngine::restoreExistingData() {
   access_thread.id = 0;
   defer(access_thread.id = -1);
-  Status s = batchWriteRollbackLogs();
-  if (s != Status::Ok) {
-    return s;
-  }
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
@@ -643,6 +639,11 @@ Status KVEngine::restoreExistingData() {
   hash_list_builder_.reset(
       new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
                           configs_.max_access_threads, hash_list_locks_.get()});
+
+  Status s = batchWriteRollbackLogs();
+  if (s != Status::Ok) {
+    return s;
+  }
 
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
@@ -984,8 +985,14 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     if (args.op == WriteBatchImpl::Op::Put) {
-      log.HashPut(args.space.offset, pmem_allocator_->addr2offset_checked(
-                                         args.res.entry.GetIndex().dl_record));
+      if (args.res.s == Status::Ok)
+      {
+        PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
+                                          args.res.entry.GetIndex().dl_record);
+        log.HashReplace(args.space.offset, old_off);
+      } else {
+        log.HashEmplace(args.space.offset);
+      }
     } else {
       log.HashDelete(args.space.offset);
     }

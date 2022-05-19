@@ -193,8 +193,12 @@ class BatchWriteLog {
     sorted_logs.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
-  void HashPut(PMemOffsetType new_offset, PMemOffsetType old_offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Put, new_offset, old_offset});
+  void HashEmplace(PMemOffsetType new_offset) {
+    hash_logs.emplace_back(HashLogEntry{Op::Put, new_offset, kNullPMemOffset});
+  }
+
+  void HashReplace(PMemOffsetType new_offset, PMemOffsetType old_offset) {
+    hash_logs.emplace_back(HashLogEntry{Op::Replace, new_offset, old_offset});
   }
 
   void HashDelete(PMemOffsetType old_offset) {
