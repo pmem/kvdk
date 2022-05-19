@@ -94,14 +94,11 @@ SpaceEntry KVEngine::purgeSortedRecord(SkiplistNode* dram_node,
   kvdk_assert(dram_node == nullptr || dram_node->record == pmem_record,
               "On-list old delete record of skiplist no pointed by its "
               "dram node");
-
-  skiplist_locks_->Lock(Skiplist::RecordHash(pmem_record));
   bool record_on_list = Skiplist::CheckReocrdNextLinkage(
       static_cast<DLRecord*>(pmem_record), pmem_allocator_.get());
 
   if (record_on_list) {
-    skiplist_locks_->Unlock(Skiplist::RecordHash(pmem_record));
-    Skiplist::Purge(static_cast<DLRecord*>(pmem_record), dram_node,
+    Skiplist::Remove(static_cast<DLRecord*>(pmem_record), dram_node,
                     pmem_allocator_.get(), skiplist_locks_.get());
   }
   return SpaceEntry(pmem_allocator_->addr2offset_checked(pmem_record),

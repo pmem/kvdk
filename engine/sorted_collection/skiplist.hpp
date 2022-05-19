@@ -305,27 +305,33 @@ class Skiplist : public Collection {
     return check_linkage() && check_type() && check_id();
   }
 
-  // Purge a dl record from its skiplist by remove it from linkage
+  // Remove a dl record from its skiplist by unlinking
   //
-  // purged_record:existing record to purge
-  // dram_node:dram node of purging record, if it's a height 0 record, then
+  // Args:
+  // * purged_record:existing record to purge
+  // * dram_node:dram node of purging record, if it's a height 0 record, then
   // pass nullptr
   //
-  // Return true on success, return false on fail.
+  // Return:
+  // * true on success
+  // * false if purging_record not linked on a skiplist
   //
   // Notice: key of the purging record should already been locked by engine
-  static bool Purge(DLRecord* purging_record, SkiplistNode* dram_node,
-                    PMEMAllocator* pmem_allocator, LockTable* lock_table);
+  static bool Remove(DLRecord* purging_record, SkiplistNode* dram_node,
+                     PMEMAllocator* pmem_allocator, LockTable* lock_table);
 
   // Replace "old_record" from its skiplist with "replacing_record", please make
   // sure the key order is correct after replace
   //
-  // old_record: existing record to be replaced
-  // replacing_record: new reocrd to replace the older one
-  // dram_node:dram node of old record, if it's a height 0 record, then
+  // Args:
+  // * old_record: existing record to be replaced
+  // * replacing_record: new reocrd to replace the older one
+  // * dram_node:dram node of old record, if it's a height 0 record, then
   // pass nullptr
   //
-  // Return true on success, return false on fail.
+  // Return:
+  // * true on success
+  // * false if old_record not linked on a skiplist
   //
   // Notice: key of the replacing record should already been locked by engine
   static bool Replace(DLRecord* old_record, DLRecord* new_record,

@@ -744,6 +744,8 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
         batch->StringDelete(keys[tid][i]);
       }
       if ((i + 1) % batch_size == 0) {
+        // Delete a non-existing key
+        batch->StringDelete("asdf");
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
@@ -2001,6 +2003,8 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
         batch->StringPut(keys[tid][i], GetRandomString(120));
       } else {
         batch->StringDelete(keys[tid][i]);
+        // Delete a non-existing key
+        batch->StringDelete("asdf");
       }
       ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     }
@@ -2031,6 +2035,7 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
   // Check KVs in engine, the batch is indeed rolled back.
   LaunchNThreads(num_threads, Check);
 
+  SyncPoint::GetInstance()->DisableProcessing();
   delete engine;
 }
 
@@ -2117,8 +2122,8 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::NothingToDo", [&](void* total_slot_size) {
-        *((size_t*)total_slot_size) = 0;
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* thread_id) {
+        *((size_t*)thread_id) = kCleanerThreadNum;
         return;
       });
   // only throw when the first call `SortedDelete`
@@ -2299,8 +2304,13 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::NothingToDo", [&](void* total_slot_size) {
-        *((size_t*)total_slot_size) = 0;
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* thread_id) {
+        *((size_t*)thread_id) = kCleanerThreadNum;
+        return;
+      });
+  SyncPoint::GetInstance()->SetCallBack(
+      "KVEngine::backgroundCleaner::RunOnceTime", [&](void* terminal) {
+        *((bool*)terminal) = true;
         return;
       });
   SyncPoint::GetInstance()->EnableProcessing();

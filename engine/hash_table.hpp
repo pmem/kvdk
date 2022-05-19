@@ -197,8 +197,10 @@ class HashTable {
 
   size_t GetSlotSize() { return slots_.size(); }
 
+  // StringAlike is std::string or StringView
+  template <typename StringAlike>
   std::vector<std::unique_lock<SpinMutex>> RangeLock(
-      std::vector<StringView> const& keys) {
+      std::vector<StringAlike> const& keys) {
     std::vector<SpinMutex*> spins;
     for (auto const& key : keys) {
       spins.push_back(GetHint(key).spin);
