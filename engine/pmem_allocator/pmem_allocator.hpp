@@ -105,7 +105,6 @@ class PMEMAllocator : public Allocator {
     }
   }
 
-  Status Backup(const std::string& backup_file);
   void LogAllocation(int tid, size_t sz) {
     if (tid == -1) {
       global_allocated_size_.fetch_add(sz);
@@ -183,8 +182,5 @@ class PMEMAllocator : public Allocator {
   std::vector<uint16_t> data_size_2_block_size_;
   VersionController* version_controller_;
   std::atomic<std::int64_t> global_allocated_size_{0};
-
-  std::mutex backup_lock;
-  bool backup_processing = false;
 };
 }  // namespace KVDK_NAMESPACE

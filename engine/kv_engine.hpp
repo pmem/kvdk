@@ -48,9 +48,13 @@ class KVEngine : public Engine {
   static Status Open(const std::string& name, Engine** engine_ptr,
                      const Configs& configs);
 
+  static Status Restore(const std::string& engine_path,
+                        const std::string& backup_log, Engine** engine_ptr,
+                        const Configs& configs);
+
   Snapshot* GetSnapshot(bool make_checkpoint) override;
 
-  Status Backup(const pmem::obj::string_view backup_path,
+  Status Backup(const pmem::obj::string_view backup_log,
                 const Snapshot* snapshot) override;
 
   void ReleaseSnapshot(const Snapshot* snapshot) override {
@@ -138,6 +142,7 @@ class KVEngine : public Engine {
     return value.size() <= UINT32_MAX;
   }
 
+  // Init basic components of the engine
   Status Init(const std::string& name, const Configs& configs);
 
   Status HashGetImpl(const StringView& key, std::string* value,
@@ -357,12 +362,13 @@ class KVEngine : public Engine {
 
   Status SortedDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
+  Status restoreExistingData();
+
+  Status restoreDataFromBackup(const std::string& backup_log);
   Status sortedWrite(SortedWriteArgs& args);
   Status sortedPublish(SortedWriteArgs const& args);
   Status sortedRollback(TimeStampType ts,
                         BatchWriteLog::SortedLogEntry const& entry);
-
-  Status Recovery();
 
   Status RestoreData();
 
@@ -378,11 +384,7 @@ class KVEngine : public Engine {
   bool ValidateRecordAndGetValue(void* data_record, uint32_t expected_checksum,
                                  std::string* value);
 
-  Status RestorePendingBatch();
-
-  Status MaybeRestoreBackup();
-
-  Status RestoreCheckpoint();
+  Status initOrRestoreCheckpoint();
 
   Status PersistOrRecoverImmutableConfigs();
 
@@ -466,22 +468,25 @@ class KVEngine : public Engine {
     skiplists_.emplace(skiplist->ID(), skiplist);
   }
 
+  std::shared_ptr<Skiplist> getSkiplist(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(skiplists_mu_);
+    return skiplists_[id];
+  }
+
+  Status buildSkiplist(const StringView& name,
+                       const SortedCollectionConfigs& s_configs,
+                       std::shared_ptr<Skiplist>& skiplist);
+
   inline std::string data_file() { return data_file(dir_); }
 
   inline static std::string data_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "data";
   }
 
-  inline std::string backup_mark_file() { return backup_mark_file(dir_); }
-
   inline std::string checkpoint_file() { return checkpoint_file(dir_); }
 
   inline static std::string checkpoint_file(const std::string& instance_path) {
     return format_dir_path(instance_path) + "checkpoint";
-  }
-
-  inline static std::string backup_mark_file(const std::string& instance_path) {
-    return format_dir_path(instance_path) + "backup_mark";
   }
 
   inline std::string config_file() { return config_file(dir_); }

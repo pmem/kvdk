@@ -201,7 +201,7 @@ struct StringRecord {
   }
 
   uint32_t Checksum() {
-    // we don't checksum next/prev pointers
+    // we don't checksum expire time
     uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
@@ -304,7 +304,11 @@ struct DLRecord {
                 "Call DLRecord::GetExpireTime with an unexpirable type");
     return expired_time;
   }
+
+  RecordType GetRecordType() const { return entry.meta.type; }
+
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
+  TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
@@ -345,7 +349,7 @@ struct DLRecord {
   }
 
   uint32_t Checksum() {
-    // we don't checksum next/prev pointers
+    // we don't checksum next/prev pointers and expire time
     uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 

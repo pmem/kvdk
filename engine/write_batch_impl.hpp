@@ -106,6 +106,7 @@ struct SortedWriteArgs {
   StringView field;
   StringView value;
   WriteBatchImpl::Op op;
+  Skiplist* skiplist;
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult res;
@@ -128,6 +129,7 @@ struct HashWriteArgs {
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult res;
+  // returned by write, used by publish
   DLRecord* new_rec;
 
   void Assign(WriteBatchImpl::HashOp const& hash_op) {
@@ -191,12 +193,13 @@ class BatchWriteLog {
     sorted_logs.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
-  void HashPut(PMemOffsetType offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Put, offset});
+  void HashPut(PMemOffsetType new_offset, PMemOffsetType old_offset) {
+    hash_logs.emplace_back(HashLogEntry{Op::Put, new_offset, old_offset});
   }
 
-  void HashDelete(PMemOffsetType offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Delete, offset});
+  void HashDelete(PMemOffsetType old_offset) {
+    hash_logs.emplace_back(
+        HashLogEntry{Op::Delete, kNullPMemOffset, old_offset});
   }
 
   void Clear() {
@@ -212,15 +215,17 @@ class BatchWriteLog {
   static size_t Capacity() { return (1UL << 20); }
 
   static size_t MaxBytes() {
-    static_assert(sizeof(StringLog) == sizeof(SortedLog), "");
-    static_assert(sizeof(StringLog) == sizeof(HashLog), "");
+    static_assert(sizeof(HashLogEntry) >= sizeof(StringLogEntry), "");
+    static_assert(sizeof(HashLogEntry) >= sizeof(SortedLogEntry), "");
     return sizeof(size_t) + sizeof(TimeStampType) + sizeof(Stage) +
-           sizeof(size_t) + Capacity() * sizeof(StringLog);
+           sizeof(size_t) + Capacity() * sizeof(HashLogEntry);
   }
 
   // Format of the BatchWriteLog
-  // total_bytes | Stage | timestamp | N | StringLogEntry*N | M |
-  // SortedLogEntry*M | K | HashLogEntry*K
+  // total_bytes | timestamp | stage |
+  // N | StringLogEntry*N |
+  // M | SortedLogEntry*M
+  // K | HashLogEntry*K
   // dst is expected to have capacity of MaxBytes().
   void EncodeTo(char* dst);
 

@@ -42,6 +42,7 @@ class EngineBasicTest : public testing::Test {
   Configs configs;
   std::string db_path;
   std::string backup_path;
+  std::string backup_log;
   std::string str_pool;
 
   virtual void SetUp() override {
@@ -58,9 +59,10 @@ class EngineBasicTest : public testing::Test {
     configs.max_access_threads = 1;
     db_path = FLAGS_path;
     backup_path = FLAGS_path + "_backup";
+    backup_log = FLAGS_path + ".backup";
     char cmd[1024];
-    sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
-            backup_path.c_str());
+    sprintf(cmd, "rm -rf %s && rm -rf %s && rm -rf %s\n", db_path.c_str(),
+            backup_path.c_str(), backup_log.c_str());
     int res __attribute__((unused)) = system(cmd);
     config_option = OptionConfig::Default;
     cnt = 500;
@@ -75,8 +77,8 @@ class EngineBasicTest : public testing::Test {
   void Destroy() {
     // delete db_path
     char cmd[1024];
-    sprintf(cmd, "rm -rf %s && rm -rf %s\n", db_path.c_str(),
-            backup_path.c_str());
+    sprintf(cmd, "rm -rf %s && rm -rf %s && rm -rf %s\n", db_path.c_str(),
+            backup_path.c_str(), backup_log.c_str());
     int res __attribute__((unused)) = system(cmd);
   }
 
@@ -549,7 +551,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     snapshot_done = true;
     cv.notify_all();
   }
-  engine->Backup(backup_path, snapshot);
+  engine->Backup(backup_log, snapshot);
   for (auto& t : ths) {
     t.join();
   }
@@ -577,19 +579,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   engine->ReleaseSortedIterator(snapshot_iter);
   delete engine;
 
-  std::vector<int> opt_restore_skiplists{0, 1};
-  for (auto is_opt : opt_restore_skiplists) {
-    configs.opt_large_sorted_collection_recovery = is_opt;
-    Engine* backup_engine;
-
-    ASSERT_EQ(
-        Engine::Open(backup_path.c_str(), &backup_engine, configs, stdout),
-        Status::Ok);
-
-    configs.recover_to_checkpoint = true;
-    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-              Status::Ok);
-
+  auto Validation = [&]() {
     // Test backup and checkpoint instance
     // All changes after snapshot should not be seen in backup and checkpoint
     // Writes on backup should work well
@@ -601,28 +591,12 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
         std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
 
-        ASSERT_EQ(backup_engine->Get(key1, &got_v1), Status::Ok);
-        ASSERT_EQ(backup_engine->Get(key2, &got_v2), Status::Ok);
-        ASSERT_EQ(backup_engine->Get(key3, &got_v3), Status::NotFound);
-        ASSERT_EQ(got_v1, key1);
-        ASSERT_EQ(got_v2, key2);
         ASSERT_EQ(engine->Get(key1, &got_v1), Status::Ok);
         ASSERT_EQ(engine->Get(key2, &got_v2), Status::Ok);
         ASSERT_EQ(engine->Get(key3, &got_v3), Status::NotFound);
         ASSERT_EQ(got_v1, key1);
         ASSERT_EQ(got_v2, key2);
 
-        ASSERT_EQ(backup_engine->SortedGet(sorted_collection, key1, &got_v1),
-                  Status::Ok);
-        ASSERT_EQ(backup_engine->SortedGet(sorted_collection, key2, &got_v2),
-                  Status::Ok);
-        ASSERT_EQ(backup_engine->SortedGet(sorted_collection, key3, &got_v3),
-                  Status::NotFound);
-        ASSERT_EQ(got_v1, key1);
-        ASSERT_EQ(got_v2, key2);
-        ASSERT_EQ(backup_engine->SortedGet(sorted_collection_after_snapshot,
-                                           key1, &got_v1),
-                  Status::NotFound);
         ASSERT_EQ(engine->SortedGet(sorted_collection, key1, &got_v1),
                   Status::Ok);
         ASSERT_EQ(engine->SortedGet(sorted_collection, key2, &got_v2),
@@ -637,35 +611,36 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       }
     }
 
-    uint64_t backup_iter_cnt = 0;
-    uint64_t checkpoint_iter_cnt = 0;
-    auto backup_iter = backup_engine->NewSortedIterator(sorted_collection);
-    auto checkpoint_iter = engine->NewSortedIterator(sorted_collection);
-    backup_iter->SeekToFirst();
-    checkpoint_iter->SeekToFirst();
-    while (backup_iter->Valid()) {
-      ASSERT_TRUE(checkpoint_iter->Valid());
-      backup_iter_cnt++;
-      checkpoint_iter_cnt++;
-      ASSERT_EQ(backup_iter->Key(), backup_iter->Value());
-      ASSERT_EQ(checkpoint_iter->Key(), checkpoint_iter->Value());
-      ASSERT_EQ(checkpoint_iter->Key(), backup_iter->Key());
-      backup_iter->Next();
-      checkpoint_iter->Next();
+    uint64_t sorted_iter_cnt = 0;
+    auto sorted_iter = engine->NewSortedIterator(sorted_collection);
+    ASSERT_TRUE(sorted_iter != nullptr);
+    sorted_iter->SeekToFirst();
+    while (sorted_iter->Valid()) {
+      ASSERT_TRUE(sorted_iter->Valid());
+      sorted_iter_cnt++;
+      ASSERT_EQ(sorted_iter->Key(), sorted_iter->Value());
+      sorted_iter->Next();
     }
-    ASSERT_EQ(backup_iter_cnt, num_threads * count * 2);
-    ASSERT_EQ(checkpoint_iter_cnt, num_threads * count * 2);
-    backup_engine->ReleaseSortedIterator(backup_iter);
-    engine->ReleaseSortedIterator(checkpoint_iter);
-
-    ASSERT_EQ(
-        backup_engine->NewSortedIterator(sorted_collection_after_snapshot),
-        nullptr);
+    ASSERT_EQ(sorted_iter_cnt, num_threads * count * 2);
+    engine->ReleaseSortedIterator(sorted_iter);
     ASSERT_EQ(engine->NewSortedIterator(sorted_collection_after_snapshot),
               nullptr);
+  };
 
+  std::vector<int> opt_restore_skiplists{0, 1};
+  for (auto is_opt : opt_restore_skiplists) {
+    configs.opt_large_sorted_collection_recovery = is_opt;
+
+    ASSERT_EQ(
+        Engine::Restore(backup_path, backup_log, &engine, configs, stdout),
+        Status::Ok);
+    Validation();
     delete engine;
-    delete backup_engine;
+
+    configs.recover_to_checkpoint = true;
+    ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
+    Validation();
+    delete engine;
   }
 }
 
@@ -771,6 +746,8 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
         batch->StringDelete(keys[tid][i]);
       }
       if ((i + 1) % batch_size == 0) {
+        // Delete a non-existing key
+        batch->StringDelete("asdf");
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
@@ -2027,6 +2004,8 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
         batch->StringPut(keys[tid][i], GetRandomString(120));
       } else {
         batch->StringDelete(keys[tid][i]);
+        // Delete a non-existing key
+        batch->StringDelete("asdf");
       }
       ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     }
