@@ -985,10 +985,9 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     if (args.op == WriteBatchImpl::Op::Put) {
-      if (args.res.s == Status::Ok)
-      {
+      if (args.res.s == Status::Ok) {
         PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
-                                          args.res.entry.GetIndex().dl_record);
+            args.res.entry.GetIndex().dl_record);
         log.HashReplace(args.space.offset, old_off);
       } else {
         log.HashEmplace(args.space.offset);
@@ -1111,7 +1110,8 @@ Status KVEngine::batchWriteRollbackLogs() {
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
          ++iter) {
       if (iter->op == BatchWriteLog::Op::Put) {
-        DLRecord* rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(iter->new_offset));
+        DLRecord* rec = static_cast<DLRecord*>(
+            pmem_allocator_->offset2addr_checked(iter->new_offset));
         if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
           continue;
         }

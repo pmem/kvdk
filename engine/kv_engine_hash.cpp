@@ -336,18 +336,22 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
 Status KVEngine::hashListWrite(HashWriteArgs& args) {
   if (args.op == WriteBatchImpl::Op::Delete) {
     // Unlink and mark as dirty, but do not free.
-    args.hlist->Erase(args.hlist->MakeIterator(args.res.entry.GetIndex().dl_record), [](DLRecord*){return;});
+    args.hlist->Erase(
+        args.hlist->MakeIterator(args.res.entry.GetIndex().dl_record),
+        [](DLRecord*) { return; });
   } else {
     if (args.res.s == Status::NotFound) {
-      args.hlist->PushFrontWithLock(args.space, args.ts, args.field, args.value);
+      args.hlist->PushFrontWithLock(args.space, args.ts, args.field,
+                                    args.value);
     } else {
       kvdk_assert(args.res.s == Status::Ok, "");
       DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
       auto pos = args.hlist->MakeIterator(old_rec);
-      args.hlist->ReplaceWithLock(args.space, pos, args.ts, args.field, args.value,
-                              [&](DLRecord*) { return; });
+      args.hlist->ReplaceWithLock(args.space, pos, args.ts, args.field,
+                                  args.value, [&](DLRecord*) { return; });
     }
-    args.new_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(args.space.offset));
+    args.new_rec = static_cast<DLRecord*>(
+        pmem_allocator_->offset2addr_checked(args.space.offset));
   }
   return Status::Ok;
 }
@@ -363,23 +367,26 @@ Status KVEngine::hashListPublish(HashWriteArgs const& args) {
 }
 
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
-  switch (log.op)
-  {
+  switch (log.op) {
     case BatchWriteLog::Op::Delete: {
-      kvdk_assert(log.new_offset== kNullPMemOffset, "");
-      DLRecord* old_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.old_offset));
+      kvdk_assert(log.new_offset == kNullPMemOffset, "");
+      DLRecord* old_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.old_offset));
       hash_list_builder_->RollbackDeletion(old_rec);
       break;
     }
     case BatchWriteLog::Op::Put: {
-      kvdk_assert(log.old_offset== kNullPMemOffset, "");
-      DLRecord* new_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.new_offset));
+      kvdk_assert(log.old_offset == kNullPMemOffset, "");
+      DLRecord* new_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.new_offset));
       hash_list_builder_->RollbackDeletion(new_rec);
       break;
     }
     case BatchWriteLog::Op::Replace: {
-      DLRecord* old_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.old_offset));
-      DLRecord* new_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.new_offset));
+      DLRecord* old_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.old_offset));
+      DLRecord* new_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.new_offset));
       hash_list_builder_->RollbackReplacement(new_rec, old_rec);
       break;
     }

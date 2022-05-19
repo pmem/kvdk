@@ -352,6 +352,8 @@ class EngineBasicTest : public testing::Test {
   int cnt;
 };
 
+class BatchWriteTest : public EngineBasicTest {};
+
 TEST_F(EngineBasicTest, TestUniqueKey) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -712,7 +714,7 @@ TEST_F(EngineBasicTest, TestStringModify) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, BatchWriteString) {
+TEST_F(BatchWriteTest, BatchWriteString) {
   size_t num_threads = 16;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -747,7 +749,7 @@ TEST_F(EngineBasicTest, BatchWriteString) {
       }
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing key
-        batch->StringDelete("asdf");
+        batch->StringDelete("non-existing");
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
@@ -782,9 +784,9 @@ TEST_F(EngineBasicTest, BatchWriteString) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, BatchWriteHash) {
+TEST_F(BatchWriteTest, BatchWriteHash) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
+  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -805,7 +807,8 @@ TEST_F(EngineBasicTest, BatchWriteHash) {
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
       values[tid][i] = GetRandomString(120);
-      ASSERT_EQ(engine->HashPut(key, fields[tid][i], values[tid][i]), Status::Ok);
+      ASSERT_EQ(engine->HashPut(key, fields[tid][i], values[tid][i]),
+                Status::Ok);
     }
   };
 
@@ -821,7 +824,7 @@ TEST_F(EngineBasicTest, BatchWriteHash) {
       }
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing key
-        batch->HashDelete(key, "asdf");
+        batch->HashDelete(key, "non-existing");
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
@@ -832,7 +835,8 @@ TEST_F(EngineBasicTest, BatchWriteHash) {
     for (size_t i = 0; i < count; i++) {
       std::string val_resp;
       if (values[tid][i].empty()) {
-        ASSERT_EQ(engine->HashGet(key, fields[tid][i], &val_resp), Status::NotFound);
+        ASSERT_EQ(engine->HashGet(key, fields[tid][i], &val_resp),
+                  Status::NotFound);
       } else {
         ASSERT_EQ(engine->HashGet(key, fields[tid][i], &val_resp), Status::Ok);
         ASSERT_EQ(values[tid][i], val_resp);
@@ -2043,7 +2047,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
 #if KVDK_DEBUG_LEVEL > 0
 
-TEST_F(EngineBasicTest, BatchWriteRollBack) {
+TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
   size_t num_threads = 16;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -2073,13 +2077,13 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
   // expected_values vector is not updated.
   auto BatchWrite = [&](size_t tid) {
     auto batch = engine->WriteBatchCreate();
-    for (size_t i = 0; i < count; i++) {
+    for (size_t i = 0; i < batch_size; i++) {
       if (i % 2 == 0) {
         batch->StringPut(keys[tid][i], GetRandomString(120));
       } else {
         batch->StringDelete(keys[tid][i]);
         // Delete a non-existing key
-        batch->StringDelete("asdf");
+        batch->StringDelete("non-existing");
       }
       ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     }
@@ -2090,6 +2094,88 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
       std::string val_resp;
       ASSERT_EQ(engine->Get(keys[tid][i], &val_resp), Status::Ok);
       ASSERT_EQ(expected_values[tid][i], val_resp);
+    }
+  };
+
+  SyncPoint::GetInstance()->EnableCrashPoint(
+      "KVEngine::batchWriteImpl::BeforeCommit");
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  // Put some KVs
+  LaunchNThreads(num_threads, Put);
+  // Check KVs in engine
+  LaunchNThreads(num_threads, Check);
+  // Try BatchWrite, crashed by crash point before commitment
+  // the BatchWrite will not be visible after recovery
+  LaunchNThreads(num_threads, BatchWrite);
+
+  Reboot();
+
+  // Check KVs in engine, the batch is indeed rolled back.
+  LaunchNThreads(num_threads, Check);
+
+  delete engine;
+}
+
+TEST_F(BatchWriteTest, BatchWriteHashRollback) {
+  size_t num_threads = 16;
+  configs.max_access_threads = num_threads + 1;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  size_t batch_size = 100;
+  size_t count = batch_size;
+
+  std::string key{"hash"};
+  ASSERT_EQ(engine->HashCreate(key), Status::Ok);
+
+  std::vector<std::vector<std::string>> fields(num_threads);
+  std::vector<std::vector<std::string>> values(num_threads);
+  // Two new field that will be inserted but rolled back
+  std::string rolled_back{"rolled-back"};
+  std::string rolled_back2{"rolled-back2"};
+  for (size_t tid = 0; tid < num_threads; tid++) {
+    for (size_t i = 0; i < count; i++) {
+      fields[tid].push_back(std::to_string(tid) + "_" + std::to_string(i));
+      values[tid].emplace_back();
+    }
+  }
+
+  auto Put = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      values[tid][i] = GetRandomString(120);
+      ASSERT_EQ(engine->HashPut(key, fields[tid][i], values[tid][i]),
+                Status::Ok);
+    }
+  };
+
+  auto BatchWrite = [&](size_t tid) {
+    auto batch = engine->WriteBatchCreate();
+    batch->HashPut(key, rolled_back, GetRandomString(120));
+    for (size_t i = 0; i < batch_size; i++) {
+      if (i % 2 == 0) {
+        batch->HashPut(key, fields[tid][i], GetRandomString(120));
+      } else {
+        batch->HashDelete(key, fields[tid][i]);
+      }
+    }
+    batch->HashPut(key, rolled_back2, GetRandomString(120));
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+  };
+
+  auto Check = [&](size_t tid) {
+    std::string val_resp;
+      ASSERT_EQ(engine->HashGet(key, rolled_back, &val_resp),
+                Status::NotFound);
+      ASSERT_EQ(engine->HashGet(key, rolled_back2, &val_resp),
+                Status::NotFound);
+    for (size_t i = 0; i < count; i++) {
+      if (values[tid][i].empty()) {
+        ASSERT_EQ(engine->HashGet(key, fields[tid][i], &val_resp),
+                  Status::NotFound);
+      } else {
+        ASSERT_EQ(engine->HashGet(key, fields[tid][i], &val_resp), Status::Ok);
+        ASSERT_EQ(values[tid][i], val_resp);
+      }
     }
   };
 
