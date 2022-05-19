@@ -218,8 +218,10 @@ class BatchWriteLog {
   }
 
   // Format of the BatchWriteLog
-  // total_bytes | Stage | timestamp | N | StringLogEntry*N | M |
-  // SortedLogEntry*M | K | HashLogEntry*K
+  // total_bytes | timestamp | stage |
+  // N | StringLogEntry*N |
+  // M | SortedLogEntry*M
+  // K | HashLogEntry*K
   // dst is expected to have capacity of MaxBytes().
   void EncodeTo(char* dst);
 
