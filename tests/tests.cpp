@@ -66,11 +66,6 @@ class EngineBasicTest : public testing::Test {
     int res __attribute__((unused)) = system(cmd);
     config_option = OptionConfig::Default;
     cnt = 500;
-
-#if KVDK_DEBUG_LEVEL > 0
-    SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Reset();
-#endif
   }
 
   virtual void TearDown() {
