@@ -746,6 +746,8 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
         batch->StringDelete(keys[tid][i]);
       }
       if ((i + 1) % batch_size == 0) {
+        // Delete a non-existing key
+        batch->StringDelete("asdf");
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
@@ -2002,6 +2004,8 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
         batch->StringPut(keys[tid][i], GetRandomString(120));
       } else {
         batch->StringDelete(keys[tid][i]);
+        // Delete a non-existing key
+        batch->StringDelete("asdf");
       }
       ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     }

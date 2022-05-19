@@ -822,29 +822,64 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     return s;
   }
 
-  // Prevent generating snapshot newer than this WriteBatch
-  auto bw_token = version_controller_.GetBatchWriteToken();
   // Prevent collection and nodes in double linked lists from being deleted
   auto access_token = version_controller_.GetLocalSnapshotHolder();
 
-  // Lock all keys
-  std::vector<StringView> keys;
+  std::vector<StringWriteArgs> string_args(batch.StringOps().size());
+  std::vector<SortedWriteArgs> sorted_args(batch.SortedOps().size());
+  std::vector<HashWriteArgs> hash_args(batch.HashOps().size());
+
+  for (size_t i = 0; i < batch.StringOps().size(); i++) {
+    auto const& string_op = batch.StringOps()[i];
+    string_args[i].Assign(string_op);
+  }
+
+  // Lookup Skiplists and Hashes for further operations
+  for (size_t i = 0; i < batch.SortedOps().size(); i++) {
+    auto const& sorted_op = batch.SortedOps()[i];
+    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
+    /// TODO: this is a temporary work-around
+    /// We cannot lock both key and field, which may trigger deadlock.
+    /// However, if a collection is created and a field is inserted,
+    /// Delete operation in batch may skip this field,
+    /// which causes inconsistency.
+    if (res.s == Status::Outdated) {
+      return Status::NotFound;
+    }
+    if (res.s != Status::Ok) {
+      return res.s;
+    }
+    sorted_args[i].Assign(sorted_op);
+    sorted_args[i].skiplist = res.entry.GetIndex().skiplist;
+  }
+
+  for (size_t i = 0; i < batch.HashOps().size(); i++) {
+    auto const& hash_op = batch.HashOps()[i];
+    HashList* hlist;
+    Status s = hashListFind(hash_op.key, &hlist);
+    if (s != Status::Ok) {
+      return s;
+    }
+    hash_args[i].Assign(hash_op);
+    hash_args[i].hlist = hlist;
+  }
+
+  // Keys/internal keys to be locked on HashTable
+  std::vector<std::string> keys_to_lock;
   for (auto const& string_op : batch.StringOps()) {
-    keys.push_back(string_op.key);
+    keys_to_lock.push_back(string_op.key);
   }
-  for (auto const& sorted_op : batch.SortedOps()) {
-    keys.push_back(sorted_op.field);
+  for (auto const& arg : sorted_args) {
+    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.field));
   }
-  for (auto const& hash_op : batch.HashOps()) {
-    keys.push_back(hash_op.field);
+  for (auto const& arg : hash_args) {
+    keys_to_lock.push_back(arg.hlist->InternalKey(arg.field));
   }
-  auto guard = hash_table_->RangeLock(keys);
+
+  auto guard = hash_table_->RangeLock(keys_to_lock);
+  keys_to_lock.clear();
 
   // Lookup keys, allocate space according to result.
-  std::vector<StringWriteArgs> string_args;
-  std::vector<SortedWriteArgs> sorted_args;
-  std::vector<HashWriteArgs> hash_args;
-
   auto ReleaseResources = [&]() {
     for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
@@ -858,10 +893,11 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   };
   defer(ReleaseResources());
 
+  // Prevent generating snapshot newer than this WriteBatch
+  auto bw_token = version_controller_.GetBatchWriteToken();
+
   // Prepare for Strings
-  for (auto const& string_op : batch.StringOps()) {
-    StringWriteArgs args;
-    args.Assign(string_op);
+  for (auto& args : string_args) {
     args.ts = bw_token.Timestamp();
     args.res = lookupKey<true>(args.key, StringRecordType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
@@ -877,31 +913,12 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       return Status::PmemOverflow;
     }
-
-    string_args.push_back(args);
   }
 
   // Prepare for Sorted Elements
-  for (auto const& sorted_op : batch.SortedOps()) {
-    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
-    if (res.s != Status::Ok && res.s != Status::NotFound &&
-        res.s != Status::Outdated) {
-      return res.s;
-    }
-    if (res.s != Status::Ok) {
-      if (sorted_op.op == WriteBatchImpl::Op::Delete) {
-        // No need to do anything for delete a field from non-existing Skiplist.
-        continue;
-      } else {
-        // Batch Write to collection not found, return Status::NotFound.
-        return Status::NotFound;
-      }
-    }
-    Skiplist* slist = res.entry.GetIndex().skiplist;
-    SortedWriteArgs args;
-    args.Assign(sorted_op);
+  for (auto& args : sorted_args) {
     args.ts = bw_token.Timestamp();
-    std::string internal_key = slist->InternalKey(args.field);
+    std::string internal_key = args.skiplist->InternalKey(args.field);
     args.res = lookupElem<true>(internal_key, SortedElemType);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -920,25 +937,9 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   }
 
   // Prepare for Hash Elements
-  for (auto const& hash_op : batch.HashOps()) {
-    HashList* hlist;
-    Status s = hashListFind(hash_op.key, &hlist);
-    if (s != Status::Ok && s != Status::NotFound) {
-      return s;
-    }
-    if (s == Status::NotFound) {
-      if (hash_op.op == WriteBatchImpl::Op::Delete) {
-        // No need to do anything for delete a field from non-existing Hash Set.
-        continue;
-      } else {
-        // Batch Write to collection not found, return Status::NotFound.
-        return Status::NotFound;
-      }
-    }
-    HashWriteArgs args;
-    args.Assign(hash_op);
+  for (auto& args : hash_args) {
     args.ts = bw_token.Timestamp();
-    std::string internal_key = hlist->InternalKey(args.field);
+    std::string internal_key = args.hlist->InternalKey(args.field);
     args.res = lookupElem<true>(internal_key, HashElem);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
@@ -953,31 +954,40 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       return Status::PmemOverflow;
     }
-    hash_args.push_back(args);
   }
 
   // Preparation done. Persist BatchLog for rollback.
   BatchWriteLog log;
   auto& tc = engine_thread_cache_[access_thread.id];
-  for (auto& arg : string_args) {
-    if (arg.op == WriteBatchImpl::Op::Put) {
-      log.StringPut(arg.space.offset);
+  for (auto& args : string_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    if (args.op == WriteBatchImpl::Op::Put) {
+      log.StringPut(args.space.offset);
     } else {
-      log.StringDelete(arg.space.offset);
+      log.StringDelete(args.space.offset);
     }
   }
-  for (auto& arg : sorted_args) {
-    if (arg.op == WriteBatchImpl::Op::Put) {
-      log.SortedPut(arg.space.offset);
+  for (auto& args : sorted_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    if (args.op == WriteBatchImpl::Op::Put) {
+      log.SortedPut(args.space.offset);
     } else {
-      log.SortedDelete(arg.space.offset);
+      log.SortedDelete(args.space.offset);
     }
   }
-  for (auto& arg : hash_args) {
-    if (arg.op == WriteBatchImpl::Op::Put) {
-      log.HashPut(arg.space.offset);
+  for (auto& args : hash_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    if (args.op == WriteBatchImpl::Op::Put) {
+      log.HashPut(args.space.offset, pmem_allocator_->addr2offset_checked(
+                                         args.res.entry.GetIndex().dl_record));
     } else {
-      log.HashDelete(arg.space.offset);
+      log.HashDelete(args.space.offset);
     }
   }
 
@@ -986,24 +996,33 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
   // Write Strings
-  for (auto& string_arg : string_args) {
-    Status s = stringWrite(string_arg);
+  for (auto& args : string_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = stringWrite(args);
     if (s != Status::Ok) {
       return s;
     }
   }
 
   // Write Sorted Elems
-  for (auto& sorted_arg : sorted_args) {
-    Status s = sortedWrite(sorted_arg);
+  for (auto& args : sorted_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = sortedWrite(args);
     if (s != Status::Ok) {
       return s;
     }
   }
 
   // Write Hash Elems
-  for (auto& hash_arg : hash_args) {
-    Status s = hashListWrite(hash_arg);
+  for (auto& args : hash_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = hashListWrite(args);
     if (s != Status::Ok) {
       return s;
     }
@@ -1020,20 +1039,29 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Crash is tolerated as BatchWrite will be recovered.
 
   // Publish Strings to HashTable
-  for (auto const& string_arg : string_args) {
-    Status s = stringPublish(string_arg);
+  for (auto const& args : string_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = stringPublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
   // Publish Sorted Elements to HashTable
-  for (auto& sorted_arg : sorted_args) {
-    Status s = sortedPublish(sorted_arg);
+  for (auto const& args : sorted_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = sortedPublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
   // Publish Hash Elements to HashTable
-  for (auto& hash_arg : hash_args) {
-    Status s = hashListPublish(hash_arg);
+  for (auto& args : hash_args) {
+    if (args.space.size == 0) {
+      continue;
+    }
+    Status s = hashListPublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
