@@ -99,8 +99,10 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
         space_entry.size, new_ts, SortedHeaderDelete,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection_name, value);
-    Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
-                      pmem_allocator_.get(), skiplist_locks_.get());
+    bool success =
+        Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
+                          pmem_allocator_.get(), skiplist_locks_.get());
+    kvdk_assert(success, "existing header should be linked on its skiplist");
     insertKeyOrElem(lookup_result, SortedHeaderDelete, skiplist);
     ul.unlock();
     SpinMutex* hash_lock = ul.release();
