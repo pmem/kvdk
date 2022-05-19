@@ -380,11 +380,12 @@ SpaceEntry OldRecordsCleaner::purgeOldDeleteRecord(
           }
         }
 
-        bool ret = Skiplist::Remove(
+        bool success = Skiplist::Remove(
             static_cast<DLRecord*>(old_delete_record.pmem_delete_record),
             dram_node, kv_engine_->pmem_allocator_.get(),
             kv_engine_->skiplist_locks_.get());
-        kvdk_assert(ret, "Must be success as we already checked linkage");
+        kvdk_assert(success, "Must be success as we already checked linkage");
+        static_cast<DLRecord*>(old_delete_record.pmem_delete_record)->Destroy();
 
         if (hash_entry_ref) {
           // Erase hash entry after successfully purge record
