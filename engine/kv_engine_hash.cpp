@@ -333,14 +333,36 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
   return Status::Ok;
 }
 
-Status KVEngine::hashListWrite(HashWriteArgs&) { return Status::NotSupported; }
-
-Status KVEngine::hashListPublish(HashWriteArgs const&) {
-  return Status::NotSupported;
+Status KVEngine::hashListWrite(HashWriteArgs& args) {
+  if (args.op == WriteBatchImpl::Op::Delete) {
+    // Unlink and mark as dirty, but do not free.
+    args.hlist->Erase(args.hlist->MakeIterator(args.res.entry.GetIndex().dl_record), [](DLRecord*){return;});
+  } else {
+    if (args.res.s == Status::NotFound) {
+      args.hlist->PushFrontWithLock(args.space, args.ts, args.field, args.value);
+    } else {
+      kvdk_assert(args.res.s == Status::Ok, "");
+      DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
+      auto pos = args.hlist->MakeIterator(old_rec);
+      args.hlist->ReplaceWithLock(args.space, pos, args.ts, args.field, args.value,
+                              [&](DLRecord*) { return; });
+    }
+    args.new_rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(args.space.offset));
+  }
+  return Status::Ok;
 }
 
-Status KVEngine::hashListRollback(TimeStampType,
-                                  BatchWriteLog::HashLogEntry const&) {
+Status KVEngine::hashListPublish(HashWriteArgs const& args) {
+  if (args.op == WriteBatchImpl::Op::Delete) {
+    removeKeyOrElem(args.res);
+  } else {
+    insertKeyOrElem(args.res, RecordType::HashElem, args.new_rec);
+  }
+  delayFree(args.res.entry.GetIndex().dl_record);
+  return Status::Ok;
+}
+
+Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
   return Status::NotSupported;
 }
 

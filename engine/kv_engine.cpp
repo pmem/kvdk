@@ -976,7 +976,13 @@ Status KVEngine::batchWriteRollbackLogs() {
     Status s;
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
          ++iter) {
-      s = hashListRollback(log.Timestamp(), *iter);
+      if (iter->op == BatchWriteLog::Op::Put) {
+        DLRecord* rec = static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(iter->new_offset));
+        if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
+          continue;
+        }
+      }
+      s = hashListRollback(*iter);
       if (s != Status::Ok) {
         return s;
       }

@@ -124,6 +124,7 @@ struct HashWriteArgs {
   StringView field;
   StringView value;
   WriteBatchImpl::Op op;
+  HashList* hlist;
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult res;
@@ -154,7 +155,7 @@ class BatchWriteLog {
     Committed,
   };
 
-  enum class Op : size_t { Put, Delete };
+  enum class Op : size_t { Put, Delete, Replace };
 
   struct StringLogEntry {
     Op op;
@@ -168,7 +169,8 @@ class BatchWriteLog {
 
   struct HashLogEntry {
     Op op;
-    PMemOffsetType offset;
+    PMemOffsetType new_offset;
+    PMemOffsetType old_offset;
   };
 
   explicit BatchWriteLog() {}

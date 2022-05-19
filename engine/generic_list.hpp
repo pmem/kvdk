@@ -570,6 +570,34 @@ class GenericList final : public Collection {
     _mm_mfence();
   }
 
+  static void cleanRecordDirtyMark(DLRecord* rec) {
+    auto& entry = rec->entry;
+    switch (entry.meta.type) {
+      case RecordType::ListDirtyElem: {
+        entry.meta.type = RecordType::ListElem;
+        break;
+      }
+      case RecordType::HashDirtyElem: {
+        entry.meta.type = RecordType::HashElem;
+        break;
+      }
+      case RecordType::ListDirtyRecord: {
+        entry.meta.type = RecordType::ListRecord;
+        break;
+      }
+      case RecordType::HashDirtyRecord: {
+        entry.meta.type = RecordType::HashRecord;
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unsupported!");
+        std::abort();
+      }
+    }
+    _mm_clwb(&entry.meta.type);
+    _mm_mfence();
+  }
+
   static bool isRecordDirty(DLRecord* rec) {
     auto& entry = rec->entry;
     return (entry.meta.type == RecordType::ListDirtyElem) ||
@@ -690,6 +718,75 @@ class GenericListBuilder final {
         kvdk_assert(false, "Unreachable");
         std::abort();
       }
+    }
+  }
+
+  void RollbackReplacement(DLRecord* new_elem, DLRecord* old_elem) {
+    kvdk_assert(new_elem->Validate(), "No need to rollback invalid element");
+    kvdk_assert(old_elem->prev == new_elem->prev, "");
+    kvdk_assert(old_elem->next == new_elem->next, "");
+
+    if (old_elem->entry.meta.type == ListDirtyElem, "")
+    {
+      kvdk_assert(addressOf(old_elem->next)->prev == offsetOf(new_elem), "");
+      kvdk_assert(addressOf(old_elem->prev)->next == offsetOf(new_elem), "");
+      List::cleanRecordDirtyMark(old_elem);
+    }
+    kvdk_assert(old_elem->Validate(), "");
+
+    // Link next back to old_elem
+    if (addressOf(old_elem->next)->prev != offsetOf(old_elem)) {
+      kvdk_assert(addressOf(old_elem->next)->prev == offsetOf(new_elem), "");
+      kvdk_assert(addressOf(old_elem->prev)->next == offsetOf(new_elem), "");
+      addressOf(old_elem->next)->PersistPrevNT(offsetOf(old_elem));
+    }
+
+    if (addressOf(old_elem->prev)->next != offsetOf(old_elem)) {
+      kvdk_assert(addressOf(old_elem->next)->prev == offsetOf(new_elem), "");
+      addressOf(old_elem->prev)->PersistNextNT(offsetOf(old_elem));
+    }
+
+    List::markRecordAsDirty(new_elem);
+  }
+
+  void RollbackEmplacement(DLRecord* new_elem) {
+    kvdk_assert(new_elem->Validate(), "No need to rollback invalid element");
+
+    // Unlink from next, like deletion
+    if (addressOf(new_elem->next)->prev == offsetOf(new_elem)) {
+      kvdk_assert(addressOf(new_elem->prev)->next == offsetOf(new_elem), "");
+      addressOf(old_elem->next)->PersistPrevNT(new_elem->prev);
+    }
+
+    // Unlink from prev, like deletion
+    if (addressOf(new_elem->prev)->next == offsetOf(new_elem)) {
+      kvdk_assert(addressOf(new_elem->next)->prev == new_elem->prev, "");
+      addressOf(old_elem->prev)->PersistNextNT(new_elem->next);
+    }
+
+    List::markRecordAsDirty(new_elem);
+  }
+
+  void RollbackDeletion(DLRecord* old_elem) {
+    // Clean dirty mark
+    if (old_elem->entry.meta.type == ListDirtyElem, "")
+    {
+      List::cleanRecordDirtyMark(old_elem);
+    }
+    kvdk_assert(old_elem->Validate(), "");
+
+    // Link to prev, like insertion
+    if (addressOf(old_elem->prev)->next != offsetOf(old_elem))
+    {
+      kvdk_assert(addressOf(old_elem->prev)->next == old_elem->next, "");
+      kvdk_assert(addressOf(old_elem->next)->prev == old_elem->prev, "");
+      addressOf(old_elem->prev)->PersistNextNT(offsetOf(old_elem));
+    }
+    
+    // Link to next, like insertion
+    if (addressOf(old_elem->next)->prev != offsetOf(old_elem)) {
+      kvdk_assert(addressOf(old_elem->next)->prev == old_elem->prev, "");
+      addressOf(old_elem->next)->PersistPrevNT(offsetOf(old_elem));
     }
   }
 
