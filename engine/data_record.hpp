@@ -316,7 +316,11 @@ struct DLRecord {
                 "Call DLRecord::GetExpireTime with an unexpirable type");
     return expired_time;
   }
+
+  RecordType GetRecordType() const { return entry.meta.type; }
+
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
+  TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
@@ -328,8 +332,6 @@ struct DLRecord {
                                    ExpireTimeType expired_time = kPersistTime);
 
   uint32_t GetRecordSize() const { return entry.header.record_size; }
-
-  RecordType GetRecordType() const { return entry.meta.type; }
 
   static uint32_t RecordSize(const StringView& key, const StringView& value) {
     return sizeof(DLRecord) + key.size() + value.size();

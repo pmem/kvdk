@@ -274,7 +274,7 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
     DLRecord* next = pmem_allocator->offset2addr<DLRecord>(next_offset);
 
-    auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
+    auto guard = lock_table->MultiGuard({RecordHash(prev), RecordHash(record)});
 
     // Check if the list has changed before we successfully acquire lock.
     if (record->prev != prev_offset || prev->next != record_offset ||
@@ -298,7 +298,7 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
       pmem_allocator_->addr2offset_checked(prev_record);
   PMemOffsetType next_offset =
       pmem_allocator_->addr2offset_checked(next_record);
-  *prev_record_lock = record_locks_->AcquireLock(recordHash(prev_record));
+  *prev_record_lock = record_locks_->AcquireLock(RecordHash(prev_record));
 
   // Check if the linkage has changed before we successfully acquire lock.
   auto check_linkage = [&]() {
@@ -881,6 +881,7 @@ void Skiplist::destroyRecords() {
       next_destroy =
           pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
       StringView key = to_destroy->Key();
+      bool need_purge = false;
 
       auto ul = hash_table_->AcquireLock(key);
 
@@ -906,17 +907,23 @@ void Skiplist::destroyRecords() {
           }
           if (hash_indexed_record == to_destroy) {
             hash_table_->Erase(lookup_result.entry_ptr);
+            need_purge = true;
           }
+        }
+      } else {
+        if (CheckRecordLinkage(to_destroy, pmem_allocator_)) {
+          need_purge = true;
         }
       }
 
-      // We need to purge destroyed records one by one in case engine crashed
-      // during destroy
-      Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, record_locks_);
+      if (need_purge) {
+        // We need to purge destroyed records one by one in case engine crashed
+        // during destroy
+        Skiplist::Purge(to_destroy, nullptr, pmem_allocator_, record_locks_);
 
-      to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
-                           to_destroy->entry.header.record_size);
-
+        to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+                             to_destroy->entry.header.record_size);
+      }
     } while (to_destroy !=
              header_record /* header record should be the last detroyed one */);
   }

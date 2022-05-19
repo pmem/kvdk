@@ -18,8 +18,14 @@ Status KVEngine::SortedCreate(const StringView collection_name,
     return Status::InvalidDataSize;
   }
 
-  // TODO jiayu: package sorted collection creation and destroy in Skiplist
-  // class
+  std::shared_ptr<Skiplist> skiplist = nullptr;
+
+  return buildSkiplist(collection_name, s_configs, skiplist);
+}
+
+Status KVEngine::buildSkiplist(const StringView& collection_name,
+                               const SortedCollectionConfigs& s_configs,
+                               std::shared_ptr<Skiplist>& skiplist) {
   auto ul = hash_table_->AcquireLock(collection_name);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
@@ -52,7 +58,7 @@ Status KVEngine::SortedCreate(const StringView collection_name,
         new_ts, SortedHeader, pmem_allocator_->addr2offset(existing_header),
         space_entry.offset, space_entry.offset, collection_name, value_str);
 
-    auto skiplist = std::make_shared<Skiplist>(
+    skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
         pmem_allocator_.get(), hash_table_.get(), skiplist_locks_.get(),
         s_configs.index_with_hashtable);
@@ -63,7 +69,6 @@ Status KVEngine::SortedCreate(const StringView collection_name,
     // Todo (jiayu): what if skiplist exists but comparator not match?
     return lookup_result.s;
   }
-
   return Status::Ok;
 }
 

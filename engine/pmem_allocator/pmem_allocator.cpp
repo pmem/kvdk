@@ -239,44 +239,41 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   }
   auto& palloc_thread_cache = palloc_thread_cache_[access_thread.id];
   while (palloc_thread_cache.segment_entry.size < aligned_size) {
-    while (!backup_processing /* we do not allocate space from free space entry if there is a backup thread processing */) {
-      // allocate from free list space
-      if (palloc_thread_cache.free_entry.size >= aligned_size) {
-        // Padding remaining space
-        auto extra_space = palloc_thread_cache.free_entry.size - aligned_size;
-        if (extra_space > 0) {
-          assert(extra_space % block_size_ == 0);
-          // Mark splited space entry size on PMem, we should firstly mark the
-          // 2st part for correctness in recovery
-          persistSpaceEntry(
-              palloc_thread_cache.free_entry.offset + aligned_size,
-              extra_space);
-        }
-
-        space_entry = palloc_thread_cache.free_entry;
-        space_entry.size = aligned_size;
-        if (offset2addr_checked<DataEntry>(space_entry.offset)
-                ->header.record_size != space_entry.size) {
-          // TODO (jiayu): Avoid persist metadata on PMem in allocation
-          persistSpaceEntry(space_entry.offset, space_entry.size);
-        }
-        palloc_thread_cache.free_entry.size -= aligned_size;
-        palloc_thread_cache.free_entry.offset += aligned_size;
-        LogAllocation(access_thread.id, aligned_size);
-        return space_entry;
-      }
-      if (palloc_thread_cache.free_entry.size > 0) {
-        // Not a true free
-        LogAllocation(access_thread.id, palloc_thread_cache.free_entry.size);
-        Free(palloc_thread_cache.free_entry);
-        palloc_thread_cache.free_entry.size = 0;
+    // allocate from free list space
+    if (palloc_thread_cache.free_entry.size >= aligned_size) {
+      // Padding remaining space
+      auto extra_space = palloc_thread_cache.free_entry.size - aligned_size;
+      if (extra_space > 0) {
+        assert(extra_space % block_size_ == 0);
+        // Mark splited space entry size on PMem, we should firstly mark the
+        // 2st part for correctness in recovery
+        persistSpaceEntry(palloc_thread_cache.free_entry.offset + aligned_size,
+                          extra_space);
       }
 
-      // allocate from free list
-      if (free_list_.Get(aligned_size, &palloc_thread_cache.free_entry)) {
-        continue;
+      space_entry = palloc_thread_cache.free_entry;
+      space_entry.size = aligned_size;
+      if (offset2addr_checked<DataEntry>(space_entry.offset)
+              ->header.record_size != space_entry.size) {
+        // TODO (jiayu): Avoid persist metadata on PMem in allocation
+        persistSpaceEntry(space_entry.offset, space_entry.size);
       }
-      break;
+      palloc_thread_cache.free_entry.size -= aligned_size;
+      palloc_thread_cache.free_entry.offset += aligned_size;
+      LogAllocation(access_thread.id, aligned_size);
+      return space_entry;
+    }
+
+    if (palloc_thread_cache.free_entry.size > 0) {
+      // Not a true free
+      LogAllocation(access_thread.id, palloc_thread_cache.free_entry.size);
+      Free(palloc_thread_cache.free_entry);
+      palloc_thread_cache.free_entry.size = 0;
+    }
+
+    // allocate from free list
+    if (free_list_.Get(aligned_size, &palloc_thread_cache.free_entry)) {
+      continue;
     }
 
     LogAllocation(access_thread.id, palloc_thread_cache.segment_entry.size);
@@ -306,83 +303,4 @@ void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
   DataEntry padding{0, sz, TimeStampType{}, RecordType::Padding, 0, 0};
   pmem_memcpy_persist(offset2addr_checked(offset), &padding, sizeof(DataEntry));
 }
-
-Status PMEMAllocator::Backup(const std::string& backup_file_path) {
-  int fd = open(backup_file_path.c_str(), O_CREAT | O_RDWR, 0666);
-  if (fd < 0) {
-    GlobalLogger.Error("Open backup file %s error in PMemAllocator::Backup\n",
-                       backup_file_path.c_str());
-    return Status::IOError;
-  }
-
-  int res = ftruncate64(fd, pmem_size_);
-  if (res != 0) {
-    GlobalLogger.Error(
-        "Truncate backup file %s to pmem file size %lu error in "
-        "PMemAllocator::Backup\n",
-        backup_file_path.c_str(), pmem_size_);
-    return Status::IOError;
-  }
-
-  void* backup_file =
-      mmap64(nullptr, pmem_size_, PROT_WRITE, MAP_SHARED, fd, 0);
-
-  if (backup_file == nullptr) {
-    GlobalLogger.Error("map backup file %s error in PMemAllocator::Backup\n",
-                       backup_file_path.c_str());
-    return Status::IOError;
-  }
-
-  std::lock_guard<std::mutex> lg(backup_lock);
-  backup_processing = true;
-  defer(backup_processing = false);
-  // We prohibit allocate space from free space entry during backup, meanwhile,
-  // the copying data maybe updated and write to new allocated segment, we need
-  // these updated data for recovery, so we copy data twice
-  //
-  // There may be ongoing writing to just allocated space while we start backup,
-  // so we also wait for holding snapshot of access threads changed
-  uint64_t copy_offset_1st_end = 0;
-  uint64_t copy_offset_2nd_start = 0;
-  uint64_t copy_offset_2nd_end = 0;
-  std::vector<TimeStampType> thread_holding_snapshot_ts(
-      palloc_thread_cache_.size());
-  for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
-    thread_holding_snapshot_ts[i] =
-        version_controller_->GetLocalSnapshot(i).GetTimestamp();
-    copy_offset_1st_end = std::max(
-        copy_offset_1st_end,
-        palloc_thread_cache_[i].segment_entry.offset +
-            (segment_size_ -
-             palloc_thread_cache_[i].segment_entry.offset % segment_size_));
-    copy_offset_2nd_start = std::min(
-        copy_offset_2nd_start, palloc_thread_cache_[i].segment_entry.offset);
-  }
-
-  for (size_t i = 0; i < palloc_thread_cache_.size(); i++) {
-    if (thread_holding_snapshot_ts[i] != kMaxTimestamp &&
-        thread_holding_snapshot_ts[i] ==
-            version_controller_->GetLocalSnapshot(i).GetTimestamp()) {
-      sleep(1);
-    }
-  }
-
-  memcpy(backup_file, pmem_, copy_offset_1st_end);
-  //  multi_thread_memcpy((char *)backup_file, pmem_, copy_offset_1st, 4);
-  {
-    std::lock_guard<SpinMutex> lg(offset_head_lock_);
-    copy_offset_2nd_end = offset_head_;
-  }
-  memcpy((char*)backup_file + copy_offset_2nd_start,
-         pmem_ + copy_offset_2nd_start,
-         copy_offset_2nd_end - copy_offset_2nd_start);
-  //  multi_thread_memcpy((char *)backup_file + copy_offset_1st,
-  //                      pmem_ + copy_offset_1st,
-  //                      copy_offset_2nd - copy_offset_1st, 4);
-
-  msync(backup_file, copy_offset_2nd_end, MS_SYNC);
-  close(fd);
-  return Status::Ok;
-}
-
 }  // namespace KVDK_NAMESPACE
