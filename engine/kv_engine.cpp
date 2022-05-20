@@ -963,6 +963,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Preparation done. Persist BatchLog for rollback.
   BatchWriteLog log;
+  log.SetTimestamp(bw_token.Timestamp());
   auto& tc = engine_thread_cache_[access_thread.id];
   for (auto& args : string_args) {
     if (args.space.size == 0) {
