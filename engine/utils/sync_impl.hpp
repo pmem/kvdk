@@ -13,9 +13,7 @@
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
-#include <csignal>
 #include <functional>
-#include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -33,24 +31,16 @@ struct SyncPointPair {
   std::string consumer;
 };
 
-class CrashPoint : public std::runtime_error {
- private:
-  using base = std::runtime_error;
-  using base::what;
-
- public:
-  CrashPoint() : base{"Crash Point!"} {}
-};
-
-inline void CatchSIGABRT(int signal) {
-  if (signal == SIGABRT) {
-    throw CrashPoint{};
-  } else {
-    std::cerr << "Unexpected signal " << signal << " received\n";
-  }
-}
-
 struct SyncImpl {
+  class CrashPoint : public std::runtime_error {
+   private:
+    using base = std::runtime_error;
+    using base::what;
+
+   public:
+    CrashPoint(std::string const& msg) : base{msg} {}
+  };
+
   SyncImpl() : ready_(false) {}
   void LoadDependency(const std::vector<SyncPointPair>& dependencies) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -107,7 +97,7 @@ struct SyncImpl {
 
   void EnableCrashPoint(std::string const& name) { crash_points_.insert(name); }
 
-  void Crash(std::string const& name) {
+  void Crash(std::string const& name, std::string const& msg) {
     if (!ready_) {
       return;
     }
@@ -116,12 +106,7 @@ struct SyncImpl {
       return;
     }
 
-    auto previous_handler = std::signal(SIGABRT, CatchSIGABRT);
-    if (previous_handler == SIG_ERR) {
-      std::cerr << "Setup failed\n";
-    }
-    // Calling std::abort(), prevent calling destructors
-    std::abort();
+    throw CrashPoint{msg};
   }
 
   void ClearAllCallBacks() {

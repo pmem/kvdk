@@ -881,6 +881,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Lookup keys, allocate space according to result.
   auto ReleaseResources = [&]() {
+  // Don't Free() if we simulate a crash.
+#ifndef KVDK_ENABLE_CRASHPOINT
     for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
     }
@@ -890,7 +892,9 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     for (auto iter = string_args.rbegin(); iter != string_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
     }
+#endif
   };
+
   defer(ReleaseResources());
 
   // Prevent generating snapshot newer than this WriteBatch
@@ -1028,7 +1032,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     }
   }
 
-  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit");
+  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit", "");
 
   BatchWriteLog::MarkCommitted(tc.batch_log);
 

@@ -2013,7 +2013,7 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
         batch->StringDelete("asdf");
       }
     }
-    ASSERT_THROW(engine->BatchWrite(batch), CrashPoint);
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
   };
 
   auto Check = [&](size_t tid) {
