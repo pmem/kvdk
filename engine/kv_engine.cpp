@@ -954,10 +954,12 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       // No need to do anything for delete a non-existing Sorted element
       continue;
     }
-    args.space = pmem_allocator_->Allocate(
-        DLRecord::RecordSize(internal_key, args.value));
-    if (args.space.size == 0) {
-      return Status::PmemOverflow;
+    if (args.op == WriteBatchImpl::Op::Put) {
+      args.space = pmem_allocator_->Allocate(
+          DLRecord::RecordSize(internal_key, args.value));
+      if (args.space.size == 0) {
+        return Status::PmemOverflow;
+      }
     }
   }
 
@@ -986,19 +988,21 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     }
   }
   for (auto& args : hash_args) {
-    if (args.space.size == 0) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       continue;
     }
-    if (args.op == WriteBatchImpl::Op::Put) {
-      if (args.res.s == Status::Ok) {
-        PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
-            args.res.entry.GetIndex().dl_record);
+    if (args.res.s == Status::Ok) {
+      PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
+          args.res.entry.GetIndex().dl_record);
+      if (args.op == WriteBatchImpl::Op::Put) {
         log.HashReplace(args.space.offset, old_off);
       } else {
-        log.HashEmplace(args.space.offset);
+        log.HashDelete(old_off);
       }
     } else {
-      log.HashDelete(args.space.offset);
+      kvdk_assert(args.op == WriteBatchImpl::Op::Put, "");
+      log.HashEmplace(args.space.offset);
     }
   }
 
@@ -1030,7 +1034,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Write Hash Elems
   for (auto& args : hash_args) {
-    if (args.space.size == 0) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       continue;
     }
     Status s = hashListWrite(args);
@@ -1069,7 +1074,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Publish Hash Elements to HashTable
   for (auto& args : hash_args) {
-    if (args.space.size == 0) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       continue;
     }
     Status s = hashListPublish(args);
@@ -1114,7 +1120,7 @@ Status KVEngine::batchWriteRollbackLogs() {
     Status s;
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
          ++iter) {
-      if (iter->op == BatchWriteLog::Op::Put) {
+      if (iter->op != BatchWriteLog::Op::Delete) {
         DLRecord* rec = static_cast<DLRecord*>(
             pmem_allocator_->offset2addr_checked(iter->new_offset));
         if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {

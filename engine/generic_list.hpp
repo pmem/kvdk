@@ -726,7 +726,7 @@ class GenericListBuilder final {
     kvdk_assert(old_elem->prev == new_elem->prev, "");
     kvdk_assert(old_elem->next == new_elem->next, "");
 
-    if (old_elem->entry.meta.type == ListDirtyElem, "") {
+    if (List::isRecordDirty(old_elem)) {
       kvdk_assert(old_elem->next == NullPMemOffset ||
                       addressOf(old_elem->next)->prev == offsetOf(new_elem),
                   "");
@@ -741,14 +741,18 @@ class GenericListBuilder final {
     if (old_elem->next != NullPMemOffset &&
         addressOf(old_elem->next)->prev != offsetOf(old_elem)) {
       kvdk_assert(addressOf(old_elem->next)->prev == offsetOf(new_elem), "");
-      kvdk_assert(addressOf(old_elem->prev)->next == offsetOf(new_elem), "");
+      kvdk_assert(old_elem->prev == NullPMemOffset ||
+                      addressOf(old_elem->prev)->next == offsetOf(new_elem),
+                  "");
       addressOf(old_elem->next)->PersistPrevNT(offsetOf(old_elem));
     }
 
     // Link prev back to old_elem
     if (old_elem->prev != NullPMemOffset &&
         addressOf(old_elem->prev)->next != offsetOf(old_elem)) {
-      kvdk_assert(addressOf(old_elem->next)->prev == offsetOf(new_elem), "");
+      kvdk_assert(old_elem->next == NullPMemOffset ||
+                      addressOf(old_elem->next)->prev == offsetOf(old_elem),
+                  "");
       addressOf(old_elem->prev)->PersistNextNT(offsetOf(old_elem));
     }
 
@@ -761,14 +765,18 @@ class GenericListBuilder final {
     // Unlink from next, like deletion
     if (new_elem->next != NullPMemOffset &&
         addressOf(new_elem->next)->prev == offsetOf(new_elem)) {
-      kvdk_assert(addressOf(new_elem->prev)->next == offsetOf(new_elem), "");
+      kvdk_assert(new_elem->prev == NullPMemOffset ||
+                      addressOf(new_elem->prev)->next == offsetOf(new_elem),
+                  "");
       addressOf(new_elem->next)->PersistPrevNT(new_elem->prev);
     }
 
     // Unlink from prev, like deletion
     if (new_elem->prev != NullPMemOffset &&
         addressOf(new_elem->prev)->next == offsetOf(new_elem)) {
-      kvdk_assert(addressOf(new_elem->next)->prev == new_elem->prev, "");
+      kvdk_assert(new_elem->next == NullPMemOffset ||
+                      addressOf(new_elem->next)->prev == new_elem->prev,
+                  "");
       addressOf(new_elem->prev)->PersistNextNT(new_elem->next);
     }
 
@@ -777,7 +785,7 @@ class GenericListBuilder final {
 
   void RollbackDeletion(DLRecord* old_elem) {
     // Clean dirty mark
-    if (old_elem->entry.meta.type == ListDirtyElem, "") {
+    if (List::isRecordDirty(old_elem)) {
       List::cleanRecordDirtyMark(old_elem);
     }
     kvdk_assert(old_elem->Validate(), "");
@@ -786,7 +794,9 @@ class GenericListBuilder final {
     if (old_elem->prev != NullPMemOffset &&
         addressOf(old_elem->prev)->next != offsetOf(old_elem)) {
       kvdk_assert(addressOf(old_elem->prev)->next == old_elem->next, "");
-      kvdk_assert(addressOf(old_elem->next)->prev == old_elem->prev, "");
+      kvdk_assert(old_elem->next == NullPMemOffset ||
+                      addressOf(old_elem->next)->prev == old_elem->prev,
+                  "");
       addressOf(old_elem->prev)->PersistNextNT(offsetOf(old_elem));
     }
 
@@ -1052,6 +1062,19 @@ class GenericListBuilder final {
     for (auto& worker : workers) {
       worker.join();
     }
+  }
+
+  std::string serialize(DLRecord* rec) const {
+    std::stringstream ss;
+    ss << "Type:\t" << to_hex(rec->entry.meta.type) << "\t"
+       << "Prev:\t" << to_hex(rec->prev) << "\t"
+       << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
+       << "Next:\t" << to_hex(rec->next) << "\t"
+       << "ID:\t" << to_hex(Collection::ExtractID(rec->Key())) << "\t"
+       << "Valid:\t" << rec->Validate() << "\t"
+       << "Key: " << Collection::ExtractUserKey(rec->Key()) << "\t"
+       << "Value: " << rec->Value();
+    return ss.str();
   }
 };
 

@@ -336,9 +336,8 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
 Status KVEngine::hashListWrite(HashWriteArgs& args) {
   if (args.op == WriteBatchImpl::Op::Delete) {
     // Unlink and mark as dirty, but do not free.
-    args.hlist->Erase(
-        args.hlist->MakeIterator(args.res.entry.GetIndex().dl_record),
-        [](DLRecord*) { return; });
+    args.hlist->EraseWithLock(args.res.entry.GetIndex().dl_record,
+                              [](DLRecord*) { return; });
   } else {
     if (args.res.s == Status::NotFound) {
       args.hlist->PushFrontWithLock(args.space, args.ts, args.field,
@@ -379,7 +378,7 @@ Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
       kvdk_assert(log.old_offset == kNullPMemOffset, "");
       DLRecord* new_rec = static_cast<DLRecord*>(
           pmem_allocator_->offset2addr_checked(log.new_offset));
-      hash_list_builder_->RollbackDeletion(new_rec);
+      hash_list_builder_->RollbackEmplacement(new_rec);
       break;
     }
     case BatchWriteLog::Op::Replace: {
@@ -391,7 +390,7 @@ Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
       break;
     }
   }
-  return Status::NotSupported;
+  return Status::Ok;
 }
 
 }  // namespace KVDK_NAMESPACE

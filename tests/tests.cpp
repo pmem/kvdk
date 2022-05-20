@@ -2128,7 +2128,7 @@ TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
 }
 
 TEST_F(BatchWriteTest, BatchWriteHashRollback) {
-  size_t num_threads = 16;
+  size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -2169,15 +2169,13 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
       }
     }
     batch->HashPut(key, rolled_back2, GetRandomString(120));
-    ASSERT_THROW(engine->BatchWrite(batch), CrashPoint);
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
   };
 
   auto Check = [&](size_t tid) {
     std::string val_resp;
-      ASSERT_EQ(engine->HashGet(key, rolled_back, &val_resp),
-                Status::NotFound);
-      ASSERT_EQ(engine->HashGet(key, rolled_back2, &val_resp),
-                Status::NotFound);
+    ASSERT_EQ(engine->HashGet(key, rolled_back, &val_resp), Status::NotFound);
+    ASSERT_EQ(engine->HashGet(key, rolled_back2, &val_resp), Status::NotFound);
     for (size_t i = 0; i < count; i++) {
       if (values[tid][i].empty()) {
         ASSERT_EQ(engine->HashGet(key, fields[tid][i], &val_resp),

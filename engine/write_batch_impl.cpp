@@ -54,7 +54,7 @@ void BatchWriteLog::DecodeFrom(char const* src) {
   StringView sw{src, total_bytes};
 
   total_bytes = FetchPOD<size_t>(&sw);
-  timestamp = FetchPOD<size_t>(&sw);
+  timestamp = FetchPOD<TimeStampType>(&sw);
   stage = FetchPOD<Stage>(&sw);
 
   if (stage == Stage::Initializing || stage == Stage::Committed) {
