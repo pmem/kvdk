@@ -2085,8 +2085,8 @@ TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
         // Delete a non-existing key
         batch->StringDelete("non-existing");
       }
-      ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     }
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
   };
 
   auto Check = [&](size_t tid) {
