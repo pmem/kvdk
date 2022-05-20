@@ -187,8 +187,10 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       auto ul = kv_engine_->hash_table_->AcquireLock(collection_name);
 
       if (valid_version_record != header_record) {
-        Skiplist::Replace(header_record, valid_version_record, nullptr,
-                          pmem_allocator, kv_engine_->skiplist_locks_.get());
+        bool success = Skiplist::Replace(header_record, valid_version_record,
+                                         nullptr, pmem_allocator,
+                                         kv_engine_->skiplist_locks_.get());
+        kvdk_assert(success, "headers in rebuild should passed linkage check");
         addUnlinkedRecord(header_record);
       }
 
@@ -352,14 +354,18 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       DLRecord* valid_version_record = findCheckpointVersion(next_record);
       if (valid_version_record == nullptr ||
           valid_version_record->entry.meta.type == SortedElemDelete) {
-        Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
-                        kv_engine_->skiplist_locks_.get());
+        bool success = Skiplist::Remove(next_record, nullptr,
+                                        kv_engine_->pmem_allocator_.get(),
+                                        kv_engine_->skiplist_locks_.get());
+        kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       } else {
         if (valid_version_record != next_record) {
-          Skiplist::Replace(next_record, valid_version_record, nullptr,
-                            kv_engine_->pmem_allocator_.get(),
-                            kv_engine_->skiplist_locks_.get());
+          bool success =
+              Skiplist::Replace(next_record, valid_version_record, nullptr,
+                                kv_engine_->pmem_allocator_.get(),
+                                kv_engine_->skiplist_locks_.get());
+          kvdk_assert(success, "elems in rebuild should passed linkage check");
           addUnlinkedRecord(next_record);
         }
         num_elems++;
@@ -504,15 +510,19 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     if (valid_version_record == nullptr ||
         valid_version_record->entry.meta.type == SortedElemDelete) {
       // purge invalid version record from list
-      Skiplist::Purge(next_record, nullptr, kv_engine_->pmem_allocator_.get(),
-                      kv_engine_->skiplist_locks_.get());
+      bool success = Skiplist::Remove(next_record, nullptr,
+                                      kv_engine_->pmem_allocator_.get(),
+                                      kv_engine_->skiplist_locks_.get());
+      kvdk_assert(success, "elems in rebuild should passed linkage check");
       addUnlinkedRecord(next_record);
     } else {
       if (valid_version_record != next_record) {
         // repair linkage of checkpoint version
-        Skiplist::Replace(next_record, valid_version_record, nullptr,
-                          kv_engine_->pmem_allocator_.get(),
-                          kv_engine_->skiplist_locks_.get());
+        bool success =
+            Skiplist::Replace(next_record, valid_version_record, nullptr,
+                              kv_engine_->pmem_allocator_.get(),
+                              kv_engine_->skiplist_locks_.get());
+        kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       }
       num_elems++;

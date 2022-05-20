@@ -881,7 +881,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   keys_to_lock.clear();
 
   // Lookup keys, allocate space according to result.
-  [[gnu::unused]] auto ReleaseResources = [&]() {
+  auto ReleaseResources = [&]() {
     for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
     }
@@ -892,10 +892,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       pmem_allocator_->Free(iter->space);
     }
   };
-#if KVDK_DEBUG_LEVEL == 0
-  // Disable RAII for crash point
   defer(ReleaseResources());
-#endif
 
   // Prevent generating snapshot newer than this WriteBatch
   auto bw_token = version_controller_.GetBatchWriteToken();
@@ -1037,7 +1034,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     }
   }
 
-  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit", "");
+  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit");
 
   BatchWriteLog::MarkCommitted(tc.batch_log);
 
