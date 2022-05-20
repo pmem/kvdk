@@ -201,7 +201,16 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Hashes: {
-        s = engine->HashPut(collections[cid], key, value);
+        if (FLAGS_batch_size == 0) {
+          s = engine->HashPut(collections[cid], key, value);
+        } else {
+          batch->HashPut(collections[cid], key,
+                         std::string{value.data(), value.size()});
+          if (operations % FLAGS_batch_size == 0) {
+            engine->BatchWrite(batch);
+            batch->Clear();
+          }
+        }
         break;
       }
       case DataType::List: {
@@ -400,19 +409,19 @@ void ProcessBenchmarkConfigs() {
     case DataType::Blackhole: {
       break;
     }
-    case DataType::List:
     case DataType::Hashes:
+    case DataType::List:
     case DataType::Sorted: {
-      if (FLAGS_batch_size > 0) {
-        throw std::invalid_argument{
-            R"(Batch is only supported for "hash" type data.)"};
-      }
       collections.resize(FLAGS_num_collection);
       for (size_t i = 0; i < FLAGS_num_collection; i++) {
         collections[i] = "Collection_" + std::to_string(i);
       }
       break;
     }
+  }
+
+  if (FLAGS_num_collection > 0 && (bench_data_type == DataType::List)) {
+    throw std::invalid_argument{R"(List does not support batch write.)"};
   }
 
   // Check for scan flag
