@@ -177,6 +177,8 @@ class BatchWriteLog {
 
   explicit BatchWriteLog() {}
 
+  void SetTimestamp(TimeStampType ts) { timestamp = ts; }
+
   void StringPut(PMemOffsetType offset) {
     string_logs.emplace_back(StringLogEntry{Op::Put, offset});
   }
