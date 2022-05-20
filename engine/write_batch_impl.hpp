@@ -232,14 +232,14 @@ class BatchWriteLog {
   void DecodeFrom(char const* src);
 
   static void MarkProcessing(char* dst) {
-    dst = &dst[sizeof(size_t)];
-    *reinterpret_cast<Stage*>(dst) = Stage::Processing;
+    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
+    *reinterpret_cast<Stage*>(dst + sizeof(size_t)) = Stage::Processing;
     _mm_clflush(dst);
     _mm_mfence();
   }
 
   static void MarkCommitted(char* dst) {
-    dst = &dst[sizeof(size_t)];
+    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Committed;
     _mm_clflush(dst);
     _mm_mfence();
@@ -247,7 +247,7 @@ class BatchWriteLog {
 
   // For rollback
   static void MarkInitializing(char* dst) {
-    dst = &dst[sizeof(size_t)];
+    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Initializing;
     _mm_clflush(dst);
     _mm_mfence();
