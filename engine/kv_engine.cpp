@@ -922,22 +922,10 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prepare for Sorted Elements
   for (auto& args : sorted_args) {
     args.ts = bw_token.Timestamp();
-    std::string internal_key = args.skiplist->InternalKey(args.field);
-    args.res = lookupElem<true>(internal_key, SortedElemType);
-    if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
-      return args.res.s;
+    Status s = args.skiplist->PrepareWrite(args);
+    if (s != Status::Ok) {
+      return s;
     }
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
-      // No need to do anything for delete a non-existing Sorted element
-      continue;
-    }
-    args.space = pmem_allocator_->Allocate(
-        DLRecord::RecordSize(internal_key, args.value));
-    if (args.space.size == 0) {
-      return Status::PmemOverflow;
-    }
-    sorted_args.push_back(args);
   }
 
   // Prepare for Hash Elements

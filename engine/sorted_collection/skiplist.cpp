@@ -348,6 +348,53 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
   return true;
 }
 
+Status Skiplist::Write(SortedWriteArgs& args) {
+  if (args.skiplist != this) {
+    return Status::InvalidArgument;
+  }
+
+  // TODO: implement no hash indexed ones
+}
+
+Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
+  if (args.skiplist != this) {
+    return Status::InvalidArgument;
+  }
+
+  // TODO: implement no hash indexed ones
+  args.res = hash_table_->Lookup<true>(InternalKey(args.key), SortedElemType);
+  bool allocate_space = true;
+  switch (args.res.s) {
+    case Status::Ok: {
+      if (args.op == WriteBatchImpl::Op::Delete &&
+          args.res.entry.GetRecordType() == SortedElemDelete) {
+        allocate_space = false;
+      }
+      break;
+    }
+    case Status::NotFound: {
+      if (args.op == WriteBatchImpl::Op::Delete) {
+        allocate_space = false;
+      }
+      break;
+    }
+    case Status::MemoryOverflow: {
+      return args.res.s;
+    }
+    default:
+      std::abort();  // never should reach
+  }
+  if (allocate_space) {
+    auto request_size = DLRecord::RecordSize(args.key, args.value);
+    args.space = pmem_allocator_->Allocate(request_size);
+    if (args.space.size == 0) {
+      return Status::PmemOverflow;
+    }
+  }
+
+  return Status::Ok;
+}
+
 Skiplist::WriteResult Skiplist::Delete(const StringView& key,
                                        TimeStampType timestamp) {
   Skiplist::WriteResult ret;

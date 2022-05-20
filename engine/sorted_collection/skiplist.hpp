@@ -222,6 +222,10 @@ class Skiplist : public Collection {
   // Notice: the deleting key should already been locked by engine
   WriteResult Delete(const StringView& key, TimeStampType timestamp);
 
+  Status PrepareWrite(SortedWriteArgs& args);
+
+  Status Write(SortedWriteArgs& args);
+
   // Seek position of "key" on both dram and PMem node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
