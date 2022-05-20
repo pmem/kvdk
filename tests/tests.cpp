@@ -1970,7 +1970,12 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 #if KVDK_DEBUG_LEVEL > 0
 
 TEST_F(EngineBasicTest, BatchWriteRollBack) {
-  size_t num_threads = 16;
+  // This test case can only be run with single thread.
+  // If multiple threads run batchwrite,
+  // a thread may crash at CrashPoint and release its id,
+  // another thread may reuse this id and the old batch log file
+  // is overwritten.
+  size_t num_threads = 1;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -2001,14 +2006,14 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
-        batch->StringPut(keys[tid][i], GetRandomString(120));
+        batch->StringPut(keys[tid][i], GetRandomString(110));
       } else {
         batch->StringDelete(keys[tid][i]);
         // Delete a non-existing key
         batch->StringDelete("asdf");
       }
     }
-    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+    ASSERT_THROW(engine->BatchWrite(batch), CrashPoint);
   };
 
   auto Check = [&](size_t tid) {
