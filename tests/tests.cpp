@@ -2024,6 +2024,8 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
     }
   };
 
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->EnableCrashPoint(
       "KVEngine::batchWriteImpl::BeforeCommit");
   SyncPoint::GetInstance()->EnableProcessing();
@@ -2040,6 +2042,9 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
 
   // Check KVs in engine, the batch is indeed rolled back.
   LaunchNThreads(num_threads, Check);
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
 
   delete engine;
 }
