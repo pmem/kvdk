@@ -233,7 +233,7 @@ class BatchWriteLog {
 
   static void MarkProcessing(char* dst) {
     dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
-    *reinterpret_cast<Stage*>(dst + sizeof(size_t)) = Stage::Processing;
+    *reinterpret_cast<Stage*>(dst) = Stage::Processing;
     _mm_clflush(dst);
     _mm_mfence();
   }

@@ -2007,8 +2007,8 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
         // Delete a non-existing key
         batch->StringDelete("asdf");
       }
-      ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     }
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
   };
 
   auto Check = [&](size_t tid) {

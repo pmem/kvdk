@@ -72,12 +72,12 @@ void BatchWriteLog::DecodeFrom(char const* src) {
   }
 
   sorted_logs.resize(FetchPOD<size_t>(&sw));
-  for (size_t i = 0; i < string_logs.size(); i++) {
+  for (size_t i = 0; i < sorted_logs.size(); i++) {
     sorted_logs[i] = FetchPOD<SortedLogEntry>(&sw);
   }
 
   hash_logs.resize(FetchPOD<size_t>(&sw));
-  for (size_t i = 0; i < string_logs.size(); i++) {
+  for (size_t i = 0; i < hash_logs.size(); i++) {
     hash_logs[i] = FetchPOD<HashLogEntry>(&sw);
   }
 
