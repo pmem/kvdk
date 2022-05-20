@@ -2091,7 +2091,7 @@ TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
         batch->StringDelete("non-existing");
       }
     }
-    ASSERT_THROW(engine->BatchWrite(batch), CrashPoint);
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
   };
 
   auto Check = [&](size_t tid) {
