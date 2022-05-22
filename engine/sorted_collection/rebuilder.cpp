@@ -279,7 +279,8 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   };
 
   GlobalLogger.Info("build segment index\n");
-  for (uint32_t thread_num = 0; thread_num < 1; ++thread_num) {
+  for (uint32_t thread_num = 0; thread_num < num_rebuild_threads_;
+       ++thread_num) {
     fs.push_back(std::async(rebuild_segments_index));
   }
   for (auto& f : fs) {
@@ -354,8 +355,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       if (valid_version_record == nullptr ||
           valid_version_record->entry.meta.type == SortedElemDelete) {
         bool success = Skiplist::Remove(next_record, nullptr,
-                                       kv_engine_->pmem_allocator_.get(),
-                                       kv_engine_->skiplist_locks_.get());
+                                        kv_engine_->pmem_allocator_.get(),
+                                        kv_engine_->skiplist_locks_.get());
         kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       } else {
@@ -512,8 +513,8 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         valid_version_record->entry.meta.type == SortedElemDelete) {
       // purge invalid version record from list
       bool success = Skiplist::Remove(next_record, nullptr,
-                                     kv_engine_->pmem_allocator_.get(),
-                                     kv_engine_->skiplist_locks_.get());
+                                      kv_engine_->pmem_allocator_.get(),
+                                      kv_engine_->skiplist_locks_.get());
       kvdk_assert(success, "elems in rebuild should passed linkage check");
       addUnlinkedRecord(next_record);
     } else {

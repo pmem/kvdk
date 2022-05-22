@@ -18,6 +18,7 @@ using namespace google;
 using namespace KVDK_NAMESPACE;
 
 #define MAX_LAT (10000000)
+#define max_value_size (64 * 1024 * 1024)
 
 // Benchmark configs
 DEFINE_string(path, "/mnt/pmem0/kvdk", "Instance path");
@@ -109,10 +110,13 @@ std::atomic_uint64_t write_ops{0};
 std::atomic_uint64_t read_not_found{0};
 std::atomic_uint64_t read_cnt{UINT64_MAX};
 std::vector<std::string> collections;
+std::vector<std::string> new_collections;
 Engine* engine;
 std::string value_pool;
 size_t operations_per_thread;
 bool has_timed_out;
+bool expire = false;
+std::vector<int> has_expire;
 std::vector<int> has_finished;  // std::vector<bool> is a trap!
 // Record operation latencies of access threads. Latencies of write threads
 // stored in first part of the vector, latencies of read threads stored in
@@ -197,15 +201,40 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Sorted: {
-        s = engine->SortedPut(collections[cid], key, value);
+        if (expire && !has_expire[cid]) {
+          printf("****\n");
+          s = engine->Expire(collections[cid], -10);
+          has_expire[cid] = true;
+        }
+        if (has_expire[cid]) {
+          s = engine->SortedPut(new_collections[cid], key, value);
+        } else {
+          s = engine->SortedPut(collections[cid], key, value);
+        }
         break;
       }
       case DataType::Hashes: {
-        s = engine->HashPut(collections[cid], key, value);
+        if (expire && !has_expire[cid]) {
+          s = engine->Expire(collections[cid], -10);
+          has_expire[cid] = true;
+        }
+        if (has_expire[cid]) {
+          s = engine->HashPut(new_collections[cid], key, value);
+        } else {
+          s = engine->HashPut(collections[cid], key, value);
+        }
         break;
       }
       case DataType::List: {
-        s = engine->ListPushFront(collections[cid], value);
+        if (expire && !has_expire[cid]) {
+          s = engine->Expire(collections[cid], -10);
+          has_expire[cid] = true;
+        }
+        if (has_expire[cid]) {
+          s = engine->ListPushFront(new_collections[cid], key);
+        } else {
+          s = engine->ListPushFront(collections[cid], key);
+        }
         break;
       }
       case DataType::Blackhole: {
@@ -411,6 +440,10 @@ void ProcessBenchmarkConfigs() {
       for (size_t i = 0; i < FLAGS_num_collection; i++) {
         collections[i] = "Collection_" + std::to_string(i);
       }
+      new_collections.resize(FLAGS_num_collection);
+      for (size_t i = 0; i < FLAGS_num_collection; i++) {
+        new_collections[i] = "UpdateCol_" + std::to_string(i);
+      }
       break;
     }
   }
@@ -509,10 +542,49 @@ int main(int argc, char** argv) {
         throw std::runtime_error{"Fail to create Sorted collection"};
       }
     }
+    for (auto col : new_collections) {
+      SortedCollectionConfigs s_configs;
+      Status s = engine->SortedCreate(col, s_configs);
+      if (s != Status::Ok) {
+        throw std::runtime_error{"Fail to create Sorted collection"};
+      }
+    }
+    engine->ReleaseAccessThread();
+  } else if (bench_data_type == DataType::List) {
+    printf("Create %ld List Collections\n", FLAGS_num_collection);
+    for (auto col : collections) {
+      Status s = engine->ListCreate(col);
+      if (s != Status::Ok) {
+        throw std::runtime_error{"Fail to create list collection"};
+      }
+    }
+    for (auto col : new_collections) {
+      Status s = engine->ListCreate(col);
+      if (s != Status::Ok) {
+        throw std::runtime_error{"Fail to create List collection"};
+      }
+    }
+    engine->ReleaseAccessThread();
+  } else if (bench_data_type == DataType::Hashes) {
+    printf("Create %ld Hash Collections\n", FLAGS_num_collection);
+    for (auto col : collections) {
+      Status s = engine->HashCreate(col);
+      if (s != Status::Ok) {
+        throw std::runtime_error{"Fail to create Hash collection"};
+      }
+    }
+    for (auto col : new_collections) {
+      Status s = engine->HashCreate(col);
+      if (s != Status::Ok) {
+        throw std::runtime_error{"Fail to create Hash collection"};
+      }
+    }
     engine->ReleaseAccessThread();
   }
 
   has_finished.resize(FLAGS_threads, 0);
+
+  has_expire.resize(FLAGS_num_collection, 0);
 
   std::cout << "Init " << read_threads << " readers "
             << "and " << write_threads << " writers." << std::endl;
@@ -563,6 +635,9 @@ int main(int argc, char** argv) {
     }
     if (num_finished == FLAGS_threads) {
       break;
+    }
+    if (!FLAGS_fill && !expire && (duration.count() >= 100 * 1000)) {
+      expire = true;
     }
     if (!FLAGS_fill && (duration.count() >= FLAGS_timeout * 1000)) {
       // Signal a timeout for read, scan, update and insert

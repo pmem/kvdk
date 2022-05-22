@@ -239,6 +239,8 @@ class Skiplist : public Collection {
   // records.
   void Destroy();
 
+  void DestroyAll();
+
   // check node linkage and hash index
   Status CheckIndex();
 
@@ -386,11 +388,6 @@ class Skiplist : public Collection {
     return 0;
   }
 
-  static LockTable::HashType RecordHash(const DLRecord* record) {
-    kvdk_assert(record != nullptr, "");
-    return XXH3_64bits(record, sizeof(const DLRecord*));
-  }
-
  private:
   WriteResult setImplNoHash(const StringView& key, const StringView& value,
                             TimeStampType timestamp);
@@ -460,6 +457,13 @@ class Skiplist : public Collection {
   void destroyRecords();
 
   void destroyNodes();
+
+  void destroyAllRecords();
+
+  static LockTable::HashType recordHash(const DLRecord* record) {
+    kvdk_assert(record != nullptr, "");
+    return XXH3_64bits(record, sizeof(const DLRecord*));
+  }
 
   std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;

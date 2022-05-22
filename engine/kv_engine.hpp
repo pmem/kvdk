@@ -446,10 +446,8 @@ class KVEngine : public Engine {
 
   SpaceEntry purgeSortedRecord(SkiplistNode* dram_node, DLRecord* pmem_record);
 
-  void destroyOldStringRecords(PMemOffsetType old_offset,
-                               std::vector<SpaceEntry>* entries);
-  void destroyOldDLRecords(PMemOffsetType old_offset,
-                           std::vector<SpaceEntry>* entries);
+  void destroyOldStringRecords(const std::vector<PMemOffsetType>& old_offset);
+  void destroyOldDLRecords(const std::vector<PMemOffsetType>& old_offset);
 
   template <typename T>
   PMemOffsetType updateVersionList(T* record);

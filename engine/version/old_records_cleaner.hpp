@@ -47,9 +47,6 @@ class OldRecordsCleaner {
   void PushToPendingFree(void* addr, TimeStampType ts);
   // Try to clean global old records
   void TryGlobalClean();
-  // Try to clean cached old records, notice we do not destroy outdated
-  // collections here as is too expensive for a foreground thread
-  void TryCleanCachedOldRecords(size_t num_limit_clean);
 
  private:
   struct CleanerThreadCache {
@@ -64,9 +61,7 @@ class OldRecordsCleaner {
 
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
-  SpinMutex lock_;
-  std::deque<PendingFreeSpaceEntries> global_pending_free_space_entries_;
-  TimeStampType clean_all_data_record_ts_{0};
+  std::deque<PendingFreeSpaceEntry> global_pending_free_space_entries_;
 };
 
 }  // namespace KVDK_NAMESPACE

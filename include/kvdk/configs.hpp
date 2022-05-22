@@ -90,7 +90,7 @@ struct Configs {
   // Time interval that the background thread report PMem usage by GlobalLogger.
   // report_pmem_usage_interval less than background_work_interval will be
   // ignored.
-  double report_pmem_usage_interval = 1000000.0;
+  double report_pmem_usage_interval = 10;
 
   // Support the devdax model with PMem
   //
@@ -131,6 +131,9 @@ struct Configs {
   // If customer compare functions is used in a kvdk engine, these functions
   // should be registered to the comparator before open engine
   ComparatorTable comparator;
+
+  // Background clean thread numbers. The 
+  uint64_t clean_threads = 16;
 };
 
 struct WriteOptions {

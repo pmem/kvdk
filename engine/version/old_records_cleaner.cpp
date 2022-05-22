@@ -49,17 +49,27 @@ void OldRecordsCleaner::TryGlobalClean() {
   TimeStampType oldest_snapshot_ts =
       kv_engine_->version_controller_.OldestSnapshotTS();
 
-  std::lock_guard<SpinMutex> lg(lock_);
-
+  std::vector<SpaceEntry> free_entries;
   for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto& cleaner_thread_cache = cleaner_thread_cache_[i];
+    if (cleaner_thread_cache.pending_free_space_entries.size() > 0) {
+      std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
+      for (auto& space_entry :
+           cleaner_thread_cache.pending_free_space_entries) {
+        if (space_entry.release_time < oldest_snapshot_ts) {
+          free_entries.emplace_back(space_entry.entry);
+        } else {
+          global_pending_free_space_entries_.emplace_back(space_entry);
+        }
+      }
+      cleaner_thread_cache.pending_free_space_entries.clear();
+    }
   }
-
-  clean_all_data_record_ts_ = oldest_snapshot_ts;
 
   auto iter = global_pending_free_space_entries_.begin();
   while (iter != global_pending_free_space_entries_.end()) {
     if (iter->release_time < oldest_snapshot_ts) {
-      kv_engine_->pmem_allocator_->BatchFree(iter->entries);
+      free_entries.emplace_back(iter->entry);
       iter++;
     } else {
       break;
@@ -68,7 +78,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   global_pending_free_space_entries_.erase(
       global_pending_free_space_entries_.begin(), iter);
 
-  if (space_to_free.size() > 0) {
+  if (free_entries.size() > 0) {
     kv_engine_->pmem_allocator_->BatchFree(space_to_free);
   }
 }

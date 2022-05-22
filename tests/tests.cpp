@@ -66,9 +66,20 @@ class EngineBasicTest : public testing::Test {
     int res __attribute__((unused)) = system(cmd);
     config_option = OptionConfig::Default;
     cnt = 500;
+
+#if KVDK_DEBUG_LEVEL > 0
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Reset();
+#endif
   }
 
-  virtual void TearDown() { Destroy(); }
+  virtual void TearDown() {
+#if KVDK_DEBUG_LEVEL > 0
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Reset();
+#endif
+    Destroy();
+  }
 
   void AssignData(std::string& data, int len) {
     data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
@@ -215,7 +226,6 @@ class EngineBasicTest : public testing::Test {
 
       TestEmptyKey(thread_local_collection, SortedPutFunc, SortedGetFunc,
                    SortedDeleteFunc);
-
       TestDestroy(thread_local_collection, SortedDestroyFunc, SortedPutFunc,
                   SortedGetFunc, SortedDeleteFunc);
 
@@ -448,6 +458,7 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
       ASSERT_EQ(length, 1);
     }
   }
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestThreadManager) {
@@ -2106,6 +2117,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
       }
     }
   }
+  delete engine;
 }
 
 // Example Case Two:
@@ -2117,13 +2129,14 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
 // Then Repair
 
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
+  Configs test_config = configs;
   std::atomic<bool> first_visited{false};
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
       "KVEngine::backgroundCleaner::NothingToDo", [&](void* thread_id) {
-        *((size_t*)thread_id) = kCleanerThreadNum;
+        *((size_t*)thread_id) = test_config.clean_threads;
         return;
       });
   // only throw when the first call `SortedDelete`
@@ -2136,7 +2149,6 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  Configs test_config = configs;
   test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
@@ -2190,6 +2202,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
     // Again delete "C".
     ASSERT_EQ(engine->SortedDelete(collection_name, keylists[0]), Status::Ok);
   }
+  delete engine;
 }
 
 // Example:
@@ -2249,6 +2262,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   for (auto& thread : ths) {
     thread.join();
   }
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestHashTableRangeIter) {
@@ -2305,7 +2319,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
       "KVEngine::backgroundCleaner::NothingToDo", [&](void* thread_id) {
-        *((size_t*)thread_id) = kCleanerThreadNum;
+        *((size_t*)thread_id) = configs.clean_threads;
         return;
       });
   SyncPoint::GetInstance()->SetCallBack(
@@ -2440,6 +2454,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
     t.join();
   }
 
+  SyncPoint::GetInstance()->DisableProcessing();
   delete engine;
 }
 #endif

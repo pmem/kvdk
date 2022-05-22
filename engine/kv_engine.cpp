@@ -47,6 +47,30 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Waiting bg threads exit ... \n");
   closing_ = true;
   terminateBackgroundWorks();
+  // for (auto& skiplist : skiplists_) {
+  //   auto start = std::chrono::system_clock::now();
+  //   auto size = skiplist.second->Size();
+  //   skiplist.second->DestroyAll();
+  //   auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+  //       std::chrono::system_clock::now() - start);
+  //   printf("sorted size: %ld, cost_time: %ld\n", size, duration.count());
+  // }
+  // for (auto& list : lists_) {
+  //   auto start = std::chrono::system_clock::now();
+  //   auto size = list->Size();
+  //   listDestroy(list);
+  //   auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+  //       std::chrono::system_clock::now() - start);
+  //   printf("list size: %ld, cost_time: %ld\n", size, duration.count());
+  // }
+  // for (auto& hlist : hash_lists_) {
+  //   auto start = std::chrono::system_clock::now();
+  //   auto size = hlist->Size();
+  //   hashListDestroy(hlist);
+  //   auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+  //       std::chrono::system_clock::now() - start);
+  //   printf("hashlist size: %ld, cost_time: %ld\n", size, duration.count());
+  // }
   deleteCollections();
   ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
@@ -96,7 +120,7 @@ Status KVEngine::Restore(const std::string& engine_path,
 }
 
 void KVEngine::FreeSkiplistDramNodes() {
-  for (auto& skiplist : skiplists_) {
+  for (auto skiplist : skiplists_) {
     skiplist.second->CleanObsoletedNodes();
   }
 }
@@ -122,13 +146,13 @@ void KVEngine::startBackgroundWorks() {
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
 
   auto total_slot_num = hash_table_->GetSlotSize();
-  size_t iter_slot_stride = total_slot_num / kCleanerThreadNum;
+  size_t iter_slot_stride = total_slot_num / configs_.clean_threads;
   size_t thread_id = 0;
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
                            &thread_id);
 
-  for (;thread_id < kCleanerThreadNum; ++thread_id) {
-    if (thread_id == (kCleanerThreadNum - 1)) {
+  for (; thread_id < configs_.clean_threads; ++thread_id) {
+    if (thread_id == (configs_.clean_threads - 1)) {
       bg_threads_.emplace_back(&KVEngine::CleanOutDated, this,
                                thread_id * iter_slot_stride, total_slot_num);
     } else {

@@ -221,6 +221,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   if (space_entry.size == 0) {
     return Status::PmemOverflow;
   }
+
   StringRecord* new_record =
       pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
   StringRecord::PersistStringRecord(

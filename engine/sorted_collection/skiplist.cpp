@@ -275,7 +275,7 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
     DLRecord* next = pmem_allocator->offset2addr<DLRecord>(next_offset);
 
-    auto guard = lock_table->MultiGuard({RecordHash(prev), RecordHash(record)});
+    auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
 
     // Check if the list has changed before we successfully acquire lock.
     if (record->prev != prev_offset || prev->next != record_offset ||
@@ -299,7 +299,7 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
       pmem_allocator_->addr2offset_checked(prev_record);
   PMemOffsetType next_offset =
       pmem_allocator_->addr2offset_checked(next_record);
-  *prev_record_lock = record_locks_->AcquireLock(RecordHash(prev_record));
+  *prev_record_lock = record_locks_->AcquireLock(recordHash(prev_record));
 
   // Check if the linkage has changed before we successfully acquire lock.
   auto check_linkage = [&]() {
@@ -853,11 +853,116 @@ void Skiplist::CleanObsoletedNodes() {
   obsolete_nodes_.swap(pending_deletion_nodes_);
 }
 
+void Skiplist::destroyAllRecords() {
+  std::vector<SpaceEntry> to_free;
+  if (header_) {
+    DLRecord* header_record = header_->record;
+    DLRecord* next_destroy =
+        pmem_allocator_->offset2addr_checked<DLRecord>(header_record->next);
+    DLRecord* to_destroy = nullptr;
+    do {
+      to_destroy = next_destroy;
+      next_destroy =
+          pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
+      StringView key = to_destroy->Key();
+      auto ul = hash_table_->AcquireLock(key);
+      // We need to purge destroyed records one by one in case engine crashed
+      // during destroy
+      if (IndexWithHashtable()) {
+        auto lookup_result =
+            hash_table_->Lookup<false>(key, to_destroy->entry.meta.type);
+        if (lookup_result.s == Status::Ok) {
+          DLRecord* hash_indexed_record = nullptr;
+          auto hash_index = lookup_result.entry.GetIndex();
+          switch (lookup_result.entry.GetIndexType()) {
+            case PointerType::Skiplist:
+              hash_indexed_record = hash_index.skiplist->HeaderRecord();
+              break;
+            case PointerType::SkiplistNode:
+              hash_indexed_record = hash_index.skiplist_node->record;
+              break;
+            case PointerType::DLRecord:
+              hash_indexed_record = hash_index.dl_record;
+              break;
+            default:
+              kvdk_assert(false, "Wrong hash index type of sorted record");
+          }
+          if (hash_indexed_record == to_destroy) {
+            hash_table_->Erase(lookup_result.entry_ptr);
+          }
+          auto old_record = static_cast<DLRecord*>(
+              pmem_allocator_->offset2addr(to_destroy->old_version));
+          while (old_record) {
+            switch (old_record->GetRecordType()) {
+              case RecordType::SortedElem:
+              case RecordType::SortedElemDelete: {
+                old_record->entry.Destroy();
+                to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
+                                     old_record->entry.header.record_size);
+                break;
+              }
+              default:
+                std::abort();
+            }
+            old_record = static_cast<DLRecord*>(
+                pmem_allocator_->offset2addr(old_record->old_version));
+          }
+
+          if (Skiplist::Remove(to_destroy, nullptr, pmem_allocator_,
+                               record_locks_)) {
+            to_destroy->Destroy();
+            to_free.emplace_back(
+                pmem_allocator_->addr2offset_checked(to_destroy),
+                to_destroy->entry.header.record_size);
+          }
+        }
+      } else {
+        auto old_record = static_cast<DLRecord*>(
+            pmem_allocator_->offset2addr(to_destroy->old_version));
+        while (old_record) {
+          switch (old_record->GetRecordType()) {
+            case RecordType::SortedElem:
+            case RecordType::SortedElemDelete: {
+              old_record->entry.Destroy();
+              to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
+                                   old_record->entry.header.record_size);
+              break;
+            }
+            default:
+              std::abort();
+          }
+          old_record = static_cast<DLRecord*>(
+              pmem_allocator_->offset2addr(old_record->old_version));
+        }
+
+        if (Skiplist::Remove(to_destroy, nullptr, pmem_allocator_,
+                             record_locks_)) {
+          to_destroy->Destroy();
+          to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+                               to_destroy->entry.header.record_size);
+        }
+      }
+    } while (to_destroy !=
+             header_record /* header record should be the last detroyed one */);
+  }
+
+  pmem_allocator_->BatchFree(to_free);
+}
+
 void Skiplist::Destroy() {
   GlobalLogger.Debug("Start Destroy skiplist %s\n", Name().c_str());
   destroyRecords();
   destroyNodes();
   GlobalLogger.Debug("Finish Destroy skiplist %s\n", Name().c_str());
+}
+
+void Skiplist::DestroyAll() {
+  GlobalLogger.Debug("Start Destroy skiplist with old version lists %s\n",
+                     Name().c_str());
+  destroyAllRecords();
+  destroyNodes();
+  GlobalLogger.Debug("Finish Destroy skiplist with old version lists %s\n",
+                     Name().c_str());
 }
 
 void Skiplist::destroyNodes() {
