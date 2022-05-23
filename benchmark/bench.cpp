@@ -476,7 +476,9 @@ int main(int argc, char** argv) {
     configs.use_devdax_mode = FLAGS_use_devdax_mode;
     Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
     if (s != Status::Ok) {
-      throw std::runtime_error{"Fail to open KVDK instance."};
+      throw std::runtime_error{
+          std::string{"Fail to open KVDK instance. Status: "} +
+          KVDKStatusStrings[static_cast<int>(s)]};
     }
   }
 
@@ -500,16 +502,42 @@ int main(int argc, char** argv) {
     latencies.resize(FLAGS_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
   }
 
-  if (bench_data_type == DataType::Sorted) {
-    printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
-    for (auto col : collections) {
-      SortedCollectionConfigs s_configs;
-      Status s = engine->SortedCreate(col, s_configs);
-      if (s != Status::Ok) {
-        throw std::runtime_error{"Fail to create Sorted collection"};
+  switch (bench_data_type) {
+    case DataType::Sorted: {
+      printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
+      for (auto col : collections) {
+        SortedCollectionConfigs s_configs;
+        Status s = engine->SortedCreate(col, s_configs);
+        if (s != Status::Ok) {
+          throw std::runtime_error{"Fail to create Sorted collection"};
+        }
       }
+      engine->ReleaseAccessThread();
+      break;
     }
-    engine->ReleaseAccessThread();
+    case DataType::Hashes: {
+      for (auto col : collections) {
+        Status s = engine->HashCreate(col);
+        if (s != Status::Ok && s != Status::Existed) {
+          throw std::runtime_error{"Fail to create Hashset"};
+        }
+      }
+      engine->ReleaseAccessThread();
+      break;
+    }
+    case DataType::List: {
+      for (auto col : collections) {
+        Status s = engine->ListCreate(col);
+        if (s != Status::Ok && s != Status::Existed) {
+          throw std::runtime_error{"Fail to create List"};
+        }
+      }
+      engine->ReleaseAccessThread();
+      break;
+    }
+    default: {
+      break;
+    }
   }
 
   has_finished.resize(FLAGS_threads, 0);
