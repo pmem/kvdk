@@ -356,12 +356,14 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
 }
 
 Status KVEngine::hashListPublish(HashWriteArgs const& args) {
+  if (args.res.s == Status::Ok) {
+    delayFree(args.res.entry.GetIndex().dl_record);
+  }
   if (args.op == WriteBatchImpl::Op::Delete) {
     removeKeyOrElem(args.res);
   } else {
     insertKeyOrElem(args.res, RecordType::HashElem, args.new_rec);
   }
-  delayFree(args.res.entry.GetIndex().dl_record);
   return Status::Ok;
 }
 

@@ -1402,12 +1402,18 @@ void KVEngine::delayFree(const OutdatedCollection& outdated_collection) {
 }
 
 void KVEngine::delayFree(DLRecord* addr) {
+  if (addr == nullptr) {
+    return;
+  }
   /// TODO: avoid deadlock in cleaner to help Free() deleted records
   old_records_cleaner_.PushToPendingFree(
       addr, version_controller_.GetCurrentTimestamp());
 }
 
 void KVEngine::directFree(DLRecord* addr) {
+  if (addr == nullptr) {
+    return;
+  }
   pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
                                    addr->entry.header.record_size});
 }
