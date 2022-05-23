@@ -102,7 +102,6 @@ struct StringWriteArgs {
 };
 
 struct SortedWriteArgs {
-  Skiplist* skiplist;
   StringView key;
   StringView field;
   StringView value;

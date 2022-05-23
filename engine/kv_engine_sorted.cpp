@@ -326,14 +326,12 @@ Status KVEngine::sortedRollback(TimeStampType,
           elem,
           pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
           nullptr, pmem_allocator_.get(), skiplist_locks_.get());
-      elem->Destroy();
     } else {
-      Skiplist::Purge(elem, nullptr, pmem_allocator_.get(),
-                      skiplist_locks_.get());
+      Skiplist::Remove(elem, nullptr, pmem_allocator_.get(),
+                       skiplist_locks_.get());
     }
-  } else {
-    elem->Destroy();
   }
+  elem->Destroy();
   return Status::NotSupported;
 }
 

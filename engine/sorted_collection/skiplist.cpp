@@ -352,6 +352,7 @@ Status Skiplist::Write(SortedWriteArgs& args) {
   if (args.skiplist != this) {
     return Status::InvalidArgument;
   }
+  return Status::Ok;
 
   // TODO: implement no hash indexed ones
 }
