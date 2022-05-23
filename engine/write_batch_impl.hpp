@@ -103,7 +103,7 @@ struct StringWriteArgs {
 
 struct SortedWriteArgs {
   StringView key;
-  StringView field;
+  StringView elem;
   StringView value;
   WriteBatchImpl::Op op;
   Skiplist* skiplist;
@@ -114,7 +114,7 @@ struct SortedWriteArgs {
 
   void Assign(WriteBatchImpl::SortedOp const& sorted_op) {
     key = sorted_op.key;
-    field = sorted_op.field;
+    elem = sorted_op.field;
     value = sorted_op.value;
     op = sorted_op.op;
   }

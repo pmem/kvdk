@@ -870,7 +870,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     keys_to_lock.push_back(string_op.key);
   }
   for (auto const& arg : sorted_args) {
-    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.field));
+    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.elem));
   }
   for (auto const& arg : hash_args) {
     keys_to_lock.push_back(arg.hlist->InternalKey(arg.field));

@@ -354,7 +354,7 @@ Status Skiplist::Write(SortedWriteArgs& args) {
   }
 
   if (args.op == WriteBatchImpl::Op::Put) {
-    return putImplWithHash(args.res, args.key, args.value, args.ts, args.space)
+    return putImplWithHash(args.res, args.elem, args.value, args.ts, args.space)
         .s;
   } else {
     return Status::NotSupported;
@@ -368,7 +368,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
   }
 
   // TODO: implement no hash indexed ones
-  args.res = hash_table_->Lookup<true>(InternalKey(args.key), SortedElemType);
+  args.res = hash_table_->Lookup<true>(InternalKey(args.elem), SortedElemType);
   bool allocate_space = true;
   switch (args.res.s) {
     case Status::Ok: {
@@ -391,7 +391,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
       std::abort();  // never should reach
   }
   if (allocate_space) {
-    auto request_size = DLRecord::RecordSize(args.key, args.value);
+    auto request_size = DLRecord::RecordSize(args.elem, args.value);
     args.space = pmem_allocator_->Allocate(request_size);
     if (args.space.size == 0) {
       return Status::PmemOverflow;
