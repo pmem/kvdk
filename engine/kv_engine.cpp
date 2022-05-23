@@ -1010,15 +1010,16 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
+  // After preparation stage, no runtime error is allowed for now,
+  // otherwise we have to perform runtime rollback.
+
   // Write Strings
   for (auto& args : string_args) {
     if (args.space.size == 0) {
       continue;
     }
     Status s = stringWrite(args);
-    if (s != Status::Ok) {
-      return s;
-    }
+    kvdk_assert(s == Status::Ok, "");
   }
 
   // Write Sorted Elems
@@ -1027,9 +1028,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     Status s = sortedWrite(args);
-    if (s != Status::Ok) {
-      return s;
-    }
+    kvdk_assert(s == Status::Ok, "");
   }
 
   // Write Hash Elems
@@ -1039,9 +1038,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     Status s = hashListWrite(args);
-    if (s != Status::Ok) {
-      return s;
-    }
+    kvdk_assert(s == Status::Ok, "");
   }
 
   TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit", "");

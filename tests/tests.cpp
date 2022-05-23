@@ -2204,6 +2204,9 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
   // Check KVs in engine, the batch is indeed rolled back.
   LaunchNThreads(num_threads, Check);
 
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+
   delete engine;
 }
 
