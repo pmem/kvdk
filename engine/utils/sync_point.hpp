@@ -38,8 +38,7 @@ namespace KVDK_NAMESPACE {
  */
 class SyncPoint {
  public:
-  using CrashPoint = typename SyncImpl::CrashPoint;
-
+  using CrashPoint = SyncImpl::CrashPoint;
   static SyncPoint* GetInstance();
   SyncPoint(const SyncPoint&) = delete;
   SyncPoint& operator=(const SyncPoint&) = delete;

@@ -881,6 +881,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Lookup keys, allocate space according to result.
   auto ReleaseResources = [&]() {
+  // Don't Free() if we simulate a crash.
+#ifndef KVDK_ENABLE_CRASHPOINT
     for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
     }
@@ -890,7 +892,9 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     for (auto iter = string_args.rbegin(); iter != string_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
     }
+#endif
   };
+
   defer(ReleaseResources());
 
   // Prevent generating snapshot newer than this WriteBatch
@@ -958,6 +962,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Preparation done. Persist BatchLog for rollback.
   BatchWriteLog log;
+  log.SetTimestamp(bw_token.Timestamp());
   auto& tc = engine_thread_cache_[access_thread.id];
   for (auto& args : string_args) {
     if (args.space.size == 0) {
@@ -995,15 +1000,16 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
+  // After preparation stage, no runtime error is allowed for now,
+  // otherwise we have to perform runtime rollback.
+
   // Write Strings
   for (auto& args : string_args) {
     if (args.space.size == 0) {
       continue;
     }
     Status s = stringWrite(args);
-    if (s != Status::Ok) {
-      return s;
-    }
+    kvdk_assert(s == Status::Ok, "");
   }
 
   // Write Sorted Elems
@@ -1012,9 +1018,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     Status s = sortedWrite(args);
-    if (s != Status::Ok) {
-      return s;
-    }
+    kvdk_assert(s == Status::Ok, "");
   }
 
   // Write Hash Elems
@@ -1023,9 +1027,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     Status s = hashListWrite(args);
-    if (s != Status::Ok) {
-      return s;
-    }
+    kvdk_assert(s == Status::Ok, "");
   }
 
   TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit", "");
