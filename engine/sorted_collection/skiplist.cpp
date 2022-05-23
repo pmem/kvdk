@@ -352,8 +352,13 @@ Status Skiplist::Write(SortedWriteArgs& args) {
   if (args.skiplist != this) {
     return Status::InvalidArgument;
   }
-  return Status::Ok;
 
+  if (args.op == WriteBatchImpl::Op::Put) {
+    return putImplWithHash(args.res, args.key, args.value, args.ts, args.space)
+        .s;
+  } else {
+    return Status::NotSupported;
+  }
   // TODO: implement no hash indexed ones
 }
 
@@ -415,17 +420,19 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
   Skiplist::WriteResult ret;
-  auto request_size =
-      sizeof(DLRecord) + sizeof(CollectionIDType) + key.size() + value.size();
+  std::string internal_key(InternalKey(key));
+  auto request_size = DLRecord::RecordSize(internal_key, value);
   SpaceEntry space = pmem_allocator_->Allocate(request_size);
   if (space.size == 0) {
     ret.s = Status::PmemOverflow;
   }
   if (ret.s == Status::Ok) {
     if (IndexWithHashtable()) {
-      ret = setImplWithHash(key, value, timestamp, space);
+      auto lookup_result =
+          hash_table_->Lookup<true>(internal_key, SortedElemType);
+      ret = putImplWithHash(lookup_result, key, value, timestamp, space);
     } else {
-      ret = setImplNoHash(key, value, timestamp, space);
+      ret = putImplNoHash(key, value, timestamp, space);
     }
     if (ret.existing_record == nullptr ||
         ret.existing_record->entry.meta.type == SortedElemDelete) {
@@ -730,15 +737,12 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
   return ret;
 }
 
-Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
-                                                const StringView& value,
-                                                TimeStampType timestamp,
-                                                const SpaceEntry& space) {
+Skiplist::WriteResult Skiplist::putImplWithHash(
+    const HashTable::LookupResult& lookup_result, const StringView& key,
+    const StringView& value, TimeStampType timestamp, const SpaceEntry& space) {
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
-  auto lookup_result =
-      hash_table_->Lookup<true>(internal_key, SortedElem | SortedElemDelete);
 
   switch (lookup_result.s) {
     case Status::Ok: {
@@ -774,7 +778,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
       break;
     }
     case Status::NotFound: {
-      ret = setImplNoHash(key, value, timestamp, space);
+      ret = putImplNoHash(key, value, timestamp, space);
       if (ret.s != Status::Ok) {
         return ret;
       }
@@ -802,7 +806,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
   return ret;
 }
 
-Skiplist::WriteResult Skiplist::setImplNoHash(const StringView& key,
+Skiplist::WriteResult Skiplist::putImplNoHash(const StringView& key,
                                               const StringView& value,
                                               TimeStampType timestamp,
                                               const SpaceEntry& space) {
