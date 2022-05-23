@@ -415,14 +415,22 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
   Skiplist::WriteResult ret;
-  if (IndexWithHashtable()) {
-    ret = setImplWithHash(key, value, timestamp);
-  } else {
-    ret = setImplNoHash(key, value, timestamp);
+  auto request_size =
+      sizeof(DLRecord) + sizeof(CollectionIDType) + key.size() + value.size();
+  SpaceEntry space = pmem_allocator_->Allocate(request_size);
+  if (space.size == 0) {
+    ret.s = Status::PmemOverflow;
   }
-  if (ret.existing_record == nullptr ||
-      ret.existing_record->entry.meta.type == SortedElemDelete) {
-    UpdateSize(1);
+  if (ret.s == Status::Ok) {
+    if (IndexWithHashtable()) {
+      ret = setImplWithHash(key, value, timestamp, space);
+    } else {
+      ret = setImplNoHash(key, value, timestamp, space);
+    }
+    if (ret.existing_record == nullptr ||
+        ret.existing_record->entry.meta.type == SortedElemDelete) {
+      UpdateSize(1);
+    }
   }
   return ret;
 }
@@ -724,7 +732,8 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
 
 Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
                                                 const StringView& value,
-                                                TimeStampType timestamp) {
+                                                TimeStampType timestamp,
+                                                const SpaceEntry& space) {
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
@@ -746,13 +755,6 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
       // Try to write delete record
       auto guard = lockRecordPosition(ret.existing_record);
 
-      auto request_size = internal_key.size() + value.size() + sizeof(DLRecord);
-      auto space_to_write = pmem_allocator_->Allocate(request_size);
-      if (space_to_write.size == 0) {
-        ret.s = Status::PmemOverflow;
-        return ret;
-      }
-
       PMemOffsetType prev_offset = ret.existing_record->prev;
       DLRecord* prev_record =
           pmem_allocator_->offset2addr_checked<DLRecord>(prev_offset);
@@ -762,9 +764,9 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
       PMemOffsetType existing_offset =
           pmem_allocator_->addr2offset_checked(ret.existing_record);
       DLRecord* new_record = DLRecord::PersistDLRecord(
-          pmem_allocator_->offset2addr(space_to_write.offset),
-          space_to_write.size, timestamp, SortedElem, existing_offset,
-          prev_offset, next_offset, internal_key, value);
+          pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
+          SortedElem, existing_offset, prev_offset, next_offset, internal_key,
+          value);
       ret.write_record = new_record;
       ret.hash_entry_ptr = lookup_result.entry_ptr;
       linkDLRecord(prev_record, next_record, new_record);
@@ -772,7 +774,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
       break;
     }
     case Status::NotFound: {
-      ret = setImplNoHash(key, value, timestamp);
+      ret = setImplNoHash(key, value, timestamp, space);
       if (ret.s != Status::Ok) {
         return ret;
       }
@@ -802,7 +804,8 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
 
 Skiplist::WriteResult Skiplist::setImplNoHash(const StringView& key,
                                               const StringView& value,
-                                              TimeStampType timestamp) {
+                                              TimeStampType timestamp,
+                                              const SpaceEntry& space) {
   WriteResult ret;
   std::string internal_key(InternalKey(key));
   DLRecord* prev_record;
@@ -842,18 +845,11 @@ seek_write_position:
     prev_record = splice.prev_pmem_record;
   }
 
-  auto request_size = internal_key.size() + value.size() + sizeof(DLRecord);
-  auto space_to_write = pmem_allocator_->Allocate(request_size);
-  if (space_to_write.size == 0) {
-    ret.s = Status::PmemOverflow;
-    return ret;
-  }
-
   uint64_t prev_offset = pmem_allocator_->addr2offset_checked(prev_record);
   uint64_t next_offset = pmem_allocator_->addr2offset_checked(next_record);
   DLRecord* new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedElem, pmem_allocator_->addr2offset(ret.existing_record),
+      pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
+      SortedElem, pmem_allocator_->addr2offset(ret.existing_record),
       prev_offset, next_offset, internal_key, value);
   ret.write_record = new_record;
   // link new record to PMem

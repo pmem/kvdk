@@ -392,10 +392,10 @@ class Skiplist : public Collection {
 
  private:
   WriteResult setImplNoHash(const StringView& key, const StringView& value,
-                            TimeStampType timestamp);
+                            TimeStampType timestamp, const SpaceEntry& space);
 
   WriteResult setImplWithHash(const StringView& key, const StringView& value,
-                              TimeStampType timestamp);
+                              TimeStampType timestamp, const SpaceEntry& space);
 
   WriteResult deleteImplNoHash(const StringView& key, TimeStampType timestamp);
 
