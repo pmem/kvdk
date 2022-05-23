@@ -400,8 +400,9 @@ class Skiplist : public Collection {
 
   WriteResult deleteImplNoHash(const StringView& key, TimeStampType timestamp);
 
-  WriteResult deleteImplWithHash(const StringView& key,
-                                 TimeStampType timestamp);
+  WriteResult deleteImplWithHash(const HashTable::LookupResult& lookup_result,
+                                 const StringView& key, TimeStampType timestamp,
+                                 const SpaceEntry& space);
 
   // Link DLRecord "linking" between "prev" and "next"
   static void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,

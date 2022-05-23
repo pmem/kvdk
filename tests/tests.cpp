@@ -749,12 +749,12 @@ TEST_F(EngineBasicTest, BatchWriteSorted) {
         values[tid][i] = GetRandomString(120);
         batch->SortedPut(collection_name, elems[tid][i], values[tid][i]);
       } else {
-        // values[tid][i].clear();
-        // batch->HashDelete(key, fields[tid][i]);
+        values[tid][i].clear();
+        batch->SortedDelete(collection_name, elems[tid][i]);
       }
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing elem
-        // batch->SortedDelete(collection_name, "non-existing");
+        batch->SortedDelete(collection_name, "non-existing");
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
