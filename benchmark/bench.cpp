@@ -109,7 +109,7 @@ std::atomic_uint64_t write_ops{0};
 std::atomic_uint64_t read_not_found{0};
 std::atomic_uint64_t read_cnt{UINT64_MAX};
 std::vector<std::string> collections;
-Engine* engine;
+Engine* engine{nullptr};
 std::string value_pool;
 size_t operations_per_thread;
 bool has_timed_out;
@@ -166,7 +166,11 @@ size_t generate_value_size(size_t tid) {
 
 void DBWrite(int tid) {
   std::string key(8, ' ');
-  auto batch = engine->WriteBatchCreate();
+  std::unique_ptr<WriteBatch> batch;
+  if (engine != nullptr) {
+    batch = engine->WriteBatchCreate();
+  }
+
   for (size_t operations = 0; operations < operations_per_thread;
        ++operations) {
     if (has_timed_out) {
