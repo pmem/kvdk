@@ -312,7 +312,7 @@ Status KVEngine::restoreSortedElem(DLRecord* elem) {
 }
 
 Status KVEngine::sortedWritePrepare(SortedWriteArgs& args) {
-  args.skiplist->PrepareWrite(args);
+  return args.skiplist->PrepareWrite(args);
 }
 
 Status KVEngine::sortedWrite(SortedWriteArgs& args) {

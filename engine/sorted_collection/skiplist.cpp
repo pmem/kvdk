@@ -352,10 +352,12 @@ Status Skiplist::Write(SortedWriteArgs& args) {
   if (args.skiplist != this) {
     return Status::InvalidArgument;
   }
-
   if (args.op == WriteBatchImpl::Op::Put) {
-    return putImplWithHash(args.res, args.elem, args.value, args.ts, args.space)
-        .s;
+    return IndexWithHashtable()
+               ? putImplWithHash(args.res, args.elem, args.value, args.ts,
+                                 args.space)
+                     .s
+               : putImplNoHash(args.elem, args.value, args.ts, args.space).s;
   } else {
     return deleteImplWithHash(args.res, args.elem, args.ts, args.space).s;
   }
@@ -368,30 +370,42 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
   if (args.skiplist != this) {
     return Status::InvalidArgument;
   }
+  bool op_delete = args.op == WriteBatchImpl::Op::Delete;
   std::string internal_key(InternalKey(args.elem));
-
-  // TODO: implement no hash indexed ones
-  if (args.op == WriteBatchImpl::Op::Put) {
-    args.res = hash_table_->Lookup<true>(internal_key, SortedElemType);
-  } else {
-    args.res = hash_table_->Lookup<false>(internal_key, SortedElem);
-  }
   bool allocate_space = true;
-  switch (args.res.s) {
-    case Status::Ok: {
-      break;
+  if (IndexWithHashtable()) {
+    if (op_delete) {
+      args.res = hash_table_->Lookup<false>(internal_key, SortedElem);
+    } else {
+      args.res = hash_table_->Lookup<true>(internal_key, SortedElemType);
     }
-    case Status::NotFound: {
-      if (args.op == WriteBatchImpl::Op::Delete) {
-        allocate_space = false;
+    switch (args.res.s) {
+      case Status::Ok: {
+        break;
       }
-      break;
+      case Status::NotFound: {
+        if (op_delete) {
+          allocate_space = false;
+        }
+        break;
+      }
+      case Status::MemoryOverflow: {
+        return args.res.s;
+      }
+      default:
+        std::abort();  // never should reach
     }
-    case Status::MemoryOverflow: {
-      return args.res.s;
+  } else {
+    // TODO Maybe no delete check for no hash indexed skiplist?
+    Splice splice(this);
+    Seek(args.elem, &splice);
+    auto key_exist = [&]() {
+      return (splice.next_pmem_record->entry.meta.type == SortedElem) &&
+             equal_string_view(splice.next_pmem_record->Key(), internal_key);
+    };
+    if (op_delete && !key_exist()) {
+      allocate_space = false;
     }
-    default:
-      std::abort();  // never should reach
   }
 
   if (allocate_space) {
