@@ -26,6 +26,8 @@ class WriteBatch {
 
   virtual void Clear() = 0;
 
+  virtual size_t Size() const = 0;
+
   virtual ~WriteBatch() = default;
 };
 

@@ -742,14 +742,18 @@ TEST_F(BatchWriteTest, BatchWriteString) {
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
         values[tid][i] = GetRandomString(120);
+        // The first Put is overwritten by the second Put.
+        batch->StringPut(keys[tid][i], GetRandomString(120));
         batch->StringPut(keys[tid][i], values[tid][i]);
       } else {
         values[tid][i].clear();
+        batch->StringDelete(keys[tid][i]);
         batch->StringDelete(keys[tid][i]);
       }
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing key
         batch->StringDelete("non-existing");
+        ASSERT_EQ(batch->Size(), batch_size + 1);
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
@@ -2203,6 +2207,9 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
 
   // Check KVs in engine, the batch is indeed rolled back.
   LaunchNThreads(num_threads, Check);
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
 
   delete engine;
 }
