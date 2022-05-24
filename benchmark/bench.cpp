@@ -194,7 +194,7 @@ void DBWrite(int tid) {
         } else {
           batch->StringPut(key, std::string{value.data(), value.size()});
           if (operations % FLAGS_batch_size == 0) {
-            engine->BatchWrite(batch);
+            s = engine->BatchWrite(batch);
             batch->Clear();
           }
         }
@@ -211,7 +211,7 @@ void DBWrite(int tid) {
           batch->HashPut(collections[cid], key,
                          std::string{value.data(), value.size()});
           if (operations % FLAGS_batch_size == 0) {
-            engine->BatchWrite(batch);
+            s = engine->BatchWrite(batch);
             batch->Clear();
           }
         }
@@ -424,7 +424,7 @@ void ProcessBenchmarkConfigs() {
     }
   }
 
-  if (FLAGS_num_collection > 0 && (bench_data_type == DataType::List)) {
+  if (FLAGS_batch_size > 0 && (bench_data_type == DataType::List)) {
     throw std::invalid_argument{R"(List does not support batch write.)"};
   }
 

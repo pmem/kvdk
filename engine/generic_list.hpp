@@ -242,6 +242,19 @@ class GenericList final : public Collection {
     last = la;
     sz.store(n);
     lock_table = lt;
+#if KVDK_DEBUG_LEVEL > 0
+    size_t cnt = 0;
+    for (auto iter = Front(); iter != Tail(); ++iter) {
+      ++cnt;
+      kvdk_assert(iter->entry.meta.type == DataType, "");
+      kvdk_assert(iter->Validate(), "");
+      kvdk_assert(ExtractID(iter->Key()) == collection_id_, "");
+      Iterator iter2{iter};
+      kvdk_assert(++(--iter2) == iter, "");
+      kvdk_assert(--(++iter2) == iter, "");
+    }
+    kvdk_assert(cnt == n, "");
+#endif  // KVDK_DEBUG_LEVEL > 0
   }
 
   LockType* Mutex() { return &mu; }
@@ -299,8 +312,7 @@ class GenericList final : public Collection {
   // EraseWithLock() presumes that DLRecord* rec is secured by caller,
   // only one thread is calling EraseWithLock() on rec and rec is valid.
   template <typename DelayFree>
-  Iterator EraseWithLock(DLRecord* rec, DelayFree delay_free) {
-    Iterator pos{this, rec};
+  Iterator EraseWithLock(Iterator pos, DelayFree delay_free) {
     LockTable::GuardType guard;
     lockPosAndPrev(pos, guard);
     return erase_impl(pos, delay_free);
@@ -473,7 +485,7 @@ class GenericList final : public Collection {
     --prev;
     Iterator next{pos};
     ++next;
-    kvdk_assert(!prev.dirty() && !next.dirty(), "");
+    kvdk_assert(!prev.dirty() && !next.dirty() && !pos.dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -1031,17 +1043,11 @@ class GenericListBuilder final {
       }
     }
     auto CountElems = [&](std::vector<DLRecord*> const& work_load) {
-      std::unordered_map<CollectionIDType, size_t> cache{1024};
       for (DLRecord* rec : work_load) {
+        size_t cnt = 0;
+        CollectionIDType id = Collection::ExtractID(rec->Key());
         while (true) {
-          CollectionIDType id = Collection::ExtractID(rec->Key());
-          ++cache[id];
-          if (cache.load_factor() > 0.7) {
-            for (auto const& pair : cache) {
-              primers.at(pair.first).size.fetch_add(pair.second);
-            }
-            cache.clear();
-          }
+          ++cnt;
           if (rec->next == NullPMemOffset) {
             break;
           }
@@ -1050,9 +1056,7 @@ class GenericListBuilder final {
             break;
           }
         }
-      }
-      for (auto const& pair : cache) {
-        primers.at(pair.first).size.fetch_add(pair.second);
+        primers.at(id).size.fetch_add(cnt);
       }
     };
     std::vector<std::thread> workers;

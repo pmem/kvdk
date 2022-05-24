@@ -50,6 +50,9 @@ void BatchWriteLog::DecodeFrom(char const* src) {
               "");
 
   size_t total_bytes = *reinterpret_cast<size_t const*>(src);
+  if (total_bytes == 0) {
+    return;
+  }
 
   StringView sw{src, total_bytes};
 

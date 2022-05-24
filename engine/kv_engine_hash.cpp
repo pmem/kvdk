@@ -204,9 +204,10 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
                       caller == hashElemOpImplCaller::HashDelete,
                   "");
       if (result.s == Status::Ok) {
+        DLRecord* old_rec = result.entry.GetIndex().dl_record;
+        auto pos = hlist->MakeIterator(old_rec);
         removeKeyOrElem(result);
-        hlist->EraseWithLock(result.entry.GetIndex().dl_record,
-                             [&](DLRecord* rec) { delayFree(rec); });
+        hlist->EraseWithLock(pos, [&](DLRecord* rec) { delayFree(rec); });
       }
       return result.s;
     }
@@ -336,8 +337,9 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
 Status KVEngine::hashListWrite(HashWriteArgs& args) {
   if (args.op == WriteBatchImpl::Op::Delete) {
     // Unlink and mark as dirty, but do not free.
-    args.hlist->EraseWithLock(args.res.entry.GetIndex().dl_record,
-                              [](DLRecord*) { return; });
+    DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
+    auto pos = args.hlist->MakeIterator(old_rec);
+    args.hlist->EraseWithLock(pos, [](DLRecord*) { return; });
   } else {
     if (args.res.s == Status::NotFound) {
       args.hlist->PushFrontWithLock(args.space, args.ts, args.field,
