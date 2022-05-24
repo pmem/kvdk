@@ -22,10 +22,6 @@ class WriteBatchImpl final : public WriteBatch {
     Op op;
     std::string key;
     std::string value;
-
-    friend bool operator==(StringOp const& lhs, StringOp const& rhs) {
-      return lhs.key == rhs.key;
-    }
   };
 
   struct SortedOp {
@@ -33,10 +29,6 @@ class WriteBatchImpl final : public WriteBatch {
     std::string key;
     std::string field;
     std::string value;
-
-    friend bool operator==(SortedOp const& lhs, SortedOp const& rhs) {
-      return lhs.key == rhs.key && lhs.field == rhs.field;
-    }
   };
 
   struct HashOp {
@@ -44,29 +36,28 @@ class WriteBatchImpl final : public WriteBatch {
     std::string key;
     std::string field;
     std::string value;
+  };
 
-    friend bool operator==(HashOp const& lhs, HashOp const& rhs) {
+  struct HashEq {
+    size_t operator()(StringOp const& string_op) const {
+      return xxh_hash(string_op.key);
+    }
+    size_t operator()(SortedOp const& sorted_op) const {
+      return xxh_hash(sorted_op.key) ^ xxh_hash(sorted_op.field);
+    }
+    size_t operator()(HashOp const& hash_op) const {
+      return xxh_hash(hash_op.key) ^ xxh_hash(hash_op.field);
+    }
+    bool operator()(StringOp const& lhs, StringOp const& rhs) const {
+      return lhs.key == rhs.key;
+    }
+    bool operator()(SortedOp const& lhs, SortedOp const& rhs) const {
+      return lhs.key == rhs.key && lhs.field == rhs.field;
+    }
+    bool operator()(HashOp const& lhs, HashOp const& rhs) const {
       return lhs.key == rhs.key && lhs.field == rhs.field;
     }
   };
-
-  struct Hasher {
-    size_t operator()(StringOp const& string_op) const {
-      return xxh_hash(string_op.op) ^ xxh_hash(string_op.key);
-    }
-    size_t operator()(SortedOp const& sorted_op) const {
-      return xxh_hash(sorted_op.op) ^ xxh_hash(sorted_op.key) ^
-             xxh_hash(sorted_op.field);
-    }
-    size_t operator()(HashOp const& hash_op) const {
-      return xxh_hash(hash_op.op) ^ xxh_hash(hash_op.key) ^
-             xxh_hash(hash_op.field);
-    }
-  };
-
-  using StringOpBatch = std::unordered_set<StringOp, Hasher>;
-  using SortedOpBatch = std::unordered_set<SortedOp, Hasher>;
-  using HashOpBatch = std::unordered_set<HashOp, Hasher>;
 
   void StringPut(std::string const& key, std::string const& value) final {
     StringOp op{Op::Put, key, value};
@@ -115,6 +106,10 @@ class WriteBatchImpl final : public WriteBatch {
   size_t Size() const final {
     return string_ops.size() + sorted_ops.size() + hash_ops.size();
   }
+
+  using StringOpBatch = std::unordered_set<StringOp, HashEq, HashEq>;
+  using SortedOpBatch = std::unordered_set<SortedOp, HashEq, HashEq>;
+  using HashOpBatch = std::unordered_set<HashOp, HashEq, HashEq>;
 
   StringOpBatch const& StringOps() const { return string_ops; }
   SortedOpBatch const& SortedOps() const { return sorted_ops; }
