@@ -10,13 +10,9 @@
 #include "hash_table.hpp"
 #include "kvdk/write_batch.hpp"
 #include "utils/codec.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
-
-template <typename T>
-unsigned long std_hash(T const& val) {
-  return std::hash<T>{}(val);
-}
 
 class WriteBatchImpl final : public WriteBatch {
  public:
@@ -55,18 +51,22 @@ class WriteBatchImpl final : public WriteBatch {
   };
 
   struct Hasher {
-    size_t operator()(StringOp const& string_op) {
-      return std_hash(string_op.op) ^ std_hash(string_op.key);
+    size_t operator()(StringOp const& string_op) const {
+      return xxh_hash(string_op.op) ^ xxh_hash(string_op.key);
     }
-    size_t operator()(SortedOp const& sorted_op) {
-      return std_hash(sorted_op.op) ^ std_hash(sorted_op.key) ^
-             std_hash(sorted_op.field);
+    size_t operator()(SortedOp const& sorted_op) const {
+      return xxh_hash(sorted_op.op) ^ xxh_hash(sorted_op.key) ^
+             xxh_hash(sorted_op.field);
     }
-    size_t operator()(HashOp const& hash_op) {
-      return std_hash(hash_op.op) ^ std_hash(hash_op.key) ^
-             std_hash(hash_op.field);
+    size_t operator()(HashOp const& hash_op) const {
+      return xxh_hash(hash_op.op) ^ xxh_hash(hash_op.key) ^
+             xxh_hash(hash_op.field);
     }
   };
+
+  using StringOpBatch = std::unordered_set<StringOp, Hasher>;
+  using SortedOpBatch = std::unordered_set<SortedOp, Hasher>;
+  using HashOpBatch = std::unordered_set<HashOp, Hasher>;
 
   void StringPut(std::string const& key, std::string const& value) final {
     StringOp op{Op::Put, key, value};
@@ -115,10 +115,6 @@ class WriteBatchImpl final : public WriteBatch {
   size_t Size() const {
     return string_ops.size() + sorted_ops.size() + hash_ops.size();
   }
-
-  using StringOpBatch = std::unordered_set<StringOp, Hasher>;
-  using SortedOpBatch = std::unordered_set<SortedOp, Hasher>;
-  using HashOpBatch = std::unordered_set<HashOp, Hasher>;
 
   StringOpBatch const& StringOps() const { return string_ops; }
   SortedOpBatch const& SortedOps() const { return sorted_ops; }

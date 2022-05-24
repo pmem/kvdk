@@ -58,6 +58,11 @@ inline uint64_t hash_str(const char* str, uint64_t size) {
   return XXH3_64bits(str, size);
 }
 
+template <typename T>
+inline uint64_t xxh_hash(T const& val) {
+  return XXH3_64bits(&val, sizeof(T));
+}
+
 inline uint64_t get_checksum(const void* data, uint64_t size) {
   return XXH3_64bits(data, size);
 }
