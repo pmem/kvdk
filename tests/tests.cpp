@@ -746,6 +746,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
       } else {
         values[tid][i].clear();
         batch->StringDelete(keys[tid][i]);
+        batch->StringDelete(keys[tid][i]);
       }
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing key
