@@ -359,7 +359,61 @@ Status Skiplist::Write(SortedWriteArgs& args) {
                      .s
                : putImplNoHash(args.elem, args.value, args.ts, args.space).s;
   } else {
-    return deleteImplWithHash(args.res, args.elem, args.ts, args.space).s;
+    if (IndexWithHashtable()) {
+      return deleteImplWithHash(args.res, args.elem, args.ts, args.space).s;
+    } else {
+      WriteResult ret;
+      std::string internal_key(InternalKey(args.elem));
+      Splice splice(this);
+      Seek(args.elem, &splice);
+      bool found =
+          (splice.next_pmem_record->entry.meta.type &
+           (SortedElem | SortedElemDelete)) &&
+          equal_string_view(splice.next_pmem_record->Key(), internal_key);
+
+      if (!found) {
+        return ret.s;
+      }
+
+      if (splice.next_pmem_record->entry.meta.type == SortedElemDelete) {
+        return ret.s;
+      }
+
+      ret.existing_record = splice.next_pmem_record;
+      if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
+        ret.dram_node = splice.nexts[1];
+      }
+
+      // try to write delete record
+      auto guard = lockRecordPosition(ret.existing_record);
+
+      assert(ret.existing_record->entry.meta.timestamp < args.ts);
+      PMemOffsetType existing_offset =
+          pmem_allocator_->addr2offset_checked(ret.existing_record);
+      PMemOffsetType prev_offset = ret.existing_record->prev;
+      DLRecord* prev_record =
+          pmem_allocator_->offset2addr_checked<DLRecord>(prev_offset);
+      PMemOffsetType next_offset = ret.existing_record->next;
+      DLRecord* next_record =
+          pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
+      DLRecord* delete_record = DLRecord::PersistDLRecord(
+          pmem_allocator_->offset2addr(args.space.offset), args.space.size,
+          args.ts, SortedElemDelete, existing_offset, prev_offset, next_offset,
+          internal_key, "");
+      ret.write_record = delete_record;
+
+      kvdk_assert(prev_record->next == existing_offset,
+                  "wrong linkage in skiplist delete after acquiring lock");
+      kvdk_assert(next_record->prev == existing_offset,
+                  "wrong linkage in skiplist delete after acquiring lock");
+
+      linkDLRecord(prev_record, next_record, delete_record);
+
+      if (ret.dram_node) {
+        ret.dram_node->record = delete_record;
+      }
+      return ret.s;
+    }
   }
   // TODO: implement no hash indexed ones
 }
