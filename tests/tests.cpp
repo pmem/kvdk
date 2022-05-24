@@ -740,6 +740,8 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
         values[tid][i] = GetRandomString(120);
+        // The first Put is overwritten by the second Put.
+        batch->StringPut(keys[tid][i], GetRandomString(120));
         batch->StringPut(keys[tid][i], values[tid][i]);
       } else {
         values[tid][i].clear();
