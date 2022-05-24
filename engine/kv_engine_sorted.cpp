@@ -311,11 +311,17 @@ Status KVEngine::restoreSortedElem(DLRecord* elem) {
   return sorted_rebuilder_->AddElement(elem);
 }
 
+Status KVEngine::sortedWritePrepare(SortedWriteArgs& args) {
+  args.skiplist->PrepareWrite(args);
+}
+
 Status KVEngine::sortedWrite(SortedWriteArgs& args) {
   return args.skiplist->Write(args);
 }
 
-Status KVEngine::sortedPublish(SortedWriteArgs const&) { return Status::Ok; }
+Status KVEngine::sortedWritePublish(SortedWriteArgs const&) {
+  return Status::Ok;
+}
 
 Status KVEngine::sortedRollback(TimeStampType,
                                 BatchWriteLog::SortedLogEntry const& log) {

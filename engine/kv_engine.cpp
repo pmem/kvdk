@@ -903,26 +903,16 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prepare for Strings
   for (auto& args : string_args) {
     args.ts = bw_token.Timestamp();
-    args.res = lookupKey<true>(args.key, StringRecordType);
-    if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
-        args.res.s != Status::Outdated) {
-      return args.res.s;
-    }
-    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
-      // No need to do anything for delete a non-existing String
-      continue;
-    }
-    args.space = pmem_allocator_->Allocate(
-        StringRecord::RecordSize(args.key, args.value));
-    if (args.space.size == 0) {
-      return Status::PmemOverflow;
+    Status s = stringWritePrepare(args);
+    if (s != Status::Ok) {
+      return s;
     }
   }
 
   // Prepare for Sorted Elements
   for (auto& args : sorted_args) {
     args.ts = bw_token.Timestamp();
-    Status s = args.skiplist->PrepareWrite(args);
+    Status s = sortedWritePrepare(args);
     if (s != Status::Ok) {
       return s;
     }
@@ -1033,7 +1023,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    Status s = stringPublish(args);
+    Status s = stringWritePublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
@@ -1042,7 +1032,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    Status s = sortedPublish(args);
+    Status s = sortedWritePublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
