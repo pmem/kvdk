@@ -2047,6 +2047,90 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
 #if KVDK_DEBUG_LEVEL > 0
 
+TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
+  size_t num_threads = 1;
+  configs.max_access_threads = num_threads + 1;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  size_t batch_size = 100;
+  size_t count = batch_size;
+
+  std::string key{"sorted"};
+  ASSERT_EQ(engine->SortedCreate(key), Status::Ok);
+
+  std::vector<std::vector<std::string>> elems(num_threads);
+  std::vector<std::vector<std::string>> values(num_threads);
+  // Two new field that will be inserted but rolled back
+  std::string rolled_back{"rolled-back"};
+  std::string rolled_back2{"rolled-back2"};
+  for (size_t tid = 0; tid < num_threads; tid++) {
+    for (size_t i = 0; i < count; i++) {
+      elems[tid].push_back(std::to_string(tid) + "_" + std::to_string(i));
+      values[tid].emplace_back();
+    }
+  }
+
+  auto Put = [&](size_t tid) {
+    for (size_t i = 0; i < count; i++) {
+      values[tid][i] = GetRandomString(120);
+      ASSERT_EQ(engine->SortedPut(key, elems[tid][i], values[tid][i]),
+                Status::Ok);
+    }
+  };
+
+  auto BatchWrite = [&](size_t tid) {
+    auto batch = engine->WriteBatchCreate();
+    batch->SortedPut(key, rolled_back, GetRandomString(120));
+    for (size_t i = 0; i < batch_size; i++) {
+      if (i % 2 == 0) {
+        batch->SortedPut(key, elems[tid][i], GetRandomString(120));
+      } else {
+        batch->SortedDelete(key, elems[tid][i]);
+      }
+    }
+    batch->SortedPut(key, rolled_back2, GetRandomString(120));
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+  };
+
+  auto Check = [&](size_t tid) {
+    std::string val_resp;
+    ASSERT_EQ(engine->SortedGet(key, rolled_back, &val_resp), Status::NotFound);
+    ASSERT_EQ(engine->SortedGet(key, rolled_back2, &val_resp),
+              Status::NotFound);
+    for (size_t i = 0; i < count; i++) {
+      if (values[tid][i].empty()) {
+        ASSERT_EQ(engine->SortedGet(key, elems[tid][i], &val_resp),
+                  Status::NotFound);
+      } else {
+        ASSERT_EQ(engine->SortedGet(key, elems[tid][i], &val_resp), Status::Ok);
+        ASSERT_EQ(values[tid][i], val_resp);
+      }
+    }
+  };
+
+  SyncPoint::GetInstance()->EnableCrashPoint(
+      "KVEngine::batchWriteImpl::BeforeCommit");
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  // Put some KVs
+  LaunchNThreads(num_threads, Put);
+  // Check KVs in engine
+  LaunchNThreads(num_threads, Check);
+  // Try BatchWrite, crashed by crash point before commitment
+  // the BatchWrite will not be visible after recovery
+  LaunchNThreads(num_threads, BatchWrite);
+
+  Reboot();
+
+  // Check KVs in engine, the batch is indeed rolled back.
+  LaunchNThreads(num_threads, Check);
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+
+  delete engine;
+}
+
 TEST_F(EngineBasicTest, BatchWriteRollBack) {
   // This test case can only be run with single thread.
   // If multiple threads run batchwrite,

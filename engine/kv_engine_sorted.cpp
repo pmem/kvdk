@@ -320,6 +320,7 @@ Status KVEngine::sortedPublish(SortedWriteArgs const&) { return Status::Ok; }
 Status KVEngine::sortedRollback(TimeStampType,
                                 BatchWriteLog::SortedLogEntry const& log) {
   DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+  // TODO only one linked is ok?
   if (Skiplist::CheckRecordLinkage(elem, pmem_allocator_.get())) {
     if (elem->old_version != kNullPMemOffset) {
       Skiplist::Replace(
@@ -332,7 +333,7 @@ Status KVEngine::sortedRollback(TimeStampType,
     }
   }
   elem->Destroy();
-  return Status::NotSupported;
+  return Status::Ok;
 }
 
 }  // namespace KVDK_NAMESPACE
