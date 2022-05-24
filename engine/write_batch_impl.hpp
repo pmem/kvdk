@@ -3,6 +3,8 @@
 #include <x86intrin.h>
 
 #include <cstring>
+#include <unordered_set>
+#include <vector>
 
 #include "alias.hpp"
 #include "hash_table.hpp"
@@ -10,6 +12,11 @@
 #include "utils/codec.hpp"
 
 namespace KVDK_NAMESPACE {
+
+template <typename T>
+unsigned long std_hash(T const& val) {
+  return std::hash<T>{}(val);
+}
 
 class WriteBatchImpl final : public WriteBatch {
  public:
@@ -19,6 +26,10 @@ class WriteBatchImpl final : public WriteBatch {
     Op op;
     std::string key;
     std::string value;
+
+    friend bool operator==(StringOp const& lhs, StringOp const& rhs) {
+      return lhs.key == rhs.key;
+    }
   };
 
   struct SortedOp {
@@ -26,6 +37,10 @@ class WriteBatchImpl final : public WriteBatch {
     std::string key;
     std::string field;
     std::string value;
+
+    friend bool operator==(SortedOp const& lhs, SortedOp const& rhs) {
+      return lhs.key == rhs.key && lhs.field == rhs.field;
+    }
   };
 
   struct HashOp {
@@ -33,32 +48,62 @@ class WriteBatchImpl final : public WriteBatch {
     std::string key;
     std::string field;
     std::string value;
+
+    friend bool operator==(HashOp const& lhs, HashOp const& rhs) {
+      return lhs.key == rhs.key && lhs.field == rhs.field;
+    }
+  };
+
+  struct Hasher {
+    size_t operator()(StringOp const& string_op) {
+      return std_hash(string_op.op) ^ std_hash(string_op.key);
+    }
+    size_t operator()(SortedOp const& sorted_op) {
+      return std_hash(sorted_op.op) ^ std_hash(sorted_op.key) ^
+             std_hash(sorted_op.field);
+    }
+    size_t operator()(HashOp const& hash_op) {
+      return std_hash(hash_op.op) ^ std_hash(hash_op.key) ^
+             std_hash(hash_op.field);
+    }
   };
 
   void StringPut(std::string const& key, std::string const& value) final {
-    string_ops.emplace_back(StringOp{Op::Put, key, value});
+    StringOp op{Op::Put, key, value};
+    string_ops.erase(op);
+    string_ops.insert(op);
   }
 
   void StringDelete(std::string const& key) final {
-    string_ops.emplace_back(StringOp{Op::Delete, key, std::string{}});
+    StringOp op{Op::Delete, key, std::string{}};
+    string_ops.erase(op);
+    string_ops.insert(op);
   }
 
   void SortedPut(std::string const& key, std::string const& field,
                  std::string const& value) final {
-    sorted_ops.emplace_back(SortedOp{Op::Put, key, field, value});
+    SortedOp op{Op::Put, key, field, value};
+    sorted_ops.erase(op);
+    sorted_ops.insert(op);
   }
 
   void SortedDelete(std::string const& key, std::string const& field) final {
-    sorted_ops.emplace_back(SortedOp{Op::Delete, key, field, std::string{}});
+    SortedOp op{Op::Delete, key, field, std::string{}};
+    sorted_ops.erase(op);
+    sorted_ops.insert(op);
   }
 
   void HashPut(std::string const& key, std::string const& field,
                std::string const& value) final {
-    hash_ops.emplace_back(HashOp{Op::Put, key, field, value});
+    HashOp op{Op::Put, key, field, value};
+    hash_ops.erase(op);
+    hash_ops.insert(op);
   }
 
   void HashDelete(std::string const& key, std::string const& field) final {
-    hash_ops.emplace_back(HashOp{Op::Delete, key, field, std::string{}});
+    HashOp op{Op::Delete, key, field, std::string{}};
+    hash_ops.erase(op);
+    hash_ops.insert(op);
   }
 
   void Clear() final {
@@ -71,9 +116,9 @@ class WriteBatchImpl final : public WriteBatch {
     return string_ops.size() + sorted_ops.size() + hash_ops.size();
   }
 
-  using StringOpBatch = std::vector<StringOp>;
-  using SortedOpBatch = std::vector<SortedOp>;
-  using HashOpBatch = std::vector<HashOp>;
+  using StringOpBatch = std::unordered_set<StringOp, Hasher>;
+  using SortedOpBatch = std::unordered_set<SortedOp, Hasher>;
+  using HashOpBatch = std::unordered_set<HashOp, Hasher>;
 
   StringOpBatch const& StringOps() const { return string_ops; }
   SortedOpBatch const& SortedOps() const { return sorted_ops; }
