@@ -112,7 +112,7 @@ class WriteBatchImpl final : public WriteBatch {
     hash_ops.clear();
   }
 
-  size_t Size() const {
+  size_t Size() const final {
     return string_ops.size() + sorted_ops.size() + hash_ops.size();
   }
 

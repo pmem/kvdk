@@ -750,6 +750,7 @@ TEST_F(EngineBasicTest, TestBatchWrite) {
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing key
         batch->StringDelete("asdf");
+        ASSERT_EQ(batch->Size(), batch_size + 1);
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
       }
