@@ -316,7 +316,8 @@ Status KVEngine::sortedWritePrepare(SortedWriteArgs& args) {
 }
 
 Status KVEngine::sortedWrite(SortedWriteArgs& args) {
-  return args.skiplist->Write(args);
+  // Notice Jiayu: we do not handle delay free here as is no longer need soon
+  return args.skiplist->Write(args).s;
 }
 
 Status KVEngine::sortedWritePublish(SortedWriteArgs const&) {
