@@ -391,25 +391,39 @@ class Skiplist : public Collection {
   }
 
  private:
-  WriteResult putImplNoHash(Splice& seek_result, const StringView& key,
-                            const StringView& value, TimeStampType timestamp,
-                            const SpaceEntry& space);
+  WriteResult putImplNoHash(const StringView& key, const StringView& value,
+                            TimeStampType timestamp);
 
-  WriteResult putImplWithHash(const HashTable::LookupResult& lookup_result,
-                              const StringView& key, const StringView& value,
-                              TimeStampType timestamp, const SpaceEntry& space);
+  // put impl with prepared seek result and pmem space
+  WriteResult putPreparedNoHash(Splice& seek_result, const StringView& key,
+                                const StringView& value,
+                                TimeStampType timestamp,
+                                const SpaceEntry& space);
+
+  WriteResult putImplWithHash(const StringView& key, const StringView& value,
+                              TimeStampType timestamp);
+
+  // put impl with prepared lookup result and pmem space
+  WriteResult putPreparedWithHash(const HashTable::LookupResult& lookup_result,
+                                  const StringView& key,
+                                  const StringView& value,
+                                  TimeStampType timestamp,
+                                  const SpaceEntry& space);
 
   WriteResult deleteImplNoHash(const Splice& seek_result, const StringView& key,
                                TimeStampType timestamp);
 
-  WriteResult deleteImplNoHash(DLRecord* existing_record,
-                               SkiplistNode* dram_node, const StringView& key,
-                               TimeStampType timestamp,
-                               const SpaceEntry& space);
+  // put impl with prepared existing record and pmem space
+  WriteResult deletePreparedNoHash(DLRecord* existing_record,
+                                   SkiplistNode* dram_node,
+                                   const StringView& key,
+                                   TimeStampType timestamp,
+                                   const SpaceEntry& space);
 
-  WriteResult deleteImplWithHash(const HashTable::LookupResult& lookup_result,
-                                 const StringView& key, TimeStampType timestamp,
-                                 const SpaceEntry& space);
+  // put impl with prepared lookup result of existing record and pmem space
+  WriteResult deletePreparedWithHash(
+      const HashTable::LookupResult& lookup_result, const StringView& key,
+      TimeStampType timestamp, const SpaceEntry& space);
 
   // Link DLRecord "linking" between "prev" and "next"
   static void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,

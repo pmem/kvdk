@@ -416,10 +416,6 @@ void ProcessBenchmarkConfigs() {
     case DataType::List:
     case DataType::Hashes:
     case DataType::Sorted: {
-      if (FLAGS_batch_size > 0) {
-        throw std::invalid_argument{
-            R"(Batch is only supported for "hash" type data.)"};
-      }
       collections.resize(FLAGS_num_collection);
       for (size_t i = 0; i < FLAGS_num_collection; i++) {
         collections[i] = "Collection_" + std::to_string(i);
