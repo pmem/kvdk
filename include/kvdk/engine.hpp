@@ -197,7 +197,7 @@ class Engine {
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
   virtual Status ListMultiPushFront(StringView key,
-                                    std::vector<StringView> elems) = 0;
+                                    std::vector<StringView>const& elems) = 0;
 
   // Push multiple elements to the back of List
   // Return:
@@ -206,7 +206,7 @@ class Engine {
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
   virtual Status ListMultiPushBack(StringView key,
-                                   std::vector<StringView> elems) = 0;
+                                   std::vector<StringView>const& elems) = 0;
 
   // Pop first N element of List
   // Return:
@@ -235,7 +235,7 @@ class Engine {
   //    Status::NotFound if key does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
   virtual Status ListMove(StringView src, int src_pos, StringView dst,
-                          int dst_pos) = 0;
+                          int dst_pos, std::string* elem) = 0;
 
   // Insert an element before element indexed by ListIterator pos
   // Return:
