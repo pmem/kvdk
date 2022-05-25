@@ -10,9 +10,8 @@
 
 #pragma once
 
-#include <assert.h>
-
 #include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -39,7 +38,6 @@ struct SyncImpl {
     using base::what;
 
    public:
-    CrashPoint() = default;
     CrashPoint(std::string const& msg) : base{msg} {}
   };
 

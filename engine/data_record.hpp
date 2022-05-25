@@ -207,7 +207,7 @@ struct StringRecord {
   }
 
   uint32_t Checksum() {
-    // we don't checksum next/prev pointers
+    // we don't checksum expire time and old version
     uint32_t meta_checksum_size = sizeof(DataMeta);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
@@ -361,7 +361,7 @@ struct DLRecord {
   }
 
   uint32_t Checksum() {
-    // we don't checksum next/prev pointers
+    // we don't checksum next/prev pointers, expire time and old_version
     uint32_t meta_checksum_size = sizeof(DataMeta);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 

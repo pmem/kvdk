@@ -66,11 +66,6 @@ class EngineBasicTest : public testing::Test {
     int res __attribute__((unused)) = system(cmd);
     config_option = OptionConfig::Default;
     cnt = 500;
-
-#if KVDK_DEBUG_LEVEL > 0
-    SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->Reset();
-#endif
   }
 
   virtual void TearDown() {
@@ -362,8 +357,6 @@ class EngineBasicTest : public testing::Test {
 };
 
 TEST_F(EngineBasicTest, TestUniqueKey) {
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
   std::string sorted_collection("sorted_collection");
   std::string unordered_collection("unordered_collection");
   std::string list("list");
@@ -1803,7 +1796,7 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   {
     // key is expired. Check expired time when reading.
     ASSERT_EQ(engine->Put(key, val, write_options1), Status::Ok);
-    sleep(2);
+    sleep(1);
     ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
 
     // update kv pair with new expired time.
@@ -1980,7 +1973,12 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 #if KVDK_DEBUG_LEVEL > 0
 
 TEST_F(EngineBasicTest, BatchWriteRollBack) {
-  size_t num_threads = 16;
+  // This test case can only be run with single thread.
+  // If multiple threads run batchwrite,
+  // a thread may crash at CrashPoint and release its id,
+  // another thread may reuse this id and the old batch log file
+  // is overwritten.
+  size_t num_threads = 1;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -2011,14 +2009,14 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
-        batch->StringPut(keys[tid][i], GetRandomString(120));
+        batch->StringPut(keys[tid][i], GetRandomString(110));
       } else {
         batch->StringDelete(keys[tid][i]);
         // Delete a non-existing key
         batch->StringDelete("asdf");
       }
-      ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     }
+    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
   };
 
   auto Check = [&](size_t tid) {
@@ -2029,6 +2027,8 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
     }
   };
 
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->EnableCrashPoint(
       "KVEngine::batchWriteImpl::BeforeCommit");
   SyncPoint::GetInstance()->EnableProcessing();
@@ -2047,6 +2047,8 @@ TEST_F(EngineBasicTest, BatchWriteRollBack) {
   LaunchNThreads(num_threads, Check);
 
   SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+
   delete engine;
 }
 
@@ -2363,7 +2365,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       Status s = engine->GetTTL(key, &ttl_time);
       if (s == Status::Ok) {
         if (ttl_time > 1) {
-          ASSERT_EQ(INT32_MAX / 10000, ttl_time / 10000);
+          ASSERT_EQ(ttl_time <= INT32_MAX, true);
         }
       } else {
         ASSERT_EQ(s, Status::NotFound);
@@ -2430,7 +2432,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(PutString));
     ts.emplace_back(std::thread(ExpireString));
-    sleep(1);
+    sleep(2);
     ts.emplace_back(std::thread(ExpiredClean));
     for (auto& t : ts) t.join();
 
@@ -2453,8 +2455,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
     GetSorted();
     t.join();
   }
-
-  SyncPoint::GetInstance()->DisableProcessing();
   delete engine;
 }
 #endif
