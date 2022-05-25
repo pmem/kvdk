@@ -194,14 +194,23 @@ void DBWrite(int tid) {
         } else {
           batch->StringPut(key, std::string{value.data(), value.size()});
           if (operations % FLAGS_batch_size == 0) {
-            engine->BatchWrite(batch);
+            s = engine->BatchWrite(batch);
             batch->Clear();
           }
         }
         break;
       }
       case DataType::Sorted: {
-        s = engine->SortedPut(collections[cid], key, value);
+        if (FLAGS_batch_size == 0) {
+          s = engine->SortedPut(collections[cid], key, value);
+        } else {
+          batch->SortedPut(collections[cid], key,
+                           std::string{value.data(), value.size()});
+          if (operations % FLAGS_batch_size == 0) {
+            s = engine->BatchWrite(batch);
+            batch->Clear();
+          }
+        }
         break;
       }
       case DataType::Hashes: {
