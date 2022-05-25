@@ -416,7 +416,6 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
     }
   } else {
     args.seek_result = std::unique_ptr<Splice>(new Splice(args.skiplist));
-    // TODO Maybe no delete check for no hash indexed skiplist?
     Seek(args.elem, args.seek_result.get());
     auto key_exist = [&]() {
       return (args.seek_result->next_pmem_record->entry.meta.type ==
