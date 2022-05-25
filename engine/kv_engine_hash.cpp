@@ -204,9 +204,10 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
                       caller == hashElemOpImplCaller::HashDelete,
                   "");
       if (result.s == Status::Ok) {
+        DLRecord* old_rec = result.entry.GetIndex().dl_record;
+        auto pos = hlist->MakeIterator(old_rec);
         removeKeyOrElem(result);
-        hlist->EraseWithLock(result.entry.GetIndex().dl_record,
-                             [&](DLRecord* rec) { delayFree(rec); });
+        hlist->EraseWithLock(pos, [&](DLRecord* rec) { delayFree(rec); });
       }
       return result.s;
     }
@@ -333,15 +334,67 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
   return Status::Ok;
 }
 
-Status KVEngine::hashListWrite(HashWriteArgs&) { return Status::NotSupported; }
-
-Status KVEngine::hashListPublish(HashWriteArgs const&) {
-  return Status::NotSupported;
+Status KVEngine::hashListWrite(HashWriteArgs& args) {
+  if (args.op == WriteBatchImpl::Op::Delete) {
+    // Unlink and mark as dirty, but do not free.
+    DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
+    auto pos = args.hlist->MakeIterator(old_rec);
+    args.hlist->EraseWithLock(pos, [](DLRecord*) { return; });
+  } else {
+    if (args.res.s == Status::NotFound) {
+      args.hlist->PushFrontWithLock(args.space, args.ts, args.field,
+                                    args.value);
+    } else {
+      kvdk_assert(args.res.s == Status::Ok, "");
+      DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
+      auto pos = args.hlist->MakeIterator(old_rec);
+      args.hlist->ReplaceWithLock(args.space, pos, args.ts, args.field,
+                                  args.value, [&](DLRecord*) { return; });
+    }
+    args.new_rec = static_cast<DLRecord*>(
+        pmem_allocator_->offset2addr_checked(args.space.offset));
+  }
+  return Status::Ok;
 }
 
-Status KVEngine::hashListRollback(TimeStampType,
-                                  BatchWriteLog::HashLogEntry const&) {
-  return Status::NotSupported;
+Status KVEngine::hashListPublish(HashWriteArgs const& args) {
+  if (args.res.s == Status::Ok) {
+    delayFree(args.res.entry.GetIndex().dl_record);
+  }
+  if (args.op == WriteBatchImpl::Op::Delete) {
+    removeKeyOrElem(args.res);
+  } else {
+    insertKeyOrElem(args.res, RecordType::HashElem, args.new_rec);
+  }
+  return Status::Ok;
+}
+
+Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
+  switch (log.op) {
+    case BatchWriteLog::Op::Delete: {
+      kvdk_assert(log.new_offset == kNullPMemOffset, "");
+      DLRecord* old_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.old_offset));
+      hash_list_builder_->RollbackDeletion(old_rec);
+      break;
+    }
+    case BatchWriteLog::Op::Put: {
+      kvdk_assert(log.old_offset == kNullPMemOffset, "");
+      DLRecord* new_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.new_offset));
+      hash_list_builder_->RollbackEmplacement(new_rec);
+      break;
+    }
+    case BatchWriteLog::Op::Replace: {
+      DLRecord* old_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.old_offset));
+      DLRecord* new_rec = static_cast<DLRecord*>(
+          pmem_allocator_->offset2addr_checked(log.new_offset));
+      hash_list_builder_->RollbackReplacement(new_rec, old_rec);
+      break;
+    }
+  }
+  return Status::Ok;
 }
 
 }  // namespace KVDK_NAMESPACE

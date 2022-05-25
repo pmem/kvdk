@@ -109,7 +109,7 @@ std::atomic_uint64_t write_ops{0};
 std::atomic_uint64_t read_not_found{0};
 std::atomic_uint64_t read_cnt{UINT64_MAX};
 std::vector<std::string> collections;
-Engine* engine;
+Engine* engine{nullptr};
 std::string value_pool;
 size_t operations_per_thread;
 bool has_timed_out;
@@ -166,7 +166,11 @@ size_t generate_value_size(size_t tid) {
 
 void DBWrite(int tid) {
   std::string key(8, ' ');
-  auto batch = engine->WriteBatchCreate();
+  std::unique_ptr<WriteBatch> batch;
+  if (engine != nullptr) {
+    batch = engine->WriteBatchCreate();
+  }
+
   for (size_t operations = 0; operations < operations_per_thread;
        ++operations) {
     if (has_timed_out) {
@@ -190,7 +194,7 @@ void DBWrite(int tid) {
         } else {
           batch->StringPut(key, std::string{value.data(), value.size()});
           if (operations % FLAGS_batch_size == 0) {
-            engine->BatchWrite(batch);
+            s = engine->BatchWrite(batch);
             batch->Clear();
           }
         }
@@ -201,7 +205,16 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Hashes: {
-        s = engine->HashPut(collections[cid], key, value);
+        if (FLAGS_batch_size == 0) {
+          s = engine->HashPut(collections[cid], key, value);
+        } else {
+          batch->HashPut(collections[cid], key,
+                         std::string{value.data(), value.size()});
+          if (operations % FLAGS_batch_size == 0) {
+            s = engine->BatchWrite(batch);
+            batch->Clear();
+          }
+        }
         break;
       }
       case DataType::List: {
@@ -400,19 +413,19 @@ void ProcessBenchmarkConfigs() {
     case DataType::Blackhole: {
       break;
     }
-    case DataType::List:
     case DataType::Hashes:
+    case DataType::List:
     case DataType::Sorted: {
-      if (FLAGS_batch_size > 0) {
-        throw std::invalid_argument{
-            R"(Batch is only supported for "hash" type data.)"};
-      }
       collections.resize(FLAGS_num_collection);
       for (size_t i = 0; i < FLAGS_num_collection; i++) {
         collections[i] = "Collection_" + std::to_string(i);
       }
       break;
     }
+  }
+
+  if (FLAGS_batch_size > 0 && (bench_data_type == DataType::List)) {
+    throw std::invalid_argument{R"(List does not support batch write.)"};
   }
 
   // Check for scan flag
@@ -476,7 +489,9 @@ int main(int argc, char** argv) {
     configs.use_devdax_mode = FLAGS_use_devdax_mode;
     Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
     if (s != Status::Ok) {
-      throw std::runtime_error{"Fail to open KVDK instance."};
+      throw std::runtime_error{
+          std::string{"Fail to open KVDK instance. Status: "} +
+          KVDKStatusStrings[static_cast<int>(s)]};
     }
   }
 
@@ -500,16 +515,42 @@ int main(int argc, char** argv) {
     latencies.resize(FLAGS_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
   }
 
-  if (bench_data_type == DataType::Sorted) {
-    printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
-    for (auto col : collections) {
-      SortedCollectionConfigs s_configs;
-      Status s = engine->SortedCreate(col, s_configs);
-      if (s != Status::Ok) {
-        throw std::runtime_error{"Fail to create Sorted collection"};
+  switch (bench_data_type) {
+    case DataType::Sorted: {
+      printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
+      for (auto col : collections) {
+        SortedCollectionConfigs s_configs;
+        Status s = engine->SortedCreate(col, s_configs);
+        if (s != Status::Ok) {
+          throw std::runtime_error{"Fail to create Sorted collection"};
+        }
       }
+      engine->ReleaseAccessThread();
+      break;
     }
-    engine->ReleaseAccessThread();
+    case DataType::Hashes: {
+      for (auto col : collections) {
+        Status s = engine->HashCreate(col);
+        if (s != Status::Ok && s != Status::Existed) {
+          throw std::runtime_error{"Fail to create Hashset"};
+        }
+      }
+      engine->ReleaseAccessThread();
+      break;
+    }
+    case DataType::List: {
+      for (auto col : collections) {
+        Status s = engine->ListCreate(col);
+        if (s != Status::Ok && s != Status::Existed) {
+          throw std::runtime_error{"Fail to create List"};
+        }
+      }
+      engine->ReleaseAccessThread();
+      break;
+    }
+    default: {
+      break;
+    }
   }
 
   has_finished.resize(FLAGS_threads, 0);
