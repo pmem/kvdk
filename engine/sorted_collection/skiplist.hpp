@@ -402,6 +402,11 @@ class Skiplist : public Collection {
   WriteResult deleteImplNoHash(const Splice& seek_result, const StringView& key,
                                TimeStampType timestamp);
 
+  WriteResult deleteImplNoHash(DLRecord* existing_record,
+                               SkiplistNode* dram_node, const StringView& key,
+                               TimeStampType timestamp,
+                               const SpaceEntry& space);
+
   WriteResult deleteImplWithHash(const HashTable::LookupResult& lookup_result,
                                  const StringView& key, TimeStampType timestamp,
                                  const SpaceEntry& space);
