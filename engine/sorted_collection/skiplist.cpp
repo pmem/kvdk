@@ -475,15 +475,18 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
 
 bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
                        SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
-                       LockTable* lock_table) {
+                       LockTable* lock_table, bool check_linkage) {
   auto guard = lockRecordPosition(old_record, pmem_allocator, lock_table);
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
   auto old_record_offset = pmem_allocator->addr2offset(old_record);
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
-  bool on_list =
-      prev->next == old_record_offset && next->prev == old_record_offset;
+  bool on_list = prev != nullptr && next != nullptr;
+  if (check_linkage) {
+    on_list = on_list && prev->next == old_record_offset &&
+              next->prev == old_record_offset;
+  }
   if (on_list) {
     if (prev_offset == old_record_offset && next_offset == old_record_offset) {
       // old record is the only record (the header) in the skiplist, so we make
@@ -518,7 +521,8 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
 }
 
 bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
-                      PMEMAllocator* pmem_allocator, LockTable* lock_table) {
+                      PMEMAllocator* pmem_allocator, LockTable* lock_table,
+                      bool check_linkage) {
   auto guard = lockRecordPosition(purging_record, pmem_allocator, lock_table);
 
   PMemOffsetType purging_offset = pmem_allocator->addr2offset(purging_record);
@@ -526,7 +530,11 @@ bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
   PMemOffsetType next_offset = purging_record->next;
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
-  bool on_list = prev->next == purging_offset && next->prev == purging_offset;
+  bool on_list = prev != nullptr && next != nullptr;
+  if (check_linkage) {
+    on_list =
+        on_list && prev->next == purging_offset && next->prev == purging_offset;
+  }
   if (on_list) {
     // For repair in recovery due to crashes during pointers changing, we should
     // first unlink deleting entry from next's prev.(It is the reverse process

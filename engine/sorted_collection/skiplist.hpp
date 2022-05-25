@@ -340,7 +340,8 @@ class Skiplist : public Collection {
   //
   // Notice: key of the purging record should already been locked by engine
   static bool Remove(DLRecord* purging_record, SkiplistNode* dram_node,
-                     PMEMAllocator* pmem_allocator, LockTable* lock_table);
+                     PMEMAllocator* pmem_allocator, LockTable* lock_table,
+                     bool check_linkage = true);
 
   // Replace "old_record" from its skiplist with "replacing_record", please make
   // sure the key order is correct after replace
@@ -358,7 +359,7 @@ class Skiplist : public Collection {
   // Notice: key of the replacing record should already been locked by engine
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
                       SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
-                      LockTable* lock_table);
+                      LockTable* lock_table, bool check_linkage = true);
 
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
