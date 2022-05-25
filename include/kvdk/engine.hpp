@@ -214,8 +214,8 @@ class Engine {
   //    Status::WrongType if key is not a List.
   //    Status::NotFound if key does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListMultiPopFront(StringView key,
-                                   std::vector<std::string*> elems) = 0;
+  virtual Status ListMultiPopFront(StringView key, size_t n,
+                                   std::vector<std::string>* elems) = 0;
 
   // Pop last N element of List
   // Return:
@@ -223,8 +223,8 @@ class Engine {
   //    Status::WrongType if key is not a List.
   //    Status::NotFound if key does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListMultiPopBack(StringView key,
-                                  std::vector<std::string*> elems) = 0;
+  virtual Status ListMultiPopBack(StringView key, size_t n,
+                                  std::vector<std::string>* elems) = 0;
 
   // Move element in src List at src_pos to dst List at dst_pos
   // src_pos and dst_pos can only be 0, indicating List front,

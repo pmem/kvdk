@@ -168,10 +168,10 @@ class KVEngine : public Engine {
   Status ListMultiPushFront(StringView key,
                             std::vector<StringView> elems) final;
   Status ListMultiPushBack(StringView key, std::vector<StringView> elems) final;
-  Status ListMultiPopFront(StringView key,
-                           std::vector<std::string*> elems) final;
-  Status ListMultiPopBack(StringView key,
-                          std::vector<std::string*> elems) final;
+  Status ListMultiPopFront(StringView key, size_t n,
+                           std::vector<std::string>* elems) final;
+  Status ListMultiPopBack(StringView key, size_t n,
+                          std::vector<std::string>* elems) final;
   Status ListMove(StringView src, int src_pos, StringView dst,
                   int dst_pos) final;
   Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
@@ -417,6 +417,11 @@ class KVEngine : public Engine {
   // Should only be called when the List is no longer
   // accessible to any other thread.
   Status listDestroy(List* list);
+
+  Status listMultiPushImpl(StringView key, std::vector<StringView>, int pos);
+  Status listWrite(ListWriteArgs& args);
+  Status listPublish(ListWriteArgs const& args);
+  Status listRollback(BatchWriteLog::ListLogEntry const& entry);
 
   /// Hash helper funtions
   Status hashListFind(StringView key, HashList** hlist);
