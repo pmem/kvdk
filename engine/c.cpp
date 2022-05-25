@@ -383,9 +383,9 @@ KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos) {
   return engine->rep->ListErase(pos->rep);
 }
 
-KVDKStatus KVDKListPut(KVDKEngine* engine, KVDKListIterator* pos,
-                       char const* elem_data, size_t elem_len) {
-  return engine->rep->ListPut(pos->rep, StringView{elem_data, elem_len});
+KVDKStatus KVDKListReplace(KVDKEngine* engine, KVDKListIterator* pos,
+                           char const* elem_data, size_t elem_len) {
+  return engine->rep->ListReplace(pos->rep, StringView{elem_data, elem_len});
 }
 
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,

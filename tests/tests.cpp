@@ -1306,7 +1306,7 @@ TEST_F(EngineBasicTest, TestList) {
     --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
-    ASSERT_EQ(engine->ListPut(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListReplace(iter, elem), Status::Ok);
     *iter2 = elem;
     ASSERT_EQ(iter->Value(), *iter2);
 

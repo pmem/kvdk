@@ -158,7 +158,6 @@ class Engine {
   virtual Status ListLength(StringView key, size_t* sz) = 0;
 
   // Push element as first element of List
-  // Create a new List and push the element if key is not found
   // Return:
   //    Status::InvalidDataSize if key or elem is too long
   //    Status::WrongType if key is not a List.
@@ -167,7 +166,6 @@ class Engine {
   virtual Status ListPushFront(StringView key, StringView elem) = 0;
 
   // Push element as last element of List
-  // Create a new List and push the element if key is not found
   // Return:
   //    Status::InvalidDataSize if key or elem is too long
   //    Status::WrongType if key is not a List.
@@ -185,13 +183,59 @@ class Engine {
   virtual Status ListPopFront(StringView key, std::string* elem) = 0;
 
   // Pop last element of List
-  // Erase the key if List is empty after pop.
   // Return:
   //    Status::InvalidDataSize if key is too long
   //    Status::WrongType if key is not a List.
   //    Status::NotFound if key does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
   virtual Status ListPopBack(StringView key, std::string* elem) = 0;
+
+  // Push multiple elements to the front of List
+  // Return:
+  //    Status::InvalidDataSize if key or elem is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::Ok if operation succeeded.
+  virtual Status ListMultiPushFront(StringView key,
+                                    std::vector<StringView> elems) = 0;
+
+  // Push multiple elements to the back of List
+  // Return:
+  //    Status::InvalidDataSize if key or elem is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::Ok if operation succeeded.
+  virtual Status ListMultiPushBack(StringView key,
+                                   std::vector<StringView> elems) = 0;
+
+  // Pop first N element of List
+  // Return:
+  //    Status::InvalidDataSize if key is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::NotFound if key does not exist or has expired.
+  //    Status::Ok and element if operation succeeded.
+  virtual Status ListMultiPopFront(StringView key,
+                                   std::vector<std::string*> elems) = 0;
+
+  // Pop last N element of List
+  // Return:
+  //    Status::InvalidDataSize if key is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::NotFound if key does not exist or has expired.
+  //    Status::Ok and element if operation succeeded.
+  virtual Status ListMultiPopBack(StringView key,
+                                  std::vector<std::string*> elems) = 0;
+
+  // Move element in src List at src_pos to dst List at dst_pos
+  // src_pos and dst_pos can only be 0, indicating List front,
+  // or -1, indicating List back.
+  // Return:
+  //    Status::InvalidDataSize if key is too long
+  //    Status::WrongType if key is not a List.
+  //    Status::NotFound if key does not exist or has expired.
+  //    Status::Ok and element if operation succeeded.
+  virtual Status ListMove(StringView src, int src_pos, StringView dst,
+                          int dst_pos) = 0;
 
   // Insert an element before element indexed by ListIterator pos
   // Return:
@@ -227,8 +271,8 @@ class Engine {
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted. pos is unchanged but invalid.
   //    Status::Ok if operation succeeded. pos points to updated element.
-  virtual Status ListPut(std::unique_ptr<ListIterator> const& pos,
-                         StringView elem) = 0;
+  virtual Status ListReplace(std::unique_ptr<ListIterator> const& pos,
+                             StringView elem) = 0;
 
   // Create an ListIterator from List
   // Return:
