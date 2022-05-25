@@ -350,24 +350,28 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
 }
 
 Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
+  WriteResult ret;
   if (args.skiplist != this) {
-    WriteResult ret;
     ret.s = Status::InvalidArgument;
     return ret;
   }
   if (args.op == WriteBatchImpl::Op::Put) {
     if (IndexWithHashtable()) {
-      return putPreparedWithHash(args.lookup_result, args.elem, args.value,
-                                 args.ts, args.space);
+      ret = putPreparedWithHash(args.lookup_result, args.elem, args.value,
+                                args.ts, args.space);
     } else {
       kvdk_assert(args.seek_result != nullptr, "");
-      return putPreparedNoHash(*args.seek_result, args.elem, args.value,
-                               args.ts, args.space);
+      ret = putPreparedNoHash(*args.seek_result, args.elem, args.value, args.ts,
+                              args.space);
+    }
+    if (ret.existing_record == nullptr ||
+        ret.existing_record->entry.meta.type == SortedElemDelete) {
+      UpdateSize(1);
     }
   } else {
     if (IndexWithHashtable()) {
-      return deletePreparedWithHash(args.lookup_result, args.elem, args.ts,
-                                    args.space);
+      ret = deletePreparedWithHash(args.lookup_result, args.elem, args.ts,
+                                   args.space);
     } else {
       kvdk_assert(args.seek_result != nullptr, "");
       DLRecord* existing_record = args.seek_result->next_pmem_record;
@@ -376,10 +380,16 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
           args.seek_result->nexts[1]->record == existing_record) {
         dram_node = args.seek_result->nexts[1];
       }
-      return deletePreparedNoHash(existing_record, dram_node, args.elem,
-                                  args.ts, args.space);
+      ret = deletePreparedNoHash(existing_record, dram_node, args.elem, args.ts,
+                                 args.space);
+    }
+
+    if (ret.existing_record != nullptr &&
+        ret.existing_record->entry.meta.type == SortedElem) {
+      UpdateSize(-1);
     }
   }
+  return ret;
 }
 
 Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
