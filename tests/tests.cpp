@@ -1336,6 +1336,77 @@ TEST_F(EngineBasicTest, TestList) {
     }
   };
 
+  auto LMultiPush = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    for (size_t j = 0; j < count; j++) {
+      list_copy.push_front(elems[j]);
+    }
+    ASSERT_EQ(engine->ListMultiPushFront(key, elems), Status::Ok);
+    size_t sz;
+    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto RMultiPush = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    for (size_t j = 0; j < count; j++) {
+      list_copy.push_back(elems[j]);
+    }
+    ASSERT_EQ(engine->ListMultiPushBack(key, elems), Status::Ok);
+    size_t sz;
+    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto LMultiPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    std::vector<std::string> elems_resp;
+    ASSERT_EQ(engine->ListMultiPopFront(key, count, &elems_resp), Status::Ok);
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(list_copy.front(), elems_resp[j]);
+      list_copy.pop_front();
+    }
+    size_t sz;
+    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto RMultiPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    std::vector<std::string> elems_resp;
+    ASSERT_EQ(engine->ListMultiPopBack(key, count, &elems_resp), Status::Ok);
+    for (size_t j = 0; j < count; j++) {
+      ASSERT_EQ(list_copy.back(), elems_resp[j]);
+      list_copy.pop_back();
+    }
+    size_t sz;
+    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto RPushLPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+
+    auto elem_copy = list_copy.front();
+    list_copy.push_back(elem_copy);
+    list_copy.pop_front();
+
+    std::string elem;
+    ASSERT_EQ(engine->ListMove(key, 0, key, -1, &elem), Status::Ok);
+    ASSERT_EQ(elem, elem_copy);
+
+    size_t sz;
+    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
   auto ListIterate = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
@@ -1409,6 +1480,15 @@ TEST_F(EngineBasicTest, TestList) {
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, RPush);
     LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, LMultiPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, RMultiPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, LMultiPop);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, RMultiPop);
+    LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, LPop);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, RPop);
@@ -1416,8 +1496,11 @@ TEST_F(EngineBasicTest, TestList) {
     LaunchNThreads(num_threads, RPush);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, LPush);
+    LaunchNThreads(num_threads, ListIterate);
     for (size_t j = 0; j < 100; j++) {
       LaunchNThreads(num_threads, ListInsertPutRemove);
+      LaunchNThreads(num_threads, ListIterate);
+      LaunchNThreads(num_threads, RPushLPop);
       LaunchNThreads(num_threads, ListIterate);
     }
     Reboot();
@@ -2207,6 +2290,110 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
 
   // Check KVs in engine, the batch is indeed rolled back.
   LaunchNThreads(num_threads, Check);
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+
+  delete engine;
+}
+
+TEST_F(BatchWriteTest, ListBatchOperationRollback) {
+  configs.max_access_threads = 1;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  size_t count = 100;
+
+  std::string key{"hash"};
+  ASSERT_EQ(engine->ListCreate(key), Status::Ok);
+
+  std::vector<std::string> elems;
+  std::list<std::string> list_copy;
+
+  auto Fill = [&]() {
+    for (size_t i = 0; i < count; i++) {
+      elems.emplace_back(GetRandomString(120));
+      list_copy.push_back(elems.back());
+      ASSERT_EQ(engine->ListPushBack(key, elems.back()), Status::Ok);
+    }
+  };
+
+  auto LMultiPush = [&]() {
+    ASSERT_THROW(engine->ListMultiPushFront(key, elems), SyncPoint::CrashPoint);
+  };
+
+  auto RMultiPush = [&]() {
+    ASSERT_THROW(engine->ListMultiPushFront(key, elems), SyncPoint::CrashPoint);
+  };
+
+  auto LMultiPop = [&]() {
+    std::vector<std::string> elems_resp;
+    ASSERT_THROW(engine->ListMultiPopFront(key, count, &elems_resp),
+                 SyncPoint::CrashPoint);
+  };
+
+  auto RMultiPop = [&]() {
+    std::vector<std::string> elems_resp;
+    ASSERT_THROW(engine->ListMultiPopFront(key, count, &elems_resp),
+                 SyncPoint::CrashPoint);
+  };
+
+  auto RPushLPop = [&]() {
+    std::string elem;
+    ASSERT_THROW(engine->ListMove(key, 0, key, -1, &elem),
+                 SyncPoint::CrashPoint);
+  };
+
+  auto Check = [&]() {
+    auto iter = engine->ListCreateIterator(key);
+    ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
+    if (iter != nullptr) {
+      iter->Seek(0);
+      for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
+        ASSERT_TRUE(iter->Valid());
+        ASSERT_EQ(iter->Value(), *iter2);
+        iter->Next();
+      }
+
+      iter->Seek(-1);
+      for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
+           iter2++) {
+        ASSERT_TRUE(iter->Valid());
+        ASSERT_EQ(iter->Value(), *iter2);
+        iter->Prev();
+      }
+    }
+  };
+
+  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::ListMove");
+  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listMultiPushImpl");
+  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listMultiPopImpl");
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  Fill();
+  Check();
+
+  Reboot();
+  Check();
+
+  LMultiPush();
+  Reboot();
+  Check();
+
+  LMultiPop();
+  Reboot();
+  Check();
+
+  RMultiPush();
+  Reboot();
+  Check();
+
+  RMultiPop();
+  Reboot();
+  Check();
+
+  RPushLPop();
+  Reboot();
+  Check();
 
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();

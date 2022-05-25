@@ -265,7 +265,8 @@ class BatchWriteLog {
   }
 
   size_t Size() const {
-    return string_logs.size() + sorted_logs.size() + hash_logs.size() + list_logs.size();
+    return string_logs.size() + sorted_logs.size() + hash_logs.size() +
+           list_logs.size();
   }
 
   static size_t Capacity() { return (1UL << 20); }
