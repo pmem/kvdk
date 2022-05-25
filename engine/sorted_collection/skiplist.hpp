@@ -391,14 +391,16 @@ class Skiplist : public Collection {
   }
 
  private:
-  WriteResult putImplNoHash(const StringView& key, const StringView& value,
-                            TimeStampType timestamp, const SpaceEntry& space);
+  WriteResult putImplNoHash(Splice& seek_result, const StringView& key,
+                            const StringView& value, TimeStampType timestamp,
+                            const SpaceEntry& space);
 
   WriteResult putImplWithHash(const HashTable::LookupResult& lookup_result,
                               const StringView& key, const StringView& value,
                               TimeStampType timestamp, const SpaceEntry& space);
 
-  WriteResult deleteImplNoHash(const StringView& key, TimeStampType timestamp);
+  WriteResult deleteImplNoHash(const Splice& seek_result, const StringView& key,
+                               TimeStampType timestamp);
 
   WriteResult deleteImplWithHash(const HashTable::LookupResult& lookup_result,
                                  const StringView& key, TimeStampType timestamp,

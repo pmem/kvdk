@@ -12,6 +12,7 @@
 #include "../kv_engine.hpp"
 #include "../utils/codec.hpp"
 #include "../utils/sync_point.hpp"
+#include "../write_batch_impl.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -353,32 +354,30 @@ Status Skiplist::Write(SortedWriteArgs& args) {
     return Status::InvalidArgument;
   }
   if (args.op == WriteBatchImpl::Op::Put) {
-    return IndexWithHashtable()
-               ? putImplWithHash(args.res, args.elem, args.value, args.ts,
-                                 args.space)
-                     .s
-               : putImplNoHash(args.elem, args.value, args.ts, args.space).s;
+    if (IndexWithHashtable()) {
+      return putImplWithHash(args.lookup_result, args.elem, args.value, args.ts,
+                             args.space)
+          .s;
+    } else {
+      kvdk_assert(args.seek_result != nullptr, "");
+      return putImplNoHash(*args.seek_result, args.elem, args.value, args.ts,
+                           args.space)
+          .s;
+    }
   } else {
     if (IndexWithHashtable()) {
-      return deleteImplWithHash(args.res, args.elem, args.ts, args.space).s;
+      return deleteImplWithHash(args.lookup_result, args.elem, args.ts,
+                                args.space)
+          .s;
     } else {
+      kvdk_assert(args.seek_result != nullptr, "");
       WriteResult ret;
       std::string internal_key(InternalKey(args.elem));
-      Splice splice(this);
-      Seek(args.elem, &splice);
-      bool found =
-          (splice.next_pmem_record->entry.meta.type &
-           (SortedElem | SortedElemDelete)) &&
-          equal_string_view(splice.next_pmem_record->Key(), internal_key);
-
-      if (!found) {
-        return ret.s;
-      }
-
-      if (splice.next_pmem_record->entry.meta.type == SortedElemDelete) {
-        return ret.s;
-      }
-
+      Splice& splice = *args.seek_result;
+      kvdk_assert(
+          (splice.next_pmem_record->entry.meta.type == SortedElem) &&
+              equal_string_view(splice.next_pmem_record->Key(), internal_key),
+          "");
       ret.existing_record = splice.next_pmem_record;
       if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
         ret.dram_node = splice.nexts[1];
@@ -429,11 +428,12 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
   bool allocate_space = true;
   if (IndexWithHashtable()) {
     if (op_delete) {
-      args.res = hash_table_->Lookup<false>(internal_key, SortedElem);
+      args.lookup_result = hash_table_->Lookup<false>(internal_key, SortedElem);
     } else {
-      args.res = hash_table_->Lookup<true>(internal_key, SortedElemType);
+      args.lookup_result =
+          hash_table_->Lookup<true>(internal_key, SortedElemType);
     }
-    switch (args.res.s) {
+    switch (args.lookup_result.s) {
       case Status::Ok: {
         break;
       }
@@ -444,18 +444,20 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
         break;
       }
       case Status::MemoryOverflow: {
-        return args.res.s;
+        return args.lookup_result.s;
       }
       default:
         std::abort();  // never should reach
     }
   } else {
+    args.seek_result = std::unique_ptr<Splice>(new Splice(args.skiplist));
     // TODO Maybe no delete check for no hash indexed skiplist?
-    Splice splice(this);
-    Seek(args.elem, &splice);
+    Seek(args.elem, args.seek_result.get());
     auto key_exist = [&]() {
-      return (splice.next_pmem_record->entry.meta.type == SortedElem) &&
-             equal_string_view(splice.next_pmem_record->Key(), internal_key);
+      return (args.seek_result->next_pmem_record->entry.meta.type ==
+              SortedElem) &&
+             equal_string_view(args.seek_result->next_pmem_record->Key(),
+                               internal_key);
     };
     if (op_delete && !key_exist()) {
       allocate_space = false;
@@ -490,7 +492,9 @@ Skiplist::WriteResult Skiplist::Delete(const StringView& key,
       }
     }
   } else {
-    ret = deleteImplNoHash(key, timestamp);
+    Splice seek_result(this);
+    Seek(key, &seek_result);
+    ret = deleteImplNoHash(seek_result, key, timestamp);
   }
   if (ret.existing_record != nullptr &&
       ret.existing_record->entry.meta.type == SortedElem) {
@@ -515,7 +519,9 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
           hash_table_->Lookup<true>(internal_key, SortedElemType);
       ret = putImplWithHash(lookup_result, key, value, timestamp, space);
     } else {
-      ret = putImplNoHash(key, value, timestamp, space);
+      Splice splice(this);
+      Seek(key, &splice);
+      ret = putImplNoHash(splice, key, value, timestamp, space);
     }
     if (ret.existing_record == nullptr ||
         ret.existing_record->entry.meta.type == SortedElemDelete) {
@@ -684,27 +690,29 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
   }
 }
 
-Skiplist::WriteResult Skiplist::deleteImplNoHash(const StringView& key,
+Skiplist::WriteResult Skiplist::deleteImplNoHash(const Splice& seek_result,
+                                                 const StringView& key,
                                                  TimeStampType timestamp) {
+  kvdk_assert(seek_result.seeking_list == this, "");
   WriteResult ret;
   std::string internal_key(InternalKey(key));
-  Splice splice(this);
-  Seek(key, &splice);
-  bool found = (splice.next_pmem_record->entry.meta.type &
-                (SortedElem | SortedElemDelete)) &&
-               equal_string_view(splice.next_pmem_record->Key(), internal_key);
+  bool found =
+      (seek_result.next_pmem_record->entry.meta.type &
+       (SortedElem | SortedElemDelete)) &&
+      equal_string_view(seek_result.next_pmem_record->Key(), internal_key);
 
   if (!found) {
     return ret;
   }
 
-  if (splice.next_pmem_record->entry.meta.type == SortedElemDelete) {
+  if (seek_result.next_pmem_record->entry.meta.type == SortedElemDelete) {
     return ret;
   }
 
-  ret.existing_record = splice.next_pmem_record;
-  if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
-    ret.dram_node = splice.nexts[1];
+  ret.existing_record = seek_result.next_pmem_record;
+  if (seek_result.nexts[1] &&
+      seek_result.nexts[1]->record == ret.existing_record) {
+    ret.dram_node = seek_result.nexts[1];
   }
 
   // try to write delete record
@@ -839,7 +847,9 @@ Skiplist::WriteResult Skiplist::putImplWithHash(
       break;
     }
     case Status::NotFound: {
-      ret = putImplNoHash(key, value, timestamp, space);
+      Splice splice(this);
+      Seek(key, &splice);
+      ret = putImplNoHash(splice, key, value, timestamp, space);
       if (ret.s != Status::Ok) {
         return ret;
       }
@@ -867,7 +877,8 @@ Skiplist::WriteResult Skiplist::putImplWithHash(
   return ret;
 }
 
-Skiplist::WriteResult Skiplist::putImplNoHash(const StringView& key,
+Skiplist::WriteResult Skiplist::putImplNoHash(Splice& seek_result,
+                                              const StringView& key,
                                               const StringView& value,
                                               TimeStampType timestamp,
                                               const SpaceEntry& space) {
@@ -880,19 +891,18 @@ Skiplist::WriteResult Skiplist::putImplNoHash(const StringView& key,
   LockTable::GuardType update_guard;
 
 seek_write_position:
-  Splice splice(this);
-  Seek(key, &splice);
-
-  key_exist = !IndexWithHashtable() /* a hash indexed skiplist call this
-                                        function only if key not exist */
-              && (splice.next_pmem_record->entry.meta.type &
-                  (SortedElem | SortedElemDelete)) &&
-              equal_string_view(splice.next_pmem_record->Key(), internal_key);
+  key_exist =
+      !IndexWithHashtable() /* a hash indexed skiplist call this
+                                function only if key not exist */
+      && (seek_result.next_pmem_record->entry.meta.type &
+          (SortedElem | SortedElemDelete)) &&
+      equal_string_view(seek_result.next_pmem_record->Key(), internal_key);
 
   if (key_exist) {
-    ret.existing_record = splice.next_pmem_record;
-    if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
-      ret.dram_node = splice.nexts[1];
+    ret.existing_record = seek_result.next_pmem_record;
+    if (seek_result.nexts[1] &&
+        seek_result.nexts[1]->record == ret.existing_record) {
+      ret.dram_node = seek_result.nexts[1];
     }
 
     update_guard = lockRecordPosition(ret.existing_record);
@@ -902,12 +912,13 @@ seek_write_position:
         ret.existing_record->next);
   } else {
     ret.existing_record = nullptr;
-    if (!lockInsertPosition(key, splice.prev_pmem_record,
-                            splice.next_pmem_record, &insert_guard)) {
+    if (!lockInsertPosition(key, seek_result.prev_pmem_record,
+                            seek_result.next_pmem_record, &insert_guard)) {
+      Seek(key, &seek_result);
       goto seek_write_position;
     }
-    next_record = splice.next_pmem_record;
-    prev_record = splice.prev_pmem_record;
+    next_record = seek_result.next_pmem_record;
+    prev_record = seek_result.prev_pmem_record;
   }
 
   uint64_t prev_offset = pmem_allocator_->addr2offset_checked(prev_record);
@@ -926,16 +937,17 @@ seek_write_position:
       auto height = ret.dram_node->Height();
       for (int i = 1; i <= height; i++) {
         while (1) {
-          auto now_next = splice.prevs[i]->Next(i);
+          auto now_next = seek_result.prevs[i]->Next(i);
           // if next has been changed or been deleted, re-compute
-          if (now_next.RawPointer() == splice.nexts[i] &&
+          if (now_next.RawPointer() == seek_result.nexts[i] &&
               now_next.GetTag() == SkiplistNode::NodeStatus::Normal) {
-            ret.dram_node->RelaxedSetNext(i, splice.nexts[i]);
-            if (splice.prevs[i]->CASNext(i, splice.nexts[i], ret.dram_node)) {
+            ret.dram_node->RelaxedSetNext(i, seek_result.nexts[i]);
+            if (seek_result.prevs[i]->CASNext(i, seek_result.nexts[i],
+                                              ret.dram_node)) {
               break;
             }
           } else {
-            splice.Recompute(key, i);
+            seek_result.Recompute(key, i);
           }
         }
       }

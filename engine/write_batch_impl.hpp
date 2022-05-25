@@ -11,6 +11,8 @@
 
 namespace KVDK_NAMESPACE {
 
+struct Splice;
+
 class WriteBatchImpl final : public WriteBatch {
  public:
   enum class Op { Put, Delete };
@@ -109,7 +111,8 @@ struct SortedWriteArgs {
   Skiplist* skiplist;
   SpaceEntry space;
   TimeStampType ts;
-  HashTable::LookupResult res;
+  HashTable::LookupResult lookup_result;
+  std::unique_ptr<Splice> seek_result;
   PointerWithTag<void*, PointerType> new_rec;
 
   void Assign(WriteBatchImpl::SortedOp const& sorted_op) {
