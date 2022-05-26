@@ -9,6 +9,14 @@
 #include "c/kvdk_c.hpp"
 
 extern "C" {
+KVDKRegex* KVDKRegexCreate(char const* data, size_t len) {
+  KVDKRegex* re = new KVDKRegex;
+  re->rep = std::regex{data, len};
+  return re;
+}
+
+void KVDKRegexDestroy(KVDKRegex* re) { delete re; }
+
 KVDKConfigs* KVDKCreateConfigs() { return new KVDKConfigs; }
 
 void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,

@@ -1396,7 +1396,7 @@ TEST_F(EngineBasicTest, TestHash) {
     ASSERT_EQ(len, cnt);
   };
 
-  auto HashIterate = [&](size_t) {
+  auto HashIterate = [&](size_t tid) {
     umap combined;
     for (size_t tid = 0; tid < num_threads; tid++) {
       umap const& local_copy = local_copies[tid];
@@ -1421,6 +1421,17 @@ TEST_F(EngineBasicTest, TestHash) {
       ASSERT_EQ(combined[iter->Key()], iter->Value());
     }
     ASSERT_EQ(cnt, combined.size());
+
+    std::regex re1{".*"};
+    std::regex re2{std::to_string(tid) + "_.*"};
+    size_t match_cnt1 = 0;
+    size_t match_cnt2 = 0;
+    for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+      match_cnt1 += iter->MatchKey(re1) ? 1 : 0;
+      match_cnt2 += iter->MatchKey(re2) ? 1 : 0;
+    }
+    ASSERT_EQ(match_cnt1, combined.size());
+    ASSERT_EQ(match_cnt2, local_copies[tid].size());
   };
 
   std::string counter{"counter"};
