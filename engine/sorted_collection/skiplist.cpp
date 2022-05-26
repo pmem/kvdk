@@ -352,11 +352,11 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
   }
   if (args.op == WriteBatchImpl::Op::Put) {
     if (IndexWithHashtable()) {
-      ret = putPreparedWithHash(args.lookup_result, args.elem, args.value,
+      ret = putPreparedWithHash(args.lookup_result, args.key, args.value,
                                 args.ts, args.space);
     } else {
       kvdk_assert(args.seek_result != nullptr, "");
-      ret = putPreparedNoHash(*args.seek_result, args.elem, args.value, args.ts,
+      ret = putPreparedNoHash(*args.seek_result, args.key, args.value, args.ts,
                               args.space);
     }
     if (ret.existing_record == nullptr ||
@@ -365,7 +365,7 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
     }
   } else {
     if (IndexWithHashtable()) {
-      ret = deletePreparedWithHash(args.lookup_result, args.elem, args.ts,
+      ret = deletePreparedWithHash(args.lookup_result, args.key, args.ts,
                                    args.space);
     } else {
       kvdk_assert(args.seek_result != nullptr, "");
@@ -375,7 +375,7 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
           args.seek_result->nexts[1]->record == existing_record) {
         dram_node = args.seek_result->nexts[1];
       }
-      ret = deletePreparedNoHash(existing_record, dram_node, args.elem, args.ts,
+      ret = deletePreparedNoHash(existing_record, dram_node, args.key, args.ts,
                                  args.space);
     }
 
@@ -394,7 +394,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
     return Status::InvalidArgument;
   }
   bool op_delete = args.op == WriteBatchImpl::Op::Delete;
-  std::string internal_key(InternalKey(args.elem));
+  std::string internal_key(InternalKey(args.key));
   bool allocate_space = true;
   if (IndexWithHashtable()) {
     if (op_delete) {
@@ -421,7 +421,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
     }
   } else {
     args.seek_result = std::unique_ptr<Splice>(new Splice(args.skiplist));
-    Seek(args.elem, args.seek_result.get());
+    Seek(args.key, args.seek_result.get());
     auto key_exist = [&]() {
       return (args.seek_result->next_pmem_record->entry.meta.type ==
               SortedElem) &&

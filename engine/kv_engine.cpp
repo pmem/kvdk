@@ -839,7 +839,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Lookup Skiplists and Hashes for further operations
   for (auto const& sorted_op : batch.SortedOps()) {
-    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
+    auto res = lookupKey<false>(sorted_op.collection, SortedHeaderType);
     /// TODO: this is a temporary work-around
     /// We cannot lock both key and field, which may trigger deadlock.
     /// However, if a collection is created and a field is inserted,
@@ -873,7 +873,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     keys_to_lock.push_back(string_op.key);
   }
   for (auto const& arg : sorted_args) {
-    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.elem));
+    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
   }
   for (auto const& arg : hash_args) {
     keys_to_lock.push_back(arg.hlist->InternalKey(arg.field));
