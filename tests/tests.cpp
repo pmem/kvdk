@@ -758,7 +758,7 @@ TEST_F(BatchWriteTest, BatchWriteString) {
       }
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing key
-        batch->StringDelete("non-existing")
+        batch->StringDelete("non-existing");
         ASSERT_EQ(batch->Size(), batch_size + 1);
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
