@@ -17,10 +17,10 @@ class EngineCAPITestBase : public testing::Test {
  protected:
   KVDKEngine* engine{nullptr};
   KVDKConfigs* configs;
-  const std::string db_path{"/mnt/pmem0/kvdk_c_api_test_" +
-                            std::to_string(__rdtsc())};
+  const std::string db_path{"/mnt/pmem0/kvdk_c_api_test"};
 
   virtual void SetUp() override {
+    purgeDB();
     configs = KVDKCreateConfigs();
     KVDKSetConfigs(configs, 32, (4UL << 30), false, 64, (1UL << 20), 1024, 1);
     ASSERT_EQ(KVDKOpen(db_path.c_str(), configs, stdout, &engine),

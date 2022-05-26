@@ -198,6 +198,8 @@ class Engine {
   //    Status::Ok if operation succeeded.
   virtual Status ListMultiPushFront(StringView key,
                                     std::vector<std::string> const& elems) = 0;
+  virtual Status ListMultiPushFront(StringView key,
+                                    std::vector<StringView> const& elems) = 0;
 
   // Push multiple elements to the back of List
   // Return:
@@ -207,6 +209,8 @@ class Engine {
   //    Status::Ok if operation succeeded.
   virtual Status ListMultiPushBack(StringView key,
                                    std::vector<std::string> const& elems) = 0;
+  virtual Status ListMultiPushBack(StringView key,
+                                   std::vector<StringView> const& elems) = 0;
 
   // Pop first N element of List
   // Return:

@@ -1852,6 +1852,12 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
 
 Status KVEngine::ListMultiPushFront(StringView key,
                                     std::vector<std::string> const& elems) {
+  return ListMultiPushFront(
+      key, std::vector<StringView>{elems.begin(), elems.end()});
+}
+
+Status KVEngine::ListMultiPushFront(StringView key,
+                                    std::vector<StringView> const& elems) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
@@ -1876,6 +1882,12 @@ Status KVEngine::ListMultiPushFront(StringView key,
 
 Status KVEngine::ListMultiPushBack(StringView key,
                                    std::vector<std::string> const& elems) {
+  return ListMultiPushBack(key,
+                           std::vector<StringView>{elems.begin(), elems.end()});
+}
+
+Status KVEngine::ListMultiPushBack(StringView key,
+                                   std::vector<StringView> const& elems) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }
@@ -2224,7 +2236,7 @@ Status KVEngine::listFind(StringView key, List** list) {
 }
 
 Status KVEngine::listMultiPushImpl(StringView key, int pos,
-                                   std::vector<std::string> const& elems) {
+                                   std::vector<StringView> const& elems) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
   Status s = listFind(key, &list);

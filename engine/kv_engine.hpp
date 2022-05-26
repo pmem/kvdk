@@ -167,8 +167,12 @@ class KVEngine : public Engine {
   Status ListPopBack(StringView key, std::string* elem) final;
   Status ListMultiPushFront(StringView key,
                             std::vector<std::string> const& elems) final;
+  Status ListMultiPushFront(StringView key,
+                            std::vector<StringView> const& elems) final;
   Status ListMultiPushBack(StringView key,
                            std::vector<std::string> const& elems) final;
+  Status ListMultiPushBack(StringView key,
+                           std::vector<StringView> const& elems) final;
   Status ListMultiPopFront(StringView key, size_t n,
                            std::vector<std::string>* elems) final;
   Status ListMultiPopBack(StringView key, size_t n,
@@ -420,7 +424,7 @@ class KVEngine : public Engine {
   Status listDestroy(List* list);
 
   Status listMultiPushImpl(StringView key, int pos,
-                           std::vector<std::string> const& elems);
+                           std::vector<StringView> const& elems);
   Status listMultiPopImpl(StringView key, int pos, size_t n,
                           std::vector<std::string>* elems);
   Status listRollback(BatchWriteLog::ListLogEntry const& entry);

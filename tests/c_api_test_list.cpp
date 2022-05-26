@@ -8,6 +8,12 @@
 
 #include "c_api_test.hpp"
 
+void ConcatStrings(char const* elem_data, size_t elem_len, void* arg) {
+  std::string* buffer = static_cast<std::string*>(arg);
+  buffer->append(elem_data, elem_len);
+  buffer->append(1, '\n');
+}
+
 TEST_F(EngineCAPITestBase, List) {
   size_t num_threads = 16;
   size_t count = 1000;
@@ -91,6 +97,9 @@ TEST_F(EngineCAPITestBase, List) {
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     for (size_t j = 0; j < count; j++) {
+      if (list_copy.empty()) {
+        break;
+      }
       ASSERT_EQ(std::make_pair(KVDKStatus::Ok, list_copy.front()),
                 ListPopFront(key));
       list_copy.pop_front();
@@ -106,6 +115,9 @@ TEST_F(EngineCAPITestBase, List) {
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     for (size_t j = 0; j < count; j++) {
+      if (list_copy.empty()) {
+        break;
+      }
       ASSERT_EQ(std::make_pair(KVDKStatus::Ok, list_copy.back()),
                 ListPopBack(key));
       list_copy.pop_back();
@@ -139,6 +151,16 @@ TEST_F(EngineCAPITestBase, List) {
       }
     }
     KVDKListIteratorDestroy(iter);
+  };
+
+  auto ConvertParams = [](std::vector<std::string> const& elems) {
+    std::vector<char const*> elems_data;
+    std::vector<size_t> elems_len;
+    for (auto const& elem : elems) {
+      elems_data.push_back(elem.data());
+      elems_len.push_back(elem.size());
+    }
+    return std::make_pair(elems_data, elems_len);
   };
 
   auto ListInsertPutRemove = [&](size_t tid) {
@@ -187,10 +209,120 @@ TEST_F(EngineCAPITestBase, List) {
     KVDKListIteratorDestroy(iter);
   };
 
+  auto LMultiPush = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    for (size_t j = 0; j < count; j++) {
+      list_copy.push_front(elems[j]);
+    }
+    auto param = ConvertParams(elems);
+    ASSERT_EQ(KVDKListMultiPushFront(engine, key.data(), key.size(),
+                                     param.first.data(), param.second.data(),
+                                     elems.size()),
+              KVDKStatus::Ok);
+    size_t sz;
+    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+              KVDKStatus::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto RMultiPush = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto const& elems = elems_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    for (size_t j = 0; j < count; j++) {
+      list_copy.push_back(elems[j]);
+    }
+    auto param = ConvertParams(elems);
+    ASSERT_EQ(KVDKListMultiPushBack(engine, key.data(), key.size(),
+                                    param.first.data(), param.second.data(),
+                                    elems.size()),
+              KVDKStatus::Ok);
+    size_t sz;
+    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+              KVDKStatus::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto LMultiPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    std::string buffer1;
+    std::string buffer2;
+    ASSERT_EQ(KVDKListMultiPopFront(engine, key.data(), key.size(), count,
+                                    ConcatStrings, &buffer1),
+              KVDKStatus::Ok);
+    for (size_t j = 0; j < count && !list_copy.empty(); j++) {
+      ConcatStrings(list_copy.front().data(), list_copy.front().size(),
+                    &buffer2);
+      list_copy.pop_front();
+    }
+    ASSERT_EQ(buffer1, buffer2);
+    size_t sz;
+    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+              KVDKStatus::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto RMultiPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+    std::string buffer1;
+    std::string buffer2;
+    ASSERT_EQ(KVDKListMultiPopBack(engine, key.data(), key.size(), count,
+                                   ConcatStrings, &buffer1),
+              KVDKStatus::Ok);
+    for (size_t j = 0; j < count && !list_copy.empty(); j++) {
+      ConcatStrings(list_copy.back().data(), list_copy.back().size(), &buffer2);
+      list_copy.pop_back();
+    }
+    ASSERT_EQ(buffer1, buffer2);
+    size_t sz;
+    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+              KVDKStatus::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
+  auto RPushLPop = [&](size_t tid) {
+    auto const& key = key_vec[tid];
+    auto& list_copy = list_copy_vec[tid];
+
+    ASSERT_FALSE(list_copy.empty());
+
+    auto elem_copy = list_copy.front();
+    list_copy.push_back(elem_copy);
+    list_copy.pop_front();
+
+    char* elem_data;
+    size_t elem_len;
+    ASSERT_EQ(KVDKListMove(engine, key.data(), key.size(), 0, key.data(),
+                           key.size(), -1, &elem_data, &elem_len),
+              KVDKStatus::Ok);
+    ASSERT_EQ(std::string(elem_data, elem_len), elem_copy);
+    free(elem_data);
+
+    size_t sz;
+    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+              KVDKStatus::Ok);
+    ASSERT_EQ(sz, list_copy.size());
+  };
+
   for (size_t i = 0; i < 3; i++) {
+    LaunchNThreads(num_threads, LPop);
+    LaunchNThreads(num_threads, RPop);
     LaunchNThreads(num_threads, LPush);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, RPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, LMultiPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, RMultiPush);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, LMultiPop);
+    LaunchNThreads(num_threads, ListIterate);
+    LaunchNThreads(num_threads, RMultiPop);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, LPop);
     LaunchNThreads(num_threads, ListIterate);
@@ -199,8 +331,11 @@ TEST_F(EngineCAPITestBase, List) {
     LaunchNThreads(num_threads, RPush);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, LPush);
+    LaunchNThreads(num_threads, ListIterate);
     for (size_t j = 0; j < 100; j++) {
       LaunchNThreads(num_threads, ListInsertPutRemove);
+      LaunchNThreads(num_threads, ListIterate);
+      LaunchNThreads(num_threads, RPushLPop);
       LaunchNThreads(num_threads, ListIterate);
     }
     RebootDB();
