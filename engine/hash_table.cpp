@@ -181,9 +181,9 @@ Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
   return Status::Ok;
 }
 
-HashTableIterator HashTable::GetIterator(uint64_t start_slot_idxx,
-                                         uint64_t end_slot_idxx) {
-  return HashTableIterator{this, start_slot_idxx, end_slot_idxx};
+HashTableIterator HashTable::GetIterator(uint64_t start_slot_idx,
+                                         uint64_t end_slot_idx) {
+  return HashTableIterator{this, start_slot_idx, end_slot_idx};
 }
 
 }  // namespace KVDK_NAMESPACE

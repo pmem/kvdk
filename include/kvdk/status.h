@@ -46,7 +46,8 @@ extern "C" {
 
 typedef enum { FOREACH_ENUM(GENERATE_ENUM) } KVDKStatus;
 
-// static char const* KVDKStatusStrings[] = {FOREACH_ENUM(GENERATE_STRING)};
+__attribute__((unused)) static char const* KVDKStatusStrings[] = {
+    FOREACH_ENUM(GENERATE_STRING)};
 
 #ifdef __cplusplus
 } /* end extern "C" */

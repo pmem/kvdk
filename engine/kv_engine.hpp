@@ -115,7 +115,7 @@ class KVEngine : public Engine {
   // Used by test case.
   HashTable* GetHashTable() { return hash_table_.get(); }
 
-  void CleanOutDated(size_t start_slot_idxx, size_t end_slot_idxx);
+  void CleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
 
  private:
   friend OldRecordsCleaner;
@@ -444,6 +444,7 @@ class KVEngine : public Engine {
 
   void purgeAndFreeDLRecords(const std::vector<DLRecord*>& old_offset);
 
+  // remove outdated records which without snapshot hold.
   template <typename T>
   T* removeOutDatedVersion(T* record);
 
@@ -554,7 +555,7 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  void backgroundCleanRecords(size_t start_slot_idxx, size_t end_slot_idxx);
+  void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
 
   void deleteCollections();
 

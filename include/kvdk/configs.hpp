@@ -132,7 +132,7 @@ struct Configs {
   // should be registered to the comparator before open engine
   ComparatorTable comparator;
 
-  // Background clean thread numbers. The 
+  // Background clean thread numbers.
   uint64_t clean_threads = 32;
 };
 

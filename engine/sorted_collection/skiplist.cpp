@@ -257,7 +257,7 @@ Status Skiplist::CheckIndex() {
       }
     }
     if (!CheckRecordLinkage(next_record, pmem_allocator_)) {
-      return Status::Fail;
+      return Status::Abort;
     }
     splice.prev_pmem_record = next_record;
   }
@@ -857,13 +857,9 @@ void Skiplist::destroyAllRecords() {
   std::vector<SpaceEntry> to_free;
   if (header_) {
     DLRecord* header_record = header_->record;
-    DLRecord* next_destroy =
-        pmem_allocator_->offset2addr_checked<DLRecord>(header_record->next);
-    DLRecord* to_destroy = nullptr;
     do {
-      to_destroy = next_destroy;
-      next_destroy =
-          pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
+      DLRecord* to_destroy =
+          pmem_allocator_->offset2addr_checked<DLRecord>(header_record->next);
       StringView key = to_destroy->Key();
       auto ul = hash_table_->AcquireLock(key);
       // We need to purge destroyed records one by one in case engine crashed
@@ -889,31 +885,30 @@ void Skiplist::destroyAllRecords() {
           }
           if (hash_indexed_record == to_destroy) {
             hash_table_->Erase(lookup_result.entry_ptr);
-          }
-          auto old_record = static_cast<DLRecord*>(
-              pmem_allocator_->offset2addr(to_destroy->old_version));
-          while (old_record) {
-            switch (old_record->GetRecordType()) {
-              case RecordType::SortedElem:
-              case RecordType::SortedElemDelete: {
-                old_record->entry.Destroy();
-                to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
-                                     old_record->entry.header.record_size);
-                break;
+            auto old_record = static_cast<DLRecord*>(
+                pmem_allocator_->offset2addr(to_destroy->old_version));
+            while (old_record) {
+              switch (old_record->GetRecordType()) {
+                case RecordType::SortedElem:
+                case RecordType::SortedElemDelete: {
+                  old_record->entry.Destroy();
+                  to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
+                                       old_record->entry.header.record_size);
+                  break;
+                }
+                default:
+                  std::abort();
               }
-              default:
-                std::abort();
+              old_record = static_cast<DLRecord*>(
+                  pmem_allocator_->offset2addr(old_record->old_version));
             }
-            old_record = static_cast<DLRecord*>(
-                pmem_allocator_->offset2addr(old_record->old_version));
-          }
-
-          if (Skiplist::Remove(to_destroy, nullptr, pmem_allocator_,
-                               record_locks_)) {
-            to_destroy->Destroy();
-            to_free.emplace_back(
-                pmem_allocator_->addr2offset_checked(to_destroy),
-                to_destroy->entry.header.record_size);
+            if (Skiplist::Remove(to_destroy, nullptr, pmem_allocator_,
+                                 record_locks_)) {
+              to_destroy->Destroy();
+              to_free.emplace_back(
+                  pmem_allocator_->addr2offset_checked(to_destroy),
+                  to_destroy->entry.header.record_size);
+            }
           }
         }
       } else {

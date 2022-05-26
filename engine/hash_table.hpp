@@ -192,8 +192,7 @@ class HashTable {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
 
-  HashTableIterator GetIterator(uint64_t start_slot_idxx,
-                                uint64_t end_slot_idxx);
+  HashTableIterator GetIterator(uint64_t start_slot_idx, uint64_t end_slot_idx);
 
   size_t GetSlotsNum() { return slots_.size(); }
 

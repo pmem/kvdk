@@ -841,18 +841,20 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prevent collection and nodes in double linked lists from being deleted
   auto access_token = version_controller_.GetLocalSnapshotHolder();
 
-  std::vector<StringWriteArgs> string_args(batch.StringOps().size());
-  std::vector<SortedWriteArgs> sorted_args(batch.SortedOps().size());
-  std::vector<HashWriteArgs> hash_args(batch.HashOps().size());
+  std::vector<StringWriteArgs> string_args;
+  string_args.reserve(batch.StringOps().size());
+  std::vector<SortedWriteArgs> sorted_args;
+  sorted_args.reserve(batch.SortedOps().size());
+  std::vector<HashWriteArgs> hash_args;
+  hash_args.reserve(batch.HashOps().size());
 
-  for (size_t i = 0; i < batch.StringOps().size(); i++) {
-    auto const& string_op = batch.StringOps()[i];
-    string_args[i].Assign(string_op);
+  for (auto const& string_op : batch.StringOps()) {
+    string_args.emplace_back();
+    string_args.back().Assign(string_op);
   }
 
   // Lookup Skiplists and Hashes for further operations
-  for (size_t i = 0; i < batch.SortedOps().size(); i++) {
-    auto const& sorted_op = batch.SortedOps()[i];
+  for (auto const& sorted_op : batch.SortedOps()) {
     auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
     /// TODO: this is a temporary work-around
     /// We cannot lock both key and field, which may trigger deadlock.
@@ -865,19 +867,20 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (res.s != Status::Ok) {
       return res.s;
     }
-    sorted_args[i].Assign(sorted_op);
-    sorted_args[i].skiplist = res.entry.GetIndex().skiplist;
+    sorted_args.emplace_back();
+    sorted_args.back().Assign(sorted_op);
+    sorted_args.back().skiplist = res.entry.GetIndex().skiplist;
   }
 
-  for (size_t i = 0; i < batch.HashOps().size(); i++) {
-    auto const& hash_op = batch.HashOps()[i];
+  for (auto const& hash_op : batch.HashOps()) {
     HashList* hlist;
     Status s = hashListFind(hash_op.key, &hlist);
     if (s != Status::Ok) {
       return s;
     }
-    hash_args[i].Assign(hash_op);
-    hash_args[i].hlist = hlist;
+    hash_args.emplace_back();
+    hash_args.back().Assign(hash_op);
+    hash_args.back().hlist = hlist;
   }
 
   // Keys/internal keys to be locked on HashTable

@@ -11,8 +11,6 @@ T* KVEngine::removeOutDatedVersion(T* record) {
   static_assert(
       std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
       "Invalid record type, should be StringRecord or DLRecord.");
-  // auto old_record =
-  //     static_cast<T*>(pmem_allocator_->offset2addr(record->old_version));
   auto old_record = record;
   while (old_record && old_record->entry.meta.timestamp >
                            version_controller_.OldestSnapshotTS()) {
@@ -95,7 +93,7 @@ struct PendingPurgeDLRecords {
   TimeStampType release_time;
 };
 
-void KVEngine::CleanOutDated(size_t start_slot_idxx, size_t end_slot_idxx) {
+void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
   constexpr uint64_t kMaxCachedOldRecords = 1024;
   constexpr size_t kSlotSegment = 1024;
   constexpr double kWakeUpThreshold = 0.3;
@@ -118,7 +116,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idxx, size_t end_slot_idxx) {
 
     // Iterate hash table
     auto hashtable_iter =
-        hash_table_->GetIterator(start_slot_idxx, end_slot_idxx);
+        hash_table_->GetIterator(start_slot_idx, end_slot_idx);
     while (hashtable_iter.Valid()) {
       /* 1. If having few outdated and old records per slot segment, the thread
        * is wake up every seconds.
@@ -126,7 +124,9 @@ void KVEngine::CleanOutDated(size_t start_slot_idxx, size_t end_slot_idxx) {
        * lock conflict.
        */
       if (slot_num++ % kSlotSegment == 0) {
-        if ((double)need_purge_num / total_num < kWakeUpThreshold) {
+        // total_num + kWakeUpThreshold to avoid division by zero.
+        if (need_purge_num / (double)(total_num + kWakeUpThreshold) <
+            kWakeUpThreshold) {
           sleep(1);
         }
         if (bg_work_signals_.terminating) break;
@@ -270,63 +270,72 @@ void KVEngine::CleanOutDated(size_t start_slot_idxx, size_t end_slot_idxx) {
         purge_dl_records.clear();
       }
 
-      {  // purge pending string records
-        auto iter = pending_purge_strings.begin();
-        while (iter != pending_purge_strings.end()) {
-          if (iter->release_time < version_controller_.OldestSnapshotTS()) {
-            purgeAndFreeStringRecords(iter->records);
-            iter++;
+      {  // purge and free pending string records
+        while (!pending_purge_strings.empty()) {
+          auto& pending_strings = pending_purge_strings.front();
+          if (pending_strings.release_time <
+              version_controller_.OldestSnapshotTS()) {
+            purgeAndFreeStringRecords(pending_strings.records);
+            pending_purge_strings.pop_front();
           } else {
             break;
           }
         }
-        pending_purge_strings.erase(pending_purge_strings.begin(), iter);
       }
 
-      {  // purge pending old dl records
-        auto iter = pending_purge_dls.begin();
-        while (iter != pending_purge_dls.end()) {
-          if (iter->release_time < version_controller_.OldestSnapshotTS()) {
-            purgeAndFreeDLRecords(iter->records);
-            iter++;
+      {  // purge and free pending old dl records
+        while (!pending_purge_dls.empty()) {
+          auto& pending_dls = pending_purge_dls.front();
+          if (pending_dls.release_time <
+              version_controller_.OldestSnapshotTS()) {
+            purgeAndFreeDLRecords(pending_dls.records);
+            pending_purge_dls.pop_front();
           } else {
             break;
           }
         }
-        pending_purge_dls.erase(pending_purge_dls.begin(), iter);
       }
 
-      // Destroy skiplist
-      if (!outdated_skip_lists.empty()) {
-        auto& ts_skiplist = outdated_skip_lists.front();
-        if (ts_skiplist.first < min_snapshot_ts) {
-          ts_skiplist.second->DestroyAll();
-          removeSkiplist(ts_skiplist.second->ID());
-          outdated_skip_lists.pop_front();
+      {  // Destroy skiplist
+        while (!outdated_skip_lists.empty()) {
+          auto& ts_skiplist = outdated_skip_lists.front();
+          if (ts_skiplist.first < min_snapshot_ts) {
+            ts_skiplist.second->DestroyAll();
+            removeSkiplist(ts_skiplist.second->ID());
+            outdated_skip_lists.pop_front();
+          } else {
+            break;
+          }
         }
       }
 
-      // Destroy list
-      if (!outdated_lists.empty()) {
-        auto& ts_list = outdated_lists.front();
-        if (ts_list.first < min_snapshot_ts) {
-          std::unique_lock<std::mutex> guard{lists_mu_};
-          lists_.erase(ts_list.second);
-          guard.unlock();
-          listDestroy(ts_list.second);
-          outdated_lists.pop_front();
+      {  // Destroy list
+        while (!outdated_lists.empty()) {
+          auto& ts_list = outdated_lists.front();
+          if (ts_list.first < min_snapshot_ts) {
+            std::unique_lock<std::mutex> guard{lists_mu_};
+            lists_.erase(ts_list.second);
+            guard.unlock();
+            listDestroy(ts_list.second);
+            outdated_lists.pop_front();
+          } else {
+            break;
+          }
         }
       }
 
-      // Destroy hash
-      if (!outdated_hash_lists.empty()) {
-        auto& ts_hlist = outdated_hash_lists.front();
-        if (ts_hlist.first < min_snapshot_ts) {
-          std::unique_lock<std::mutex> guard{hlists_mu_};
-          hash_lists_.erase(ts_hlist.second);
-          guard.unlock();
-          hashListDestroy(ts_hlist.second);
-          outdated_hash_lists.pop_front();
+      {  // Destroy hash
+        while (!outdated_hash_lists.empty()) {
+          auto& ts_hlist = outdated_hash_lists.front();
+          if (ts_hlist.first < min_snapshot_ts) {
+            std::unique_lock<std::mutex> guard{hlists_mu_};
+            hash_lists_.erase(ts_hlist.second);
+            guard.unlock();
+            hashListDestroy(ts_hlist.second);
+            outdated_hash_lists.pop_front();
+          } else {
+            break;
+          }
         }
       }
     }  // Finsh iterating hash table

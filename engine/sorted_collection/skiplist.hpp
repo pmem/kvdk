@@ -239,6 +239,7 @@ class Skiplist : public Collection {
   // records.
   void Destroy();
 
+  // Destroy and free the whole skiplist with old version list.
   void DestroyAll();
 
   // check node linkage and hash index
@@ -454,10 +455,12 @@ class Skiplist : public Collection {
     return height;
   }
 
+  // Destroy sorted records, not including old version list.
   void destroyRecords();
 
   void destroyNodes();
 
+  // Destroy all sorted records including old version list.
   void destroyAllRecords();
 
   static LockTable::HashType recordHash(const DLRecord* record) {
