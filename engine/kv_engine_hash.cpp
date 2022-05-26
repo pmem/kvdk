@@ -342,8 +342,13 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
     args.hlist->EraseWithLock(pos, [](DLRecord*) { return; });
   } else {
     if (args.res.s == Status::NotFound) {
-      args.hlist->PushFrontWithLock(args.space, args.ts, args.field,
-                                    args.value);
+      if (std::hash<StringView>{}(args.field) % 2 == 0) {
+        args.hlist->PushFrontWithLock(args.space, args.ts, args.field,
+                                      args.value);
+      } else {
+        args.hlist->PushBackWithLock(args.space, args.ts, args.field,
+                                     args.value);
+      }
     } else {
       kvdk_assert(args.res.s == Status::Ok, "");
       DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
