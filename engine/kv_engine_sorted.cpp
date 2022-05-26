@@ -327,10 +327,10 @@ Status KVEngine::sortedWritePublish(SortedWriteArgs const&) {
 Status KVEngine::sortedRollback(TimeStampType,
                                 BatchWriteLog::SortedLogEntry const& log) {
   DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
-  // We only check next linkage as a valid next linkage indicate valid prev and
+  // We only check prev linkage as a valid prev linkage indicate valid prev and
   // next pointers on the record, so we can safely do remove/replace
   if (elem->Validate() &&
-      Skiplist::CheckReocrdNextLinkage(elem, pmem_allocator_.get())) {
+      Skiplist::CheckRecordPrevLinkage(elem, pmem_allocator_.get())) {
     if (elem->old_version != kNullPMemOffset) {
       Skiplist::Replace(
           elem,

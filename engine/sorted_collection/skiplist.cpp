@@ -165,7 +165,7 @@ void Skiplist::linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
-  TEST_SYNC_POINT("KVEngine::Skiplist::InsertDLRecord::UpdatePrev");
+  TEST_SYNC_POINT("KVEngine::Skiplist::LinkDLRecord::HalfLink");
   next->prev = inserting_record_offset;
   pmem_persist(&next->prev, 8);
 }
@@ -267,24 +267,19 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
                                                   PMEMAllocator* pmem_allocator,
                                                   LockTable* lock_table) {
   while (1) {
-    PMemOffsetType record_offset = pmem_allocator->addr2offset_checked(record);
     PMemOffsetType prev_offset = record->prev;
     PMemOffsetType next_offset = record->next;
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
-    DLRecord* next = pmem_allocator->offset2addr<DLRecord>(next_offset);
 
     auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
 
     // Check if the list has changed before we successfully acquire lock.
-    if (record->prev != prev_offset || prev->next != record_offset ||
-        record->next != next_offset || next->prev != record_offset) {
+    if (record->prev != prev_offset || record->next != next_offset) {
       continue;
     }
 
     kvdk_assert(record->prev == prev_offset, "");
     kvdk_assert(record->next == next_offset, "");
-    kvdk_assert(next->prev == record_offset, "");
-    kvdk_assert(prev->next == record_offset, "");
 
     return guard;
   }
@@ -486,6 +481,7 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
                        SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
                        LockTable* lock_table, bool check_linkage) {
   auto guard = lockRecordPosition(old_record, pmem_allocator, lock_table);
+
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
   auto old_record_offset = pmem_allocator->addr2offset(old_record);

@@ -2120,10 +2120,10 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
       }
     };
 
+    // Test crash before commit
     SyncPoint::GetInstance()->EnableCrashPoint(
         "KVEngine::batchWriteImpl::BeforeCommit");
     SyncPoint::GetInstance()->EnableProcessing();
-
     // Put some KVs
     LaunchNThreads(num_threads, Put);
     // Check KVs in engine
@@ -2139,6 +2139,24 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
 
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->Reset();
+
+    // Test crash with half linked record
+    size_t num_write = 0;
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEngine::Skiplist::LinkDLRecord::HalfLink", [&](void*) {
+          if (++num_write == batch_size / 2) {
+            throw SyncPoint::CrashPoint{"Crash with half linkage"};
+          }
+        });
+    SyncPoint::GetInstance()->EnableProcessing();
+    // Try BatchWrite, crashed by sync point while the last write is half linked
+    LaunchNThreads(num_threads, BatchWrite);
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Reset();
+    Reboot();
+
+    // Check KVs in engine, the batch is indeed rolled back.
+    LaunchNThreads(num_threads, Check);
 
     delete engine;
   }
@@ -2241,7 +2259,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::InsertDLRecord::UpdatePrev", [&](void*) {
+      "KVEngine::Skiplist::LinkDLRecord::HalfLink", [&](void*) {
         if (update_num % 8 == 0) {
           throw 1;
         }
@@ -2388,7 +2406,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->LoadDependency(
-      {{"KVEngine::Skiplist::InsertDLRecord::UpdatePrev", "Test::Iter::key0"}});
+      {{"KVEngine::Skiplist::LinkDLRecord::HalfLink", "Test::Iter::key0"}});
   SyncPoint::GetInstance()->EnableProcessing();
 
   // insert
