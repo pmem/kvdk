@@ -121,7 +121,7 @@ void KVEngine::startBackgroundWorks() {
   bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
 
-  auto total_slot_num = hash_table_->GetSlotSize();
+  auto total_slot_num = hash_table_->GetSlotsNum();
   size_t iter_slot_stride = total_slot_num / configs_.clean_threads;
   size_t thread_id = 0;
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
@@ -468,7 +468,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
   TimeStampType backup_ts =
       static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
   auto hashtable_iterator =
-      hash_table_->GetIterator(0, hash_table_->GetSlotSize());
+      hash_table_->GetIterator(0, hash_table_->GetSlotsNum());
   while (hashtable_iterator.Valid()) {
     auto ul = hashtable_iterator.AcquireSlotLock();
     auto slot_iter = hashtable_iterator.Slot();

@@ -22,7 +22,6 @@ constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
 // Select a record every 10000 into restored skiplist map for multi-thread
 // restoring large skiplist.
 constexpr uint64_t kRestoreSkiplistStride = 10000;
-constexpr uint64_t kMaxCachedOldRecords = 1000;
 constexpr size_t kLimitForegroundCleanOldRecords = 1;
 constexpr size_t kSlotSegment = 8;
 }  // namespace KVDK_NAMESPACE

@@ -1724,7 +1724,7 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
   // Hash Table Iterator
   // scan hash table with locked slot.
   {
-    auto hashtable_iter = hash_table->GetIterator(0, hash_table->GetSlotSize());
+    auto hashtable_iter = hash_table->GetIterator(0, hash_table->GetSlotsNum());
     while (hashtable_iter.Valid()) {
       auto slot_iter = hashtable_iter.Slot();
       while (slot_iter.Valid()) {
@@ -1903,13 +1903,9 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   // Get hashes record expired time
   ASSERT_EQ(engine->GetTTL(hashes_collection, &ttl_time), Status::Ok);
-  ASSERT_EQ(engine->Expire(hashes_collection, INT64_MIN), Status::Ok);
-  ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
 
   // Get list record expired time
   ASSERT_EQ(engine->GetTTL(list_collection, &ttl_time), Status::Ok);
-  ASSERT_EQ(engine->Expire(hashes_collection, -100), Status::Ok);
-  ASSERT_EQ(engine->GetTTL(sorted_collection, &ttl_time), Status::NotFound);
   delete engine;
 }
 
@@ -2167,7 +2163,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
     engine->SortedDelete(collection_name, keylists[0]);
     auto test_kvengine = static_cast<KVEngine*>(engine);
     test_kvengine->CleanOutDated(0,
-                                 test_kvengine->GetHashTable()->GetSlotSize());
+                                 test_kvengine->GetHashTable()->GetSlotsNum());
   } catch (...) {
     delete engine;
     // reopen engine
@@ -2291,7 +2287,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
   auto HashTableScan = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     auto hash_table = test_kvengine->GetHashTable();
-    auto hashtable_iter = hash_table->GetIterator(0, hash_table->GetSlotSize());
+    auto hashtable_iter = hash_table->GetIterator(0, hash_table->GetSlotsNum());
     while (hashtable_iter.Valid()) {
       auto slot_lock = hashtable_iter.AcquireSlotLock();
       auto slot_iter = hashtable_iter.Slot();
@@ -2425,7 +2421,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   auto ExpiredClean = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     test_kvengine->CleanOutDated(0,
-                                 test_kvengine->GetHashTable()->GetSlotSize());
+                                 test_kvengine->GetHashTable()->GetSlotsNum());
   };
 
   {

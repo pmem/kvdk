@@ -133,7 +133,7 @@ struct Configs {
   ComparatorTable comparator;
 
   // Background clean thread numbers. The 
-  uint64_t clean_threads = 16;
+  uint64_t clean_threads = 32;
 };
 
 struct WriteOptions {

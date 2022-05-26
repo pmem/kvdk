@@ -56,8 +56,7 @@ struct alignas(16) HashEntry {
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
             PointerType index_type)
-      : index_(_index),
-        header_({key_hash_prefix, record_type, index_type}) {}
+      : index_(_index), header_({key_hash_prefix, record_type, index_type}) {}
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
@@ -193,9 +192,10 @@ class HashTable {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
 
-  HashTableIterator GetIterator(uint64_t start_slot_idx, uint64_t end_slot_idx);
+  HashTableIterator GetIterator(uint64_t start_slot_idxx,
+                                uint64_t end_slot_idxx);
 
-  size_t GetSlotSize() { return slots_.size(); }
+  size_t GetSlotsNum() { return slots_.size(); }
 
   // StringAlike is std::string or StringView
   template <typename StringAlike>
@@ -376,15 +376,15 @@ struct HashTableIterator {
   std::unique_lock<SpinMutex> iter_lock_slot_;
   // current slot id
   HashTable* hash_table_;
-  uint64_t current_slot_id_;
-  uint64_t end_slot_id_;
+  uint64_t current_slot_idx_;
+  uint64_t end_slot_idx_;
 
  public:
   HashTableIterator(HashTable* hash_table, uint64_t start_slot_idx,
                     uint64_t end_slot_idx)
       : hash_table_(hash_table),
-        current_slot_id_(start_slot_idx),
-        end_slot_id_(end_slot_idx) {}
+        current_slot_idx_(start_slot_idx),
+        end_slot_idx_(end_slot_idx) {}
 
   std::unique_lock<SpinMutex> AcquireSlotLock() {
     SpinMutex* slot_lock = GetSlotLock();
@@ -393,18 +393,18 @@ struct HashTableIterator {
 
   void Next() {
     if (Valid()) {
-      current_slot_id_++;
+      current_slot_idx_++;
     }
   }
 
-  bool Valid() { return current_slot_id_ < end_slot_id_; }
+  bool Valid() { return current_slot_idx_ < end_slot_idx_; }
 
   HashSlotIterator Slot() {
-    return HashSlotIterator{hash_table_, current_slot_id_};
+    return HashSlotIterator{hash_table_, current_slot_idx_};
   }
 
   SpinMutex* GetSlotLock() {
-    return &hash_table_->slots_[current_slot_id_].spin;
+    return &hash_table_->slots_[current_slot_idx_].spin;
   }
 };
 }  // namespace KVDK_NAMESPACE

@@ -115,7 +115,7 @@ class KVEngine : public Engine {
   // Used by test case.
   HashTable* GetHashTable() { return hash_table_.get(); }
 
-  void CleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
+  void CleanOutDated(size_t start_slot_idxx, size_t end_slot_idxx);
 
  private:
   friend OldRecordsCleaner;
@@ -440,17 +440,12 @@ class KVEngine : public Engine {
 
   void FreeSkiplistDramNodes();
 
-  void purgeOutDatedRecords(
-      const std::vector<std::pair<void*, PointerType>>& outdated_records,
-      std::vector<SpaceEntry>* entries);
+  void purgeAndFreeStringRecords(const std::vector<StringRecord*>& old_offset);
 
-  SpaceEntry purgeSortedRecord(SkiplistNode* dram_node, DLRecord* pmem_record);
-
-  void destroyOldStringRecords(const std::vector<PMemOffsetType>& old_offset);
-  void destroyOldDLRecords(const std::vector<PMemOffsetType>& old_offset);
+  void purgeAndFreeDLRecords(const std::vector<DLRecord*>& old_offset);
 
   template <typename T>
-  PMemOffsetType updateVersionList(T* record);
+  T* removeOutDatedVersion(T* record);
 
   void delayFree(DLRecord* addr);
 
@@ -559,7 +554,7 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
+  void backgroundCleanRecords(size_t start_slot_idxx, size_t end_slot_idxx);
 
   void deleteCollections();
 
