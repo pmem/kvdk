@@ -68,7 +68,13 @@ class EngineBasicTest : public testing::Test {
     cnt = 500;
   }
 
-  virtual void TearDown() { Destroy(); }
+  virtual void TearDown() {
+#if KVDK_DEBUG_LEVEL > 0
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Reset();
+#endif
+    Destroy();
+  }
 
   void AssignData(std::string& data, int len) {
     data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
@@ -752,7 +758,7 @@ TEST_F(BatchWriteTest, BatchWriteString) {
       }
       if ((i + 1) % batch_size == 0) {
         // Delete a non-existing key
-        batch->StringDelete("non-existing");
+        batch->StringDelete("non-existing")
         ASSERT_EQ(batch->Size(), batch_size + 1);
         ASSERT_EQ(engine->BatchWrite(batch), Status::Ok);
         batch->Clear();
