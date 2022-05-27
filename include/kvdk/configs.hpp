@@ -90,7 +90,7 @@ struct Configs {
   // Time interval that the background thread report PMem usage by GlobalLogger.
   // report_pmem_usage_interval less than background_work_interval will be
   // ignored.
-  double report_pmem_usage_interval = 10;
+  double report_pmem_usage_interval = 1000000.0;
 
   // Support the devdax model with PMem
   //
