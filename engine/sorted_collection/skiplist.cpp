@@ -997,13 +997,10 @@ void Skiplist::destroyRecords() {
   std::vector<SpaceEntry> to_free;
   if (header_) {
     DLRecord* header_record = header_->record;
-    DLRecord* next_destroy =
-        pmem_allocator_->offset2addr_checked<DLRecord>(header_record->next);
     DLRecord* to_destroy = nullptr;
     do {
-      to_destroy = next_destroy;
-      next_destroy =
-          pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
+      to_destroy =
+          pmem_allocator_->offset2addr_checked<DLRecord>(header_record->next);
       StringView key = to_destroy->Key();
       auto ul = hash_table_->AcquireLock(key);
       // We need to purge destroyed records one by one in case engine crashed
