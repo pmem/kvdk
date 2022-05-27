@@ -68,7 +68,13 @@ class EngineBasicTest : public testing::Test {
     cnt = 500;
   }
 
-  virtual void TearDown() { Destroy(); }
+  virtual void TearDown() {
+#if KVDK_DEBUG_LEVEL > 0
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->Reset();
+#endif
+    Destroy();
+  }
 
   void AssignData(std::string& data, int len) {
     data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
