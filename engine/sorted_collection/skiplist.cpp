@@ -836,6 +836,10 @@ Skiplist::WriteResult Skiplist::putPreparedWithHash(
           value);
       ret.write_record = new_record;
       ret.hash_entry_ptr = lookup_result.entry_ptr;
+      kvdk_assert(prev_record->next == existing_offset,
+                  "wrong linkage in skiplist update after acquiring lock");
+      kvdk_assert(next_record->prev == existing_offset,
+                  "wrong linkage in skiplist update after acquiring lock");
       linkDLRecord(prev_record, next_record, new_record);
 
       break;
@@ -904,6 +908,12 @@ seek_write_position:
         ret.existing_record->prev);
     next_record = pmem_allocator_->offset2addr_checked<DLRecord>(
         ret.existing_record->next);
+    kvdk_assert(
+        prev_record->next == pmem_allocator_->addr2offset(ret.existing_record),
+        "wrong linkage in skiplist update after acquiring lock");
+    kvdk_assert(
+        next_record->prev == pmem_allocator_->addr2offset(ret.existing_record),
+        "wrong linkage in skiplist update after acquiring lock");
   } else {
     ret.existing_record = nullptr;
     if (!lockInsertPosition(key, seek_result.prev_pmem_record,
