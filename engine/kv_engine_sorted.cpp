@@ -332,13 +332,15 @@ Status KVEngine::sortedRollback(TimeStampType,
   if (elem->Validate() &&
       Skiplist::CheckRecordPrevLinkage(elem, pmem_allocator_.get())) {
     if (elem->old_version != kNullPMemOffset) {
-      Skiplist::Replace(
+      bool success = Skiplist::Replace(
           elem,
           pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
           nullptr, pmem_allocator_.get(), skiplist_locks_.get(), false);
+      kvdk_assert(success, "Replace should success as we checked linkage");
     } else {
-      Skiplist::Remove(elem, nullptr, pmem_allocator_.get(),
-                       skiplist_locks_.get(), false);
+      bool success = Skiplist::Remove(elem, nullptr, pmem_allocator_.get(),
+                                      skiplist_locks_.get(), false);
+      kvdk_assert(success, "Remove should success as we checked linkage");
     }
   }
   elem->Destroy();

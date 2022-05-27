@@ -278,9 +278,6 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
       continue;
     }
 
-    kvdk_assert(record->prev == prev_offset, "");
-    kvdk_assert(record->next == next_offset, "");
-
     return guard;
   }
 }
