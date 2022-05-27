@@ -484,12 +484,12 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
   auto old_record_offset = pmem_allocator->addr2offset(old_record);
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
-  bool on_list = prev != nullptr && next != nullptr;
+  bool do_replace = prev != nullptr && next != nullptr;
   if (check_linkage) {
-    on_list = on_list && prev->next == old_record_offset &&
-              next->prev == old_record_offset;
+    do_replace = do_replace && prev->next == old_record_offset &&
+                 next->prev == old_record_offset;
   }
-  if (on_list) {
+  if (do_replace) {
     if (prev_offset == old_record_offset && next_offset == old_record_offset) {
       // old record is the only record (the header) in the skiplist, so we make
       // new record point to itself and break linkage of the old one for
@@ -519,7 +519,7 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
       dram_node->record = new_record;
     }
   }
-  return on_list;
+  return do_replace;
 }
 
 bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
@@ -532,12 +532,12 @@ bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
   PMemOffsetType next_offset = purging_record->next;
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
-  bool on_list = prev != nullptr && next != nullptr;
+  bool do_remove = prev != nullptr && next != nullptr;
   if (check_linkage) {
-    on_list =
-        on_list && prev->next == purging_offset && next->prev == purging_offset;
+    do_remove = do_remove && prev->next == purging_offset &&
+                next->prev == purging_offset;
   }
-  if (on_list) {
+  if (do_remove) {
     // For repair in recovery due to crashes during pointers changing, we should
     // first unlink deleting entry from next's prev.(It is the reverse process
     // of insertion)
@@ -552,7 +552,7 @@ bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
     }
   }
 
-  return on_list;
+  return do_remove;
 }
 
 SkiplistNode* Skiplist::NewNodeBuild(DLRecord* pmem_record) {
