@@ -335,11 +335,11 @@ Status KVEngine::sortedRollback(TimeStampType,
       bool success = Skiplist::Replace(
           elem,
           pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
-          nullptr, pmem_allocator_.get(), skiplist_locks_.get(), false);
+          nullptr, pmem_allocator_.get(), skiplist_locks_.get());
       kvdk_assert(success, "Replace should success as we checked linkage");
     } else {
       bool success = Skiplist::Remove(elem, nullptr, pmem_allocator_.get(),
-                                      skiplist_locks_.get(), false);
+                                      skiplist_locks_.get());
       kvdk_assert(success, "Remove should success as we checked linkage");
     }
   }

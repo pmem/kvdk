@@ -340,8 +340,7 @@ class Skiplist : public Collection {
   //
   // Notice: key of the purging record should already been locked by engine
   static bool Remove(DLRecord* purging_record, SkiplistNode* dram_node,
-                     PMEMAllocator* pmem_allocator, LockTable* lock_table,
-                     bool check_linkage = true);
+                     PMEMAllocator* pmem_allocator, LockTable* lock_table);
 
   // Replace "old_record" from its skiplist with "replacing_record", please make
   // sure the key order is correct after replace
@@ -359,7 +358,7 @@ class Skiplist : public Collection {
   // Notice: key of the replacing record should already been locked by engine
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
                       SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
-                      LockTable* lock_table, bool check_linkage = true);
+                      LockTable* lock_table);
 
   // Build a skiplist node for "pmem_record"
   static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
@@ -469,6 +468,10 @@ class Skiplist : public Collection {
                                                  PMEMAllocator* pmem_allocator,
                                                  LockTable* lock_table);
 
+  // lock skiplist position of "record" by locking its prev DLRecord and the
+  // record itself
+  // Notice: record must be a on list record, e.g. correctly linked by its
+  // predecessor
   LockTable::GuardType lockOnListRecord(const DLRecord* record) {
     while (true) {
       auto guard = lockRecordPosition(record, pmem_allocator_, record_locks_);
