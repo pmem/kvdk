@@ -273,7 +273,7 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
 
     auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
 
-    // Check if the list has changed before we successfully acquire lock.
+    // Check if the linkage has changed before we successfully acquire lock.
     if (record->prev != prev_offset || record->next != next_offset) {
       continue;
     }
