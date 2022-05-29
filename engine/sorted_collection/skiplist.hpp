@@ -464,12 +464,20 @@ class Skiplist : public Collection {
 
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
+  // Notice: we do not check if record is still correctly linked
   static LockTable::GuardType lockRecordPosition(const DLRecord* record,
                                                  PMEMAllocator* pmem_allocator,
                                                  LockTable* lock_table);
 
-  LockTable::GuardType lockRecordPosition(const DLRecord* record) {
-    return lockRecordPosition(record, pmem_allocator_, record_locks_);
+  LockTable::GuardType lockOnListRecord(const DLRecord* record) {
+    while (true) {
+      auto guard = lockRecordPosition(record, pmem_allocator_, record_locks_);
+      DLRecord* prev =
+          pmem_allocator_->offset2addr_checked<DLRecord>(record->prev);
+      if (prev->next == pmem_allocator_->addr2offset_checked(record)) {
+        return guard;
+      }
+    }
   }
 
   bool validateDLRecord(const DLRecord* record) {

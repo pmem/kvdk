@@ -269,14 +269,12 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
   while (1) {
     PMemOffsetType prev_offset = record->prev;
     PMemOffsetType next_offset = record->next;
-    PMemOffsetType record_offset = pmem_allocator->addr2offset_checked(record);
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
 
     auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
 
     // Check if the list has changed before we successfully acquire lock.
-    if (record->prev != prev_offset || prev->next != record_offset ||
-        record->next != next_offset) {
+    if (record->prev != prev_offset || record->next != next_offset) {
       continue;
     }
 
@@ -686,7 +684,7 @@ Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
   ret.existing_record = existing_record;
   ret.dram_node = dram_node;
   // to write delete record
-  auto guard = lockRecordPosition(existing_record);
+  auto guard = lockOnListRecord(existing_record);
   assert(ret.existing_record->entry.meta.timestamp < timestamp);
   PMemOffsetType existing_offset =
       pmem_allocator_->addr2offset_checked(ret.existing_record);
@@ -822,7 +820,7 @@ Skiplist::WriteResult Skiplist::putPreparedWithHash(
       assert(timestamp > ret.existing_record->entry.meta.timestamp);
 
       // Try to write delete record
-      auto guard = lockRecordPosition(ret.existing_record);
+      auto guard = lockOnListRecord(ret.existing_record);
 
       PMemOffsetType prev_offset = ret.existing_record->prev;
       DLRecord* prev_record =
@@ -905,7 +903,7 @@ seek_write_position:
       ret.dram_node = seek_result.nexts[1];
     }
 
-    update_guard = lockRecordPosition(ret.existing_record);
+    update_guard = lockOnListRecord(ret.existing_record);
     prev_record = pmem_allocator_->offset2addr_checked<DLRecord>(
         ret.existing_record->prev);
     next_record = pmem_allocator_->offset2addr_checked<DLRecord>(
