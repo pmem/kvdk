@@ -242,6 +242,19 @@ class GenericList final : public Collection {
     last = la;
     sz.store(n);
     lock_table = lt;
+#if KVDK_DEBUG_LEVEL > 0
+    size_t cnt = 0;
+    for (auto iter = Front(); iter != Tail(); ++iter) {
+      ++cnt;
+      kvdk_assert(iter->entry.meta.type == DataType, "");
+      kvdk_assert(iter->Validate(), "");
+      kvdk_assert(ExtractID(iter->Key()) == collection_id_, "");
+      Iterator iter2{iter};
+      kvdk_assert(++(--iter2) == iter, "");
+      kvdk_assert(--(++iter2) == iter, "");
+    }
+    kvdk_assert(cnt == n, "");
+#endif  // KVDK_DEBUG_LEVEL > 0
   }
 
   LockType* Mutex() { return &mu; }
@@ -299,8 +312,7 @@ class GenericList final : public Collection {
   // EraseWithLock() presumes that DLRecord* rec is secured by caller,
   // only one thread is calling EraseWithLock() on rec and rec is valid.
   template <typename DelayFree>
-  Iterator EraseWithLock(DLRecord* rec, DelayFree delay_free) {
-    Iterator pos{this, rec};
+  Iterator EraseWithLock(Iterator pos, DelayFree delay_free) {
     LockTable::GuardType guard;
     lockPosAndPrev(pos, guard);
     return erase_impl(pos, delay_free);
@@ -473,7 +485,7 @@ class GenericList final : public Collection {
     --prev;
     Iterator next{pos};
     ++next;
-    kvdk_assert(!prev.dirty() && !next.dirty(), "");
+    kvdk_assert(!prev.dirty() && !next.dirty() && !pos.dirty(), "");
 
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
@@ -559,6 +571,34 @@ class GenericList final : public Collection {
       }
       case RecordType::HashRecord: {
         entry.meta.type = RecordType::HashDirtyRecord;
+        break;
+      }
+      default: {
+        kvdk_assert(false, "Unsupported!");
+        std::abort();
+      }
+    }
+    _mm_clwb(&entry.meta.type);
+    _mm_mfence();
+  }
+
+  static void cleanRecordDirtyMark(DLRecord* rec) {
+    auto& entry = rec->entry;
+    switch (entry.meta.type) {
+      case RecordType::ListDirtyElem: {
+        entry.meta.type = RecordType::ListElem;
+        break;
+      }
+      case RecordType::HashDirtyElem: {
+        entry.meta.type = RecordType::HashElem;
+        break;
+      }
+      case RecordType::ListDirtyRecord: {
+        entry.meta.type = RecordType::ListRecord;
+        break;
+      }
+      case RecordType::HashDirtyRecord: {
+        entry.meta.type = RecordType::HashRecord;
         break;
       }
       default: {
@@ -690,6 +730,93 @@ class GenericListBuilder final {
         kvdk_assert(false, "Unreachable");
         std::abort();
       }
+    }
+  }
+
+  void RollbackReplacement(DLRecord* new_elem, DLRecord* old_elem) {
+    kvdk_assert(new_elem->Validate(), "No need to rollback invalid element");
+    kvdk_assert(old_elem->prev == new_elem->prev, "");
+    kvdk_assert(old_elem->next == new_elem->next, "");
+
+    if (List::isRecordDirty(old_elem)) {
+      kvdk_assert(old_elem->next == NullPMemOffset ||
+                      addressOf(old_elem->next)->prev == offsetOf(new_elem),
+                  "");
+      kvdk_assert(old_elem->prev == NullPMemOffset ||
+                      addressOf(old_elem->prev)->next == offsetOf(new_elem),
+                  "");
+      List::cleanRecordDirtyMark(old_elem);
+    }
+    kvdk_assert(old_elem->Validate(), "");
+
+    // Link next back to old_elem
+    if (old_elem->next != NullPMemOffset &&
+        addressOf(old_elem->next)->prev != offsetOf(old_elem)) {
+      kvdk_assert(addressOf(old_elem->next)->prev == offsetOf(new_elem), "");
+      kvdk_assert(old_elem->prev == NullPMemOffset ||
+                      addressOf(old_elem->prev)->next == offsetOf(new_elem),
+                  "");
+      addressOf(old_elem->next)->PersistPrevNT(offsetOf(old_elem));
+    }
+
+    // Link prev back to old_elem
+    if (old_elem->prev != NullPMemOffset &&
+        addressOf(old_elem->prev)->next != offsetOf(old_elem)) {
+      kvdk_assert(old_elem->next == NullPMemOffset ||
+                      addressOf(old_elem->next)->prev == offsetOf(old_elem),
+                  "");
+      addressOf(old_elem->prev)->PersistNextNT(offsetOf(old_elem));
+    }
+
+    List::markRecordAsDirty(new_elem);
+  }
+
+  void RollbackEmplacement(DLRecord* new_elem) {
+    kvdk_assert(new_elem->Validate(), "No need to rollback invalid element");
+
+    // Unlink from next, like deletion
+    if (new_elem->next != NullPMemOffset &&
+        addressOf(new_elem->next)->prev == offsetOf(new_elem)) {
+      kvdk_assert(new_elem->prev == NullPMemOffset ||
+                      addressOf(new_elem->prev)->next == offsetOf(new_elem),
+                  "");
+      addressOf(new_elem->next)->PersistPrevNT(new_elem->prev);
+    }
+
+    // Unlink from prev, like deletion
+    if (new_elem->prev != NullPMemOffset &&
+        addressOf(new_elem->prev)->next == offsetOf(new_elem)) {
+      kvdk_assert(new_elem->next == NullPMemOffset ||
+                      addressOf(new_elem->next)->prev == new_elem->prev,
+                  "");
+      addressOf(new_elem->prev)->PersistNextNT(new_elem->next);
+    }
+
+    List::markRecordAsDirty(new_elem);
+  }
+
+  void RollbackDeletion(DLRecord* old_elem) {
+    // Clean dirty mark
+    if (List::isRecordDirty(old_elem)) {
+      List::cleanRecordDirtyMark(old_elem);
+    }
+    kvdk_assert(old_elem->Validate(), "");
+
+    // Link to prev, like insertion
+    if (old_elem->prev != NullPMemOffset &&
+        addressOf(old_elem->prev)->next != offsetOf(old_elem)) {
+      kvdk_assert(addressOf(old_elem->prev)->next == old_elem->next, "");
+      kvdk_assert(old_elem->next == NullPMemOffset ||
+                      addressOf(old_elem->next)->prev == old_elem->prev,
+                  "");
+      addressOf(old_elem->prev)->PersistNextNT(offsetOf(old_elem));
+    }
+
+    // Link to next, like insertion
+    if (old_elem->next != NullPMemOffset &&
+        addressOf(old_elem->next)->prev != offsetOf(old_elem)) {
+      kvdk_assert(addressOf(old_elem->next)->prev == old_elem->prev, "");
+      addressOf(old_elem->next)->PersistPrevNT(offsetOf(old_elem));
     }
   }
 
@@ -916,17 +1043,11 @@ class GenericListBuilder final {
       }
     }
     auto CountElems = [&](std::vector<DLRecord*> const& work_load) {
-      std::unordered_map<CollectionIDType, size_t> cache{1024};
       for (DLRecord* rec : work_load) {
+        size_t cnt = 0;
+        CollectionIDType id = Collection::ExtractID(rec->Key());
         while (true) {
-          CollectionIDType id = Collection::ExtractID(rec->Key());
-          ++cache[id];
-          if (cache.load_factor() > 0.7) {
-            for (auto const& pair : cache) {
-              primers.at(pair.first).size.fetch_add(pair.second);
-            }
-            cache.clear();
-          }
+          ++cnt;
           if (rec->next == NullPMemOffset) {
             break;
           }
@@ -935,9 +1056,7 @@ class GenericListBuilder final {
             break;
           }
         }
-      }
-      for (auto const& pair : cache) {
-        primers.at(pair.first).size.fetch_add(pair.second);
+        primers.at(id).size.fetch_add(cnt);
       }
     };
     std::vector<std::thread> workers;
@@ -947,6 +1066,19 @@ class GenericListBuilder final {
     for (auto& worker : workers) {
       worker.join();
     }
+  }
+
+  std::string serialize(DLRecord* rec) const {
+    std::stringstream ss;
+    ss << "Type:\t" << to_hex(rec->entry.meta.type) << "\t"
+       << "Prev:\t" << to_hex(rec->prev) << "\t"
+       << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
+       << "Next:\t" << to_hex(rec->next) << "\t"
+       << "ID:\t" << to_hex(Collection::ExtractID(rec->Key())) << "\t"
+       << "Valid:\t" << rec->Validate() << "\t"
+       << "Key: " << Collection::ExtractUserKey(rec->Key()) << "\t"
+       << "Value: " << rec->Value();
+    return ss.str();
   }
 };
 
