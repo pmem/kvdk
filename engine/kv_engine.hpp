@@ -439,8 +439,7 @@ class KVEngine : public Engine {
 
   Status hashListWrite(HashWriteArgs& args);
   Status hashListPublish(HashWriteArgs const& args);
-  Status hashListRollback(TimeStampType ts,
-                          BatchWriteLog::HashLogEntry const& entry);
+  Status hashListRollback(BatchWriteLog::HashLogEntry const& entry);
 
   /// Other
   Status CheckConfigs(const Configs& configs);

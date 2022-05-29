@@ -38,7 +38,7 @@ def insert_random(exec, shared_para, data_type, report_path, num_operations):
 
 
 def batch_insert_random(exec, shared_para, data_type, report_path, num_operations):
-    if data_type != "string" and data_type != "sorted" and data_type != "blackhole":
+    if data_type != "string" and data_type != "sorted" and data_type != "blackhole" and data_type != "hash":
         return
     new_para = shared_para + \
         " -fill=0 -type={} -read_ratio=0 -batch_size=100"\

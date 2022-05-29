@@ -630,10 +630,6 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
 Status KVEngine::restoreExistingData() {
   access_thread.id = 0;
   defer(access_thread.id = -1);
-  Status s = batchWriteRollbackLogs();
-  if (s != Status::Ok) {
-    return s;
-  }
 
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
@@ -643,6 +639,11 @@ Status KVEngine::restoreExistingData() {
   hash_list_builder_.reset(
       new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
                           configs_.max_access_threads, hash_list_locks_.get()});
+
+  Status s = batchWriteRollbackLogs();
+  if (s != Status::Ok) {
+    return s;
+  }
 
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
@@ -934,10 +935,12 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       // No need to do anything for delete a non-existing Sorted element
       continue;
     }
-    args.space = pmem_allocator_->Allocate(
-        DLRecord::RecordSize(internal_key, args.value));
-    if (args.space.size == 0) {
-      return Status::PmemOverflow;
+    if (args.op == WriteBatchImpl::Op::Put) {
+      args.space = pmem_allocator_->Allocate(
+          DLRecord::RecordSize(internal_key, args.value));
+      if (args.space.size == 0) {
+        return Status::PmemOverflow;
+      }
     }
   }
 
@@ -966,14 +969,21 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     }
   }
   for (auto& args : hash_args) {
-    if (args.space.size == 0) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       continue;
     }
-    if (args.op == WriteBatchImpl::Op::Put) {
-      log.HashPut(args.space.offset, pmem_allocator_->addr2offset_checked(
-                                         args.res.entry.GetIndex().dl_record));
+    if (args.res.s == Status::Ok) {
+      PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
+          args.res.entry.GetIndex().dl_record);
+      if (args.op == WriteBatchImpl::Op::Put) {
+        log.HashReplace(args.space.offset, old_off);
+      } else {
+        log.HashDelete(old_off);
+      }
     } else {
-      log.HashDelete(args.space.offset);
+      kvdk_assert(args.op == WriteBatchImpl::Op::Put, "");
+      log.HashEmplace(args.space.offset);
     }
   }
 
@@ -1004,7 +1014,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Write Hash Elems
   for (auto& args : hash_args) {
-    if (args.space.size == 0) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       continue;
     }
     Status s = hashListWrite(args);
@@ -1041,7 +1052,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Publish Hash Elements to HashTable
   for (auto& args : hash_args) {
-    if (args.space.size == 0) {
+    if (args.op == WriteBatchImpl::Op::Delete &&
+        args.res.s == Status::NotFound) {
       continue;
     }
     Status s = hashListPublish(args);
@@ -1086,7 +1098,14 @@ Status KVEngine::batchWriteRollbackLogs() {
     Status s;
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
          ++iter) {
-      s = hashListRollback(log.Timestamp(), *iter);
+      if (iter->op != BatchWriteLog::Op::Delete) {
+        DLRecord* rec = static_cast<DLRecord*>(
+            pmem_allocator_->offset2addr_checked(iter->new_offset));
+        if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
+          continue;
+        }
+      }
+      s = hashListRollback(*iter);
       if (s != Status::Ok) {
         return s;
       }
@@ -1361,12 +1380,18 @@ void KVEngine::delayFree(const OutdatedCollection& outdated_collection) {
 }
 
 void KVEngine::delayFree(DLRecord* addr) {
+  if (addr == nullptr) {
+    return;
+  }
   /// TODO: avoid deadlock in cleaner to help Free() deleted records
   old_records_cleaner_.PushToPendingFree(
       addr, version_controller_.GetCurrentTimestamp());
 }
 
 void KVEngine::directFree(DLRecord* addr) {
+  if (addr == nullptr) {
+    return;
+  }
   pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
                                    addr->entry.header.record_size});
 }
