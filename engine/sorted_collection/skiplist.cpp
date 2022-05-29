@@ -269,12 +269,14 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
   while (1) {
     PMemOffsetType prev_offset = record->prev;
     PMemOffsetType next_offset = record->next;
+    PMemOffsetType record_offset = pmem_allocator->addr2offset_checked(record);
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
 
     auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
 
     // Check if the list has changed before we successfully acquire lock.
-    if (record->prev != prev_offset || record->next != next_offset) {
+    if (record->prev != prev_offset || prev->next != record_offset ||
+        record->next != next_offset) {
       continue;
     }
 
@@ -527,15 +529,15 @@ bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
                       bool check_linkage) {
   auto guard = lockRecordPosition(purging_record, pmem_allocator, lock_table);
 
-  PMemOffsetType purging_offset = pmem_allocator->addr2offset(purging_record);
+  PMemOffsetType removing_offset = pmem_allocator->addr2offset(purging_record);
   PMemOffsetType prev_offset = purging_record->prev;
   PMemOffsetType next_offset = purging_record->next;
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
   bool do_remove = prev != nullptr && next != nullptr;
   if (check_linkage) {
-    do_remove = do_remove && prev->next == purging_offset &&
-                next->prev == purging_offset;
+    do_remove = do_remove && prev->next == removing_offset &&
+                next->prev == removing_offset;
   }
   if (do_remove) {
     // For repair in recovery due to crashes during pointers changing, we should
@@ -609,8 +611,7 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
     }
   } else {
     std::string internal_key = InternalKey(key);
-    auto ret =
-        hash_table_->Lookup<false>(internal_key, SortedElem | SortedElemDelete);
+    auto ret = hash_table_->Lookup<false>(internal_key, SortedElem);
     if (ret.s != Status::Ok) {
       return Status::NotFound;
     }
@@ -631,8 +632,9 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
         return Status::Abort;
       }
     }
-
-    if (pmem_record->entry.meta.type == SortedElemDelete) {
+    // As get is lockless, skiplist node may point to a new elem delete record
+    // after we get if from hashtable
+    if (pmem_record->GetRecordType() == SortedElemDelete) {
       return Status::NotFound;
     } else {
       assert(pmem_record->entry.meta.type == SortedElem);
