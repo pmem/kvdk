@@ -840,7 +840,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Lookup Skiplists and Hashes for further operations
   for (auto const& sorted_op : batch.SortedOps()) {
-    auto res = lookupKey<false>(sorted_op.key, SortedHeaderType);
+    auto res = lookupKey<false>(sorted_op.collection, SortedHeaderType);
     /// TODO: this is a temporary work-around
     /// We cannot lock both key and field, which may trigger deadlock.
     /// However, if a collection is created and a field is inserted,
@@ -874,7 +874,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     keys_to_lock.push_back(string_op.key);
   }
   for (auto const& arg : sorted_args) {
-    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.field));
+    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
   }
   for (auto const& arg : hash_args) {
     keys_to_lock.push_back(arg.hlist->InternalKey(arg.field));
@@ -907,41 +907,19 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prepare for Strings
   for (auto& args : string_args) {
     args.ts = bw_token.Timestamp();
-    args.res = lookupKey<true>(args.key, StringRecordType);
-    if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
-        args.res.s != Status::Outdated) {
-      return args.res.s;
-    }
-    if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
-      // No need to do anything for delete a non-existing String
-      continue;
-    }
-    args.space = pmem_allocator_->Allocate(
-        StringRecord::RecordSize(args.key, args.value));
-    if (args.space.size == 0) {
-      return Status::PmemOverflow;
+    Status s = stringWritePrepare(args);
+    if (s != Status::Ok) {
+      return s;
     }
   }
 
   // Prepare for Sorted Elements
   for (auto& args : sorted_args) {
     args.ts = bw_token.Timestamp();
-    std::string internal_key = args.skiplist->InternalKey(args.field);
-    args.res = lookupElem<true>(internal_key, SortedElemType);
-    if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
-      return args.res.s;
+    Status s = sortedWritePrepare(args);
+    if (s != Status::Ok) {
+      return s;
     }
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
-      // No need to do anything for delete a non-existing Sorted element
-      continue;
-    }
-    args.space = pmem_allocator_->Allocate(
-        DLRecord::RecordSize(internal_key, args.value));
-    if (args.space.size == 0) {
-      return Status::PmemOverflow;
-    }
-    sorted_args.push_back(args);
   }
 
   // Prepare for Hash Elements
@@ -1059,7 +1037,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    Status s = stringPublish(args);
+    Status s = stringWritePublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 
@@ -1068,7 +1046,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    Status s = sortedPublish(args);
+    Status s = sortedWritePublish(args);
     kvdk_assert(s == Status::Ok, "");
   }
 

@@ -14,6 +14,8 @@
 
 namespace KVDK_NAMESPACE {
 
+struct Splice;
+
 class WriteBatchImpl final : public WriteBatch {
  public:
   enum class Op { Put, Delete };
@@ -26,8 +28,8 @@ class WriteBatchImpl final : public WriteBatch {
 
   struct SortedOp {
     Op op;
+    std::string collection;
     std::string key;
-    std::string field;
     std::string value;
   };
 
@@ -43,7 +45,7 @@ class WriteBatchImpl final : public WriteBatch {
       return xxh_hash(string_op.key);
     }
     size_t operator()(SortedOp const& sorted_op) const {
-      return xxh_hash(sorted_op.key) ^ xxh_hash(sorted_op.field);
+      return xxh_hash(sorted_op.collection) ^ xxh_hash(sorted_op.key);
     }
     size_t operator()(HashOp const& hash_op) const {
       return xxh_hash(hash_op.key) ^ xxh_hash(hash_op.field);
@@ -52,7 +54,7 @@ class WriteBatchImpl final : public WriteBatch {
       return lhs.key == rhs.key;
     }
     bool operator()(SortedOp const& lhs, SortedOp const& rhs) const {
-      return lhs.key == rhs.key && lhs.field == rhs.field;
+      return lhs.collection == rhs.collection && lhs.key == rhs.key;
     }
     bool operator()(HashOp const& lhs, HashOp const& rhs) const {
       return lhs.key == rhs.key && lhs.field == rhs.field;
@@ -138,19 +140,19 @@ struct StringWriteArgs {
 };
 
 struct SortedWriteArgs {
+  StringView collection;
   StringView key;
-  StringView field;
   StringView value;
   WriteBatchImpl::Op op;
   Skiplist* skiplist;
   SpaceEntry space;
   TimeStampType ts;
-  HashTable::LookupResult res;
-  PointerWithTag<void*, PointerType> new_rec;
+  HashTable::LookupResult lookup_result;
+  std::unique_ptr<Splice> seek_result;
 
   void Assign(WriteBatchImpl::SortedOp const& sorted_op) {
+    collection = sorted_op.collection;
     key = sorted_op.key;
-    field = sorted_op.field;
     value = sorted_op.value;
     op = sorted_op.op;
   }
