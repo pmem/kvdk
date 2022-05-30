@@ -12,6 +12,7 @@
 #include "../kv_engine.hpp"
 #include "../utils/codec.hpp"
 #include "../utils/sync_point.hpp"
+#include "../write_batch_impl.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -164,7 +165,7 @@ void Skiplist::linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
-  TEST_SYNC_POINT("KVEngine::Skiplist::InsertDLRecord::UpdatePrev");
+  TEST_SYNC_POINT("KVEngine::Skiplist::LinkDLRecord::HalfLink");
   next->prev = inserting_record_offset;
   pmem_persist(&next->prev, 8);
 }
@@ -266,24 +267,16 @@ LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
                                                   PMEMAllocator* pmem_allocator,
                                                   LockTable* lock_table) {
   while (1) {
-    PMemOffsetType record_offset = pmem_allocator->addr2offset_checked(record);
     PMemOffsetType prev_offset = record->prev;
     PMemOffsetType next_offset = record->next;
     DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
-    DLRecord* next = pmem_allocator->offset2addr<DLRecord>(next_offset);
 
     auto guard = lock_table->MultiGuard({recordHash(prev), recordHash(record)});
 
-    // Check if the list has changed before we successfully acquire lock.
-    if (record->prev != prev_offset || prev->next != record_offset ||
-        record->next != next_offset || next->prev != record_offset) {
+    // Check if the linkage has changed before we successfully acquire lock.
+    if (record->prev != prev_offset || record->next != next_offset) {
       continue;
     }
-
-    kvdk_assert(record->prev == prev_offset, "");
-    kvdk_assert(record->next == next_offset, "");
-    kvdk_assert(next->prev == record_offset, "");
-    kvdk_assert(prev->next == record_offset, "");
 
     return guard;
   }
@@ -348,8 +341,110 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
   return true;
 }
 
+Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
+  WriteResult ret;
+  if (args.skiplist != this) {
+    ret.s = Status::InvalidArgument;
+    return ret;
+  }
+  if (args.op == WriteBatchImpl::Op::Put) {
+    if (IndexWithHashtable()) {
+      ret = putPreparedWithHash(args.lookup_result, args.key, args.value,
+                                args.ts, args.space);
+    } else {
+      kvdk_assert(args.seek_result != nullptr, "");
+      ret = putPreparedNoHash(*args.seek_result, args.key, args.value, args.ts,
+                              args.space);
+    }
+    if (ret.existing_record == nullptr ||
+        ret.existing_record->entry.meta.type == SortedElemDelete) {
+      UpdateSize(1);
+    }
+  } else {
+    if (IndexWithHashtable()) {
+      ret = deletePreparedWithHash(args.lookup_result, args.key, args.ts,
+                                   args.space);
+    } else {
+      kvdk_assert(args.seek_result != nullptr, "");
+      DLRecord* existing_record = args.seek_result->next_pmem_record;
+      SkiplistNode* dram_node = nullptr;
+      if (args.seek_result->nexts[1] &&
+          args.seek_result->nexts[1]->record == existing_record) {
+        dram_node = args.seek_result->nexts[1];
+      }
+      ret = deletePreparedNoHash(existing_record, dram_node, args.key, args.ts,
+                                 args.space);
+    }
+
+    if (ret.existing_record != nullptr &&
+        ret.existing_record->entry.meta.type == SortedElem) {
+      UpdateSize(-1);
+    }
+  }
+  return ret;
+}
+
+Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
+  kvdk_assert(args.op == WriteBatchImpl::Op::Put || args.value.size() == 0,
+              "value of delete operation should be empty");
+  if (args.skiplist != this) {
+    return Status::InvalidArgument;
+  }
+  bool op_delete = args.op == WriteBatchImpl::Op::Delete;
+  std::string internal_key(InternalKey(args.key));
+  bool allocate_space = true;
+  if (IndexWithHashtable()) {
+    if (op_delete) {
+      args.lookup_result = hash_table_->Lookup<false>(internal_key, SortedElem);
+    } else {
+      args.lookup_result =
+          hash_table_->Lookup<true>(internal_key, SortedElemType);
+    }
+    switch (args.lookup_result.s) {
+      case Status::Ok: {
+        break;
+      }
+      case Status::NotFound: {
+        if (op_delete) {
+          allocate_space = false;
+        }
+        break;
+      }
+      case Status::MemoryOverflow: {
+        return args.lookup_result.s;
+      }
+      default:
+        std::abort();  // never should reach
+    }
+  } else {
+    args.seek_result = std::unique_ptr<Splice>(new Splice(args.skiplist));
+    Seek(args.key, args.seek_result.get());
+    auto key_exist = [&]() {
+      return (args.seek_result->next_pmem_record->entry.meta.type ==
+              SortedElem) &&
+             equal_string_view(args.seek_result->next_pmem_record->Key(),
+                               internal_key);
+    };
+    if (op_delete && !key_exist()) {
+      allocate_space = false;
+    }
+  }
+
+  if (allocate_space) {
+    auto request_size = DLRecord::RecordSize(internal_key, args.value);
+    args.space = pmem_allocator_->Allocate(request_size);
+    if (args.space.size == 0) {
+      return Status::PmemOverflow;
+    }
+  }
+
+  return Status::Ok;
+}
+
 Skiplist::WriteResult Skiplist::Delete(const StringView& key,
                                        TimeStampType timestamp) {
+  std::string internal_key(InternalKey(key));
+
   Skiplist::WriteResult ret;
   if (IndexWithHashtable()) {
     ret = deleteImplWithHash(key, timestamp);
@@ -366,11 +461,11 @@ Skiplist::WriteResult Skiplist::Delete(const StringView& key,
 Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
-  Skiplist::WriteResult ret;
+  WriteResult ret;
   if (IndexWithHashtable()) {
-    ret = setImplWithHash(key, value, timestamp);
+    ret = putImplWithHash(key, value, timestamp);
   } else {
-    ret = setImplNoHash(key, value, timestamp);
+    ret = putImplNoHash(key, value, timestamp);
   }
   if (ret.existing_record == nullptr ||
       ret.existing_record->entry.meta.type == SortedElemDelete) {
@@ -383,13 +478,14 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
                        SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
                        LockTable* lock_table) {
   auto guard = lockRecordPosition(old_record, pmem_allocator, lock_table);
+
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
   auto old_record_offset = pmem_allocator->addr2offset(old_record);
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
   bool on_list =
-      prev->next == old_record_offset && next->prev == old_record_offset;
+      prev != nullptr && next != nullptr && prev->next == old_record_offset;
   if (on_list) {
     if (prev_offset == old_record_offset && next_offset == old_record_offset) {
       // old record is the only record (the header) in the skiplist, so we make
@@ -427,12 +523,13 @@ bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
                       PMEMAllocator* pmem_allocator, LockTable* lock_table) {
   auto guard = lockRecordPosition(purging_record, pmem_allocator, lock_table);
 
-  PMemOffsetType purging_offset = pmem_allocator->addr2offset(purging_record);
+  PMemOffsetType removing_offset = pmem_allocator->addr2offset(purging_record);
   PMemOffsetType prev_offset = purging_record->prev;
   PMemOffsetType next_offset = purging_record->next;
   DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
   DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(next_offset);
-  bool on_list = prev->next == purging_offset && next->prev == purging_offset;
+  bool on_list =
+      prev != nullptr && next != nullptr && prev->next == removing_offset;
   if (on_list) {
     // For repair in recovery due to crashes during pointers changing, we should
     // first unlink deleting entry from next's prev.(It is the reverse process
@@ -505,8 +602,7 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
     }
   } else {
     std::string internal_key = InternalKey(key);
-    auto ret =
-        hash_table_->Lookup<false>(internal_key, SortedElem | SortedElemDelete);
+    auto ret = hash_table_->Lookup<false>(internal_key, SortedElem);
     if (ret.s != Status::Ok) {
       return Status::NotFound;
     }
@@ -527,8 +623,9 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
         return Status::Abort;
       }
     }
-
-    if (pmem_record->entry.meta.type == SortedElemDelete) {
+    // As get is lockless, skiplist node may point to a new elem delete record
+    // after we get if from hashtable
+    if (pmem_record->GetRecordType() == SortedElemDelete) {
       return Status::NotFound;
     } else {
       assert(pmem_record->entry.meta.type == SortedElem);
@@ -538,39 +635,49 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
   }
 }
 
-Skiplist::WriteResult Skiplist::deleteImplNoHash(const StringView& key,
-                                                 TimeStampType timestamp) {
-  WriteResult ret;
+Skiplist::WriteResult Skiplist::putImplWithHash(const StringView& key,
+                                                const StringView& value,
+                                                TimeStampType timestamp) {
   std::string internal_key(InternalKey(key));
-  Splice splice(this);
-  Seek(key, &splice);
-  bool found = (splice.next_pmem_record->entry.meta.type &
-                (SortedElem | SortedElemDelete)) &&
-               equal_string_view(splice.next_pmem_record->Key(), internal_key);
-
-  if (!found) {
-    return ret;
-  }
-
-  if (splice.next_pmem_record->entry.meta.type == SortedElemDelete) {
-    return ret;
-  }
-
-  ret.existing_record = splice.next_pmem_record;
-  if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
-    ret.dram_node = splice.nexts[1];
-  }
-
-  // try to write delete record
-  auto guard = lockRecordPosition(ret.existing_record);
-
-  auto request_size = internal_key.size() + sizeof(DLRecord);
-  auto space_to_write = pmem_allocator_->Allocate(request_size);
-  if (space_to_write.size == 0) {
+  auto space =
+      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
+  if (space.size == 0) {
+    WriteResult ret;
     ret.s = Status::PmemOverflow;
     return ret;
   }
+  auto lookup_result = hash_table_->Lookup<true>(internal_key, SortedElem);
+  return putPreparedWithHash(lookup_result, key, value, timestamp, space);
+}
 
+Skiplist::WriteResult Skiplist::putImplNoHash(const StringView& key,
+                                              const StringView& value,
+                                              TimeStampType timestamp) {
+  auto space =
+      pmem_allocator_->Allocate(DLRecord::RecordSize(InternalKey(key), value));
+  if (space.size == 0) {
+    WriteResult ret;
+    ret.s = Status::PmemOverflow;
+    return ret;
+  }
+  Splice splice(this);
+  Seek(key, &splice);
+  return putPreparedNoHash(splice, key, value, timestamp, space);
+}
+
+Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
+                                                     SkiplistNode* dram_node,
+                                                     const StringView& key,
+                                                     TimeStampType timestamp,
+                                                     const SpaceEntry& space) {
+  kvdk_assert(existing_record != nullptr, "");
+  WriteResult ret;
+  std::string internal_key(InternalKey(key));
+  kvdk_assert(equal_string_view(existing_record->Key(), internal_key), "");
+  ret.existing_record = existing_record;
+  ret.dram_node = dram_node;
+  // to write delete record
+  auto guard = lockOnListRecord(existing_record);
   assert(ret.existing_record->entry.meta.timestamp < timestamp);
   PMemOffsetType existing_offset =
       pmem_allocator_->addr2offset_checked(ret.existing_record);
@@ -581,9 +688,9 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(const StringView& key,
   DLRecord* next_record =
       pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
   DLRecord* delete_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedElemDelete, existing_offset, prev_offset, next_offset,
-      internal_key, "");
+      pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
+      SortedElemDelete, existing_offset, prev_offset, next_offset, internal_key,
+      "");
   ret.write_record = delete_record;
 
   kvdk_assert(prev_record->next == existing_offset,
@@ -593,72 +700,84 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(const StringView& key,
 
   linkDLRecord(prev_record, next_record, delete_record);
 
-  if (ret.dram_node) {
-    ret.dram_node->record = delete_record;
+  if (dram_node) {
+    dram_node->record = delete_record;
   }
   return ret;
 }
 
 Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
                                                    TimeStampType timestamp) {
-  WriteResult ret;
-  assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
-  auto lookup_result =
-      hash_table_->Lookup<false>(internal_key, SortedElem | SortedElemDelete);
-  ret.s = lookup_result.s;
-
-  switch (ret.s) {
-    case Status::NotFound: {
-      ret.s = Status::Ok;
-      return ret;
+  WriteResult ret;
+  auto lookup_result = hash_table_->Lookup<false>(internal_key, SortedElem);
+  if (lookup_result.s == Status::Ok) {
+    auto space =
+        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, ""));
+    if (space.size == 0) {
+      ret.s = Status::PmemOverflow;
+    } else {
+      ret = deletePreparedWithHash(lookup_result, key, timestamp, space);
     }
-    case Status::Ok: {
-      if (lookup_result.entry.GetRecordType() == SortedElemDelete) {
-        return ret;
-      }
-
-      if (lookup_result.entry.GetIndexType() == PointerType::SkiplistNode) {
-        ret.dram_node = lookup_result.entry.GetIndex().skiplist_node;
-        ret.existing_record = ret.dram_node->record;
-      } else {
-        ret.dram_node = nullptr;
-        assert(lookup_result.entry.GetIndexType() == PointerType::DLRecord);
-        ret.existing_record = lookup_result.entry.GetIndex().dl_record;
-      }
-      assert(timestamp > ret.existing_record->entry.meta.timestamp);
-
-      // Try to write delete record
-      auto guard = lockRecordPosition(ret.existing_record);
-
-      auto space_to_write =
-          pmem_allocator_->Allocate(internal_key.size() + sizeof(DLRecord));
-      if (space_to_write.size == 0) {
-        ret.s = Status::PmemOverflow;
-        return ret;
-      }
-
-      PMemOffsetType prev_offset = ret.existing_record->prev;
-      DLRecord* prev_record =
-          pmem_allocator_->offset2addr_checked<DLRecord>(prev_offset);
-      PMemOffsetType next_offset = ret.existing_record->next;
-      DLRecord* next_record =
-          pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
-      PMemOffsetType existing_offset =
-          pmem_allocator_->addr2offset_checked(ret.existing_record);
-      DLRecord* delete_record = DLRecord::PersistDLRecord(
-          pmem_allocator_->offset2addr(space_to_write.offset),
-          space_to_write.size, timestamp, SortedElemDelete, existing_offset,
-          prev_offset, next_offset, internal_key, "");
-      linkDLRecord(prev_record, next_record, delete_record);
-      ret.write_record = delete_record;
-      ret.hash_entry_ptr = lookup_result.entry_ptr;
-
-      break;
-    }
-    default:
-      std::abort();  // never reach
   }
+  return ret;
+}
+
+Skiplist::WriteResult Skiplist::deleteImplNoHash(const StringView& key,
+                                                 TimeStampType timestamp) {
+  WriteResult ret;
+  std::string internal_key(InternalKey(key));
+  Splice seek_result(this);
+  Seek(key, &seek_result);
+  bool key_exist =
+      (seek_result.next_pmem_record->entry.meta.type == SortedElem) &&
+      equal_string_view(seek_result.next_pmem_record->Key(), internal_key);
+
+  if (!key_exist) {
+    return ret;
+  }
+
+  auto space =
+      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, ""));
+  if (space.size == 0) {
+    ret.s = Status::PmemOverflow;
+    return ret;
+  }
+
+  DLRecord* existing_record = seek_result.next_pmem_record;
+  SkiplistNode* dram_node = nullptr;
+
+  if (seek_result.nexts[1] && seek_result.nexts[1]->record == existing_record) {
+    dram_node = seek_result.nexts[1];
+  }
+
+  return deletePreparedNoHash(existing_record, dram_node, key, timestamp,
+                              space);
+}
+
+Skiplist::WriteResult Skiplist::deletePreparedWithHash(
+    const HashTable::LookupResult& lookup_result, const StringView& key,
+    TimeStampType timestamp, const SpaceEntry& space) {
+  std::string internal_key(InternalKey(key));
+  assert(IndexWithHashtable());
+  assert(lookup_result.s == Status::Ok);
+  assert(lookup_result.entry.GetRecordType() == SortedElem);
+  assert(space.size >= DLRecord::RecordSize(internal_key, ""));
+  DLRecord* existing_record;
+  SkiplistNode* dram_node;
+
+  if (lookup_result.entry.GetIndexType() == PointerType::SkiplistNode) {
+    dram_node = lookup_result.entry.GetIndex().skiplist_node;
+    existing_record = dram_node->record;
+  } else {
+    dram_node = nullptr;
+    assert(lookup_result.entry.GetIndexType() == PointerType::DLRecord);
+    existing_record = lookup_result.entry.GetIndex().dl_record;
+  }
+  assert(timestamp > existing_record->entry.meta.timestamp);
+
+  auto ret =
+      deletePreparedNoHash(existing_record, dram_node, key, timestamp, space);
 
   // until here, new record is already inserted to list
   assert(ret.write_record != nullptr);
@@ -674,14 +793,12 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
   return ret;
 }
 
-Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
-                                                const StringView& value,
-                                                TimeStampType timestamp) {
+Skiplist::WriteResult Skiplist::putPreparedWithHash(
+    const HashTable::LookupResult& lookup_result, const StringView& key,
+    const StringView& value, TimeStampType timestamp, const SpaceEntry& space) {
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
-  auto lookup_result =
-      hash_table_->Lookup<true>(internal_key, SortedElem | SortedElemDelete);
 
   switch (lookup_result.s) {
     case Status::Ok: {
@@ -696,14 +813,7 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
       assert(timestamp > ret.existing_record->entry.meta.timestamp);
 
       // Try to write delete record
-      auto guard = lockRecordPosition(ret.existing_record);
-
-      auto request_size = internal_key.size() + value.size() + sizeof(DLRecord);
-      auto space_to_write = pmem_allocator_->Allocate(request_size);
-      if (space_to_write.size == 0) {
-        ret.s = Status::PmemOverflow;
-        return ret;
-      }
+      auto guard = lockOnListRecord(ret.existing_record);
 
       PMemOffsetType prev_offset = ret.existing_record->prev;
       DLRecord* prev_record =
@@ -714,17 +824,23 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
       PMemOffsetType existing_offset =
           pmem_allocator_->addr2offset_checked(ret.existing_record);
       DLRecord* new_record = DLRecord::PersistDLRecord(
-          pmem_allocator_->offset2addr(space_to_write.offset),
-          space_to_write.size, timestamp, SortedElem, existing_offset,
-          prev_offset, next_offset, internal_key, value);
+          pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
+          SortedElem, existing_offset, prev_offset, next_offset, internal_key,
+          value);
       ret.write_record = new_record;
       ret.hash_entry_ptr = lookup_result.entry_ptr;
+      kvdk_assert(prev_record->next == existing_offset,
+                  "wrong linkage in skiplist update after acquiring lock");
+      kvdk_assert(next_record->prev == existing_offset,
+                  "wrong linkage in skiplist update after acquiring lock");
       linkDLRecord(prev_record, next_record, new_record);
 
       break;
     }
     case Status::NotFound: {
-      ret = setImplNoHash(key, value, timestamp);
+      Splice splice(this);
+      Seek(key, &splice);
+      ret = putPreparedNoHash(splice, key, value, timestamp, space);
       if (ret.s != Status::Ok) {
         return ret;
       }
@@ -752,9 +868,11 @@ Skiplist::WriteResult Skiplist::setImplWithHash(const StringView& key,
   return ret;
 }
 
-Skiplist::WriteResult Skiplist::setImplNoHash(const StringView& key,
-                                              const StringView& value,
-                                              TimeStampType timestamp) {
+Skiplist::WriteResult Skiplist::putPreparedNoHash(Splice& seek_result,
+                                                  const StringView& key,
+                                                  const StringView& value,
+                                                  TimeStampType timestamp,
+                                                  const SpaceEntry& space) {
   WriteResult ret;
   std::string internal_key(InternalKey(key));
   DLRecord* prev_record;
@@ -764,48 +882,47 @@ Skiplist::WriteResult Skiplist::setImplNoHash(const StringView& key,
   LockTable::GuardType update_guard;
 
 seek_write_position:
-  Splice splice(this);
-  Seek(key, &splice);
-
-  key_exist = !IndexWithHashtable() /* a hash indexed skiplist call this
-                                        function only if key not exist */
-              && (splice.next_pmem_record->entry.meta.type &
-                  (SortedElem | SortedElemDelete)) &&
-              equal_string_view(splice.next_pmem_record->Key(), internal_key);
+  key_exist =
+      !IndexWithHashtable() /* a hash indexed skiplist call this
+                                function only if key not exist */
+      && (seek_result.next_pmem_record->entry.meta.type &
+          (SortedElem | SortedElemDelete)) &&
+      equal_string_view(seek_result.next_pmem_record->Key(), internal_key);
 
   if (key_exist) {
-    ret.existing_record = splice.next_pmem_record;
-    if (splice.nexts[1] && splice.nexts[1]->record == ret.existing_record) {
-      ret.dram_node = splice.nexts[1];
+    ret.existing_record = seek_result.next_pmem_record;
+    if (seek_result.nexts[1] &&
+        seek_result.nexts[1]->record == ret.existing_record) {
+      ret.dram_node = seek_result.nexts[1];
     }
 
-    update_guard = lockRecordPosition(ret.existing_record);
+    update_guard = lockOnListRecord(ret.existing_record);
     prev_record = pmem_allocator_->offset2addr_checked<DLRecord>(
         ret.existing_record->prev);
     next_record = pmem_allocator_->offset2addr_checked<DLRecord>(
         ret.existing_record->next);
+    kvdk_assert(
+        prev_record->next == pmem_allocator_->addr2offset(ret.existing_record),
+        "wrong linkage in skiplist update after acquiring lock");
+    kvdk_assert(
+        next_record->prev == pmem_allocator_->addr2offset(ret.existing_record),
+        "wrong linkage in skiplist update after acquiring lock");
   } else {
     ret.existing_record = nullptr;
-    if (!lockInsertPosition(key, splice.prev_pmem_record,
-                            splice.next_pmem_record, &insert_guard)) {
+    if (!lockInsertPosition(key, seek_result.prev_pmem_record,
+                            seek_result.next_pmem_record, &insert_guard)) {
+      Seek(key, &seek_result);
       goto seek_write_position;
     }
-    next_record = splice.next_pmem_record;
-    prev_record = splice.prev_pmem_record;
-  }
-
-  auto request_size = internal_key.size() + value.size() + sizeof(DLRecord);
-  auto space_to_write = pmem_allocator_->Allocate(request_size);
-  if (space_to_write.size == 0) {
-    ret.s = Status::PmemOverflow;
-    return ret;
+    next_record = seek_result.next_pmem_record;
+    prev_record = seek_result.prev_pmem_record;
   }
 
   uint64_t prev_offset = pmem_allocator_->addr2offset_checked(prev_record);
   uint64_t next_offset = pmem_allocator_->addr2offset_checked(next_record);
   DLRecord* new_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr(space_to_write.offset), space_to_write.size,
-      timestamp, SortedElem, pmem_allocator_->addr2offset(ret.existing_record),
+      pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
+      SortedElem, pmem_allocator_->addr2offset(ret.existing_record),
       prev_offset, next_offset, internal_key, value);
   ret.write_record = new_record;
   // link new record to PMem
@@ -817,16 +934,17 @@ seek_write_position:
       auto height = ret.dram_node->Height();
       for (int i = 1; i <= height; i++) {
         while (1) {
-          auto now_next = splice.prevs[i]->Next(i);
+          auto now_next = seek_result.prevs[i]->Next(i);
           // if next has been changed or been deleted, re-compute
-          if (now_next.RawPointer() == splice.nexts[i] &&
+          if (now_next.RawPointer() == seek_result.nexts[i] &&
               now_next.GetTag() == SkiplistNode::NodeStatus::Normal) {
-            ret.dram_node->RelaxedSetNext(i, splice.nexts[i]);
-            if (splice.prevs[i]->CASNext(i, splice.nexts[i], ret.dram_node)) {
+            ret.dram_node->RelaxedSetNext(i, seek_result.nexts[i]);
+            if (seek_result.prevs[i]->CASNext(i, seek_result.nexts[i],
+                                              ret.dram_node)) {
               break;
             }
           } else {
-            splice.Recompute(key, i);
+            seek_result.Recompute(key, i);
           }
         }
       }
@@ -872,13 +990,10 @@ void Skiplist::destroyRecords() {
   std::vector<SpaceEntry> to_free;
   if (header_) {
     DLRecord* header_record = header_->record;
-    DLRecord* next_destroy =
-        pmem_allocator_->offset2addr_checked<DLRecord>(header_record->next);
     DLRecord* to_destroy = nullptr;
     do {
-      to_destroy = next_destroy;
-      next_destroy =
-          pmem_allocator_->offset2addr_checked<DLRecord>(to_destroy->next);
+      to_destroy =
+          pmem_allocator_->offset2addr_checked<DLRecord>(header_record->next);
       StringView key = to_destroy->Key();
       auto ul = hash_table_->AcquireLock(key);
       // We need to purge destroyed records one by one in case engine crashed

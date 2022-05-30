@@ -366,8 +366,9 @@ class KVEngine : public Engine {
 
   Status StringDeleteImpl(const StringView& key);
 
+  Status stringWritePrepare(StringWriteArgs& args);
   Status stringWrite(StringWriteArgs& args);
-  Status stringPublish(StringWriteArgs const& args);
+  Status stringWritePublish(StringWriteArgs const& args);
   Status stringRollback(TimeStampType ts,
                         BatchWriteLog::StringLogEntry const& entry);
 
@@ -379,8 +380,9 @@ class KVEngine : public Engine {
   Status restoreExistingData();
 
   Status restoreDataFromBackup(const std::string& backup_log);
+  Status sortedWritePrepare(SortedWriteArgs& args);
   Status sortedWrite(SortedWriteArgs& args);
-  Status sortedPublish(SortedWriteArgs const& args);
+  Status sortedWritePublish(SortedWriteArgs const& args);
   Status sortedRollback(TimeStampType ts,
                         BatchWriteLog::SortedLogEntry const& entry);
 
