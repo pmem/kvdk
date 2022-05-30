@@ -449,6 +449,10 @@ class KVEngine : public Engine {
   template <typename T>
   T* removeOutDatedVersion(T* record);
 
+  // find delete and old records in skiplist with no hash index
+  void iterSkiplistWithNoHashIndex(Skiplist* skiplist,
+                                   std::vector<DLRecord*>& purge_dl_records);
+
   void delayFree(DLRecord* addr);
 
   void directFree(DLRecord* addr);
