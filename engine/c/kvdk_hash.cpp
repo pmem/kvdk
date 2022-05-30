@@ -128,4 +128,8 @@ void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** field_data,
   *field_len = buffer.size();
 }
 
+int KVDKHashIteratorMatchKey(KVDKHashIterator* iter, KVDKRegex const* re) {
+  return iter->rep->MatchKey(re->rep) ? 1 : 0;
+}
+
 }  // extern "C"

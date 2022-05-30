@@ -94,7 +94,7 @@ TEST_F(EngineCAPITestBase, Hash) {
     ASSERT_EQ(len, cnt);
   };
 
-  auto HashIterate = [&](size_t) {
+  auto HashIterate = [&](size_t tid) {
     umap combined;
     for (size_t tid = 0; tid < num_threads; tid++) {
       umap const& local_copy = local_copies[tid];
@@ -140,6 +140,23 @@ TEST_F(EngineCAPITestBase, Hash) {
       free(value_data);
     }
     ASSERT_EQ(cnt, combined.size());
+
+    std::string re_str1{".*"};
+    std::string re_str2{std::to_string(tid) + "_.*"};
+    KVDKRegex* re1 = KVDKRegexCreate(re_str1.data(), re_str1.size());
+    KVDKRegex* re2 = KVDKRegexCreate(re_str2.data(), re_str2.size());
+    size_t match_cnt1 = 0;
+    size_t match_cnt2 = 0;
+    for (KVDKHashIteratorSeekToFirst(iter); KVDKHashIteratorIsValid(iter);
+         KVDKHashIteratorNext(iter)) {
+      match_cnt1 += KVDKHashIteratorMatchKey(iter, re1);
+      match_cnt2 += KVDKHashIteratorMatchKey(iter, re2);
+    }
+    ASSERT_EQ(match_cnt1, combined.size());
+    ASSERT_EQ(match_cnt2, local_copies[tid].size());
+    KVDKRegexDestroy(re2);
+    KVDKRegexDestroy(re1);
+
     KVDKHashIteratorDestroy(iter);
   };
 

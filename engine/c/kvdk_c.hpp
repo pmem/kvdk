@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <regex>
 
 #include "../alias.hpp"
 #include "kvdk/configs.hpp"
@@ -62,6 +63,10 @@ struct KVDKWriteOptions {
 
 struct KVDKSortedCollectionConfigs {
   SortedCollectionConfigs rep;
+};
+
+struct KVDKRegex {
+  std::regex rep;
 };
 
 inline char* CopyStringToChar(const std::string& str) {
