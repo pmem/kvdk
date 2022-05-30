@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <regex>
+
 #include "types.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -71,6 +73,8 @@ class HashIterator {
   virtual std::string Key() const = 0;
 
   virtual std::string Value() const = 0;
+
+  virtual bool MatchKey(std::regex const& re) = 0;
 
   virtual ~HashIterator() = default;
 };

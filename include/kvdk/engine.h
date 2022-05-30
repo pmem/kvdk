@@ -24,8 +24,12 @@ typedef struct KVDKListIterator KVDKListIterator;
 typedef struct KVDKHashIterator KVDKHashIterator;
 typedef struct KVDKSnapshot KVDKSnapshot;
 typedef struct KVDKSortedCollectionConfigs KVDKSortedCollectionConfigs;
+typedef struct KVDKRegex KVDKRegex;
 
-KVDKConfigs* KVDKCreateConfigs(void);
+extern KVDKRegex* KVDKRegexCreate(char const* data, size_t len);
+extern void KVDKRegexDestroy(KVDKRegex* re);
+
+extern KVDKConfigs* KVDKCreateConfigs(void);
 extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
                            uint64_t pmem_file_size,
                            unsigned char populate_pmem_space,
@@ -198,6 +202,8 @@ extern void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** field_data,
                                    size_t* field_len);
 extern void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** value_data,
                                      size_t* value_len);
+extern int KVDKHashIteratorMatchKey(KVDKHashIterator* iter,
+                                    KVDKRegex const* re);
 
 /// List //////////////////////////////////////////////////////////////////////
 extern KVDKStatus KVDKListCreate(KVDKEngine* engine, char const* key_data,
