@@ -312,11 +312,11 @@ class GenericList final : public Collection {
 
   void AddOldVersion(GenericList* old) {
     kvdk_assert(old_list == nullptr, "");
+    old_list = old;
     kvdk_assert(old_list->ID() < ID(), "");
     kvdk_assert(
         old_list->list_record->GetTimestamp() < list_record->GetTimestamp(),
         "");
-    old_list = old;
   }
 
   void RemoveOldVersion() {
