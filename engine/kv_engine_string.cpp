@@ -268,6 +268,23 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   return Status::Ok;
 }
 
+Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
+  args.res = lookupKey<true>(args.key, StringRecordType);
+  if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
+      args.res.s != Status::Outdated) {
+    return args.res.s;
+  }
+  if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+    return Status::Ok;
+  }
+  args.space =
+      pmem_allocator_->Allocate(StringRecord::RecordSize(args.key, args.value));
+  if (args.space.size == 0) {
+    return Status::PmemOverflow;
+  }
+  return Status::Ok;
+}
+
 Status KVEngine::stringWrite(StringWriteArgs& args) {
   RecordType type = (args.op == WriteBatchImpl::Op::Put)
                         ? RecordType::StringDataRecord
@@ -280,7 +297,7 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
   return Status::Ok;
 }
 
-Status KVEngine::stringPublish(StringWriteArgs const& args) {
+Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
   RecordType type = (args.op == WriteBatchImpl::Op::Put)
                         ? RecordType::StringDataRecord
                         : RecordType::StringDeleteRecord;

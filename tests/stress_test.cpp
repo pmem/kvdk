@@ -957,20 +957,20 @@ TEST_F(EngineHotspotTest, BackgroundCleanerTest) {
       CheckStrings();
       StringEvenSetOddDelete();
       CheckStrings();
-      // Hash
-      HashesAllHSet(global_hash_collection_name);
-      CheckHashesCollection(global_hash_collection_name);
-      HashesEvenHSetOddHDelete(global_hash_collection_name);
-      CheckHashesCollection(global_hash_collection_name);
+      // // Hash
+      // HashesAllHSet(global_hash_collection_name);
+      // CheckHashesCollection(global_hash_collection_name);
+      // HashesEvenHSetOddHDelete(global_hash_collection_name);
+      // CheckHashesCollection(global_hash_collection_name);
     }
 
     RebootDB();
     CheckSortedCollection(global_sorted_collection_name);
-    CheckHashesCollection(global_hash_collection_name);
+    // CheckHashesCollection(global_hash_collection_name);
     ASSERT_EQ(engine->SortedDestroy(global_sorted_collection_name),
               kvdk::Status::Ok);
-    ASSERT_EQ(engine->Expire(global_hash_collection_name, -1),
-              kvdk::Status::Ok);
+    // ASSERT_EQ(engine->Expire(global_hash_collection_name, -1),
+    //           kvdk::Status::Ok);
   }
 }
 

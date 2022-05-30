@@ -316,7 +316,7 @@ class KVEngine : public Engine {
       kvdk_assert(false, "Collection already registered!");
       return Status::Abort;
     }
-    if (ret.s != Status::NotFound) {
+    if (ret.s != Status::NotFound && ret.s != Status::Outdated) {
       return ret.s;
     }
     insertKeyOrElem(ret, type, coll);
@@ -347,8 +347,9 @@ class KVEngine : public Engine {
 
   Status StringDeleteImpl(const StringView& key);
 
+  Status stringWritePrepare(StringWriteArgs& args);
   Status stringWrite(StringWriteArgs& args);
-  Status stringPublish(StringWriteArgs const& args);
+  Status stringWritePublish(StringWriteArgs const& args);
   Status stringRollback(TimeStampType ts,
                         BatchWriteLog::StringLogEntry const& entry);
 
@@ -360,8 +361,9 @@ class KVEngine : public Engine {
   Status restoreExistingData();
 
   Status restoreDataFromBackup(const std::string& backup_log);
+  Status sortedWritePrepare(SortedWriteArgs& args);
   Status sortedWrite(SortedWriteArgs& args);
-  Status sortedPublish(SortedWriteArgs const& args);
+  Status sortedWritePublish(SortedWriteArgs const& args);
   Status sortedRollback(TimeStampType ts,
                         BatchWriteLog::SortedLogEntry const& entry);
 
@@ -432,8 +434,7 @@ class KVEngine : public Engine {
 
   Status hashListWrite(HashWriteArgs& args);
   Status hashListPublish(HashWriteArgs const& args);
-  Status hashListRollback(TimeStampType ts,
-                          BatchWriteLog::HashLogEntry const& entry);
+  Status hashListRollback(BatchWriteLog::HashLogEntry const& entry);
 
   /// Other
   Status CheckConfigs(const Configs& configs);

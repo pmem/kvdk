@@ -273,15 +273,40 @@ Status KVEngine::restoreSortedElem(DLRecord* elem) {
   return sorted_rebuilder_->AddElement(elem);
 }
 
-Status KVEngine::sortedWrite(SortedWriteArgs&) { return Status::NotSupported; }
+Status KVEngine::sortedWritePrepare(SortedWriteArgs& args) {
+  return args.skiplist->PrepareWrite(args);
+}
 
-Status KVEngine::sortedPublish(SortedWriteArgs const&) {
-  return Status::NotSupported;
+Status KVEngine::sortedWrite(SortedWriteArgs& args) {
+  // Notice Jiayu: we do not handle delay free here as is no longer need soon
+  return args.skiplist->Write(args).s;
+}
+
+Status KVEngine::sortedWritePublish(SortedWriteArgs const&) {
+  return Status::Ok;
 }
 
 Status KVEngine::sortedRollback(TimeStampType,
-                                BatchWriteLog::SortedLogEntry const&) {
-  return Status::NotSupported;
+                                BatchWriteLog::SortedLogEntry const& log) {
+  DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+  // We only check prev linkage as a valid prev linkage indicate valid prev and
+  // next pointers on the record, so we can safely do remove/replace
+  if (elem->Validate() &&
+      Skiplist::CheckRecordPrevLinkage(elem, pmem_allocator_.get())) {
+    if (elem->old_version != kNullPMemOffset) {
+      bool success = Skiplist::Replace(
+          elem,
+          pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
+          nullptr, pmem_allocator_.get(), skiplist_locks_.get());
+      kvdk_assert(success, "Replace should success as we checked linkage");
+    } else {
+      bool success = Skiplist::Remove(elem, nullptr, pmem_allocator_.get(),
+                                      skiplist_locks_.get());
+      kvdk_assert(success, "Remove should success as we checked linkage");
+    }
+  }
+  elem->Destroy();
+  return Status::Ok;
 }
 
 }  // namespace KVDK_NAMESPACE
