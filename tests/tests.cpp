@@ -1356,6 +1356,8 @@ TEST_F(EngineBasicTest, TestList) {
   for (size_t i = 0; i < num_threads; i++) {
     key_vec[i] = "List_" + std::to_string(i);
     ASSERT_EQ(engine->ListCreate(key_vec[i]), Status::Ok);
+    ASSERT_EQ(engine->ListDestroy(key_vec[i]), Status::Ok);
+    ASSERT_EQ(engine->ListCreate(key_vec[i]), Status::Ok);
     for (size_t j = 0; j < count; j++) {
       elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }
@@ -1521,6 +1523,8 @@ TEST_F(EngineBasicTest, TestHash) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key{"Hash"};
+  ASSERT_EQ(engine->HashCreate(key), Status::Ok);
+  ASSERT_EQ(engine->HashDestroy(key), Status::Ok);
   ASSERT_EQ(engine->HashCreate(key), Status::Ok);
   using umap = std::unordered_map<std::string, std::string>;
   std::vector<umap> local_copies(num_threads);
