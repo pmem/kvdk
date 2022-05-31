@@ -176,7 +176,7 @@ class GenericList final : public Collection {
     //  A Normal Record
     void debug_check() const {
 #if KVDK_DEBUG_LEVEL > 0
-      if (curr == nullptr) {
+      if (owner == nullptr || curr == nullptr) {
         return;
       }
       kvdk_assert(Collection::ExtractID(curr->Key()) == owner->ID(), "");

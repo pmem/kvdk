@@ -13,17 +13,45 @@ using ListBuilder =
 
 class ListIteratorImpl final : public ListIterator {
  public:
-  void Seek(IndexType pos) final { rep = list->Seek(pos); }
+  void Seek(IndexType pos) final {
+    if (list == nullptr) {
+      return;
+    }
+    rep = list->Seek(pos);
+  }
 
-  void SeekToFirst() final { rep = list->Front(); }
+  void SeekToFirst() final {
+    if (list == nullptr) {
+      return;
+    }
+    rep = list->Front();
+  }
 
-  void SeekToLast() final { rep = list->Back(); }
+  void SeekToLast() final {
+    if (list == nullptr) {
+      return;
+    }
+    rep = list->Back();
+  }
 
-  void Next() final { ++rep; }
+  void Next() final {
+    if (list == nullptr) {
+      return;
+    }
+    ++rep;
+  }
 
-  void Prev() final { --rep; }
+  void Prev() final {
+    if (list == nullptr) {
+      return;
+    }
+    --rep;
+  }
 
   void SeekToFirst(StringView elem) final {
+    if (list == nullptr) {
+      return;
+    }
     SeekToFirst();
     while (Valid() && elem != rep->Value()) {
       ++rep;
@@ -31,6 +59,9 @@ class ListIteratorImpl final : public ListIterator {
   }
 
   void SeekToLast(StringView elem) final {
+    if (list == nullptr) {
+      return;
+    }
     SeekToLast();
     while (Valid() && elem != rep->Value()) {
       --rep;
@@ -38,6 +69,9 @@ class ListIteratorImpl final : public ListIterator {
   }
 
   void Next(StringView elem) final {
+    if (list == nullptr) {
+      return;
+    }
     if (!Valid()) return;
     ++rep;
     while (Valid() && elem != rep->Value()) {
@@ -46,6 +80,9 @@ class ListIteratorImpl final : public ListIterator {
   }
 
   void Prev(StringView elem) final {
+    if (list == nullptr) {
+      return;
+    }
     if (!Valid()) return;
     --rep;
     while (Valid() && elem != rep->Value()) {
@@ -55,7 +92,7 @@ class ListIteratorImpl final : public ListIterator {
 
   bool Valid() const final {
     // list->Head() == list->Tail()
-    return (rep != list->Tail());
+    return (s == Status::Ok && rep != list->Tail());
   }
 
   Status CurrentStatus() const final { return s; }
@@ -72,9 +109,11 @@ class ListIteratorImpl final : public ListIterator {
   ~ListIteratorImpl() final = default;
 
  public:
-  ListIteratorImpl(List* l, Status status)
-      : list{l}, rep{l->Front()}, s{status}, guard{list->AcquireLock()} {
-    kvdk_assert(list != nullptr, "");
+  ListIteratorImpl(List* l, Status status) : list{l}, rep{l}, s{status} {
+    if (list != nullptr) {
+      rep = l->Front();
+      guard = list->AcquireLock();
+    }
   }
 
   List::Iterator& Rep() { return rep; }

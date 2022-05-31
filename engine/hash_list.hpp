@@ -11,24 +11,44 @@ using HashListBuilder =
 
 class HashIteratorImpl final : public HashIterator {
  public:
-  void SeekToFirst() final { rep = list->Front(); }
+  void SeekToFirst() final {
+    if (list == nullptr) {
+      return;
+    }
+    rep = list->Front();
+  }
 
-  void SeekToLast() final { rep = list->Back(); }
+  void SeekToLast() final {
+    if (list == nullptr) {
+      return;
+    }
+    rep = list->Back();
+  }
 
   bool Valid() const final {
     // list->Head() == list->Tail()
-    return (rep != list->Tail());
+    return (s == Status::Ok && rep != list->Tail());
   }
 
   Status CurrentStatus() const final { return s; }
 
-  void Next() final { ++rep; }
+  void Next() final {
+    if (list == nullptr) {
+      return;
+    }
+    ++rep;
+  }
 
-  void Prev() final { --rep; }
+  void Prev() final {
+    if (list == nullptr) {
+      return;
+    }
+    --rep;
+  }
 
   std::string Key() const final {
     if (!Valid()) {
-      kvdk_assert(false, "Accessing data with invalid ListIterator!");
+      kvdk_assert(false, "Accessing data with invalid HashIterator!");
       return std::string{};
     }
     auto sw = Collection::ExtractUserKey(rep->Key());
@@ -37,7 +57,7 @@ class HashIteratorImpl final : public HashIterator {
 
   std::string Value() const final {
     if (!Valid()) {
-      kvdk_assert(false, "Accessing data with invalid ListIterator!");
+      kvdk_assert(false, "Accessing data with invalid HashIterator!");
       return std::string{};
     }
     auto sw = rep->Value();
@@ -45,6 +65,10 @@ class HashIteratorImpl final : public HashIterator {
   }
 
   bool MatchKey(std::regex const& re) final {
+    if (!Valid()) {
+      kvdk_assert(false, "Accessing data with invalid HashIterator!");
+      return false;
+    }
     return std::regex_match(Key(), re);
   }
 
@@ -55,8 +79,10 @@ class HashIteratorImpl final : public HashIterator {
 
  public:
   HashIteratorImpl(HashList* l, Status status, AccessToken t)
-      : list{l}, rep{l->Front()}, s{status}, token{t} {
-    kvdk_assert(list != nullptr, "");
+      : list{l}, rep{l}, s{status}, token{t} {
+    if (list != nullptr) {
+      rep = l->Front();
+    }
   }
 
  private:

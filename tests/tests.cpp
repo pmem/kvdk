@@ -1432,23 +1432,25 @@ TEST_F(EngineBasicTest, TestList) {
     auto& list_copy = list_copy_vec[tid];
 
     auto iter = engine->ListCreateIterator(key);
-    ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
-    if (iter != nullptr) {
-      iter->Seek(0);
-      for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
-        ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Value(), *iter2);
-        iter->Next();
-      }
-
-      iter->Seek(-1);
-      for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
-           iter2++) {
-        ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Value(), *iter2);
-        iter->Prev();
-      }
+    iter->Seek(0);
+    for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
+      ASSERT_TRUE(iter->Valid());
+      ASSERT_EQ(iter->Value(), *iter2);
+      iter->Next();
     }
+
+    iter->Seek(-1);
+    for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend(); iter2++) {
+      ASSERT_TRUE(iter->Valid());
+      ASSERT_EQ(iter->Value(), *iter2);
+      iter->Prev();
+    }
+
+    iter = engine->ListCreateIterator("Non-existing");
+    iter->SeekToFirst();
+    iter->SeekToLast();
+    ASSERT_FALSE(iter->Valid());
+    ASSERT_EQ(iter->CurrentStatus(), Status::NotFound);
   };
 
   auto ListInsertPutRemove = [&](size_t tid) {
@@ -1579,8 +1581,6 @@ TEST_F(EngineBasicTest, TestHash) {
     }
 
     auto iter = engine->HashCreateIterator(key);
-
-    ASSERT_NE(iter, nullptr);
     size_t cnt = 0;
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
       ++cnt;
@@ -1605,6 +1605,12 @@ TEST_F(EngineBasicTest, TestHash) {
     }
     ASSERT_EQ(match_cnt1, combined.size());
     ASSERT_EQ(match_cnt2, local_copies[tid].size());
+
+    iter = engine->HashCreateIterator("Non-existing");
+    iter->SeekToFirst();
+    iter->SeekToLast();
+    ASSERT_FALSE(iter->Valid());
+    ASSERT_EQ(iter->CurrentStatus(), Status::NotFound);
   };
 
   std::string counter{"counter"};
