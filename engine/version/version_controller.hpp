@@ -135,6 +135,13 @@ class VersionController {
       }
     }
     TimeStampType Timestamp() { return snap_->GetTimestamp(); }
+
+    void Release() {
+      kvdk_assert(owner_ != nullptr, "");
+      owner_->ReleaseSnapshot(snap_);
+      owner_ = nullptr;
+      snap_ = nullptr;
+    }
   };
 
   class BatchWriteToken {

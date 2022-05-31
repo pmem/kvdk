@@ -237,13 +237,18 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
   }
 
   auto snapshot = version_controller_.GetGlobalSnapshotToken();
-  HashList* hlist;
+  HashList* hlist = nullptr;
   Status s = hashListFind(key, &hlist);
-  if (s != Status::Ok) {
-    return nullptr;
+  if (s == Status::Ok) {
+    return std::unique_ptr<HashIteratorImpl>{
+        new HashIteratorImpl{hlist, s, std::move(snapshot)}};
+  } else {
+    // An invalid iterator does not need a snapshot,
+    // and snapshot should be released as soon as possible.
+    snapshot->Release();
+    return std::unique_ptr<HashIteratorImpl>{
+        new HashIteratorImpl{nullptr, s, std::move(snapshot)}};
   }
-  return std::unique_ptr<HashIteratorImpl>{
-      new HashIteratorImpl{hlist, std::move(snapshot)}};
 }
 
 Status KVEngine::hashListFind(StringView key, HashList** hlist) {

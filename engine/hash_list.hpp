@@ -20,6 +20,8 @@ class HashIteratorImpl final : public HashIterator {
     return (rep != list->Tail());
   }
 
+  Status CurrentStatus() const final { return s; }
+
   void Next() final { ++rep; }
 
   void Prev() final { --rep; }
@@ -52,14 +54,15 @@ class HashIteratorImpl final : public HashIterator {
   using AccessToken = std::shared_ptr<VersionController::GlobalSnapshotHolder>;
 
  public:
-  HashIteratorImpl(HashList* l, AccessToken t)
-      : list{l}, rep{l->Front()}, token{t} {
+  HashIteratorImpl(HashList* l, Status status, AccessToken t)
+      : list{l}, rep{l->Front()}, s{status}, token{t} {
     kvdk_assert(list != nullptr, "");
   }
 
  private:
   HashList* list;
   HashList::Iterator rep;
+  Status s;
   AccessToken token;
 };
 

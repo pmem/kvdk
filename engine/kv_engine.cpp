@@ -1942,13 +1942,14 @@ std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(StringView key) {
   }
 
   auto token = version_controller_.GetLocalSnapshotHolder();
-  List* list;
+  List* list = nullptr;
   Status s = listFind(key, &list);
-  if (s != Status::Ok) {
-    return nullptr;
+  if (s == Status::Ok) {
+    auto guard = list->AcquireLock();
+    return std::unique_ptr<ListIteratorImpl>{new ListIteratorImpl{list, s}};
+  } else {
+    return std::unique_ptr<ListIteratorImpl>{new ListIteratorImpl{nullptr, s}};
   }
-  auto guard = list->AcquireLock();
-  return std::unique_ptr<ListIteratorImpl>{new ListIteratorImpl{list}};
 }
 
 Status KVEngine::listRestoreElem(DLRecord* pmp_record) {

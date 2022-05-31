@@ -6,6 +6,7 @@
 
 #include <regex>
 
+#include "status.hpp"
 #include "types.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -53,6 +54,8 @@ class ListIterator {
 
   virtual bool Valid() const = 0;
 
+  virtual Status CurrentStatus() const = 0;
+
   virtual std::string Value() const = 0;
 
   virtual ~ListIterator() = default;
@@ -65,6 +68,8 @@ class HashIterator {
   virtual void SeekToLast() = 0;
 
   virtual bool Valid() const = 0;
+
+  virtual Status CurrentStatus() const = 0;
 
   virtual void Next() = 0;
 

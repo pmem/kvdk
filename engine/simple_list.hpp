@@ -58,6 +58,8 @@ class ListIteratorImpl final : public ListIterator {
     return (rep != list->Tail());
   }
 
+  Status CurrentStatus() const final { return s; }
+
   std::string Value() const final {
     if (!Valid()) {
       kvdk_assert(false, "Accessing data with invalid ListIterator!");
@@ -70,8 +72,8 @@ class ListIteratorImpl final : public ListIterator {
   ~ListIteratorImpl() final = default;
 
  public:
-  ListIteratorImpl(List* l)
-      : list{l}, rep{l->Front()}, guard{list->AcquireLock()} {
+  ListIteratorImpl(List* l, Status status)
+      : list{l}, rep{l->Front()}, s{status}, guard{list->AcquireLock()} {
     kvdk_assert(list != nullptr, "");
   }
 
@@ -82,6 +84,7 @@ class ListIteratorImpl final : public ListIterator {
  private:
   List* list;
   List::Iterator rep;
+  Status s;
   std::unique_lock<std::recursive_mutex> guard;
 };
 
