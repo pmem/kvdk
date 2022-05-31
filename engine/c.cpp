@@ -398,11 +398,8 @@ KVDKStatus KVDKListPut(KVDKEngine* engine, KVDKListIterator* pos,
 
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len) {
-  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len});
-  if (rep == nullptr) {
-    return nullptr;
-  }
   KVDKListIterator* iter = new KVDKListIterator;
+  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len});
   iter->rep.swap(rep);
   return iter;
 }
@@ -448,6 +445,10 @@ void KVDKListIteratorSeekToLastElem(KVDKListIterator* iter,
 int KVDKListIteratorIsValid(KVDKListIterator* iter) {
   bool valid = iter->rep->Valid();
   return (valid ? 1 : 0);
+}
+
+KVDKStatus KVDKListIteratorStatus(KVDKListIterator* iter) {
+  return iter->rep->CurrentStatus();
 }
 
 void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,

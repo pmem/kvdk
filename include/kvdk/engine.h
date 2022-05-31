@@ -198,6 +198,7 @@ extern void KVDKHashIteratorNext(KVDKHashIterator* iter);
 extern void KVDKHashIteratorSeekToFirst(KVDKHashIterator* iter);
 extern void KVDKHashIteratorSeekToLast(KVDKHashIterator* iter);
 extern int KVDKHashIteratorIsValid(KVDKHashIterator* iter);
+extern KVDKStatus KVDKHashIteratorStatus(KVDKHashIterator* iter);
 extern void KVDKHashIteratorGetKey(KVDKHashIterator* iter, char** field_data,
                                    size_t* field_len);
 extern void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** value_data,
@@ -253,6 +254,7 @@ extern void KVDKListIteratorSeekToLastElem(KVDKListIterator* iter,
                                            size_t elem_len);
 extern void KVDKListIteratorSeekPos(KVDKListIterator* iter, long pos);
 extern int KVDKListIteratorIsValid(KVDKListIterator* iter);
+extern KVDKStatus KVDKListIteratorStatus(KVDKListIterator* iter);
 extern void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
                                      size_t* elem_len);
 

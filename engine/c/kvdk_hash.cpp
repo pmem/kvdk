@@ -82,11 +82,8 @@ extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len) {
-  auto iter = engine->rep->HashCreateIterator(StringView{key_data, key_len});
-  if (iter == nullptr) {
-    return nullptr;
-  }
   KVDKHashIterator* hash_iter = new KVDKHashIterator;
+  auto iter = engine->rep->HashCreateIterator(StringView{key_data, key_len});
   hash_iter->rep.swap(iter);
   return hash_iter;
 }
@@ -108,6 +105,10 @@ void KVDKHashIteratorSeekToLast(KVDKHashIterator* iter) {
 int KVDKHashIteratorIsValid(KVDKHashIterator* iter) {
   bool valid = iter->rep->Valid();
   return (valid ? 1 : 0);
+}
+
+KVDKStatus KVDKHashIteratorStatus(KVDKHashIterator* iter) {
+  return iter->rep->CurrentStatus();
 }
 
 void KVDKHashIteratorGetValue(KVDKHashIterator* iter, char** value_data,
