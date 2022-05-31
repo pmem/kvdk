@@ -2685,6 +2685,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
 }
 
 TEST_F(EngineBasicTest, TestBackGroundCleaner) {
+  int cleaner_execute_time = 1;
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
@@ -2693,9 +2694,18 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
         *((size_t*)thread_id) = configs.clean_threads;
         return;
       });
+  SyncPoint::GetInstance()->SetCallBack("KVEngine::backgroundCleaner::Start",
+                                        [&](void* terminal) {
+                                          *((bool*)terminal) = false;
+                                          return;
+                                        });
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::RunOnceTime", [&](void* terminal) {
-        *((bool*)terminal) = true;
+      "KVEngine::backgroundCleaner::ExecuteNTime", [&](void* terminal) {
+        cleaner_execute_time--;
+        if (cleaner_execute_time == 0) {
+          *((bool*)terminal) = true;
+        }
+        sleep(1);
         return;
       });
   SyncPoint::GetInstance()->EnableProcessing();
@@ -2791,6 +2801,60 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
     }
   };
 
+  std::string sorted_collection = "sorted_collection";
+  std::string list_collection = "list_collection";
+  std::string hashlist_collection = "hashlist_collection";
+
+  auto CreateAndDestroySorted = [&]() {
+    std::string key = "sorted_key";
+    ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+    for (int i = 0; i < cnt; ++i) {
+      auto new_key = key + std::to_string(i);
+      ASSERT_EQ(engine->SortedPut(sorted_collection, new_key, "sorted_value"),
+                Status::Ok);
+      ASSERT_EQ(
+          engine->SortedPut(sorted_collection, new_key, "sorted_update_value"),
+          Status::Ok);
+      if (i % 2 != 0) {
+        ASSERT_EQ(engine->SortedDelete(sorted_collection, new_key), Status::Ok);
+      }
+    }
+    ASSERT_EQ(engine->SortedDestroy(sorted_collection), Status::Ok);
+    ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  };
+
+  auto CreateAndDestroyList = [&]() {
+    std::string key = "list_key";
+    std::string got_key;
+    ASSERT_EQ(engine->ListCreate(list_collection), Status::Ok);
+    for (int i = 0; i < cnt; ++i) {
+      auto new_key = key + std::to_string(i);
+      ASSERT_EQ(engine->ListPushFront(list_collection, new_key), Status::Ok);
+      ASSERT_EQ(engine->ListPopBack(list_collection, &got_key), Status::Ok);
+      ASSERT_EQ(got_key, new_key);
+    }
+    ASSERT_EQ(engine->ListDestroy(list_collection), Status::Ok);
+    ASSERT_EQ(engine->ListCreate(list_collection), Status::Ok);
+  };
+
+  auto CreateAndDestroyHashList = [&]() {
+    std::string key = "hashlist_key";
+    ASSERT_EQ(engine->HashCreate(hashlist_collection), Status::Ok);
+    for (int i = 0; i < cnt; ++i) {
+      auto new_key = key + std::to_string(i);
+      ASSERT_EQ(engine->HashPut(hashlist_collection, new_key, "hashlist_value"),
+                Status::Ok);
+      ASSERT_EQ(engine->HashPut(hashlist_collection, new_key,
+                                "hashlist_update_value"),
+                Status::Ok);
+      if (i % 2 != 0) {
+        ASSERT_EQ(engine->HashDelete(hashlist_collection, new_key), Status::Ok);
+      }
+    }
+    ASSERT_EQ(engine->HashDestroy(hashlist_collection), Status::Ok);
+    ASSERT_EQ(engine->HashCreate(hashlist_collection), Status::Ok);
+  };
+
   auto ExpiredClean = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     test_kvengine->CleanOutDated(0,
@@ -2798,6 +2862,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   };
 
   {
+    cleaner_execute_time = 1;
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(PutString));
     ts.emplace_back(std::thread(ExpireString));
@@ -2810,6 +2875,7 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   }
 
   {
+    cleaner_execute_time = 1;
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(PutString));
     ts.emplace_back(std::thread(ExpireString));
@@ -2819,15 +2885,34 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   }
 
   {
+    cleaner_execute_time = 1;
     PutSorted();
     auto t = std::thread(ExpiredClean);
     GetSorted();
     t.join();
   }
+
+  {
+    cleaner_execute_time = 3;
+    CreateAndDestroySorted();
+    CreateAndDestroyHashList();
+    CreateAndDestroyList();
+    ExpiredClean();
+    {
+      size_t size;
+      ASSERT_EQ(engine->SortedSize(sorted_collection, &size), Status::Ok);
+      ASSERT_EQ(size, 0);
+      ASSERT_EQ(engine->HashLength(hashlist_collection, &size), Status::Ok);
+      ASSERT_EQ(size, 0);
+      ASSERT_EQ(engine->ListLength(list_collection, &size), Status::Ok);
+      ASSERT_EQ(size, 0);
+    }
+  }
   delete engine;
 }
 
 TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
+  int cleaner_execute_time = 3;
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
@@ -2836,9 +2921,18 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
         *((size_t*)thread_id) = configs.clean_threads;
         return;
       });
+  SyncPoint::GetInstance()->SetCallBack("KVEngine::backgroundCleaner::Start",
+                                        [&](void* terminal) {
+                                          *((bool*)terminal) = false;
+                                          return;
+                                        });
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::RunOnceTime", [&](void* terminal) {
-        *((bool*)terminal) = true;
+      "KVEngine::backgroundCleaner::ExecuteNTime", [&](void* terminal) {
+        cleaner_execute_time--;
+        if (cleaner_execute_time == 0) {
+          *((bool*)terminal) = true;
+        }
+        sleep(1);
         return;
       });
   SyncPoint::GetInstance()->LoadDependency(

@@ -1771,8 +1771,9 @@ Status KVEngine::listDestroy(List* list) {
     entries.push_back(space);
   };
   if (list->OldVersion() != nullptr) {
+    auto old_list = list->OldVersion();
     list->RemoveOldVersion();
-    listDestroy(list->OldVersion());
+    listDestroy(old_list);
   }
   while (list->Size() > 0) {
     list->PopFront(PushPending);

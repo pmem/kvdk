@@ -449,9 +449,15 @@ class KVEngine : public Engine {
   template <typename T>
   T* removeOutDatedVersion(T* record);
 
+  // Workaround for expired list or hash list.
+  // TODO: replaced this by `removeOutDatedVersion` when list/hash list has
+  // mvcc.
+  template <typename T>
+  T* removeListOutDatedVersion(T* list);
+
   // find delete and old records in skiplist with no hash index
-  void iterSkiplistWithNoHashIndex(Skiplist* skiplist,
-                                   std::vector<DLRecord*>& purge_dl_records);
+  void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
+                                  std::vector<DLRecord*>& purge_dl_records);
 
   void delayFree(DLRecord* addr);
 

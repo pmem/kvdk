@@ -326,8 +326,9 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     entries.push_back(space);
   };
   if (hlist->OldVersion() != nullptr) {
+    auto old_hlist = hlist->OldVersion();
     hlist->RemoveOldVersion();
-    hashListDestroy(hlist->OldVersion());
+    hashListDestroy(old_hlist);
   }
   while (hlist->Size() != 0) {
     StringView internal_key = hlist->Front()->Key();

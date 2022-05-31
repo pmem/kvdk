@@ -44,7 +44,8 @@ class SortedIterator : public Iterator {
   }
 
   virtual bool Valid() override {
-    return (current_ != nullptr && current_ != skiplist_->HeaderRecord());
+    return (current_ != nullptr &&
+            (current_->GetRecordType() & SortedHeaderType) == 0);
   }
 
   virtual void Next() override {

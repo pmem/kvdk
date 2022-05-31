@@ -622,6 +622,20 @@ class EngineTestBase : public testing::Test {
         new ShadowSorted{engine, collection_name, n_thread});
   }
 
+  void RemoveOutDatedSorted(std::string const& collection_name) {
+    if (shadow_sorted_engines.find(collection_name) !=
+        shadow_sorted_engines.end()) {
+      shadow_sorted_engines.erase(collection_name);
+    }
+  }
+
+  void RemoveOutDatedHashes(std::string const& collection_name) {
+    if (shadow_hashes_engines.find(collection_name) !=
+        shadow_hashes_engines.end()) {
+      shadow_hashes_engines.erase(collection_name);
+    }
+  }
+
  private:
   void purgeDB() {
     std::string cmd = "rm -rf " + FLAGS_path + "\n";
@@ -925,12 +939,9 @@ TEST_F(EngineHotspotTest, StringMultipleHotspot) {
   }
 }
 
-TEST_F(EngineHotspotTest, BackgroundCleanerTest) {
+TEST_F(EngineStressTest, BackgroundCleanerTest) {
   std::string global_sorted_collection_name{"SortedCollection_withHashTable"};
   std::string global_hash_collection_name{"HashCollection"};
-  InitializeSorted(global_sorted_collection_name);
-  InitializeHashes(global_hash_collection_name);
-  InitializeStrings();
 
   kvdk::SortedCollectionConfigs s_configs;
   s_configs.index_with_hashtable = 1;
@@ -938,6 +949,9 @@ TEST_F(EngineHotspotTest, BackgroundCleanerTest) {
   std::cout << "[Testing] Modify, check, reboot and check engine for "
             << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
+    InitializeSorted(global_sorted_collection_name);
+    InitializeHashes(global_hash_collection_name);
+    InitializeStrings();
     std::cout << "[Testing] Repeat: " << i + 1 << std::endl;
     std::cout << " Create Sorted collection index with hashtable: " << 1
               << std::endl;
@@ -957,20 +971,22 @@ TEST_F(EngineHotspotTest, BackgroundCleanerTest) {
       CheckStrings();
       StringEvenSetOddDelete();
       CheckStrings();
-      // // Hash
-      // HashesAllHSet(global_hash_collection_name);
-      // CheckHashesCollection(global_hash_collection_name);
-      // HashesEvenHSetOddHDelete(global_hash_collection_name);
-      // CheckHashesCollection(global_hash_collection_name);
+      // Hash
+      HashesAllHSet(global_hash_collection_name);
+      CheckHashesCollection(global_hash_collection_name);
+      HashesEvenHSetOddHDelete(global_hash_collection_name);
+      CheckHashesCollection(global_hash_collection_name);
     }
 
     RebootDB();
     CheckSortedCollection(global_sorted_collection_name);
-    // CheckHashesCollection(global_hash_collection_name);
+    CheckHashesCollection(global_hash_collection_name);
     ASSERT_EQ(engine->SortedDestroy(global_sorted_collection_name),
               kvdk::Status::Ok);
-    // ASSERT_EQ(engine->Expire(global_hash_collection_name, -1),
-    //           kvdk::Status::Ok);
+    RemoveOutDatedSorted(global_sorted_collection_name);
+    ASSERT_EQ(engine->Expire(global_hash_collection_name, -1),
+              kvdk::Status::Ok);
+    RemoveOutDatedHashes(global_hash_collection_name);
   }
 }
 
