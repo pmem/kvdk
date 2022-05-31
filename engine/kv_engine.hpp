@@ -101,8 +101,8 @@ class KVEngine : public Engine {
                    const StringView value) override;
   Status SortedDelete(const StringView collection,
                       const StringView user_key) override;
-  Iterator* NewSortedIterator(const StringView collection,
-                              Snapshot* snapshot) override;
+  Iterator* NewSortedIterator(const StringView collection, Snapshot* snapshot,
+                              Status* s) override;
   void ReleaseSortedIterator(Iterator* sorted_iterator) override;
 
   void ReleaseAccessThread() override { access_thread.Release(); }
@@ -172,7 +172,8 @@ class KVEngine : public Engine {
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
   Status ListPut(std::unique_ptr<ListIterator> const& pos,
                  StringView elem) final;
-  std::unique_ptr<ListIterator> ListCreateIterator(StringView key) final;
+  std::unique_ptr<ListIterator> ListCreateIterator(StringView key,
+                                                   Status* s) final;
 
   // Hash
   Status HashCreate(StringView key) final;
@@ -183,7 +184,8 @@ class KVEngine : public Engine {
   Status HashDelete(StringView key, StringView field) final;
   Status HashModify(StringView key, StringView field, ModifyFunc modify_func,
                     void* cb_args) final;
-  std::unique_ptr<HashIterator> HashCreateIterator(StringView key) final;
+  std::unique_ptr<HashIterator> HashCreateIterator(StringView key,
+                                                   Status* s) final;
 
  private:
   // Look up a first level key in hash table(e.g. collections or string, not

@@ -251,11 +251,12 @@ KVDKStatus KVDKSortedDelete(KVDKEngine* engine, const char* collection,
 KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
                                                  const char* collection,
                                                  size_t collection_len,
-                                                 KVDKSnapshot* snapshot) {
+                                                 KVDKSnapshot* snapshot,
+                                                 KVDKStatus* s) {
   KVDKSortedIterator* result = new KVDKSortedIterator;
   result->rep =
       (engine->rep->NewSortedIterator(StringView{collection, collection_len},
-                                      snapshot ? snapshot->rep : nullptr));
+                                      snapshot ? snapshot->rep : nullptr, s));
   if (!result->rep) {
     delete result;
     return nullptr;
@@ -397,8 +398,9 @@ KVDKStatus KVDKListPut(KVDKEngine* engine, KVDKListIterator* pos,
 }
 
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
-                                         char const* key_data, size_t key_len) {
-  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len});
+                                         char const* key_data, size_t key_len,
+                                         KVDKStatus* s) {
+  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len}, s);
   if (rep == nullptr) {
     return nullptr;
   }

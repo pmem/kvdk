@@ -121,7 +121,7 @@ TEST_F(EngineCAPITestBase, List) {
     auto& list_copy = list_copy_vec[tid];
 
     KVDKListIterator* iter =
-        KVDKListIteratorCreate(engine, key.data(), key.size());
+        KVDKListIteratorCreate(engine, key.data(), key.size(), NULL);
     if (iter != nullptr) {
       KVDKListIteratorSeekPos(iter, 0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
@@ -153,7 +153,7 @@ TEST_F(EngineCAPITestBase, List) {
     ASSERT_GT(len, insert_pos);
 
     KVDKListIterator* iter =
-        KVDKListIteratorCreate(engine, key.data(), key.size());
+        KVDKListIteratorCreate(engine, key.data(), key.size(), NULL);
     ASSERT_NE(iter, nullptr);
 
     KVDKListIteratorSeekPos(iter, insert_pos);
