@@ -172,6 +172,12 @@ struct StringRecord {
     _mm_mfence();
   }
 
+  void PersistOldVersion(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
+                    static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
   RecordType GetRecordType() const { return entry.meta.type; }
@@ -203,8 +209,8 @@ struct StringRecord {
   }
 
   uint32_t Checksum() {
-    // we don't checksum expire time
-    uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
+    // we don't checksum expire time and old version
+    uint32_t meta_checksum_size = sizeof(DataMeta);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
     return get_checksum((char*)&entry.meta, meta_checksum_size) +
@@ -301,6 +307,12 @@ struct DLRecord {
     _mm_mfence();
   }
 
+  void PersistOldVersion(PMemOffsetType offset) {
+    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
+                    static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
   ExpireTimeType GetExpireTime() const {
     kvdk_assert(entry.meta.type & ExpirableRecordType,
                 "Call DLRecord::GetExpireTime with an unexpirable type");
@@ -351,8 +363,8 @@ struct DLRecord {
   }
 
   uint32_t Checksum() {
-    // we don't checksum next/prev pointers and expire time
-    uint32_t meta_checksum_size = sizeof(DataMeta) + sizeof(PMemOffsetType);
+    // we don't checksum next/prev pointers, expire time and old_version
+    uint32_t meta_checksum_size = sizeof(DataMeta);
     uint32_t data_checksum_size = entry.meta.k_size + entry.meta.v_size;
 
     return get_checksum((char*)&entry.meta, meta_checksum_size) +
