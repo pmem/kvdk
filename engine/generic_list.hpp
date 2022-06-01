@@ -271,6 +271,10 @@ class GenericList final : public Collection {
     return list_record->GetExpireTime();
   }
 
+  TimeStampType GetTimeStamp() const {
+    return list_record->entry.meta.timestamp;
+  }
+
   bool HasExpired() const final {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }

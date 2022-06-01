@@ -115,7 +115,7 @@ class KVEngine : public Engine {
   // Used by test case.
   HashTable* GetHashTable() { return hash_table_.get(); }
 
-  void CleanOutDated();
+  void CleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
 
  private:
   friend OldRecordsCleaner;
@@ -232,9 +232,9 @@ class KVEngine : public Engine {
 
   // insert/update key or elem to hashtable, ret must be return value of
   // lookupElem or lookupKey
-  void insertKeyOrElem(HashTable::LookupResult ret, RecordType type, void* addr,
-                       KeyStatus entry_status = KeyStatus::Persist) {
-    hash_table_->Insert(ret, type, addr, pointerType(type), entry_status);
+  void insertKeyOrElem(HashTable::LookupResult ret, RecordType type,
+                       void* addr) {
+    hash_table_->Insert(ret, type, addr, pointerType(type));
   }
 
   template <typename CollectionType>
@@ -298,11 +298,6 @@ class KVEngine : public Engine {
                         CollectionType** collection_ptr, uint64_t record_type) {
     auto res = lookupKey<false>(collection_name, record_type);
     if (res.s == Status::Outdated) {
-      // TODO(zhichen): will open the following code when completing collection
-      // deletion.
-      // delayFree(OldDeleteRecord{res.entry_ptr->GetIndex().ptr,
-      //                           version_controller_.GetCurrentTimestamp(),
-      //                           res.entry_ptr, hint.spin});
       return Status::NotFound;
     }
     *collection_ptr =
@@ -321,7 +316,7 @@ class KVEngine : public Engine {
       kvdk_assert(false, "Collection already registered!");
       return Status::Abort;
     }
-    if (ret.s != Status::NotFound) {
+    if (ret.s != Status::NotFound && ret.s != Status::Outdated) {
       return ret.s;
     }
     insertKeyOrElem(ret, type, coll);
@@ -446,11 +441,23 @@ class KVEngine : public Engine {
 
   void FreeSkiplistDramNodes();
 
-  void delayFree(const OldDeleteRecord&);
+  void purgeAndFreeStringRecords(const std::vector<StringRecord*>& old_offset);
 
-  void delayFree(const OldDataRecord&);
+  void purgeAndFreeDLRecords(const std::vector<DLRecord*>& old_offset);
 
-  void delayFree(const OutdatedCollection&);
+  // remove outdated records which without snapshot hold.
+  template <typename T>
+  T* removeOutDatedVersion(T* record);
+
+  // Workaround for expired list or hash list.
+  // TODO: replaced this by `removeOutDatedVersion` when list/hash list has
+  // mvcc.
+  template <typename T>
+  T* removeListOutDatedVersion(T* list);
+
+  // find delete and old records in skiplist with no hash index
+  void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
+                                  std::vector<DLRecord*>& purge_dl_records);
 
   void delayFree(DLRecord* addr);
 
@@ -550,9 +557,6 @@ class KVEngine : public Engine {
                    data_entry->header.record_size));
   }
 
-  // Run in background to clean old records regularly
-  void backgroundOldRecordCleaner();
-
   // Run in background to report PMem usage regularly
   void backgroundPMemUsageReporter();
 
@@ -562,9 +566,9 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  void deleteCollections();
+  void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
 
-  void backgroundDestroyCollections();
+  void deleteCollections();
 
   void startBackgroundWorks();
 
@@ -603,8 +607,6 @@ class KVEngine : public Engine {
   std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
-
-  bool need_clean_records_ = false;
 
   ComparatorTable comparators_;
 

@@ -9,7 +9,7 @@
 
 namespace KVDK_NAMESPACE {
 
-const uint32_t kMinMovableEntries = 8;
+const uint32_t kMinMovableEntries = 1024;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
   assert(offset < map_.size());

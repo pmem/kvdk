@@ -68,10 +68,6 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
               : pmem_allocator_->addr2offset_checked(existing_record),
           key, new_value, expired_time);
       insertKeyOrElem(lookup_result, StringDataRecord, new_record);
-      if (lookup_result.s == Status::Ok) {
-        ul.unlock();
-        delayFree(OldDataRecord{existing_record, new_ts});
-      }
       break;
     }
     case ModifyOperation::Delete: {
@@ -88,20 +84,14 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
             pmem_ptr, space_entry.size, new_ts, StringDeleteRecord,
             pmem_allocator_->addr2offset_checked(existing_record), key, "");
         insertKeyOrElem(lookup_result, StringDeleteRecord, pmem_ptr);
-        ul.unlock();
-        SpinMutex* hash_lock = ul.release();
-        delayFree(OldDataRecord{lookup_result.entry.GetIndex().string_record,
-                                new_ts});
-        delayFree(OldDeleteRecord(pmem_ptr, lookup_result.entry_ptr,
-                                  PointerType::HashEntry, new_ts, hash_lock));
+        break;
       }
-      break;
-    }
-    case ModifyOperation::Abort: {
-      return Status::Abort;
-    }
-    case ModifyOperation::Noop: {
-      return Status::Ok;
+      case ModifyOperation::Abort: {
+        return Status::Abort;
+      }
+      case ModifyOperation::Noop: {
+        return Status::Ok;
+      }
     }
   }
 
@@ -182,14 +172,6 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
             lookup_result.entry.GetIndex().string_record),
         key, "");
     insertKeyOrElem(lookup_result, StringDeleteRecord, pmem_ptr);
-    ul.unlock();
-
-    SpinMutex* hash_lock = ul.release();
-    delayFree(
-        OldDataRecord{lookup_result.entry.GetIndex().string_record, new_ts});
-    // Free this delete record to recycle PMem and DRAM space
-    delayFree(OldDeleteRecord(pmem_ptr, lookup_result.entry_ptr,
-                              PointerType::HashEntry, new_ts, hash_lock));
   }
 
   return (lookup_result.s == Status::NotFound ||
@@ -207,9 +189,6 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
 
   ExpireTimeType expired_time =
       TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
-
-  KeyStatus entry_status =
-      expired_time != kPersistTime ? KeyStatus::Volatile : KeyStatus::Persist;
 
   TEST_SYNC_POINT("KVEngine::StringPutImpl::BeforeLock");
   auto ul = hash_table_->AcquireLock(key);
@@ -242,26 +221,14 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   if (space_entry.size == 0) {
     return Status::PmemOverflow;
   }
+
   StringRecord* new_record =
       pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
   StringRecord::PersistStringRecord(
       new_record, space_entry.size, new_ts, StringDataRecord,
       pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
 
-  insertKeyOrElem(lookup_result, StringDataRecord, new_record, entry_status);
-  // Free existing record
-  bool need_free =
-      existing_record &&
-      lookup_result.entry.GetRecordType() != StringDeleteRecord &&
-      !lookup_result.entry.IsExpiredStatus() /*Check if expired_key already
-                                       handled by background cleaner*/
-      ;
-
-  if (need_free) {
-    ul.unlock();
-    delayFree(
-        OldDataRecord{lookup_result.entry.GetIndex().string_record, new_ts});
-  }
+  insertKeyOrElem(lookup_result, StringDataRecord, new_record);
 
   return Status::Ok;
 }
@@ -274,6 +241,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
     purgeAndFree(pmem_record);
     return Status::Ok;
   }
+
   auto view = pmem_record->Key();
   std::string key{view.data(), view.size()};
   auto ul = hash_table_->AcquireLock(key);
@@ -291,6 +259,8 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   }
 
   insertKeyOrElem(lookup_result, cached_entry.meta.type, pmem_record);
+  pmem_record->PersistOldVersion(kNullPMemOffset);
+
   if (lookup_result.s == Status::Ok) {
     purgeAndFree(lookup_result.entry.GetIndex().ptr);
   }
