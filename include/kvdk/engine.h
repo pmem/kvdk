@@ -12,7 +12,6 @@ extern "C" {
 #include <stdint.h>
 #include <stdio.h>
 
-#include "status.h"
 #include "types.h"
 
 typedef struct KVDKEngine KVDKEngine;
@@ -269,6 +268,9 @@ extern KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str,
  */
 extern KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str,
                              size_t str_len, int64_t* ttl_time);
+
+extern KVDKStatus KVDKTypeOf(KVDKEngine* engine, char const* key_data,
+                             size_t key_len, KVDKValueType* type);
 
 #ifdef __cplusplus
 } /* end extern "C" */

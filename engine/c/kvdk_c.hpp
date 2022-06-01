@@ -12,7 +12,6 @@
 #include "kvdk/engine.h"
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
-#include "kvdk/status.h"
 #include "kvdk/write_batch.hpp"
 
 using kvdk::StringView;

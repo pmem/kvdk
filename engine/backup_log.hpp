@@ -11,7 +11,7 @@
 #include "configs.hpp"
 #include "data_record.hpp"
 #include "kvdk/configs.hpp"
-#include "kvdk/status.hpp"
+#include "kvdk/types.hpp"
 #include "logger.hpp"
 
 namespace KVDK_NAMESPACE {

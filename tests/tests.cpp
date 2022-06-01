@@ -34,7 +34,7 @@ using DestroyFunc = std::function<Status(const std::string& collection)>;
 using GetOpsFunc = std::function<Status(
     const std::string& collection, const std::string& key, std::string* value)>;
 
-enum Types { String, Sorted, Hash };
+enum class Types { String, Sorted, Hash };
 
 class EngineBasicTest : public testing::Test {
  protected:
@@ -373,7 +373,9 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
+
   ASSERT_EQ(engine->Put(str, val), Status::Ok);
+
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
 
   ASSERT_EQ(engine->HashCreate(unordered_collection), Status::Ok);
@@ -395,8 +397,6 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     if (ret_s == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
-    // Delete
-    ASSERT_EQ(engine->Delete(string_key), ret_s);
   }
 
   // Test sorted
@@ -460,6 +460,42 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
       ASSERT_EQ(length, 1);
     }
   }
+
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TypeOfKey) {
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::unordered_map<std::string, ValueType> key_types;
+  for (auto type : {ValueType::String, ValueType::HashSet, ValueType::List,
+                    ValueType::SortedSet}) {
+    std::string key = KVDKValueTypeString[type];
+    key_types[key] = type;
+    ValueType type_resp;
+    switch (type) {
+      case ValueType::String: {
+        ASSERT_EQ(engine->Put(key, ""), Status::Ok);
+        break;
+      }
+      case ValueType::HashSet: {
+        ASSERT_EQ(engine->HashCreate(key), Status::Ok);
+        break;
+      }
+      case ValueType::List: {
+        ASSERT_EQ(engine->ListCreate(key), Status::Ok);
+        break;
+      }
+      case ValueType::SortedSet: {
+        ASSERT_EQ(engine->SortedCreate(key), Status::Ok);
+        break;
+      }
+    }
+    ASSERT_EQ(engine->TypeOf(key, &type_resp), Status::Ok);
+    ASSERT_EQ(type_resp, type);
+    ASSERT_EQ(engine->TypeOf("non-exist", &type_resp), Status::NotFound);
+  }
+  delete engine;
 }
 
 TEST_F(EngineBasicTest, TestThreadManager) {

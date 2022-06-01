@@ -16,6 +16,9 @@ using UnixTimeType = std::int64_t;
 using ExpireTimeType = UnixTimeType;
 using TTLType = std::int64_t;
 
+using Status = KVDKStatus;
+using ValueType = KVDKValueType;
+
 enum class ModifyOperation : int {
   Write = KVDK_MODIFY_WRITE,
   Delete = KVDK_MODIFY_DELETE,

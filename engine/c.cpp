@@ -308,12 +308,17 @@ void KVDKSortedIteratorValue(KVDKSortedIterator* iter, char** value,
 
 KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str, size_t str_len,
                       int64_t ttl_time) {
-  return engine->rep->Expire(std::string(str, str_len), ttl_time);
+  return engine->rep->Expire(StringView{str, str_len}, ttl_time);
 }
 
 KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str, size_t str_len,
                       int64_t* ttl_time) {
-  return engine->rep->GetTTL(std::string(str, str_len), ttl_time);
+  return engine->rep->GetTTL(StringView{str, str_len}, ttl_time);
+}
+
+KVDKStatus KVDKTypeOf(KVDKEngine* engine, char const* key_data, size_t key_len,
+                      KVDKValueType* type) {
+  return engine->rep->TypeOf(StringView{key_data, key_len}, type);
 }
 }
 

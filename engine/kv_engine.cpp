@@ -1141,7 +1141,7 @@ Status KVEngine::batchWriteRollbackLogs() {
 Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
   auto ul = hash_table_->AcquireLock(str);
-  auto res = lookupKey<false>(str, ExpirableRecordType);
+  auto res = lookupKey<false>(str, PrimaryRecordType);
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;
@@ -1172,6 +1172,35 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   return res.s == Status::Outdated ? Status::NotFound : res.s;
 }
 
+Status KVEngine::TypeOf(StringView key, ValueType* type) {
+  auto res = lookupKey<false>(key, PrimaryRecordType);
+
+  if (res.s == Status::Ok) {
+    switch (res.entry_ptr->GetIndexType()) {
+      case PointerType::Skiplist: {
+        *type = ValueType::SortedSet;
+        break;
+      }
+      case PointerType::List: {
+        *type = ValueType::List;
+        break;
+      }
+      case PointerType::HashList: {
+        *type = ValueType::HashSet;
+        break;
+      }
+      case PointerType::StringRecord: {
+        *type = ValueType::String;
+        break;
+      }
+      default: {
+        return Status::Abort;
+      }
+    }
+  }
+  return res.s == Status::Outdated ? Status::NotFound : res.s;
+}
+
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
@@ -1187,7 +1216,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   auto ul = hash_table_->AcquireLock(str);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
-  auto res = lookupKey<false>(str, ExpirableRecordType);
+  auto res = lookupKey<false>(str, PrimaryRecordType);
   if (res.s == Status::Outdated) {
     if (res.entry_ptr->IsTTLStatus()) {
       // Push the expired record into cleaner and update hash entry status

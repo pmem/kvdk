@@ -82,6 +82,8 @@ class KVEngine : public Engine {
   // implemented yet
   Status GetTTL(const StringView str, TTLType* ttl_time) override;
 
+  Status TypeOf(StringView key, ValueType* type) final;
+
   // Global Anonymous Collection
   Status Get(const StringView key, std::string* value) override;
   Status Put(const StringView key, const StringView value,
