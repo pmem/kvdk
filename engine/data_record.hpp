@@ -50,13 +50,11 @@ const uint16_t DeleteRecordType =
 
 const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
 
-const uint16_t PrimaryRecordType =
+const uint16_t ExpirableRecordType =
     (StringDataRecord | SortedHeader | ListRecord | HashRecord);
 
-// ExpirableRecordType will be different from PrimaryRecordType
-// when we support expire an element in SortedSet.
-// All PrimaryRecordTypes are expirable.
-const uint16_t ExpirableRecordType = (PrimaryRecordType);
+const uint16_t PrimaryRecordType =
+    (ExpirableRecordType | StringDeleteRecord | SortedHeaderDelete);
 
 struct DataHeader {
   DataHeader() = default;
