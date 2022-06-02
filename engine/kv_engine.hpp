@@ -188,7 +188,7 @@ class KVEngine : public Engine {
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
 
   Status ListReplace(std::unique_ptr<ListIterator> const& pos,
-                 StringView elem) final;
+                     StringView elem) final;
   std::unique_ptr<ListIterator> ListCreateIterator(StringView key,
                                                    Status* s) final;
 
