@@ -46,16 +46,21 @@ endif()
 
 # source files
 set(SOURCES
-        engine/c/kvdk_hash.cpp
+        engine/c/kvdk_basic_op.cpp
         engine/c/kvdk_batch.cpp
+        engine/c/kvdk_hash.cpp
+        engine/c/kvdk_list.cpp
+        engine/c/kvdk_sorted.cpp
+        engine/c/kvdk_string.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
         engine/engine.cpp
         engine/kv_engine.cpp
+        engine/kv_engine_cleaner.cpp
         engine/kv_engine_hash.cpp
+        engine/kv_engine_list.cpp
         engine/kv_engine_sorted.cpp
         engine/kv_engine_string.cpp
-        engine/kv_engine_cleaner.cpp
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp
@@ -65,7 +70,6 @@ set(SOURCES
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
         engine/pmem_allocator/free_list.cpp
-        engine/c.cpp
         engine/data_record.cpp
         engine/version/old_records_cleaner.cpp
     )
@@ -85,9 +89,6 @@ set(KVDK_PUBLIC_HEADERS
     ${PROJECT_SOURCE_DIR}/include/kvdk/engine.h
     ${PROJECT_SOURCE_DIR}/include/kvdk/engine.hpp
     ${PROJECT_SOURCE_DIR}/include/kvdk/iterator.hpp
-    ${PROJECT_SOURCE_DIR}/include/kvdk/namespace.hpp
-    ${PROJECT_SOURCE_DIR}/include/kvdk/status.h
-    ${PROJECT_SOURCE_DIR}/include/kvdk/status.hpp
     ${PROJECT_SOURCE_DIR}/include/kvdk/write_batch.hpp
     ${PROJECT_SOURCE_DIR}/extern/libpmemobj++/string_view.hpp
 )
