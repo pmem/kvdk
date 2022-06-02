@@ -219,7 +219,7 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
   // find collection
   auto res = lookupKey<false>(collection, SortedHeader);
   if (s != nullptr) {
-    *s = res.s;
+    *s = (res.s == Status::Outdated) ? Status::NotFound : res.s;
   }
   if (res.s == Status::Ok) {
     skiplist = res.entry_ptr->GetIndex().skiplist;
