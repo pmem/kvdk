@@ -1188,6 +1188,35 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   return res.s == Status::Outdated ? Status::NotFound : res.s;
 }
 
+Status KVEngine::TypeOf(StringView key, ValueType* type) {
+  auto res = lookupKey<false>(key, ExpirableRecordType);
+
+  if (res.s == Status::Ok) {
+    switch (res.entry_ptr->GetIndexType()) {
+      case PointerType::Skiplist: {
+        *type = ValueType::SortedSet;
+        break;
+      }
+      case PointerType::List: {
+        *type = ValueType::List;
+        break;
+      }
+      case PointerType::HashList: {
+        *type = ValueType::HashSet;
+        break;
+      }
+      case PointerType::StringRecord: {
+        *type = ValueType::String;
+        break;
+      }
+      default: {
+        return Status::Abort;
+      }
+    }
+  }
+  return res.s == Status::Outdated ? Status::NotFound : res.s;
+}
+
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {

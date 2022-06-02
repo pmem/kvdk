@@ -10,7 +10,6 @@
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
-#include "status.hpp"
 #include "types.hpp"
 #include "write_batch.hpp"
 
@@ -52,6 +51,8 @@ class Engine {
   static Status Restore(const std::string& engine_path,
                         const std::string& backup_log, Engine** engine_ptr,
                         const Configs& configs, FILE* log_file = stdout);
+
+  virtual Status TypeOf(StringView key, ValueType* type) = 0;
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
   // successful persistence, return non-Ok on any error.

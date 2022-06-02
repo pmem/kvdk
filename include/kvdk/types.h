@@ -3,6 +3,8 @@
  */
 #pragma once
 
+#include <stddef.h>
+
 #define KVDK_MODIFY_WRITE 0
 #define KVDK_MODIFY_DELETE 1
 #define KVDK_MODIFY_ABORT 2
@@ -32,3 +34,43 @@ typedef int (*KVDKModifyFunc)(const char* old_val, size_t old_val_len,
                               char** new_val, size_t* new_val_len, void* args);
 // Used in KVDKModify, indicate how to free allocated space in KVDKModifyFunc
 typedef void (*KVDKFreeFunc)(void*);
+
+#define GENERATE_ENUM(ENUM) ENUM,
+#define GENERATE_STRING(STRING) #STRING,
+
+#define KVDK_TYPES(GEN) \
+  GEN(String)           \
+  GEN(SortedSet)        \
+  GEN(HashSet)          \
+  GEN(List)
+
+typedef enum { KVDK_TYPES(GENERATE_ENUM) } KVDKValueType;
+
+__attribute__((unused)) static char const* KVDKValueTypeString[] = {
+    KVDK_TYPES(GENERATE_STRING)};
+
+#define KVDK_STATUS(GEN)    \
+  GEN(Ok)                   \
+  GEN(NotFound)             \
+  GEN(Outdated)             \
+  GEN(WrongType)            \
+  GEN(Existed)              \
+  GEN(OperationFail)        \
+  GEN(OutOfRange)           \
+  GEN(MemoryOverflow)       \
+  GEN(PmemOverflow)         \
+  GEN(NotSupported)         \
+  GEN(PMemMapFileError)     \
+  GEN(InvalidBatchSize)     \
+  GEN(TooManyAccessThreads) \
+  GEN(InvalidDataSize)      \
+  GEN(InvalidArgument)      \
+  GEN(IOError)              \
+  GEN(InvalidConfiguration) \
+  GEN(Fail)                 \
+  GEN(Abort)
+
+typedef enum { KVDK_STATUS(GENERATE_ENUM) } KVDKStatus;
+
+__attribute__((unused)) static char const* KVDKStatusStrings[] = {
+    KVDK_STATUS(GENERATE_STRING)};
