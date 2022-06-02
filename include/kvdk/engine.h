@@ -218,20 +218,20 @@ extern KVDKStatus KVDKListPopFront(KVDKEngine* engine, char const* key_data,
 extern KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
                                   size_t key_len, char** elem_data,
                                   size_t* elem_len);
-extern KVDKStatus KVDKListMultiPushFront(KVDKEngine* engine,
+extern KVDKStatus KVDKListBatchPushFront(KVDKEngine* engine,
                                          char const* key_data, size_t key_len,
                                          char const* const* elems_data,
                                          size_t const* elems_len,
                                          size_t elems_cnt);
-extern KVDKStatus KVDKListMultiPushBack(KVDKEngine* engine,
+extern KVDKStatus KVDKListBatchPushBack(KVDKEngine* engine,
                                         char const* key_data, size_t key_len,
                                         char const* const* elems_data,
                                         size_t const* elems_len,
                                         size_t elems_cnt);
-extern KVDKStatus KVDKListMultiPopFront(
+extern KVDKStatus KVDKListBatchPopFront(
     KVDKEngine* engine, char const* key_data, size_t key_len, size_t n,
     void (*cb)(char const* elem_data, size_t elem_len, void* args), void* args);
-extern KVDKStatus KVDKListMultiPopBack(
+extern KVDKStatus KVDKListBatchPopBack(
     KVDKEngine* engine, char const* key_data, size_t key_len, size_t n,
     void (*cb)(char const* elem_data, size_t elem_len, void* args), void* args);
 extern KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,

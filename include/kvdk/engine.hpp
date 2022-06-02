@@ -196,9 +196,9 @@ class Engine {
   //    Status::WrongType if key is not a List.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
-  virtual Status ListMultiPushFront(StringView key,
+  virtual Status ListBatchPushFront(StringView key,
                                     std::vector<std::string> const& elems) = 0;
-  virtual Status ListMultiPushFront(StringView key,
+  virtual Status ListBatchPushFront(StringView key,
                                     std::vector<StringView> const& elems) = 0;
 
   // Push multiple elements to the back of List
@@ -207,9 +207,9 @@ class Engine {
   //    Status::WrongType if key is not a List.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
-  virtual Status ListMultiPushBack(StringView key,
+  virtual Status ListBatchPushBack(StringView key,
                                    std::vector<std::string> const& elems) = 0;
-  virtual Status ListMultiPushBack(StringView key,
+  virtual Status ListBatchPushBack(StringView key,
                                    std::vector<StringView> const& elems) = 0;
 
   // Pop first N element of List
@@ -218,7 +218,7 @@ class Engine {
   //    Status::WrongType if key is not a List.
   //    Status::NotFound if key does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListMultiPopFront(StringView key, size_t n,
+  virtual Status ListBatchPopFront(StringView key, size_t n,
                                    std::vector<std::string>* elems) = 0;
 
   // Pop last N element of List
@@ -227,7 +227,7 @@ class Engine {
   //    Status::WrongType if key is not a List.
   //    Status::NotFound if key does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListMultiPopBack(StringView key, size_t n,
+  virtual Status ListBatchPopBack(StringView key, size_t n,
                                   std::vector<std::string>* elems) = 0;
 
   // Move element in src List at src_pos to dst List at dst_pos

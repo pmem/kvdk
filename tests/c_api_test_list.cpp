@@ -209,7 +209,7 @@ TEST_F(EngineCAPITestBase, List) {
     KVDKListIteratorDestroy(iter);
   };
 
-  auto LMultiPush = [&](size_t tid) {
+  auto LBatchPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
@@ -217,7 +217,7 @@ TEST_F(EngineCAPITestBase, List) {
       list_copy.push_front(elems[j]);
     }
     auto param = ConvertParams(elems);
-    ASSERT_EQ(KVDKListMultiPushFront(engine, key.data(), key.size(),
+    ASSERT_EQ(KVDKListBatchPushFront(engine, key.data(), key.size(),
                                      param.first.data(), param.second.data(),
                                      elems.size()),
               KVDKStatus::Ok);
@@ -227,7 +227,7 @@ TEST_F(EngineCAPITestBase, List) {
     ASSERT_EQ(sz, list_copy.size());
   };
 
-  auto RMultiPush = [&](size_t tid) {
+  auto RBatchPush = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
@@ -235,7 +235,7 @@ TEST_F(EngineCAPITestBase, List) {
       list_copy.push_back(elems[j]);
     }
     auto param = ConvertParams(elems);
-    ASSERT_EQ(KVDKListMultiPushBack(engine, key.data(), key.size(),
+    ASSERT_EQ(KVDKListBatchPushBack(engine, key.data(), key.size(),
                                     param.first.data(), param.second.data(),
                                     elems.size()),
               KVDKStatus::Ok);
@@ -245,12 +245,12 @@ TEST_F(EngineCAPITestBase, List) {
     ASSERT_EQ(sz, list_copy.size());
   };
 
-  auto LMultiPop = [&](size_t tid) {
+  auto LBatchPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string buffer1;
     std::string buffer2;
-    ASSERT_EQ(KVDKListMultiPopFront(engine, key.data(), key.size(), count,
+    ASSERT_EQ(KVDKListBatchPopFront(engine, key.data(), key.size(), count,
                                     ConcatStrings, &buffer1),
               KVDKStatus::Ok);
     for (size_t j = 0; j < count && !list_copy.empty(); j++) {
@@ -265,12 +265,12 @@ TEST_F(EngineCAPITestBase, List) {
     ASSERT_EQ(sz, list_copy.size());
   };
 
-  auto RMultiPop = [&](size_t tid) {
+  auto RBatchPop = [&](size_t tid) {
     auto const& key = key_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string buffer1;
     std::string buffer2;
-    ASSERT_EQ(KVDKListMultiPopBack(engine, key.data(), key.size(), count,
+    ASSERT_EQ(KVDKListBatchPopBack(engine, key.data(), key.size(), count,
                                    ConcatStrings, &buffer1),
               KVDKStatus::Ok);
     for (size_t j = 0; j < count && !list_copy.empty(); j++) {
@@ -315,14 +315,14 @@ TEST_F(EngineCAPITestBase, List) {
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, RPush);
     LaunchNThreads(num_threads, ListIterate);
-    LaunchNThreads(num_threads, LMultiPush);
+    LaunchNThreads(num_threads, LBatchPush);
     LaunchNThreads(num_threads, ListIterate);
-    LaunchNThreads(num_threads, RMultiPush);
+    LaunchNThreads(num_threads, RBatchPush);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, ListIterate);
-    LaunchNThreads(num_threads, LMultiPop);
+    LaunchNThreads(num_threads, LBatchPop);
     LaunchNThreads(num_threads, ListIterate);
-    LaunchNThreads(num_threads, RMultiPop);
+    LaunchNThreads(num_threads, RBatchPop);
     LaunchNThreads(num_threads, ListIterate);
     LaunchNThreads(num_threads, LPop);
     LaunchNThreads(num_threads, ListIterate);

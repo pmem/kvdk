@@ -387,34 +387,34 @@ KVDKStatus KVDKListReplace(KVDKEngine* engine, KVDKListIterator* pos,
   return engine->rep->ListReplace(pos->rep, StringView{elem_data, elem_len});
 }
 
-KVDKStatus KVDKListMultiPushFront(KVDKEngine* engine, char const* key_data,
+KVDKStatus KVDKListBatchPushFront(KVDKEngine* engine, char const* key_data,
                                   size_t key_len, char const* const* elems_data,
                                   size_t const* elems_len, size_t elems_cnt) {
   std::vector<StringView> elems;
   for (size_t i = 0; i < elems_cnt; i++) {
     elems.emplace_back(elems_data[i], elems_len[i]);
   }
-  return engine->rep->ListMultiPushFront(StringView{key_data, key_len}, elems);
+  return engine->rep->ListBatchPushFront(StringView{key_data, key_len}, elems);
 }
 
-KVDKStatus KVDKListMultiPushBack(KVDKEngine* engine, char const* key_data,
+KVDKStatus KVDKListBatchPushBack(KVDKEngine* engine, char const* key_data,
                                  size_t key_len, char const* const* elems_data,
                                  size_t const* elems_len, size_t elems_cnt) {
   std::vector<StringView> elems;
   for (size_t i = 0; i < elems_cnt; i++) {
     elems.emplace_back(elems_data[i], elems_len[i]);
   }
-  return engine->rep->ListMultiPushBack(StringView{key_data, key_len}, elems);
+  return engine->rep->ListBatchPushBack(StringView{key_data, key_len}, elems);
 }
 
-KVDKStatus KVDKListMultiPopFront(KVDKEngine* engine, char const* key_data,
+KVDKStatus KVDKListBatchPopFront(KVDKEngine* engine, char const* key_data,
                                  size_t key_len, size_t n,
                                  void (*cb)(char const* elem_data,
                                             size_t elem_len, void* args),
                                  void* args) {
   std::vector<std::string> elems;
   KVDKStatus s =
-      engine->rep->ListMultiPopFront(StringView{key_data, key_len}, n, &elems);
+      engine->rep->ListBatchPopFront(StringView{key_data, key_len}, n, &elems);
   if (s != KVDKStatus::Ok) {
     return s;
   }
@@ -424,14 +424,14 @@ KVDKStatus KVDKListMultiPopFront(KVDKEngine* engine, char const* key_data,
   return s;
 }
 
-KVDKStatus KVDKListMultiPopBack(KVDKEngine* engine, char const* key_data,
+KVDKStatus KVDKListBatchPopBack(KVDKEngine* engine, char const* key_data,
                                 size_t key_len, size_t n,
                                 void (*cb)(char const* elem_data,
                                            size_t elem_len, void* args),
                                 void* args) {
   std::vector<std::string> elems;
   KVDKStatus s =
-      engine->rep->ListMultiPopBack(StringView{key_data, key_len}, n, &elems);
+      engine->rep->ListBatchPopBack(StringView{key_data, key_len}, n, &elems);
   if (s != KVDKStatus::Ok) {
     return s;
   }

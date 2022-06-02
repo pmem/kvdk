@@ -165,17 +165,17 @@ class KVEngine : public Engine {
   Status ListPushBack(StringView key, StringView elem) final;
   Status ListPopFront(StringView key, std::string* elem) final;
   Status ListPopBack(StringView key, std::string* elem) final;
-  Status ListMultiPushFront(StringView key,
+  Status ListBatchPushFront(StringView key,
                             std::vector<std::string> const& elems) final;
-  Status ListMultiPushFront(StringView key,
+  Status ListBatchPushFront(StringView key,
                             std::vector<StringView> const& elems) final;
-  Status ListMultiPushBack(StringView key,
+  Status ListBatchPushBack(StringView key,
                            std::vector<std::string> const& elems) final;
-  Status ListMultiPushBack(StringView key,
+  Status ListBatchPushBack(StringView key,
                            std::vector<StringView> const& elems) final;
-  Status ListMultiPopFront(StringView key, size_t n,
+  Status ListBatchPopFront(StringView key, size_t n,
                            std::vector<std::string>* elems) final;
-  Status ListMultiPopBack(StringView key, size_t n,
+  Status ListBatchPopBack(StringView key, size_t n,
                           std::vector<std::string>* elems) final;
   Status ListMove(StringView src, int src_pos, StringView dst, int dst_pos,
                   std::string* elem) final;
@@ -425,9 +425,9 @@ class KVEngine : public Engine {
   // accessible to any other thread.
   Status listDestroy(List* list);
 
-  Status listMultiPushImpl(StringView key, int pos,
+  Status listBatchPushImpl(StringView key, int pos,
                            std::vector<StringView> const& elems);
-  Status listMultiPopImpl(StringView key, int pos, size_t n,
+  Status listBatchPopImpl(StringView key, int pos, size_t n,
                           std::vector<std::string>* elems);
   Status listRollback(BatchWriteLog::ListLogEntry const& entry);
 

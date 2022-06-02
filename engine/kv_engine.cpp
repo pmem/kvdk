@@ -1828,13 +1828,13 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   return Status::Ok;
 }
 
-Status KVEngine::ListMultiPushFront(StringView key,
+Status KVEngine::ListBatchPushFront(StringView key,
                                     std::vector<std::string> const& elems) {
-  return ListMultiPushFront(
+  return ListBatchPushFront(
       key, std::vector<StringView>{elems.begin(), elems.end()});
 }
 
-Status KVEngine::ListMultiPushFront(StringView key,
+Status KVEngine::ListBatchPushFront(StringView key,
                                     std::vector<StringView> const& elems) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
@@ -1855,16 +1855,16 @@ Status KVEngine::ListMultiPushFront(StringView key,
   if (s != Status::Ok) {
     return s;
   }
-  return listMultiPushImpl(key, 0, elems);
+  return listBatchPushImpl(key, 0, elems);
 }
 
-Status KVEngine::ListMultiPushBack(StringView key,
+Status KVEngine::ListBatchPushBack(StringView key,
                                    std::vector<std::string> const& elems) {
-  return ListMultiPushBack(key,
+  return ListBatchPushBack(key,
                            std::vector<StringView>{elems.begin(), elems.end()});
 }
 
-Status KVEngine::ListMultiPushBack(StringView key,
+Status KVEngine::ListBatchPushBack(StringView key,
                                    std::vector<StringView> const& elems) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
@@ -1885,10 +1885,10 @@ Status KVEngine::ListMultiPushBack(StringView key,
   if (s != Status::Ok) {
     return s;
   }
-  return listMultiPushImpl(key, -1, elems);
+  return listBatchPushImpl(key, -1, elems);
 }
 
-Status KVEngine::ListMultiPopFront(StringView key, size_t n,
+Status KVEngine::ListBatchPopFront(StringView key, size_t n,
                                    std::vector<std::string>* elems) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
@@ -1901,10 +1901,10 @@ Status KVEngine::ListMultiPopFront(StringView key, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  return listMultiPopImpl(key, 0, n, elems);
+  return listBatchPopImpl(key, 0, n, elems);
 }
 
-Status KVEngine::ListMultiPopBack(StringView key, size_t n,
+Status KVEngine::ListBatchPopBack(StringView key, size_t n,
                                   std::vector<std::string>* elems) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
@@ -1917,7 +1917,7 @@ Status KVEngine::ListMultiPopBack(StringView key, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  return listMultiPopImpl(key, -1, n, elems);
+  return listBatchPopImpl(key, -1, n, elems);
 }
 
 Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
@@ -2213,7 +2213,7 @@ Status KVEngine::listFind(StringView key, List** list) {
   return Status::Ok;
 }
 
-Status KVEngine::listMultiPushImpl(StringView key, int pos,
+Status KVEngine::listBatchPushImpl(StringView key, int pos,
                                    std::vector<StringView> const& elems) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -2254,13 +2254,13 @@ Status KVEngine::listMultiPushImpl(StringView key, int pos,
   if (pos == 0) {
     for (size_t i = 0; i < elems.size(); i++) {
       list->PushFront(spaces[i], bw_token.Timestamp(), "", elems[i]);
-      TEST_CRASH_POINT("KVEngine::listMultiPushImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
     }
   } else {
     kvdk_assert(pos == -1, "");
     for (size_t i = 0; i < elems.size(); i++) {
       list->PushBack(spaces[i], bw_token.Timestamp(), "", elems[i]);
-      TEST_CRASH_POINT("KVEngine::listMultiPushImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
     }
   }
   BatchWriteLog::MarkCommitted(tc.batch_log);
@@ -2268,7 +2268,7 @@ Status KVEngine::listMultiPushImpl(StringView key, int pos,
   return Status::Ok;
 }
 
-Status KVEngine::listMultiPopImpl(StringView key, int pos, size_t n,
+Status KVEngine::listBatchPopImpl(StringView key, int pos, size_t n,
                                   std::vector<std::string>* elems) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -2314,12 +2314,12 @@ Status KVEngine::listMultiPopImpl(StringView key, int pos, size_t n,
   if (pos == 0) {
     for (size_t i = 0; i < n && list->Size() > 0; i++) {
       list->PopFront([&](DLRecord* rec) { old_records.push_back(rec); });
-      TEST_CRASH_POINT("KVEngine::listMultiPopImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPopImpl", "");
     }
   } else {
     for (size_t i = 0; i < n && list->Size() > 0; i++) {
       list->PopBack([&](DLRecord* rec) { old_records.push_back(rec); });
-      TEST_CRASH_POINT("KVEngine::listMultiPopImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPopImpl", "");
     }
   }
   BatchWriteLog::MarkCommitted(tc.batch_log);
