@@ -131,6 +131,9 @@ struct Configs {
   // If customer compare functions is used in a kvdk engine, these functions
   // should be registered to the comparator before open engine
   ComparatorTable comparator;
+
+  // Background clean thread numbers.
+  uint64_t clean_threads = 32;
 };
 
 struct WriteOptions {

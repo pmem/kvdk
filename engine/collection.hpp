@@ -10,7 +10,6 @@
 #include <string>
 
 #include "alias.hpp"
-#include "kvdk/status.hpp"
 #include "macros.hpp"
 #include "utils/codec.hpp"
 

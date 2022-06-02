@@ -17,16 +17,11 @@
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
-enum class KeyStatus : uint8_t {
-  Persist = 0,
-  Volatile = 1 << 0,  // expirable
-  Expired = 1 << 1,
-};
+
 struct HashHeader {
   uint32_t key_prefix;
   RecordType record_type;
   PointerType index_type;
-  KeyStatus entry_status;
 };
 
 class Skiplist;
@@ -60,9 +55,8 @@ struct alignas(16) HashEntry {
   HashEntry() = default;
 
   HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
-            PointerType index_type, KeyStatus entry_status)
-      : index_(_index),
-        header_({key_hash_prefix, record_type, index_type, entry_status}) {}
+            PointerType index_type)
+      : index_(_index), header_({key_hash_prefix, record_type, index_type}) {}
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
@@ -71,10 +65,6 @@ struct alignas(16) HashEntry {
   PointerType GetIndexType() const { return header_.index_type; }
 
   RecordType GetRecordType() const { return header_.record_type; }
-
-  bool IsExpiredStatus() { return header_.entry_status == KeyStatus::Expired; }
-
-  bool IsTTLStatus() { return header_.entry_status == KeyStatus::Volatile; }
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
@@ -85,10 +75,6 @@ struct alignas(16) HashEntry {
  private:
   // Make this hash entry empty while its content been deleted
   void clear() { header_.index_type = PointerType::Empty; }
-
-  void updateEntryStatus(KeyStatus entry_status) {
-    header_.entry_status = entry_status;
-  }
 
  private:
   Index index_;
@@ -194,8 +180,7 @@ class HashTable {
   // * insert_position: indicate the the postion to insert new entry, it should
   // be return of Lookup of the inserting key
   void Insert(const LookupResult& insert_position, RecordType type, void* index,
-              PointerType index_type,
-              KeyStatus entry_status = KeyStatus::Persist);
+              PointerType index_type);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
@@ -203,14 +188,13 @@ class HashTable {
     entry_ptr->clear();
   }
 
-  void UpdateEntryStatus(HashEntry* entry_ptr, KeyStatus entry_status) {
-    assert(entry_ptr != nullptr);
-    entry_ptr->updateEntryStatus(entry_status);
-  }
-
   std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {
     return std::unique_lock<SpinMutex>{*GetHint(key).spin};
   }
+
+  HashTableIterator GetIterator(uint64_t start_slot_idx, uint64_t end_slot_idx);
+
+  size_t GetSlotsNum() { return slots_.size(); }
 
   // StringAlike is std::string or StringView
   template <typename StringAlike>
@@ -229,8 +213,6 @@ class HashTable {
     }
     return guard;
   }
-
-  HashTableIterator GetIterator();
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t num_buckets_per_slot,
@@ -393,11 +375,15 @@ struct HashTableIterator {
   std::unique_lock<SpinMutex> iter_lock_slot_;
   // current slot id
   HashTable* hash_table_;
-  uint64_t current_slot_id_;
+  uint64_t current_slot_idx_;
+  uint64_t end_slot_idx_;
 
  public:
-  HashTableIterator(HashTable* hash_table)
-      : hash_table_(hash_table), current_slot_id_(0) {}
+  HashTableIterator(HashTable* hash_table, uint64_t start_slot_idx,
+                    uint64_t end_slot_idx)
+      : hash_table_(hash_table),
+        current_slot_idx_(start_slot_idx),
+        end_slot_idx_(end_slot_idx) {}
 
   std::unique_lock<SpinMutex> AcquireSlotLock() {
     SpinMutex* slot_lock = GetSlotLock();
@@ -406,18 +392,18 @@ struct HashTableIterator {
 
   void Next() {
     if (Valid()) {
-      current_slot_id_++;
+      current_slot_idx_++;
     }
   }
 
-  bool Valid() { return current_slot_id_ < hash_table_->slots_.size(); }
+  bool Valid() { return current_slot_idx_ < end_slot_idx_; }
 
   HashSlotIterator Slot() {
-    return HashSlotIterator{hash_table_, current_slot_id_};
+    return HashSlotIterator{hash_table_, current_slot_idx_};
   }
 
   SpinMutex* GetSlotLock() {
-    return &hash_table_->slots_[current_slot_id_].spin;
+    return &hash_table_->slots_[current_slot_idx_].spin;
   }
 };
 }  // namespace KVDK_NAMESPACE

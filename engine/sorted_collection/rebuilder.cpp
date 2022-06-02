@@ -221,6 +221,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
           addRecoverySegment(skiplist->HeaderNode());
         }
 
+        valid_version_record->PersistOldVersion(kNullPMemOffset);
         // Always build hash index for skiplist
         s = insertHashIndex(skiplist->Name(), skiplist.get(),
                             PointerType::Skiplist);
@@ -334,7 +335,6 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
 
   SkiplistNode* cur_node = start_node;
   DLRecord* cur_record = cur_node->record;
-
   while (true) {
     DLRecord* next_record =
         kv_engine_->pmem_allocator_->offset2addr_checked<DLRecord>(
@@ -391,6 +391,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
             return s;
           }
         }
+        valid_version_record->PersistOldVersion(kNullPMemOffset);
         cur_record = valid_version_record;
       }
     } else {
@@ -507,6 +508,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     StringView internal_key = next_record->Key();
     auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
     DLRecord* valid_version_record = findCheckpointVersion(next_record);
+
     if (valid_version_record == nullptr ||
         valid_version_record->entry.meta.type == SortedElemDelete) {
       // purge invalid version record from list
@@ -556,6 +558,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         }
       }
 
+      valid_version_record->PersistOldVersion(kNullPMemOffset);
       splice.prev_pmem_record = valid_version_record;
     }
   }
@@ -598,7 +601,6 @@ bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
   if (Skiplist::CheckReocrdNextLinkage(record, pmem_allocator)) {
     return true;
   }
-
   // If only prev linkage is correct, then repair the next linkage
   if (Skiplist::CheckRecordPrevLinkage(record, pmem_allocator)) {
     DLRecord* next =

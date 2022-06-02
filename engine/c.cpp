@@ -9,6 +9,14 @@
 #include "c/kvdk_c.hpp"
 
 extern "C" {
+KVDKRegex* KVDKRegexCreate(char const* data, size_t len) {
+  KVDKRegex* re = new KVDKRegex;
+  re->rep = std::regex{data, len};
+  return re;
+}
+
+void KVDKRegexDestroy(KVDKRegex* re) { delete re; }
+
 KVDKConfigs* KVDKCreateConfigs() { return new KVDKConfigs; }
 
 void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
@@ -242,11 +250,12 @@ KVDKStatus KVDKSortedDelete(KVDKEngine* engine, const char* collection,
 KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
                                                  const char* collection,
                                                  size_t collection_len,
-                                                 KVDKSnapshot* snapshot) {
+                                                 KVDKSnapshot* snapshot,
+                                                 KVDKStatus* s) {
   KVDKSortedIterator* result = new KVDKSortedIterator;
   result->rep =
       (engine->rep->NewSortedIterator(StringView{collection, collection_len},
-                                      snapshot ? snapshot->rep : nullptr));
+                                      snapshot ? snapshot->rep : nullptr, s));
   if (!result->rep) {
     delete result;
     return nullptr;
@@ -299,12 +308,17 @@ void KVDKSortedIteratorValue(KVDKSortedIterator* iter, char** value,
 
 KVDKStatus KVDKExpire(KVDKEngine* engine, const char* str, size_t str_len,
                       int64_t ttl_time) {
-  return engine->rep->Expire(std::string(str, str_len), ttl_time);
+  return engine->rep->Expire(StringView{str, str_len}, ttl_time);
 }
 
 KVDKStatus KVDKGetTTL(KVDKEngine* engine, const char* str, size_t str_len,
                       int64_t* ttl_time) {
-  return engine->rep->GetTTL(std::string(str, str_len), ttl_time);
+  return engine->rep->GetTTL(StringView{str, str_len}, ttl_time);
+}
+
+KVDKStatus KVDKTypeOf(KVDKEngine* engine, char const* key_data, size_t key_len,
+                      KVDKValueType* type) {
+  return engine->rep->TypeOf(StringView{key_data, key_len}, type);
 }
 }
 
@@ -455,8 +469,9 @@ KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
 }
 
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
-                                         char const* key_data, size_t key_len) {
-  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len});
+                                         char const* key_data, size_t key_len,
+                                         KVDKStatus* s) {
+  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len}, s);
   if (rep == nullptr) {
     return nullptr;
   }

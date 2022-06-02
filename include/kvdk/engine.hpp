@@ -10,7 +10,6 @@
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
-#include "status.hpp"
 #include "types.hpp"
 #include "write_batch.hpp"
 
@@ -52,6 +51,8 @@ class Engine {
   static Status Restore(const std::string& engine_path,
                         const std::string& backup_log, Engine** engine_ptr,
                         const Configs& configs, FILE* log_file = stdout);
+
+  virtual Status TypeOf(StringView key, ValueType* type) = 0;
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
   // successful persistence, return non-Ok on any error.
@@ -284,7 +285,8 @@ class Engine {
   //    otherwise return ListIterator to First element of List
   // Internally ListIterator holds an recursive of List, which is relased
   // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListCreateIterator(StringView key) = 0;
+  virtual std::unique_ptr<ListIterator> ListCreateIterator(
+      StringView key, Status* s = nullptr) = 0;
 
   /// Hash APIs ///////////////////////////////////////////////////////////////
 
@@ -301,7 +303,8 @@ class Engine {
   // Warning: HashIterator internally holds a snapshot,
   // prevents some resources from being freed.
   // The HashIterator should be destroyed as long as it is no longer used.
-  virtual std::unique_ptr<HashIterator> HashCreateIterator(StringView key) = 0;
+  virtual std::unique_ptr<HashIterator> HashCreateIterator(
+      StringView key, Status* s = nullptr) = 0;
 
   /// Other ///////////////////////////////////////////////////////////////////
 
@@ -333,7 +336,8 @@ class Engine {
   // 2. Please release the iterator as soon as it is not needed, as the holding
   // snapshot will forbid newer data being freed
   virtual Iterator* NewSortedIterator(const StringView collection,
-                                      Snapshot* snapshot = nullptr) = 0;
+                                      Snapshot* snapshot = nullptr,
+                                      Status* s = nullptr) = 0;
 
   // Release a sorted iterator
   virtual void ReleaseSortedIterator(Iterator*) = 0;

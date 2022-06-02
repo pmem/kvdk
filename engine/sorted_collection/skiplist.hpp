@@ -262,6 +262,9 @@ class Skiplist : public Collection {
   // records.
   void Destroy();
 
+  // Destroy and free the whole skiplist with old version list.
+  void DestroyAll();
+
   // check node linkage and hash index
   Status CheckIndex();
 
@@ -314,6 +317,7 @@ class Skiplist : public Collection {
     uint64_t offset = pmem_allocator->addr2offset_checked(record);
     DLRecord* prev =
         pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
+
     auto check_linkage = [&]() { return prev->next == offset; };
 
     auto check_type = [&]() { return IsSkiplistRecord(prev); };
@@ -510,9 +514,13 @@ class Skiplist : public Collection {
     return height;
   }
 
+  // Destroy sorted records, not including old version list.
   void destroyRecords();
 
   void destroyNodes();
+
+  // Destroy all sorted records including old version list.
+  void destroyAllRecords();
 
   static LockTable::HashType recordHash(const DLRecord* record) {
     kvdk_assert(record != nullptr, "");

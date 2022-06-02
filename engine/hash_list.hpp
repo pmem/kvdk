@@ -42,6 +42,10 @@ class HashIteratorImpl final : public HashIterator {
     return std::string{sw.data(), sw.size()};
   }
 
+  bool MatchKey(std::regex const& re) final {
+    return std::regex_match(Key(), re);
+  }
+
   ~HashIteratorImpl() final = default;
 
  private:
