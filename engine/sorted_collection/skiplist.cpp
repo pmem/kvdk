@@ -595,8 +595,8 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
   if (!IndexWithHashtable()) {
     Splice splice(this);
     Seek(key, &splice);
-    if (equal_string_view(key, UserKey(splice.next_pmem_record)) &&
-        splice.next_pmem_record->entry.meta.type == SortedElem) {
+    if (splice.next_pmem_record->entry.meta.type == SortedElem &&
+        equal_string_view(key, UserKey(splice.next_pmem_record))) {
       value->assign(splice.next_pmem_record->Value().data(),
                     splice.next_pmem_record->Value().size());
       return Status::Ok;
