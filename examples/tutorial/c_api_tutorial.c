@@ -162,7 +162,7 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
   }
   // create sorted iterator
   KVDKSortedIterator* kvdk_iter = KVDKKVDKSortedIteratorCreate(
-      kvdk_engine, sorted_collection, strlen(sorted_collection), NULL);
+      kvdk_engine, sorted_collection, strlen(sorted_collection), NULL, NULL);
   KVDKSortedIteratorSeekToFirst(kvdk_iter);
   // Iterate through range ["key1", "key8").
   const char* beg = "key1";
@@ -272,7 +272,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
     assert(s == Ok);
   }
   KVDKSortedIterator* iter = KVDKKVDKSortedIteratorCreate(
-      kvdk_engine, collection, strlen(collection), NULL);
+      kvdk_engine, collection, strlen(collection), NULL, NULL);
   assert(iter != NULL);
 
   int i = 0;
@@ -358,7 +358,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   // create hash iterator
   KVDKHashIterator* kvdk_iter = KVDKHashIteratorCreate(
-      kvdk_engine, hash_collection, strlen(hash_collection));
+      kvdk_engine, hash_collection, strlen(hash_collection), NULL);
   assert(kvdk_iter != NULL);
   int cnt = 0;
   for (KVDKHashIteratorSeekToFirst(kvdk_iter);

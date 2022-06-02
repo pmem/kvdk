@@ -149,7 +149,8 @@ extern KVDKStatus KVDKSortedGet(KVDKEngine* engine, const char* collection,
 extern KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
                                                         const char* collection,
                                                         size_t collection_len,
-                                                        KVDKSnapshot* snapshot);
+                                                        KVDKSnapshot* snapshot,
+                                                        KVDKStatus* s);
 extern void KVDKSortedIteratorDestroy(KVDKEngine* engine,
                                       KVDKSortedIterator* iterator);
 extern void KVDKSortedIteratorSeekToFirst(KVDKSortedIterator* iter);
@@ -190,7 +191,7 @@ extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
 /// HashIterator //////////////////////////////////////////////////////////////
 extern KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                                 char const* key_data,
-                                                size_t key_len);
+                                                size_t key_len, KVDKStatus* s);
 extern void KVDKHashIteratorDestroy(KVDKHashIterator* iter);
 extern void KVDKHashIteratorPrev(KVDKHashIterator* iter);
 extern void KVDKHashIteratorNext(KVDKHashIterator* iter);
@@ -234,7 +235,7 @@ extern KVDKStatus KVDKListPut(KVDKEngine* engine, KVDKListIterator* pos,
 /// ListIterator //////////////////////////////////////////////////////////////
 extern KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
                                                 char const* key_data,
-                                                size_t key_len);
+                                                size_t key_len, KVDKStatus* s);
 extern void KVDKListIteratorDestroy(KVDKListIterator* iter);
 extern void KVDKListIteratorPrev(KVDKListIterator* iter);
 extern void KVDKListIteratorNext(KVDKListIterator* iter);

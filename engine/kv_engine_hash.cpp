@@ -236,7 +236,8 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
   }
 }
 
-std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
+std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key,
+                                                           Status* status) {
   if (!CheckKeySize(key)) {
     return nullptr;
   }
@@ -247,6 +248,9 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key) {
   auto snapshot = version_controller_.GetGlobalSnapshotToken();
   HashList* hlist;
   Status s = hashListFind(key, &hlist);
+  if (status != nullptr) {
+    *status = s;
+  }
   if (s != Status::Ok) {
     return nullptr;
   }

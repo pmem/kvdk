@@ -237,7 +237,8 @@ class Engine {
   //    otherwise return ListIterator to First element of List
   // Internally ListIterator holds an recursive of List, which is relased
   // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListCreateIterator(StringView key) = 0;
+  virtual std::unique_ptr<ListIterator> ListCreateIterator(
+      StringView key, Status* s = nullptr) = 0;
 
   /// Hash APIs ///////////////////////////////////////////////////////////////
 
@@ -254,7 +255,8 @@ class Engine {
   // Warning: HashIterator internally holds a snapshot,
   // prevents some resources from being freed.
   // The HashIterator should be destroyed as long as it is no longer used.
-  virtual std::unique_ptr<HashIterator> HashCreateIterator(StringView key) = 0;
+  virtual std::unique_ptr<HashIterator> HashCreateIterator(
+      StringView key, Status* s = nullptr) = 0;
 
   /// Other ///////////////////////////////////////////////////////////////////
 
@@ -286,7 +288,8 @@ class Engine {
   // 2. Please release the iterator as soon as it is not needed, as the holding
   // snapshot will forbid newer data being freed
   virtual Iterator* NewSortedIterator(const StringView collection,
-                                      Snapshot* snapshot = nullptr) = 0;
+                                      Snapshot* snapshot = nullptr,
+                                      Status* s = nullptr) = 0;
 
   // Release a sorted iterator
   virtual void ReleaseSortedIterator(Iterator*) = 0;

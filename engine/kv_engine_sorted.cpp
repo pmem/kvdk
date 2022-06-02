@@ -205,7 +205,7 @@ Status KVEngine::SortedDelete(const StringView collection,
 }
 
 Iterator* KVEngine::NewSortedIterator(const StringView collection,
-                                      Snapshot* snapshot) {
+                                      Snapshot* snapshot, Status* s) {
   Skiplist* skiplist;
   bool create_snapshot = snapshot == nullptr;
   if (create_snapshot) {
@@ -213,6 +213,9 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
   }
   // find collection
   auto res = lookupKey<false>(collection, SortedHeader);
+  if (s != nullptr) {
+    *s = (res.s == Status::Outdated) ? Status::NotFound : res.s;
+  }
   if (res.s == Status::Ok) {
     skiplist = res.entry_ptr->GetIndex().skiplist;
     return new SortedIterator(skiplist, pmem_allocator_.get(),

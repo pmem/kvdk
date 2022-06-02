@@ -1740,7 +1740,8 @@ Status KVEngine::ListPut(std::unique_ptr<ListIterator> const& pos,
   return Status::Ok;
 }
 
-std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(StringView key) {
+std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(StringView key,
+                                                           Status* status) {
   if (!CheckKeySize(key)) {
     return nullptr;
   }
@@ -1751,6 +1752,9 @@ std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(StringView key) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
   Status s = listFind(key, &list);
+  if (status != nullptr) {
+    *status = s;
+  }
   if (s != Status::Ok) {
     return nullptr;
   }
