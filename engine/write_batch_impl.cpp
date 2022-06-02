@@ -12,7 +12,8 @@ void BatchWriteLog::EncodeTo(char* dst) {
       sizeof(total_bytes) + sizeof(timestamp) + sizeof(stage) +
       sizeof(string_logs.size()) + string_logs.size() * sizeof(StringLogEntry) +
       sizeof(sorted_logs.size()) + sorted_logs.size() * sizeof(SortedLogEntry) +
-      sizeof(hash_logs.size()) + hash_logs.size() * sizeof(HashLogEntry);
+      sizeof(hash_logs.size()) + hash_logs.size() * sizeof(HashLogEntry) +
+      sizeof(list_logs.size()) + list_logs.size() * sizeof(ListLogEntry);
 
   std::string buffer;
   buffer.reserve(total_bytes);
@@ -34,6 +35,11 @@ void BatchWriteLog::EncodeTo(char* dst) {
   AppendPOD(&buffer, hash_logs.size());
   for (size_t i = 0; i < hash_logs.size(); i++) {
     AppendPOD(&buffer, hash_logs[i]);
+  }
+
+  AppendPOD(&buffer, list_logs.size());
+  for (size_t i = 0; i < list_logs.size(); i++) {
+    AppendPOD(&buffer, list_logs[i]);
   }
 
   kvdk_assert(buffer.size() == total_bytes, "");
@@ -82,6 +88,11 @@ void BatchWriteLog::DecodeFrom(char const* src) {
   hash_logs.resize(FetchPOD<size_t>(&sw));
   for (size_t i = 0; i < hash_logs.size(); i++) {
     hash_logs[i] = FetchPOD<HashLogEntry>(&sw);
+  }
+
+  list_logs.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < list_logs.size(); i++) {
+    list_logs[i] = FetchPOD<ListLogEntry>(&sw);
   }
 
   kvdk_assert(sw.size() == 0, "");

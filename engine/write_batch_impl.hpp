@@ -213,6 +213,11 @@ class BatchWriteLog {
     PMemOffsetType old_offset;
   };
 
+  struct ListLogEntry {
+    Op op;
+    PMemOffsetType offset;
+  };
+
   explicit BatchWriteLog() {}
 
   void SetTimestamp(TimeStampType ts) { timestamp = ts; }
@@ -246,14 +251,24 @@ class BatchWriteLog {
         HashLogEntry{Op::Delete, kNullPMemOffset, old_offset});
   }
 
+  void ListEmplace(PMemOffsetType offset) {
+    list_logs.emplace_back(ListLogEntry{Op::Put, offset});
+  }
+
+  void ListDelete(PMemOffsetType offset) {
+    list_logs.emplace_back(ListLogEntry{Op::Delete, offset});
+  }
+
   void Clear() {
     string_logs.clear();
     sorted_logs.clear();
     hash_logs.clear();
+    list_logs.clear();
   }
 
   size_t Size() const {
-    return string_logs.size() + sorted_logs.size() + hash_logs.size();
+    return string_logs.size() + sorted_logs.size() + hash_logs.size() +
+           list_logs.size();
   }
 
   static size_t Capacity() { return (1UL << 20); }
@@ -261,6 +276,7 @@ class BatchWriteLog {
   static size_t MaxBytes() {
     static_assert(sizeof(HashLogEntry) >= sizeof(StringLogEntry), "");
     static_assert(sizeof(HashLogEntry) >= sizeof(SortedLogEntry), "");
+    static_assert(sizeof(HashLogEntry) >= sizeof(ListLogEntry), "");
     return sizeof(size_t) + sizeof(TimeStampType) + sizeof(Stage) +
            sizeof(size_t) + Capacity() * sizeof(HashLogEntry);
   }
@@ -270,6 +286,7 @@ class BatchWriteLog {
   // N | StringLogEntry*N |
   // M | SortedLogEntry*M
   // K | HashLogEntry*K
+  // L | ListLogEntry*K
   // dst is expected to have capacity of MaxBytes().
   void EncodeTo(char* dst);
 
@@ -300,10 +317,12 @@ class BatchWriteLog {
   using StringLog = std::vector<StringLogEntry>;
   using SortedLog = std::vector<SortedLogEntry>;
   using HashLog = std::vector<HashLogEntry>;
+  using ListLog = std::vector<ListLogEntry>;
 
   StringLog const& StringLogs() const { return string_logs; }
   SortedLog const& SortedLogs() const { return sorted_logs; }
   HashLog const& HashLogs() const { return hash_logs; }
+  ListLog const& ListLogs() const { return list_logs; }
   TimeStampType Timestamp() const { return timestamp; }
 
  private:
@@ -312,6 +331,7 @@ class BatchWriteLog {
   StringLog string_logs;
   SortedLog sorted_logs;
   HashLog hash_logs;
+  ListLog list_logs;
 };
 
 }  // namespace KVDK_NAMESPACE

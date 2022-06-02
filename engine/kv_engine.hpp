@@ -167,13 +167,28 @@ class KVEngine : public Engine {
   Status ListPushBack(StringView key, StringView elem) final;
   Status ListPopFront(StringView key, std::string* elem) final;
   Status ListPopBack(StringView key, std::string* elem) final;
+  Status ListBatchPushFront(StringView key,
+                            std::vector<std::string> const& elems) final;
+  Status ListBatchPushFront(StringView key,
+                            std::vector<StringView> const& elems) final;
+  Status ListBatchPushBack(StringView key,
+                           std::vector<std::string> const& elems) final;
+  Status ListBatchPushBack(StringView key,
+                           std::vector<StringView> const& elems) final;
+  Status ListBatchPopFront(StringView key, size_t n,
+                           std::vector<std::string>* elems) final;
+  Status ListBatchPopBack(StringView key, size_t n,
+                          std::vector<std::string>* elems) final;
+  Status ListMove(StringView src, int src_pos, StringView dst, int dst_pos,
+                  std::string* elem) final;
   Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
                           StringView elem) final;
   Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
                          StringView elem) final;
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
-  Status ListPut(std::unique_ptr<ListIterator> const& pos,
-                 StringView elem) final;
+
+  Status ListReplace(std::unique_ptr<ListIterator> const& pos,
+                     StringView elem) final;
   std::unique_ptr<ListIterator> ListCreateIterator(StringView key,
                                                    Status* s) final;
 
@@ -409,6 +424,12 @@ class KVEngine : public Engine {
   // Should only be called when the List is no longer
   // accessible to any other thread.
   Status listDestroy(List* list);
+
+  Status listBatchPushImpl(StringView key, int pos,
+                           std::vector<StringView> const& elems);
+  Status listBatchPopImpl(StringView key, int pos, size_t n,
+                          std::vector<std::string>* elems);
+  Status listRollback(BatchWriteLog::ListLogEntry const& entry);
 
   /// Hash helper funtions
   Status hashListFind(StringView key, HashList** hlist);

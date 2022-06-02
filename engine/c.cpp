@@ -153,9 +153,8 @@ KVDKStatus KVDKSortedCreate(KVDKEngine* engine, const char* collection_name,
   return s;
 }
 
-extern KVDKStatus KVDKSortedDestroy(KVDKEngine* engine,
-                                    const char* collection_name,
-                                    size_t collection_len) {
+KVDKStatus KVDKSortedDestroy(KVDKEngine* engine, const char* collection_name,
+                             size_t collection_len) {
   return engine->rep->SortedDestroy(
       StringView(collection_name, collection_len));
 }
@@ -397,9 +396,76 @@ KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos) {
   return engine->rep->ListErase(pos->rep);
 }
 
-KVDKStatus KVDKListPut(KVDKEngine* engine, KVDKListIterator* pos,
-                       char const* elem_data, size_t elem_len) {
-  return engine->rep->ListPut(pos->rep, StringView{elem_data, elem_len});
+KVDKStatus KVDKListReplace(KVDKEngine* engine, KVDKListIterator* pos,
+                           char const* elem_data, size_t elem_len) {
+  return engine->rep->ListReplace(pos->rep, StringView{elem_data, elem_len});
+}
+
+KVDKStatus KVDKListBatchPushFront(KVDKEngine* engine, char const* key_data,
+                                  size_t key_len, char const* const* elems_data,
+                                  size_t const* elems_len, size_t elems_cnt) {
+  std::vector<StringView> elems;
+  for (size_t i = 0; i < elems_cnt; i++) {
+    elems.emplace_back(elems_data[i], elems_len[i]);
+  }
+  return engine->rep->ListBatchPushFront(StringView{key_data, key_len}, elems);
+}
+
+KVDKStatus KVDKListBatchPushBack(KVDKEngine* engine, char const* key_data,
+                                 size_t key_len, char const* const* elems_data,
+                                 size_t const* elems_len, size_t elems_cnt) {
+  std::vector<StringView> elems;
+  for (size_t i = 0; i < elems_cnt; i++) {
+    elems.emplace_back(elems_data[i], elems_len[i]);
+  }
+  return engine->rep->ListBatchPushBack(StringView{key_data, key_len}, elems);
+}
+
+KVDKStatus KVDKListBatchPopFront(KVDKEngine* engine, char const* key_data,
+                                 size_t key_len, size_t n,
+                                 void (*cb)(char const* elem_data,
+                                            size_t elem_len, void* args),
+                                 void* args) {
+  std::vector<std::string> elems;
+  KVDKStatus s =
+      engine->rep->ListBatchPopFront(StringView{key_data, key_len}, n, &elems);
+  if (s != KVDKStatus::Ok) {
+    return s;
+  }
+  for (auto const& elem : elems) {
+    cb(elem.data(), elem.size(), args);
+  }
+  return s;
+}
+
+KVDKStatus KVDKListBatchPopBack(KVDKEngine* engine, char const* key_data,
+                                size_t key_len, size_t n,
+                                void (*cb)(char const* elem_data,
+                                           size_t elem_len, void* args),
+                                void* args) {
+  std::vector<std::string> elems;
+  KVDKStatus s =
+      engine->rep->ListBatchPopBack(StringView{key_data, key_len}, n, &elems);
+  if (s != KVDKStatus::Ok) {
+    return s;
+  }
+  for (auto const& elem : elems) {
+    cb(elem.data(), elem.size(), args);
+  }
+  return s;
+}
+
+KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
+                        size_t src_len, int src_pos, char const* dst_data,
+                        size_t dst_len, int dst_pos, char** elem_data,
+                        size_t* elem_len) {
+  std::string elem;
+  KVDKStatus s =
+      engine->rep->ListMove(StringView{src_data, src_len}, src_pos,
+                            StringView{dst_data, dst_len}, dst_pos, &elem);
+  *elem_data = CopyStringToChar(elem);
+  *elem_len = elem.size();
+  return s;
 }
 
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
