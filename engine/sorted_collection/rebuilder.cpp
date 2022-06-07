@@ -88,7 +88,6 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
             0 &&
         findCheckpointVersion(record) == record &&
         record->entry.meta.type == SortedElem) {
-      record->PersistOldVersion(kNullPMemOffset);
       SkiplistNode* start_node = nullptr;
       while (start_node == nullptr) {
         // Always build dram node for a recovery segment start record
@@ -333,6 +332,9 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       }
     }
   }
+  kvdk_assert(findCheckpointVersion(start_node->record) == start_node->record,
+              "start node of a recovery segment must be valid verion");
+  start_node->record->PersistOldVersion(kNullPMemOffset);
 
   SkiplistNode* cur_node = start_node;
   DLRecord* cur_record = cur_node->record;
