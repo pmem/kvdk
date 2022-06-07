@@ -481,10 +481,7 @@ class Skiplist : public Collection {
       auto guard = lockRecordPosition(record, pmem_allocator_, record_locks_);
       DLRecord* prev =
           pmem_allocator_->offset2addr_checked<DLRecord>(record->prev);
-      DLRecord* next =
-          pmem_allocator_->offset2addr_checked<DLRecord>(record->next);
-      if (prev->next == pmem_allocator_->addr2offset_checked(record) &&
-          next->prev == pmem_allocator_->addr2offset_checked(record)) {
+      if (prev->next == pmem_allocator_->addr2offset_checked(record)) {
         return guard;
       }
     }
