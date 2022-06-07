@@ -649,7 +649,8 @@ Skiplist::WriteResult Skiplist::putImplWithHash(const StringView& key,
     ret.s = Status::PmemOverflow;
     return ret;
   }
-  auto lookup_result = hash_table_->Lookup<true>(internal_key, SortedElem);
+  auto lookup_result =
+      hash_table_->Lookup<true>(internal_key, SortedElem | SortedElemDelete);
   return putPreparedWithHash(lookup_result, key, value, timestamp, space);
 }
 
@@ -913,6 +914,7 @@ seek_write_position:
     ret.existing_record = nullptr;
     if (!lockInsertPosition(key, seek_result.prev_pmem_record,
                             seek_result.next_pmem_record, &insert_guard)) {
+      seek_result = Splice(this);
       Seek(key, &seek_result);
       goto seek_write_position;
     }

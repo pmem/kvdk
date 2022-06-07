@@ -88,6 +88,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
             0 &&
         findCheckpointVersion(record) == record &&
         record->entry.meta.type == SortedElem) {
+      record->PersistOldVersion(kNullPMemOffset);
       SkiplistNode* start_node = nullptr;
       while (start_node == nullptr) {
         // Always build dram node for a recovery segment start record
