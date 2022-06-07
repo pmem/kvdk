@@ -80,21 +80,19 @@ void KVEngine::purgeAndFreeDLRecords(
   std::vector<CollectionIDType> outdated_skiplists;
   for (auto pmem_record : old_records) {
     while (pmem_record) {
+      DLRecord* next_record =
+          pmem_allocator_->offset2addr<DLRecord>(pmem_record->old_version);
       switch (pmem_record->GetRecordType()) {
         case RecordType::SortedElem:
         case RecordType::SortedHeader:
         case RecordType::SortedElemDelete: {
-          pmem_record->entry.Destroy();
           entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                pmem_record->entry.header.record_size);
-          pmem_record = static_cast<DLRecord*>(
-              pmem_allocator_->offset2addr(pmem_record->old_version));
+          pmem_record->Destroy();
           break;
         }
         case RecordType::SortedHeaderDelete: {
           auto skiplist_id = Skiplist::SkiplistID(pmem_record);
-          pmem_record = static_cast<DLRecord*>(
-              pmem_allocator_->offset2addr(pmem_record->old_version));
           // For the skiplist header, we should disconnect the old version list
           // of sorted header delete record. In order that `DestroyAll` function
           // could easily deal with destroying a sorted collection, instead of
@@ -109,6 +107,7 @@ void KVEngine::purgeAndFreeDLRecords(
         default:
           std::abort();
       }
+      pmem_record = next_record;
     }
   }
   pmem_allocator_->BatchFree(entries);
@@ -252,7 +251,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
               }
               case PointerType::SkiplistNode: {
                 total_num++;
-                auto dl_record = slot_iter->GetIndex().skiplist_node->record;
+                auto node = slot_iter->GetIndex().skiplist_node;
+                auto dl_record = node->record;
                 auto old_record = removeOutDatedVersion<DLRecord>(dl_record);
                 if (old_record) {
                   purge_dl_records.emplace_back(old_record);
@@ -261,11 +261,11 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 if (slot_iter->GetRecordType() ==
                         RecordType::SortedElemDelete &&
                     dl_record->entry.meta.timestamp < min_snapshot_ts) {
+                  bool success =
+                      Skiplist::Remove(dl_record, node, pmem_allocator_.get(),
+                                       skiplist_locks_.get());
+                  kvdk_assert(success, "");
                   hash_table_->Erase(&(*slot_iter));
-                  Skiplist::Remove(static_cast<DLRecord*>(dl_record),
-                                   slot_iter->GetIndex().skiplist_node,
-                                   pmem_allocator_.get(),
-                                   skiplist_locks_.get());
                   purge_dl_records.emplace_back(dl_record);
                   need_purge_num++;
                 }
@@ -282,9 +282,10 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 if (slot_iter->GetRecordType() ==
                         RecordType::SortedElemDelete &&
                     dl_record->entry.meta.timestamp < min_snapshot_ts) {
-                  Skiplist::Remove(static_cast<DLRecord*>(dl_record), nullptr,
-                                   pmem_allocator_.get(),
-                                   skiplist_locks_.get());
+                  bool success = Skiplist::Remove(dl_record, nullptr,
+                                                  pmem_allocator_.get(),
+                                                  skiplist_locks_.get());
+                  kvdk_assert(success, "");
                   hash_table_->Erase(&(*slot_iter));
                   purge_dl_records.emplace_back(dl_record);
                   need_purge_num++;
