@@ -649,8 +649,7 @@ Skiplist::WriteResult Skiplist::putImplWithHash(const StringView& key,
     ret.s = Status::PmemOverflow;
     return ret;
   }
-  auto lookup_result =
-      hash_table_->Lookup<true>(internal_key, SortedElem | SortedElemDelete);
+  auto lookup_result = hash_table_->Lookup<true>(internal_key, SortedElemType);
   return putPreparedWithHash(lookup_result, key, value, timestamp, space);
 }
 
