@@ -182,7 +182,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                            &bg_work_signals_.terminating);
   constexpr uint64_t kMaxCachedOldRecords = 1024;
   constexpr size_t kSlotSegment = 1024;
-  constexpr double kWakeUpThreshold = 0.3;
+  constexpr double kWakeUpThreshold = 0.1;
 
   std::deque<std::pair<TimeStampType, ListPtr>> outdated_lists;
   std::deque<std::pair<TimeStampType, HashListPtr>> outdated_hash_lists;
@@ -211,7 +211,9 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
       if (slot_num++ % kSlotSegment == 0) {
         // total_num + kWakeUpThreshold to avoid division by zero.
         if (need_purge_num / (double)(total_num + kWakeUpThreshold) <
-            kWakeUpThreshold) {
+                kWakeUpThreshold &&
+            ((pmem_allocator_->PMemUsageInBytes() /
+              (double)configs_.pmem_file_size) < 0.5)) {
           sleep(1);
         }
         if (bg_work_signals_.terminating) break;
