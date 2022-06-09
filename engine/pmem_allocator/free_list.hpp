@@ -147,7 +147,11 @@ class SpaceEntryPool {
   }
 
  private:
+  // Pool of small space entries, the vector index is block size of space
+  // entries in each entry offset list
   std::vector<std::vector<std::vector<PMemOffsetType>>> small_entry_pool_;
+  // Pool of large space entries, the vector index is block size index of space
+  // entries in each entry set
   std::vector<std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>>>
       large_entry_pool_;
   // Small entry lists of a same block size share a spin lock
@@ -210,10 +214,10 @@ class Freelist {
   void OrganizeFreeSpace();
 
  private:
-  // Each access thread caches some freed space entries in active_entry_offsets
-  // to avoid contention. To balance free space entries among threads, if too
-  // many entries cached by a thread, newly freed entries will be stored to
-  // backup_entries and move to entry pool which shared by all threads.
+  // Each access thread caches some freed space entries in small_entry_offsets
+  // and large_entries according to their size. To balance free space entries
+  // among threads, a background thread will regularly move cached entries to
+  // entry pool which shared by all threads.
   struct alignas(64) FlistThreadCache {
     FlistThreadCache(uint32_t max_small_entry_b_size,
                      size_t max_large_entry_size_index)
@@ -232,9 +236,9 @@ class Freelist {
     Array<std::vector<PMemOffsetType>> small_entry_offsets;
     // Store all large free space entries whose block size larger than
     // max_small_entry_b_size. Array index indicates entries stored in the set
-    // have block size between (max_small_entry_b_size + index *
-    // kBlockSizeIndexInterval) and (max_small_entry_b_size +
-    // (index + 1) * kBlockSizeIndexInterval)
+    // have block size between "max_small_entry_b_size + index *
+    // kBlockSizeIndexInterval" and "max_small_entry_b_size +
+    // (index + 1) * kBlockSizeIndexInterval"
     Array<std::set<SpaceEntry, SpaceEntry::SpaceCmp>> large_entries;
     // Protect small_entry_offsets
     Array<SpinMutex> small_entry_spins;
