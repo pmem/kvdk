@@ -129,7 +129,7 @@ void Freelist::MergeSpaceInPool() {
   std::vector<std::vector<PMemOffsetType>> merged_small_entry_offsets(
       max_small_entry_block_size_);
   std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>> merged_large_entries(
-      max_large_entry_size_index_);
+      max_block_size_index_);
 
   for (uint32_t b_size = 1; b_size < max_small_entry_block_size_; b_size++) {
     while (active_pool_.TryFetchEntryList(merging_list, b_size)) {
@@ -221,7 +221,7 @@ uint64_t Freelist::BatchPush(const std::vector<SpaceEntry>& entries) {
   std::vector<std::vector<PMemOffsetType>> moving_small_entry_list(
       max_small_entry_block_size_);
   std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>>
-      moving_large_entry_set(max_large_entry_size_index_);
+      moving_large_entry_set(max_block_size_index_);
   for (const SpaceEntry& entry : entries) {
     kvdk_assert(entry.size % block_size_ == 0,
                 "batch freed entry size is not aligned to block size");

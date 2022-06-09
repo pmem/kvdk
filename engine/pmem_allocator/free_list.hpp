@@ -164,12 +164,13 @@ class Freelist {
       : num_segment_blocks_(num_segment_blocks),
         block_size_(block_size),
         max_small_entry_block_size_(max_small_entry_b_size),
-        max_large_entry_size_index_(kMaxBlockSizeIndex),
-        active_pool_(max_small_entry_b_size, max_large_entry_size_index_),
-        merged_pool_(max_small_entry_b_size, max_large_entry_size_index_),
+        max_block_size_index_(std::min(
+            kMaxBlockSizeIndex, blockSizeIndex(num_segment_blocks_) + 1)),
+        active_pool_(max_small_entry_b_size, max_block_size_index_),
+        merged_pool_(max_small_entry_b_size, max_block_size_index_),
         space_map_(num_blocks),
         flist_thread_cache_(num_threads, max_small_entry_block_size_,
-                            max_large_entry_size_index_),
+                            max_block_size_index_),
         pmem_allocator_(allocator) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t block_size,
@@ -256,7 +257,7 @@ class Freelist {
                        ? 0
                        : (block_size - max_small_entry_block_size_) /
                              kBlockSizeIndexInterval;
-    return std::min(ret, max_large_entry_size_index_ - 1);
+    return std::min(ret, max_block_size_index_ - 1);
   }
 
   bool getSmallEntry(uint32_t size, SpaceEntry* space_entry);
@@ -266,7 +267,7 @@ class Freelist {
   const uint64_t num_segment_blocks_;
   const uint32_t block_size_;
   const uint32_t max_small_entry_block_size_;
-  const uint32_t max_large_entry_size_index_;
+  const uint32_t max_block_size_index_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;
   SpaceMap space_map_;
