@@ -7,35 +7,13 @@
 namespace KVDK_NAMESPACE {
 
 template <typename T>
-T* KVEngine::removeOutDatedVersion(T* record) {
-  static_assert(
-      std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
-      "Invalid record type, should be StringRecord or DLRecord.");
-  auto old_record = record;
-  while (old_record && old_record->entry.meta.timestamp >
-                           version_controller_.OldestSnapshotTS()) {
-    old_record =
-        static_cast<T*>(pmem_allocator_->offset2addr(old_record->old_version));
-  }
-
-  // the snapshot should access the old record, so we need to purge and free the
-  // older version of the old record
-  if (old_record && old_record->old_version != kNullPMemOffset) {
-    auto old_offset = old_record->old_version;
-    old_record->PersistOldVersion(kNullPMemOffset);
-    return static_cast<T*>(pmem_allocator_->offset2addr(old_offset));
-  }
-  return nullptr;
-}
-
-template <typename T>
 T* KVEngine::removeListOutDatedVersion(T* list) {
   static_assert(
       std::is_same<T, List>::value || std::is_same<T, HashList>::value,
       "Invalid collection type, should be list or hashlist.");
   T* old_list = list;
-  while (old_list &&
-         old_list->GetTimeStamp() > version_controller_.OldestSnapshotTS()) {
+  while (old_list && old_list->GetTimeStamp() >
+                         version_controller_.GlobalOldestSnapshotTs()) {
     old_list = old_list->OldVersion();
   }
 
@@ -138,7 +116,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
     switch (cur_record->GetRecordType()) {
       case SortedElemDelete: {
         if (cur_record->GetTimestamp() <
-            version_controller_.OldestSnapshotTS()) {
+            version_controller_.GlobalOldestSnapshotTs()) {
           TEST_SYNC_POINT(
               "KVEngine::BackgroundCleaner::IterSkiplist::UnlinkDeleteRecord");
           /* Notice: a user thread firstly update this key, its old version
@@ -154,6 +132,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
         }
         break;
         case SortedHeader:
+        case SortedHeaderDelete:
         case SortedElem:
           break;
         default:
@@ -209,11 +188,28 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
        * lock conflict.
        */
       if (slot_num++ % kSlotSegment == 0) {
+        {  // Deal with old records from forground
+          round_robin_id = (round_robin_id + 1) % configs_.max_access_threads;
+          auto& tc = cleaner_thread_cache_[round_robin_id];
+          std::unique_lock<SpinMutex> lock(tc.mtx);
+          if (!tc.old_str_records.empty()) {
+            purge_string_records.insert(purge_string_records.end(),
+                                        tc.old_str_records.begin(),
+                                        tc.old_str_records.end());
+            need_purge_num += tc.old_str_records.size();
+            tc.old_str_records.clear();
+          }
+          if (!tc.old_dl_records.empty()) {
+            purge_dl_records.insert(purge_dl_records.end(),
+                                    tc.old_dl_records.begin(),
+                                    tc.old_dl_records.end());
+            need_purge_num += tc.old_dl_records.size();
+            tc.old_dl_records.clear();
+          }
+        }
         // total_num + kWakeUpThreshold to avoid division by zero.
         if (need_purge_num / (double)(total_num + kWakeUpThreshold) <
-                kWakeUpThreshold &&
-            ((pmem_allocator_->PMemUsageInBytes() /
-              (double)configs_.pmem_file_size) < 0.5)) {
+            kWakeUpThreshold) {
           sleep(1);
         }
         if (bg_work_signals_.terminating) break;
@@ -221,7 +217,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         need_purge_num = 0;
         version_controller_.UpdatedOldestSnapshot();
       }
-      auto min_snapshot_ts = version_controller_.OldestSnapshotTS();
+      auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
       auto now = TimeUtils::millisecond_time();
 
       std::vector<Skiplist*> no_index_skiplists;
@@ -382,7 +378,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         while (!pending_purge_strings.empty()) {
           auto& pending_strings = pending_purge_strings.front();
           if (pending_strings.release_time <
-              version_controller_.OldestSnapshotTS()) {
+              version_controller_.LocalOldestSnapshotTS()) {
             purgeAndFreeStringRecords(pending_strings.records);
             pending_purge_strings.pop_front();
           } else {
@@ -395,7 +391,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         while (!pending_purge_dls.empty()) {
           auto& pending_dls = pending_purge_dls.front();
           if (pending_dls.release_time <
-              version_controller_.OldestSnapshotTS()) {
+              version_controller_.LocalOldestSnapshotTS()) {
             purgeAndFreeDLRecords(pending_dls.records);
             pending_purge_dls.pop_front();
           } else {

@@ -124,6 +124,7 @@ class KVEngine : public Engine {
 
   KVEngine(const Configs& configs)
       : engine_thread_cache_(configs.max_access_threads),
+        cleaner_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads),
         comparators_(configs.comparator){};
@@ -136,6 +137,13 @@ class KVEngine : public Engine {
     // Info used in recovery
     uint64_t newest_restored_ts = 0;
     std::unordered_map<uint64_t, int> visited_skiplist_ids{};
+  };
+
+  struct CleanerThreadCache {
+    CleanerThreadCache() = default;
+    std::vector<StringRecord*> old_str_records;
+    std::vector<DLRecord*> old_dl_records;
+    SpinMutex mtx;
   };
 
   bool CheckKeySize(const StringView& key) { return key.size() <= UINT16_MAX; }
@@ -600,6 +608,7 @@ class KVEngine : public Engine {
   void terminateBackgroundWorks();
 
   Array<EngineThreadCache> engine_thread_cache_;
+  Array<CleanerThreadCache> cleaner_thread_cache_;
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};
@@ -651,6 +660,8 @@ class KVEngine : public Engine {
   std::mutex checkpoint_lock_;
 
   BackgroundWorkSignals bg_work_signals_;
+
+  std::atomic<int64_t> round_robin_id{-1};
 };
 
 }  // namespace KVDK_NAMESPACE
