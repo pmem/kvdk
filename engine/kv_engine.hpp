@@ -480,7 +480,7 @@ class KVEngine : public Engine {
 
   // remove outdated records which without snapshot hold.
   template <typename T>
-  T* removeOutDatedVersion(T* record);
+  T* removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts);
 
   // Workaround for expired list or hash list.
   // TODO: replaced this by `removeOutDatedVersion` when list/hash list has

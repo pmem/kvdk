@@ -97,9 +97,11 @@ void KVEngine::cleanNoHashIndexedSkiplist(
   auto cur_node = skiplist->HeaderNode();
   auto cur_record = header;
   do {
+    auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
     auto ul = hash_table_->AcquireLock(cur_record->Key());
     // iter old version list
-    auto old_record = removeOutDatedVersion<DLRecord>(cur_record);
+    auto old_record =
+        removeOutDatedVersion<DLRecord>(cur_record, min_snapshot_ts);
     if (old_record) {
       purge_dl_records.emplace_back(old_record);
     }
@@ -115,8 +117,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
     }
     switch (cur_record->GetRecordType()) {
       case SortedElemDelete: {
-        if (cur_record->GetTimestamp() <
-            version_controller_.GlobalOldestSnapshotTs()) {
+        if (cur_record->GetTimestamp() < min_snapshot_ts) {
           TEST_SYNC_POINT(
               "KVEngine::BackgroundCleaner::IterSkiplist::UnlinkDeleteRecord");
           /* Notice: a user thread firstly update this key, its old version
@@ -217,6 +218,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         need_purge_num = 0;
         version_controller_.UpdatedOldestSnapshot();
       }
+
       auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
       auto now = TimeUtils::millisecond_time();
 
@@ -231,8 +233,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
               case PointerType::StringRecord: {
                 total_num++;
                 auto string_record = slot_iter->GetIndex().string_record;
-                auto old_record =
-                    removeOutDatedVersion<StringRecord>(string_record);
+                auto old_record = removeOutDatedVersion<StringRecord>(
+                    string_record, min_snapshot_ts);
                 if (old_record) {
                   purge_string_records.emplace_back(old_record);
                   need_purge_num++;
@@ -251,7 +253,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 total_num++;
                 auto node = slot_iter->GetIndex().skiplist_node;
                 auto dl_record = node->record;
-                auto old_record = removeOutDatedVersion<DLRecord>(dl_record);
+                auto old_record =
+                    removeOutDatedVersion<DLRecord>(dl_record, min_snapshot_ts);
                 if (old_record) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
@@ -272,7 +275,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
               case PointerType::DLRecord: {
                 total_num++;
                 auto dl_record = slot_iter->GetIndex().dl_record;
-                auto old_record = removeOutDatedVersion<DLRecord>(dl_record);
+                auto old_record =
+                    removeOutDatedVersion<DLRecord>(dl_record, min_snapshot_ts);
                 if (old_record) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
@@ -294,7 +298,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 Skiplist* skiplist = slot_iter->GetIndex().skiplist;
                 total_num += skiplist->Size();
                 auto head_record = skiplist->HeaderRecord();
-                auto old_record = removeOutDatedVersion<DLRecord>(head_record);
+                auto old_record = removeOutDatedVersion<DLRecord>(
+                    head_record, min_snapshot_ts);
                 if (old_record) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;

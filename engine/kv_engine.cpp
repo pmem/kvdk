@@ -1357,13 +1357,12 @@ template HashTable::LookupResult KVEngine::lookupKey<false>(StringView,
                                                             uint16_t);
 
 template <typename T>
-T* KVEngine::removeOutDatedVersion(T* record) {
+T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
   static_assert(
       std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
       "Invalid record type, should be StringRecord or DLRecord.");
   auto old_record = record;
-  while (old_record && old_record->entry.meta.timestamp >
-                           version_controller_.GlobalOldestSnapshotTs()) {
+  while (old_record && old_record->entry.meta.timestamp > min_snapshot_ts) {
     old_record =
         static_cast<T*>(pmem_allocator_->offset2addr(old_record->old_version));
   }
@@ -1379,8 +1378,9 @@ T* KVEngine::removeOutDatedVersion(T* record) {
 }
 
 template StringRecord* KVEngine::removeOutDatedVersion<StringRecord>(
-    StringRecord*);
-template DLRecord* KVEngine::removeOutDatedVersion<DLRecord>(DLRecord*);
+    StringRecord*, TimeStampType);
+template DLRecord* KVEngine::removeOutDatedVersion<DLRecord>(DLRecord*,
+                                                             TimeStampType);
 
 }  // namespace KVDK_NAMESPACE
 

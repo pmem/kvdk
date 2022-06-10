@@ -268,7 +268,8 @@ Status KVEngine::SortedPutImpl(Skiplist* skiplist, const StringView& user_key,
 
   // Collect outdated version records
   if (ret.existing_record) {
-    auto old_record = removeOutDatedVersion<DLRecord>(ret.write_record);
+    auto old_record = removeOutDatedVersion<DLRecord>(
+        ret.write_record, version_controller_.GlobalOldestSnapshotTs());
     if (old_record) {
       auto& tc = cleaner_thread_cache_[access_thread.id];
       std::unique_lock<SpinMutex> lock(tc.mtx);
