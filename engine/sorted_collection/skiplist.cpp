@@ -139,7 +139,7 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
       }
 
       DLRecord* next_pmem_record = next->record;
-      int cmp = compare(key, next->UserKey());
+      int cmp = Compare(key, next->UserKey());
       // pmem record maybe updated before comparing string, then the compare
       // result will be invalid, so we need to do double check
       if (next->record != next_pmem_record) {
@@ -185,7 +185,7 @@ void Skiplist::Seek(const StringView& key, Splice* result_splice) {
     if (next_record == nullptr) {
       return Seek(key, result_splice);
     }
-    int cmp = compare(key, UserKey(next_record));
+    int cmp = Compare(key, UserKey(next_record));
     // pmem record maybe updated before comparing string, then the comparing
     // result will be invalid, so we need to do double check
     //
@@ -322,9 +322,9 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
   auto check_order = [&]() {
     bool res =
         /*check next*/ (next_record == header_->record ||
-                        compare(inserting_key, UserKey(next_record)) <= 0) &&
+                        Compare(inserting_key, UserKey(next_record)) <= 0) &&
         /*check prev*/ (prev_record == header_->record ||
-                        compare(inserting_key, UserKey(prev_record)) > 0);
+                        Compare(inserting_key, UserKey(prev_record)) > 0);
     return res;
   };
   if (!check_linkage()) {
