@@ -7,13 +7,12 @@
 namespace KVDK_NAMESPACE {
 
 template <typename T>
-T* KVEngine::removeOutDatedVersion(T* record) {
+T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
   static_assert(
       std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
       "Invalid record type, should be StringRecord or DLRecord.");
   auto old_record = record;
-  while (old_record && old_record->entry.meta.timestamp >
-                           version_controller_.OldestSnapshotTS()) {
+  while (old_record && old_record->entry.meta.timestamp > min_snapshot_ts) {
     old_record =
         static_cast<T*>(pmem_allocator_->offset2addr(old_record->old_version));
   }
@@ -116,29 +115,48 @@ void KVEngine::purgeAndFreeDLRecords(
 void KVEngine::cleanNoHashIndexedSkiplist(
     Skiplist* skiplist, std::vector<DLRecord*>& purge_dl_records) {
   auto header = skiplist->HeaderRecord();
-  auto cur_node = skiplist->HeaderNode();
-  auto cur_record = header;
-  do {
+  auto prev_node = skiplist->HeaderNode();
+  auto cur_record =
+      pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+  while ((cur_record->GetRecordType() & SortedHeaderType) == 0) {
+    auto min_snapshot_ts = version_controller_.OldestSnapshotTS();
     auto ul = hash_table_->AcquireLock(cur_record->Key());
     // iter old version list
-    auto old_record = removeOutDatedVersion<DLRecord>(cur_record);
+    auto old_record =
+        removeOutDatedVersion<DLRecord>(cur_record, min_snapshot_ts);
     if (old_record) {
       purge_dl_records.emplace_back(old_record);
     }
 
-    SkiplistNode* dram_node = nullptr;
     // check record has dram skiplist node and update skiplist node;
-    if (cur_node && cur_node->record == cur_record) {
-      kvdk_assert(
-          equal_string_view(cur_node->record->Key(), cur_record->Key()),
-          "the record of dram skiplist node should be equal the record");
-      dram_node = cur_node;
-      cur_node = cur_node->Next(1).RawPointer();
+    SkiplistNode* dram_node = nullptr;
+    SkiplistNode* cur_node = prev_node->Next(1).RawPointer();
+    while (cur_node) {
+      if (cur_node->Next(1).GetTag() == SkiplistNode::NodeStatus::Deleted) {
+        // cur_node already been deleted
+        cur_node = cur_node->Next(1).RawPointer();
+      } else {
+        kvdk_assert((cur_node->record->GetRecordType() & SortedHeaderType) == 0,
+                    "");
+        if (skiplist->Compare(cur_node->UserKey(),
+                              Skiplist::UserKey(cur_record)) < 0) {
+          prev_node = cur_node;
+          cur_node = cur_node->Next(1).RawPointer();
+        } else {
+          break;
+        }
+      }
     }
+
+    if (cur_node && cur_node->record == cur_record) {
+      dram_node = cur_node;
+    }
+
+    DLRecord* next_record =
+        pmem_allocator_->offset2addr<DLRecord>(cur_record->next);
     switch (cur_record->GetRecordType()) {
       case SortedElemDelete: {
-        if (cur_record->GetTimestamp() <
-            version_controller_.OldestSnapshotTS()) {
+        if (cur_record->GetTimestamp() < min_snapshot_ts) {
           TEST_SYNC_POINT(
               "KVEngine::BackgroundCleaner::IterSkiplist::UnlinkDeleteRecord");
           /* Notice: a user thread firstly update this key, its old version
@@ -155,14 +173,14 @@ void KVEngine::cleanNoHashIndexedSkiplist(
         break;
         case SortedHeader:
         case SortedElem:
+        case SortedHeaderDelete:
           break;
         default:
           std::abort();
       }
     }
-    cur_record =
-        static_cast<DLRecord*>(pmem_allocator_->offset2addr(cur_record->next));
-  } while (cur_record != header);
+    cur_record = next_record;
+  }
 }
 
 struct PendingPurgeStrRecords {
@@ -233,8 +251,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
               case PointerType::StringRecord: {
                 total_num++;
                 auto string_record = slot_iter->GetIndex().string_record;
-                auto old_record =
-                    removeOutDatedVersion<StringRecord>(string_record);
+                auto old_record = removeOutDatedVersion<StringRecord>(
+                    string_record, min_snapshot_ts);
                 if (old_record) {
                   purge_string_records.emplace_back(old_record);
                   need_purge_num++;
@@ -253,7 +271,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 total_num++;
                 auto node = slot_iter->GetIndex().skiplist_node;
                 auto dl_record = node->record;
-                auto old_record = removeOutDatedVersion<DLRecord>(dl_record);
+                auto old_record =
+                    removeOutDatedVersion<DLRecord>(dl_record, min_snapshot_ts);
                 if (old_record) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
@@ -274,7 +293,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
               case PointerType::DLRecord: {
                 total_num++;
                 auto dl_record = slot_iter->GetIndex().dl_record;
-                auto old_record = removeOutDatedVersion<DLRecord>(dl_record);
+                auto old_record =
+                    removeOutDatedVersion<DLRecord>(dl_record, min_snapshot_ts);
                 if (old_record) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
@@ -296,7 +316,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 Skiplist* skiplist = slot_iter->GetIndex().skiplist;
                 total_num += skiplist->Size();
                 auto head_record = skiplist->HeaderRecord();
-                auto old_record = removeOutDatedVersion<DLRecord>(head_record);
+                auto old_record = removeOutDatedVersion<DLRecord>(
+                    head_record, min_snapshot_ts);
                 if (old_record) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
@@ -402,6 +423,14 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         }
       }
 
+      {  // Deal with skiplist with hash index: remove outdated records.
+        if (!no_index_skiplists.empty()) {
+          for (auto& skiplist : no_index_skiplists) {
+            cleanNoHashIndexedSkiplist(skiplist, purge_dl_records);
+          }
+        }
+      }
+
       {  // Destroy skiplist
         while (!outdated_skip_lists.empty()) {
           auto& ts_skiplist = outdated_skip_lists.front();
@@ -411,14 +440,6 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
             outdated_skip_lists.pop_front();
           } else {
             break;
-          }
-        }
-      }
-
-      {  // Deal with skiplist with hash index: remove outdated records.
-        if (!no_index_skiplists.empty()) {
-          for (auto& skiplist : no_index_skiplists) {
-            cleanNoHashIndexedSkiplist(skiplist, purge_dl_records);
           }
         }
       }
