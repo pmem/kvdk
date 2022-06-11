@@ -131,13 +131,23 @@ void KVEngine::cleanNoHashIndexedSkiplist(
     // check record has dram skiplist node and update skiplist node;
     SkiplistNode* dram_node = nullptr;
     SkiplistNode* cur_node = prev_node->Next(1).RawPointer();
-    assert(cur_node == nullptr ||
-           ((cur_node->record->GetRecordType() & SortedHeaderType) == 0));
-    while (cur_node && skiplist->Compare(cur_node->UserKey(),
-                                         Skiplist::UserKey(cur_record)) < 0) {
-      prev_node = cur_node;
-      cur_node = cur_node->Next(1).RawPointer();
+    while (cur_node) {
+      if (cur_node->Next(1).GetTag() == SkiplistNode::NodeStatus::Deleted) {
+        // cur_node already been deleted
+        cur_node = cur_node->Next(1).RawPointer();
+      } else {
+        kvdk_assert((cur_node->record->GetRecordType() & SortedHeaderType) == 0,
+                    "");
+        if (skiplist->Compare(cur_node->UserKey(),
+                              Skiplist::UserKey(cur_record)) < 0) {
+          prev_node = cur_node;
+          cur_node = cur_node->Next(1).RawPointer();
+        } else {
+          break;
+        }
+      }
     }
+
     if (cur_node && cur_node->record == cur_record) {
       dram_node = cur_node;
     }
