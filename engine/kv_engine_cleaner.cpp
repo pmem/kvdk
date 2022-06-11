@@ -7,13 +7,12 @@
 namespace KVDK_NAMESPACE {
 
 template <typename T>
-T* KVEngine::removeListOutDatedVersion(T* list) {
+T* KVEngine::removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts) {
   static_assert(
       std::is_same<T, List>::value || std::is_same<T, HashList>::value,
       "Invalid collection type, should be list or hashlist.");
   T* old_list = list;
-  while (old_list && old_list->GetTimeStamp() >
-                         version_controller_.GlobalOldestSnapshotTs()) {
+  while (old_list && old_list->GetTimeStamp() > min_snapshot_ts) {
     old_list = old_list->OldVersion();
   }
 
@@ -190,8 +189,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
        */
       if (slot_num++ % kSlotSegment == 0) {
         {  // Deal with old records from forground
-          round_robin_id = (round_robin_id + 1) % configs_.max_access_threads;
-          auto& tc = cleaner_thread_cache_[round_robin_id];
+          round_robin_id_ = (round_robin_id_ + 1) % configs_.max_access_threads;
+          auto& tc = cleaner_thread_cache_[round_robin_id_];
           std::unique_lock<SpinMutex> lock(tc.mtx);
           if (!tc.old_str_records.empty()) {
             purge_string_records.insert(purge_string_records.end(),
@@ -219,12 +218,12 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         version_controller_.UpdatedOldestSnapshot();
       }
 
-      auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
-      auto now = TimeUtils::millisecond_time();
-
       std::vector<Skiplist*> no_index_skiplists;
 
       {  // Slot lock section
+        auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
+        auto now = TimeUtils::millisecond_time();
+
         auto slot_lock(hashtable_iter.AcquireSlotLock());
         auto slot_iter = hashtable_iter.Slot();
         while (slot_iter.Valid()) {
@@ -321,7 +320,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 List* list = slot_iter->GetIndex().list;
                 total_num += list->Size();
                 auto current_ts = version_controller_.GetCurrentTimestamp();
-                auto old_list = removeListOutDatedVersion(list);
+                auto old_list =
+                    removeListOutDatedVersion(list, min_snapshot_ts);
                 if (old_list) {
                   outdated_lists.emplace_back(
                       std::make_pair(current_ts, old_list));
@@ -340,7 +340,8 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                 HashList* hlist = slot_iter->GetIndex().hlist;
                 total_num += hlist->Size();
                 auto current_ts = version_controller_.GetCurrentTimestamp();
-                auto old_list = removeListOutDatedVersion(hlist);
+                auto old_list =
+                    removeListOutDatedVersion(hlist, min_snapshot_ts);
                 if (old_list) {
                   outdated_hash_lists.emplace_back(
                       std::make_pair(current_ts, old_list));
@@ -408,7 +409,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
       {  // Destroy skiplist
         while (!outdated_skip_lists.empty()) {
           auto& ts_skiplist = outdated_skip_lists.front();
-          if (ts_skiplist.first < min_snapshot_ts) {
+          if (ts_skiplist.first < version_controller_.LocalOldestSnapshotTS()) {
             ts_skiplist.second->DestroyAll();
             removeSkiplist(ts_skiplist.second->ID());
             outdated_skip_lists.pop_front();
@@ -429,7 +430,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
       {  // Destroy list
         while (!outdated_lists.empty()) {
           auto& ts_list = outdated_lists.front();
-          if (ts_list.first < min_snapshot_ts) {
+          if (ts_list.first < version_controller_.LocalOldestSnapshotTS()) {
             listDestroy(ts_list.second.release());
             outdated_lists.pop_front();
           } else {
@@ -441,7 +442,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
       {  // Destroy hash
         while (!outdated_hash_lists.empty()) {
           auto& ts_hlist = outdated_hash_lists.front();
-          if (ts_hlist.first < min_snapshot_ts) {
+          if (ts_hlist.first < version_controller_.LocalOldestSnapshotTS()) {
             hashListDestroy(ts_hlist.second.release());
             outdated_hash_lists.pop_front();
           } else {

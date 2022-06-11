@@ -486,7 +486,7 @@ class KVEngine : public Engine {
   // TODO: replaced this by `removeOutDatedVersion` when list/hash list has
   // mvcc.
   template <typename T>
-  T* removeListOutDatedVersion(T* list);
+  T* removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts);
 
   // find delete and old records in skiplist with no hash index
   void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
@@ -661,7 +661,7 @@ class KVEngine : public Engine {
 
   BackgroundWorkSignals bg_work_signals_;
 
-  std::atomic<int64_t> round_robin_id{-1};
+  std::atomic<int64_t> round_robin_id_{-1};
 };
 
 }  // namespace KVDK_NAMESPACE

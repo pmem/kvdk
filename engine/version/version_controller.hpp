@@ -264,7 +264,8 @@ class VersionController {
   }
 
   TimeStampType GlobalOldestSnapshotTs() {
-    return global_oldest_snapshot_.timestamp;
+    std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
+    return global_snapshots_.OldestSnapshotTS();
   }
 
   // Update recorded oldest snapshot up to state by iterating every thread
@@ -272,12 +273,6 @@ class VersionController {
   void UpdatedOldestSnapshot() {
     // update local oldest snapshot
     TimeStampType ts = GetCurrentTimestamp();
-    {// update global oldest snapshot.
-    std::lock_guard<SpinMutex> lg(global_snapshots_lock_);
-    global_oldest_snapshot_.timestamp =
-        std::min(ts, global_snapshots_.OldestSnapshotTS());
-    }
-    
     for (size_t i = 0; i < version_thread_cache_.size(); i++) {
       auto& tc = version_thread_cache_[i];
       ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
@@ -301,8 +296,8 @@ class VersionController {
   SpinMutex global_snapshots_lock_;
   // Known oldest snapshot of the instance, there is delay with the actual
   // oldest snapshot until call UpdatedOldestSnapshot()
-  SnapshotImpl local_oldest_snapshot_;
-  SnapshotImpl global_oldest_snapshot_;
+  SnapshotImpl local_oldest_snapshot_{kMaxTimestamp};
+  SnapshotImpl global_oldest_snapshot_{kMaxTimestamp};
 
   // These two used to get current timestamp of the instance
   // version_base_: The newest timestamp on instance closing last time
