@@ -275,6 +275,10 @@ class Skiplist : public Collection {
 
   void UpdateSize(int64_t delta);
 
+  int Compare(const StringView& src_key, const StringView& target_key) {
+    return comparator_(src_key, target_key);
+  }
+
   static bool IsSkiplistRecord(DLRecord* record) {
     auto type = record->entry.meta.type;
     return type == SortedElem || type == SortedElemDelete ||
@@ -492,10 +496,6 @@ class Skiplist : public Collection {
     return prev != nullptr &&
            prev->next == pmem_allocator_->addr2offset(record) &&
            SkiplistID(record) == ID();
-  }
-
-  int compare(const StringView& src_key, const StringView& target_key) {
-    return comparator_(src_key, target_key);
   }
 
   void obsoleteNodes(const std::vector<SkiplistNode*> nodes) {

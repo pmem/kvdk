@@ -93,9 +93,10 @@ void KVEngine::purgeAndFreeDLRecords(
 void KVEngine::cleanNoHashIndexedSkiplist(
     Skiplist* skiplist, std::vector<DLRecord*>& purge_dl_records) {
   auto header = skiplist->HeaderRecord();
-  auto cur_node = skiplist->HeaderNode();
-  auto cur_record = header;
-  do {
+  auto prev_node = skiplist->HeaderNode();
+  auto cur_record =
+      pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+  while ((cur_record->GetRecordType() & SortedHeaderType) == 0) {
     auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
     auto ul = hash_table_->AcquireLock(cur_record->Key());
     // iter old version list
@@ -105,15 +106,32 @@ void KVEngine::cleanNoHashIndexedSkiplist(
       purge_dl_records.emplace_back(old_record);
     }
 
-    SkiplistNode* dram_node = nullptr;
     // check record has dram skiplist node and update skiplist node;
-    if (cur_node && cur_node->record == cur_record) {
-      kvdk_assert(
-          equal_string_view(cur_node->record->Key(), cur_record->Key()),
-          "the record of dram skiplist node should be equal the record");
-      dram_node = cur_node;
-      cur_node = cur_node->Next(1).RawPointer();
+    SkiplistNode* dram_node = nullptr;
+    SkiplistNode* cur_node = prev_node->Next(1).RawPointer();
+    while (cur_node) {
+      if (cur_node->Next(1).GetTag() == SkiplistNode::NodeStatus::Deleted) {
+        // cur_node already been deleted
+        cur_node = cur_node->Next(1).RawPointer();
+      } else {
+        kvdk_assert((cur_node->record->GetRecordType() & SortedHeaderType) == 0,
+                    "");
+        if (skiplist->Compare(cur_node->UserKey(),
+                              Skiplist::UserKey(cur_record)) < 0) {
+          prev_node = cur_node;
+          cur_node = cur_node->Next(1).RawPointer();
+        } else {
+          break;
+        }
+      }
     }
+
+    if (cur_node && cur_node->record == cur_record) {
+      dram_node = cur_node;
+    }
+
+    DLRecord* next_record =
+        pmem_allocator_->offset2addr<DLRecord>(cur_record->next);
     switch (cur_record->GetRecordType()) {
       case SortedElemDelete: {
         if (cur_record->GetTimestamp() < min_snapshot_ts) {
@@ -139,9 +157,8 @@ void KVEngine::cleanNoHashIndexedSkiplist(
           std::abort();
       }
     }
-    cur_record =
-        static_cast<DLRecord*>(pmem_allocator_->offset2addr(cur_record->next));
-  } while (cur_record != header);
+    cur_record = next_record;
+  }
 }
 
 struct PendingPurgeStrRecords {
@@ -406,6 +423,14 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         }
       }
 
+      {  // Deal with skiplist with hash index: remove outdated records.
+        if (!no_index_skiplists.empty()) {
+          for (auto& skiplist : no_index_skiplists) {
+            cleanNoHashIndexedSkiplist(skiplist, purge_dl_records);
+          }
+        }
+      }
+
       {  // Destroy skiplist
         while (!outdated_skip_lists.empty()) {
           auto& ts_skiplist = outdated_skip_lists.front();
@@ -415,14 +440,6 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
             outdated_skip_lists.pop_front();
           } else {
             break;
-          }
-        }
-      }
-
-      {  // Deal with skiplist with hash index: remove outdated records.
-        if (!no_index_skiplists.empty()) {
-          for (auto& skiplist : no_index_skiplists) {
-            cleanNoHashIndexedSkiplist(skiplist, purge_dl_records);
           }
         }
       }
