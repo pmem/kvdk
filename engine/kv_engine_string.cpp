@@ -230,6 +230,16 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
 
   insertKeyOrElem(lookup_result, StringDataRecord, new_record);
 
+  if (existing_record) {
+    auto old_record = removeOutDatedVersion<StringRecord>(
+        new_record, version_controller_.GlobalOldestSnapshotTs());
+    if (old_record) {
+      auto& tc = cleaner_thread_cache_[access_thread.id];
+      std::unique_lock<SpinMutex> lock(tc.mtx);
+      tc.old_str_records.emplace_back(old_record);
+    }
+  }
+
   return Status::Ok;
 }
 

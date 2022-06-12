@@ -26,7 +26,7 @@ void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   /// GlobalClean() should collect those entries and Free() them.
   maybeUpdateOldestSnapshot();
   TimeStampType earliest_ts =
-      kv_engine_->version_controller_.OldestSnapshotTS();
+      kv_engine_->version_controller_.LocalOldestSnapshotTS();
   constexpr size_t kMaxFreePending = 16;
   for (size_t i = 0; i < kMaxFreePending; i++) {
     if (tc.pending_free_space_entries.empty()) {
@@ -47,7 +47,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   // can be freed
   kv_engine_->version_controller_.UpdatedOldestSnapshot();
   TimeStampType oldest_snapshot_ts =
-      kv_engine_->version_controller_.OldestSnapshotTS();
+      kv_engine_->version_controller_.LocalOldestSnapshotTS();
 
   std::vector<SpaceEntry> free_entries;
   for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
