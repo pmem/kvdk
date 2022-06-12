@@ -205,25 +205,31 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
        * lock conflict.
        */
       if (slot_num++ % kSlotSegment == 0) {
+        std::vector<StringRecord*> tmp_string_records;
+        std::vector<DLRecord*> tmp_dl_records;
         {  // Deal with old records from forground
           round_robin_id_ = (round_robin_id_ + 1) % configs_.max_access_threads;
           auto& tc = cleaner_thread_cache_[round_robin_id_];
           std::unique_lock<SpinMutex> lock(tc.mtx);
           if (!tc.old_str_records.empty()) {
-            purge_string_records.insert(purge_string_records.end(),
-                                        tc.old_str_records.begin(),
-                                        tc.old_str_records.end());
-            need_purge_num += tc.old_str_records.size();
-            tc.old_str_records.clear();
+            tmp_string_records.swap(tc.old_str_records);
+            need_purge_num += tmp_string_records.size();
           }
           if (!tc.old_dl_records.empty()) {
-            purge_dl_records.insert(purge_dl_records.end(),
-                                    tc.old_dl_records.begin(),
-                                    tc.old_dl_records.end());
-            need_purge_num += tc.old_dl_records.size();
-            tc.old_dl_records.clear();
+            tmp_dl_records.swap(tc.old_dl_records);
+            need_purge_num += tmp_dl_records.size();
           }
         }
+        if (!tmp_string_records.empty()) {
+          purge_string_records.insert(purge_string_records.end(),
+                                      tmp_string_records.begin(),
+                                      tmp_string_records.end());
+        }
+        if (!tmp_dl_records.empty()) {
+          purge_dl_records.insert(purge_dl_records.end(),
+                                  tmp_dl_records.begin(), tmp_dl_records.end());
+        }
+
         // total_num + kWakeUpThreshold to avoid division by zero.
         if (need_purge_num / (double)(total_num + kWakeUpThreshold) <
             kWakeUpThreshold) {

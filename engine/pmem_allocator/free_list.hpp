@@ -13,7 +13,9 @@
 
 namespace KVDK_NAMESPACE {
 
-constexpr uint32_t kFreelistMaxClassifiedBlockSize = 255;
+constexpr uint32_t kMaxSmallBlockSize = 255;
+constexpr uint32_t kMaxBlockSizeIndex = 255;
+constexpr uint32_t kBlockSizeIndexInterval = 1024;
 constexpr uint32_t kSpaceMapLockGranularity = 64;
 
 class PMEMAllocator;
@@ -88,25 +90,56 @@ class SpaceMap {
 //                    |-----   list2
 class SpaceEntryPool {
  public:
-  SpaceEntryPool(uint32_t max_classified_b_size)
-      : pool_(max_classified_b_size), spins_(max_classified_b_size) {}
+  SpaceEntryPool(uint32_t max_small_entry_b_size,
+                 uint32_t max_large_entry_size_index)
+      : small_entry_pool_(max_small_entry_b_size),
+        large_entry_pool_(max_large_entry_size_index),
+        small_entry_spins_(max_small_entry_b_size),
+        large_entry_spins_(max_large_entry_size_index) {}
 
   // move a list of b_size free space entries to pool, "src" will be empty
   // after move
   void MoveEntryList(std::vector<PMemOffsetType>& src, uint32_t b_size) {
-    std::lock_guard<SpinMutex> lg(spins_[b_size]);
-    assert(b_size < pool_.size());
-    pool_[b_size].emplace_back();
-    pool_[b_size].back().swap(src);
+    if (src.size() > 0) {
+      std::lock_guard<SpinMutex> lg(small_entry_spins_[b_size]);
+      assert(b_size < small_entry_pool_.size());
+      small_entry_pool_[b_size].emplace_back();
+      small_entry_pool_[b_size].back().swap(src);
+    }
   }
 
   // try to fetch b_size free space entries from a entry list of pool to dst
   bool TryFetchEntryList(std::vector<PMemOffsetType>& dst, uint32_t b_size) {
-    if (pool_[b_size].size() != 0) {
-      std::lock_guard<SpinMutex> lg(spins_[b_size]);
-      if (pool_[b_size].size() != 0) {
-        dst.swap(pool_[b_size].back());
-        pool_[b_size].pop_back();
+    if (small_entry_pool_[b_size].size() != 0) {
+      std::lock_guard<SpinMutex> lg(small_entry_spins_[b_size]);
+      if (small_entry_pool_[b_size].size() != 0) {
+        dst.swap(small_entry_pool_[b_size].back());
+        small_entry_pool_[b_size].pop_back();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void MoveLargeEntrySet(std::set<SpaceEntry, SpaceEntry::SpaceCmp>& src,
+                         size_t size_index) {
+    if (src.size() > 0) {
+      kvdk_assert(size_index < large_entry_pool_.size(), "");
+      std::lock_guard<SpinMutex> lg(large_entry_spins_[size_index]);
+      large_entry_pool_[size_index].emplace_back();
+      large_entry_pool_[size_index].back().swap(src);
+    }
+  }
+
+  // Try to fetch large space entries set with size_index from pool to dst
+  bool TryFetchLargeEntrySet(std::set<SpaceEntry, SpaceEntry::SpaceCmp>& dst,
+                             size_t size_index) {
+    kvdk_assert(size_index < large_entry_pool_.size(), "");
+    if (large_entry_pool_[size_index].size() != 0) {
+      std::lock_guard<SpinMutex> lg(large_entry_spins_[size_index]);
+      if (large_entry_pool_[size_index].size() != 0) {
+        dst.swap(large_entry_pool_[size_index].back());
+        large_entry_pool_[size_index].pop_back();
         return true;
       }
     }
@@ -114,29 +147,40 @@ class SpaceEntryPool {
   }
 
  private:
-  std::vector<std::vector<std::vector<PMemOffsetType>>> pool_;
-  // Entry lists of a same block size share a spin lock
-  std::vector<SpinMutex> spins_;
+  // Pool of small space entries, the vector index is block size of space
+  // entries in each entry offset list
+  std::vector<std::vector<std::vector<PMemOffsetType>>> small_entry_pool_;
+  // Pool of large space entries, the vector index is block size index of space
+  // entries in each entry set
+  std::vector<std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>>>
+      large_entry_pool_;
+  // Small entry lists of a same block size share a spin lock
+  std::vector<SpinMutex> small_entry_spins_;
+  // Large entry set of same size index share a spin lock
+  std::vector<SpinMutex> large_entry_spins_;
 };
 
 class Freelist {
  public:
-  Freelist(uint32_t max_classified_b_size, uint64_t num_segment_blocks,
+  Freelist(uint32_t max_small_entry_b_size, uint64_t num_segment_blocks,
            uint32_t block_size, uint32_t num_threads, uint64_t num_blocks,
            PMEMAllocator* allocator)
       : num_segment_blocks_(num_segment_blocks),
         block_size_(block_size),
-        max_classified_b_size_(max_classified_b_size),
-        active_pool_(max_classified_b_size),
-        merged_pool_(max_classified_b_size),
+        max_small_entry_block_size_(max_small_entry_b_size),
+        max_block_size_index_(std::min(
+            kMaxBlockSizeIndex, blockSizeIndex(num_segment_blocks_) + 1)),
+        active_pool_(max_small_entry_b_size, max_block_size_index_),
+        merged_pool_(max_small_entry_b_size, max_block_size_index_),
         space_map_(num_blocks),
-        flist_thread_cache_(num_threads, max_classified_b_size),
+        flist_thread_cache_(num_threads, max_small_entry_block_size_,
+                            max_block_size_index_),
         pmem_allocator_(allocator) {}
 
   Freelist(uint64_t num_segment_blocks, uint32_t block_size,
            uint32_t num_threads, uint64_t num_blocks, PMEMAllocator* allocator)
-      : Freelist(kFreelistMaxClassifiedBlockSize, num_segment_blocks,
-                 block_size, num_threads, num_blocks, allocator) {}
+      : Freelist(kMaxSmallBlockSize, num_segment_blocks, block_size,
+                 num_threads, num_blocks, allocator) {}
 
   // Add a space entry
   void Push(const SpaceEntry& entry);
@@ -144,12 +188,8 @@ class Freelist {
   // Add a batch of space entry to free list entries pool, return pushed size
   uint64_t BatchPush(const std::vector<SpaceEntry>& entries);
 
-  // Request a at least "size" free space entry
+  // Request a free space entry that equal to or larger than "size"
   bool Get(uint32_t size, SpaceEntry* space_entry);
-
-  // Try to merge thread-cached free space entries to get a at least "size"
-  // entry
-  bool MergeGet(uint32_t size, SpaceEntry* space_entry);
 
   // Merge adjacent free spaces stored in the entry pool into larger one
   //
@@ -159,6 +199,7 @@ class Freelist {
   // active_pool_ for next run. Calculate the minimal timestamp of free entries
   // in the pool meantime
   // TODO: set a condition to decide if we need to do merging
+  // Notice: we do not merge large entries for performance
   void MergeSpaceInPool();
 
   // Move cached free space list to space entry pool to balance usable space
@@ -166,40 +207,43 @@ class Freelist {
   //
   // Iterate every active entry lists of thread caches, move the list to
   // active_pool_, and update minimal timestamp of free entries meantime
-  void MoveCachedListsToPool();
+  void MoveCachedEntriesToPool();
 
   // Origanize free space entries, including merging adjacent space and move
   // thread cached space entries to pool
   void OrganizeFreeSpace();
 
  private:
-  // Each access thread caches some freed space entries in active_entry_offsets
-  // to avoid contention. To balance free space entries among threads, if too
-  // many entries cached by a thread, newly freed entries will be stored to
-  // backup_entries and move to entry pool which shared by all threads.
+  // Each access thread caches some freed space entries in small_entry_offsets
+  // and large_entries according to their size. To balance free space entries
+  // among threads, a background thread will regularly move cached entries to
+  // entry pool which shared by all threads.
   struct alignas(64) FlistThreadCache {
-    FlistThreadCache(uint32_t max_classified_b_size)
-        : active_entry_offsets(max_classified_b_size),
-          spins(max_classified_b_size) {}
+    FlistThreadCache(uint32_t max_small_entry_b_size,
+                     size_t max_large_entry_size_index)
+        : small_entry_offsets(max_small_entry_b_size),
+          large_entries(max_large_entry_size_index),
+          small_entry_spins(max_small_entry_b_size),
+          large_entry_spins(max_large_entry_size_index) {}
 
     FlistThreadCache() = delete;
     FlistThreadCache(FlistThreadCache&&) = delete;
     FlistThreadCache(const FlistThreadCache&) = delete;
 
-    // Offsets of active entries, entry size stored in block unit indicated by
-    // Array index
-    Array<std::vector<PMemOffsetType>> active_entry_offsets;
-    // Protect active_entry_offsets
-    Array<SpinMutex> spins;
-  };
-
-  class SpaceCmp {
-   public:
-    bool operator()(const SpaceEntry& s1, const SpaceEntry& s2) const {
-      if (s1.size > s2.size) return true;
-      if (s1.size == s2.size && s1.offset < s2.offset) return true;
-      return false;
-    }
+    // Offsets of small free space entries whose block size smaller than
+    // max_small_entry_b_size. Array index indicates block size of entries
+    // stored in the vector
+    Array<std::vector<PMemOffsetType>> small_entry_offsets;
+    // Store all large free space entries whose block size larger than
+    // max_small_entry_b_size. Array index indicates entries stored in the set
+    // have block size between "max_small_entry_b_size + index *
+    // kBlockSizeIndexInterval" and "max_small_entry_b_size +
+    // (index + 1) * kBlockSizeIndexInterval"
+    Array<std::set<SpaceEntry, SpaceEntry::SpaceCmp>> large_entries;
+    // Protect small_entry_offsets
+    Array<SpinMutex> small_entry_spins;
+    // Protect large_entries
+    Array<SpinMutex> large_entry_spins;
   };
 
   uint64_t MergeSpace(uint64_t offset, uint64_t max_size,
@@ -211,17 +255,28 @@ class Freelist {
     return size;
   }
 
+  uint32_t blockSizeIndex(uint32_t block_size) {
+    kvdk_assert(block_size <= num_segment_blocks_, "");
+    uint32_t ret = block_size < max_small_entry_block_size_
+                       ? 0
+                       : (block_size - max_small_entry_block_size_) /
+                             kBlockSizeIndexInterval;
+    return std::min(ret, max_block_size_index_ - 1);
+  }
+
+  bool getSmallEntry(uint32_t size, SpaceEntry* space_entry);
+
+  bool getLargeEntry(uint32_t size, SpaceEntry* space_entry);
+
   const uint64_t num_segment_blocks_;
   const uint32_t block_size_;
-  const uint32_t max_classified_b_size_;
+  const uint32_t max_small_entry_block_size_;
+  const uint32_t max_block_size_index_;
   SpaceEntryPool active_pool_;
   SpaceEntryPool merged_pool_;
   SpaceMap space_map_;
   Array<FlistThreadCache> flist_thread_cache_;
   PMEMAllocator* pmem_allocator_;
-  // Store all large free space entries that larger than max_classified_b_size_
-  // TODO: use multimap instead of set
-  std::set<SpaceEntry, SpaceCmp> large_entries_;
   SpinMutex large_entries_spin_;
 };
 
