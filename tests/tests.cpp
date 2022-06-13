@@ -2314,6 +2314,9 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
         }
       }
       batch->SortedPut(key, rolled_back2, GetRandomString(120));
+      // Notice: catch exception here will prevent engine from crash, which
+      // makes background threads access failed batch write result
+      // TODO: fix this test
       ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
     };
 
