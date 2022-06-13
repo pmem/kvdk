@@ -300,8 +300,15 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
                         ? RecordType::StringDataRecord
                         : RecordType::StringDeleteRecord;
   void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
-  PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
-      args.res.entry.GetIndex().string_record);
+  PMemOffsetType old_off;
+  if (args.res.s == Status::NotFound) {
+    kvdk_assert(args.op == WriteBatchImpl::Op::Put, "");
+    old_off = kNullPMemOffset;
+  } else {
+    kvdk_assert(args.res.s == Status::Ok || args.res.s == Status::Outdated, "");
+    old_off = pmem_allocator_->addr2offset_checked(
+        args.res.entry.GetIndex().string_record);
+  }
   args.new_rec = StringRecord::PersistStringRecord(
       new_addr, args.space.size, args.ts, type, old_off, args.key, args.value);
   return Status::Ok;
