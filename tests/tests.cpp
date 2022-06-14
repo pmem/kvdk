@@ -358,6 +358,7 @@ class EngineBasicTest : public testing::Test {
 };
 
 class BatchWriteTest : public EngineBasicTest {};
+class BatchWriteDeathTest : public EngineBasicTest {};
 
 TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string sorted_collection("sorted_collection");
@@ -779,7 +780,7 @@ TEST_F(BatchWriteTest, BatchWriteSorted) {
 
     auto Put = [&](size_t tid) {
       for (size_t i = 0; i < count; i++) {
-        values[tid][i] = GetRandomString(120);
+        values[tid][i] = GetRandomString(20);
         ASSERT_EQ(
             engine->SortedPut(collection_name, elems[tid][i], values[tid][i]),
             Status::Ok);
@@ -790,7 +791,7 @@ TEST_F(BatchWriteTest, BatchWriteSorted) {
       auto batch = engine->WriteBatchCreate();
       for (size_t i = 0; i < count; i++) {
         if (i % 2 == 0) {
-          values[tid][i] = GetRandomString(120);
+          values[tid][i] = GetRandomString(20);
           batch->SortedPut(collection_name, elems[tid][i], values[tid][i]);
         } else {
           values[tid][i].clear();
@@ -855,7 +856,7 @@ TEST_F(BatchWriteTest, BatchWriteString) {
 
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
-      values[tid][i] = GetRandomString(120);
+      values[tid][i] = GetRandomString(20);
       ASSERT_EQ(engine->Put(keys[tid][i], values[tid][i]), Status::Ok);
     }
   };
@@ -864,9 +865,9 @@ TEST_F(BatchWriteTest, BatchWriteString) {
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
-        values[tid][i] = GetRandomString(120);
+        values[tid][i] = GetRandomString(20);
         // The first Put is overwritten by the second Put.
-        batch->StringPut(keys[tid][i], GetRandomString(120));
+        batch->StringPut(keys[tid][i], GetRandomString(20));
         batch->StringPut(keys[tid][i], values[tid][i]);
       } else {
         values[tid][i].clear();
@@ -933,7 +934,7 @@ TEST_F(BatchWriteTest, BatchWriteHash) {
 
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
-      values[tid][i] = GetRandomString(120);
+      values[tid][i] = GetRandomString(20);
       ASSERT_EQ(engine->HashPut(key, fields[tid][i], values[tid][i]),
                 Status::Ok);
     }
@@ -943,7 +944,7 @@ TEST_F(BatchWriteTest, BatchWriteHash) {
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
-        values[tid][i] = GetRandomString(120);
+        values[tid][i] = GetRandomString(20);
         batch->HashPut(key, fields[tid][i], values[tid][i]);
       } else {
         values[tid][i].clear();
@@ -1653,7 +1654,7 @@ TEST_F(EngineBasicTest, TestHash) {
     umap& local_copy = local_copies[tid];
     for (size_t j = 0; j < count; j++) {
       std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
-      std::string value{GetRandomString(120)};
+      std::string value{GetRandomString(20)};
       ASSERT_EQ(engine->HashPut(key, field, value), Status::Ok);
       local_copy[field] = value;
     }
@@ -2269,7 +2270,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
 #if KVDK_DEBUG_LEVEL > 0
 
-TEST_F(BatchWriteTest, BatchWriteSortedRollback) {
+TEST_F(BatchWriteDeathTest, BatchWriteSortedRollback) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
@@ -2297,7 +2298,7 @@ TEST_F(BatchWriteTest, BatchWriteSortedRollback) {
 
     auto Put = [&](size_t tid) {
       for (size_t i = 0; i < count; i++) {
-        values[tid][i] = GetRandomString(120);
+        values[tid][i] = GetRandomString(20);
         ASSERT_EQ(engine->SortedPut(key, elems[tid][i], values[tid][i]),
                   Status::Ok);
       }
@@ -2305,19 +2306,19 @@ TEST_F(BatchWriteTest, BatchWriteSortedRollback) {
 
     auto BatchWrite = [&](size_t tid) {
       auto batch = engine->WriteBatchCreate();
-      batch->SortedPut(key, rolled_back, GetRandomString(120));
+      batch->SortedPut(key, rolled_back, GetRandomString(20));
       for (size_t i = 0; i < batch_size; i++) {
         if (i % 2 == 0) {
-          batch->SortedPut(key, elems[tid][i], GetRandomString(120));
+          batch->SortedPut(key, elems[tid][i], GetRandomString(20));
         } else {
           batch->SortedDelete(key, elems[tid][i]);
         }
       }
-      batch->SortedPut(key, rolled_back2, GetRandomString(120));
+      batch->SortedPut(key, rolled_back2, GetRandomString(20));
       // Notice: catch exception here will prevent engine from crash, which
       // makes background threads access failed batch write result
       // TODO: fix this test
-      ASSERT_DEATH(engine->BatchWrite(batch), SyncPoint::DefaultCrashMessage);
+      engine->BatchWrite(batch);
     };
 
     auto Check = [&](size_t tid) {
@@ -2348,7 +2349,7 @@ TEST_F(BatchWriteTest, BatchWriteSortedRollback) {
     LaunchNThreads(num_threads, Check);
     // Try BatchWrite, crashed by crash point before commitment
     // the BatchWrite will not be visible after recovery
-    LaunchNThreads(num_threads, BatchWrite);
+    ASSERT_DEATH(LaunchNThreads(num_threads, BatchWrite), SyncPoint::DefaultCrashMessage);
 
     Reboot();
 
@@ -2362,11 +2363,11 @@ TEST_F(BatchWriteTest, BatchWriteSortedRollback) {
     size_t num_write = 0;
     SyncPoint::GetInstance()->EnableCrashPoint(
         "KVEngine::Skiplist::LinkDLRecord::HalfLink",
-        SyncPoint::DefaultCrashMessage,
+        "Half-Linked",
         [&](void*) { return (++num_write == batch_size / 2); });
     SyncPoint::GetInstance()->EnableProcessing();
     // Try BatchWrite, crashed by sync point while the last write is half linked
-    LaunchNThreads(num_threads, BatchWrite);
+    ASSERT_DEATH(LaunchNThreads(num_threads, BatchWrite), "Half-Linked");
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->Reset();
     Reboot();
@@ -2378,7 +2379,7 @@ TEST_F(BatchWriteTest, BatchWriteSortedRollback) {
   }
 }
 
-TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
+TEST_F(BatchWriteDeathTest, BatchWriteStringRollback) {
   // This test case can only be run with single thread.
   // If multiple threads run batchwrite,
   // a thread may crash at CrashPoint and release its id,
@@ -2403,7 +2404,7 @@ TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
   // Write to engine and update expected_values vector.
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
-      std::string value = GetRandomString(120);
+      std::string value = GetRandomString(20);
       expected_values[tid][i] = value;
       ASSERT_EQ(engine->Put(keys[tid][i], value), Status::Ok);
     }
@@ -2415,14 +2416,14 @@ TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < batch_size; i++) {
       if (i % 2 == 0) {
-        batch->StringPut(keys[tid][i], GetRandomString(110));
+        batch->StringPut(keys[tid][i], GetRandomString(100));
       } else {
         batch->StringDelete(keys[tid][i]);
         // Delete a non-existing key
         batch->StringDelete("non-existing");
       }
     }
-    ASSERT_DEATH(engine->BatchWrite(batch), SyncPoint::DefaultCrashMessage);
+    engine->BatchWrite(batch);
   };
 
   auto Check = [&](size_t tid) {
@@ -2445,7 +2446,7 @@ TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
   LaunchNThreads(num_threads, Check);
   // Try BatchWrite, crashed by crash point before commitment
   // the BatchWrite will not be visible after recovery
-  LaunchNThreads(num_threads, BatchWrite);
+  ASSERT_DEATH(LaunchNThreads(num_threads, BatchWrite), SyncPoint::DefaultCrashMessage);
 
   Reboot();
 
@@ -2458,7 +2459,7 @@ TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
   delete engine;
 }
 
-TEST_F(BatchWriteTest, BatchWriteHashRollback) {
+TEST_F(BatchWriteDeathTest, BatchWriteHashRollback) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -2483,7 +2484,7 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
 
   auto Put = [&](size_t tid) {
     for (size_t i = 0; i < count; i++) {
-      values[tid][i] = GetRandomString(120);
+      values[tid][i] = GetRandomString(20);
       ASSERT_EQ(engine->HashPut(key, fields[tid][i], values[tid][i]),
                 Status::Ok);
     }
@@ -2491,16 +2492,16 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
 
   auto BatchWrite = [&](size_t tid) {
     auto batch = engine->WriteBatchCreate();
-    batch->HashPut(key, rolled_back, GetRandomString(120));
+    batch->HashPut(key, rolled_back, GetRandomString(100));
     for (size_t i = 0; i < batch_size; i++) {
       if (i % 2 == 0) {
-        batch->HashPut(key, fields[tid][i], GetRandomString(120));
+        batch->HashPut(key, fields[tid][i], GetRandomString(100));
       } else {
         batch->HashDelete(key, fields[tid][i]);
       }
     }
-    batch->HashPut(key, rolled_back2, GetRandomString(120));
-    ASSERT_DEATH(engine->BatchWrite(batch), SyncPoint::DefaultCrashMessage);
+    batch->HashPut(key, rolled_back2, GetRandomString(100));
+    engine->BatchWrite(batch);
   };
 
   auto Check = [&](size_t tid) {
@@ -2528,7 +2529,7 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
   LaunchNThreads(num_threads, Check);
   // Try BatchWrite, crashed by crash point before commitment
   // the BatchWrite will not be visible after recovery
-  LaunchNThreads(num_threads, BatchWrite);
+  ASSERT_DEATH(LaunchNThreads(num_threads, BatchWrite), SyncPoint::DefaultCrashMessage);
 
   Reboot();
 
@@ -2541,7 +2542,7 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
   delete engine;
 }
 
-TEST_F(BatchWriteTest, ListBatchOperationRollback) {
+TEST_F(BatchWriteDeathTest, ListBatchOperationRollback) {
   configs.max_access_threads = 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -2555,33 +2556,33 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
 
   auto Fill = [&]() {
     for (size_t i = 0; i < count; i++) {
-      elems.emplace_back(GetRandomString(120));
+      elems.emplace_back(GetRandomString(20));
       list_copy.push_back(elems.back());
       ASSERT_EQ(engine->ListPushBack(key, elems.back()), Status::Ok);
     }
   };
 
   auto LBatchPush = [&]() {
-    ASSERT_DEATH(engine->ListBatchPushFront(key, elems), "ListPush");
+    engine->ListBatchPushFront(key, elems);
   };
 
   auto RBatchPush = [&]() {
-    ASSERT_DEATH(engine->ListBatchPushFront(key, elems), "ListPush");
+    engine->ListBatchPushFront(key, elems);
   };
 
   auto LBatchPop = [&]() {
     std::vector<std::string> elems_resp;
-    ASSERT_DEATH(engine->ListBatchPopFront(key, count, &elems_resp), "ListPop");
+    engine->ListBatchPopFront(key, count, &elems_resp);
   };
 
   auto RBatchPop = [&]() {
     std::vector<std::string> elems_resp;
-    ASSERT_DEATH(engine->ListBatchPopFront(key, count, &elems_resp), "ListPop");
+    engine->ListBatchPopFront(key, count, &elems_resp);
   };
 
   auto RPushLPop = [&]() {
     std::string elem;
-    ASSERT_DEATH(engine->ListMove(key, 0, key, -1, &elem), "ListMove");
+    engine->ListMove(key, 0, key, -1, &elem);
   };
 
   auto Check = [&]() {
@@ -2591,7 +2592,6 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
       iter->Seek(0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Value(), *iter2);
         iter->Next();
       }
 
@@ -2618,23 +2618,23 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   Reboot();
   Check();
 
-  LBatchPush();
+  ASSERT_DEATH(LBatchPush(), "ListPush");
   Reboot();
   Check();
 
-  LBatchPop();
+  ASSERT_DEATH(LBatchPop(), "ListPop");
   Reboot();
   Check();
 
-  RBatchPush();
+  ASSERT_DEATH(RBatchPush(), "ListPush");
   Reboot();
   Check();
 
-  RBatchPop();
+  ASSERT_DEATH(RBatchPop(), "ListPop");
   Reboot();
   Check();
 
-  RPushLPop();
+  ASSERT_DEATH(RPushLPop(), "ListMove");
   Reboot();
   Check();
 
@@ -3230,6 +3230,8 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
+  testing::FLAGS_gtest_death_test_style = "threadsafe";
+  testing::FLAGS_gtest_break_on_failure = true;
   google::ParseCommandLineFlags(&argc, &argv, true);
   return RUN_ALL_TESTS();
 }
