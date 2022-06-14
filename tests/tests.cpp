@@ -2269,7 +2269,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
 #if KVDK_DEBUG_LEVEL > 0
 
-TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
+TEST_F(BatchWriteTest, BatchWriteSortedRollback) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
@@ -2317,7 +2317,7 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
       // Notice: catch exception here will prevent engine from crash, which
       // makes background threads access failed batch write result
       // TODO: fix this test
-      ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+      ASSERT_DEATH(engine->BatchWrite(batch), SyncPoint::DefaultCrashMessage);
     };
 
     auto Check = [&](size_t tid) {
@@ -2360,12 +2360,10 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
 
     // Test crash with half linked record
     size_t num_write = 0;
-    SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::Skiplist::LinkDLRecord::HalfLink", [&](void*) {
-          if (++num_write == batch_size / 2) {
-            throw SyncPoint::CrashPoint{"Crash with half linkage"};
-          }
-        });
+    SyncPoint::GetInstance()->EnableCrashPoint(
+        "KVEngine::Skiplist::LinkDLRecord::HalfLink",
+        SyncPoint::DefaultCrashMessage,
+        [&](void*) { return (++num_write == batch_size / 2); });
     SyncPoint::GetInstance()->EnableProcessing();
     // Try BatchWrite, crashed by sync point while the last write is half linked
     LaunchNThreads(num_threads, BatchWrite);
@@ -2380,7 +2378,7 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
   }
 }
 
-TEST_F(EngineBasicTest, BatchWriteStringRollBack) {
+TEST_F(BatchWriteTest, BatchWriteStringRollBack) {
   // This test case can only be run with single thread.
   // If multiple threads run batchwrite,
   // a thread may crash at CrashPoint and release its id,
@@ -2424,7 +2422,7 @@ TEST_F(EngineBasicTest, BatchWriteStringRollBack) {
         batch->StringDelete("non-existing");
       }
     }
-    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+    ASSERT_DEATH(engine->BatchWrite(batch), SyncPoint::DefaultCrashMessage);
   };
 
   auto Check = [&](size_t tid) {
@@ -2502,7 +2500,7 @@ TEST_F(BatchWriteTest, BatchWriteHashRollback) {
       }
     }
     batch->HashPut(key, rolled_back2, GetRandomString(120));
-    ASSERT_THROW(engine->BatchWrite(batch), SyncPoint::CrashPoint);
+    ASSERT_DEATH(engine->BatchWrite(batch), SyncPoint::DefaultCrashMessage);
   };
 
   auto Check = [&](size_t tid) {
@@ -2564,29 +2562,26 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   };
 
   auto LBatchPush = [&]() {
-    ASSERT_THROW(engine->ListBatchPushFront(key, elems), SyncPoint::CrashPoint);
+    ASSERT_DEATH(engine->ListBatchPushFront(key, elems), "ListPush");
   };
 
   auto RBatchPush = [&]() {
-    ASSERT_THROW(engine->ListBatchPushFront(key, elems), SyncPoint::CrashPoint);
+    ASSERT_DEATH(engine->ListBatchPushFront(key, elems), "ListPush");
   };
 
   auto LBatchPop = [&]() {
     std::vector<std::string> elems_resp;
-    ASSERT_THROW(engine->ListBatchPopFront(key, count, &elems_resp),
-                 SyncPoint::CrashPoint);
+    ASSERT_DEATH(engine->ListBatchPopFront(key, count, &elems_resp), "ListPop");
   };
 
   auto RBatchPop = [&]() {
     std::vector<std::string> elems_resp;
-    ASSERT_THROW(engine->ListBatchPopFront(key, count, &elems_resp),
-                 SyncPoint::CrashPoint);
+    ASSERT_DEATH(engine->ListBatchPopFront(key, count, &elems_resp), "ListPop");
   };
 
   auto RPushLPop = [&]() {
     std::string elem;
-    ASSERT_THROW(engine->ListMove(key, 0, key, -1, &elem),
-                 SyncPoint::CrashPoint);
+    ASSERT_DEATH(engine->ListMove(key, 0, key, -1, &elem), "ListMove");
   };
 
   auto Check = [&]() {
@@ -2610,9 +2605,11 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
     }
   };
 
-  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::ListMove");
-  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPushImpl");
-  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPopImpl");
+  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::ListMove", "ListMove");
+  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPushImpl",
+                                             "ListPush");
+  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPopImpl",
+                                             "ListPop");
   SyncPoint::GetInstance()->EnableProcessing();
 
   Fill();

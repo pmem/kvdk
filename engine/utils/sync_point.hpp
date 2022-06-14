@@ -38,7 +38,6 @@ namespace KVDK_NAMESPACE {
  */
 class SyncPoint {
  public:
-  using CrashPoint = SyncImpl::CrashPoint;
   static SyncPoint* GetInstance();
   SyncPoint(const SyncPoint&) = delete;
   SyncPoint& operator=(const SyncPoint&) = delete;
@@ -52,9 +51,14 @@ class SyncPoint {
   void SetCallBack(const std::string& point,
                    const std::function<void(void*)>& callback);
 
-  void EnableCrashPoint(std::string const& name);
+  static std::string const DefaultCrashMessage;
+  // msg will be printed to stderr before exit(-1) and will be captured by gtest
+  // for checking.
+  void EnableCrashPoint(std::string const& name,
+                        std::string const& msg = DefaultCrashMessage,
+                        std::function<bool(void*)> pred = nullptr);
 
-  void Crash(std::string const& name, std::string const& msg);
+  void Crash(std::string const& name, void* args = nullptr);
 
   void ClearAllCallBacks();
 
@@ -74,11 +78,13 @@ class SyncPoint {
 #define TEST_SYNC_POINT(x) KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x)
 #define TEST_SYNC_POINT_CALLBACK(x, y) \
   KVDK_NAMESPACE::SyncPoint::GetInstance()->Process(x, y)
-#define TEST_CRASH_POINT(name, msg) \
-  KVDK_NAMESPACE::SyncPoint::GetInstance()->Crash(name, msg)
+#define TEST_CRASH_POINT(name) \
+  KVDK_NAMESPACE::SyncPoint::GetInstance()->Crash(name)
+#define TEST_CRASH_POINT_PREDICATE(name, args) \
+  KVDK_NAMESPACE::SyncPoint::GetInstance()->Crash(name, args)
 
 #else
 #define TEST_SYNC_POINT(x)
 #define TEST_SYNC_POINT_CALLBACK(x, y)
-#define TEST_CRASH_POINT(name, msg)
+#define TEST_CRASH_POINT(name, pred, args)
 #endif

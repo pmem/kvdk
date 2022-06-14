@@ -1038,7 +1038,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     kvdk_assert(s == Status::Ok, "");
   }
 
-  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit", "");
+  TEST_CRASH_POINT("KVEngine::batchWriteImpl::BeforeCommit");
 
   BatchWriteLog::MarkCommitted(tc.batch_log);
 
@@ -1834,7 +1834,7 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
   } else {
     src_list->PopBack([&](DLRecord*) { return; });
   }
-  TEST_CRASH_POINT("KVEngine::ListMove", "");
+  TEST_CRASH_POINT("KVEngine::ListMove");
   if (dst_pos == 0) {
     dst_list->PushFront(space, bw_token.Timestamp(), "", sw);
   } else {
@@ -2096,13 +2096,13 @@ Status KVEngine::listBatchPushImpl(StringView key, int pos,
   if (pos == 0) {
     for (size_t i = 0; i < elems.size(); i++) {
       list->PushFront(spaces[i], bw_token.Timestamp(), "", elems[i]);
-      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPushImpl");
     }
   } else {
     kvdk_assert(pos == -1, "");
     for (size_t i = 0; i < elems.size(); i++) {
       list->PushBack(spaces[i], bw_token.Timestamp(), "", elems[i]);
-      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPushImpl");
     }
   }
   BatchWriteLog::MarkCommitted(tc.batch_log);
@@ -2156,12 +2156,12 @@ Status KVEngine::listBatchPopImpl(StringView key, int pos, size_t n,
   if (pos == 0) {
     for (size_t i = 0; i < n && list->Size() > 0; i++) {
       list->PopFront([&](DLRecord* rec) { old_records.push_back(rec); });
-      TEST_CRASH_POINT("KVEngine::listBatchPopImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPopImpl");
     }
   } else {
     for (size_t i = 0; i < n && list->Size() > 0; i++) {
       list->PopBack([&](DLRecord* rec) { old_records.push_back(rec); });
-      TEST_CRASH_POINT("KVEngine::listBatchPopImpl", "");
+      TEST_CRASH_POINT("KVEngine::listBatchPopImpl");
     }
   }
   BatchWriteLog::MarkCommitted(tc.batch_log);

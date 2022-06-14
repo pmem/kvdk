@@ -14,6 +14,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -95,9 +96,12 @@ struct SyncImpl {
     point_table_.insert(point);
   }
 
-  void EnableCrashPoint(std::string const& name) { crash_points_.insert(name); }
+  void EnableCrashPoint(std::string const& name, std::string const& msg,
+                        std::function<bool(void*)> pred) {
+    crash_points_[name] = std::make_pair(msg, pred);
+  }
 
-  void Crash(std::string const& name, std::string const& msg) {
+  void Crash(std::string const& name, void* args) {
     if (!ready_) {
       return;
     }
@@ -106,7 +110,13 @@ struct SyncImpl {
       return;
     }
 
-    throw CrashPoint{msg};
+    if (crash_points_[name].second != nullptr &&
+        !crash_points_[name].second(args)) {
+      return;
+    }
+
+    std::cerr << crash_points_[name].first << std::endl;
+    std::exit(-1);
   }
 
   void ClearAllCallBacks() {
@@ -147,7 +157,9 @@ struct SyncImpl {
   std::condition_variable cv_;
   std::atomic<bool> ready_;
   std::unordered_set<std::string> point_table_;
-  std::unordered_set<std::string> crash_points_;
+  std::unordered_map<std::string,
+                     std::pair<std::string, std::function<bool(void*)>>>
+      crash_points_;
   int num_callbacks_running_ = 0;
 
   std::unordered_map<std::string, std::vector<std::string>> consumers_;

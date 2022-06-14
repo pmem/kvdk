@@ -165,7 +165,8 @@ void Skiplist::linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
   pmem_persist(&prev->next, 8);
-  TEST_SYNC_POINT("KVEngine::Skiplist::LinkDLRecord::HalfLink");
+  TEST_CRASH_POINT_PREDICATE("KVEngine::Skiplist::LinkDLRecord::HalfLink",
+                             nullptr);
   next->prev = inserting_record_offset;
   pmem_persist(&next->prev, 8);
 }

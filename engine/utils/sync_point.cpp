@@ -29,12 +29,14 @@ void SyncPoint::LoadDependency(const std::vector<SyncPointPair>& dependencies) {
   sync_impl_->LoadDependency(dependencies);
 }
 
-void SyncPoint::EnableCrashPoint(std::string const& name) {
-  sync_impl_->EnableCrashPoint(name);
+void SyncPoint::EnableCrashPoint(std::string const& name,
+                                 std::string const& msg,
+                                 std::function<bool(void*)> pred) {
+  sync_impl_->EnableCrashPoint(name, msg, pred);
 }
 
-void SyncPoint::Crash(std::string const& name, std::string const& msg) {
-  sync_impl_->Crash(name, msg);
+void SyncPoint::Crash(std::string const& name, void* args) {
+  sync_impl_->Crash(name, args);
 }
 
 void SyncPoint::EnableProcessing() { sync_impl_->EnableProcessing(); }
@@ -52,6 +54,7 @@ void SyncPoint::ClearDependTrace() { sync_impl_->ClearDependTrace(); }
 
 void SyncPoint::Reset() { sync_impl_->Reset(); }
 
+std::string const SyncPoint::DefaultCrashMessage = "Crashed";
 }  // namespace KVDK_NAMESPACE
 
 #endif
