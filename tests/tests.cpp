@@ -753,7 +753,7 @@ TEST_F(EngineBasicTest, TestStringModify) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, BatchWriteSorted) {
+TEST_F(BatchWriteTest, BatchWriteSorted) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
