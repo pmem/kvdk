@@ -191,7 +191,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
     size_t total_num = 0;
     size_t need_purge_num = 0;
     size_t slot_num = 0;
-    version_controller_.UpdatedOldestSnapshot();
+    version_controller_.UpdateLocalOldestSnapshot();
 
     std::vector<StringRecord*> purge_string_records;
     std::vector<DLRecord*> purge_dl_records;
@@ -214,7 +214,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         if (bg_work_signals_.terminating) break;
         total_num = 0;
         need_purge_num = 0;
-        version_controller_.UpdatedOldestSnapshot();
+        version_controller_.UpdateLocalOldestSnapshot();
       }
 
       std::vector<Skiplist*> no_index_skiplists;
@@ -363,6 +363,28 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
       }  // Finish a slot.
 
       auto new_ts = version_controller_.GetCurrentTimestamp();
+      auto release_time = version_controller_.LocalOldestSnapshotTS();
+      std::vector<SpaceEntry> to_free;
+      for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+        auto& tc = cleaner_thread_cache_[i];
+        std::deque<CleanerThreadCache::PendingFreeRecord> outdated_records;
+        {
+          std::lock_guard<SpinMutex> lg(tc.mtx);
+          if (tc.outdated_records.size() > 0) {
+            outdated_records.swap(tc.outdated_records);
+          }
+        }
+        auto iter = outdated_records.begin();
+        while (iter != outdated_records.begin() &&
+               iter->release_time < release_time) {
+          to_free.emplace_back(SpaceEntry(
+              pmem_allocator_->addr2offset_checked(iter->record),
+              static_cast<DataEntry*>(iter->record)->header.record_size));
+          static_cast<DataEntry*>(iter->record)->Destroy();
+          iter++;
+        }
+      }
+      pmem_allocator_->BatchFree(to_free);
 
       if (purge_string_records.size() > kMaxCachedOldRecords) {
         pending_purge_strings.emplace_back(
