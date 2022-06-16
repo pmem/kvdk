@@ -179,16 +179,9 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
     insertKeyOrElem(lookup_result, RecordType::String, RecordStatus::Outdated,
                     pmem_ptr);
 
-    auto old_record = removeOutDatedVersion<StringRecord>(
-        pmem_ptr, version_controller_.GlobalOldestSnapshotTs());
-    if (old_record) {
-      auto& tc = cleaner_thread_cache_[access_thread.id];
-      std::unique_lock<SpinMutex> lock(tc.mtx);
-      tc.outdated_string_records.emplace_back(
-          version_controller_.GetCurrentTimestamp(), old_record);
-    }
+    removeAndCacheOutdatedVersion(pmem_ptr);
   }
-  tryCleanCachedOutdatedRecord();
+  tryCleanCachedOutdatedRecords();
 
   return (lookup_result.s == Status::NotFound ||
           lookup_result.s == Status::Outdated)
@@ -247,18 +240,11 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   insertKeyOrElem(lookup_result, RecordType::String, RecordStatus::Normal,
                   new_record);
 
-  auto& tc = cleaner_thread_cache_[access_thread.id];
   if (existing_record) {
-    auto old_record = removeOutDatedVersion<StringRecord>(
-        new_record, version_controller_.GlobalOldestSnapshotTs());
-    if (old_record) {
-      std::unique_lock<SpinMutex> lock(tc.mtx);
-      tc.outdated_string_records.emplace_back(
-          version_controller_.GetCurrentTimestamp(), old_record);
-    }
+    removeAndCacheOutdatedVersion(new_record);
   }
+  tryCleanCachedOutdatedRecords();
 
-  tryCleanCachedOutdatedRecord();
   return Status::Ok;
 }
 

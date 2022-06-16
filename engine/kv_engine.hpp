@@ -600,10 +600,13 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
+  template <typename T>
+  void removeAndCacheOutdatedVersion(T* new_record);
+
   void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
 
   // Clean a outdated record in cleaner_thread_cache_
-  void tryCleanCachedOutdatedRecord();
+  void tryCleanCachedOutdatedRecords();
 
   template <typename T>
   void cleanOutdatedRecordImpl(T* record);

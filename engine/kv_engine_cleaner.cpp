@@ -27,20 +27,52 @@ T* KVEngine::removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts) {
 }
 
 template <typename T>
-void KVEngine::cleanOutdatedRecordImpl(T* record) {
-  while (record) {
-    T* next = pmem_allocator_->offset2addr<T>(record->old_version);
-    if (record->GetRecordType() & DeleteRecordType == 0) {
-      record->Destroy();
+void KVEngine::removeAndCacheOutdatedVersion(T* record) {
+  static_assert(std::is_same<T, StringRecord>::value ||
+                std::is_same<T, DLRecord>::value);
+  kvdk_assert(access_thread.id >= 0, "");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  if (std::is_same<T, StringRecord>::value) {
+    StringRecord* old_record = removeOutDatedVersion<StringRecord>(
+        (StringRecord*)record, version_controller_.GlobalOldestSnapshotTs());
+    if (old_record) {
+      std::lock_guard<SpinMutex> lg(tc.mtx);
+      tc.outdated_string_records.emplace_back(
+          version_controller_.GetCurrentTimestamp(), old_record);
     }
-    pmem_allocator_->Free(
-        SpaceEntry(pmem_allocator_->addr2offset_checked(record),
-                   record->entry.header.record_size));
-    record = next;
+  } else {
+    DLRecord* old_record = removeOutDatedVersion<DLRecord>(
+        (DLRecord*)record, version_controller_.GlobalOldestSnapshotTs());
+    if (old_record) {
+      std::lock_guard<SpinMutex> lg(tc.mtx);
+      tc.outdated_dl_records.emplace_back(
+          version_controller_.GetCurrentTimestamp(), old_record);
+    }
   }
 }
 
-void KVEngine::tryCleanCachedOutdatedRecord() {
+template void KVEngine::removeAndCacheOutdatedVersion<StringRecord>(
+    StringRecord* record);
+template void KVEngine::removeAndCacheOutdatedVersion<DLRecord>(
+    DLRecord* record);
+
+template <typename T>
+void KVEngine::cleanOutdatedRecordImpl(T* old_record) {
+  static_assert(std::is_same<T, StringRecord>::value ||
+                std::is_same<T, DLRecord>::value);
+  while (old_record) {
+    T* next = pmem_allocator_->offset2addr<T>(old_record->old_version);
+    if ((old_record->GetRecordType() & DeleteRecordType) == 0) {
+      old_record->Destroy();
+    }
+    pmem_allocator_->Free(
+        SpaceEntry(pmem_allocator_->addr2offset_checked(old_record),
+                   old_record->entry.header.record_size));
+    old_record = next;
+  }
+}
+
+void KVEngine::tryCleanCachedOutdatedRecords() {
   kvdk_assert(access_thread.id >= 0, "");
   auto& tc = cleaner_thread_cache_[access_thread.id];
   // Regularly update local oldest snapshot
