@@ -270,14 +270,26 @@ Status KVEngine::SortedPutImpl(Skiplist* skiplist, const StringView& user_key,
   TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
   auto ret = skiplist->Put(user_key, value, new_ts);
 
+  auto& tc = cleaner_thread_cache_[access_thread.id];
   // Collect outdated version records
   if (ret.existing_record) {
     auto old_record = removeOutDatedVersion<DLRecord>(
         ret.write_record, version_controller_.GlobalOldestSnapshotTs());
     if (old_record) {
-      auto& tc = cleaner_thread_cache_[access_thread.id];
       std::unique_lock<SpinMutex> lock(tc.mtx);
-      tc.old_dl_records.emplace_back(old_record);
+      tc.outdated_records.emplace_back(
+          version_controller_.GetCurrentTimestamp(), old_record);
+    }
+  }
+
+  if (!tc.outdated_records.empty()) {
+    std::lock_guard<SpinMutex> lg(tc.mtx);
+    if (!tc.outdated_records.empty()) {
+      TimeStampType release_time = version_controller_.LocalOldestSnapshotTS();
+      if (tc.outdated_records.front().release_time < release_time) {
+        purgeAndFree(tc.outdated_records.front().record);
+        tc.outdated_records.pop_front();
+      }
     }
   }
 

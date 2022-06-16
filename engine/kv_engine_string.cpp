@@ -236,16 +236,27 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   insertKeyOrElem(lookup_result, RecordType::String, RecordStatus::Normal,
                   new_record);
 
+  auto& tc = cleaner_thread_cache_[access_thread.id];
   if (existing_record) {
     auto old_record = removeOutDatedVersion<StringRecord>(
         new_record, version_controller_.GlobalOldestSnapshotTs());
     if (old_record) {
-      auto& tc = cleaner_thread_cache_[access_thread.id];
       std::unique_lock<SpinMutex> lock(tc.mtx);
-      tc.old_str_records.emplace_back(old_record);
+      tc.outdated_records.emplace_back(
+          version_controller_.GetCurrentTimestamp(), old_record);
     }
   }
 
+  if (!tc.outdated_records.empty()) {
+    std::lock_guard<SpinMutex> lg(tc.mtx);
+    if (!tc.outdated_records.empty()) {
+      TimeStampType release_time = version_controller_.LocalOldestSnapshotTS();
+      if (tc.outdated_records.front().release_time < release_time) {
+        purgeAndFree(tc.outdated_records.front().record);
+        tc.outdated_records.pop_front();
+      }
+    }
+  }
   return Status::Ok;
 }
 

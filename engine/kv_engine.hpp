@@ -140,9 +140,16 @@ class KVEngine : public Engine {
   };
 
   struct CleanerThreadCache {
+    struct PendingFreeRecord {
+      PendingFreeRecord(TimeStampType _release_time, void* _record)
+          : release_time(_release_time), record(_record) {}
+
+      TimeStampType release_time;
+      void* record;
+    };
+
     CleanerThreadCache() = default;
-    std::vector<StringRecord*> old_str_records;
-    std::vector<DLRecord*> old_dl_records;
+    std::deque<PendingFreeRecord> outdated_records;
     SpinMutex mtx;
   };
 
