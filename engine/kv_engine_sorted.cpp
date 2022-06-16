@@ -260,7 +260,7 @@ Status KVEngine::SortedDeleteImpl(Skiplist* skiplist,
   if (ret.existing_record && ret.write_record) {
     removeAndCacheOutdatedVersion(ret.write_record);
   }
-  tryCleanCachedOutdatedRecords();
+  tryCleanCachedOutdatedRecord();
 
   return ret.s;
 }
@@ -280,7 +280,7 @@ Status KVEngine::SortedPutImpl(Skiplist* skiplist, const StringView& user_key,
   if (ret.existing_record) {
     removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
   }
-  tryCleanCachedOutdatedRecords();
+  tryCleanCachedOutdatedRecord();
 
   return ret.s;
 }

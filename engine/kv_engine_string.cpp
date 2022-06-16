@@ -181,7 +181,7 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
 
     removeAndCacheOutdatedVersion(pmem_ptr);
   }
-  tryCleanCachedOutdatedRecords();
+  tryCleanCachedOutdatedRecord();
 
   return (lookup_result.s == Status::NotFound ||
           lookup_result.s == Status::Outdated)
@@ -243,7 +243,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   if (existing_record) {
     removeAndCacheOutdatedVersion(new_record);
   }
-  tryCleanCachedOutdatedRecords();
+  tryCleanCachedOutdatedRecord();
 
   return Status::Ok;
 }

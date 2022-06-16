@@ -142,11 +142,11 @@ class KVEngine : public Engine {
   struct CleanerThreadCache {
     template <typename T>
     struct OutdatedRecord {
-      OutdatedRecord(TimeStampType _release_time, T* _record)
-          : release_time(_release_time), record(_record) {}
+      OutdatedRecord(T* _record, TimeStampType _release_time)
+          : record(_record), release_time(_release_time) {}
 
-      TimeStampType release_time;
       T* record;
+      TimeStampType release_time;
     };
 
     CleanerThreadCache() = default;
@@ -600,18 +600,18 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  template <typename T>
-  void removeAndCacheOutdatedVersion(T* new_record);
-
   void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
 
+  /* functions for cleaner thread cache */
+  // Remove old version records from version chain of new_record and cache it
+  template <typename T>
+  void removeAndCacheOutdatedVersion(T* new_record);
   // Clean a outdated record in cleaner_thread_cache_
-  void tryCleanCachedOutdatedRecords();
-
+  void tryCleanCachedOutdatedRecord();
   template <typename T>
   void cleanOutdatedRecordImpl(T* record);
-
   void deleteCollections();
+  /* functions for cleaner thread cache */
 
   void startBackgroundWorks();
 
