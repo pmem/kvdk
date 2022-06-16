@@ -140,16 +140,18 @@ class KVEngine : public Engine {
   };
 
   struct CleanerThreadCache {
-    struct PendingFreeRecord {
-      PendingFreeRecord(TimeStampType _release_time, void* _record)
+    template <typename T>
+    struct OutdatedRecord {
+      OutdatedRecord(TimeStampType _release_time, T* _record)
           : release_time(_release_time), record(_record) {}
 
       TimeStampType release_time;
-      void* record;
+      T* record;
     };
 
     CleanerThreadCache() = default;
-    std::deque<PendingFreeRecord> outdated_records;
+    std::deque<OutdatedRecord<StringRecord>> outdated_string_records;
+    std::deque<OutdatedRecord<DLRecord>> outdated_dl_records;
     SpinMutex mtx;
   };
 
@@ -279,11 +281,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -600,6 +601,12 @@ class KVEngine : public Engine {
   void backgroundDramCleaner();
 
   void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
+
+  // Clean a outdated record in cleaner_thread_cache_
+  void tryCleanCachedOutdatedRecord();
+
+  template <typename T>
+  void cleanOutdatedRecordImpl(T* record);
 
   void deleteCollections();
 

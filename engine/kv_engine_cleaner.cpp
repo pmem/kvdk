@@ -26,6 +26,48 @@ T* KVEngine::removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts) {
   return nullptr;
 }
 
+template <typename T>
+void KVEngine::cleanOutdatedRecordImpl(T* record) {
+  while (record) {
+    T* next = pmem_allocator_->offset2addr<T>(record->old_version);
+    if (record->GetRecordType() & DeleteRecordType == 0) {
+      record->Destroy();
+    }
+    pmem_allocator_->Free(
+        SpaceEntry(pmem_allocator_->addr2offset_checked(record),
+                   record->entry.header.record_size));
+    record = next;
+  }
+}
+
+void KVEngine::tryCleanCachedOutdatedRecord() {
+  kvdk_assert(access_thread.id >= 0, "");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  // Regularly update local oldest snapshot
+  thread_local uint64_t round = 0;
+  if (++round % 1000 == 0) {
+    version_controller_.UpdateLocalOldestSnapshot();
+  }
+  auto release_time = version_controller_.LocalOldestSnapshotTS();
+  std::unique_lock<SpinMutex> ul(tc.mtx);
+  if (!tc.outdated_string_records.empty() &&
+      tc.outdated_string_records.front().release_time < release_time) {
+    auto to_clean = tc.outdated_string_records.front();
+    tc.outdated_string_records.pop_front();
+    ul.unlock();
+    cleanOutdatedRecordImpl<StringRecord>(to_clean.record);
+    return;
+  }
+
+  if (!tc.outdated_dl_records.empty() &&
+      tc.outdated_dl_records.front().release_time < release_time) {
+    auto to_clean = tc.outdated_dl_records.front();
+    tc.outdated_dl_records.pop_front();
+    ul.unlock();
+    cleanOutdatedRecordImpl<DLRecord>(to_clean.record);
+  }
+}
+
 void KVEngine::purgeAndFreeStringRecords(
     const std::vector<StringRecord*>& old_records) {
   std::vector<SpaceEntry> entries;
@@ -367,20 +409,26 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
       std::vector<SpaceEntry> to_free;
       for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
         auto& tc = cleaner_thread_cache_[i];
-        std::deque<CleanerThreadCache::PendingFreeRecord> outdated_records;
+        std::deque<CleanerThreadCache::OutdatedRecord<StringRecord>>
+            outdated_string_records;
+        std::deque<CleanerThreadCache::OutdatedRecord<DLRecord>>
+            outdated_dl_records;
         {
           std::lock_guard<SpinMutex> lg(tc.mtx);
-          if (tc.outdated_records.size() > 0) {
-            outdated_records.swap(tc.outdated_records);
+          if (tc.outdated_string_records.size() > 0) {
+            outdated_string_records.swap(tc.outdated_string_records);
+          }
+          if (tc.outdated_dl_records.size() > 0) {
+            outdated_dl_records.swap(tc.outdated_dl_records);
           }
         }
-        auto iter = outdated_records.begin();
-        while (iter != outdated_records.begin() &&
+        auto iter = outdated_string_records.begin();
+        while (iter != outdated_string_records.begin() &&
                iter->release_time < release_time) {
-          to_free.emplace_back(SpaceEntry(
-              pmem_allocator_->addr2offset_checked(iter->record),
-              static_cast<DataEntry*>(iter->record)->header.record_size));
-          static_cast<DataEntry*>(iter->record)->Destroy();
+          to_free.emplace_back(
+              SpaceEntry(pmem_allocator_->addr2offset_checked(iter->record),
+                         iter->record->entry.header.record_size));
+          iter->record->Destroy();
           iter++;
         }
       }

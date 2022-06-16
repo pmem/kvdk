@@ -168,7 +168,8 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
       return Status::PmemOverflow;
     }
 
-    void* pmem_ptr = pmem_allocator_->offset2addr_checked(space_entry.offset);
+    StringRecord* pmem_ptr =
+        pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
     StringRecord::PersistStringRecord(
         pmem_ptr, space_entry.size, new_ts, RecordType::String,
         RecordStatus::Outdated,
@@ -177,7 +178,17 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
         key, "");
     insertKeyOrElem(lookup_result, RecordType::String, RecordStatus::Outdated,
                     pmem_ptr);
+
+    auto old_record = removeOutDatedVersion<StringRecord>(
+        pmem_ptr, version_controller_.GlobalOldestSnapshotTs());
+    if (old_record) {
+      auto& tc = cleaner_thread_cache_[access_thread.id];
+      std::unique_lock<SpinMutex> lock(tc.mtx);
+      tc.outdated_string_records.emplace_back(
+          version_controller_.GetCurrentTimestamp(), old_record);
+    }
   }
+  tryCleanCachedOutdatedRecord();
 
   return (lookup_result.s == Status::NotFound ||
           lookup_result.s == Status::Outdated)
@@ -242,21 +253,12 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
         new_record, version_controller_.GlobalOldestSnapshotTs());
     if (old_record) {
       std::unique_lock<SpinMutex> lock(tc.mtx);
-      tc.outdated_records.emplace_back(
+      tc.outdated_string_records.emplace_back(
           version_controller_.GetCurrentTimestamp(), old_record);
     }
   }
 
-  if (!tc.outdated_records.empty()) {
-    std::lock_guard<SpinMutex> lg(tc.mtx);
-    if (!tc.outdated_records.empty()) {
-      TimeStampType release_time = version_controller_.LocalOldestSnapshotTS();
-      if (tc.outdated_records.front().release_time < release_time) {
-        purgeAndFree(tc.outdated_records.front().record);
-        tc.outdated_records.pop_front();
-      }
-    }
-  }
+  tryCleanCachedOutdatedRecord();
   return Status::Ok;
 }
 
