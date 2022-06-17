@@ -176,8 +176,10 @@ class SpinMutex {
   SpinMutex() = default;
 
   void lock() {
-    while (locked.test_and_set(std::memory_order_acquire)) {
-      asm volatile("pause");
+    while (!try_lock()) {
+      for (size_t i = 0; i != 64; ++i) {
+        _mm_pause();
+      }
     }
   }
 
