@@ -20,13 +20,19 @@ class HashIteratorImpl final : public HashIterator {
     return (rep != list->Tail());
   }
 
-  void Next() final { ++rep; }
+  void Next() final {
+    if (!Valid()) return;
+    ++rep;
+  }
 
-  void Prev() final { --rep; }
+  void Prev() final {
+    if (!Valid()) return;
+    --rep;
+  }
 
   std::string Key() const final {
     if (!Valid()) {
-      kvdk_assert(false, "Accessing data with invalid ListIterator!");
+      kvdk_assert(false, "Accessing data with invalid HashIterator!");
       return std::string{};
     }
     auto sw = Collection::ExtractUserKey(rep->Key());
@@ -35,7 +41,7 @@ class HashIteratorImpl final : public HashIterator {
 
   std::string Value() const final {
     if (!Valid()) {
-      kvdk_assert(false, "Accessing data with invalid ListIterator!");
+      kvdk_assert(false, "Accessing data with invalid HashIterator!");
       return std::string{};
     }
     auto sw = rep->Value();
@@ -43,6 +49,10 @@ class HashIteratorImpl final : public HashIterator {
   }
 
   bool MatchKey(std::regex const& re) final {
+    if (!Valid()) {
+      kvdk_assert(false, "Accessing data with invalid HashIterator!");
+      return false;
+    }
     return std::regex_match(Key(), re);
   }
 

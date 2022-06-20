@@ -19,9 +19,15 @@ class ListIteratorImpl final : public ListIterator {
 
   void SeekToLast() final { rep = list->Back(); }
 
-  void Next() final { ++rep; }
+  void Next() final {
+    if (!Valid()) return;
+    ++rep;
+  }
 
-  void Prev() final { --rep; }
+  void Prev() final {
+    if (!Valid()) return;
+    --rep;
+  }
 
   void SeekToFirst(StringView elem) final {
     SeekToFirst();
