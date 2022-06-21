@@ -32,8 +32,8 @@ KVDKStatus KVDKModify(KVDKEngine* engine, const char* key, size_t key_len,
                       const KVDKWriteOptions* write_option) {
   auto cpp_modify_func = [&](const std::string* old_value,
                              std::string* new_value, void* args) {
-    char* nv;
-    size_t nv_len;
+    char* nv = nullptr;
+    size_t nv_len = 0;
     auto result =
         modify_func(old_value ? old_value->data() : nullptr,
                     old_value ? old_value->size() : 0, &nv, &nv_len, args);

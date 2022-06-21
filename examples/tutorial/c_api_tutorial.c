@@ -564,13 +564,7 @@ typedef struct {
 int IncN(const char* old_val, size_t old_val_len, char** new_val,
          size_t* new_val_len, void* args_pointer) {
   assert(args_pointer);
-  IncNArgs* args = (IncNArgs*)args_pointer;
-  *new_val = (char*)malloc(sizeof(int));
-  if (*new_val == NULL) {
-    return KVDK_MODIFY_ABORT;
-  }
 
-  *new_val_len = sizeof(int);
   int old_num;
   if (old_val == NULL) {
     old_num = 0;
@@ -581,6 +575,14 @@ int IncN(const char* old_val, size_t old_val_len, char** new_val,
     assert(old_val_len == sizeof(int));
     memcpy(&old_num, old_val, sizeof(int));
   }
+
+  IncNArgs* args = (IncNArgs*)args_pointer;
+  *new_val = (char*)malloc(sizeof(int));
+  if (*new_val == NULL) {
+    return KVDK_MODIFY_ABORT;
+  }
+
+  *new_val_len = sizeof(int);
 
   args->result = old_num + args->incr_by;
   memcpy(*new_val, &args->result, sizeof(int));
