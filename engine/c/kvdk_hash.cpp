@@ -61,8 +61,8 @@ extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
   auto ModifyFunc = [&](const std::string* old_value, std::string* new_value,
                         void* arg) {
     int op;
-    char* new_val_data;
-    size_t new_val_len;
+    char* new_val_data = nullptr;
+    size_t new_val_len = 0;
     if (old_value != nullptr) {
       op = modify_func(old_value->data(), old_value->size(), &new_val_data,
                        &new_val_len, arg);
