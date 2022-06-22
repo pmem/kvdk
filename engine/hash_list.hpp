@@ -5,9 +5,9 @@
 #include "version/version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
-using HashList = GenericList<RecordMark::RecordType::HashRecord, RecordMark::RecordType::HashElem>;
+using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
 using HashListBuilder =
-    GenericListBuilder<RecordMark::RecordType::HashRecord, RecordMark::RecordType::HashElem>;
+    GenericListBuilder<RecordType::HashRecord, RecordType::HashElem>;
 
 class HashIteratorImpl final : public HashIterator {
  public:

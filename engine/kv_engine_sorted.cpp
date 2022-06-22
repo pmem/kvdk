@@ -30,7 +30,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
   auto lookup_result =
-      lookupKey<true>(collection_name, RecordMark::RecordType::SortedHeader);
+      lookupKey<true>(collection_name, RecordType::SortedHeader);
   if (lookup_result.s == NotFound || lookup_result.s == Outdated) {
     DLRecord* existing_header =
         lookup_result.s == Outdated
@@ -52,7 +52,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
       return Status::PmemOverflow;
     }
 
-    RecordMark mark(RecordMark::RecordType::SortedHeader, RecordMark::RecordStatus::Normal);
+    RecordMark mark(RecordType::SortedHeader, RecordStatus::Normal);
     // PMem level of skiplist is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
@@ -84,11 +84,11 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   auto new_ts = snapshot_holder.Timestamp();
   auto lookup_result =
-      lookupKey<false>(collection_name, RecordMark::RecordType::SortedHeader);
+      lookupKey<false>(collection_name, RecordType::SortedHeader);
   if (lookup_result.s == Status::Ok) {
     Skiplist* skiplist = lookup_result.entry.GetIndex().skiplist;
     DLRecord* header = skiplist->HeaderRecord();
-    assert(header->entry.meta.mark.record_type == RecordMark::RecordType::SortedHeader);
+    assert(header->entry.meta.mark.record_type == RecordType::SortedHeader);
     StringView value = header->Value();
     auto request_size =
         sizeof(DLRecord) + collection_name.size() + value.size();
@@ -96,7 +96,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
     if (space_entry.size == 0) {
       return Status::PmemOverflow;
     }
-    RecordMark mark(RecordMark::RecordType::SortedHeader, RecordMark::RecordStatus::Outdated);
+    RecordMark mark(RecordType::SortedHeader, RecordStatus::Outdated);
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space_entry.offset),
         space_entry.size, new_ts, mark,
@@ -124,7 +124,7 @@ Status KVEngine::SortedSize(const StringView collection, size_t* size) {
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, RecordMark::RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -148,7 +148,7 @@ Status KVEngine::SortedGet(const StringView collection,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, RecordMark::RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -172,7 +172,7 @@ Status KVEngine::SortedPut(const StringView collection,
 
   Skiplist* skiplist = nullptr;
 
-  auto ret = lookupKey<false>(collection, RecordMark::RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -193,7 +193,7 @@ Status KVEngine::SortedDelete(const StringView collection,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, RecordMark::RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   // GlobalLogger.Debug("ret.s is %d\n", ret.s);
   if (ret.s != Status::Ok) {
     return (ret.s == Status::Outdated || ret.s == Status::NotFound) ? Status::Ok
@@ -215,7 +215,7 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
     snapshot = GetSnapshot(false);
   }
   // find collection
-  auto res = lookupKey<false>(collection, RecordMark::RecordType::SortedHeader);
+  auto res = lookupKey<false>(collection, RecordType::SortedHeader);
   if (s != nullptr) {
     *s = (res.s == Status::Outdated) ? Status::NotFound : res.s;
   }

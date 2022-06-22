@@ -14,7 +14,7 @@ Status KVEngine::HashCreate(StringView key) {
   }
 
   auto guard = hash_table_->AcquireLock(key);
-  auto result = lookupKey<true>(key, RecordMark::RecordType::HashRecord);
+  auto result = lookupKey<true>(key, RecordType::HashRecord);
   if (result.s == Status::Ok) {
     return Status::Existed;
   }
@@ -43,7 +43,7 @@ Status KVEngine::HashCreate(StringView key) {
     hash_lists_.emplace(hlist);
   }
   insertKeyOrElem(
-      result, RecordMark(RecordMark::RecordType::HashRecord, RecordMark::RecordStatus::Normal), hlist);
+      result, RecordMark(RecordType::HashRecord, RecordStatus::Normal), hlist);
   return Status::Ok;
 }
 
@@ -164,7 +164,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
     guard = hash_table_->AcquireLock(internal_key);
   }
 
-  auto result = lookupElem<may_set>(internal_key, RecordMark::RecordType::HashElem);
+  auto result = lookupElem<may_set>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
@@ -206,7 +206,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
                                [&](DLRecord* rec) { delayFree(rec); });
       }
       insertKeyOrElem(
-          result, RecordMark(RecordMark::RecordType::HashElem, RecordMark::RecordStatus::Normal), addr);
+          result, RecordMark(RecordType::HashElem, RecordStatus::Normal), addr);
       return Status::Ok;
     }
     case ModifyOperation::Delete: {
@@ -263,7 +263,7 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key,
 Status KVEngine::hashListFind(StringView key, HashList** hlist) {
   // Callers should acquire the access token or snapshot.
   // Lockless lookup for the collection
-  auto result = lookupKey<false>(key, RecordMark::RecordType::HashRecord);
+  auto result = lookupKey<false>(key, RecordType::HashRecord);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }
@@ -291,12 +291,12 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
 
   StringView internal_key = rec->Key();
   auto guard = hash_table_->AcquireLock(internal_key);
-  auto result = lookupElem<true>(internal_key, RecordMark::RecordType::HashElem);
+  auto result = lookupElem<true>(internal_key, RecordType::HashElem);
   if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
     return result.s;
   }
   kvdk_assert(result.s == Status::NotFound, "Impossible!");
-  insertKeyOrElem(result, RecordMark(RecordMark::RecordType::HashElem, RecordMark::RecordStatus::Normal),
+  insertKeyOrElem(result, RecordMark(RecordType::HashElem, RecordStatus::Normal),
                   rec);
 
   return Status::Ok;
@@ -342,7 +342,7 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
     {
       auto guard = hash_table_->AcquireLock(internal_key);
       kvdk_assert(hlist->Front()->Key() == internal_key, "");
-      auto ret = lookupElem<false>(internal_key, RecordMark::RecordType::HashElem);
+      auto ret = lookupElem<false>(internal_key, RecordType::HashElem);
       kvdk_assert(ret.s == Status::Ok, "");
       removeKeyOrElem(ret);
       hlist->PopFront(PushPending);
@@ -390,7 +390,7 @@ Status KVEngine::hashListPublish(HashWriteArgs const& args) {
     removeKeyOrElem(args.res);
   } else {
     insertKeyOrElem(args.res,
-                    RecordMark(RecordMark::RecordType::HashElem, RecordMark::RecordStatus::Normal),
+                    RecordMark(RecordType::HashElem, RecordStatus::Normal),
                     args.new_rec);
   }
   return Status::Ok;

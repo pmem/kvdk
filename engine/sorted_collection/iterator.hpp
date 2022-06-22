@@ -45,7 +45,7 @@ class SortedIterator : public Iterator {
 
   virtual bool Valid() override {
     return (current_ != nullptr &&
-            current_->GetRecordMark().record_type == RecordMark::RecordType::SortedElem);
+            current_->GetRecordMark().record_type == RecordType::SortedElem);
   }
 
   virtual void Next() override {
@@ -98,7 +98,7 @@ class SortedIterator : public Iterator {
       DLRecord* valid_version_record = findValidVersion(current_);
       if (valid_version_record == nullptr ||
           valid_version_record->entry.meta.mark.record_status ==
-              RecordMark::RecordStatus::Outdated) {
+              RecordStatus::Outdated) {
         current_ =
             forward
                 ? pmem_allocator_->offset2addr_checked<DLRecord>(current_->next)

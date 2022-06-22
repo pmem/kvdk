@@ -27,10 +27,10 @@ namespace KVDK_NAMESPACE {
 
 constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 
-template <RecordMark::RecordType, RecordMark::RecordType>
+template <RecordType, RecordType>
 class GenericListBuilder;
 
-template <RecordMark::RecordType ListType, RecordMark::RecordType ElemType>
+template <RecordType ListType, RecordType ElemType>
 class GenericList final : public Collection {
  private:
   // For offset-address translation
@@ -581,24 +581,24 @@ class GenericList final : public Collection {
 
   static void markRecordAsDirty(DLRecord* rec) {
     auto& entry = rec->entry;
-    entry.meta.mark.record_status = RecordMark::RecordStatus::Dirty;
+    entry.meta.mark.record_status = RecordStatus::Dirty;
     _mm_clwb(&entry.meta.mark.record_status);
     _mm_mfence();
   }
 
   static void cleanRecordDirtyMark(DLRecord* rec) {
     auto& entry = rec->entry;
-    entry.meta.mark.record_status = RecordMark::RecordStatus::Normal;
+    entry.meta.mark.record_status = RecordStatus::Normal;
     _mm_clwb(&entry.meta.mark.record_status);
     _mm_mfence();
   }
 
   static bool isRecordDirty(DLRecord* rec) {
-    return rec->entry.meta.mark.record_status == RecordMark::RecordStatus::Dirty;
+    return rec->entry.meta.mark.record_status == RecordStatus::Dirty;
   }
 };
 
-template <RecordMark::RecordType ListType, RecordMark::RecordType ElemType>
+template <RecordType ListType, RecordType ElemType>
 class GenericListBuilder final {
   static constexpr size_t NMiddlePoints = 1024;
   using List = GenericList<ListType, ElemType>;

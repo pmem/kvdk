@@ -12,10 +12,10 @@ namespace KVDK_NAMESPACE {
 void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   kvdk_assert(
       (static_cast<DLRecord*>(addr)->GetRecordMark().record_type &
-       (RecordMark::RecordType::ListRecord | RecordMark::RecordType::ListElem | RecordMark::RecordType::HashRecord |
-        RecordMark::RecordType::HashElem)) &&
+       (RecordType::ListRecord | RecordType::ListElem | RecordType::HashRecord |
+        RecordType::HashElem)) &&
           (static_cast<DLRecord*>(addr)->GetRecordMark().record_status ==
-           RecordMark::RecordStatus::Dirty),
+           RecordStatus::Dirty),
       "");
   kvdk_assert(access_thread.id >= 0, "");
   auto& tc = cleaner_thread_cache_[access_thread.id];

@@ -14,32 +14,32 @@
 
 namespace KVDK_NAMESPACE {
 
+enum RecordType : uint8_t {
+  Empty = 0,
+  String = (1 << 0),
+  SortedHeader = (1 << 1),
+  SortedElem = (1 << 2),
+  HashRecord = (1 << 3),
+  HashElem = (1 << 4),
+  ListRecord = (1 << 5),
+  ListElem = (1 << 6),
+};
+
+enum class RecordStatus : uint8_t {
+  // Indicate a up-to-date record
+  Normal = 0,
+  // Indicate key of the record is updated
+  Dirty,
+  // Indicate deleted or expired record
+  Outdated,
+};
+
 struct RecordMark {
-  enum class RecordStatus : uint8_t {
-    // Indicate a up-to-date record
-    Normal = 0,
-    // Indicate key of the record is updated
-    Dirty,
-    // Indicate deleted or expired record
-    Outdated,
-  };
-
-  enum RecordType : uint8_t {
-    Empty = 0,
-    String = (1 << 0),
-    SortedHeader = (1 << 1),
-    SortedElem = (1 << 2),
-    HashRecord = (1 << 3),
-    HashElem = (1 << 4),
-    ListRecord = (1 << 5),
-    ListElem = (1 << 6),
-  };
-
   RecordMark(RecordType type, RecordStatus s)
       : record_type(type), record_status(s) {}
 
   RecordMark(RecordType type)
-      : record_type(type), record_status(RecordMark::RecordStatus::Normal) {}
+      : record_type(type), record_status(RecordStatus::Normal) {}
 
   RecordMark() = default;
 
@@ -47,11 +47,11 @@ struct RecordMark {
   RecordStatus record_status;
 };
 
-const uint8_t ExpirableDataType =
-    (RecordMark::RecordType::String | RecordMark::RecordType::SortedHeader | RecordMark::RecordType::HashRecord |
-     RecordMark::RecordType::ListRecord);
+const uint8_t ExpirableRecordType =
+    (RecordType::String | RecordType::SortedHeader | RecordType::HashRecord |
+     RecordType::ListRecord);
 
-const uint8_t PrimaryDataType = ExpirableDataType;
+const uint8_t PrimaryRecordType = ExpirableRecordType;
 
 struct DataHeader {
   DataHeader() = default;
@@ -87,7 +87,7 @@ struct DataEntry {
   DataEntry() = default;
 
   void Destroy() {
-    meta.mark.record_type = RecordMark::RecordType::Empty;
+    meta.mark.record_type = RecordType::Empty;
     pmem_persist(&meta.mark, sizeof(RecordMark));
   }
 
@@ -190,7 +190,7 @@ struct StringRecord {
               _value.size()),
         old_version(_old_version),
         expired_time(_expired_time) {
-    kvdk_assert(_record_mark.record_type == RecordMark::RecordType::String, "");
+    kvdk_assert(_record_mark.record_type == RecordType::String, "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
@@ -276,7 +276,7 @@ struct DLRecord {
   }
 
   void PersistExpireTimeNT(ExpireTimeType time) {
-    kvdk_assert(entry.meta.mark.record_type & ExpirableDataType, "");
+    kvdk_assert(entry.meta.mark.record_type & ExpirableRecordType, "");
     _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
                     static_cast<long long>(time));
     _mm_mfence();
@@ -295,7 +295,7 @@ struct DLRecord {
   }
 
   void PersistExpireTimeCLWB(ExpireTimeType time) {
-    kvdk_assert(entry.meta.mark.record_type & ExpirableDataType, "");
+    kvdk_assert(entry.meta.mark.record_type & ExpirableRecordType, "");
     expired_time = time;
     _mm_clwb(&expired_time);
     _mm_mfence();
@@ -308,7 +308,7 @@ struct DLRecord {
   }
 
   ExpireTimeType GetExpireTime() const {
-    kvdk_assert(entry.meta.mark.record_type & ExpirableDataType,
+    kvdk_assert(entry.meta.mark.record_type & ExpirableRecordType,
                 "Call DLRecord::GetExpireTime with an unexpirable type");
     return expired_time;
   }
@@ -345,9 +345,9 @@ struct DLRecord {
         next(_next),
         expired_time(_expired_time) {
     kvdk_assert(_record_mark.record_type &
-                    (RecordMark::RecordType::SortedElem | RecordMark::RecordType::SortedHeader |
-                     RecordMark::RecordType::HashElem | RecordMark::RecordType::HashRecord |
-                     RecordMark::RecordType::ListElem | RecordMark::RecordType::ListRecord),
+                    (RecordType::SortedElem | RecordType::SortedHeader |
+                     RecordType::HashElem | RecordType::HashRecord |
+                     RecordType::ListElem | RecordType::ListRecord),
                 "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());

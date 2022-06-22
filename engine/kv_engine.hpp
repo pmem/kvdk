@@ -265,45 +265,45 @@ class KVEngine : public Engine {
   }
 
   template <typename CollectionType>
-  static constexpr RecordMark::RecordType collectionType() {
+  static constexpr RecordType collectionType() {
     static_assert(std::is_same<CollectionType, Skiplist>::value ||
                       std::is_same<CollectionType, List>::value ||
                       std::is_same<CollectionType, HashList>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
-               ? RecordMark::RecordType::SortedHeader
+               ? RecordType::SortedHeader
                : std::is_same<CollectionType, List>::value
-                     ? RecordMark::RecordType::ListRecord
+                     ? RecordType::ListRecord
                      : std::is_same<CollectionType, HashList>::value
-                           ? RecordMark::RecordType::HashRecord
-                           : RecordMark::RecordType::Empty;
+                           ? RecordType::HashRecord
+                           : RecordType::Empty;
   }
 
-  static PointerType pointerType(RecordMark::RecordType rtype) {
+  static PointerType pointerType(RecordType rtype) {
     switch (rtype) {
-      case RecordMark::RecordType::Empty: {
+      case RecordType::Empty: {
         return PointerType::Empty;
       }
-      case RecordMark::RecordType::String: {
+      case RecordType::String: {
         return PointerType::StringRecord;
       }
-      case RecordMark::RecordType::SortedElem: {
+      case RecordType::SortedElem: {
         kvdk_assert(false, "Not supported!");
         return PointerType::Invalid;
       }
-      case RecordMark::RecordType::SortedHeader: {
+      case RecordType::SortedHeader: {
         return PointerType::Skiplist;
       }
-      case RecordMark::RecordType::ListRecord: {
+      case RecordType::ListRecord: {
         return PointerType::List;
       }
-      case RecordMark::RecordType::HashRecord: {
+      case RecordType::HashRecord: {
         return PointerType::HashList;
       }
-      case RecordMark::RecordType::HashElem: {
+      case RecordType::HashElem: {
         return PointerType::HashElem;
       }
-      case RecordMark::RecordType::ListElem:
+      case RecordType::ListElem:
       default: {
         /// TODO: Remove Expire Flag
         kvdk_assert(false, "Invalid type!");
@@ -342,7 +342,7 @@ class KVEngine : public Engine {
     if (ret.s != Status::NotFound && ret.s != Status::Outdated) {
       return ret.s;
     }
-    insertKeyOrElem(ret, RecordMark(type, RecordMark::RecordStatus::Normal), coll);
+    insertKeyOrElem(ret, RecordMark(type, RecordStatus::Normal), coll);
     return Status::Ok;
   }
 

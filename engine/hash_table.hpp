@@ -28,11 +28,11 @@ class Skiplist;
 class SkiplistNode;
 struct HashBucketIterator;
 
-template <RecordMark::RecordType ListType, RecordMark::RecordType ElemType>
+template <RecordType ListType, RecordType ElemType>
 class GenericList;
 
-using List = GenericList<RecordMark::RecordType::ListRecord, RecordMark::RecordType::ListElem>;
-using HashList = GenericList<RecordMark::RecordType::HashRecord, RecordMark::RecordType::HashElem>;
+using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
+using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
 
 struct alignas(16) HashEntry {
  public:
@@ -71,7 +71,7 @@ struct alignas(16) HashEntry {
   // and return true, otherwise return false.
   //
   // Args:
-  // * target_type: a mask of RecordMark::RecordType, search all masked types
+  // * target_type: a mask of RecordType, search all masked types
   bool Match(const StringView& key, uint32_t hash_k_prefix, uint8_t target_type,
              DataEntry* data_entry_metadata);
 

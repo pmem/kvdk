@@ -248,7 +248,7 @@ Status KVEngine::RestoreData() {
       DataEntry* recovering_pmem_data_entry =
           static_cast<DataEntry*>(recovering_pmem_record);
       uint64_t padding_size = segment_recovering.size;
-      recovering_pmem_data_entry->meta.mark.record_type = RecordMark::RecordType::Empty;
+      recovering_pmem_data_entry->meta.mark.record_type = RecordType::Empty;
       pmem_persist(&recovering_pmem_data_entry->meta.mark, sizeof(RecordMark));
       recovering_pmem_data_entry->header.record_size = padding_size;
       pmem_persist(&recovering_pmem_data_entry->header.record_size,
@@ -260,25 +260,25 @@ Status KVEngine::RestoreData() {
     segment_recovering.offset += data_entry_cached.header.record_size;
 
     switch (data_entry_cached.meta.mark.record_type) {
-      case RecordMark::RecordType::SortedElem:
-      case RecordMark::RecordType::SortedHeader:
-      case RecordMark::RecordType::String:
-      case RecordMark::RecordType::HashRecord:
-      case RecordMark::RecordType::HashElem:
-      case RecordMark::RecordType::ListRecord:
-      case RecordMark::RecordType::ListElem: {
-        if (data_entry_cached.meta.mark.record_status == RecordMark::RecordStatus::Dirty) {
-          data_entry_cached.meta.mark.record_type = RecordMark::RecordType::Empty;
+      case RecordType::SortedElem:
+      case RecordType::SortedHeader:
+      case RecordType::String:
+      case RecordType::HashRecord:
+      case RecordType::HashElem:
+      case RecordType::ListRecord:
+      case RecordType::ListElem: {
+        if (data_entry_cached.meta.mark.record_status == RecordStatus::Dirty) {
+          data_entry_cached.meta.mark.record_type = RecordType::Empty;
         } else {
           if (!ValidateRecord(recovering_pmem_record)) {
             // Checksum dismatch, mark as padding to be Freed
             // Otherwise the Restore will continue normally
-            data_entry_cached.meta.mark.record_type = RecordMark::RecordType::Empty;
+            data_entry_cached.meta.mark.record_type = RecordType::Empty;
           }
         }
         break;
       }
-      case RecordMark::RecordType::Empty: {
+      case RecordType::Empty: {
         break;
       }
       default: {
@@ -289,7 +289,7 @@ Status KVEngine::RestoreData() {
             data_entry_cached.meta.mark.record_type,
             data_entry_cached.header.checksum);
         kvdk_assert(data_entry_cached.header.checksum == 0, "");
-        data_entry_cached.meta.mark.record_type = RecordMark::RecordType::Empty;
+        data_entry_cached.meta.mark.record_type = RecordType::Empty;
         break;
       }
     }
@@ -297,7 +297,7 @@ Status KVEngine::RestoreData() {
     // When met records with invalid checksum
     // or the space is padding, empty or with corrupted record
     // Free the space and fetch another
-    if (data_entry_cached.meta.mark.record_type == RecordMark::RecordType::Empty) {
+    if (data_entry_cached.meta.mark.record_type == RecordType::Empty) {
       pmem_allocator_->Free(SpaceEntry(
           pmem_allocator_->addr2offset_checked(recovering_pmem_record),
           data_entry_cached.header.record_size));
@@ -313,33 +313,33 @@ Status KVEngine::RestoreData() {
                  engine_thread_cache.newest_restored_ts);
 
     switch (data_entry_cached.meta.mark.record_type) {
-      case RecordMark::RecordType::SortedElem: {
+      case RecordType::SortedElem: {
         s = restoreSortedElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordMark::RecordType::SortedHeader: {
+      case RecordType::SortedHeader: {
         s = restoreSortedHeader(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordMark::RecordType::String: {
+      case RecordType::String: {
         s = restoreStringRecord(
             static_cast<StringRecord*>(recovering_pmem_record),
             data_entry_cached);
         break;
       }
-      case RecordMark::RecordType::ListRecord: {
+      case RecordType::ListRecord: {
         s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordMark::RecordType::ListElem: {
+      case RecordType::ListElem: {
         s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordMark::RecordType::HashRecord: {
+      case RecordType::HashRecord: {
         s = hashListRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordMark::RecordType::HashElem: {
+      case RecordType::HashElem: {
         s = hashListRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -364,15 +364,15 @@ bool KVEngine::ValidateRecord(void* data_record) {
   assert(data_record);
   DataEntry* entry = static_cast<DataEntry*>(data_record);
   switch (entry->meta.mark.record_type) {
-    case RecordMark::RecordType::String: {
+    case RecordType::String: {
       return static_cast<StringRecord*>(data_record)->Validate();
     }
-    case RecordMark::RecordType::SortedHeader:
-    case RecordMark::RecordType::SortedElem:
-    case RecordMark::RecordType::HashRecord:
-    case RecordMark::RecordType::HashElem:
-    case RecordMark::RecordType::ListRecord:
-    case RecordMark::RecordType::ListElem: {
+    case RecordType::SortedHeader:
+    case RecordType::SortedElem:
+    case RecordType::HashRecord:
+    case RecordType::HashElem:
+    case RecordType::ListRecord:
+    case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
     default:
@@ -427,30 +427,30 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
     while (slot_iter.Valid()) {
       auto mark = slot_iter->GetRecordMark();
       switch (mark.record_type) {
-        case RecordMark::RecordType::String: {
+        case RecordType::String: {
           StringRecord* record = slot_iter->GetIndex().string_record;
           while (record != nullptr && record->GetTimestamp() > backup_ts) {
             record =
                 pmem_allocator_->offset2addr<StringRecord>(record->old_version);
           }
           if (record &&
-              record->GetRecordMark().record_status == RecordMark::RecordStatus::Normal &&
+              record->GetRecordMark().record_status == RecordStatus::Normal &&
               !record->HasExpired()) {
-            s = backup.Append(RecordMark::RecordType::String, record->Key(),
+            s = backup.Append(RecordType::String, record->Key(),
                               record->Value(), record->GetExpireTime());
           }
           break;
         }
-        case RecordMark::RecordType::SortedHeader: {
+        case RecordType::SortedHeader: {
           DLRecord* header = slot_iter->GetIndex().skiplist->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
             header =
                 pmem_allocator_->offset2addr<DLRecord>(header->old_version);
           }
           if (header &&
-              header->GetRecordMark().record_status == RecordMark::RecordStatus::Normal &&
+              header->GetRecordMark().record_status == RecordStatus::Normal &&
               !header->HasExpired()) {
-            s = backup.Append(RecordMark::RecordType::SortedHeader, header->Key(),
+            s = backup.Append(RecordType::SortedHeader, header->Key(),
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append skiplist elems following the header
@@ -462,7 +462,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                   static_cast<const SnapshotImpl*>(snapshot), false);
               for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
                    skiplist_iter.Next()) {
-                s = backup.Append(RecordMark::RecordType::SortedElem, skiplist_iter.Key(),
+                s = backup.Append(RecordType::SortedElem, skiplist_iter.Key(),
                                   skiplist_iter.Value(), kPersistTime);
                 if (s != Status::Ok) {
                   break;
@@ -530,7 +530,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
     bool expired = TimeUtils::CheckIsExpired(record.expire_time);
     wo.ttl_time = record.expire_time;
     switch (record.type) {
-      case RecordMark::RecordType::String: {
+      case RecordType::String: {
         if (!expired) {
           cnt++;
           s = Put(record.key, record.val, wo);
@@ -538,7 +538,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         iter->Next();
         break;
       }
-      case RecordMark::RecordType::SortedHeader: {
+      case RecordType::SortedHeader: {
         // Maybe reuse id?
         std::shared_ptr<Skiplist> skiplist = nullptr;
         if (!expired) {
@@ -562,7 +562,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         // the header is followed by all its elems in backup log
         while (iter->Valid()) {
           record = iter->Record();
-          if (record.type != RecordMark::RecordType::SortedElem) {
+          if (record.type != RecordType::SortedElem) {
             break;
           }
           if (!expired) {
@@ -578,7 +578,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         }
         break;
       }
-      case RecordMark::RecordType::SortedElem: {
+      case RecordType::SortedElem: {
         GlobalLogger.Error("sorted elems not lead by header in backup log %s\n",
                            backup_log.c_str());
         return Status::Abort;
@@ -809,7 +809,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Lookup Skiplists and Hashes for further operations
   for (auto const& sorted_op : batch.SortedOps()) {
-    auto res = lookupKey<false>(sorted_op.collection, RecordMark::RecordType::SortedHeader);
+    auto res = lookupKey<false>(sorted_op.collection, RecordType::SortedHeader);
     /// TODO: this is a temporary work-around
     /// We cannot lock both key and field, which may trigger deadlock.
     /// However, if a collection is created and a field is inserted,
@@ -895,7 +895,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   for (auto& args : hash_args) {
     args.ts = bw_token.Timestamp();
     std::string internal_key = args.hlist->InternalKey(args.field);
-    args.res = lookupElem<true>(internal_key, RecordMark::RecordType::HashElem);
+    args.res = lookupElem<true>(internal_key, RecordType::HashElem);
     if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
       return args.res.s;
     }
@@ -1124,7 +1124,7 @@ Status KVEngine::batchWriteRollbackLogs() {
 Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
   auto ul = hash_table_->AcquireLock(str);
-  auto res = lookupKey<false>(str, ExpirableDataType);
+  auto res = lookupKey<false>(str, ExpirableRecordType);
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;
@@ -1156,7 +1156,7 @@ Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
 }
 
 Status KVEngine::TypeOf(StringView key, ValueType* type) {
-  auto res = lookupKey<false>(key, ExpirableDataType);
+  auto res = lookupKey<false>(key, ExpirableRecordType);
 
   if (res.s == Status::Ok) {
     switch (res.entry_ptr->GetIndexType()) {
@@ -1199,7 +1199,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   auto ul = hash_table_->AcquireLock(str);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
-  auto res = lookupKey<false>(str, ExpirableDataType);
+  auto res = lookupKey<false>(str, ExpirableRecordType);
   if (res.s == Status::Outdated) {
     return Status::NotFound;
   }
@@ -1250,7 +1250,7 @@ namespace KVDK_NAMESPACE {
 template <bool may_insert>
 HashTable::LookupResult KVEngine::lookupElem(StringView key,
                                              uint8_t type_mask) {
-  kvdk_assert(type_mask & (RecordMark::RecordType::HashElem | RecordMark::RecordType::SortedElem), "");
+  kvdk_assert(type_mask & (RecordType::HashElem | RecordType::SortedElem), "");
   return hash_table_->Lookup<may_insert>(key, type_mask);
 }
 
@@ -1261,7 +1261,7 @@ template HashTable::LookupResult KVEngine::lookupElem<false>(StringView,
 
 template <bool may_insert>
 HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
-  auto result = hash_table_->Lookup<may_insert>(key, PrimaryDataType);
+  auto result = hash_table_->Lookup<may_insert>(key, PrimaryRecordType);
 
   if (result.s != Status::Ok) {
     kvdk_assert(
@@ -1275,19 +1275,19 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
   // TODO: fix mvcc of different type keys
   if (!type_match) {
     result.s = Status::WrongType;
-  } else if (mark.record_status == RecordMark::RecordStatus::Outdated) {
+  } else if (mark.record_status == RecordStatus::Outdated) {
     result.s = Status::Outdated;
   } else {
     switch (mark.record_type) {
-      case RecordMark::RecordType::String: {
+      case RecordType::String: {
         result.s = result.entry.GetIndex().string_record->HasExpired()
                        ? Status::Outdated
                        : Status::Ok;
         break;
       }
-      case RecordMark::RecordType::SortedHeader:
-      case RecordMark::RecordType::ListRecord:
-      case RecordMark::RecordType::HashRecord: {
+      case RecordType::SortedHeader:
+      case RecordType::ListRecord:
+      case RecordType::HashRecord: {
         result.s =
             static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired()
                 ? Status::Outdated
