@@ -1096,8 +1096,8 @@ void Skiplist::destroyRecords() {
       if (Skiplist::Remove(to_destroy, nullptr, pmem_allocator_,
                            record_locks_)) {
         if (IndexWithHashtable()) {
-          auto lookup_result = hash_table_->Lookup<false>(
-              key, to_destroy->GetRecordMark().type);
+          auto lookup_result =
+              hash_table_->Lookup<false>(key, to_destroy->GetRecordMark().type);
 
           if (lookup_result.s == Status::Ok) {
             DLRecord* hash_indexed_record = nullptr;

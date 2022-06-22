@@ -122,9 +122,9 @@ void KVEngine::cleanNoHashIndexedSkiplist(
         // cur_node already been deleted
         cur_node = cur_node->Next(1).RawPointer();
       } else {
-        kvdk_assert(cur_node->record->GetRecordMark().type ==
-                        RecordType::SortedElem,
-                    "");
+        kvdk_assert(
+            cur_node->record->GetRecordMark().type == RecordType::SortedElem,
+            "");
         if (skiplist->Compare(cur_node->UserKey(),
                               Skiplist::UserKey(cur_record)) < 0) {
           prev_node = cur_node;
