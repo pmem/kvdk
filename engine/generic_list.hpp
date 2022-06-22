@@ -580,21 +580,15 @@ class GenericList final : public Collection {
   friend class GenericListBuilder<ListType, ElemType>;
 
   static void markRecordAsDirty(DLRecord* rec) {
-    auto& entry = rec->entry;
-    entry.meta.mark.status = RecordStatus::Dirty;
-    _mm_clwb(&entry.meta.mark.status);
-    _mm_mfence();
+    rec->PersistStatus(RecordStatus::Dirty);
   }
 
   static void cleanRecordDirtyMark(DLRecord* rec) {
-    auto& entry = rec->entry;
-    entry.meta.mark.status = RecordStatus::Normal;
-    _mm_clwb(&entry.meta.mark.status);
-    _mm_mfence();
+    rec->PersistStatus(RecordStatus::Normal);
   }
 
   static bool isRecordDirty(DLRecord* rec) {
-    return rec->entry.meta.mark.status == RecordStatus::Dirty;
+    return rec->GetRecordMark().status == RecordStatus::Dirty;
   }
 };
 

@@ -173,6 +173,12 @@ struct StringRecord {
     _mm_mfence();
   }
 
+  void PersistStatus(RecordStatus status) {
+    entry.meta.mark.status = status;
+    _mm_clwb(&entry.meta.mark.status);
+    _mm_mfence();
+  }
+
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
   RecordMark GetRecordMark() const { return entry.meta.mark; }
@@ -304,6 +310,12 @@ struct DLRecord {
   void PersistOldVersion(PMemOffsetType offset) {
     _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
                     static_cast<long long>(offset));
+    _mm_mfence();
+  }
+
+  void PersistStatus(RecordStatus status) {
+    entry.meta.mark.status = status;
+    _mm_clwb(&entry.meta.mark.status);
     _mm_mfence();
   }
 
