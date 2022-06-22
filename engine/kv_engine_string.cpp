@@ -26,7 +26,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
-  auto lookup_result = lookupKey<true>(key, RecordMark::String);
+  auto lookup_result = lookupKey<true>(key, RecordMark::RecordType::String);
 
   StringRecord* existing_record = nullptr;
   std::string existing_value;
@@ -61,7 +61,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
       StringRecord* new_record =
           pmem_allocator_->offset2addr_checked<StringRecord>(
               space_entry.offset);
-      RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Normal);
+      RecordMark mark(RecordMark::RecordType::String, RecordMark::RecordStatus::Normal);
       StringRecord::PersistStringRecord(
           new_record, space_entry.size, new_ts, mark,
           existing_record == nullptr
@@ -81,7 +81,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
         void* pmem_ptr =
             pmem_allocator_->offset2addr_checked(space_entry.offset);
-        RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Outdated);
+        RecordMark mark(RecordMark::RecordType::String, RecordMark::RecordStatus::Outdated);
         StringRecord::PersistStringRecord(
             pmem_ptr, space_entry.size, new_ts, mark,
             pmem_allocator_->addr2offset_checked(existing_record), key, "");
@@ -125,10 +125,10 @@ Status KVEngine::Get(const StringView key, std::string* value) {
     return Status::InvalidDataSize;
   }
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  auto ret = lookupKey<false>(key, RecordMark::String);
+  auto ret = lookupKey<false>(key, RecordMark::RecordType::String);
   if (ret.s == Status::Ok) {
     StringRecord* string_record = ret.entry.GetIndex().string_record;
-    kvdk_assert(string_record->GetRecordMark().record_type == RecordMark::String,
+    kvdk_assert(string_record->GetRecordMark().record_type == RecordMark::RecordType::String,
                 "Got wrong data type in string get");
     kvdk_assert(string_record->Validate(), "Corrupted data in string get");
     value->assign(string_record->Value().data(), string_record->Value().size());
@@ -157,7 +157,7 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
 
-  auto lookup_result = lookupKey<false>(key, RecordMark::String);
+  auto lookup_result = lookupKey<false>(key, RecordMark::RecordType::String);
   if (lookup_result.s == Status::Ok) {
     // We only write delete record if key exist
     auto request_size = key.size() + sizeof(StringRecord);
@@ -167,7 +167,7 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
     }
 
     void* pmem_ptr = pmem_allocator_->offset2addr_checked(space_entry.offset);
-    RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Outdated);
+    RecordMark mark(RecordMark::RecordType::String, RecordMark::RecordStatus::Outdated);
     StringRecord::PersistStringRecord(
         pmem_ptr, space_entry.size, new_ts, mark,
         pmem_allocator_->addr2offset_checked(
@@ -198,7 +198,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   TimeStampType new_ts = holder.Timestamp();
 
   // Lookup key in hashtable
-  auto lookup_result = lookupKey<true>(key, RecordMark::String);
+  auto lookup_result = lookupKey<true>(key, RecordMark::RecordType::String);
   if (lookup_result.s == Status::MemoryOverflow ||
       lookup_result.s == Status::WrongType) {
     return lookup_result.s;
@@ -225,7 +225,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
 
   StringRecord* new_record =
       pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
-  RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Normal);
+  RecordMark mark(RecordMark::RecordType::String, RecordMark::RecordStatus::Normal);
   StringRecord::PersistStringRecord(
       new_record, space_entry.size, new_ts, mark,
       pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
@@ -247,7 +247,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
 
 Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
                                      const DataEntry& cached_entry) {
-  assert(pmem_record->GetRecordMark().record_type == RecordMark::String);
+  assert(pmem_record->GetRecordMark().record_type == RecordMark::RecordType::String);
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     purgeAndFree(pmem_record);
@@ -257,7 +257,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   auto view = pmem_record->Key();
   std::string key{view.data(), view.size()};
   auto ul = hash_table_->AcquireLock(key);
-  auto lookup_result = hash_table_->Lookup<true>(key, RecordMark::String);
+  auto lookup_result = hash_table_->Lookup<true>(key, RecordMark::RecordType::String);
 
   if (lookup_result.s == Status::MemoryOverflow) {
     return lookup_result.s;
@@ -281,7 +281,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
 }
 
 Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
-  args.res = lookupKey<true>(args.key, RecordMark::String);
+  args.res = lookupKey<true>(args.key, RecordMark::RecordType::String);
   if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
       args.res.s != Status::Outdated) {
     return args.res.s;
@@ -298,7 +298,7 @@ Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWrite(StringWriteArgs& args) {
-  RecordMark mark(RecordMark::String, args.op == WriteBatchImpl::Op::Put
+  RecordMark mark(RecordMark::RecordType::String, args.op == WriteBatchImpl::Op::Put
                                           ? RecordMark::RecordStatus::Normal
                                           : RecordMark::RecordStatus::Outdated);
   void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
@@ -317,7 +317,7 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
-  RecordMark mark(RecordMark::String, args.op == WriteBatchImpl::Op::Put
+  RecordMark mark(RecordMark::RecordType::String, args.op == WriteBatchImpl::Op::Put
                                           ? RecordMark::RecordStatus::Normal
                                           : RecordMark::RecordStatus::Outdated);
   insertKeyOrElem(args.res, mark, const_cast<StringRecord*>(args.new_rec));

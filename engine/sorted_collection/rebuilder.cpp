@@ -45,7 +45,7 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 }
 
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
-  assert(header_record->GetRecordMark().record_type == RecordMark::SortedHeader);
+  assert(header_record->GetRecordMark().record_type == RecordMark::RecordType::SortedHeader);
 
   bool linked_record = checkAndRepairRecordLinkage(header_record);
 
@@ -66,7 +66,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 }
 
 Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
-  kvdk_assert(record->GetRecordMark().record_type == RecordMark::SortedElem,
+  kvdk_assert(record->GetRecordMark().record_type == RecordMark::RecordType::SortedElem,
               "wrong record type in RestoreSkiplistRecord");
   bool linked_record = checkAndRepairRecordLinkage(record);
 
@@ -85,7 +85,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
                 kRestoreSkiplistStride ==
             0 &&
         findCheckpointVersion(record) == record &&
-        record->GetRecordMark().record_type == RecordMark::SortedElem) {
+        record->GetRecordMark().record_type == RecordMark::RecordType::SortedElem) {
       SkiplistNode* start_node = nullptr;
       while (start_node == nullptr) {
         // Always build dram node for a recovery segment start record
@@ -321,7 +321,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
   // First insert hash index for the start node
   if (start_node->record != segment_owner->HeaderRecord()) {
     kvdk_assert(
-        start_node->record->GetRecordMark().record_type == RecordMark::SortedElem,
+        start_node->record->GetRecordMark().record_type == RecordMark::RecordType::SortedElem,
         "Wrong start node of skiplist segment");
     num_elems++;
     if (build_hash_index) {
@@ -401,7 +401,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
     } else {
       // link end node of this segment to adjacent segment
       if (iter->second.start_node->record->GetRecordMark().record_type ==
-          RecordMark::SortedElem) {
+          RecordMark::RecordType::SortedElem) {
         cur_node->RelaxedSetNext(1, iter->second.start_node);
       } else {
         cur_node->RelaxedSetNext(1, nullptr);
@@ -655,17 +655,17 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
                                                   void* index_ptr,
                                                   PointerType index_type) {
   // TODO: ttl
-  RecordMark::RecordType search_type = RecordMark::Empty;
+  RecordMark::RecordType search_type = RecordMark::RecordType::Empty;
   RecordMark record_mark;
   if (index_type == PointerType::DLRecord) {
-    search_type = RecordMark::SortedElem;
+    search_type = RecordMark::RecordType::SortedElem;
     record_mark = static_cast<DLRecord*>(index_ptr)->GetRecordMark();
   } else if (index_type == PointerType::SkiplistNode) {
-    search_type = RecordMark::SortedElem;
+    search_type = RecordMark::RecordType::SortedElem;
     record_mark =
         static_cast<SkiplistNode*>(index_ptr)->record->GetRecordMark();
   } else if (index_type == PointerType::Skiplist) {
-    search_type = RecordMark::SortedHeader;
+    search_type = RecordMark::RecordType::SortedHeader;
     record_mark =
         static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordMark();
   } else {

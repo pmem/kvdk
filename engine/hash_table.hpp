@@ -31,8 +31,8 @@ struct HashBucketIterator;
 template <RecordMark::RecordType ListType, RecordMark::RecordType ElemType>
 class GenericList;
 
-using List = GenericList<RecordMark::ListRecord, RecordMark::ListElem>;
-using HashList = GenericList<RecordMark::HashRecord, RecordMark::HashElem>;
+using List = GenericList<RecordMark::RecordType::ListRecord, RecordMark::RecordType::ListElem>;
+using HashList = GenericList<RecordMark::RecordType::HashRecord, RecordMark::RecordType::HashElem>;
 
 struct alignas(16) HashEntry {
  public:

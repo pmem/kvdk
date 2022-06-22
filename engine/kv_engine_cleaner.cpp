@@ -62,7 +62,7 @@ void KVEngine::purgeAndFreeDLRecords(
           pmem_allocator_->offset2addr<DLRecord>(pmem_record->old_version);
       auto mark = pmem_record->GetRecordMark();
       switch (mark.record_type) {
-        case RecordMark::SortedElem: {
+        case RecordMark::RecordType::SortedElem: {
           entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                pmem_record->entry.header.record_size);
           if (mark.record_status == RecordMark::RecordStatus::Normal) {
@@ -70,7 +70,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordMark::SortedHeader: {
+        case RecordMark::RecordType::SortedHeader: {
           if (mark.record_status == RecordMark::RecordStatus::Normal) {
             entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                  pmem_record->entry.header.record_size);
@@ -104,7 +104,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
   auto prev_node = skiplist->HeaderNode();
   auto cur_record =
       pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
-  while (cur_record->GetRecordMark().record_type == RecordMark::SortedElem) {
+  while (cur_record->GetRecordMark().record_type == RecordMark::RecordType::SortedElem) {
     auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
     auto ul = hash_table_->AcquireLock(cur_record->Key());
     // iter old version list
@@ -123,7 +123,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
         cur_node = cur_node->Next(1).RawPointer();
       } else {
         kvdk_assert(cur_node->record->GetRecordMark().record_type ==
-                        RecordMark::SortedElem,
+                        RecordMark::RecordType::SortedElem,
                     "");
         if (skiplist->Compare(cur_node->UserKey(),
                               Skiplist::UserKey(cur_record)) < 0) {
@@ -142,7 +142,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
     DLRecord* next_record =
         pmem_allocator_->offset2addr<DLRecord>(cur_record->next);
     auto mark = cur_record->GetRecordMark();
-    if (mark.record_type == RecordMark::SortedElem &&
+    if (mark.record_type == RecordMark::RecordType::SortedElem &&
         mark.record_status == RecordMark::RecordStatus::Outdated &&
         cur_record->GetTimestamp() < min_snapshot_ts) {
       TEST_SYNC_POINT(

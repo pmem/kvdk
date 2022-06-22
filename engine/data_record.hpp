@@ -16,8 +16,11 @@ namespace KVDK_NAMESPACE {
 
 struct RecordMark {
   enum class RecordStatus : uint8_t {
+    // Indicate a up-to-date record
     Normal = 0,
+    // Indicate key of the record is updated
     Dirty,
+    // Indicate deleted or expired record
     Outdated,
   };
 
@@ -45,8 +48,8 @@ struct RecordMark {
 };
 
 const uint8_t ExpirableDataType =
-    (RecordMark::String | RecordMark::SortedHeader | RecordMark::HashRecord |
-     RecordMark::ListRecord);
+    (RecordMark::RecordType::String | RecordMark::RecordType::SortedHeader | RecordMark::RecordType::HashRecord |
+     RecordMark::RecordType::ListRecord);
 
 const uint8_t PrimaryDataType = ExpirableDataType;
 
@@ -84,7 +87,7 @@ struct DataEntry {
   DataEntry() = default;
 
   void Destroy() {
-    meta.mark.record_type = RecordMark::Empty;
+    meta.mark.record_type = RecordMark::RecordType::Empty;
     pmem_persist(&meta.mark, sizeof(RecordMark));
   }
 
@@ -187,7 +190,7 @@ struct StringRecord {
               _value.size()),
         old_version(_old_version),
         expired_time(_expired_time) {
-    kvdk_assert(_record_mark.record_type == RecordMark::String, "");
+    kvdk_assert(_record_mark.record_type == RecordMark::RecordType::String, "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
@@ -342,9 +345,9 @@ struct DLRecord {
         next(_next),
         expired_time(_expired_time) {
     kvdk_assert(_record_mark.record_type &
-                    (RecordMark::SortedElem | RecordMark::SortedHeader |
-                     RecordMark::HashElem | RecordMark::HashRecord |
-                     RecordMark::ListElem | RecordMark::ListRecord),
+                    (RecordMark::RecordType::SortedElem | RecordMark::RecordType::SortedHeader |
+                     RecordMark::RecordType::HashElem | RecordMark::RecordType::HashRecord |
+                     RecordMark::RecordType::ListElem | RecordMark::RecordType::ListRecord),
                 "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());

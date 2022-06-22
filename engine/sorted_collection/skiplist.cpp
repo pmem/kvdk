@@ -72,7 +72,7 @@ Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
   DLRecord* pmem_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr_checked(space_entry.offset),
       space_entry.size, timestamp,
-      RecordMark(RecordMark::SortedHeader, RecordMark::RecordStatus::Normal),
+      RecordMark(RecordMark::RecordType::SortedHeader, RecordMark::RecordStatus::Normal),
       pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
       header->Key(), header->Value(), expired_time);
   bool success = Skiplist::Replace(header, pmem_record, HeaderNode(),
@@ -396,10 +396,10 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
   if (IndexWithHashtable()) {
     if (op_delete) {
       args.lookup_result =
-          hash_table_->Lookup<false>(internal_key, RecordMark::SortedElem);
+          hash_table_->Lookup<false>(internal_key, RecordMark::RecordType::SortedElem);
     } else {
       args.lookup_result =
-          hash_table_->Lookup<true>(internal_key, RecordMark::SortedElem);
+          hash_table_->Lookup<true>(internal_key, RecordMark::RecordType::SortedElem);
     }
     switch (args.lookup_result.s) {
       case Status::Ok: {
@@ -427,7 +427,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
     Seek(args.key, args.seek_result.get());
     auto key_exist = [&]() {
       auto mark = args.seek_result->next_pmem_record->GetRecordMark();
-      return mark.record_type == RecordMark::SortedElem &&
+      return mark.record_type == RecordMark::RecordType::SortedElem &&
              mark.record_status == RecordMark::RecordStatus::Normal &&
              equal_string_view(args.seek_result->next_pmem_record->Key(),
                                internal_key);
@@ -501,8 +501,8 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
       // new record point to itself and break linkage of the old one for
       // recovery
       kvdk_assert(
-          new_record->GetRecordMark().record_type == RecordMark::SortedHeader &&
-              old_record->GetRecordMark().record_type == RecordMark::SortedHeader,
+          new_record->GetRecordMark().record_type == RecordMark::RecordType::SortedHeader &&
+              old_record->GetRecordMark().record_type == RecordMark::RecordType::SortedHeader,
           "Non-header record shouldn't be the only record in a skiplist");
       Skiplist::linkDLRecord(new_record, new_record, new_record,
                              pmem_allocator);
@@ -602,7 +602,7 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
     Splice splice(this);
     Seek(key, &splice);
     auto mark = splice.next_pmem_record->GetRecordMark();
-    if (mark.record_type == RecordMark::SortedElem &&
+    if (mark.record_type == RecordMark::RecordType::SortedElem &&
         mark.record_status != RecordMark::RecordStatus::Outdated &&
         equal_string_view(key, UserKey(splice.next_pmem_record))) {
       value->assign(splice.next_pmem_record->Value().data(),
@@ -613,7 +613,7 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
     }
   } else {
     std::string internal_key = InternalKey(key);
-    auto ret = hash_table_->Lookup<false>(internal_key, RecordMark::SortedElem);
+    auto ret = hash_table_->Lookup<false>(internal_key, RecordMark::RecordType::SortedElem);
     if (ret.s != Status::Ok ||
         ret.entry.GetRecordMark().record_status == RecordMark::RecordStatus::Outdated) {
       return Status::NotFound;
@@ -636,7 +636,7 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
       }
     }
     kvdk_assert(
-        pmem_record->GetRecordMark().record_type == RecordMark::SortedElem, "");
+        pmem_record->GetRecordMark().record_type == RecordMark::RecordType::SortedElem, "");
     // As get is lockless, skiplist node may point to a new elem delete record
     // after we get if from hashtable
     if (pmem_record->GetRecordMark().record_status == RecordMark::RecordStatus::Outdated) {
@@ -660,7 +660,7 @@ Skiplist::WriteResult Skiplist::putImplWithHash(const StringView& key,
     return ret;
   }
   auto lookup_result =
-      hash_table_->Lookup<true>(internal_key, RecordMark::SortedElem);
+      hash_table_->Lookup<true>(internal_key, RecordMark::RecordType::SortedElem);
   return putPreparedWithHash(lookup_result, key, value, timestamp, space);
 }
 
@@ -703,7 +703,7 @@ Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
       pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
   DLRecord* delete_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
-      RecordMark(RecordMark::SortedElem, RecordMark::RecordStatus::Outdated), existing_offset,
+      RecordMark(RecordMark::RecordType::SortedElem, RecordMark::RecordStatus::Outdated), existing_offset,
       prev_offset, next_offset, internal_key, "");
   ret.write_record = delete_record;
 
@@ -725,7 +725,7 @@ Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
   std::string internal_key(InternalKey(key));
   WriteResult ret;
   auto lookup_result =
-      hash_table_->Lookup<false>(internal_key, RecordMark::SortedElem);
+      hash_table_->Lookup<false>(internal_key, RecordMark::RecordType::SortedElem);
   if (lookup_result.s == Status::Ok &&
       lookup_result.entry.GetRecordMark().record_status !=
           RecordMark::RecordStatus::Outdated) {
@@ -748,7 +748,7 @@ Skiplist::WriteResult Skiplist::deleteImplNoHash(const StringView& key,
   Seek(key, &seek_result);
   auto mark = seek_result.next_pmem_record->GetRecordMark();
   bool key_exist =
-      mark.record_type == RecordMark::SortedElem &&
+      mark.record_type == RecordMark::RecordType::SortedElem &&
       mark.record_status == RecordMark::RecordStatus::Normal &&
       equal_string_view(seek_result.next_pmem_record->Key(), internal_key);
 
@@ -781,7 +781,7 @@ Skiplist::WriteResult Skiplist::deletePreparedWithHash(
   assert(IndexWithHashtable());
   assert(lookup_result.s == Status::Ok);
   assert(
-      lookup_result.entry.GetRecordMark().record_type == RecordMark::SortedElem &&
+      lookup_result.entry.GetRecordMark().record_type == RecordMark::RecordType::SortedElem &&
       lookup_result.entry.GetRecordMark().record_status == RecordMark::RecordStatus::Normal);
   assert(space.size >= DLRecord::RecordSize(internal_key, ""));
   DLRecord* existing_record;
@@ -802,7 +802,7 @@ Skiplist::WriteResult Skiplist::deletePreparedWithHash(
 
   // until here, new record is already inserted to list
   assert(ret.write_record != nullptr);
-  RecordMark mark(RecordMark::SortedElem, RecordMark::RecordStatus::Outdated);
+  RecordMark mark(RecordMark::RecordType::SortedElem, RecordMark::RecordStatus::Outdated);
   if (ret.dram_node == nullptr) {
     hash_table_->Insert(lookup_result, mark, ret.write_record,
                         PointerType::DLRecord);
@@ -821,7 +821,7 @@ Skiplist::WriteResult Skiplist::putPreparedWithHash(
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
-  RecordMark mark(RecordMark::SortedElem, RecordMark::RecordStatus::Normal);
+  RecordMark mark(RecordMark::RecordType::SortedElem, RecordMark::RecordStatus::Normal);
 
   switch (lookup_result.s) {
     case Status::Ok: {
@@ -907,7 +907,7 @@ seek_write_position:
       !IndexWithHashtable() /* a hash indexed skiplist call this
                                 function only if key not exist */
       && seek_result.next_pmem_record->GetRecordMark().record_type ==
-             RecordMark::SortedElem &&
+             RecordMark::RecordType::SortedElem &&
       equal_string_view(seek_result.next_pmem_record->Key(), internal_key);
 
   if (key_exist) {
@@ -944,7 +944,7 @@ seek_write_position:
   uint64_t next_offset = pmem_allocator_->addr2offset_checked(next_record);
   DLRecord* new_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
-      RecordMark(RecordMark::SortedElem, RecordMark::RecordStatus::Normal),
+      RecordMark(RecordMark::RecordType::SortedElem, RecordMark::RecordStatus::Normal),
       pmem_allocator_->addr2offset(ret.existing_record), prev_offset,
       next_offset, internal_key, value);
   ret.write_record = new_record;
@@ -1036,7 +1036,7 @@ void Skiplist::destroyAllRecords() {
             pmem_allocator_->offset2addr(to_destroy->old_version));
         while (old_record) {
           switch (old_record->GetRecordMark().record_type) {
-            case RecordMark::SortedElem: {
+            case RecordMark::RecordType::SortedElem: {
               old_record->entry.Destroy();
               to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
                                    old_record->entry.header.record_size);

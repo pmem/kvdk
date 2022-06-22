@@ -11,7 +11,7 @@ Status KVEngine::ListCreate(StringView key) {
   }
 
   auto guard = hash_table_->AcquireLock(key);
-  auto result = lookupKey<true>(key, RecordMark::ListRecord);
+  auto result = lookupKey<true>(key, RecordMark::RecordType::ListRecord);
   if (result.s == Status::Ok) {
     return Status::Existed;
   }
@@ -40,7 +40,7 @@ Status KVEngine::ListCreate(StringView key) {
     lists_.emplace(list);
   }
   insertKeyOrElem(result,
-                  RecordMark(RecordMark::ListRecord, RecordMark::RecordStatus::Normal), list);
+                  RecordMark(RecordMark::RecordType::ListRecord, RecordMark::RecordStatus::Normal), list);
   return Status::Ok;
 }
 
@@ -571,7 +571,7 @@ Status KVEngine::listDestroy(List* list) {
 }
 
 Status KVEngine::listFind(StringView key, List** list) {
-  auto result = lookupKey<false>(key, RecordMark::ListRecord);
+  auto result = lookupKey<false>(key, RecordMark::RecordType::ListRecord);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }
