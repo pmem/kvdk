@@ -52,7 +52,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
       return Status::PmemOverflow;
     }
 
-    RecordMark mark(RecordMark::SortedHeader, RecordMark::Normal);
+    RecordMark mark(RecordMark::SortedHeader, RecordMark::RecordStatus::Normal);
     // PMem level of skiplist is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
@@ -96,7 +96,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
     if (space_entry.size == 0) {
       return Status::PmemOverflow;
     }
-    RecordMark mark(RecordMark::SortedHeader, RecordMark::Outdated);
+    RecordMark mark(RecordMark::SortedHeader, RecordMark::RecordStatus::Outdated);
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space_entry.offset),
         space_entry.size, new_ts, mark,

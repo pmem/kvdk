@@ -194,7 +194,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
 
       bool outdated =
           valid_version_record->GetRecordMark().record_status ==
-              RecordMark::Outdated ||
+              RecordMark::RecordStatus::Outdated ||
           TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
 
       if (outdated) {
@@ -357,7 +357,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       DLRecord* valid_version_record = findCheckpointVersion(next_record);
       if (valid_version_record == nullptr ||
           valid_version_record->GetRecordMark().record_status ==
-              RecordMark::Outdated) {
+              RecordMark::RecordStatus::Outdated) {
         bool success = Skiplist::Remove(next_record, nullptr,
                                         kv_engine_->pmem_allocator_.get(),
                                         kv_engine_->skiplist_locks_.get());
@@ -515,7 +515,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 
     if (valid_version_record == nullptr ||
         valid_version_record->GetRecordMark().record_status ==
-            RecordMark::Outdated) {
+            RecordMark::RecordStatus::Outdated) {
       // purge invalid version record from list
       bool success = Skiplist::Remove(next_record, nullptr,
                                       kv_engine_->pmem_allocator_.get(),

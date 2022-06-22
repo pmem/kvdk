@@ -342,7 +342,7 @@ class KVEngine : public Engine {
     if (ret.s != Status::NotFound && ret.s != Status::Outdated) {
       return ret.s;
     }
-    insertKeyOrElem(ret, RecordMark(type, RecordMark::Normal), coll);
+    insertKeyOrElem(ret, RecordMark(type, RecordMark::RecordStatus::Normal), coll);
     return Status::Ok;
   }
 

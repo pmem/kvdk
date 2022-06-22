@@ -61,7 +61,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
       StringRecord* new_record =
           pmem_allocator_->offset2addr_checked<StringRecord>(
               space_entry.offset);
-      RecordMark mark(RecordMark::String, RecordMark::Normal);
+      RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Normal);
       StringRecord::PersistStringRecord(
           new_record, space_entry.size, new_ts, mark,
           existing_record == nullptr
@@ -81,7 +81,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
         void* pmem_ptr =
             pmem_allocator_->offset2addr_checked(space_entry.offset);
-        RecordMark mark(RecordMark::String, RecordMark::Outdated);
+        RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Outdated);
         StringRecord::PersistStringRecord(
             pmem_ptr, space_entry.size, new_ts, mark,
             pmem_allocator_->addr2offset_checked(existing_record), key, "");
@@ -167,7 +167,7 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
     }
 
     void* pmem_ptr = pmem_allocator_->offset2addr_checked(space_entry.offset);
-    RecordMark mark(RecordMark::String, RecordMark::Outdated);
+    RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Outdated);
     StringRecord::PersistStringRecord(
         pmem_ptr, space_entry.size, new_ts, mark,
         pmem_allocator_->addr2offset_checked(
@@ -225,7 +225,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
 
   StringRecord* new_record =
       pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
-  RecordMark mark(RecordMark::String, RecordMark::Normal);
+  RecordMark mark(RecordMark::String, RecordMark::RecordStatus::Normal);
   StringRecord::PersistStringRecord(
       new_record, space_entry.size, new_ts, mark,
       pmem_allocator_->addr2offset(existing_record), key, value, expired_time);
@@ -299,8 +299,8 @@ Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
 
 Status KVEngine::stringWrite(StringWriteArgs& args) {
   RecordMark mark(RecordMark::String, args.op == WriteBatchImpl::Op::Put
-                                          ? RecordMark::Normal
-                                          : RecordMark::Outdated);
+                                          ? RecordMark::RecordStatus::Normal
+                                          : RecordMark::RecordStatus::Outdated);
   void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
   PMemOffsetType old_off;
   if (args.res.s == Status::NotFound) {
@@ -318,8 +318,8 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
 
 Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
   RecordMark mark(RecordMark::String, args.op == WriteBatchImpl::Op::Put
-                                          ? RecordMark::Normal
-                                          : RecordMark::Outdated);
+                                          ? RecordMark::RecordStatus::Normal
+                                          : RecordMark::RecordStatus::Outdated);
   insertKeyOrElem(args.res, mark, const_cast<StringRecord*>(args.new_rec));
   return Status::Ok;
 }

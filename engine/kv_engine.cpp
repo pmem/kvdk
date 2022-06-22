@@ -267,7 +267,7 @@ Status KVEngine::RestoreData() {
       case RecordMark::HashElem:
       case RecordMark::ListRecord:
       case RecordMark::ListElem: {
-        if (data_entry_cached.meta.mark.record_status == RecordMark::Dirty) {
+        if (data_entry_cached.meta.mark.record_status == RecordMark::RecordStatus::Dirty) {
           data_entry_cached.meta.mark.record_type = RecordMark::Empty;
         } else {
           if (!ValidateRecord(recovering_pmem_record)) {
@@ -434,7 +434,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                 pmem_allocator_->offset2addr<StringRecord>(record->old_version);
           }
           if (record &&
-              record->GetRecordMark().record_status == RecordMark::Normal &&
+              record->GetRecordMark().record_status == RecordMark::RecordStatus::Normal &&
               !record->HasExpired()) {
             s = backup.Append(RecordMark::String, record->Key(),
                               record->Value(), record->GetExpireTime());
@@ -448,7 +448,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                 pmem_allocator_->offset2addr<DLRecord>(header->old_version);
           }
           if (header &&
-              header->GetRecordMark().record_status == RecordMark::Normal &&
+              header->GetRecordMark().record_status == RecordMark::RecordStatus::Normal &&
               !header->HasExpired()) {
             s = backup.Append(RecordMark::SortedHeader, header->Key(),
                               header->Value(), header->GetExpireTime());
@@ -1275,7 +1275,7 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
   // TODO: fix mvcc of different type keys
   if (!type_match) {
     result.s = Status::WrongType;
-  } else if (mark.record_status == RecordMark::Outdated) {
+  } else if (mark.record_status == RecordMark::RecordStatus::Outdated) {
     result.s = Status::Outdated;
   } else {
     switch (mark.record_type) {

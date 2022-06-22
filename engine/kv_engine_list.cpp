@@ -40,7 +40,7 @@ Status KVEngine::ListCreate(StringView key) {
     lists_.emplace(list);
   }
   insertKeyOrElem(result,
-                  RecordMark(RecordMark::ListRecord, RecordMark::Normal), list);
+                  RecordMark(RecordMark::ListRecord, RecordMark::RecordStatus::Normal), list);
   return Status::Ok;
 }
 

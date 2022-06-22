@@ -32,13 +32,13 @@ void KVEngine::purgeAndFreeStringRecords(
   for (auto old_record : old_records) {
     while (old_record) {
       switch (old_record->GetRecordMark().record_status) {
-        case RecordMark::Normal:
+        case RecordMark::RecordStatus::Normal:
           old_record->entry.Destroy();
           entries.emplace_back(pmem_allocator_->addr2offset(old_record),
                                old_record->entry.header.record_size);
           break;
-        case RecordMark::Outdated:
-        case RecordMark::Dirty:
+        case RecordMark::RecordStatus::Outdated:
+        case RecordMark::RecordStatus::Dirty:
           entries.emplace_back(pmem_allocator_->addr2offset(old_record),
                                old_record->entry.header.record_size);
           break;
@@ -65,13 +65,13 @@ void KVEngine::purgeAndFreeDLRecords(
         case RecordMark::SortedElem: {
           entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                pmem_record->entry.header.record_size);
-          if (mark.record_status == RecordMark::Normal) {
+          if (mark.record_status == RecordMark::RecordStatus::Normal) {
             pmem_record->Destroy();
           }
           break;
         }
         case RecordMark::SortedHeader: {
-          if (mark.record_status == RecordMark::Normal) {
+          if (mark.record_status == RecordMark::RecordStatus::Normal) {
             entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                  pmem_record->entry.header.record_size);
             pmem_record->Destroy();
@@ -143,7 +143,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
         pmem_allocator_->offset2addr<DLRecord>(cur_record->next);
     auto mark = cur_record->GetRecordMark();
     if (mark.record_type == RecordMark::SortedElem &&
-        mark.record_status == RecordMark::Outdated &&
+        mark.record_status == RecordMark::RecordStatus::Outdated &&
         cur_record->GetTimestamp() < min_snapshot_ts) {
       TEST_SYNC_POINT(
           "KVEngine::BackgroundCleaner::IterSkiplist::"
@@ -264,7 +264,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   need_purge_num++;
                 }
                 if ((string_record->GetRecordMark().record_status ==
-                         RecordMark::Outdated ||
+                         RecordMark::RecordStatus::Outdated ||
                      string_record->GetExpireTime() <= now) &&
                     string_record->GetTimestamp() < min_snapshot_ts) {
                   hash_table_->Erase(&(*slot_iter));
@@ -284,7 +284,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   need_purge_num++;
                 }
                 if (slot_iter->GetRecordMark().record_status ==
-                        RecordMark::Outdated &&
+                        RecordMark::RecordStatus::Outdated &&
                     dl_record->entry.meta.timestamp < min_snapshot_ts) {
                   bool success =
                       Skiplist::Remove(dl_record, node, pmem_allocator_.get(),
@@ -306,7 +306,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   need_purge_num++;
                 }
                 if (slot_iter->GetRecordMark().record_status ==
-                        RecordMark::Outdated &&
+                        RecordMark::RecordStatus::Outdated &&
                     dl_record->entry.meta.timestamp < min_snapshot_ts) {
                   bool success = Skiplist::Remove(dl_record, nullptr,
                                                   pmem_allocator_.get(),
@@ -329,7 +329,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   need_purge_num++;
                 }
                 if ((slot_iter->GetRecordMark().record_status ==
-                         RecordMark::Outdated ||
+                         RecordMark::RecordStatus::Outdated ||
                      head_record->GetExpireTime() <= now) &&
                     head_record->entry.meta.timestamp < min_snapshot_ts) {
                   hash_table_->Erase(&(*slot_iter));

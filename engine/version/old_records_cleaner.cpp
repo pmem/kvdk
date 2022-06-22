@@ -15,7 +15,7 @@ void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
        (RecordMark::ListRecord | RecordMark::ListElem | RecordMark::HashRecord |
         RecordMark::HashElem)) &&
           (static_cast<DLRecord*>(addr)->GetRecordMark().record_status ==
-           RecordMark::Dirty),
+           RecordMark::RecordStatus::Dirty),
       "");
   kvdk_assert(access_thread.id >= 0, "");
   auto& tc = cleaner_thread_cache_[access_thread.id];

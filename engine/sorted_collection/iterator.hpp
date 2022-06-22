@@ -98,7 +98,7 @@ class SortedIterator : public Iterator {
       DLRecord* valid_version_record = findValidVersion(current_);
       if (valid_version_record == nullptr ||
           valid_version_record->entry.meta.mark.record_status ==
-              RecordMark::Outdated) {
+              RecordMark::RecordStatus::Outdated) {
         current_ =
             forward
                 ? pmem_allocator_->offset2addr_checked<DLRecord>(current_->next)

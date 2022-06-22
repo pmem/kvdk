@@ -15,7 +15,7 @@
 namespace KVDK_NAMESPACE {
 
 struct RecordMark {
-  enum RecordStatus : uint8_t {
+  enum class RecordStatus : uint8_t {
     Normal = 0,
     Dirty,
     Outdated,
@@ -36,7 +36,7 @@ struct RecordMark {
       : record_type(type), record_status(s) {}
 
   RecordMark(RecordType type)
-      : record_type(type), record_status(RecordMark::Normal) {}
+      : record_type(type), record_status(RecordMark::RecordStatus::Normal) {}
 
   RecordMark() = default;
 

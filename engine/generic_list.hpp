@@ -581,20 +581,20 @@ class GenericList final : public Collection {
 
   static void markRecordAsDirty(DLRecord* rec) {
     auto& entry = rec->entry;
-    entry.meta.mark.record_status = RecordMark::Dirty;
+    entry.meta.mark.record_status = RecordMark::RecordStatus::Dirty;
     _mm_clwb(&entry.meta.mark.record_status);
     _mm_mfence();
   }
 
   static void cleanRecordDirtyMark(DLRecord* rec) {
     auto& entry = rec->entry;
-    entry.meta.mark.record_status = RecordMark::Normal;
+    entry.meta.mark.record_status = RecordMark::RecordStatus::Normal;
     _mm_clwb(&entry.meta.mark.record_status);
     _mm_mfence();
   }
 
   static bool isRecordDirty(DLRecord* rec) {
-    return rec->entry.meta.mark.record_status == RecordMark::Dirty;
+    return rec->entry.meta.mark.record_status == RecordMark::RecordStatus::Dirty;
   }
 };
 
