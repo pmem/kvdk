@@ -26,9 +26,9 @@ struct RecordMark {
     String = (1 << 0),
     SortedHeader = (1 << 1),
     SortedElem = (1 << 2),
-    HashHeader = (1 << 3),
+    HashRecord = (1 << 3),
     HashElem = (1 << 4),
-    ListHeader = (1 << 5),
+    ListRecord = (1 << 5),
     ListElem = (1 << 6),
   };
 
@@ -45,8 +45,8 @@ struct RecordMark {
 };
 
 const uint8_t ExpirableDataType =
-    (RecordMark::String | RecordMark::SortedHeader | RecordMark::HashHeader |
-     RecordMark::ListHeader);
+    (RecordMark::String | RecordMark::SortedHeader | RecordMark::HashRecord |
+     RecordMark::ListRecord);
 
 const uint8_t PrimaryDataType = ExpirableDataType;
 
@@ -187,7 +187,7 @@ struct StringRecord {
               _value.size()),
         old_version(_old_version),
         expired_time(_expired_time) {
-    assert(_record_mark.data_type == RecordMark::String);
+    kvdk_assert(_record_mark.data_type == RecordMark::String, "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
@@ -341,7 +341,11 @@ struct DLRecord {
         prev(_prev),
         next(_next),
         expired_time(_expired_time) {
-    // assert(_record_type & DLRecordType);
+    kvdk_assert(_record_mark.data_type &
+                    (RecordMark::SortedElem | RecordMark::SortedHeader |
+                     RecordMark::HashElem | RecordMark::HashRecord |
+                     RecordMark::ListElem | RecordMark::ListRecord),
+                "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();

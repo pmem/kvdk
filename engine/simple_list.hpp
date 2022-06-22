@@ -7,9 +7,9 @@
 #include "kvdk/iterator.hpp"
 
 namespace KVDK_NAMESPACE {
-using List = GenericList<RecordMark::ListHeader, RecordMark::ListElem>;
+using List = GenericList<RecordMark::ListRecord, RecordMark::ListElem>;
 using ListBuilder =
-    GenericListBuilder<RecordMark::ListHeader, RecordMark::ListElem>;
+    GenericListBuilder<RecordMark::ListRecord, RecordMark::ListElem>;
 
 class ListIteratorImpl final : public ListIterator {
  public:

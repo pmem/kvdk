@@ -14,7 +14,7 @@ Status KVEngine::HashCreate(StringView key) {
   }
 
   auto guard = hash_table_->AcquireLock(key);
-  auto result = lookupKey<true>(key, RecordMark::HashHeader);
+  auto result = lookupKey<true>(key, RecordMark::HashRecord);
   if (result.s == Status::Ok) {
     return Status::Existed;
   }
@@ -43,7 +43,7 @@ Status KVEngine::HashCreate(StringView key) {
     hash_lists_.emplace(hlist);
   }
   insertKeyOrElem(
-      result, RecordMark(RecordMark::HashHeader, RecordMark::Normal), hlist);
+      result, RecordMark(RecordMark::HashRecord, RecordMark::Normal), hlist);
   return Status::Ok;
 }
 
@@ -263,7 +263,7 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key,
 Status KVEngine::hashListFind(StringView key, HashList** hlist) {
   // Callers should acquire the access token or snapshot.
   // Lockless lookup for the collection
-  auto result = lookupKey<false>(key, RecordMark::HashHeader);
+  auto result = lookupKey<false>(key, RecordMark::HashRecord);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }

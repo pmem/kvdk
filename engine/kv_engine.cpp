@@ -263,9 +263,9 @@ Status KVEngine::RestoreData() {
       case RecordMark::SortedElem:
       case RecordMark::SortedHeader:
       case RecordMark::String:
-      case RecordMark::HashHeader:
+      case RecordMark::HashRecord:
       case RecordMark::HashElem:
-      case RecordMark::ListHeader:
+      case RecordMark::ListRecord:
       case RecordMark::ListElem: {
         if (data_entry_cached.meta.mark.record_status == RecordMark::Dirty) {
           data_entry_cached.meta.mark.data_type = RecordMark::Empty;
@@ -327,7 +327,7 @@ Status KVEngine::RestoreData() {
             data_entry_cached);
         break;
       }
-      case RecordMark::ListHeader: {
+      case RecordMark::ListRecord: {
         s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -335,7 +335,7 @@ Status KVEngine::RestoreData() {
         s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordMark::HashHeader: {
+      case RecordMark::HashRecord: {
         s = hashListRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -369,9 +369,9 @@ bool KVEngine::ValidateRecord(void* data_record) {
     }
     case RecordMark::SortedHeader:
     case RecordMark::SortedElem:
-    case RecordMark::HashHeader:
+    case RecordMark::HashRecord:
     case RecordMark::HashElem:
-    case RecordMark::ListHeader:
+    case RecordMark::ListRecord:
     case RecordMark::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
@@ -1286,8 +1286,8 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
         break;
       }
       case RecordMark::SortedHeader:
-      case RecordMark::ListHeader:
-      case RecordMark::HashHeader: {
+      case RecordMark::ListRecord:
+      case RecordMark::HashRecord: {
         result.s =
             static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired()
                 ? Status::Outdated

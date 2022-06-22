@@ -272,10 +272,11 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordMark::SortedHeader
-           : std::is_same<CollectionType, List>::value ? RecordMark::ListHeader
-           : std::is_same<CollectionType, HashList>::value
-               ? RecordMark::HashHeader
-               : RecordMark::Empty;
+               : std::is_same<CollectionType, List>::value
+                     ? RecordMark::ListRecord
+                     : std::is_same<CollectionType, HashList>::value
+                           ? RecordMark::HashRecord
+                           : RecordMark::Empty;
   }
 
   static PointerType pointerType(RecordMark::DataType rtype) {
@@ -293,10 +294,10 @@ class KVEngine : public Engine {
       case RecordMark::SortedHeader: {
         return PointerType::Skiplist;
       }
-      case RecordMark::ListHeader: {
+      case RecordMark::ListRecord: {
         return PointerType::List;
       }
-      case RecordMark::HashHeader: {
+      case RecordMark::HashRecord: {
         return PointerType::HashList;
       }
       case RecordMark::HashElem: {
