@@ -39,8 +39,8 @@ Status KVEngine::ListCreate(StringView key) {
     }
     lists_.emplace(list);
   }
-  insertKeyOrElem(result,
-                  RecordMark(RecordType::ListRecord, RecordStatus::Normal), list);
+  insertKeyOrElem(
+      result, RecordMark(RecordType::ListRecord, RecordStatus::Normal), list);
   return Status::Ok;
 }
 

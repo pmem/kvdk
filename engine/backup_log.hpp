@@ -171,8 +171,8 @@ class BackupLog {
   }
 
   // Append a record to backup log
-  Status Append(RecordType type, const StringView& key,
-                const StringView& val, ExpireTimeType expire_time) {
+  Status Append(RecordType type, const StringView& key, const StringView& val,
+                ExpireTimeType expire_time) {
     if (finished()) {
       changeStage(BackupStage::NotFinished);
     }

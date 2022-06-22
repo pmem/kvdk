@@ -45,7 +45,8 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 }
 
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
-  assert(header_record->GetRecordMark().record_type == RecordType::SortedHeader);
+  assert(header_record->GetRecordMark().record_type ==
+         RecordType::SortedHeader);
 
   bool linked_record = checkAndRepairRecordLinkage(header_record);
 
@@ -320,9 +321,9 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
   size_t num_elems = 0;
   // First insert hash index for the start node
   if (start_node->record != segment_owner->HeaderRecord()) {
-    kvdk_assert(
-        start_node->record->GetRecordMark().record_type == RecordType::SortedElem,
-        "Wrong start node of skiplist segment");
+    kvdk_assert(start_node->record->GetRecordMark().record_type ==
+                    RecordType::SortedElem,
+                "Wrong start node of skiplist segment");
     num_elems++;
     if (build_hash_index) {
       s = insertHashIndex(start_node->record->Key(), start_node,

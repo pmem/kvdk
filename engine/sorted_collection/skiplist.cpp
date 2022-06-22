@@ -502,7 +502,8 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
       // recovery
       kvdk_assert(
           new_record->GetRecordMark().record_type == RecordType::SortedHeader &&
-              old_record->GetRecordMark().record_type == RecordType::SortedHeader,
+              old_record->GetRecordMark().record_type ==
+                  RecordType::SortedHeader,
           "Non-header record shouldn't be the only record in a skiplist");
       Skiplist::linkDLRecord(new_record, new_record, new_record,
                              pmem_allocator);
@@ -703,8 +704,8 @@ Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
       pmem_allocator_->offset2addr_checked<DLRecord>(next_offset);
   DLRecord* delete_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr(space.offset), space.size, timestamp,
-      RecordMark(RecordType::SortedElem, RecordStatus::Outdated), existing_offset,
-      prev_offset, next_offset, internal_key, "");
+      RecordMark(RecordType::SortedElem, RecordStatus::Outdated),
+      existing_offset, prev_offset, next_offset, internal_key, "");
   ret.write_record = delete_record;
 
   kvdk_assert(prev_record->next == existing_offset,
@@ -780,9 +781,10 @@ Skiplist::WriteResult Skiplist::deletePreparedWithHash(
   std::string internal_key(InternalKey(key));
   assert(IndexWithHashtable());
   assert(lookup_result.s == Status::Ok);
-  assert(
-      lookup_result.entry.GetRecordMark().record_type == RecordType::SortedElem &&
-      lookup_result.entry.GetRecordMark().record_status == RecordStatus::Normal);
+  assert(lookup_result.entry.GetRecordMark().record_type ==
+             RecordType::SortedElem &&
+         lookup_result.entry.GetRecordMark().record_status ==
+             RecordStatus::Normal);
   assert(space.size >= DLRecord::RecordSize(internal_key, ""));
   DLRecord* existing_record;
   SkiplistNode* dram_node;

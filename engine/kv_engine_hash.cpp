@@ -296,8 +296,8 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
     return result.s;
   }
   kvdk_assert(result.s == Status::NotFound, "Impossible!");
-  insertKeyOrElem(result, RecordMark(RecordType::HashElem, RecordStatus::Normal),
-                  rec);
+  insertKeyOrElem(result,
+                  RecordMark(RecordType::HashElem, RecordStatus::Normal), rec);
 
   return Status::Ok;
 }
