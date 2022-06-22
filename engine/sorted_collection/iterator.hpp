@@ -45,7 +45,7 @@ class SortedIterator : public Iterator {
 
   virtual bool Valid() override {
     return (current_ != nullptr &&
-            current_->GetRecordMark().record_type == RecordType::SortedElem);
+            current_->GetRecordMark().type == RecordType::SortedElem);
   }
 
   virtual void Next() override {
@@ -97,7 +97,7 @@ class SortedIterator : public Iterator {
     while (Valid()) {
       DLRecord* valid_version_record = findValidVersion(current_);
       if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.mark.record_status ==
+          valid_version_record->GetRecordMark().status ==
               RecordStatus::Outdated) {
         current_ =
             forward

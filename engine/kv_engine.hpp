@@ -261,7 +261,7 @@ class KVEngine : public Engine {
   // lookupElem or lookupKey
   void insertKeyOrElem(HashTable::LookupResult ret, RecordMark mark,
                        void* addr) {
-    hash_table_->Insert(ret, mark, addr, pointerType(mark.record_type));
+    hash_table_->Insert(ret, mark, addr, pointerType(mark.type));
   }
 
   template <typename CollectionType>

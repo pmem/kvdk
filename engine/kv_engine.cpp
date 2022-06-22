@@ -248,7 +248,7 @@ Status KVEngine::RestoreData() {
       DataEntry* recovering_pmem_data_entry =
           static_cast<DataEntry*>(recovering_pmem_record);
       uint64_t padding_size = segment_recovering.size;
-      recovering_pmem_data_entry->meta.mark.record_type = RecordType::Empty;
+      recovering_pmem_data_entry->meta.mark.type = RecordType::Empty;
       pmem_persist(&recovering_pmem_data_entry->meta.mark, sizeof(RecordMark));
       recovering_pmem_data_entry->header.record_size = padding_size;
       pmem_persist(&recovering_pmem_data_entry->header.record_size,
@@ -259,7 +259,7 @@ Status KVEngine::RestoreData() {
     segment_recovering.size -= data_entry_cached.header.record_size;
     segment_recovering.offset += data_entry_cached.header.record_size;
 
-    switch (data_entry_cached.meta.mark.record_type) {
+    switch (data_entry_cached.meta.mark.type) {
       case RecordType::SortedElem:
       case RecordType::SortedHeader:
       case RecordType::String:
@@ -267,13 +267,13 @@ Status KVEngine::RestoreData() {
       case RecordType::HashElem:
       case RecordType::ListRecord:
       case RecordType::ListElem: {
-        if (data_entry_cached.meta.mark.record_status == RecordStatus::Dirty) {
-          data_entry_cached.meta.mark.record_type = RecordType::Empty;
+        if (data_entry_cached.meta.mark.status == RecordStatus::Dirty) {
+          data_entry_cached.meta.mark.type = RecordType::Empty;
         } else {
           if (!ValidateRecord(recovering_pmem_record)) {
             // Checksum dismatch, mark as padding to be Freed
             // Otherwise the Restore will continue normally
-            data_entry_cached.meta.mark.record_type = RecordType::Empty;
+            data_entry_cached.meta.mark.type = RecordType::Empty;
           }
         }
         break;
@@ -286,10 +286,10 @@ Status KVEngine::RestoreData() {
         GlobalLogger.Error(
             "Corrupted Record met when recovering. It has invalid "
             "type. Record data type: %u, Checksum: %u\n",
-            data_entry_cached.meta.mark.record_type,
+            data_entry_cached.meta.mark.type,
             data_entry_cached.header.checksum);
         kvdk_assert(data_entry_cached.header.checksum == 0, "");
-        data_entry_cached.meta.mark.record_type = RecordType::Empty;
+        data_entry_cached.meta.mark.type = RecordType::Empty;
         break;
       }
     }
@@ -297,7 +297,7 @@ Status KVEngine::RestoreData() {
     // When met records with invalid checksum
     // or the space is padding, empty or with corrupted record
     // Free the space and fetch another
-    if (data_entry_cached.meta.mark.record_type == RecordType::Empty) {
+    if (data_entry_cached.meta.mark.type == RecordType::Empty) {
       pmem_allocator_->Free(SpaceEntry(
           pmem_allocator_->addr2offset_checked(recovering_pmem_record),
           data_entry_cached.header.record_size));
@@ -312,7 +312,7 @@ Status KVEngine::RestoreData() {
         std::max(data_entry_cached.meta.timestamp,
                  engine_thread_cache.newest_restored_ts);
 
-    switch (data_entry_cached.meta.mark.record_type) {
+    switch (data_entry_cached.meta.mark.type) {
       case RecordType::SortedElem: {
         s = restoreSortedElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
@@ -347,7 +347,7 @@ Status KVEngine::RestoreData() {
         GlobalLogger.Error(
             "Invalid Record type when recovering. Trying "
             "restoring record. Record data type: %u\n",
-            data_entry_cached.meta.mark.record_type);
+            data_entry_cached.meta.mark.type);
         s = Status::Abort;
       }
     }
@@ -363,7 +363,7 @@ Status KVEngine::RestoreData() {
 bool KVEngine::ValidateRecord(void* data_record) {
   assert(data_record);
   DataEntry* entry = static_cast<DataEntry*>(data_record);
-  switch (entry->meta.mark.record_type) {
+  switch (entry->meta.mark.type) {
     case RecordType::String: {
       return static_cast<StringRecord*>(data_record)->Validate();
     }
@@ -426,7 +426,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
     auto slot_iter = hashtable_iterator.Slot();
     while (slot_iter.Valid()) {
       auto mark = slot_iter->GetRecordMark();
-      switch (mark.record_type) {
+      switch (mark.type) {
         case RecordType::String: {
           StringRecord* record = slot_iter->GetIndex().string_record;
           while (record != nullptr && record->GetTimestamp() > backup_ts) {
@@ -434,7 +434,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                 pmem_allocator_->offset2addr<StringRecord>(record->old_version);
           }
           if (record &&
-              record->GetRecordMark().record_status == RecordStatus::Normal &&
+              record->GetRecordMark().status == RecordStatus::Normal &&
               !record->HasExpired()) {
             s = backup.Append(RecordType::String, record->Key(),
                               record->Value(), record->GetExpireTime());
@@ -448,7 +448,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                 pmem_allocator_->offset2addr<DLRecord>(header->old_version);
           }
           if (header &&
-              header->GetRecordMark().record_status == RecordStatus::Normal &&
+              header->GetRecordMark().status == RecordStatus::Normal &&
               !header->HasExpired()) {
             s = backup.Append(RecordType::SortedHeader, header->Key(),
                               header->Value(), header->GetExpireTime());
@@ -1270,15 +1270,15 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
   }
 
   auto mark = result.entry.GetRecordMark();
-  bool type_match = type_mask & mark.record_type;
+  bool type_match = type_mask & mark.type;
 
   // TODO: fix mvcc of different type keys
   if (!type_match) {
     result.s = Status::WrongType;
-  } else if (mark.record_status == RecordStatus::Outdated) {
+  } else if (mark.status == RecordStatus::Outdated) {
     result.s = Status::Outdated;
   } else {
-    switch (mark.record_type) {
+    switch (mark.type) {
       case RecordType::String: {
         result.s = result.entry.GetIndex().string_record->HasExpired()
                        ? Status::Outdated

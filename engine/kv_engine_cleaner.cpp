@@ -31,7 +31,7 @@ void KVEngine::purgeAndFreeStringRecords(
   std::vector<SpaceEntry> entries;
   for (auto old_record : old_records) {
     while (old_record) {
-      switch (old_record->GetRecordMark().record_status) {
+      switch (old_record->GetRecordMark().status) {
         case RecordStatus::Normal:
           old_record->entry.Destroy();
           entries.emplace_back(pmem_allocator_->addr2offset(old_record),
@@ -61,17 +61,17 @@ void KVEngine::purgeAndFreeDLRecords(
       DLRecord* next_record =
           pmem_allocator_->offset2addr<DLRecord>(pmem_record->old_version);
       auto mark = pmem_record->GetRecordMark();
-      switch (mark.record_type) {
+      switch (mark.type) {
         case RecordType::SortedElem: {
           entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                pmem_record->entry.header.record_size);
-          if (mark.record_status == RecordStatus::Normal) {
+          if (mark.status == RecordStatus::Normal) {
             pmem_record->Destroy();
           }
           break;
         }
         case RecordType::SortedHeader: {
-          if (mark.record_status == RecordStatus::Normal) {
+          if (mark.status == RecordStatus::Normal) {
             entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                  pmem_record->entry.header.record_size);
             pmem_record->Destroy();
@@ -104,7 +104,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
   auto prev_node = skiplist->HeaderNode();
   auto cur_record =
       pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
-  while (cur_record->GetRecordMark().record_type == RecordType::SortedElem) {
+  while (cur_record->GetRecordMark().type == RecordType::SortedElem) {
     auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
     auto ul = hash_table_->AcquireLock(cur_record->Key());
     // iter old version list
@@ -122,7 +122,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
         // cur_node already been deleted
         cur_node = cur_node->Next(1).RawPointer();
       } else {
-        kvdk_assert(cur_node->record->GetRecordMark().record_type ==
+        kvdk_assert(cur_node->record->GetRecordMark().type ==
                         RecordType::SortedElem,
                     "");
         if (skiplist->Compare(cur_node->UserKey(),
@@ -142,8 +142,8 @@ void KVEngine::cleanNoHashIndexedSkiplist(
     DLRecord* next_record =
         pmem_allocator_->offset2addr<DLRecord>(cur_record->next);
     auto mark = cur_record->GetRecordMark();
-    if (mark.record_type == RecordType::SortedElem &&
-        mark.record_status == RecordStatus::Outdated &&
+    if (mark.type == RecordType::SortedElem &&
+        mark.status == RecordStatus::Outdated &&
         cur_record->GetTimestamp() < min_snapshot_ts) {
       TEST_SYNC_POINT(
           "KVEngine::BackgroundCleaner::IterSkiplist::"
@@ -263,7 +263,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   purge_string_records.emplace_back(old_record);
                   need_purge_num++;
                 }
-                if ((string_record->GetRecordMark().record_status ==
+                if ((string_record->GetRecordMark().status ==
                          RecordStatus::Outdated ||
                      string_record->GetExpireTime() <= now) &&
                     string_record->GetTimestamp() < min_snapshot_ts) {
@@ -283,7 +283,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
                 }
-                if (slot_iter->GetRecordMark().record_status ==
+                if (slot_iter->GetRecordMark().status ==
                         RecordStatus::Outdated &&
                     dl_record->entry.meta.timestamp < min_snapshot_ts) {
                   bool success =
@@ -305,7 +305,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
                 }
-                if (slot_iter->GetRecordMark().record_status ==
+                if (slot_iter->GetRecordMark().status ==
                         RecordStatus::Outdated &&
                     dl_record->entry.meta.timestamp < min_snapshot_ts) {
                   bool success = Skiplist::Remove(dl_record, nullptr,
@@ -328,7 +328,7 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
                   purge_dl_records.emplace_back(old_record);
                   need_purge_num++;
                 }
-                if ((slot_iter->GetRecordMark().record_status ==
+                if ((slot_iter->GetRecordMark().status ==
                          RecordStatus::Outdated ||
                      head_record->GetExpireTime() <= now) &&
                     head_record->entry.meta.timestamp < min_snapshot_ts) {

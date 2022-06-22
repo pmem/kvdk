@@ -35,16 +35,16 @@ enum class RecordStatus : uint8_t {
 };
 
 struct RecordMark {
-  RecordMark(RecordType type, RecordStatus s)
-      : record_type(type), record_status(s) {}
+  explicit RecordMark(RecordType type, RecordStatus s)
+      : type(type), status(s) {}
 
-  RecordMark(RecordType type)
-      : record_type(type), record_status(RecordStatus::Normal) {}
+  explicit RecordMark(RecordType type)
+      : type(type), status(RecordStatus::Normal) {}
 
   RecordMark() = default;
 
-  RecordType record_type;
-  RecordStatus record_status;
+  RecordType type;
+  RecordStatus status;
 };
 
 const uint8_t ExpirableRecordType =
@@ -87,7 +87,7 @@ struct DataEntry {
   DataEntry() = default;
 
   void Destroy() {
-    meta.mark.record_type = RecordType::Empty;
+    meta.mark.type = RecordType::Empty;
     pmem_persist(&meta.mark, sizeof(RecordMark));
   }
 
@@ -190,7 +190,7 @@ struct StringRecord {
               _value.size()),
         old_version(_old_version),
         expired_time(_expired_time) {
-    kvdk_assert(_record_mark.record_type == RecordType::String, "");
+    kvdk_assert(_record_mark.type == RecordType::String, "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
@@ -276,7 +276,7 @@ struct DLRecord {
   }
 
   void PersistExpireTimeNT(ExpireTimeType time) {
-    kvdk_assert(entry.meta.mark.record_type & ExpirableRecordType, "");
+    kvdk_assert(entry.meta.mark.type & ExpirableRecordType, "");
     _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
                     static_cast<long long>(time));
     _mm_mfence();
@@ -295,7 +295,7 @@ struct DLRecord {
   }
 
   void PersistExpireTimeCLWB(ExpireTimeType time) {
-    kvdk_assert(entry.meta.mark.record_type & ExpirableRecordType, "");
+    kvdk_assert(entry.meta.mark.type & ExpirableRecordType, "");
     expired_time = time;
     _mm_clwb(&expired_time);
     _mm_mfence();
@@ -308,7 +308,7 @@ struct DLRecord {
   }
 
   ExpireTimeType GetExpireTime() const {
-    kvdk_assert(entry.meta.mark.record_type & ExpirableRecordType,
+    kvdk_assert(entry.meta.mark.type & ExpirableRecordType,
                 "Call DLRecord::GetExpireTime with an unexpirable type");
     return expired_time;
   }
@@ -344,11 +344,11 @@ struct DLRecord {
         prev(_prev),
         next(_next),
         expired_time(_expired_time) {
-    kvdk_assert(_record_mark.record_type &
-                    (RecordType::SortedElem | RecordType::SortedHeader |
-                     RecordType::HashElem | RecordType::HashRecord |
-                     RecordType::ListElem | RecordType::ListRecord),
-                "");
+    kvdk_assert(
+        _record_mark.type & (RecordType::SortedElem | RecordType::SortedHeader |
+                             RecordType::HashElem | RecordType::HashRecord |
+                             RecordType::ListElem | RecordType::ListRecord),
+        "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
