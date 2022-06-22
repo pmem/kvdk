@@ -31,7 +31,7 @@ enum class BackupStage {
 class BackupLog {
  public:
   struct LogRecord {
-    RecordType type;
+    RecordMark::DataType type;
     std::string key;
     std::string val;
     ExpireTimeType expire_time;
@@ -171,8 +171,8 @@ class BackupLog {
   }
 
   // Append a record to backup log
-  Status Append(RecordType type, const StringView& key, const StringView& val,
-                ExpireTimeType expire_time) {
+  Status Append(RecordMark::DataType type, const StringView& key,
+                const StringView& val, ExpireTimeType expire_time) {
     if (finished()) {
       changeStage(BackupStage::NotFinished);
     }

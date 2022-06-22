@@ -10,7 +10,7 @@ thread_local std::string thread_data_buffer;
 static constexpr int kDataBufferSize = 1024 * 1024;
 
 StringRecord* StringRecord::PersistStringRecord(
-    void* addr, uint32_t record_size, TimeStampType timestamp, RecordType type,
+    void* addr, uint32_t record_size, TimeStampType timestamp, RecordMark mark,
     PMemOffsetType old_version, const StringView& key, const StringView& value,
     ExpireTimeType expired_time) {
   void* data_cpy_target;
@@ -25,7 +25,7 @@ StringRecord* StringRecord::PersistStringRecord(
     data_cpy_target = addr;
   }
   StringRecord::ConstructStringRecord(data_cpy_target, record_size, timestamp,
-                                      type, old_version, key, value,
+                                      mark, old_version, key, value,
                                       expired_time);
   if (with_buffer) {
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
@@ -38,7 +38,7 @@ StringRecord* StringRecord::PersistStringRecord(
 }
 
 DLRecord* DLRecord::PersistDLRecord(void* addr, uint32_t record_size,
-                                    TimeStampType timestamp, RecordType type,
+                                    TimeStampType timestamp, RecordMark mark,
                                     PMemOffsetType old_version,
                                     PMemOffsetType prev, PMemOffsetType next,
                                     const StringView& key,
@@ -55,7 +55,7 @@ DLRecord* DLRecord::PersistDLRecord(void* addr, uint32_t record_size,
   } else {
     data_cpy_target = addr;
   }
-  DLRecord::ConstructDLRecord(data_cpy_target, record_size, timestamp, type,
+  DLRecord::ConstructDLRecord(data_cpy_target, record_size, timestamp, mark,
                               old_version, prev, next, key, value,
                               expired_time);
   if (with_buffer) {

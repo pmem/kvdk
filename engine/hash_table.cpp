@@ -30,8 +30,8 @@ HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
 }
 
 bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
-                      uint16_t target_type, DataEntry* data_entry_metadata) {
-  if ((target_type & header_.record_type) &&
+                      uint8_t target_type, DataEntry* data_entry_metadata) {
+  if ((target_type & header_.record_mark.data_type) &&
       hash_k_prefix == header_.key_prefix) {
     void* pmem_record = nullptr;
     StringView data_entry_key;
@@ -92,7 +92,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
 
 template <bool may_insert>
 HashTable::LookupResult HashTable::Lookup(const StringView& key,
-                                          uint16_t type_mask) {
+                                          uint8_t type_mask) {
   LookupResult ret;
   HashEntry* empty_entry = nullptr;
   auto hint = GetHint(key);
@@ -147,13 +147,13 @@ HashTable::LookupResult HashTable::Lookup(const StringView& key,
 }
 
 template HashTable::LookupResult HashTable::Lookup<true>(const StringView&,
-                                                         uint16_t);
+                                                         uint8_t);
 template HashTable::LookupResult HashTable::Lookup<false>(const StringView&,
-                                                          uint16_t);
+                                                          uint8_t);
 
-void HashTable::Insert(const LookupResult& insert_position, RecordType type,
+void HashTable::Insert(const LookupResult& insert_position, RecordMark mark,
                        void* index, PointerType index_type) {
-  HashEntry new_hash_entry(insert_position.key_hash_prefix, type, index,
+  HashEntry new_hash_entry(insert_position.key_hash_prefix, mark, index,
                            index_type);
   atomic_store_16(insert_position.entry_ptr, &new_hash_entry);
 }

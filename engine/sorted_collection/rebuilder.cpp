@@ -45,8 +45,7 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 }
 
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
-  assert(header_record->entry.meta.type == SortedHeader ||
-         header_record->entry.meta.type == SortedHeaderDelete);
+  assert(header_record->GetRecordMark().data_type == RecordMark::SortedHeader);
 
   bool linked_record = checkAndRepairRecordLinkage(header_record);
 
@@ -67,8 +66,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 }
 
 Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
-  kvdk_assert(record->entry.meta.type == SortedElem ||
-                  record->entry.meta.type == SortedElemDelete,
+  kvdk_assert(record->GetRecordMark().data_type == RecordMark::SortedElem,
               "wrong record type in RestoreSkiplistRecord");
   bool linked_record = checkAndRepairRecordLinkage(record);
 
@@ -87,7 +85,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
                 kRestoreSkiplistStride ==
             0 &&
         findCheckpointVersion(record) == record &&
-        record->entry.meta.type == SortedElem) {
+        record->GetRecordMark().data_type == RecordMark::SortedElem) {
       SkiplistNode* start_node = nullptr;
       while (start_node == nullptr) {
         // Always build dram node for a recovery segment start record
@@ -195,7 +193,8 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       }
 
       bool outdated =
-          valid_version_record->entry.meta.type == SortedHeaderDelete ||
+          valid_version_record->GetRecordMark().record_status ==
+              RecordMark::Outdated ||
           TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
 
       if (outdated) {
@@ -321,8 +320,9 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
   size_t num_elems = 0;
   // First insert hash index for the start node
   if (start_node->record != segment_owner->HeaderRecord()) {
-    kvdk_assert((start_node->record->entry.meta.type & SortedHeaderType) == 0,
-                "Wrong start node of skiplist segment");
+    kvdk_assert(
+        start_node->record->GetRecordMark().data_type == RecordMark::SortedElem,
+        "Wrong start node of skiplist segment");
     num_elems++;
     if (build_hash_index) {
       s = insertHashIndex(start_node->record->Key(), start_node,
@@ -356,7 +356,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
       DLRecord* valid_version_record = findCheckpointVersion(next_record);
       if (valid_version_record == nullptr ||
-          valid_version_record->entry.meta.type == SortedElemDelete) {
+          valid_version_record->GetRecordMark().record_status ==
+              RecordMark::Outdated) {
         bool success = Skiplist::Remove(next_record, nullptr,
                                         kv_engine_->pmem_allocator_.get(),
                                         kv_engine_->skiplist_locks_.get());
@@ -399,8 +400,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       }
     } else {
       // link end node of this segment to adjacent segment
-      if ((iter->second.start_node->record->entry.meta.type &
-           SortedHeaderType) == 0) {
+      if (iter->second.start_node->record->GetRecordMark().data_type ==
+          RecordMark::SortedElem) {
         cur_node->RelaxedSetNext(1, iter->second.start_node);
       } else {
         cur_node->RelaxedSetNext(1, nullptr);
@@ -513,7 +514,8 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     DLRecord* valid_version_record = findCheckpointVersion(next_record);
 
     if (valid_version_record == nullptr ||
-        valid_version_record->entry.meta.type == SortedElemDelete) {
+        valid_version_record->GetRecordMark().record_status ==
+            RecordMark::Outdated) {
       // purge invalid version record from list
       bool success = Skiplist::Remove(next_record, nullptr,
                                       kv_engine_->pmem_allocator_.get(),
@@ -653,28 +655,28 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
                                                   void* index_ptr,
                                                   PointerType index_type) {
   // TODO: ttl
-  uint16_t search_type_mask = 0;
-  RecordType record_type = RecordType::Empty;
+  RecordMark::DataType search_type = RecordMark::Empty;
+  RecordMark record_mark;
   if (index_type == PointerType::DLRecord) {
-    search_type_mask = SortedElemType;
-    record_type = static_cast<DLRecord*>(index_ptr)->entry.meta.type;
+    search_type = RecordMark::SortedElem;
+    record_mark = static_cast<DLRecord*>(index_ptr)->GetRecordMark();
   } else if (index_type == PointerType::SkiplistNode) {
-    search_type_mask = SortedElemType;
-    record_type =
-        static_cast<SkiplistNode*>(index_ptr)->record->entry.meta.type;
+    search_type = RecordMark::SortedElem;
+    record_mark =
+        static_cast<SkiplistNode*>(index_ptr)->record->GetRecordMark();
   } else if (index_type == PointerType::Skiplist) {
-    search_type_mask = SortedHeaderType;
-    record_type = SortedHeader;
+    search_type = RecordMark::SortedHeader;
+    record_mark =
+        static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordMark();
   } else {
     kvdk_assert(false, "Wrong type in sorted collection rebuilder");
   }
 
-  auto lookup_result =
-      kv_engine_->hash_table_->Lookup<true>(key, search_type_mask);
+  auto lookup_result = kv_engine_->hash_table_->Lookup<true>(key, search_type);
 
   switch (lookup_result.s) {
     case Status::NotFound: {
-      kv_engine_->hash_table_->Insert(lookup_result, record_type, index_ptr,
+      kv_engine_->hash_table_->Insert(lookup_result, record_mark, index_ptr,
                                       index_type);
       return Status::Ok;
     }

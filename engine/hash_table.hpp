@@ -20,7 +20,7 @@ namespace KVDK_NAMESPACE {
 
 struct HashHeader {
   uint32_t key_prefix;
-  RecordType record_type;
+  RecordMark record_mark;
   PointerType index_type;
 };
 
@@ -28,11 +28,11 @@ class Skiplist;
 class SkiplistNode;
 struct HashBucketIterator;
 
-template <RecordType ListType, RecordType DataType>
+template <RecordMark::DataType ListType, RecordMark::DataType ElemType>
 class GenericList;
 
-using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
-using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
+using List = GenericList<RecordMark::ListHeader, RecordMark::ListElem>;
+using HashList = GenericList<RecordMark::HashHeader, RecordMark::HashElem>;
 
 struct alignas(16) HashEntry {
  public:
@@ -54,9 +54,9 @@ struct alignas(16) HashEntry {
 
   HashEntry() = default;
 
-  HashEntry(uint32_t key_hash_prefix, RecordType record_type, void* _index,
+  HashEntry(uint32_t key_hash_prefix, RecordMark record_mark, void* _index,
             PointerType index_type)
-      : index_(_index), header_({key_hash_prefix, record_type, index_type}) {}
+      : index_(_index), header_({key_hash_prefix, record_mark, index_type}) {}
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
@@ -64,13 +64,16 @@ struct alignas(16) HashEntry {
 
   PointerType GetIndexType() const { return header_.index_type; }
 
-  RecordType GetRecordType() const { return header_.record_type; }
+  RecordMark GetRecordMark() const { return header_.record_mark; }
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
   // and return true, otherwise return false.
-  bool Match(const StringView& key, uint32_t hash_k_prefix,
-             uint16_t target_type, DataEntry* data_entry_metadata);
+  //
+  // Args:
+  // * target_type: a mask of RecordMark::DataType, search all masked types
+  bool Match(const StringView& key, uint32_t hash_k_prefix, uint8_t target_type,
+             DataEntry* data_entry_metadata);
 
  private:
   // Make this hash entry empty while its content been deleted
@@ -174,12 +177,12 @@ class HashTable {
   //
   // Notice: key should be locked if set may_insert to true
   template <bool may_insert>
-  LookupResult Lookup(const StringView& key, uint16_t type_mask);
+  LookupResult Lookup(const StringView& key, uint8_t type_mask);
 
   // Insert a hash entry to hash table
   // * insert_position: indicate the the postion to insert new entry, it should
   // be return of Lookup of the inserting key
-  void Insert(const LookupResult& insert_position, RecordType type, void* index,
+  void Insert(const LookupResult& insert_position, RecordMark mark, void* index,
               PointerType index_type);
 
   // Erase a hash entry so it can be reused in future
