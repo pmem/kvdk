@@ -61,7 +61,7 @@ void KVEngine::purgeAndFreeDLRecords(
       DLRecord* next_record =
           pmem_allocator_->offset2addr<DLRecord>(pmem_record->old_version);
       auto mark = pmem_record->GetRecordMark();
-      switch (mark.data_type) {
+      switch (mark.record_type) {
         case RecordMark::SortedElem: {
           entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                pmem_record->entry.header.record_size);
@@ -104,7 +104,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
   auto prev_node = skiplist->HeaderNode();
   auto cur_record =
       pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
-  while (cur_record->GetRecordMark().data_type == RecordMark::SortedElem) {
+  while (cur_record->GetRecordMark().record_type == RecordMark::SortedElem) {
     auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
     auto ul = hash_table_->AcquireLock(cur_record->Key());
     // iter old version list
@@ -122,7 +122,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
         // cur_node already been deleted
         cur_node = cur_node->Next(1).RawPointer();
       } else {
-        kvdk_assert(cur_node->record->GetRecordMark().data_type ==
+        kvdk_assert(cur_node->record->GetRecordMark().record_type ==
                         RecordMark::SortedElem,
                     "");
         if (skiplist->Compare(cur_node->UserKey(),
@@ -142,7 +142,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
     DLRecord* next_record =
         pmem_allocator_->offset2addr<DLRecord>(cur_record->next);
     auto mark = cur_record->GetRecordMark();
-    if (mark.data_type == RecordMark::SortedElem &&
+    if (mark.record_type == RecordMark::SortedElem &&
         mark.record_status == RecordMark::Outdated &&
         cur_record->GetTimestamp() < min_snapshot_ts) {
       TEST_SYNC_POINT(

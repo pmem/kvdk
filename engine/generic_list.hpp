@@ -27,10 +27,10 @@ namespace KVDK_NAMESPACE {
 
 constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 
-template <RecordMark::DataType, RecordMark::DataType>
+template <RecordMark::RecordType, RecordMark::RecordType>
 class GenericListBuilder;
 
-template <RecordMark::DataType ListType, RecordMark::DataType ElemType>
+template <RecordMark::RecordType ListType, RecordMark::RecordType ElemType>
 class GenericList final : public Collection {
  private:
   // For offset-address translation
@@ -182,7 +182,7 @@ class GenericList final : public Collection {
       }
       kvdk_assert(Collection::ExtractID(curr->Key()) == owner->ID(), "");
       kvdk_assert(
-          (curr->entry.meta.mark.data_type == ElemType && curr->Validate()) ||
+          (curr->entry.meta.mark.record_type == ElemType && curr->Validate()) ||
               dirty(),
           "");
 #endif  // KVDK_DEBUG_LEVEL > 0
@@ -251,7 +251,7 @@ class GenericList final : public Collection {
     size_t cnt = 0;
     for (auto iter = Front(); iter != Tail(); ++iter) {
       ++cnt;
-      kvdk_assert(iter->entry.meta.mark.data_type == ElemType, "");
+      kvdk_assert(iter->entry.meta.mark.record_type == ElemType, "");
       kvdk_assert(iter->Validate(), "");
       kvdk_assert(ExtractID(iter->Key()) == collection_id_, "");
       Iterator iter2{iter};
@@ -539,7 +539,7 @@ class GenericList final : public Collection {
 
   std::string serialize(DLRecord* rec) const {
     std::stringstream ss;
-    ss << "Type:\t" << to_hex(rec->GetRecordMark().data_type) << "\t"
+    ss << "Type:\t" << to_hex(rec->GetRecordMark().record_type) << "\t"
        << "Prev:\t" << to_hex(rec->prev) << "\t"
        << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
        << "Next:\t" << to_hex(rec->next) << "\t"
@@ -598,7 +598,7 @@ class GenericList final : public Collection {
   }
 };
 
-template <RecordMark::DataType ListType, RecordMark::DataType ElemType>
+template <RecordMark::RecordType ListType, RecordMark::RecordType ElemType>
 class GenericListBuilder final {
   static constexpr size_t NMiddlePoints = 1024;
   using List = GenericList<ListType, ElemType>;
@@ -677,7 +677,7 @@ class GenericListBuilder final {
   }
 
   bool AddListRecord(DLRecord* lrec) {
-    kvdk_assert(lrec->GetRecordMark().data_type == ListType, "");
+    kvdk_assert(lrec->GetRecordMark().record_type == ListType, "");
     kvdk_assert(lrec->Value().size() == sizeof(CollectionIDType), "");
     CollectionIDType id = Collection::ExtractID(lrec->Value());
     maybeResizePrimers(id);
@@ -691,7 +691,7 @@ class GenericListBuilder final {
   }
 
   bool AddListElem(DLRecord* elem) {
-    kvdk_assert(elem->GetRecordMark().data_type == ElemType, "");
+    kvdk_assert(elem->GetRecordMark().record_type == ElemType, "");
     switch (typeOf(elem)) {
       case ListRecordType::Unique: {
         return addUniqueElem(elem);
@@ -1057,7 +1057,7 @@ class GenericListBuilder final {
 
   std::string serialize(DLRecord* rec) const {
     std::stringstream ss;
-    ss << "Type:\t" << to_hex(rec->GetRecordMark().data_type) << "\t"
+    ss << "Type:\t" << to_hex(rec->GetRecordMark().record_type) << "\t"
        << "Prev:\t" << to_hex(rec->prev) << "\t"
        << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
        << "Next:\t" << to_hex(rec->next) << "\t"

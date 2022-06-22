@@ -11,7 +11,7 @@ namespace KVDK_NAMESPACE {
 
 void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   kvdk_assert(
-      (static_cast<DLRecord*>(addr)->GetRecordMark().data_type &
+      (static_cast<DLRecord*>(addr)->GetRecordMark().record_type &
        (RecordMark::ListRecord | RecordMark::ListElem | RecordMark::HashRecord |
         RecordMark::HashElem)) &&
           (static_cast<DLRecord*>(addr)->GetRecordMark().record_status ==

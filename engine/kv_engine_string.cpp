@@ -128,7 +128,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
   auto ret = lookupKey<false>(key, RecordMark::String);
   if (ret.s == Status::Ok) {
     StringRecord* string_record = ret.entry.GetIndex().string_record;
-    kvdk_assert(string_record->GetRecordMark().data_type == RecordMark::String,
+    kvdk_assert(string_record->GetRecordMark().record_type == RecordMark::String,
                 "Got wrong data type in string get");
     kvdk_assert(string_record->Validate(), "Corrupted data in string get");
     value->assign(string_record->Value().data(), string_record->Value().size());
@@ -247,7 +247,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
 
 Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
                                      const DataEntry& cached_entry) {
-  assert(pmem_record->GetRecordMark().data_type == RecordMark::String);
+  assert(pmem_record->GetRecordMark().record_type == RecordMark::String);
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     purgeAndFree(pmem_record);

@@ -279,8 +279,8 @@ class Skiplist : public Collection {
 
   static bool IsSkiplistRecord(DLRecord* record) {
     auto mark = record->entry.meta.mark;
-    return mark.data_type == RecordMark::SortedElem ||
-           mark.data_type == RecordMark::SortedHeader;
+    return mark.record_type == RecordMark::SortedElem ||
+           mark.record_type == RecordMark::SortedHeader;
   }
 
   // Check if record correctly linked on list
@@ -398,15 +398,15 @@ class Skiplist : public Collection {
 
   inline static CollectionIDType SkiplistID(const DLRecord* record) {
     assert(record != nullptr);
-    switch (record->GetRecordMark().data_type) {
+    switch (record->GetRecordMark().record_type) {
       case RecordMark::SortedElem:
         return ExtractID(record->Key());
         break;
       case RecordMark::SortedHeader:
         return DecodeID(record->Value());
       default:
-        GlobalLogger.Error("Wrong record data type %u in SkiplistID",
-                           record->GetRecordMark().data_type);
+        GlobalLogger.Error("Wrong record type %u in SkiplistID",
+                           record->GetRecordMark().record_type);
         kvdk_assert(false, "Wrong type in SkiplistID");
     }
     return 0;

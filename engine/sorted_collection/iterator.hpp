@@ -45,7 +45,7 @@ class SortedIterator : public Iterator {
 
   virtual bool Valid() override {
     return (current_ != nullptr &&
-            current_->GetRecordMark().data_type == RecordMark::SortedElem);
+            current_->GetRecordMark().record_type == RecordMark::SortedElem);
   }
 
   virtual void Next() override {

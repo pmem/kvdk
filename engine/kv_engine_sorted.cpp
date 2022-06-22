@@ -88,7 +88,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
   if (lookup_result.s == Status::Ok) {
     Skiplist* skiplist = lookup_result.entry.GetIndex().skiplist;
     DLRecord* header = skiplist->HeaderRecord();
-    assert(header->entry.meta.mark.data_type == RecordMark::SortedHeader);
+    assert(header->entry.meta.mark.record_type == RecordMark::SortedHeader);
     StringView value = header->Value();
     auto request_size =
         sizeof(DLRecord) + collection_name.size() + value.size();

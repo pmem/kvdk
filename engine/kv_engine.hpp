@@ -261,11 +261,11 @@ class KVEngine : public Engine {
   // lookupElem or lookupKey
   void insertKeyOrElem(HashTable::LookupResult ret, RecordMark mark,
                        void* addr) {
-    hash_table_->Insert(ret, mark, addr, pointerType(mark.data_type));
+    hash_table_->Insert(ret, mark, addr, pointerType(mark.record_type));
   }
 
   template <typename CollectionType>
-  static constexpr RecordMark::DataType collectionType() {
+  static constexpr RecordMark::RecordType collectionType() {
     static_assert(std::is_same<CollectionType, Skiplist>::value ||
                       std::is_same<CollectionType, List>::value ||
                       std::is_same<CollectionType, HashList>::value,
@@ -279,7 +279,7 @@ class KVEngine : public Engine {
                            : RecordMark::Empty;
   }
 
-  static PointerType pointerType(RecordMark::DataType rtype) {
+  static PointerType pointerType(RecordMark::RecordType rtype) {
     switch (rtype) {
       case RecordMark::Empty: {
         return PointerType::Empty;

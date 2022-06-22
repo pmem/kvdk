@@ -31,7 +31,7 @@ HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
 
 bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
                       uint8_t target_type, DataEntry* data_entry_metadata) {
-  if ((target_type & header_.record_mark.data_type) &&
+  if ((target_type & header_.record_mark.record_type) &&
       hash_k_prefix == header_.key_prefix) {
     void* pmem_record = nullptr;
     StringView data_entry_key;
