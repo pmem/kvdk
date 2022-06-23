@@ -20,7 +20,8 @@ namespace KVDK_NAMESPACE {
 
 struct HashHeader {
   uint32_t key_prefix;
-  RecordMark record_mark;
+  RecordType record_type;
+  RecordStatus record_status;
   PointerType index_type;
 };
 
@@ -54,9 +55,10 @@ struct alignas(16) HashEntry {
 
   HashEntry() = default;
 
-  HashEntry(uint32_t key_hash_prefix, RecordMark record_mark, void* _index,
-            PointerType index_type)
-      : index_(_index), header_({key_hash_prefix, record_mark, index_type}) {}
+  HashEntry(uint32_t key_hash_prefix, RecordType record_type,
+            RecordStatus record_status, void* _index, PointerType index_type)
+      : index_(_index),
+        header_({key_hash_prefix, record_type, record_status, index_type}) {}
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
@@ -64,7 +66,9 @@ struct alignas(16) HashEntry {
 
   PointerType GetIndexType() const { return header_.index_type; }
 
-  RecordMark GetRecordMark() const { return header_.record_mark; }
+  RecordType GetRecordType() const { return header_.record_type; }
+
+  RecordStatus GetRecordStatus() const { return header_.record_status; }
 
   // Check if "key" of data type "target_type" is indexed by "this". If
   // matches, copy data entry of data record of "key" to "data_entry_metadata"
@@ -182,8 +186,8 @@ class HashTable {
   // Insert a hash entry to hash table
   // * insert_position: indicate the the postion to insert new entry, it should
   // be return of Lookup of the inserting key
-  void Insert(const LookupResult& insert_position, RecordMark mark, void* index,
-              PointerType index_type);
+  void Insert(const LookupResult& insert_position, RecordType type,
+              RecordStatus status, void* index, PointerType index_type);
 
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {

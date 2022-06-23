@@ -45,7 +45,7 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 }
 
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
-  assert(header_record->GetRecordMark().type == RecordType::SortedHeader);
+  assert(header_record->GetRecordType() == RecordType::SortedHeader);
 
   bool linked_record = checkAndRepairRecordLinkage(header_record);
 
@@ -66,7 +66,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 }
 
 Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
-  kvdk_assert(record->GetRecordMark().type == RecordType::SortedElem,
+  kvdk_assert(record->GetRecordType() == RecordType::SortedElem,
               "wrong record type in RestoreSkiplistRecord");
   bool linked_record = checkAndRepairRecordLinkage(record);
 
@@ -85,7 +85,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
                 kRestoreSkiplistStride ==
             0 &&
         findCheckpointVersion(record) == record &&
-        record->GetRecordMark().type == RecordType::SortedElem) {
+        record->GetRecordType() == RecordType::SortedElem) {
       SkiplistNode* start_node = nullptr;
       while (start_node == nullptr) {
         // Always build dram node for a recovery segment start record
@@ -193,8 +193,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       }
 
       bool outdated =
-          valid_version_record->GetRecordMark().status ==
-              RecordStatus::Outdated ||
+          valid_version_record->GetRecordStatus() == RecordStatus::Outdated ||
           TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
 
       if (outdated) {
@@ -320,9 +319,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
   size_t num_elems = 0;
   // First insert hash index for the start node
   if (start_node->record != segment_owner->HeaderRecord()) {
-    kvdk_assert(
-        start_node->record->GetRecordMark().type == RecordType::SortedElem,
-        "Wrong start node of skiplist segment");
+    kvdk_assert(start_node->record->GetRecordType() == RecordType::SortedElem,
+                "Wrong start node of skiplist segment");
     num_elems++;
     if (build_hash_index) {
       s = insertHashIndex(start_node->record->Key(), start_node,
@@ -356,8 +354,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       auto ul = kv_engine_->hash_table_->AcquireLock(internal_key);
       DLRecord* valid_version_record = findCheckpointVersion(next_record);
       if (valid_version_record == nullptr ||
-          valid_version_record->GetRecordMark().status ==
-              RecordStatus::Outdated) {
+          valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
         bool success = Skiplist::Remove(next_record, nullptr,
                                         kv_engine_->pmem_allocator_.get(),
                                         kv_engine_->skiplist_locks_.get());
@@ -400,7 +397,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
       }
     } else {
       // link end node of this segment to adjacent segment
-      if (iter->second.start_node->record->GetRecordMark().type ==
+      if (iter->second.start_node->record->GetRecordType() ==
           RecordType::SortedElem) {
         cur_node->RelaxedSetNext(1, iter->second.start_node);
       } else {
@@ -514,8 +511,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     DLRecord* valid_version_record = findCheckpointVersion(next_record);
 
     if (valid_version_record == nullptr ||
-        valid_version_record->GetRecordMark().status ==
-            RecordStatus::Outdated) {
+        valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
       // purge invalid version record from list
       bool success = Skiplist::Remove(next_record, nullptr,
                                       kv_engine_->pmem_allocator_.get(),
@@ -655,29 +651,40 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
                                                   void* index_ptr,
                                                   PointerType index_type) {
   // TODO: ttl
-  RecordType search_type = RecordType::Empty;
-  RecordMark record_mark;
+  RecordType record_type = RecordType::Empty;
+  RecordStatus record_status;
   if (index_type == PointerType::DLRecord) {
-    search_type = RecordType::SortedElem;
-    record_mark = static_cast<DLRecord*>(index_ptr)->GetRecordMark();
+    record_type = RecordType::SortedElem;
+    record_status = static_cast<DLRecord*>(index_ptr)->GetRecordStatus();
+    kvdk_assert(static_cast<DLRecord*>(index_ptr)->GetRecordType() ==
+                    RecordType::SortedElem,
+                "");
   } else if (index_type == PointerType::SkiplistNode) {
-    search_type = RecordType::SortedElem;
-    record_mark =
-        static_cast<SkiplistNode*>(index_ptr)->record->GetRecordMark();
+    record_type = RecordType::SortedElem;
+    record_status =
+        static_cast<SkiplistNode*>(index_ptr)->record->GetRecordStatus();
+    kvdk_assert(
+        static_cast<SkiplistNode*>(index_ptr)->record->GetRecordType() ==
+            RecordType::SortedElem,
+        "");
   } else if (index_type == PointerType::Skiplist) {
-    search_type = RecordType::SortedHeader;
-    record_mark =
-        static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordMark();
+    record_type = RecordType::SortedHeader;
+    record_status =
+        static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordStatus();
+    kvdk_assert(
+        static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordType() ==
+            RecordType::SortedHeader,
+        "");
   } else {
     kvdk_assert(false, "Wrong type in sorted collection rebuilder");
   }
 
-  auto lookup_result = kv_engine_->hash_table_->Lookup<true>(key, search_type);
+  auto lookup_result = kv_engine_->hash_table_->Lookup<true>(key, record_type);
 
   switch (lookup_result.s) {
     case Status::NotFound: {
-      kv_engine_->hash_table_->Insert(lookup_result, record_mark, index_ptr,
-                                      index_type);
+      kv_engine_->hash_table_->Insert(lookup_result, record_type, record_status,
+                                      index_ptr, index_type);
       return Status::Ok;
     }
     case Status::Ok: {

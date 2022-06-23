@@ -34,19 +34,6 @@ enum class RecordStatus : uint8_t {
   Outdated,
 };
 
-struct RecordMark {
-  explicit RecordMark(RecordType type, RecordStatus s)
-      : type(type), status(s) {}
-
-  explicit RecordMark(RecordType type)
-      : type(type), status(RecordStatus::Normal) {}
-
-  RecordMark() = default;
-
-  RecordType type;
-  RecordStatus status;
-};
-
 const uint8_t ExpirableRecordType =
     (RecordType::String | RecordType::SortedHeader | RecordType::HashRecord |
      RecordType::ListRecord);
@@ -63,32 +50,34 @@ struct DataHeader {
 
 struct DataMeta {
   DataMeta() = default;
-  DataMeta(TimeStampType _timestamp, RecordMark _record_mark,
+  DataMeta(TimeStampType _timestamp, RecordType _type, RecordStatus _status,
            uint16_t _key_size, uint32_t _value_size)
-      : timestamp(_timestamp),
-        mark(_record_mark),
+      : type(_type),
+        status(_status),
         k_size(_key_size),
-        v_size(_value_size) {}
+        v_size(_value_size),
+        timestamp(_timestamp) {}
 
-  TimeStampType timestamp;
-  RecordMark mark;
+  RecordType type;
+  RecordStatus status;
   uint16_t k_size;
   uint32_t v_size;
+  TimeStampType timestamp;
 };
 
 // Header and metadata of a data record
 struct DataEntry {
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
-            TimeStampType _timestamp, RecordMark _record_mark,
+            TimeStampType _timestamp, RecordType _type, RecordStatus _status,
             uint16_t _key_size, uint32_t _value_size)
       : header(_checksum, _record_size),
-        meta(_timestamp, _record_mark, _key_size, _value_size) {}
+        meta(_timestamp, _type, _status, _key_size, _value_size) {}
 
   DataEntry() = default;
 
   void Destroy() {
-    meta.mark.type = RecordType::Empty;
-    pmem_persist(&meta.mark, sizeof(RecordMark));
+    meta.type = RecordType::Empty;
+    pmem_persist(&meta.type, sizeof(RecordType));
   }
 
   // TODO jiayu: use function to access these
@@ -111,20 +100,21 @@ struct StringRecord {
   // should larger than sizeof(StringRecord) + key size + value size
   static StringRecord* ConstructStringRecord(
       void* target_address, uint32_t _record_size, TimeStampType _timestamp,
-      RecordMark _record_mark, PMemOffsetType _old_version,
-      const StringView& _key, const StringView& _value,
-      ExpireTimeType _expired_time) {
+      RecordType _record_type, RecordStatus _record_status,
+      PMemOffsetType _old_version, const StringView& _key,
+      const StringView& _value, ExpireTimeType _expired_time) {
     StringRecord* record = new (target_address)
-        StringRecord(_record_size, _timestamp, _record_mark, _old_version, _key,
-                     _value, _expired_time);
+        StringRecord(_record_size, _timestamp, _record_type, _record_status,
+                     _old_version, _key, _value, _expired_time);
     return record;
   }
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord* PersistStringRecord(
       void* addr, uint32_t record_size, TimeStampType timestamp,
-      RecordMark mark, PMemOffsetType old_version, const StringView& key,
-      const StringView& value, ExpireTimeType expired_time = kPersistTime);
+      RecordType type, RecordStatus status, PMemOffsetType old_version,
+      const StringView& key, const StringView& value,
+      ExpireTimeType expired_time = kPersistTime);
 
   void Destroy() { entry.Destroy(); }
 
@@ -174,14 +164,16 @@ struct StringRecord {
   }
 
   void PersistStatus(RecordStatus status) {
-    entry.meta.mark.status = status;
-    _mm_clwb(&entry.meta.mark.status);
+    entry.meta.status = status;
+    _mm_clwb(&entry.meta.status);
     _mm_mfence();
   }
 
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
-  RecordMark GetRecordMark() const { return entry.meta.mark; }
+  RecordType GetRecordType() const { return entry.meta.type; }
+
+  RecordStatus GetRecordStatus() const { return entry.meta.status; }
 
   static uint32_t RecordSize(const StringView& key, const StringView& value) {
     return key.size() + value.size() + sizeof(StringRecord);
@@ -189,14 +181,14 @@ struct StringRecord {
 
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
-               RecordMark _record_mark, PMemOffsetType _old_version,
-               const StringView& _key, const StringView& _value,
-               ExpireTimeType _expired_time)
-      : entry(0, _record_size, _timestamp, _record_mark, _key.size(),
-              _value.size()),
+               RecordType _record_type, RecordStatus _record_status,
+               PMemOffsetType _old_version, const StringView& _key,
+               const StringView& _value, ExpireTimeType _expired_time)
+      : entry(0, _record_size, _timestamp, _record_type, _record_status,
+              _key.size(), _value.size()),
         old_version(_old_version),
         expired_time(_expired_time) {
-    kvdk_assert(_record_mark.type == RecordType::String, "");
+    kvdk_assert(_record_type == RecordType::String, "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
@@ -236,14 +228,15 @@ struct DLRecord {
   // should no smaller than sizeof(DLRecord) + key size + value size
   static DLRecord* ConstructDLRecord(void* target_address, uint32_t record_size,
                                      TimeStampType timestamp,
-                                     RecordMark record_mark,
+                                     RecordType record_type,
+                                     RecordStatus record_status,
                                      PMemOffsetType old_version, uint64_t prev,
                                      uint64_t next, const StringView& key,
                                      const StringView& value,
                                      ExpireTimeType expired_time) {
     DLRecord* record = new (target_address)
-        DLRecord(record_size, timestamp, record_mark, old_version, prev, next,
-                 key, value, expired_time);
+        DLRecord(record_size, timestamp, record_type, record_status,
+                 old_version, prev, next, key, value, expired_time);
     return record;
   }
 
@@ -282,7 +275,7 @@ struct DLRecord {
   }
 
   void PersistExpireTimeNT(ExpireTimeType time) {
-    kvdk_assert(entry.meta.mark.type & ExpirableRecordType, "");
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
                     static_cast<long long>(time));
     _mm_mfence();
@@ -301,7 +294,7 @@ struct DLRecord {
   }
 
   void PersistExpireTimeCLWB(ExpireTimeType time) {
-    kvdk_assert(entry.meta.mark.type & ExpirableRecordType, "");
+    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     expired_time = time;
     _mm_clwb(&expired_time);
     _mm_mfence();
@@ -314,30 +307,30 @@ struct DLRecord {
   }
 
   void PersistStatus(RecordStatus status) {
-    entry.meta.mark.status = status;
-    _mm_clwb(&entry.meta.mark.status);
+    entry.meta.status = status;
+    _mm_clwb(&entry.meta.status);
     _mm_mfence();
   }
 
   ExpireTimeType GetExpireTime() const {
-    kvdk_assert(entry.meta.mark.type & ExpirableRecordType,
+    kvdk_assert(entry.meta.type & ExpirableRecordType,
                 "Call DLRecord::GetExpireTime with an unexpirable type");
     return expired_time;
   }
 
-  RecordMark GetRecordMark() const { return entry.meta.mark; }
+  RecordType GetRecordType() const { return entry.meta.type; }
+
+  RecordStatus GetRecordStatus() const { return entry.meta.status; }
 
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
   // Construct and persist a dl record to PMem address "addr"
-  static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
-                                   TimeStampType timestamp, RecordMark mark,
-                                   PMemOffsetType old_version,
-                                   PMemOffsetType prev, PMemOffsetType next,
-                                   const StringView& key,
-                                   const StringView& value,
-                                   ExpireTimeType expired_time = kPersistTime);
+  static DLRecord* PersistDLRecord(
+      void* addr, uint32_t record_size, TimeStampType timestamp,
+      RecordType type, RecordStatus status, PMemOffsetType old_version,
+      PMemOffsetType prev, PMemOffsetType next, const StringView& key,
+      const StringView& value, ExpireTimeType expired_time = kPersistTime);
 
   uint32_t GetRecordSize() const { return entry.header.record_size; }
 
@@ -346,21 +339,20 @@ struct DLRecord {
   }
 
  private:
-  DLRecord(uint32_t _record_size, TimeStampType _timestamp,
-           RecordMark _record_mark, PMemOffsetType _old_version,
+  DLRecord(uint32_t _record_size, TimeStampType _timestamp, RecordType _type,
+           RecordStatus _status, PMemOffsetType _old_version,
            PMemOffsetType _prev, PMemOffsetType _next, const StringView& _key,
            const StringView& _value, ExpireTimeType _expired_time)
-      : entry(0, _record_size, _timestamp, _record_mark, _key.size(),
+      : entry(0, _record_size, _timestamp, _type, _status, _key.size(),
               _value.size()),
         old_version(_old_version),
         prev(_prev),
         next(_next),
         expired_time(_expired_time) {
-    kvdk_assert(
-        _record_mark.type & (RecordType::SortedElem | RecordType::SortedHeader |
-                             RecordType::HashElem | RecordType::HashRecord |
-                             RecordType::ListElem | RecordType::ListRecord),
-        "");
+    kvdk_assert(_type & (RecordType::SortedElem | RecordType::SortedHeader |
+                         RecordType::HashElem | RecordType::HashRecord |
+                         RecordType::ListElem | RecordType::ListRecord),
+                "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();

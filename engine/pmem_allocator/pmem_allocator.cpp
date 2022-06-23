@@ -300,12 +300,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
   std::uint32_t sz = static_cast<std::uint32_t>(size);
   kvdk_assert(size == static_cast<std::uint64_t>(sz), "Integer Overflow!");
-  DataEntry padding{0,
-                    sz,
-                    TimeStampType{},
-                    RecordMark(RecordType::Empty, RecordStatus::Normal),
-                    0,
-                    0};
+  DataEntry padding{
+      0, sz, TimeStampType{}, RecordType::Empty, RecordStatus::Normal, 0, 0};
   pmem_memcpy_persist(offset2addr_checked(offset), &padding, sizeof(DataEntry));
 }
 }  // namespace KVDK_NAMESPACE

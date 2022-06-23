@@ -31,7 +31,7 @@ HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
 
 bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
                       uint8_t target_type, DataEntry* data_entry_metadata) {
-  if ((target_type & header_.record_mark.type) &&
+  if ((target_type & header_.record_type) &&
       hash_k_prefix == header_.key_prefix) {
     void* pmem_record = nullptr;
     StringView data_entry_key;
@@ -151,9 +151,10 @@ template HashTable::LookupResult HashTable::Lookup<true>(const StringView&,
 template HashTable::LookupResult HashTable::Lookup<false>(const StringView&,
                                                           uint8_t);
 
-void HashTable::Insert(const LookupResult& insert_position, RecordMark mark,
-                       void* index, PointerType index_type) {
-  HashEntry new_hash_entry(insert_position.key_hash_prefix, mark, index,
+void HashTable::Insert(const LookupResult& insert_position, RecordType type,
+                       RecordStatus status, void* index,
+                       PointerType index_type) {
+  HashEntry new_hash_entry(insert_position.key_hash_prefix, type, status, index,
                            index_type);
   atomic_store_16(insert_position.entry_ptr, &new_hash_entry);
 }

@@ -52,20 +52,21 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
       return Status::PmemOverflow;
     }
 
-    RecordMark mark(RecordType::SortedHeader, RecordStatus::Normal);
     // PMem level of skiplist is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
-        new_ts, mark, pmem_allocator_->addr2offset(existing_header),
-        space_entry.offset, space_entry.offset, collection_name, value_str);
+        new_ts, RecordType::SortedHeader, RecordStatus::Normal,
+        pmem_allocator_->addr2offset(existing_header), space_entry.offset,
+        space_entry.offset, collection_name, value_str);
 
     skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
         pmem_allocator_.get(), hash_table_.get(), skiplist_locks_.get(),
         s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
-    insertKeyOrElem(lookup_result, mark, skiplist.get());
+    insertKeyOrElem(lookup_result, RecordType::SortedHeader,
+                    RecordStatus::Normal, skiplist.get());
   } else {
     // Todo (jiayu): handle expired skiplist
     // Todo (jiayu): what if skiplist exists but comparator not match?
@@ -88,7 +89,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
   if (lookup_result.s == Status::Ok) {
     Skiplist* skiplist = lookup_result.entry.GetIndex().skiplist;
     DLRecord* header = skiplist->HeaderRecord();
-    assert(header->GetRecordMark().type == RecordType::SortedHeader);
+    assert(header->GetRecordType() == RecordType::SortedHeader);
     StringView value = header->Value();
     auto request_size =
         sizeof(DLRecord) + collection_name.size() + value.size();
@@ -96,17 +97,17 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
     if (space_entry.size == 0) {
       return Status::PmemOverflow;
     }
-    RecordMark mark(RecordType::SortedHeader, RecordStatus::Outdated);
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space_entry.offset),
-        space_entry.size, new_ts, mark,
-        pmem_allocator_->addr2offset_checked(header), header->prev,
-        header->next, collection_name, value);
+        space_entry.size, new_ts, RecordType::SortedHeader,
+        RecordStatus::Outdated, pmem_allocator_->addr2offset_checked(header),
+        header->prev, header->next, collection_name, value);
     bool success =
         Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
                           pmem_allocator_.get(), skiplist_locks_.get());
     kvdk_assert(success, "existing header should be linked on its skiplist");
-    insertKeyOrElem(lookup_result, mark, skiplist);
+    insertKeyOrElem(lookup_result, RecordType::SortedHeader,
+                    RecordStatus::Outdated, skiplist);
   } else if (lookup_result.s == Status::Outdated ||
              lookup_result.s == Status::NotFound) {
     lookup_result.s = Status::Ok;

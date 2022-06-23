@@ -259,9 +259,9 @@ class KVEngine : public Engine {
 
   // insert/update key or elem to hashtable, ret must be return value of
   // lookupElem or lookupKey
-  void insertKeyOrElem(HashTable::LookupResult ret, RecordMark mark,
-                       void* addr) {
-    hash_table_->Insert(ret, mark, addr, pointerType(mark.type));
+  void insertKeyOrElem(HashTable::LookupResult ret, RecordType type,
+                       RecordStatus status, void* addr) {
+    hash_table_->Insert(ret, type, status, addr, pointerType(type));
   }
 
   template <typename CollectionType>
@@ -272,11 +272,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -342,7 +341,7 @@ class KVEngine : public Engine {
     if (ret.s != Status::NotFound && ret.s != Status::Outdated) {
       return ret.s;
     }
-    insertKeyOrElem(ret, RecordMark(type, RecordStatus::Normal), coll);
+    insertKeyOrElem(ret, type, RecordStatus::Normal, coll);
     return Status::Ok;
   }
 
