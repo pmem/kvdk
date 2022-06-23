@@ -14,47 +14,31 @@
 
 namespace KVDK_NAMESPACE {
 
-enum RecordType : uint16_t {
+enum RecordType : uint8_t {
   Empty = 0,
-  StringDataRecord = (1 << 0),
-  StringDeleteRecord = (1 << 1),
-
+  String = (1 << 0),
+  SortedHeader = (1 << 1),
   SortedElem = (1 << 2),
-  SortedElemDelete = (1 << 3),
-  SortedHeader = (1 << 4),
-  SortedHeaderDelete = (1 << 5),
-
-  HashRecord = (1 << 6),
-  HashDirtyRecord = (1 << 7),
-  HashElem = (1 << 8),
-  HashDirtyElem = (1 << 9),
-
-  ListRecord = (1 << 10),
-  ListDirtyRecord = (1 << 11),
-  ListElem = (1 << 12),
-  ListDirtyElem = (1 << 13),
-
-  Padding = (1 << 15),
+  HashRecord = (1 << 3),
+  HashElem = (1 << 4),
+  ListRecord = (1 << 5),
+  ListElem = (1 << 6),
 };
 
-const uint16_t SortedHeaderType = (SortedHeader | SortedHeaderDelete);
+enum class RecordStatus : uint8_t {
+  // Indicate a up-to-date record
+  Normal = 0,
+  // Indicate key of the record is updated
+  Dirty,
+  // Indicate deleted or expired record
+  Outdated,
+};
 
-const uint16_t SortedElemType = (SortedElem | SortedElemDelete);
+const uint8_t ExpirableRecordType =
+    (RecordType::String | RecordType::SortedHeader | RecordType::HashRecord |
+     RecordType::ListRecord);
 
-const uint16_t DLRecordType =
-    (SortedElem | SortedElemDelete | SortedHeader | SortedHeaderDelete |
-     HashRecord | HashElem | ListElem | ListRecord);
-
-const uint16_t DeleteRecordType =
-    (StringDeleteRecord | SortedElemDelete | SortedHeaderDelete);
-
-const uint16_t StringRecordType = (StringDataRecord | StringDeleteRecord);
-
-const uint16_t ExpirableRecordType =
-    (StringDataRecord | SortedHeader | ListRecord | HashRecord);
-
-const uint16_t PrimaryRecordType =
-    (ExpirableRecordType | StringDeleteRecord | SortedHeaderDelete);
+const uint8_t PrimaryRecordType = ExpirableRecordType;
 
 struct DataHeader {
   DataHeader() = default;
@@ -66,31 +50,33 @@ struct DataHeader {
 
 struct DataMeta {
   DataMeta() = default;
-  DataMeta(TimeStampType _timestamp, RecordType _record_type,
+  DataMeta(TimeStampType _timestamp, RecordType _type, RecordStatus _status,
            uint16_t _key_size, uint32_t _value_size)
-      : timestamp(_timestamp),
-        type(_record_type),
+      : type(_type),
+        status(_status),
         k_size(_key_size),
-        v_size(_value_size) {}
+        v_size(_value_size),
+        timestamp(_timestamp) {}
 
-  TimeStampType timestamp;
   RecordType type;
+  RecordStatus status;
   uint16_t k_size;
   uint32_t v_size;
+  TimeStampType timestamp;
 };
 
 // Header and metadata of a data record
 struct DataEntry {
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
-            TimeStampType _timestamp, RecordType _record_type,
+            TimeStampType _timestamp, RecordType _type, RecordStatus _status,
             uint16_t _key_size, uint32_t _value_size)
       : header(_checksum, _record_size),
-        meta(_timestamp, _record_type, _key_size, _value_size) {}
+        meta(_timestamp, _type, _status, _key_size, _value_size) {}
 
   DataEntry() = default;
 
   void Destroy() {
-    meta.type = RecordType::Padding;
+    meta.type = RecordType::Empty;
     pmem_persist(&meta.type, sizeof(RecordType));
   }
 
@@ -114,20 +100,21 @@ struct StringRecord {
   // should larger than sizeof(StringRecord) + key size + value size
   static StringRecord* ConstructStringRecord(
       void* target_address, uint32_t _record_size, TimeStampType _timestamp,
-      RecordType _record_type, PMemOffsetType _old_version,
-      const StringView& _key, const StringView& _value,
-      ExpireTimeType _expired_time) {
+      RecordType _record_type, RecordStatus _record_status,
+      PMemOffsetType _old_version, const StringView& _key,
+      const StringView& _value, ExpireTimeType _expired_time) {
     StringRecord* record = new (target_address)
-        StringRecord(_record_size, _timestamp, _record_type, _old_version, _key,
-                     _value, _expired_time);
+        StringRecord(_record_size, _timestamp, _record_type, _record_status,
+                     _old_version, _key, _value, _expired_time);
     return record;
   }
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord* PersistStringRecord(
       void* addr, uint32_t record_size, TimeStampType timestamp,
-      RecordType type, PMemOffsetType old_version, const StringView& key,
-      const StringView& value, ExpireTimeType expired_time = kPersistTime);
+      RecordType type, RecordStatus status, PMemOffsetType old_version,
+      const StringView& key, const StringView& value,
+      ExpireTimeType expired_time = kPersistTime);
 
   void Destroy() { entry.Destroy(); }
 
@@ -176,9 +163,17 @@ struct StringRecord {
     _mm_mfence();
   }
 
+  void PersistStatus(RecordStatus status) {
+    entry.meta.status = status;
+    _mm_clwb(&entry.meta.status);
+    _mm_mfence();
+  }
+
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
   RecordType GetRecordType() const { return entry.meta.type; }
+
+  RecordStatus GetRecordStatus() const { return entry.meta.status; }
 
   static uint32_t RecordSize(const StringView& key, const StringView& value) {
     return key.size() + value.size() + sizeof(StringRecord);
@@ -186,15 +181,14 @@ struct StringRecord {
 
  private:
   StringRecord(uint32_t _record_size, TimeStampType _timestamp,
-               RecordType _record_type, PMemOffsetType _old_version,
-               const StringView& _key, const StringView& _value,
-               ExpireTimeType _expired_time)
-      : entry(0, _record_size, _timestamp, _record_type, _key.size(),
-              _value.size()),
+               RecordType _record_type, RecordStatus _record_status,
+               PMemOffsetType _old_version, const StringView& _key,
+               const StringView& _value, ExpireTimeType _expired_time)
+      : entry(0, _record_size, _timestamp, _record_type, _record_status,
+              _key.size(), _value.size()),
         old_version(_old_version),
         expired_time(_expired_time) {
-    assert(_record_type == StringDataRecord ||
-           _record_type == StringDeleteRecord);
+    kvdk_assert(_record_type == RecordType::String, "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();
@@ -235,13 +229,14 @@ struct DLRecord {
   static DLRecord* ConstructDLRecord(void* target_address, uint32_t record_size,
                                      TimeStampType timestamp,
                                      RecordType record_type,
+                                     RecordStatus record_status,
                                      PMemOffsetType old_version, uint64_t prev,
                                      uint64_t next, const StringView& key,
                                      const StringView& value,
                                      ExpireTimeType expired_time) {
     DLRecord* record = new (target_address)
-        DLRecord(record_size, timestamp, record_type, old_version, prev, next,
-                 key, value, expired_time);
+        DLRecord(record_size, timestamp, record_type, record_status,
+                 old_version, prev, next, key, value, expired_time);
     return record;
   }
 
@@ -311,6 +306,12 @@ struct DLRecord {
     _mm_mfence();
   }
 
+  void PersistStatus(RecordStatus status) {
+    entry.meta.status = status;
+    _mm_clwb(&entry.meta.status);
+    _mm_mfence();
+  }
+
   ExpireTimeType GetExpireTime() const {
     kvdk_assert(entry.meta.type & ExpirableRecordType,
                 "Call DLRecord::GetExpireTime with an unexpirable type");
@@ -319,17 +320,17 @@ struct DLRecord {
 
   RecordType GetRecordType() const { return entry.meta.type; }
 
+  RecordStatus GetRecordStatus() const { return entry.meta.status; }
+
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
   TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
 
   // Construct and persist a dl record to PMem address "addr"
-  static DLRecord* PersistDLRecord(void* addr, uint32_t record_size,
-                                   TimeStampType timestamp, RecordType type,
-                                   PMemOffsetType old_version,
-                                   PMemOffsetType prev, PMemOffsetType next,
-                                   const StringView& key,
-                                   const StringView& value,
-                                   ExpireTimeType expired_time = kPersistTime);
+  static DLRecord* PersistDLRecord(
+      void* addr, uint32_t record_size, TimeStampType timestamp,
+      RecordType type, RecordStatus status, PMemOffsetType old_version,
+      PMemOffsetType prev, PMemOffsetType next, const StringView& key,
+      const StringView& value, ExpireTimeType expired_time = kPersistTime);
 
   uint32_t GetRecordSize() const { return entry.header.record_size; }
 
@@ -338,17 +339,20 @@ struct DLRecord {
   }
 
  private:
-  DLRecord(uint32_t _record_size, TimeStampType _timestamp,
-           RecordType _record_type, PMemOffsetType _old_version,
+  DLRecord(uint32_t _record_size, TimeStampType _timestamp, RecordType _type,
+           RecordStatus _status, PMemOffsetType _old_version,
            PMemOffsetType _prev, PMemOffsetType _next, const StringView& _key,
            const StringView& _value, ExpireTimeType _expired_time)
-      : entry(0, _record_size, _timestamp, _record_type, _key.size(),
+      : entry(0, _record_size, _timestamp, _type, _status, _key.size(),
               _value.size()),
         old_version(_old_version),
         prev(_prev),
         next(_next),
         expired_time(_expired_time) {
-    assert(_record_type & DLRecordType);
+    kvdk_assert(_type & (RecordType::SortedElem | RecordType::SortedHeader |
+                         RecordType::HashElem | RecordType::HashRecord |
+                         RecordType::ListElem | RecordType::ListRecord),
+                "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());
     entry.header.checksum = Checksum();

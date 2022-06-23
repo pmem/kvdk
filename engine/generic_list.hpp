@@ -30,7 +30,7 @@ constexpr PMemOffsetType NullPMemOffset = kNullPMemOffset;
 template <RecordType, RecordType>
 class GenericListBuilder;
 
-template <RecordType ListType, RecordType DataType>
+template <RecordType ListType, RecordType ElemType>
 class GenericList final : public Collection {
  private:
   // For offset-address translation
@@ -182,7 +182,7 @@ class GenericList final : public Collection {
       }
       kvdk_assert(Collection::ExtractID(curr->Key()) == owner->ID(), "");
       kvdk_assert(
-          (curr->entry.meta.type == DataType && curr->Validate()) || dirty(),
+          (curr->GetRecordType() == ElemType && curr->Validate()) || dirty(),
           "");
 #endif  // KVDK_DEBUG_LEVEL > 0
     }
@@ -217,7 +217,8 @@ class GenericList final : public Collection {
     alloc = a;
     list_record = DLRecord::PersistDLRecord(
         addressOf(space.offset), space.size, timestamp, ListType,
-        NullPMemOffset, NullPMemOffset, NullPMemOffset, key, ID2String(id));
+        RecordStatus::Normal, NullPMemOffset, NullPMemOffset, NullPMemOffset,
+        key, ID2String(id));
     lock_table = lt;
   }
 
@@ -250,7 +251,7 @@ class GenericList final : public Collection {
     size_t cnt = 0;
     for (auto iter = Front(); iter != Tail(); ++iter) {
       ++cnt;
-      kvdk_assert(iter->entry.meta.type == DataType, "");
+      kvdk_assert(iter->GetRecordType() == ElemType, "");
       kvdk_assert(iter->Validate(), "");
       kvdk_assert(ExtractID(iter->Key()) == collection_id_, "");
       Iterator iter2{iter};
@@ -440,8 +441,9 @@ class GenericList final : public Collection {
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
     DLRecord* record = DLRecord::PersistDLRecord(
-        addressOf(space.offset), space.size, timestamp, DataType,
-        NullPMemOffset, prev_off, next_off, InternalKey(key), value);
+        addressOf(space.offset), space.size, timestamp, ElemType,
+        RecordStatus::Normal, NullPMemOffset, prev_off, next_off,
+        InternalKey(key), value);
     kvdk_assert(record->Validate(), "");
 
     if (prev == Head() && next == Tail()) {
@@ -514,8 +516,9 @@ class GenericList final : public Collection {
     PMemOffsetType prev_off = (prev == Head()) ? NullPMemOffset : prev.Offset();
     PMemOffsetType next_off = (next == Tail()) ? NullPMemOffset : next.Offset();
     DLRecord* record = DLRecord::PersistDLRecord(
-        addressOf(space.offset), space.size, timestamp, DataType,
-        NullPMemOffset, prev_off, next_off, InternalKey(key), value);
+        addressOf(space.offset), space.size, timestamp, ElemType,
+        RecordStatus::Normal, NullPMemOffset, prev_off, next_off,
+        InternalKey(key), value);
     if (prev == Head() && next == Tail()) {
       first = record;
       last = record;
@@ -538,7 +541,7 @@ class GenericList final : public Collection {
 
   std::string serialize(DLRecord* rec) const {
     std::stringstream ss;
-    ss << "Type:\t" << to_hex(rec->entry.meta.type) << "\t"
+    ss << "Type:\t" << to_hex(rec->GetRecordType()) << "\t"
        << "Prev:\t" << to_hex(rec->prev) << "\t"
        << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
        << "Next:\t" << to_hex(rec->next) << "\t"
@@ -576,77 +579,25 @@ class GenericList final : public Collection {
     }
   }
 
-  friend class GenericListBuilder<ListType, DataType>;
+  friend class GenericListBuilder<ListType, ElemType>;
 
   static void markRecordAsDirty(DLRecord* rec) {
-    auto& entry = rec->entry;
-    switch (entry.meta.type) {
-      case RecordType::ListElem: {
-        entry.meta.type = RecordType::ListDirtyElem;
-        break;
-      }
-      case RecordType::HashElem: {
-        entry.meta.type = RecordType::HashDirtyElem;
-        break;
-      }
-      case RecordType::ListRecord: {
-        entry.meta.type = RecordType::ListDirtyRecord;
-        break;
-      }
-      case RecordType::HashRecord: {
-        entry.meta.type = RecordType::HashDirtyRecord;
-        break;
-      }
-      default: {
-        kvdk_assert(false, "Unsupported!");
-        std::abort();
-      }
-    }
-    _mm_clwb(&entry.meta.type);
-    _mm_mfence();
+    rec->PersistStatus(RecordStatus::Dirty);
   }
 
   static void cleanRecordDirtyMark(DLRecord* rec) {
-    auto& entry = rec->entry;
-    switch (entry.meta.type) {
-      case RecordType::ListDirtyElem: {
-        entry.meta.type = RecordType::ListElem;
-        break;
-      }
-      case RecordType::HashDirtyElem: {
-        entry.meta.type = RecordType::HashElem;
-        break;
-      }
-      case RecordType::ListDirtyRecord: {
-        entry.meta.type = RecordType::ListRecord;
-        break;
-      }
-      case RecordType::HashDirtyRecord: {
-        entry.meta.type = RecordType::HashRecord;
-        break;
-      }
-      default: {
-        kvdk_assert(false, "Unsupported!");
-        std::abort();
-      }
-    }
-    _mm_clwb(&entry.meta.type);
-    _mm_mfence();
+    rec->PersistStatus(RecordStatus::Normal);
   }
 
   static bool isRecordDirty(DLRecord* rec) {
-    auto& entry = rec->entry;
-    return (entry.meta.type == RecordType::ListDirtyElem) ||
-           (entry.meta.type == RecordType::HashDirtyElem) ||
-           (entry.meta.type == RecordType::ListDirtyRecord) ||
-           (entry.meta.type == RecordType::HashDirtyRecord);
+    return rec->GetRecordStatus() == RecordStatus::Dirty;
   }
 };
 
-template <RecordType ListType, RecordType DataType>
+template <RecordType ListType, RecordType ElemType>
 class GenericListBuilder final {
   static constexpr size_t NMiddlePoints = 1024;
-  using List = GenericList<ListType, DataType>;
+  using List = GenericList<ListType, ElemType>;
 
   PMEMAllocator* alloc;
   // Number of workers to count List elements
@@ -722,7 +673,7 @@ class GenericListBuilder final {
   }
 
   bool AddListRecord(DLRecord* lrec) {
-    kvdk_assert(lrec->entry.meta.type == ListType, "");
+    kvdk_assert(lrec->GetRecordType() == ListType, "");
     kvdk_assert(lrec->Value().size() == sizeof(CollectionIDType), "");
     CollectionIDType id = Collection::ExtractID(lrec->Value());
     maybeResizePrimers(id);
@@ -736,7 +687,7 @@ class GenericListBuilder final {
   }
 
   bool AddListElem(DLRecord* elem) {
-    kvdk_assert(elem->entry.meta.type == DataType, "");
+    kvdk_assert(elem->GetRecordType() == ElemType, "");
     switch (typeOf(elem)) {
       case ListRecordType::Unique: {
         return addUniqueElem(elem);
@@ -1102,7 +1053,7 @@ class GenericListBuilder final {
 
   std::string serialize(DLRecord* rec) const {
     std::stringstream ss;
-    ss << "Type:\t" << to_hex(rec->entry.meta.type) << "\t"
+    ss << "Type:\t" << to_hex(rec->GetRecordType()) << "\t"
        << "Prev:\t" << to_hex(rec->prev) << "\t"
        << "Offset:\t" << to_hex(offsetOf(rec)) << "\t"
        << "Next:\t" << to_hex(rec->next) << "\t"

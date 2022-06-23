@@ -231,7 +231,7 @@ class KVEngine : public Engine {
   //
   // Notice: key should be locked if set may_insert to true
   template <bool may_insert>
-  HashTable::LookupResult lookupKey(StringView key, uint16_t type_mask);
+  HashTable::LookupResult lookupKey(StringView key, uint8_t type_mask);
 
   // Look up a collection element in hash table
   //
@@ -248,7 +248,7 @@ class KVEngine : public Engine {
   //
   // Notice: elem should be locked if set may_insert to true
   template <bool may_insert>
-  HashTable::LookupResult lookupElem(StringView key, uint16_t type_mask);
+  HashTable::LookupResult lookupElem(StringView key, uint8_t type_mask);
 
   // Remove a key or elem from hash table, ret should be return of
   // lookupKey/lookupElem
@@ -260,16 +260,15 @@ class KVEngine : public Engine {
   // insert/update key or elem to hashtable, ret must be return value of
   // lookupElem or lookupKey
   void insertKeyOrElem(HashTable::LookupResult ret, RecordType type,
-                       void* addr) {
-    hash_table_->Insert(ret, type, addr, pointerType(type));
+                       RecordStatus status, void* addr) {
+    hash_table_->Insert(ret, type, status, addr, pointerType(type));
   }
 
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
     static_assert(std::is_same<CollectionType, Skiplist>::value ||
                       std::is_same<CollectionType, List>::value ||
-                      std::is_same<CollectionType, HashList>::value ||
-                      std::is_same<CollectionType, StringRecord>::value,
+                      std::is_same<CollectionType, HashList>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
@@ -285,16 +284,13 @@ class KVEngine : public Engine {
       case RecordType::Empty: {
         return PointerType::Empty;
       }
-      case RecordType::StringDataRecord:
-      case RecordType::StringDeleteRecord: {
+      case RecordType::String: {
         return PointerType::StringRecord;
       }
-      case RecordType::SortedElem:
-      case RecordType::SortedElemDelete: {
+      case RecordType::SortedElem: {
         kvdk_assert(false, "Not supported!");
         return PointerType::Invalid;
       }
-      case RecordType::SortedHeaderDelete:
       case RecordType::SortedHeader: {
         return PointerType::Skiplist;
       }
@@ -337,7 +333,7 @@ class KVEngine : public Engine {
   // Lockless. It's up to caller to lock the HashTable
   template <typename CollectionType>
   Status registerCollection(CollectionType* coll) {
-    RecordType type = collectionType<CollectionType>();
+    auto type = collectionType<CollectionType>();
     auto ret = lookupKey<true>(coll->Name(), type);
     if (ret.s == Status::Ok) {
       kvdk_assert(false, "Collection already registered!");
@@ -346,7 +342,7 @@ class KVEngine : public Engine {
     if (ret.s != Status::NotFound && ret.s != Status::Outdated) {
       return ret.s;
     }
-    insertKeyOrElem(ret, type, coll);
+    insertKeyOrElem(ret, type, RecordStatus::Normal, coll);
     return Status::Ok;
   }
 
@@ -404,9 +400,6 @@ class KVEngine : public Engine {
                              const DataEntry& cached_entry);
 
   bool ValidateRecord(void* data_record);
-
-  bool ValidateRecordAndGetValue(void* data_record, uint32_t expected_checksum,
-                                 std::string* value);
 
   Status initOrRestoreCheckpoint();
 

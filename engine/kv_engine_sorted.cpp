@@ -30,7 +30,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
   auto lookup_result =
-      lookupKey<true>(collection_name, SortedHeader | SortedHeaderDelete);
+      lookupKey<true>(collection_name, RecordType::SortedHeader);
   if (lookup_result.s == NotFound || lookup_result.s == Outdated) {
     DLRecord* existing_header =
         lookup_result.s == Outdated
@@ -51,19 +51,22 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
     if (space_entry.size == 0) {
       return Status::PmemOverflow;
     }
+
     // PMem level of skiplist is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
-        new_ts, SortedHeader, pmem_allocator_->addr2offset(existing_header),
-        space_entry.offset, space_entry.offset, collection_name, value_str);
+        new_ts, RecordType::SortedHeader, RecordStatus::Normal,
+        pmem_allocator_->addr2offset(existing_header), space_entry.offset,
+        space_entry.offset, collection_name, value_str);
 
     skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
         pmem_allocator_.get(), hash_table_.get(), skiplist_locks_.get(),
         s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
-    insertKeyOrElem(lookup_result, SortedHeader, skiplist.get());
+    insertKeyOrElem(lookup_result, RecordType::SortedHeader,
+                    RecordStatus::Normal, skiplist.get());
   } else {
     // Todo (jiayu): handle expired skiplist
     // Todo (jiayu): what if skiplist exists but comparator not match?
@@ -81,12 +84,12 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
   auto ul = hash_table_->AcquireLock(collection_name);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   auto new_ts = snapshot_holder.Timestamp();
-  auto lookup_result = lookupKey<false>(
-      collection_name, static_cast<uint16_t>(RecordType::SortedHeader));
+  auto lookup_result =
+      lookupKey<false>(collection_name, RecordType::SortedHeader);
   if (lookup_result.s == Status::Ok) {
     Skiplist* skiplist = lookup_result.entry.GetIndex().skiplist;
     DLRecord* header = skiplist->HeaderRecord();
-    assert(header->entry.meta.type == SortedHeader);
+    assert(header->GetRecordType() == RecordType::SortedHeader);
     StringView value = header->Value();
     auto request_size =
         sizeof(DLRecord) + collection_name.size() + value.size();
@@ -96,14 +99,15 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
     }
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space_entry.offset),
-        space_entry.size, new_ts, SortedHeaderDelete,
-        pmem_allocator_->addr2offset_checked(header), header->prev,
-        header->next, collection_name, value);
+        space_entry.size, new_ts, RecordType::SortedHeader,
+        RecordStatus::Outdated, pmem_allocator_->addr2offset_checked(header),
+        header->prev, header->next, collection_name, value);
     bool success =
         Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
                           pmem_allocator_.get(), skiplist_locks_.get());
     kvdk_assert(success, "existing header should be linked on its skiplist");
-    insertKeyOrElem(lookup_result, SortedHeaderDelete, skiplist);
+    insertKeyOrElem(lookup_result, RecordType::SortedHeader,
+                    RecordStatus::Outdated, skiplist);
   } else if (lookup_result.s == Status::Outdated ||
              lookup_result.s == Status::NotFound) {
     lookup_result.s = Status::Ok;
@@ -121,7 +125,7 @@ Status KVEngine::SortedSize(const StringView collection, size_t* size) {
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -145,7 +149,7 @@ Status KVEngine::SortedGet(const StringView collection,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -169,7 +173,7 @@ Status KVEngine::SortedPut(const StringView collection,
 
   Skiplist* skiplist = nullptr;
 
-  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -190,7 +194,7 @@ Status KVEngine::SortedDelete(const StringView collection,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, SortedHeader | SortedHeaderDelete);
+  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   // GlobalLogger.Debug("ret.s is %d\n", ret.s);
   if (ret.s != Status::Ok) {
     return (ret.s == Status::Outdated || ret.s == Status::NotFound) ? Status::Ok
@@ -212,7 +216,7 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
     snapshot = GetSnapshot(false);
   }
   // find collection
-  auto res = lookupKey<false>(collection, SortedHeader);
+  auto res = lookupKey<false>(collection, RecordType::SortedHeader);
   if (s != nullptr) {
     *s = (res.s == Status::Outdated) ? Status::NotFound : res.s;
   }

@@ -10,10 +10,12 @@
 namespace KVDK_NAMESPACE {
 
 void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
-  kvdk_assert(
-      static_cast<DLRecord*>(addr)->entry.meta.type &
-          (ListDirtyElem | ListDirtyRecord | HashDirtyElem | HashDirtyRecord),
-      "");
+  kvdk_assert((static_cast<DLRecord*>(addr)->GetRecordType() &
+               (RecordType::ListRecord | RecordType::ListElem |
+                RecordType::HashRecord | RecordType::HashElem)) &&
+                  (static_cast<DLRecord*>(addr)->GetRecordStatus() ==
+                   RecordStatus::Dirty),
+              "");
   kvdk_assert(access_thread.id >= 0, "");
   auto& tc = cleaner_thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> guard{tc.old_records_lock};

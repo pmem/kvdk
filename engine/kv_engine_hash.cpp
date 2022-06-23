@@ -42,7 +42,7 @@ Status KVEngine::HashCreate(StringView key) {
     }
     hash_lists_.emplace(hlist);
   }
-  insertKeyOrElem(result, RecordType::HashRecord, hlist);
+  insertKeyOrElem(result, RecordType::HashRecord, RecordStatus::Normal, hlist);
   return Status::Ok;
 }
 
@@ -204,7 +204,7 @@ Status KVEngine::hashElemOpImpl(StringView key, StringView field, CallBack cb,
         hlist->ReplaceWithLock(space, pos, ts, field, new_value,
                                [&](DLRecord* rec) { delayFree(rec); });
       }
-      insertKeyOrElem(result, RecordType::HashElem, addr);
+      insertKeyOrElem(result, RecordType::HashElem, RecordStatus::Normal, addr);
       return Status::Ok;
     }
     case ModifyOperation::Delete: {
@@ -294,7 +294,7 @@ Status KVEngine::hashListRestoreElem(DLRecord* rec) {
     return result.s;
   }
   kvdk_assert(result.s == Status::NotFound, "Impossible!");
-  insertKeyOrElem(result, RecordType::HashElem, rec);
+  insertKeyOrElem(result, RecordType::HashElem, RecordStatus::Normal, rec);
 
   return Status::Ok;
 }
@@ -386,7 +386,8 @@ Status KVEngine::hashListPublish(HashWriteArgs const& args) {
   if (args.op == WriteBatchImpl::Op::Delete) {
     removeKeyOrElem(args.res);
   } else {
-    insertKeyOrElem(args.res, RecordType::HashElem, args.new_rec);
+    insertKeyOrElem(args.res, RecordType::HashElem, RecordStatus::Normal,
+                    args.new_rec);
   }
   return Status::Ok;
 }
