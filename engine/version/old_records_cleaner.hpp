@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../alias.hpp"
+#include "../cleaner.hpp"
 #include "../collection.hpp"
 #include "../hash_table.hpp"
 #include "../thread_manager.hpp"
@@ -17,20 +18,6 @@
 
 namespace KVDK_NAMESPACE {
 class KVEngine;
-
-struct PendingFreeSpaceEntries {
-  std::vector<SpaceEntry> entries;
-  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
-  // could safely free these entries
-  TimeStampType release_time;
-};
-
-struct PendingFreeSpaceEntry {
-  SpaceEntry entry;
-  // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
-  // could safely free this entry
-  TimeStampType release_time;
-};
 
 // OldRecordsCleaner is used to clean old version PMem records of kvdk
 //

@@ -117,16 +117,21 @@ class KVEngine : public Engine {
   // Used by test case.
   HashTable* GetHashTable() { return hash_table_.get(); }
 
-  void CleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
+  void TestCleanOutDated(int execute_time, size_t start_slot_idx,
+                         size_t end_slot_idx);
+
+  size_t ReclaimerThreadNum();
 
  private:
   friend OldRecordsCleaner;
+  friend SpaceReclaimer;
 
   KVEngine(const Configs& configs)
       : engine_thread_cache_(configs.max_access_threads),
         cleaner_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads),
+        space_reclaimer_(this, configs.clean_threads),
         comparators_(configs.comparator){};
 
   struct EngineThreadCache {
@@ -143,6 +148,7 @@ class KVEngine : public Engine {
     CleanerThreadCache() = default;
     std::vector<StringRecord*> old_str_records;
     std::vector<DLRecord*> old_dl_records;
+    std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};
     SpinMutex mtx;
   };
 
@@ -492,6 +498,11 @@ class KVEngine : public Engine {
   void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
                                   std::vector<DLRecord*>& purge_dl_records);
 
+  double cleanSlotBlockOutDated(PendingPrugeFreeRecords& pending_clean_records,
+                                size_t start_slot_idx, size_t slot_block_size);
+
+  void prugeAndFreeAllType(PendingPrugeFreeRecords& pending_clean_records);
+
   void delayFree(DLRecord* addr);
 
   void directFree(DLRecord* addr);
@@ -599,8 +610,6 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
-
   void deleteCollections();
 
   void startBackgroundWorks();
@@ -641,6 +650,7 @@ class KVEngine : public Engine {
   std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
+  SpaceReclaimer space_reclaimer_;
 
   ComparatorTable comparators_;
 

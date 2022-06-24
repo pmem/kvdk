@@ -2265,6 +2265,67 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
   delete engine;
 }
+
+TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
+  configs.max_access_threads = 32;
+  configs.hash_bucket_num = 256;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::string sorted_collection = "sorted_collection";
+  std::string common_str_key = "string_key";
+  std::string common_sorted_key = "sorted_key";
+  std::string common_value = "val";
+  ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  auto test_kvengine = static_cast<KVEngine*>(engine);
+
+  size_t cnt = 16;
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string value = std::to_string(id) + common_value;
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
+    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
+              Status::Ok);
+  }
+  ASSERT_EQ(test_kvengine->ReclaimerThreadNum(), 1);
+
+  // expire
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    ASSERT_EQ(engine->Expire(str_key, -1), Status::Ok);
+    ASSERT_EQ(engine->SortedDelete(sorted_collection, sorted_key), Status::Ok);
+  }
+
+  ASSERT_TRUE(test_kvengine->ReclaimerThreadNum() > 1);
+
+  sleep(1);
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string value = std::to_string(id) + common_value;
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
+    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
+              Status::Ok);
+  }
+  ASSERT_EQ(test_kvengine->ReclaimerThreadNum(), 1);
+  // update
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string value = std::to_string(id) + common_value;
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    for (int i = 0; i < 10; ++i) {
+      auto update_val = value + std::to_string(i);
+      ASSERT_EQ(engine->Put(str_key, update_val), Status::Ok);
+      ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, update_val),
+                Status::Ok);
+    }
+  }
+  ASSERT_TRUE(test_kvengine->ReclaimerThreadNum() > 1);
+
+  delete engine;
+}
 // ========================= Sync Point ======================================
 
 #if KVDK_DEBUG_LEVEL > 0
@@ -2273,6 +2334,16 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
+    // Test crash before commit
+    SyncPoint::GetInstance()->EnableCrashPoint(
+        "KVEngine::batchWriteImpl::BeforeCommit");
+    SyncPoint::GetInstance()->EnableProcessing();
+    // abandon background cleaner thread
+    SyncPoint::GetInstance()->SetCallBack(
+        "KVEngine::backgroundCleaner::NothingToDo", [&](void* close_reclaimer) {
+          *((std::atomic_bool*)close_reclaimer) = true;
+          return;
+        });
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
               Status::Ok);
     size_t batch_size = 100;
@@ -2338,10 +2409,6 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
       }
     };
 
-    // Test crash before commit
-    SyncPoint::GetInstance()->EnableCrashPoint(
-        "KVEngine::batchWriteImpl::BeforeCommit");
-    SyncPoint::GetInstance()->EnableProcessing();
     // Put some KVs
     LaunchNThreads(num_threads, Put);
     // Check KVs in engine
@@ -2732,8 +2799,8 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::NothingToDo", [&](void* thread_id) {
-        *((size_t*)thread_id) = test_config.clean_threads;
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* close_reclaimer) {
+        *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
   // only throw when the first call `SortedDelete`
@@ -2761,8 +2828,8 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
     engine->SortedPut(collection_name, keylists[2], "val" + keylists[2]);
     engine->SortedDelete(collection_name, keylists[0]);
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->CleanOutDated(0,
-                                 test_kvengine->GetHashTable()->GetSlotsNum());
+    test_kvengine->TestCleanOutDated(
+        1, 0, test_kvengine->GetHashTable()->GetSlotsNum());
   } catch (...) {
     delete engine;
     // reopen engine
@@ -2916,22 +2983,8 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::NothingToDo", [&](void* thread_id) {
-        *((size_t*)thread_id) = configs.clean_threads;
-        return;
-      });
-  SyncPoint::GetInstance()->SetCallBack("KVEngine::backgroundCleaner::Start",
-                                        [&](void* terminal) {
-                                          *((bool*)terminal) = false;
-                                          return;
-                                        });
-  SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::ExecuteNTime", [&](void* terminal) {
-        cleaner_execute_time--;
-        if (cleaner_execute_time == 0) {
-          *((bool*)terminal) = true;
-        }
-        sleep(1);
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* close_reclaimer) {
+        *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
   SyncPoint::GetInstance()->EnableProcessing();
@@ -3083,8 +3136,8 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 
   auto ExpiredClean = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->CleanOutDated(0,
-                                 test_kvengine->GetHashTable()->GetSlotsNum());
+    test_kvengine->TestCleanOutDated(
+        cleaner_execute_time, 0, test_kvengine->GetHashTable()->GetSlotsNum());
   };
 
   {
@@ -3138,27 +3191,12 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 }
 
 TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
-  int cleaner_execute_time = 3;
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::NothingToDo", [&](void* thread_id) {
-        *((size_t*)thread_id) = configs.clean_threads;
-        return;
-      });
-  SyncPoint::GetInstance()->SetCallBack("KVEngine::backgroundCleaner::Start",
-                                        [&](void* terminal) {
-                                          *((bool*)terminal) = false;
-                                          return;
-                                        });
-  SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::backgroundCleaner::ExecuteNTime", [&](void* terminal) {
-        cleaner_execute_time--;
-        if (cleaner_execute_time == 0) {
-          *((bool*)terminal) = true;
-        }
-        sleep(1);
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* close_reclaimer) {
+        *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
   SyncPoint::GetInstance()->LoadDependency(
@@ -3199,8 +3237,8 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 
   auto backgroundCleaner = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->CleanOutDated(0,
-                                 test_kvengine->GetHashTable()->GetSlotsNum());
+    test_kvengine->TestCleanOutDated(
+        3, 0, test_kvengine->GetHashTable()->GetSlotsNum());
   };
   std::vector<std::thread> ts;
   ts.emplace_back(PutAndDeleteSorted);
