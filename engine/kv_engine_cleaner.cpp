@@ -6,6 +6,8 @@
 
 namespace KVDK_NAMESPACE {
 
+constexpr uint64_t kCleanCachedUpdateSnapshotInterval = 1000;
+
 template <typename T>
 T* KVEngine::removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts) {
   static_assert(
@@ -62,7 +64,7 @@ void KVEngine::cleanOutdatedRecordImpl(T* old_record) {
                 std::is_same<T, DLRecord>::value);
   while (old_record) {
     T* next = pmem_allocator_->offset2addr<T>(old_record->old_version);
-    if ((old_record->GetRecordType() & DeleteRecordType) == 0) {
+    if (old_record->GetRecordStatus() == RecordStatus::Normal) {
       old_record->Destroy();
     }
     pmem_allocator_->Free(
@@ -77,7 +79,7 @@ void KVEngine::tryCleanCachedOutdatedRecord() {
   auto& tc = cleaner_thread_cache_[access_thread.id];
   // Regularly update local oldest snapshot
   thread_local uint64_t round = 0;
-  if (++round % 1000 == 0) {
+  if (++round % kCleanCachedUpdateSnapshotInterval == 0) {
     version_controller_.UpdateLocalOldestSnapshot();
   }
   auto release_time = version_controller_.LocalOldestSnapshotTS();
