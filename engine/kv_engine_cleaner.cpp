@@ -64,12 +64,12 @@ void KVEngine::cleanOutdatedRecordImpl(T* old_record) {
                 std::is_same<T, DLRecord>::value);
   while (old_record) {
     T* next = pmem_allocator_->offset2addr<T>(old_record->old_version);
+    auto record_size = old_record->entry.header.record_size;
     if (old_record->GetRecordStatus() == RecordStatus::Normal) {
       old_record->Destroy();
     }
-    pmem_allocator_->Free(
-        SpaceEntry(pmem_allocator_->addr2offset_checked(old_record),
-                   old_record->entry.header.record_size));
+    pmem_allocator_->Free(SpaceEntry(
+        pmem_allocator_->addr2offset_checked(old_record), record_size));
     old_record = next;
   }
 }
@@ -83,22 +83,27 @@ void KVEngine::tryCleanCachedOutdatedRecord() {
     version_controller_.UpdateLocalOldestSnapshot();
   }
   auto release_time = version_controller_.LocalOldestSnapshotTS();
-  std::unique_lock<SpinMutex> ul(tc.mtx);
-  if (!tc.outdated_string_records.empty() &&
-      tc.outdated_string_records.front().release_time < release_time) {
-    auto to_clean = tc.outdated_string_records.front();
-    tc.outdated_string_records.pop_front();
-    ul.unlock();
-    cleanOutdatedRecordImpl<StringRecord>(to_clean.record);
-    return;
+  if (!tc.outdated_string_records.empty()) {
+    std::unique_lock<SpinMutex> ul(tc.mtx);
+    if (!tc.outdated_string_records.empty() &&
+        tc.outdated_string_records.front().release_time < release_time) {
+      auto to_clean = tc.outdated_string_records.front();
+      tc.outdated_string_records.pop_front();
+      ul.unlock();
+      cleanOutdatedRecordImpl<StringRecord>(to_clean.record);
+      return;
+    }
   }
 
-  if (!tc.outdated_dl_records.empty() &&
-      tc.outdated_dl_records.front().release_time < release_time) {
-    auto to_clean = tc.outdated_dl_records.front();
-    tc.outdated_dl_records.pop_front();
-    ul.unlock();
-    cleanOutdatedRecordImpl<DLRecord>(to_clean.record);
+  if (!tc.outdated_dl_records.empty()) {
+    std::unique_lock<SpinMutex> ul(tc.mtx);
+    if (!tc.outdated_dl_records.empty() &&
+        tc.outdated_dl_records.front().release_time < release_time) {
+      auto to_clean = tc.outdated_dl_records.front();
+      tc.outdated_dl_records.pop_front();
+      ul.unlock();
+      cleanOutdatedRecordImpl<DLRecord>(to_clean.record);
+    }
   }
 }
 
