@@ -1307,10 +1307,10 @@ template HashTable::LookupResult KVEngine::lookupKey<false>(StringView,
 
 template <typename T>
 T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
-  T* ret = nullptr;
   static_assert(
       std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
       "Invalid record type, should be StringRecord or DLRecord.");
+  T* ret = nullptr;
   auto old_record = record;
   while (old_record && old_record->entry.meta.timestamp > min_snapshot_ts) {
     old_record =
@@ -1324,12 +1324,13 @@ T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
         pmem_allocator_->offset2addr_checked<T>(old_record->old_version);
     ret = remove_record;
     old_record->PersistOldVersion(kNullPMemOffset);
-    // while (remove_record != nullptr) {
-    if (remove_record->GetRecordStatus() == RecordStatus::Normal) {
-      remove_record->PersistStatus(RecordStatus::Dirty);
+    while (remove_record != nullptr) {
+      if (remove_record->GetRecordStatus() == RecordStatus::Normal) {
+        remove_record->PersistStatus(RecordStatus::Dirty);
+      }
+      remove_record =
+          pmem_allocator_->offset2addr<T>(remove_record->old_version);
     }
-    // remove_record = nullptr;
-    // }
   }
   return ret;
 }

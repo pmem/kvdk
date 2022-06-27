@@ -281,12 +281,64 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
     auto hashtable_iter =
         hash_table_->GetIterator(start_slot_idx, end_slot_idx);
     while (hashtable_iter.Valid()) {
-      /* 1. If having few outdated and old records per slot segment, the thread
-       * is wake up every seconds.
-       * 2. Update min snapshot timestamp per slot segment to avoid snapshot
-       * lock conflict.
-       */
       if (slot_num++ % kSlotSegment == 0) {
+        // Clean cached
+        {
+          size_t i = round_robin_id_.fetch_add(1) % configs_.max_access_threads;
+          auto& tc = cleaner_thread_cache_[i];
+          std::deque<CleanerThreadCache::OutdatedRecord<StringRecord>>
+              outdated_string_records;
+          std::deque<CleanerThreadCache::OutdatedRecord<DLRecord>>
+              outdated_dl_records;
+          if (tc.outdated_dl_records.size() > kMaxCachedOldRecords ||
+              tc.outdated_string_records.size() > kMaxCachedOldRecords) {
+            std::lock_guard<SpinMutex> lg(tc.mtx);
+            if (tc.outdated_string_records.size() > kMaxCachedOldRecords) {
+              outdated_string_records.swap(tc.outdated_string_records);
+            }
+            if (tc.outdated_dl_records.size() > kMaxCachedOldRecords) {
+              outdated_dl_records.swap(tc.outdated_dl_records);
+            }
+          }
+          if (outdated_string_records.size() > 0) {
+            std::vector<StringRecord*> to_free_strings;
+            version_controller_.UpdateLocalOldestSnapshot();
+            auto release_time = version_controller_.LocalOldestSnapshotTS();
+            auto iter = outdated_string_records.begin();
+            while (iter != outdated_string_records.end()) {
+              if (iter->release_time < release_time) {
+                to_free_strings.emplace_back(iter->record);
+              } else {
+                purge_string_records.push_back(iter->record);
+              }
+              iter++;
+            }
+            pending_purge_strings.emplace_front(std::move(to_free_strings),
+                                                release_time);
+          }
+          if (outdated_dl_records.size() > 0) {
+            std::vector<DLRecord*> to_free_dls;
+            version_controller_.UpdateLocalOldestSnapshot();
+            auto release_time = version_controller_.LocalOldestSnapshotTS();
+            auto iter = outdated_dl_records.begin();
+            while (iter != outdated_dl_records.end()) {
+              if (iter->release_time < release_time) {
+                to_free_dls.emplace_back(iter->record);
+              } else {
+                purge_dl_records.push_back(iter->record);
+              }
+              iter++;
+            }
+            pending_purge_dls.emplace_front(std::move(to_free_dls),
+                                            release_time);
+          }
+        }  // Clean cached finish
+
+        /* 1. If having few outdated and old records per slot segment, the
+         * thread is wake up every seconds.
+         * 2. Update min snapshot timestamp per slot segment to avoid snapshot
+         * lock conflict.
+         */
         // total_num + kWakeUpThreshold to avoid division by zero.
         if (need_purge_num / (double)(total_num + kWakeUpThreshold) <
             kWakeUpThreshold) {
@@ -442,56 +494,6 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
         }
         hashtable_iter.Next();
       }  // Finish a slot.
-
-      /* Cached logic start */
-      size_t i = round_robin_id_.fetch_add(1) % configs_.max_access_threads;
-      auto& tc = cleaner_thread_cache_[i];
-      std::deque<CleanerThreadCache::OutdatedRecord<StringRecord>>
-          outdated_string_records;
-      std::deque<CleanerThreadCache::OutdatedRecord<DLRecord>>
-          outdated_dl_records;
-      if (tc.outdated_dl_records.size() > kMaxCachedOldRecords ||
-          tc.outdated_string_records.size() > kMaxCachedOldRecords) {
-        std::lock_guard<SpinMutex> lg(tc.mtx);
-        if (tc.outdated_string_records.size() > kMaxCachedOldRecords) {
-          outdated_string_records.swap(tc.outdated_string_records);
-        }
-        if (tc.outdated_dl_records.size() > kMaxCachedOldRecords) {
-          outdated_dl_records.swap(tc.outdated_dl_records);
-        }
-      }
-      if (outdated_string_records.size() > 0) {
-        std::vector<StringRecord*> to_free_strings;
-        version_controller_.UpdateLocalOldestSnapshot();
-        auto release_time = version_controller_.LocalOldestSnapshotTS();
-        auto iter = outdated_string_records.begin();
-        while (iter != outdated_string_records.end()) {
-          if (iter->release_time < release_time) {
-            to_free_strings.emplace_back(iter->record);
-          } else {
-            purge_string_records.push_back(iter->record);
-          }
-          iter++;
-        }
-        pending_purge_strings.emplace_front(std::move(to_free_strings),
-                                            release_time);
-      }
-      if (outdated_dl_records.size() > 0) {
-        std::vector<DLRecord*> to_free_dls;
-        version_controller_.UpdateLocalOldestSnapshot();
-        auto release_time = version_controller_.LocalOldestSnapshotTS();
-        auto iter = outdated_dl_records.begin();
-        while (iter != outdated_dl_records.end()) {
-          if (iter->release_time < release_time) {
-            to_free_dls.emplace_back(iter->record);
-          } else {
-            purge_dl_records.push_back(iter->record);
-          }
-          iter++;
-        }
-        pending_purge_dls.emplace_front(std::move(to_free_dls), release_time);
-      }
-      /* Cached logic finish */
 
       auto new_ts = version_controller_.GetCurrentTimestamp();
       if (purge_string_records.size() > kMaxCachedOldRecords) {
