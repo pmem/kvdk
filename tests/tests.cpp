@@ -901,7 +901,6 @@ TEST_F(BatchWriteTest, BatchWriteString) {
   LaunchNThreads(num_threads, Check);
 
   Reboot();
-
   LaunchNThreads(num_threads, Check);
   LaunchNThreads(num_threads, Put);
   LaunchNThreads(num_threads, Check);
@@ -2280,6 +2279,7 @@ TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
   auto test_kvengine = static_cast<KVEngine*>(engine);
 
   size_t cnt = 16;
+  // only insert
   for (size_t id = 0; id < cnt; ++id) {
     std::string value = std::to_string(id) + common_value;
     std::string str_key = std::to_string(id) + common_str_key;
@@ -2290,39 +2290,38 @@ TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
   }
   ASSERT_EQ(test_kvengine->ReclaimerThreadNum(), 1);
 
-  // expire
+  bool multi_reclaimer_thread = false;
+  // update + expire
   for (size_t id = 0; id < cnt; ++id) {
     std::string str_key = std::to_string(id) + common_str_key;
     std::string sorted_key = std::to_string(id) + common_sorted_key;
-    ASSERT_EQ(engine->Expire(str_key, -1), Status::Ok);
-    ASSERT_EQ(engine->SortedDelete(sorted_collection, sorted_key), Status::Ok);
-  }
-
-  ASSERT_TRUE(test_kvengine->ReclaimerThreadNum() > 1);
-
-  sleep(1);
-  for (size_t id = 0; id < cnt; ++id) {
     std::string value = std::to_string(id) + common_value;
-    std::string str_key = std::to_string(id) + common_str_key;
-    std::string sorted_key = std::to_string(id) + common_sorted_key;
-    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
-    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
-              Status::Ok);
-  }
-  ASSERT_EQ(test_kvengine->ReclaimerThreadNum(), 1);
-  // update
-  for (size_t id = 0; id < cnt; ++id) {
-    std::string value = std::to_string(id) + common_value;
-    std::string str_key = std::to_string(id) + common_str_key;
-    std::string sorted_key = std::to_string(id) + common_sorted_key;
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 100; ++i) {
       auto update_val = value + std::to_string(i);
       ASSERT_EQ(engine->Put(str_key, update_val), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, update_val),
                 Status::Ok);
     }
+    ASSERT_EQ(engine->Expire(str_key, -1), Status::Ok);
+    ASSERT_EQ(engine->SortedDelete(sorted_collection, sorted_key), Status::Ok);
+    if (test_kvengine->ReclaimerThreadNum() > 1) {
+      multi_reclaimer_thread = true;
+    }
   }
-  ASSERT_TRUE(test_kvengine->ReclaimerThreadNum() > 1);
+
+  ASSERT_TRUE(multi_reclaimer_thread);
+
+  sleep(1);
+
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string value = std::to_string(id) + common_value;
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
+    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
+              Status::Ok);
+  }
+  ASSERT_EQ(test_kvengine->ReclaimerThreadNum(), 1);
 
   delete engine;
 }

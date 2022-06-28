@@ -194,8 +194,6 @@ class Skiplist : public Collection {
 
   Status SetExpireTime(ExpireTimeType expired_time) final;
 
-  Status MarkAsDeleted();
-
   // Put "key, value" to the skiplist
   //
   // timestamp: kvdk engine timestamp of this operation
@@ -280,9 +278,8 @@ class Skiplist : public Collection {
   }
 
   static bool IsSkiplistRecord(DLRecord* record) {
-    auto type = record->entry.meta.type;
-    return type == SortedElem || type == SortedElemDelete ||
-           type == SortedHeader || type == SortedHeaderDelete;
+    RecordType type = record->GetRecordType();
+    return type == RecordType::SortedElem || type == RecordType::SortedHeader;
   }
 
   // Check if record correctly linked on list
@@ -400,17 +397,15 @@ class Skiplist : public Collection {
 
   inline static CollectionIDType SkiplistID(const DLRecord* record) {
     assert(record != nullptr);
-    switch (record->entry.meta.type) {
+    switch (record->GetRecordType()) {
       case RecordType::SortedElem:
-      case RecordType::SortedElemDelete:
         return ExtractID(record->Key());
         break;
       case RecordType::SortedHeader:
-      case RecordType::SortedHeaderDelete:
         return DecodeID(record->Value());
       default:
-        GlobalLogger.Error("Wrong record type %d in SkiplistID",
-                           record->entry.meta.type);
+        GlobalLogger.Error("Wrong record type %u in SkiplistID",
+                           record->GetRecordType());
         kvdk_assert(false, "Wrong type in SkiplistID");
     }
     return 0;

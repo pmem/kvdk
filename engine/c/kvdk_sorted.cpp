@@ -75,11 +75,11 @@ KVDKStatus KVDKSortedDelete(KVDKEngine* engine, const char* collection,
                                    StringView(key, key_len));
 }
 
-KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
-                                                 const char* collection,
-                                                 size_t collection_len,
-                                                 KVDKSnapshot* snapshot,
-                                                 KVDKStatus* s) {
+KVDKSortedIterator* KVDKSortedIteratorCreate(KVDKEngine* engine,
+                                             const char* collection,
+                                             size_t collection_len,
+                                             KVDKSnapshot* snapshot,
+                                             KVDKStatus* s) {
   KVDKSortedIterator* result = new KVDKSortedIterator;
   result->rep =
       (engine->rep->NewSortedIterator(StringView{collection, collection_len},
@@ -103,7 +103,7 @@ void KVDKSortedIteratorSeekToFirst(KVDKSortedIterator* iter) {
   iter->rep->SeekToFirst();
 }
 
-void KVDKKVDKSortedIteratorSeekToLast(KVDKSortedIterator* iter) {
+void KVDKSortedIteratorSeekToLast(KVDKSortedIterator* iter) {
   iter->rep->SeekToLast();
 }
 

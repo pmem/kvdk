@@ -146,15 +146,15 @@ extern KVDKStatus KVDKSortedDelete(KVDKEngine* engine, const char* collection,
 extern KVDKStatus KVDKSortedGet(KVDKEngine* engine, const char* collection,
                                 size_t collection_len, const char* key,
                                 size_t key_len, size_t* val_len, char** val);
-extern KVDKSortedIterator* KVDKKVDKSortedIteratorCreate(KVDKEngine* engine,
-                                                        const char* collection,
-                                                        size_t collection_len,
-                                                        KVDKSnapshot* snapshot,
-                                                        KVDKStatus* s);
+extern KVDKSortedIterator* KVDKSortedIteratorCreate(KVDKEngine* engine,
+                                                    const char* collection,
+                                                    size_t collection_len,
+                                                    KVDKSnapshot* snapshot,
+                                                    KVDKStatus* s);
 extern void KVDKSortedIteratorDestroy(KVDKEngine* engine,
                                       KVDKSortedIterator* iterator);
 extern void KVDKSortedIteratorSeekToFirst(KVDKSortedIterator* iter);
-extern void KVDKKVDKSortedIteratorSeekToLast(KVDKSortedIterator* iter);
+extern void KVDKSortedIteratorSeekToLast(KVDKSortedIterator* iter);
 extern void KVDKSortedIteratorSeek(KVDKSortedIterator* iter, const char* str,
                                    size_t str_len);
 extern void KVDKSortedIteratorNext(KVDKSortedIterator* iter);

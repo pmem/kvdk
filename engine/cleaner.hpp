@@ -84,17 +84,22 @@ class SpaceReclaimer {
 
   ~SpaceReclaimer() { CloseAllWorkers(); }
 
-  void CloseAllWorkers();
-  void AdjustThread(size_t advice_thread_num);
-
   void StartReclaim();
-
+  void CloseAllWorkers() {
+    close_ = true;
+    for (size_t i = 0; i < workers_.size(); ++i) {
+      if (workers_[i].worker.joinable()) {
+        workers_[i].recycle = true;
+        workers_[i].worker.join();
+      }
+    }
+  }
+  void AdjustThread(size_t advice_thread_num);
   size_t ReclaimerThreadNum() { return live_thread_num_.load(); }
 
  private:
-  enum class ThreadStatus { Init, Main, Sub, Recycle };
   struct ThreadWorker {
-    ThreadStatus status;
+    bool recycle = false;
     std::thread worker;
     std::mutex mtx;
   };
@@ -111,17 +116,8 @@ class SpaceReclaimer {
   std::deque<size_t> actived_workers_;
 
  private:
-  void addSubWorker(size_t thread_id);
-  void joinWorker();
+  void addNewWorker(size_t thread_id);
   void mainWorker();
 };
 
-inline void SpaceReclaimer::CloseAllWorkers() {
-  close_ = true;
-  for (size_t i = 0; i < workers_.size(); ++i) {
-    if (workers_[i].worker.joinable()) {
-      workers_[i].worker.join();
-    }
-  }
-}
 }  // namespace KVDK_NAMESPACE

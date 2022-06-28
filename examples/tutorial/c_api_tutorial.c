@@ -161,7 +161,7 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
     assert(s == Ok);
   }
   // create sorted iterator
-  KVDKSortedIterator* kvdk_iter = KVDKKVDKSortedIteratorCreate(
+  KVDKSortedIterator* kvdk_iter = KVDKSortedIteratorCreate(
       kvdk_engine, sorted_collection, strlen(sorted_collection), NULL, NULL);
   KVDKSortedIteratorSeekToFirst(kvdk_iter);
   // Iterate through range ["key1", "key8").
@@ -271,7 +271,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
                       array[i].value, strlen(array[i].value));
     assert(s == Ok);
   }
-  KVDKSortedIterator* iter = KVDKKVDKSortedIteratorCreate(
+  KVDKSortedIterator* iter = KVDKSortedIteratorCreate(
       kvdk_engine, collection, strlen(collection), NULL, NULL);
   assert(iter != NULL);
 

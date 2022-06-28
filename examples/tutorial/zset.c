@@ -116,8 +116,8 @@ KVDKStatus KVDKZPopMin(KVDKEngine* engine, const char* collection,
   printf("ZPOPMIN %s %lu\n", collection, n);
 
   KVDKStatus s;
-  KVDKSortedIterator* iter = KVDKKVDKSortedIteratorCreate(
-      engine, collection, collection_len, NULL, NULL);
+  KVDKSortedIterator* iter =
+      KVDKSortedIteratorCreate(engine, collection, collection_len, NULL, NULL);
   if (iter == NULL) {
     return Ok;
   }
@@ -163,14 +163,14 @@ KVDKStatus KVDKZPopMax(KVDKEngine* engine, const char* collection,
   printf("ZPOPMAX %s %lu\n", collection, n);
 
   KVDKStatus s;
-  KVDKSortedIterator* iter = KVDKKVDKSortedIteratorCreate(
-      engine, collection, collection_len, NULL, NULL);
+  KVDKSortedIterator* iter =
+      KVDKSortedIteratorCreate(engine, collection, collection_len, NULL, NULL);
   if (iter == NULL) {
     return Ok;
   }
   size_t cnt = 0;
 
-  for (KVDKKVDKSortedIteratorSeekToLast(iter);
+  for (KVDKSortedIteratorSeekToLast(iter);
        KVDKSortedIteratorValid(iter) && n > 0; KVDKSortedIteratorPrev(iter)) {
     char* score_key;
     char* string_key;
@@ -210,8 +210,8 @@ KVDKStatus KVDKZRange(KVDKEngine* engine, const char* collection,
                       int64_t max_score) {
   printf("ZRANGE %s %ld %ld\n", collection, min_score, max_score);
 
-  KVDKSortedIterator* iter = KVDKKVDKSortedIteratorCreate(
-      engine, collection, collection_len, NULL, NULL);
+  KVDKSortedIterator* iter =
+      KVDKSortedIteratorCreate(engine, collection, collection_len, NULL, NULL);
   if (iter == NULL) {
     return Ok;
   }
