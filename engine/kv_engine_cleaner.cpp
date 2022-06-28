@@ -6,7 +6,7 @@
 
 namespace KVDK_NAMESPACE {
 
-constexpr uint64_t kCleanCachedUpdateSnapshotInterval = 1000;
+constexpr uint64_t kForegroundUpdateSnapshotInterval = 1000;
 
 template <typename T>
 T* KVEngine::removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts) {
@@ -79,7 +79,7 @@ void KVEngine::tryCleanCachedOutdatedRecord() {
   auto& tc = cleaner_thread_cache_[access_thread.id];
   // Regularly update local oldest snapshot
   thread_local uint64_t round = 0;
-  if (++round % kCleanCachedUpdateSnapshotInterval == 0) {
+  if (++round % kForegroundUpdateSnapshotInterval == 0) {
     version_controller_.UpdateLocalOldestSnapshot();
   }
   auto release_time = version_controller_.LocalOldestSnapshotTS();
@@ -499,12 +499,12 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
       if (purge_string_records.size() > kMaxCachedOldRecords) {
         pending_purge_strings.emplace_back(std::move(purge_string_records),
                                            new_ts);
-        purge_string_records.clear();
+        purge_string_records = std::vector<StringRecord*>();
       }
 
       if (purge_dl_records.size() > kMaxCachedOldRecords) {
         pending_purge_dls.emplace_back(std::move(purge_dl_records), new_ts);
-        purge_dl_records.clear();
+        purge_dl_records = std::vector<DLRecord*>();
       }
 
       {  // purge and free pending string records
@@ -584,12 +584,12 @@ void KVEngine::CleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
     if (!purge_string_records.empty()) {
       pending_purge_strings.emplace_back(std::move(purge_string_records),
                                          new_ts);
-      purge_string_records.clear();
+      purge_string_records = std::vector<StringRecord*>();
     }
 
     if (!purge_dl_records.empty()) {
       pending_purge_dls.emplace_back(std::move(purge_dl_records), new_ts);
-      pending_purge_dls.clear();
+      purge_dl_records = std::vector<DLRecord*>();
     }
 
     TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::ExecuteNTime",
