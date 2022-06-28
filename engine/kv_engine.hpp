@@ -611,8 +611,9 @@ class KVEngine : public Engine {
   void tryCleanCachedOutdatedRecord();
   template <typename T>
   void cleanOutdatedRecordImpl(T* record);
-  void deleteCollections();
   /* functions for cleaner thread cache */
+
+  void deleteCollections();
 
   void startBackgroundWorks();
 
