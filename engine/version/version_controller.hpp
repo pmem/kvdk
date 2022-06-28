@@ -182,7 +182,7 @@ class VersionController {
   void Init(uint64_t base_timestamp) {
     tsc_on_startup_ = rdtsc();
     base_timestamp_ = base_timestamp;
-    UpdatedOldestSnapshot();
+    UpdateLocalOldestSnapshot();
   }
 
   LocalSnapshotHolder GetLocalSnapshotHolder() {
@@ -272,7 +272,7 @@ class VersionController {
 
   // Update recorded oldest snapshot up to state by iterating every thread
   // holding snapshot
-  void UpdatedOldestSnapshot() {
+  void UpdateLocalOldestSnapshot() {
     // update local oldest snapshot
     TimeStampType ts = GetCurrentTimestamp();
     for (size_t i = 0; i < version_thread_cache_.size(); i++) {

@@ -140,9 +140,18 @@ class KVEngine : public Engine {
   };
 
   struct CleanerThreadCache {
+    template <typename T>
+    struct OutdatedRecord {
+      OutdatedRecord(T* _record, TimeStampType _release_time)
+          : record(_record), release_time(_release_time) {}
+
+      T* record;
+      TimeStampType release_time;
+    };
+
     CleanerThreadCache() = default;
-    std::vector<StringRecord*> old_str_records;
-    std::vector<DLRecord*> old_dl_records;
+    std::deque<OutdatedRecord<StringRecord>> outdated_string_records;
+    std::deque<OutdatedRecord<DLRecord>> outdated_dl_records;
     SpinMutex mtx;
   };
 
@@ -593,6 +602,16 @@ class KVEngine : public Engine {
   void backgroundDramCleaner();
 
   void backgroundCleanRecords(size_t start_slot_idx, size_t end_slot_idx);
+
+  /* functions for cleaner thread cache */
+  // Remove old version records from version chain of new_record and cache it
+  template <typename T>
+  void removeAndCacheOutdatedVersion(T* new_record);
+  // Clean a outdated record in cleaner_thread_cache_
+  void tryCleanCachedOutdatedRecord();
+  template <typename T>
+  void cleanOutdatedRecordImpl(T* record);
+  /* functions for cleaner thread cache */
 
   void deleteCollections();
 

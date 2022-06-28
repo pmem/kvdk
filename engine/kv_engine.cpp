@@ -1310,6 +1310,7 @@ T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
   static_assert(
       std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
       "Invalid record type, should be StringRecord or DLRecord.");
+  T* ret = nullptr;
   auto old_record = record;
   while (old_record && old_record->entry.meta.timestamp > min_snapshot_ts) {
     old_record =
@@ -1319,11 +1320,19 @@ T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
   // the snapshot should access the old record, so we need to purge and free the
   // older version of the old record
   if (old_record && old_record->old_version != kNullPMemOffset) {
-    auto old_offset = old_record->old_version;
+    T* remove_record =
+        pmem_allocator_->offset2addr_checked<T>(old_record->old_version);
+    ret = remove_record;
     old_record->PersistOldVersion(kNullPMemOffset);
-    return static_cast<T*>(pmem_allocator_->offset2addr(old_offset));
+    while (remove_record != nullptr) {
+      if (remove_record->GetRecordStatus() == RecordStatus::Normal) {
+        remove_record->PersistStatus(RecordStatus::Dirty);
+      }
+      remove_record =
+          pmem_allocator_->offset2addr<T>(remove_record->old_version);
+    }
   }
-  return nullptr;
+  return ret;
 }
 
 template StringRecord* KVEngine::removeOutDatedVersion<StringRecord>(
