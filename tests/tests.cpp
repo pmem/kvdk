@@ -2265,66 +2265,6 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
-  configs.max_access_threads = 32;
-  configs.hash_bucket_num = 256;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  std::string sorted_collection = "sorted_collection";
-  std::string common_str_key = "string_key";
-  std::string common_sorted_key = "sorted_key";
-  std::string common_value = "val";
-  ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
-  auto test_kvengine = static_cast<KVEngine*>(engine);
-
-  size_t cnt = 16;
-  // only insert
-  for (size_t id = 0; id < cnt; ++id) {
-    std::string value = std::to_string(id) + common_value;
-    std::string str_key = std::to_string(id) + common_str_key;
-    std::string sorted_key = std::to_string(id) + common_sorted_key;
-    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
-    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
-              Status::Ok);
-  }
-  ASSERT_EQ(test_kvengine->ReclaimerThreadNum(), 1);
-
-  bool multi_reclaimer_thread = false;
-  // update + expire
-  for (size_t id = 0; id < cnt; ++id) {
-    std::string str_key = std::to_string(id) + common_str_key;
-    std::string sorted_key = std::to_string(id) + common_sorted_key;
-    std::string value = std::to_string(id) + common_value;
-    for (int i = 0; i < 100; ++i) {
-      auto update_val = value + std::to_string(i);
-      ASSERT_EQ(engine->Put(str_key, update_val), Status::Ok);
-      ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, update_val),
-                Status::Ok);
-    }
-    ASSERT_EQ(engine->Expire(str_key, -1), Status::Ok);
-    ASSERT_EQ(engine->SortedDelete(sorted_collection, sorted_key), Status::Ok);
-    if (test_kvengine->ReclaimerThreadNum() > 1) {
-      multi_reclaimer_thread = true;
-    }
-  }
-
-  ASSERT_TRUE(multi_reclaimer_thread);
-
-  sleep(1);
-
-  for (size_t id = 0; id < cnt; ++id) {
-    std::string value = std::to_string(id) + common_value;
-    std::string str_key = std::to_string(id) + common_str_key;
-    std::string sorted_key = std::to_string(id) + common_sorted_key;
-    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
-    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
-              Status::Ok);
-  }
-  ASSERT_EQ(test_kvengine->ReclaimerThreadNum(), 1);
-
-  delete engine;
-}
 // ========================= Sync Point ======================================
 
 #if KVDK_DEBUG_LEVEL > 0
@@ -2828,7 +2768,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
     engine->SortedDelete(collection_name, keylists[0]);
     auto test_kvengine = static_cast<KVEngine*>(engine);
     test_kvengine->TestCleanOutDated(
-        1, 0, test_kvengine->GetHashTable()->GetSlotsNum());
+        0, test_kvengine->GetHashTable()->GetSlotsNum());
   } catch (...) {
     delete engine;
     // reopen engine
@@ -2977,7 +2917,6 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
 }
 
 TEST_F(EngineBasicTest, TestBackGroundCleaner) {
-  int cleaner_execute_time = 1;
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
@@ -3135,17 +3074,18 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 
   auto ExpiredClean = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->TestCleanOutDated(
-        cleaner_execute_time, 0, test_kvengine->GetHashTable()->GetSlotsNum());
+    auto space_reclaimer = test_kvengine->GetSpaceReclaimer();
+    space_reclaimer->StartReclaim();
+    sleep(2);
+    space_reclaimer->CloseAllWorkers();
   };
 
   {
-    cleaner_execute_time = 1;
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(PutString));
     ts.emplace_back(std::thread(ExpireString));
-    sleep(2);
     ts.emplace_back(std::thread(ExpiredClean));
+
     for (auto& t : ts) t.join();
 
     // check
@@ -3153,7 +3093,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   }
 
   {
-    cleaner_execute_time = 1;
     std::vector<std::thread> ts;
     ts.emplace_back(std::thread(PutString));
     ts.emplace_back(std::thread(ExpireString));
@@ -3163,7 +3102,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   }
 
   {
-    cleaner_execute_time = 1;
     PutSorted();
     auto t = std::thread(ExpiredClean);
     GetSorted();
@@ -3171,7 +3109,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   }
 
   {
-    cleaner_execute_time = 3;
     CreateAndDestroySorted();
     CreateAndDestroyHashList();
     CreateAndDestroyList();
@@ -3236,8 +3173,10 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 
   auto backgroundCleaner = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    test_kvengine->TestCleanOutDated(
-        3, 0, test_kvengine->GetHashTable()->GetSlotsNum());
+    auto space_reclaimer = test_kvengine->GetSpaceReclaimer();
+    space_reclaimer->StartReclaim();
+    sleep(2);
+    space_reclaimer->CloseAllWorkers();
   };
   std::vector<std::thread> ts;
   ts.emplace_back(PutAndDeleteSorted);
@@ -3264,6 +3203,97 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
   }
   engine->ReleaseSortedIterator(iter);
   ASSERT_EQ(entries, cnt);
+  delete engine;
+}
+
+TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
+  std::string op;
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->Reset();
+  // abandon background cleaner thread
+  SyncPoint::GetInstance()->SetCallBack(
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* close_reclaimer) {
+        *((std::atomic_bool*)close_reclaimer) = true;
+        return;
+      });
+  SyncPoint::GetInstance()->SetCallBack(
+      "KVEngine::SpaceReclaimer::AdjustThread", [&](void* advice_thread_num) {
+        if (op == "update") {
+          *((size_t*)advice_thread_num) = 6;
+        } else if (op == "delete") {
+          *((size_t*)advice_thread_num) = 8;
+        } else {
+          *((size_t*)advice_thread_num) = 1;
+        }
+        return;
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+  configs.max_access_threads = 32;
+  configs.hash_bucket_num = 256;
+  configs.clean_threads = 8;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  std::string sorted_collection = "sorted_collection";
+  std::string common_str_key = "string_key";
+  std::string common_sorted_key = "sorted_key";
+  std::string common_value = "val";
+  ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  auto test_kvengine = static_cast<KVEngine*>(engine);
+  auto space_reclaimer = test_kvengine->GetSpaceReclaimer();
+  space_reclaimer->StartReclaim();
+
+  size_t cnt = 16;
+  // only insert
+  op = "insert";
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string value = std::to_string(id) + common_value;
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
+    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
+              Status::Ok);
+  }
+  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 1);
+
+  // update
+  op = "update";
+  sleep(1);
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    std::string value = std::to_string(id) + common_value;
+    for (int i = 0; i < 100; ++i) {
+      auto update_val = value + std::to_string(i);
+      ASSERT_EQ(engine->Put(str_key, update_val), Status::Ok);
+      ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, update_val),
+                Status::Ok);
+    }
+  }
+  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 6);
+
+  op = "delete";
+  sleep(1);
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    ASSERT_EQ(engine->Expire(str_key, -1), Status::Ok);
+    ASSERT_EQ(engine->SortedDelete(sorted_collection, sorted_key), Status::Ok);
+  }
+  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 8);
+
+  op = "insert";
+  sleep(1);
+  for (size_t id = 0; id < cnt; ++id) {
+    std::string value = std::to_string(id) + common_value;
+    std::string str_key = std::to_string(id) + common_str_key;
+    std::string sorted_key = std::to_string(id) + common_sorted_key;
+    ASSERT_EQ(engine->Put(str_key, value), Status::Ok);
+    ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
+              Status::Ok);
+  }
+  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 1);
+
   delete engine;
 }
 #endif

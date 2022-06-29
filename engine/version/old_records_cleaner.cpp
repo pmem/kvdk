@@ -47,7 +47,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   std::vector<SpaceEntry> space_to_free;
   // Update recorded oldest snapshot up to state so we can know which records
   // can be freed
-  kv_engine_->version_controller_.UpdatedOldestSnapshot();
+  kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
   TimeStampType oldest_snapshot_ts =
       kv_engine_->version_controller_.LocalOldestSnapshotTS();
 
@@ -92,7 +92,7 @@ void OldRecordsCleaner::maybeUpdateOldestSnapshot() {
   constexpr size_t kUpdateSnapshotRound = 10000;
   thread_local size_t round = 0;
   if ((++round) % kUpdateSnapshotRound == 0) {
-    kv_engine_->version_controller_.UpdatedOldestSnapshot();
+    kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
   }
 }
 

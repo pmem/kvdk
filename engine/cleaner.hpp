@@ -37,16 +37,24 @@ struct PendingFreeSpaceEntry {
 };
 
 struct PendingPurgeStrRecords {
+  PendingPurgeStrRecords(std::vector<StringRecord*>&& _records,
+                         TimeStampType _release_time)
+      : records(_records), release_time(_release_time) {}
+
   std::vector<StringRecord*> records;
   TimeStampType release_time;
 };
 
 struct PendingPurgeDLRecords {
+  PendingPurgeDLRecords(std::vector<DLRecord*>&& _records,
+                        TimeStampType _release_time)
+      : records(_records), release_time(_release_time) {}
+
   std::vector<DLRecord*> records;
   TimeStampType release_time;
 };
 
-struct PendingPrugeFreeRecords {
+struct PendingCleanRecords {
   using ListPtr = std::unique_ptr<List>;
   using HashListPtr = std::unique_ptr<HashList>;
 
@@ -59,7 +67,7 @@ struct PendingPrugeFreeRecords {
   size_t Size() {
     return outdated_lists.size() + outdated_hash_lists.size() +
            outdated_skip_lists.size() + pending_purge_strings.size() +
-           pending_purge_dls.size();
+           pending_purge_dls.size() + no_index_skiplists.size();
   }
 };
 
@@ -89,22 +97,22 @@ class SpaceReclaimer {
     close_ = true;
     for (size_t i = 0; i < workers_.size(); ++i) {
       if (workers_[i].worker.joinable()) {
-        workers_[i].recycle = true;
+        workers_[i].finish = true;
         workers_[i].worker.join();
       }
     }
   }
   void AdjustThread(size_t advice_thread_num);
-  size_t ReclaimerThreadNum() { return live_thread_num_.load(); }
+  size_t ActiveThreadNum() { return live_thread_num_.load(); }
 
  private:
   struct ThreadWorker {
-    bool recycle = false;
+    bool finish = true;
     std::thread worker;
     std::mutex mtx;
   };
   KVEngine* kv_engine_;
-  PendingPrugeFreeRecords pending_clean_records_;
+  PendingCleanRecords pending_clean_records_;
 
   size_t max_thread_num_;
   size_t min_thread_num_ = 1;

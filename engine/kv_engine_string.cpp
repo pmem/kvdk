@@ -130,9 +130,13 @@ Status KVEngine::Get(const StringView key, std::string* value) {
   auto ret = lookupKey<false>(key, RecordType::String);
   if (ret.s == Status::Ok) {
     StringRecord* string_record = ret.entry.GetIndex().string_record;
-    kvdk_assert(string_record->GetRecordType() == RecordType::String,
+    kvdk_assert(string_record->GetRecordType() == RecordType::String &&
+                    string_record->GetRecordStatus() != RecordStatus::Outdated,
                 "Got wrong data type in string get");
-    kvdk_assert(string_record->Validate(), "Corrupted data in string get");
+    kvdk_assert((string_record->GetRecordStatus() == RecordStatus::Normal &&
+                 string_record->Validate()) ||
+                    string_record->GetRecordStatus() == RecordStatus::Dirty,
+                "Corrupted data in string get");
     value->assign(string_record->Value().data(), string_record->Value().size());
     return Status::Ok;
   } else {
@@ -168,7 +172,8 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
       return Status::PmemOverflow;
     }
 
-    void* pmem_ptr = pmem_allocator_->offset2addr_checked(space_entry.offset);
+    StringRecord* pmem_ptr =
+        pmem_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
     StringRecord::PersistStringRecord(
         pmem_ptr, space_entry.size, new_ts, RecordType::String,
         RecordStatus::Outdated,
@@ -177,7 +182,10 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
         key, "");
     insertKeyOrElem(lookup_result, RecordType::String, RecordStatus::Outdated,
                     pmem_ptr);
+
+    removeAndCacheOutdatedVersion(pmem_ptr);
   }
+  tryCleanCachedOutdatedRecord();
 
   return (lookup_result.s == Status::NotFound ||
           lookup_result.s == Status::Outdated)
@@ -237,14 +245,9 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
                   new_record);
 
   if (existing_record) {
-    auto old_record = removeOutDatedVersion<StringRecord>(
-        new_record, version_controller_.GlobalOldestSnapshotTs());
-    if (old_record) {
-      auto& tc = cleaner_thread_cache_[access_thread.id];
-      std::unique_lock<SpinMutex> lock(tc.mtx);
-      tc.old_str_records.emplace_back(old_record);
-    }
+    removeAndCacheOutdatedVersion(new_record);
   }
+  tryCleanCachedOutdatedRecord();
 
   return Status::Ok;
 }

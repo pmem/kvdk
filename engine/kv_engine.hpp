@@ -117,10 +117,9 @@ class KVEngine : public Engine {
   // Used by test case.
   HashTable* GetHashTable() { return hash_table_.get(); }
 
-  void TestCleanOutDated(int execute_time, size_t start_slot_idx,
-                         size_t end_slot_idx);
+  void TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
 
-  size_t ReclaimerThreadNum();
+  SpaceReclaimer* GetSpaceReclaimer() { return &space_reclaimer_; }
 
  private:
   friend OldRecordsCleaner;
@@ -145,10 +144,18 @@ class KVEngine : public Engine {
   };
 
   struct CleanerThreadCache {
+    template <typename T>
+    struct OutdatedRecord {
+      OutdatedRecord(T* _record, TimeStampType _release_time)
+          : record(_record), release_time(_release_time) {}
+
+      T* record;
+      TimeStampType release_time;
+    };
+
     CleanerThreadCache() = default;
-    std::vector<StringRecord*> old_str_records;
-    std::vector<DLRecord*> old_dl_records;
-    std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};
+    std::deque<OutdatedRecord<StringRecord>> outdated_string_records;
+    std::deque<OutdatedRecord<DLRecord>> outdated_dl_records;
     SpinMutex mtx;
   };
 
@@ -603,6 +610,21 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
+  /* functions for cleaner thread cache */
+  // Remove old version records from version chain of new_record and cache it
+  template <typename T>
+  void removeAndCacheOutdatedVersion(T* new_record);
+  // Clean a outdated record in cleaner_thread_cache_
+  void tryCleanCachedOutdatedRecord();
+  template <typename T>
+  void cleanOutdatedRecordImpl(T* record);
+  // Cleaner thread fetches cached outdated records
+  size_t FetchCachedOutdatedVersion(
+      PendingPrugeFreeRecords& pending_clean_records,
+      std::vector<StringRecord*>& purge_string_records,
+      std::vector<DLRecord*>& purge_dl_records);
+  /* functions for cleaner thread cache */
+
   void deleteCollections();
 
   void startBackgroundWorks();
@@ -665,6 +687,8 @@ class KVEngine : public Engine {
   BackgroundWorkSignals bg_work_signals_;
 
   std::atomic<int64_t> round_robin_id_{-1};
+
+  const uint64_t kMaxCachedOldRecords = 1024;
 };
 
 }  // namespace KVDK_NAMESPACE
