@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "../alias.hpp"
-#include "../cleaner.hpp"
 #include "../collection.hpp"
 #include "../hash_table.hpp"
+#include "../kv_engine_cleaner.hpp"
 #include "../thread_manager.hpp"
 #include "../utils/utils.hpp"
 #include "kvdk/configs.hpp"

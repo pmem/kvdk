@@ -73,16 +73,16 @@ struct PendingCleanRecords {
 
 class KVEngine;
 
-class SpaceReclaimer {
+class Cleaner {
  public:
   static constexpr int64_t kSlotBlockUnit = 1024;
   static constexpr double kWakeUpThreshold = 0.1;
 
-  SpaceReclaimer(KVEngine* kv_engine, int64_t max_cleaner_threads)
+  Cleaner(KVEngine* kv_engine, int64_t max_cleaner_threads)
       : kv_engine_(kv_engine),
         max_thread_num_(max_cleaner_threads),
         close_(false),
-        cur_slot_idx_(-kSlotBlockUnit),
+        start_slot_(0),
         live_thread_num_(0),
         workers_(max_cleaner_threads) {
     for (size_t thread_id = 0; thread_id < max_thread_num_; ++thread_id) {
@@ -90,9 +90,9 @@ class SpaceReclaimer {
     }
   }
 
-  ~SpaceReclaimer() { CloseAllWorkers(); }
+  ~Cleaner() { CloseAllWorkers(); }
 
-  void StartReclaim();
+  void StartClean();
   void CloseAllWorkers() {
     close_ = true;
     for (size_t i = 0; i < workers_.size(); ++i) {
@@ -107,9 +107,8 @@ class SpaceReclaimer {
 
  private:
   struct ThreadWorker {
-    bool finish = true;
+    std::atomic_bool finish{true};
     std::thread worker;
-    std::mutex mtx;
   };
   KVEngine* kv_engine_;
   PendingCleanRecords pending_clean_records_;
@@ -117,14 +116,14 @@ class SpaceReclaimer {
   size_t max_thread_num_;
   size_t min_thread_num_ = 1;
   std::atomic_bool close_;
-  std::atomic_int64_t cur_slot_idx_;
+  std::atomic_int64_t start_slot_;
   std::atomic<size_t> live_thread_num_;
   std::vector<ThreadWorker> workers_;
   std::deque<size_t> idled_workers_;
   std::deque<size_t> actived_workers_;
 
  private:
-  void addNewWorker(size_t thread_id);
+  void doCleanWork(size_t thread_id);
   void mainWorker();
 };
 

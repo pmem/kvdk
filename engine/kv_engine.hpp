@@ -119,18 +119,18 @@ class KVEngine : public Engine {
 
   void TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
 
-  SpaceReclaimer* GetSpaceReclaimer() { return &space_reclaimer_; }
+  Cleaner* EngineCleaner() { return &cleaner_; }
 
  private:
   friend OldRecordsCleaner;
-  friend SpaceReclaimer;
+  friend Cleaner;
 
   KVEngine(const Configs& configs)
       : engine_thread_cache_(configs.max_access_threads),
         cleaner_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads),
-        space_reclaimer_(this, configs.clean_threads),
+        cleaner_(this, configs.clean_threads),
         comparators_(configs.comparator){};
 
   struct EngineThreadCache {
@@ -498,10 +498,10 @@ class KVEngine : public Engine {
   void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
                                   std::vector<DLRecord*>& purge_dl_records);
 
-  double cleanSlotBlockOutDated(PendingPrugeFreeRecords& pending_clean_records,
-                                size_t start_slot_idx, size_t slot_block_size);
+  double cleanOutDated(PendingCleanRecords& pending_clean_records,
+                       size_t start_slot_idx, size_t slot_block_size);
 
-  void prugeAndFreeAllType(PendingPrugeFreeRecords& pending_clean_records);
+  void purgeAndFreeAllType(PendingCleanRecords& pending_clean_records);
 
   void delayFree(DLRecord* addr);
 
@@ -619,8 +619,8 @@ class KVEngine : public Engine {
   template <typename T>
   void cleanOutdatedRecordImpl(T* record);
   // Cleaner thread fetches cached outdated records
-  size_t FetchCachedOutdatedVersion(
-      PendingPrugeFreeRecords& pending_clean_records,
+  void FetchCachedOutdatedVersion(
+      PendingCleanRecords& pending_clean_records,
       std::vector<StringRecord*>& purge_string_records,
       std::vector<DLRecord*>& purge_dl_records);
   /* functions for cleaner thread cache */
@@ -665,7 +665,7 @@ class KVEngine : public Engine {
   std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
-  SpaceReclaimer space_reclaimer_;
+  Cleaner cleaner_;
 
   ComparatorTable comparators_;
 
@@ -686,7 +686,7 @@ class KVEngine : public Engine {
 
   BackgroundWorkSignals bg_work_signals_;
 
-  std::atomic<int64_t> round_robin_id_{-1};
+  std::atomic<int64_t> round_robin_id_{0};
 
   const uint64_t kMaxCachedOldRecords = 1024;
 };

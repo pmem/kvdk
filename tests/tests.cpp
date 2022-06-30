@@ -3074,10 +3074,10 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
 
   auto ExpiredClean = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    auto space_reclaimer = test_kvengine->GetSpaceReclaimer();
-    space_reclaimer->StartReclaim();
+    auto cleaner = test_kvengine->EngineCleaner();
+    cleaner->StartClean();
     sleep(2);
-    space_reclaimer->CloseAllWorkers();
+    cleaner->CloseAllWorkers();
   };
 
   {
@@ -3173,10 +3173,10 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 
   auto backgroundCleaner = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
-    auto space_reclaimer = test_kvengine->GetSpaceReclaimer();
-    space_reclaimer->StartReclaim();
+    auto cleaner = test_kvengine->EngineCleaner();
+    cleaner->StartClean();
     sleep(2);
-    space_reclaimer->CloseAllWorkers();
+    cleaner->CloseAllWorkers();
   };
   std::vector<std::thread> ts;
   ts.emplace_back(PutAndDeleteSorted);
@@ -3206,7 +3206,7 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
+TEST_F(EngineBasicTest, TestDynamicCleaner) {
   std::string op;
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
@@ -3240,8 +3240,8 @@ TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
   std::string common_value = "val";
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
   auto test_kvengine = static_cast<KVEngine*>(engine);
-  auto space_reclaimer = test_kvengine->GetSpaceReclaimer();
-  space_reclaimer->StartReclaim();
+  auto space_cleaner = test_kvengine->EngineCleaner();
+  space_cleaner->StartClean();
 
   size_t cnt = 16;
   // only insert
@@ -3254,7 +3254,7 @@ TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
     ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
               Status::Ok);
   }
-  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 1);
+  ASSERT_EQ(space_cleaner->ActiveThreadNum(), 1);
 
   // update
   op = "update";
@@ -3270,7 +3270,7 @@ TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
                 Status::Ok);
     }
   }
-  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 6);
+  ASSERT_EQ(space_cleaner->ActiveThreadNum(), 6);
 
   op = "delete";
   sleep(1);
@@ -3280,7 +3280,7 @@ TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
     ASSERT_EQ(engine->Expire(str_key, -1), Status::Ok);
     ASSERT_EQ(engine->SortedDelete(sorted_collection, sorted_key), Status::Ok);
   }
-  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 8);
+  ASSERT_EQ(space_cleaner->ActiveThreadNum(), 8);
 
   op = "insert";
   sleep(1);
@@ -3292,7 +3292,7 @@ TEST_F(EngineBasicTest, TestDynamicSpaceReclaimer) {
     ASSERT_EQ(engine->SortedPut(sorted_collection, sorted_key, value),
               Status::Ok);
   }
-  ASSERT_EQ(space_reclaimer->ActiveThreadNum(), 1);
+  ASSERT_EQ(space_cleaner->ActiveThreadNum(), 1);
 
   delete engine;
 }

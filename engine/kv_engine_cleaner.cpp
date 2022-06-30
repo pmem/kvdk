@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2021 Intel Corporation
+ * Copyright(c) 2021-2022 Intel Corporation
  */
 #include <algorithm>
 
@@ -147,7 +147,8 @@ void KVEngine::purgeAndFreeDLRecords(
           break;
         }
         case RecordType::SortedHeader: {
-          if (record_status == RecordStatus::Normal) {
+          if (record_status == RecordStatus::Normal ||
+              record_status == RecordStatus::Dirty) {
             entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                  pmem_record->entry.header.record_size);
             pmem_record->Destroy();
@@ -237,7 +238,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
   }
 }
 
-void KVEngine::prugeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
+void KVEngine::purgeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
   {  // purge and free pending string records
     while (!pending_clean_records.pending_purge_strings.empty()) {
       auto& pending_strings =
@@ -303,11 +304,10 @@ void KVEngine::prugeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
   }
 }
 
-size_t KVEngine::FetchCachedOutdatedVersion(
+void KVEngine::FetchCachedOutdatedVersion(
     PendingCleanRecords& pending_clean_records,
     std::vector<StringRecord*>& purge_string_records,
     std::vector<DLRecord*>& purge_dl_records) {
-  size_t outdated_records_num = 0;
   size_t i = round_robin_id_.fetch_add(1) % configs_.max_access_threads;
   auto& tc = cleaner_thread_cache_[i];
   std::deque<CleanerThreadCache::OutdatedRecord<StringRecord>>
@@ -324,7 +324,6 @@ size_t KVEngine::FetchCachedOutdatedVersion(
     }
   }
   if (outdated_string_records.size() > 0) {
-    outdated_records_num += outdated_string_records.size();
     std::vector<StringRecord*> to_free_strings;
     version_controller_.UpdateLocalOldestSnapshot();
     auto release_time = version_controller_.LocalOldestSnapshotTS();
@@ -341,11 +340,11 @@ size_t KVEngine::FetchCachedOutdatedVersion(
         std::move(to_free_strings), release_time);
   }
   if (outdated_dl_records.size() > 0) {
-    outdated_records_num += outdated_dl_records.size();
     std::vector<DLRecord*> to_free_dls;
     version_controller_.UpdateLocalOldestSnapshot();
     auto release_time = version_controller_.LocalOldestSnapshotTS();
     auto iter = outdated_dl_records.begin();
+
     while (iter != outdated_dl_records.end()) {
       if (iter->release_time < release_time) {
         to_free_dls.emplace_back(iter->record);
@@ -357,30 +356,10 @@ size_t KVEngine::FetchCachedOutdatedVersion(
     pending_clean_records.pending_purge_dls.emplace_front(
         std::move(to_free_dls), release_time);
   }
-  return outdated_records_num;
 }
 
-static inline int64_t PushToOutdatedPool(
-    StringRecord* old_record, std::vector<StringRecord*> purge_string_records) {
-  if (old_record) {
-    purge_string_records.emplace_back(old_record);
-    return 1;
-  }
-  return 0;
-}
-
-static inline int64_t PushToOutdatedPool(
-    DLRecord* old_record, std::vector<DLRecord*> purge_dl_records) {
-  if (old_record) {
-    purge_dl_records.emplace_back(old_record);
-    return 1;
-  }
-  return 0;
-}
-
-double KVEngine::cleanSlotBlockOutDated(
-    PendingCleanRecords& pending_clean_records, size_t start_slot_idx,
-    size_t slot_block_size) {
+double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
+                               size_t start_slot_idx, size_t slot_block_size) {
   size_t total_num = 0;
   size_t need_purge_num = 0;
   version_controller_.UpdateLocalOldestSnapshot();
@@ -388,6 +367,8 @@ double KVEngine::cleanSlotBlockOutDated(
   std::vector<StringRecord*> purge_string_records;
   std::vector<DLRecord*> purge_dl_records;
 
+  FetchCachedOutdatedVersion(pending_clean_records, purge_string_records,
+                             purge_dl_records);
   // Iterate hash table
   size_t end_slot_idx = start_slot_idx + slot_block_size;
   if (end_slot_idx > hash_table_->GetSlotsNum()) {
@@ -395,8 +376,6 @@ double KVEngine::cleanSlotBlockOutDated(
   }
   auto hashtable_iter = hash_table_->GetIterator(start_slot_idx, end_slot_idx);
   while (hashtable_iter.Valid()) {
-    need_purge_num += FetchCachedOutdatedVersion(
-        pending_clean_records, purge_string_records, purge_dl_records);
     {  // Slot lock section
       auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
       auto now = TimeUtils::millisecond_time();
@@ -411,8 +390,10 @@ double KVEngine::cleanSlotBlockOutDated(
               auto string_record = slot_iter->GetIndex().string_record;
               auto old_record = removeOutDatedVersion<StringRecord>(
                   string_record, min_snapshot_ts);
-              need_purge_num +=
-                  PushToOutdatedPool(old_record, purge_string_records);
+              if (old_record) {
+                purge_string_records.emplace_back(old_record);
+                need_purge_num++;
+              }
               if ((string_record->GetRecordStatus() == RecordStatus::Outdated ||
                    string_record->GetExpireTime() <= now) &&
                   string_record->GetTimestamp() < min_snapshot_ts) {
@@ -428,8 +409,10 @@ double KVEngine::cleanSlotBlockOutDated(
               auto dl_record = node->record;
               auto old_record =
                   removeOutDatedVersion<DLRecord>(dl_record, min_snapshot_ts);
-              need_purge_num +=
-                  PushToOutdatedPool(old_record, purge_dl_records);
+              if (old_record) {
+                purge_dl_records.emplace_back(old_record);
+                need_purge_num++;
+              }
               if (slot_iter->GetRecordStatus() == RecordStatus::Outdated &&
                   dl_record->entry.meta.timestamp < min_snapshot_ts) {
                 bool success =
@@ -447,8 +430,10 @@ double KVEngine::cleanSlotBlockOutDated(
               auto dl_record = slot_iter->GetIndex().dl_record;
               auto old_record =
                   removeOutDatedVersion<DLRecord>(dl_record, min_snapshot_ts);
-              need_purge_num +=
-                  PushToOutdatedPool(old_record, purge_dl_records);
+              if (old_record) {
+                purge_dl_records.emplace_back(old_record);
+                need_purge_num++;
+              }
               if (slot_iter->GetRecordStatus() == RecordStatus::Outdated &&
                   dl_record->entry.meta.timestamp < min_snapshot_ts) {
                 bool success =
@@ -467,8 +452,11 @@ double KVEngine::cleanSlotBlockOutDated(
               auto head_record = skiplist->HeaderRecord();
               auto old_record =
                   removeOutDatedVersion<DLRecord>(head_record, min_snapshot_ts);
-              need_purge_num +=
-                  PushToOutdatedPool(old_record, purge_dl_records);
+              if (old_record) {
+                purge_dl_records.emplace_back(old_record);
+                need_purge_num++;
+              }
+
               if ((slot_iter->GetRecordStatus() == RecordStatus::Outdated ||
                    head_record->GetExpireTime() <= now) &&
                   head_record->entry.meta.timestamp < min_snapshot_ts) {
@@ -485,17 +473,18 @@ double KVEngine::cleanSlotBlockOutDated(
             case PointerType::List: {
               List* list = slot_iter->GetIndex().list;
               total_num += list->Size();
-              auto current_ts = version_controller_.GetCurrentTimestamp();
               auto old_list = removeListOutDatedVersion(list, min_snapshot_ts);
               if (old_list) {
                 pending_clean_records.outdated_lists.emplace_back(
-                    std::make_pair(current_ts, old_list));
+                    std::make_pair(version_controller_.GetCurrentTimestamp(),
+                                   old_list));
               }
               if (list->GetExpireTime() <= now &&
                   list->GetTimeStamp() < min_snapshot_ts) {
                 hash_table_->Erase(&(*slot_iter));
                 pending_clean_records.outdated_lists.emplace_back(
-                    std::make_pair(current_ts, list));
+                    std::make_pair(version_controller_.GetCurrentTimestamp(),
+                                   list));
                 need_purge_num += list->Size();
                 std::unique_lock<std::mutex> guard{lists_mu_};
                 lists_.erase(list);
@@ -505,11 +494,11 @@ double KVEngine::cleanSlotBlockOutDated(
             case PointerType::HashList: {
               HashList* hlist = slot_iter->GetIndex().hlist;
               total_num += hlist->Size();
-              auto current_ts = version_controller_.GetCurrentTimestamp();
               auto old_list = removeListOutDatedVersion(hlist, min_snapshot_ts);
               if (old_list) {
                 pending_clean_records.outdated_hash_lists.emplace_back(
-                    std::make_pair(current_ts, old_list));
+                    std::make_pair(version_controller_.GetCurrentTimestamp(),
+                                   old_list));
               }
               if (hlist->GetExpireTime() <= now &&
                   hlist->GetTimeStamp() < min_snapshot_ts) {
@@ -551,7 +540,7 @@ double KVEngine::cleanSlotBlockOutDated(
       purge_dl_records = std::vector<DLRecord*>();
     }
 
-    prugeAndFreeAllType(pending_clean_records);
+    purgeAndFreeAllType(pending_clean_records);
 
   }  // Finsh iterating hash table
 
@@ -577,46 +566,41 @@ void KVEngine::TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
   while (!bg_work_signals_.terminating) {
     auto cur_slot_idx = start_slot_idx;
     while (cur_slot_idx < end_slot_idx && !bg_work_signals_.terminating) {
-      cleanSlotBlockOutDated(pending_clean_records, cur_slot_idx, 1024);
+      cleanOutDated(pending_clean_records, cur_slot_idx, 1024);
       cur_slot_idx += 1024;
     }
   }
 }
 
 // Space Reclaimer
-void SpaceReclaimer::addNewWorker(size_t thread_id) {
+void Cleaner::doCleanWork(size_t thread_id) {
   PendingCleanRecords pending_clean_records;
   while (true) {
     if (close_) return;
-    cur_slot_idx_ = (cur_slot_idx_ + kSlotBlockUnit) %
-                    kv_engine_->hash_table_->GetSlotsNum();
-    kv_engine_->cleanSlotBlockOutDated(pending_clean_records,
-                                       cur_slot_idx_.load(), kSlotBlockUnit);
 
-    bool finish = false;
-    {
-      std::unique_lock<std::mutex> worker_lock(workers_[thread_id].mtx);
-      finish = workers_[thread_id].finish;
-    }
-    if (finish) {
+    std::int64_t start_pos = start_slot_.fetch_add(kSlotBlockUnit) %
+                             (kv_engine_->hash_table_->GetSlotsNum());
+    kv_engine_->cleanOutDated(pending_clean_records, start_pos, kSlotBlockUnit);
+
+    if (workers_[thread_id].finish) {
       while (pending_clean_records.Size() != 0 && !close_.load()) {
         kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
-        kv_engine_->prugeAndFreeAllType(pending_clean_records);
+        kv_engine_->purgeAndFreeAllType(pending_clean_records);
       }
       return;
     }
   }
 }
 
-void SpaceReclaimer::AdjustThread(size_t advice_thread_num) {
+void Cleaner::AdjustThread(size_t advice_thread_num) {
   auto active_thread_num = live_thread_num_.load();
   if (active_thread_num < advice_thread_num) {
     for (size_t i = active_thread_num; i < advice_thread_num; ++i) {
       size_t thread_id = idled_workers_.front();
       idled_workers_.pop_front();
-      std::thread worker(&SpaceReclaimer::addNewWorker, this, thread_id);
-      workers_[thread_id].finish = false;
-      workers_[thread_id].worker = std::move(worker);
+      workers_[thread_id].finish.store(false);
+      workers_[thread_id].worker =
+          std::thread(&Cleaner::doCleanWork, this, thread_id);
       actived_workers_.push_back(thread_id);
       live_thread_num_++;
     }
@@ -624,10 +608,7 @@ void SpaceReclaimer::AdjustThread(size_t advice_thread_num) {
     for (size_t i = advice_thread_num; i < active_thread_num; ++i) {
       auto thread_id = actived_workers_.front();
       actived_workers_.pop_front();
-      {
-        std::unique_lock<std::mutex> worker_lock(workers_[thread_id].mtx);
-        workers_[thread_id].finish = true;
-      }
+      workers_[thread_id].finish.store(true);
       workers_[thread_id].worker.detach();
       idled_workers_.push_back(thread_id);
       --live_thread_num_;
@@ -635,30 +616,33 @@ void SpaceReclaimer::AdjustThread(size_t advice_thread_num) {
   }
 }
 
-void SpaceReclaimer::mainWorker() {
+void Cleaner::mainWorker() {
   PendingCleanRecords pending_clean_records;
   while (true) {
     if (close_) return;
-    cur_slot_idx_ = (cur_slot_idx_ + kSlotBlockUnit) %
-                    kv_engine_->hash_table_->GetSlotsNum();
-    auto outdated_ratio = kv_engine_->cleanSlotBlockOutDated(
-        pending_clean_records, cur_slot_idx_.load(), kSlotBlockUnit);
-
-    size_t advice_thread_num = std::ceil(outdated_ratio * max_thread_num_);
-    advice_thread_num =
-        std::min(std::max(advice_thread_num, min_thread_num_), max_thread_num_);
-    TEST_SYNC_POINT_CALLBACK("KVEngine::SpaceReclaimer::AdjustThread",
-                             &advice_thread_num);
-    AdjustThread(advice_thread_num);
+    std::int64_t start_pos = start_slot_.fetch_add(kSlotBlockUnit) %
+                             (kv_engine_->hash_table_->GetSlotsNum());
+    auto outdated_ratio = kv_engine_->cleanOutDated(pending_clean_records,
+                                                    start_pos, kSlotBlockUnit);
+    if (outdated_ratio < kWakeUpThreshold) {
+      sleep(1);
+    } else {
+      size_t advice_thread_num = std::ceil(outdated_ratio * max_thread_num_);
+      advice_thread_num = std::min(std::max(advice_thread_num, min_thread_num_),
+                                   max_thread_num_);
+      TEST_SYNC_POINT_CALLBACK("KVEngine::Cleaner::AdjustThread",
+                               &advice_thread_num);
+      AdjustThread(advice_thread_num);
+    }
   }
 }
 
-void SpaceReclaimer::StartReclaim() {
+void Cleaner::StartClean() {
   if (!close_) {
     auto thread_id = idled_workers_.front();
     idled_workers_.pop_front();
-    std::thread worker(&SpaceReclaimer::mainWorker, this);
-    workers_[thread_id].finish = false;
+    std::thread worker(&Cleaner::mainWorker, this);
+    workers_[thread_id].finish.store(false);
     workers_[thread_id].worker.swap(worker);
     live_thread_num_++;
   }

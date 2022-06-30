@@ -125,12 +125,12 @@ void KVEngine::startBackgroundWorks() {
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
                            &close_reclaimer);
   if (!close_reclaimer) {
-    space_reclaimer_.StartReclaim();
+    cleaner_.StartClean();
   }
 }
 
 void KVEngine::terminateBackgroundWorks() {
-  space_reclaimer_.CloseAllWorkers();
+  cleaner_.CloseAllWorkers();
   {
     std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
     bg_work_signals_.terminating = true;
