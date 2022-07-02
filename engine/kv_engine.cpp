@@ -121,25 +121,16 @@ void KVEngine::startBackgroundWorks() {
   bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
 
-  auto total_slot_num = hash_table_->GetSlotsNum();
-  size_t iter_slot_stride = total_slot_num / configs_.clean_threads;
-  size_t thread_id = 0;
+  bool close_reclaimer = false;
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
-                           &thread_id);
-
-  for (; thread_id < configs_.clean_threads; ++thread_id) {
-    if (thread_id == (configs_.clean_threads - 1)) {
-      bg_threads_.emplace_back(&KVEngine::CleanOutDated, this,
-                               thread_id * iter_slot_stride, total_slot_num);
-    } else {
-      bg_threads_.emplace_back(&KVEngine::CleanOutDated, this,
-                               thread_id * iter_slot_stride,
-                               (thread_id + 1) * iter_slot_stride);
-    }
+                           &close_reclaimer);
+  if (!close_reclaimer) {
+    cleaner_.StartClean();
   }
 }
 
 void KVEngine::terminateBackgroundWorks() {
+  cleaner_.CloseAllWorkers();
   {
     std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
     bg_work_signals_.terminating = true;
