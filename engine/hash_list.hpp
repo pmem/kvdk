@@ -1,10 +1,37 @@
 #pragma once
 
+#include "dl_list.hpp"
 #include "generic_list.hpp"
+#include "hash_table.hpp"
 #include "kvdk/iterator.hpp"
 #include "version/version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
+
+class HashList2 : public Collection {
+ public:
+  struct WriteResult {
+    Status s = Status::Ok;
+    DLRecord* existing_record = nullptr;
+    DLRecord* write_record = nullptr;
+    HashEntry* hash_entry_ptr = nullptr;
+  };
+
+  WriteResult Put(const StringView& key, const StringView& value,
+                  TimeStampType timestamp);
+
+  Status Get(const StringView& key, std::string* value);
+
+  WriteResult Delete(const StringView& key, TimeStampType timestamp);
+
+  Status PrepareWrite(HashWriteArgs& args);
+
+  WriteResult Write(HashWriteArgs& args);
+
+ private:
+  DLList dl_list_;
+};
+
 using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
 using HashListBuilder =
     GenericListBuilder<RecordType::HashRecord, RecordType::HashElem>;
