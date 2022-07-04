@@ -2,7 +2,7 @@ import benchmark_impl
 import sys
 import itertools
 
-numanode = 0
+numanode = 1
 pmem_path = "/mnt/pmem{}/kvdk_benchmark".format(numanode)
 bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)

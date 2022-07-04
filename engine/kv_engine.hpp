@@ -610,6 +610,8 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
+  void searchOutdatedCollections();
+
   /* functions for cleaner thread cache */
   // Remove old version records from version chain of new_record and cache it
   template <typename T>
@@ -652,6 +654,9 @@ class KVEngine : public Engine {
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
   std::unique_ptr<LockTable> skiplist_locks_;
+
+  SpinMutex queue_mtx_;
+  std::deque<Collection*> outdated_collections_;
 
   std::string dir_;
   std::string batch_log_dir_;
