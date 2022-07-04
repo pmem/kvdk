@@ -13,6 +13,7 @@
 
 #include "../alias.hpp"
 #include "../collection.hpp"
+#include "../dl_list.hpp"
 #include "../hash_table.hpp"
 #include "../lock_table.hpp"
 #include "../structures.hpp"
@@ -110,7 +111,7 @@ struct SkiplistNode {
   }
 
   // Logically delete node by tag next pointers from bottom to top
-  void MarkAsRemoved() {
+  void MarkAsDeleted() {
     for (int l = 1; l <= height; l++) {
       while (1) {
         auto next = RelaxedNext(l);
@@ -126,6 +127,8 @@ struct SkiplistNode {
       }
     }
   }
+
+  bool IsDeleted() { return Next(1).GetTag() == NodeStatus::Deleted; }
 
  private:
   SkiplistNode() {}
@@ -486,13 +489,6 @@ class Skiplist : public Collection {
     }
   }
 
-  bool validateDLRecord(const DLRecord* record) {
-    DLRecord* prev = pmem_allocator_->offset2addr<DLRecord>(record->prev);
-    return prev != nullptr &&
-           prev->next == pmem_allocator_->addr2offset(record) &&
-           SkiplistID(record) == ID();
-  }
-
   void obsoleteNodes(const std::vector<SkiplistNode*> nodes) {
     std::lock_guard<SpinMutex> lg(obsolete_nodes_spin_);
     for (SkiplistNode* node : nodes) {
@@ -522,6 +518,7 @@ class Skiplist : public Collection {
     return XXH3_64bits(record, sizeof(const DLRecord*));
   }
 
+  DLList dl_list_;
   std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;
   PMEMAllocator* pmem_allocator_;
@@ -530,7 +527,6 @@ class Skiplist : public Collection {
   // locks to protect modification of records
   LockTable* record_locks_;
   bool index_with_hashtable_;
-  bool deleted_;
   SkiplistNode* header_;
   // nodes that unlinked on every height
   std::vector<SkiplistNode*> obsolete_nodes_;

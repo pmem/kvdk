@@ -405,8 +405,10 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     ASSERT_EQ(engine->SortedCreate(collection_name), ret_s);
     // Put
     ASSERT_EQ(engine->SortedPut(collection_name, elem_key, new_val), ret_s);
+
     // Get
     ASSERT_EQ(engine->SortedGet(collection_name, elem_key, &got_val), ret_s);
+
     if (ret_s == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
@@ -2383,7 +2385,7 @@ TEST_F(BatchWriteTest, SortedRollback) {
     // Test crash with half linked record
     size_t num_write = 0;
     SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::Skiplist::LinkDLRecord::HalfLink", [&](void*) {
+        "KVEngine::DLList::LinkDLRecord::HalfLink", [&](void*) {
           if (++num_write == batch_size / 2) {
             throw SyncPoint::CrashPoint{"Crash with half linkage"};
           }
@@ -2686,7 +2688,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::LinkDLRecord::HalfLink", [&](void*) {
+      "KVEngine::DLList::LinkDLRecord::HalfLink", [&](void*) {
         if (update_num % 8 == 0) {
           throw 1;
         }
@@ -2760,7 +2762,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       });
   // only throw when the first call `SortedDelete`
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::Delete::PersistNext'sPrev::After", [&](void*) {
+      "KVEngine::DLList::Remove::PersistNext'sPrev::After", [&](void*) {
         if (!first_visited.load()) {
           first_visited.store(true);
           throw 1;
@@ -2844,7 +2846,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->LoadDependency(
-      {{"KVEngine::Skiplist::LinkDLRecord::HalfLink", "Test::Iter::key0"}});
+      {{"KVEngine::DLList::LinkDLRecord::HalfLink", "Test::Iter::key0"}});
   SyncPoint::GetInstance()->EnableProcessing();
 
   // insert
