@@ -572,7 +572,8 @@ void KVEngine::TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
   }
 }
 
-// Space Reclaimer
+// Space Cleaner
+
 void Cleaner::doCleanWork(size_t thread_id) {
   PendingCleanRecords pending_clean_records;
   while (true) {

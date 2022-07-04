@@ -133,7 +133,8 @@ Status KVEngine::Get(const StringView key, std::string* value) {
     kvdk_assert(string_record->GetRecordType() == RecordType::String &&
                     string_record->GetRecordStatus() != RecordStatus::Outdated,
                 "Got wrong data type in string get");
-    kvdk_assert(string_record->GetRecordStatus() == RecordStatus::Normal ||
+    kvdk_assert((string_record->GetRecordStatus() == RecordStatus::Normal &&
+                 string_record->Validate()) ||
                     string_record->GetRecordStatus() == RecordStatus::Dirty,
                 "Corrupted data in string get");
     value->assign(string_record->Value().data(), string_record->Value().size());
