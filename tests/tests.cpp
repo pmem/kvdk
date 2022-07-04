@@ -3216,17 +3216,17 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
         *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
-  SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::SpaceReclaimer::AdjustThread", [&](void* advice_thread_num) {
-        if (op == "update") {
-          *((size_t*)advice_thread_num) = 6;
-        } else if (op == "delete") {
-          *((size_t*)advice_thread_num) = 8;
-        } else {
-          *((size_t*)advice_thread_num) = 1;
-        }
-        return;
-      });
+  SyncPoint::GetInstance()->SetCallBack("KVEngine::Cleaner::AdjustThread",
+                                        [&](void* advice_thread_num) {
+                                          if (op == "update") {
+                                            *((size_t*)advice_thread_num) = 6;
+                                          } else if (op == "delete") {
+                                            *((size_t*)advice_thread_num) = 8;
+                                          } else {
+                                            *((size_t*)advice_thread_num) = 1;
+                                          }
+                                          return;
+                                        });
   SyncPoint::GetInstance()->EnableProcessing();
   configs.max_access_threads = 32;
   configs.hash_bucket_num = 256;
