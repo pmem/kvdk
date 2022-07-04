@@ -815,7 +815,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   for (auto const& hash_op : batch.HashOps()) {
     HashList* hlist;
-    Status s = hashListFind(hash_op.key, &hlist);
+    Status s = hashListFind(hash_op.collection, &hlist);
     if (s != Status::Ok) {
       return s;
     }
@@ -833,7 +833,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
   }
   for (auto const& arg : hash_args) {
-    keys_to_lock.push_back(arg.hlist->InternalKey(arg.field));
+    keys_to_lock.push_back(arg.hlist->InternalKey(arg.key));
   }
 
   auto guard = hash_table_->RangeLock(keys_to_lock);
@@ -893,13 +893,13 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Prepare for Hash Elements
   for (auto& args : hash_args) {
     args.ts = bw_token.Timestamp();
-    std::string internal_key = args.hlist->InternalKey(args.field);
-    args.res = lookupElem<true>(internal_key, RecordType::HashElem);
-    if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
-      return args.res.s;
+    std::string internal_key = args.hlist->InternalKey(args.key);
+    args.lookup_result = lookupElem<true>(internal_key, RecordType::HashElem);
+    if (args.lookup_result.s != Status::Ok && args.lookup_result.s != Status::NotFound) {
+      return args.lookup_result.s;
     }
     if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
+        args.lookup_result.s == Status::NotFound) {
       // No need to do anything for delete a non-existing Sorted element
       continue;
     }
@@ -938,12 +938,12 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   }
   for (auto& args : hash_args) {
     if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
+        args.lookup_result.s == Status::NotFound) {
       continue;
     }
-    if (args.res.s == Status::Ok) {
+    if (args.lookup_result.s == Status::Ok) {
       PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
-          args.res.entry.GetIndex().dl_record);
+          args.lookup_result.entry.GetIndex().dl_record);
       if (args.op == WriteBatchImpl::Op::Put) {
         log.HashReplace(args.space.offset, old_off);
       } else {
@@ -983,7 +983,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Write Hash Elems
   for (auto& args : hash_args) {
     if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
+        args.lookup_result.s == Status::NotFound) {
       continue;
     }
     Status s = hashListWrite(args);
@@ -1021,7 +1021,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Publish Hash Elements to HashTable
   for (auto& args : hash_args) {
     if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
+        args.lookup_result.s == Status::NotFound) {
       continue;
     }
     Status s = hashListPublish(args);

@@ -354,23 +354,23 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
 Status KVEngine::hashListWrite(HashWriteArgs& args) {
   if (args.op == WriteBatchImpl::Op::Delete) {
     // Unlink and mark as dirty, but do not free.
-    DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
+    DLRecord* old_rec = args.lookup_result.entry.GetIndex().dl_record;
     auto pos = args.hlist->MakeIterator(old_rec);
     args.hlist->EraseWithLock(pos, [](DLRecord*) { return; });
   } else {
-    if (args.res.s == Status::NotFound) {
-      if (std::hash<StringView>{}(args.field) % 2 == 0) {
-        args.hlist->PushFrontWithLock(args.space, args.ts, args.field,
+    if (args.lookup_result.s == Status::NotFound) {
+      if (std::hash<StringView>{}(args.key) % 2 == 0) {
+        args.hlist->PushFrontWithLock(args.space, args.ts, args.key,
                                       args.value);
       } else {
-        args.hlist->PushBackWithLock(args.space, args.ts, args.field,
+        args.hlist->PushBackWithLock(args.space, args.ts, args.key,
                                      args.value);
       }
     } else {
-      kvdk_assert(args.res.s == Status::Ok, "");
-      DLRecord* old_rec = args.res.entry.GetIndex().dl_record;
+      kvdk_assert(args.lookup_result.s == Status::Ok, "");
+      DLRecord* old_rec = args.lookup_result.entry.GetIndex().dl_record;
       auto pos = args.hlist->MakeIterator(old_rec);
-      args.hlist->ReplaceWithLock(args.space, pos, args.ts, args.field,
+      args.hlist->ReplaceWithLock(args.space, pos, args.ts, args.key,
                                   args.value, [&](DLRecord*) { return; });
     }
     args.new_rec = static_cast<DLRecord*>(
@@ -380,13 +380,13 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
 }
 
 Status KVEngine::hashListPublish(HashWriteArgs const& args) {
-  if (args.res.s == Status::Ok) {
-    delayFree(args.res.entry.GetIndex().dl_record);
+  if (args.lookup_result.s == Status::Ok) {
+    delayFree(args.lookup_result.entry.GetIndex().dl_record);
   }
   if (args.op == WriteBatchImpl::Op::Delete) {
-    removeKeyOrElem(args.res);
+    removeKeyOrElem(args.lookup_result);
   } else {
-    insertKeyOrElem(args.res, RecordType::HashElem, RecordStatus::Normal,
+    insertKeyOrElem(args.lookup_result, RecordType::HashElem, RecordStatus::Normal,
                     args.new_rec);
   }
   return Status::Ok;

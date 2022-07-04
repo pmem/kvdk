@@ -35,8 +35,8 @@ class WriteBatchImpl final : public WriteBatch {
 
   struct HashOp {
     Op op;
+    std::string collection;
     std::string key;
-    std::string field;
     std::string value;
   };
 
@@ -48,7 +48,7 @@ class WriteBatchImpl final : public WriteBatch {
       return xxh_hash(sorted_op.collection) ^ xxh_hash(sorted_op.key);
     }
     size_t operator()(HashOp const& hash_op) const {
-      return xxh_hash(hash_op.key) ^ xxh_hash(hash_op.field);
+      return xxh_hash(hash_op.collection) ^ xxh_hash(hash_op.key);
     }
     bool operator()(StringOp const& lhs, StringOp const& rhs) const {
       return lhs.key == rhs.key;
@@ -57,7 +57,7 @@ class WriteBatchImpl final : public WriteBatch {
       return lhs.collection == rhs.collection && lhs.key == rhs.key;
     }
     bool operator()(HashOp const& lhs, HashOp const& rhs) const {
-      return lhs.key == rhs.key && lhs.field == rhs.field;
+      return lhs.collection == rhs.collection && lhs.key == rhs.key;
     }
   };
 
@@ -159,20 +159,20 @@ struct SortedWriteArgs {
 };
 
 struct HashWriteArgs {
+  StringView collection;
   StringView key;
-  StringView field;
   StringView value;
   WriteBatchImpl::Op op;
   HashList* hlist;
   SpaceEntry space;
   TimeStampType ts;
-  HashTable::LookupResult res;
+  HashTable::LookupResult lookup_result;
   // returned by write, used by publish
   DLRecord* new_rec;
 
   void Assign(WriteBatchImpl::HashOp const& hash_op) {
+    collection = hash_op.collection;
     key = hash_op.key;
-    field = hash_op.field;
     value = hash_op.value;
     op = hash_op.op;
   }

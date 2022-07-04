@@ -579,7 +579,7 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
     }
     kvdk_assert(pmem_record->GetRecordType() == RecordType::SortedElem, "");
     // As get is lockless, skiplist node may point to a new elem delete record
-    // after we get if from hashtable
+    // after we get it from hashtable
     if (pmem_record->GetRecordStatus() == RecordStatus::Outdated) {
       return Status::NotFound;
     } else {
