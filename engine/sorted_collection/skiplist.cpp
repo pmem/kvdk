@@ -53,8 +53,7 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
 };
 
 Status Skiplist::SetExpireTime(ExpireTimeType expired_time) {
-  header_->record->expired_time = expired_time;
-  pmem_persist(&header_->record->expired_time, sizeof(ExpireTimeType));
+  header_->record->PersistExpireTimeNT(expired_time);
   return Status::Ok;
 }
 
@@ -156,11 +155,9 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
 void Skiplist::linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
                             PMEMAllocator* pmem_allocator) {
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
-  prev->next = inserting_record_offset;
-  pmem_persist(&prev->next, 8);
+  prev->PersistNextCLWB(inserting_record_offset);
   TEST_SYNC_POINT("KVEngine::Skiplist::LinkDLRecord::HalfLink");
-  next->prev = inserting_record_offset;
-  pmem_persist(&next->prev, 8);
+  next->PersistPrevCLWB(inserting_record_offset);
 }
 
 void Skiplist::Seek(const StringView& key, Splice* result_splice) {
@@ -506,10 +503,8 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
               !Skiplist::CheckReocrdNextLinkage(old_record, pmem_allocator),
           "");
     } else {
-      new_record->prev = prev_offset;
-      pmem_persist(&new_record->prev, sizeof(PMemOffsetType));
-      new_record->next = next_offset;
-      pmem_persist(&new_record->next, sizeof(PMemOffsetType));
+      new_record->PersistPrevCLWB(prev_offset);
+      new_record->PersistNextCLWB(next_offset);
       Skiplist::linkDLRecord(prev, next, new_record, pmem_allocator);
     }
     if (dram_node != nullptr) {
@@ -536,11 +531,9 @@ bool Skiplist::Remove(DLRecord* purging_record, SkiplistNode* dram_node,
     // For repair in recovery due to crashes during pointers changing, we should
     // first unlink deleting entry from next's prev.(It is the reverse process
     // of insertion)
-    next->prev = prev_offset;
-    pmem_persist(&next->prev, 8);
+    next->PersistPrevCLWB(prev_offset);
     TEST_SYNC_POINT("KVEngine::Skiplist::Delete::PersistNext'sPrev::After");
-    prev->next = next_offset;
-    pmem_persist(&prev->next, 8);
+    prev->PersistNextCLWB(next_offset);
 
     if (dram_node) {
       dram_node->MarkAsRemoved();

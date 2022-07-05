@@ -606,8 +606,7 @@ bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
   if (Skiplist::CheckRecordPrevLinkage(record, pmem_allocator)) {
     DLRecord* next =
         pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-    next->prev = pmem_allocator->addr2offset_checked(record);
-    pmem_persist(&next->prev, sizeof(PMemOffsetType));
+    next->PersistPrevCLWB(pmem_allocator->addr2offset_checked(record));
     return true;
   }
 

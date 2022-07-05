@@ -59,7 +59,7 @@ struct DataMeta {
         timestamp(_timestamp) {}
 
   RecordType type;
-  RecordStatus status;
+  volatile RecordStatus status;
   uint16_t k_size;
   uint32_t v_size;
   TimeStampType timestamp;
@@ -89,8 +89,8 @@ static_assert(sizeof(DataEntry) <= kMinPMemBlockSize);
 struct StringRecord {
  public:
   DataEntry entry;
-  PMemOffsetType old_version;
-  ExpireTimeType expired_time;
+  volatile PMemOffsetType old_version;
+  volatile ExpireTimeType expired_time;
   char data[0];
 
   // Construct a StringRecord instance at target_address. As the record need
@@ -146,26 +146,28 @@ struct StringRecord {
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
 
   void PersistExpireTimeNT(ExpireTimeType time) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
+    _mm_stream_si64(reinterpret_cast<long long*>(
+                        const_cast<ExpireTimeType*>(&expired_time)),
                     static_cast<long long>(time));
     _mm_mfence();
   }
 
   void PersistExpireTimeCLWB(ExpireTimeType time) {
     expired_time = time;
-    _mm_clwb(&expired_time);
+    _mm_clwb(const_cast<ExpireTimeType*>(&expired_time));
     _mm_mfence();
   }
 
   void PersistOldVersion(PMemOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
-                    static_cast<long long>(offset));
+    _mm_stream_si64(
+        reinterpret_cast<long long*>(const_cast<PMemOffsetType*>(&old_version)),
+        static_cast<long long>(offset));
     _mm_mfence();
   }
 
   void PersistStatus(RecordStatus status) {
     entry.meta.status = status;
-    _mm_clwb(&entry.meta.status);
+    _mm_clwb(const_cast<RecordStatus*>(&entry.meta.status));
     _mm_mfence();
   }
 
@@ -214,10 +216,10 @@ struct StringRecord {
 struct DLRecord {
  public:
   DataEntry entry;
-  PMemOffsetType old_version;
-  PMemOffsetType prev;
-  PMemOffsetType next;
-  ExpireTimeType expired_time;
+  volatile PMemOffsetType old_version;
+  volatile PMemOffsetType prev;
+  volatile PMemOffsetType next;
+  volatile ExpireTimeType expired_time;
 
   char data[0];
 
@@ -263,52 +265,56 @@ struct DLRecord {
   }
 
   void PersistNextNT(PMemOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&next),
-                    static_cast<long long>(offset));
+    _mm_stream_si64(
+        reinterpret_cast<long long*>(const_cast<PMemOffsetType*>(&next)),
+        static_cast<long long>(offset));
     _mm_mfence();
   }
 
   void PersistPrevNT(PMemOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&prev),
-                    static_cast<long long>(offset));
+    _mm_stream_si64(
+        reinterpret_cast<long long*>(const_cast<PMemOffsetType*>(&prev)),
+        static_cast<long long>(offset));
     _mm_mfence();
   }
 
   void PersistExpireTimeNT(ExpireTimeType time) {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
-    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
+    _mm_stream_si64(reinterpret_cast<long long*>(
+                        const_cast<ExpireTimeType*>(&expired_time)),
                     static_cast<long long>(time));
     _mm_mfence();
   }
 
   void PersistNextCLWB(PMemOffsetType offset) {
     next = offset;
-    _mm_clwb(&next);
+    _mm_clwb(const_cast<PMemOffsetType*>(&next));
     _mm_mfence();
   }
 
   void PersistPrevCLWB(PMemOffsetType offset) {
     prev = offset;
-    _mm_clwb(&prev);
+    _mm_clwb(const_cast<PMemOffsetType*>(&prev));
     _mm_mfence();
   }
 
   void PersistExpireTimeCLWB(ExpireTimeType time) {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     expired_time = time;
-    _mm_clwb(&expired_time);
+    _mm_clwb(const_cast<ExpireTimeType*>(&expired_time));
     _mm_mfence();
   }
 
   void PersistOldVersion(PMemOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
-                    static_cast<long long>(offset));
+    _mm_stream_si64(
+        reinterpret_cast<long long*>(const_cast<PMemOffsetType*>(&old_version)),
+        static_cast<long long>(offset));
     _mm_mfence();
   }
 
   void PersistStatus(RecordStatus status) {
     entry.meta.status = status;
-    _mm_clwb(&entry.meta.status);
+    _mm_clwb(const_cast<RecordStatus*>(&entry.meta.status));
     _mm_mfence();
   }
 
