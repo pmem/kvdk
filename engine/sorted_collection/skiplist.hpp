@@ -27,7 +27,7 @@ static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
 
 struct Splice;
-
+class SortedIterator;
 /* Format:
  * next pointers | DLRecord on pmem | height | cached key size |
  * cached key We only cache key if height > kCache height or there are enough
@@ -415,6 +415,8 @@ class Skiplist : public Collection {
   }
 
  private:
+  friend SortedIterator;
+
   WriteResult putImplNoHash(const StringView& key, const StringView& value,
                             TimeStampType timestamp);
 

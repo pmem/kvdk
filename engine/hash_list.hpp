@@ -237,32 +237,26 @@ using HashListBuilder =
 
 class HashIteratorImpl final : public HashIterator {
  public:
-  void SeekToFirst() final { rep = list->Front(); }
+  void SeekToFirst() final { dl_iter_.SeekToFirst(); }
 
-  void SeekToLast() final { rep = list->Back(); }
+  void SeekToLast() final { dl_iter_.SeekToLast(); }
 
   bool Valid() const final {
     // list->Head() == list->Tail()
-    return (rep != list->Tail());
+    return dl_iter_.Valid();
   }
 
-  void Next() final {
-    if (!Valid()) return;
-    ++rep;
-  }
+  void Next() final { dl_iter_.Next(); }
 
-  void Prev() final {
-    if (!Valid()) return;
-    --rep;
-  }
+  void Prev() final { dl_iter_.Prev(); }
 
   std::string Key() const final {
     if (!Valid()) {
       kvdk_assert(false, "Accessing data with invalid HashIterator!");
       return std::string{};
     }
-    auto sw = Collection::ExtractUserKey(rep->Key());
-    return std::string{sw.data(), sw.size()};
+    auto internal_key = dl_iter_.Key();
+    return string_view_2_string(Collection::ExtractUserKey(dl_iter_.Key()));
   }
 
   std::string Value() const final {
@@ -270,8 +264,7 @@ class HashIteratorImpl final : public HashIterator {
       kvdk_assert(false, "Accessing data with invalid HashIterator!");
       return std::string{};
     }
-    auto sw = rep->Value();
-    return std::string{sw.data(), sw.size()};
+    return string_view_2_string(dl_iter_.Value());
   }
 
   bool MatchKey(std::regex const& re) final {
@@ -288,15 +281,14 @@ class HashIteratorImpl final : public HashIterator {
   using AccessToken = std::shared_ptr<VersionController::GlobalSnapshotHolder>;
 
  public:
-  HashIteratorImpl(HashList* l, AccessToken t)
-      : list{l}, rep{l->Front()}, token{t} {
-    kvdk_assert(list != nullptr, "");
+  HashIteratorImpl(DLList* l, PMEMAllocator* pmem_allocator,
+                   const SnapshotImpl* snapshot, bool own_snapshot)
+      : dl_iter_(l, pmem_allocator, snapshot, own_snapshot) {
+    kvdk_assert(l != nullptr, "");
   }
 
  private:
-  HashList* list;
-  HashList::Iterator rep;
-  AccessToken token;
+  DLListAccessIterator dl_iter_;
 };
 
 }  // namespace KVDK_NAMESPACE

@@ -258,5 +258,103 @@ class DLList {
   LockTable* lock_table_;
 };
 
-class DLListIterator {};
+class DLListAccessIterator {
+ public:
+  DLListAccessIterator(DLList* dl_list, const PMEMAllocator* pmem_allocator,
+                       const SnapshotImpl* snapshot, bool own_snapshot)
+      : dl_list_(dl_list),
+        pmem_allocator_(pmem_allocator),
+        current_(nullptr),
+        snapshot_(snapshot),
+        own_snapshot_(own_snapshot) {}
+
+  void Locate(DLRecord* record, bool forward) {
+    kvdk_assert(record != nullptr, "");
+    current_ = record;
+    skipInvalidRecords(forward);
+  }
+
+  void SeekToFirst() {
+    auto first = dl_list_->Header()->next;
+    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(first);
+    skipInvalidRecords(true);
+  }
+
+  void SeekToLast() {
+    auto last = dl_list_->Header()->prev;
+    current_ = pmem_allocator_->offset2addr<DLRecord>(last);
+    skipInvalidRecords(false);
+  }
+
+  bool Valid() const {
+    return current_ != nullptr && (current_->GetRecordType() & ElemType);
+  }
+
+  virtual void Next() {
+    if (!Valid()) {
+      return;
+    }
+    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
+    skipInvalidRecords(true);
+  }
+
+  void Prev() {
+    if (!Valid()) {
+      return;
+    }
+    current_ = (pmem_allocator_->offset2addr<DLRecord>(current_->prev));
+    skipInvalidRecords(false);
+  }
+
+  StringView Key() const {
+    if (!Valid()) return "";
+    return current_->Key();
+  }
+
+  StringView Value() const {
+    if (!Valid()) return "";
+    return current_->Value();
+  }
+
+ private:
+  DLRecord* findValidVersion(DLRecord* pmem_record) {
+    DLRecord* curr = pmem_record;
+    TimeStampType ts = snapshot_->GetTimestamp();
+    while (curr != nullptr && curr->entry.meta.timestamp > ts) {
+      curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
+      kvdk_assert(curr == nullptr || curr->Validate(),
+                  "Broken checkpoint: invalid older version sorted record");
+      kvdk_assert(
+          curr == nullptr || equal_string_view(curr->Key(), pmem_record->Key()),
+          "Broken checkpoint: key of older version sorted data is "
+          "not same as new "
+          "version");
+    }
+    return curr;
+  }
+
+  // Move current_ to next/prev valid version data record
+  void skipInvalidRecords(bool forward) {
+    while (Valid()) {
+      DLRecord* valid_version_record = findValidVersion(current_);
+      if (valid_version_record == nullptr ||
+          valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
+        current_ =
+            forward
+                ? pmem_allocator_->offset2addr_checked<DLRecord>(current_->next)
+                : pmem_allocator_->offset2addr_checked<DLRecord>(
+                      current_->prev);
+      } else {
+        current_ = valid_version_record;
+        break;
+      }
+    }
+  }
+
+  DLList* dl_list_;
+  const PMEMAllocator* pmem_allocator_;
+  DLRecord* current_;
+  const SnapshotImpl* snapshot_;
+  bool own_snapshot_;
+};
 }  // namespace KVDK_NAMESPACE
