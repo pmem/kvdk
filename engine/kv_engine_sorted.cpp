@@ -52,7 +52,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
       return Status::PmemOverflow;
     }
 
-    // PMem level of skiplist is circular, so the next and prev pointers of
+    // PMem level of dl list is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,

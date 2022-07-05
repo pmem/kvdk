@@ -4,12 +4,13 @@
 #include "generic_list.hpp"
 #include "hash_table.hpp"
 #include "kvdk/iterator.hpp"
+#include "kvdk/types.hpp"
 #include "version/version_controller.hpp"
 #include "write_batch_impl.hpp"
 
 namespace KVDK_NAMESPACE {
 
-class HashList2 : public Collection {
+class HashList : public Collection {
  public:
   struct WriteResult {
     Status s = Status::Ok;
@@ -17,6 +18,19 @@ class HashList2 : public Collection {
     DLRecord* write_record = nullptr;
     HashEntry* hash_entry_ptr = nullptr;
   };
+
+  HashList(DLRecord* header, const StringView& name, CollectionIDType id,
+           PMEMAllocator* pmem_allocator, HashTable* hash_table,
+           LockTable* lock_table)
+      : Collection(name, id),
+        dl_list_(header, pmem_allocator, lock_table),
+        size_(0),
+        pmem_allocator_(pmem_allocator),
+        hash_table_(hash_table) {}
+
+  DLRecord* HeaderRecord() const { return dl_list_.Header(); }
+
+  size_t Size() { return size_; }
 
   WriteResult Put(const StringView& key, const StringView& value,
                   TimeStampType timestamp) {
@@ -67,7 +81,7 @@ class HashList2 : public Collection {
     args.value = value;
     args.op = op;
     args.collection = Name();
-    // args.hlist = this;
+    args.hlist = this;
     return args;
   }
 
@@ -137,8 +151,32 @@ class HashList2 : public Collection {
     return ret;
   }
 
+  WriteResult SetExpireTime(ExpireTimeType expired_time,
+                            TimeStampType timestamp) {}
+
+  bool Replace(DLRecord* old_record, DLRecord* new_record) {
+    return dl_list_.Replace(old_record, new_record);
+  }
+
+  ExpireTimeType GetExpireTime() const final {
+    return HeaderRecord()->GetExpireTime();
+  }
+
+  bool HasExpired() const final {
+    return TimeUtils::CheckIsExpired(GetExpireTime());
+  }
+
+  Status SetExpireTime(ExpireTimeType expired_time) final {
+    HeaderRecord()->PersistExpireTimeCLWB(expired_time);
+    return Status::Ok;
+  }
+
+  // Destroy and free the whole hash list with old version list.
+  void DestroyAll();
+
  private:
   DLList dl_list_;
+  std::atomic<size_t> size_;
   HashTable* hash_table_;
   PMEMAllocator* pmem_allocator_;
 
@@ -193,7 +231,7 @@ class HashList2 : public Collection {
   }
 };
 
-using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
+using HashList2 = GenericList<RecordType::HashRecord, RecordType::HashElem>;
 using HashListBuilder =
     GenericListBuilder<RecordType::HashRecord, RecordType::HashElem>;
 

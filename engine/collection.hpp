@@ -17,8 +17,8 @@ namespace KVDK_NAMESPACE {
 /// TODO: (ziyan) add expire_time field to Collection.
 class Collection {
  public:
-  Collection(const std::string& name, CollectionIDType id)
-      : collection_name_(name), collection_id_(id) {}
+  Collection(const StringView& name, CollectionIDType id)
+      : collection_name_(string_view_2_string(name)), collection_id_(id) {}
   // Return unique ID of the collection
   uint64_t ID() const { return collection_id_; }
 

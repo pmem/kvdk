@@ -42,7 +42,7 @@ class DLList {
     SpaceEntry space;
   };
 
-  DLRecord* Header() { return header_; }
+  DLRecord* Header() const { return header_; }
 
   Status PushBack(const WriteArgs& args) { return InsertBefore(args, header_); }
 

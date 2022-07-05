@@ -295,7 +295,7 @@ void KVEngine::purgeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
     while (!pending_clean_records.outdated_hash_lists.empty()) {
       auto& ts_hlist = pending_clean_records.outdated_hash_lists.front();
       if (ts_hlist.first < version_controller_.LocalOldestSnapshotTS()) {
-        hashListDestroy(ts_hlist.second.release());
+        ts_hlist.second->DestroyAll();
         pending_clean_records.outdated_hash_lists.pop_front();
       } else {
         break;

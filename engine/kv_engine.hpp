@@ -285,11 +285,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashRecord
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashRecord
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -448,30 +447,14 @@ class KVEngine : public Engine {
   /// Hash helper funtions
   Status hashListFind(StringView key, HashList** hlist);
 
-  Status hashListExpire(HashList* hlist, ExpireTimeType t);
-
-  // CallBack should have signature
-  // ModifyOperation(StringView const* old, StringView* new, void* args).
-  // for ModifyOperation::Delete and Noop, return Status of the field.
-  // for ModifyOperation::Write, return the Status of the Write.
-  // for ModifyOperation::Abort, return Status::Abort.
-  enum class hashElemOpImplCaller { HashGet, HashPut, HashModify, HashDelete };
-  template <hashElemOpImplCaller caller, typename CallBack>
-  Status hashElemOpImpl(StringView key, StringView field, CallBack cb,
-                        void* cb_args);
-
   Status hashListRestoreElem(DLRecord* rec);
 
   Status hashListRestoreList(DLRecord* rec);
 
   Status hashListRegisterRecovered();
 
-  // Destroy a HashList already removed from HashTable
-  // Should only be called when the HashList is no longer
-  // accessible to any other thread.
-  Status hashListDestroy(HashList* hlist);
-
   Status hashListWrite(HashWriteArgs& args);
+  Status hashWritePrepare(HashWriteArgs& args, TimeStampType ts);
   Status hashListPublish(HashWriteArgs const& args);
   Status hashListRollback(BatchWriteLog::HashLogEntry const& entry);
 

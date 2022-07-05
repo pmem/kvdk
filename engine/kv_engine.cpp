@@ -892,23 +892,9 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Prepare for Hash Elements
   for (auto& args : hash_args) {
-    args.ts = bw_token.Timestamp();
-    std::string internal_key = args.hlist->InternalKey(args.key);
-    args.lookup_result = lookupElem<true>(internal_key, RecordType::HashElem);
-    if (args.lookup_result.s != Status::Ok && args.lookup_result.s != Status::NotFound) {
-      return args.lookup_result.s;
-    }
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.lookup_result.s == Status::NotFound) {
-      // No need to do anything for delete a non-existing Sorted element
-      continue;
-    }
-    if (args.op == WriteBatchImpl::Op::Put) {
-      args.space = pmem_allocator_->Allocate(
-          DLRecord::RecordSize(internal_key, args.value));
-      if (args.space.size == 0) {
-        return Status::PmemOverflow;
-      }
+    Status s = hashWritePrepare(args, bw_token.Timestamp());
+    if (s != Status::Ok) {
+      return s;
     }
   }
 
@@ -936,22 +922,15 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       log.SortedDelete(args.space.offset);
     }
   }
+
   for (auto& args : hash_args) {
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.lookup_result.s == Status::NotFound) {
+    if (args.space.size == 0) {
       continue;
     }
-    if (args.lookup_result.s == Status::Ok) {
-      PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
-          args.lookup_result.entry.GetIndex().dl_record);
-      if (args.op == WriteBatchImpl::Op::Put) {
-        log.HashReplace(args.space.offset, old_off);
-      } else {
-        log.HashDelete(old_off);
-      }
-    } else {
-      kvdk_assert(args.op == WriteBatchImpl::Op::Put, "");
+    if (args.op == WriteBatchImpl::Op::Put) {
       log.HashEmplace(args.space.offset);
+    } else {
+      log.HashDelete(args.space.offset);
     }
   }
 
@@ -982,8 +961,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Write Hash Elems
   for (auto& args : hash_args) {
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.lookup_result.s == Status::NotFound) {
+    if (args.space.size == 0) {
       continue;
     }
     Status s = hashListWrite(args);
@@ -1020,8 +998,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Publish Hash Elements to HashTable
   for (auto& args : hash_args) {
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.lookup_result.s == Status::NotFound) {
+    if (args.space.size == 0) {
       continue;
     }
     Status s = hashListPublish(args);
@@ -1226,8 +1203,9 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         break;
       }
       case PointerType::HashList: {
+        auto new_ts = snapshot_holder.Timestamp();
         HashList* hlist = res.entry_ptr->GetIndex().hlist;
-        res.s = hashListExpire(hlist, expired_time);
+        res.s = hlist->SetExpireTime(expired_time, new_ts).s;
         break;
       }
       case PointerType::List: {
