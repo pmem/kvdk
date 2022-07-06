@@ -12,6 +12,7 @@
 #include "alias.hpp"
 #include "macros.hpp"
 #include "utils/codec.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 /// TODO: (ziyan) add expire_time field to Collection.

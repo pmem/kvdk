@@ -459,7 +459,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
 
               if ((slot_iter->GetRecordStatus() == RecordStatus::Outdated ||
                    head_record->GetExpireTime() <= now) &&
-                  head_record->entry.meta.timestamp < min_snapshot_ts) {
+                  head_record->GetTimestamp() < min_snapshot_ts) {
                 hash_table_->Erase(&(*slot_iter));
                 pending_clean_records.outdated_skip_lists.emplace_back(
                     std::make_pair(version_controller_.GetCurrentTimestamp(),
@@ -494,21 +494,22 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
             case PointerType::HashList: {
               HashList* hlist = slot_iter->GetIndex().hlist;
               total_num += hlist->Size();
-              auto old_list = removeListOutDatedVersion(hlist, min_snapshot_ts);
-              if (old_list) {
-                pending_clean_records.outdated_hash_lists.emplace_back(
-                    std::make_pair(version_controller_.GetCurrentTimestamp(),
-                                   old_list));
+              auto head_record = hlist->HeaderRecord();
+              auto old_record =
+                  removeOutDatedVersion<DLRecord>(head_record, min_snapshot_ts);
+              if (old_record) {
+                purge_dl_records.emplace_back(old_record);
+                need_purge_num++;
               }
-              if (hlist->GetExpireTime() <= now &&
-                  hlist->GetTimeStamp() < min_snapshot_ts) {
+
+              if ((slot_iter->GetRecordStatus() == RecordStatus::Outdated ||
+                   head_record->GetExpireTime() <= now) &&
+                  head_record->GetTimestamp() < min_snapshot_ts) {
+                hash_table_->Erase(&(*slot_iter));
                 pending_clean_records.outdated_hash_lists.emplace_back(
                     std::make_pair(version_controller_.GetCurrentTimestamp(),
                                    hlist));
-                hash_table_->Erase(&(*slot_iter));
                 need_purge_num += hlist->Size();
-                std::unique_lock<std::mutex> guard{hlists_mu_};
-                hash_lists_.erase(hlist);
               }
               break;
             }

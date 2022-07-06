@@ -10,6 +10,8 @@
 
 namespace KVDK_NAMESPACE {
 
+class HashIteratorImpl;
+
 class HashList : public Collection {
  public:
   struct WriteResult {
@@ -27,6 +29,8 @@ class HashList : public Collection {
         size_(0),
         pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {}
+
+  virtual ~HashList() {}
 
   DLRecord* HeaderRecord() const { return dl_list_.Header(); }
 
@@ -152,7 +156,26 @@ class HashList : public Collection {
   }
 
   WriteResult SetExpireTime(ExpireTimeType expired_time,
-                            TimeStampType timestamp) {}
+                            TimeStampType timestamp) {
+    WriteResult ret;
+    DLRecord* header = HeaderRecord();
+    SpaceEntry space = pmem_allocator_->Allocate(
+        DLRecord::RecordSize(header->Key(), header->Value()));
+    if (space.size == 0) {
+      ret.s = Status::PmemOverflow;
+      return ret;
+    }
+    DLRecord* pmem_record = DLRecord::PersistDLRecord(
+        pmem_allocator_->offset2addr_checked(space.offset), space.size,
+        timestamp, RecordType::HashRecord, RecordStatus::Normal,
+        pmem_allocator_->addr2offset_checked(header), header->prev,
+        header->next, header->Key(), header->Value(), expired_time);
+    bool success = dl_list_.Replace(header, pmem_record);
+    kvdk_assert(success, "existing header should be linked on its list");
+    ret.existing_record = header;
+    ret.write_record = pmem_record;
+    return ret;
+  }
 
   bool Replace(DLRecord* old_record, DLRecord* new_record) {
     return dl_list_.Replace(old_record, new_record);
@@ -161,6 +184,8 @@ class HashList : public Collection {
   ExpireTimeType GetExpireTime() const final {
     return HeaderRecord()->GetExpireTime();
   }
+
+  TimeStampType GetTimeStamp() const { return HeaderRecord()->GetTimestamp(); }
 
   bool HasExpired() const final {
     return TimeUtils::CheckIsExpired(GetExpireTime());
@@ -172,13 +197,14 @@ class HashList : public Collection {
   }
 
   // Destroy and free the whole hash list with old version list.
-  void DestroyAll();
+  void DestroyAll() {}
 
  private:
+  friend HashIteratorImpl;
   DLList dl_list_;
   std::atomic<size_t> size_;
-  HashTable* hash_table_;
   PMEMAllocator* pmem_allocator_;
+  HashTable* hash_table_;
 
   WriteResult putPrepared(const HashTable::LookupResult& lookup_result,
                           const StringView& key, const StringView& value,
@@ -231,12 +257,18 @@ class HashList : public Collection {
   }
 };
 
-using HashList2 = GenericList<RecordType::HashRecord, RecordType::HashElem>;
 using HashListBuilder =
     GenericListBuilder<RecordType::HashRecord, RecordType::HashElem>;
 
 class HashIteratorImpl final : public HashIterator {
  public:
+  HashIteratorImpl(HashList* hlist, const SnapshotImpl* snapshot,
+                   bool own_snapshot)
+      : hlist_(hlist),
+        snapshot_(snapshot),
+        own_snapshot_(own_snapshot),
+        dl_iter_(&hlist->dl_list_, hlist->pmem_allocator_, snapshot,
+                 own_snapshot) {}
   void SeekToFirst() final { dl_iter_.SeekToFirst(); }
 
   void SeekToLast() final { dl_iter_.SeekToLast(); }
@@ -255,7 +287,6 @@ class HashIteratorImpl final : public HashIterator {
       kvdk_assert(false, "Accessing data with invalid HashIterator!");
       return std::string{};
     }
-    auto internal_key = dl_iter_.Key();
     return string_view_2_string(Collection::ExtractUserKey(dl_iter_.Key()));
   }
 
@@ -288,6 +319,9 @@ class HashIteratorImpl final : public HashIterator {
   }
 
  private:
+  HashList* hlist_;
+  const SnapshotImpl* snapshot_;
+  bool own_snapshot_;
   DLListAccessIterator dl_iter_;
 };
 

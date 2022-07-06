@@ -33,7 +33,7 @@ template <RecordType ListType, RecordType ElemType>
 class GenericList;
 
 using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
-using HashList2 = GenericList<RecordType::HashRecord, RecordType::HashElem>;
+struct HashList;
 
 struct alignas(16) HashEntry {
  public:

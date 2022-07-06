@@ -592,9 +592,9 @@ Status KVEngine::restoreExistingData() {
       configs_.max_access_threads, *persist_checkpoint_));
   list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
                                       configs_.max_access_threads, nullptr});
-  hash_list_builder_.reset(
-      new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
-                          configs_.max_access_threads, hash_list_locks_.get()});
+  // hash_list_builder_.reset(
+  // new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
+  // configs_.max_access_threads, hash_list_locks_.get()});
 
   Status s = batchWriteRollbackLogs();
   if (s != Status::Ok) {
@@ -649,14 +649,16 @@ Status KVEngine::restoreExistingData() {
   list_builder_.reset(nullptr);
   GlobalLogger.Info("Rebuild Lists done\n");
 
-  hash_list_builder_->RebuildLists();
-  hash_list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
-  s = hashListRegisterRecovered();
-  if (s != Status::Ok) {
-    return s;
+  if (hash_list_builder_ != nullptr) {
+    hash_list_builder_->RebuildLists();
+    hash_list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
+    s = hashListRegisterRecovered();
+    if (s != Status::Ok) {
+      return s;
+    }
+    hash_list_builder_.reset(nullptr);
+    GlobalLogger.Info("Rebuild HashLists done\n");
   }
-  hash_list_builder_.reset(nullptr);
-  GlobalLogger.Info("Rebuild HashLists done\n");
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {

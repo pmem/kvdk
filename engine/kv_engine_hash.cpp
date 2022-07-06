@@ -123,7 +123,7 @@ Status KVEngine::HashGet(StringView collection, StringView key,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  Status s = hashListFind(collection, &hlist);
+  s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     s = hlist->Get(key, value);
   }
@@ -142,7 +142,7 @@ Status KVEngine::HashPut(StringView collection, StringView key,
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  Status s = hashListFind(collection, &hlist);
+  s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
     if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
@@ -172,7 +172,7 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  Status s = hashListFind(collection, &hlist);
+  s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
     if (!CheckKeySize(collection_key)) {
@@ -204,17 +204,18 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key,
     return nullptr;
   }
 
-  auto snapshot = version_controller_.GetGlobalSnapshotToken();
+  auto snapshot = GetSnapshot(false);
   HashList* hlist;
   Status s = hashListFind(key, &hlist);
   if (status != nullptr) {
     *status = s;
   }
   if (s != Status::Ok) {
+    ReleaseSnapshot(snapshot);
     return nullptr;
   }
   return std::unique_ptr<HashIteratorImpl>{
-      new HashIteratorImpl{hlist, std::move(snapshot)}};
+      new HashIteratorImpl{hlist, static_cast<SnapshotImpl*>(snapshot), true}};
 }
 
 Status KVEngine::hashListFind(StringView key, HashList** hlist) {
@@ -271,7 +272,7 @@ Status KVEngine::hashListRegisterRecovered() {
   return Status::Ok;
 }
 
-Status hashWritePrepare(HashWriteArgs& args, TimeStampType ts) {
+Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimeStampType ts) {
   return args.hlist->PrepareWrite(args, ts);
 }
 
@@ -300,10 +301,10 @@ Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
       break;
     }
     case BatchWriteLog::Op::Replace: {
-      DLRecord* old_rec = static_cast<DLRecord*>(
-          pmem_allocator_->offset2addr_checked(log.old_offset));
-      DLRecord* new_rec = static_cast<DLRecord*>(
-          pmem_allocator_->offset2addr_checked(log.new_offset));
+      DLRecord* old_rec =
+          pmem_allocator_->offset2addr_checked<DLRecord>(log.old_offset);
+      DLRecord* new_rec =
+          pmem_allocator_->offset2addr_checked<DLRecord>(log.new_offset);
       hash_list_builder_->RollbackReplacement(new_rec, old_rec);
       break;
     }
