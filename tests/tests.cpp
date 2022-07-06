@@ -3207,7 +3207,8 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 }
 
 TEST_F(EngineBasicTest, TestDynamicCleaner) {
-  std::string op;
+  enum class OpType { insert, update, outdated };
+  OpType op;
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
@@ -3216,17 +3217,17 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
         *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
-  SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::SpaceReclaimer::AdjustThread", [&](void* advice_thread_num) {
-        if (op == "update") {
-          *((size_t*)advice_thread_num) = 6;
-        } else if (op == "delete") {
-          *((size_t*)advice_thread_num) = 8;
-        } else {
-          *((size_t*)advice_thread_num) = 1;
-        }
-        return;
-      });
+  SyncPoint::GetInstance()->SetCallBack("KVEngine::Cleaner::AdjustThread",
+                                        [&](void* advice_thread_num) {
+                                          if (op == OpType::update) {
+                                            *((size_t*)advice_thread_num) = 6;
+                                          } else if (op == OpType::outdated) {
+                                            *((size_t*)advice_thread_num) = 8;
+                                          } else {
+                                            *((size_t*)advice_thread_num) = 1;
+                                          }
+                                          return;
+                                        });
   SyncPoint::GetInstance()->EnableProcessing();
   configs.max_access_threads = 32;
   configs.hash_bucket_num = 256;
@@ -3245,7 +3246,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
 
   size_t cnt = 16;
   // only insert
-  op = "insert";
+  op = OpType::insert;
   for (size_t id = 0; id < cnt; ++id) {
     std::string value = std::to_string(id) + common_value;
     std::string str_key = std::to_string(id) + common_str_key;
@@ -3257,7 +3258,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
   ASSERT_EQ(space_cleaner->ActiveThreadNum(), 1);
 
   // update
-  op = "update";
+  op = OpType::update;
   sleep(1);
   for (size_t id = 0; id < cnt; ++id) {
     std::string str_key = std::to_string(id) + common_str_key;
@@ -3271,8 +3272,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
     }
   }
   ASSERT_EQ(space_cleaner->ActiveThreadNum(), 6);
-
-  op = "delete";
+  op = OpType::outdated;
   sleep(1);
   for (size_t id = 0; id < cnt; ++id) {
     std::string str_key = std::to_string(id) + common_str_key;
@@ -3282,7 +3282,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
   }
   ASSERT_EQ(space_cleaner->ActiveThreadNum(), 8);
 
-  op = "insert";
+  op = OpType::insert;
   sleep(1);
   for (size_t id = 0; id < cnt; ++id) {
     std::string value = std::to_string(id) + common_value;
