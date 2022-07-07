@@ -44,6 +44,17 @@ class PMEMAllocator : public Allocator {
   // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(const SpaceEntry& entry) override;
 
+  // Purge a kvdk data record and free it
+  template <typename T>
+  void PurgeAndFree(T* pmem_record) {
+    static_assert(std::is_same<T, DLRecord>::value ||
+                      std::is_same<T, StringRecord>::value,
+                  "");
+    pmem_record->Destroy();
+    Free(SpaceEntry(addr2offset_checked(pmem_record),
+                    pmem_record->GetRecordSize()));
+  }
+
   // translate block_offset of allocated space to address
   inline void* offset2addr_checked(PMemOffsetType offset) const {
     assert(validate_offset(offset) && "Trying to access invalid offset");

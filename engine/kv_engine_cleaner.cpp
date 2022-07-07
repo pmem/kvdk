@@ -230,7 +230,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
        * iteration.
        */
       if (Skiplist::Remove(cur_record, dram_node, pmem_allocator_.get(),
-                           skiplist_locks_.get())) {
+                           dllist_locks_.get())) {
         purge_dl_records.emplace_back(cur_record);
       }
     }
@@ -417,7 +417,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
                   dl_record->entry.meta.timestamp < min_snapshot_ts) {
                 bool success =
                     Skiplist::Remove(dl_record, node, pmem_allocator_.get(),
-                                     skiplist_locks_.get());
+                                     dllist_locks_.get());
                 kvdk_assert(success, "");
                 hash_table_->Erase(&(*slot_iter));
                 purge_dl_records.emplace_back(dl_record);
@@ -438,7 +438,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
                   dl_record->entry.meta.timestamp < min_snapshot_ts) {
                 bool success =
                     Skiplist::Remove(dl_record, nullptr, pmem_allocator_.get(),
-                                     skiplist_locks_.get());
+                                     dllist_locks_.get());
                 kvdk_assert(success, "");
                 hash_table_->Erase(&(*slot_iter));
                 purge_dl_records.emplace_back(dl_record);

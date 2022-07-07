@@ -1,12 +1,12 @@
 #pragma once
 
-#include "dl_list.hpp"
-#include "generic_list.hpp"
-#include "hash_table.hpp"
+#include "../dl_list.hpp"
+#include "../generic_list.hpp"
+#include "../hash_table.hpp"
+#include "../version/version_controller.hpp"
+#include "../write_batch_impl.hpp"
 #include "kvdk/iterator.hpp"
 #include "kvdk/types.hpp"
-#include "version/version_controller.hpp"
-#include "write_batch_impl.hpp"
 
 namespace KVDK_NAMESPACE {
 
@@ -31,6 +31,8 @@ class HashList : public Collection {
         hash_table_(hash_table) {}
 
   virtual ~HashList() {}
+
+  DLList* GetDLList() { return &dl_list_; }
 
   DLRecord* HeaderRecord() const { return dl_list_.Header(); }
 
@@ -199,6 +201,27 @@ class HashList : public Collection {
   // Destroy and free the whole hash list with old version list.
   void DestroyAll() {}
 
+  void UpdateSize(int64_t delta) {
+    kvdk_assert(delta >= 0 || size_.load() >= static_cast<size_t>(-delta),
+                "Update skiplist size to negative");
+    size_.fetch_add(delta, std::memory_order_relaxed);
+  }
+
+  inline static CollectionIDType HashListID(const DLRecord* record) {
+    assert(record != nullptr);
+    switch (record->GetRecordType()) {
+      case RecordType::HashElem:
+        return ExtractID(record->Key());
+      case RecordType::HashRecord:
+        return DecodeID(record->Value());
+      default:
+        GlobalLogger.Error("Wrong record type %u in HashListID",
+                           record->GetRecordType());
+        kvdk_assert(false, "Wrong type in HashListID");
+        return 0;
+    }
+  }
+
  private:
   friend HashIteratorImpl;
   DLList dl_list_;
@@ -213,21 +236,24 @@ class HashList : public Collection {
     std::string internal_key(InternalKey(key));
     DLList::WriteArgs args(internal_key, value, RecordType::HashElem,
                            RecordStatus::Normal, timestamp, space);
+    ret.write_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+    ret.hash_entry_ptr = lookup_result.entry_ptr;
     if (lookup_result.s == Status::Ok) {
       ret.existing_record = lookup_result.entry.GetIndex().dl_record;
       kvdk_assert(timestamp > ret.existing_record->GetTimestamp(), "");
       while (dl_list_.Update(args, ret.existing_record) != Status::Ok) {
       }
-
-      ret.write_record =
-          pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
-      ret.hash_entry_ptr = lookup_result.entry_ptr;
     } else {
       kvdk_assert(lookup_result.s == Status::NotFound, "");
       bool push_back = fast_random_64() % 2 == 0;
       Status s = push_back ? dl_list_.PushBack(args) : dl_list_.PushFront(args);
       kvdk_assert(s == Status::Ok, "");
+      UpdateSize(1);
     }
+    hash_table_->Insert(lookup_result, RecordType::HashElem,
+                        RecordStatus::Normal, ret.write_record,
+                        PointerType::DLRecord);
     return ret;
   }
 
@@ -248,6 +274,7 @@ class HashList : public Collection {
                            RecordStatus::Outdated, timestamp, space);
     while (dl_list_.Update(args, ret.existing_record) != Status::Ok) {
     }
+    UpdateSize(-1);
     ret.write_record =
         pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
     hash_table_->Insert(lookup_result, RecordType::HashElem,

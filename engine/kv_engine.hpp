@@ -22,7 +22,8 @@
 #include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "hash_list.hpp"
+#include "hash_collection/hash_list.hpp"
+#include "hash_collection/rebuilder.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "lock_table.hpp"
@@ -447,9 +448,9 @@ class KVEngine : public Engine {
   /// Hash helper funtions
   Status hashListFind(StringView key, HashList** hlist);
 
-  Status hashListRestoreElem(DLRecord* rec);
+  Status restoreHashElem(DLRecord* rec);
 
-  Status hashListRestoreList(DLRecord* rec);
+  Status restoreHashHeader(DLRecord* rec);
 
   Status hashListRegisterRecovered();
 
@@ -576,14 +577,6 @@ class KVEngine : public Engine {
     }
   }
 
-  inline void purgeAndFree(void* pmem_record) {
-    DataEntry* data_entry = static_cast<DataEntry*>(pmem_record);
-    data_entry->Destroy();
-    pmem_allocator_->Free(
-        SpaceEntry(pmem_allocator_->addr2offset_checked(pmem_record),
-                   data_entry->header.record_size));
-  }
-
   // Run in background to report PMem usage regularly
   void backgroundPMemUsageReporter();
 
@@ -634,7 +627,7 @@ class KVEngine : public Engine {
   std::set<HashList*, Collection::TTLCmp> hash_lists_;
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
-  std::unique_ptr<LockTable> skiplist_locks_;
+  std::unique_ptr<LockTable> dllist_locks_;
 
   std::string dir_;
   std::string batch_log_dir_;
@@ -646,6 +639,7 @@ class KVEngine : public Engine {
   std::vector<std::thread> bg_threads_;
 
   std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
+  std::unique_ptr<HashListRebuilder> hash_rebuilder_;
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
   Cleaner cleaner_;

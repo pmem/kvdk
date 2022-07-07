@@ -257,7 +257,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   assert(pmem_record->GetRecordType() == RecordType::String);
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
-    purgeAndFree(pmem_record);
+    pmem_allocator_->PurgeAndFree<StringRecord>(pmem_record);
     return Status::Ok;
   }
 
@@ -273,7 +273,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   if (lookup_result.s == Status::Ok &&
       lookup_result.entry.GetIndex().string_record->GetTimestamp() >=
           cached_entry.meta.timestamp) {
-    purgeAndFree(pmem_record);
+    pmem_allocator_->PurgeAndFree<StringRecord>(pmem_record);
     return Status::Ok;
   }
 
@@ -282,7 +282,8 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   pmem_record->PersistOldVersion(kNullPMemOffset);
 
   if (lookup_result.s == Status::Ok) {
-    purgeAndFree(lookup_result.entry.GetIndex().ptr);
+    pmem_allocator_->PurgeAndFree<StringRecord>(
+        lookup_result.entry.GetIndex().string_record);
   }
 
   return Status::Ok;

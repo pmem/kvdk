@@ -51,7 +51,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 
   if (!linked_record) {
     if (!recoverToCheckpoint()) {
-      kv_engine_->purgeAndFree(header_record);
+      kv_engine_->pmem_allocator_->PurgeAndFree<DLRecord>(header_record);
     } else {
       // We do not know if this is a checkpoint version record, so we can't free
       // it here
@@ -72,7 +72,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
 
   if (!linked_record) {
     if (!recoverToCheckpoint()) {
-      kv_engine_->purgeAndFree(record);
+      kv_engine_->pmem_allocator_->PurgeAndFree<DLRecord>(record);
     } else {
       // We do not know if this is a checkpoint version record, so we can't free
       // it here
@@ -176,7 +176,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
               make_shared<Skiplist>(header_record, collection_name, id,
                                     comparator, pmem_allocator,
                                     kv_engine_->hash_table_.get(),
-                                    kv_engine_->skiplist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+                                    kv_engine_->dllist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
         std::lock_guard<SpinMutex> lg(lock_);
         invalid_skiplists_[id] = skiplist;
@@ -187,20 +187,20 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       if (valid_version_record != header_record) {
         bool success = Skiplist::Replace(header_record, valid_version_record,
                                          nullptr, pmem_allocator,
-                                         kv_engine_->skiplist_locks_.get());
+                                         kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "headers in rebuild should passed linkage check");
         addUnlinkedRecord(header_record);
       }
 
       bool outdated =
           valid_version_record->GetRecordStatus() == RecordStatus::Outdated ||
-          TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
+          valid_version_record->HasExpired();
 
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
             pmem_allocator, kv_engine_->hash_table_.get(),
-            kv_engine_->skiplist_locks_.get(), false);
+            kv_engine_->dllist_locks_.get(), false);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           invalid_skiplists_[id] = skiplist;
@@ -209,7 +209,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
             pmem_allocator, kv_engine_->hash_table_.get(),
-            kv_engine_->skiplist_locks_.get(), s_configs.index_with_hashtable);
+            kv_engine_->dllist_locks_.get(), s_configs.index_with_hashtable);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           rebuild_skiplits_[id] = skiplist;
@@ -357,7 +357,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
         bool success = Skiplist::Remove(next_record, nullptr,
                                         kv_engine_->pmem_allocator_.get(),
-                                        kv_engine_->skiplist_locks_.get());
+                                        kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       } else {
@@ -365,7 +365,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           bool success =
               Skiplist::Replace(next_record, valid_version_record, nullptr,
                                 kv_engine_->pmem_allocator_.get(),
-                                kv_engine_->skiplist_locks_.get());
+                                kv_engine_->dllist_locks_.get());
           kvdk_assert(success, "elems in rebuild should passed linkage check");
           addUnlinkedRecord(next_record);
         }
@@ -492,7 +492,6 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
   size_t num_elems = 0;
 
   Splice splice(skiplist);
-  HashEntry hash_entry;
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     splice.prevs[i] = skiplist->HeaderNode();
     splice.prev_pmem_record = skiplist->HeaderRecord();
@@ -515,7 +514,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
       // purge invalid version record from list
       bool success = Skiplist::Remove(next_record, nullptr,
                                       kv_engine_->pmem_allocator_.get(),
-                                      kv_engine_->skiplist_locks_.get());
+                                      kv_engine_->dllist_locks_.get());
       kvdk_assert(success, "elems in rebuild should passed linkage check");
       addUnlinkedRecord(next_record);
     } else {
@@ -524,7 +523,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         bool success =
             Skiplist::Replace(next_record, valid_version_record, nullptr,
                               kv_engine_->pmem_allocator_.get(),
-                              kv_engine_->skiplist_locks_.get());
+                              kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       }
@@ -715,8 +714,7 @@ DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
   }
   CollectionIDType id = Skiplist::SkiplistID(pmem_record);
   DLRecord* curr = pmem_record;
-  while (curr != nullptr &&
-         curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
+  while (curr != nullptr && curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
     curr =
         kv_engine_->pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
 

@@ -42,7 +42,7 @@ Status KVEngine::HashCreate(StringView collection) {
 
     HashList* hlist =
         new HashList(pmem_record, collection, id, pmem_allocator_.get(),
-                     hash_table_.get(), skiplist_locks_.get());
+                     hash_table_.get(), dllist_locks_.get());
     {
       std::lock_guard<std::mutex> lg(hlists_mu_);
       hash_lists_.insert(hlist);
@@ -232,28 +232,12 @@ Status KVEngine::hashListFind(StringView key, HashList** hlist) {
   return Status::Ok;
 }
 
-Status KVEngine::hashListRestoreElem(DLRecord* rec) {
-  if (!hash_list_builder_->AddListElem(rec)) {
-    // Broken record, don't put in HashTable.
-    // Rebuilder will delete it after recovery is done.
-    return Status::Ok;
-  }
-
-  StringView internal_key = rec->Key();
-  auto guard = hash_table_->AcquireLock(internal_key);
-  auto result = lookupElem<true>(internal_key, RecordType::HashElem);
-  if (!(result.s == Status::Ok || result.s == Status::NotFound)) {
-    return result.s;
-  }
-  kvdk_assert(result.s == Status::NotFound, "Impossible!");
-  insertKeyOrElem(result, RecordType::HashElem, RecordStatus::Normal, rec);
-
-  return Status::Ok;
+Status KVEngine::restoreHashElem(DLRecord* rec) {
+  return hash_rebuilder_->AddElem(rec);
 }
 
-Status KVEngine::hashListRestoreList(DLRecord* rec) {
-  hash_list_builder_->AddListRecord(rec);
-  return Status::Ok;
+Status KVEngine::restoreHashHeader(DLRecord* rec) {
+  return hash_rebuilder_->AddHeader(rec);
 }
 
 Status KVEngine::hashListRegisterRecovered() {

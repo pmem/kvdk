@@ -196,10 +196,10 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,
       pmem_allocator_.get(), configs_.max_access_threads));
-  skiplist_locks_.reset(new LockTable{1UL << 20});
+  dllist_locks_.reset(new LockTable{1UL << 20});
   hash_list_locks_.reset(new LockTable{1UL << 20});
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
-      thread_manager_ == nullptr || skiplist_locks_ == nullptr ||
+      thread_manager_ == nullptr || dllist_locks_ == nullptr ||
       hash_list_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
@@ -326,11 +326,11 @@ Status KVEngine::RestoreData() {
         break;
       }
       case RecordType::HashRecord: {
-        s = hashListRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
+        s = restoreHashHeader(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::HashElem: {
-        s = hashListRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
+        s = restoreHashElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       default: {
@@ -592,6 +592,10 @@ Status KVEngine::restoreExistingData() {
       configs_.max_access_threads, *persist_checkpoint_));
   list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
                                       configs_.max_access_threads, nullptr});
+  hash_rebuilder_.reset(
+      new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+                            dllist_locks_.get(), thread_manager_.get(),
+                            configs_.max_access_threads, *persist_checkpoint_));
   // hash_list_builder_.reset(
   // new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
   // configs_.max_access_threads, hash_list_locks_.get()});
@@ -619,14 +623,14 @@ Status KVEngine::restoreExistingData() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  auto ret = sorted_rebuilder_->Rebuild();
-  if (ret.s != Status::Ok) {
-    return ret.s;
+  auto s_ret = sorted_rebuilder_->Rebuild();
+  if (s_ret.s != Status::Ok) {
+    return s_ret.s;
   }
-  if (list_id_.load() <= ret.max_id) {
-    list_id_.store(ret.max_id + 1);
+  if (list_id_.load() <= s_ret.max_id) {
+    list_id_.store(s_ret.max_id + 1);
   }
-  skiplists_.swap(ret.rebuild_skiplits);
+  skiplists_.swap(s_ret.rebuild_skiplits);
 
 #if KVDK_DEBUG_LEVEL > 0
   for (auto skiplist : skiplists_) {
@@ -649,16 +653,16 @@ Status KVEngine::restoreExistingData() {
   list_builder_.reset(nullptr);
   GlobalLogger.Info("Rebuild Lists done\n");
 
-  if (hash_list_builder_ != nullptr) {
-    hash_list_builder_->RebuildLists();
-    hash_list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
-    s = hashListRegisterRecovered();
-    if (s != Status::Ok) {
-      return s;
-    }
-    hash_list_builder_.reset(nullptr);
-    GlobalLogger.Info("Rebuild HashLists done\n");
+  auto h_ret = hash_rebuilder_->Rebuild();
+  if (h_ret.s != Status::Ok) {
+    return s_ret.s;
   }
+  if (list_id_.load() <= h_ret.max_id) {
+    list_id_.store(h_ret.max_id + 1);
+  }
+  hash_lists_.swap(h_ret.rebuilt_hlists);
+  GlobalLogger.Info("Rebuild HashLists done\n");
+  hash_list_builder_.reset(nullptr);
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {

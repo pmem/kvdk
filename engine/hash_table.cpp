@@ -4,7 +4,7 @@
 
 #include "hash_table.hpp"
 
-#include "hash_list.hpp"
+#include "hash_collection/hash_list.hpp"
 #include "simple_list.hpp"
 #include "sorted_collection/skiplist.hpp"
 #include "thread_manager.hpp"

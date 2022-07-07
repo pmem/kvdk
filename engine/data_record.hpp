@@ -185,6 +185,8 @@ struct StringRecord {
 
   RecordStatus GetRecordStatus() const { return entry.meta.status; }
 
+  uint32_t GetRecordSize() const { return entry.header.record_size; }
+
   static uint32_t RecordSize(const StringView& key, const StringView& value) {
     return key.size() + value.size() + sizeof(StringRecord);
   }
