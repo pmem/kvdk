@@ -137,11 +137,15 @@ struct Configs {
 };
 
 struct WriteOptions {
-  WriteOptions(TTLType _ttl_time = kPersistTTL) : ttl_time(_ttl_time) {}
+  WriteOptions(TTLType _ttl_time = kPersistTTL, bool _update_ttl = true)
+      : ttl_time(_ttl_time), update_ttl(_update_ttl) {}
 
   // expired time in milliseconod, should be kPersistTime for no expiration
   // data, or a certain interge which be in the range [INT64_MIN , INT64_MAX].
   TTLType ttl_time;
+
+  // determine whether to update expired time if key already existed
+  bool update_ttl;
 };
 
 }  // namespace KVDK_NAMESPACE

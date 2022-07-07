@@ -454,6 +454,14 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     s = KVDKGetTTL(kvdk_engine, key, strlen(key), &ttl_time);
     assert(s == Ok);
     assert(ttl_time == INT64_MAX);
+    // case: keep expire time unchanged while updating a existing key
+    KVDKWriteOptionsSetUpdateTTL(write_option, 0);
+    KVDKWriteOptionsSetTTLTime(write_option, 0);
+    s = KVDKPut(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
+    assert(s == Ok);
+    s = KVDKGetTTL(kvdk_engine, key, strlen(key), &ttl_time);
+    assert(s == Ok);
+    assert(ttl_time == INT64_MAX);
     // case: key is expired.
     s = KVDKExpire(kvdk_engine, key, strlen(key), 1);
     assert(s == Ok);
@@ -461,7 +469,6 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);
     assert(s == NotFound);
     // case: ttl time is negative or 0
-    KVDKWriteOptionsSetTTLTime(write_option, 0);
     s = KVDKPut(kvdk_engine, key, strlen(key), val, strlen(val), write_option);
     assert(s == Ok);
     s = KVDKGet(kvdk_engine, key, strlen(key), &val_len, &got_val);

@@ -2081,8 +2081,6 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   std::string got_val;
   int64_t ttl_time;
-  WriteOptions write_options1{1};
-  WriteOptions write_options2{INT64_MAX / 1000};
   std::string key = "expired_key";
   std::string val(10, 'a');
   std::string val2(10, 'b');
@@ -2095,12 +2093,36 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   // For string
   {
     // key is expired. Check expired time when reading.
+    WriteOptions write_options1{1, true};
     ASSERT_EQ(engine->Put(key, val, write_options1), Status::Ok);
     sleep(1);
     ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
 
     // update kv pair with new expired time.
+    WriteOptions write_options2{INT64_MAX / 1000, true};
     ASSERT_EQ(engine->Put(key, val2, write_options2), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+    ASSERT_EQ(got_val, val2);
+
+    // test update_ttl option
+    WriteOptions write_options3{1, false};
+    ASSERT_EQ(engine->Put(key, val, write_options3), Status::Ok);
+    sleep(1);
+    ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+    ASSERT_EQ(got_val, val);
+    ASSERT_EQ(
+        engine->Modify(
+            key,
+            [=](const std::string* old_value, std::string* new_value, void*) {
+              if (old_value != nullptr) {
+                new_value->assign(val2);
+                return ModifyOperation::Write;
+              }
+              return ModifyOperation::Abort;
+            },
+            nullptr, write_options3),
+        Status::Ok);
+    sleep(1);
     ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
     ASSERT_EQ(got_val, val2);
 
