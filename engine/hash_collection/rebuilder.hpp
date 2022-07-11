@@ -23,35 +23,44 @@ class HashListRebuilder {
   HashListRebuilder(PMEMAllocator* pmem_allocator, HashTable* hash_table,
                     LockTable* lock_table, ThreadManager* thread_manager,
                     uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
-      : pmem_allocator_(pmem_allocator),
+      : rebuilder_thread_cache_(num_rebuild_threads),
+        pmem_allocator_(pmem_allocator),
         hash_table_(hash_table),
         lock_table_(lock_table),
         thread_manager_(thread_manager),
         num_rebuild_threads_(num_rebuild_threads),
         checkpoint_(checkpoint) {}
 
-  Status AddElem(DLRecord* record) {
-    // TODO check and repair linkage
-    bool linked_record = true;
+  Status AddElem(DLRecord* elem_record) {
+    bool linked_record = DLListRebuilderHelper::CheckAndRepairLinkage(
+        elem_record, pmem_allocator_);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
+        // We do not know if this is a checkpoint version record, so we can't
+        // free
+        // it here
+        addUnlinkedRecord(elem_record);
       } else {
-        pmem_allocator_->PurgeAndFree<DLRecord>(record);
+        pmem_allocator_->PurgeAndFree<DLRecord>(elem_record);
       }
     }
     return Status::Ok;
   }
 
-  Status AddHeader(DLRecord* record) {
-    // TODO check and repair linkage
-    bool linked_record = true;
+  Status AddHeader(DLRecord* header_record) {
+    bool linked_record = DLListRebuilderHelper::CheckAndRepairLinkage(
+        header_record, pmem_allocator_);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
+        // We do not know if this is a checkpoint version record, so we can't
+        // free
+        // it here
+        addUnlinkedRecord(header_record);
       } else {
-        pmem_allocator_->PurgeAndFree<DLRecord>(record);
+        pmem_allocator_->PurgeAndFree<DLRecord>(header_record);
       }
     } else {
-      linked_headers_.emplace_back(record);
+      linked_headers_.emplace_back(header_record);
     }
     return Status::Ok;
   }
@@ -111,7 +120,7 @@ class HashListRebuilder {
                                          pmem_allocator_, lock_table_);
           kvdk_assert(success,
                       "headers in rebuild should passed linkage check");
-          // TODO add unlinked record
+          addUnlinkedRecord(header_record);
         }
 
         hlist = new HashList(valid_version_record, collection_name, id,
@@ -130,7 +139,25 @@ class HashListRebuilder {
         }
         // TODO no need always to persist old version
         valid_version_record->PersistOldVersion(kNullPMemOffset);
-        // TODO insert hash index
+
+        auto lookup_result = hash_table_->Insert(
+            collection_name, RecordType::HashRecord, RecordStatus::Normal,
+            hlist, PointerType::HashList);
+        switch (lookup_result.s) {
+          case Status::Ok: {
+            GlobalLogger.Error(
+                "Rebuild hlist error, hash entry of hlist records should "
+                "not be inserted before rebuild\n");
+            return Status::Abort;
+          }
+
+          case Status::NotFound: {
+            break;
+          }
+          default: {
+            return lookup_result.s;
+          }
+        }
         // TODO continue
       }
     }
@@ -163,7 +190,10 @@ class HashListRebuilder {
   }
 
   Status rebuildIndex(HashList* hlist) {
-    // TODO Init access thread
+    Status s = thread_manager_->MaybeInitThread(access_thread);
+    if (s != Status::Ok) {
+      return s;
+    }
     size_t num_elems = 0;
     DLRecord* prev = hlist->HeaderRecord();
     while (true) {
@@ -179,17 +209,34 @@ class HashListRebuilder {
           valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
         bool success = hlist->GetDLList()->Remove(curr);
         kvdk_assert(success, "elems in rebuild should passed linkage check");
-        // TODO add unlinked record
+        addUnlinkedRecord(curr);
       } else {
         if (valid_version_record != curr) {
           bool success =
               hlist->GetDLList()->Replace(curr, valid_version_record);
           kvdk_assert(success, "elems in rebuild should passed linkage check");
-          //   addUnlinkedRecord(next_record);
+          addUnlinkedRecord(curr);
         }
         num_elems++;
 
-        // insert hash index
+        auto lookup_result = hash_table_->Insert(
+            internal_key, RecordType::HashElem, RecordStatus::Normal,
+            valid_version_record, PointerType::DLRecord);
+        switch (lookup_result.s) {
+          case Status::Ok: {
+            GlobalLogger.Error(
+                "Rebuild hlist error, hash entry of hlist records should "
+                "not be inserted before rebuild\n");
+            return Status::Abort;
+          }
+
+          case Status::NotFound: {
+            break;
+          }
+          default: {
+            return lookup_result.s;
+          }
+        }
 
         valid_version_record->PersistOldVersion(kNullPMemOffset);
         prev = valid_version_record;
@@ -199,6 +246,42 @@ class HashListRebuilder {
     return Status::Ok;
   }
 
+  void addUnlinkedRecord(DLRecord* pmem_record) {
+    assert(access_thread.id >= 0);
+    rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
+        pmem_record);
+  }
+
+  void cleanInvalidRecords() {
+    std::vector<SpaceEntry> to_free;
+
+    // clean unlinked records
+    for (auto& thread_cache : rebuilder_thread_cache_) {
+      for (DLRecord* pmem_record : thread_cache.unlinked_records) {
+        if (!DLList::CheckLinkage(pmem_record, pmem_allocator_)) {
+          pmem_record->Destroy();
+          to_free.emplace_back(
+              pmem_allocator_->addr2offset_checked(pmem_record),
+              pmem_record->entry.header.record_size);
+        }
+      }
+      pmem_allocator_->BatchFree(to_free);
+      to_free.clear();
+      thread_cache.unlinked_records.clear();
+    }
+
+    // clean invalid skiplists
+    for (auto& s : invalid_hlists_) {
+      s.second->Destroy();
+    }
+    invalid_hlists_.clear();
+  }
+
+  struct ThreadCache {
+    std::vector<DLRecord*> unlinked_records{};
+  };
+
+  std::vector<ThreadCache> rebuilder_thread_cache_;
   std::vector<DLRecord*> linked_headers_;
   PMEMAllocator* pmem_allocator_;
   HashTable* hash_table_;

@@ -596,9 +596,6 @@ Status KVEngine::restoreExistingData() {
       new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
                             dllist_locks_.get(), thread_manager_.get(),
                             configs_.max_access_threads, *persist_checkpoint_));
-  // hash_list_builder_.reset(
-  // new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
-  // configs_.max_access_threads, hash_list_locks_.get()});
 
   Status s = batchWriteRollbackLogs();
   if (s != Status::Ok) {
@@ -662,7 +659,7 @@ Status KVEngine::restoreExistingData() {
   }
   hash_lists_.swap(h_ret.rebuilt_hlists);
   GlobalLogger.Info("Rebuild HashLists done\n");
-  hash_list_builder_.reset(nullptr);
+  hash_rebuilder_.reset(nullptr);
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
@@ -934,7 +931,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
       continue;
     }
     if (args.op == WriteBatchImpl::Op::Put) {
-      log.HashEmplace(args.space.offset);
+      log.HashPut(args.space.offset);
     } else {
       log.HashDelete(args.space.offset);
     }
@@ -1065,7 +1062,7 @@ Status KVEngine::batchWriteRollbackLogs() {
          ++iter) {
       if (iter->op != BatchWriteLog::Op::Delete) {
         DLRecord* rec = static_cast<DLRecord*>(
-            pmem_allocator_->offset2addr_checked(iter->new_offset));
+            pmem_allocator_->offset2addr_checked(iter->offset));
         if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
           continue;
         }

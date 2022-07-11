@@ -625,7 +625,6 @@ class KVEngine : public Engine {
 
   std::mutex hlists_mu_;
   std::set<HashList*, Collection::TTLCmp> hash_lists_;
-  std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
   std::unique_ptr<LockTable> dllist_locks_;
 

@@ -209,8 +209,7 @@ class BatchWriteLog {
 
   struct HashLogEntry {
     Op op;
-    PMemOffsetType new_offset;
-    PMemOffsetType old_offset;
+    PMemOffsetType offset;
   };
 
   struct ListLogEntry {
@@ -238,17 +237,12 @@ class BatchWriteLog {
     sorted_logs.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
-  void HashEmplace(PMemOffsetType new_offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Put, new_offset, kNullPMemOffset});
+  void HashPut(PMemOffsetType offset) {
+    hash_logs.emplace_back(HashLogEntry{Op::Put, offset});
   }
 
-  void HashReplace(PMemOffsetType new_offset, PMemOffsetType old_offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Replace, new_offset, old_offset});
-  }
-
-  void HashDelete(PMemOffsetType old_offset) {
-    hash_logs.emplace_back(
-        HashLogEntry{Op::Delete, kNullPMemOffset, old_offset});
+  void HashDelete(PMemOffsetType offset) {
+    hash_logs.emplace_back(HashLogEntry{Op::Delete, offset});
   }
 
   void ListEmplace(PMemOffsetType offset) {

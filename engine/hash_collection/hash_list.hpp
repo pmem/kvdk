@@ -201,6 +201,8 @@ class HashList : public Collection {
   // Destroy and free the whole hash list with old version list.
   void DestroyAll() {}
 
+  void Destroy() {}
+
   void UpdateSize(int64_t delta) {
     kvdk_assert(delta >= 0 || size_.load() >= static_cast<size_t>(-delta),
                 "Update skiplist size to negative");
@@ -283,9 +285,6 @@ class HashList : public Collection {
     return ret;
   }
 };
-
-using HashListBuilder =
-    GenericListBuilder<RecordType::HashRecord, RecordType::HashElem>;
 
 class HashIteratorImpl final : public HashIterator {
  public:

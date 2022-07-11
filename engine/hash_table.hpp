@@ -192,6 +192,10 @@ class HashTable {
   void Insert(const LookupResult& insert_position, RecordType type,
               RecordStatus status, void* index, PointerType index_type);
 
+  // Lookup and insert a hash entry of key to hash table, return lookup result
+  LookupResult Insert(const StringView& key, RecordType type,
+                      RecordStatus status, void* index, PointerType index_type);
+
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
     assert(entry_ptr != nullptr);

@@ -171,12 +171,9 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         Skiplist::SkiplistID(valid_version_record) != id) {
       // No valid version, or valid version header belongs to another linked
       // skiplist with same name
-      skiplist =
-          std::
-              make_shared<Skiplist>(header_record, collection_name, id,
-                                    comparator, pmem_allocator,
-                                    kv_engine_->hash_table_.get(),
-                                    kv_engine_->dllist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+      skiplist = std::make_shared<Skiplist>(
+          header_record, collection_name, id, comparator, pmem_allocator,
+          kv_engine_->hash_table_.get(), kv_engine_->dllist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
         std::lock_guard<SpinMutex> lg(lock_);
         invalid_skiplists_[id] = skiplist;
@@ -185,9 +182,9 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       auto ul = kv_engine_->hash_table_->AcquireLock(collection_name);
 
       if (valid_version_record != header_record) {
-        bool success = Skiplist::Replace(header_record, valid_version_record,
-                                         nullptr, pmem_allocator,
-                                         kv_engine_->dllist_locks_.get());
+        bool success =
+            Skiplist::Replace(header_record, valid_version_record, nullptr,
+                              pmem_allocator, kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "headers in rebuild should passed linkage check");
         addUnlinkedRecord(header_record);
       }
@@ -520,10 +517,9 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
     } else {
       if (valid_version_record != next_record) {
         // repair linkage of checkpoint version
-        bool success =
-            Skiplist::Replace(next_record, valid_version_record, nullptr,
-                              kv_engine_->pmem_allocator_.get(),
-                              kv_engine_->dllist_locks_.get());
+        bool success = Skiplist::Replace(
+            next_record, valid_version_record, nullptr,
+            kv_engine_->pmem_allocator_.get(), kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       }
@@ -678,12 +674,11 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
     kvdk_assert(false, "Wrong type in sorted collection rebuilder");
   }
 
-  auto lookup_result = kv_engine_->hash_table_->Lookup<true>(key, record_type);
+  auto lookup_result = kv_engine_->hash_table_->Insert(
+      key, record_type, record_status, index_ptr, index_type);
 
   switch (lookup_result.s) {
     case Status::NotFound: {
-      kv_engine_->hash_table_->Insert(lookup_result, record_type, record_status,
-                                      index_ptr, index_type);
       return Status::Ok;
     }
     case Status::Ok: {
@@ -694,12 +689,9 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
       return Status::Abort;
     }
 
-    case Status::MemoryOverflow: {
+    default: {
       return lookup_result.s;
     }
-
-    default:
-      std::abort();  // never reach
   }
 
   return Status::Ok;

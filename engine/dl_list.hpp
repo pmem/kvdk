@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "collection.hpp"
 #include "data_record.hpp"
 #include "kvdk/types.hpp"
 #include "lock_table.hpp"
@@ -201,6 +202,66 @@ class DLList {
     return on_list;
   }
 
+  static bool CheckNextLinkage(DLRecord* record,
+                               PMEMAllocator* pmem_allocator) {
+    uint64_t offset = pmem_allocator->addr2offset_checked(record);
+    DLRecord* next =
+        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
+
+    auto check_linkage = [&]() { return next->prev == offset; };
+
+    auto check_type = [&]() {
+      return next->GetRecordType() == record->GetRecordType() ||
+             (next->GetRecordType() & HeaderType) ||
+             (record->GetRecordType() & HeaderType);
+    };
+
+    auto check_id = [&]() {
+      auto next_id = ExtractID(next);
+      auto record_id = ExtractID(record);
+      return record_id == next_id;
+    };
+
+    return check_linkage() && check_type() && check_id();
+  }
+
+  static bool CheckPrevLinkage(DLRecord* record,
+                               PMEMAllocator* pmem_allocator) {
+    uint64_t offset = pmem_allocator->addr2offset_checked(record);
+    DLRecord* prev =
+        pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
+
+    auto check_linkage = [&]() { return prev->next == offset; };
+
+    auto check_type = [&]() {
+      return prev->GetRecordType() == record->GetRecordType() ||
+             (prev->GetRecordType() & HeaderType) ||
+             (record->GetRecordType() & HeaderType);
+    };
+
+    auto check_id = [&]() {
+      auto prev_id = ExtractID(prev);
+      auto record_id = ExtractID(record);
+      return record_id == prev_id;
+    };
+
+    return check_linkage() && check_type() && check_id();
+  }
+
+  static bool CheckLinkage(DLRecord* record, PMEMAllocator* pmem_allocator) {
+    return CheckPrevLinkage(record, pmem_allocator) &&
+           CheckNextLinkage(record, pmem_allocator);
+  }
+
+  static bool ExtractID(DLRecord* record) {
+    auto type = record->GetRecordType();
+    if (type & HeaderType) {
+      return Collection::DecodeID(record->Value());
+    } else {
+      return Collection::ExtractID(record->Key());
+    }
+  }
+
  private:
   // lock position to insert a new record by locking the prev DLRecord
   LockTable::ULockType acquireInsertLock(DLRecord* prev) {
@@ -356,5 +417,28 @@ class DLListAccessIterator {
   DLRecord* current_;
   const SnapshotImpl* snapshot_;
   bool own_snapshot_;
+};
+
+class DLListRebuilderHelper {
+ public:
+  static bool CheckAndRepairLinkage(DLRecord* record,
+                                    PMEMAllocator* pmem_allocator) {
+    // The next linkage is correct. If the prev linkage is correct too, the
+    // record linkage is ok. If the prev linkage is not correct, it will be
+    // repaired by the correct prodecessor soon, so directly return true here.
+    if (DLList::CheckNextLinkage(record, pmem_allocator)) {
+      return true;
+    }
+    // If only prev linkage is correct, then repair the next linkage
+    if (DLList::CheckPrevLinkage(record, pmem_allocator)) {
+      DLRecord* next =
+          pmem_allocator->offset2addr_checked<DLRecord>(record->next);
+      next->prev = pmem_allocator->addr2offset_checked(record);
+      pmem_persist(&next->prev, sizeof(PMemOffsetType));
+      return true;
+    }
+
+    return false;
+  }
 };
 }  // namespace KVDK_NAMESPACE

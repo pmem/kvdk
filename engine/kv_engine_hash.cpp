@@ -269,30 +269,26 @@ Status KVEngine::hashListPublish(HashWriteArgs const& args) {
 }
 
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
-  switch (log.op) {
-    case BatchWriteLog::Op::Delete: {
-      kvdk_assert(log.new_offset == kNullPMemOffset, "");
-      DLRecord* old_rec = static_cast<DLRecord*>(
-          pmem_allocator_->offset2addr_checked(log.old_offset));
-      hash_list_builder_->RollbackDeletion(old_rec);
-      break;
-    }
-    case BatchWriteLog::Op::Put: {
-      kvdk_assert(log.old_offset == kNullPMemOffset, "");
-      DLRecord* new_rec = static_cast<DLRecord*>(
-          pmem_allocator_->offset2addr_checked(log.new_offset));
-      hash_list_builder_->RollbackEmplacement(new_rec);
-      break;
-    }
-    case BatchWriteLog::Op::Replace: {
-      DLRecord* old_rec =
-          pmem_allocator_->offset2addr_checked<DLRecord>(log.old_offset);
-      DLRecord* new_rec =
-          pmem_allocator_->offset2addr_checked<DLRecord>(log.new_offset);
-      hash_list_builder_->RollbackReplacement(new_rec, old_rec);
-      break;
+  DLRecord* elem =
+      pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+  // We only check prev linkage as a valid prev linkage indicate valid prev and
+  // next pointers on the record, so we can safely do remove/replace
+  if (elem->Validate() &&
+      DLList::CheckPrevLinkage(elem, pmem_allocator_.get())) {
+    if (elem->old_version != kNullPMemOffset) {
+      bool success = DLList::Replace(
+          elem,
+          pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
+          pmem_allocator_.get(), dllist_locks_.get());
+      kvdk_assert(success, "Replace should success as we checked linkage");
+    } else {
+      bool success =
+          DLList::Remove(elem, pmem_allocator_.get(), dllist_locks_.get());
+      kvdk_assert(success, "Remove should success as we checked linkage");
     }
   }
+
+  elem->Destroy();
   return Status::Ok;
 }
 
