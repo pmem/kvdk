@@ -494,6 +494,10 @@ class KVEngine : public Engine {
   template <typename T>
   T* removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts);
 
+  // Find and remove alist in the old version list of main_list.
+  template <typename T>
+  void removeListFromOldVersion(T* main_list, T* alist);
+
   // find delete and old records in skiplist with no hash index
   void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
                                   std::vector<DLRecord*>& purge_dl_records);
@@ -644,6 +648,7 @@ class KVEngine : public Engine {
 
   std::mutex skiplists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
+  std::set<Skiplist*, Collection::TTLCmp> outdated_skiplists_;
 
   std::mutex lists_mu_;
   std::set<List*, Collection::TTLCmp> lists_;
@@ -654,9 +659,6 @@ class KVEngine : public Engine {
   std::unique_ptr<HashListBuilder> hash_list_builder_;
   std::unique_ptr<LockTable> hash_list_locks_;
   std::unique_ptr<LockTable> skiplist_locks_;
-
-  SpinMutex queue_mtx_;
-  std::deque<Collection*> outdated_collections_;
 
   std::string dir_;
   std::string batch_log_dir_;

@@ -31,6 +31,19 @@ T* KVEngine::removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts) {
 }
 
 template <typename T>
+void KVEngine::removeListFromOldVersion(T* main_list, T* alist) {
+  auto cur_list = main_list;
+  while (cur_list) {
+    auto old_list = cur_list->OldVersion();
+    if (old_list == alist) {
+      cur_list->RemoveOldVersion();
+      break;
+    }
+    cur_list = old_list;
+  }
+}
+
+template <typename T>
 void KVEngine::removeAndCacheOutdatedVersion(T* record) {
   static_assert(std::is_same<T, StringRecord>::value ||
                 std::is_same<T, DLRecord>::value);
@@ -148,21 +161,15 @@ void KVEngine::purgeAndFreeDLRecords(
         }
         case RecordType::SortedHeader: {
           if (record_status == RecordStatus::Normal ||
-              record_status == RecordStatus::Dirty) {
+              record_status == RecordStatus::Dirty ||
+              !pmem_record->HasExpired()) {
             entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                  pmem_record->entry.header.record_size);
             pmem_record->Destroy();
           } else {
             auto skiplist_id = Skiplist::SkiplistID(pmem_record);
-            // For the skiplist header, we should disconnect the old version
-            // list of sorted header delete record. In order that `DestroyAll`
-            // function could easily deal with destroying a sorted collection,
-            // instead of may recusively destroy sorted collection, example
-            // case: sortedHeaderDelete->sortedHeader->sortedHeaderDelete.
             skiplists_[skiplist_id]->HeaderRecord()->PersistOldVersion(
                 kNullPMemOffset);
-            skiplists_[skiplist_id]->DestroyAll();
-            removeSkiplist(skiplist_id);
           }
           break;
         }
@@ -370,6 +377,10 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
   FetchCachedOutdatedVersion(pending_clean_records, purge_string_records,
                              purge_dl_records);
 
+  double outdated_collection_ratio = cleaner_.SearchOutdatedCollections();
+
+  cleaner_.FetchOutdatedCollections(pending_clean_records, purge_dl_records);
+
   // Iterate hash table
   size_t end_slot_idx = start_slot_idx + slot_block_size;
   if (end_slot_idx > hash_table_->GetSlotsNum()) {
@@ -449,7 +460,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
             }
             case PointerType::Skiplist: {
               Skiplist* skiplist = slot_iter->GetIndex().skiplist;
-              total_num += skiplist->Size();
+              total_num++;
               auto head_record = skiplist->HeaderRecord();
               auto old_record =
                   removeOutDatedVersion<DLRecord>(head_record, min_snapshot_ts);
@@ -457,59 +468,11 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
                 purge_dl_records.emplace_back(old_record);
                 need_purge_num++;
               }
-
-              if ((slot_iter->GetRecordStatus() == RecordStatus::Outdated ||
-                   head_record->GetExpireTime() <= now) &&
-                  head_record->entry.meta.timestamp < min_snapshot_ts) {
-                hash_table_->Erase(&(*slot_iter));
-                pending_clean_records.outdated_skip_lists.emplace_back(
-                    std::make_pair(version_controller_.GetCurrentTimestamp(),
-                                   skiplist));
-                need_purge_num += skiplist->Size();
-              } else if (!skiplist->IndexWithHashtable()) {
+              if (!skiplist->IndexWithHashtable() &&
+                  slot_iter->GetRecordStatus() != RecordStatus::Outdated &&
+                  !head_record->HasExpired()) {
+                need_purge_num++;
                 pending_clean_records.no_index_skiplists.emplace_back(skiplist);
-              }
-              break;
-            }
-            case PointerType::List: {
-              List* list = slot_iter->GetIndex().list;
-              total_num += list->Size();
-              auto old_list = removeListOutDatedVersion(list, min_snapshot_ts);
-              if (old_list) {
-                pending_clean_records.outdated_lists.emplace_back(
-                    std::make_pair(version_controller_.GetCurrentTimestamp(),
-                                   old_list));
-              }
-              if (list->GetExpireTime() <= now &&
-                  list->GetTimeStamp() < min_snapshot_ts) {
-                hash_table_->Erase(&(*slot_iter));
-                pending_clean_records.outdated_lists.emplace_back(
-                    std::make_pair(version_controller_.GetCurrentTimestamp(),
-                                   list));
-                need_purge_num += list->Size();
-                std::unique_lock<std::mutex> guard{lists_mu_};
-                lists_.erase(list);
-              }
-              break;
-            }
-            case PointerType::HashList: {
-              HashList* hlist = slot_iter->GetIndex().hlist;
-              total_num += hlist->Size();
-              auto old_list = removeListOutDatedVersion(hlist, min_snapshot_ts);
-              if (old_list) {
-                pending_clean_records.outdated_hash_lists.emplace_back(
-                    std::make_pair(version_controller_.GetCurrentTimestamp(),
-                                   old_list));
-              }
-              if (hlist->GetExpireTime() <= now &&
-                  hlist->GetTimeStamp() < min_snapshot_ts) {
-                pending_clean_records.outdated_hash_lists.emplace_back(
-                    std::make_pair(version_controller_.GetCurrentTimestamp(),
-                                   hlist));
-                hash_table_->Erase(&(*slot_iter));
-                need_purge_num += hlist->Size();
-                std::unique_lock<std::mutex> guard{hlists_mu_};
-                hash_lists_.erase(hlist);
               }
               break;
             }
@@ -524,7 +487,10 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
 
     if (!pending_clean_records.no_index_skiplists.empty()) {
       for (auto& skiplist : pending_clean_records.no_index_skiplists) {
-        cleanNoHashIndexedSkiplist(skiplist, purge_dl_records);
+        if (skiplist) {
+          cleanNoHashIndexedSkiplist(skiplist, purge_dl_records);
+        }
+        pending_clean_records.no_index_skiplists.pop_front();
       }
     }
 
@@ -559,7 +525,9 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
     purge_dl_records = std::vector<DLRecord*>();
   }
 
-  return total_num == 0 ? 0.0f : need_purge_num / (double)total_num;
+  return total_num == 0
+             ? 0.0f + outdated_collection_ratio
+             : (need_purge_num / (double)total_num) + outdated_collection_ratio;
 }
 
 void KVEngine::TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
@@ -574,37 +542,6 @@ void KVEngine::TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
 }
 
 // Space Cleaner
-void KVEngine::searchOutdatedCollections() {
-  auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
-
-  { std::lock_guard<std::mutex> guard{skiplists_mu_}; }
-
-  {
-    std::lock_guard<std::mutex> guard{lists_mu_};
-    if (!lists_.empty()) {
-      std::set<List*>::iterator list_iter = lists_.begin();
-      std::unique_lock<SpinMutex> outdated_queue_{queue_mtx_};
-      while (list_iter != lists_.end()) {
-        auto outdated_list = *list_iter;
-        outdated_collections_.emplace_back(outdated_list);
-        list_iter = lists_.erase(list_iter);
-      }
-    }
-  }
-
-  {
-    std::lock_guard<std::mutex> guard{hlists_mu_};
-    if (!hash_lists_.empty()) {
-      std::set<HashList*>::iterator hlist_iter = hash_lists_.begin();
-      std::unique_lock<SpinMutex> outdated_queue_{queue_mtx_};
-      while (hlist_iter != hash_lists_.end() && (*hlist_iter)->HasExpired()) {
-        auto outdated_hlist = *hlist_iter;
-        outdated_collections_.emplace_back(outdated_hlist);
-        hlist_iter = hash_lists_.erase(hlist_iter);
-      }
-    }
-  }
-}
 
 void Cleaner::doCleanWork(size_t thread_id) {
   PendingCleanRecords pending_clean_records;
@@ -649,12 +586,190 @@ void Cleaner::AdjustThread(size_t advice_thread_num) {
   }
 }
 
+double Cleaner::SearchOutdatedCollections() {
+  size_t limited_fetch_num = 0;
+  std::unique_lock<SpinMutex> queue_lock(outdated_collections_.queue_mtx_);
+  int64_t before_queue_size =
+      static_cast<int64_t>(outdated_collections_.hashlists.size() +
+                           outdated_collections_.lists.size() +
+                           outdated_collections_.skiplists.size());
+  {
+    std::unique_lock<std::mutex> skiplist_lock(kv_engine_->skiplists_mu_);
+    auto iter = kv_engine_->outdated_skiplists_.begin();
+    while (!kv_engine_->outdated_skiplists_.empty() && (*iter)->HasExpired() &&
+           limited_fetch_num < max_thread_num_) {
+      auto outdated_skiplist = *iter;
+      iter = kv_engine_->outdated_skiplists_.erase(iter);
+      outdated_collections_.skiplists.emplace(outdated_skiplist);
+      limited_fetch_num++;
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> list_lock(kv_engine_->lists_mu_);
+    auto iter = kv_engine_->lists_.begin();
+    while (!kv_engine_->lists_.empty() && (*iter)->HasExpired() &&
+           limited_fetch_num < max_thread_num_) {
+      auto expired_list = *iter;
+      iter = kv_engine_->lists_.erase(iter);
+      outdated_collections_.lists.emplace(expired_list);
+      limited_fetch_num++;
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> hlist_lock(kv_engine_->hlists_mu_);
+    auto iter = kv_engine_->hash_lists_.begin();
+    while (!kv_engine_->hash_lists_.empty() && (*iter)->HasExpired() &&
+           limited_fetch_num < max_thread_num_) {
+      auto expired_hash_list = *iter;
+      iter = kv_engine_->hash_lists_.erase(iter);
+      outdated_collections_.hashlists.emplace(expired_hash_list);
+      limited_fetch_num++;
+    }
+  }
+
+  int64_t after_queue_size =
+      static_cast<int64_t>(outdated_collections_.hashlists.size() +
+                           outdated_collections_.lists.size() +
+                           outdated_collections_.skiplists.size());
+  outdated_collections_.increase_ratio =
+      (double)(after_queue_size - before_queue_size) /
+      outdated_collections_.increase_ratio;
+  return outdated_collections_.increase_ratio;
+}
+
+void Cleaner::FetchOutdatedCollections(
+    PendingCleanRecords& pending_clean_records,
+    std::vector<DLRecord*>& purge_dl_records) {
+  Collection* outdated_collection = nullptr;
+  RecordType record_type;
+  auto min_snapshot_ts =
+      kv_engine_->version_controller_.GlobalOldestSnapshotTs();
+  {
+    std::unique_lock<SpinMutex> queue_lock(outdated_collections_.queue_mtx_);
+    if (!outdated_collection && !outdated_collections_.skiplists.empty()) {
+      auto skiplist = outdated_collections_.skiplists.top();
+      if (skiplist->GetTimeStamp() < min_snapshot_ts) {
+        outdated_collection = skiplist;
+        record_type = RecordType::SortedHeader;
+        outdated_collections_.skiplists.pop();
+      }
+    }
+
+    if (!outdated_collection && !outdated_collections_.lists.empty()) {
+      auto list = outdated_collections_.lists.top();
+      if (list->GetTimeStamp() < min_snapshot_ts) {
+        outdated_collection = list;
+        record_type = RecordType::ListRecord;
+        outdated_collections_.lists.pop();
+      }
+    }
+
+    if (!outdated_collection && !outdated_collections_.hashlists.empty()) {
+      auto hash_list = outdated_collections_.hashlists.top();
+      if (hash_list->GetTimeStamp() < min_snapshot_ts) {
+        outdated_collection = hash_list;
+        record_type = RecordType::HashRecord;
+        outdated_collections_.hashlists.pop();
+      }
+    }
+  }
+
+  if (outdated_collection) {
+    auto guard =
+        kv_engine_->hash_table_->AcquireLock(outdated_collection->Name());
+    auto lookup_result =
+        kv_engine_->lookupKey<false>(outdated_collection->Name(), record_type);
+    switch (lookup_result.entry_ptr->GetIndexType()) {
+      case PointerType::HashList: {
+        auto outdated_hlist = static_cast<HashList*>(outdated_collection);
+        if (lookup_result.entry_ptr->GetIndex().hlist->ID() ==
+                outdated_collection->ID() &&
+            lookup_result.s == Status::Outdated) {
+          kv_engine_->hash_table_->Erase(lookup_result.entry_ptr);
+        } else {
+          // remove the outdated list from the old version list of newest list
+          // object.
+          kv_engine_->removeListFromOldVersion(
+              lookup_result.entry_ptr->GetIndex().hlist, outdated_hlist);
+        }
+        auto old_outdated_hlist = outdated_hlist->OldVersion();
+        while (old_outdated_hlist) {
+          pending_clean_records.outdated_hash_lists.emplace_back(std::make_pair(
+              kv_engine_->version_controller_.GetCurrentTimestamp(),
+              old_outdated_hlist));
+          old_outdated_hlist = old_outdated_hlist->OldVersion();
+        }
+        pending_clean_records.outdated_hash_lists.emplace_back(std::make_pair(
+            kv_engine_->version_controller_.GetCurrentTimestamp(),
+            outdated_hlist));
+        break;
+      }
+      case PointerType::List: {
+        auto outdated_list = static_cast<List*>(outdated_collection);
+        if (lookup_result.s == Status::Outdated &&
+            lookup_result.entry_ptr->GetIndex().list->ID() ==
+                outdated_collection->ID()) {
+          kv_engine_->hash_table_->Erase(lookup_result.entry_ptr);
+        } else {
+          // remove the outdated list from the old version hash list of newest
+          // hash list object.
+          kv_engine_->removeListFromOldVersion(
+              lookup_result.entry_ptr->GetIndex().list, outdated_list);
+        }
+        auto old_outdated_list = outdated_list->OldVersion();
+        while (old_outdated_list) {
+          pending_clean_records.outdated_lists.emplace_back(std::make_pair(
+              kv_engine_->version_controller_.GetCurrentTimestamp(),
+              old_outdated_list));
+          old_outdated_list = old_outdated_list->OldVersion();
+        }
+        pending_clean_records.outdated_lists.emplace_back(std::make_pair(
+            kv_engine_->version_controller_.GetCurrentTimestamp(),
+            outdated_list));
+        break;
+      }
+      case PointerType::Skiplist: {
+        auto outdated_skiplist = static_cast<Skiplist*>(outdated_collection);
+        if (lookup_result.entry_ptr->GetIndex().skiplist->ID() ==
+            outdated_collection->ID()) {
+          kv_engine_->hash_table_->Erase(lookup_result.entry_ptr);
+        } else {
+          auto cur_record =
+              lookup_result.entry_ptr->GetIndex().skiplist->HeaderRecord();
+          while (cur_record) {
+            auto old_record =
+                static_cast<DLRecord*>(kv_engine_->pmem_allocator_->offset2addr(
+                    cur_record->old_version));
+            if (old_record == outdated_skiplist->HeaderRecord()) {
+              cur_record->PersistOldVersion(kNullPMemOffset);
+              break;
+            }
+            cur_record = old_record;
+          }
+        }
+        auto old_record = kv_engine_->removeOutDatedVersion<DLRecord>(
+            outdated_skiplist->HeaderRecord(), min_snapshot_ts);
+        if (old_record) {
+          purge_dl_records.emplace_back(old_record);
+        }
+        pending_clean_records.outdated_skip_lists.emplace_back(std::make_pair(
+            kv_engine_->version_controller_.GetCurrentTimestamp(),
+            outdated_skiplist));
+        break;
+      }
+      default:
+        break;
+    }
+  }
+}
+
 void Cleaner::mainWorker() {
   PendingCleanRecords pending_clean_records;
   while (true) {
     if (close_) return;
 
-    kv_engine_->searchOutdatedCollections();
     std::int64_t start_pos = start_slot_.fetch_add(kSlotBlockUnit) %
                              (kv_engine_->hash_table_->GetSlotsNum());
     auto outdated_ratio = kv_engine_->cleanOutDated(pending_clean_records,

@@ -28,6 +28,7 @@ class Collection {
   virtual ExpireTimeType GetExpireTime() const = 0;
   virtual bool HasExpired() const = 0;
   virtual Status SetExpireTime(ExpireTimeType) = 0;
+  virtual TimeStampType GetTimeStamp() const = 0;
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id
@@ -66,6 +67,16 @@ class Collection {
     bool operator()(const Collection* a, const Collection* b) const {
       if (a->GetExpireTime() < b->GetExpireTime()) return true;
       if (a->GetExpireTime() == b->GetExpireTime() && a->ID() < b->ID())
+        return true;
+      return false;
+    }
+  };
+
+  struct TimeStampCmp {
+   public:
+    bool operator()(const Collection* a, const Collection* b) const {
+      if (a->GetTimeStamp() < b->GetTimeStamp()) return true;
+      if (a->GetTimeStamp() == b->GetTimeStamp() && a->ID() < b->ID())
         return true;
       return false;
     }

@@ -187,6 +187,10 @@ class Skiplist : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
+  TimeStampType GetTimeStamp() const final {
+    return header_->record->GetTimestamp();
+  }
+
   // TODO jiayu: use lock table for skiplist so will don't need to pass outsider
   // locks for write operations, and write operations wont fail anymore
   WriteResult SetExpireTime(ExpireTimeType expired_time,

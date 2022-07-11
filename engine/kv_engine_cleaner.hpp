@@ -57,7 +57,6 @@ struct PendingPurgeDLRecords {
 struct PendingCleanRecords {
   using ListPtr = std::unique_ptr<List>;
   using HashListPtr = std::unique_ptr<HashList>;
-
   std::deque<std::pair<TimeStampType, ListPtr>> outdated_lists;
   std::deque<std::pair<TimeStampType, HashListPtr>> outdated_hash_lists;
   std::deque<std::pair<TimeStampType, Skiplist*>> outdated_skip_lists;
@@ -105,13 +104,16 @@ class Cleaner {
   void AdjustThread(size_t advice_thread_num);
   size_t ActiveThreadNum() { return live_thread_num_.load(); }
 
+  double SearchOutdatedCollections();
+  void FetchOutdatedCollections(PendingCleanRecords& pending_clean_records,
+                                std::vector<DLRecord*>& purge_dl_records);
+
  private:
   struct ThreadWorker {
     std::atomic_bool finish{true};
     std::thread worker;
   };
   KVEngine* kv_engine_;
-  PendingCleanRecords pending_clean_records_;
 
   size_t max_thread_num_;
   size_t min_thread_num_ = 1;
@@ -121,6 +123,24 @@ class Cleaner {
   std::vector<ThreadWorker> workers_;
   std::deque<size_t> idled_workers_;
   std::deque<size_t> actived_workers_;
+
+  struct OutDatedCollections {
+    using ListQueue = std::priority_queue<List*, std::vector<List*>,
+                                          Collection::TimeStampCmp>;
+    using HashListQueue = std::priority_queue<HashList*, std::vector<HashList*>,
+                                              Collection::TimeStampCmp>;
+
+    using SkiplistQueue = std::priority_queue<Skiplist*, std::vector<Skiplist*>,
+                                              Collection::TimeStampCmp>;
+
+    SpinMutex queue_mtx_;
+    ListQueue lists;
+    HashListQueue hashlists;
+    SkiplistQueue skiplists;
+    double increase_ratio = 1;
+  };
+
+  OutDatedCollections outdated_collections_;
 
  private:
   void doCleanWork(size_t thread_id);

@@ -1211,6 +1211,10 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
             expired_time, new_ts);
         res.s = ret.s;
+        {
+          std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
+          outdated_skiplists_.emplace(res.entry_ptr->GetIndex().skiplist);
+        }
         break;
       }
       case PointerType::HashList: {
@@ -1288,7 +1292,6 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
       }
     }
   }
-
   return result;
 }
 

@@ -272,7 +272,7 @@ class GenericList final : public Collection {
     return list_record->GetExpireTime();
   }
 
-  TimeStampType GetTimeStamp() const {
+  TimeStampType GetTimeStamp() const final {
     return list_record->entry.meta.timestamp;
   }
 
