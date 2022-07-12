@@ -211,6 +211,7 @@ class HashList : public Collection {
 
   Status CheckIndex() {
     DLRecord* prev = HeaderRecord();
+    size_t cnt = 0;
     while (true) {
       DLRecord* curr =
           pmem_allocator_->offset2addr_checked<DLRecord>(prev->next);
@@ -230,11 +231,15 @@ class HashList : public Collection {
             "table\n");
         return Status::Abort;
       }
-      if (DLList::CheckLinkage(curr, pmem_allocator_)) {
+      if (!DLList::CheckLinkage(curr, pmem_allocator_)) {
+        GlobalLogger.Error("Check hash index error: dl record linkage error\n");
         return Status::Abort;
       }
+      cnt++;
       prev = curr;
     }
+    GlobalLogger.Debug("indexed hash records %lu, hash list size %lu\n", cnt,
+                       Size());
     return Status::Ok;
   }
 

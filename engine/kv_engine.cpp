@@ -653,6 +653,7 @@ Status KVEngine::restoreExistingData() {
   hash_rebuilder_.reset(nullptr);
 
 #if KVDK_DEBUG_LEVEL > 0
+  GlobalLogger.Debug("Start check index\n");
   for (auto skiplist : skiplists_) {
     Status s = skiplist.second->CheckIndex();
     if (s != Status::Ok) {

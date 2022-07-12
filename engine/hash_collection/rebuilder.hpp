@@ -60,6 +60,10 @@ class HashListRebuilder {
         pmem_allocator_->PurgeAndFree<DLRecord>(header_record);
       }
     } else {
+      GlobalLogger.Debug("Add header %s status %u address %lu\n",
+                         string_view_2_string(header_record->Key()).c_str(),
+                         header_record->GetRecordStatus(),
+                         pmem_allocator_->addr2offset_checked(header_record));
       linked_headers_.emplace_back(header_record);
     }
     return Status::Ok;
@@ -89,7 +93,8 @@ class HashListRebuilder {
       }
     }
     ret.max_id = max_recovered_id_;
-    GlobalLogger.Debug("Rebuild finish\n");
+    GlobalLogger.Debug("Rebuild finish, rebuilt %lu\n",
+                       ret.rebuilt_hlists.size());
     return ret;
   }
 
@@ -97,11 +102,12 @@ class HashListRebuilder {
   bool recoverToCheckPoint() { return checkpoint_.Valid(); }
 
   Status initRebuildLists() {
+    GlobalLogger.Debug("Init %lu rebuild hash lists\n", linked_headers_.size());
     for (size_t i = 0; i < linked_headers_.size(); i++) {
       DLRecord* header_record = linked_headers_[i];
-      if (i + 1 < linked_headers_.size() /*&& xx*/) {
-        continue;
-      }
+      // if (i + 1 < linked_headers_.size() /*&& xx*/) {
+      // continue;
+      // }
 
       auto collection_name = header_record->Key();
       CollectionIDType id = Collection::DecodeID(header_record->Value());
@@ -129,10 +135,13 @@ class HashListRebuilder {
 
         hlist = new HashList(valid_version_record, collection_name, id,
                              pmem_allocator_, hash_table_, lock_table_);
+        kvdk_assert(hlist != nullptr, "");
 
         bool outdated =
             valid_version_record->GetRecordStatus() == RecordStatus::Outdated ||
             valid_version_record->HasExpired();
+        GlobalLogger.Debug("Outdated? %d\n", outdated);
+
         {
           std::lock_guard<SpinMutex> lg(lock_);
           if (outdated) {
@@ -144,26 +153,28 @@ class HashListRebuilder {
         // TODO no need always to persist old version
         valid_version_record->PersistOldVersion(kNullPMemOffset);
 
-        auto lookup_result = hash_table_->Insert(
-            collection_name, RecordType::HashHeader, RecordStatus::Normal,
-            hlist, PointerType::HashList);
-        switch (lookup_result.s) {
-          case Status::Ok: {
-            GlobalLogger.Error(
-                "Rebuild hlist error, hash entry of hlist records should "
-                "not be inserted before rebuild\n");
-            return Status::Abort;
-          }
+        if (!outdated) {
+          auto lookup_result = hash_table_->Insert(
+              collection_name, RecordType::HashHeader, RecordStatus::Normal,
+              hlist, PointerType::HashList);
+          switch (lookup_result.s) {
+            case Status::Ok: {
+              GlobalLogger.Error(
+                  "Rebuild hlist error, hash entry of hlist records should "
+                  "not be inserted before rebuild\n");
+              return Status::Abort;
+            }
 
-          case Status::NotFound: {
-            break;
+            case Status::NotFound: {
+              break;
+            }
+            default: {
+              return lookup_result.s;
+            }
           }
-          default: {
-            return lookup_result.s;
-          }
+          GlobalLogger.Debug("rebuild hlist %s ok\n",
+                             string_view_2_string(collection_name).c_str());
         }
-        GlobalLogger.Debug("rebuild hlist %s ok\n",
-                           string_view_2_string(collection_name).c_str());
         // TODO continue
       }
     }

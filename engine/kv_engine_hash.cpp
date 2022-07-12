@@ -32,26 +32,28 @@ Status KVEngine::HashCreate(StringView collection) {
     if (space.size == 0) {
       return Status::PmemOverflow;
     }
-    // PMem level of dl list is circular, so the next and prev pointers of
+    // dl list is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::HashHeader, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, collection, value_str);
+    GlobalLogger.Debug("Create header record addreess %lu\n", space.offset);
 
     HashList* hlist =
         new HashList(pmem_record, collection, id, pmem_allocator_.get(),
                      hash_table_.get(), dllist_locks_.get());
+    kvdk_assert(hlist != nullptr, "");
     {
       std::lock_guard<std::mutex> lg(hlists_mu_);
       hash_lists_.insert(hlist);
     }
-    // TODO add hlist to set
     insertKeyOrElem(lookup_result, RecordType::HashHeader, RecordStatus::Normal,
                     hlist);
     return Status::Ok;
   } else {
+    GlobalLogger.Debug("create hash search status: %u\n", lookup_result.s);
     return lookup_result.s;
   }
 }
@@ -86,9 +88,11 @@ Status KVEngine::HashDestroy(StringView collection) {
         RecordType::HashHeader, RecordStatus::Outdated,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection, value);
+    GlobalLogger.Debug("Destroy header record addreess %lu\n", space.offset);
     bool success = hlist->Replace(header, pmem_record);
     kvdk_assert(success, "existing header should be linked on its hlist");
-    // insert to hash table
+    hash_table_->Insert(collection, RecordType::HashHeader,
+                        RecordStatus::Outdated, hlist, PointerType::HashList);
   }
   return s;
 }

@@ -238,7 +238,18 @@ class DLList {
       return record_id == next_id;
     };
 
-    return check_linkage() && check_type() && check_id();
+    bool ret = check_linkage() && check_type() && check_id();
+
+    if (!ret) {
+      if (!check_linkage()) GlobalLogger.Debug("check next linkage error\n");
+      if (!check_type()) {
+        GlobalLogger.Debug("check next type error\n");
+      }
+      if (!check_id()) {
+        GlobalLogger.Debug("check next id error\n");
+      }
+    }
+    return ret;
   }
 
   static bool CheckPrevLinkage(DLRecord* record,
@@ -261,7 +272,18 @@ class DLList {
       return record_id == prev_id;
     };
 
-    return check_linkage() && check_type() && check_id();
+    bool ret = check_linkage() && check_type() && check_id();
+
+    if (!ret) {
+      if (!check_linkage()) GlobalLogger.Debug("check prev linkage error\n");
+      if (!check_type()) {
+        GlobalLogger.Debug("check prev type error\n");
+      }
+      if (!check_id()) {
+        GlobalLogger.Debug("check prev id error\n");
+      }
+    }
+    return ret;
   }
 
   static bool CheckLinkage(DLRecord* record, PMEMAllocator* pmem_allocator) {
@@ -449,8 +471,7 @@ class DLListRebuilderHelper {
     if (DLList::CheckPrevLinkage(record, pmem_allocator)) {
       DLRecord* next =
           pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-      next->prev = pmem_allocator->addr2offset_checked(record);
-      pmem_persist(&next->prev, sizeof(PMemOffsetType));
+      next->PersistPrevNT(pmem_allocator->addr2offset_checked(record));
       return true;
     }
 
