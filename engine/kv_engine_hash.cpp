@@ -18,7 +18,7 @@ Status KVEngine::HashCreate(StringView collection) {
   auto ul = hash_table_->AcquireLock(collection);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
-  auto lookup_result = lookupKey<true>(collection, RecordType::SortedHeader);
+  auto lookup_result = lookupKey<true>(collection, RecordType::HashHeader);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {
     DLRecord* existing_header =
@@ -36,7 +36,7 @@ Status KVEngine::HashCreate(StringView collection) {
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
-        RecordType::HashRecord, RecordStatus::Normal,
+        RecordType::HashHeader, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, collection, value_str);
 
@@ -48,7 +48,7 @@ Status KVEngine::HashCreate(StringView collection) {
       hash_lists_.insert(hlist);
     }
     // TODO add hlist to set
-    insertKeyOrElem(lookup_result, RecordType::HashRecord, RecordStatus::Normal,
+    insertKeyOrElem(lookup_result, RecordType::HashHeader, RecordStatus::Normal,
                     hlist);
     return Status::Ok;
   } else {
@@ -74,7 +74,7 @@ Status KVEngine::HashDestroy(StringView collection) {
   s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     DLRecord* header = hlist->HeaderRecord();
-    kvdk_assert(header->GetRecordType() == RecordType::HashRecord, "");
+    kvdk_assert(header->GetRecordType() == RecordType::HashHeader, "");
     StringView value = header->Value();
     auto request_size = DLRecord::RecordSize(collection, value);
     SpaceEntry space = pmem_allocator_->Allocate(request_size);
@@ -83,7 +83,7 @@ Status KVEngine::HashDestroy(StringView collection) {
     }
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
-        RecordType::HashRecord, RecordStatus::Outdated,
+        RecordType::HashHeader, RecordStatus::Outdated,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection, value);
     bool success = hlist->Replace(header, pmem_record);
@@ -221,7 +221,7 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key,
 Status KVEngine::hashListFind(StringView key, HashList** hlist) {
   // Callers should acquire the access token or snapshot.
   // Lockless lookup for the collection
-  auto result = lookupKey<false>(key, RecordType::HashRecord);
+  auto result = lookupKey<false>(key, RecordType::HashHeader);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }
@@ -269,8 +269,7 @@ Status KVEngine::hashListPublish(HashWriteArgs const& args) {
 }
 
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
-  DLRecord* elem =
-      pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+  DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
   // We only check prev linkage as a valid prev linkage indicate valid prev and
   // next pointers on the record, so we can safely do remove/replace
   if (elem->Validate() &&

@@ -45,9 +45,21 @@ class DLList {
 
   DLRecord* Header() const { return header_; }
 
-  Status PushBack(const WriteArgs& args) { return InsertBefore(args, header_); }
+  Status PushBack(const WriteArgs& args) {
+    Status s;
+    do {
+      s = InsertBefore(args, header_);
+    } while (s == Status::Fail);
+    return s;
+  }
 
-  Status PushFront(const WriteArgs& args) { return InsertAfter(args, header_); }
+  Status PushFront(const WriteArgs& args) {
+    Status s;
+    do {
+      s = InsertAfter(args, header_);
+    } while (s == Status::Fail);
+    return s;
+  }
 
   DLRecord* PopFront() {
     while (true) {
@@ -132,7 +144,11 @@ class DLList {
   }
 
   bool Replace(DLRecord* old_record, DLRecord* new_record) {
-    return Replace(old_record, new_record, pmem_allocator_, lock_table_);
+    bool ret = Replace(old_record, new_record, pmem_allocator_, lock_table_);
+    if (ret && old_record == header_) {
+      header_ = new_record;
+    }
+    return ret;
   }
 
   bool Remove(DLRecord* removing_record) {
@@ -156,8 +172,8 @@ class DLList {
         // make
         // new record point to itself and break linkage of the old one for
         // recovery
-        kvdk_assert(new_record->GetRecordType() == RecordType::SortedHeader &&
-                        old_record->GetRecordType() == RecordType::SortedHeader,
+        kvdk_assert((new_record->GetRecordType() & HeaderType) &&
+                        (old_record->GetRecordType() & HeaderType),
                     "Non-header record shouldn't be the only record in a list");
         linkRecord(new_record, new_record, new_record, pmem_allocator);
         auto new_record_offset = pmem_allocator->addr2offset(new_record);

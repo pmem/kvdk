@@ -288,7 +288,7 @@ class KVEngine : public Engine {
                ? RecordType::SortedHeader
            : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
            : std::is_same<CollectionType, HashList>::value
-               ? RecordType::HashRecord
+               ? RecordType::HashHeader
                : RecordType::Empty;
   }
 
@@ -310,7 +310,7 @@ class KVEngine : public Engine {
       case RecordType::ListRecord: {
         return PointerType::List;
       }
-      case RecordType::HashRecord: {
+      case RecordType::HashHeader: {
         return PointerType::HashList;
       }
       case RecordType::HashElem: {

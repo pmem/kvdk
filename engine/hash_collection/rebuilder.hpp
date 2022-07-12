@@ -67,6 +67,10 @@ class HashListRebuilder {
 
   RebuildResult Rebuild() {
     RebuildResult ret;
+    ret.s = initRebuildLists();
+    if (ret.s != Status::Ok) {
+      return ret;
+    }
     std::vector<std::future<Status>> fs;
     size_t i = 0;
     for (auto hlist : rebuild_hlists_) {
@@ -76,16 +80,16 @@ class HashListRebuilder {
       ret.rebuilt_hlists.insert(hlist.second);
       if (i % num_rebuild_threads_ == 0 || i == rebuild_hlists_.size()) {
         for (auto& f : fs) {
-          Status s = f.get();
-          if (s != Status::Ok) {
-            ret.s = s;
-            return ret;
+          ret.s = f.get();
+          if (ret.s != Status::Ok) {
+            break;
           }
         }
         fs.clear();
       }
     }
     ret.max_id = max_recovered_id_;
+    GlobalLogger.Debug("Rebuild finish\n");
     return ret;
   }
 
@@ -141,7 +145,7 @@ class HashListRebuilder {
         valid_version_record->PersistOldVersion(kNullPMemOffset);
 
         auto lookup_result = hash_table_->Insert(
-            collection_name, RecordType::HashRecord, RecordStatus::Normal,
+            collection_name, RecordType::HashHeader, RecordStatus::Normal,
             hlist, PointerType::HashList);
         switch (lookup_result.s) {
           case Status::Ok: {
@@ -158,6 +162,8 @@ class HashListRebuilder {
             return lookup_result.s;
           }
         }
+        GlobalLogger.Debug("rebuild hlist %s ok\n",
+                           string_view_2_string(collection_name).c_str());
         // TODO continue
       }
     }
@@ -194,6 +200,7 @@ class HashListRebuilder {
     if (s != Status::Ok) {
       return s;
     }
+    defer(thread_manager_->Release(access_thread));
     size_t num_elems = 0;
     DLRecord* prev = hlist->HeaderRecord();
     while (true) {

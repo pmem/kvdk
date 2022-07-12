@@ -1631,7 +1631,7 @@ TEST_F(EngineBasicTest, TestList) {
 }
 
 TEST_F(EngineBasicTest, TestHash) {
-  size_t num_threads = 16;
+  size_t num_threads = 1;
   size_t count = 1000;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -1754,6 +1754,7 @@ TEST_F(EngineBasicTest, TestHash) {
   };
 
   for (size_t i = 0; i < 3; i++) {
+    GlobalLogger.Debug("### round %lu ####\n", i);
     Reboot();
     LaunchNThreads(num_threads, HPut);
     LaunchNThreads(num_threads, HGet);

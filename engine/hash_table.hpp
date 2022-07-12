@@ -18,13 +18,6 @@
 
 namespace KVDK_NAMESPACE {
 
-struct HashHeader {
-  uint32_t key_prefix;
-  RecordType record_type;
-  RecordStatus record_status;
-  PointerType index_type;
-};
-
 class Skiplist;
 class SkiplistNode;
 struct HashBucketIterator;
@@ -87,8 +80,18 @@ struct alignas(16) HashEntry {
              DataEntry* data_entry_metadata);
 
  private:
+  struct EntryHeader {
+    uint32_t key_prefix;
+    RecordType record_type;
+    RecordStatus record_status;
+    PointerType index_type;
+  };
+  // Make this hash entry empty while its content been deleted
+  void clear() { header_.index_type = PointerType::Empty; }
+
+ private:
   Index index_;
-  HashHeader header_;
+  EntryHeader header_;
 };
 static_assert(sizeof(HashEntry) == 16);
 

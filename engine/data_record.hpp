@@ -19,7 +19,7 @@ enum RecordType : uint8_t {
   String = (1 << 0),
   SortedHeader = (1 << 1),
   SortedElem = (1 << 2),
-  HashRecord = (1 << 3),
+  HashHeader = (1 << 3),
   HashElem = (1 << 4),
   ListRecord = (1 << 5),
   ListElem = (1 << 6),
@@ -35,7 +35,7 @@ enum class RecordStatus : uint8_t {
 };
 
 const uint8_t ExpirableRecordType =
-    (RecordType::String | RecordType::SortedHeader | RecordType::HashRecord |
+    (RecordType::String | RecordType::SortedHeader | RecordType::HashHeader |
      RecordType::ListRecord);
 
 const uint8_t PrimaryRecordType = ExpirableRecordType;
@@ -43,7 +43,7 @@ const uint8_t PrimaryRecordType = ExpirableRecordType;
 const uint8_t ElemType =
     (RecordType::SortedElem | RecordType::HashElem | RecordType::ListElem);
 
-const uint8_t HeaderType = (RecordType::SortedHeader | RecordType::HashRecord |
+const uint8_t HeaderType = (RecordType::SortedHeader | RecordType::HashHeader |
                             RecordType::ListRecord);
 
 struct DataHeader {
@@ -365,7 +365,7 @@ struct DLRecord {
         next(_next),
         expired_time(_expired_time) {
     kvdk_assert(_type & (RecordType::SortedElem | RecordType::SortedHeader |
-                         RecordType::HashElem | RecordType::HashRecord |
+                         RecordType::HashElem | RecordType::HashHeader |
                          RecordType::ListElem | RecordType::ListRecord),
                 "");
     memcpy(data, _key.data(), _key.size());

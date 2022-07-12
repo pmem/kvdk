@@ -144,10 +144,10 @@ class HashList : public Collection {
 
   WriteResult Write(HashWriteArgs& args) {
     WriteResult ret;
-    // if (args.skiplist != this) {
-    // ret.s = Status::InvalidArgument;
-    // return ret;
-    // }
+    if (args.hlist != this) {
+      ret.s = Status::InvalidArgument;
+      return ret;
+    }
     if (args.op == WriteBatchImpl::Op::Put) {
       ret = putPrepared(args.lookup_result, args.key, args.value, args.ts,
                         args.space);
@@ -169,7 +169,7 @@ class HashList : public Collection {
     }
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size,
-        timestamp, RecordType::HashRecord, RecordStatus::Normal,
+        timestamp, RecordType::HashHeader, RecordStatus::Normal,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, header->Key(), header->Value(), expired_time);
     bool success = dl_list_.Replace(header, pmem_record);
@@ -209,12 +209,41 @@ class HashList : public Collection {
     size_.fetch_add(delta, std::memory_order_relaxed);
   }
 
+  Status CheckIndex() {
+    DLRecord* prev = HeaderRecord();
+    while (true) {
+      DLRecord* curr =
+          pmem_allocator_->offset2addr_checked<DLRecord>(prev->next);
+      if (curr == HeaderRecord()) {
+        break;
+      }
+      StringView key = curr->Key();
+      auto ret = hash_table_->Lookup<false>(key, curr->GetRecordType());
+      if (ret.s != Status::Ok) {
+        GlobalLogger.Error(
+            "Check hash index error: record not exist in hash table\n");
+        return Status::Abort;
+      }
+      if (ret.entry.GetIndex().dl_record != curr) {
+        GlobalLogger.Error(
+            "Check hash index error: Dlrecord miss-match with hash "
+            "table\n");
+        return Status::Abort;
+      }
+      if (DLList::CheckLinkage(curr, pmem_allocator_)) {
+        return Status::Abort;
+      }
+      prev = curr;
+    }
+    return Status::Ok;
+  }
+
   inline static CollectionIDType HashListID(const DLRecord* record) {
     assert(record != nullptr);
     switch (record->GetRecordType()) {
       case RecordType::HashElem:
         return ExtractID(record->Key());
-      case RecordType::HashRecord:
+      case RecordType::HashHeader:
         return DecodeID(record->Value());
       default:
         GlobalLogger.Error("Wrong record type %u in HashListID",

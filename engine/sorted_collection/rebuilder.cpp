@@ -477,14 +477,9 @@ Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
 Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
   Status s = kv_engine_->MaybeInitAccessThread();
   if (s != Status::Ok) {
-    GlobalLogger.Error("too many threads repair skiplist linkage\n");
     return s;
   }
   defer(kv_engine_->ReleaseAccessThread());
-
-  if (s != Status::Ok) {
-    return s;
-  }
 
   size_t num_elems = 0;
 

@@ -254,7 +254,7 @@ Status KVEngine::RestoreData() {
       case RecordType::SortedElem:
       case RecordType::SortedHeader:
       case RecordType::String:
-      case RecordType::HashRecord:
+      case RecordType::HashHeader:
       case RecordType::HashElem:
       case RecordType::ListRecord:
       case RecordType::ListElem: {
@@ -325,7 +325,7 @@ Status KVEngine::RestoreData() {
         s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordType::HashRecord: {
+      case RecordType::HashHeader: {
         s = restoreHashHeader(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -359,7 +359,7 @@ bool KVEngine::ValidateRecord(void* data_record) {
     }
     case RecordType::SortedHeader:
     case RecordType::SortedElem:
-    case RecordType::HashRecord:
+    case RecordType::HashHeader:
     case RecordType::HashElem:
     case RecordType::ListRecord:
     case RecordType::ListElem: {
@@ -629,15 +629,6 @@ Status KVEngine::restoreExistingData() {
   }
   skiplists_.swap(s_ret.rebuild_skiplits);
 
-#if KVDK_DEBUG_LEVEL > 0
-  for (auto skiplist : skiplists_) {
-    Status s = skiplist.second->CheckIndex();
-    if (s != Status::Ok) {
-      GlobalLogger.Error("Check skiplist index error\n");
-      return s;
-    }
-  }
-#endif
   GlobalLogger.Info("Rebuild skiplist done\n");
   sorted_rebuilder_.reset(nullptr);
 
@@ -660,6 +651,24 @@ Status KVEngine::restoreExistingData() {
   hash_lists_.swap(h_ret.rebuilt_hlists);
   GlobalLogger.Info("Rebuild HashLists done\n");
   hash_rebuilder_.reset(nullptr);
+
+#if KVDK_DEBUG_LEVEL > 0
+  for (auto skiplist : skiplists_) {
+    Status s = skiplist.second->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Error("Check skiplist index error\n");
+      return s;
+    }
+  }
+
+  for (auto hlist : hash_lists_) {
+    Status s = hlist->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Error("Check hash index error\n");
+      return s;
+    }
+  }
+#endif
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
@@ -1268,7 +1277,7 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
       }
       case RecordType::SortedHeader:
       case RecordType::ListRecord:
-      case RecordType::HashRecord: {
+      case RecordType::HashHeader: {
         result.s =
             static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired()
                 ? Status::Outdated
