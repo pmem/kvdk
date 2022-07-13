@@ -294,11 +294,12 @@ void KVEngine::purgeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
   }
 
   {  // Destroy hash
-    while (!pending_clean_records.outdated_hash_lists.empty()) {
-      auto& ts_hlist = pending_clean_records.outdated_hash_lists.front();
+    while (!pending_clean_records.outdated_hlists.empty()) {
+      auto& ts_hlist = pending_clean_records.outdated_hlists.front();
       if (ts_hlist.first < version_controller_.LocalOldestSnapshotTS()) {
         ts_hlist.second->DestroyAll();
-        pending_clean_records.outdated_hash_lists.pop_front();
+        removeHashlist(ts_hlist.second->ID());
+        pending_clean_records.outdated_hlists.pop_front();
       } else {
         break;
       }
@@ -508,7 +509,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
                    head_record->GetExpireTime() <= now) &&
                   head_record->GetTimestamp() < min_snapshot_ts) {
                 hash_table_->Erase(&(*slot_iter));
-                pending_clean_records.outdated_hash_lists.emplace_back(
+                pending_clean_records.outdated_hlists.emplace_back(
                     std::make_pair(version_controller_.GetCurrentTimestamp(),
                                    hlist));
                 need_purge_num += hlist->Size();

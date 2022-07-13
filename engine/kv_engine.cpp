@@ -457,6 +457,36 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               }
             }
           }
+          break;
+        }
+        case RecordType::HashHeader: {
+          break;
+          DLRecord* header = slot_iter->GetIndex().hlist->HeaderRecord();
+          while (header != nullptr && header->GetExpireTime() > backup_ts) {
+            header =
+                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+          }
+          if (header && header->GetRecordStatus() == RecordStatus::Normal &&
+              !header->HasExpired()) {
+            s = backup.Append(RecordType::HashElem, header->Key(),
+                              header->Value(), header->GetExpireTime());
+            if (s == Status::Ok) {
+              // Append hlist elems following the header
+              auto hlist = getHashlist(HashList::HashListID(header));
+              kvdk_assert(hlist != nullptr, "Backup hlist should exist in map");
+              auto hlist_iter = HashIteratorImpl(
+                  hlist.get(), static_cast<const SnapshotImpl*>(snapshot),
+                  false);
+              for (hlist_iter.SeekToFirst(); hlist_iter.Valid();
+                   hlist_iter.Next()) {
+                s = backup.Append(RecordType::HashElem, hlist_iter.Key(),
+                                  hlist_iter.Value(), kPersistTime);
+                if (s != Status::Ok) {
+                  break;
+                }
+              }
+            }
+          }
         }
         default:
           // Hash and list backup is not supported yet
@@ -565,8 +595,46 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         }
         break;
       }
+      case RecordType::HashHeader: {
+        std::shared_ptr<HashList> hlist = nullptr;
+        if (!expired) {
+          CollectionIDType id = Collection::DecodeID(record.val);
+          if (s == Status::Ok && wo.ttl_time != kPersistTime) {
+            hlist->SetExpireTime(wo.ttl_time,
+                                 version_controller_.GetCurrentTimestamp());
+          }
+          if (s != Status::Ok) {
+            break;
+          }
+          cnt++;
+        }
+        iter->Next();
+        // the header is followed by all its elems in backup log
+        while (iter->Valid()) {
+          record = iter->Record();
+          if (record.type != RecordType::HashElem) {
+            break;
+          }
+          if (!expired) {
+            auto ret = hlist->Put(record.key, record.val,
+                                  version_controller_.GetCurrentTimestamp());
+            s = ret.s;
+            if (s != Status::Ok) {
+              break;
+            }
+            cnt++;
+          }
+          iter->Next();
+        }
+        break;
+      }
       case RecordType::SortedElem: {
         GlobalLogger.Error("sorted elems not lead by header in backup log %s\n",
+                           backup_log.c_str());
+        return Status::Abort;
+      }
+      case RecordType::HashElem: {
+        GlobalLogger.Error("hash elems not lead by header in backup log %s\n",
                            backup_log.c_str());
         return Status::Abort;
       }
@@ -648,7 +716,7 @@ Status KVEngine::restoreExistingData() {
   if (list_id_.load() <= h_ret.max_id) {
     list_id_.store(h_ret.max_id + 1);
   }
-  hash_lists_.swap(h_ret.rebuilt_hlists);
+  hlists_.swap(h_ret.rebuilt_hlists);
   GlobalLogger.Info("Rebuild HashLists done\n");
   hash_rebuilder_.reset(nullptr);
 
@@ -661,8 +729,8 @@ Status KVEngine::restoreExistingData() {
     }
   }
 
-  for (auto hlist : hash_lists_) {
-    Status s = hlist->CheckIndex();
+  for (auto hlist : hlists_) {
+    Status s = hlist.second->CheckIndex();
     if (s != Status::Ok) {
       GlobalLogger.Error("Check hash index error\n");
       return s;
@@ -1414,12 +1482,6 @@ void KVEngine::deleteCollections() {
   while (list_it != lists_.end()) {
     delete *list_it;
     list_it = lists_.erase(list_it);
-  }
-
-  std::set<HashList*>::iterator hash_it = hash_lists_.begin();
-  while (hash_it != hash_lists_.end()) {
-    delete *hash_it;
-    hash_it = hash_lists_.erase(hash_it);
   }
 };
 

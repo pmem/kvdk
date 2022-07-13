@@ -17,7 +17,8 @@ class HashListRebuilder {
   struct RebuildResult {
     Status s = Status::Ok;
     CollectionIDType max_id = 0;
-    std::set<HashList*, Collection::TTLCmp> rebuilt_hlists;
+    std::unordered_map<CollectionIDType, std::shared_ptr<HashList>>
+        rebuilt_hlists;
   };
 
   HashListRebuilder(PMEMAllocator* pmem_allocator, HashTable* hash_table,
@@ -76,8 +77,8 @@ class HashListRebuilder {
     for (auto hlist : rebuild_hlists_) {
       i++;
       fs.push_back(
-          std::async(&HashListRebuilder::rebuildIndex, this, hlist.second));
-      ret.rebuilt_hlists.insert(hlist.second);
+          std::async(&HashListRebuilder::rebuildIndex, this, hlist.second.get()));
+      ret.rebuilt_hlists = rebuild_hlists_;
       if (i % num_rebuild_threads_ == 0 || i == rebuild_hlists_.size()) {
         for (auto& f : fs) {
           ret.s = f.get();
@@ -107,11 +108,12 @@ class HashListRebuilder {
       max_recovered_id_ = std::max(max_recovered_id_, id);
 
       DLRecord* valid_version_record = findCheckpointVersion(header_record);
-      HashList* hlist;
+      std::shared_ptr<HashList> hlist;
       if (valid_version_record == nullptr ||
           HashList::HashListID(valid_version_record) != id) {
-        hlist = new HashList(header_record, collection_name, id,
-                             pmem_allocator_, hash_table_, lock_table_);
+        hlist = std::make_shared<HashList>(header_record, collection_name, id,
+                                           pmem_allocator_, hash_table_,
+                                           lock_table_);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           invalid_hlists_[id] = hlist;
@@ -126,8 +128,9 @@ class HashListRebuilder {
           addUnlinkedRecord(header_record);
         }
 
-        hlist = new HashList(valid_version_record, collection_name, id,
-                             pmem_allocator_, hash_table_, lock_table_);
+        hlist = std::make_shared<HashList>(valid_version_record,
+                                           collection_name, id, pmem_allocator_,
+                                           hash_table_, lock_table_);
         kvdk_assert(hlist != nullptr, "");
 
         bool outdated =
@@ -148,7 +151,7 @@ class HashListRebuilder {
         if (!outdated) {
           auto lookup_result = hash_table_->Insert(
               collection_name, RecordType::HashHeader, RecordStatus::Normal,
-              hlist, PointerType::HashList);
+              hlist.get(), PointerType::HashList);
           switch (lookup_result.s) {
             case Status::Ok: {
               GlobalLogger.Error(
@@ -297,8 +300,10 @@ class HashListRebuilder {
   const size_t num_rebuild_threads_;
   CheckPoint checkpoint_;
   SpinMutex lock_;
-  std::unordered_map<CollectionIDType, HashList*> invalid_hlists_;
-  std::unordered_map<CollectionIDType, HashList*> rebuild_hlists_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<HashList>>
+      invalid_hlists_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<HashList>>
+      rebuild_hlists_;
   CollectionIDType max_recovered_id_;
 };
 }  // namespace KVDK_NAMESPACE

@@ -20,6 +20,7 @@ class Collection {
  public:
   Collection(const StringView& name, CollectionIDType id)
       : collection_name_(string_view_2_string(name)), collection_id_(id) {}
+  virtual ~Collection() = default;
   // Return unique ID of the collection
   uint64_t ID() const { return collection_id_; }
 

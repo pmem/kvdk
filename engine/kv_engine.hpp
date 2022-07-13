@@ -508,6 +508,21 @@ class KVEngine : public Engine {
     return skiplists_[id];
   }
 
+  void removeHashlist(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(hlists_mu_);
+    hlists_.erase(id);
+  }
+
+  void addHashlistToMap(std::shared_ptr<HashList> hlist) {
+    std::lock_guard<std::mutex> lg(hlists_mu_);
+    hlists_.emplace(hlist->ID(), hlist);
+  }
+
+  std::shared_ptr<HashList> getHashlist(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(hlists_mu_);
+    return hlists_[id];
+  }
+
   Status buildSkiplist(const StringView& name,
                        const SortedCollectionConfigs& s_configs,
                        std::shared_ptr<Skiplist>& skiplist);
@@ -622,7 +637,7 @@ class KVEngine : public Engine {
   std::unique_ptr<ListBuilder> list_builder_;
 
   std::mutex hlists_mu_;
-  std::set<HashList*, Collection::TTLCmp> hash_lists_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<HashList>> hlists_;
   std::unique_ptr<LockTable> hash_list_locks_;
   std::unique_ptr<LockTable> dllist_locks_;
 

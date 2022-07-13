@@ -30,7 +30,7 @@ class HashList : public Collection {
         pmem_allocator_(pmem_allocator),
         hash_table_(hash_table) {}
 
-  virtual ~HashList() {}
+  ~HashList() final = default;
 
   DLList* GetDLList() { return &dl_list_; }
 

@@ -40,16 +40,16 @@ Status KVEngine::HashCreate(StringView collection) {
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, collection, value_str);
 
-    HashList* hlist =
-        new HashList(pmem_record, collection, id, pmem_allocator_.get(),
-                     hash_table_.get(), dllist_locks_.get());
+    auto hlist = std::make_shared<HashList>(
+        pmem_record, collection, id, pmem_allocator_.get(), hash_table_.get(),
+        dllist_locks_.get());
     kvdk_assert(hlist != nullptr, "");
     {
       std::lock_guard<std::mutex> lg(hlists_mu_);
-      hash_lists_.insert(hlist);
+      hlists_[id] = hlist;
     }
     insertKeyOrElem(lookup_result, RecordType::HashHeader, RecordStatus::Normal,
-                    hlist);
+                    hlist.get());
     return Status::Ok;
   } else {
     return lookup_result.s;

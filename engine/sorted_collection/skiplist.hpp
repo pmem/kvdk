@@ -174,7 +174,7 @@ class Skiplist : public Collection {
            HashTable* hash_table, LockTable* lock_table,
            bool index_with_hashtable);
 
-  ~Skiplist();
+  ~Skiplist() final;
 
   SkiplistNode* HeaderNode() { return header_; }
 
