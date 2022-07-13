@@ -452,8 +452,6 @@ class KVEngine : public Engine {
 
   Status restoreHashHeader(DLRecord* rec);
 
-  Status hashListRegisterRecovered();
-
   Status hashListWrite(HashWriteArgs& args);
   Status hashWritePrepare(HashWriteArgs& args, TimeStampType ts);
   Status hashListPublish(HashWriteArgs const& args);

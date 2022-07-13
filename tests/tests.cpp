@@ -526,9 +526,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
             Status::Ok);
 
   std::string sorted_collection("sorted_collection");
+  std::string hash_collection("hash_collection");
   std::string sorted_collection_after_snapshot(
       "sorted_collection_after_snapshot");
+  std::string hash_collection_after_snapshot("hash_collection_after_snapshot");
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+  engine->ReleaseAccessThread();
 
   bool snapshot_done(false);
   std::atomic_uint64_t set_finished_threads(0);
@@ -548,6 +552,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       ASSERT_EQ(engine->Put(key2, key2, write_options), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection, key1, key1), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection, key2, key2), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection, key1, key1), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection, key2, key2), Status::Ok);
     }
     // Wait snapshot done
     set_finished_threads.fetch_add(1);
@@ -568,11 +574,19 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       ASSERT_EQ(engine->Put(key1, "updated " + key1), Status::Ok);
       ASSERT_EQ(engine->Delete(key1), Status::Ok);
       ASSERT_EQ(engine->Put(key3, key3), Status::Ok);
+
       ASSERT_EQ(engine->SortedPut(sorted_collection, key1, "updated " + key1),
                 Status::Ok);
       ASSERT_EQ(engine->SortedDelete(sorted_collection, key2), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection, key3, key3), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection_after_snapshot, key1, key1),
+                Ok);
+
+      ASSERT_EQ(engine->HashPut(hash_collection, key1, "updated " + key1),
+                Status::Ok);
+      ASSERT_EQ(engine->HashDelete(hash_collection, key2), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection, key3, key3), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection_after_snapshot, key1, key1),
                 Ok);
     }
   };
@@ -588,6 +602,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   Snapshot* snapshot = engine->GetSnapshot(true);
   // Insert a new collection after snapshot
   ASSERT_EQ(engine->SortedCreate(sorted_collection_after_snapshot), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection_after_snapshot), Status::Ok);
+  engine->ReleaseAccessThread();
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
@@ -598,27 +614,27 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     t.join();
   }
 
-  Iterator* snapshot_iter =
+  Iterator* sorted_snapshot_iter =
       engine->NewSortedIterator(sorted_collection, snapshot);
   // Destroyed collection still should be accessable by snapshot_iter
   engine->SortedDestroy(sorted_collection);
 
   uint64_t snapshot_iter_cnt = 0;
-  snapshot_iter->SeekToFirst();
-  while (snapshot_iter->Valid()) {
-    ASSERT_TRUE(snapshot_iter->Valid());
+  sorted_snapshot_iter->SeekToFirst();
+  while (sorted_snapshot_iter->Valid()) {
+    ASSERT_TRUE(sorted_snapshot_iter->Valid());
     snapshot_iter_cnt++;
-    ASSERT_EQ(snapshot_iter->Key(), snapshot_iter->Value());
-    snapshot_iter->Next();
+    ASSERT_EQ(sorted_snapshot_iter->Key(), sorted_snapshot_iter->Value());
+    sorted_snapshot_iter->Next();
   }
   ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
-  engine->ReleaseSortedIterator(snapshot_iter);
+  engine->ReleaseSortedIterator(sorted_snapshot_iter);
 
-  snapshot_iter =
+  sorted_snapshot_iter =
       engine->NewSortedIterator(sorted_collection_after_snapshot, snapshot);
-  snapshot_iter->SeekToFirst();
-  ASSERT_FALSE(snapshot_iter->Valid());
-  engine->ReleaseSortedIterator(snapshot_iter);
+  sorted_snapshot_iter->SeekToFirst();
+  ASSERT_FALSE(sorted_snapshot_iter->Valid());
+  engine->ReleaseSortedIterator(sorted_snapshot_iter);
 
   delete engine;
 

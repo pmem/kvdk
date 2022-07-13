@@ -80,6 +80,73 @@ class HashList : public Collection {
     return ret;
   }
 
+  WriteResult Modify(const StringView key, ModifyFunc modify_func,
+                     void* modify_args, TimeStampType ts) {
+    WriteResult ret;
+    std::string internal_key(InternalKey(key));
+    auto lookup_result =
+        hash_table_->Lookup<true>(internal_key, RecordType::HashElem);
+    DLRecord* existing_record = nullptr;
+    std::string exisiting_value;
+    std::string new_value;
+    bool data_existing = false;
+    if (lookup_result.s == Status::Ok) {
+      existing_record = lookup_result.entry.GetIndex().dl_record;
+      ret.existing_record = existing_record;
+      if (existing_record->GetRecordStatus() != RecordStatus::Outdated) {
+        data_existing = true;
+        exisiting_value.assign(existing_record->Value().data(),
+                               existing_record->Value().size());
+      }
+    } else if (lookup_result.s == Status::NotFound) {
+      // nothing todo
+    } else {
+      ret.s = lookup_result.s;
+      return ret;
+    }
+
+    auto modify_operation = modify_func(
+        data_existing ? &exisiting_value : nullptr, &new_value, modify_args);
+    switch (modify_operation) {
+      case ModifyOperation::Write: {
+        // TODO: check new value size
+        HashWriteArgs args =
+            InitWriteArgs(key, new_value, WriteBatchImpl::Op::Put);
+        args.ts = ts;
+        args.lookup_result = lookup_result;
+        args.space = pmem_allocator_->Allocate(
+            DLRecord::RecordSize(internal_key, new_value));
+        if (args.space.size == 0) {
+          ret.s = Status::PmemOverflow;
+          return ret;
+        }
+        return Write(args);
+      }
+
+      case ModifyOperation::Delete: {
+        HashWriteArgs args = InitWriteArgs(key, "", WriteBatchImpl::Op::Delete);
+        args.ts = ts;
+        args.lookup_result = lookup_result;
+        args.space =
+            pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, ""));
+        if (args.space.size == 0) {
+          ret.s = Status::PmemOverflow;
+          return ret;
+        }
+        return Write(args);
+      }
+
+      case ModifyOperation::Abort: {
+        ret.s = Status::Abort;
+        return ret;
+      }
+
+      case ModifyOperation::Noop: {
+        return ret;
+      }
+    }
+  }
+
   HashWriteArgs InitWriteArgs(const StringView& key, const StringView& value,
                               WriteBatchImpl::Op op) {
     HashWriteArgs args;
@@ -94,9 +161,9 @@ class HashList : public Collection {
   Status PrepareWrite(HashWriteArgs& args, TimeStampType ts) {
     kvdk_assert(args.op == WriteBatchImpl::Op::Put || args.value.size() == 0,
                 "value of delete operation should be empty");
-    // if (args.hlist != this) {
-    // return Status::InvalidArgument;
-    // }
+    if (args.hlist != this) {
+      return Status::InvalidArgument;
+    }
 
     args.ts = ts;
     bool op_delete = args.op == WriteBatchImpl::Op::Delete;
@@ -238,8 +305,6 @@ class HashList : public Collection {
       cnt++;
       prev = curr;
     }
-    GlobalLogger.Debug("indexed hash records %lu, hash list size %lu\n", cnt,
-                       Size());
     return Status::Ok;
   }
 

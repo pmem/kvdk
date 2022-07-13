@@ -195,7 +195,6 @@ Status KVEngine::SortedDelete(const StringView collection,
 
   Skiplist* skiplist = nullptr;
   auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
-  // GlobalLogger.Debug("ret.s is %d\n", ret.s);
   if (ret.s != Status::Ok) {
     return (ret.s == Status::Outdated || ret.s == Status::NotFound) ? Status::Ok
                                                                     : ret.s;

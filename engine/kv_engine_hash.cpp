@@ -39,7 +39,6 @@ Status KVEngine::HashCreate(StringView collection) {
         RecordType::HashHeader, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, collection, value_str);
-    GlobalLogger.Debug("Create header record addreess %lu\n", space.offset);
 
     HashList* hlist =
         new HashList(pmem_record, collection, id, pmem_allocator_.get(),
@@ -53,7 +52,6 @@ Status KVEngine::HashCreate(StringView collection) {
                     hlist);
     return Status::Ok;
   } else {
-    GlobalLogger.Debug("create hash search status: %u\n", lookup_result.s);
     return lookup_result.s;
   }
 }
@@ -88,7 +86,6 @@ Status KVEngine::HashDestroy(StringView collection) {
         RecordType::HashHeader, RecordStatus::Outdated,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection, value);
-    GlobalLogger.Debug("Destroy header record addreess %lu\n", space.offset);
     bool success = hlist->Replace(header, pmem_record);
     kvdk_assert(success, "existing header should be linked on its hlist");
     hash_table_->Insert(collection, RecordType::HashHeader,
@@ -194,9 +191,29 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
   return s;
 }
 
-Status KVEngine::HashModify(StringView key, StringView field,
+Status KVEngine::HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) {
-  return Status::Ok;
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
+
+  // Hold current snapshot in this thread
+  auto holder = version_controller_.GetLocalSnapshotHolder();
+  HashList* hlist;
+  s = hashListFind(collection, &hlist);
+  if (s == Status::Ok) {
+    std::string internal_key(hlist->InternalKey(key));
+    auto ul = hash_table_->AcquireLock(internal_key);
+    auto ret = hlist->Modify(key, modify_func, cb_args,
+                             version_controller_.GetCurrentTimestamp());
+    s = ret.s;
+    if (s == Status::Ok && ret.existing_record && ret.write_record) {
+      removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
+    }
+    tryCleanCachedOutdatedRecord();
+  }
+  return s;
 }
 
 std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key,
@@ -242,22 +259,6 @@ Status KVEngine::restoreHashElem(DLRecord* rec) {
 
 Status KVEngine::restoreHashHeader(DLRecord* rec) {
   return hash_rebuilder_->AddHeader(rec);
-}
-
-Status KVEngine::hashListRegisterRecovered() {
-  CollectionIDType max_id = 0;
-  for (HashList* hlist : hash_lists_) {
-    auto guard = hash_table_->AcquireLock(hlist->Name());
-    Status s = registerCollection(hlist);
-    if (s != Status::Ok) {
-      return s;
-    }
-    max_id = std::max(max_id, hlist->ID());
-  }
-  CollectionIDType old = list_id_.load();
-  while (max_id >= old && !list_id_.compare_exchange_strong(old, max_id + 1)) {
-  }
-  return Status::Ok;
 }
 
 Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimeStampType ts) {

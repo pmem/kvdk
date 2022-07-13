@@ -138,6 +138,7 @@ void KVEngine::purgeAndFreeDLRecords(
       RecordType type = pmem_record->GetRecordType();
       RecordStatus record_status = pmem_record->GetRecordStatus();
       switch (type) {
+        case RecordType::HashElem:
         case RecordType::SortedElem: {
           entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
                                pmem_record->entry.header.record_size);
@@ -167,6 +168,7 @@ void KVEngine::purgeAndFreeDLRecords(
           break;
         }
         default:
+          GlobalLogger.Error("Cleaner abort on record type %u\n", type);
           std::abort();
       }
       pmem_record = next_record;

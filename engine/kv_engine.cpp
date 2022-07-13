@@ -47,7 +47,7 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Waiting bg threads exit ... \n");
   closing_ = true;
   terminateBackgroundWorks();
-  deleteCollections();
+  // deleteCollections();
   ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
 }
@@ -653,7 +653,6 @@ Status KVEngine::restoreExistingData() {
   hash_rebuilder_.reset(nullptr);
 
 #if KVDK_DEBUG_LEVEL > 0
-  GlobalLogger.Debug("Start check index\n");
   for (auto skiplist : skiplists_) {
     Status s = skiplist.second->CheckIndex();
     if (s != Status::Ok) {

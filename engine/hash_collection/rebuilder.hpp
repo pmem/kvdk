@@ -60,10 +60,6 @@ class HashListRebuilder {
         pmem_allocator_->PurgeAndFree<DLRecord>(header_record);
       }
     } else {
-      GlobalLogger.Debug("Add header %s status %u address %lu\n",
-                         string_view_2_string(header_record->Key()).c_str(),
-                         header_record->GetRecordStatus(),
-                         pmem_allocator_->addr2offset_checked(header_record));
       linked_headers_.emplace_back(header_record);
     }
     return Status::Ok;
@@ -93,8 +89,6 @@ class HashListRebuilder {
       }
     }
     ret.max_id = max_recovered_id_;
-    GlobalLogger.Debug("Rebuild finish, rebuilt %lu\n",
-                       ret.rebuilt_hlists.size());
     return ret;
   }
 
@@ -102,7 +96,6 @@ class HashListRebuilder {
   bool recoverToCheckPoint() { return checkpoint_.Valid(); }
 
   Status initRebuildLists() {
-    GlobalLogger.Debug("Init %lu rebuild hash lists\n", linked_headers_.size());
     for (size_t i = 0; i < linked_headers_.size(); i++) {
       DLRecord* header_record = linked_headers_[i];
       // if (i + 1 < linked_headers_.size() /*&& xx*/) {
@@ -140,7 +133,6 @@ class HashListRebuilder {
         bool outdated =
             valid_version_record->GetRecordStatus() == RecordStatus::Outdated ||
             valid_version_record->HasExpired();
-        GlobalLogger.Debug("Outdated? %d\n", outdated);
 
         {
           std::lock_guard<SpinMutex> lg(lock_);
@@ -172,10 +164,7 @@ class HashListRebuilder {
               return lookup_result.s;
             }
           }
-          GlobalLogger.Debug("rebuild hlist %s ok\n",
-                             string_view_2_string(collection_name).c_str());
         }
-        // TODO continue
       }
     }
     linked_headers_.clear();
