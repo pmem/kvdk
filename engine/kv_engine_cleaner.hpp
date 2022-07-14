@@ -105,8 +105,7 @@ class Cleaner {
   size_t ActiveThreadNum() { return live_thread_num_.load(); }
 
   double SearchOutdatedCollections();
-  void FetchOutdatedCollections(PendingCleanRecords& pending_clean_records,
-                                std::vector<DLRecord*>& purge_dl_records);
+  void FetchOutdatedCollections(PendingCleanRecords& pending_clean_records);
 
  private:
   struct ThreadWorker {
@@ -125,19 +124,17 @@ class Cleaner {
   std::deque<size_t> actived_workers_;
 
   struct OutDatedCollections {
-    using ListQueue = std::priority_queue<List*, std::vector<List*>,
-                                          Collection::TimeStampCmp>;
-    using HashListQueue = std::priority_queue<HashList*, std::vector<HashList*>,
-                                              Collection::TimeStampCmp>;
+    using ListQueue = std::set<List*, Collection::TimeStampCmp>;
+    using HashListQueue = std::set<HashList*, Collection::TimeStampCmp>;
 
-    using SkiplistQueue = std::priority_queue<Skiplist*, std::vector<Skiplist*>,
-                                              Collection::TimeStampCmp>;
+    using SkiplistQueue = std::set<Skiplist*, Collection::TimeStampCmp>;
 
     SpinMutex queue_mtx_;
     ListQueue lists;
     HashListQueue hashlists;
     SkiplistQueue skiplists;
-    double increase_ratio = 1;
+    double increase_ratio = 0;
+    ~OutDatedCollections();
   };
 
   OutDatedCollections outdated_collections_;

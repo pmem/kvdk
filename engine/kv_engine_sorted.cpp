@@ -110,7 +110,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
                     RecordStatus::Outdated, skiplist);
     {
       std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
-      outdated_skiplists_.emplace(skiplist);
+      expirable_skiplists_.emplace(skiplist);
     }
   } else if (lookup_result.s == Status::Outdated ||
              lookup_result.s == Status::NotFound) {

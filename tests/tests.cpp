@@ -2081,8 +2081,6 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
   std::string got_val;
   int64_t ttl_time;
-  WriteOptions write_options1{1};
-  WriteOptions write_options2{INT64_MAX / 1000};
   std::string key = "expired_key";
   std::string val(10, 'a');
   std::string val2(10, 'b');
@@ -2095,12 +2093,36 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   // For string
   {
     // key is expired. Check expired time when reading.
+    WriteOptions write_options1{1, true};
     ASSERT_EQ(engine->Put(key, val, write_options1), Status::Ok);
     sleep(1);
     ASSERT_EQ(engine->Get(key, &got_val), Status::NotFound);
 
     // update kv pair with new expired time.
+    WriteOptions write_options2{INT64_MAX / 1000, true};
     ASSERT_EQ(engine->Put(key, val2, write_options2), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+    ASSERT_EQ(got_val, val2);
+
+    // test update_ttl option
+    WriteOptions write_options3{1, false};
+    ASSERT_EQ(engine->Put(key, val, write_options3), Status::Ok);
+    sleep(1);
+    ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
+    ASSERT_EQ(got_val, val);
+    ASSERT_EQ(
+        engine->Modify(
+            key,
+            [=](const std::string* old_value, std::string* new_value, void*) {
+              if (old_value != nullptr) {
+                new_value->assign(val2);
+                return ModifyOperation::Write;
+              }
+              return ModifyOperation::Abort;
+            },
+            nullptr, write_options3),
+        Status::Ok);
+    sleep(1);
     ASSERT_EQ(engine->Get(key, &got_val), Status::Ok);
     ASSERT_EQ(got_val, val2);
 
@@ -3207,7 +3229,8 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 }
 
 TEST_F(EngineBasicTest, TestDynamicCleaner) {
-  std::string op;
+  enum class OpType { insert, update, outdated };
+  OpType op;
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   // abandon background cleaner thread
@@ -3218,9 +3241,9 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
       });
   SyncPoint::GetInstance()->SetCallBack("KVEngine::Cleaner::AdjustThread",
                                         [&](void* advice_thread_num) {
-                                          if (op == "update") {
+                                          if (op == OpType::update) {
                                             *((size_t*)advice_thread_num) = 6;
-                                          } else if (op == "delete") {
+                                          } else if (op == OpType::outdated) {
                                             *((size_t*)advice_thread_num) = 8;
                                           } else {
                                             *((size_t*)advice_thread_num) = 1;
@@ -3245,7 +3268,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
 
   size_t cnt = 16;
   // only insert
-  op = "insert";
+  op = OpType::insert;
   for (size_t id = 0; id < cnt; ++id) {
     std::string value = std::to_string(id) + common_value;
     std::string str_key = std::to_string(id) + common_str_key;
@@ -3257,7 +3280,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
   ASSERT_EQ(space_cleaner->ActiveThreadNum(), 1);
 
   // update
-  op = "update";
+  op = OpType::update;
   sleep(1);
   for (size_t id = 0; id < cnt; ++id) {
     std::string str_key = std::to_string(id) + common_str_key;
@@ -3271,8 +3294,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
     }
   }
   ASSERT_EQ(space_cleaner->ActiveThreadNum(), 6);
-
-  op = "delete";
+  op = OpType::outdated;
   sleep(1);
   for (size_t id = 0; id < cnt; ++id) {
     std::string str_key = std::to_string(id) + common_str_key;
@@ -3282,7 +3304,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
   }
   ASSERT_EQ(space_cleaner->ActiveThreadNum(), 8);
 
-  op = "insert";
+  op = OpType::insert;
   sleep(1);
   for (size_t id = 0; id < cnt; ++id) {
     std::string value = std::to_string(id) + common_value;

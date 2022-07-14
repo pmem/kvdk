@@ -137,6 +137,13 @@ struct StringRecord {
     return false;
   }
 
+  bool ValidOrDirty() {
+    bool valid = Validate();
+    asm volatile("" ::: "memory");
+    bool dirty = (GetRecordStatus() == RecordStatus::Dirty);
+    return (valid || dirty);
+  }
+
   // Check whether the record corrupted with expected checksum
   bool Validate(uint32_t expected_checksum) {
     if (ValidateRecordSize()) {

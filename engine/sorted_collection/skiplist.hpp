@@ -53,7 +53,9 @@ struct SkiplistNode {
   // 4 bytes for alignment, the actually allocated size may > 4
   char cached_key[4];
 
-  static void DeleteNode(SkiplistNode* node) { free(node->heap_space_start()); }
+  static void DeleteNode(SkiplistNode* node) {
+    free(node->heap_space_start());
+  }
 
   static SkiplistNode* NewNode(const StringView& key, DLRecord* record_on_pmem,
                                uint8_t height) {
@@ -111,12 +113,12 @@ struct SkiplistNode {
 
   // Logically delete node by tag next pointers from bottom to top
   void MarkAsRemoved() {
-    for (int l = 1; l <= height; l++) {
+    for (int l = height; l >= 1; --l) {
       while (1) {
         auto next = RelaxedNext(l);
         // This node alread tagged by another thread
         if (next.GetTag() == NodeStatus::Deleted) {
-          continue;
+          break;
         }
         auto tagged = PointerWithTag<SkiplistNode, NodeStatus>(
             next.RawPointer(), NodeStatus::Deleted);
@@ -415,6 +417,12 @@ class Skiplist : public Collection {
     return 0;
   }
 
+  bool CleaningSkiplist() { return cleaning_skiplist_.load(); }
+
+  void SkiplistCleanStatus(bool accessible) {
+    cleaning_skiplist_.store(accessible);
+  }
+
  private:
   WriteResult putImplNoHash(const StringView& key, const StringView& value,
                             TimeStampType timestamp);
@@ -527,6 +535,7 @@ class Skiplist : public Collection {
   }
 
   std::atomic<size_t> size_;
+  std::atomic_bool cleaning_skiplist_{true};
   Comparator comparator_ = compare_string_view;
   PMEMAllocator* pmem_allocator_;
   // TODO: use specified hash table for each skiplist

@@ -14,10 +14,6 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
     return Status::InvalidArgument;
   }
 
-  ExpireTimeType expired_time = write_options.ttl_time == kPersistTime
-                                    ? kPersistTime
-                                    : write_options.ttl_time + base_time;
-
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -52,6 +48,12 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
       if (!CheckValueSize(new_value)) {
         return Status::InvalidDataSize;
       }
+
+      ExpireTimeType expired_time =
+          lookup_result.s == Status::Ok && !write_options.update_ttl
+              ? existing_record->GetExpireTime()
+              : TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
+
       SpaceEntry space_entry =
           pmem_allocator_->Allocate(StringRecord::RecordSize(key, new_value));
       if (space_entry.size == 0) {
@@ -133,9 +135,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
     kvdk_assert(string_record->GetRecordType() == RecordType::String &&
                     string_record->GetRecordStatus() != RecordStatus::Outdated,
                 "Got wrong data type in string get");
-    kvdk_assert(string_record->GetRecordStatus() == RecordStatus::Normal ||
-                    string_record->GetRecordStatus() == RecordStatus::Dirty,
-                "Corrupted data in string get");
+    kvdk_assert(string_record->ValidOrDirty(), "Corrupted data in string get");
     value->assign(string_record->Value().data(), string_record->Value().size());
     return Status::Ok;
   } else {
@@ -199,9 +199,6 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
     return Status::InvalidArgument;
   }
 
-  ExpireTimeType expired_time =
-      TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
-
   TEST_SYNC_POINT("KVEngine::StringPutImpl::BeforeLock");
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
@@ -225,10 +222,14 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   kvdk_assert(!existing_record || new_ts > existing_record->GetTimestamp(),
               "existing record has newer timestamp or wrong return status in "
               "string set");
+  ExpireTimeType expired_time =
+      lookup_result.s == Status::Ok && !write_options.update_ttl
+          ? existing_record->GetExpireTime()
+          : TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
 
   // Persist key-value pair to PMem
-  uint32_t requested_size = value.size() + key.size() + sizeof(StringRecord);
-  SpaceEntry space_entry = pmem_allocator_->Allocate(requested_size);
+  SpaceEntry space_entry =
+      pmem_allocator_->Allocate(StringRecord::RecordSize(key, value));
   if (space_entry.size == 0) {
     return Status::PmemOverflow;
   }

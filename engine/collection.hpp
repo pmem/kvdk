@@ -29,6 +29,7 @@ class Collection {
   virtual bool HasExpired() const = 0;
   virtual Status SetExpireTime(ExpireTimeType) = 0;
   virtual TimeStampType GetTimeStamp() const = 0;
+  virtual ~Collection() = default;
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id

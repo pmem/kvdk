@@ -1029,6 +1029,16 @@ void Skiplist::destroyAllRecords() {
             pmem_allocator_->offset2addr(to_destroy->old_version));
         while (old_record) {
           switch (old_record->GetRecordType()) {
+            case RecordType::SortedHeader: {
+              kvdk_assert(
+                  old_record->GetRecordStatus() != RecordStatus::Outdated,
+                  "the old version list hasn't the outdated status "
+                  "header record\n");
+              old_record->entry.Destroy();
+              to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
+                                   old_record->entry.header.record_size);
+              break;
+            }
             case RecordType::SortedElem: {
               old_record->entry.Destroy();
               to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
@@ -1049,7 +1059,6 @@ void Skiplist::destroyAllRecords() {
     } while (to_destroy !=
              header_record /* header record should be the last detroyed one */);
   }
-
   pmem_allocator_->BatchFree(to_free);
 }
 
@@ -1074,11 +1083,19 @@ void Skiplist::DestroyAll() {
 
 void Skiplist::destroyNodes() {
   if (header_) {
-    SkiplistNode* to_delete = header_;
-    while (to_delete) {
-      SkiplistNode* next = to_delete->Next(1).RawPointer();
-      SkiplistNode::DeleteNode(to_delete);
-      to_delete = next;
+    std::set<SkiplistNode*> freed_nodes;
+    for (int i = 1; i <= header_->Height(); ++i) {
+      auto to_delete = header_->Next(i).RawPointer();
+      while (to_delete) {
+        freed_nodes.insert(to_delete);
+        auto next = to_delete->Next(i).RawPointer();
+        to_delete = next;
+      }
+    }
+    freed_nodes.insert(header_);
+
+    for (auto freed_node : freed_nodes) {
+      SkiplistNode::DeleteNode(freed_node);
     }
     header_ = nullptr;
   }

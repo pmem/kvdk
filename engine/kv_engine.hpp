@@ -491,12 +491,11 @@ class KVEngine : public Engine {
   // Workaround for expired list or hash list.
   // TODO: replaced this by `removeOutDatedVersion` when list/hash list has
   // mvcc.
-  template <typename T>
-  T* removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts);
+  // Find and remove outdated collections from old version lists.
+  template <typename ListType>
+  void removeOutdatedList(ListType* collection);
 
-  // Find and remove alist in the old version list of main_list.
-  template <typename T>
-  void removeListFromOldVersion(T* main_list, T* alist);
+  void removeOutdatedSkiplist(Skiplist* collection);
 
   // find delete and old records in skiplist with no hash index
   void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
@@ -614,8 +613,6 @@ class KVEngine : public Engine {
   // Run in background to free obsolete DRAM space
   void backgroundDramCleaner();
 
-  void searchOutdatedCollections();
-
   /* functions for cleaner thread cache */
   // Remove old version records from version chain of new_record and cache it
   template <typename T>
@@ -631,6 +628,7 @@ class KVEngine : public Engine {
       std::vector<DLRecord*>& purge_dl_records);
   /* functions for cleaner thread cache */
 
+  void destroyCo();
   void deleteCollections();
 
   void startBackgroundWorks();
@@ -648,7 +646,7 @@ class KVEngine : public Engine {
 
   std::mutex skiplists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
-  std::set<Skiplist*, Collection::TTLCmp> outdated_skiplists_;
+  std::set<Skiplist*, Collection::TTLCmp> expirable_skiplists_;
 
   std::mutex lists_mu_;
   std::set<List*, Collection::TTLCmp> lists_;

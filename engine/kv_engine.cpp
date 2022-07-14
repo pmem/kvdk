@@ -1208,13 +1208,12 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
       case PointerType::Skiplist: {
         auto new_ts = snapshot_holder.Timestamp();
-        auto ret = res.entry_ptr->GetIndex().skiplist->SetExpireTime(
-            expired_time, new_ts);
+        Skiplist* skiplist = res.entry_ptr->GetIndex().skiplist;
+        std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
+        expirable_skiplists_.erase(skiplist);
+        auto ret = skiplist->SetExpireTime(expired_time, new_ts);
+        expirable_skiplists_.emplace(skiplist);
         res.s = ret.s;
-        {
-          std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
-          outdated_skiplists_.emplace(res.entry_ptr->GetIndex().skiplist);
-        }
         break;
       }
       case PointerType::HashList: {
@@ -1380,6 +1379,7 @@ void KVEngine::backgroundPMemUsageReporter() {
       }
     }
     ReportPMemUsage();
+    GlobalLogger.Info("Cleaner Thread Num: %ld\n", cleaner_.ActiveThreadNum());
   }
 }
 

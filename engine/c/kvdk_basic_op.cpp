@@ -58,6 +58,11 @@ void KVDKWriteOptionsSetTTLTime(KVDKWriteOptions* kv_options,
   kv_options->rep.ttl_time = ttl_time;
 }
 
+void KVDKWriteOptionsSetUpdateTTL(KVDKWriteOptions* kv_options,
+                                  int update_ttl) {
+  kv_options->rep.update_ttl = update_ttl;
+}
+
 KVDKStatus KVDKOpen(const char* name, const KVDKConfigs* config, FILE* log_file,
                     KVDKEngine** kv_engine) {
   Engine* engine;
