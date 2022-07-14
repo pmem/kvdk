@@ -152,3 +152,13 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*)
+
+option(WITH_JNI "Build with JNI" ON)
+if(WITH_JNI OR JNI)
+    message(STATUS "JNI library is enabled")
+    set(KVDK_SHARED_LIB engine)
+    set_property(TARGET ${KVDK_SHARED_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/java)
+else()
+    message(STATUS "JNI library is disabled")
+endif()
