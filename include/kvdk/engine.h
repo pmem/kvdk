@@ -193,7 +193,9 @@ extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
 /// HashIterator //////////////////////////////////////////////////////////////
 extern KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                                 char const* key_data,
-                                                size_t key_len, KVDKStatus* s);
+                                                size_t key_len,
+                                                KVDKSnapshot* snapshot,
+                                                KVDKStatus* s);
 extern void KVDKHashIteratorDestroy(KVDKHashIterator* iter);
 extern void KVDKHashIteratorPrev(KVDKHashIterator* iter);
 extern void KVDKHashIteratorNext(KVDKHashIterator* iter);

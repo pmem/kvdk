@@ -358,7 +358,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   // create hash iterator
   KVDKHashIterator* kvdk_iter = KVDKHashIteratorCreate(
-      kvdk_engine, hash_collection, strlen(hash_collection), NULL);
+      kvdk_engine, hash_collection, strlen(hash_collection), NULL, NULL);
   assert(kvdk_iter != NULL);
   int cnt = 0;
   for (KVDKHashIteratorSeekToFirst(kvdk_iter);

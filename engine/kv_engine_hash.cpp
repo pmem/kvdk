@@ -218,27 +218,32 @@ Status KVEngine::HashModify(StringView collection, StringView key,
   return s;
 }
 
-std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(StringView key,
-                                                           Status* status) {
-  if (!CheckKeySize(key)) {
-    return nullptr;
-  }
-  if (MaybeInitAccessThread() != Status::Ok) {
-    return nullptr;
+std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(
+    StringView collection, Snapshot* snapshot, Status* status) {
+  Status s{Status::Ok};
+  std::unique_ptr<HashIterator> ret(nullptr);
+  if (!CheckKeySize(collection)) {
+    s = Status::InvalidDataSize;
   }
 
-  auto snapshot = GetSnapshot(false);
-  HashList* hlist;
-  Status s = hashListFind(key, &hlist);
-  if (status != nullptr) {
+  if (s == Status::Ok) {
+    bool create_snapshot = snapshot == nullptr;
+    if (create_snapshot) {
+      snapshot = GetSnapshot(false);
+    }
+    HashList* hlist;
+    Status s = hashListFind(collection, &hlist);
+    if (s == Status::Ok) {
+      ret = std::unique_ptr<HashIteratorImpl>{new HashIteratorImpl{
+          this, hlist, static_cast<SnapshotImpl*>(snapshot), create_snapshot}};
+    } else if (create_snapshot) {
+      ReleaseSnapshot(snapshot);
+    }
+  }
+  if (status) {
     *status = s;
   }
-  if (s != Status::Ok) {
-    ReleaseSnapshot(snapshot);
-    return nullptr;
-  }
-  return std::unique_ptr<HashIteratorImpl>{
-      new HashIteratorImpl{hlist, static_cast<SnapshotImpl*>(snapshot), true}};
+  return ret;
 }
 
 Status KVEngine::hashListFind(StringView key, HashList** hlist) {
@@ -271,9 +276,7 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
   return args.hlist->Write(args).s;
 }
 
-Status KVEngine::hashListPublish(HashWriteArgs const&) {
-  return Status::Ok;
-}
+Status KVEngine::hashListPublish(HashWriteArgs const&) { return Status::Ok; }
 
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
   DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);

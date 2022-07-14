@@ -5,6 +5,7 @@
 #include "../hash_table.hpp"
 #include "../version/version_controller.hpp"
 #include "../write_batch_impl.hpp"
+#include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
 #include "kvdk/types.hpp"
 
@@ -141,8 +142,8 @@ class HashList : public Collection {
         return ret;
       }
 
-      case ModifyOperation::Noop: {
-        return ret;
+      default: {
+        std::abort();  // non-reach area
       }
     }
   }
@@ -387,9 +388,10 @@ class HashList : public Collection {
 
 class HashIteratorImpl final : public HashIterator {
  public:
-  HashIteratorImpl(HashList* hlist, const SnapshotImpl* snapshot,
-                   bool own_snapshot)
-      : hlist_(hlist),
+  HashIteratorImpl(Engine* engine, HashList* hlist,
+                   const SnapshotImpl* snapshot, bool own_snapshot)
+      : engine_(engine),
+        hlist_(hlist),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
         dl_iter_(&hlist->dl_list_, hlist->pmem_allocator_, snapshot,
@@ -431,7 +433,11 @@ class HashIteratorImpl final : public HashIterator {
     return std::regex_match(Key(), re);
   }
 
-  ~HashIteratorImpl() final = default;
+  ~HashIteratorImpl() final {
+    if (own_snapshot_ && snapshot_) {
+      engine_->ReleaseSnapshot(snapshot_);
+    }
+  };
 
  private:
   using AccessToken = std::shared_ptr<VersionController::GlobalSnapshotHolder>;
@@ -444,6 +450,7 @@ class HashIteratorImpl final : public HashIterator {
   }
 
  private:
+  Engine* engine_;
   HashList* hlist_;
   const SnapshotImpl* snapshot_;
   bool own_snapshot_;

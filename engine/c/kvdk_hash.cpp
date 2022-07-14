@@ -86,8 +86,10 @@ extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len,
+                                         KVDKSnapshot* snapshot,
                                          KVDKStatus* s) {
-  auto iter = engine->rep->HashCreateIterator(StringView{key_data, key_len}, s);
+  auto iter = engine->rep->HashCreateIterator(
+      StringView{key_data, key_len}, snapshot ? snapshot->rep : nullptr, s);
   if (iter == nullptr) {
     return nullptr;
   }

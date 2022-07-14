@@ -461,7 +461,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
         }
         case RecordType::HashHeader: {
           DLRecord* header = slot_iter->GetIndex().hlist->HeaderRecord();
-          while (header != nullptr && header->GetExpireTime() > backup_ts) {
+          while (header != nullptr && header->GetTimestamp() > backup_ts) {
             header =
                 pmem_allocator_->offset2addr<DLRecord>(header->old_version);
           }
@@ -474,7 +474,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               auto hlist = getHashlist(HashList::HashListID(header));
               kvdk_assert(hlist != nullptr, "Backup hlist should exist in map");
               auto hlist_iter = HashIteratorImpl(
-                  hlist.get(), static_cast<const SnapshotImpl*>(snapshot),
+                  this, hlist.get(), static_cast<const SnapshotImpl*>(snapshot),
                   false);
               for (hlist_iter.SeekToFirst(); hlist_iter.Valid();
                    hlist_iter.Next()) {

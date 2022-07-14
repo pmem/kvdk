@@ -104,7 +104,7 @@ TEST_F(EngineCAPITestBase, Hash) {
     }
 
     KVDKHashIterator* iter =
-        KVDKHashIteratorCreate(engine, key.data(), key.size(), NULL);
+        KVDKHashIteratorCreate(engine, key.data(), key.size(), NULL, NULL);
 
     ASSERT_NE(iter, nullptr);
     size_t cnt = 0;

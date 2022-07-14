@@ -224,6 +224,7 @@ class KVEngine : public Engine {
   Status HashModify(StringView key, StringView field, ModifyFunc modify_func,
                     void* cb_args) final;
   std::unique_ptr<HashIterator> HashCreateIterator(StringView key,
+                                                   Snapshot* snapshot,
                                                    Status* s) final;
 
  private:

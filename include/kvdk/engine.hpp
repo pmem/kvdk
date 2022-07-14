@@ -304,7 +304,7 @@ class Engine {
   // prevents some resources from being freed.
   // The HashIterator should be destroyed as long as it is no longer used.
   virtual std::unique_ptr<HashIterator> HashCreateIterator(
-      StringView key, Status* s = nullptr) = 0;
+      StringView key, Snapshot* snapshot = nullptr, Status* s = nullptr) = 0;
 
   /// Other ///////////////////////////////////////////////////////////////////
 
