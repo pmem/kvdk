@@ -78,7 +78,6 @@ class HashListRebuilder {
       i++;
       fs.push_back(std::async(&HashListRebuilder::rebuildIndex, this,
                               hlist.second.get()));
-      ret.rebuilt_hlists = rebuild_hlists_;
       if (i % num_rebuild_threads_ == 0 || i == rebuild_hlists_.size()) {
         for (auto& f : fs) {
           ret.s = f.get();
@@ -89,7 +88,12 @@ class HashListRebuilder {
         fs.clear();
       }
     }
-    ret.max_id = max_recovered_id_;
+
+    if (ret.s == Status::Ok) {
+      ret.rebuilt_hlists.swap(rebuild_hlists_);
+      ret.max_id = max_recovered_id_;
+    }
+    cleanInvalidRecords();
     return ret;
   }
 

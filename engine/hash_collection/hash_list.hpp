@@ -269,11 +269,54 @@ class HashList : public Collection {
   // Destroy and free the whole hash list with old version list.
   void DestroyAll() {}
 
-  void Destroy() {}
+  void Destroy() {
+    std::vector<SpaceEntry> to_free;
+    DLRecord* header = HeaderRecord();
+    if (header) {
+      DLRecord* to_destroy = nullptr;
+      do {
+        to_destroy =
+            pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+        StringView key = to_destroy->Key();
+        auto ul = hash_table_->AcquireLock(key);
+        // We need to purge destroyed records one by one in case engine crashed
+        // during destroy
+        if (dl_list_.Remove(to_destroy)) {
+          auto lookup_result =
+              hash_table_->Lookup<false>(key, to_destroy->GetRecordType());
+
+          if (lookup_result.s == Status::Ok) {
+            DLRecord* hash_indexed_record = nullptr;
+            auto hash_index = lookup_result.entry.GetIndex();
+            switch (lookup_result.entry.GetIndexType()) {
+              case PointerType::HashList:
+                hash_indexed_record = hash_index.hlist->HeaderRecord();
+                break;
+              case PointerType::DLRecord:
+                hash_indexed_record = hash_index.dl_record;
+                break;
+              default:
+                kvdk_assert(false, "Wrong hash index type of sorted record");
+            }
+            if (hash_indexed_record == to_destroy) {
+              hash_table_->Erase(lookup_result.entry_ptr);
+            }
+          }
+          to_destroy->Destroy();
+
+          to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+                               to_destroy->entry.header.record_size);
+        }
+
+      } while (to_destroy !=
+               header /* header record should be the last detroyed one */);
+    }
+    pmem_allocator_->BatchFree(to_free);
+  }
 
   void UpdateSize(int64_t delta) {
     kvdk_assert(delta >= 0 || size_.load() >= static_cast<size_t>(-delta),
-                "Update skiplist size to negative");
+                "Update hash list size to negative");
     size_.fetch_add(delta, std::memory_order_relaxed);
   }
 
