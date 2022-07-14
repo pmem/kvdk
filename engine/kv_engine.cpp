@@ -460,7 +460,6 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           break;
         }
         case RecordType::HashHeader: {
-          break;
           DLRecord* header = slot_iter->GetIndex().hlist->HeaderRecord();
           while (header != nullptr && header->GetExpireTime() > backup_ts) {
             header =
@@ -598,7 +597,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
       case RecordType::HashHeader: {
         std::shared_ptr<HashList> hlist = nullptr;
         if (!expired) {
-          CollectionIDType id = Collection::DecodeID(record.val);
+          s = buildHashlist(record.key, hlist);
           if (s == Status::Ok && wo.ttl_time != kPersistTime) {
             hlist->SetExpireTime(wo.ttl_time,
                                  version_controller_.GetCurrentTimestamp());

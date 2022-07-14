@@ -527,6 +527,9 @@ class KVEngine : public Engine {
                        const SortedCollectionConfigs& s_configs,
                        std::shared_ptr<Skiplist>& skiplist);
 
+  Status buildHashlist(const StringView& collection,
+                       std::shared_ptr<HashList>& hlist);
+
   inline std::string data_file() { return data_file(dir_); }
 
   inline static std::string data_file(const std::string& instance_path) {

@@ -15,6 +15,12 @@ Status KVEngine::HashCreate(StringView collection) {
     return Status::InvalidDataSize;
   }
 
+  std::shared_ptr<HashList> hlist = nullptr;
+  return buildHashlist(collection, hlist);
+}
+
+Status KVEngine::buildHashlist(const StringView& collection,
+                               std::shared_ptr<HashList>& hlist) {
   auto ul = hash_table_->AcquireLock(collection);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
@@ -39,15 +45,11 @@ Status KVEngine::HashCreate(StringView collection) {
         RecordType::HashHeader, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, collection, value_str);
-
-    auto hlist = std::make_shared<HashList>(
-        pmem_record, collection, id, pmem_allocator_.get(), hash_table_.get(),
-        dllist_locks_.get());
+    hlist = std::make_shared<HashList>(pmem_record, collection, id,
+                                       pmem_allocator_.get(), hash_table_.get(),
+                                       dllist_locks_.get());
     kvdk_assert(hlist != nullptr, "");
-    {
-      std::lock_guard<std::mutex> lg(hlists_mu_);
-      hlists_[id] = hlist;
-    }
+    addHashlistToMap(hlist);
     insertKeyOrElem(lookup_result, RecordType::HashHeader, RecordStatus::Normal,
                     hlist.get());
     return Status::Ok;
@@ -269,7 +271,7 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
   return args.hlist->Write(args).s;
 }
 
-Status KVEngine::hashListPublish(HashWriteArgs const& args) {
+Status KVEngine::hashListPublish(HashWriteArgs const&) {
   return Status::Ok;
 }
 
