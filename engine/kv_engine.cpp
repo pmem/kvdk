@@ -467,7 +467,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
-            s = backup.Append(RecordType::HashElem, header->Key(),
+            s = backup.Append(RecordType::HashHeader, header->Key(),
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append hlist elems following the header

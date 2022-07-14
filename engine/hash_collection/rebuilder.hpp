@@ -76,8 +76,8 @@ class HashListRebuilder {
     size_t i = 0;
     for (auto hlist : rebuild_hlists_) {
       i++;
-      fs.push_back(
-          std::async(&HashListRebuilder::rebuildIndex, this, hlist.second.get()));
+      fs.push_back(std::async(&HashListRebuilder::rebuildIndex, this,
+                              hlist.second.get()));
       ret.rebuilt_hlists = rebuild_hlists_;
       if (i % num_rebuild_threads_ == 0 || i == rebuild_hlists_.size()) {
         for (auto& f : fs) {

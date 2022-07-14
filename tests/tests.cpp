@@ -614,27 +614,50 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     t.join();
   }
 
-  Iterator* sorted_snapshot_iter =
-      engine->NewSortedIterator(sorted_collection, snapshot);
-  // Destroyed collection still should be accessable by snapshot_iter
-  engine->SortedDestroy(sorted_collection);
+  {  // sorted snapshot iterator
+    Iterator* sorted_snapshot_iter =
+        engine->NewSortedIterator(sorted_collection, snapshot);
+    // Destroyed collection still should be accessable by snapshot_iter
+    engine->SortedDestroy(sorted_collection);
 
-  uint64_t snapshot_iter_cnt = 0;
-  sorted_snapshot_iter->SeekToFirst();
-  while (sorted_snapshot_iter->Valid()) {
-    ASSERT_TRUE(sorted_snapshot_iter->Valid());
-    snapshot_iter_cnt++;
-    ASSERT_EQ(sorted_snapshot_iter->Key(), sorted_snapshot_iter->Value());
-    sorted_snapshot_iter->Next();
+    uint64_t snapshot_iter_cnt = 0;
+    sorted_snapshot_iter->SeekToFirst();
+    while (sorted_snapshot_iter->Valid()) {
+      ASSERT_TRUE(sorted_snapshot_iter->Valid());
+      snapshot_iter_cnt++;
+      ASSERT_EQ(sorted_snapshot_iter->Key(), sorted_snapshot_iter->Value());
+      sorted_snapshot_iter->Next();
+    }
+    ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+    engine->ReleaseSortedIterator(sorted_snapshot_iter);
+
+    sorted_snapshot_iter =
+        engine->NewSortedIterator(sorted_collection_after_snapshot, snapshot);
+    sorted_snapshot_iter->SeekToFirst();
+    ASSERT_FALSE(sorted_snapshot_iter->Valid());
+    engine->ReleaseSortedIterator(sorted_snapshot_iter);
   }
-  ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
-  engine->ReleaseSortedIterator(sorted_snapshot_iter);
 
-  sorted_snapshot_iter =
-      engine->NewSortedIterator(sorted_collection_after_snapshot, snapshot);
-  sorted_snapshot_iter->SeekToFirst();
-  ASSERT_FALSE(sorted_snapshot_iter->Valid());
-  engine->ReleaseSortedIterator(sorted_snapshot_iter);
+  {  // Hash snapshot iterator
+    auto hash_snapshot_iter =
+        engine->HashCreateIterator(hash_collection, snapshot);
+    engine->HashDestroy(hash_collection);
+
+    uint64_t snapshot_iter_cnt = 0;
+    hash_snapshot_iter->SeekToFirst();
+    while (hash_snapshot_iter->Valid()) {
+      ASSERT_TRUE(hash_snapshot_iter->Valid());
+      snapshot_iter_cnt++;
+      ASSERT_EQ(hash_snapshot_iter->Key(), hash_snapshot_iter->Value());
+      hash_snapshot_iter->Next();
+    }
+    ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+
+    hash_snapshot_iter =
+        engine->HashCreateIterator(hash_collection_after_snapshot, snapshot);
+    hash_snapshot_iter->SeekToFirst();
+    ASSERT_FALSE(hash_snapshot_iter->Valid());
+  }
 
   delete engine;
 
@@ -649,13 +672,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
         std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
         std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
-
+        // string
         ASSERT_EQ(engine->Get(key1, &got_v1), Status::Ok);
         ASSERT_EQ(engine->Get(key2, &got_v2), Status::Ok);
         ASSERT_EQ(engine->Get(key3, &got_v3), Status::NotFound);
         ASSERT_EQ(got_v1, key1);
         ASSERT_EQ(got_v2, key2);
-
+        // sorted
         ASSERT_EQ(engine->SortedGet(sorted_collection, key1, &got_v1),
                   Status::Ok);
         ASSERT_EQ(engine->SortedGet(sorted_collection, key2, &got_v2),
@@ -667,23 +690,51 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         ASSERT_EQ(
             engine->SortedGet(sorted_collection_after_snapshot, key1, &got_v1),
             Status::NotFound);
+        // hash
+        ASSERT_EQ(engine->HashGet(hash_collection, key1, &got_v1), Status::Ok);
+        ASSERT_EQ(engine->HashGet(hash_collection, key2, &got_v2), Status::Ok);
+        ASSERT_EQ(engine->HashGet(hash_collection, key3, &got_v3),
+                  Status::NotFound);
+        ASSERT_EQ(got_v1, key1);
+        ASSERT_EQ(got_v2, key2);
+        ASSERT_EQ(
+            engine->HashGet(hash_collection_after_snapshot, key1, &got_v1),
+            Status::NotFound);
       }
     }
 
-    uint64_t sorted_iter_cnt = 0;
-    auto sorted_iter = engine->NewSortedIterator(sorted_collection);
-    ASSERT_TRUE(sorted_iter != nullptr);
-    sorted_iter->SeekToFirst();
-    while (sorted_iter->Valid()) {
-      ASSERT_TRUE(sorted_iter->Valid());
-      sorted_iter_cnt++;
-      ASSERT_EQ(sorted_iter->Key(), sorted_iter->Value());
-      sorted_iter->Next();
+    {  // sorted iterator
+      uint64_t sorted_iter_cnt = 0;
+      auto sorted_iter = engine->NewSortedIterator(sorted_collection);
+      ASSERT_TRUE(sorted_iter != nullptr);
+      sorted_iter->SeekToFirst();
+      while (sorted_iter->Valid()) {
+        ASSERT_TRUE(sorted_iter->Valid());
+        sorted_iter_cnt++;
+        ASSERT_EQ(sorted_iter->Key(), sorted_iter->Value());
+        sorted_iter->Next();
+      }
+      ASSERT_EQ(sorted_iter_cnt, num_threads * count * 2);
+      engine->ReleaseSortedIterator(sorted_iter);
+      ASSERT_EQ(engine->NewSortedIterator(sorted_collection_after_snapshot),
+                nullptr);
     }
-    ASSERT_EQ(sorted_iter_cnt, num_threads * count * 2);
-    engine->ReleaseSortedIterator(sorted_iter);
-    ASSERT_EQ(engine->NewSortedIterator(sorted_collection_after_snapshot),
-              nullptr);
+
+    {  // hash iterator
+      uint64_t hash_iter_cnt = 0;
+      auto hash_iter = engine->HashCreateIterator(hash_collection);
+      ASSERT_TRUE(hash_iter != nullptr);
+      hash_iter->SeekToFirst();
+      while (hash_iter->Valid()) {
+        ASSERT_TRUE(hash_iter->Valid());
+        hash_iter_cnt++;
+        ASSERT_EQ(hash_iter->Key(), hash_iter->Value());
+        hash_iter->Next();
+      }
+      ASSERT_EQ(hash_iter_cnt, num_threads * count * 2);
+      ASSERT_EQ(engine->HashCreateIterator(hash_collection_after_snapshot),
+                nullptr);
+    }
   };
 
   std::vector<int> opt_restore_skiplists{0, 1};
@@ -695,7 +746,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         Status::Ok);
     Validation();
     delete engine;
-
+    GlobalLogger.Debug("open checkpoint\n");
     configs.recover_to_checkpoint = true;
     ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
     Validation();
