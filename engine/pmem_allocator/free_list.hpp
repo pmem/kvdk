@@ -224,7 +224,8 @@ class Freelist {
         : small_entry_offsets(max_small_entry_b_size),
           large_entries(max_large_entry_size_index),
           small_entry_spins(max_small_entry_b_size),
-          large_entry_spins(max_large_entry_size_index) {}
+          large_entry_spins(max_large_entry_size_index),
+          recently_freed(0) {}
 
     FlistThreadCache() = delete;
     FlistThreadCache(FlistThreadCache&&) = delete;
@@ -244,6 +245,8 @@ class Freelist {
     Array<SpinMutex> small_entry_spins;
     // Protect large_entries
     Array<SpinMutex> large_entry_spins;
+    // freed entries after last time organize space in background
+    std::atomic<uint64_t> recently_freed;
   };
 
   uint64_t MergeSpace(uint64_t offset, uint64_t max_size,
@@ -278,6 +281,7 @@ class Freelist {
   Array<FlistThreadCache> flist_thread_cache_;
   PMEMAllocator* pmem_allocator_;
   SpinMutex large_entries_spin_;
+  std::atomic<size_t> last_freed_after_merge_;
 };
 
 }  // namespace KVDK_NAMESPACE

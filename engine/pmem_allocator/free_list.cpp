@@ -10,6 +10,7 @@
 namespace KVDK_NAMESPACE {
 
 const uint32_t kMinMovableEntries = 1024;
+const uint64_t kMergeThreshold = 1024 * 1024;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
   assert(offset < map_.size());
@@ -125,73 +126,79 @@ void Freelist::OrganizeFreeSpace() {
 }
 
 void Freelist::MergeSpaceInPool() {
-  std::vector<PMemOffsetType> merging_list;
-  std::vector<std::vector<PMemOffsetType>> merged_small_entry_offsets(
-      max_small_entry_block_size_);
-  std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>> merged_large_entries(
-      max_block_size_index_);
+  if (last_freed_after_merge_.load() > kMergeThreshold) {
+    last_freed_after_merge_.store(0);
+    std::vector<PMemOffsetType> merging_list;
+    std::vector<std::vector<PMemOffsetType>> merged_small_entry_offsets(
+        max_small_entry_block_size_);
+    std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>>
+        merged_large_entries(max_block_size_index_);
 
-  for (uint32_t b_size = 1; b_size < max_small_entry_block_size_; b_size++) {
-    while (active_pool_.TryFetchEntryList(merging_list, b_size)) {
-      for (PMemOffsetType& offset : merging_list) {
-        assert(offset % block_size_ == 0);
-        auto b_offset = offset / block_size_;
-        uint64_t merged_blocks_ = MergeSpace(
-            b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
-            b_size);
+    for (uint32_t b_size = 1; b_size < max_small_entry_block_size_; b_size++) {
+      while (active_pool_.TryFetchEntryList(merging_list, b_size)) {
+        for (PMemOffsetType& offset : merging_list) {
+          assert(offset % block_size_ == 0);
+          auto b_offset = offset / block_size_;
+          uint64_t merged_blocks_ = MergeSpace(
+              b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
+              b_size);
 
-        if (merged_blocks_ > 0) {
-          // Persist merged free entry on PMem
-          if (merged_blocks_ > b_size) {
-            pmem_allocator_->persistSpaceEntry(offset,
-                                               merged_blocks_ * block_size_);
-          }
-
-          // large space entries
-          if (merged_blocks_ >= merged_small_entry_offsets.size()) {
-            size_t size_index = blockSizeIndex(merged_blocks_);
-            merged_large_entries[size_index].emplace(
-                offset, merged_blocks_ * block_size_);
-            if (merged_large_entries[size_index].size() >= kMinMovableEntries) {
-              // move merged entries to merging pool to avoid redundant merging
-              merged_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
-                                             size_index);
+          if (merged_blocks_ > 0) {
+            // Persist merged free entry on PMem
+            if (merged_blocks_ > b_size) {
+              pmem_allocator_->persistSpaceEntry(offset,
+                                                 merged_blocks_ * block_size_);
             }
-          } else {
-            merged_small_entry_offsets[merged_blocks_].emplace_back(offset);
-            if (merged_small_entry_offsets[merged_blocks_].size() >=
-                kMinMovableEntries) {
-              // move merged entries to merging pool to avoid redundant merging
-              merged_pool_.MoveEntryList(
-                  merged_small_entry_offsets[merged_blocks_], merged_blocks_);
+
+            // large space entries
+            if (merged_blocks_ >= merged_small_entry_offsets.size()) {
+              size_t size_index = blockSizeIndex(merged_blocks_);
+              merged_large_entries[size_index].emplace(
+                  offset, merged_blocks_ * block_size_);
+              if (merged_large_entries[size_index].size() >=
+                  kMinMovableEntries) {
+                // move merged entries to merging pool to avoid redundant
+                // merging
+                merged_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
+                                               size_index);
+              }
+            } else {
+              merged_small_entry_offsets[merged_blocks_].emplace_back(offset);
+              if (merged_small_entry_offsets[merged_blocks_].size() >=
+                  kMinMovableEntries) {
+                // move merged entries to merging pool to avoid redundant
+                // merging
+                merged_pool_.MoveEntryList(
+                    merged_small_entry_offsets[merged_blocks_], merged_blocks_);
+              }
             }
           }
         }
       }
     }
-  }
 
-  for (uint32_t b_size = 1; b_size < merged_small_entry_offsets.size();
-       b_size++) {
-    if (merged_small_entry_offsets[b_size].size() > 0) {
-      active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
+    for (uint32_t b_size = 1; b_size < merged_small_entry_offsets.size();
+         b_size++) {
+      if (merged_small_entry_offsets[b_size].size() > 0) {
+        active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
+      }
+      while (merged_pool_.TryFetchEntryList(merged_small_entry_offsets[b_size],
+                                            b_size)) {
+        active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
+      }
     }
-    while (merged_pool_.TryFetchEntryList(merged_small_entry_offsets[b_size],
-                                          b_size)) {
-      active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
-    }
-  }
 
-  for (size_t size_index = 0; size_index < merged_large_entries.size();
-       size_index++) {
-    if (merged_large_entries[size_index].size() > 0) {
-      active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
-                                     size_index);
-    }
-    while (merged_pool_.TryFetchLargeEntrySet(merged_large_entries[size_index],
-                                              size_index)) {
-      active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
-                                     size_index);
+    for (size_t size_index = 0; size_index < merged_large_entries.size();
+         size_index++) {
+      if (merged_large_entries[size_index].size() > 0) {
+        active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
+                                       size_index);
+      }
+      while (merged_pool_.TryFetchLargeEntrySet(
+          merged_large_entries[size_index], size_index)) {
+        active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
+                                       size_index);
+      }
     }
   }
 }
@@ -214,6 +221,7 @@ void Freelist::Push(const SpaceEntry& entry) {
     std::lock_guard<SpinMutex> lg(flist_thread_cache.small_entry_spins[b_size]);
     flist_thread_cache.small_entry_offsets[b_size].emplace_back(entry.offset);
   }
+  flist_thread_cache.recently_freed.fetch_add(1, std::memory_order_relaxed);
 }
 
 uint64_t Freelist::BatchPush(const std::vector<SpaceEntry>& entries) {
@@ -256,6 +264,7 @@ uint64_t Freelist::BatchPush(const std::vector<SpaceEntry>& entries) {
                                      size_index);
     }
   }
+  last_freed_after_merge_.fetch_add(entries.size(), std::memory_order_relaxed);
   return pushed_size;
 }
 
@@ -272,6 +281,10 @@ void Freelist::MoveCachedEntriesToPool() {
   std::set<SpaceEntry, SpaceEntry::SpaceCmp> moving_large_entry_set;
   for (uint64_t i = 0; i < flist_thread_cache_.size(); i++) {
     auto& tc = flist_thread_cache_[i];
+    last_freed_after_merge_.fetch_add(
+        tc.recently_freed.load(std::memory_order_relaxed),
+        std::memory_order_relaxed);
+    tc.recently_freed.store(0, std::memory_order_relaxed);
 
     for (size_t b_size = 1; b_size < tc.small_entry_offsets.size(); b_size++) {
       moving_small_entry_list.clear();
