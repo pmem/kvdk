@@ -17,9 +17,16 @@ public class Engine extends KVDKObject {
     super(nativeHandle);
   }
 
+  public static Engine open(final String path, final Configs configs)
+      throws KVDKException {
+    final Engine engine = new Engine(open(path, configs.getNativeHandle()));
+    return engine;
+  }
+
   @Override
   protected final native void closeInternal(long handle);
-
+  private native static long open(final String path,
+      final long cfg_handle) throws KVDKException;
 
   private enum LibraryState {
     NOT_LOADED,
@@ -50,7 +57,7 @@ public class Engine extends KVDKObject {
         NativeLibraryLoader.getInstance().loadLibrary(tmpDir);
       } catch (final IOException e) {
         libraryLoaded.set(LibraryState.NOT_LOADED);
-        throw new RuntimeException("Unable to load the RocksDB shared library",
+        throw new RuntimeException("Unable to load the KVDK shared library",
             e);
       }
 

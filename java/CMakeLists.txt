@@ -15,6 +15,8 @@ set(JAVA_MAIN_SOURCES
   src/main/java/io/pmem/kvdk/AbstractNativeReference.java
   src/main/java/io/pmem/kvdk/Configs.java
   src/main/java/io/pmem/kvdk/Engine.java
+  src/main/java/io/pmem/kvdk/Status.java
+  src/main/java/io/pmem/kvdk/KVDKException.java
   src/main/java/io/pmem/kvdk/KVDKObject.java
   src/main/java/io/pmem/kvdk/NativeLibraryLoader.java
 )
@@ -120,4 +122,4 @@ endif()
 set(KVDKJNI_SHARED_LIB kvdkjni${ARTIFACT_SUFFIX})
 add_library(${KVDKJNI_SHARED_LIB} SHARED ${JNI_NATIVE_SOURCES})
 add_dependencies(${KVDKJNI_SHARED_LIB} kvdkjni_headers)
-target_link_libraries(${KVDKJNI_SHARED_LIB} ${KVDK_SHARED_LIB})
+target_link_libraries(${KVDKJNI_SHARED_LIB} ${KVDK_STATIC_LIB})

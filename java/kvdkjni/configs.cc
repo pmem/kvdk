@@ -2,13 +2,10 @@
  * Copyright(c) 2021-2022 Intel Corporation
  */
 
-#include <jni.h>
-
 #include <assert.h>
 
-#include "cplusplus_to_java_convert.h"
-
-#include "kvdk/engine.hpp"
+#include "include/io_pmem_kvdk_Configs.h"
+#include "kvdkjni/kvdkjni.h"
 
 
 /**
@@ -20,6 +17,36 @@ jlong Java_io_pmem_kvdk_Configs_newConfigs(
     JNIEnv*, jclass) {
   auto* cfg = new kvdk::Configs();
   return GET_CPLUSPLUS_POINTER(cfg);
+}
+
+/**
+ * Class:     io_pmem_kvdk_Configs
+ * Method:    setPMemFileSize
+ * Signature: (JJ)V
+ */
+void Java_io_pmem_kvdk_Configs_setPMemFileSize(
+  JNIEnv*, jobject, jlong handle, jlong size) {
+  reinterpret_cast<kvdk::Configs *>(handle)->pmem_file_size = size;
+}
+
+/**
+ * Class:     io_pmem_kvdk_Configs
+ * Method:    setPMemSegmentBlocks
+ * Signature: (JJ)V
+ */
+void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(
+  JNIEnv*, jobject, jlong handle, jlong blocks) {
+  reinterpret_cast<kvdk::Configs *>(handle)->pmem_segment_blocks = blocks;
+}
+
+/**
+ * Class:     io_pmem_kvdk_Configs
+ * Method:    setHashBucketNum
+ * Signature: (JJ)V
+ */
+void Java_io_pmem_kvdk_Configs_setHashBucketNum(
+  JNIEnv*, jobject, jlong handle, jlong num) {
+  reinterpret_cast<kvdk::Configs *>(handle)->hash_bucket_num = num;
 }
 
 /**

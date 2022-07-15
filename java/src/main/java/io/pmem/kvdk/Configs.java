@@ -13,7 +13,29 @@ public class Configs extends KVDKObject {
     super(newConfigs());
   }
 
+  public Configs setPMemFileSize(final long size) {
+    assert(isOwningHandle());
+    setPMemFileSize(nativeHandle_, size);
+    return this;
+  }
+
+  public Configs setPMemSegmentBlocks(final long blocks) {
+    assert(isOwningHandle());
+    setPMemSegmentBlocks(nativeHandle_, blocks);
+    return this;
+  }
+
+  public Configs setHashBucketNum(final long num) {
+    assert(isOwningHandle());
+    setHashBucketNum(nativeHandle_, num);
+    return this;
+  }
+
   private static native long newConfigs();
+
+  private native void setPMemFileSize(long handle, long size);
+  private native void setPMemSegmentBlocks(long handle, long blocks);
+  private native void setHashBucketNum(long handle, long num);
 
   @Override
   protected final native void closeInternal(long handle);
