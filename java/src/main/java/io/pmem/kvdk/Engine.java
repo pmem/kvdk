@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class Engine extends KVDKObject {
+  private static final AtomicReference<LibraryState> libraryLoaded =
+      new AtomicReference<>(LibraryState.NOT_LOADED);
+
   static {
     Engine.loadLibrary();
   }
@@ -33,9 +36,6 @@ public class Engine extends KVDKObject {
     LOADING,
     LOADED
   }
-
-  private static final AtomicReference<LibraryState> libraryLoaded =
-      new AtomicReference<>(LibraryState.NOT_LOADED);
 
   /**
    * Loads the necessary library files.

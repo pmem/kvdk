@@ -100,10 +100,6 @@ else ()
 
 endif()
 
-if(NOT EXISTS ${PROJECT_SOURCE_DIR}/java/classes)
-  file(MAKE_DIRECTORY ${PROJECT_SOURCE_DIR}/java/classes)
-endif()
-
 if(${CMAKE_VERSION} VERSION_LESS "3.11.4")
   # Old CMake ONLY generate JNI headers, otherwise JNI is handled in add_jar step above
   message("Preparing JNI headers for old CMake (${CMAKE_VERSION})")
@@ -123,3 +119,15 @@ set(KVDKJNI_SHARED_LIB kvdkjni${ARTIFACT_SUFFIX})
 add_library(${KVDKJNI_SHARED_LIB} SHARED ${JNI_NATIVE_SOURCES})
 add_dependencies(${KVDKJNI_SHARED_LIB} kvdkjni_headers)
 target_link_libraries(${KVDKJNI_SHARED_LIB} ${KVDK_STATIC_LIB})
+
+if(NOT EXISTS ${PROJECT_SOURCE_DIR}/java/target)
+  file(MAKE_DIRECTORY ${PROJECT_SOURCE_DIR}/java/target)
+endif()
+set(KVDKJNI_SHARED_LIB_COPY_PATH ${PROJECT_SOURCE_DIR}/java/target/${CMAKE_SHARED_LIBRARY_PREFIX}${KVDKJNI_SHARED_LIB}${CMAKE_SHARED_LIBRARY_SUFFIX})
+
+add_custom_command(TARGET ${KVDKJNI_SHARED_LIB} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        $<TARGET_FILE:${KVDKJNI_SHARED_LIB}>
+        ${KVDKJNI_SHARED_LIB_COPY_PATH}
+    COMMENT "Copying JNI library file to: ${KVDKJNI_SHARED_LIB_COPY_PATH}"
+)

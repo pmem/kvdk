@@ -17,7 +17,7 @@ public class NativeLibraryLoader {
   private static final NativeLibraryLoader instance = new NativeLibraryLoader();
   private static boolean initialized = false;
 
-  private static final String sharedLibraryName = "kvkdjni";
+  private static final String sharedLibraryName = "kvdkjni";
   private static final String jniLibraryFileName = System.mapLibraryName("kvdkjni");
   private static final String tempFilePrefix = "libkvdkjni";
   private static final String tempFileSuffix = ".so";
