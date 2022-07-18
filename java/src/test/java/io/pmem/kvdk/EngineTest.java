@@ -21,9 +21,11 @@ public class EngineTest {
     String enginePath = tempDir.getAbsolutePath();
 
     Configs engineConfigs = new Configs();
+    engineConfigs.setHashBucketNum(1L << 10);
     engineConfigs.setMaxAccessThreads(4);
     engineConfigs.setPMemSegmentBlocks(2L << 20);
     engineConfigs.setPMemFileSize(1L << 30); // 1 GB
+    engineConfigs.setPopulatePMemSpace(true);
 
     Engine kvdkEngine = Engine.open(enginePath, engineConfigs);
 
