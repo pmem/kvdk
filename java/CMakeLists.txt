@@ -9,15 +9,19 @@ set(CMAKE_JAVA_COMPILE_FLAGS -source 7)
 set(JNI_NATIVE_SOURCES
   kvdkjni/configs.cc
   kvdkjni/engine.cc
+  kvdkjni/iterator.cc
+  kvdkjni/native_bytes_handle.cc
 )
 
 set(JAVA_MAIN_SOURCES
   src/main/java/io/pmem/kvdk/AbstractNativeReference.java
   src/main/java/io/pmem/kvdk/Configs.java
   src/main/java/io/pmem/kvdk/Engine.java
+  src/main/java/io/pmem/kvdk/Iterator.java
   src/main/java/io/pmem/kvdk/Status.java
   src/main/java/io/pmem/kvdk/KVDKException.java
   src/main/java/io/pmem/kvdk/KVDKObject.java
+  src/main/java/io/pmem/kvdk/NativeBytesHandle.java
   src/main/java/io/pmem/kvdk/NativeLibraryLoader.java
 )
 

@@ -42,10 +42,64 @@ public class Engine extends KVDKObject {
     return engine;
   }
 
+  public void put(final byte[] key, final byte[] value) throws KVDKException {
+    put(nativeHandle_, key, value);
+  }
+
+  public bytes[] get(final byte[] key) throws KVDKException {
+    return get(nativeHandle_, key);
+  }
+
+  public void delete(final byte[] key) throws KVDKException {
+    delete(nativeHandle_, key);
+  }
+
+  public void sortedCreate(final NativeBytesHandle collection_name)
+      throws KVDKException {
+
+  }
+
+  public void sortedDestroy(final NativeBytesHandle collection_name)
+      throws KVDKException {
+  
+  }
+
+  public long sortedSize(final NativeBytesHandle collection_name)
+      throws KVDKException {
+
+  }
+
+  public void sortedPut(final NativeBytesHandle collection_name,
+      final byte[] key, final byte[] value) throws KVDKException {
+
+  }
+
+  public byte[] sortedGet(final NativeBytesHandle collection_name,
+      final byte[] key) throws KVDKException {
+
+  }
+
+  public void sortedDelete(final NativeBytesHandle collection_name,
+      final byte[] key) throws KVDKException {
+
+  }
+
+  public Iterator newSortedIterator(final NativeBytesHandle collection_name)
+      throws KVDKException {
+
+  }
+
+  public void releaseSortedIterator(final Iterator iterator)
+      throws KVDKException {
+      iterator.close();
+  }
+
+  // Native methods
   @Override
   protected final native void closeInternal(long handle);
   private native static long open(final String path,
       final long cfg_handle) throws KVDKException;
+
 
   private enum LibraryState {
     NOT_LOADED,
