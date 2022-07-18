@@ -657,8 +657,8 @@ Status KVEngine::restoreExistingData() {
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
-  list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
-                                      configs_.max_access_threads, nullptr});
+  // list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
+  // configs_.max_access_threads, nullptr});
   hash_rebuilder_.reset(
       new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
                             dllist_locks_.get(), thread_manager_.get(),
@@ -699,13 +699,13 @@ Status KVEngine::restoreExistingData() {
   GlobalLogger.Info("Rebuild skiplist done\n");
   sorted_rebuilder_.reset(nullptr);
 
-  list_builder_->RebuildLists();
-  list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
+  // list_builder_->RebuildLists();
+  // list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
   s = listRegisterRecovered();
   if (s != Status::Ok) {
     return s;
   }
-  list_builder_.reset(nullptr);
+  // list_builder_.reset(nullptr);
   GlobalLogger.Info("Rebuild Lists done\n");
 
   auto h_ret = hash_rebuilder_->Rebuild();

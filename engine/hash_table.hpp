@@ -25,7 +25,7 @@ struct HashBucketIterator;
 template <RecordType ListType, RecordType ElemType>
 class GenericList;
 
-using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
+struct List;
 struct HashList;
 
 struct alignas(16) HashEntry {

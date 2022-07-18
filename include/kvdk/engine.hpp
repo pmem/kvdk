@@ -242,25 +242,25 @@ class Engine {
   virtual Status ListMove(StringView src, int src_pos, StringView dst,
                           int dst_pos, std::string* elem) = 0;
 
-  // Insert an element before element indexed by ListIterator pos
+  // Insert an element "key" before element "pos" in list "collection"
   // Return:
-  //    Status::InvalidDataSize if elem is too long. pos is unchanged.
-  //    Status::PMemOverflow if PMem exhausted. pos is unchanged.
+  //    Status::InvalidDataSize if elem is too long.
+  //    Status::PMemOverflow if PMem exhausted.
   //    Status::NotFound if List of the ListIterator has expired or been
-  //    deleted. pos is unchanged but is invalid.
-  //    Status::Ok if operation succeeded. pos points to inserted element.
-  virtual Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
-                                  StringView elem) = 0;
+  //    deleted, or "pos" not exist in the list
+  //    Status::Ok if operation succeeded.
+  virtual Status ListInsertBefore(StringView collection, StringView key,
+                                  StringView pos) = 0;
 
-  // Insert an element after element indexed by ListIterator pos
+  // Insert an element "key" after element "pos" in list "collection"
   // Return:
-  //    Status::InvalidDataSize if elem is too long. pos is unchanged.
-  //    Status::PMemOverflow if PMem exhausted. pos is unchanged.
+  //    Status::InvalidDataSize if elem is too long.
+  //    Status::PMemOverflow if PMem exhausted.
   //    Status::NotFound if List of the ListIterator has expired or been
-  //    deleted. pos is unchanged but is invalid.
-  //    Status::Ok if operation succeeded. pos points to inserted element.
-  virtual Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
-                                 StringView elem) = 0;
+  //    deleted, or "pos" not exist in the list
+  //    Status::Ok if operation succeeded.
+  virtual Status ListInsertAfter(StringView collection, StringView key,
+                                 StringView pos) = 0;
 
   // Remove the element indexed by ListIterator pos
   // Return:

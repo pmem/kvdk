@@ -148,7 +148,7 @@ Status KVEngine::HashPut(StringView collection, StringView key,
   s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
-    if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
+    if (!CheckKeySize(collection_key) || !CheckKeySize(value)) {
       s = Status::InvalidDataSize;
     } else {
       auto ul = hash_table_->AcquireLock(collection_key);

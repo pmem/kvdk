@@ -45,7 +45,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
                   &new_value, modify_args);
   switch (modify_operation) {
     case ModifyOperation::Write: {
-      if (!CheckValueSize(new_value)) {
+      if (!CheckKeySize(new_value)) {
         return Status::InvalidDataSize;
       }
 
@@ -111,7 +111,7 @@ Status KVEngine::Put(const StringView key, const StringView value,
     return s;
   }
 
-  if (!CheckKeySize(key) || !CheckValueSize(value)) {
+  if (!CheckKeySize(key) || !CheckKeySize(value)) {
     return Status::InvalidDataSize;
   }
 

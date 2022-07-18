@@ -26,10 +26,10 @@
 #include "hash_collection/rebuilder.hpp"
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
+#include "list_collection/list.hpp"
 #include "lock_table.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
-#include "simple_list.hpp"
 #include "sorted_collection/rebuilder.hpp"
 #include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
@@ -203,10 +203,10 @@ class KVEngine : public Engine {
                           std::vector<std::string>* elems) final;
   Status ListMove(StringView src, int src_pos, StringView dst, int dst_pos,
                   std::string* elem) final;
-  Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
-                          StringView elem) final;
-  Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
-                         StringView elem) final;
+  Status ListInsertBefore(StringView collection, StringView key,
+                          StringView pos) final;
+  Status ListInsertAfter(StringView collection, StringView key,
+                         StringView pos) final;
   Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
 
   Status ListReplace(std::unique_ptr<ListIterator> const& pos,
@@ -638,7 +638,7 @@ class KVEngine : public Engine {
 
   std::mutex lists_mu_;
   std::set<List*, Collection::TTLCmp> lists_;
-  std::unique_ptr<ListBuilder> list_builder_;
+  // std::unique_ptr<ListBuilder> list_builder_;
 
   std::mutex hlists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<HashList>> hlists_;

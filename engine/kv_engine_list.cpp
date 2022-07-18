@@ -82,8 +82,8 @@ Status KVEngine::ListLength(StringView key, size_t* sz) {
   return Status::Ok;
 }
 
-Status KVEngine::ListPushFront(StringView key, StringView elem) {
-  if (!CheckKeySize(key) || !CheckValueSize(elem)) {
+Status KVEngine::ListPushFront(StringView collection, StringView key) {
+  if (!CheckKeySize(collection) || !CheckValueSize(key)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -94,24 +94,19 @@ Status KVEngine::ListPushFront(StringView key, StringView elem) {
   /// to perform these operations lockless.
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(key, &list);
+  Status s = listFind(collection, &list);
   if (s != Status::Ok) {
     return s;
   }
   auto guard = list->AcquireLock();
 
-  SpaceEntry space = pmem_allocator_->Allocate(
-      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
-  if (space.size == 0) {
-    return Status::PmemOverflow;
-  }
-
-  list->PushFront(space, version_controller_.GetCurrentTimestamp(), "", elem);
+  auto ret =
+      list->PushFront("", key, version_controller_.GetCurrentTimestamp());
   return Status::Ok;
 }
 
-Status KVEngine::ListPushBack(StringView key, StringView elem) {
-  if (!CheckKeySize(key) || !CheckValueSize(elem)) {
+Status KVEngine::ListPushBack(StringView collection, StringView key) {
+  if (!CheckKeySize(collection) || !CheckValueSize(key)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -120,19 +115,13 @@ Status KVEngine::ListPushBack(StringView key, StringView elem) {
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(key, &list);
+  Status s = listFind(collection, &list);
   if (s != Status::Ok) {
     return s;
   }
   auto guard = list->AcquireLock();
 
-  SpaceEntry space = pmem_allocator_->Allocate(
-      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
-  if (space.size == 0) {
-    return Status::PmemOverflow;
-  }
-
-  list->PushBack(space, version_controller_.GetCurrentTimestamp(), "", elem);
+  auto ret = list->PushBack("", key, version_controller_.GetCurrentTimestamp());
   return Status::Ok;
 }
 
@@ -151,14 +140,15 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
     return s;
   }
   auto guard = list->AcquireLock();
-  /// TODO: NotFound does not properly describe the situation
-  if (list->Size() == 0) {
+
+  auto ret = list->PopFront();
+  if (ret.existing_record == nullptr) {
+    /// TODO: NotFound does not properly describe the situation
     return Status::NotFound;
   }
 
-  StringView sw = list->Front()->Value();
-  elem->assign(sw.data(), sw.size());
-  list->PopFront([&](DLRecord* rec) { delayFree(rec); });
+  elem->assign(ret.existing_record->Value().data(),
+               ret.existing_record->Value().size());
   return Status::Ok;
 }
 
@@ -177,13 +167,15 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
     return s;
   }
   auto guard = list->AcquireLock();
-  if (list->Size() == 0) {
+
+  auto ret = list->PopBack();
+  if (ret.existing_record == nullptr) {
+    /// TODO: NotFound does not properly describe the situation
     return Status::NotFound;
   }
 
-  StringView sw = list->Back()->Value();
-  elem->assign(sw.data(), sw.size());
-  list->PopBack([&](DLRecord* rec) { delayFree(rec); });
+  elem->assign(ret.existing_record->Value().data(),
+               ret.existing_record->Value().size());
   return Status::Ok;
 }
 
@@ -372,68 +364,46 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
   return Status::Ok;
 }
 
-Status KVEngine::ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
-                                  StringView elem) {
-  if (!CheckValueSize(elem)) {
+Status KVEngine::ListInsertBefore(StringView collection, StringView key,
+                                  StringView pos) {
+  if (!CheckValueSize(key)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
     return Status::TooManyAccessThreads;
   }
 
-  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos.get());
-  kvdk_assert(iter != nullptr, "Invalid iterator!");
-
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(iter->Owner()->Name(), &list);
+  Status s = listFind(collection, &list);
   if (s != Status::Ok) {
     return s;
   }
   auto guard = list->AcquireLock();
-  kvdk_assert(list == iter->Owner(), "Iterator outdated!");
 
-  SpaceEntry space = pmem_allocator_->Allocate(
-      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
-  if (space.size == 0) {
-    return Status::PmemOverflow;
-  }
-
-  iter->Rep() = list->EmplaceBefore(
-      space, iter->Rep(), version_controller_.GetCurrentTimestamp(), "", elem);
-  return Status::Ok;
+  return list->InsertBefore(key, pos, version_controller_.GetCurrentTimestamp())
+      .s;
 }
 
-Status KVEngine::ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
-                                 StringView elem) {
-  if (!CheckValueSize(elem)) {
+Status KVEngine::ListInsertAfter(StringView collection, StringView key,
+                                 StringView pos) {
+  if (!CheckValueSize(key)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
     return Status::TooManyAccessThreads;
   }
 
-  ListIteratorImpl* iter = dynamic_cast<ListIteratorImpl*>(pos.get());
-  kvdk_assert(iter != nullptr, "Invalid iterator!");
-
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(iter->Owner()->Name(), &list);
+  Status s = listFind(collection, &list);
   if (s != Status::Ok) {
     return s;
   }
   auto guard = list->AcquireLock();
-  kvdk_assert(list == iter->Owner(), "Iterator outdated!");
 
-  SpaceEntry space = pmem_allocator_->Allocate(
-      sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
-  if (space.size == 0) {
-    return Status::PmemOverflow;
-  }
-
-  iter->Rep() = list->EmplaceAfter(
-      space, iter->Rep(), version_controller_.GetCurrentTimestamp(), "", elem);
-  return Status::Ok;
+  return list->InsertAfter(key, pos, version_controller_.GetCurrentTimestamp())
+      .s;
 }
 
 Status KVEngine::ListErase(std::unique_ptr<ListIterator> const& pos) {
@@ -515,12 +485,12 @@ std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(StringView key,
 }
 
 Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
-  list_builder_->AddListElem(pmp_record);
+  // list_builder_->AddListElem(pmp_record);
   return Status::Ok;
 }
 
 Status KVEngine::listRestoreList(DLRecord* pmp_record) {
-  list_builder_->AddListRecord(pmp_record);
+  // list_builder_->AddListRecord(pmp_record);
   return Status::Ok;
 }
 
@@ -702,11 +672,11 @@ Status KVEngine::listRollback(BatchWriteLog::ListLogEntry const& log) {
       static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.offset));
   switch (log.op) {
     case BatchWriteLog::Op::Delete: {
-      list_builder_->RollbackDeletion(rec);
+      // list_builder_->RollbackDeletion(rec);
       break;
     }
     case BatchWriteLog::Op::Put: {
-      list_builder_->RollbackEmplacement(rec);
+      // list_builder_->RollbackEmplacement(rec);
       break;
     }
     default: {

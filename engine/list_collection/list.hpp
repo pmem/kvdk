@@ -24,45 +24,66 @@
 namespace KVDK_NAMESPACE {
 class List : public Collection {
  public:
+  List(DLRecord* header, const StringView& name, CollectionIDType id,
+       PMEMAllocator* pmem_allocator, LockTable* lock_table)
+      : Collection(name, id),
+        dl_list_(header, pmem_allocator, lock_table),
+        size_(0),
+        pmem_allocator_(pmem_allocator) {}
+
   struct WriteResult {
     Status s = Status::Ok;
     DLRecord* write_record = nullptr;
     DLRecord* existing_record = nullptr;
   };
 
+  ExpireTimeType GetExpireTime() const final {
+    return dl_list_.Header()->GetExpireTime();
+  }
+
+  bool HasExpired() const final { return dl_list_.Header()->HasExpired(); }
+
+  Status SetExpireTime(ExpireTimeType) final { return Status::Ok; }
+
   WriteResult PushFront(const StringView& key, const StringView& value,
                         TimeStampType ts) {
     WriteResult ret;
-    std::string internal_key(InternalKey(key);
-    SpaceEntry space = pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
-    if(space.size == 0){
+    std::string internal_key(InternalKey(key));
+    SpaceEntry space =
+        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
+    if (space.size == 0) {
       ret.s = Status::PmemOverflow;
       return ret;
     }
 
-    DLList::WriteArgs args(internal_key, value, RecordType::ListElem, RecordStatus::Normal, ts, space);
+    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+                           RecordStatus::Normal, ts, space);
     ret.s = dl_list_.PushFront(args);
     kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
     UpdateSize(1);
-    ret.write_record = pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+    ret.write_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
     return ret;
   }
 
   WriteResult PushBack(const StringView& key, const StringView& value,
                        TimeStampType ts) {
     WriteResult ret;
-    std::string internal_key(InternalKey(key);
-    SpaceEntry space = pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
-    if(space.size == 0){
+    std::string internal_key(InternalKey(key));
+    SpaceEntry space =
+        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
+    if (space.size == 0) {
       ret.s = Status::PmemOverflow;
       return ret;
     }
 
-    DLList::WriteArgs args(internal_key, value, RecordType::ListElem, RecordStatus::Normal, ts, space);
+    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+                           RecordStatus::Normal, ts, space);
     ret.s = dl_list_.PushBack(args);
     kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
     UpdateSize(1);
-    ret.write_record = pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+    ret.write_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
     return ret;
   }
 
@@ -83,7 +104,6 @@ class List : public Collection {
   WriteResult InsertBefore(const StringView& key, const StringView& pos,
                            TimeStampType ts) {
     WriteResult ret;
-    std::lock_guard<std::mutex> lg(list_lock_);
     DLListRecordIterator iter(&dl_list_, pmem_allocator_);
     for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
       DLRecord* record = iter.Record();
@@ -115,7 +135,6 @@ class List : public Collection {
   WriteResult InsertAfter(const StringView& key, const StringView& pos,
                           TimeStampType ts) {
     WriteResult ret;
-    std::lock_guard<std::mutex> lg(list_lock_);
     DLListRecordIterator iter(&dl_list_, pmem_allocator_);
     for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
       DLRecord* record = iter.Record();
@@ -146,7 +165,6 @@ class List : public Collection {
 
   WriteResult InsertAt(const StringView& key, uint64_t pos, TimeStampType ts) {
     WriteResult ret;
-    std::lock_guard<std::mutex> lg(list_lock_);
     uint64_t curr = 0;
     DLRecord* prev = dl_list_.Header();
     while (curr < pos) {
@@ -157,7 +175,7 @@ class List : public Collection {
       }
       curr++;
     }
-    SpaceEntry space = pmem_allocator_->Allocate(DLRecord::RecordSize(key));
+    SpaceEntry space = pmem_allocator_->Allocate(DLRecord::RecordSize(key, ""));
     if (space.size == 0) {
       ret.s = Status::PmemOverflow;
       return ret;
@@ -180,9 +198,16 @@ class List : public Collection {
 
   Status Move();
 
+  size_t Size() { return size_; }
+
+  std::unique_lock<std::recursive_mutex> AcquireLock() {
+    return std::unique_lock<std::recursive_mutex>(list_lock_);
+  }
+
  private:
   DLList dl_list_;
   PMEMAllocator* pmem_allocator_;
-  std::mutex list_lock_;
+  std::recursive_mutex list_lock_;
+  size_t size_;
 };
 }  // namespace KVDK_NAMESPACE
