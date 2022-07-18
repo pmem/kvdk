@@ -43,7 +43,9 @@ class DLList {
     SpaceEntry space;
   };
 
-  DLRecord* Header() const { return header_; }
+  const DLRecord* Header() const { return header_; }
+
+  DLRecord* Header() { return header_; }
 
   Status PushBack(const WriteArgs& args) {
     Status s;
@@ -335,6 +337,7 @@ class DLList {
   LockTable* lock_table_;
 };
 
+// Iter all valid data in a dl list
 class DLListAccessIterator {
  public:
   DLListAccessIterator(DLList* dl_list, const PMEMAllocator* pmem_allocator,
@@ -433,6 +436,48 @@ class DLListAccessIterator {
   DLRecord* current_;
   const SnapshotImpl* snapshot_;
   bool own_snapshot_;
+};
+
+// Iter all records in a dl list
+class DLListRecordIterator {
+ public:
+  DLListRecordIterator(DLList* dl_list, PMEMAllocator* pmem_allocator)
+      : dl_list_(dl_list),
+        header_(dl_list->Header()),
+        current_(header_),
+        pmem_allocator_(pmem_allocator) {}
+
+  void Next() {
+    if (Valid()) {
+      current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
+    }
+  }
+
+  void Prev() {
+    if (Valid()) {
+      current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->prev);
+    }
+  }
+
+  bool Valid() { return current_ != header_; }
+
+  void SeekToFirst() {
+    kvdk_assert(header_ != nullptr, "");
+    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(header_->next);
+  }
+
+  void SeekToLast() {
+    kvdk_assert(header_ != nullptr, "");
+    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(header_->prev);
+  }
+
+  DLRecord* Record() {}
+
+ private:
+  DLList* dl_list_;
+  DLRecord* header_;
+  DLRecord* current_;
+  const PMEMAllocator* pmem_allocator_;
 };
 
 class DLListRebuilderHelper {

@@ -80,7 +80,95 @@ class List : public Collection {
     return ret;
   }
 
-  WriteResult InsertBefore();
+  WriteResult InsertBefore(const StringView& key, const StringView& pos,
+                           TimeStampType ts) {
+    WriteResult ret;
+    std::lock_guard<std::mutex> lg(list_lock_);
+    DLListRecordIterator iter(&dl_list_, pmem_allocator_);
+    for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
+      DLRecord* record = iter.Record();
+      if (record->GetRecordStatus() == RecordStatus::Normal &&
+          equal_string_view(record->Key(), pos)) {
+        SpaceEntry space =
+            pmem_allocator_->Allocate(DLRecord::RecordSize(key, ""));
+        if (space.size == 0) {
+          ret.s = Status::PmemOverflow;
+          return ret;
+        }
+        DLList::WriteArgs args(key, "", RecordType::ListElem,
+                               RecordStatus::Normal, ts, space);
+        ret.s = dl_list_.InsertBefore(args, record);
+        kvdk_assert(
+            ret.s == Status::Ok,
+            "the whole list is locked, so the insertion must be success");
+        if (ret.s == Status::Ok) {
+          ret.write_record =
+              pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        }
+        return ret;
+      }
+    }
+    ret.s = Status::NotFound;
+    return ret;
+  }
+
+  WriteResult InsertAfter(const StringView& key, const StringView& pos,
+                          TimeStampType ts) {
+    WriteResult ret;
+    std::lock_guard<std::mutex> lg(list_lock_);
+    DLListRecordIterator iter(&dl_list_, pmem_allocator_);
+    for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
+      DLRecord* record = iter.Record();
+      if (record->GetRecordStatus() == RecordStatus::Normal &&
+          equal_string_view(record->Key(), pos)) {
+        SpaceEntry space =
+            pmem_allocator_->Allocate(DLRecord::RecordSize(key, ""));
+        if (space.size == 0) {
+          ret.s = Status::PmemOverflow;
+          return ret;
+        }
+        DLList::WriteArgs args(key, "", RecordType::ListElem,
+                               RecordStatus::Normal, ts, space);
+        ret.s = dl_list_.InsertAfter(args, record);
+        kvdk_assert(
+            ret.s == Status::Ok,
+            "the whole list is locked, so the insertion must be success");
+        if (ret.s == Status::Ok) {
+          ret.write_record =
+              pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        }
+        return ret;
+      }
+    }
+    ret.s = Status::NotFound;
+    return ret;
+  }
+
+  WriteResult InsertAt(const StringView& key, uint64_t pos, TimeStampType ts) {
+    WriteResult ret;
+    std::lock_guard<std::mutex> lg(list_lock_);
+    uint64_t curr = 0;
+    DLRecord* prev = dl_list_.Header();
+    while (curr < pos) {
+      prev = pmem_allocator_->offset2addr_checked<DLRecord>(prev->next);
+      if (prev == dl_list_.Header()) {
+        ret.s = Status::InvalidArgument;
+        return ret;
+      }
+      curr++;
+    }
+    SpaceEntry space = pmem_allocator_->Allocate(DLRecord::RecordSize(key));
+    if (space.size == 0) {
+      ret.s = Status::PmemOverflow;
+      return ret;
+    }
+
+    DLList::WriteArgs args(key, "", RecordType::ListElem, RecordStatus::Normal,
+                           ts, space);
+    ret.s = dl_list_.InsertAfter(args, prev);
+    kvdk_assert(ret.s == Status::Ok, "");
+    return ret;
+  }
 
   WriteResult InsertAfter();
 
@@ -95,5 +183,6 @@ class List : public Collection {
  private:
   DLList dl_list_;
   PMEMAllocator* pmem_allocator_;
+  std::mutex list_lock_;
 };
 }  // namespace KVDK_NAMESPACE
