@@ -21,6 +21,16 @@ jlong Java_io_pmem_kvdk_Configs_newConfigs(
 
 /**
  * Class:     io_pmem_kvdk_Configs
+ * Method:    setMaxAccessThreads
+ * Signature: (JJ)V
+ */
+void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(
+  JNIEnv*, jobject, jlong handle, jlong num) {
+  reinterpret_cast<kvdk::Configs *>(handle)->max_access_threads = num;
+}
+
+/**
+ * Class:     io_pmem_kvdk_Configs
  * Method:    setPMemFileSize
  * Signature: (JJ)V
  */
@@ -47,6 +57,26 @@ void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(
 void Java_io_pmem_kvdk_Configs_setHashBucketNum(
   JNIEnv*, jobject, jlong handle, jlong num) {
   reinterpret_cast<kvdk::Configs *>(handle)->hash_bucket_num = num;
+}
+
+/**
+ * Class:     io_pmem_kvdk_Configs
+ * Method:    setPopulatePMemSpace
+ * Signature: (JZ)V
+ */
+void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(
+  JNIEnv*, jobject, jlong handle, jboolean populate) {
+  reinterpret_cast<kvdk::Configs *>(handle)->populate_pmem_space = populate;
+}
+
+/**
+ * Class:     io_pmem_kvdk_Configs
+ * Method:    setCleanThreads
+ * Signature: (JJ)V
+ */
+void Java_io_pmem_kvdk_Configs_setCleanThreads(
+  JNIEnv*, jobject, jlong handle, jlong num_threds) {
+  reinterpret_cast<kvdk::Configs *>(handle)->clean_threads = num_threds;
 }
 
 /**

@@ -23,6 +23,7 @@ set(JAVA_MAIN_SOURCES
 
 set(JAVA_TEST_SOURCES
   src/test/java/io/pmem/kvdk/ConfigsTest.java
+  src/test/java/io/pmem/kvdk/EngineTest.java
 )
 
 include(FindJava)
@@ -38,8 +39,11 @@ set(MVN_CENTRAL https://repo1.maven.org/maven2)
 
 set(JAVA_TEST_LIBDIR ${PROJECT_SOURCE_DIR}/java/test-libs)
 set(JAVA_TMP_JAR ${JAVA_TEST_LIBDIR}/tmp.jar)
+
 set(JAVA_JUNIT_JAR_SOURCE /junit/junit/4.12/junit-4.12.jar)
 set(JAVA_JUNIT_JAR ${JAVA_TEST_LIBDIR}/junit-4.12.jar)
+set(JAVA_JUNIT_JAR_CHECKSUM_256 59721f0805e223d84b90677887d9ff567dc534d7c502ca903c0c2b17f05c116a)
+
 set(JAVA_TESTCLASSPATH ${JAVA_JUNIT_JAR})
 
 set(JNI_OUTPUT_DIR ${PROJECT_SOURCE_DIR}/java/include)
@@ -49,6 +53,7 @@ if(${Java_VERSION_MINOR} VERSION_LESS_EQUAL "7" AND ${Java_VERSION_MAJOR} STREQU
   message(FATAL_ERROR "Detected Java 7 or older (${Java_VERSION_STRING}), minimum required version in now Java 8")
 endif()
 
+# Download dependencies for Java unit tests
 if(NOT EXISTS ${JAVA_TEST_LIBDIR})
   file(MAKE_DIRECTORY ${JAVA_TEST_LIBDIR})
 endif()
@@ -69,6 +74,12 @@ if(NOT EXISTS ${JAVA_JUNIT_JAR})
     endif()
     file(RENAME ${JAVA_TMP_JAR} ${JAVA_JUNIT_JAR})
   endif()
+endif()
+
+# Verify checksum of downloaded files
+file(SHA256 ${JAVA_JUNIT_JAR} TEMP_FILE_CHECKSUM)
+if (NOT ${JAVA_JUNIT_JAR_CHECKSUM_256} STREQUAL ${TEMP_FILE_CHECKSUM})
+  message(FATAL_ERROR "Checksum mismatch, file: ${JAVA_JUNIT_JAR}, expected: ${JAVA_JUNIT_JAR_CHECKSUM_256}, is: ${TEMP_FILE_CHECKSUM}")
 endif()
 
 if(${Java_VERSION_MAJOR} VERSION_GREATER_EQUAL "10" AND ${CMAKE_VERSION} VERSION_LESS "3.11.4")

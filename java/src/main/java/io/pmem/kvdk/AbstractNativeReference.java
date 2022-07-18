@@ -15,6 +15,10 @@ public abstract class AbstractNativeReference implements AutoCloseable {
    */
   protected final AtomicBoolean owningHandle_;
 
+  /**
+   * Constrctor.
+   * @param owningHandle
+   */
   public AbstractNativeReference(final boolean owningHandle) {
     this.owningHandle_ = new AtomicBoolean(owningHandle);
   }
@@ -23,6 +27,9 @@ public abstract class AbstractNativeReference implements AutoCloseable {
     return owningHandle_.get();
   }
 
+  /**
+   * Release the responsibility of freeing native C++ object.
+   */
   protected final void disOwnNativeHandle() {
     owningHandle_.set(false);
   }

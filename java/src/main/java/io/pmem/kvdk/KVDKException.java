@@ -4,6 +4,9 @@
 
 package io.pmem.kvdk;
 
+/**
+ * Exception class defined for KVDK.
+ */
 public class KVDKException extends Exception {
   private final Status status;
 

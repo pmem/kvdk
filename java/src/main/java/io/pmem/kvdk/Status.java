@@ -6,6 +6,9 @@ package io.pmem.kvdk;
 
 import java.util.Objects;
 
+/**
+ * Java class to represent the Status enum in C++ KVDK.
+ */
 public class Status {
   private final Code code;
   private final String message;
@@ -48,6 +51,7 @@ public class Status {
     return Objects.hash(code, message);
   }
 
+  // should stay in sync with include/kvdk/types.h:KVDKStatus and java/kvdkjni/kvdkjni.h:toJavaStatusCode
   public enum Code {
     Ok(                     (byte)0x0),
     NotFound(               (byte)0x1),

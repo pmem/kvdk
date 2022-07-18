@@ -8,7 +8,16 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * The KVDK engine, providing the APIs for Key-Value operations.
+ */
 public class Engine extends KVDKObject {
+  private static final String jniLibraryFileName = System.mapLibraryName("kvdkjni");
+
+  /**
+   * Current state of loading native library.
+   * This must be defined before calling loading loadLibrary().
+   */
   private static final AtomicReference<LibraryState> libraryLoaded =
       new AtomicReference<>(LibraryState.NOT_LOADED);
 
@@ -20,6 +29,13 @@ public class Engine extends KVDKObject {
     super(nativeHandle);
   }
 
+  /**
+   * Open a KVDK engine instance.
+   * @param path A directory to PMem
+   * @param configs KVDK engine configs
+   * @return
+   * @throws KVDKException
+   */
   public static Engine open(final String path, final Configs configs)
       throws KVDKException {
     final Engine engine = new Engine(open(path, configs.getNativeHandle()));
@@ -92,7 +108,7 @@ public class Engine extends KVDKObject {
       UnsatisfiedLinkError err = null;
       for (final String path : paths) {
         try {
-          System.load(path + "/" + "libkvdkjni.so");
+          System.load(path + "/" + jniLibraryFileName);
           success = true;
           break;
         } catch (final UnsatisfiedLinkError e) {

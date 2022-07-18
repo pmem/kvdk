@@ -15,6 +15,7 @@
 
 namespace KVDK_NAMESPACE {
 
+// Helper class to get Java class by name from C++.
 class JavaClass {
  public:
   /**

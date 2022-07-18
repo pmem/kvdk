@@ -4,6 +4,9 @@
 
 package io.pmem.kvdk;
 
+/**
+ * Base calss for KVDK object that hold a reference to native C++ object.
+ */
 public abstract class KVDKObject extends AbstractNativeReference {
   /**
    * An immutable reference to the value of the C++ pointer.
