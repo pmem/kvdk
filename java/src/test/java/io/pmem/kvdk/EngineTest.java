@@ -6,43 +6,11 @@ package io.pmem.kvdk;
 
 import static org.junit.Assert.assertEquals;
 
-import java.io.File;
-import java.io.IOException;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 import io.pmem.kvdk.Status.Code;
 
-public class EngineTest {
-  private Engine kvdkEngine;
-
-  @Rule
-  public TemporaryFolder folder = new TemporaryFolder();
-
-  @Before
-  public void init() throws KVDKException, IOException {
-    File tempDir = folder.newFolder();
-    String enginePath = tempDir.getAbsolutePath();
-
-    Configs engineConfigs = new Configs();
-    engineConfigs.setHashBucketNum(1L << 10);
-    engineConfigs.setMaxAccessThreads(4);
-    engineConfigs.setPMemSegmentBlocks(2L << 20);
-    engineConfigs.setPMemFileSize(1L << 30); // 1 GB
-    engineConfigs.setPopulatePMemSpace(false);
-
-    kvdkEngine = Engine.open(enginePath, engineConfigs);
-  }
-
-  @After
-  public void teardown() {
-    kvdkEngine.close();
-  }
-
+public class EngineTest extends EngineTestBase {
   @Test
   public void testOpenAndCloseKVDKEngine() {
   }

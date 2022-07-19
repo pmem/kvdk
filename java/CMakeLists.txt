@@ -6,6 +6,9 @@ endif()
 
 set(CMAKE_JAVA_COMPILE_FLAGS -source 7)
 
+set(KVDKJNI_VERSION 1.0.0-SNAPSHOT)
+set(KVDKJNI_JAR_FILE kvdkjni-${KVDKJNI_VERSION}.jar)
+
 set(JNI_NATIVE_SOURCES
   kvdkjni/configs.cc
   kvdkjni/engine.cc
@@ -28,6 +31,8 @@ set(JAVA_MAIN_SOURCES
 set(JAVA_TEST_SOURCES
   src/test/java/io/pmem/kvdk/ConfigsTest.java
   src/test/java/io/pmem/kvdk/EngineTest.java
+  src/test/java/io/pmem/kvdk/EngineTestBase.java
+  src/test/java/io/pmem/kvdk/IteratorTest.java
 )
 
 include(FindJava)
@@ -135,14 +140,23 @@ add_library(${KVDKJNI_SHARED_LIB} SHARED ${JNI_NATIVE_SOURCES})
 add_dependencies(${KVDKJNI_SHARED_LIB} kvdkjni_headers)
 target_link_libraries(${KVDKJNI_SHARED_LIB} ${KVDK_STATIC_LIB})
 
-if(NOT EXISTS ${PROJECT_SOURCE_DIR}/java/target)
-  file(MAKE_DIRECTORY ${PROJECT_SOURCE_DIR}/java/target)
+# copy shared library to java resource dir for unit tests
+if(NOT EXISTS ${PROJECT_SOURCE_DIR}/java/src/main/resources)
+  file(MAKE_DIRECTORY ${PROJECT_SOURCE_DIR}/java/src/main/resources)
 endif()
-set(KVDKJNI_SHARED_LIB_COPY_PATH ${PROJECT_SOURCE_DIR}/java/target/${CMAKE_SHARED_LIBRARY_PREFIX}${KVDKJNI_SHARED_LIB}${CMAKE_SHARED_LIBRARY_SUFFIX})
+set(KVDKJNI_SHARED_LIB_FILE ${CMAKE_SHARED_LIBRARY_PREFIX}${KVDKJNI_SHARED_LIB}${CMAKE_SHARED_LIBRARY_SUFFIX})
+set(KVDKJNI_SHARED_LIB_COPY_PATH_RESOURCES ${PROJECT_SOURCE_DIR}/java/src/main/resources/${KVDKJNI_SHARED_LIB_FILE})
 
 add_custom_command(TARGET ${KVDKJNI_SHARED_LIB} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         $<TARGET_FILE:${KVDKJNI_SHARED_LIB}>
-        ${KVDKJNI_SHARED_LIB_COPY_PATH}
-    COMMENT "Copying JNI library file to: ${KVDKJNI_SHARED_LIB_COPY_PATH}"
+        ${KVDKJNI_SHARED_LIB_COPY_PATH_RESOURCES}
+    COMMENT "Copying JNI library file to: ${KVDKJNI_SHARED_LIB_COPY_PATH_RESOURCES}"
+)
+
+# build jar
+add_custom_command(TARGET ${KVDKJNI_SHARED_LIB} POST_BUILD
+    COMMAND cp kvdkjni_classes.jar ${KVDKJNI_JAR_FILE}
+    COMMAND jar -uf ${KVDKJNI_JAR_FILE} ${KVDKJNI_SHARED_LIB_FILE}
+    COMMENT "Building jar file: ${CMAKE_CURRENT_BINARY_DIR}/${KVDKJNI_JAR_FILE}"
 )

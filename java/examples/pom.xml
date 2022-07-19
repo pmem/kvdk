@@ -3,12 +3,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.pmem</groupId>
-    <artifactId>kvdkjni</artifactId>
+    <artifactId>kvdkjni-examples</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 
-    <name>KVDK JNI</name>
-    <description>KVDK fat jar that contains .so file.
-    </description>
+    <name>KVDK JNI Examples</name>
+    <description>KVDK JNI Examples.</description>
     <url>https://github.com/pmem/kvdk</url>
     <inceptionYear>2021</inceptionYear>
 
@@ -32,6 +31,7 @@
     </organization>
 
     <properties>
+        <kvdkjni.version>1.0.0-SNAPSHOT</kvdkjni.version>
         <project.build.source>1.7</project.build.source>
         <project.build.target>1.7</project.build.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -70,6 +70,11 @@
     </build>
 
     <dependencies>
+        <dependency>
+            <groupId>io.pmem</groupId>
+            <artifactId>kvdkjni</artifactId>
+            <version>${kvdkjni.version}</version>
+        </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
