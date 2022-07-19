@@ -20,7 +20,7 @@ public class KVDKExamples {
     engineConfigs.setPMemFileSize(1L << 30); // 1 GB
     engineConfigs.setPopulatePMemSpace(false);
 
-    kvdkEngine = Engine.open("/mnt/pmem/kvdk-test-dir", engineConfigs);
+    kvdkEngine = Engine.open("/tmp/kvdk-test-dir", engineConfigs);
     engineConfigs.close();
   }
 

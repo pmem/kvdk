@@ -11,7 +11,18 @@ mvn clean test
 ```
 cp pom.xml.template pom.xml
 mvn clean install
-``` 
+```
 
 ## Release to Maven Central
 TODO
+
+## Run examples
+```
+cd examples
+mvn clean package
+
+export PMEM_IS_PMEM_FORCE=1
+mkdir -p /tmp/kvdk-test-dir
+
+java -cp target/kvdkjni-examples-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.examples.KVDKExamples
+```
