@@ -15,6 +15,10 @@ const uint32_t kMinMovableEntries = 1024;
 // To avoid background space merge consumes resorces in idle time, do merge only
 // if more than kMergeThreshold space entries been freed since last merge
 const uint64_t kMergeThreshold = 1024 * 1024;
+// Freqently merge a space with a far larger following one will cause high CPU
+// overhead, so we merge a following space only if (size of the following space)
+// not larger than (kMaxAjacentSpaceSizeInMerge * current space size)
+const uint64_t kMaxAjacentSpaceSizeInMerge = 8;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
   assert(offset < map_.size());
@@ -77,51 +81,78 @@ uint64_t SpaceMap::TestAndUnset(uint64_t offset, uint64_t length) {
   return res;
 }
 
-uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
-                            uint64_t min_merge_length) {
-  assert(offset < map_.size());
-  if (offset + min_merge_length > map_.size()) {
+uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
+                            uint64_t limit_merge_size) {
+  kvdk_assert(start_size > 0, "");
+  assert(start_offset < map_.size());
+  if (start_offset + start_size > map_.size()) {
     return 0;
   }
-  uint64_t cur = offset;
-  uint64_t end_offset = std::min(offset + max_merge_length, map_.size());
-  SpinMutex* last_lock = &map_spins_[cur / lock_granularity_];
-  uint64_t merged = 0;
+  uint64_t end_offset = std::min(start_offset + limit_merge_size, map_.size());
+  SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
   std::lock_guard<SpinMutex> lg(*last_lock);
-  if (map_[cur].Empty() || !map_[cur].IsStart()) {
-    return merged;
+  if (map_[start_offset].Empty() || !map_[start_offset].IsStart()) {
+    return 0;
   }
+
+#if KVDK_DEBUG_LEVEL > 0
+  // check start size
+  uint64_t debug_size = map_[start_offset].Size();
+  uint64_t debug_cur = start_offset + debug_size;
+  while (!map_[debug_cur].Empty() && !map_[debug_cur].IsStart()) {
+    debug_size += map_[debug_cur].Size();
+    debug_cur += map_[debug_cur].Size();
+  }
+  kvdk_assert(debug_size == start_size,
+              "TryMerge: start space entry size error");
+#endif  // KVDK_DEBUG_LEVEL > 0
+
   std::vector<SpinMutex*> locked;
   std::vector<uint64_t> merged_offset;
-  while (cur < end_offset) {
-    if (map_[cur].Empty()) {
-      break;
-    } else {
-      merged += map_[cur].Size();
-      if (cur != offset && map_[cur].IsStart()) {
-        merged_offset.push_back(cur);
-      }
-      cur = offset + merged;
+  uint64_t merged_size = start_size;
+  uint64_t in_merge_offset = start_offset + start_size;
+  bool keep_merge = in_merge_offset < end_offset;
+  while (keep_merge) {
+    SpinMutex* cur_lock = &map_spins_[in_merge_offset / lock_granularity_];
+    if (cur_lock != last_lock) {
+      last_lock = cur_lock;
+      cur_lock->lock();
+      locked.push_back(cur_lock);
     }
 
-    SpinMutex* next_lock = &map_spins_[cur / lock_granularity_];
-    if (next_lock != last_lock) {
-      last_lock = next_lock;
-      next_lock->lock();
-      locked.push_back(next_lock);
+    if (map_[in_merge_offset].Empty()) {
+      break;
+    } else {
+      kvdk_assert(map_[in_merge_offset].IsStart(), "");
+      uint64_t in_merge_size = map_[in_merge_offset].Size();
+      uint64_t cur = in_merge_offset + in_merge_size;
+      while (true) {
+        if (map_[cur].IsStart() || map_[cur].Empty()) {
+          merged_size += in_merge_size;
+          merged_offset.push_back(in_merge_offset);
+          in_merge_offset = cur;
+          keep_merge = in_merge_offset < end_offset;
+          break;
+        } else if (in_merge_size > kMaxAjacentSpaceSizeInMerge * merged_size ||
+                   cur >= end_offset) {
+          keep_merge = false;
+          break;
+        } else {
+          in_merge_size += map_[cur].Size();
+          cur += map_[cur].Size();
+        }
+      }
     }
   }
-  if (merged >= min_merge_length) {
-    for (uint64_t o : merged_offset) {
-      map_[o].UnStart();
-    }
-  } else {
-    merged = 0;
+
+  for (uint64_t o : merged_offset) {
+    map_[o].UnStart();
   }
+
   for (SpinMutex* l : locked) {
     l->unlock();
   }
-  return merged;
+  return merged_size;
 }
 
 void Freelist::OrganizeFreeSpace() {
@@ -144,9 +175,9 @@ void Freelist::MergeSpaceInPool() {
       for (PMemOffsetType& offset : merging_list) {
         assert(offset % block_size_ == 0);
         auto b_offset = offset / block_size_;
-        uint64_t merged_blocks_ = MergeSpace(
-            b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
-            b_size);
+        uint64_t merged_blocks_ =
+            MergeSpace(b_offset, b_size,
+                       num_segment_blocks_ - b_offset % num_segment_blocks_);
 
         if (merged_blocks_ > 0) {
           // Persist merged free entry on PMem

@@ -31,8 +31,8 @@ class SpaceMap {
 
   uint64_t TestAndUnset(uint64_t offset, uint64_t length);
 
-  uint64_t TryMerge(uint64_t offset, uint64_t max_merge_length,
-                    uint64_t min_merge_length);
+  uint64_t TryMerge(uint64_t start_offset, uint64_t start_b_size,
+                    uint64_t limit_merge_size);
 
   void Set(uint64_t offset, uint64_t length);
 
@@ -249,12 +249,12 @@ class Freelist {
     std::atomic<uint64_t> recently_freed;
   };
 
-  uint64_t MergeSpace(uint64_t offset, uint64_t max_size,
-                      uint64_t min_merge_size) {
-    if (min_merge_size > max_size) {
+  uint64_t MergeSpace(uint64_t b_offset, uint64_t b_size,
+                      uint64_t limit_merge_size) {
+    if (b_size > limit_merge_size) {
       return 0;
     }
-    uint64_t size = space_map_.TryMerge(offset, max_size, min_merge_size);
+    uint64_t size = space_map_.TryMerge(b_offset, b_size, limit_merge_size);
     return size;
   }
 
