@@ -9,7 +9,11 @@
 
 namespace KVDK_NAMESPACE {
 
+// For balance free entries among threads, move a free list to the background
+// pool if more than kMinMovableEntries in the free list
 const uint32_t kMinMovableEntries = 1024;
+// To avoid background space merge consumes resorces in idle time, do merge only
+// if more than kMergeThreshold space entries been freed since last merge
 const uint64_t kMergeThreshold = 1024 * 1024;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
