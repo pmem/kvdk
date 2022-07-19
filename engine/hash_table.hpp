@@ -62,6 +62,8 @@ struct alignas(16) HashEntry {
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
+  void MarkAsAllocated() { header_.index_type = PointerType::Allocated; }
+
   Index GetIndex() const { return index_; }
 
   PointerType GetIndexType() const { return header_.index_type; }

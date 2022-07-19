@@ -753,7 +753,7 @@ TEST_F(EngineBasicTest, TestStringModify) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, BatchWriteSorted) {
+TEST_F(BatchWriteTest, Sorted) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
@@ -821,8 +821,6 @@ TEST_F(EngineBasicTest, BatchWriteSorted) {
       }
     };
 
-    LaunchNThreads(num_threads, Put);
-    LaunchNThreads(num_threads, Check);
     LaunchNThreads(num_threads, BatchWrite);
     LaunchNThreads(num_threads, Check);
 
@@ -837,7 +835,7 @@ TEST_F(EngineBasicTest, BatchWriteSorted) {
   }
 }
 
-TEST_F(BatchWriteTest, BatchWriteString) {
+TEST_F(BatchWriteTest, String) {
   size_t num_threads = 16;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -895,8 +893,6 @@ TEST_F(BatchWriteTest, BatchWriteString) {
     }
   };
 
-  LaunchNThreads(num_threads, Put);
-  LaunchNThreads(num_threads, Check);
   LaunchNThreads(num_threads, BatchWrite);
   LaunchNThreads(num_threads, Check);
 
@@ -910,7 +906,7 @@ TEST_F(BatchWriteTest, BatchWriteString) {
   delete engine;
 }
 
-TEST_F(BatchWriteTest, BatchWriteHash) {
+TEST_F(BatchWriteTest, Hash) {
   size_t num_threads = 16;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -970,8 +966,6 @@ TEST_F(BatchWriteTest, BatchWriteHash) {
     }
   };
 
-  LaunchNThreads(num_threads, Put);
-  LaunchNThreads(num_threads, Check);
   LaunchNThreads(num_threads, BatchWrite);
   LaunchNThreads(num_threads, Check);
 
@@ -2291,7 +2285,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
 #if KVDK_DEBUG_LEVEL > 0
 
-TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
+TEST_F(BatchWriteTest, SortedRollback) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
@@ -2408,7 +2402,7 @@ TEST_F(EngineBasicTest, BatchWriteSortedRollback) {
   }
 }
 
-TEST_F(EngineBasicTest, BatchWriteStringRollBack) {
+TEST_F(BatchWriteTest, StringRollBack) {
   // This test case can only be run with single thread.
   // If multiple threads run batchwrite,
   // a thread may crash at CrashPoint and release its id,
@@ -2488,7 +2482,7 @@ TEST_F(EngineBasicTest, BatchWriteStringRollBack) {
   delete engine;
 }
 
-TEST_F(BatchWriteTest, BatchWriteHashRollback) {
+TEST_F(BatchWriteTest, HashRollback) {
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
