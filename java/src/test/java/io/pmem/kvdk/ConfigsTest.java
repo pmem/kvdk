@@ -8,7 +8,7 @@ import org.junit.Test;
 
 public class ConfigsTest {
   @Test
-  public void createConfigs() {
+  public void testCreateConfigs() {
     Configs configs = new Configs();
 
     configs.setPMemSegmentBlocks(8L << 20);

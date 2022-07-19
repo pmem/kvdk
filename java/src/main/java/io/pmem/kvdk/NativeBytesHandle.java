@@ -15,14 +15,20 @@ public class NativeBytesHandle extends KVDKObject {
   }
 
   private final int length;
+  private final byte[] bytes;
 
   public NativeBytesHandle(final byte[] bytes) {
     super(newNativeBytes(bytes));
     this.length = bytes.length;
+    this.bytes = bytes;
   }
 
-  protected int getLength() {
+  public int getLength() {
     return length;
+  }
+
+  public byte[] getBytes() {
+    return bytes;
   }
 
   // Native methods

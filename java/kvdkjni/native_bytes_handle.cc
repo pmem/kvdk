@@ -13,7 +13,7 @@
  * Signature: ([B)J
  */
 jlong Java_io_pmem_kvdk_NativeBytesHandle_newNativeBytes(
-    JNIEnv*, jclass, jbyteArray bytes) {
+    JNIEnv* env, jclass, jbyteArray bytes) {
   int len = env->GetArrayLength(bytes);
   jbyte *b = new jbyte[len];
   env->GetByteArrayRegion(bytes, 0, len, b);

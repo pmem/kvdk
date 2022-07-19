@@ -275,6 +275,40 @@ class KVDKExceptionJni :
   }
 };
 
+class JniUtil {
+ public:
+  static jbyteArray createJavaByteArray(JNIEnv* env, const char* bytes, const size_t size) {
+    // Limitation for java array size is vm specific
+    // In general it cannot exceed Integer.MAX_VALUE (2^31 - 1)
+    // Current HotSpot VM limitation for array size is Integer.MAX_VALUE - 5 (2^31 - 1 - 5)
+    // It means that the next call to env->NewByteArray can still end with
+    // OutOfMemoryError("Requested array size exceeds VM limit") coming from VM
+    static const size_t MAX_JARRAY_SIZE = (static_cast<size_t>(1)) << 31;
+    if(size > MAX_JARRAY_SIZE) {
+      KVDK_NAMESPACE::KVDKExceptionJni::ThrowNew(
+          env, "Requested array size exceeds VM limit");
+      return nullptr;
+    }
+
+    const jsize jlen = static_cast<jsize>(size);
+    jbyteArray jbytes = env->NewByteArray(jlen);
+    if(jbytes == nullptr) {
+      // exception thrown: OutOfMemoryError
+      return nullptr;
+    }
+
+    env->SetByteArrayRegion(jbytes, 0, jlen,
+      const_cast<jbyte*>(reinterpret_cast<const jbyte*>(bytes)));
+    if(env->ExceptionCheck()) {
+      // exception thrown: ArrayIndexOutOfBoundsException
+      env->DeleteLocalRef(jbytes);
+      return nullptr;
+    }
+
+    return jbytes;
+  }
+};
+
 }  // namespace KVDK_NAMESPACE
 
 #endif // JAVA_KVDKJNI_KVDKJNI_H_

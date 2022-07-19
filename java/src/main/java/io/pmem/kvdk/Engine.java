@@ -46,7 +46,12 @@ public class Engine extends KVDKObject {
     put(nativeHandle_, key, value);
   }
 
-  public bytes[] get(final byte[] key) throws KVDKException {
+  /**
+   * @param key
+   * @return Value as byte array, null if the specified key doesn't exist.
+   * @throws KVDKException
+   */
+  public byte[] get(final byte[] key) throws KVDKException {
     return get(nativeHandle_, key);
   }
 
@@ -54,39 +59,55 @@ public class Engine extends KVDKObject {
     delete(nativeHandle_, key);
   }
 
-  public void sortedCreate(final NativeBytesHandle collection_name)
+  public void sortedCreate(final NativeBytesHandle nameHandle)
       throws KVDKException {
-
+    sortedCreate(nativeHandle_, nameHandle.getNativeHandle(),
+        nameHandle.getLength());
   }
 
-  public void sortedDestroy(final NativeBytesHandle collection_name)
+  public void sortedDestroy(final NativeBytesHandle nameHandle)
       throws KVDKException {
-  
+    sortedDestroy(nativeHandle_, nameHandle.getNativeHandle(),
+        nameHandle.getLength());
   }
 
-  public long sortedSize(final NativeBytesHandle collection_name)
+  public long sortedSize(final NativeBytesHandle nameHandle)
       throws KVDKException {
-
+    return sortedSize(nativeHandle_, nameHandle.getNativeHandle(),
+        nameHandle.getLength());
   }
 
-  public void sortedPut(final NativeBytesHandle collection_name,
+  public void sortedPut(final NativeBytesHandle nameHandle,
       final byte[] key, final byte[] value) throws KVDKException {
-
+    sortedPut(nativeHandle_, nameHandle.getNativeHandle(),
+        nameHandle.getLength(), key, value);
   }
 
-  public byte[] sortedGet(final NativeBytesHandle collection_name,
+  /**
+   * @param nameHandle
+   * @param key
+   * @return Value as byte array, null if the specified key doesn't exist.
+   * @throws KVDKException
+   */
+  public byte[] sortedGet(final NativeBytesHandle nameHandle,
       final byte[] key) throws KVDKException {
-
+    return sortedGet(nativeHandle_, nameHandle.getNativeHandle(),
+        nameHandle.getLength(), key);
   }
 
-  public void sortedDelete(final NativeBytesHandle collection_name,
+  public void sortedDelete(final NativeBytesHandle nameHandle,
       final byte[] key) throws KVDKException {
-
+    sortedDelete(nativeHandle_, nameHandle.getNativeHandle(),
+        nameHandle.getLength(), key);
   }
 
-  public Iterator newSortedIterator(final NativeBytesHandle collection_name)
+  public Iterator newSortedIterator(final NativeBytesHandle nameHandle)
       throws KVDKException {
+    long iteratorHandle = newSortedIterator(nativeHandle_,
+        nameHandle.getNativeHandle(),
+        nameHandle.getLength());
 
+    return new Iterator(iteratorHandle, nativeHandle_);
   }
 
   public void releaseSortedIterator(final Iterator iterator)
@@ -99,7 +120,23 @@ public class Engine extends KVDKObject {
   protected final native void closeInternal(long handle);
   private native static long open(final String path,
       final long cfg_handle) throws KVDKException;
-
+  private native void put(long handle, byte[] key, byte[] value);
+  private native byte[] get(long handle, byte[] key);
+  private native void delete(long handle, byte[] key);
+  private native void sortedCreate(long engineHandle, long nameHandle,
+      int nameLenth);
+  private native void sortedDestroy(long engineHandle, long nameHandle,
+      int nameLenth);
+  private native long sortedSize(long engineHandle, long nameHandle,
+      int nameLenth);
+  private native void sortedPut(long engineHandle, long nameHandle,
+      int nameLenth, byte[] key, byte[] value);
+  private native byte[] sortedGet(long engineHandle, long nameHandle,
+  int nameLenth, byte[] key);
+  private native void sortedDelete(long engineHandle, long nameHandle,
+      int nameLenth, byte[] key);
+  private native long newSortedIterator(long engineHandle,
+      long nameHandle, int nameLenth);
 
   private enum LibraryState {
     NOT_LOADED,
