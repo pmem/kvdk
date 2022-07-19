@@ -9,7 +9,12 @@
 
 namespace KVDK_NAMESPACE {
 
+// For balance free entries among threads, move a free list to the background
+// pool if more than kMinMovableEntries in the free list
 const uint32_t kMinMovableEntries = 1024;
+// To avoid background space merge consumes resorces in idle time, do merge only
+// if more than kMergeThreshold space entries been freed since last merge
+const uint64_t kMergeThreshold = 1024 * 1024;
 
 void SpaceMap::Set(uint64_t offset, uint64_t length) {
   assert(offset < map_.size());
@@ -121,10 +126,13 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
 
 void Freelist::OrganizeFreeSpace() {
   MoveCachedEntriesToPool();
-  MergeSpaceInPool();
+  if (last_freed_after_merge_.load() > kMergeThreshold) {
+    MergeSpaceInPool();
+  }
 }
 
 void Freelist::MergeSpaceInPool() {
+  last_freed_after_merge_.store(0);
   std::vector<PMemOffsetType> merging_list;
   std::vector<std::vector<PMemOffsetType>> merged_small_entry_offsets(
       max_small_entry_block_size_);
@@ -153,7 +161,8 @@ void Freelist::MergeSpaceInPool() {
             merged_large_entries[size_index].emplace(
                 offset, merged_blocks_ * block_size_);
             if (merged_large_entries[size_index].size() >= kMinMovableEntries) {
-              // move merged entries to merging pool to avoid redundant merging
+              // move merged entries to merging pool to avoid redundant
+              // merging
               merged_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
                                              size_index);
             }
@@ -161,7 +170,8 @@ void Freelist::MergeSpaceInPool() {
             merged_small_entry_offsets[merged_blocks_].emplace_back(offset);
             if (merged_small_entry_offsets[merged_blocks_].size() >=
                 kMinMovableEntries) {
-              // move merged entries to merging pool to avoid redundant merging
+              // move merged entries to merging pool to avoid redundant
+              // merging
               merged_pool_.MoveEntryList(
                   merged_small_entry_offsets[merged_blocks_], merged_blocks_);
             }
@@ -214,6 +224,7 @@ void Freelist::Push(const SpaceEntry& entry) {
     std::lock_guard<SpinMutex> lg(flist_thread_cache.small_entry_spins[b_size]);
     flist_thread_cache.small_entry_offsets[b_size].emplace_back(entry.offset);
   }
+  flist_thread_cache.recently_freed.fetch_add(1, std::memory_order_relaxed);
 }
 
 uint64_t Freelist::BatchPush(const std::vector<SpaceEntry>& entries) {
@@ -256,6 +267,7 @@ uint64_t Freelist::BatchPush(const std::vector<SpaceEntry>& entries) {
                                      size_index);
     }
   }
+  last_freed_after_merge_.fetch_add(entries.size(), std::memory_order_relaxed);
   return pushed_size;
 }
 
@@ -272,6 +284,10 @@ void Freelist::MoveCachedEntriesToPool() {
   std::set<SpaceEntry, SpaceEntry::SpaceCmp> moving_large_entry_set;
   for (uint64_t i = 0; i < flist_thread_cache_.size(); i++) {
     auto& tc = flist_thread_cache_[i];
+    last_freed_after_merge_.fetch_add(
+        tc.recently_freed.load(std::memory_order_relaxed),
+        std::memory_order_relaxed);
+    tc.recently_freed.store(0, std::memory_order_relaxed);
 
     for (size_t b_size = 1; b_size < tc.small_entry_offsets.size(); b_size++) {
       moving_small_entry_list.clear();
