@@ -126,83 +126,82 @@ uint64_t SpaceMap::TryMerge(uint64_t offset, uint64_t max_merge_length,
 
 void Freelist::OrganizeFreeSpace() {
   MoveCachedEntriesToPool();
-  MergeSpaceInPool();
+  if (last_freed_after_merge_.load() > kMergeThreshold) {
+    MergeSpaceInPool();
+  }
 }
 
 void Freelist::MergeSpaceInPool() {
-  if (last_freed_after_merge_.load() > kMergeThreshold) {
-    last_freed_after_merge_.store(0);
-    std::vector<PMemOffsetType> merging_list;
-    std::vector<std::vector<PMemOffsetType>> merged_small_entry_offsets(
-        max_small_entry_block_size_);
-    std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>>
-        merged_large_entries(max_block_size_index_);
+  last_freed_after_merge_.store(0);
+  std::vector<PMemOffsetType> merging_list;
+  std::vector<std::vector<PMemOffsetType>> merged_small_entry_offsets(
+      max_small_entry_block_size_);
+  std::vector<std::set<SpaceEntry, SpaceEntry::SpaceCmp>> merged_large_entries(
+      max_block_size_index_);
 
-    for (uint32_t b_size = 1; b_size < max_small_entry_block_size_; b_size++) {
-      while (active_pool_.TryFetchEntryList(merging_list, b_size)) {
-        for (PMemOffsetType& offset : merging_list) {
-          assert(offset % block_size_ == 0);
-          auto b_offset = offset / block_size_;
-          uint64_t merged_blocks_ = MergeSpace(
-              b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
-              b_size);
+  for (uint32_t b_size = 1; b_size < max_small_entry_block_size_; b_size++) {
+    while (active_pool_.TryFetchEntryList(merging_list, b_size)) {
+      for (PMemOffsetType& offset : merging_list) {
+        assert(offset % block_size_ == 0);
+        auto b_offset = offset / block_size_;
+        uint64_t merged_blocks_ = MergeSpace(
+            b_offset, num_segment_blocks_ - b_offset % num_segment_blocks_,
+            b_size);
 
-          if (merged_blocks_ > 0) {
-            // Persist merged free entry on PMem
-            if (merged_blocks_ > b_size) {
-              pmem_allocator_->persistSpaceEntry(offset,
-                                                 merged_blocks_ * block_size_);
+        if (merged_blocks_ > 0) {
+          // Persist merged free entry on PMem
+          if (merged_blocks_ > b_size) {
+            pmem_allocator_->persistSpaceEntry(offset,
+                                               merged_blocks_ * block_size_);
+          }
+
+          // large space entries
+          if (merged_blocks_ >= merged_small_entry_offsets.size()) {
+            size_t size_index = blockSizeIndex(merged_blocks_);
+            merged_large_entries[size_index].emplace(
+                offset, merged_blocks_ * block_size_);
+            if (merged_large_entries[size_index].size() >= kMinMovableEntries) {
+              // move merged entries to merging pool to avoid redundant
+              // merging
+              merged_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
+                                             size_index);
             }
-
-            // large space entries
-            if (merged_blocks_ >= merged_small_entry_offsets.size()) {
-              size_t size_index = blockSizeIndex(merged_blocks_);
-              merged_large_entries[size_index].emplace(
-                  offset, merged_blocks_ * block_size_);
-              if (merged_large_entries[size_index].size() >=
-                  kMinMovableEntries) {
-                // move merged entries to merging pool to avoid redundant
-                // merging
-                merged_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
-                                               size_index);
-              }
-            } else {
-              merged_small_entry_offsets[merged_blocks_].emplace_back(offset);
-              if (merged_small_entry_offsets[merged_blocks_].size() >=
-                  kMinMovableEntries) {
-                // move merged entries to merging pool to avoid redundant
-                // merging
-                merged_pool_.MoveEntryList(
-                    merged_small_entry_offsets[merged_blocks_], merged_blocks_);
-              }
+          } else {
+            merged_small_entry_offsets[merged_blocks_].emplace_back(offset);
+            if (merged_small_entry_offsets[merged_blocks_].size() >=
+                kMinMovableEntries) {
+              // move merged entries to merging pool to avoid redundant
+              // merging
+              merged_pool_.MoveEntryList(
+                  merged_small_entry_offsets[merged_blocks_], merged_blocks_);
             }
           }
         }
       }
     }
+  }
 
-    for (uint32_t b_size = 1; b_size < merged_small_entry_offsets.size();
-         b_size++) {
-      if (merged_small_entry_offsets[b_size].size() > 0) {
-        active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
-      }
-      while (merged_pool_.TryFetchEntryList(merged_small_entry_offsets[b_size],
-                                            b_size)) {
-        active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
-      }
+  for (uint32_t b_size = 1; b_size < merged_small_entry_offsets.size();
+       b_size++) {
+    if (merged_small_entry_offsets[b_size].size() > 0) {
+      active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
     }
+    while (merged_pool_.TryFetchEntryList(merged_small_entry_offsets[b_size],
+                                          b_size)) {
+      active_pool_.MoveEntryList(merged_small_entry_offsets[b_size], b_size);
+    }
+  }
 
-    for (size_t size_index = 0; size_index < merged_large_entries.size();
-         size_index++) {
-      if (merged_large_entries[size_index].size() > 0) {
-        active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
-                                       size_index);
-      }
-      while (merged_pool_.TryFetchLargeEntrySet(
-          merged_large_entries[size_index], size_index)) {
-        active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
-                                       size_index);
-      }
+  for (size_t size_index = 0; size_index < merged_large_entries.size();
+       size_index++) {
+    if (merged_large_entries[size_index].size() > 0) {
+      active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
+                                     size_index);
+    }
+    while (merged_pool_.TryFetchLargeEntrySet(merged_large_entries[size_index],
+                                              size_index)) {
+      active_pool_.MoveLargeEntrySet(merged_large_entries[size_index],
+                                     size_index);
     }
   }
 }
