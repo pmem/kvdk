@@ -39,7 +39,7 @@ mkdir -p /tmp/kvdk-test-dir
 java -cp target/kvdkjni-examples-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.examples.KVDKExamples
 ```
 
-## Cross Platform:
+## Cross Platform
 
 The KVDK Java library contains the needed shared libaries (`.so` files) in the jar.
 
