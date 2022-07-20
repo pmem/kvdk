@@ -37,7 +37,8 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
     StringView data_entry_key;
 
     switch (header_.index_type) {
-      case PointerType::Empty: {
+      case PointerType::Empty:
+      case PointerType::Allocated: {
         return false;
       }
       case PointerType::StringRecord: {
@@ -143,6 +144,9 @@ HashTable::LookupResult HashTable::Lookup(const StringView& key,
   }
 
   ret.s = NotFound;
+  if (may_insert) {
+    ret.entry_ptr->MarkAsAllocated();
+  }
   return ret;
 }
 
