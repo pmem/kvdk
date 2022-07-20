@@ -2,7 +2,7 @@
 
 ### System requirements
 * JDK >= 1.8
-* Apache Maven
+* Apache Maven >= 3.1.0
 
 ### Build KVDK JNI library
 Add `-DWITH_JNI=ON` to cmake command options. For example:

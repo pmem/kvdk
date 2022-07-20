@@ -4,28 +4,24 @@
 
 package io.pmem.kvdk;
 
-/**
- * Base calss for KVDK object that hold a reference to native C++ object.
- */
+/** Base calss for KVDK object that hold a reference to native C++ object. */
 public abstract class KVDKObject extends AbstractNativeReference {
-  /**
-   * An immutable reference to the value of the C++ pointer.
-   */
-  protected final long nativeHandle_;
+    /** An immutable reference to the value of the C++ pointer. */
+    protected final long nativeHandle_;
 
-  public KVDKObject(final long nativeHandle) {
-    super(true);
-    this.nativeHandle_ = nativeHandle;
-  }
+    public KVDKObject(final long nativeHandle) {
+        super(true);
+        this.nativeHandle_ = nativeHandle;
+    }
 
-  @Override
-  protected void closeInternal() {
-    closeInternal(nativeHandle_);
-  }
+    @Override
+    protected void closeInternal() {
+        closeInternal(nativeHandle_);
+    }
 
-  protected abstract void closeInternal(final long handle);
+    protected abstract void closeInternal(final long handle);
 
-  public long getNativeHandle() {
-    return nativeHandle_;
-  }
+    public long getNativeHandle() {
+        return nativeHandle_;
+    }
 }

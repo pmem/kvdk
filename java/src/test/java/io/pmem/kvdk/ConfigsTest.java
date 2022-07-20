@@ -7,14 +7,14 @@ package io.pmem.kvdk;
 import org.junit.Test;
 
 public class ConfigsTest {
-  @Test
-  public void testCreateConfigs() {
-    Configs configs = new Configs();
+    @Test
+    public void testCreateConfigs() {
+        Configs configs = new Configs();
 
-    configs.setPMemSegmentBlocks(8L << 20);
-    configs.setMaxAccessThreads(8);
-    configs.setPMemFileSize(10L << 30);
+        configs.setPMemSegmentBlocks(8L << 20);
+        configs.setMaxAccessThreads(8);
+        configs.setPMemFileSize(10L << 30);
 
-    configs.close();
-  }
+        configs.close();
+    }
 }

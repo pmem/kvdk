@@ -5,36 +5,34 @@
 package io.pmem.kvdk;
 
 /**
- * This class is used to handle reference to native string view.
- * Holding native string view avoids repetitive coversion of bytes
- * from Java to C++.
+ * This class is used to handle reference to native string view. Holding native string view avoids
+ * repetitive coversion of bytes from Java to C++.
  */
 public class NativeBytesHandle extends KVDKObject {
-  static {
-    Engine.loadLibrary();
-  }
+    static {
+        Engine.loadLibrary();
+    }
 
-  private final int length;
-  private final byte[] bytes;
+    private final int length;
+    private final byte[] bytes;
 
-  public NativeBytesHandle(final byte[] bytes) {
-    super(newNativeBytes(bytes));
-    this.length = bytes.length;
-    this.bytes = bytes;
-  }
+    public NativeBytesHandle(final byte[] bytes) {
+        super(newNativeBytes(bytes));
+        this.length = bytes.length;
+        this.bytes = bytes;
+    }
 
-  public int getLength() {
-    return length;
-  }
+    public int getLength() {
+        return length;
+    }
 
-  public byte[] getBytes() {
-    return bytes;
-  }
+    public byte[] getBytes() {
+        return bytes;
+    }
 
-  // Native methods
-  private static native long newNativeBytes(byte[] bytes);
-  
-  @Override
-  protected native void closeInternal(long handle);
+    // Native methods
+    private static native long newNativeBytes(byte[] bytes);
 
+    @Override
+    protected native void closeInternal(long handle);
 }
