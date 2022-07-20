@@ -17,10 +17,13 @@ public class NativeLibraryLoader {
   private static final NativeLibraryLoader instance = new NativeLibraryLoader();
   private static boolean initialized = false;
 
-  private static final String sharedLibraryName = "kvdkjni";
+  private static final String jniLibraryName = "kvdkjni";
   private static final String jniLibraryFileName = System.mapLibraryName("kvdkjni");
-  private static final String tempFilePrefix = "libkvdkjni";
-  private static final String tempFileSuffix = ".so";
+  private static final String atomicLibraryFileName = "libatomic.so.1";
+  private static final String tempAtomicLibraryFilePrefix = "libatomic";
+  private static final String tempAtomicLibraryFileSuffix = ".so.1";
+  private static final String tempJniLibraryFilePrefix = "libkvdkjni";
+  private static final String tempJniLibraryFileSuffix = ".so";
 
   public static NativeLibraryLoader getInstance() {
     return instance;
@@ -29,7 +32,7 @@ public class NativeLibraryLoader {
   public synchronized void loadLibrary(final String tmpDir) throws IOException {
     try {
       // try system dynamic library
-      System.loadLibrary(sharedLibraryName);
+      System.loadLibrary(jniLibraryName);
       return;
     } catch (final UnsatisfiedLinkError ule) {
       // ignore - then try from jar
@@ -42,17 +45,26 @@ public class NativeLibraryLoader {
   void loadLibraryFromJar(final String tmpDir)
       throws IOException {
     if (!initialized) {
-      System.load(loadLibraryFromJarToTemp(tmpDir).getAbsolutePath());
+      System.load(
+          loadLibraryFromJarToTemp(tmpDir, atomicLibraryFileName,
+              tempAtomicLibraryFilePrefix, tempAtomicLibraryFileSuffix)
+          .getAbsolutePath()
+      );
+      System.load(
+          loadLibraryFromJarToTemp(tmpDir, jniLibraryFileName,
+              tempJniLibraryFilePrefix, tempJniLibraryFileSuffix)
+          .getAbsolutePath()
+      );
       initialized = true;
     }
   }
 
-  File loadLibraryFromJarToTemp(final String tmpDir)
+  File loadLibraryFromJarToTemp(final String tmpDir, String libraryFileName,
+      String tempFilePrefix, String tempFileSuffix)
       throws IOException {
     InputStream is = null;
     try {
       // attempt to look up the static library in the jar file
-      String libraryFileName = jniLibraryFileName;
       is = getClass().getClassLoader().getResourceAsStream(libraryFileName);
 
       if (is == null) {
