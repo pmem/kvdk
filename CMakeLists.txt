@@ -153,11 +153,13 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*)
 
-option(WITH_JNI "Build with JNI" ON)
+option(WITH_JNI "Build with JNI" OFF)
 if(WITH_JNI OR JNI)
     message(STATUS "JNI library is enabled")
     set(KVDK_SHARED_LIB engine)
     set(KVDK_STATIC_LIB engine-static)
+
+    include(FindPackageHandleStandardArgs)
 
     find_library(LIBPMEM_STATIC_LIB NAMES "${CMAKE_STATIC_LIBRARY_PREFIX}pmem${CMAKE_STATIC_LIBRARY_SUFFIX}")
     find_package_handle_standard_args(libpmem REQUIRED_VARS LIBPMEM_STATIC_LIB)

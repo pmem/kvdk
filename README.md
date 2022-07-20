@@ -31,7 +31,7 @@ git clone --recurse-submodules https://github.com/pmem/kvdk.git
 ## Building
 ### Install dependent tools and libraries on Ubuntu 18.04
 ```bash
-sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
+sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git curl
 
 git clone https://github.com/pmem/ndctl.git
 cd ndctl
@@ -61,7 +61,7 @@ sudo make install
 yum config-manager --add-repo /etc/yum.repos.d/CentOS-Linux-PowerTools.repo
 yum config-manager --set-enabled PowerTools
 
-yum install -y git gcc gcc-c++ autoconf automake asciidoc bash-completion xmlto libtool pkgconfig glib2 glib2-devel libfabric libfabric-devel doxygen graphviz pandoc ncurses kmod kmod-devel libudev-devel libuuid-devel json-c-devel keyutils-libs-devel gem make cmake libarchive clang-tools-extra hwloc-devel perl-Text-Diff gflags-devel
+yum install -y git gcc gcc-c++ autoconf automake asciidoc bash-completion xmlto libtool pkgconfig glib2 glib2-devel libfabric libfabric-devel doxygen graphviz pandoc ncurses kmod kmod-devel libudev-devel libuuid-devel json-c-devel keyutils-libs-devel gem make cmake libarchive clang-tools-extra hwloc-devel perl-Text-Diff gflags-devel curl
 
 git clone https://github.com/pmem/ndctl.git
 cd ndctl
