@@ -39,10 +39,10 @@ mkdir -p /tmp/kvdk-test-dir
 java -cp target/kvdkjni-examples-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.examples.KVDKExamples
 ```
 
-Note:
+## Cross Platform:
 
-If the examples are planned to be run on another server, not the one building KVDK on, you should make sure the C++ Standard Library is new enough so that `libstdc++.so.6` includes `GLIBCXX_3.4.22` and `CXXABI_1.3.11`.
+The KVDK Java library contains the needed shared libaries (`.so` files) in the jar.
 
-Otherwise, you may need to install newer version of `gcc` or set the `LD_LIBRARY_PATH` to proper directory that has newer version of `libstdc++.so.6`.
+A Java application relying on KVDK Java library can be run on 64-bit Linux servers without building the KVDK C++ code, when the C++ Standard Library is new enough so that `libstdc++.so.6` includes `GLIBCXX_3.4.22` and `CXXABI_1.3.11`.
 
-We tested on `Centos-8` and `Ubuntu-18.04`, the version of `libstdc++.so.6` is OK.
+We tested on `Centos-8` and `Ubuntu-18.04`, in which the `libstdc++.so.6` is new enough. And we don't need to build the KVDK C++ code to run Java applications using KVDK.
