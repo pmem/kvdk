@@ -62,6 +62,11 @@ struct alignas(16) HashEntry {
 
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
+  // Make this hash entry empty while its content been deleted
+  void clear() { header_.index_type = PointerType::Empty; }
+
+  bool Allocated() { return header_.index_type == PointerType::Allocated; }
+
   void MarkAsAllocated() { header_.index_type = PointerType::Allocated; }
 
   Index GetIndex() const { return index_; }
@@ -80,10 +85,6 @@ struct alignas(16) HashEntry {
   // * target_type: a mask of RecordType, search all masked types
   bool Match(const StringView& key, uint32_t hash_k_prefix, uint8_t target_type,
              DataEntry* data_entry_metadata);
-
- private:
-  // Make this hash entry empty while its content been deleted
-  void clear() { header_.index_type = PointerType::Empty; }
 
  private:
   Index index_;
