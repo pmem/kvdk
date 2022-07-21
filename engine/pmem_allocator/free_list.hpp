@@ -249,15 +249,6 @@ class Freelist {
     std::atomic<uint64_t> recently_freed;
   };
 
-  uint64_t MergeSpace(uint64_t b_offset, uint64_t b_size,
-                      uint64_t limit_merge_size) {
-    if (b_size > limit_merge_size) {
-      return 0;
-    }
-    uint64_t size = space_map_.TryMerge(b_offset, b_size, limit_merge_size);
-    return size;
-  }
-
   uint32_t blockSizeIndex(uint32_t block_size) {
     kvdk_assert(block_size <= num_segment_blocks_, "");
     uint32_t ret = block_size < max_small_entry_block_size_
