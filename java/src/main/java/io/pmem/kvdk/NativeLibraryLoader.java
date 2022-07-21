@@ -17,10 +17,15 @@ public class NativeLibraryLoader {
     private static boolean initialized = false;
 
     private static final String jniLibraryName = "kvdkjni";
-    private static final String jniLibraryFileName = System.mapLibraryName("kvdkjni");
+
     private static final String atomicLibraryFileName = "libatomic.so.1";
+    private static final String stdLibraryFileName = "libstdc++.so.6";
+    private static final String jniLibraryFileName = System.mapLibraryName("kvdkjni");
+
     private static final String tempAtomicLibraryFilePrefix = "libatomic";
     private static final String tempAtomicLibraryFileSuffix = ".so.1";
+    private static final String tempStdLibraryFilePrefix = "libstdc++";
+    private static final String tempStdLibraryFileSuffix = ".so.6";
     private static final String tempJniLibraryFilePrefix = "libkvdkjni";
     private static final String tempJniLibraryFileSuffix = ".so";
 
@@ -49,6 +54,13 @@ public class NativeLibraryLoader {
                                     atomicLibraryFileName,
                                     tempAtomicLibraryFilePrefix,
                                     tempAtomicLibraryFileSuffix)
+                            .getAbsolutePath());
+            System.load(
+                    loadLibraryFromJarToTemp(
+                                    tmpDir,
+                                    stdLibraryFileName,
+                                    tempStdLibraryFilePrefix,
+                                    tempStdLibraryFileSuffix)
                             .getAbsolutePath());
             System.load(
                     loadLibraryFromJarToTemp(

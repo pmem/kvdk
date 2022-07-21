@@ -173,6 +173,12 @@ if(WITH_JNI OR JNI)
         message(FATAL_ERROR "libatomic.so.1 not found")
     endif()
 
+    find_library(STD_CPP_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}stdc++${CMAKE_SHARED_LIBRARY_SUFFIX}.6")
+    find_package_handle_standard_args(std_cpp REQUIRED_VARS STD_CPP_SHARED_LIB)
+    if(NOT std_cpp_FOUND)
+        message(FATAL_ERROR "libstdc++.so.6 not found")
+    endif()
+
     add_library(${KVDK_STATIC_LIB} STATIC ${SOURCES})
     target_include_directories(${KVDK_STATIC_LIB} PUBLIC ./include ./extern)
     target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${LIBPMEM_STATIC_LIB})

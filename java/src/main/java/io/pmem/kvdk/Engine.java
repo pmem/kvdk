@@ -10,7 +10,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /** The KVDK engine, providing the APIs for Key-Value operations. */
 public class Engine extends KVDKObject {
-    private static final String atomicLibraryFileName = System.mapLibraryName("atomic");
+    private static final String atomicLibraryFileName = "libatomic.so.1";
+    private static final String stdLibraryFileName = "libstdc++.so.6";
     private static final String jniLibraryFileName = System.mapLibraryName("kvdkjni");
 
     /**
@@ -185,6 +186,7 @@ public class Engine extends KVDKObject {
             for (final String path : paths) {
                 try {
                     System.load(path + "/" + atomicLibraryFileName);
+                    System.load(path + "/" + stdLibraryFileName);
                     System.load(path + "/" + jniLibraryFileName);
                     success = true;
                     break;
