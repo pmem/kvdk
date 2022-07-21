@@ -119,6 +119,15 @@ public class Engine extends KVDKObject {
         iterator.close();
     }
 
+    public WriteBatch writeBatchCreate() {
+        long batchHandle = writeBatchCreate(nativeHandle_);
+        return new WriteBatch(batchHandle);
+    }
+
+    public void batchWrite(WriteBatch batch) throws KVDKException {
+        batchWrite(nativeHandle_, batch.getNativeHandle());
+    }
+
     // Native methods
     @Override
     protected final native void closeInternal(long handle);
@@ -150,6 +159,10 @@ public class Engine extends KVDKObject {
     private native void sortedDelete(long engineHandle, long nameHandle, int nameLenth, byte[] key);
 
     private native long newSortedIterator(long engineHandle, long nameHandle, int nameLenth);
+
+    private native long writeBatchCreate(long handle);
+
+    private native void batchWrite(long engineHandle, long batchHandle);
 
     private enum LibraryState {
         NOT_LOADED,
