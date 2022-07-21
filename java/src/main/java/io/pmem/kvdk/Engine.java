@@ -43,7 +43,22 @@ public class Engine extends KVDKObject {
     }
 
     public void put(final byte[] key, final byte[] value) throws KVDKException {
-        put(nativeHandle_, key, value);
+        WriteOptions defaulWriteOptions = new WriteOptions();
+        put(key, value, defaulWriteOptions);
+    }
+
+    public void put(final byte[] key, final byte[] value, final WriteOptions wOptions)
+            throws KVDKException {
+        put(nativeHandle_, key, value, wOptions.getTtlInMillis(), wOptions.isUpdateTtlIfExisted());
+    }
+
+    public void expire(final byte[] key, final long ttlInMillis) throws KVDKException {
+        expire(nativeHandle_, key, ttlInMillis);
+    }
+
+    public void expire(final NativeBytesHandle nameHandle, final long ttlInMillis)
+            throws KVDKException {
+        expire(nativeHandle_, nameHandle.getNativeHandle(), nameHandle.getLength(), ttlInMillis);
     }
 
     /**
@@ -110,7 +125,12 @@ public class Engine extends KVDKObject {
 
     private static native long open(final String path, final long cfg_handle) throws KVDKException;
 
-    private native void put(long handle, byte[] key, byte[] value);
+    private native void put(
+            long handle, byte[] key, byte[] value, long ttl, boolean updateTtlIfExisted);
+
+    private native void expire(long handle, byte[] key, long ttlInMillis);
+
+    private native void expire(long handle, long nameHandle, int nameLenth, long ttlInMillis);
 
     private native byte[] get(long handle, byte[] key);
 

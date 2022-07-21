@@ -107,4 +107,38 @@ public class EngineTest extends EngineTestBase {
         // close name handle
         nameHandle.close();
     }
+
+    @Test
+    public void testExpiration() throws KVDKException, InterruptedException {
+        String key1 = "key1";
+        String value1 = "value1";
+
+        // put
+        kvdkEngine.put(key1.getBytes(), value1.getBytes());
+        assertEquals(value1, new String(kvdkEngine.get(key1.getBytes())));
+
+        // expire
+        kvdkEngine.expire(key1.getBytes(), 199);
+        Thread.sleep(200);
+
+        // check
+        assertEquals(null, kvdkEngine.get(key1.getBytes()));
+    }
+
+    @Test
+    public void testExpirationWithWriteOptions() throws KVDKException, InterruptedException {
+        String key1 = "key1";
+        String value1 = "value1";
+
+        WriteOptions writeOptions = new WriteOptions(199, true);
+
+        // put
+        kvdkEngine.put(key1.getBytes(), value1.getBytes(), writeOptions);
+        assertEquals(value1, new String(kvdkEngine.get(key1.getBytes())));
+
+        Thread.sleep(200);
+
+        // check
+        assertEquals(null, kvdkEngine.get(key1.getBytes()));
+    }
 }

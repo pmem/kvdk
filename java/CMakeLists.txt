@@ -26,6 +26,7 @@ set(JAVA_MAIN_SOURCES
   src/main/java/io/pmem/kvdk/KVDKObject.java
   src/main/java/io/pmem/kvdk/NativeBytesHandle.java
   src/main/java/io/pmem/kvdk/NativeLibraryLoader.java
+  src/main/java/io/pmem/kvdk/WriteOptions.java
 )
 
 set(JAVA_TEST_SOURCES

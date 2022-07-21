@@ -39,10 +39,12 @@ jlong Java_io_pmem_kvdk_Engine_open(JNIEnv* env, jclass, jstring jengine_path,
 /**
  * Class:     io_pmem_kvdk_Engine
  * Method:    put
- * Signature: (J[B[B)V
+ * Signature: (J[B[BJZ)V
  */
 void Java_io_pmem_kvdk_Engine_put(JNIEnv* env, jobject, jlong handle,
-                                  jbyteArray key, jbyteArray value) {
+                                  jbyteArray key, jbyteArray value,
+                                  jlong ttl_in_millis,
+                                  jboolean update_ttl_if_existed) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
   int key_len = env->GetArrayLength(key);
@@ -64,12 +66,65 @@ void Java_io_pmem_kvdk_Engine_put(JNIEnv* env, jobject, jlong handle,
     return;
   }
 
+  KVDK_NAMESPACE::WriteOptions write_options;
+  write_options.ttl_time = ttl_in_millis;
+  write_options.update_ttl = update_ttl_if_existed;
+
   auto s =
       engine->Put(std::string(reinterpret_cast<char*>(key_bytes), key_len),
-                  std::string(reinterpret_cast<char*>(value_bytes), value_len));
+                  std::string(reinterpret_cast<char*>(value_bytes), value_len),
+                  write_options);
 
   delete[] key_bytes;
   delete[] value_bytes;
+
+  if (s != KVDK_NAMESPACE::Status::Ok) {
+    KVDK_NAMESPACE::KVDKExceptionJni::ThrowNew(env, s);
+  }
+}
+
+/**
+ * Class:     io_pmem_kvdk_Engine
+ * Method:    expire
+ * Signature: (J[BJ)V
+ */
+void Java_io_pmem_kvdk_Engine_expire__J_3BJ(JNIEnv* env, jobject, jlong handle,
+                                            jbyteArray key,
+                                            jlong ttl_in_millis) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
+
+  int key_len = env->GetArrayLength(key);
+  jbyte* key_bytes = new jbyte[key_len];
+  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  if (env->ExceptionCheck()) {
+    // exception thrown: ArrayIndexOutOfBoundsException
+    delete[] key_bytes;
+    return;
+  }
+
+  auto s = engine->Expire(
+      std::string(reinterpret_cast<char*>(key_bytes), key_len), ttl_in_millis);
+
+  delete[] key_bytes;
+
+  if (s != KVDK_NAMESPACE::Status::Ok) {
+    KVDK_NAMESPACE::KVDKExceptionJni::ThrowNew(env, s);
+  }
+}
+
+/**
+ * Class:     io_pmem_kvdk_Engine
+ * Method:    expire
+ * Signature: (JJIJ)V
+ */
+void Java_io_pmem_kvdk_Engine_expire__JJIJ(JNIEnv* env, jobject,
+                                           jlong engine_handle,
+                                           jlong name_handle, jint name_len,
+                                           jlong ttl_in_millis) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
+
+  auto s = engine->Expire(std::string(name_chars, name_len), ttl_in_millis);
 
   if (s != KVDK_NAMESPACE::Status::Ok) {
     KVDK_NAMESPACE::KVDKExceptionJni::ThrowNew(env, s);
