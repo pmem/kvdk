@@ -179,6 +179,10 @@ if(WITH_JNI OR JNI)
     target_link_libraries(${KVDK_STATIC_LIB} PRIVATE pthread gflags hwloc atomic)
     set_property(TARGET ${KVDK_STATIC_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/java)
+
+    add_cppstyle(jni_src
+        ${CMAKE_CURRENT_SOURCE_DIR}/java/kvdkjni/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/java/kvdkjni/*.h*)
 else()
     message(STATUS "JNI library is disabled")
 endif()

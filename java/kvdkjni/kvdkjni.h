@@ -7,10 +7,10 @@
 
 #include <jni.h>
 #include <stdio.h>
+
 #include <iostream>
 
 #include "kvdk/engine.hpp"
-
 #include "kvdkjni/cplusplus_to_java_convert.h"
 
 namespace KVDK_NAMESPACE {
@@ -64,21 +64,19 @@ class StatusJni : public JavaClass {
    */
   static jobject construct(JNIEnv* env, const Status& status) {
     jclass jclazz = getJClass(env);
-    if(jclazz == nullptr) {
+    if (jclazz == nullptr) {
       // exception occurred accessing class
       return nullptr;
     }
 
-    jmethodID mid =
-        env->GetMethodID(jclazz, "<init>", "(B)V");
-    if(mid == nullptr) {
+    jmethodID mid = env->GetMethodID(jclazz, "<init>", "(B)V");
+    if (mid == nullptr) {
       // exception thrown: NoSuchMethodException or OutOfMemoryError
       return nullptr;
     }
 
-    jobject jstatus =
-        env->NewObject(jclazz, mid, toJavaStatusCode(status));
-    if(env->ExceptionCheck()) {
+    jobject jstatus = env->NewObject(jclazz, mid, toJavaStatusCode(status));
+    if (env->ExceptionCheck()) {
       // exception occurred
       return nullptr;
     }
@@ -137,9 +135,10 @@ class StatusJni : public JavaClass {
     }
   }
 };
-  
+
 // Java Exception template
-template<class DERIVED> class JavaException : public JavaClass {
+template <class DERIVED>
+class JavaException : public JavaClass {
  public:
   /**
    * Create and throw a java exception with the provided message
@@ -151,16 +150,18 @@ template<class DERIVED> class JavaException : public JavaClass {
    */
   static bool ThrowNew(JNIEnv* env, const std::string& msg) {
     jclass jclazz = DERIVED::getJClass(env);
-    if(jclazz == nullptr) {
+    if (jclazz == nullptr) {
       // exception occurred accessing class
-      std::cerr << "JavaException::ThrowNew - Error: unexpected exception!" << std::endl;
+      std::cerr << "JavaException::ThrowNew - Error: unexpected exception!"
+                << std::endl;
       return env->ExceptionCheck();
     }
 
     const jint rs = env->ThrowNew(jclazz, msg.c_str());
-    if(rs != JNI_OK) {
+    if (rs != JNI_OK) {
       // exception could not be thrown
-      std::cerr << "JavaException::ThrowNew - Fatal: could not throw exception!" << std::endl;
+      std::cerr << "JavaException::ThrowNew - Fatal: could not throw exception!"
+                << std::endl;
       return env->ExceptionCheck();
     }
 
@@ -169,8 +170,7 @@ template<class DERIVED> class JavaException : public JavaClass {
 };
 
 // The portal class for io.pmem.kvdk.KVDKException
-class KVDKExceptionJni :
-    public JavaException<KVDKExceptionJni> {
+class KVDKExceptionJni : public JavaException<KVDKExceptionJni> {
  public:
   /**
    * Get the Java Class io.pmem.kvdk.KVDKException
@@ -214,60 +214,71 @@ class KVDKExceptionJni :
 
     // get the KVDKException class
     jclass jclazz = getJClass(env);
-    if(jclazz == nullptr) {
+    if (jclazz == nullptr) {
       // exception occurred accessing class
-      std::cerr << "KVDKExceptionJni::ThrowNew/class - Error: unexpected exception!" << std::endl;
+      std::cerr
+          << "KVDKExceptionJni::ThrowNew/class - Error: unexpected exception!"
+          << std::endl;
       return env->ExceptionCheck();
     }
 
     // get the constructor of io.pmem.kvdk.KVDKException
     jmethodID mid =
         env->GetMethodID(jclazz, "<init>", "(Lio/pmem/kvdk/Status;)V");
-    if(mid == nullptr) {
+    if (mid == nullptr) {
       // exception thrown: NoSuchMethodException or OutOfMemoryError
-      std::cerr << "KVDKExceptionJni::ThrowNew/cstr - Error: unexpected exception!" << std::endl;
+      std::cerr
+          << "KVDKExceptionJni::ThrowNew/cstr - Error: unexpected exception!"
+          << std::endl;
       return env->ExceptionCheck();
     }
 
     // get the Java status object
     jobject jstatus = StatusJni::construct(env, s);
-    if(jstatus == nullptr) {
+    if (jstatus == nullptr) {
       // exception occcurred
-      std::cerr << "KVDKExceptionJni::ThrowNew/StatusJni - Error: unexpected exception!" << std::endl;
+      std::cerr << "KVDKExceptionJni::ThrowNew/StatusJni - Error: unexpected "
+                   "exception!"
+                << std::endl;
       return env->ExceptionCheck();
     }
 
     // construct the KVDKException
-    jthrowable kvdk_exception = reinterpret_cast<jthrowable>(env->NewObject(jclazz, mid, jstatus));
-    if(env->ExceptionCheck()) {
-      if(jstatus != nullptr) {
+    jthrowable kvdk_exception =
+        reinterpret_cast<jthrowable>(env->NewObject(jclazz, mid, jstatus));
+    if (env->ExceptionCheck()) {
+      if (jstatus != nullptr) {
         env->DeleteLocalRef(jstatus);
       }
-      if(kvdk_exception != nullptr) {
+      if (kvdk_exception != nullptr) {
         env->DeleteLocalRef(kvdk_exception);
       }
-      std::cerr << "KVDKExceptionJni::ThrowNew/NewObject - Error: unexpected exception!" << std::endl;
+      std::cerr << "KVDKExceptionJni::ThrowNew/NewObject - Error: unexpected "
+                   "exception!"
+                << std::endl;
       return true;
     }
 
     // throw the KVDKException
     const jint rs = env->Throw(kvdk_exception);
-    if(rs != JNI_OK) {
+    if (rs != JNI_OK) {
       // exception could not be thrown
-      std::cerr << "KVDKExceptionJni::ThrowNew - Fatal: could not throw exception!" << std::endl;
-      if(jstatus != nullptr) {
+      std::cerr
+          << "KVDKExceptionJni::ThrowNew - Fatal: could not throw exception!"
+          << std::endl;
+      if (jstatus != nullptr) {
         env->DeleteLocalRef(jstatus);
       }
-      if(kvdk_exception != nullptr) {
+      if (kvdk_exception != nullptr) {
         env->DeleteLocalRef(kvdk_exception);
       }
       return env->ExceptionCheck();
     }
 
-    if(jstatus != nullptr) {
+    if (jstatus != nullptr) {
       env->DeleteLocalRef(jstatus);
     }
-    if(kvdk_exception != nullptr) {
+    if (kvdk_exception != nullptr) {
       env->DeleteLocalRef(kvdk_exception);
     }
 
@@ -277,14 +288,16 @@ class KVDKExceptionJni :
 
 class JniUtil {
  public:
-  static jbyteArray createJavaByteArray(JNIEnv* env, const char* bytes, const size_t size) {
+  static jbyteArray createJavaByteArray(JNIEnv* env, const char* bytes,
+                                        const size_t size) {
     // Limitation for java array size is vm specific
     // In general it cannot exceed Integer.MAX_VALUE (2^31 - 1)
-    // Current HotSpot VM limitation for array size is Integer.MAX_VALUE - 5 (2^31 - 1 - 5)
-    // It means that the next call to env->NewByteArray can still end with
-    // OutOfMemoryError("Requested array size exceeds VM limit") coming from VM
+    // Current HotSpot VM limitation for array size is Integer.MAX_VALUE - 5
+    // (2^31 - 1 - 5) It means that the next call to env->NewByteArray can still
+    // end with OutOfMemoryError("Requested array size exceeds VM limit") coming
+    // from VM
     static const size_t MAX_JARRAY_SIZE = (static_cast<size_t>(1)) << 31;
-    if(size > MAX_JARRAY_SIZE) {
+    if (size > MAX_JARRAY_SIZE) {
       KVDK_NAMESPACE::KVDKExceptionJni::ThrowNew(
           env, "Requested array size exceeds VM limit");
       return nullptr;
@@ -292,14 +305,15 @@ class JniUtil {
 
     const jsize jlen = static_cast<jsize>(size);
     jbyteArray jbytes = env->NewByteArray(jlen);
-    if(jbytes == nullptr) {
+    if (jbytes == nullptr) {
       // exception thrown: OutOfMemoryError
       return nullptr;
     }
 
-    env->SetByteArrayRegion(jbytes, 0, jlen,
-      const_cast<jbyte*>(reinterpret_cast<const jbyte*>(bytes)));
-    if(env->ExceptionCheck()) {
+    env->SetByteArrayRegion(
+        jbytes, 0, jlen,
+        const_cast<jbyte*>(reinterpret_cast<const jbyte*>(bytes)));
+    if (env->ExceptionCheck()) {
       // exception thrown: ArrayIndexOutOfBoundsException
       env->DeleteLocalRef(jbytes);
       return nullptr;
@@ -311,4 +325,4 @@ class JniUtil {
 
 }  // namespace KVDK_NAMESPACE
 
-#endif // JAVA_KVDKJNI_KVDKJNI_H_
+#endif  // JAVA_KVDKJNI_KVDKJNI_H_

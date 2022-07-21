@@ -7,14 +7,12 @@
 #include "include/io_pmem_kvdk_Configs.h"
 #include "kvdkjni/kvdkjni.h"
 
-
 /**
  * Class:     io_pmem_kvdk_Configs
  * Method:    newConfigs
  * Signature: ()J
  */
-jlong Java_io_pmem_kvdk_Configs_newConfigs(
-    JNIEnv*, jclass) {
+jlong Java_io_pmem_kvdk_Configs_newConfigs(JNIEnv*, jclass) {
   auto* cfg = new kvdk::Configs();
   return GET_CPLUSPLUS_POINTER(cfg);
 }
@@ -24,9 +22,9 @@ jlong Java_io_pmem_kvdk_Configs_newConfigs(
  * Method:    setMaxAccessThreads
  * Signature: (JJ)V
  */
-void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(
-  JNIEnv*, jobject, jlong handle, jlong num) {
-  reinterpret_cast<kvdk::Configs *>(handle)->max_access_threads = num;
+void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(JNIEnv*, jobject,
+                                                   jlong handle, jlong num) {
+  reinterpret_cast<kvdk::Configs*>(handle)->max_access_threads = num;
 }
 
 /**
@@ -34,9 +32,9 @@ void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(
  * Method:    setPMemFileSize
  * Signature: (JJ)V
  */
-void Java_io_pmem_kvdk_Configs_setPMemFileSize(
-  JNIEnv*, jobject, jlong handle, jlong size) {
-  reinterpret_cast<kvdk::Configs *>(handle)->pmem_file_size = size;
+void Java_io_pmem_kvdk_Configs_setPMemFileSize(JNIEnv*, jobject, jlong handle,
+                                               jlong size) {
+  reinterpret_cast<kvdk::Configs*>(handle)->pmem_file_size = size;
 }
 
 /**
@@ -44,9 +42,10 @@ void Java_io_pmem_kvdk_Configs_setPMemFileSize(
  * Method:    setPMemSegmentBlocks
  * Signature: (JJ)V
  */
-void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(
-  JNIEnv*, jobject, jlong handle, jlong blocks) {
-  reinterpret_cast<kvdk::Configs *>(handle)->pmem_segment_blocks = blocks;
+void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(JNIEnv*, jobject,
+                                                    jlong handle,
+                                                    jlong blocks) {
+  reinterpret_cast<kvdk::Configs*>(handle)->pmem_segment_blocks = blocks;
 }
 
 /**
@@ -54,9 +53,9 @@ void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(
  * Method:    setHashBucketNum
  * Signature: (JJ)V
  */
-void Java_io_pmem_kvdk_Configs_setHashBucketNum(
-  JNIEnv*, jobject, jlong handle, jlong num) {
-  reinterpret_cast<kvdk::Configs *>(handle)->hash_bucket_num = num;
+void Java_io_pmem_kvdk_Configs_setHashBucketNum(JNIEnv*, jobject, jlong handle,
+                                                jlong num) {
+  reinterpret_cast<kvdk::Configs*>(handle)->hash_bucket_num = num;
 }
 
 /**
@@ -64,9 +63,10 @@ void Java_io_pmem_kvdk_Configs_setHashBucketNum(
  * Method:    setPopulatePMemSpace
  * Signature: (JZ)V
  */
-void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(
-  JNIEnv*, jobject, jlong handle, jboolean populate) {
-  reinterpret_cast<kvdk::Configs *>(handle)->populate_pmem_space = populate;
+void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(JNIEnv*, jobject,
+                                                    jlong handle,
+                                                    jboolean populate) {
+  reinterpret_cast<kvdk::Configs*>(handle)->populate_pmem_space = populate;
 }
 
 /**
@@ -74,9 +74,9 @@ void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(
  * Method:    setCleanThreads
  * Signature: (JJ)V
  */
-void Java_io_pmem_kvdk_Configs_setCleanThreads(
-  JNIEnv*, jobject, jlong handle, jlong num_threds) {
-  reinterpret_cast<kvdk::Configs *>(handle)->clean_threads = num_threds;
+void Java_io_pmem_kvdk_Configs_setCleanThreads(JNIEnv*, jobject, jlong handle,
+                                               jlong num_threds) {
+  reinterpret_cast<kvdk::Configs*>(handle)->clean_threads = num_threds;
 }
 
 /**
@@ -84,9 +84,8 @@ void Java_io_pmem_kvdk_Configs_setCleanThreads(
  * Method:    closeInternal
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_Configs_closeInternal(
-    JNIEnv*, jobject, jlong handle) {
-  auto* cfg = reinterpret_cast<kvdk::Configs *>(handle);
+void Java_io_pmem_kvdk_Configs_closeInternal(JNIEnv*, jobject, jlong handle) {
+  auto* cfg = reinterpret_cast<kvdk::Configs*>(handle);
   assert(cfg != nullptr);
   delete cfg;
 }

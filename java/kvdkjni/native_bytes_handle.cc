@@ -12,10 +12,10 @@
  * Method:    newNativeBytes
  * Signature: ([B)J
  */
-jlong Java_io_pmem_kvdk_NativeBytesHandle_newNativeBytes(
-    JNIEnv* env, jclass, jbyteArray bytes) {
+jlong Java_io_pmem_kvdk_NativeBytesHandle_newNativeBytes(JNIEnv* env, jclass,
+                                                         jbyteArray bytes) {
   int len = env->GetArrayLength(bytes);
-  jbyte *b = new jbyte[len];
+  jbyte* b = new jbyte[len];
   env->GetByteArrayRegion(bytes, 0, len, b);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -31,10 +31,9 @@ jlong Java_io_pmem_kvdk_NativeBytesHandle_newNativeBytes(
  * Method:    closeInternal
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_NativeBytesHandle_closeInternal(
-    JNIEnv*, jobject, jlong handle) {
-  auto* b = reinterpret_cast<jbyte *>(handle);
+void Java_io_pmem_kvdk_NativeBytesHandle_closeInternal(JNIEnv*, jobject,
+                                                       jlong handle) {
+  auto* b = reinterpret_cast<jbyte*>(handle);
   assert(b != nullptr);
   delete[] b;
 }
-

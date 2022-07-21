@@ -12,8 +12,8 @@
  * Method:    open
  * Signature: (Ljava/lang/String;J)V
  */
-jlong Java_io_pmem_kvdk_Engine_open(
-  JNIEnv* env, jclass, jstring jengine_path, jlong jcfg_handle) {
+jlong Java_io_pmem_kvdk_Engine_open(JNIEnv* env, jclass, jstring jengine_path,
+                                    jlong jcfg_handle) {
   const char* engine_path_chars = env->GetStringUTFChars(jengine_path, nullptr);
   if (engine_path_chars == nullptr) {
     // exception thrown: OutOfMemoryError
@@ -41,12 +41,12 @@ jlong Java_io_pmem_kvdk_Engine_open(
  * Method:    put
  * Signature: (J[B[B)V
  */
-void Java_io_pmem_kvdk_Engine_put(
-    JNIEnv* env, jobject, jlong handle, jbyteArray key, jbyteArray value) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(handle);
+void Java_io_pmem_kvdk_Engine_put(JNIEnv* env, jobject, jlong handle,
+                                  jbyteArray key, jbyteArray value) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
   int key_len = env->GetArrayLength(key);
-  jbyte *key_bytes = new jbyte[key_len];
+  jbyte* key_bytes = new jbyte[key_len];
   env->GetByteArrayRegion(key, 0, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -55,7 +55,7 @@ void Java_io_pmem_kvdk_Engine_put(
   }
 
   int value_len = env->GetArrayLength(value);
-  jbyte *value_bytes = new jbyte[value_len];
+  jbyte* value_bytes = new jbyte[value_len];
   env->GetByteArrayRegion(value, 0, value_len, value_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -64,9 +64,9 @@ void Java_io_pmem_kvdk_Engine_put(
     return;
   }
 
-  auto s = engine->Put(
-      std::string(reinterpret_cast<char*>(key_bytes), key_len),
-      std::string(reinterpret_cast<char*>(value_bytes), value_len));
+  auto s =
+      engine->Put(std::string(reinterpret_cast<char*>(key_bytes), key_len),
+                  std::string(reinterpret_cast<char*>(value_bytes), value_len));
 
   delete[] key_bytes;
   delete[] value_bytes;
@@ -81,12 +81,12 @@ void Java_io_pmem_kvdk_Engine_put(
  * Method:    get
  * Signature: (J[B)[B
  */
-jbyteArray Java_io_pmem_kvdk_Engine_get(
-    JNIEnv* env, jobject, jlong handle, jbyteArray key) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(handle);
+jbyteArray Java_io_pmem_kvdk_Engine_get(JNIEnv* env, jobject, jlong handle,
+                                        jbyteArray key) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
   int key_len = env->GetArrayLength(key);
-  jbyte *key_bytes = new jbyte[key_len];
+  jbyte* key_bytes = new jbyte[key_len];
   env->GetByteArrayRegion(key, 0, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -95,9 +95,8 @@ jbyteArray Java_io_pmem_kvdk_Engine_get(
   }
 
   std::string value;
-  auto s = engine->Get(
-      std::string(reinterpret_cast<char*>(key_bytes), key_len),
-      &value);
+  auto s = engine->Get(std::string(reinterpret_cast<char*>(key_bytes), key_len),
+                       &value);
 
   delete[] key_bytes;
 
@@ -120,12 +119,12 @@ jbyteArray Java_io_pmem_kvdk_Engine_get(
  * Method:    delete
  * Signature: (J[B)V
  */
-void Java_io_pmem_kvdk_Engine_delete(
-    JNIEnv* env, jobject, jlong handle, jbyteArray key) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(handle);
+void Java_io_pmem_kvdk_Engine_delete(JNIEnv* env, jobject, jlong handle,
+                                     jbyteArray key) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
   int key_len = env->GetArrayLength(key);
-  jbyte *key_bytes = new jbyte[key_len];
+  jbyte* key_bytes = new jbyte[key_len];
   env->GetByteArrayRegion(key, 0, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -133,8 +132,8 @@ void Java_io_pmem_kvdk_Engine_delete(
     return;
   }
 
-  auto s = engine->Delete(
-      std::string(reinterpret_cast<char*>(key_bytes), key_len));
+  auto s =
+      engine->Delete(std::string(reinterpret_cast<char*>(key_bytes), key_len));
 
   delete[] key_bytes;
 
@@ -148,10 +147,11 @@ void Java_io_pmem_kvdk_Engine_delete(
  * Method:    sortedCreate
  * Signature: (JJI)V
  */
-void Java_io_pmem_kvdk_Engine_sortedCreate(
-    JNIEnv* env, jobject, jlong engine_handle, jlong name_handle, jint name_len) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(engine_handle);
-  auto* name_chars = reinterpret_cast<char *>(name_handle);
+void Java_io_pmem_kvdk_Engine_sortedCreate(JNIEnv* env, jobject,
+                                           jlong engine_handle,
+                                           jlong name_handle, jint name_len) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
 
   auto s = engine->SortedCreate(std::string(name_chars, name_len));
 
@@ -165,10 +165,11 @@ void Java_io_pmem_kvdk_Engine_sortedCreate(
  * Method:    sortedDestroy
  * Signature: (JJI)V
  */
-void Java_io_pmem_kvdk_Engine_sortedDestroy(
-    JNIEnv* env, jobject, jlong engine_handle, jlong name_handle, jint name_len) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(engine_handle);
-  auto* name_chars = reinterpret_cast<char *>(name_handle);
+void Java_io_pmem_kvdk_Engine_sortedDestroy(JNIEnv* env, jobject,
+                                            jlong engine_handle,
+                                            jlong name_handle, jint name_len) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
 
   auto s = engine->SortedDestroy(std::string(name_chars, name_len));
 
@@ -182,10 +183,11 @@ void Java_io_pmem_kvdk_Engine_sortedDestroy(
  * Method:    sortedSize
  * Signature: (JJI)J
  */
-jlong Java_io_pmem_kvdk_Engine_sortedSize(
-    JNIEnv* env, jobject, jlong engine_handle, jlong name_handle, jint name_len) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(engine_handle);
-  auto* name_chars = reinterpret_cast<char *>(name_handle);
+jlong Java_io_pmem_kvdk_Engine_sortedSize(JNIEnv* env, jobject,
+                                          jlong engine_handle,
+                                          jlong name_handle, jint name_len) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
 
   size_t size = 0;
   auto s = engine->SortedSize(std::string(name_chars, name_len), &size);
@@ -202,14 +204,15 @@ jlong Java_io_pmem_kvdk_Engine_sortedSize(
  * Method:    sortedPut
  * Signature: (JJI[B[B)V
  */
-void Java_io_pmem_kvdk_Engine_sortedPut(
-    JNIEnv* env, jobject, jlong engine_handle, jlong name_handle, jint name_len,
-    jbyteArray key, jbyteArray value) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(engine_handle);
-  auto* name_chars = reinterpret_cast<char *>(name_handle);
+void Java_io_pmem_kvdk_Engine_sortedPut(JNIEnv* env, jobject,
+                                        jlong engine_handle, jlong name_handle,
+                                        jint name_len, jbyteArray key,
+                                        jbyteArray value) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
 
   int key_len = env->GetArrayLength(key);
-  jbyte *key_bytes = new jbyte[key_len];
+  jbyte* key_bytes = new jbyte[key_len];
   env->GetByteArrayRegion(key, 0, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -218,7 +221,7 @@ void Java_io_pmem_kvdk_Engine_sortedPut(
   }
 
   int value_len = env->GetArrayLength(value);
-  jbyte *value_bytes = new jbyte[value_len];
+  jbyte* value_bytes = new jbyte[value_len];
   env->GetByteArrayRegion(value, 0, value_len, value_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -245,14 +248,15 @@ void Java_io_pmem_kvdk_Engine_sortedPut(
  * Method:    sortedGet
  * Signature: (JJI[B)[B
  */
-jbyteArray Java_io_pmem_kvdk_Engine_sortedGet(
-    JNIEnv* env, jobject, jlong engine_handle, jlong name_handle, jint name_len,
-    jbyteArray key) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(engine_handle);
-  auto* name_chars = reinterpret_cast<char *>(name_handle);
+jbyteArray Java_io_pmem_kvdk_Engine_sortedGet(JNIEnv* env, jobject,
+                                              jlong engine_handle,
+                                              jlong name_handle, jint name_len,
+                                              jbyteArray key) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
 
   int key_len = env->GetArrayLength(key);
-  jbyte *key_bytes = new jbyte[key_len];
+  jbyte* key_bytes = new jbyte[key_len];
   env->GetByteArrayRegion(key, 0, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -263,8 +267,7 @@ jbyteArray Java_io_pmem_kvdk_Engine_sortedGet(
   std::string value;
   auto s = engine->SortedGet(
       std::string(name_chars, name_len),
-      std::string(reinterpret_cast<char*>(key_bytes), key_len),
-      &value);
+      std::string(reinterpret_cast<char*>(key_bytes), key_len), &value);
 
   delete[] key_bytes;
 
@@ -287,14 +290,15 @@ jbyteArray Java_io_pmem_kvdk_Engine_sortedGet(
  * Method:    sortedDelete
  * Signature: (JJI[B)V
  */
-void Java_io_pmem_kvdk_Engine_sortedDelete(
-    JNIEnv* env, jobject, jlong engine_handle, jlong name_handle, jint name_len,
-    jbyteArray key) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(engine_handle);
-  auto* name_chars = reinterpret_cast<char *>(name_handle);
+void Java_io_pmem_kvdk_Engine_sortedDelete(JNIEnv* env, jobject,
+                                           jlong engine_handle,
+                                           jlong name_handle, jint name_len,
+                                           jbyteArray key) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
 
   int key_len = env->GetArrayLength(key);
-  jbyte *key_bytes = new jbyte[key_len];
+  jbyte* key_bytes = new jbyte[key_len];
   env->GetByteArrayRegion(key, 0, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
@@ -318,15 +322,16 @@ void Java_io_pmem_kvdk_Engine_sortedDelete(
  * Method:    newSortedIterator
  * Signature: (JJI)J
  */
-jlong Java_io_pmem_kvdk_Engine_newSortedIterator(
-    JNIEnv* env, jobject, jlong engine_handle, jlong name_handle, jint name_len) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(engine_handle);
-  auto* name_chars = reinterpret_cast<char *>(name_handle);
+jlong Java_io_pmem_kvdk_Engine_newSortedIterator(JNIEnv* env, jobject,
+                                                 jlong engine_handle,
+                                                 jlong name_handle,
+                                                 jint name_len) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* name_chars = reinterpret_cast<char*>(name_handle);
 
   KVDK_NAMESPACE::Status s;
-  KVDK_NAMESPACE::Iterator *iter = engine->NewSortedIterator(
-      std::string(name_chars, name_len),
-      nullptr, &s);
+  KVDK_NAMESPACE::Iterator* iter =
+      engine->NewSortedIterator(std::string(name_chars, name_len), nullptr, &s);
 
   if (s == KVDK_NAMESPACE::Status::Ok) {
     return GET_CPLUSPLUS_POINTER(iter);
@@ -341,9 +346,8 @@ jlong Java_io_pmem_kvdk_Engine_newSortedIterator(
  * Method:    closeInternal
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_Engine_closeInternal(
-    JNIEnv*, jobject, jlong handle) {
-  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine *>(handle);
+void Java_io_pmem_kvdk_Engine_closeInternal(JNIEnv*, jobject, jlong handle) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
   assert(engine != nullptr);
   delete engine;
 }

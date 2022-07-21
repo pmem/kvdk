@@ -12,13 +12,13 @@
  * Method:    closeInternal
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_Iterator_closeInternal(
-    JNIEnv*, jobject, jlong iterator_handle, jlong engine_handle) {
-  auto* iterator = reinterpret_cast<kvdk::Iterator *>(iterator_handle);
-  auto* engine = reinterpret_cast<kvdk::Engine *>(engine_handle);
+void Java_io_pmem_kvdk_Iterator_closeInternal(JNIEnv*, jobject,
+                                              jlong iterator_handle,
+                                              jlong engine_handle) {
+  auto* iterator = reinterpret_cast<kvdk::Iterator*>(iterator_handle);
+  auto* engine = reinterpret_cast<kvdk::Engine*>(engine_handle);
   assert(iterator != nullptr);
   assert(engine != nullptr);
-  
+
   engine->ReleaseSortedIterator(iterator);
 }
-

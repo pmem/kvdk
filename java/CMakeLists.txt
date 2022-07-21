@@ -59,7 +59,7 @@ set(JNI_OUTPUT_DIR ${PROJECT_SOURCE_DIR}/java/include)
 file(MAKE_DIRECTORY ${JNI_OUTPUT_DIR})
 
 if(${Java_VERSION_MINOR} VERSION_LESS_EQUAL "7" AND ${Java_VERSION_MAJOR} STREQUAL "1")
-  message(FATAL_ERROR "Detected Java 7 or older (${Java_VERSION_STRING}), minimum required version in now Java 8")
+  message(FATAL_ERROR "Detected Java 7 or older (${Java_VERSION_STRING}), minimum required version is Java 8")
 endif()
 
 # Download dependencies for Java unit tests
