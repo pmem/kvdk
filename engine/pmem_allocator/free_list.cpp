@@ -27,14 +27,14 @@ void SpaceMap::Set(uint64_t offset, uint64_t size) {
   SpinMutex* last_lock = &map_spins_[offset / lock_granularity_];
   std::lock_guard<SpinMutex> start_lg(*last_lock);
   std::unique_lock<SpinMutex> ul;
-  auto to_set = size > INT8_MAX ? INT8_MAX : size;
   kvdk_assert(map_[offset].Empty(), "Set space map on a already set byte");
+  auto to_set = size > INT8_MAX ? INT8_MAX : size;
   map_[offset] = Token(true, to_set);
-  size -= to_set;
+  uint64_t remaining = size - to_set;
   uint64_t cur = offset + to_set;
-  while (size > 0) {
+  while (remaining > 0) {
     kvdk_assert(cur < map_.size(), "Set space map overflow");
-    to_set = size > INT8_MAX ? INT8_MAX : size;
+    to_set = remaining > INT8_MAX ? INT8_MAX : remaining;
     SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
     if (cur_lock != last_lock) {
       ul = std::unique_lock<SpinMutex>(*cur_lock);
@@ -43,7 +43,7 @@ void SpaceMap::Set(uint64_t offset, uint64_t size) {
     kvdk_assert(map_[cur].Empty(), "");
     map_[cur] = Token(false, to_set);
     cur += to_set;
-    size -= to_set;
+    remaining -= to_set;
   }
 // /*
 #if KVDK_DEBUG_LEVEL > 0
@@ -90,20 +90,20 @@ bool SpaceMap::TestAndUnset(uint64_t offset, uint64_t size) {
       map_[cur].Clear();
     }
   }
-  /*
-  #if KVDK_DEBUG_LEVEL > 0
-    uint64_t debug_cur = offset + res;
-    if (debug_cur < map_.size()) {
-      SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
-      if (debug_lock != last_lock) {
-        lg.reset(new std::lock_guard<SpinMutex>(*debug_lock));
-      }
-      kvdk_assert(res == 0 || res == size, "space map error in TestAndUnset");
-      kvdk_assert(map_[debug_cur].IsStart() || map_[debug_cur].Empty(),
-                  "space map error after TestAndUnset");
+
+#if KVDK_DEBUG_LEVEL > 0
+  uint64_t debug_cur = offset + res;
+  if (debug_cur < map_.size()) {
+    SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
+    if (debug_lock != last_lock) {
+      ul = std::unique_lock<SpinMutex>(*debug_lock);
     }
-  #endif
-    */
+    kvdk_assert(res == 0 || res == size, "space map error in TestAndUnset");
+    kvdk_assert(map_[debug_cur].IsStart() || map_[debug_cur].Empty(),
+                "space map error after TestAndUnset");
+  }
+#endif
+
   return res == size;
 }
 
