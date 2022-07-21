@@ -7,7 +7,7 @@
 #include "include/io_pmem_kvdk_Engine.h"
 #include "kvdkjni/kvdkjni.h"
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    open
  * Signature: (Ljava/lang/String;J)V
@@ -36,7 +36,7 @@ jlong Java_io_pmem_kvdk_Engine_open(JNIEnv* env, jclass, jstring jengine_path,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    put
  * Signature: (J[B[BJZ)V
@@ -83,7 +83,7 @@ void Java_io_pmem_kvdk_Engine_put(JNIEnv* env, jobject, jlong handle,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    expire
  * Signature: (J[BJ)V
@@ -112,7 +112,7 @@ void Java_io_pmem_kvdk_Engine_expire__J_3BJ(JNIEnv* env, jobject, jlong handle,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    expire
  * Signature: (JJIJ)V
@@ -131,7 +131,7 @@ void Java_io_pmem_kvdk_Engine_expire__JJIJ(JNIEnv* env, jobject,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    get
  * Signature: (J[B)[B
@@ -169,7 +169,7 @@ jbyteArray Java_io_pmem_kvdk_Engine_get(JNIEnv* env, jobject, jlong handle,
   return nullptr;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    delete
  * Signature: (J[B)V
@@ -197,7 +197,7 @@ void Java_io_pmem_kvdk_Engine_delete(JNIEnv* env, jobject, jlong handle,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedCreate
  * Signature: (JJI)V
@@ -215,7 +215,7 @@ void Java_io_pmem_kvdk_Engine_sortedCreate(JNIEnv* env, jobject,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedDestroy
  * Signature: (JJI)V
@@ -233,7 +233,7 @@ void Java_io_pmem_kvdk_Engine_sortedDestroy(JNIEnv* env, jobject,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedSize
  * Signature: (JJI)J
@@ -254,7 +254,7 @@ jlong Java_io_pmem_kvdk_Engine_sortedSize(JNIEnv* env, jobject,
   return size;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedPut
  * Signature: (JJI[B[B)V
@@ -298,7 +298,7 @@ void Java_io_pmem_kvdk_Engine_sortedPut(JNIEnv* env, jobject,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedGet
  * Signature: (JJI[B)[B
@@ -340,7 +340,7 @@ jbyteArray Java_io_pmem_kvdk_Engine_sortedGet(JNIEnv* env, jobject,
   return nullptr;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedDelete
  * Signature: (JJI[B)V
@@ -372,7 +372,7 @@ void Java_io_pmem_kvdk_Engine_sortedDelete(JNIEnv* env, jobject,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    newSortedIterator
  * Signature: (JJI)J
@@ -396,7 +396,7 @@ jlong Java_io_pmem_kvdk_Engine_newSortedIterator(JNIEnv* env, jobject,
   }
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Engine
  * Method:    closeInternal
  * Signature: (J)V

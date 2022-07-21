@@ -7,7 +7,7 @@
 #include "include/io_pmem_kvdk_NativeBytesHandle.h"
 #include "kvdkjni/kvdkjni.h"
 
-/**
+/*
  * Class:     io_pmem_kvdk_NativeBytesHandle
  * Method:    newNativeBytes
  * Signature: ([B)J
@@ -26,7 +26,7 @@ jlong Java_io_pmem_kvdk_NativeBytesHandle_newNativeBytes(JNIEnv* env, jclass,
   return GET_CPLUSPLUS_POINTER(b);
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_NativeBytesHandle
  * Method:    closeInternal
  * Signature: (J)V

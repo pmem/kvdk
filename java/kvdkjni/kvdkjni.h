@@ -18,7 +18,7 @@ namespace KVDK_NAMESPACE {
 // Helper class to get Java class by name from C++.
 class JavaClass {
  public:
-  /**
+  /*
    * Gets and initializes a Java Class
    *
    * @param env A pointer to the Java environment
@@ -39,7 +39,7 @@ class JavaClass {
 // The portal class for io.pmem.kvdk.Status
 class StatusJni : public JavaClass {
  public:
-  /**
+  /*
    * Get the Java Class io.pmem.kvdk.Status
    *
    * @param env A pointer to the Java environment
@@ -52,7 +52,7 @@ class StatusJni : public JavaClass {
     return JavaClass::getJClass(env, "io/pmem/kvdk/Status");
   }
 
-  /**
+  /*
    * Create a new Java io.pmem.kvdk.Status object with the same properties as
    * the provided C++ KVDK_NAMESPACE::Status object
    *
@@ -140,7 +140,7 @@ class StatusJni : public JavaClass {
 template <class DERIVED>
 class JavaException : public JavaClass {
  public:
-  /**
+  /*
    * Create and throw a java exception with the provided message
    *
    * @param env A pointer to the Java environment
@@ -172,7 +172,7 @@ class JavaException : public JavaClass {
 // The portal class for io.pmem.kvdk.KVDKException
 class KVDKExceptionJni : public JavaException<KVDKExceptionJni> {
  public:
-  /**
+  /*
    * Get the Java Class io.pmem.kvdk.KVDKException
    *
    * @param env A pointer to the Java environment
@@ -185,7 +185,7 @@ class KVDKExceptionJni : public JavaException<KVDKExceptionJni> {
     return JavaException::getJClass(env, "io/pmem/kvdk/KVDKException");
   }
 
-  /**
+  /*
    * Create and throw a Java KVDKException with the provided message
    *
    * @param env A pointer to the Java environment
@@ -197,7 +197,7 @@ class KVDKExceptionJni : public JavaException<KVDKExceptionJni> {
     return JavaException::ThrowNew(env, msg);
   }
 
-  /**
+  /*
    * Create and throw a Java KVDKException with the provided status
    *
    * If s == Status::Ok, then this function will not throw any exception.

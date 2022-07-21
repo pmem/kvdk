@@ -7,7 +7,7 @@
 #include "include/io_pmem_kvdk_Configs.h"
 #include "kvdkjni/kvdkjni.h"
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    newConfigs
  * Signature: ()J
@@ -17,7 +17,7 @@ jlong Java_io_pmem_kvdk_Configs_newConfigs(JNIEnv*, jclass) {
   return GET_CPLUSPLUS_POINTER(cfg);
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    setMaxAccessThreads
  * Signature: (JJ)V
@@ -27,7 +27,7 @@ void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(JNIEnv*, jobject,
   reinterpret_cast<kvdk::Configs*>(handle)->max_access_threads = num;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    setPMemFileSize
  * Signature: (JJ)V
@@ -37,7 +37,7 @@ void Java_io_pmem_kvdk_Configs_setPMemFileSize(JNIEnv*, jobject, jlong handle,
   reinterpret_cast<kvdk::Configs*>(handle)->pmem_file_size = size;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    setPMemSegmentBlocks
  * Signature: (JJ)V
@@ -48,7 +48,7 @@ void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(JNIEnv*, jobject,
   reinterpret_cast<kvdk::Configs*>(handle)->pmem_segment_blocks = blocks;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    setHashBucketNum
  * Signature: (JJ)V
@@ -58,7 +58,7 @@ void Java_io_pmem_kvdk_Configs_setHashBucketNum(JNIEnv*, jobject, jlong handle,
   reinterpret_cast<kvdk::Configs*>(handle)->hash_bucket_num = num;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    setPopulatePMemSpace
  * Signature: (JZ)V
@@ -69,7 +69,7 @@ void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(JNIEnv*, jobject,
   reinterpret_cast<kvdk::Configs*>(handle)->populate_pmem_space = populate;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    setCleanThreads
  * Signature: (JJ)V
@@ -79,7 +79,7 @@ void Java_io_pmem_kvdk_Configs_setCleanThreads(JNIEnv*, jobject, jlong handle,
   reinterpret_cast<kvdk::Configs*>(handle)->clean_threads = num_threds;
 }
 
-/**
+/*
  * Class:     io_pmem_kvdk_Configs
  * Method:    closeInternal
  * Signature: (J)V

@@ -6,7 +6,9 @@ package io.pmem.kvdk.examples;
 
 import io.pmem.kvdk.Configs;
 import io.pmem.kvdk.Engine;
+import io.pmem.kvdk.Iterator;
 import io.pmem.kvdk.KVDKException;
+import io.pmem.kvdk.NativeBytesHandle;
 
 public class KVDKExamples {
     protected Configs engineConfigs;
@@ -24,19 +26,63 @@ public class KVDKExamples {
         engineConfigs.close();
     }
 
-    public void run() throws KVDKException {
+    public void runAnonymousCollection() throws KVDKException {
         // put
         String key = "sssss";
         String value = "22222";
         kvdkEngine.put(key.getBytes(), value.getBytes());
+
+        // expire
+        kvdkEngine.expire(key.getBytes(), 1000);
 
         // get
         System.out.println("value: " + new String(kvdkEngine.get(key.getBytes())));
 
         // delete
         kvdkEngine.delete(key.getBytes());
+    }
 
-        // close
+    public void runSortedCollection() throws KVDKException {
+        String name = "collection\u0000\nname";
+        NativeBytesHandle nameHandle = new NativeBytesHandle(name.getBytes());
+
+        // create
+        kvdkEngine.sortedCreate(nameHandle);
+
+        String key1 = "key\u00001";
+        String key2 = "key\u00002";
+        String key3 = "key\u00003";
+
+        String value1 = "value\u00003";
+        String value2 = "value\u00002";
+        String value3 = "value\u00001";
+
+        // disordered put
+        kvdkEngine.sortedPut(nameHandle, key3.getBytes(), value3.getBytes());
+        kvdkEngine.sortedPut(nameHandle, key1.getBytes(), value1.getBytes());
+        kvdkEngine.sortedPut(nameHandle, key2.getBytes(), value2.getBytes());
+
+        // print sorted result
+        System.out.println("Sorted by key:");
+        Iterator iter = kvdkEngine.newSortedIterator(nameHandle);
+        for (iter.seekToFirst(); iter.isValid(); iter.next()) {
+            System.out.println(
+                    new String(iter.key()).replace("\0", "[\\0]")
+                            + ": "
+                            + new String(iter.value()).replace("\0", "[\\0]"));
+        }
+
+        // close iterator
+        iter.close();
+
+        // destroy sorted collection
+        kvdkEngine.sortedDestroy(nameHandle);
+
+        // close name handle
+        nameHandle.close();
+    }
+
+    public void close() {
         kvdkEngine.close();
     }
 
@@ -44,7 +90,9 @@ public class KVDKExamples {
         try {
             KVDKExamples examples = new KVDKExamples();
             examples.prepare();
-            examples.run();
+            examples.runAnonymousCollection();
+            examples.runSortedCollection();
+            examples.close();
         } catch (KVDKException ex) {
             ex.printStackTrace();
         }
