@@ -112,11 +112,11 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
   }
   uint64_t end_offset = std::min(start_offset + limit_merge_size, map_.size());
   SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
-  std::lock_guard<SpinMutex> lg(*last_lock);
+  std::lock_guard<SpinMutex> start_lg(*last_lock);
   uint64_t merged_size = 0;
   if (map_[start_offset].IsStart()) {
-    std::vector<SpinMutex*> locked;
-    std::vector<uint64_t> merged_offset;
+    std::unique_ptr<std::lock_guard<SpinMutex>> lg(nullptr);
+
 #if KVDK_DEBUG_LEVEL > 0
     // check start size
     uint64_t debug_size = map_[start_offset].Size();
@@ -124,8 +124,7 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
     while (true) {
       SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
       if (debug_lock != last_lock) {
-        debug_lock->lock();
-        locked.push_back(debug_lock);
+        lg.reset(new std::lock_guard<SpinMutex>(*debug_lock));
         last_lock = debug_lock;
       }
       if (map_[debug_cur].IsStart() || map_[debug_cur].Empty()) {
@@ -135,65 +134,41 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
         debug_cur = start_offset + debug_size;
       }
     }
-    if (debug_size != start_size) {
-      GlobalLogger.Error("Size mismatch %lu and %lu\n", debug_size, start_size);
-    }
     kvdk_assert(debug_size == start_size,
                 "TryMerge: start space entry size error");
 #endif  // KVDK_DEBUG_LEVEL > 0
+
     merged_size = start_size;
     uint64_t in_merge_offset = start_offset + merged_size;
-    bool keep_merge = in_merge_offset < end_offset;
-    while (keep_merge) {
-      SpinMutex* in_merge_lock =
-          &map_spins_[in_merge_offset / lock_granularity_];
-      if (in_merge_lock != last_lock) {
-        in_merge_lock->lock();
-        locked.push_back(in_merge_lock);
-        last_lock = in_merge_lock;
-      }
-
-      if (map_[in_merge_offset].IsStart()) {
-        uint64_t in_merge_size = map_[in_merge_offset].Size();
-        uint64_t cur = in_merge_offset + in_merge_size;
-        while (true) {
-          SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
-          if (cur_lock != last_lock) {
-            cur_lock->lock();
-            locked.push_back(cur_lock);
-            last_lock = cur_lock;
-          }
-
-          if (map_[cur].IsStart() || map_[cur].Empty()) {
-            merged_size += in_merge_size;
-            merged_offset.push_back(in_merge_offset);
-            in_merge_offset = cur;
-            keep_merge = in_merge_offset < end_offset;
-            break;
-          } else if (in_merge_size >
-                         kMaxAjacentSpaceSizeInMerge *
-                             merged_size /* avoid merging a large
-                                            space into a small one */
-                     || cur >= end_offset) {
-            keep_merge = false;
-            break;
-          } else {
-            in_merge_size += map_[cur].Size();
-            cur = in_merge_offset + in_merge_size;
-          }
-        }
-      } else {
-        kvdk_assert(map_[in_merge_offset].Empty(), "");
+    uint64_t in_merge_size = 0;
+    while (true) {
+      uint64_t cur = in_merge_offset + in_merge_size;
+      if (cur >= end_offset || in_merge_size >
+                                   merged_size * kMaxAjacentSpaceSizeInMerge /* do not merge a small space with a far larger one */) {
         break;
       }
-    }
+      SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
+      if (cur_lock != last_lock) {
+        lg.reset(new std::lock_guard<SpinMutex>(*cur_lock));
+        last_lock = cur_lock;
+      }
+      if (map_[cur].IsStart() || map_[cur].Empty()) {
+        if (in_merge_size > 0) {
+          merged_size += in_merge_size;
+          map_[in_merge_offset].UnStart();
+          in_merge_offset = cur;
+          in_merge_size = 0;
+        }
+      } else {
+        kvdk_assert(in_merge_size > 0 && cur > in_merge_offset,
+                    "space map error in TryMerge");
+      }
 
-    for (uint64_t o : merged_offset) {
-      map_[o].UnStart();
-    }
-
-    for (SpinMutex* l : locked) {
-      l->unlock();
+      if (map_[cur].Empty()) {
+        break;
+      } else {
+        in_merge_size += map_[cur].Size();
+      }
     }
   }
 
