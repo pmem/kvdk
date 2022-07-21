@@ -29,12 +29,12 @@ class SpaceMap {
         lock_granularity_(kSpaceMapLockGranularity),
         map_spins_(num_blocks / lock_granularity_ + 1) {}
 
-  uint64_t TestAndUnset(uint64_t offset, uint64_t length);
+  bool TestAndUnset(uint64_t offset, uint64_t size);
 
   uint64_t TryMerge(uint64_t start_offset, uint64_t start_b_size,
                     uint64_t limit_merge_size);
 
-  void Set(uint64_t offset, uint64_t length);
+  void Set(uint64_t offset, uint64_t size);
 
   uint64_t Size() { return map_.size(); }
 
