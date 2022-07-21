@@ -43,8 +43,15 @@ java -cp target/kvdkjni-examples-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAP
 
 ## Cross Platform
 
-The KVDK Java library contains the needed shared libaries (`.so` files) in the jar, which will be loaded when they are not in system library paths.
+The KVDK Java library contains the needed shared libaries (`.so` files), which will be loaded when they are not present in system library paths.
 
-A Java application relying on KVDK Java library can be run on 64-bit Linux servers without building the KVDK C++ code, when the `libc` version `GLIBC_2.18` can be found.
+A Java application relying on KVDK Java library can be run on **64-bit** servers without building the KVDK C++ code or installing its dependencies (e.g. ndctl, pmdk).
 
-We tested on `Fedora 20`, `Ubuntu-14.04` and `Centos-8`, in which the `libc` is new enough. And we don't need to build the KVDK C++ code to run Java applications using KVDK.
+The only requirement is the `libc` version `GLIBC_2.18 or higher` can be found.
+
+We tested without installing KVDK C++ library or its dependencies on below platforms, in which the `libc` is new enough:
+* Fedora >= 20
+* Ubuntu >= 14.04
+* Centos >= 8
+
+For older platforms, you may need to upgrade `libc` in system path or where `LD_LIBRARY_PATH` points to.
