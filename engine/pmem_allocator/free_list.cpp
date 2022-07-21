@@ -92,13 +92,13 @@ bool SpaceMap::TestAndUnset(uint64_t offset, uint64_t size) {
   }
 
 #if KVDK_DEBUG_LEVEL > 0
+  kvdk_assert(res == 0 || res == size, "space map error in TestAndUnset");
   uint64_t debug_cur = offset + res;
   if (debug_cur < map_.size()) {
     SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
     if (debug_lock != last_lock) {
       ul = std::unique_lock<SpinMutex>(*debug_lock);
     }
-    kvdk_assert(res == 0 || res == size, "space map error in TestAndUnset");
     kvdk_assert(map_[debug_cur].IsStart() || map_[debug_cur].Empty(),
                 "space map error after TestAndUnset");
   }
