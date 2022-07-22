@@ -13,7 +13,7 @@
  * Signature: ()J
  */
 jlong Java_io_pmem_kvdk_Configs_newConfigs(JNIEnv*, jclass) {
-  auto* cfg = new kvdk::Configs();
+  auto* cfg = new KVDK_NAMESPACE::Configs();
   return GET_CPLUSPLUS_POINTER(cfg);
 }
 
@@ -24,7 +24,7 @@ jlong Java_io_pmem_kvdk_Configs_newConfigs(JNIEnv*, jclass) {
  */
 void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(JNIEnv*, jobject,
                                                    jlong handle, jlong num) {
-  reinterpret_cast<kvdk::Configs*>(handle)->max_access_threads = num;
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->max_access_threads = num;
 }
 
 /*
@@ -34,7 +34,7 @@ void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(JNIEnv*, jobject,
  */
 void Java_io_pmem_kvdk_Configs_setPMemFileSize(JNIEnv*, jobject, jlong handle,
                                                jlong size) {
-  reinterpret_cast<kvdk::Configs*>(handle)->pmem_file_size = size;
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->pmem_file_size = size;
 }
 
 /*
@@ -45,7 +45,8 @@ void Java_io_pmem_kvdk_Configs_setPMemFileSize(JNIEnv*, jobject, jlong handle,
 void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(JNIEnv*, jobject,
                                                     jlong handle,
                                                     jlong blocks) {
-  reinterpret_cast<kvdk::Configs*>(handle)->pmem_segment_blocks = blocks;
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->pmem_segment_blocks =
+      blocks;
 }
 
 /*
@@ -55,7 +56,7 @@ void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(JNIEnv*, jobject,
  */
 void Java_io_pmem_kvdk_Configs_setHashBucketNum(JNIEnv*, jobject, jlong handle,
                                                 jlong num) {
-  reinterpret_cast<kvdk::Configs*>(handle)->hash_bucket_num = num;
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->hash_bucket_num = num;
 }
 
 /*
@@ -66,7 +67,8 @@ void Java_io_pmem_kvdk_Configs_setHashBucketNum(JNIEnv*, jobject, jlong handle,
 void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(JNIEnv*, jobject,
                                                     jlong handle,
                                                     jboolean populate) {
-  reinterpret_cast<kvdk::Configs*>(handle)->populate_pmem_space = populate;
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->populate_pmem_space =
+      populate;
 }
 
 /*
@@ -76,7 +78,8 @@ void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(JNIEnv*, jobject,
  */
 void Java_io_pmem_kvdk_Configs_setCleanThreads(JNIEnv*, jobject, jlong handle,
                                                jlong num_threds) {
-  reinterpret_cast<kvdk::Configs*>(handle)->clean_threads = num_threds;
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->clean_threads =
+      num_threds;
 }
 
 /*
@@ -85,7 +88,7 @@ void Java_io_pmem_kvdk_Configs_setCleanThreads(JNIEnv*, jobject, jlong handle,
  * Signature: (J)V
  */
 void Java_io_pmem_kvdk_Configs_closeInternal(JNIEnv*, jobject, jlong handle) {
-  auto* cfg = reinterpret_cast<kvdk::Configs*>(handle);
+  auto* cfg = reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle);
   assert(cfg != nullptr);
   delete cfg;
 }

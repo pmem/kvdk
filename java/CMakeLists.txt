@@ -14,6 +14,7 @@ set(JNI_NATIVE_SOURCES
   kvdkjni/engine.cc
   kvdkjni/iterator.cc
   kvdkjni/native_bytes_handle.cc
+  kvdkjni/write_batch.cc
 )
 
 set(JAVA_MAIN_SOURCES
@@ -35,6 +36,7 @@ set(JAVA_TEST_SOURCES
   src/test/java/io/pmem/kvdk/EngineTest.java
   src/test/java/io/pmem/kvdk/EngineTestBase.java
   src/test/java/io/pmem/kvdk/IteratorTest.java
+  src/test/java/io/pmem/kvdk/WriteBatchTest.java
 )
 
 include(FindJava)

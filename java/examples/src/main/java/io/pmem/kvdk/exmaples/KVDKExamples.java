@@ -9,6 +9,7 @@ import io.pmem.kvdk.Engine;
 import io.pmem.kvdk.Iterator;
 import io.pmem.kvdk.KVDKException;
 import io.pmem.kvdk.NativeBytesHandle;
+import io.pmem.kvdk.WriteBatch;
 
 public class KVDKExamples {
     protected Configs engineConfigs;
@@ -27,6 +28,9 @@ public class KVDKExamples {
     }
 
     public void runAnonymousCollection() throws KVDKException {
+        System.out.println();
+        System.out.println("Output of runAnonymousCollection: ");
+
         // put
         String key = "sssss";
         String value = "22222";
@@ -43,6 +47,9 @@ public class KVDKExamples {
     }
 
     public void runSortedCollection() throws KVDKException {
+        System.out.println();
+        System.out.println("Output of runSortedCollection: ");
+
         String name = "collection\u0000\nname";
         NativeBytesHandle nameHandle = new NativeBytesHandle(name.getBytes());
 
@@ -82,6 +89,32 @@ public class KVDKExamples {
         nameHandle.close();
     }
 
+    public void runWriteBatch() throws KVDKException {
+        System.out.println();
+        System.out.println("Output of runWriteBatch: ");
+
+        String key = "key1";
+        String value1 = "value1";
+        String value2 = "value2";
+
+        // batch
+        WriteBatch batch = kvdkEngine.writeBatchCreate();
+        batch.stringPut(key.getBytes(), value1.getBytes());
+        batch.stringPut(key.getBytes(), value2.getBytes());
+
+        // write
+        kvdkEngine.batchWrite(batch);
+
+        // get
+        kvdkEngine.get(key.getBytes());
+
+        // print
+        System.out.println("value: " + new String(kvdkEngine.get(key.getBytes())));
+
+        // delete
+        kvdkEngine.delete(key.getBytes());
+    }
+
     public void close() {
         kvdkEngine.close();
     }
@@ -92,6 +125,7 @@ public class KVDKExamples {
             examples.prepare();
             examples.runAnonymousCollection();
             examples.runSortedCollection();
+            examples.runWriteBatch();
             examples.close();
         } catch (KVDKException ex) {
             ex.printStackTrace();

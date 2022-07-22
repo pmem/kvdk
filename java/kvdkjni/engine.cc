@@ -406,3 +406,34 @@ void Java_io_pmem_kvdk_Engine_closeInternal(JNIEnv*, jobject, jlong handle) {
   assert(engine != nullptr);
   delete engine;
 }
+
+/*
+ * Class:     io_pmem_kvdk_Engine
+ * Method:    writeBatchCreate
+ * Signature: (J)J
+ */
+jlong Java_io_pmem_kvdk_Engine_writeBatchCreate(JNIEnv*, jobject,
+                                                jlong handle) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
+  std::unique_ptr<KVDK_NAMESPACE::WriteBatch> ptr = engine->WriteBatchCreate();
+  return GET_CPLUSPLUS_POINTER(ptr.release());
+}
+
+/*
+ * Class:     io_pmem_kvdk_Engine
+ * Method:    batchWrite
+ * Signature: (JJ)V
+ */
+void Java_io_pmem_kvdk_Engine_batchWrite(JNIEnv* env, jobject,
+                                         jlong engine_handle,
+                                         jlong batch_handle) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  auto* batch = reinterpret_cast<KVDK_NAMESPACE::WriteBatch*>(batch_handle);
+  std::unique_ptr<KVDK_NAMESPACE::WriteBatch> ptr(batch);
+  auto s = engine->BatchWrite(ptr);
+  ptr.release();
+
+  if (s != KVDK_NAMESPACE::Status::Ok) {
+    KVDK_NAMESPACE::KVDKExceptionJni::ThrowNew(env, s);
+  }
+}
