@@ -31,6 +31,8 @@ class SpaceMap {
 
   bool TestAndUnset(uint64_t offset, uint64_t size);
 
+  uint64_t Test(uint64_t start_offset);
+
   uint64_t TryMerge(uint64_t start_offset, uint64_t start_b_size,
                     uint64_t limit_merge_size);
 
