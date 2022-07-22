@@ -1055,6 +1055,10 @@ void Skiplist::destroyAllRecords() {
         to_destroy->Destroy();
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
                              to_destroy->entry.header.record_size);
+        if (to_free.size() > kMaxCachedOldRecords) {
+          pmem_allocator_->BatchFree(to_free);
+          to_free.clear();
+        }
       }
     } while (to_destroy !=
              header_record /* header record should be the last detroyed one */);
@@ -1070,12 +1074,13 @@ void Skiplist::Destroy() {
 }
 
 void Skiplist::DestroyAll() {
-  GlobalLogger.Debug(
-      "Start Destroy skiplist with old version lists: %s, collection ID: %ld\n",
-      Name().c_str(), ID());
+  GlobalLogger.Info(
+      "Start Destroy skiplist with old version lists: %s, collection ID: %ld, "
+      "size: %ld\n",
+      Name().c_str(), ID(), Size());
   destroyAllRecords();
   destroyNodes();
-  GlobalLogger.Debug(
+  GlobalLogger.Info(
       "Finish Destroy skiplist with old version lists: %s, collection ID: "
       "%ld\n",
       Name().c_str(), ID());

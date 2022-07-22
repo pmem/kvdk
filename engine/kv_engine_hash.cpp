@@ -30,16 +30,8 @@ Status KVEngine::HashCreate(StringView key) {
   hlist->Init(pmem_allocator_.get(), space,
               version_controller_.GetCurrentTimestamp(), key,
               list_id_.fetch_add(1), hash_list_locks_.get());
-  HashList* old_hlist = nullptr;
-  if (result.s == Status::Outdated) {
-    old_hlist = result.entry.GetIndex().hlist;
-    hlist->AddOldVersion(old_hlist);
-  }
   {
     std::lock_guard<std::mutex> guard2{hlists_mu_};
-    if (old_hlist != nullptr) {
-      hash_lists_.erase(old_hlist);
-    }
     hash_lists_.emplace(hlist);
   }
   insertKeyOrElem(result, RecordType::HashRecord, RecordStatus::Normal, hlist);
@@ -329,11 +321,6 @@ Status KVEngine::hashListDestroy(HashList* hlist) {
                      rec->entry.header.record_size};
     entries.push_back(space);
   };
-  if (hlist->OldVersion() != nullptr) {
-    auto old_hlist = hlist->OldVersion();
-    hlist->RemoveOldVersion();
-    hashListDestroy(old_hlist);
-  }
   while (hlist->Size() != 0) {
     StringView internal_key = hlist->Front()->Key();
     {

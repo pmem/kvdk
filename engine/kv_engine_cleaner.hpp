@@ -124,12 +124,23 @@ class Cleaner {
   std::deque<size_t> actived_workers_;
 
   struct OutDatedCollections {
-    using ListQueue = std::set<List*, Collection::TimeStampCmp>;
-    using HashListQueue = std::set<HashList*, Collection::TimeStampCmp>;
+    struct TimeStampCmp {
+     public:
+      bool operator()(const std::pair<Collection*, TimeStampType> a,
+                      const std::pair<Collection*, TimeStampType> b) const {
+        if (a.second < b.second) return true;
+        if (a.second == b.second && a.first->ID() < b.first->ID()) return true;
+        return false;
+      }
+    };
+    using ListQueue = std::set<std::pair<List*, TimeStampType>, TimeStampCmp>;
+    using HashListQueue =
+        std::set<std::pair<HashList*, TimeStampType>, TimeStampCmp>;
 
-    using SkiplistQueue = std::set<Skiplist*, Collection::TimeStampCmp>;
+    using SkiplistQueue =
+        std::set<std::pair<Skiplist*, TimeStampType>, TimeStampCmp>;
 
-    SpinMutex queue_mtx_;
+    SpinMutex queue_mtx;
     ListQueue lists;
     HashListQueue hashlists;
     SkiplistQueue skiplists;

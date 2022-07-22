@@ -488,13 +488,6 @@ class KVEngine : public Engine {
   template <typename T>
   T* removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts);
 
-  // Workaround for expired list or hash list.
-  // TODO: replaced this by `removeOutDatedVersion` when list/hash list has
-  // mvcc.
-  // Find and remove outdated collections from old version lists.
-  template <typename ListType>
-  void removeOutdatedList(ListType* collection);
-
   void removeOutdatedSkiplist(Skiplist* collection);
 
   // find delete and old records in skiplist with no hash index
@@ -628,7 +621,6 @@ class KVEngine : public Engine {
       std::vector<DLRecord*>& purge_dl_records);
   /* functions for cleaner thread cache */
 
-  void destroyCo();
   void deleteCollections();
 
   void startBackgroundWorks();
@@ -692,8 +684,6 @@ class KVEngine : public Engine {
   BackgroundWorkSignals bg_work_signals_;
 
   std::atomic<int64_t> round_robin_id_{0};
-
-  const uint64_t kMaxCachedOldRecords = 1024;
 };
 
 }  // namespace KVDK_NAMESPACE

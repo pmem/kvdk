@@ -53,9 +53,7 @@ struct SkiplistNode {
   // 4 bytes for alignment, the actually allocated size may > 4
   char cached_key[4];
 
-  static void DeleteNode(SkiplistNode* node) {
-    free(node->heap_space_start());
-  }
+  static void DeleteNode(SkiplistNode* node) { free(node->heap_space_start()); }
 
   static SkiplistNode* NewNode(const StringView& key, DLRecord* record_on_pmem,
                                uint8_t height) {
@@ -187,10 +185,6 @@ class Skiplist : public Collection {
 
   bool HasExpired() const final {
     return TimeUtils::CheckIsExpired(GetExpireTime());
-  }
-
-  TimeStampType GetTimeStamp() const final {
-    return header_->record->GetTimestamp();
   }
 
   // TODO jiayu: use lock table for skiplist so will don't need to pass outsider
@@ -417,10 +411,14 @@ class Skiplist : public Collection {
     return 0;
   }
 
-  bool CleaningSkiplist() { return cleaning_skiplist_.load(); }
+  bool CleaningSkiplist() {
+    std::unique_lock<SpinMutex> lock(clean_status_spin_);
+    return cleaning_skiplist_;
+  }
 
-  void SkiplistCleanStatus(bool accessible) {
-    cleaning_skiplist_.store(accessible);
+  void SkiplistCleanStatus(bool cleaning) {
+    std::unique_lock<SpinMutex> lock(clean_status_spin_);
+    cleaning_skiplist_ = cleaning;
   }
 
  private:
@@ -535,7 +533,6 @@ class Skiplist : public Collection {
   }
 
   std::atomic<size_t> size_;
-  std::atomic_bool cleaning_skiplist_{true};
   Comparator comparator_ = compare_string_view;
   PMEMAllocator* pmem_allocator_;
   // TODO: use specified hash table for each skiplist
@@ -556,6 +553,9 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
+  // to avoid illegal access caused by cleaning skiplist by multi-thread
+  SpinMutex clean_status_spin_;
+  bool cleaning_skiplist_ = false;
 };
 
 // A helper struct for locating a skiplist position
