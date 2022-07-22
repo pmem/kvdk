@@ -128,24 +128,31 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
   uint64_t merged_size = 0;
   if (map_[start_offset].IsStart()) {
 #if KVDK_DEBUG_LEVEL > 0
-    // check start size
-    uint64_t debug_size = map_[start_offset].Size();
-    uint64_t debug_cur = start_offset + debug_size;
-    while (true) {
-      SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
-      if (debug_lock != last_lock) {
-        locked.emplace_back(*debug_lock);
-        last_lock = debug_lock;
+    {
+      // check start size
+      uint64_t debug_size = map_[start_offset].Size();
+      uint64_t debug_cur = start_offset + debug_size;
+      while (true) {
+        SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
+        if (debug_lock != last_lock) {
+          locked.emplace_back(*debug_lock);
+          last_lock = debug_lock;
+        }
+        if (map_[debug_cur].IsStart() || map_[debug_cur].Empty()) {
+          break;
+        } else {
+          debug_size += map_[debug_cur].Size();
+          debug_cur = start_offset + debug_size;
+        }
       }
-      if (map_[debug_cur].IsStart() || map_[debug_cur].Empty()) {
-        break;
-      } else {
-        debug_size += map_[debug_cur].Size();
-        debug_cur = start_offset + debug_size;
+      if (debug_size != start_size) {
+        GlobalLogger.Error(
+            "TryMerge: start space entry size error: %lu and %lu\n", debug_size,
+            start_size);
       }
+      kvdk_assert(debug_size == start_size,
+                  "TryMerge: start space entry size error");
     }
-    kvdk_assert(debug_size == start_size,
-                "TryMerge: start space entry size error");
 #endif  // KVDK_DEBUG_LEVEL > 0
 
     merged_size = start_size;
@@ -181,6 +188,21 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
       }
     }
   }
+
+#if KVDK_DEBUG_LEVEL > 0
+  // Check space map is correct after merge
+  {
+    uint64_t debug_cur = start_offset + merged_size;
+    if (merged_size > 0 && debug_cur < end_offset && debug_cur < map_.size()) {
+      SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
+      if (debug_lock != last_lock) {
+        locked.emplace_back(*debug_lock);
+      }
+      kvdk_assert(map_[debug_cur].IsStart() || map_[debug_cur].Empty(),
+                  "space map error after merge");
+    }
+  }
+#endif  // KVDK_DEBUG_LEVEL > 0
 
   return merged_size;
 }
