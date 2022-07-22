@@ -45,7 +45,7 @@ void SpaceMap::Set(uint64_t offset, uint64_t size) {
     cur += to_set;
     remaining -= to_set;
   }
-  
+
 #if KVDK_DEBUG_LEVEL > 0
   // Check space map is correct after set
   uint64_t debug_cur = offset + size;
