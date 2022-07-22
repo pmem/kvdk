@@ -29,7 +29,7 @@ class SpaceMap {
         lock_granularity_(kSpaceMapLockGranularity),
         map_spins_(num_blocks / lock_granularity_ + 1) {}
 
-  bool TestAndUnset(uint64_t offset, uint64_t size);
+  bool TestAndClear(uint64_t offset, uint64_t size);
 
   uint64_t Test(uint64_t start_offset);
 
@@ -41,6 +41,9 @@ class SpaceMap {
   uint64_t Size() { return map_.size(); }
 
  private:
+  // test size with start_offset locked
+  uint64_t testLocked(uint64_t start_offset);
+
   // The highest 1 bit ot the token indicates if this is the start of a space
   // entry, the lower 7 bits indicate how many free blocks followed
   struct Token {
