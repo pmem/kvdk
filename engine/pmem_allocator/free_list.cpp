@@ -47,7 +47,7 @@ void SpaceMap::Set(uint64_t offset, uint64_t size) {
   }
 
 #if KVDK_DEBUG_LEVEL > 0
-  // Check space map is correct after set
+  // Check set space followed by another valid space or empty
   uint64_t debug_cur = offset + size;
   if (debug_cur < map_.size()) {
     SpinMutex* debug_lock = &map_spins_[(debug_cur) / lock_granularity_];
@@ -92,7 +92,7 @@ bool SpaceMap::TestAndUnset(uint64_t offset, uint64_t size) {
   }
 
 #if KVDK_DEBUG_LEVEL > 0
-  // Check space map is correct after unset
+  // Check unset space followed by another valid space or empty
   if (res != 0) {
     kvdk_assert(res == size, "space map error in TestAndUnset");
     uint64_t debug_cur = offset + res;
@@ -129,7 +129,7 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
   if (map_[start_offset].IsStart()) {
 #if KVDK_DEBUG_LEVEL > 0
     {
-      // check start size
+      // check start space size is correct
       uint64_t debug_size = map_[start_offset].Size();
       uint64_t debug_cur = start_offset + debug_size;
       while (true) {
@@ -190,7 +190,7 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
   }
 
 #if KVDK_DEBUG_LEVEL > 0
-  // Check space map is correct after merge
+  // Check merged spaced followed by another valid space or empty
   {
     uint64_t debug_cur = start_offset + merged_size;
     if (merged_size > 0 && debug_cur < end_offset && debug_cur < map_.size()) {
