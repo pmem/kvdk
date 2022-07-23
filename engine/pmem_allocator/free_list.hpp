@@ -16,7 +16,7 @@ namespace KVDK_NAMESPACE {
 constexpr uint32_t kMaxSmallBlockSize = 255;
 constexpr uint32_t kMaxBlockSizeIndex = 255;
 constexpr uint32_t kBlockSizeIndexInterval = 1024;
-constexpr uint32_t kSpaceMapLockGranularity = 128;
+constexpr uint32_t kSpaceMapLockGranularity = 256;
 
 class PMEMAllocator;
 

@@ -131,14 +131,9 @@ uint64_t SpaceMap::testLocked(uint64_t start_offset) {
 
 uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
                             uint64_t limit_merge_size) {
-  kvdk_assert(start_size > 0, "");
-  assert(start_offset < map_.size());
-  if (start_offset + start_size > map_.size()) {
-    return 0;
-  }
-  if (start_size >= limit_merge_size) {
-    return start_size;
-  }
+  kvdk_assert(start_size > 0 && start_offset + start_size < map_.size() &&
+                  start_size <= limit_merge_size,
+              "");
 
   uint64_t end_offset = std::min(start_offset + limit_merge_size, map_.size());
   uint64_t merged_size = 0;
