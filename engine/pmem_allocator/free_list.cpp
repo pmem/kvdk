@@ -20,28 +20,6 @@ const uint64_t kMergeThreshold = 1024 * 1024;
 // not larger than (kMaxAjacentSpaceSizeInMerge * current space size)
 const uint64_t kMaxAjacentSpaceSizeInMerge = 8;
 
-void SpaceMap::setRemaining(uint64_t remaining_offset, uint64_t remaining,
-                            uint64_t start_offset) {
-  SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
-  std::vector<std::unique_lock<SpinMutex>> remaining_locked;
-  uint64_t cur = remaining_offset;
-  kvdk_assert(testLocked(start_offset) == (remaining_offset - start_offset),
-              "");
-  while (remaining > 0) {
-    kvdk_assert(cur < map_.size(), "Set space map overflow");
-    uint8_t to_set = remaining > INT8_MAX ? INT8_MAX : remaining;
-    SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
-    if (cur_lock != last_lock) {
-      remaining_locked.emplace_back(*cur_lock);
-      last_lock = cur_lock;
-    }
-    kvdk_assert(map_[cur].Empty(), "");
-    map_[cur] = Token(false, to_set);
-    cur += to_set;
-    remaining -= to_set;
-  }
-}
-
 void SpaceMap::Set(uint64_t offset, uint64_t size) {
   if (size == 0) {
     return;
@@ -104,30 +82,6 @@ uint64_t SpaceMap::Test(uint64_t start_offset) {
   return testLocked(start_offset);
 }
 
-uint64_t SpaceMap::testLocked(uint64_t start_offset) {
-  std::vector<std::unique_lock<SpinMutex>> locked;
-  SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
-  uint64_t size = 0;
-  if (map_[start_offset].IsStart()) {
-    kvdk_assert(map_[start_offset].IsStart(), "");
-    size = map_[start_offset].Size();
-    uint64_t cur = start_offset + size;
-    while (cur < map_.size()) {
-      SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
-      if (cur_lock != last_lock) {
-        last_lock = cur_lock;
-        locked.emplace_back(*last_lock);
-      }
-      if (map_[cur].IsStart() || map_[cur].Empty()) {
-        return size;
-      }
-      size += map_[cur].Size();
-      cur = start_offset + size;
-    }
-  }
-  return size;
-}
-
 uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
                             uint64_t limit_merge_size) {
   uint64_t end_offset = std::min(start_offset + limit_merge_size, map_.size());
@@ -186,6 +140,52 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
   kvdk_assert(merged_size == 0 || testLocked(start_offset) == merged_size, "");
 
   return merged_size;
+}
+
+uint64_t SpaceMap::testLocked(uint64_t start_offset) {
+  std::vector<std::unique_lock<SpinMutex>> locked;
+  SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
+  uint64_t size = 0;
+  if (map_[start_offset].IsStart()) {
+    kvdk_assert(map_[start_offset].IsStart(), "");
+    size = map_[start_offset].Size();
+    uint64_t cur = start_offset + size;
+    while (cur < map_.size()) {
+      SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
+      if (cur_lock != last_lock) {
+        last_lock = cur_lock;
+        locked.emplace_back(*last_lock);
+      }
+      if (map_[cur].IsStart() || map_[cur].Empty()) {
+        return size;
+      }
+      size += map_[cur].Size();
+      cur = start_offset + size;
+    }
+  }
+  return size;
+}
+
+void SpaceMap::setRemaining(uint64_t remaining_offset, uint64_t remaining,
+                            uint64_t start_offset) {
+  SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
+  std::vector<std::unique_lock<SpinMutex>> remaining_locked;
+  uint64_t cur = remaining_offset;
+  kvdk_assert(testLocked(start_offset) == (remaining_offset - start_offset),
+              "");
+  while (remaining > 0) {
+    kvdk_assert(cur < map_.size(), "Set space map overflow");
+    uint8_t to_set = remaining > INT8_MAX ? INT8_MAX : remaining;
+    SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
+    if (cur_lock != last_lock) {
+      remaining_locked.emplace_back(*cur_lock);
+      last_lock = cur_lock;
+    }
+    kvdk_assert(map_[cur].Empty(), "");
+    map_[cur] = Token(false, to_set);
+    cur += to_set;
+    remaining -= to_set;
+  }
 }
 
 void Freelist::OrganizeFreeSpace() {
