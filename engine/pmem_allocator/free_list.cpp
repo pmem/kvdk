@@ -20,24 +20,19 @@ const uint64_t kMergeThreshold = 1024 * 1024;
 // not larger than (kMaxAjacentSpaceSizeInMerge * current space size)
 const uint64_t kMaxAjacentSpaceSizeInMerge = 8;
 
-void SpaceMap::Set(uint64_t offset, uint64_t size) {
-  if (size == 0) {
-    return;
-  }
-  SpinMutex* last_lock = &map_spins_[offset / lock_granularity_];
-  std::lock_guard<SpinMutex> start_lg(*last_lock);
-  std::vector<std::unique_lock<SpinMutex>> iter_locked;
-  kvdk_assert(map_[offset].Empty(), "Set space map on a already set byte");
-  auto to_set = size > INT8_MAX ? INT8_MAX : size;
-  map_[offset] = Token(true, to_set);
-  uint64_t remaining = size - to_set;
-  uint64_t cur = offset + to_set;
+void SpaceMap::setRemaining(uint64_t remaining_offset, uint64_t remaining,
+                            uint64_t start_offset) {
+  SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
+  std::vector<std::unique_lock<SpinMutex>> remaining_locked;
+  uint64_t cur = remaining_offset;
+  kvdk_assert(testLocked(start_offset) == (remaining_offset - start_offset),
+              "");
   while (remaining > 0) {
     kvdk_assert(cur < map_.size(), "Set space map overflow");
-    to_set = remaining > INT8_MAX ? INT8_MAX : remaining;
+    uint8_t to_set = remaining > INT8_MAX ? INT8_MAX : remaining;
     SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
     if (cur_lock != last_lock) {
-      iter_locked.emplace_back(*cur_lock);
+      remaining_locked.emplace_back(*cur_lock);
       last_lock = cur_lock;
     }
     kvdk_assert(map_[cur].Empty(), "");
@@ -45,12 +40,24 @@ void SpaceMap::Set(uint64_t offset, uint64_t size) {
     cur += to_set;
     remaining -= to_set;
   }
+}
 
-#if KVDK_DEBUG_LEVEL > 0
-  iter_locked.clear();
-  uint64_t debug_size = testLocked(offset);
-  kvdk_assert(debug_size == size, "");
-#endif
+void SpaceMap::Set(uint64_t offset, uint64_t size) {
+  if (size == 0) {
+    return;
+  }
+  SpinMutex* start_lock = &map_spins_[offset / lock_granularity_];
+  std::lock_guard<SpinMutex> start_lg(*start_lock);
+  kvdk_assert(map_[offset].Empty(), "Set space map on a already set byte");
+  auto to_set = size > INT8_MAX ? INT8_MAX : size;
+  map_[offset] = Token(true, to_set);
+  uint64_t remaining = size - to_set;
+  uint64_t cur = offset + to_set;
+  if (remaining > 0) {
+    setRemaining(cur, remaining, offset);
+  }
+
+  kvdk_assert(testLocked(offset) == size, "");
 }
 
 bool SpaceMap::TestAndClear(uint64_t offset, uint64_t size) {
@@ -61,43 +68,35 @@ bool SpaceMap::TestAndClear(uint64_t offset, uint64_t size) {
   std::vector<std::unique_lock<SpinMutex>> locked;
   SpinMutex* last_lock = &map_spins_[offset / lock_granularity_];
   locked.emplace_back(*last_lock);
-  uint64_t res = 0;
+  uint64_t in_clear = 0;
+  std::vector<uint64_t> to_clear_offsets;
   if (map_[offset].IsStart()) {
-    res += map_[offset].Size();
-    map_[offset].Clear();
+    in_clear = map_[offset].Size();
+    to_clear_offsets.push_back(offset);
+    uint64_t cur = offset + in_clear;
 
-    while (res < size) {
-      uint64_t cur = offset + res;
-      kvdk_assert(cur <= map_.size(), "");
+    while (cur < map_.size() && in_clear <= size) {
       SpinMutex* cur_lock = &map_spins_[cur / lock_granularity_];
       if (cur_lock != last_lock) {
         last_lock = cur_lock;
         locked.emplace_back(*last_lock);
       }
-      kvdk_assert(
-          cur < map_.size() && !map_[cur].Empty() && !map_[cur].IsStart(), "");
-      res += map_[cur].Size();
-      map_[cur].Clear();
-    }
-  }
-
-#if KVDK_DEBUG_LEVEL > 0
-  // Check unset space followed by another valid space or empty
-  if (res != 0) {
-    kvdk_assert(res == size, "space map error in TestAndClear");
-    uint64_t debug_cur = offset + res;
-    if (debug_cur < map_.size()) {
-      SpinMutex* debug_lock = &map_spins_[debug_cur / lock_granularity_];
-      if (debug_lock != last_lock) {
-        locked.emplace_back(*debug_lock);
+      if (map_[cur].Empty() || map_[cur].IsStart()) {
+        break;
       }
-      kvdk_assert(map_[debug_cur].IsStart() || map_[debug_cur].Empty(),
-                  "space map error after TestAndClear");
+      in_clear += map_[cur].Size();
+      to_clear_offsets.push_back(cur);
+      cur = offset + in_clear;
     }
   }
-#endif
 
-  return res == size;
+  if (in_clear == size) {
+    for (uint64_t tco : to_clear_offsets) {
+      map_[tco].Clear();
+    }
+    return true;
+  }
+  return false;
 }
 
 uint64_t SpaceMap::Test(uint64_t start_offset) {
@@ -131,27 +130,17 @@ uint64_t SpaceMap::testLocked(uint64_t start_offset) {
 
 uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
                             uint64_t limit_merge_size) {
-  kvdk_assert(start_size > 0 && start_offset + start_size < map_.size() &&
-                  start_size <= limit_merge_size,
-              "");
-
   uint64_t end_offset = std::min(start_offset + limit_merge_size, map_.size());
+  kvdk_assert(start_size > 0 && start_offset + start_size <= end_offset, "");
   uint64_t merged_size = 0;
   SpinMutex* last_lock = &map_spins_[start_offset / lock_granularity_];
   std::lock_guard<SpinMutex> start_lg(*last_lock);
   std::vector<std::unique_lock<SpinMutex>> iter_locked;
-  if (map_[start_offset].IsStart()) {
-#if KVDK_DEBUG_LEVEL > 0
-    {
-      uint64_t debug_size = testLocked(start_offset);
-      kvdk_assert(debug_size == start_size,
-                  "TryMerge: start space entry size error");
-    }
-#endif  // KVDK_DEBUG_LEVEL > 0
-
+  if (testLocked(start_offset) == start_size) {
     merged_size = start_size;
     uint64_t in_merge_offset = start_offset + merged_size;
     uint64_t in_merge_size = 0;
+    std::vector<uint64_t> to_clear_offsets;
     while (true) {
       uint64_t cur = in_merge_offset + in_merge_size;
       if (cur >= end_offset || in_merge_size >
@@ -166,7 +155,10 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
       if (map_[cur].IsStart() || map_[cur].Empty()) {
         if (in_merge_size > 0) {
           merged_size += in_merge_size;
-          map_[in_merge_offset].UnStart();
+          for (uint64_t tco : to_clear_offsets) {
+            map_[tco].Clear();
+          }
+          to_clear_offsets.clear();
           in_merge_offset = cur;
           in_merge_size = 0;
         }
@@ -178,19 +170,20 @@ uint64_t SpaceMap::TryMerge(uint64_t start_offset, uint64_t start_size,
       if (map_[cur].Empty()) {
         break;
       } else {
+        to_clear_offsets.push_back(cur);
         in_merge_size += map_[cur].Size();
       }
     }
   }
 
-#if KVDK_DEBUG_LEVEL > 0
-  // Check merged spaced size
-  if (merged_size > 0) {
-    iter_locked.clear();
-    uint64_t debug_size = testLocked(start_offset);
-    kvdk_assert(debug_size == merged_size, "");
+  iter_locked.clear();
+  if (merged_size > start_size) {
+    setRemaining(start_offset + start_size, merged_size - start_size,
+                 start_offset);
   }
-#endif  // KVDK_DEBUG_LEVEL > 0
+
+  // Check merged spaced size
+  kvdk_assert(merged_size == 0 || testLocked(start_offset) == merged_size, "");
 
   return merged_size;
 }

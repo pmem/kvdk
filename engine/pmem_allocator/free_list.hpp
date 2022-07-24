@@ -44,6 +44,11 @@ class SpaceMap {
   // test size with start_offset locked
   uint64_t testLocked(uint64_t start_offset);
 
+  // set remaining space bytes of space "start_offset", the start offset should
+  // already been locked
+  void setRemaining(uint64_t remaining_offset, uint64_t remaining,
+                    uint64_t start_offset);
+
   // The highest 1 bit ot the token indicates if this is the start of a space
   // entry, the lower 7 bits indicate how many free blocks followed
   struct Token {
