@@ -29,7 +29,7 @@ Status KVEngine::buildList(const StringView& list_name,
             ? lookup_result.entry.GetIndex().hlist->HeaderRecord()
             : nullptr;
     CollectionIDType id = collection_id_.fetch_add(1);
-    std::string value_str = HashList::EncodeID(id);
+    std::string value_str = List::EncodeID(id);
     SpaceEntry space =
         pmem_allocator_->Allocate(DLRecord::RecordSize(list_name, value_str));
     if (space.size == 0) {
@@ -39,14 +39,13 @@ Status KVEngine::buildList(const StringView& list_name,
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
-        RecordType::HashHeader, RecordStatus::Normal,
+        RecordType::ListRecord, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, list_name, value_str);
     list = std::make_shared<List>(pmem_record, list_name, id,
                                   pmem_allocator_.get(), dllist_locks_.get());
     kvdk_assert(list != nullptr, "");
     addListToMap(list);
-    // addHashlistToMap(hlist);
     insertKeyOrElem(lookup_result, RecordType::ListRecord, RecordStatus::Normal,
                     list.get());
     return Status::Ok;
@@ -85,7 +84,7 @@ Status KVEngine::ListDestroy(StringView collection) {
     bool success = list->Replace(header, pmem_record);
     kvdk_assert(success, "existing header should be linked on its list");
     hash_table_->Insert(collection, RecordType::ListRecord,
-                        RecordStatus::Outdated, list, PointerType::HashList);
+                        RecordStatus::Outdated, list, PointerType::List);
   }
   return s;
 }
@@ -581,64 +580,38 @@ Status KVEngine::listBatchPushImpl(StringView key, int pos,
 
 Status KVEngine::listBatchPopImpl(StringView key, int pos, size_t n,
                                   std::vector<std::string>* elems) {
-  /*
-auto token = version_controller_.GetLocalSnapshotHolder();
-List* list;
-Status s = listFind(key, &list);
-if (s != Status::Ok) {
-return s;
-}
-auto guard = list->AcquireLock();
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  List* list;
+  Status s = listFind(key, &list);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto guard = list->AcquireLock();
 
-auto bw_token = version_controller_.GetBatchWriteToken();
-BatchWriteLog log;
-log.SetTimestamp(bw_token.Timestamp());
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  BatchWriteLog log;
+  log.SetTimestamp(bw_token.Timestamp());
 
-elems->clear();
-size_t nn = n;
-if (pos == 0) {
-for (auto iter = list->Front(); iter != list->Tail(); ++iter) {
-StringView elem = iter->Value();
-elems->emplace_back(elem.data(), elem.size());
-log.ListDelete(iter.Offset());
---nn;
-if (nn == 0) {
-break;
-}
-}
-} else {
-kvdk_assert(pos == -1, "");
-for (auto iter = list->Back(); iter != list->Head(); --iter) {
-StringView elem = iter->Value();
-elems->emplace_back(elem.data(), elem.size());
-log.ListDelete(iter.Offset());
---nn;
-if (nn == 0) {
-break;
-}
-}
-}
+  elems->clear();
+  size_t nn = n;
+  while (nn > 0) {
+    auto ret = pos == 0 ? list->PopFront() : list->PopBack();
+    if (ret.s != Status::Ok) {
+      break;
+    }
+    StringView elem = ret.existing_record->Value();
+    elems->emplace_back(elem.data(), elem.size());
+    // Todo: first log then pop
+    log.ListDelete(pmem_allocator_->addr2offset_checked(ret.existing_record));
+    --nn;
+  }
 
-std::vector<DLRecord*> old_records;
-auto& tc = engine_thread_cache_[access_thread.id];
-log.EncodeTo(tc.batch_log);
-BatchWriteLog::MarkProcessing(tc.batch_log);
-if (pos == 0) {
-for (size_t i = 0; i < n && list->Size() > 0; i++) {
-list->PopFront([&](DLRecord* rec) { old_records.push_back(rec); });
-TEST_CRASH_POINT("KVEngine::listBatchPopImpl", "");
-}
-} else {
-for (size_t i = 0; i < n && list->Size() > 0; i++) {
-list->PopBack([&](DLRecord* rec) { old_records.push_back(rec); });
-TEST_CRASH_POINT("KVEngine::listBatchPopImpl", "");
-}
-}
-BatchWriteLog::MarkCommitted(tc.batch_log);
-for (auto rec : old_records) {
-delayFree(rec);
-}
-*/
+  auto& tc = engine_thread_cache_[access_thread.id];
+  log.EncodeTo(tc.batch_log);
+  BatchWriteLog::MarkProcessing(tc.batch_log);
+
+  BatchWriteLog::MarkCommitted(tc.batch_log);
+  // Todo: free existing records
   return Status::Ok;
 }
 

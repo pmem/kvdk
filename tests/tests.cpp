@@ -1640,17 +1640,21 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Value()),
               Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
+    iter = engine->ListCreateIterator(list_name);
+    iter->Seek(insert_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
-    iter->Prev();
-    iter->Prev();
     auto replace_pos = insert_pos - 2;
+    iter->Prev();
+    iter->Prev();
     --iter2;
     --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListReplace(list_name, replace_pos, elem), Status::Ok);
     *iter2 = elem;
+    iter = engine->ListCreateIterator(list_name);
+    iter->Seek(replace_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
     auto erase_pos = replace_pos - 2;
@@ -1661,6 +1665,8 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(iter->Value(), *iter2);
     ASSERT_EQ(engine->ListErase(list_name, erase_pos), Status::Ok);
     iter2 = list_copy.erase(iter2);
+    iter = engine->ListCreateIterator(list_name);
+    iter->Seek(erase_pos);
     ASSERT_EQ(iter->Value(), *iter2);
   };
 
@@ -1694,6 +1700,7 @@ TEST_F(EngineBasicTest, TestList) {
       LaunchNThreads(num_threads, RPushLPop);
       LaunchNThreads(num_threads, ListIterate);
     }
+    break;
     Reboot();
   }
 
