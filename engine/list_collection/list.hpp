@@ -75,12 +75,12 @@ class List : public Collection {
     return ret;
   }
 
-  WriteResult PushFront(const StringView& key, const StringView& value,
-                        TimeStampType ts, const SpaceEntry space) {
+  WriteResult PushFront(const StringView& elem, TimeStampType ts,
+                        const SpaceEntry space) {
     WriteResult ret;
-    std::string internal_key(InternalKey(key));
+    std::string internal_key(InternalKey(""));
 
-    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+    DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
                            RecordStatus::Normal, ts, space);
     ret.s = dl_list_.PushFront(args);
     kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
@@ -90,18 +90,17 @@ class List : public Collection {
     return ret;
   }
 
-  WriteResult PushFront(const StringView& key, const StringView& value,
-                        TimeStampType ts) {
+  WriteResult PushFront(const StringView& elem, TimeStampType ts) {
     WriteResult ret;
-    std::string internal_key(InternalKey(key));
+    std::string internal_key(InternalKey(""));
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
+        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
     if (space.size == 0) {
       ret.s = Status::PmemOverflow;
       return ret;
     }
 
-    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+    DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
                            RecordStatus::Normal, ts, space);
     ret.s = dl_list_.PushFront(args);
     kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
@@ -111,18 +110,17 @@ class List : public Collection {
     return ret;
   }
 
-  WriteResult PushBack(const StringView& key, const StringView& value,
-                       TimeStampType ts) {
+  WriteResult PushBack(const StringView& elem, TimeStampType ts) {
     WriteResult ret;
-    std::string internal_key(InternalKey(key));
+    std::string internal_key(InternalKey(""));
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
+        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
     if (space.size == 0) {
       ret.s = Status::PmemOverflow;
       return ret;
     }
 
-    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+    DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
                            RecordStatus::Normal, ts, space);
     ret.s = dl_list_.PushBack(args);
     kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
@@ -132,12 +130,12 @@ class List : public Collection {
     return ret;
   }
 
-  WriteResult PushBack(const StringView& key, const StringView& value,
+  WriteResult PushBack(const StringView& elem,
                        TimeStampType ts, const SpaceEntry& space) {
     WriteResult ret;
-    std::string internal_key(InternalKey(key));
+    std::string internal_key(InternalKey(""));
 
-    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+    DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
                            RecordStatus::Normal, ts, space);
     ret.s = dl_list_.PushBack(args);
     kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");

@@ -110,8 +110,8 @@ Status KVEngine::ListLength(StringView key, size_t* sz) {
   return Status::Ok;
 }
 
-Status KVEngine::ListPushFront(StringView collection, StringView key) {
-  if (!CheckKeySize(collection) || !CheckValueSize(key)) {
+Status KVEngine::ListPushFront(StringView collection, StringView elem) {
+  if (!CheckKeySize(collection) || !CheckValueSize(elem)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -128,11 +128,11 @@ Status KVEngine::ListPushFront(StringView collection, StringView key) {
   }
   auto guard = list->AcquireLock();
 
-  return list->PushFront("", key, version_controller_.GetCurrentTimestamp()).s;
+  return list->PushFront(elem, version_controller_.GetCurrentTimestamp()).s;
 }
 
-Status KVEngine::ListPushBack(StringView collection, StringView key) {
-  if (!CheckKeySize(collection) || !CheckValueSize(key)) {
+Status KVEngine::ListPushBack(StringView list_name, StringView elem) {
+  if (!CheckKeySize(list_name) || !CheckValueSize(elem)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -141,13 +141,13 @@ Status KVEngine::ListPushBack(StringView collection, StringView key) {
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(collection, &list);
+  Status s = listFind(list_name, &list);
   if (s != Status::Ok) {
     return s;
   }
   auto guard = list->AcquireLock();
 
-  return list->PushBack("", key, version_controller_.GetCurrentTimestamp()).s;
+  return list->PushBack(elem, version_controller_.GetCurrentTimestamp()).s;
 }
 
 Status KVEngine::ListPopFront(StringView key, std::string* elem) {
@@ -388,9 +388,9 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
 
   TEST_CRASH_POINT("KVEngine::ListMove", "");
   if (dst_pos == 0) {
-    dst_list->PushFront("", *elem, bw_token.Timestamp(), space);
+    dst_list->PushFront(*elem, bw_token.Timestamp(), space);
   } else {
-    dst_list->PushBack("", *elem, bw_token.Timestamp(), space);
+    dst_list->PushBack(*elem, bw_token.Timestamp(), space);
   }
 
   BatchWriteLog::MarkCommitted(tc.batch_log);
@@ -564,13 +564,13 @@ Status KVEngine::listBatchPushImpl(StringView key, int pos,
   BatchWriteLog::MarkProcessing(tc.batch_log);
   if (pos == 0) {
     for (size_t i = 0; i < elems.size(); i++) {
-      list->PushFront("", elems[i], bw_token.Timestamp(), spaces[i]);
+      list->PushFront(elems[i], bw_token.Timestamp(), spaces[i]);
       TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
     }
   } else {
     kvdk_assert(pos == -1, "");
     for (size_t i = 0; i < elems.size(); i++) {
-      list->PushBack("", elems[i], bw_token.Timestamp(), spaces[i]);
+      list->PushBack(elems[i], bw_token.Timestamp(), spaces[i]);
       TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
     }
   }
