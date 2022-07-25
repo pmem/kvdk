@@ -1074,13 +1074,13 @@ void Skiplist::Destroy() {
 }
 
 void Skiplist::DestroyAll() {
-  GlobalLogger.Info(
+  GlobalLogger.Debug(
       "Start Destroy skiplist with old version lists: %s, collection ID: %ld, "
       "size: %ld\n",
       Name().c_str(), ID(), Size());
   destroyAllRecords();
   destroyNodes();
-  GlobalLogger.Info(
+  GlobalLogger.Debug(
       "Finish Destroy skiplist with old version lists: %s, collection ID: "
       "%ld\n",
       Name().c_str(), ID());
@@ -1088,20 +1088,24 @@ void Skiplist::DestroyAll() {
 
 void Skiplist::destroyNodes() {
   if (header_) {
-    std::set<SkiplistNode*> freed_nodes;
-    for (int i = 1; i <= header_->Height(); ++i) {
+    // To avoid memory leak (don't free created skiplist node), we should
+    // iterate the skiplist to find all deleted skiplist nodes.
+    // Notice: sometimes, a thread has just marked deleted skiplist node A, but
+    // another thread found this deleted skiplist node A and updated its linkage
+    // of lower height whiling seeking nodes. It is easy to ignore that the
+    // linkage of higher height of this deleted skiplist node A has not been
+    // changed.
+    for (int i = header_->Height(); i >= 1; --i) {
       auto to_delete = header_->Next(i).RawPointer();
       while (to_delete) {
-        freed_nodes.insert(to_delete);
         auto next = to_delete->Next(i).RawPointer();
+        if (--to_delete->valid_links == 0) {
+          SkiplistNode::DeleteNode(to_delete);
+        }
         to_delete = next;
       }
     }
-    freed_nodes.insert(header_);
-
-    for (auto freed_node : freed_nodes) {
-      SkiplistNode::DeleteNode(freed_node);
-    }
+    SkiplistNode::DeleteNode(header_);
     header_ = nullptr;
   }
 }

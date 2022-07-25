@@ -89,7 +89,9 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         LaunchNThreads(num_thread, TestPmemAlloc);
 
         ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), 0LL);
-        pmem_alloc->BackgroundWork();
+        Freelist* free_list = pmem_alloc->GetFreeList();
+        free_list->MoveCachedEntriesToPool();
+        free_list->MergeSpaceInPool();
         access_thread.Release();
 
         // Then allocate all pmem.
@@ -147,7 +149,9 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   access_thread.Release();
 
   LaunchNThreads(num_thread, TestPmemFree);
-  pmem_alloc->BackgroundWork();
+  Freelist* free_list = pmem_alloc->GetFreeList();
+  free_list->MoveCachedEntriesToPool();
+  free_list->MergeSpaceInPool();
   // Test merge free memory
   thread_manager_->MaybeInitThread(access_thread);
   for (uint32_t id = 0; id < num_thread / 4; ++id) {
@@ -198,10 +202,17 @@ TEST_F(EnginePMemAllocatorTest, TestPMemAllocFreeList) {
   pmem_alloc->Free(records.front());
   records.pop_front();
 
-  // need to merge
+  // Recently freed entries less than kMergeThreshold, so the background work
+  // won't do space merge
   pmem_alloc->BackgroundWork();
+  // allocate 1024 bytes fail
+  ASSERT_EQ(pmem_alloc->Allocate(1024ULL).size, 0);
 
-  // allocate 1024 bytes
+  // Manually call merge
+  Freelist* free_list = pmem_alloc->GetFreeList();
+  free_list->MoveCachedEntriesToPool();
+  free_list->MergeSpaceInPool();
+  // allocate 1024 bytes success
   records.push_back(pmem_alloc->Allocate(1024ULL));
   ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), pmem_size);
   delete pmem_alloc;

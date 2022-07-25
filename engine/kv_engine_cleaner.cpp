@@ -257,12 +257,12 @@ void KVEngine::purgeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
   {  // Destroy skiplist
     while (!pending_clean_records.outdated_skip_lists.empty()) {
       auto& ts_skiplist = pending_clean_records.outdated_skip_lists.front();
-      if (ts_skiplist.first < version_controller_.LocalOldestSnapshotTS()) {
-        if (!ts_skiplist.second->IndexWithHashtable()) {
-          ts_skiplist.second->SkiplistCleanStatus(true);
-        }
-        ts_skiplist.second->DestroyAll();
-        removeSkiplist(ts_skiplist.second->ID());
+      auto skiplist = ts_skiplist.second;
+      if (ts_skiplist.first < version_controller_.LocalOldestSnapshotTS() &&
+          skiplist->TryCleaningLock()) {
+        skiplist->DestroyAll();
+        removeSkiplist(skiplist->ID());
+        skiplist->ReleaseCleaningLock();
         pending_clean_records.outdated_skip_lists.pop_front();
       } else {
         break;
@@ -475,10 +475,9 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
 
     if (!pending_clean_records.no_index_skiplists.empty()) {
       for (auto& skiplist : pending_clean_records.no_index_skiplists) {
-        if (skiplist && !skiplist->CleaningSkiplist()) {
-          skiplist->SkiplistCleanStatus(true);
+        if (skiplist && skiplist->TryCleaningLock()) {
           cleanNoHashIndexedSkiplist(skiplist, purge_dl_records);
-          skiplist->SkiplistCleanStatus(false);
+          skiplist->ReleaseCleaningLock();
         }
         pending_clean_records.no_index_skiplists.pop_front();
       }

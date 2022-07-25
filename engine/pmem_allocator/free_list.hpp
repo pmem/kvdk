@@ -16,7 +16,7 @@ namespace KVDK_NAMESPACE {
 constexpr uint32_t kMaxSmallBlockSize = 255;
 constexpr uint32_t kMaxBlockSizeIndex = 255;
 constexpr uint32_t kBlockSizeIndexInterval = 1024;
-constexpr uint32_t kSpaceMapLockGranularity = 64;
+constexpr uint32_t kSpaceMapLockGranularity = 256;
 
 class PMEMAllocator;
 
@@ -29,16 +29,26 @@ class SpaceMap {
         lock_granularity_(kSpaceMapLockGranularity),
         map_spins_(num_blocks / lock_granularity_ + 1) {}
 
-  uint64_t TestAndUnset(uint64_t offset, uint64_t length);
+  bool TestAndClear(uint64_t offset, uint64_t size);
 
-  uint64_t TryMerge(uint64_t offset, uint64_t max_merge_length,
-                    uint64_t min_merge_length);
+  uint64_t Test(uint64_t start_offset);
 
-  void Set(uint64_t offset, uint64_t length);
+  uint64_t TryMerge(uint64_t start_offset, uint64_t start_b_size,
+                    uint64_t limit_merge_size);
+
+  void Set(uint64_t offset, uint64_t size);
 
   uint64_t Size() { return map_.size(); }
 
  private:
+  // test size with start_offset locked
+  uint64_t testLocked(uint64_t start_offset);
+
+  // set remaining space bytes of space "start_offset", the start offset should
+  // already been locked
+  void setRemaining(uint64_t remaining_offset, uint64_t remaining,
+                    uint64_t start_offset);
+
   // The highest 1 bit ot the token indicates if this is the start of a space
   // entry, the lower 7 bits indicate how many free blocks followed
   struct Token {
@@ -224,7 +234,8 @@ class Freelist {
         : small_entry_offsets(max_small_entry_b_size),
           large_entries(max_large_entry_size_index),
           small_entry_spins(max_small_entry_b_size),
-          large_entry_spins(max_large_entry_size_index) {}
+          large_entry_spins(max_large_entry_size_index),
+          recently_freed(0) {}
 
     FlistThreadCache() = delete;
     FlistThreadCache(FlistThreadCache&&) = delete;
@@ -244,16 +255,9 @@ class Freelist {
     Array<SpinMutex> small_entry_spins;
     // Protect large_entries
     Array<SpinMutex> large_entry_spins;
+    // freed entries after last time organize space in background
+    std::atomic<uint64_t> recently_freed;
   };
-
-  uint64_t MergeSpace(uint64_t offset, uint64_t max_size,
-                      uint64_t min_merge_size) {
-    if (min_merge_size > max_size) {
-      return 0;
-    }
-    uint64_t size = space_map_.TryMerge(offset, max_size, min_merge_size);
-    return size;
-  }
 
   uint32_t blockSizeIndex(uint32_t block_size) {
     kvdk_assert(block_size <= num_segment_blocks_, "");
@@ -278,6 +282,7 @@ class Freelist {
   Array<FlistThreadCache> flist_thread_cache_;
   PMEMAllocator* pmem_allocator_;
   SpinMutex large_entries_spin_;
+  std::atomic<size_t> last_freed_after_merge_;
 };
 
 }  // namespace KVDK_NAMESPACE

@@ -125,6 +125,9 @@ class PMEMAllocator : public Allocator {
 
   std::int64_t PMemUsageInBytes();
 
+  // Notice: This function is only for unit test
+  Freelist* GetFreeList() { return &free_list_; }
+
  private:
   friend Freelist;
 

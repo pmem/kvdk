@@ -411,15 +411,9 @@ class Skiplist : public Collection {
     return 0;
   }
 
-  bool CleaningSkiplist() {
-    std::unique_lock<SpinMutex> lock(clean_status_spin_);
-    return cleaning_skiplist_;
-  }
+  bool TryCleaningLock() { return clean_status_spin_.try_lock(); }
 
-  void SkiplistCleanStatus(bool cleaning) {
-    std::unique_lock<SpinMutex> lock(clean_status_spin_);
-    cleaning_skiplist_ = cleaning;
-  }
+  void ReleaseCleaningLock() { clean_status_spin_.unlock(); }
 
  private:
   WriteResult putImplNoHash(const StringView& key, const StringView& value,
@@ -555,7 +549,6 @@ class Skiplist : public Collection {
   SpinMutex pending_delete_nodes_spin_;
   // to avoid illegal access caused by cleaning skiplist by multi-thread
   SpinMutex clean_status_spin_;
-  bool cleaning_skiplist_ = false;
 };
 
 // A helper struct for locating a skiplist position
