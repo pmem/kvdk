@@ -22,9 +22,6 @@ class Skiplist;
 class SkiplistNode;
 struct HashBucketIterator;
 
-template <RecordType ListType, RecordType ElemType>
-class GenericList;
-
 struct List;
 struct HashList;
 
@@ -56,7 +53,7 @@ struct alignas(16) HashEntry {
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
   // Make this hash entry empty while its content been deleted
-  void clear() { header_.index_type = PointerType::Empty; }
+  void Clear() { header_.index_type = PointerType::Empty; }
 
   bool Allocated() { return header_.index_type == PointerType::Allocated; }
 
@@ -86,8 +83,6 @@ struct alignas(16) HashEntry {
     RecordStatus record_status;
     PointerType index_type;
   };
-  // Make this hash entry empty while its content been deleted
-  void clear() { header_.index_type = PointerType::Empty; }
 
  private:
   Index index_;
@@ -202,7 +197,7 @@ class HashTable {
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
     assert(entry_ptr != nullptr);
-    entry_ptr->clear();
+    entry_ptr->Clear();
   }
 
   std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {

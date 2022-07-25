@@ -76,6 +76,21 @@ class List : public Collection {
   }
 
   WriteResult PushFront(const StringView& key, const StringView& value,
+                        TimeStampType ts, const SpaceEntry space) {
+    WriteResult ret;
+    std::string internal_key(InternalKey(key));
+
+    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+                           RecordStatus::Normal, ts, space);
+    ret.s = dl_list_.PushFront(args);
+    kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
+    UpdateSize(1);
+    ret.write_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+    return ret;
+  }
+
+  WriteResult PushFront(const StringView& key, const StringView& value,
                         TimeStampType ts) {
     WriteResult ret;
     std::string internal_key(InternalKey(key));
@@ -106,6 +121,21 @@ class List : public Collection {
       ret.s = Status::PmemOverflow;
       return ret;
     }
+
+    DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
+                           RecordStatus::Normal, ts, space);
+    ret.s = dl_list_.PushBack(args);
+    kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
+    UpdateSize(1);
+    ret.write_record =
+        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+    return ret;
+  }
+
+  WriteResult PushBack(const StringView& key, const StringView& value,
+                       TimeStampType ts, const SpaceEntry& space) {
+    WriteResult ret;
+    std::string internal_key(InternalKey(key));
 
     DLList::WriteArgs args(internal_key, value, RecordType::ListElem,
                            RecordStatus::Normal, ts, space);
@@ -253,6 +283,26 @@ class List : public Collection {
     return ret;
   }
 
+  Status Front(std::string* elem) {
+    if (Size() == 0) {
+      return Status::NotFound;
+    }
+    StringView sw =
+        pmem_allocator_->offset2addr_checked<DLRecord>(HeaderRecord()->next)
+            ->Value();
+    elem->assign(sw.data(), sw.size());
+  }
+
+  Status Back(std::string* elem) {
+    if (Size() == 0) {
+      return Status::NotFound;
+    }
+    StringView sw =
+        pmem_allocator_->offset2addr_checked<DLRecord>(HeaderRecord()->prev)
+            ->Value();
+    elem->assign(sw.data(), sw.size());
+  }
+
   bool Replace(DLRecord* old_record, DLRecord* new_record) {
     return dl_list_.Replace(old_record, new_record);
   }
@@ -329,16 +379,16 @@ class ListIteratorImpl final : public ListIterator {
                  own_snapshot) {}
 
   void Seek(long index) final {
-    if (pos < 0) {
+    if (index < 0) {
       SeekToLast();
       long cur = -1;
-      while (cur-- > pos && Valid()) {
+      while (cur-- > index && Valid()) {
         Prev();
       }
     } else {
       SeekToFirst();
       long cur = 0;
-      while (cur++ < pos && Valid()) {
+      while (cur++ < index && Valid()) {
         Next();
       }
     }

@@ -1450,12 +1450,12 @@ TEST_F(EngineBasicTest, TestList) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::vector<std::vector<std::string>> elems_vec(num_threads);
-  std::vector<std::string> key_vec(num_threads);
+  std::vector<std::string> list_vec(num_threads);
   for (size_t i = 0; i < num_threads; i++) {
-    key_vec[i] = "List_" + std::to_string(i);
-    ASSERT_EQ(engine->ListCreate(key_vec[i]), Status::Ok);
-    ASSERT_EQ(engine->ListDestroy(key_vec[i]), Status::Ok);
-    ASSERT_EQ(engine->ListCreate(key_vec[i]), Status::Ok);
+    list_vec[i] = "List_" + std::to_string(i);
+    ASSERT_EQ(engine->ListCreate(list_vec[i]), Status::Ok);
+    ASSERT_EQ(engine->ListDestroy(list_vec[i]), Status::Ok);
+    ASSERT_EQ(engine->ListCreate(list_vec[i]), Status::Ok);
     for (size_t j = 0; j < count; j++) {
       elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }
@@ -1463,7 +1463,7 @@ TEST_F(EngineBasicTest, TestList) {
   std::vector<std::list<std::string>> list_copy_vec(num_threads);
 
   auto LPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
@@ -1476,7 +1476,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto RPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
@@ -1489,7 +1489,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto LPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
     size_t sz;
@@ -1507,7 +1507,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto RPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
     size_t sz;
@@ -1525,7 +1525,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto LBatchPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     for (size_t j = 0; j < count; j++) {
@@ -1538,7 +1538,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto RBatchPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     for (size_t j = 0; j < count; j++) {
@@ -1551,7 +1551,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto LBatchPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::vector<std::string> elems_resp;
     ASSERT_EQ(engine->ListBatchPopFront(key, count, &elems_resp), Status::Ok);
@@ -1565,7 +1565,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto RBatchPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::vector<std::string> elems_resp;
     ASSERT_EQ(engine->ListBatchPopBack(key, count, &elems_resp), Status::Ok);
@@ -1579,7 +1579,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto RPushLPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
     auto elem_copy = list_copy.front();
@@ -1596,7 +1596,7 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto ListIterate = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
     auto iter = engine->ListCreateIterator(key);
@@ -1620,16 +1620,16 @@ TEST_F(EngineBasicTest, TestList) {
   };
 
   auto ListInsertPutRemove = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& list_name = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     size_t const insert_pos = 5;
     std::string elem;
 
-    ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
+    ASSERT_EQ(engine->ListLength(list_name, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
-    auto iter = engine->ListCreateIterator(key);
+    auto iter = engine->ListCreateIterator(list_name);
     ASSERT_NE(iter, nullptr);
 
     iter->Seek(insert_pos);
@@ -1637,26 +1637,29 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(iter->Value(), *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(engine->ListInsertBefore(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Value()),
+              Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
     ASSERT_EQ(iter->Value(), *iter2);
 
     iter->Prev();
     iter->Prev();
+    auto replace_pos = insert_pos - 2;
     --iter2;
     --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
-    ASSERT_EQ(engine->ListReplace(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListReplace(list_name, replace_pos, elem), Status::Ok);
     *iter2 = elem;
     ASSERT_EQ(iter->Value(), *iter2);
 
+    auto erase_pos = replace_pos - 2;
     iter->Prev();
     iter->Prev();
     --iter2;
     --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
-    ASSERT_EQ(engine->ListErase(iter), Status::Ok);
+    ASSERT_EQ(engine->ListErase(list_name, erase_pos), Status::Ok);
     iter2 = list_copy.erase(iter2);
     ASSERT_EQ(iter->Value(), *iter2);
   };

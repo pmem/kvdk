@@ -244,9 +244,9 @@ Status KVEngine::ListBatchPushBack(StringView key,
                            std::vector<StringView>{elems.begin(), elems.end()});
 }
 
-Status KVEngine::ListBatchPushBack(StringView key,
+Status KVEngine::ListBatchPushBack(StringView list_name,
                                    std::vector<StringView> const& elems) {
-  if (!CheckKeySize(key)) {
+  if (!CheckKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
   if (elems.size() > BatchWriteLog::Capacity()) {
@@ -265,7 +265,7 @@ Status KVEngine::ListBatchPushBack(StringView key,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPushImpl(key, -1, elems);
+  return listBatchPushImpl(list_name, -1, elems);
 }
 
 Status KVEngine::ListBatchPopFront(StringView key, size_t n,
@@ -302,96 +302,99 @@ Status KVEngine::ListBatchPopBack(StringView key, size_t n,
 
 Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
                           int dst_pos, std::string* elem) {
-  /*
-if ((src_pos != 0 && src_pos != -1) || (dst_pos != 0 && dst_pos != -1)) {
-return Status::InvalidArgument;
-}
-if (!CheckKeySize(src) || !CheckKeySize(dst)) {
-return Status::InvalidDataSize;
-}
-Status s = MaybeInitAccessThread();
-if (s != Status::Ok) {
-return s;
-}
-s = maybeInitBatchLogFile();
-if (s != Status::Ok) {
-return s;
-}
+  if ((src_pos != 0 && src_pos != -1) || (dst_pos != 0 && dst_pos != -1)) {
+    return Status::InvalidArgument;
+  }
+  if (!CheckKeySize(src) || !CheckKeySize(dst)) {
+    return Status::InvalidDataSize;
+  }
+  Status s = MaybeInitAccessThread();
+  if (s != Status::Ok) {
+    return s;
+  }
 
-auto token = version_controller_.GetLocalSnapshotHolder();
-List* src_list;
-List* dst_list;
-/// TODO: we must guarantee a consistent view for the List.
-/// The same holds for other collections.
-/// No collection should be expired, created or deleted during BatchWrite.
-s = listFind(src, &src_list);
-if (s != Status::Ok) {
-return s;
-}
-if (src != dst) {
-s = listFind(dst, &dst_list);
-if (s != Status::Ok) {
-return s;
-}
-} else {
-dst_list = src_list;
-}
+  s = maybeInitBatchLogFile();
+  if (s != Status::Ok) {
+    return s;
+  }
 
-std::unique_lock<std::recursive_mutex> guard1;
-std::unique_lock<std::recursive_mutex> guard2;
-if (src_list < dst_list) {
-guard1 = src_list->AcquireLock();
-guard2 = dst_list->AcquireLock();
-} else if (src_list > dst_list) {
-guard1 = dst_list->AcquireLock();
-guard2 = src_list->AcquireLock();
-} else {
-kvdk_assert(src == dst, "");
-guard1 = src_list->AcquireLock();
-}
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  List* src_list;
+  List* dst_list;
+  /// TODO: we must guarantee a consistent view for the List.
+  /// The same holds for other collections.
+  /// No collection should be expired, created or deleted during BatchWrite.
+  s = listFind(src, &src_list);
+  if (s != Status::Ok) {
+    return s;
+  }
+  if (src != dst) {
+    s = listFind(dst, &dst_list);
+    if (s != Status::Ok) {
+      return s;
+    }
+  } else {
+    dst_list = src_list;
+  }
 
-if (src_list->Size() == 0) {
-return Status::NotFound;
-}
+  std::unique_lock<std::recursive_mutex> guard1;
+  std::unique_lock<std::recursive_mutex> guard2;
+  if (src_list < dst_list) {
+    guard1 = src_list->AcquireLock();
+    guard2 = dst_list->AcquireLock();
+  } else if (src_list > dst_list) {
+    guard1 = dst_list->AcquireLock();
+    guard2 = src_list->AcquireLock();
+  } else {
+    kvdk_assert(src == dst, "");
+    guard1 = src_list->AcquireLock();
+  }
 
-List::Iterator iter = (src_pos == 0) ? src_list->Front() : src_list->Back();
-StringView sw = iter->Value();
-elem->assign(sw.data(), sw.size());
-if (src == dst && src_pos == dst_pos) {
-return Status::Ok;
-}
+  if (src == dst && src_pos == dst_pos) {
+    s = src_pos == 0 ? src_list->Front(elem) : src_list->Back(elem);
+    return s;
+  }
 
-auto space = pmem_allocator_->Allocate(DLRecord::RecordSize("", sw) +
-               sizeof(CollectionIDType));
-if (space.size == 0) {
-return Status::PmemOverflow;
-}
+  // TODO first log
+  List::WriteResult ret;
+  if (src_pos == 0) {
+    ret = src_list->PopFront();
+  } else {
+    ret = src_list->PopBack();
+  }
 
-auto bw_token = version_controller_.GetBatchWriteToken();
-BatchWriteLog log;
-log.SetTimestamp(bw_token.Timestamp());
-log.ListDelete(iter.Offset());
-log.ListEmplace(space.offset);
+  if (ret.s == Status::Ok) {
+    elem->assign(ret.existing_record->Value().data(),
+                 ret.existing_record->Value().size());
+  } else {
+    return ret.s;
+  }
 
-auto& tc = engine_thread_cache_[access_thread.id];
-log.EncodeTo(tc.batch_log);
-BatchWriteLog::MarkProcessing(tc.batch_log);
+  auto space = pmem_allocator_->Allocate(DLRecord::RecordSize("", *elem) +
+                                         sizeof(CollectionIDType));
+  if (space.size == 0) {
+    return Status::PmemOverflow;
+  }
 
-if (src_pos == 0) {
-src_list->PopFront([&](DLRecord*) { return; });
-} else {
-src_list->PopBack([&](DLRecord*) { return; });
-}
-TEST_CRASH_POINT("KVEngine::ListMove", "");
-if (dst_pos == 0) {
-dst_list->PushFront(space, bw_token.Timestamp(), "", sw);
-} else {
-dst_list->PushBack(space, bw_token.Timestamp(), "", sw);
-}
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  BatchWriteLog log;
+  log.SetTimestamp(bw_token.Timestamp());
+  log.ListDelete(pmem_allocator_->addr2offset_checked(ret.existing_record));
+  log.ListEmplace(space.offset);
 
-BatchWriteLog::MarkCommitted(tc.batch_log);
-delayFree(iter.Address());
-*/
+  auto& tc = engine_thread_cache_[access_thread.id];
+  log.EncodeTo(tc.batch_log);
+  BatchWriteLog::MarkProcessing(tc.batch_log);
+
+  TEST_CRASH_POINT("KVEngine::ListMove", "");
+  if (dst_pos == 0) {
+    dst_list->PushFront("", *elem, bw_token.Timestamp(), space);
+  } else {
+    dst_list->PushBack("", *elem, bw_token.Timestamp(), space);
+  }
+
+  BatchWriteLog::MarkCommitted(tc.batch_log);
+  // TODO free existing record
   return Status::Ok;
 }
 
@@ -523,58 +526,56 @@ Status KVEngine::listFind(StringView key, List** list) {
 
 Status KVEngine::listBatchPushImpl(StringView key, int pos,
                                    std::vector<StringView> const& elems) {
-  /*
-auto token = version_controller_.GetLocalSnapshotHolder();
-List* list;
-Status s = listFind(key, &list);
-if (s != Status::Ok) {
-return s;
-}
-auto guard = list->AcquireLock();
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  List* list;
+  Status s = listFind(key, &list);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto guard = list->AcquireLock();
 
-auto bw_token = version_controller_.GetBatchWriteToken();
-BatchWriteLog log;
-log.SetTimestamp(bw_token.Timestamp());
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  BatchWriteLog log;
+  log.SetTimestamp(bw_token.Timestamp());
 
-std::vector<SpaceEntry> spaces;
-auto ReleaseResources = [&]() {
+  std::vector<SpaceEntry> spaces;
+  auto ReleaseResources = [&]() {
 // Don't Free() if we simulate a crash.
 #ifndef KVDK_ENABLE_CRASHPOINT
-for (auto space : spaces) {
-pmem_allocator_->Free(space);
-}
+    for (auto space : spaces) {
+      pmem_allocator_->Free(space);
+    }
 #endif
-};
-defer(ReleaseResources());
+  };
+  defer(ReleaseResources());
 
-for (auto const& elem : elems) {
-SpaceEntry space = pmem_allocator_->Allocate(
-sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
-if (space.size == 0) {
-return Status::PmemOverflow;
-}
-spaces.push_back(space);
-log.ListEmplace(space.offset);
-}
+  for (auto const& elem : elems) {
+    SpaceEntry space = pmem_allocator_->Allocate(
+        sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
+    if (space.size == 0) {
+      return Status::PmemOverflow;
+    }
+    spaces.push_back(space);
+    log.ListEmplace(space.offset);
+  }
 
-auto& tc = engine_thread_cache_[access_thread.id];
-log.EncodeTo(tc.batch_log);
-BatchWriteLog::MarkProcessing(tc.batch_log);
-if (pos == 0) {
-for (size_t i = 0; i < elems.size(); i++) {
-list->PushFront(spaces[i], bw_token.Timestamp(), "", elems[i]);
-TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
-}
-} else {
-kvdk_assert(pos == -1, "");
-for (size_t i = 0; i < elems.size(); i++) {
-list->PushBack(spaces[i], bw_token.Timestamp(), "", elems[i]);
-TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
-}
-}
-BatchWriteLog::MarkCommitted(tc.batch_log);
-spaces.clear();
-*/
+  auto& tc = engine_thread_cache_[access_thread.id];
+  log.EncodeTo(tc.batch_log);
+  BatchWriteLog::MarkProcessing(tc.batch_log);
+  if (pos == 0) {
+    for (size_t i = 0; i < elems.size(); i++) {
+      list->PushFront("", elems[i], bw_token.Timestamp(), spaces[i]);
+      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
+    }
+  } else {
+    kvdk_assert(pos == -1, "");
+    for (size_t i = 0; i < elems.size(); i++) {
+      list->PushBack("", elems[i], bw_token.Timestamp(), spaces[i]);
+      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
+    }
+  }
+  BatchWriteLog::MarkCommitted(tc.batch_log);
+  spaces.clear();
   return Status::Ok;
 }
 

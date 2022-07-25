@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../dl_list.hpp"
-#include "../generic_list.hpp"
 #include "../hash_table.hpp"
 #include "../version/version_controller.hpp"
 #include "../write_batch_impl.hpp"

@@ -191,7 +191,7 @@ Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
     bucket_iter.bucket_ptr_ = bucket_iter.bucket_ptr_->next;
   }
   bucket_iter.entry_idx_ = hash_bucket_entries_[bucket_iter.bucket_idx_]++;
-  bucket_iter->clear();
+  bucket_iter->Clear();
   kvdk_assert(bucket_iter.Valid(), "");
   return Status::Ok;
 }
