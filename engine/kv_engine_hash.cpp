@@ -31,7 +31,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
         lookup_result.s == Outdated
             ? lookup_result.entry.GetIndex().hlist->HeaderRecord()
             : nullptr;
-    CollectionIDType id = list_id_.fetch_add(1);
+    CollectionIDType id = collection_id_.fetch_add(1);
     std::string value_str = HashList::EncodeID(id);
     SpaceEntry space =
         pmem_allocator_->Allocate(DLRecord::RecordSize(collection, value_str));

@@ -35,7 +35,9 @@ class HashList : public Collection {
 
   DLList* GetDLList() { return &dl_list_; }
 
-  DLRecord* HeaderRecord() const { return dl_list_.Header(); }
+  const DLRecord* HeaderRecord() const { return dl_list_.Header(); }
+
+  DLRecord* HeaderRecord() { return dl_list_.Header(); }
 
   size_t Size() { return size_; }
 
@@ -443,10 +445,7 @@ class HashIteratorImpl final : public HashIterator {
 
   void SeekToLast() final { dl_iter_.SeekToLast(); }
 
-  bool Valid() const final {
-    // list->Head() == list->Tail()
-    return dl_iter_.Valid();
-  }
+  bool Valid() const final { return dl_iter_.Valid(); }
 
   void Next() final { dl_iter_.Next(); }
 
@@ -481,9 +480,6 @@ class HashIteratorImpl final : public HashIterator {
       engine_->ReleaseSnapshot(snapshot_);
     }
   };
-
- private:
-  using AccessToken = std::shared_ptr<VersionController::GlobalSnapshotHolder>;
 
  public:
   HashIteratorImpl(DLList* l, PMEMAllocator* pmem_allocator,

@@ -471,7 +471,7 @@ class DLListRecordIterator {
     current_ = pmem_allocator_->offset2addr_checked<DLRecord>(header_->prev);
   }
 
-  DLRecord* Record() {}
+  DLRecord* Record() { return Valid() ? current_ : nullptr; }
 
  private:
   DLList* dl_list_;

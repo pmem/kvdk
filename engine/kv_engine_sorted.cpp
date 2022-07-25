@@ -42,7 +42,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
                          s_configs.comparator_name);
       return Status::Abort;
     }
-    CollectionIDType id = list_id_.fetch_add(1);
+    CollectionIDType id = collection_id_.fetch_add(1);
     std::string value_str =
         Skiplist::EncodeSortedCollectionValue(id, s_configs);
     uint32_t request_size =

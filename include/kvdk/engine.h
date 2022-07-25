@@ -249,13 +249,21 @@ extern KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
                                char const* dst_data, size_t dst_len,
                                int dst_pos, char** elem_data, size_t* elem_len);
 extern KVDKStatus KVDKListInsertBefore(KVDKEngine* engine,
-                                       KVDKListIterator* pos,
-                                       char const* elem_data, size_t elem_len);
-extern KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, KVDKListIterator* pos,
-                                      char const* elem_data, size_t elem_len);
-extern KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos);
-extern KVDKStatus KVDKListReplace(KVDKEngine* engine, KVDKListIterator* pos,
-                                  char const* elem_data, size_t elem_len);
+                                       char const* list_name,
+                                       size_t list_name_len,
+                                       char const* elem_data, size_t elem_len,
+                                       char const* pos_elem,
+                                       size_t pos_elem_len);
+extern KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, char const* list_name,
+                                      size_t list_name_len,
+                                      char const* elem_data, size_t elem_len,
+                                      char const* pos_elem,
+                                      size_t pos_elem_len);
+extern KVDKStatus KVDKListErase(KVDKEngine* engine, char const* list_name,
+                                size_t list_len, size_t pos);
+extern KVDKStatus KVDKListReplace(KVDKEngine* engine, char const* list_name,
+                                  size_t list_name_len, size_t pos,
+                                  char const* elem, size_t elem_len);
 /// ListIterator //////////////////////////////////////////////////////////////
 extern KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
                                                 char const* key_data,

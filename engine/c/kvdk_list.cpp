@@ -60,25 +60,34 @@ KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
   return s;
 }
 
-KVDKStatus KVDKListInsertBefore(KVDKEngine* engine, KVDKListIterator* pos,
-                                char const* elem_data, size_t elem_len) {
-  return engine->rep->ListInsertBefore(pos->rep,
-                                       StringView{elem_data, elem_len});
+KVDKStatus KVDKListInsertBefore(KVDKEngine* engine, char const* list_name,
+                                size_t list_name_len, char const* elem_data,
+                                size_t elem_len, char const* pos_elem,
+                                size_t pos_elem_len) {
+  return engine->rep->ListInsertBefore(StringView(list_name, list_name_len),
+                                       StringView{elem_data, elem_len},
+                                       StringView(pos_elem, pos_elem_len));
 }
 
-KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, KVDKListIterator* pos,
-                               char const* elem_data, size_t elem_len) {
-  return engine->rep->ListInsertAfter(pos->rep,
-                                      StringView{elem_data, elem_len});
+KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, char const* list_name,
+                               size_t list_name_len, char const* elem_data,
+                               size_t elem_len, char const* pos_elem,
+                               size_t pos_elem_len) {
+  return engine->rep->ListInsertAfter(StringView(list_name, list_name_len),
+                                      StringView{elem_data, elem_len},
+                                      StringView(pos_elem, pos_elem_len));
 }
 
-KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos) {
-  return engine->rep->ListErase(pos->rep);
+KVDKStatus KVDKListErase(KVDKEngine* engine, char const* list_name,
+                         size_t list_len, size_t pos) {
+  return engine->rep->ListErase(StringView(list_name, list_len), pos);
 }
 
-KVDKStatus KVDKListReplace(KVDKEngine* engine, KVDKListIterator* pos,
-                           char const* elem_data, size_t elem_len) {
-  return engine->rep->ListReplace(pos->rep, StringView{elem_data, elem_len});
+KVDKStatus KVDKListReplace(KVDKEngine* engine, char const* list_name,
+                           size_t list_name_len, size_t pos, char const* elem,
+                           size_t elem_len) {
+  return engine->rep->ListReplace(StringView(list_name, list_name_len), pos,
+                                  StringView(elem, elem_len));
 }
 
 KVDKStatus KVDKListBatchPushFront(KVDKEngine* engine, char const* key_data,
@@ -151,7 +160,8 @@ KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len,
                                          KVDKStatus* s) {
-  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len}, s);
+  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len},
+                                             nullptr, s);
   if (rep == nullptr) {
     return nullptr;
   }

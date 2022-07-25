@@ -691,8 +691,8 @@ Status KVEngine::restoreExistingData() {
   if (s_ret.s != Status::Ok) {
     return s_ret.s;
   }
-  if (list_id_.load() <= s_ret.max_id) {
-    list_id_.store(s_ret.max_id + 1);
+  if (collection_id_.load() <= s_ret.max_id) {
+    collection_id_.store(s_ret.max_id + 1);
   }
   skiplists_.swap(s_ret.rebuild_skiplits);
 
@@ -701,7 +701,6 @@ Status KVEngine::restoreExistingData() {
 
   // list_builder_->RebuildLists();
   // list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
-  s = listRegisterRecovered();
   if (s != Status::Ok) {
     return s;
   }
@@ -712,8 +711,8 @@ Status KVEngine::restoreExistingData() {
   if (h_ret.s != Status::Ok) {
     return s_ret.s;
   }
-  if (list_id_.load() <= h_ret.max_id) {
-    list_id_.store(h_ret.max_id + 1);
+  if (collection_id_.load() <= h_ret.max_id) {
+    collection_id_.store(h_ret.max_id + 1);
   }
   hlists_.swap(h_ret.rebuilt_hlists);
   GlobalLogger.Info("Rebuild HashLists done\n");
@@ -1288,8 +1287,9 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         break;
       }
       case PointerType::List: {
+        auto new_ts = snapshot_holder.Timestamp();
         List* list = res.entry_ptr->GetIndex().list;
-        res.s = listExpire(list, expired_time);
+        res.s = list->SetExpireTime(expired_time, new_ts).s;
         break;
       }
       default: {
@@ -1475,13 +1475,4 @@ void KVEngine::backgroundDramCleaner() {
     FreeSkiplistDramNodes();
   }
 }
-
-void KVEngine::deleteCollections() {
-  std::set<List*>::iterator list_it = lists_.begin();
-  while (list_it != lists_.end()) {
-    delete *list_it;
-    list_it = lists_.erase(list_it);
-  }
-};
-
 }  // namespace KVDK_NAMESPACE

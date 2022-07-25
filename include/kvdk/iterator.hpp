@@ -33,7 +33,7 @@ class Iterator {
 
 class ListIterator {
  public:
-  virtual void Seek(IndexType pos) = 0;
+  virtual void Seek(long index) = 0;
 
   virtual void SeekToFirst() = 0;
 

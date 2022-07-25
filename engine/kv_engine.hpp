@@ -207,12 +207,13 @@ class KVEngine : public Engine {
                           StringView pos) final;
   Status ListInsertAfter(StringView collection, StringView key,
                          StringView pos) final;
-  Status ListErase(std::unique_ptr<ListIterator> const& pos) final;
+  Status ListErase(StringView collection, uint64_t pos) final;
 
-  Status ListReplace(std::unique_ptr<ListIterator> const& pos,
+  Status ListReplace(StringView list_name, uint64_t pos,
                      StringView elem) final;
-  std::unique_ptr<ListIterator> ListCreateIterator(StringView key,
-                                                   Status* s) final;
+  std::unique_ptr<ListIterator> ListCreateIterator(StringView collection,
+                                                   Snapshot* snapshot,
+                                                   Status* status) final;
 
   // Hash
   Status HashCreate(StringView key) final;
@@ -428,17 +429,9 @@ class KVEngine : public Engine {
   // Guarantees always return a valid List and lockes it if returns Status::Ok
   Status listFind(StringView key, List** list);
 
-  Status listExpire(List* list, ExpireTimeType t);
-
   Status listRestoreElem(DLRecord* pmp_record);
 
   Status listRestoreList(DLRecord* pmp_record);
-
-  Status listRegisterRecovered();
-
-  // Should only be called when the List is no longer
-  // accessible to any other thread.
-  Status listDestroy(List* list);
 
   Status listBatchPushImpl(StringView key, int pos,
                            std::vector<StringView> const& elems);
@@ -524,12 +517,29 @@ class KVEngine : public Engine {
     return hlists_[id];
   }
 
+  void removeList(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(lists_mu_);
+    lists_.erase(id);
+  }
+
+  void addListToMap(std::shared_ptr<List> list) {
+    std::lock_guard<std::mutex> lg(hlists_mu_);
+    lists_.emplace(list->ID(), list);
+  }
+
+  std::shared_ptr<List> getList(CollectionIDType id) {
+    std::lock_guard<std::mutex> lg(lists_mu_);
+    return lists_[id];
+  }
+
   Status buildSkiplist(const StringView& name,
                        const SortedCollectionConfigs& s_configs,
                        std::shared_ptr<Skiplist>& skiplist);
 
-  Status buildHashlist(const StringView& collection,
+  Status buildHashlist(const StringView& name,
                        std::shared_ptr<HashList>& hlist);
+
+  Status buildList(const StringView& name, std::shared_ptr<List>& list);
 
   inline std::string data_file() { return data_file(dir_); }
 
@@ -618,8 +628,6 @@ class KVEngine : public Engine {
       std::vector<DLRecord*>& purge_dl_records);
   /* functions for cleaner thread cache */
 
-  void deleteCollections();
-
   void startBackgroundWorks();
 
   void terminateBackgroundWorks();
@@ -629,7 +637,7 @@ class KVEngine : public Engine {
 
   // restored kvs in reopen
   std::atomic<uint64_t> restored_{0};
-  std::atomic<CollectionIDType> list_id_{0};
+  std::atomic<CollectionIDType> collection_id_{0};
 
   std::unique_ptr<HashTable> hash_table_;
 
@@ -637,8 +645,7 @@ class KVEngine : public Engine {
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
 
   std::mutex lists_mu_;
-  std::set<List*, Collection::TTLCmp> lists_;
-  // std::unique_ptr<ListBuilder> list_builder_;
+  std::unordered_map<CollectionIDType, std::shared_ptr<List>> lists_;
 
   std::mutex hlists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<HashList>> hlists_;

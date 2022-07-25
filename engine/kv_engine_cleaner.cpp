@@ -285,7 +285,8 @@ void KVEngine::purgeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
     while (!pending_clean_records.outdated_lists.empty()) {
       auto& ts_list = pending_clean_records.outdated_lists.front();
       if (ts_list.first < version_controller_.LocalOldestSnapshotTS()) {
-        listDestroy(ts_list.second.release());
+        ts_list.second->DestroyAll();
+        removeList(ts_list.second->ID());
         pending_clean_records.outdated_lists.pop_front();
       } else {
         break;
@@ -476,21 +477,22 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
             case PointerType::List: {
               List* list = slot_iter->GetIndex().list;
               total_num += list->Size();
-              auto old_list = removeListOutDatedVersion(list, min_snapshot_ts);
-              if (old_list) {
-                pending_clean_records.outdated_lists.emplace_back(
-                    std::make_pair(version_controller_.GetCurrentTimestamp(),
-                                   old_list));
+              auto header_record = list->HeaderRecord();
+              auto old_record = removeOutDatedVersion<DLRecord>(
+                  header_record, min_snapshot_ts);
+              if (old_record) {
+                purge_dl_records.emplace_back(old_record);
+                need_purge_num++;
               }
-              if (list->GetExpireTime() <= now &&
-                  list->GetTimeStamp() < min_snapshot_ts) {
+
+              if ((slot_iter->GetRecordStatus() == RecordStatus::Outdated ||
+                   header_record->GetExpireTime() <= now) &&
+                  header_record->GetTimestamp() < min_snapshot_ts) {
                 hash_table_->Erase(&(*slot_iter));
                 pending_clean_records.outdated_lists.emplace_back(
                     std::make_pair(version_controller_.GetCurrentTimestamp(),
                                    list));
                 need_purge_num += list->Size();
-                std::unique_lock<std::mutex> guard{lists_mu_};
-                lists_.erase(list);
               }
               break;
             }

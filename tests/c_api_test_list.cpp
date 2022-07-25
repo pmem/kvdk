@@ -13,7 +13,7 @@ void ConcatStrings(char const* elem_data, size_t elem_len, void* arg) {
   buffer->append(elem_data, elem_len);
   buffer->append(1, '\n');
 }
-
+/*
 TEST_F(EngineCAPITestBase, List) {
   size_t num_threads = 16;
   size_t count = 1000;
@@ -341,3 +341,4 @@ TEST_F(EngineCAPITestBase, List) {
     RebootDB();
   }
 }
+*/
