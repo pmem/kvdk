@@ -45,6 +45,7 @@ scripts/__pycache__
 
 java/out
 java/target
+java/benchmark/target
 java/examples/target
 java/test-libs
 java/*.log

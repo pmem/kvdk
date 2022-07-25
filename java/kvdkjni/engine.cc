@@ -437,3 +437,14 @@ void Java_io_pmem_kvdk_Engine_batchWrite(JNIEnv* env, jobject,
     KVDK_NAMESPACE::KVDKExceptionJni::ThrowNew(env, s);
   }
 }
+
+/*
+ * Class:     io_pmem_kvdk_Engine
+ * Method:    releaseAccessThread
+ * Signature: (JJ)V
+ */
+void Java_io_pmem_kvdk_Engine_releaseAccessThread(JNIEnv* env, jobject,
+                                                  jlong engine_handle) {
+  auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
+  engine->ReleaseAccessThread();
+}

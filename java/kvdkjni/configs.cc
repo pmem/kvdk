@@ -73,6 +73,27 @@ void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(JNIEnv*, jobject,
 
 /*
  * Class:     io_pmem_kvdk_Configs
+ * Method:    setOptLargeSortedCollectionRecovery
+ * Signature: (JZ)V
+ */
+void Java_io_pmem_kvdk_Configs_setOptLargeSortedCollectionRecovery(
+    JNIEnv*, jobject, jlong handle, jboolean opt) {
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)
+      ->opt_large_sorted_collection_recovery = opt;
+}
+
+/*
+ * Class:     io_pmem_kvdk_Configs
+ * Method:    setUseDevDaxMode
+ * Signature: (JZ)V
+ */
+void Java_io_pmem_kvdk_Configs_setUseDevDaxMode(JNIEnv*, jobject, jlong handle,
+                                                jboolean use) {
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->use_devdax_mode = use;
+}
+
+/*
+ * Class:     io_pmem_kvdk_Configs
  * Method:    setCleanThreads
  * Signature: (JJ)V
  */

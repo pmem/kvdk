@@ -49,6 +49,18 @@ public class Configs extends KVDKObject {
         return this;
     }
 
+    public Configs setOptLargeSortedCollectionRecovery(final boolean opt) {
+        assert (isOwningHandle());
+        setOptLargeSortedCollectionRecovery(nativeHandle_, opt);
+        return this;
+    }
+
+    public Configs setUseDevDaxMode(final boolean use) {
+        assert (isOwningHandle());
+        setUseDevDaxMode(nativeHandle_, use);
+        return this;
+    }
+
     public Configs setCleanThreads(final long num_threads) {
         assert (isOwningHandle());
         setCleanThreads(nativeHandle_, num_threads);
@@ -67,6 +79,10 @@ public class Configs extends KVDKObject {
     private native void setHashBucketNum(long handle, long num);
 
     private native void setPopulatePMemSpace(long handle, boolean populate);
+
+    private native void setOptLargeSortedCollectionRecovery(long handle, boolean opt);
+
+    private native void setUseDevDaxMode(long handle, boolean use);
 
     private native void setCleanThreads(long handle, long num);
 
