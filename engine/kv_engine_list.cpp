@@ -502,13 +502,11 @@ std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(
 }
 
 Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
-  // list_builder_->AddListElem(pmp_record);
-  return Status::Ok;
+  return list_rebuilder_->AddElem(pmp_record);
 }
 
 Status KVEngine::listRestoreList(DLRecord* pmp_record) {
-  // list_builder_->AddListRecord(pmp_record);
-  return Status::Ok;
+  return list_rebuilder_->AddHeader(pmp_record);
 }
 
 Status KVEngine::listFind(StringView key, List** list) {

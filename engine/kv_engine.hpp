@@ -27,6 +27,7 @@
 #include "hash_table.hpp"
 #include "kvdk/engine.hpp"
 #include "list_collection/list.hpp"
+#include "list_collection/rebuilder.hpp"
 #include "lock_table.hpp"
 #include "logger.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
@@ -209,8 +210,7 @@ class KVEngine : public Engine {
                          StringView pos) final;
   Status ListErase(StringView collection, uint64_t pos) final;
 
-  Status ListReplace(StringView list_name, uint64_t pos,
-                     StringView elem) final;
+  Status ListReplace(StringView list_name, uint64_t pos, StringView elem) final;
   std::unique_ptr<ListIterator> ListCreateIterator(StringView collection,
                                                    Snapshot* snapshot,
                                                    Status* status) final;
@@ -663,6 +663,7 @@ class KVEngine : public Engine {
 
   std::unique_ptr<SortedCollectionRebuilder> sorted_rebuilder_;
   std::unique_ptr<HashListRebuilder> hash_rebuilder_;
+  std::unique_ptr<ListRebuilder> list_rebuilder_;
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
   Cleaner cleaner_;

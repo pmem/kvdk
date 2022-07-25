@@ -372,7 +372,26 @@ class List : public Collection {
     return std::unique_lock<std::recursive_mutex>(list_lock_);
   }
 
+  DLList* GetDLList() { return &dl_list_; }
+
   void DestroyAll() {}
+
+  void Destroy() {}
+
+  static CollectionIDType ListID(DLRecord* record) {
+    assert(record != nullptr);
+    switch (record->GetRecordType()) {
+      case RecordType::ListElem:
+        return ExtractID(record->Key());
+      case RecordType::ListRecord:
+        return DecodeID(record->Value());
+      default:
+        GlobalLogger.Error("Wrong record type %u in ListID",
+                           record->GetRecordType());
+        kvdk_assert(false, "Wrong type in ListID");
+        return 0;
+    }
+  }
 
  private:
   friend ListIteratorImpl;

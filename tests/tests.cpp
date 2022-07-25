@@ -1700,7 +1700,6 @@ TEST_F(EngineBasicTest, TestList) {
       LaunchNThreads(num_threads, RPushLPop);
       LaunchNThreads(num_threads, ListIterate);
     }
-    break;
     Reboot();
   }
 

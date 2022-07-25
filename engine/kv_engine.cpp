@@ -657,12 +657,14 @@ Status KVEngine::restoreExistingData() {
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
-  // list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
-  // configs_.max_access_threads, nullptr});
   hash_rebuilder_.reset(
       new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
                             dllist_locks_.get(), thread_manager_.get(),
                             configs_.max_access_threads, *persist_checkpoint_));
+  list_rebuilder_.reset(
+      new ListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+                        dllist_locks_.get(), thread_manager_.get(),
+                        configs_.max_access_threads, *persist_checkpoint_));
 
   Status s = batchWriteRollbackLogs();
   if (s != Status::Ok) {
@@ -699,17 +701,20 @@ Status KVEngine::restoreExistingData() {
   GlobalLogger.Info("Rebuild skiplist done\n");
   sorted_rebuilder_.reset(nullptr);
 
-  // list_builder_->RebuildLists();
-  // list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
-  if (s != Status::Ok) {
-    return s;
+  auto l_ret = list_rebuilder_->Rebuild();
+  if (l_ret.s != Status::Ok) {
+    return l_ret.s;
   }
-  // list_builder_.reset(nullptr);
+  if (collection_id_.load() <= l_ret.max_id) {
+    collection_id_.store(l_ret.max_id + 1);
+  }
+  lists_.swap(l_ret.rebuilt_lists);
   GlobalLogger.Info("Rebuild Lists done\n");
+  list_rebuilder_.reset(nullptr);
 
   auto h_ret = hash_rebuilder_->Rebuild();
   if (h_ret.s != Status::Ok) {
-    return s_ret.s;
+    return h_ret.s;
   }
   if (collection_id_.load() <= h_ret.max_id) {
     collection_id_.store(h_ret.max_id + 1);
