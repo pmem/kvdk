@@ -165,7 +165,7 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
   }
   auto guard = list->AcquireLock();
 
-  auto ret = list->PopFront();
+  auto ret = list->PopFront(version_controller_.GetCurrentTimestamp());
   if (ret.existing_record == nullptr) {
     /// TODO: NotFound does not properly describe the situation
     return Status::NotFound;
@@ -194,7 +194,7 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   }
   auto guard = list->AcquireLock();
 
-  auto ret = list->PopBack();
+  auto ret = list->PopBack(version_controller_.GetCurrentTimestamp());
   if (ret.existing_record == nullptr) {
     /// TODO: NotFound does not properly describe the situation
     return Status::NotFound;
@@ -354,12 +354,16 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
     return s;
   }
 
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  BatchWriteLog log;
+  log.SetTimestamp(bw_token.Timestamp());
+
   // TODO first log
   List::WriteResult ret;
   if (src_pos == 0) {
-    ret = src_list->PopFront();
+    ret = src_list->PopFront(bw_token.Timestamp());
   } else {
-    ret = src_list->PopBack();
+    ret = src_list->PopBack(bw_token.Timestamp());
   }
 
   if (ret.s == Status::Ok) {
@@ -375,9 +379,6 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
     return Status::PmemOverflow;
   }
 
-  auto bw_token = version_controller_.GetBatchWriteToken();
-  BatchWriteLog log;
-  log.SetTimestamp(bw_token.Timestamp());
   log.ListDelete(pmem_allocator_->addr2offset_checked(ret.existing_record));
   log.ListEmplace(space.offset);
 
@@ -593,14 +594,14 @@ Status KVEngine::listBatchPopImpl(StringView key, int pos, size_t n,
   elems->clear();
   size_t nn = n;
   while (nn > 0) {
-    auto ret = pos == 0 ? list->PopFront() : list->PopBack();
+    auto ret = pos == 0 ? list->PopFront(bw_token.Timestamp())
+                        : list->PopBack(bw_token.Timestamp());
     if (ret.s != Status::Ok) {
       break;
     }
     StringView elem = ret.existing_record->Value();
     elems->emplace_back(elem.data(), elem.size());
-    // Todo: first log then pop
-    log.ListDelete(pmem_allocator_->addr2offset_checked(ret.existing_record));
+    log.ListDelete(pmem_allocator_->addr2offset_checked(ret.write_record));
     --nn;
   }
 
@@ -609,27 +610,29 @@ Status KVEngine::listBatchPopImpl(StringView key, int pos, size_t n,
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
   BatchWriteLog::MarkCommitted(tc.batch_log);
-  // Todo: free existing records
   return Status::Ok;
 }
 
 Status KVEngine::listRollback(BatchWriteLog::ListLogEntry const& log) {
-  DLRecord* rec =
-      static_cast<DLRecord*>(pmem_allocator_->offset2addr_checked(log.offset));
-  switch (log.op) {
-    case BatchWriteLog::Op::Delete: {
-      // list_builder_->RollbackDeletion(rec);
-      break;
-    }
-    case BatchWriteLog::Op::Put: {
-      // list_builder_->RollbackEmplacement(rec);
-      break;
-    }
-    default: {
-      kvdk_assert(false, "Invalid operation int log");
-      return Status::Abort;
+  DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+  // We only check prev linkage as a valid prev linkage indicate valid prev and
+  // next pointers on the record, so we can safely do remove/replace
+  if (elem->Validate() &&
+      DLList::CheckPrevLinkage(elem, pmem_allocator_.get())) {
+    if (elem->old_version != kNullPMemOffset) {
+      bool success = DLList::Replace(
+          elem,
+          pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
+          pmem_allocator_.get(), dllist_locks_.get());
+      kvdk_assert(success, "Replace should success as we checked linkage");
+    } else {
+      bool success =
+          DLList::Remove(elem, pmem_allocator_.get(), dllist_locks_.get());
+      kvdk_assert(success, "Remove should success as we checked linkage");
     }
   }
+
+  elem->Destroy();
   return Status::Ok;
 }
 

@@ -63,7 +63,7 @@ class DLList {
     return s;
   }
 
-  DLRecord* PopFront() {
+  DLRecord* RemoveFront() {
     while (true) {
       DLRecord* front =
           pmem_allocator_->offset2addr_checked<DLRecord>(header_->next);
@@ -78,7 +78,7 @@ class DLList {
     }
   }
 
-  DLRecord* PopBack() {
+  DLRecord* RemoveBack() {
     while (true) {
       DLRecord* back =
           pmem_allocator_->offset2addr_checked<DLRecord>(header_->prev);

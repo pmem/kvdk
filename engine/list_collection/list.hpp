@@ -138,32 +138,69 @@ class List : public Collection {
     DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
                            RecordStatus::Normal, ts, space);
     ret.s = dl_list_.PushBack(args);
-    kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
+    kvdk_assert(ret.s == Status::Ok, "Push back should alwasy success");
     UpdateSize(1);
     ret.write_record =
         pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
     return ret;
   }
 
-  WriteResult PopFront() {
+  WriteResult PopFront(TimeStampType ts) {
     WriteResult ret;
-    ret.existing_record = dl_list_.PopFront();
-    if (ret.existing_record == nullptr) {
-      ret.s = Status::NotFound;
-    } else {
-      UpdateSize(-1);
+    DLListRecordIterator iter(&dl_list_, pmem_allocator_);
+    for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
+      DLRecord* record = iter.Record();
+      if (record->GetRecordStatus() == RecordStatus::Normal) {
+        SpaceEntry space = pmem_allocator_->Allocate(
+            DLRecord::RecordSize(record->Key(), record->Value()));
+        if (space.size == 0) {
+          ret.s = Status::PmemOverflow;
+          return ret;
+        }
+        DLList::WriteArgs args(record->Key(), record->Value(),
+                               RecordType::ListElem, RecordStatus::Outdated, ts,
+                               space);
+        ret.s = dl_list_.Update(args, record);
+        kvdk_assert(ret.s == Status::Ok,
+                    "the whole list is locked so the update must be success");
+        ret.write_record =
+            pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        ret.existing_record = record;
+        UpdateSize(-1);
+        return ret;
+      }
     }
+    ret.s = Status::NotFound;
     return ret;
   };
 
-  WriteResult PopBack() {
+  WriteResult PopBack(TimeStampType ts) {
+    // TODO cache back to avoid iter
     WriteResult ret;
-    ret.existing_record = dl_list_.PopBack();
-    if (ret.existing_record == nullptr) {
-      ret.s = Status::NotFound;
-    } else {
-      UpdateSize(-1);
+    DLListRecordIterator iter(&dl_list_, pmem_allocator_);
+    for (iter.SeekToLast(); iter.Valid(); iter.Prev()) {
+      DLRecord* record = iter.Record();
+      if (record->GetRecordStatus() == RecordStatus::Normal) {
+        SpaceEntry space = pmem_allocator_->Allocate(
+            DLRecord::RecordSize(record->Key(), record->Value()));
+        if (space.size == 0) {
+          ret.s = Status::PmemOverflow;
+          return ret;
+        }
+        DLList::WriteArgs args(record->Key(), record->Value(),
+                               RecordType::ListElem, RecordStatus::Outdated, ts,
+                               space);
+        ret.s = dl_list_.Update(args, record);
+        kvdk_assert(ret.s == Status::Ok,
+                    "the whole list is locked so the update must be success");
+        ret.write_record =
+            pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        ret.existing_record = record;
+        UpdateSize(-1);
+        return ret;
+      }
     }
+    ret.s = Status::NotFound;
     return ret;
   }
 
@@ -301,20 +338,34 @@ class List : public Collection {
     if (Size() == 0) {
       return Status::NotFound;
     }
-    StringView sw =
-        pmem_allocator_->offset2addr_checked<DLRecord>(HeaderRecord()->next)
-            ->Value();
-    elem->assign(sw.data(), sw.size());
+    DLListRecordIterator iter(&dl_list_, pmem_allocator_);
+    for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
+      DLRecord* record = iter.Record();
+      if (record->GetRecordStatus() == RecordStatus::Normal) {
+        StringView sw = record->Value();
+        elem->assign(sw.data(), sw.size());
+        return Status::Ok;
+      }
+    }
+
+    return Status::NotFound;
   }
 
   Status Back(std::string* elem) {
     if (Size() == 0) {
       return Status::NotFound;
     }
-    StringView sw =
-        pmem_allocator_->offset2addr_checked<DLRecord>(HeaderRecord()->prev)
-            ->Value();
-    elem->assign(sw.data(), sw.size());
+    DLListRecordIterator iter(&dl_list_, pmem_allocator_);
+    for (iter.SeekToLast(); iter.Valid(); iter.Prev()) {
+      DLRecord* record = iter.Record();
+      if (record->GetRecordStatus() == RecordStatus::Normal) {
+        StringView sw = record->Value();
+        elem->assign(sw.data(), sw.size());
+        return Status::Ok;
+      }
+    }
+
+    return Status::NotFound;
   }
 
   bool Replace(DLRecord* old_record, DLRecord* new_record) {
