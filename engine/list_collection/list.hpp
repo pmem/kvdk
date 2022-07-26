@@ -51,8 +51,6 @@ class List : public Collection {
 
   bool HasExpired() const final { return dl_list_.Header()->HasExpired(); }
 
-  Status SetExpireTime(ExpireTimeType) final { return Status::Ok; }
-
   WriteResult SetExpireTime(ExpireTimeType expired_time,
                             TimeStampType timestamp) {
     WriteResult ret;

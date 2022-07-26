@@ -262,11 +262,6 @@ class HashList : public Collection {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
 
-  Status SetExpireTime(ExpireTimeType expired_time) final {
-    HeaderRecord()->PersistExpireTimeCLWB(expired_time);
-    return Status::Ok;
-  }
-
   // Destroy and free the whole hash list with old version list.
   void DestroyAll() {}
 
