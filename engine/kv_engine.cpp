@@ -959,9 +959,9 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (res.s != Status::Ok) {
       return res.s;
     }
-    sorted_args.emplace_back();
-    sorted_args.back().Assign(sorted_op);
-    sorted_args.back().skiplist = res.entry.GetIndex().skiplist;
+    Skiplist* skiplist = res.entry.GetIndex().skiplist;
+    sorted_args.emplace_back(
+        skiplist->InitWriteArgs(sorted_op.key, sorted_op.value, sorted_op.op));
   }
 
   for (auto const& hash_op : batch.HashOps()) {
@@ -970,9 +970,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (s != Status::Ok) {
       return s;
     }
-    hash_args.emplace_back();
-    hash_args.back().Assign(hash_op);
-    hash_args.back().hlist = hlist;
+    hash_args.emplace_back(
+        hlist->InitWriteArgs(hash_op.key, hash_op.value, hash_op.op));
   }
 
   // Keys/internal keys to be locked on HashTable

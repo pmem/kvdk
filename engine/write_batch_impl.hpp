@@ -149,13 +149,6 @@ struct SortedWriteArgs {
   TimeStampType ts;
   HashTable::LookupResult lookup_result;
   std::unique_ptr<Splice> seek_result;
-
-  void Assign(WriteBatchImpl::SortedOp const& sorted_op) {
-    collection = sorted_op.collection;
-    key = sorted_op.key;
-    value = sorted_op.value;
-    op = sorted_op.op;
-  }
 };
 
 struct HashWriteArgs {
@@ -167,15 +160,6 @@ struct HashWriteArgs {
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult lookup_result;
-  // returned by write, used by publish
-  DLRecord* new_rec;
-
-  void Assign(WriteBatchImpl::HashOp const& hash_op) {
-    collection = hash_op.collection;
-    key = hash_op.key;
-    value = hash_op.value;
-    op = hash_op.op;
-  }
 };
 
 class BatchWriteLog {

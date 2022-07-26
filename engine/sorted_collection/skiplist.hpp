@@ -218,8 +218,12 @@ class Skiplist : public Collection {
   // Notice: the deleting key should already been locked by engine
   WriteResult Delete(const StringView& key, TimeStampType timestamp);
 
-  // Prepare args for batch write, store lookup/seek result and pmem space to
-  // write new reocrd in args
+  // Init args for write operations
+  SortedWriteArgs InitWriteArgs(const StringView& key, const StringView& value,
+                                WriteBatchImpl::Op op);
+
+  // Prepare neccessary resources for write, store lookup/seek result and pmem
+  // space to write new reocrd in args
   //
   // Args:
   // * args: prepared by kvdk engine, the op and ts field must be assigned
@@ -416,9 +420,6 @@ class Skiplist : public Collection {
   WriteResult putImplNoHash(const StringView& key, const StringView& value,
                             TimeStampType timestamp);
 
-  WriteResult putImplWithHash(const StringView& key, const StringView& value,
-                              TimeStampType timestamp);
-
   // put impl with prepared seek result and pmem space
   WriteResult putPreparedNoHash(Splice& seek_result, const StringView& key,
                                 const StringView& value,
@@ -431,10 +432,6 @@ class Skiplist : public Collection {
                                   const StringView& value,
                                   TimeStampType timestamp,
                                   const SpaceEntry& space);
-  WriteResult deleteImplNoHash(const StringView& key, TimeStampType timestamp);
-
-  WriteResult deleteImplWithHash(const StringView& key,
-                                 TimeStampType timestamp);
 
   // put impl with prepared existing record and pmem space
   WriteResult deletePreparedNoHash(DLRecord* existing_record,

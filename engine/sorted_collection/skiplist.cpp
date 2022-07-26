@@ -376,6 +376,18 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
   return ret;
 }
 
+SortedWriteArgs Skiplist::InitWriteArgs(const StringView& key,
+                                        const StringView& value,
+                                        WriteBatchImpl::Op op) {
+  SortedWriteArgs args;
+  args.collection = Name();
+  args.skiplist = this;
+  args.key = key;
+  args.value = value;
+  args.op = op;
+  return args;
+}
+
 Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
   kvdk_assert(args.op == WriteBatchImpl::Op::Put || args.value.size() == 0,
               "value of delete operation should be empty");
@@ -441,17 +453,12 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
 
 Skiplist::WriteResult Skiplist::Delete(const StringView& key,
                                        TimeStampType timestamp) {
-  std::string internal_key(InternalKey(key));
-
-  Skiplist::WriteResult ret;
-  if (IndexWithHashtable()) {
-    ret = deleteImplWithHash(key, timestamp);
-  } else {
-    ret = deleteImplNoHash(key, timestamp);
-  }
-  if (ret.existing_record != nullptr &&
-      ret.existing_record->GetRecordStatus() == RecordStatus::Normal) {
-    UpdateSize(-1);
+  WriteResult ret;
+  SortedWriteArgs args = InitWriteArgs(key, "", WriteBatchImpl::Op::Delete);
+  ret.s = PrepareWrite(args);
+  args.ts = timestamp;
+  if (ret.s == Status::Ok && args.space.size > 0) {
+    ret = Write(args);
   }
   return ret;
 }
@@ -460,14 +467,11 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
   WriteResult ret;
-  if (IndexWithHashtable()) {
-    ret = putImplWithHash(key, value, timestamp);
-  } else {
-    ret = putImplNoHash(key, value, timestamp);
-  }
-  if (ret.existing_record == nullptr ||
-      ret.existing_record->GetRecordStatus() == RecordStatus::Outdated) {
-    UpdateSize(1);
+  SortedWriteArgs args = InitWriteArgs(key, value, WriteBatchImpl::Op::Put);
+  ret.s = PrepareWrite(args);
+  args.ts = timestamp;
+  if (ret.s == Status::Ok) {
+    ret = Write(args);
   }
   return ret;
 }
@@ -583,37 +587,6 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
   }
 }
 
-Skiplist::WriteResult Skiplist::putImplWithHash(const StringView& key,
-                                                const StringView& value,
-                                                TimeStampType timestamp) {
-  std::string internal_key(InternalKey(key));
-  auto space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, value));
-  if (space.size == 0) {
-    WriteResult ret;
-    ret.s = Status::PmemOverflow;
-    return ret;
-  }
-  auto lookup_result =
-      hash_table_->Lookup<true>(internal_key, RecordType::SortedElem);
-  return putPreparedWithHash(lookup_result, key, value, timestamp, space);
-}
-
-Skiplist::WriteResult Skiplist::putImplNoHash(const StringView& key,
-                                              const StringView& value,
-                                              TimeStampType timestamp) {
-  auto space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(InternalKey(key), value));
-  if (space.size == 0) {
-    WriteResult ret;
-    ret.s = Status::PmemOverflow;
-    return ret;
-  }
-  Splice splice(this);
-  Seek(key, &splice);
-  return putPreparedNoHash(splice, key, value, timestamp, space);
-}
-
 Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
                                                      SkiplistNode* dram_node,
                                                      const StringView& key,
@@ -636,59 +609,6 @@ Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
     dram_node->record = ret.write_record;
   }
   return ret;
-}
-
-Skiplist::WriteResult Skiplist::deleteImplWithHash(const StringView& key,
-                                                   TimeStampType timestamp) {
-  std::string internal_key(InternalKey(key));
-  WriteResult ret;
-  auto lookup_result =
-      hash_table_->Lookup<false>(internal_key, RecordType::SortedElem);
-  if (lookup_result.s == Status::Ok &&
-      lookup_result.entry.GetRecordStatus() != RecordStatus::Outdated) {
-    auto space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, ""));
-    if (space.size == 0) {
-      ret.s = Status::PmemOverflow;
-    } else {
-      ret = deletePreparedWithHash(lookup_result, key, timestamp, space);
-    }
-  }
-  return ret;
-}
-
-Skiplist::WriteResult Skiplist::deleteImplNoHash(const StringView& key,
-                                                 TimeStampType timestamp) {
-  WriteResult ret;
-  std::string internal_key(InternalKey(key));
-  Splice seek_result(this);
-  Seek(key, &seek_result);
-  auto type = seek_result.next_pmem_record->GetRecordType();
-  auto status = seek_result.next_pmem_record->GetRecordStatus();
-  bool key_exist =
-      type == RecordType::SortedElem && status == RecordStatus::Normal &&
-      equal_string_view(seek_result.next_pmem_record->Key(), internal_key);
-
-  if (!key_exist) {
-    return ret;
-  }
-
-  auto space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, ""));
-  if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
-    return ret;
-  }
-
-  DLRecord* existing_record = seek_result.next_pmem_record;
-  SkiplistNode* dram_node = nullptr;
-
-  if (seek_result.nexts[1] && seek_result.nexts[1]->record == existing_record) {
-    dram_node = seek_result.nexts[1];
-  }
-
-  return deletePreparedNoHash(existing_record, dram_node, key, timestamp,
-                              space);
 }
 
 Skiplist::WriteResult Skiplist::deletePreparedWithHash(
