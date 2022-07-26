@@ -507,7 +507,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                   false);
               for (list_iter.SeekToFirst(); list_iter.Valid();
                    list_iter.Next()) {
-                s = backup.Append(RecordType::ListElem, "", list_iter.Value(),
+                s = backup.Append(RecordType::ListElem, "", list_iter.Elem(),
                                   kPersistTime);
                 if (s != Status::Ok) {
                   break;
@@ -996,23 +996,23 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 #ifndef KVDK_ENABLE_CRASHPOINT
     for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
-      if (iter->res.entry_ptr->Allocated()) {
-        kvdk_assert(iter->res.s == Status::NotFound, "");
-        iter->res.entry_ptr->clear();
+      if (iter->lookup_result.entry_ptr->Allocated()) {
+        kvdk_assert(iter->lookup_result.s == Status::NotFound, "");
+        iter->lookup_result.entry_ptr->Clear();
       }
     }
     for (auto iter = sorted_args.rbegin(); iter != sorted_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
       if (iter->lookup_result.entry_ptr->Allocated()) {
         kvdk_assert(iter->lookup_result.s == Status::NotFound, "");
-        iter->lookup_result.entry_ptr->clear();
+        iter->lookup_result.entry_ptr->Clear();
       }
     }
     for (auto iter = string_args.rbegin(); iter != string_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
       if (iter->res.entry_ptr->Allocated()) {
         kvdk_assert(iter->res.s == Status::NotFound, "");
-        iter->res.entry_ptr->clear();
+        iter->res.entry_ptr->Clear();
       }
     }
 #endif

@@ -450,7 +450,7 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
     ASSERT_EQ(engine->ListPopBack(collection_name, &got_val_back), ret_s);
     ASSERT_EQ(engine->ListPopFront(collection_name, &got_val_front), ret_s);
     // Length
-    ASSERT_EQ(engine->ListLength(collection_name, &length), ret_s);
+    ASSERT_EQ(engine->ListSize(collection_name, &length), ret_s);
 
     if (ret_s == Status::Ok) {
       ASSERT_EQ(got_val_back, new_val_back);
@@ -570,9 +570,9 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       }
     }
 
-    cnt = count * 10;
-    // Update / Delete, and insert new
+    cnt = count;
     while (cnt--) {
+      // Update, Delete, and Insert new
       std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
       std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
       std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
@@ -593,6 +593,12 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       ASSERT_EQ(engine->HashPut(hash_collection, key3, key3), Status::Ok);
       ASSERT_EQ(engine->HashPut(hash_collection_after_snapshot, key1, key1),
                 Ok);
+
+      std::string elem;
+      ASSERT_EQ(engine->ListPopBack(list, &elem), Status::Ok);
+      ASSERT_EQ(engine->ListPopBack(list, &elem), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list, key3), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list_after_snapshot, key1), Ok);
     }
   };
 
@@ -665,12 +671,40 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     ASSERT_FALSE(hash_snapshot_iter->Valid());
   }
 
+  {  // List snapshot iterator
+    auto list_snapshot_iter = engine->ListCreateIterator(list, snapshot);
+    engine->ListDestroy(list);
+
+    uint64_t snapshot_iter_cnt = 0;
+    list_snapshot_iter->SeekToFirst();
+    while (list_snapshot_iter->Valid()) {
+      ASSERT_TRUE(list_snapshot_iter->Valid());
+      snapshot_iter_cnt++;
+      ASSERT_TRUE(list_snapshot_iter->Elem()[0] == 'a' ||
+                  list_snapshot_iter->Elem()[0] == 'b');
+      list_snapshot_iter->Next();
+    }
+    ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+
+    list_snapshot_iter =
+        engine->ListCreateIterator(list_after_snapshot, snapshot);
+    list_snapshot_iter->SeekToFirst();
+    ASSERT_FALSE(list_snapshot_iter->Valid());
+  }
+
   delete engine;
 
   auto Validation = [&]() {
     // Test backup and checkpoint instance
     // All changes after snapshot should not be seen in backup and checkpoint
     // Writes on backup should work well
+    size_t size;
+    ASSERT_EQ(engine->SortedSize(sorted_collection, &size), Status::Ok);
+    ASSERT_EQ(size, num_threads * count * 2);
+    ASSERT_EQ(engine->HashSize(hash_collection, &size), Status::Ok);
+    ASSERT_EQ(size, num_threads * count * 2);
+    ASSERT_EQ(engine->ListSize(list, &size), Status::Ok);
+    ASSERT_EQ(size, num_threads * count * 2);
     for (uint32_t id = 0; id < num_threads; id++) {
       int cnt = count;
       std::string got_v1, got_v2, got_v3;
@@ -739,6 +773,23 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       }
       ASSERT_EQ(hash_iter_cnt, num_threads * count * 2);
       ASSERT_EQ(engine->HashCreateIterator(hash_collection_after_snapshot),
+                nullptr);
+    }
+
+    {  // list iterator
+      uint64_t list_iter_cnt = 0;
+      auto list_iter = engine->ListCreateIterator(list);
+      ASSERT_TRUE(list_iter != nullptr);
+      list_iter->SeekToFirst();
+      while (list_iter->Valid()) {
+        ASSERT_TRUE(list_iter->Valid());
+        list_iter_cnt++;
+        ASSERT_TRUE(list_iter->Elem()[0] == 'a' ||
+                    list_iter->Elem()[0] == 'b');
+        list_iter->Next();
+      }
+      ASSERT_EQ(list_iter_cnt, num_threads * count * 2);
+      ASSERT_EQ(engine->ListCreateIterator(hash_collection_after_snapshot),
                 nullptr);
     }
   };
@@ -1476,7 +1527,7 @@ TEST_F(EngineBasicTest, TestList) {
     for (size_t j = 0; j < count; j++) {
       ASSERT_EQ(engine->ListPushFront(key, elems[j]), Status::Ok);
       list_copy.push_front(elems[j]);
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
@@ -1489,7 +1540,7 @@ TEST_F(EngineBasicTest, TestList) {
     for (size_t j = 0; j < count; j++) {
       ASSERT_EQ(engine->ListPushBack(key, elems[j]), Status::Ok);
       list_copy_vec[tid].push_back(elems[j]);
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
@@ -1507,7 +1558,7 @@ TEST_F(EngineBasicTest, TestList) {
       ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.front(), value_got);
       list_copy.pop_front();
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
@@ -1525,7 +1576,7 @@ TEST_F(EngineBasicTest, TestList) {
       ASSERT_EQ(engine->ListPopBack(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.back(), value_got);
       list_copy.pop_back();
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
@@ -1539,7 +1590,7 @@ TEST_F(EngineBasicTest, TestList) {
     }
     ASSERT_EQ(engine->ListBatchPushFront(key, elems), Status::Ok);
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
@@ -1552,7 +1603,7 @@ TEST_F(EngineBasicTest, TestList) {
     }
     ASSERT_EQ(engine->ListBatchPushBack(key, elems), Status::Ok);
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
@@ -1566,7 +1617,7 @@ TEST_F(EngineBasicTest, TestList) {
       list_copy.pop_front();
     }
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
@@ -1580,7 +1631,7 @@ TEST_F(EngineBasicTest, TestList) {
       list_copy.pop_back();
     }
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
@@ -1597,7 +1648,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(elem, elem_copy);
 
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
@@ -1611,7 +1662,7 @@ TEST_F(EngineBasicTest, TestList) {
       iter->Seek(0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Value(), *iter2);
+        ASSERT_EQ(iter->Elem(), *iter2);
         iter->Next();
       }
 
@@ -1619,7 +1670,7 @@ TEST_F(EngineBasicTest, TestList) {
       for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
            iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Value(), *iter2);
+        ASSERT_EQ(iter->Elem(), *iter2);
         iter->Prev();
       }
     }
@@ -1632,7 +1683,7 @@ TEST_F(EngineBasicTest, TestList) {
     size_t const insert_pos = 5;
     std::string elem;
 
-    ASSERT_EQ(engine->ListLength(list_name, &len), Status::Ok);
+    ASSERT_EQ(engine->ListSize(list_name, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
     auto iter = engine->ListCreateIterator(list_name);
@@ -1640,40 +1691,40 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Seek(insert_pos);
     auto iter2 = std::next(list_copy.begin(), insert_pos);
-    ASSERT_EQ(iter->Value(), *iter2);
+    ASSERT_EQ(iter->Elem(), *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Value()),
+    ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Elem()),
               Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
     iter = engine->ListCreateIterator(list_name);
     iter->Seek(insert_pos);
-    ASSERT_EQ(iter->Value(), *iter2);
+    ASSERT_EQ(iter->Elem(), *iter2);
 
     auto replace_pos = insert_pos - 2;
     iter->Prev();
     iter->Prev();
     --iter2;
     --iter2;
-    ASSERT_EQ(iter->Value(), *iter2);
+    ASSERT_EQ(iter->Elem(), *iter2);
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListReplace(list_name, replace_pos, elem), Status::Ok);
     *iter2 = elem;
     iter = engine->ListCreateIterator(list_name);
     iter->Seek(replace_pos);
-    ASSERT_EQ(iter->Value(), *iter2);
+    ASSERT_EQ(iter->Elem(), *iter2);
 
     auto erase_pos = replace_pos - 2;
     iter->Prev();
     iter->Prev();
     --iter2;
     --iter2;
-    ASSERT_EQ(iter->Value(), *iter2);
+    ASSERT_EQ(iter->Elem(), *iter2);
     ASSERT_EQ(engine->ListErase(list_name, erase_pos), Status::Ok);
     iter2 = list_copy.erase(iter2);
     iter = engine->ListCreateIterator(list_name);
     iter->Seek(erase_pos);
-    ASSERT_EQ(iter->Value(), *iter2);
+    ASSERT_EQ(iter->Elem(), *iter2);
   };
 
   for (size_t i = 0; i < 3; i++) {
@@ -1756,9 +1807,9 @@ TEST_F(EngineBasicTest, TestHash) {
     }
   };
 
-  auto HashLength = [&](size_t) {
+  auto HashSize = [&](size_t) {
     size_t len = 0;
-    ASSERT_EQ(engine->HashLength(key, &len), Status::Ok);
+    ASSERT_EQ(engine->HashSize(key, &len), Status::Ok);
     size_t cnt = 0;
     for (size_t tid = 0; tid < num_threads; tid++) {
       cnt += local_copies[tid].size();
@@ -1842,12 +1893,12 @@ TEST_F(EngineBasicTest, TestHash) {
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
-    LaunchNThreads(num_threads, HashLength);
+    LaunchNThreads(num_threads, HashSize);
     LaunchNThreads(num_threads, HPut);
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
-    LaunchNThreads(num_threads, HashLength);
+    LaunchNThreads(num_threads, HashSize);
   }
   LaunchNThreads(num_threads, HashModify);
   std::string resp;
@@ -2703,7 +2754,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
       iter->Seek(0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Value(), *iter2);
+        ASSERT_EQ(iter->Elem(), *iter2);
         iter->Next();
       }
 
@@ -2711,7 +2762,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
       for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
            iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Value(), *iter2);
+        ASSERT_EQ(iter->Elem(), *iter2);
         iter->Prev();
       }
     }
@@ -3218,9 +3269,9 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       size_t size;
       ASSERT_EQ(engine->SortedSize(sorted_collection, &size), Status::Ok);
       ASSERT_EQ(size, 0);
-      ASSERT_EQ(engine->HashLength(hashlist_collection, &size), Status::Ok);
+      ASSERT_EQ(engine->HashSize(hashlist_collection, &size), Status::Ok);
       ASSERT_EQ(size, 0);
-      ASSERT_EQ(engine->ListLength(list_collection, &size), Status::Ok);
+      ASSERT_EQ(engine->ListSize(list_collection, &size), Status::Ok);
       ASSERT_EQ(size, 0);
     }
   }

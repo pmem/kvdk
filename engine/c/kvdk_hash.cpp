@@ -19,7 +19,7 @@ KVDKStatus KVDKHashDestroy(KVDKEngine* engine, char const* key_data,
 
 KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
                           size_t key_len, size_t* len) {
-  return engine->rep->HashLength(StringView{key_data, key_len}, len);
+  return engine->rep->HashSize(StringView{key_data, key_len}, len);
 }
 
 KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data, size_t key_len,

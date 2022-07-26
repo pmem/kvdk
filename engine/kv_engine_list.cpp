@@ -89,7 +89,7 @@ Status KVEngine::ListDestroy(StringView collection) {
   return s;
 }
 
-Status KVEngine::ListLength(StringView key, size_t* sz) {
+Status KVEngine::ListSize(StringView key, size_t* sz) {
   if (!CheckKeySize(key)) {
     return Status::InvalidDataSize;
   }

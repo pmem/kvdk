@@ -156,7 +156,7 @@ class Engine {
   //    Status::WrongType if key is not a List.
   //    Status::NotFound if key does not exist or has expired.
   //    Status::Ok and length of List if List exists.
-  virtual Status ListLength(StringView key, size_t* sz) = 0;
+  virtual Status ListSize(StringView key, size_t* sz) = 0;
 
   // Push element as first element of List
   // Return:
@@ -293,7 +293,7 @@ class Engine {
 
   virtual Status HashCreate(StringView key) = 0;
   virtual Status HashDestroy(StringView key) = 0;
-  virtual Status HashLength(StringView key, size_t* len) = 0;
+  virtual Status HashSize(StringView key, size_t* len) = 0;
   virtual Status HashGet(StringView key, StringView field,
                          std::string* value) = 0;
   virtual Status HashPut(StringView key, StringView field,

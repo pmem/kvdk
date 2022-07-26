@@ -14,7 +14,7 @@ KVDKStatus KVDKListDestroy(KVDKEngine* engine, char const* key_data,
 }
 KVDKStatus KVDKListLength(KVDKEngine* engine, char const* key_data,
                           size_t key_len, size_t* len) {
-  return engine->rep->ListLength(StringView{key_data, key_len}, len);
+  return engine->rep->ListSize(StringView{key_data, key_len}, len);
 }
 
 KVDKStatus KVDKListPushFront(KVDKEngine* engine, char const* key_data,
@@ -217,7 +217,7 @@ void KVDKListIteratorGetValue(KVDKListIterator* iter, char** elem_data,
                               size_t* elem_len) {
   *elem_data = nullptr;
   *elem_len = 0;
-  std::string buffer = iter->rep->Value();
+  std::string buffer = iter->rep->Elem();
   *elem_data = CopyStringToChar(buffer);
   *elem_len = buffer.size();
 }

@@ -53,7 +53,7 @@ class ListIterator {
 
   virtual bool Valid() const = 0;
 
-  virtual std::string Value() const = 0;
+  virtual std::string Elem() const = 0;
 
   virtual ~ListIterator() = default;
 };

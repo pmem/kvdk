@@ -96,7 +96,7 @@ Status KVEngine::HashDestroy(StringView collection) {
   return s;
 }
 
-Status KVEngine::HashLength(StringView collection, size_t* len) {
+Status KVEngine::HashSize(StringView collection, size_t* len) {
   if (!CheckKeySize(collection)) {
     return Status::InvalidDataSize;
   }

@@ -185,7 +185,7 @@ class KVEngine : public Engine {
   // List
   Status ListCreate(StringView key) final;
   Status ListDestroy(StringView key) final;
-  Status ListLength(StringView key, size_t* sz) final;
+  Status ListSize(StringView key, size_t* sz) final;
   Status ListPushFront(StringView key, StringView elem) final;
   Status ListPushBack(StringView key, StringView elem) final;
   Status ListPopFront(StringView key, std::string* elem) final;
@@ -218,7 +218,7 @@ class KVEngine : public Engine {
   // Hash
   Status HashCreate(StringView key) final;
   Status HashDestroy(StringView key) final;
-  Status HashLength(StringView key, size_t* len) final;
+  Status HashSize(StringView key, size_t* len) final;
   Status HashGet(StringView key, StringView field, std::string* value) final;
   Status HashPut(StringView key, StringView field, StringView value) final;
   Status HashDelete(StringView key, StringView field) final;
