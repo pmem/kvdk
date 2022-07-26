@@ -486,6 +486,36 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               }
             }
           }
+          break;
+        }
+        case RecordType::ListRecord: {
+          DLRecord* header = slot_iter->GetIndex().list->HeaderRecord();
+          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+            header =
+                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+          }
+          if (header && header->GetRecordStatus() == RecordStatus::Normal &&
+              !header->HasExpired()) {
+            s = backup.Append(RecordType::ListRecord, header->Key(),
+                              header->Value(), header->GetExpireTime());
+            if (s == Status::Ok) {
+              // Append hlist elems following the header
+              auto list = getList(List::ListID(header));
+              kvdk_assert(list != nullptr, "Backup list should exist in map");
+              auto list_iter = ListIteratorImpl(
+                  this, list.get(), static_cast<const SnapshotImpl*>(snapshot),
+                  false);
+              for (list_iter.SeekToFirst(); list_iter.Valid();
+                   list_iter.Next()) {
+                s = backup.Append(RecordType::ListElem, "", list_iter.Value(),
+                                  kPersistTime);
+                if (s != Status::Ok) {
+                  break;
+                }
+              }
+            }
+          }
+          break;
         }
         default:
           // Hash and list backup is not supported yet
@@ -627,6 +657,39 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         }
         break;
       }
+      case RecordType::ListRecord: {
+        std::shared_ptr<List> list = nullptr;
+        if (!expired) {
+          s = buildList(record.key, list);
+          if (s == Status::Ok && wo.ttl_time != kPersistTime) {
+            list->SetExpireTime(wo.ttl_time,
+                                version_controller_.GetCurrentTimestamp());
+          }
+          if (s != Status::Ok) {
+            break;
+          }
+          cnt++;
+        }
+        iter->Next();
+        // the header is followed by all its elems in backup log
+        while (iter->Valid()) {
+          record = iter->Record();
+          if (record.type != RecordType::ListElem) {
+            break;
+          }
+          if (!expired) {
+            auto ret = list->PushBack(
+                record.val, version_controller_.GetCurrentTimestamp());
+            s = ret.s;
+            if (s != Status::Ok) {
+              break;
+            }
+            cnt++;
+          }
+          iter->Next();
+        }
+        break;
+      }
       case RecordType::SortedElem: {
         GlobalLogger.Error("sorted elems not lead by header in backup log %s\n",
                            backup_log.c_str());
@@ -634,6 +697,11 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
       }
       case RecordType::HashElem: {
         GlobalLogger.Error("hash elems not lead by header in backup log %s\n",
+                           backup_log.c_str());
+        return Status::Abort;
+      }
+      case RecordType::ListElem: {
+        GlobalLogger.Error("list elems not lead by header in backup log %s\n",
                            backup_log.c_str());
         return Status::Abort;
       }

@@ -527,11 +527,14 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
   std::string sorted_collection("sorted_collection");
   std::string hash_collection("hash_collection");
+  std::string list("list");
   std::string sorted_collection_after_snapshot(
       "sorted_collection_after_snapshot");
   std::string hash_collection_after_snapshot("hash_collection_after_snapshot");
+  std::string list_after_snapshot("list_after_snapshot");
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+  ASSERT_EQ(engine->ListCreate(list), Status::Ok);
   engine->ReleaseAccessThread();
 
   bool snapshot_done(false);
@@ -554,6 +557,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       ASSERT_EQ(engine->SortedPut(sorted_collection, key2, key2), Status::Ok);
       ASSERT_EQ(engine->HashPut(hash_collection, key1, key1), Status::Ok);
       ASSERT_EQ(engine->HashPut(hash_collection, key2, key2), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list, key1), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list, key2), Status::Ok);
     }
     // Wait snapshot done
     set_finished_threads.fetch_add(1);
@@ -603,6 +608,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   // Insert a new collection after snapshot
   ASSERT_EQ(engine->SortedCreate(sorted_collection_after_snapshot), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection_after_snapshot), Status::Ok);
+  ASSERT_EQ(engine->ListCreate(list_after_snapshot), Status::Ok);
   engine->ReleaseAccessThread();
   {
     std::lock_guard<SpinMutex> ul(spin);
