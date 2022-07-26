@@ -16,7 +16,7 @@ public abstract class AbstractNativeReference implements AutoCloseable {
      *
      * @param owningHandle
      */
-    public AbstractNativeReference(final boolean owningHandle) {
+    protected AbstractNativeReference(final boolean owningHandle) {
         this.owningHandle_ = new AtomicBoolean(owningHandle);
     }
 

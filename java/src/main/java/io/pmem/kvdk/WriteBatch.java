@@ -10,7 +10,7 @@ public class WriteBatch extends KVDKObject {
         Engine.loadLibrary();
     }
 
-    public WriteBatch(final long handle) {
+    protected WriteBatch(final long handle) {
         super(handle);
     }
 

@@ -12,7 +12,7 @@ public class Iterator extends KVDKObject {
 
     private final long engineHandle;
 
-    public Iterator(final long iteratorHandle, final long engineHandle) {
+    protected Iterator(final long iteratorHandle, final long engineHandle) {
         super(iteratorHandle);
         this.engineHandle = engineHandle;
     }

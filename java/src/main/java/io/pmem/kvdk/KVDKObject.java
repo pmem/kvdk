@@ -9,7 +9,7 @@ public abstract class KVDKObject extends AbstractNativeReference {
     /** An immutable reference to the value of the C++ pointer. */
     protected final long nativeHandle_;
 
-    public KVDKObject(final long nativeHandle) {
+    protected KVDKObject(final long nativeHandle) {
         super(true);
         this.nativeHandle_ = nativeHandle;
     }

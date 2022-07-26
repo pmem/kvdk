@@ -41,6 +41,24 @@ mkdir -p /tmp/kvdk-test-dir
 java -cp target/kvdkjni-examples-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.examples.KVDKExamples
 ```
 
+## Run benchmark
+```
+cd kvdk/java/benchmark
+mvn clean package
+
+export PMEM_IS_PMEM_FORCE=1
+mkdir -p /tmp/kvdk-bench-dir
+
+# insert
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=true -latency=true -path=/tmp/kvdk-bench-dir -space=21474836480 -hash_bucket_num=16777216 -num_kv=16777216 -threads=32
+
+# read
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -read_ratio=1 -latency=true -path=/tmp/kvdk-bench-dir -space=21474836480 -hash_bucket_num=16777216 -num_kv=16777216 -threads=32 -timeout=60
+
+# update
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -read_ratio=0 -latency=true -path=/tmp/kvdk-bench-dir -space=21474836480 -hash_bucket_num=16777216 -num_kv=16777216 -threads=32 -timeout=60
+```
+
 ## Cross Platform
 
 The KVDK Java library contains the needed shared libaries (`.so` files), which will be loaded when they are not present in system library paths.
