@@ -52,26 +52,25 @@ export type=string
 # or export type=sorted
 
 # fill example
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=true -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=true -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=412316860416 -num_kv=536870912 -num_operations=536870912 -type=$type -threads=32
 
 # random batch insert example
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0 -existing_keys_ratio=0 -batch_size=100
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=412316860416 -num_kv=536870912 -num_operations=536870912 -type=$type -threads=32 -timeout=30 -read_ratio=0 -existing_keys_ratio=0 -batch_size=100
 
 # random insert example
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0 -existing_keys_ratio=0
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=412316860416 -num_kv=536870912 -num_operations=536870912 -type=$type -threads=32 -timeout=30 -read_ratio=0 -existing_keys_ratio=0
 
 # range scan example
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=1 -scan=1
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=412316860416 -num_kv=536870912 -num_operations=10737418240 -type=$type -threads=32 -timeout=30 -read_ratio=1 -scan=1
 
 # random read example
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=1
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=412316860416 -num_kv=536870912 -num_operations=10737418240 -type=$type -threads=32 -timeout=30 -read_ratio=1
 
 # random read write example (9R:1W)
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0.9
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=412316860416 -num_kv=536870912 -num_operations=536870912 -type=$type -threads=32 -timeout=30 -read_ratio=0.9
 
 # random update example
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0
-
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=412316860416 -num_kv=536870912 -num_operations=10737418240 -type=$type -threads=32 -timeout=30 -read_ratio=0
 ```
 
 ## Cross Platform
