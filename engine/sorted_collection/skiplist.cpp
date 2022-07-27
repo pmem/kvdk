@@ -349,7 +349,7 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
                               args.space);
     }
     if (ret.existing_record == nullptr ||
-        ret.existing_record->entry.meta.status == RecordStatus::Outdated) {
+        ret.existing_record->GetRecordStatus() == RecordStatus::Outdated) {
       UpdateSize(1);
     }
   } else {
@@ -631,7 +631,7 @@ Skiplist::WriteResult Skiplist::deletePreparedWithHash(
     assert(lookup_result.entry.GetIndexType() == PointerType::DLRecord);
     existing_record = lookup_result.entry.GetIndex().dl_record;
   }
-  assert(timestamp > existing_record->entry.meta.timestamp);
+  assert(timestamp > existing_record->GetTimestamp());
 
   auto ret =
       deletePreparedNoHash(existing_record, dram_node, key, timestamp, space);
@@ -671,7 +671,7 @@ Skiplist::WriteResult Skiplist::putPreparedWithHash(
         assert(lookup_result.entry.GetIndexType() == PointerType::DLRecord);
         ret.existing_record = lookup_result.entry.GetIndex().dl_record;
       }
-      assert(timestamp > ret.existing_record->entry.meta.timestamp);
+      assert(timestamp > ret.existing_record->GetTimestamp());
       while (dl_list_.Update(args, ret.existing_record) != Status::Ok) {
       }
 
@@ -811,7 +811,7 @@ void Skiplist::destroyAllRecords() {
                            record_locks_)) {
         if (IndexWithHashtable()) {
           auto lookup_result =
-              hash_table_->Lookup<false>(key, to_destroy->entry.meta.type);
+              hash_table_->Lookup<false>(key, to_destroy->GetRecordType());
           if (lookup_result.s == Status::Ok) {
             DLRecord* hash_indexed_record = nullptr;
             auto hash_index = lookup_result.entry.GetIndex();
@@ -840,9 +840,9 @@ void Skiplist::destroyAllRecords() {
         while (old_record) {
           switch (old_record->GetRecordType()) {
             case RecordType::SortedElem: {
-              old_record->entry.Destroy();
+              old_record->Destroy();
               to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
-                                   old_record->entry.header.record_size);
+                                   old_record->GetRecordSize());
               break;
             }
             default:
@@ -854,7 +854,7 @@ void Skiplist::destroyAllRecords() {
 
         to_destroy->Destroy();
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
-                             to_destroy->entry.header.record_size);
+                             to_destroy->GetRecordSize());
       }
     } while (to_destroy !=
              header_record /* header record should be the last detroyed one */);
@@ -933,7 +933,7 @@ void Skiplist::destroyRecords() {
         to_destroy->Destroy();
 
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
-                             to_destroy->entry.header.record_size);
+                             to_destroy->GetRecordSize());
       }
 
     } while (to_destroy !=

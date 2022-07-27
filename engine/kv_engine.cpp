@@ -1196,7 +1196,7 @@ Status KVEngine::batchWriteRollbackLogs() {
       if (iter->op != BatchWriteLog::Op::Delete) {
         DLRecord* rec = static_cast<DLRecord*>(
             pmem_allocator_->offset2addr_checked(iter->offset));
-        if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
+        if (!rec->Validate() || rec->GetTimestamp() != log.Timestamp()) {
           continue;
         }
       }
@@ -1210,7 +1210,7 @@ Status KVEngine::batchWriteRollbackLogs() {
       if (iter->op != BatchWriteLog::Op::Delete) {
         DLRecord* rec = static_cast<DLRecord*>(
             pmem_allocator_->offset2addr_checked(iter->offset));
-        if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
+        if (!rec->Validate() || rec->GetTimestamp() != log.Timestamp()) {
           continue;
         }
       }
@@ -1444,7 +1444,7 @@ T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
       "Invalid record type, should be StringRecord or DLRecord.");
   T* ret = nullptr;
   auto old_record = record;
-  while (old_record && old_record->entry.meta.timestamp > min_snapshot_ts) {
+  while (old_record && old_record->GetTimestamp() > min_snapshot_ts) {
     old_record =
         static_cast<T*>(pmem_allocator_->offset2addr(old_record->old_version));
   }
@@ -1504,7 +1504,7 @@ void KVEngine::directFree(DLRecord* addr) {
     return;
   }
   pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                                   addr->entry.header.record_size});
+                                   addr->GetRecordSize()});
 }
 
 void KVEngine::backgroundPMemUsageReporter() {

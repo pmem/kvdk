@@ -400,7 +400,7 @@ class DLListAccessIterator {
   DLRecord* findValidVersion(DLRecord* pmem_record) {
     DLRecord* curr = pmem_record;
     TimeStampType ts = snapshot_->GetTimestamp();
-    while (curr != nullptr && curr->entry.meta.timestamp > ts) {
+    while (curr != nullptr && curr->GetTimestamp() > ts) {
       curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),
                   "Broken checkpoint: invalid older version sorted record");

@@ -109,7 +109,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     auto id1 = Skiplist::SkiplistID(header1);
     auto id2 = Skiplist::SkiplistID(header2);
     if (id1 == id2) {
-      return header1->entry.meta.timestamp < header2->entry.meta.timestamp;
+      return header1->GetTimestamp() < header2->GetTimestamp();
     }
     return id1 < id2;
   };
@@ -615,7 +615,7 @@ void SortedCollectionRebuilder::cleanInvalidRecords() {
         pmem_record->Destroy();
         to_free.emplace_back(
             kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),
-            pmem_record->entry.header.record_size);
+            pmem_record->GetRecordSize());
       }
     }
     kv_engine_->pmem_allocator_->BatchFree(to_free);

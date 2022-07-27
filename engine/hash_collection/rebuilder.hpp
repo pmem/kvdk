@@ -276,7 +276,7 @@ class HashListRebuilder {
           pmem_record->Destroy();
           to_free.emplace_back(
               pmem_allocator_->addr2offset_checked(pmem_record),
-              pmem_record->entry.header.record_size);
+              pmem_record->GetRecordSize());
         }
       }
       pmem_allocator_->BatchFree(to_free);

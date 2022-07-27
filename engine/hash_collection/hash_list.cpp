@@ -305,7 +305,7 @@ void HashList::Destroy() {
         to_destroy->Destroy();
 
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
-                             to_destroy->entry.header.record_size);
+                             to_destroy->GetRecordSize());
       }
 
     } while (to_destroy !=

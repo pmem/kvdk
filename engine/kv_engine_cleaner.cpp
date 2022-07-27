@@ -16,7 +16,7 @@ T* KVEngine::removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts) {
       std::is_same<T, List>::value || std::is_same<T, HashList>::value,
       "Invalid collection type, should be list or hashlist.");
   T* old_list = list;
-  while (old_list && old_list->GetTimeStamp() > min_snapshot_ts) {
+  while (old_list && old_list->GetTimestamp() > min_snapshot_ts) {
     old_list = old_list->OldVersion();
   }
 
@@ -66,7 +66,7 @@ void KVEngine::cleanOutdatedRecordImpl(T* old_record) {
                 std::is_same<T, DLRecord>::value);
   while (old_record) {
     T* next = pmem_allocator_->offset2addr<T>(old_record->old_version);
-    auto record_size = old_record->entry.header.record_size;
+    auto record_size = old_record->GetRecordSize();
     if (old_record->GetRecordStatus() == RecordStatus::Normal) {
       old_record->Destroy();
     }
@@ -117,10 +117,10 @@ void KVEngine::purgeAndFreeStringRecords(
       StringRecord* next =
           pmem_allocator_->offset2addr<StringRecord>(old_record->old_version);
       if (old_record->GetRecordStatus() == RecordStatus::Normal) {
-        old_record->entry.Destroy();
+        old_record->Destroy();
       }
       entries.emplace_back(pmem_allocator_->addr2offset(old_record),
-                           old_record->entry.header.record_size);
+                           old_record->GetRecordSize());
       old_record = next;
     }
   }
@@ -141,7 +141,7 @@ void KVEngine::purgeAndFreeDLRecords(
         case RecordType::HashElem:
         case RecordType::SortedElem: {
           entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
-                               pmem_record->entry.header.record_size);
+                               pmem_record->GetRecordSize());
           if (record_status == RecordStatus::Normal) {
             pmem_record->Destroy();
           }
@@ -151,7 +151,7 @@ void KVEngine::purgeAndFreeDLRecords(
           if (record_status == RecordStatus::Normal ||
               record_status == RecordStatus::Dirty) {
             entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
-                                 pmem_record->entry.header.record_size);
+                                 pmem_record->GetRecordSize());
             pmem_record->Destroy();
           } else {
             auto skiplist_id = Skiplist::SkiplistID(pmem_record);
@@ -418,7 +418,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
                 need_purge_num++;
               }
               if (slot_iter->GetRecordStatus() == RecordStatus::Outdated &&
-                  dl_record->entry.meta.timestamp < min_snapshot_ts) {
+                  dl_record->GetTimestamp() < min_snapshot_ts) {
                 bool success =
                     Skiplist::Remove(dl_record, node, pmem_allocator_.get(),
                                      dllist_locks_.get());
@@ -439,7 +439,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
                 need_purge_num++;
               }
               if (slot_iter->GetRecordStatus() == RecordStatus::Outdated &&
-                  dl_record->entry.meta.timestamp < min_snapshot_ts) {
+                  dl_record->GetTimestamp() < min_snapshot_ts) {
                 bool success =
                     Skiplist::Remove(dl_record, nullptr, pmem_allocator_.get(),
                                      dllist_locks_.get());
