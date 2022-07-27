@@ -1029,6 +1029,16 @@ void Skiplist::destroyAllRecords() {
             pmem_allocator_->offset2addr(to_destroy->old_version));
         while (old_record) {
           switch (old_record->GetRecordType()) {
+            case RecordType::SortedHeader: {
+              kvdk_assert(
+                  old_record->GetRecordStatus() != RecordStatus::Outdated,
+                  "the old version list hasn't the outdated status "
+                  "header record\n");
+              old_record->entry.Destroy();
+              to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
+                                   old_record->entry.header.record_size);
+              break;
+            }
             case RecordType::SortedElem: {
               old_record->entry.Destroy();
               to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
@@ -1045,11 +1055,14 @@ void Skiplist::destroyAllRecords() {
         to_destroy->Destroy();
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
                              to_destroy->entry.header.record_size);
+        if (to_free.size() > kMaxCachedOldRecords) {
+          pmem_allocator_->BatchFree(to_free);
+          to_free.clear();
+        }
       }
     } while (to_destroy !=
              header_record /* header record should be the last detroyed one */);
   }
-
   pmem_allocator_->BatchFree(to_free);
 }
 
@@ -1061,22 +1074,38 @@ void Skiplist::Destroy() {
 }
 
 void Skiplist::DestroyAll() {
-  GlobalLogger.Debug("Start Destroy skiplist with old version lists %s\n",
-                     Name().c_str());
+  GlobalLogger.Debug(
+      "Start Destroy skiplist with old version lists: %s, collection ID: %ld, "
+      "size: %ld\n",
+      Name().c_str(), ID(), Size());
   destroyAllRecords();
   destroyNodes();
-  GlobalLogger.Debug("Finish Destroy skiplist with old version lists %s\n",
-                     Name().c_str());
+  GlobalLogger.Debug(
+      "Finish Destroy skiplist with old version lists: %s, collection ID: "
+      "%ld\n",
+      Name().c_str(), ID());
 }
 
 void Skiplist::destroyNodes() {
   if (header_) {
-    SkiplistNode* to_delete = header_;
-    while (to_delete) {
-      SkiplistNode* next = to_delete->Next(1).RawPointer();
-      SkiplistNode::DeleteNode(to_delete);
-      to_delete = next;
+    // To avoid memory leak (don't free created skiplist node), we should
+    // iterate the skiplist to find all deleted skiplist nodes.
+    // Notice: sometimes, a thread has just marked deleted skiplist node A, but
+    // another thread found this deleted skiplist node A and updated its linkage
+    // of lower height whiling seeking nodes. It is easy to ignore that the
+    // linkage of higher height of this deleted skiplist node A has not been
+    // changed.
+    for (int i = header_->Height(); i >= 1; --i) {
+      auto to_delete = header_->Next(i).RawPointer();
+      while (to_delete) {
+        auto next = to_delete->Next(i).RawPointer();
+        if (--to_delete->valid_links == 0) {
+          SkiplistNode::DeleteNode(to_delete);
+        }
+        to_delete = next;
+      }
     }
+    SkiplistNode::DeleteNode(header_);
     header_ = nullptr;
   }
 }

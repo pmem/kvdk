@@ -27,16 +27,8 @@ Status KVEngine::ListCreate(StringView key) {
   list->Init(pmem_allocator_.get(), space,
              version_controller_.GetCurrentTimestamp(), key,
              list_id_.fetch_add(1), nullptr);
-  List* old_list = nullptr;
-  if (result.s == Status::Outdated) {
-    old_list = result.entry.GetIndex().list;
-    list->AddOldVersion(old_list);
-  }
   {
     std::lock_guard<std::mutex> guard2{lists_mu_};
-    if (old_list != nullptr) {
-      lists_.erase(old_list);
-    }
     lists_.emplace(list);
   }
   insertKeyOrElem(result, RecordType::ListRecord, RecordStatus::Normal, list);
@@ -555,11 +547,6 @@ Status KVEngine::listDestroy(List* list) {
                      rec->entry.header.record_size};
     entries.push_back(space);
   };
-  if (list->OldVersion() != nullptr) {
-    auto old_list = list->OldVersion();
-    list->RemoveOldVersion();
-    listDestroy(old_list);
-  }
   while (list->Size() > 0) {
     list->PopFront(PushPending);
   }

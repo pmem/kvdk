@@ -57,7 +57,6 @@ struct PendingPurgeDLRecords {
 struct PendingCleanRecords {
   using ListPtr = std::unique_ptr<List>;
   using HashListPtr = std::unique_ptr<HashList>;
-
   std::deque<std::pair<TimeStampType, ListPtr>> outdated_lists;
   std::deque<std::pair<TimeStampType, HashListPtr>> outdated_hash_lists;
   std::deque<std::pair<TimeStampType, Skiplist*>> outdated_skip_lists;
@@ -105,13 +104,15 @@ class Cleaner {
   void AdjustThread(size_t advice_thread_num);
   size_t ActiveThreadNum() { return live_thread_num_.load(); }
 
+  double SearchOutdatedCollections();
+  void FetchOutdatedCollections(PendingCleanRecords& pending_clean_records);
+
  private:
   struct ThreadWorker {
     std::atomic_bool finish{true};
     std::thread worker;
   };
   KVEngine* kv_engine_;
-  PendingCleanRecords pending_clean_records_;
 
   size_t max_thread_num_;
   size_t min_thread_num_ = 1;
@@ -121,6 +122,33 @@ class Cleaner {
   std::vector<ThreadWorker> workers_;
   std::deque<size_t> idled_workers_;
   std::deque<size_t> actived_workers_;
+
+  struct OutDatedCollections {
+    struct TimeStampCmp {
+     public:
+      bool operator()(const std::pair<Collection*, TimeStampType> a,
+                      const std::pair<Collection*, TimeStampType> b) const {
+        if (a.second < b.second) return true;
+        if (a.second == b.second && a.first->ID() < b.first->ID()) return true;
+        return false;
+      }
+    };
+    using ListQueue = std::set<std::pair<List*, TimeStampType>, TimeStampCmp>;
+    using HashListQueue =
+        std::set<std::pair<HashList*, TimeStampType>, TimeStampCmp>;
+
+    using SkiplistQueue =
+        std::set<std::pair<Skiplist*, TimeStampType>, TimeStampCmp>;
+
+    SpinMutex queue_mtx;
+    ListQueue lists;
+    HashListQueue hashlists;
+    SkiplistQueue skiplists;
+    double increase_ratio = 0;
+    ~OutDatedCollections();
+  };
+
+  OutDatedCollections outdated_collections_;
 
  private:
   void doCleanWork(size_t thread_id);
