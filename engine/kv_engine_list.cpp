@@ -89,8 +89,8 @@ Status KVEngine::ListDestroy(StringView collection) {
   return s;
 }
 
-Status KVEngine::ListSize(StringView key, size_t* sz) {
-  if (!CheckKeySize(key)) {
+Status KVEngine::ListSize(StringView list_name, size_t* sz) {
+  if (!CheckKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -100,7 +100,7 @@ Status KVEngine::ListSize(StringView key, size_t* sz) {
   auto token = version_controller_.GetLocalSnapshotHolder();
 
   List* list;
-  Status s = listFind(key, &list);
+  Status s = listFind(list_name, &list);
   if (s != Status::Ok) {
     return s;
   }
@@ -147,8 +147,8 @@ Status KVEngine::ListPushBack(StringView list_name, StringView elem) {
   return list->PushBack(elem, version_controller_.GetCurrentTimestamp()).s;
 }
 
-Status KVEngine::ListPopFront(StringView key, std::string* elem) {
-  if (!CheckKeySize(key)) {
+Status KVEngine::ListPopFront(StringView list_name, std::string* elem) {
+  if (!CheckKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -157,7 +157,7 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(key, &list);
+  Status s = listFind(list_name, &list);
   if (s != Status::Ok) {
     return s;
   }
@@ -176,8 +176,8 @@ Status KVEngine::ListPopFront(StringView key, std::string* elem) {
   return ret.s;
 }
 
-Status KVEngine::ListPopBack(StringView key, std::string* elem) {
-  if (!CheckKeySize(key)) {
+Status KVEngine::ListPopBack(StringView list_name, std::string* elem) {
+  if (!CheckKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -186,7 +186,7 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(key, &list);
+  Status s = listFind(list_name, &list);
   if (s != Status::Ok) {
     return s;
   }
@@ -205,15 +205,15 @@ Status KVEngine::ListPopBack(StringView key, std::string* elem) {
   return ret.s;
 }
 
-Status KVEngine::ListBatchPushFront(StringView key,
+Status KVEngine::ListBatchPushFront(StringView list_name,
                                     std::vector<std::string> const& elems) {
   return ListBatchPushFront(
-      key, std::vector<StringView>{elems.begin(), elems.end()});
+      list_name, std::vector<StringView>{elems.begin(), elems.end()});
 }
 
-Status KVEngine::ListBatchPushFront(StringView key,
+Status KVEngine::ListBatchPushFront(StringView list_name,
                                     std::vector<StringView> const& elems) {
-  if (!CheckKeySize(key)) {
+  if (!CheckKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
   if (elems.size() > BatchWriteLog::Capacity()) {
@@ -232,12 +232,12 @@ Status KVEngine::ListBatchPushFront(StringView key,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPushImpl(key, 0, elems);
+  return listBatchPushImpl(list_name, 0, elems);
 }
 
-Status KVEngine::ListBatchPushBack(StringView key,
+Status KVEngine::ListBatchPushBack(StringView list_name,
                                    std::vector<std::string> const& elems) {
-  return ListBatchPushBack(key,
+  return ListBatchPushBack(list_name,
                            std::vector<StringView>{elems.begin(), elems.end()});
 }
 
@@ -265,9 +265,9 @@ Status KVEngine::ListBatchPushBack(StringView list_name,
   return listBatchPushImpl(list_name, -1, elems);
 }
 
-Status KVEngine::ListBatchPopFront(StringView key, size_t n,
+Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
                                    std::vector<std::string>* elems) {
-  if (!CheckKeySize(key)) {
+  if (!CheckKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
   Status s = MaybeInitAccessThread();
@@ -278,12 +278,12 @@ Status KVEngine::ListBatchPopFront(StringView key, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPopImpl(key, 0, n, elems);
+  return listBatchPopImpl(list_name, 0, n, elems);
 }
 
-Status KVEngine::ListBatchPopBack(StringView key, size_t n,
+Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
                                   std::vector<std::string>* elems) {
-  if (!CheckKeySize(key)) {
+  if (!CheckKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
   Status s = MaybeInitAccessThread();
@@ -294,7 +294,7 @@ Status KVEngine::ListBatchPopBack(StringView key, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPopImpl(key, -1, n, elems);
+  return listBatchPopImpl(list_name, -1, n, elems);
 }
 
 Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
@@ -418,9 +418,9 @@ Status KVEngine::ListInsertBefore(StringView list_name, StringView elem,
       .s;
 }
 
-Status KVEngine::ListInsertAfter(StringView collection, StringView key,
-                                 StringView pos) {
-  if (!CheckValueSize(key)) {
+Status KVEngine::ListInsertAfter(StringView collection, StringView elem,
+                                 StringView dst) {
+  if (!CheckValueSize(elem)) {
     return Status::InvalidDataSize;
   }
   if (MaybeInitAccessThread() != Status::Ok) {
@@ -435,7 +435,7 @@ Status KVEngine::ListInsertAfter(StringView collection, StringView key,
   }
   auto guard = list->AcquireLock();
 
-  return list->InsertAfter(key, pos, version_controller_.GetCurrentTimestamp())
+  return list->InsertAfter(elem, dst, version_controller_.GetCurrentTimestamp())
       .s;
 }
 
@@ -508,8 +508,8 @@ Status KVEngine::listRestoreList(DLRecord* pmp_record) {
   return list_rebuilder_->AddHeader(pmp_record);
 }
 
-Status KVEngine::listFind(StringView key, List** list) {
-  auto result = lookupKey<false>(key, RecordType::ListRecord);
+Status KVEngine::listFind(StringView list_name, List** list) {
+  auto result = lookupKey<false>(list_name, RecordType::ListRecord);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }
@@ -520,11 +520,11 @@ Status KVEngine::listFind(StringView key, List** list) {
   return Status::Ok;
 }
 
-Status KVEngine::listBatchPushImpl(StringView key, int pos,
+Status KVEngine::listBatchPushImpl(StringView list_name, int pos,
                                    std::vector<StringView> const& elems) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(key, &list);
+  Status s = listFind(list_name, &list);
   if (s != Status::Ok) {
     return s;
   }
@@ -575,11 +575,11 @@ Status KVEngine::listBatchPushImpl(StringView key, int pos,
   return Status::Ok;
 }
 
-Status KVEngine::listBatchPopImpl(StringView key, int pos, size_t n,
+Status KVEngine::listBatchPopImpl(StringView list_name, int pos, size_t n,
                                   std::vector<std::string>* elems) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
-  Status s = listFind(key, &list);
+  Status s = listFind(list_name, &list);
   if (s != Status::Ok) {
     return s;
   }

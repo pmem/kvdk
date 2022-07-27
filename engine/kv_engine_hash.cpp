@@ -246,10 +246,10 @@ std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(
   return ret;
 }
 
-Status KVEngine::hashListFind(StringView key, HashList** hlist) {
+Status KVEngine::hashListFind(StringView collection, HashList** hlist) {
   // Callers should acquire the access token or snapshot.
   // Lockless lookup for the collection
-  auto result = lookupKey<false>(key, RecordType::HashHeader);
+  auto result = lookupKey<false>(collection, RecordType::HashHeader);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }
