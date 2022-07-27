@@ -320,29 +320,10 @@ class KVEngine : public Engine {
       }
       case RecordType::ListElem:
       default: {
-        /// TODO: Remove Expire Flag
         kvdk_assert(false, "Invalid type!");
         return PointerType::Invalid;
       }
     }
-  }
-
-  // May lock HashTable internally, caller must call this without lock
-  // HashTable!
-  //
-  // TODO (jiayu): replace this with lookupKey
-  template <typename CollectionType>
-  Status FindCollection(const StringView collection_name,
-                        CollectionType** collection_ptr, uint64_t record_type) {
-    auto res = lookupKey<false>(collection_name, record_type);
-    if (res.s == Status::Outdated) {
-      return Status::NotFound;
-    }
-    *collection_ptr =
-        res.s == Status::Ok
-            ? static_cast<CollectionType*>(res.entry_ptr->GetIndex().ptr)
-            : nullptr;
-    return res.s;
   }
 
   // Lockless. It's up to caller to lock the HashTable
@@ -559,49 +540,9 @@ class KVEngine : public Engine {
     return format_dir_path(instance_path) + "configs";
   }
 
-  inline bool checkDLRecordLinkageLeft(DLRecord* pmp_record) {
-    uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLRecord* pmem_record_prev =
-        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
-    return pmem_record_prev->next == offset;
-  }
-
-  inline bool checkDLRecordLinkageRight(DLRecord* pmp_record) {
-    uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLRecord* pmp_next =
-        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
-    return pmp_next->prev == offset;
-  }
-
   // If this instance is a backup of another kvdk instance
   bool RecoverToCheckpoint() {
     return configs_.recover_to_checkpoint && persist_checkpoint_->Valid();
-  }
-
-  bool checkLinkage(DLRecord* pmp_record) {
-    uint64_t offset = pmem_allocator_->addr2offset_checked(pmp_record);
-    DLRecord* pmp_prev =
-        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->prev);
-    DLRecord* pmp_next =
-        pmem_allocator_->offset2addr_checked<DLRecord>(pmp_record->next);
-    bool is_linked_left = (pmp_prev->next == offset);
-    bool is_linked_right = (pmp_next->prev == offset);
-
-    if (is_linked_left && is_linked_right) {
-      return true;
-    } else if (!is_linked_left && !is_linked_right) {
-      return false;
-    } else if (is_linked_left && !is_linked_right) {
-      /// TODO: Repair this situation
-      GlobalLogger.Error(
-          "Broken DLDataEntry linkage: prev<=>curr->right, abort...\n");
-      std::abort();
-    } else {
-      GlobalLogger.Error(
-          "Broken DLDataEntry linkage: prev<-curr<=>right, "
-          "which is logically impossible! Abort...\n");
-      std::abort();
-    }
   }
 
   // Run in background to report PMem usage regularly

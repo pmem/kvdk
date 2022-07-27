@@ -117,8 +117,6 @@ Status KVEngine::ListPushFront(StringView collection, StringView elem) {
     return Status::TooManyAccessThreads;
   }
 
-  /// TODO: (Ziyan) use gargage collection mechanism from version controller
-  /// to perform these operations lockless.
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
   Status s = listFind(collection, &list);

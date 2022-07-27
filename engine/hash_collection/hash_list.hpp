@@ -98,7 +98,7 @@ class HashList : public Collection {
 
   Status CheckIndex();
 
-  inline static CollectionIDType HashListID(const DLRecord* record);
+  static CollectionIDType HashListID(const DLRecord* record);
 
  private:
   friend HashIteratorImpl;
