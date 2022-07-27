@@ -28,6 +28,19 @@ static const uint8_t kCacheHeight = 3;
 
 struct Splice;
 class SortedIterator;
+
+struct SortedWriteArgs {
+  StringView collection;
+  StringView key;
+  StringView value;
+  WriteBatchImpl::Op op;
+  Skiplist* skiplist;
+  SpaceEntry space;
+  TimeStampType ts;
+  HashTable::LookupResult lookup_result;
+  std::unique_ptr<Splice> seek_result;
+};
+
 /* Format:
  * next pointers | DLRecord on pmem | height | cached key size |
  * cached key We only cache key if height > kCache height or there are enough

@@ -139,29 +139,6 @@ struct StringWriteArgs {
   }
 };
 
-struct SortedWriteArgs {
-  StringView collection;
-  StringView key;
-  StringView value;
-  WriteBatchImpl::Op op;
-  Skiplist* skiplist;
-  SpaceEntry space;
-  TimeStampType ts;
-  HashTable::LookupResult lookup_result;
-  std::unique_ptr<Splice> seek_result;
-};
-
-struct HashWriteArgs {
-  StringView collection;
-  StringView key;
-  StringView value;
-  WriteBatchImpl::Op op;
-  HashList* hlist;
-  SpaceEntry space;
-  TimeStampType ts;
-  HashTable::LookupResult lookup_result;
-};
-
 class BatchWriteLog {
  public:
   // The batch is first persisted to PMem with Stage::Initializing.
@@ -179,7 +156,7 @@ class BatchWriteLog {
     Committed,
   };
 
-  enum class Op : size_t { Put, Delete, Replace };
+  enum class Op : size_t { Put, Delete };
 
   struct StringLogEntry {
     Op op;
