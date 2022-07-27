@@ -82,7 +82,7 @@ public class KVDKBenchmark {
     AtomicLong readNotFoundCount;
 
     Engine kvdkEngine;
-    String valuePool;
+    byte[] valuePool;
     long numOperationsPerThread;
     NativeBytesHandle[] collectionNameHandles;
     LongGenerator[] randomKeyGenerators;
@@ -263,7 +263,7 @@ public class KVDKBenchmark {
             sb.append((char) (low + random.nextInt(26)));
         }
 
-        valuePool = sb.toString();
+        valuePool = sb.toString().getBytes();
     }
 
     private void createSortedCollections() throws KVDKException {
@@ -791,7 +791,7 @@ public class KVDKBenchmark {
 
                 long num = generateKey();
                 byte[] key = longToBytes(num);
-                byte[] value = valuePool.substring(0, (int) generateValueSize()).getBytes();
+                int generatedValueSize = (int) generateValueSize();
 
                 long start = 0;
                 if (latency) {
@@ -801,9 +801,9 @@ public class KVDKBenchmark {
                 switch (dataType) {
                     case String:
                         if (batchSize == 0) {
-                            kvdkEngine.put(key, value);
+                            kvdkEngine.put(key, 0, key.length, valuePool, 0, generatedValueSize);
                         } else {
-                            batch.stringPut(key, value);
+                            batch.stringPut(key, 0, key.length, valuePool, 0, generatedValueSize);
                             if ((operations + 1) % batchSize == 0) {
                                 kvdkEngine.batchWrite(batch);
                                 batch.clear();
@@ -813,9 +813,23 @@ public class KVDKBenchmark {
                     case Sorted:
                         int cid = (int) (num % numCollection);
                         if (batchSize == 0) {
-                            kvdkEngine.sortedPut(collectionNameHandles[cid], key, value);
+                            kvdkEngine.sortedPut(
+                                    collectionNameHandles[cid],
+                                    key,
+                                    0,
+                                    key.length,
+                                    valuePool,
+                                    0,
+                                    generatedValueSize);
                         } else {
-                            batch.sortedPut(collectionNameHandles[cid], key, value);
+                            batch.sortedPut(
+                                    collectionNameHandles[cid],
+                                    key,
+                                    0,
+                                    key.length,
+                                    valuePool,
+                                    0,
+                                    generatedValueSize);
                             if ((operations + 1) % batchSize == 0) {
                                 kvdkEngine.batchWrite(batch);
                                 batch.clear();
