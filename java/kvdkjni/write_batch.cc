@@ -22,25 +22,25 @@ void Java_io_pmem_kvdk_WriteBatch_closeInternal(JNIEnv*, jobject,
 /*
  * Class:     io_pmem_kvdk_WriteBatch
  * Method:    stringPut
- * Signature: (J[B[B)V
+ * Signature: (J[BII[BII)V
  */
 void Java_io_pmem_kvdk_WriteBatch_stringPut(JNIEnv* env, jobject,
                                             jlong batch_handle, jbyteArray key,
-                                            jbyteArray value) {
+                                            jint key_off, jint key_len,
+                                            jbyteArray value, jint value_off,
+                                            jint value_len) {
   auto* batch = reinterpret_cast<KVDK_NAMESPACE::WriteBatch*>(batch_handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
     return;
   }
 
-  int value_len = env->GetArrayLength(value);
   jbyte* value_bytes = new jbyte[value_len];
-  env->GetByteArrayRegion(value, 0, value_len, value_bytes);
+  env->GetByteArrayRegion(value, value_off, value_len, value_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -59,16 +59,16 @@ void Java_io_pmem_kvdk_WriteBatch_stringPut(JNIEnv* env, jobject,
 /*
  * Class:     io_pmem_kvdk_WriteBatch
  * Method:    stringDelete
- * Signature: (J[B)V
+ * Signature: (J[BII)V
  */
 void Java_io_pmem_kvdk_WriteBatch_stringDelete(JNIEnv* env, jobject,
                                                jlong batch_handle,
-                                               jbyteArray key) {
+                                               jbyteArray key, jint key_off,
+                                               jint key_len) {
   auto* batch = reinterpret_cast<KVDK_NAMESPACE::WriteBatch*>(batch_handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -83,27 +83,27 @@ void Java_io_pmem_kvdk_WriteBatch_stringDelete(JNIEnv* env, jobject,
 /*
  * Class:     io_pmem_kvdk_WriteBatch
  * Method:    sortedPut
- * Signature: (JJI[B[B)V
+ * Signature: (JJI[BII[BII)V
  */
 void Java_io_pmem_kvdk_WriteBatch_sortedPut(JNIEnv* env, jobject,
                                             jlong batch_handle,
                                             jlong name_handle, jint name_len,
-                                            jbyteArray key, jbyteArray value) {
+                                            jbyteArray key, jint key_off,
+                                            jint key_len, jbyteArray value,
+                                            jint value_off, jint value_len) {
   auto* batch = reinterpret_cast<KVDK_NAMESPACE::WriteBatch*>(batch_handle);
   auto* name_chars = reinterpret_cast<char*>(name_handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
     return;
   }
 
-  int value_len = env->GetArrayLength(value);
   jbyte* value_bytes = new jbyte[value_len];
-  env->GetByteArrayRegion(value, 0, value_len, value_bytes);
+  env->GetByteArrayRegion(value, value_off, value_len, value_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -123,18 +123,18 @@ void Java_io_pmem_kvdk_WriteBatch_sortedPut(JNIEnv* env, jobject,
 /*
  * Class:     io_pmem_kvdk_WriteBatch
  * Method:    sortedDelete
- * Signature: (JJI[B)V
+ * Signature: (JJI[BII)V
  */
 void Java_io_pmem_kvdk_WriteBatch_sortedDelete(JNIEnv* env, jobject,
                                                jlong batch_handle,
                                                jlong name_handle, jint name_len,
-                                               jbyteArray key) {
+                                               jbyteArray key, jint key_off,
+                                               jint key_len) {
   auto* batch = reinterpret_cast<KVDK_NAMESPACE::WriteBatch*>(batch_handle);
   auto* name_chars = reinterpret_cast<char*>(name_handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;

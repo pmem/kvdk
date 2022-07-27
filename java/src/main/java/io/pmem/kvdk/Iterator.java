@@ -23,7 +23,11 @@ public class Iterator extends KVDKObject {
     }
 
     public void seek(final byte[] key) {
-        seek(nativeHandle_, key);
+        seek(nativeHandle_, key, 0, key.length);
+    }
+
+    public void seek(final byte[] key, final int keyOffset, int keyLength) {
+        seek(nativeHandle_, key, keyOffset, keyLength);
     }
 
     public void seekToFirst() {
@@ -57,7 +61,7 @@ public class Iterator extends KVDKObject {
     // Native methods
     protected native void closeInternal(long iteratorHandle, long engineHandle);
 
-    private native void seek(long handle, byte[] key);
+    private native void seek(long handle, byte[] key, int keyOffset, int keyLength);
 
     private native void seekToFirst(long handle);
 

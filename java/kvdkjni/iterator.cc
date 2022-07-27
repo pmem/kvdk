@@ -26,15 +26,15 @@ void Java_io_pmem_kvdk_Iterator_closeInternal(JNIEnv*, jobject,
 /*
  * Class:     io_pmem_kvdk_Iterator
  * Method:    seek
- * Signature: (J[B)V
+ * Signature: (J[BII)V
  */
 void Java_io_pmem_kvdk_Iterator_seek(JNIEnv* env, jobject, jlong handle,
-                                     jbyteArray key) {
+                                     jbyteArray key, jint key_off,
+                                     jint key_len) {
   auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;

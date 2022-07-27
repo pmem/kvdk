@@ -39,26 +39,25 @@ jlong Java_io_pmem_kvdk_Engine_open(JNIEnv* env, jclass, jstring jengine_path,
 /*
  * Class:     io_pmem_kvdk_Engine
  * Method:    put
- * Signature: (J[B[BJZ)V
+ * Signature: (J[BII[BIIJZ)V
  */
 void Java_io_pmem_kvdk_Engine_put(JNIEnv* env, jobject, jlong handle,
-                                  jbyteArray key, jbyteArray value,
-                                  jlong ttl_in_millis,
+                                  jbyteArray key, jint key_off, jint key_len,
+                                  jbyteArray value, jint value_off,
+                                  jint value_len, jlong ttl_in_millis,
                                   jboolean update_ttl_if_existed) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
     return;
   }
 
-  int value_len = env->GetArrayLength(value);
   jbyte* value_bytes = new jbyte[value_len];
-  env->GetByteArrayRegion(value, 0, value_len, value_bytes);
+  env->GetByteArrayRegion(value, value_off, value_len, value_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -86,16 +85,16 @@ void Java_io_pmem_kvdk_Engine_put(JNIEnv* env, jobject, jlong handle,
 /*
  * Class:     io_pmem_kvdk_Engine
  * Method:    expire
- * Signature: (J[BJ)V
+ * Signature: (J[BIIJ)V
  */
-void Java_io_pmem_kvdk_Engine_expire__J_3BJ(JNIEnv* env, jobject, jlong handle,
-                                            jbyteArray key,
-                                            jlong ttl_in_millis) {
+void Java_io_pmem_kvdk_Engine_expire__J_3BIIJ(JNIEnv* env, jobject,
+                                              jlong handle, jbyteArray key,
+                                              jint key_off, jint key_len,
+                                              jlong ttl_in_millis) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -134,15 +133,15 @@ void Java_io_pmem_kvdk_Engine_expire__JJIJ(JNIEnv* env, jobject,
 /*
  * Class:     io_pmem_kvdk_Engine
  * Method:    get
- * Signature: (J[B)[B
+ * Signature: (J[BII)[B
  */
 jbyteArray Java_io_pmem_kvdk_Engine_get(JNIEnv* env, jobject, jlong handle,
-                                        jbyteArray key) {
+                                        jbyteArray key, jint key_off,
+                                        jint key_len) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -172,15 +171,15 @@ jbyteArray Java_io_pmem_kvdk_Engine_get(JNIEnv* env, jobject, jlong handle,
 /*
  * Class:     io_pmem_kvdk_Engine
  * Method:    delete
- * Signature: (J[B)V
+ * Signature: (J[BII)V
  */
 void Java_io_pmem_kvdk_Engine_delete(JNIEnv* env, jobject, jlong handle,
-                                     jbyteArray key) {
+                                     jbyteArray key, jint key_off,
+                                     jint key_len) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -257,27 +256,27 @@ jlong Java_io_pmem_kvdk_Engine_sortedSize(JNIEnv* env, jobject,
 /*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedPut
- * Signature: (JJI[B[B)V
+ * Signature: (JJI[BII[BII)V
  */
 void Java_io_pmem_kvdk_Engine_sortedPut(JNIEnv* env, jobject,
                                         jlong engine_handle, jlong name_handle,
                                         jint name_len, jbyteArray key,
-                                        jbyteArray value) {
+                                        jint key_off, jint key_len,
+                                        jbyteArray value, jint value_off,
+                                        jint value_len) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
   auto* name_chars = reinterpret_cast<char*>(name_handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
     return;
   }
 
-  int value_len = env->GetArrayLength(value);
   jbyte* value_bytes = new jbyte[value_len];
-  env->GetByteArrayRegion(value, 0, value_len, value_bytes);
+  env->GetByteArrayRegion(value, value_off, value_len, value_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -301,18 +300,18 @@ void Java_io_pmem_kvdk_Engine_sortedPut(JNIEnv* env, jobject,
 /*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedGet
- * Signature: (JJI[B)[B
+ * Signature: (JJI[BII)[B
  */
 jbyteArray Java_io_pmem_kvdk_Engine_sortedGet(JNIEnv* env, jobject,
                                               jlong engine_handle,
                                               jlong name_handle, jint name_len,
-                                              jbyteArray key) {
+                                              jbyteArray key, jint key_off,
+                                              jint key_len) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
   auto* name_chars = reinterpret_cast<char*>(name_handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;
@@ -343,18 +342,18 @@ jbyteArray Java_io_pmem_kvdk_Engine_sortedGet(JNIEnv* env, jobject,
 /*
  * Class:     io_pmem_kvdk_Engine
  * Method:    sortedDelete
- * Signature: (JJI[B)V
+ * Signature: (JJI[BII)V
  */
 void Java_io_pmem_kvdk_Engine_sortedDelete(JNIEnv* env, jobject,
                                            jlong engine_handle,
                                            jlong name_handle, jint name_len,
-                                           jbyteArray key) {
+                                           jbyteArray key, jint key_off,
+                                           jint key_len) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
   auto* name_chars = reinterpret_cast<char*>(name_handle);
 
-  int key_len = env->GetArrayLength(key);
   jbyte* key_bytes = new jbyte[key_len];
-  env->GetByteArrayRegion(key, 0, key_len, key_bytes);
+  env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
     delete[] key_bytes;

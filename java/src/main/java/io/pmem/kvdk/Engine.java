@@ -44,16 +44,81 @@ public class Engine extends KVDKObject {
 
     public void put(final byte[] key, final byte[] value) throws KVDKException {
         WriteOptions defaulWriteOptions = new WriteOptions();
-        put(key, value, defaulWriteOptions);
+        put(
+                nativeHandle_,
+                key,
+                0,
+                key.length,
+                value,
+                0,
+                value.length,
+                defaulWriteOptions.getTtlInMillis(),
+                defaulWriteOptions.isUpdateTtlIfExisted());
+    }
+
+    public void put(
+            final byte[] key,
+            int keyOffset,
+            int keyLength,
+            final byte[] value,
+            int valueOffset,
+            int valueLength)
+            throws KVDKException {
+        WriteOptions defaulWriteOptions = new WriteOptions();
+        put(
+                nativeHandle_,
+                key,
+                keyOffset,
+                keyLength,
+                value,
+                valueOffset,
+                valueLength,
+                defaulWriteOptions.getTtlInMillis(),
+                defaulWriteOptions.isUpdateTtlIfExisted());
     }
 
     public void put(final byte[] key, final byte[] value, final WriteOptions wOptions)
             throws KVDKException {
-        put(nativeHandle_, key, value, wOptions.getTtlInMillis(), wOptions.isUpdateTtlIfExisted());
+        put(
+                nativeHandle_,
+                key,
+                0,
+                key.length,
+                value,
+                0,
+                value.length,
+                wOptions.getTtlInMillis(),
+                wOptions.isUpdateTtlIfExisted());
+    }
+
+    public void put(
+            final byte[] key,
+            int keyOffset,
+            int keyLength,
+            final byte[] value,
+            int valueOffset,
+            int valueLength,
+            final WriteOptions wOptions)
+            throws KVDKException {
+        put(
+                nativeHandle_,
+                key,
+                keyOffset,
+                keyLength,
+                value,
+                valueOffset,
+                valueLength,
+                wOptions.getTtlInMillis(),
+                wOptions.isUpdateTtlIfExisted());
     }
 
     public void expire(final byte[] key, final long ttlInMillis) throws KVDKException {
-        expire(nativeHandle_, key, ttlInMillis);
+        expire(nativeHandle_, key, 0, key.length, ttlInMillis);
+    }
+
+    public void expire(final byte[] key, int keyOffset, int keyLength, final long ttlInMillis)
+            throws KVDKException {
+        expire(nativeHandle_, key, keyOffset, keyLength, ttlInMillis);
     }
 
     public void expire(final NativeBytesHandle nameHandle, final long ttlInMillis)
@@ -67,11 +132,24 @@ public class Engine extends KVDKObject {
      * @throws KVDKException
      */
     public byte[] get(final byte[] key) throws KVDKException {
-        return get(nativeHandle_, key);
+        return get(nativeHandle_, key, 0, key.length);
+    }
+
+    /**
+     * @param key
+     * @return Value as byte array, null if the specified key doesn't exist.
+     * @throws KVDKException
+     */
+    public byte[] get(final byte[] key, int keyOffset, int keyLength) throws KVDKException {
+        return get(nativeHandle_, key, keyOffset, keyLength);
     }
 
     public void delete(final byte[] key) throws KVDKException {
-        delete(nativeHandle_, key);
+        delete(nativeHandle_, key, 0, key.length);
+    }
+
+    public void delete(final byte[] key, int keyOffset, int keyLength) throws KVDKException {
+        delete(nativeHandle_, key, keyOffset, keyLength);
     }
 
     public void sortedCreate(final NativeBytesHandle nameHandle) throws KVDKException {
@@ -88,7 +166,37 @@ public class Engine extends KVDKObject {
 
     public void sortedPut(final NativeBytesHandle nameHandle, final byte[] key, final byte[] value)
             throws KVDKException {
-        sortedPut(nativeHandle_, nameHandle.getNativeHandle(), nameHandle.getLength(), key, value);
+        sortedPut(
+                nativeHandle_,
+                nameHandle.getNativeHandle(),
+                nameHandle.getLength(),
+                key,
+                0,
+                key.length,
+                value,
+                0,
+                value.length);
+    }
+
+    public void sortedPut(
+            final NativeBytesHandle nameHandle,
+            final byte[] key,
+            int keyOffset,
+            int keyLength,
+            final byte[] value,
+            int valueOffset,
+            int valueLength)
+            throws KVDKException {
+        sortedPut(
+                nativeHandle_,
+                nameHandle.getNativeHandle(),
+                nameHandle.getLength(),
+                key,
+                keyOffset,
+                keyLength,
+                value,
+                valueOffset,
+                valueLength);
     }
 
     /**
@@ -99,12 +207,54 @@ public class Engine extends KVDKObject {
      */
     public byte[] sortedGet(final NativeBytesHandle nameHandle, final byte[] key)
             throws KVDKException {
-        return sortedGet(nativeHandle_, nameHandle.getNativeHandle(), nameHandle.getLength(), key);
+        return sortedGet(
+                nativeHandle_,
+                nameHandle.getNativeHandle(),
+                nameHandle.getLength(),
+                key,
+                0,
+                key.length);
+    }
+
+    /**
+     * @param nameHandle
+     * @param key
+     * @return Value as byte array, null if the specified key doesn't exist.
+     * @throws KVDKException
+     */
+    public byte[] sortedGet(
+            final NativeBytesHandle nameHandle, final byte[] key, int keyOffset, int keyLength)
+            throws KVDKException {
+        return sortedGet(
+                nativeHandle_,
+                nameHandle.getNativeHandle(),
+                nameHandle.getLength(),
+                key,
+                keyOffset,
+                keyLength);
     }
 
     public void sortedDelete(final NativeBytesHandle nameHandle, final byte[] key)
             throws KVDKException {
-        sortedDelete(nativeHandle_, nameHandle.getNativeHandle(), nameHandle.getLength(), key);
+        sortedDelete(
+                nativeHandle_,
+                nameHandle.getNativeHandle(),
+                nameHandle.getLength(),
+                key,
+                0,
+                key.length);
+    }
+
+    public void sortedDelete(
+            final NativeBytesHandle nameHandle, final byte[] key, int keyOffset, int keyLength)
+            throws KVDKException {
+        sortedDelete(
+                nativeHandle_,
+                nameHandle.getNativeHandle(),
+                nameHandle.getLength(),
+                key,
+                keyOffset,
+                keyLength);
     }
 
     public Iterator newSortedIterator(final NativeBytesHandle nameHandle) throws KVDKException {
@@ -139,15 +289,24 @@ public class Engine extends KVDKObject {
     private static native long open(final String path, final long cfg_handle) throws KVDKException;
 
     private native void put(
-            long handle, byte[] key, byte[] value, long ttl, boolean updateTtlIfExisted);
+            long handle,
+            byte[] key,
+            int keyOffset,
+            int keyLength,
+            byte[] value,
+            int valueOffset,
+            int valueLength,
+            long ttl,
+            boolean updateTtlIfExisted);
 
-    private native void expire(long handle, byte[] key, long ttlInMillis);
+    private native void expire(
+            long handle, byte[] key, int keyOffset, int keyLength, long ttlInMillis);
 
     private native void expire(long handle, long nameHandle, int nameLenth, long ttlInMillis);
 
-    private native byte[] get(long handle, byte[] key);
+    private native byte[] get(long handle, byte[] key, int keyOffset, int keyLength);
 
-    private native void delete(long handle, byte[] key);
+    private native void delete(long handle, byte[] key, int keyOffset, int keyLength);
 
     private native void sortedCreate(long engineHandle, long nameHandle, int nameLenth);
 
@@ -156,11 +315,31 @@ public class Engine extends KVDKObject {
     private native long sortedSize(long engineHandle, long nameHandle, int nameLenth);
 
     private native void sortedPut(
-            long engineHandle, long nameHandle, int nameLenth, byte[] key, byte[] value);
+            long engineHandle,
+            long nameHandle,
+            int nameLenth,
+            byte[] key,
+            int keyOffset,
+            int keyLength,
+            byte[] value,
+            int valueOffset,
+            int valueLength);
 
-    private native byte[] sortedGet(long engineHandle, long nameHandle, int nameLenth, byte[] key);
+    private native byte[] sortedGet(
+            long engineHandle,
+            long nameHandle,
+            int nameLenth,
+            byte[] key,
+            int keyOffset,
+            int keyLength);
 
-    private native void sortedDelete(long engineHandle, long nameHandle, int nameLenth, byte[] key);
+    private native void sortedDelete(
+            long engineHandle,
+            long nameHandle,
+            int nameLenth,
+            byte[] key,
+            int keyOffset,
+            int keyLength);
 
     private native long newSortedIterator(long engineHandle, long nameHandle, int nameLenth);
 
