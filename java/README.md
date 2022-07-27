@@ -10,18 +10,18 @@ Add `-DWITH_JNI=ON` to cmake command options. For example:
 ```bash
 cd kvdk
 mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON -DWITH_JNI && make -j
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON && make -j
 ```
 
 ### Unit Test with Apache Maven
-```
+```bash
 cd kvdk/java
 mvn clean test
 ``` 
 
 ## Release
 ### Install to local Maven repository
-```
+```bash
 cd kvdk/java
 mvn clean install
 ```
@@ -31,7 +31,7 @@ mvn clean install
 2. Release deployment [from OSSRH to Maven Central](https://central.sonatype.org/publish/release/)
 
 ## Run examples
-```
+```bash
 cd kvdk/java/examples
 mvn clean package
 
@@ -42,21 +42,36 @@ java -cp target/kvdkjni-examples-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAP
 ```
 
 ## Run benchmark
-```
+```bash
 cd kvdk/java/benchmark
 mvn clean package
 
-export PMEM_IS_PMEM_FORCE=1
-mkdir -p /tmp/kvdk-bench-dir
+mkdir -p /mnt/pmem0/kvdk/bench-dir
 
-# insert
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=true -latency=true -path=/tmp/kvdk-bench-dir -space=21474836480 -hash_bucket_num=16777216 -num_kv=16777216 -threads=32
+export type=string
+# or export type=sorted
 
-# read
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -read_ratio=1 -latency=true -path=/tmp/kvdk-bench-dir -space=21474836480 -hash_bucket_num=16777216 -num_kv=16777216 -threads=32 -timeout=60
+# fill example
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=true -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32
 
-# update
-java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -read_ratio=0 -latency=true -path=/tmp/kvdk-bench-dir -space=21474836480 -hash_bucket_num=16777216 -num_kv=16777216 -threads=32 -timeout=60
+# random batch insert example
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0 -existing_keys_ratio=0 -batch_size=100
+
+# random insert example
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0 -existing_keys_ratio=0
+
+# range scan example
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=1 -scan=1
+
+# random read example
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=1
+
+# random read write example (9R:1W)
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0.9
+
+# random update example
+java -cp target/kvdkjni-benchmark-1.0.0-SNAPSHOT.jar:../target/kvdkjni-1.0.0-SNAPSHOT.jar io.pmem.kvdk.benchmark.KVDKBenchmark -fill=false -latency=true -path=/mnt/pmem0/kvdk/bench-dir -space=214748364800 -num_kv=335544320 -type=$type -threads=32 -timeout=30 -read_ratio=0
+
 ```
 
 ## Cross Platform

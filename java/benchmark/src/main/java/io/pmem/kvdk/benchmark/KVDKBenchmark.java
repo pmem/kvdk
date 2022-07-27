@@ -230,7 +230,7 @@ public class KVDKBenchmark {
                     "Invalid -value_size_distribution: " + valueSizeDistributionStr);
         }
 
-        writeThreads = fill ? threads : threads - (int) (readRatio * 100 * threads / 100);
+        writeThreads = fill ? threads : (int) (threads - (readRatio * 100 * threads / 100));
         readThreads = threads - writeThreads;
 
         if (latency) {
@@ -267,7 +267,7 @@ public class KVDKBenchmark {
     }
 
     private void createSortedCollections() throws KVDKException {
-        System.out.format("Creating %ld Sorted Collections", numCollection);
+        System.out.format("Creating %d Sorted Collections", numCollection);
         for (int i = 0; i < collectionNames.size(); i++) {
             String collectionName = collectionNames.get(i);
             NativeBytesHandle nameHandle = new NativeBytesHandle(collectionName.getBytes());
@@ -580,10 +580,7 @@ public class KVDKBenchmark {
                 return parseBoolean(value);
             }
         },
-        type(
-                "string",
-                "Storage engine to benchmark, can be string, sorted, hash, list\n"
-                        + "\tor blackhole") {
+        type("string", "Storage engine to benchmark, can be string, sorted or blackhole") {
             @Override
             protected Object parseValue(String value) {
                 return value;
@@ -592,7 +589,7 @@ public class KVDKBenchmark {
         scan(
                 false,
                 "If set true, read threads will do scan operations, this is valid\n"
-                        + "\tonly if we benchmark sorted or hash engine") {
+                        + "\tonly if we benchmark sorted engine") {
             @Override
             protected Object parseValue(String value) {
                 return parseBoolean(value);
