@@ -372,8 +372,8 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
     return push_args.s;
   }
 
-  log.ListDelete(pop_args.write_args[0].space.offset);
-  log.ListEmplace(push_args.write_args[0].space.size);
+  log.ListDelete(pop_args.spaces[0].offset);
+  log.ListEmplace(push_args.spaces[0].offset);
   auto& tc = engine_thread_cache_[access_thread.id];
   log.EncodeTo(tc.batch_log);
 
@@ -532,8 +532,8 @@ Status KVEngine::listBatchPushImpl(StringView list_name, int pos,
     return push_n_args.s;
   }
 
-  for (auto& wa : push_n_args.write_args) {
-    log.ListEmplace(wa.space.offset);
+  for (auto& space : push_n_args.spaces) {
+    log.ListEmplace(space.offset);
   }
 
   auto& tc = engine_thread_cache_[access_thread.id];
@@ -565,8 +565,8 @@ Status KVEngine::listBatchPopImpl(StringView list_name, size_t n, int pos,
     return pop_n_args.s;
   }
 
-  for (auto& wa : pop_n_args.write_args) {
-    log.ListDelete(wa.space.offset);
+  for (auto& space : pop_n_args.spaces) {
+    log.ListDelete(space.offset);
   }
 
   auto& tc = engine_thread_cache_[access_thread.id];

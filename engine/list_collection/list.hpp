@@ -42,19 +42,22 @@ class List : public Collection {
 
   struct PopNArgs {
    public:
-    Status s{Status::Ok};
-    std::vector<DLList::WriteArgs> write_args{};
+    Status s{Status::InvalidArgument};
+    std::vector<SpaceEntry> spaces{};
 
    private:
     friend List;
     std::vector<DLRecord*> to_pop{};
+    TimeStampType ts;
   };
 
   struct PushNArgs {
    public:
-    Status s{Status::Ok};
-    std::vector<DLList::WriteArgs> write_args{};
+    Status s{Status::InvalidArgument};
+    std::vector<SpaceEntry> spaces;
+    std::vector<StringView> elems;
     int pos{0};
+    TimeStampType ts;
   };
 
   const DLRecord* HeaderRecord() const { return dl_list_.Header(); }
@@ -457,6 +460,7 @@ class List : public Collection {
                          TimeStampType ts) {
     PushNArgs args;
     args.pos = pos;
+    args.ts = ts;
     if (elems.size() > 0) {
       std::string internal_key(InternalKey(""));
       for (auto& elem : elems) {
@@ -465,16 +469,17 @@ class List : public Collection {
         if (space.size == 0) {
           GlobalLogger.Error("Try allocate %lu error\n",
                              DLRecord::RecordSize(internal_key, elem));
-          for (auto& wa : args.write_args) {
-            pmem_allocator_->Free(wa.space);
+          for (auto& sp : args.spaces) {
+            pmem_allocator_->Free(sp);
           }
           args.s = Status::PmemOverflow;
           break;
         }
-        args.write_args.emplace_back(internal_key, elem, RecordType::ListElem,
-                                     RecordStatus::Normal, ts, space);
+        args.spaces.emplace_back(space);
       }
+      args.elems = elems;
     }
+    args.s = Status::Ok;
     return args;
   }
 
@@ -482,6 +487,7 @@ class List : public Collection {
                        std::vector<std::string>* elems) {
     size_t nn = n;
     PopNArgs args;
+    args.ts = ts;
     DLListRecordIterator iter(&dl_list_, pmem_allocator_);
     for (pos == 0 ? iter.SeekToFirst() : iter.SeekToLast();
          iter.Valid() && nn > 0; pos == 0 ? iter.Next() : iter.Prev()) {
@@ -490,8 +496,8 @@ class List : public Collection {
         SpaceEntry space =
             pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
         if (space.size == 0) {
-          for (auto& wa : args.write_args) {
-            pmem_allocator_->Free(wa.space);
+          for (auto& sp : args.spaces) {
+            pmem_allocator_->Free(sp);
           }
           args.s = Status::PmemOverflow;
           return args;
@@ -500,12 +506,12 @@ class List : public Collection {
           StringView sw = record->Value();
           elems->emplace_back(sw.data(), sw.size());
         }
-        args.write_args.emplace_back(record->Key(), "", RecordType::ListElem,
-                                     RecordStatus::Outdated, ts, space);
+        args.spaces.emplace_back(space);
         args.to_pop.emplace_back(record);
         nn--;
       }
     }
+    args.s = Status::Ok;
     return args;
   }
 
@@ -513,12 +519,16 @@ class List : public Collection {
     if (args.s != Status::Ok) {
       return args.s;
     }
-    for (auto& wa : args.write_args) {
+    std::string internal_key(InternalKey(""));
+    kvdk_assert(args.elems.size() == args.spaces.size(), "");
+    for (size_t i = 0; i < args.elems.size(); i++) {
+      DLList::WriteArgs wa(internal_key, args.elems[i], RecordType::ListElem,
+                           RecordStatus::Normal, args.ts, args.spaces[i]);
       Status s = args.pos == 0 ? dl_list_.PushFront(wa) : dl_list_.PushBack(wa);
       kvdk_assert(s == Status::Ok, "Push back/front should always success");
       TEST_CRASH_POINT("List::PushN", "");
     }
-    UpdateSize(args.write_args.size());
+    UpdateSize(args.elems.size());
     return Status::Ok;
   }
 
@@ -526,9 +536,12 @@ class List : public Collection {
     if (args.s != Status::Ok) {
       return args.s;
     }
-    kvdk_assert(args.write_args.size() == args.to_pop.size(), "");
-    for (size_t i = 0; i < args.write_args.size(); i++) {
-      Status s = dl_list_.Update(args.write_args[i], args.to_pop[i]);
+    std::string internal_key(InternalKey(""));
+    kvdk_assert(args.spaces.size() == args.to_pop.size(), "");
+    for (size_t i = 0; i < args.to_pop.size(); i++) {
+      DLList::WriteArgs wa(internal_key, "", RecordType::ListElem,
+                           RecordStatus::Outdated, args.ts, args.spaces[i]);
+      Status s = dl_list_.Update(wa, args.to_pop[i]);
       kvdk_assert(
           s == Status::Ok,
           "the whole list should be locked, so the update must be success");
