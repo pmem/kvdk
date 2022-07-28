@@ -232,7 +232,7 @@ Status KVEngine::ListBatchPushFront(StringView list_name,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPushImpl(list_name, 0, elems);
+  return listBatchPushImpl(list_name, ListPos::Front, elems);
 }
 
 Status KVEngine::ListBatchPushBack(StringView list_name,
@@ -262,7 +262,7 @@ Status KVEngine::ListBatchPushBack(StringView list_name,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPushImpl(list_name, -1, elems);
+  return listBatchPushImpl(list_name, ListPos::Back, elems);
 }
 
 Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
@@ -278,7 +278,7 @@ Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPopImpl(list_name, n, 0, elems);
+  return listBatchPopImpl(list_name, ListPos::Front, n, elems);
 }
 
 Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
@@ -295,7 +295,7 @@ Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
     return s;
   }
 
-  return listBatchPopImpl(list_name, n, -1, elems);
+  return listBatchPopImpl(list_name, ListPos::Back, n, elems);
 }
 
 Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
@@ -359,15 +359,15 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
   std::vector<std::string> elems;
 
   auto pop_args =
-      src_list->PreparePopN(1, src_pos, bw_token.Timestamp(), &elems);
+      src_list->PreparePopN((ListPos)src_pos, 1, bw_token.Timestamp(), &elems);
   if (pop_args.s != Status::Ok) {
     return pop_args.s;
   }
   kvdk_assert(elems.size() == 1, "");
   elem->swap(elems[0]);
   std::vector<StringView> elems_view{StringView(elem->data(), elem->size())};
-  auto push_args =
-      dst_list->PreparePushN(dst_pos, elems_view, bw_token.Timestamp());
+  auto push_args = dst_list->PreparePushN((ListPos)dst_pos, elems_view,
+                                          bw_token.Timestamp());
   if (push_args.s != Status::Ok) {
     return push_args.s;
   }
@@ -461,7 +461,7 @@ Status KVEngine::ListReplace(StringView collection, uint64_t pos,
     return s;
   }
   auto guard = list->AcquireLock();
-  return list->Replace(pos, elem, version_controller_.GetCurrentTimestamp()).s;
+  return list->Update(pos, elem, version_controller_.GetCurrentTimestamp()).s;
 }
 
 std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(
@@ -513,7 +513,7 @@ Status KVEngine::listFind(StringView list_name, List** list) {
   return Status::Ok;
 }
 
-Status KVEngine::listBatchPushImpl(StringView list_name, int pos,
+Status KVEngine::listBatchPushImpl(StringView list_name, ListPos pos,
                                    std::vector<StringView> const& elems) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -546,7 +546,7 @@ Status KVEngine::listBatchPushImpl(StringView list_name, int pos,
   return s;
 }
 
-Status KVEngine::listBatchPopImpl(StringView list_name, size_t n, int pos,
+Status KVEngine::listBatchPopImpl(StringView list_name, ListPos pos, size_t n,
                                   std::vector<std::string>* elems) {
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -560,7 +560,7 @@ Status KVEngine::listBatchPopImpl(StringView list_name, size_t n, int pos,
   BatchWriteLog log;
   log.SetTimestamp(bw_token.Timestamp());
 
-  auto pop_n_args = list->PreparePopN(n, pos, bw_token.Timestamp(), elems);
+  auto pop_n_args = list->PreparePopN(pos, n, bw_token.Timestamp(), elems);
   if (pop_n_args.s != Status::Ok) {
     return pop_n_args.s;
   }

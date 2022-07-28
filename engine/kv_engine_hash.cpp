@@ -2,6 +2,7 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#include "hash_collection/iterator.hpp"
 #include "kv_engine.hpp"
 
 namespace KVDK_NAMESPACE {

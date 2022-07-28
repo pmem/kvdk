@@ -4,13 +4,6 @@
 
 #include "hash_list.hpp"
 
-#include "../hash_table.hpp"
-#include "../version/version_controller.hpp"
-#include "../write_batch_impl.hpp"
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
-#include "kvdk/types.hpp"
-
 namespace KVDK_NAMESPACE {
 HashList::WriteResult HashList::Put(const StringView& key,
                                     const StringView& value,

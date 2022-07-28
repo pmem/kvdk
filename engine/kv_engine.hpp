@@ -414,9 +414,9 @@ class KVEngine : public Engine {
 
   Status listRestoreList(DLRecord* pmp_record);
 
-  Status listBatchPushImpl(StringView key, int pos,
+  Status listBatchPushImpl(StringView key, ListPos pos,
                            std::vector<StringView> const& elems);
-  Status listBatchPopImpl(StringView list_name, size_t n, int pos,
+  Status listBatchPopImpl(StringView list_name, ListPos pos, size_t n,
                           std::vector<std::string>* elems);
   Status listRollback(BatchWriteLog::ListLogEntry const& entry);
 

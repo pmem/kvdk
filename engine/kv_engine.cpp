@@ -20,6 +20,7 @@
 #include "backup_log.hpp"
 #include "configs.hpp"
 #include "dram_allocator.hpp"
+#include "hash_collection/iterator.hpp"
 #include "kvdk/engine.hpp"
 #include "sorted_collection/iterator.hpp"
 #include "structures.hpp"

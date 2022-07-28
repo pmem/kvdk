@@ -339,16 +339,15 @@ class DLList {
   LockTable* lock_table_;
 };
 
-// Iter all valid data in a dl list
-class DLListAccessIterator {
+// Iter valid data under a snapshot in a dl list
+class DLListDataIterator {
  public:
-  DLListAccessIterator(DLList* dl_list, const PMEMAllocator* pmem_allocator,
-                       const SnapshotImpl* snapshot, bool own_snapshot)
+  DLListDataIterator(DLList* dl_list, const PMEMAllocator* pmem_allocator,
+                     const SnapshotImpl* snapshot)
       : dl_list_(dl_list),
         pmem_allocator_(pmem_allocator),
         current_(nullptr),
-        snapshot_(snapshot),
-        own_snapshot_(own_snapshot) {}
+        snapshot_(snapshot) {}
 
   void Locate(DLRecord* record, bool forward) {
     kvdk_assert(record != nullptr, "");
@@ -437,7 +436,6 @@ class DLListAccessIterator {
   const PMEMAllocator* pmem_allocator_;
   DLRecord* current_;
   const SnapshotImpl* snapshot_;
-  bool own_snapshot_;
 };
 
 // Iter all records in a dl list

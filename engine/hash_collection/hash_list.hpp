@@ -2,10 +2,7 @@
 
 #include "../dl_list.hpp"
 #include "../hash_table.hpp"
-#include "../version/version_controller.hpp"
 #include "../write_batch_impl.hpp"
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
 #include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -115,70 +112,4 @@ class HashList : public Collection {
                              const StringView& key, TimeStampType timestamp,
                              const SpaceEntry& space);
 };
-
-class HashIteratorImpl final : public HashIterator {
- public:
-  HashIteratorImpl(Engine* engine, HashList* hlist,
-                   const SnapshotImpl* snapshot, bool own_snapshot)
-      : engine_(engine),
-        hlist_(hlist),
-        snapshot_(snapshot),
-        own_snapshot_(own_snapshot),
-        dl_iter_(&hlist->dl_list_, hlist->pmem_allocator_, snapshot,
-                 own_snapshot) {}
-  void SeekToFirst() final { dl_iter_.SeekToFirst(); }
-
-  void SeekToLast() final { dl_iter_.SeekToLast(); }
-
-  bool Valid() const final { return dl_iter_.Valid(); }
-
-  void Next() final { dl_iter_.Next(); }
-
-  void Prev() final { dl_iter_.Prev(); }
-
-  std::string Key() const final {
-    if (!Valid()) {
-      kvdk_assert(false, "Accessing data with invalid HashIterator!");
-      return std::string{};
-    }
-    return string_view_2_string(Collection::ExtractUserKey(dl_iter_.Key()));
-  }
-
-  std::string Value() const final {
-    if (!Valid()) {
-      kvdk_assert(false, "Accessing data with invalid HashIterator!");
-      return std::string{};
-    }
-    return string_view_2_string(dl_iter_.Value());
-  }
-
-  bool MatchKey(std::regex const& re) final {
-    if (!Valid()) {
-      kvdk_assert(false, "Accessing data with invalid HashIterator!");
-      return false;
-    }
-    return std::regex_match(Key(), re);
-  }
-
-  ~HashIteratorImpl() final {
-    if (own_snapshot_ && snapshot_) {
-      engine_->ReleaseSnapshot(snapshot_);
-    }
-  };
-
- public:
-  HashIteratorImpl(DLList* l, PMEMAllocator* pmem_allocator,
-                   const SnapshotImpl* snapshot, bool own_snapshot)
-      : dl_iter_(l, pmem_allocator, snapshot, own_snapshot) {
-    kvdk_assert(l != nullptr, "");
-  }
-
- private:
-  Engine* engine_;
-  HashList* hlist_;
-  const SnapshotImpl* snapshot_;
-  bool own_snapshot_;
-  DLListAccessIterator dl_iter_;
-};
-
 }  // namespace KVDK_NAMESPACE

@@ -18,7 +18,7 @@ class SortedIterator : public Iterator {
       : skiplist_(skiplist),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
-        dl_iter_(&skiplist->dl_list_, pmem_allocator, snapshot, own_snapshot) {}
+        dl_iter_(&skiplist->dl_list_, pmem_allocator, snapshot) {}
 
   virtual ~SortedIterator() = default;
 
@@ -55,6 +55,6 @@ class SortedIterator : public Iterator {
   Skiplist* skiplist_;
   const SnapshotImpl* snapshot_;
   bool own_snapshot_;
-  DLListAccessIterator dl_iter_;
+  DLListDataIterator dl_iter_;
 };
 }  // namespace KVDK_NAMESPACE
