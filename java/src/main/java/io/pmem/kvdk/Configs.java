@@ -15,7 +15,6 @@ public class Configs extends KVDKObject {
     }
 
     public Configs setMaxAccessThreads(final long num_threads) {
-        assert (isOwningHandle());
         setMaxAccessThreads(nativeHandle_, num_threads);
         return this;
     }
@@ -26,43 +25,36 @@ public class Configs extends KVDKObject {
      * @return
      */
     public Configs setPMemFileSize(final long size) {
-        assert (isOwningHandle());
         setPMemFileSize(nativeHandle_, size);
         return this;
     }
 
     public Configs setPMemSegmentBlocks(final long blocks) {
-        assert (isOwningHandle());
         setPMemSegmentBlocks(nativeHandle_, blocks);
         return this;
     }
 
     public Configs setHashBucketNum(final long num) {
-        assert (isOwningHandle());
         setHashBucketNum(nativeHandle_, num);
         return this;
     }
 
     public Configs setPopulatePMemSpace(final boolean populate) {
-        assert (isOwningHandle());
         setPopulatePMemSpace(nativeHandle_, populate);
         return this;
     }
 
     public Configs setOptLargeSortedCollectionRecovery(final boolean opt) {
-        assert (isOwningHandle());
         setOptLargeSortedCollectionRecovery(nativeHandle_, opt);
         return this;
     }
 
     public Configs setUseDevDaxMode(final boolean use) {
-        assert (isOwningHandle());
         setUseDevDaxMode(nativeHandle_, use);
         return this;
     }
 
     public Configs setCleanThreads(final long num_threads) {
-        assert (isOwningHandle());
         setCleanThreads(nativeHandle_, num_threads);
         return this;
     }
