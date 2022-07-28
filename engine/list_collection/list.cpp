@@ -4,23 +4,6 @@
 
 #include "list.hpp"
 
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
-#include <thread>
-#include <unordered_map>
-#include <unordered_set>
-
-#include "../alias.hpp"
-#include "../collection.hpp"
-#include "../dl_list.hpp"
-#include "../hash_table.hpp"
-#include "../lock_table.hpp"
-#include "../structures.hpp"
-#include "../utils/utils.hpp"
-#include "../write_batch_impl.hpp"
-#include "kvdk/engine.hpp"
-
 namespace KVDK_NAMESPACE {
 List::WriteResult List::SetExpireTime(ExpireTimeType expired_time,
                                       TimeStampType timestamp) {

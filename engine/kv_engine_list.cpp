@@ -1,4 +1,5 @@
 #include "kv_engine.hpp"
+#include "list_collection/iterator.hpp"
 #include "utils/sync_point.hpp"
 
 namespace KVDK_NAMESPACE {

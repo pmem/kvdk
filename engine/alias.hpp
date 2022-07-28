@@ -9,6 +9,8 @@
 #include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
+enum class WriteOp { Put, Delete };
+
 // Internal types
 using PMemOffsetType = std::uint64_t;
 using TimeStampType = std::uint64_t;

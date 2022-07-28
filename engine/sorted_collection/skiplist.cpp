@@ -339,7 +339,7 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
     ret.s = Status::InvalidArgument;
     return ret;
   }
-  if (args.op == WriteBatchImpl::Op::Put) {
+  if (args.op == WriteOp::Put) {
     if (IndexWithHashtable()) {
       ret = putPreparedWithHash(args.lookup_result, args.key, args.value,
                                 args.ts, args.space);
@@ -378,7 +378,7 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
 
 SortedWriteArgs Skiplist::InitWriteArgs(const StringView& key,
                                         const StringView& value,
-                                        WriteBatchImpl::Op op) {
+                                        WriteOp op) {
   SortedWriteArgs args;
   args.collection = Name();
   args.skiplist = this;
@@ -389,12 +389,12 @@ SortedWriteArgs Skiplist::InitWriteArgs(const StringView& key,
 }
 
 Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
-  kvdk_assert(args.op == WriteBatchImpl::Op::Put || args.value.size() == 0,
+  kvdk_assert(args.op == WriteOp::Put || args.value.size() == 0,
               "value of delete operation should be empty");
   if (args.skiplist != this) {
     return Status::InvalidArgument;
   }
-  bool op_delete = args.op == WriteBatchImpl::Op::Delete;
+  bool op_delete = args.op == WriteOp::Delete;
   std::string internal_key(InternalKey(args.key));
   bool allocate_space = true;
   if (IndexWithHashtable()) {
@@ -454,7 +454,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
 Skiplist::WriteResult Skiplist::Delete(const StringView& key,
                                        TimeStampType timestamp) {
   WriteResult ret;
-  SortedWriteArgs args = InitWriteArgs(key, "", WriteBatchImpl::Op::Delete);
+  SortedWriteArgs args = InitWriteArgs(key, "", WriteOp::Delete);
   ret.s = PrepareWrite(args);
   args.ts = timestamp;
   if (ret.s == Status::Ok && args.space.size > 0) {
@@ -467,7 +467,7 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
   WriteResult ret;
-  SortedWriteArgs args = InitWriteArgs(key, value, WriteBatchImpl::Op::Put);
+  SortedWriteArgs args = InitWriteArgs(key, value, WriteOp::Put);
   ret.s = PrepareWrite(args);
   args.ts = timestamp;
   if (ret.s == Status::Ok) {

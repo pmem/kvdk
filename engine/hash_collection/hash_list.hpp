@@ -2,7 +2,6 @@
 
 #include "../dl_list.hpp"
 #include "../hash_table.hpp"
-#include "../write_batch_impl.hpp"
 #include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -13,7 +12,7 @@ struct HashWriteArgs {
   StringView collection;
   StringView key;
   StringView value;
-  WriteBatchImpl::Op op;
+  WriteOp op;
   HashList* hlist;
   SpaceEntry space;
   TimeStampType ts;
@@ -59,7 +58,7 @@ class HashList : public Collection {
                      void* modify_args, TimeStampType ts);
 
   HashWriteArgs InitWriteArgs(const StringView& key, const StringView& value,
-                              WriteBatchImpl::Op op);
+                              WriteOp op);
 
   Status PrepareWrite(HashWriteArgs& args, TimeStampType ts);
 

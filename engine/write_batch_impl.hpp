@@ -18,23 +18,21 @@ struct Splice;
 
 class WriteBatchImpl final : public WriteBatch {
  public:
-  enum class Op { Put, Delete };
-
   struct StringOp {
-    Op op;
+    WriteOp op;
     std::string key;
     std::string value;
   };
 
   struct SortedOp {
-    Op op;
+    WriteOp op;
     std::string collection;
     std::string key;
     std::string value;
   };
 
   struct HashOp {
-    Op op;
+    WriteOp op;
     std::string collection;
     std::string key;
     std::string value;
@@ -62,39 +60,39 @@ class WriteBatchImpl final : public WriteBatch {
   };
 
   void StringPut(std::string const& key, std::string const& value) final {
-    StringOp op{Op::Put, key, value};
+    StringOp op{WriteOp::Put, key, value};
     string_ops.erase(op);
     string_ops.insert(op);
   }
 
   void StringDelete(std::string const& key) final {
-    StringOp op{Op::Delete, key, std::string{}};
+    StringOp op{WriteOp::Delete, key, std::string{}};
     string_ops.erase(op);
     string_ops.insert(op);
   }
 
   void SortedPut(std::string const& key, std::string const& field,
                  std::string const& value) final {
-    SortedOp op{Op::Put, key, field, value};
+    SortedOp op{WriteOp::Put, key, field, value};
     sorted_ops.erase(op);
     sorted_ops.insert(op);
   }
 
   void SortedDelete(std::string const& key, std::string const& field) final {
-    SortedOp op{Op::Delete, key, field, std::string{}};
+    SortedOp op{WriteOp::Delete, key, field, std::string{}};
     sorted_ops.erase(op);
     sorted_ops.insert(op);
   }
 
   void HashPut(std::string const& key, std::string const& field,
                std::string const& value) final {
-    HashOp op{Op::Put, key, field, value};
+    HashOp op{WriteOp::Put, key, field, value};
     hash_ops.erase(op);
     hash_ops.insert(op);
   }
 
   void HashDelete(std::string const& key, std::string const& field) final {
-    HashOp op{Op::Delete, key, field, std::string{}};
+    HashOp op{WriteOp::Delete, key, field, std::string{}};
     hash_ops.erase(op);
     hash_ops.insert(op);
   }
@@ -126,7 +124,7 @@ class WriteBatchImpl final : public WriteBatch {
 struct StringWriteArgs {
   StringView key;
   StringView value;
-  WriteBatchImpl::Op op;
+  WriteOp op;
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult res;

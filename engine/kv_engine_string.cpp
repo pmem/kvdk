@@ -295,7 +295,7 @@ Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
       args.res.s != Status::Outdated) {
     return args.res.s;
   }
-  if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+  if (args.op == WriteOp::Delete && args.res.s != Status::Ok) {
     return Status::Ok;
   }
   args.space =
@@ -307,13 +307,13 @@ Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWrite(StringWriteArgs& args) {
-  RecordStatus record_status = args.op == WriteBatchImpl::Op::Put
+  RecordStatus record_status = args.op == WriteOp::Put
                                    ? RecordStatus::Normal
                                    : RecordStatus::Outdated;
   void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
   PMemOffsetType old_off;
   if (args.res.s == Status::NotFound) {
-    kvdk_assert(args.op == WriteBatchImpl::Op::Put, "");
+    kvdk_assert(args.op == WriteOp::Put, "");
     old_off = kNullPMemOffset;
   } else {
     kvdk_assert(args.res.s == Status::Ok || args.res.s == Status::Outdated, "");
@@ -327,7 +327,7 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
-  RecordStatus record_status = args.op == WriteBatchImpl::Op::Put
+  RecordStatus record_status = args.op == WriteOp::Put
                                    ? RecordStatus::Normal
                                    : RecordStatus::Outdated;
   insertKeyOrElem(args.res, RecordType::String, record_status,

@@ -33,7 +33,7 @@ struct SortedWriteArgs {
   StringView collection;
   StringView key;
   StringView value;
-  WriteBatchImpl::Op op;
+  WriteOp op;
   Skiplist* skiplist;
   SpaceEntry space;
   TimeStampType ts;
@@ -233,7 +233,7 @@ class Skiplist : public Collection {
 
   // Init args for write operations
   SortedWriteArgs InitWriteArgs(const StringView& key, const StringView& value,
-                                WriteBatchImpl::Op op);
+                                WriteOp op);
 
   // Prepare neccessary resources for write, store lookup/seek result and pmem
   // space to write new reocrd in args

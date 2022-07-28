@@ -9,7 +9,7 @@ HashList::WriteResult HashList::Put(const StringView& key,
                                     const StringView& value,
                                     TimeStampType timestamp) {
   WriteResult ret;
-  HashWriteArgs args = InitWriteArgs(key, value, WriteBatchImpl::Op::Put);
+  HashWriteArgs args = InitWriteArgs(key, value, WriteOp::Put);
   ret.s = PrepareWrite(args, timestamp);
   if (ret.s == Status::Ok) {
     ret = Write(args);
@@ -41,7 +41,7 @@ Status HashList::Get(const StringView& key, std::string* value) {
 HashList::WriteResult HashList::Delete(const StringView& key,
                                        TimeStampType timestamp) {
   WriteResult ret;
-  HashWriteArgs args = InitWriteArgs(key, "", WriteBatchImpl::Op::Delete);
+  HashWriteArgs args = InitWriteArgs(key, "", WriteOp::Delete);
   ret.s = PrepareWrite(args, timestamp);
   if (ret.s == Status::Ok && args.space.size > 0) {
     ret = Write(args);
@@ -81,7 +81,7 @@ HashList::WriteResult HashList::Modify(const StringView key,
     case ModifyOperation::Write: {
       // TODO: check new value size
       HashWriteArgs args =
-          InitWriteArgs(key, new_value, WriteBatchImpl::Op::Put);
+          InitWriteArgs(key, new_value, WriteOp::Put);
       args.ts = ts;
       args.lookup_result = lookup_result;
       args.space = pmem_allocator_->Allocate(
@@ -94,7 +94,7 @@ HashList::WriteResult HashList::Modify(const StringView key,
     }
 
     case ModifyOperation::Delete: {
-      HashWriteArgs args = InitWriteArgs(key, "", WriteBatchImpl::Op::Delete);
+      HashWriteArgs args = InitWriteArgs(key, "", WriteOp::Delete);
       args.ts = ts;
       args.lookup_result = lookup_result;
       args.space =
@@ -119,7 +119,7 @@ HashList::WriteResult HashList::Modify(const StringView key,
 
 HashWriteArgs HashList::InitWriteArgs(const StringView& key,
                                       const StringView& value,
-                                      WriteBatchImpl::Op op) {
+                                      WriteOp op) {
   HashWriteArgs args;
   args.key = key;
   args.value = value;
@@ -130,14 +130,14 @@ HashWriteArgs HashList::InitWriteArgs(const StringView& key,
 }
 
 Status HashList::PrepareWrite(HashWriteArgs& args, TimeStampType ts) {
-  kvdk_assert(args.op == WriteBatchImpl::Op::Put || args.value.size() == 0,
+  kvdk_assert(args.op == WriteOp::Put || args.value.size() == 0,
               "value of delete operation should be empty");
   if (args.hlist != this) {
     return Status::InvalidArgument;
   }
 
   args.ts = ts;
-  bool op_delete = args.op == WriteBatchImpl::Op::Delete;
+  bool op_delete = args.op == WriteOp::Delete;
   std::string internal_key(InternalKey(args.key));
   bool allocate_space = true;
   if (op_delete) {
@@ -186,7 +186,7 @@ HashList::WriteResult HashList::Write(HashWriteArgs& args) {
     ret.s = Status::InvalidArgument;
     return ret;
   }
-  if (args.op == WriteBatchImpl::Op::Put) {
+  if (args.op == WriteOp::Put) {
     ret = putPrepared(args.lookup_result, args.key, args.value, args.ts,
                       args.space);
   } else {

@@ -22,6 +22,7 @@
 #include "dram_allocator.hpp"
 #include "hash_collection/iterator.hpp"
 #include "kvdk/engine.hpp"
+#include "list_collection/iterator.hpp"
 #include "sorted_collection/iterator.hpp"
 #include "structures.hpp"
 #include "utils/sync_point.hpp"
@@ -1057,7 +1058,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    if (args.op == WriteBatchImpl::Op::Put) {
+    if (args.op == WriteOp::Put) {
       log.StringPut(args.space.offset);
     } else {
       log.StringDelete(args.space.offset);
@@ -1067,7 +1068,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    if (args.op == WriteBatchImpl::Op::Put) {
+    if (args.op == WriteOp::Put) {
       log.SortedPut(args.space.offset);
     } else {
       log.SortedDelete(args.space.offset);
@@ -1078,7 +1079,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    if (args.op == WriteBatchImpl::Op::Put) {
+    if (args.op == WriteOp::Put) {
       log.HashPut(args.space.offset);
     } else {
       log.HashDelete(args.space.offset);
