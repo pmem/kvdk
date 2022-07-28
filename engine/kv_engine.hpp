@@ -416,8 +416,6 @@ class KVEngine : public Engine {
 
   Status listBatchPushImpl(StringView key, int pos,
                            std::vector<StringView> const& elems);
-  Status listBatchPopImpl(StringView key, int pos, size_t n,
-                          std::vector<std::string>* elems);
   Status listRollback(BatchWriteLog::ListLogEntry const& entry);
 
   /// Hash helper funtions

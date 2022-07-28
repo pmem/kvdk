@@ -278,7 +278,16 @@ Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPopImpl(list_name, 0, n, elems);
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  List* list;
+  s = listFind(list_name, &list);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto guard = list->AcquireLock();
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  return list->BatchPopFront(n, elems, bw_token.Timestamp(),
+                             engine_thread_cache_[access_thread.id].batch_log);
 }
 
 Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
@@ -294,7 +303,17 @@ Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  return listBatchPopImpl(list_name, -1, n, elems);
+
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  List* list;
+  s = listFind(list_name, &list);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto guard = list->AcquireLock();
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  return list->BatchPopBack(n, elems, bw_token.Timestamp(),
+                            engine_thread_cache_[access_thread.id].batch_log);
 }
 
 Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
@@ -572,42 +591,6 @@ Status KVEngine::listBatchPushImpl(StringView list_name, int pos,
   }
   BatchWriteLog::MarkCommitted(tc.batch_log);
   spaces.clear();
-  return Status::Ok;
-}
-
-Status KVEngine::listBatchPopImpl(StringView list_name, int pos, size_t n,
-                                  std::vector<std::string>* elems) {
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  List* list;
-  Status s = listFind(list_name, &list);
-  if (s != Status::Ok) {
-    return s;
-  }
-  auto guard = list->AcquireLock();
-
-  auto bw_token = version_controller_.GetBatchWriteToken();
-  BatchWriteLog log;
-  log.SetTimestamp(bw_token.Timestamp());
-
-  elems->clear();
-  size_t nn = n;
-  while (nn > 0) {
-    auto ret = pos == 0 ? list->PopFront(bw_token.Timestamp())
-                        : list->PopBack(bw_token.Timestamp());
-    if (ret.s != Status::Ok) {
-      break;
-    }
-    StringView elem = ret.existing_record->Value();
-    elems->emplace_back(elem.data(), elem.size());
-    log.ListDelete(pmem_allocator_->addr2offset_checked(ret.write_record));
-    --nn;
-  }
-
-  auto& tc = engine_thread_cache_[access_thread.id];
-  log.EncodeTo(tc.batch_log);
-  BatchWriteLog::MarkProcessing(tc.batch_log);
-
-  BatchWriteLog::MarkCommitted(tc.batch_log);
   return Status::Ok;
 }
 

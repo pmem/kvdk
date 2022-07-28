@@ -35,6 +35,8 @@ class DLList {
 
     WriteArgs(const WriteArgs&) = delete;
 
+    WriteArgs(WriteArgs&& args) = default;
+
     StringView key;
     StringView val;
     RecordType type;

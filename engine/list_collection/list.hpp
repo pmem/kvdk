@@ -73,6 +73,16 @@ class List : public Collection {
     return ret;
   }
 
+  Status BatchPopBack(size_t n, std::vector<std::string>* elems,
+                      TimeStampType batch_ts, char* batch_log) {
+    return batchPopImpl(n, -1, elems, batch_ts, batch_log);
+  }
+
+  Status BatchPopFront(size_t n, std::vector<std::string>* elems,
+                       TimeStampType batch_ts, char* batch_log) {
+    return batchPopImpl(n, 0, elems, batch_ts, batch_log);
+  }
+
   WriteResult PushFront(const StringView& elem, TimeStampType ts,
                         const SpaceEntry space) {
     WriteResult ret;
@@ -149,15 +159,14 @@ class List : public Collection {
     for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
       DLRecord* record = iter.Record();
       if (record->GetRecordStatus() == RecordStatus::Normal) {
-        SpaceEntry space = pmem_allocator_->Allocate(
-            DLRecord::RecordSize(record->Key(), record->Value()));
+        SpaceEntry space =
+            pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
         if (space.size == 0) {
           ret.s = Status::PmemOverflow;
           return ret;
         }
-        DLList::WriteArgs args(record->Key(), record->Value(),
-                               RecordType::ListElem, RecordStatus::Outdated, ts,
-                               space);
+        DLList::WriteArgs args(record->Key(), "", RecordType::ListElem,
+                               RecordStatus::Outdated, ts, space);
         ret.s = dl_list_.Update(args, record);
         kvdk_assert(ret.s == Status::Ok,
                     "the whole list is locked so the update must be success");
@@ -179,15 +188,14 @@ class List : public Collection {
     for (iter.SeekToLast(); iter.Valid(); iter.Prev()) {
       DLRecord* record = iter.Record();
       if (record->GetRecordStatus() == RecordStatus::Normal) {
-        SpaceEntry space = pmem_allocator_->Allocate(
-            DLRecord::RecordSize(record->Key(), record->Value()));
+        SpaceEntry space =
+            pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
         if (space.size == 0) {
           ret.s = Status::PmemOverflow;
           return ret;
         }
-        DLList::WriteArgs args(record->Key(), record->Value(),
-                               RecordType::ListElem, RecordStatus::Outdated, ts,
-                               space);
+        DLList::WriteArgs args(record->Key(), "", RecordType::ListElem,
+                               RecordStatus::Outdated, ts, space);
         ret.s = dl_list_.Update(args, record);
         kvdk_assert(ret.s == Status::Ok,
                     "the whole list is locked so the update must be success");
@@ -443,6 +451,77 @@ class List : public Collection {
   }
 
  private:
+  Status batchPushImpl(int pos, const std::vector<StringView>& elems,
+                       TimeStampType batch_ts, char* batch_log) {
+    BatchWriteLog log;
+    log.SetTimestamp(batch_ts);
+    std::vector<DLList::WriteArgs> write_args;
+    std::string internal_key(InternalKey(""));
+    for (auto& elem : elems) {
+      SpaceEntry space =
+          pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+      if (space.size == 0) {
+        return Status::PmemOverflow;
+      }
+      write_args.emplace_back(internal_key, elem, RecordType::ListElem,
+                              RecordStatus::Normal, batch_ts, space);
+      log.ListEmplace(space.offset);
+    }
+    log.EncodeTo(batch_log);
+    BatchWriteLog::MarkProcessing(batch_log);
+    for (auto& wa : write_args) {
+      Status s = pos == 0 ? dl_list_.PushFront(wa) : dl_list_.PushBack(wa);
+      kvdk_assert(s == Status::Ok, "Push back should always success");
+    }
+    UpdateSize(elems.size());
+    BatchWriteLog::MarkCommitted(batch_log);
+    return Status::Ok;
+  }
+
+  Status batchPopImpl(size_t n, int pos, std::vector<std::string>* elems,
+                      TimeStampType batch_ts, char* batch_log) {
+    kvdk_assert(batch_log != nullptr, "");
+    BatchWriteLog log;
+    log.SetTimestamp(batch_ts);
+    if (elems) {
+      elems->clear();
+    }
+    size_t nn = n;
+    std::vector<DLRecord*> to_pop;
+    std::vector<DLList::WriteArgs> write_args;
+    DLListRecordIterator iter(&dl_list_, pmem_allocator_);
+    for (pos == 0 ? iter.SeekToFirst() : iter.SeekToLast();
+         iter.Valid() && nn-- > 0; pos == 0 ? iter.Next() : iter.Prev()) {
+      DLRecord* record = iter.Record();
+      if (record->GetRecordStatus() == RecordStatus::Normal) {
+        SpaceEntry space =
+            pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
+        if (space.size == 0) {
+          return Status::PmemOverflow;
+        }
+        to_pop.emplace_back(record);
+        write_args.emplace_back(record->Key(), "", RecordType::ListElem,
+                                RecordStatus::Outdated, batch_ts, space);
+        log.ListDelete(space.offset);
+      }
+    }
+    log.EncodeTo(batch_log);
+    BatchWriteLog::MarkProcessing(batch_log);
+    for (size_t i = 0; i < to_pop.size(); i++) {
+      if (elems) {
+        StringView sw = to_pop[i]->Value();
+        elems->emplace_back(sw.data(), sw.size());
+      }
+      Status s = dl_list_.Update(write_args[i], to_pop[i]);
+      kvdk_assert(
+          s == Status::Ok,
+          "the whole list should be locked, so the update must be success");
+    }
+    UpdateSize(-to_pop.size());
+    BatchWriteLog::MarkCommitted(batch_log);
+    return Status::Ok;
+  }
+
   friend ListIteratorImpl;
   std::recursive_mutex list_lock_;
   DLList dl_list_;
