@@ -278,16 +278,7 @@ Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
   if (s != Status::Ok) {
     return s;
   }
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  List* list;
-  s = listFind(list_name, &list);
-  if (s != Status::Ok) {
-    return s;
-  }
-  auto guard = list->AcquireLock();
-  auto bw_token = version_controller_.GetBatchWriteToken();
-  return list->BatchPopFront(n, elems, bw_token.Timestamp(),
-                             engine_thread_cache_[access_thread.id].batch_log);
+  return listBatchPopImpl(list_name, n, 0, elems);
 }
 
 Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
@@ -304,16 +295,7 @@ Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
     return s;
   }
 
-  auto token = version_controller_.GetLocalSnapshotHolder();
-  List* list;
-  s = listFind(list_name, &list);
-  if (s != Status::Ok) {
-    return s;
-  }
-  auto guard = list->AcquireLock();
-  auto bw_token = version_controller_.GetBatchWriteToken();
-  return list->BatchPopBack(n, elems, bw_token.Timestamp(),
-                            engine_thread_cache_[access_thread.id].batch_log);
+  return listBatchPopImpl(list_name, n, -1, elems);
 }
 
 Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
@@ -374,44 +356,36 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
   auto bw_token = version_controller_.GetBatchWriteToken();
   BatchWriteLog log;
   log.SetTimestamp(bw_token.Timestamp());
+  std::vector<std::string> elems;
 
-  // TODO first log
-  List::WriteResult ret;
-  if (src_pos == 0) {
-    ret = src_list->PopFront(bw_token.Timestamp());
-  } else {
-    ret = src_list->PopBack(bw_token.Timestamp());
+  auto pop_args =
+      src_list->PreparePopN(1, src_pos, bw_token.Timestamp(), &elems);
+  if (pop_args.s != Status::Ok) {
+    return pop_args.s;
+  }
+  kvdk_assert(elems.size() == 1, "");
+  elem->swap(elems[0]);
+  std::vector<StringView> elems_view{StringView(elem->data(), elem->size())};
+  auto push_args =
+      dst_list->PreparePushN(dst_pos, elems_view, bw_token.Timestamp());
+  if (push_args.s != Status::Ok) {
+    return push_args.s;
   }
 
-  if (ret.s == Status::Ok) {
-    elem->assign(ret.existing_record->Value().data(),
-                 ret.existing_record->Value().size());
-  } else {
-    return ret.s;
-  }
-
-  auto space = pmem_allocator_->Allocate(DLRecord::RecordSize("", *elem) +
-                                         sizeof(CollectionIDType));
-  if (space.size == 0) {
-    return Status::PmemOverflow;
-  }
-
-  log.ListDelete(pmem_allocator_->addr2offset_checked(ret.existing_record));
-  log.ListEmplace(space.offset);
-
+  log.ListDelete(pop_args.write_args[0].space.offset);
+  log.ListEmplace(push_args.write_args[0].space.size);
   auto& tc = engine_thread_cache_[access_thread.id];
   log.EncodeTo(tc.batch_log);
+
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
+  s = src_list->PopN(pop_args);
+  kvdk_assert(s == Status::Ok, "pop n always success");
   TEST_CRASH_POINT("KVEngine::ListMove", "");
-  if (dst_pos == 0) {
-    dst_list->PushFront(*elem, bw_token.Timestamp(), space);
-  } else {
-    dst_list->PushBack(*elem, bw_token.Timestamp(), space);
-  }
+  s = dst_list->PushN(push_args);
+  kvdk_assert(s == Status::Ok, "push n always success");
 
   BatchWriteLog::MarkCommitted(tc.batch_log);
-  // TODO free existing record
   return Status::Ok;
 }
 
@@ -553,45 +527,56 @@ Status KVEngine::listBatchPushImpl(StringView list_name, int pos,
   BatchWriteLog log;
   log.SetTimestamp(bw_token.Timestamp());
 
-  std::vector<SpaceEntry> spaces;
-  auto ReleaseResources = [&]() {
-// Don't Free() if we simulate a crash.
-#ifndef KVDK_ENABLE_CRASHPOINT
-    for (auto space : spaces) {
-      pmem_allocator_->Free(space);
-    }
-#endif
-  };
-  defer(ReleaseResources());
+  auto push_n_args = list->PreparePushN(pos, elems, bw_token.Timestamp());
+  if (push_n_args.s != Status::Ok) {
+    return push_n_args.s;
+  }
 
-  for (auto const& elem : elems) {
-    SpaceEntry space = pmem_allocator_->Allocate(
-        sizeof(DLRecord) + sizeof(CollectionIDType) + elem.size());
-    if (space.size == 0) {
-      return Status::PmemOverflow;
-    }
-    spaces.push_back(space);
-    log.ListEmplace(space.offset);
+  for (auto& wa : push_n_args.write_args) {
+    log.ListEmplace(wa.space.offset);
   }
 
   auto& tc = engine_thread_cache_[access_thread.id];
   log.EncodeTo(tc.batch_log);
   BatchWriteLog::MarkProcessing(tc.batch_log);
-  if (pos == 0) {
-    for (size_t i = 0; i < elems.size(); i++) {
-      list->PushFront(elems[i], bw_token.Timestamp(), spaces[i]);
-      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
-    }
-  } else {
-    kvdk_assert(pos == -1, "");
-    for (size_t i = 0; i < elems.size(); i++) {
-      list->PushBack(elems[i], bw_token.Timestamp(), spaces[i]);
-      TEST_CRASH_POINT("KVEngine::listBatchPushImpl", "");
-    }
-  }
+
+  s = list->PushN(push_n_args);
+  kvdk_assert(s == Status::Ok, "PushN always success");
   BatchWriteLog::MarkCommitted(tc.batch_log);
-  spaces.clear();
-  return Status::Ok;
+  return s;
+}
+
+Status KVEngine::listBatchPopImpl(StringView list_name, size_t n, int pos,
+                                  std::vector<std::string>* elems) {
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  List* list;
+  Status s = listFind(list_name, &list);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto guard = list->AcquireLock();
+
+  auto bw_token = version_controller_.GetBatchWriteToken();
+  BatchWriteLog log;
+  log.SetTimestamp(bw_token.Timestamp());
+
+  auto pop_n_args = list->PreparePopN(n, pos, bw_token.Timestamp(), elems);
+  if (pop_n_args.s != Status::Ok) {
+    return pop_n_args.s;
+  }
+
+  for (auto& wa : pop_n_args.write_args) {
+    log.ListDelete(wa.space.offset);
+  }
+
+  auto& tc = engine_thread_cache_[access_thread.id];
+  log.EncodeTo(tc.batch_log);
+  BatchWriteLog::MarkProcessing(tc.batch_log);
+
+  s = list->PopN(pop_n_args);
+  kvdk_assert(s == Status::Ok, "PopN always success with lock");
+  BatchWriteLog::MarkCommitted(tc.batch_log);
+  return s;
 }
 
 Status KVEngine::listRollback(BatchWriteLog::ListLogEntry const& log) {

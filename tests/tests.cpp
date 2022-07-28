@@ -2769,8 +2769,8 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   };
 
   SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::ListMove");
-  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPushImpl");
-  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPopImpl");
+  SyncPoint::GetInstance()->EnableCrashPoint("List::PushN");
+  SyncPoint::GetInstance()->EnableCrashPoint("List::PopN");
   SyncPoint::GetInstance()->EnableProcessing();
 
   Fill();
