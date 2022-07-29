@@ -32,7 +32,7 @@ jobs:
       - name: Check codestyle & Build
         run: |
           mkdir -p build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON
           make -j
 
       # The example program requires AVX512 which is not supported by Github hosted runners

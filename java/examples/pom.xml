@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.pmem</groupId>
+    <artifactId>kvdkjni-examples</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+
+    <name>KVDK JNI Examples</name>
+    <description>KVDK JNI Examples.</description>
+    <url>https://github.com/pmem/kvdk</url>
+    <inceptionYear>2021</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>BSD-3-Clause</name>
+            <url>hhttps://github.com/pmem/kvdk/blob/main/LICENSE</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:https://github.com/pmem/kvdk.git</connection>
+        <developerConnection>scm:git:https://github.com/pmem/kvdk.git</developerConnection>
+        <url>scm:git:https://github.com/pmem/kvdk.git</url>
+    </scm>
+
+    <organization>
+        <name>Intel</name>
+        <url>https://www.intel.com</url>
+    </organization>
+
+    <properties>
+        <kvdkjni.version>1.0.0-SNAPSHOT</kvdkjni.version>
+        <project.build.source>1.8</project.build.source>
+        <project.build.target>1.8</project.build.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <spotless.version>2.7.0</spotless.version>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.2</version>
+                <configuration>
+                    <source>${project.build.source}</source>
+                    <target>${project.build.target}</target>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.0.0-M5</version>
+                <configuration>
+                    <workingDirectory>target</workingDirectory>
+                    <argLine>-Djava.library.path=${project.build.directory}</argLine>
+                    <useManifestOnlyJar>false</useManifestOnlyJar>  
+                    <useSystemClassLoader>false</useSystemClassLoader>
+                    <additionalClasspathElements>
+                        <additionalClasspathElement>${project.build.directory}/*</additionalClasspathElement>
+                    </additionalClasspathElements>
+                    <environmentVariables>
+                        <PMEM_IS_PMEM_FORCE>1</PMEM_IS_PMEM_FORCE>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <googleJavaFormat>
+                            <version>1.7</version>
+                            <style>AOSP</style>
+                        </googleJavaFormat>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.pmem</groupId>
+            <artifactId>kvdkjni</artifactId>
+            <version>${kvdkjni.version}</version>
+        </dependency>
+    </dependencies>
+</project>
