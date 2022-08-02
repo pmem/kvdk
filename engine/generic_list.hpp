@@ -49,7 +49,6 @@ class GenericList final : public Collection {
   // Lock table to lock individual elements
   // Redis List don't use lock_table, Redis Hash does.
   LockTable* lock_table{nullptr};
-  GenericList* old_list{nullptr};
 
  public:
   // Deletion of a node in GenericList takes two steps.
@@ -202,8 +201,6 @@ class GenericList final : public Collection {
   GenericList& operator=(GenericList const&) = delete;
   GenericList& operator=(GenericList&&) = delete;
   ~GenericList() {
-    delete old_list;
-    old_list = nullptr;
     list_record = nullptr;
     alloc = nullptr;
   }
@@ -227,7 +224,6 @@ class GenericList final : public Collection {
   void Destroy(DelayFree delay_free) {
     kvdk_assert(list_record != nullptr, "Destroy() uninitialized.");
     kvdk_assert(Size() == 0, "Only empty list can be Destroy()ed");
-    kvdk_assert(old_list == nullptr, "");
     kvdk_assert(!isRecordDirty(list_record), "double Destroy()!");
     markRecordAsDirty(list_record);
     delay_free(list_record);
@@ -272,10 +268,6 @@ class GenericList final : public Collection {
     return list_record->GetExpireTime();
   }
 
-  TimeStampType GetTimeStamp() const {
-    return list_record->entry.meta.timestamp;
-  }
-
   bool HasExpired() const final {
     return TimeUtils::CheckIsExpired(GetExpireTime());
   }
@@ -311,22 +303,6 @@ class GenericList final : public Collection {
       }
       return iter;
     }
-  }
-
-  GenericList* OldVersion() const { return old_list; }
-
-  void AddOldVersion(GenericList* old) {
-    kvdk_assert(old_list == nullptr, "");
-    old_list = old;
-    kvdk_assert(old_list->ID() < ID(), "");
-    kvdk_assert(
-        old_list->list_record->GetTimestamp() < list_record->GetTimestamp(),
-        "");
-  }
-
-  void RemoveOldVersion() {
-    kvdk_assert(old_list != nullptr, "");
-    old_list = nullptr;
   }
 
   template <typename DelayFree>
@@ -796,7 +772,6 @@ class GenericListBuilder final {
   }
 
   void RebuildLists() {
-    std::unordered_map<StringView, List*> temp;
     countListElems();
     for (auto const& primer : primers) {
       if (primer.list_record == nullptr) {
@@ -808,14 +783,7 @@ class GenericListBuilder final {
       List* list = new List{};
       list->Restore(alloc, primer.list_record, primer.first, primer.last,
                     primer.size.load(), lock_table);
-      List* old_list = temp[list->Name()];
-      if (old_list != nullptr) {
-        list->AddOldVersion(old_list);
-      }
-      temp[list->Name()] = list;
-    }
-    for (auto const& pair : temp) {
-      rebuilded_lists->emplace(pair.second);
+      rebuilded_lists->emplace(list);
     }
   }
 

@@ -40,6 +40,9 @@ const uint8_t ExpirableRecordType =
 
 const uint8_t PrimaryRecordType = ExpirableRecordType;
 
+const uint8_t CollectionType =
+    RecordType::SortedHeader | RecordType::HashRecord | RecordType::ListRecord;
+
 struct DataHeader {
   DataHeader() = default;
   DataHeader(uint32_t c, uint32_t s) : checksum(c), record_size(s) {}
