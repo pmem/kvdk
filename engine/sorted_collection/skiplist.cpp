@@ -377,8 +377,7 @@ Skiplist::WriteResult Skiplist::Write(SortedWriteArgs& args) {
 }
 
 SortedWriteArgs Skiplist::InitWriteArgs(const StringView& key,
-                                        const StringView& value,
-                                        WriteOp op) {
+                                        const StringView& value, WriteOp op) {
   SortedWriteArgs args;
   args.collection = Name();
   args.skiplist = this;

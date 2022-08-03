@@ -80,8 +80,7 @@ HashList::WriteResult HashList::Modify(const StringView key,
   switch (modify_operation) {
     case ModifyOperation::Write: {
       // TODO: check new value size
-      HashWriteArgs args =
-          InitWriteArgs(key, new_value, WriteOp::Put);
+      HashWriteArgs args = InitWriteArgs(key, new_value, WriteOp::Put);
       args.ts = ts;
       args.lookup_result = lookup_result;
       args.space = pmem_allocator_->Allocate(
@@ -118,8 +117,7 @@ HashList::WriteResult HashList::Modify(const StringView key,
 }
 
 HashWriteArgs HashList::InitWriteArgs(const StringView& key,
-                                      const StringView& value,
-                                      WriteOp op) {
+                                      const StringView& value, WriteOp op) {
   HashWriteArgs args;
   args.key = key;
   args.value = value;

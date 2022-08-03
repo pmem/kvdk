@@ -111,7 +111,7 @@ Status KVEngine::Put(const StringView key, const StringView value,
     return s;
   }
 
-  if (!CheckKeySize(key) || !CheckKeySize(value)) {
+  if (!CheckKeySize(key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
 
@@ -307,9 +307,8 @@ Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWrite(StringWriteArgs& args) {
-  RecordStatus record_status = args.op == WriteOp::Put
-                                   ? RecordStatus::Normal
-                                   : RecordStatus::Outdated;
+  RecordStatus record_status =
+      args.op == WriteOp::Put ? RecordStatus::Normal : RecordStatus::Outdated;
   void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
   PMemOffsetType old_off;
   if (args.res.s == Status::NotFound) {
@@ -327,9 +326,8 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
-  RecordStatus record_status = args.op == WriteOp::Put
-                                   ? RecordStatus::Normal
-                                   : RecordStatus::Outdated;
+  RecordStatus record_status =
+      args.op == WriteOp::Put ? RecordStatus::Normal : RecordStatus::Outdated;
   insertKeyOrElem(args.res, RecordType::String, record_status,
                   const_cast<StringRecord*>(args.new_rec));
   return Status::Ok;
