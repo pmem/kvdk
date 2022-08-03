@@ -45,6 +45,8 @@ const uint8_t ElemType =
 
 const uint8_t HeaderType = (RecordType::SortedHeader | RecordType::HashHeader |
                             RecordType::ListRecord);
+const uint8_t CollectionType =
+    RecordType::SortedHeader | RecordType::HashHeader | RecordType::ListRecord;
 
 struct DataHeader {
   DataHeader() = default;

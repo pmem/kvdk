@@ -446,11 +446,7 @@ class KVEngine : public Engine {
   template <typename T>
   T* removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts);
 
-  // Workaround for expired list or hash list.
-  // TODO: replaced this by `removeOutDatedVersion` when list/hash list has
-  // mvcc.
-  template <typename T>
-  T* removeListOutDatedVersion(T* list, TimeStampType min_snapshot_ts);
+  void removeOutdatedSkiplist(Skiplist* collection);
 
   // find delete and old records in skiplist with no hash index
   void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
@@ -585,6 +581,7 @@ class KVEngine : public Engine {
 
   std::mutex skiplists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>> skiplists_;
+  std::set<Skiplist*, Collection::TTLCmp> expirable_skiplists_;
 
   std::mutex lists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<List>> lists_;
@@ -630,8 +627,6 @@ class KVEngine : public Engine {
   BackgroundWorkSignals bg_work_signals_;
 
   std::atomic<int64_t> round_robin_id_{0};
-
-  const uint64_t kMaxCachedOldRecords = 1024;
 };
 
 }  // namespace KVDK_NAMESPACE

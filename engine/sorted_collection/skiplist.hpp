@@ -130,7 +130,7 @@ struct SkiplistNode {
         auto next = RelaxedNext(l);
         // This node alread tagged by another thread
         if (next.GetTag() == NodeStatus::Deleted) {
-          continue;
+          break;
         }
         auto tagged = PointerWithTag<SkiplistNode, NodeStatus>(
             next.RawPointer(), NodeStatus::Deleted);
@@ -427,6 +427,10 @@ class Skiplist : public Collection {
     return 0;
   }
 
+  bool TryCleaningLock() { return clean_status_spin_.try_lock(); }
+
+  void ReleaseCleaningLock() { clean_status_spin_.unlock(); }
+
  private:
   friend SortedIterator;
 
@@ -547,6 +551,8 @@ class Skiplist : public Collection {
   SpinMutex obsolete_nodes_spin_;
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
+  // to avoid illegal access caused by cleaning skiplist by multi-thread
+  SpinMutex clean_status_spin_;
 };
 
 // A helper struct for locating a skiplist position

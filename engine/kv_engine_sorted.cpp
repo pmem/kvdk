@@ -101,13 +101,17 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
         pmem_allocator_->offset2addr_checked(space_entry.offset),
         space_entry.size, new_ts, RecordType::SortedHeader,
         RecordStatus::Outdated, pmem_allocator_->addr2offset_checked(header),
-        header->prev, header->next, collection_name, value);
+        header->prev, header->next, collection_name, value, 0);
     bool success =
         Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
                           pmem_allocator_.get(), dllist_locks_.get());
     kvdk_assert(success, "existing header should be linked on its skiplist");
     insertKeyOrElem(lookup_result, RecordType::SortedHeader,
                     RecordStatus::Outdated, skiplist);
+    {
+      std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
+      expirable_skiplists_.emplace(skiplist);
+    }
   } else if (lookup_result.s == Status::Outdated ||
              lookup_result.s == Status::NotFound) {
     lookup_result.s = Status::Ok;
