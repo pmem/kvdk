@@ -110,6 +110,11 @@ HashList::WriteResult HashList::Modify(const StringView key,
       return ret;
     }
 
+    case ModifyOperation::Noop: {
+      ret.s = Status::Ok;
+      return ret;
+    }
+
     default: {
       std::abort();  // non-reach area
     }
@@ -246,7 +251,7 @@ Status HashList::CheckIndex() {
   return Status::Ok;
 }
 
-CollectionIDType HashList::HashListID(const DLRecord* record) {
+CollectionIDType HashList::FetchID(const DLRecord* record) {
   assert(record != nullptr);
   switch (record->GetRecordType()) {
     case RecordType::HashElem:
@@ -270,12 +275,9 @@ void HashList::Destroy() {
       to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
       StringView key = to_destroy->Key();
       auto ul = hash_table_->AcquireLock(key);
-      // We need to purge destroyed records one by one in case engine crashed
-      // during destroy
       if (dl_list_.Remove(to_destroy)) {
         auto lookup_result =
             hash_table_->Lookup<false>(key, to_destroy->GetRecordType());
-
         if (lookup_result.s == Status::Ok) {
           DLRecord* hash_indexed_record = nullptr;
           auto hash_index = lookup_result.entry.GetIndex();
@@ -287,20 +289,75 @@ void HashList::Destroy() {
               hash_indexed_record = hash_index.dl_record;
               break;
             default:
-              kvdk_assert(false, "Wrong hash index type of sorted record");
+              kvdk_assert(false, "Wrong hash index type of hash record");
           }
+
           if (hash_indexed_record == to_destroy) {
             hash_table_->Erase(lookup_result.entry_ptr);
           }
         }
-        to_destroy->Destroy();
 
+        to_destroy->Destroy();
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
                              to_destroy->GetRecordSize());
+        if (to_free.size() > kMaxCachedOldRecords) {
+          pmem_allocator_->BatchFree(to_free);
+          to_free.clear();
+        }
       }
+    } while (to_destroy != header);
+  }
+  pmem_allocator_->BatchFree(to_free);
+}
 
-    } while (to_destroy !=
-             header /* header record should be the last detroyed one */);
+void HashList::DestroyAll() {
+  std::vector<SpaceEntry> to_free;
+  DLRecord* header = HeaderRecord();
+  if (header) {
+    DLRecord* to_destroy = nullptr;
+    do {
+      to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+      StringView key = to_destroy->Key();
+      auto ul = hash_table_->AcquireLock(key);
+      if (dl_list_.Remove(to_destroy)) {
+        auto lookup_result =
+            hash_table_->Lookup<false>(key, to_destroy->GetRecordType());
+        if (lookup_result.s == Status::Ok) {
+          DLRecord* hash_indexed_record = nullptr;
+          auto hash_index = lookup_result.entry.GetIndex();
+          switch (lookup_result.entry.GetIndexType()) {
+            case PointerType::HashList:
+              hash_indexed_record = hash_index.hlist->HeaderRecord();
+              break;
+            case PointerType::DLRecord:
+              hash_indexed_record = hash_index.dl_record;
+              break;
+            default:
+              kvdk_assert(false, "Wrong hash index type of hash record");
+          }
+
+          if (hash_indexed_record == to_destroy) {
+            hash_table_->Erase(lookup_result.entry_ptr);
+          }
+        }
+        auto old_record =
+            pmem_allocator_->offset2addr<DLRecord>(to_destroy->old_version);
+        while (old_record) {
+          auto old_version = old_record->old_version;
+          old_record->Destroy();
+          to_free.emplace_back(pmem_allocator_->addr2offset_checked(old_record),
+                               old_record->GetRecordSize());
+          old_record = pmem_allocator_->offset2addr<DLRecord>(old_version);
+        }
+        to_destroy->Destroy();
+        to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+                             to_destroy->GetRecordSize());
+        if (to_free.size() > kMaxCachedOldRecords) {
+          pmem_allocator_->BatchFree(to_free);
+          to_free.clear();
+        }
+      }
+    } while (to_destroy != header);
   }
   pmem_allocator_->BatchFree(to_free);
 }

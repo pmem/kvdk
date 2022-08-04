@@ -424,4 +424,56 @@ Status List::PopN(const List::PopNArgs& args) {
   UpdateSize(-args.to_pop.size());
   return Status::Ok;
 }
+
+void List::Destroy() {
+  std::vector<SpaceEntry> to_free;
+  DLRecord* header = HeaderRecord();
+  if (header) {
+    DLRecord* to_destroy = nullptr;
+    do {
+      to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+      if (dl_list_.Remove(to_destroy)) {
+        to_destroy->Destroy();
+        to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+                             to_destroy->GetRecordSize());
+        if (to_free.size() > kMaxCachedOldRecords) {
+          pmem_allocator_->BatchFree(to_free);
+          to_free.clear();
+        }
+      }
+    } while (to_destroy != header);
+  }
+  pmem_allocator_->BatchFree(to_free);
+}
+
+void List::DestroyAll() {
+  std::vector<SpaceEntry> to_free;
+  DLRecord* header = HeaderRecord();
+  if (header) {
+    DLRecord* to_destroy = nullptr;
+    do {
+      to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+      if (dl_list_.Remove(to_destroy)) {
+        auto old_record =
+            pmem_allocator_->offset2addr<DLRecord>(to_destroy->old_version);
+        while (old_record) {
+          auto old_version = old_record->old_version;
+          old_record->Destroy();
+          to_free.emplace_back(pmem_allocator_->addr2offset_checked(old_record),
+                               old_record->GetRecordSize());
+          old_record = pmem_allocator_->offset2addr<DLRecord>(old_version);
+        }
+
+        to_destroy->Destroy();
+        to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+                             to_destroy->GetRecordSize());
+        if (to_free.size() > kMaxCachedOldRecords) {
+          pmem_allocator_->BatchFree(to_free);
+          to_free.clear();
+        }
+      }
+    } while (to_destroy != header);
+  }
+  pmem_allocator_->BatchFree(to_free);
+}
 }  // namespace KVDK_NAMESPACE

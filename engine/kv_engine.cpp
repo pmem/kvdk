@@ -443,7 +443,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append skiplist elems following the header
-              auto skiplist = getSkiplist(Skiplist::SkiplistID(header));
+              auto skiplist = getSkiplist(Skiplist::FetchID(header));
               kvdk_assert(skiplist != nullptr,
                           "Backup skiplist should exist in map");
               auto skiplist_iter = SortedIterator(
@@ -473,7 +473,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append hlist elems following the header
-              auto hlist = getHashlist(HashList::HashListID(header));
+              auto hlist = getHashlist(HashList::FetchID(header));
               kvdk_assert(hlist != nullptr, "Backup hlist should exist in map");
               auto hlist_iter = HashIteratorImpl(
                   this, hlist.get(), static_cast<const SnapshotImpl*>(snapshot),
@@ -502,7 +502,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append hlist elems following the header
-              auto list = getList(List::ListID(header));
+              auto list = getList(List::FetchID(header));
               kvdk_assert(list != nullptr, "Backup list should exist in map");
               auto list_iter = ListIteratorImpl(
                   this, list.get(), static_cast<const SnapshotImpl*>(snapshot),
@@ -1420,12 +1420,19 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
         break;
       }
       case RecordType::SortedHeader:
+        result.s = result.entry.GetIndex().skiplist->HasExpired()
+                       ? Status::Outdated
+                       : Status::Ok;
+
+        break;
       case RecordType::ListRecord:
+        result.s = result.entry.GetIndex().list->HasExpired() ? Status::Outdated
+                                                              : Status::Ok;
+        break;
       case RecordType::HashHeader: {
-        result.s =
-            static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired()
-                ? Status::Outdated
-                : Status::Ok;
+        result.s = result.entry.GetIndex().hlist->HasExpired()
+                       ? Status::Outdated
+                       : Status::Ok;
         break;
       }
       default: {

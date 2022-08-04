@@ -18,7 +18,7 @@ namespace KVDK_NAMESPACE {
 
 StringView SkiplistNode::UserKey() { return Skiplist::UserKey(this); }
 
-uint64_t SkiplistNode::SkiplistID() { return Skiplist::SkiplistID(this); }
+uint64_t SkiplistNode::SkiplistID() { return Skiplist::FetchID(this); }
 
 Skiplist::~Skiplist() {
   destroyNodes();
@@ -303,7 +303,7 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
   // prev and next won't be freed during this operation, so id and order won't
   // be changed anymore. We only check id and order in debug mode
   auto check_id = [&]() {
-    return SkiplistID(next_record) == ID() && SkiplistID(prev_record) == ID();
+    return FetchID(next_record) == ID() && FetchID(prev_record) == ID();
   };
 
   auto check_order = [&]() {
@@ -837,28 +837,11 @@ void Skiplist::destroyAllRecords() {
         auto old_record = static_cast<DLRecord*>(
             pmem_allocator_->offset2addr(to_destroy->old_version));
         while (old_record) {
-          switch (old_record->GetRecordType()) {
-            case RecordType::SortedHeader: {
-              kvdk_assert(
-                  old_record->GetRecordStatus() != RecordStatus::Outdated,
-                  "the old version list hasn't the outdated status "
-                  "header record\n");
-              old_record->entry.Destroy();
-              to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
-                                   old_record->entry.header.record_size);
-              break;
-            }
-            case RecordType::SortedElem: {
-              old_record->Destroy();
-              to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
-                                   old_record->GetRecordSize());
-              break;
-            }
-            default:
-              std::abort();
-          }
-          old_record = static_cast<DLRecord*>(
-              pmem_allocator_->offset2addr(old_record->old_version));
+          auto old_version = old_record->old_version;
+          old_record->Destroy();
+          to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
+                               old_record->GetRecordSize());
+          old_record = pmem_allocator_->offset2addr<DLRecord>(old_version);
         }
 
         to_destroy->Destroy();

@@ -114,7 +114,7 @@ class HashListRebuilder {
       DLRecord* valid_version_record = findCheckpointVersion(header_record);
       std::shared_ptr<HashList> hlist;
       if (valid_version_record == nullptr ||
-          HashList::HashListID(valid_version_record) != id) {
+          HashList::FetchID(valid_version_record) != id) {
         hlist = std::make_shared<HashList>(header_record, collection_name, id,
                                            pmem_allocator_, hash_table_,
                                            lock_table_);
@@ -183,7 +183,7 @@ class HashListRebuilder {
       return pmem_record;
     }
 
-    CollectionIDType id = HashList::HashListID(pmem_record);
+    CollectionIDType id = HashList::FetchID(pmem_record);
     DLRecord* curr = pmem_record;
     while (curr != nullptr &&
            curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
@@ -195,7 +195,7 @@ class HashListRebuilder {
           "Broken checkpoint: key of older version sorted data is "
           "not same as new "
           "version");
-      if (curr && HashList::HashListID(curr) != id) {
+      if (curr && HashList::FetchID(curr) != id) {
         curr = nullptr;
       }
     }

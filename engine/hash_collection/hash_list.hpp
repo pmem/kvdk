@@ -77,12 +77,10 @@ class HashList : public Collection {
 
   TimeStampType GetTimeStamp() const { return HeaderRecord()->GetTimestamp(); }
 
-  bool HasExpired() const final {
-    return TimeUtils::CheckIsExpired(GetExpireTime());
-  }
+  bool HasExpired() const final { return HeaderRecord()->HasExpired(); }
 
   // Destroy and free the whole hash list with old version list.
-  void DestroyAll() {}
+  void DestroyAll();
 
   void Destroy();
 
@@ -94,7 +92,11 @@ class HashList : public Collection {
 
   Status CheckIndex();
 
-  static CollectionIDType HashListID(const DLRecord* record);
+  bool TryCleaningLock() { return cleaning_lock_.try_lock(); }
+
+  void ReleaseCleaningLock() { cleaning_lock_.unlock(); }
+
+  static CollectionIDType FetchID(const DLRecord* record);
 
  private:
   friend HashIteratorImpl;
@@ -102,6 +104,8 @@ class HashList : public Collection {
   std::atomic<size_t> size_;
   PMEMAllocator* pmem_allocator_;
   HashTable* hash_table_;
+  // to avoid illegal access caused by cleaning skiplist by multi-thread
+  SpinMutex cleaning_lock_;
 
   WriteResult putPrepared(const HashTable::LookupResult& lookup_result,
                           const StringView& key, const StringView& value,

@@ -114,7 +114,7 @@ class ListRebuilder {
       DLRecord* valid_version_record = findCheckpointVersion(header_record);
       std::shared_ptr<List> list;
       if (valid_version_record == nullptr ||
-          List::ListID(valid_version_record) != id) {
+          List::FetchID(valid_version_record) != id) {
         list = std::make_shared<List>(header_record, collection_name, id,
                                       pmem_allocator_, lock_table_);
         {
@@ -181,7 +181,7 @@ class ListRebuilder {
       return pmem_record;
     }
 
-    CollectionIDType id = List::ListID(pmem_record);
+    CollectionIDType id = List::FetchID(pmem_record);
     DLRecord* curr = pmem_record;
     while (curr != nullptr &&
            curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
@@ -193,7 +193,7 @@ class ListRebuilder {
           "Broken checkpoint: key of older version sorted data is "
           "not same as new "
           "version");
-      if (curr && List::ListID(curr) != id) {
+      if (curr && List::FetchID(curr) != id) {
         curr = nullptr;
       }
     }
@@ -263,7 +263,10 @@ class ListRebuilder {
 
     // clean invalid skiplists
     for (auto& s : invalid_lists_) {
-      s.second->Destroy();
+      {
+        auto ul = s.second->AcquireLock();
+        s.second->Destroy();
+      }
     }
     invalid_lists_.clear();
   }

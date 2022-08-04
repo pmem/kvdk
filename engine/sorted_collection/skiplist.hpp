@@ -193,15 +193,15 @@ class Skiplist : public Collection {
 
   DLRecord* HeaderRecord() { return header_->record; }
 
+  const DLRecord* HeaderRecord() const { return header_->record; }
+
   bool IndexWithHashtable() { return index_with_hashtable_; }
 
   ExpireTimeType GetExpireTime() const final {
-    return header_->record->expired_time;
+    return HeaderRecord()->GetExpireTime();
   }
 
-  bool HasExpired() const final {
-    return TimeUtils::CheckIsExpired(GetExpireTime());
-  }
+  bool HasExpired() const final { return HeaderRecord()->HasExpired(); }
 
   WriteResult SetExpireTime(ExpireTimeType expired_time,
                             TimeStampType timestamp);
@@ -319,8 +319,8 @@ class Skiplist : public Collection {
     auto check_type = [&]() { return IsSkiplistRecord(next); };
 
     auto check_id = [&]() {
-      auto next_id = Skiplist::SkiplistID(next);
-      auto record_id = Skiplist::SkiplistID(record);
+      auto next_id = Skiplist::FetchID(next);
+      auto record_id = Skiplist::FetchID(record);
       return record_id == next_id;
     };
 
@@ -340,8 +340,8 @@ class Skiplist : public Collection {
     auto check_type = [&]() { return IsSkiplistRecord(prev); };
 
     auto check_id = [&]() {
-      auto prev_id = Skiplist::SkiplistID(prev);
-      auto record_id = Skiplist::SkiplistID(record);
+      auto prev_id = Skiplist::FetchID(prev);
+      auto record_id = Skiplist::FetchID(record);
       return record_id == prev_id;
     };
 
@@ -406,12 +406,12 @@ class Skiplist : public Collection {
     return ExtractUserKey(record->Key());
   }
 
-  inline static CollectionIDType SkiplistID(const SkiplistNode* node) {
+  inline static CollectionIDType FetchID(const SkiplistNode* node) {
     assert(node != nullptr);
-    return SkiplistID(node->record);
+    return FetchID(node->record);
   }
 
-  inline static CollectionIDType SkiplistID(const DLRecord* record) {
+  inline static CollectionIDType FetchID(const DLRecord* record) {
     assert(record != nullptr);
     switch (record->GetRecordType()) {
       case RecordType::SortedElem:
@@ -427,15 +427,12 @@ class Skiplist : public Collection {
     return 0;
   }
 
-  bool TryCleaningLock() { return clean_status_spin_.try_lock(); }
+  bool TryCleaningLock() { return cleaning_lock_.try_lock(); }
 
-  void ReleaseCleaningLock() { clean_status_spin_.unlock(); }
+  void ReleaseCleaningLock() { cleaning_lock_.unlock(); }
 
  private:
   friend SortedIterator;
-
-  WriteResult putImplNoHash(const StringView& key, const StringView& value,
-                            TimeStampType timestamp);
 
   // put impl with prepared seek result and pmem space
   WriteResult putPreparedNoHash(Splice& seek_result, const StringView& key,
@@ -552,7 +549,7 @@ class Skiplist : public Collection {
   // protect pending_deletion_nodes_
   SpinMutex pending_delete_nodes_spin_;
   // to avoid illegal access caused by cleaning skiplist by multi-thread
-  SpinMutex clean_status_spin_;
+  SpinMutex cleaning_lock_;
 };
 
 // A helper struct for locating a skiplist position

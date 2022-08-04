@@ -61,7 +61,7 @@ class List : public Collection {
 
   TimeStampType GetTimeStamp() const { return HeaderRecord()->GetTimestamp(); }
 
-  bool HasExpired() const final { return dl_list_.Header()->HasExpired(); }
+  bool HasExpired() const final { return HeaderRecord()->HasExpired(); }
 
   WriteResult SetExpireTime(ExpireTimeType expired_time,
                             TimeStampType timestamp);
@@ -108,9 +108,9 @@ class List : public Collection {
 
   DLList* GetDLList() { return &dl_list_; }
 
-  void DestroyAll() {}
+  void DestroyAll();
 
-  void Destroy() {}
+  void Destroy();
 
   PushNArgs PreparePushN(ListPos pos, const std::vector<StringView>& elems,
                          TimeStampType ts);
@@ -122,7 +122,11 @@ class List : public Collection {
 
   Status PopN(const PopNArgs& args);
 
-  static CollectionIDType ListID(DLRecord* record) {
+  bool TryCleaningLock() { return cleaning_lock_.try_lock(); }
+
+  void ReleaseCleaningLock() { cleaning_lock_.unlock(); }
+
+  static CollectionIDType FetchID(DLRecord* record) {
     assert(record != nullptr);
     switch (record->GetRecordType()) {
       case RecordType::ListElem:
@@ -143,5 +147,7 @@ class List : public Collection {
   DLList dl_list_;
   PMEMAllocator* pmem_allocator_;
   std::atomic<size_t> size_;
+  // to avoid illegal access caused by cleaning skiplist by multi-thread
+  SpinMutex cleaning_lock_;
 };
 }  // namespace KVDK_NAMESPACE

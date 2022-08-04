@@ -96,7 +96,7 @@ HashTable::LookupResult HashTable::Lookup(const StringView& key,
                                           uint8_t type_mask) {
   LookupResult ret;
   HashEntry* empty_entry = nullptr;
-  auto hint = GetHint(key);
+  auto hint = getHint(key);
   ret.key_hash_prefix = hint.key_hash_prefix;
 
   HashBucket* bucket_ptr = &hash_buckets_[hint.bucket];

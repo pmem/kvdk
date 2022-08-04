@@ -81,7 +81,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   } else {
     if (segment_based_rebuild_ &&
         ++rebuilder_thread_cache_[access_thread.id]
-                    .visited_skiplists[Skiplist::SkiplistID(record)] %
+                    .visited_skiplists[Skiplist::FetchID(record)] %
                 kRestoreSkiplistStride ==
             0 &&
         findCheckpointVersion(record) == record &&
@@ -106,8 +106,8 @@ Status SortedCollectionRebuilder::initRebuildLists() {
 
   // Keep headers with same id together for recognize outdated ones
   auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
-    auto id1 = Skiplist::SkiplistID(header1);
-    auto id2 = Skiplist::SkiplistID(header2);
+    auto id1 = Skiplist::FetchID(header1);
+    auto id2 = Skiplist::FetchID(header2);
     if (id1 == id2) {
       return header1->GetTimestamp() < header2->GetTimestamp();
     }
@@ -118,8 +118,8 @@ Status SortedCollectionRebuilder::initRebuildLists() {
   for (size_t i = 0; i < linked_headers_.size(); i++) {
     DLRecord* header_record = linked_headers_[i];
     if (i + 1 < linked_headers_.size() &&
-        Skiplist::SkiplistID(header_record) ==
-            Skiplist::SkiplistID(linked_headers_[i + 1])) {
+        Skiplist::FetchID(header_record) ==
+            Skiplist::FetchID(linked_headers_[i + 1])) {
       // There are newer version of this header, it indicates system crashed
       // while updating header of a empty skiplist in previous run before break
       // header linkage.
@@ -168,7 +168,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     DLRecord* valid_version_record = findCheckpointVersion(header_record);
     std::shared_ptr<Skiplist> skiplist;
     if (valid_version_record == nullptr ||
-        Skiplist::SkiplistID(valid_version_record) != id) {
+        Skiplist::FetchID(valid_version_record) != id) {
       // No valid version, or valid version header belongs to another linked
       // skiplist with same name
       skiplist = std::make_shared<Skiplist>(
@@ -255,11 +255,11 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
       }
 
       auto rebuild_skiplist_iter = rebuild_skiplits_.find(
-          Skiplist::SkiplistID(iter->second.start_node->record));
+          Skiplist::FetchID(iter->second.start_node->record));
       if (rebuild_skiplist_iter == rebuild_skiplits_.end()) {
         // this start point belong to a invalid skiplist
         kvdk_assert(
-            invalid_skiplists_.find(Skiplist::SkiplistID(
+            invalid_skiplists_.find(Skiplist::FetchID(
                 iter->second.start_node->record)) != invalid_skiplists_.end(),
             "Start record of a recovery segment should belong to a skiplist");
       } else {
@@ -699,7 +699,7 @@ DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
   if (!recoverToCheckpoint()) {
     return pmem_record;
   }
-  CollectionIDType id = Skiplist::SkiplistID(pmem_record);
+  CollectionIDType id = Skiplist::FetchID(pmem_record);
   DLRecord* curr = pmem_record;
   while (curr != nullptr && curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
     curr =
@@ -713,7 +713,7 @@ DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
         "not same as new "
         "version");
 
-    if (curr && Skiplist::SkiplistID(curr) != id) {
+    if (curr && Skiplist::FetchID(curr) != id) {
       curr = nullptr;
     }
   }
