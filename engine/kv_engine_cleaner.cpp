@@ -198,7 +198,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordType::ListRecord: {
+        case RecordType::ListHeader: {
           if (record_status != RecordStatus::Outdated &&
               !pmem_record->HasExpired()) {
             entries.emplace_back(
@@ -726,7 +726,7 @@ void Cleaner::FetchOutdatedCollections(
       auto list_iter = outdated_collections_.lists.begin();
       if (list_iter->second < min_snapshot_ts) {
         outdated_collection = list_iter->first;
-        record_type = RecordType::ListRecord;
+        record_type = RecordType::ListHeader;
         outdated_collections_.lists.erase(list_iter);
       }
     }

@@ -22,7 +22,7 @@ Status KVEngine::buildList(const StringView& list_name,
   auto ul = hash_table_->AcquireLock(list_name);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimeStampType new_ts = holder.Timestamp();
-  auto lookup_result = lookupKey<true>(list_name, RecordType::ListRecord);
+  auto lookup_result = lookupKey<true>(list_name, RecordType::ListHeader);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {
     DLRecord* existing_header =
@@ -40,14 +40,14 @@ Status KVEngine::buildList(const StringView& list_name,
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
-        RecordType::ListRecord, RecordStatus::Normal,
+        RecordType::ListHeader, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, list_name, value_str);
     list = std::make_shared<List>(pmem_record, list_name, id,
                                   pmem_allocator_.get(), dllist_locks_.get());
     kvdk_assert(list != nullptr, "");
     addListToMap(list);
-    insertKeyOrElem(lookup_result, RecordType::ListRecord, RecordStatus::Normal,
+    insertKeyOrElem(lookup_result, RecordType::ListHeader, RecordStatus::Normal,
                     list.get());
     return Status::Ok;
   } else {
@@ -70,7 +70,7 @@ Status KVEngine::ListDestroy(StringView collection) {
   Status s = listFind(collection, &list);
   if (s == Status::Ok) {
     DLRecord* header = list->HeaderRecord();
-    kvdk_assert(header->GetRecordType() == RecordType::ListRecord, "");
+    kvdk_assert(header->GetRecordType() == RecordType::ListHeader, "");
     StringView value = header->Value();
     auto request_size = DLRecord::RecordSize(collection, value);
     SpaceEntry space = pmem_allocator_->Allocate(request_size);
@@ -79,12 +79,12 @@ Status KVEngine::ListDestroy(StringView collection) {
     }
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
-        RecordType::ListRecord, RecordStatus::Outdated,
+        RecordType::ListHeader, RecordStatus::Outdated,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection, value);
     bool success = list->Replace(header, pmem_record);
     kvdk_assert(success, "existing header should be linked on its list");
-    hash_table_->Insert(collection, RecordType::ListRecord,
+    hash_table_->Insert(collection, RecordType::ListHeader,
                         RecordStatus::Outdated, list, PointerType::List);
   }
   return s;
@@ -503,7 +503,7 @@ Status KVEngine::listRestoreList(DLRecord* pmp_record) {
 }
 
 Status KVEngine::listFind(StringView list_name, List** list) {
-  auto result = lookupKey<false>(list_name, RecordType::ListRecord);
+  auto result = lookupKey<false>(list_name, RecordType::ListHeader);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }

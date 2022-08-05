@@ -258,7 +258,7 @@ Status KVEngine::RestoreData() {
       case RecordType::String:
       case RecordType::HashHeader:
       case RecordType::HashElem:
-      case RecordType::ListRecord:
+      case RecordType::ListHeader:
       case RecordType::ListElem: {
         if (data_entry_cached.meta.status == RecordStatus::Dirty) {
           data_entry_cached.meta.type = RecordType::Empty;
@@ -319,7 +319,7 @@ Status KVEngine::RestoreData() {
             data_entry_cached);
         break;
       }
-      case RecordType::ListRecord: {
+      case RecordType::ListHeader: {
         s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -363,7 +363,7 @@ bool KVEngine::ValidateRecord(void* data_record) {
     case RecordType::SortedElem:
     case RecordType::HashHeader:
     case RecordType::HashElem:
-    case RecordType::ListRecord:
+    case RecordType::ListHeader:
     case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
@@ -490,7 +490,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           break;
         }
-        case RecordType::ListRecord: {
+        case RecordType::ListHeader: {
           DLRecord* header = slot_iter->GetIndex().list->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
             header =
@@ -498,7 +498,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
-            s = backup.Append(RecordType::ListRecord, header->Key(),
+            s = backup.Append(RecordType::ListHeader, header->Key(),
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append hlist elems following the header
@@ -659,7 +659,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         }
         break;
       }
-      case RecordType::ListRecord: {
+      case RecordType::ListHeader: {
         std::shared_ptr<List> list = nullptr;
         if (!expired) {
           s = buildList(record.key, list);
@@ -1425,7 +1425,7 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
                        : Status::Ok;
 
         break;
-      case RecordType::ListRecord:
+      case RecordType::ListHeader:
         result.s = result.entry.GetIndex().list->HasExpired() ? Status::Outdated
                                                               : Status::Ok;
         break;

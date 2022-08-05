@@ -289,7 +289,7 @@ class KVEngine : public Engine {
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
                : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListRecord
+                     ? RecordType::ListHeader
                      : std::is_same<CollectionType, HashList>::value
                            ? RecordType::HashHeader
                            : RecordType::Empty;
@@ -310,7 +310,7 @@ class KVEngine : public Engine {
       case RecordType::SortedHeader: {
         return PointerType::Skiplist;
       }
-      case RecordType::ListRecord: {
+      case RecordType::ListHeader: {
         return PointerType::List;
       }
       case RecordType::HashHeader: {

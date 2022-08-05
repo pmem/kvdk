@@ -17,7 +17,7 @@ List::WriteResult List::SetExpireTime(ExpireTimeType expired_time,
   }
   DLRecord* pmem_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr_checked(space.offset), space.size, timestamp,
-      RecordType::ListRecord, RecordStatus::Normal,
+      RecordType::ListHeader, RecordStatus::Normal,
       pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
       header->Key(), header->Value(), expired_time);
   bool success = dl_list_.Replace(header, pmem_record);

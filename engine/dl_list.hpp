@@ -176,8 +176,8 @@ class DLList {
         // make
         // new record point to itself and break linkage of the old one for
         // recovery
-        kvdk_assert((new_record->GetRecordType() & HeaderType) &&
-                        (old_record->GetRecordType() & HeaderType),
+        kvdk_assert((new_record->GetRecordType() & CollectionType) &&
+                        (old_record->GetRecordType() & CollectionType),
                     "Non-header record shouldn't be the only record in a list");
         linkRecord(new_record, new_record, new_record, pmem_allocator);
         auto new_record_offset = pmem_allocator->addr2offset(new_record);
@@ -232,8 +232,8 @@ class DLList {
 
     auto check_type = [&]() {
       return next->GetRecordType() == record->GetRecordType() ||
-             (next->GetRecordType() & HeaderType) ||
-             (record->GetRecordType() & HeaderType);
+             (next->GetRecordType() & CollectionType) ||
+             (record->GetRecordType() & CollectionType);
     };
 
     auto check_id = [&]() {
@@ -255,8 +255,8 @@ class DLList {
 
     auto check_type = [&]() {
       return prev->GetRecordType() == record->GetRecordType() ||
-             (prev->GetRecordType() & HeaderType) ||
-             (record->GetRecordType() & HeaderType);
+             (prev->GetRecordType() & CollectionType) ||
+             (record->GetRecordType() & CollectionType);
     };
 
     auto check_id = [&]() {
@@ -275,7 +275,7 @@ class DLList {
 
   static bool ExtractID(DLRecord* record) {
     auto type = record->GetRecordType();
-    if (type & HeaderType) {
+    if (type & CollectionType) {
       return Collection::DecodeID(record->Value());
     } else {
       return Collection::ExtractID(record->Key());

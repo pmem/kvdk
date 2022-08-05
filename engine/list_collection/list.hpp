@@ -131,7 +131,7 @@ class List : public Collection {
     switch (record->GetRecordType()) {
       case RecordType::ListElem:
         return ExtractID(record->Key());
-      case RecordType::ListRecord:
+      case RecordType::ListHeader:
         return DecodeID(record->Value());
       default:
         GlobalLogger.Error("Wrong record type %u in ListID",
