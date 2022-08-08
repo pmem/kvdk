@@ -192,8 +192,16 @@ HashList::WriteResult HashList::Write(HashWriteArgs& args) {
   if (args.op == WriteOp::Put) {
     ret = putPrepared(args.lookup_result, args.key, args.value, args.ts,
                       args.space);
+    if (ret.existing_record == nullptr ||
+        ret.existing_record->GetRecordStatus() == RecordStatus::Outdated) {
+      UpdateSize(1);
+    }
   } else {
     ret = deletePrepared(args.lookup_result, args.key, args.ts, args.space);
+    if (ret.existing_record != nullptr &&
+        ret.existing_record->GetRecordStatus() == RecordStatus::Normal) {
+      UpdateSize(-1);
+    }
   }
   return ret;
 }
@@ -382,7 +390,6 @@ HashList::WriteResult HashList::putPrepared(
     bool push_back = fast_random_64() % 2 == 0;
     Status s = push_back ? dl_list_.PushBack(args) : dl_list_.PushFront(args);
     kvdk_assert(s == Status::Ok, "");
-    UpdateSize(1);
   }
   hash_table_->Insert(lookup_result, RecordType::HashElem, RecordStatus::Normal,
                       ret.write_record, PointerType::DLRecord);
@@ -405,7 +412,6 @@ HashList::WriteResult HashList::deletePrepared(
                          RecordStatus::Outdated, timestamp, space);
   while (dl_list_.Update(args, ret.existing_record) != Status::Ok) {
   }
-  UpdateSize(-1);
   ret.write_record =
       pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
   hash_table_->Insert(lookup_result, RecordType::HashElem,
