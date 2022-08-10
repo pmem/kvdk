@@ -288,11 +288,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashHeader
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -452,6 +451,8 @@ class KVEngine : public Engine {
   // find delete and old records in skiplist with no hash index
   void cleanNoHashIndexedSkiplist(Skiplist* skiplist,
                                   std::vector<DLRecord*>& purge_dl_records);
+
+  void cleanList(List* list, std::vector<DLRecord*>& purge_dl_records);
 
   double cleanOutDated(PendingCleanRecords& pending_clean_records,
                        size_t start_slot_idx, size_t slot_block_size);

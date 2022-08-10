@@ -12,6 +12,8 @@
 #include "utils/sync_point.hpp"
 
 namespace KVDK_NAMESPACE {
+class DLListRecordIterator;
+
 // Persistent doubly linked list
 class DLList {
  public:
@@ -158,6 +160,8 @@ class DLList {
   bool Remove(DLRecord* removing_record) {
     return Remove(removing_record, pmem_allocator_, lock_table_);
   }
+
+  std::unique_ptr<DLListRecordIterator> GetRecordIterator();
 
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
                       PMEMAllocator* pmem_allocator, LockTable* lock_table) {
@@ -447,6 +451,8 @@ class DLListRecordIterator {
         current_(header_),
         pmem_allocator_(pmem_allocator) {}
 
+  void Locate(DLRecord* record) { current_ = record; }
+
   void Next() {
     if (Valid()) {
       current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
@@ -459,7 +465,7 @@ class DLListRecordIterator {
     }
   }
 
-  bool Valid() { return current_ != header_; }
+  bool Valid() { return current_ && (current_->GetRecordType() & ElemType); }
 
   void SeekToFirst() {
     kvdk_assert(header_ != nullptr, "");

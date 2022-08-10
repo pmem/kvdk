@@ -2701,6 +2701,13 @@ TEST_F(BatchWriteTest, HashRollback) {
 }
 
 TEST_F(BatchWriteTest, ListBatchOperationRollback) {
+  SyncPoint::GetInstance()->EnableProcessing();
+  // abandon background cleaner thread
+  SyncPoint::GetInstance()->SetCallBack(
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* close_reclaimer) {
+        *((std::atomic_bool*)close_reclaimer) = true;
+        return;
+      });
   configs.max_access_threads = 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -2725,7 +2732,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   };
 
   auto RBatchPush = [&]() {
-    ASSERT_THROW(engine->ListBatchPushFront(key, elems), SyncPoint::CrashPoint);
+    ASSERT_THROW(engine->ListBatchPushBack(key, elems), SyncPoint::CrashPoint);
   };
 
   auto LBatchPop = [&]() {
@@ -2736,7 +2743,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
 
   auto RBatchPop = [&]() {
     std::vector<std::string> elems_resp;
-    ASSERT_THROW(engine->ListBatchPopFront(key, count, &elems_resp),
+    ASSERT_THROW(engine->ListBatchPopBack(key, count, &elems_resp),
                  SyncPoint::CrashPoint);
   };
 

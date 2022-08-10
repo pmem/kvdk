@@ -203,6 +203,8 @@ class Skiplist : public Collection {
 
   bool HasExpired() const final { return HeaderRecord()->HasExpired(); }
 
+  DLList* GetDLList() { return &dl_list_; }
+
   // Set this skiplist expire at expired_time
   //
   // Args:

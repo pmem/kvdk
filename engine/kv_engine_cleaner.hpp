@@ -60,11 +60,13 @@ struct PendingCleanRecords {
   std::deque<std::pair<TimeStampType, Skiplist*>> outdated_skiplists;
   std::deque<PendingPurgeStrRecords> pending_purge_strings;
   std::deque<PendingPurgeDLRecords> pending_purge_dls;
-  std::deque<Skiplist*> no_index_skiplists;
+  std::deque<Skiplist*> no_hash_skiplists;
+  std::deque<List*> valid_lists;
   size_t Size() {
     return outdated_lists.size() + outdated_hlists.size() +
            outdated_skiplists.size() + pending_purge_strings.size() +
-           pending_purge_dls.size() + no_index_skiplists.size();
+           pending_purge_dls.size() + no_hash_skiplists.size() +
+           valid_lists.size();
   }
 };
 

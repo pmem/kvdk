@@ -73,6 +73,7 @@ set(SOURCES
         engine/thread_manager.cpp
         engine/pmem_allocator/free_list.cpp
         engine/data_record.cpp
+        engine/dl_list.cpp
         engine/version/old_records_cleaner.cpp
     )
 

@@ -214,13 +214,12 @@ class HashListRebuilder {
     }
     defer(thread_manager_->Release(access_thread));
     size_t num_elems = 0;
-    DLRecord* prev = hlist->HeaderRecord();
-    while (true) {
-      DLRecord* curr =
-          pmem_allocator_->offset2addr_checked<DLRecord>(prev->next);
-      if (curr == hlist->HeaderRecord()) {
-        break;
-      }
+
+    auto iter = hlist->GetDLList()->GetRecordIterator();
+    iter->SeekToFirst();
+    while (iter->Valid()) {
+      DLRecord* curr = iter->Record();
+      iter->Next();
       auto internal_key = curr->Key();
       auto ul = hash_table_->AcquireLock(internal_key);
       DLRecord* valid_version_record = findCheckpointVersion(curr);
@@ -258,7 +257,6 @@ class HashListRebuilder {
         }
 
         valid_version_record->PersistOldVersion(kNullPMemOffset);
-        prev = valid_version_record;
       }
     }
     hlist->UpdateSize(num_elems);

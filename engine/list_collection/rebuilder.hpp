@@ -208,13 +208,11 @@ class ListRebuilder {
     }
     defer(thread_manager_->Release(access_thread));
     size_t num_elems = 0;
-    DLRecord* prev = list->HeaderRecord();
-    while (true) {
-      DLRecord* curr =
-          pmem_allocator_->offset2addr_checked<DLRecord>(prev->next);
-      if (curr == list->HeaderRecord()) {
-        break;
-      }
+    auto iter = list->GetDLList()->GetRecordIterator();
+    iter->SeekToFirst();
+    while (iter->Valid()) {
+      DLRecord* curr = iter->Record();
+      iter->Next();
       DLRecord* valid_version_record = findCheckpointVersion(curr);
       if (valid_version_record == nullptr ||
           valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
@@ -230,7 +228,6 @@ class ListRebuilder {
         num_elems++;
 
         valid_version_record->PersistOldVersion(kNullPMemOffset);
-        prev = valid_version_record;
       }
     }
     list->UpdateSize(num_elems);
