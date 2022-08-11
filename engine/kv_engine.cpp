@@ -509,7 +509,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                   false);
               for (list_iter.SeekToFirst(); list_iter.Valid();
                    list_iter.Next()) {
-                s = backup.Append(RecordType::ListElem, "", list_iter.Elem(),
+                s = backup.Append(RecordType::ListElem, "", list_iter.Value(),
                                   kPersistTime);
                 if (s != Status::Ok) {
                   break;

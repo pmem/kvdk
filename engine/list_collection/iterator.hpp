@@ -70,7 +70,7 @@ class ListIteratorImpl final : public ListIterator {
     }
   }
 
-  std::string Elem() const final {
+  std::string Value() const final {
     if (!Valid()) {
       kvdk_assert(false, "Accessing data with invalid ListIterator!");
       return std::string{};

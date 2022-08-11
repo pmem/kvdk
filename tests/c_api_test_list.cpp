@@ -13,16 +13,16 @@ void ConcatStrings(char const* elem_data, size_t elem_len, void* arg) {
   buffer->append(elem_data, elem_len);
   buffer->append(1, '\n');
 }
-/*
+
 TEST_F(EngineCAPITestBase, List) {
   size_t num_threads = 16;
   size_t count = 1000;
 
   std::vector<std::vector<std::string>> elems_vec(num_threads);
-  std::vector<std::string> key_vec(num_threads);
+  std::vector<std::string> list_vec(num_threads);
   for (size_t i = 0; i < num_threads; i++) {
-    key_vec[i] = "List_" + std::to_string(i);
-    ASSERT_EQ(KVDKListCreate(engine, key_vec[i].data(), key_vec[i].size()),
+    list_vec[i] = "List_" + std::to_string(i);
+    ASSERT_EQ(KVDKListCreate(engine, list_vec[i].data(), list_vec[i].size()),
               KVDKStatus::Ok);
     for (size_t j = 0; j < count; j++) {
       elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
@@ -61,7 +61,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto LPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
@@ -70,14 +70,14 @@ TEST_F(EngineCAPITestBase, List) {
                                   elems[j].data(), elems[j].size()),
                 KVDKStatus::Ok);
       list_copy.push_front(elems[j]);
-      ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+      ASSERT_EQ(KVDKListSize(engine, key.data(), key.size(), &sz),
                 KVDKStatus::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
 
   auto RPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
@@ -86,14 +86,14 @@ TEST_F(EngineCAPITestBase, List) {
                                  elems[j].data(), elems[j].size()),
                 KVDKStatus::Ok);
       list_copy.push_back(elems[j]);
-      ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+      ASSERT_EQ(KVDKListSize(engine, key.data(), key.size(), &sz),
                 KVDKStatus::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
 
   auto LPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     for (size_t j = 0; j < count; j++) {
@@ -103,7 +103,7 @@ TEST_F(EngineCAPITestBase, List) {
       ASSERT_EQ(std::make_pair(KVDKStatus::Ok, list_copy.front()),
                 ListPopFront(key));
       list_copy.pop_front();
-      ASSERT_TRUE((KVDKListLength(engine, key.data(), key.size(), &len) ==
+      ASSERT_TRUE((KVDKListSize(engine, key.data(), key.size(), &len) ==
                        KVDKStatus::NotFound &&
                    list_copy.empty()) ||
                   len == list_copy.size());
@@ -111,7 +111,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto RPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     for (size_t j = 0; j < count; j++) {
@@ -121,7 +121,7 @@ TEST_F(EngineCAPITestBase, List) {
       ASSERT_EQ(std::make_pair(KVDKStatus::Ok, list_copy.back()),
                 ListPopBack(key));
       list_copy.pop_back();
-      ASSERT_TRUE((KVDKListLength(engine, key.data(), key.size(), &len) ==
+      ASSERT_TRUE((KVDKListSize(engine, key.data(), key.size(), &len) ==
                        KVDKStatus::NotFound &&
                    list_copy.empty()) ||
                   len == list_copy.size());
@@ -129,7 +129,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto ListIterate = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
     KVDKListIterator* iter =
@@ -164,53 +164,74 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto ListInsertPutRemove = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& list_name = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     std::string elem;
     size_t const insert_pos = 5;
 
-    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &len),
+    ASSERT_EQ(KVDKListSize(engine, list_name.data(), list_name.size(), &len),
               KVDKStatus::Ok);
     ASSERT_GT(len, insert_pos);
 
-    KVDKListIterator* iter =
-        KVDKListIteratorCreate(engine, key.data(), key.size(), NULL);
+    KVDKListIterator* iter = KVDKListIteratorCreate(engine, list_name.data(),
+                                                    list_name.size(), NULL);
     ASSERT_NE(iter, nullptr);
 
     KVDKListIteratorSeekPos(iter, insert_pos);
     auto iter2 = std::next(list_copy.begin(), insert_pos);
-    ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
+    auto iter_elem = ListIteratorGetValue(iter);
+    ASSERT_EQ(iter_elem, *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(KVDKListInsertBefore(engine, iter, elem.data(), elem.size()),
+    ASSERT_EQ(KVDKListInsertBefore(engine, list_name.data(), list_name.size(),
+                                   elem.data(), elem.size(), iter_elem.data(),
+                                   iter_elem.size()),
               KVDKStatus::Ok);
     iter2 = list_copy.insert(iter2, elem);
+    KVDKListIteratorDestroy(iter);
+    iter = KVDKListIteratorCreate(engine, list_name.data(), list_name.size(),
+                                  NULL);
+    KVDKListIteratorSeekPos(iter, insert_pos);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
 
+    auto replace_pos = insert_pos - 2;
     KVDKListIteratorPrev(iter);
     KVDKListIteratorPrev(iter);
-    ----iter2;
+    --iter2;
+    --iter2;
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
     elem = *iter2 + "_new";
-    ASSERT_EQ(KVDKListReplace(engine, iter, elem.data(), elem.size()),
+    ASSERT_EQ(KVDKListReplace(engine, list_name.data(), list_name.size(),
+                              replace_pos, elem.data(), elem.size()),
               KVDKStatus::Ok);
     *iter2 = elem;
+    KVDKListIteratorDestroy(iter);
+    iter = KVDKListIteratorCreate(engine, list_name.data(), list_name.size(),
+                                  NULL);
+    KVDKListIteratorSeekPos(iter, replace_pos);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
 
+    auto erase_pos = replace_pos - 2;
     KVDKListIteratorPrev(iter);
     KVDKListIteratorPrev(iter);
-    ----iter2;
+    --iter2;
+    --iter2;
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
-    ASSERT_EQ(KVDKListErase(engine, iter), KVDKStatus::Ok);
+    ASSERT_EQ(
+        KVDKListErase(engine, list_name.data(), list_name.size(), erase_pos),
+        KVDKStatus::Ok);
     iter2 = list_copy.erase(iter2);
+    KVDKListIteratorDestroy(iter);
+    iter = KVDKListIteratorCreate(engine, list_name.data(), list_name.size(),
+                                  NULL);
+    KVDKListIteratorSeekPos(iter, erase_pos);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
-
     KVDKListIteratorDestroy(iter);
   };
 
   auto LBatchPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     for (size_t j = 0; j < count; j++) {
@@ -222,13 +243,13 @@ TEST_F(EngineCAPITestBase, List) {
                                      elems.size()),
               KVDKStatus::Ok);
     size_t sz;
-    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+    ASSERT_EQ(KVDKListSize(engine, key.data(), key.size(), &sz),
               KVDKStatus::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto RBatchPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     for (size_t j = 0; j < count; j++) {
@@ -240,13 +261,13 @@ TEST_F(EngineCAPITestBase, List) {
                                     elems.size()),
               KVDKStatus::Ok);
     size_t sz;
-    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+    ASSERT_EQ(KVDKListSize(engine, key.data(), key.size(), &sz),
               KVDKStatus::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto LBatchPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string buffer1;
     std::string buffer2;
@@ -260,13 +281,13 @@ TEST_F(EngineCAPITestBase, List) {
     }
     ASSERT_EQ(buffer1, buffer2);
     size_t sz;
-    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+    ASSERT_EQ(KVDKListSize(engine, key.data(), key.size(), &sz),
               KVDKStatus::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto RBatchPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string buffer1;
     std::string buffer2;
@@ -279,13 +300,13 @@ TEST_F(EngineCAPITestBase, List) {
     }
     ASSERT_EQ(buffer1, buffer2);
     size_t sz;
-    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+    ASSERT_EQ(KVDKListSize(engine, key.data(), key.size(), &sz),
               KVDKStatus::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto RPushLPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
     ASSERT_FALSE(list_copy.empty());
@@ -303,7 +324,7 @@ TEST_F(EngineCAPITestBase, List) {
     free(elem_data);
 
     size_t sz;
-    ASSERT_EQ(KVDKListLength(engine, key.data(), key.size(), &sz),
+    ASSERT_EQ(KVDKListSize(engine, key.data(), key.size(), &sz),
               KVDKStatus::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
@@ -341,4 +362,3 @@ TEST_F(EngineCAPITestBase, List) {
     RebootDB();
   }
 }
-*/

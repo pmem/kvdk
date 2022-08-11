@@ -214,7 +214,7 @@ extern KVDKStatus KVDKListCreate(KVDKEngine* engine, char const* key_data,
                                  size_t key_len);
 extern KVDKStatus KVDKListDestroy(KVDKEngine* engine, char const* key_data,
                                   size_t key_len);
-extern KVDKStatus KVDKListLength(KVDKEngine* engine, char const* key_data,
+extern KVDKStatus KVDKListSize(KVDKEngine* engine, char const* key_data,
                                  size_t key_len, size_t* len);
 extern KVDKStatus KVDKListPushFront(KVDKEngine* engine, char const* key_data,
                                     size_t key_len, char const* elem_data,

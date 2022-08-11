@@ -680,8 +680,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     while (list_snapshot_iter->Valid()) {
       ASSERT_TRUE(list_snapshot_iter->Valid());
       snapshot_iter_cnt++;
-      ASSERT_TRUE(list_snapshot_iter->Elem()[0] == 'a' ||
-                  list_snapshot_iter->Elem()[0] == 'b');
+      ASSERT_TRUE(list_snapshot_iter->Value()[0] == 'a' ||
+                  list_snapshot_iter->Value()[0] == 'b');
       list_snapshot_iter->Next();
     }
     ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
@@ -784,7 +784,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       while (list_iter->Valid()) {
         ASSERT_TRUE(list_iter->Valid());
         list_iter_cnt++;
-        ASSERT_TRUE(list_iter->Elem()[0] == 'a' || list_iter->Elem()[0] == 'b');
+        ASSERT_TRUE(list_iter->Value()[0] == 'a' || list_iter->Value()[0] == 'b');
         list_iter->Next();
       }
       ASSERT_EQ(list_iter_cnt, num_threads * count * 2);
@@ -1661,7 +1661,7 @@ TEST_F(EngineBasicTest, TestList) {
       iter->Seek(0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Elem(), *iter2);
+        ASSERT_EQ(iter->Value(), *iter2);
         iter->Next();
       }
 
@@ -1669,7 +1669,7 @@ TEST_F(EngineBasicTest, TestList) {
       for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
            iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Elem(), *iter2);
+        ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
       }
     }
@@ -1690,40 +1690,40 @@ TEST_F(EngineBasicTest, TestList) {
 
     iter->Seek(insert_pos);
     auto iter2 = std::next(list_copy.begin(), insert_pos);
-    ASSERT_EQ(iter->Elem(), *iter2);
+    ASSERT_EQ(iter->Value(), *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Elem()),
+    ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Value()),
               Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
     iter = engine->ListCreateIterator(list_name);
     iter->Seek(insert_pos);
-    ASSERT_EQ(iter->Elem(), *iter2);
+    ASSERT_EQ(iter->Value(), *iter2);
 
     auto replace_pos = insert_pos - 2;
     iter->Prev();
     iter->Prev();
     --iter2;
     --iter2;
-    ASSERT_EQ(iter->Elem(), *iter2);
+    ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListReplace(list_name, replace_pos, elem), Status::Ok);
     *iter2 = elem;
     iter = engine->ListCreateIterator(list_name);
     iter->Seek(replace_pos);
-    ASSERT_EQ(iter->Elem(), *iter2);
+    ASSERT_EQ(iter->Value(), *iter2);
 
     auto erase_pos = replace_pos - 2;
     iter->Prev();
     iter->Prev();
     --iter2;
     --iter2;
-    ASSERT_EQ(iter->Elem(), *iter2);
+    ASSERT_EQ(iter->Value(), *iter2);
     ASSERT_EQ(engine->ListErase(list_name, erase_pos), Status::Ok);
     iter2 = list_copy.erase(iter2);
     iter = engine->ListCreateIterator(list_name);
     iter->Seek(erase_pos);
-    ASSERT_EQ(iter->Elem(), *iter2);
+    ASSERT_EQ(iter->Value(), *iter2);
   };
 
   for (size_t i = 0; i < 3; i++) {
@@ -2760,7 +2760,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
       iter->Seek(0);
       for (auto iter2 = list_copy.begin(); iter2 != list_copy.end(); iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Elem(), *iter2);
+        ASSERT_EQ(iter->Value(), *iter2);
         iter->Next();
       }
 
@@ -2768,7 +2768,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
       for (auto iter2 = list_copy.rbegin(); iter2 != list_copy.rend();
            iter2++) {
         ASSERT_TRUE(iter->Valid());
-        ASSERT_EQ(iter->Elem(), *iter2);
+        ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
       }
     }
