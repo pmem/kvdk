@@ -235,12 +235,21 @@ class Engine {
   // src_pos and dst_pos can only be 0, indicating List front,
   // or -1, indicating List back.
   // Return:
-  //    Status::InvalidDataSize if key is too long
-  //    Status::WrongType if key is not a List.
-  //    Status::NotFound if key does not exist or has expired.
-  //    Status::Ok and element if operation succeeded.
-  virtual Status ListMove(StringView src, int src_pos, StringView dst,
+  //    Status::WrongType if src or dst is not a List.
+  //    Status::NotFound if list or element not exist
+  //    Status::Ok and moved element if operation succeeded.
+  virtual Status ListMove(StringView src_list, int src_pos, StringView dst_list,
                           int dst_pos, std::string* elem) = 0;
+
+  // Insert a element "key" to a list at index, the index can be positive or
+  // negative
+  // Return:
+  //    Status::InvalidDataSize if key is too large
+  //    Status::WrongType if collection is not a list
+  //    Status::NotFound if collection not found or index is beyond list size
+  //    Status::Ok if operation succeeded
+  virtual Status ListInsertAt(StringView collection, StringView key,
+                              long index) = 0;
 
   // Insert an element "key" before element "pos" in list "collection"
   // Return:

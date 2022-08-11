@@ -390,6 +390,25 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
   return Status::Ok;
 }
 
+Status KVEngine::ListInsertAt(StringView list_name, StringView elem,
+                              long index) {
+  if (!CheckValueSize(elem)) {
+    return Status::InvalidDataSize;
+  }
+  if (MaybeInitAccessThread() != Status::Ok) {
+    return Status::TooManyAccessThreads;
+  }
+  auto token = version_controller_.GetLocalSnapshotHolder();
+  List* list;
+  Status s = listFind(list_name, &list);
+  if (s != Status::Ok) {
+    return s;
+  }
+  auto guard = list->AcquireLock();
+  return list->InsertAt(elem, index, version_controller_.GetCurrentTimestamp())
+      .s;
+}
+
 Status KVEngine::ListInsertBefore(StringView list_name, StringView elem,
                                   StringView pos) {
   if (!CheckValueSize(elem)) {

@@ -215,7 +215,7 @@ extern KVDKStatus KVDKListCreate(KVDKEngine* engine, char const* key_data,
 extern KVDKStatus KVDKListDestroy(KVDKEngine* engine, char const* key_data,
                                   size_t key_len);
 extern KVDKStatus KVDKListSize(KVDKEngine* engine, char const* key_data,
-                                 size_t key_len, size_t* len);
+                               size_t key_len, size_t* len);
 extern KVDKStatus KVDKListPushFront(KVDKEngine* engine, char const* key_data,
                                     size_t key_len, char const* elem_data,
                                     size_t elem_len);
@@ -248,6 +248,9 @@ extern KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
                                size_t src_len, int src_pos,
                                char const* dst_data, size_t dst_len,
                                int dst_pos, char** elem_data, size_t* elem_len);
+extern KVDKStatus KVDKListInsertAt(KVDKEngine* engine, char const* list_name,
+                                   size_t list_name_len, char const* elem_data,
+                                   size_t elem_len, long index);
 extern KVDKStatus KVDKListInsertBefore(KVDKEngine* engine,
                                        char const* list_name,
                                        size_t list_name_len,

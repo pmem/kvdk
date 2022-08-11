@@ -204,6 +204,7 @@ class KVEngine : public Engine {
                           std::vector<std::string>* elems) final;
   Status ListMove(StringView src, int src_pos, StringView dst, int dst_pos,
                   std::string* elem) final;
+  Status ListInsertAt(StringView collection, StringView key, long index) final;
   Status ListInsertBefore(StringView collection, StringView key,
                           StringView pos) final;
   Status ListInsertAfter(StringView collection, StringView key,

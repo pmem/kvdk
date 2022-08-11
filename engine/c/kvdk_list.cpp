@@ -13,7 +13,7 @@ KVDKStatus KVDKListDestroy(KVDKEngine* engine, char const* key_data,
   return engine->rep->ListDestroy(StringView{key_data, key_len});
 }
 KVDKStatus KVDKListSize(KVDKEngine* engine, char const* key_data,
-                          size_t key_len, size_t* len) {
+                        size_t key_len, size_t* len) {
   return engine->rep->ListSize(StringView{key_data, key_len}, len);
 }
 
@@ -60,12 +60,19 @@ KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
   return s;
 }
 
+KVDKStatus KVDKListInsertAt(KVDKEngine* engine, char const* list_name,
+                            size_t list_name_len, char const* elem_data,
+                            size_t elem_len, long index) {
+  return engine->rep->ListInsertAt(StringView(list_name, list_name_len),
+                                   StringView(elem_data, elem_len), index);
+}
+
 KVDKStatus KVDKListInsertBefore(KVDKEngine* engine, char const* list_name,
                                 size_t list_name_len, char const* elem_data,
                                 size_t elem_len, char const* pos_elem,
                                 size_t pos_elem_len) {
   return engine->rep->ListInsertBefore(StringView(list_name, list_name_len),
-                                       StringView{elem_data, elem_len},
+                                       StringView(elem_data, elem_len),
                                        StringView(pos_elem, pos_elem_len));
 }
 
@@ -74,7 +81,7 @@ KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, char const* list_name,
                                size_t elem_len, char const* pos_elem,
                                size_t pos_elem_len) {
   return engine->rep->ListInsertAfter(StringView(list_name, list_name_len),
-                                      StringView{elem_data, elem_len},
+                                      StringView(elem_data, elem_len),
                                       StringView(pos_elem, pos_elem_len));
 }
 
