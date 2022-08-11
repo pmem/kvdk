@@ -80,9 +80,9 @@ class List : public Collection {
   WriteResult InsertAfter(const StringView& elem,
                           const StringView& existing_elem, TimeStampType ts);
 
-  WriteResult InsertAt(const StringView& elem, uint64_t pos, TimeStampType ts);
+  WriteResult InsertAt(const StringView& elem, long index, TimeStampType ts);
 
-  WriteResult Erase(uint64_t pos);
+  WriteResult Erase(long index);
 
   Status Front(std::string* elem);
 
@@ -92,7 +92,7 @@ class List : public Collection {
     return dl_list_.Replace(old_record, new_record);
   }
 
-  WriteResult Update(uint64_t pos, const StringView& elem, TimeStampType ts);
+  WriteResult Update(long index, const StringView& elem, TimeStampType ts);
 
   void UpdateSize(int64_t delta) {
     kvdk_assert(delta >= 0 || size_.load() >= static_cast<size_t>(-delta),

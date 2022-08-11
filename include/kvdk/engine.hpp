@@ -262,21 +262,20 @@ class Engine {
   virtual Status ListInsertAfter(StringView collection, StringView key,
                                  StringView pos) = 0;
 
-  // Remove the element indexed by ListIterator pos
+  // Remove the element at index
   // Return:
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted. pos is unchanged but is invalid.
-  //    Status::Ok if operation succeeded. pos points
-  //    to successor of erased element.
-  virtual Status ListErase(StringView collection, uint64_t pos) = 0;
+  //    Status::Ok if operation succeeded.
+  virtual Status ListErase(StringView collection, long index) = 0;
 
-  // Replace the element at pos
+  // Replace the element at index
   // Return:
   //    Status::InvalidDataSize if elem is too long
   //    Status::NotFound if List of the ListIterator has expired or been
-  //    deleted. pos is unchanged but invalid.
-  //    Status::Ok if operation succeeded. pos points to updated element.
-  virtual Status ListReplace(StringView collection, uint64_t pos,
+  //    deleted.
+  //    Status::Ok if operation succeeded.
+  virtual Status ListReplace(StringView collection, long index,
                              StringView elem) = 0;
 
   // Create an ListIterator from List

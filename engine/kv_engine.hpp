@@ -208,9 +208,9 @@ class KVEngine : public Engine {
                           StringView pos) final;
   Status ListInsertAfter(StringView collection, StringView key,
                          StringView pos) final;
-  Status ListErase(StringView collection, uint64_t pos) final;
+  Status ListErase(StringView collection, long index) final;
 
-  Status ListReplace(StringView list_name, uint64_t pos, StringView elem) final;
+  Status ListReplace(StringView list_name, long index, StringView elem) final;
   std::unique_ptr<ListIterator> ListCreateIterator(StringView collection,
                                                    Snapshot* snapshot,
                                                    Status* status) final;

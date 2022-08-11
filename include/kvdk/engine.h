@@ -260,9 +260,9 @@ extern KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, char const* list_name,
                                       char const* pos_elem,
                                       size_t pos_elem_len);
 extern KVDKStatus KVDKListErase(KVDKEngine* engine, char const* list_name,
-                                size_t list_len, size_t pos);
+                                size_t list_len, long index);
 extern KVDKStatus KVDKListReplace(KVDKEngine* engine, char const* list_name,
-                                  size_t list_name_len, size_t pos,
+                                  size_t list_name_len, long index,
                                   char const* elem, size_t elem_len);
 /// ListIterator //////////////////////////////////////////////////////////////
 extern KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,

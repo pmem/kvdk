@@ -433,7 +433,7 @@ Status KVEngine::ListInsertAfter(StringView collection, StringView elem,
       .s;
 }
 
-Status KVEngine::ListErase(StringView list_name, uint64_t pos) {
+Status KVEngine::ListErase(StringView list_name, long index) {
   if (MaybeInitAccessThread() != Status::Ok) {
     return Status::TooManyAccessThreads;
   }
@@ -445,11 +445,11 @@ Status KVEngine::ListErase(StringView list_name, uint64_t pos) {
     return s;
   }
   auto guard = list->AcquireLock();
-  return list->Erase(pos).s;
+  return list->Erase(index).s;
 }
 
 // Replace the element at pos
-Status KVEngine::ListReplace(StringView collection, uint64_t pos,
+Status KVEngine::ListReplace(StringView collection, long index,
                              StringView elem) {
   if (MaybeInitAccessThread() != Status::Ok) {
     return Status::TooManyAccessThreads;
@@ -462,7 +462,7 @@ Status KVEngine::ListReplace(StringView collection, uint64_t pos,
     return s;
   }
   auto guard = list->AcquireLock();
-  return list->Update(pos, elem, version_controller_.GetCurrentTimestamp()).s;
+  return list->Update(index, elem, version_controller_.GetCurrentTimestamp()).s;
 }
 
 std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(

@@ -190,26 +190,30 @@ List::WriteResult List::InsertAfter(const StringView& elem,
   return ret;
 }
 
-List::WriteResult List::InsertAt(const StringView& elem, uint64_t pos,
+List::WriteResult List::InsertAt(const StringView& elem, long index,
                                  TimeStampType ts) {
   WriteResult ret;
+  size_t required_size = index < 0 ? std::abs(index) - 1 : index;
+  if (required_size > Size()) {
+    ret.s = Status::NotFound;
+    return ret;
+  }
   std::string internal_key(InternalKey(""));
   DLListRecordIterator iter(&dl_list_, pmem_allocator_);
-  uint64_t cur = 0;
-  DLRecord* prev = dl_list_.Header();
-  for (iter.SeekToFirst(); iter.Valid() && cur < pos; iter.Next()) {
+  bool backward = index < 0;
+  long cur = backward ? -1 : 0;
+  DLRecord* write_pos = dl_list_.Header();
+  for (backward ? iter.SeekToLast() : iter.SeekToFirst();
+       iter.Valid() && cur != index; backward ? iter.Prev() : iter.Next()) {
     DLRecord* record = iter.Record();
     if (record->GetRecordStatus() == RecordStatus::Outdated) {
       continue;
     }
-    cur++;
-    prev = record;
+    backward ? cur-- : cur++;
+    write_pos = record;
   }
 
-  if (cur < pos) {
-    ret.s = Status::NotFound;
-    return ret;
-  }
+  kvdk_assert(cur == index, "size already checked");
 
   SpaceEntry space =
       pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
@@ -219,7 +223,8 @@ List::WriteResult List::InsertAt(const StringView& elem, uint64_t pos,
   }
   DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
                          RecordStatus::Normal, ts, space);
-  ret.s = dl_list_.InsertAfter(args, prev);
+  ret.s = backward ? dl_list_.InsertBefore(args, write_pos)
+                   : dl_list_.InsertAfter(args, write_pos);
   kvdk_assert(ret.s == Status::Ok,
               "the whole list is locked, so the insertion must be success");
   ret.write_record =
@@ -228,29 +233,32 @@ List::WriteResult List::InsertAt(const StringView& elem, uint64_t pos,
   return ret;
 }
 
-List::WriteResult List::Erase(uint64_t pos) {
+List::WriteResult List::Erase(long index) {
   WriteResult ret;
-  if (pos >= Size()) {
+  size_t required_size = index < 0 ? std::abs(index) : index + 1;
+  if (required_size > Size()) {
     ret.s = Status::NotFound;
     return ret;
   }
   DLListRecordIterator iter(&dl_list_, pmem_allocator_);
-  uint64_t cur = 0;
-  for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
+  bool backward = index < 0;
+  long cur = backward ? -1 : 0;
+  for (backward ? iter.SeekToLast() : iter.SeekToFirst(); iter.Valid();
+       backward ? iter.Prev() : iter.Next()) {
     DLRecord* record = iter.Record();
     if (record->GetRecordStatus() == RecordStatus::Outdated) {
       continue;
     }
-    if (cur == pos) {
+    if (cur == index) {
       bool success = dl_list_.Remove(record);
       ret.existing_record = record;
       kvdk_assert(success,
                   "the whole list is locked, so the remove must be success");
       break;
     }
-    cur++;
+    backward ? cur-- : cur++;
   }
-  kvdk_assert(cur == pos, "size already checked");
+  kvdk_assert(cur == index, "size already checked");
   UpdateSize(-1);
   return ret;
 }
@@ -289,14 +297,15 @@ Status List::Back(std::string* elem) {
   return Status::NotFound;
 }
 
-List::WriteResult List::Update(uint64_t pos, const StringView& elem,
+List::WriteResult List::Update(long index, const StringView& elem,
                                TimeStampType ts) {
   WriteResult ret;
-  std::string internal_key(InternalKey(""));
-  if (pos >= Size()) {
+  size_t required_size = index < 0 ? std::abs(index) : index + 1;
+  if (required_size > Size()) {
     ret.s = Status::NotFound;
     return ret;
   }
+  std::string internal_key(InternalKey(""));
   SpaceEntry space =
       pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
   if (space.size == 0) {
@@ -306,13 +315,15 @@ List::WriteResult List::Update(uint64_t pos, const StringView& elem,
   DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
                          RecordStatus::Normal, ts, space);
   DLListRecordIterator iter(&dl_list_, pmem_allocator_);
-  uint64_t cur = 0;
-  for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
+  bool backward = index < 0;
+  long cur = backward ? -1 : 0;
+  for (backward ? iter.SeekToLast() : iter.SeekToFirst(); iter.Valid();
+       backward ? iter.Prev() : iter.Next()) {
     DLRecord* record = iter.Record();
     if (record->GetRecordStatus() == RecordStatus::Outdated) {
       continue;
     }
-    if (cur == pos) {
+    if (cur == index) {
       ret.s = dl_list_.Update(args, record);
       ret.existing_record = record;
       ret.write_record =
@@ -321,9 +332,9 @@ List::WriteResult List::Update(uint64_t pos, const StringView& elem,
                   "the whole list is locked, so the update must be success");
       break;
     }
-    cur++;
+    backward ? cur-- : cur++;
   }
-  kvdk_assert(cur == pos, "size already checked");
+  kvdk_assert(cur == index, "size already checked");
   return ret;
 }
 

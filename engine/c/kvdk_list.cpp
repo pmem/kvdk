@@ -79,14 +79,14 @@ KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, char const* list_name,
 }
 
 KVDKStatus KVDKListErase(KVDKEngine* engine, char const* list_name,
-                         size_t list_len, size_t pos) {
-  return engine->rep->ListErase(StringView(list_name, list_len), pos);
+                         size_t list_len, long index) {
+  return engine->rep->ListErase(StringView(list_name, list_len), index);
 }
 
 KVDKStatus KVDKListReplace(KVDKEngine* engine, char const* list_name,
-                           size_t list_name_len, size_t pos, char const* elem,
+                           size_t list_name_len, long index, char const* elem,
                            size_t elem_len) {
-  return engine->rep->ListReplace(StringView(list_name, list_name_len), pos,
+  return engine->rep->ListReplace(StringView(list_name, list_name_len), index,
                                   StringView(elem, elem_len));
 }
 
