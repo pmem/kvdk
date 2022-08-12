@@ -784,7 +784,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       while (list_iter->Valid()) {
         ASSERT_TRUE(list_iter->Valid());
         list_iter_cnt++;
-        ASSERT_TRUE(list_iter->Value()[0] == 'a' || list_iter->Value()[0] == 'b');
+        ASSERT_TRUE(list_iter->Value()[0] == 'a' ||
+                    list_iter->Value()[0] == 'b');
         list_iter->Next();
       }
       ASSERT_EQ(list_iter_cnt, num_threads * count * 2);
