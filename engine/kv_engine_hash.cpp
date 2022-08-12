@@ -55,7 +55,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
                     hlist.get());
     return Status::Ok;
   } else {
-    return lookup_result.s;
+    return lookup_result.s == Status::Ok ? Status::Existed : lookup_result.s;
   }
 }
 
@@ -219,7 +219,7 @@ Status KVEngine::HashModify(StringView collection, StringView key,
   return s;
 }
 
-std::unique_ptr<HashIterator> KVEngine::HashCreateIterator(
+std::unique_ptr<HashIterator> KVEngine::HashIteratorCreate(
     StringView collection, Snapshot* snapshot, Status* status) {
   Status s{Status::Ok};
   std::unique_ptr<HashIterator> ret(nullptr);

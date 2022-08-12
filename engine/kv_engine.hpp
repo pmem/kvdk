@@ -212,7 +212,7 @@ class KVEngine : public Engine {
   Status ListErase(StringView collection, long index) final;
 
   Status ListReplace(StringView list_name, long index, StringView elem) final;
-  std::unique_ptr<ListIterator> ListCreateIterator(StringView collection,
+  std::unique_ptr<ListIterator> ListIteratorCreate(StringView collection,
                                                    Snapshot* snapshot,
                                                    Status* status) final;
 
@@ -225,7 +225,7 @@ class KVEngine : public Engine {
   Status HashDelete(StringView key, StringView field) final;
   Status HashModify(StringView key, StringView field, ModifyFunc modify_func,
                     void* cb_args) final;
-  std::unique_ptr<HashIterator> HashCreateIterator(StringView key,
+  std::unique_ptr<HashIterator> HashIteratorCreate(StringView key,
                                                    Snapshot* snapshot,
                                                    Status* s) final;
 

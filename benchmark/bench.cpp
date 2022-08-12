@@ -296,7 +296,7 @@ void DBScan(int tid) {
         break;
       }
       case DataType::Hashes: {
-        auto iter = engine->HashCreateIterator(collections[cid]);
+        auto iter = engine->HashIteratorCreate(collections[cid]);
         if (iter) {
           for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             key = iter->Key();
@@ -530,7 +530,7 @@ int main(int argc, char** argv) {
       for (auto col : collections) {
         SortedCollectionConfigs s_configs;
         Status s = engine->SortedCreate(col, s_configs);
-        if (s != Status::Ok) {
+        if (s != Status::Ok && s != Status::Existed) {
           throw std::runtime_error{"Fail to create Sorted collection"};
         }
       }

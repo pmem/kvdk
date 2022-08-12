@@ -361,7 +361,7 @@ class BatchWriteTest : public EngineBasicTest {};
 
 TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string sorted_collection("sorted_collection");
-  std::string unordered_collection("unordered_collection");
+  std::string hash_collection("unordered_collection");
   std::string list("list");
   std::string str("str");
   std::string elem_key("elem");
@@ -374,8 +374,8 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
 
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
 
-  ASSERT_EQ(engine->HashCreate(unordered_collection), Status::Ok);
-  ASSERT_EQ(engine->HashPut(unordered_collection, elem_key, val), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+  ASSERT_EQ(engine->HashPut(hash_collection, elem_key, val), Status::Ok);
 
   ASSERT_EQ(engine->ListCreate(list), Status::Ok);
   ASSERT_EQ(engine->ListPushBack(list, elem_key), Status::Ok);
@@ -383,76 +383,87 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string got_val;
   // Test string
   for (const std::string& string_key :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s = string_key == str ? Status::Ok : Status::WrongType;
+       {sorted_collection, hash_collection, list, str}) {
+    Status op_ret = string_key == str ? Status::Ok : Status::WrongType;
     std::string new_val("new_str_val");
     // Put
-    ASSERT_EQ(engine->Put(string_key, new_val), ret_s);
+    ASSERT_EQ(engine->Put(string_key, new_val), op_ret);
     // Get
-    ASSERT_EQ(engine->Get(string_key, &got_val), ret_s);
-    if (ret_s == Status::Ok) {
+    ASSERT_EQ(engine->Get(string_key, &got_val), op_ret);
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
   }
 
   // Test sorted
   for (const std::string& collection_name :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s =
+       {sorted_collection, hash_collection, list, str}) {
+    Status create_ret = collection_name == sorted_collection
+                            ? Status::Existed
+                            : Status::WrongType;
+    Status op_ret =
         collection_name == sorted_collection ? Status::Ok : Status::WrongType;
     std::string new_val("new_sorted_val");
     // Create
-    ASSERT_EQ(engine->SortedCreate(collection_name), ret_s);
+    ASSERT_EQ(engine->SortedCreate(collection_name), create_ret);
     // Put
-    ASSERT_EQ(engine->SortedPut(collection_name, elem_key, new_val), ret_s);
+    ASSERT_EQ(engine->SortedPut(collection_name, elem_key, new_val), op_ret);
 
     // Get
-    ASSERT_EQ(engine->SortedGet(collection_name, elem_key, &got_val), ret_s);
+    ASSERT_EQ(engine->SortedGet(collection_name, elem_key, &got_val), op_ret);
 
-    if (ret_s == Status::Ok) {
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
     // Delete elem
-    ASSERT_EQ(engine->SortedDelete(collection_name, elem_key), ret_s);
+    ASSERT_EQ(engine->SortedDelete(collection_name, elem_key), op_ret);
   }
 
   // Test unordered
   for (const std::string& collection_name :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s = collection_name == unordered_collection ? Status::Ok
+       {sorted_collection, hash_collection, list, str}) {
+    Status create_ret = collection_name == hash_collection ? Status::Existed
                                                            : Status::WrongType;
+    Status op_ret =
+        collection_name == hash_collection ? Status::Ok : Status::WrongType;
     std::string new_val("new_unordered_val");
+    // Create
+    ASSERT_EQ(engine->HashCreate(collection_name), create_ret);
     // Put
-    ASSERT_EQ(engine->HashPut(collection_name, elem_key, new_val), ret_s);
+    ASSERT_EQ(engine->HashPut(collection_name, elem_key, new_val), op_ret);
     // Get
-    ASSERT_EQ(engine->HashGet(collection_name, elem_key, &got_val), ret_s);
-    if (ret_s == Status::Ok) {
+    ASSERT_EQ(engine->HashGet(collection_name, elem_key, &got_val), op_ret);
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
     // Delete
-    ASSERT_EQ(engine->HashDelete(collection_name, elem_key), ret_s);
+    ASSERT_EQ(engine->HashDelete(collection_name, elem_key), op_ret);
   }
 
   // Test list
   for (const std::string& collection_name :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s = collection_name == list ? Status::Ok : Status ::WrongType;
+       {sorted_collection, hash_collection, list, str}) {
+    Status create_ret =
+        collection_name == list ? Status::Existed : Status::WrongType;
+    Status op_ret = collection_name == list ? Status::Ok : Status ::WrongType;
     std::string new_val_back("new_back_val");
     std::string new_val_front("new_front_val");
     size_t length;
     std::string got_val_back;
     std::string got_val_front;
 
+    // Create
+    ASSERT_EQ(engine->ListCreate(collection_name), create_ret);
     // Push
-    ASSERT_EQ(engine->ListPushBack(collection_name, new_val_back), ret_s);
-    ASSERT_EQ(engine->ListPushFront(collection_name, new_val_front), ret_s);
+    ASSERT_EQ(engine->ListPushBack(collection_name, new_val_back), op_ret);
+    ASSERT_EQ(engine->ListPushFront(collection_name, new_val_front), op_ret);
     // Pop
-    ASSERT_EQ(engine->ListPopBack(collection_name, &got_val_back), ret_s);
-    ASSERT_EQ(engine->ListPopFront(collection_name, &got_val_front), ret_s);
+    ASSERT_EQ(engine->ListPopBack(collection_name, &got_val_back), op_ret);
+    ASSERT_EQ(engine->ListPopFront(collection_name, &got_val_front), op_ret);
     // Length
-    ASSERT_EQ(engine->ListSize(collection_name, &length), ret_s);
+    ASSERT_EQ(engine->ListSize(collection_name, &length), op_ret);
 
-    if (ret_s == Status::Ok) {
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val_back, new_val_back);
       ASSERT_EQ(got_val_front, new_val_front);
       ASSERT_EQ(length, 1);
@@ -652,7 +663,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
   {  // Hash snapshot iterator
     auto hash_snapshot_iter =
-        engine->HashCreateIterator(hash_collection, snapshot);
+        engine->HashIteratorCreate(hash_collection, snapshot);
     engine->HashDestroy(hash_collection);
 
     uint64_t snapshot_iter_cnt = 0;
@@ -666,13 +677,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
 
     hash_snapshot_iter =
-        engine->HashCreateIterator(hash_collection_after_snapshot, snapshot);
+        engine->HashIteratorCreate(hash_collection_after_snapshot, snapshot);
     hash_snapshot_iter->SeekToFirst();
     ASSERT_FALSE(hash_snapshot_iter->Valid());
   }
 
   {  // List snapshot iterator
-    auto list_snapshot_iter = engine->ListCreateIterator(list, snapshot);
+    auto list_snapshot_iter = engine->ListIteratorCreate(list, snapshot);
     engine->ListDestroy(list);
 
     uint64_t snapshot_iter_cnt = 0;
@@ -687,7 +698,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
 
     list_snapshot_iter =
-        engine->ListCreateIterator(list_after_snapshot, snapshot);
+        engine->ListIteratorCreate(list_after_snapshot, snapshot);
     list_snapshot_iter->SeekToFirst();
     ASSERT_FALSE(list_snapshot_iter->Valid());
   }
@@ -762,7 +773,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
     {  // hash iterator
       uint64_t hash_iter_cnt = 0;
-      auto hash_iter = engine->HashCreateIterator(hash_collection);
+      auto hash_iter = engine->HashIteratorCreate(hash_collection);
       ASSERT_TRUE(hash_iter != nullptr);
       hash_iter->SeekToFirst();
       while (hash_iter->Valid()) {
@@ -772,13 +783,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         hash_iter->Next();
       }
       ASSERT_EQ(hash_iter_cnt, num_threads * count * 2);
-      ASSERT_EQ(engine->HashCreateIterator(hash_collection_after_snapshot),
+      ASSERT_EQ(engine->HashIteratorCreate(hash_collection_after_snapshot),
                 nullptr);
     }
 
     {  // list iterator
       uint64_t list_iter_cnt = 0;
-      auto list_iter = engine->ListCreateIterator(list);
+      auto list_iter = engine->ListIteratorCreate(list);
       ASSERT_TRUE(list_iter != nullptr);
       list_iter->SeekToFirst();
       while (list_iter->Valid()) {
@@ -789,7 +800,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         list_iter->Next();
       }
       ASSERT_EQ(list_iter_cnt, num_threads * count * 2);
-      ASSERT_EQ(engine->ListCreateIterator(hash_collection_after_snapshot),
+      ASSERT_EQ(engine->ListIteratorCreate(hash_collection_after_snapshot),
                 nullptr);
     }
   };
@@ -1430,6 +1441,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       ASSERT_EQ(data_entries_scan, 0);
       engine->ReleaseSortedIterator(iter);
       delete engine;
+      Destroy();
     }
   }
 }
@@ -1448,7 +1460,8 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   for (size_t i = 1; i <= count; ++i) {
     std::string average_skiplist("a_skiplist" +
                                  std::to_string(i % num_collections));
-    ASSERT_EQ(engine->SortedCreate(average_skiplist), Status::Ok);
+    Status s = engine->SortedCreate(average_skiplist);
+    ASSERT_TRUE(s == Status::Ok || s == Status::Existed);
   }
   for (size_t i = 0; i < num_threads; ++i) {
     std::string r_skiplist("r_skiplist" + std::to_string(i));
@@ -1656,7 +1669,7 @@ TEST_F(EngineBasicTest, TestList) {
     auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
-    auto iter = engine->ListCreateIterator(key);
+    auto iter = engine->ListIteratorCreate(key);
     ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
     if (iter != nullptr) {
       iter->Seek(0);
@@ -1686,7 +1699,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListSize(list_name, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
-    auto iter = engine->ListCreateIterator(list_name);
+    auto iter = engine->ListIteratorCreate(list_name);
     ASSERT_NE(iter, nullptr);
 
     iter->Seek(insert_pos);
@@ -1697,7 +1710,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Value()),
               Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
-    iter = engine->ListCreateIterator(list_name);
+    iter = engine->ListIteratorCreate(list_name);
     iter->Seek(insert_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
@@ -1710,7 +1723,7 @@ TEST_F(EngineBasicTest, TestList) {
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListReplace(list_name, replace_pos, elem), Status::Ok);
     *iter2 = elem;
-    iter = engine->ListCreateIterator(list_name);
+    iter = engine->ListIteratorCreate(list_name);
     iter->Seek(replace_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
@@ -1722,7 +1735,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(iter->Value(), *iter2);
     ASSERT_EQ(engine->ListErase(list_name, erase_pos), Status::Ok);
     iter2 = list_copy.erase(iter2);
-    iter = engine->ListCreateIterator(list_name);
+    iter = engine->ListIteratorCreate(list_name);
     iter->Seek(erase_pos);
     ASSERT_EQ(iter->Value(), *iter2);
   };
@@ -1826,7 +1839,7 @@ TEST_F(EngineBasicTest, TestHash) {
       }
     }
 
-    auto iter = engine->HashCreateIterator(key);
+    auto iter = engine->HashIteratorCreate(key);
 
     ASSERT_NE(iter, nullptr);
     size_t cnt = 0;
@@ -2535,6 +2548,7 @@ TEST_F(BatchWriteTest, SortedRollback) {
     LaunchNThreads(num_threads, Check);
 
     delete engine;
+    Destroy();
   }
 }
 
@@ -2755,7 +2769,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   };
 
   auto Check = [&]() {
-    auto iter = engine->ListCreateIterator(key);
+    auto iter = engine->ListIteratorCreate(key);
     ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
     if (iter != nullptr) {
       iter->Seek(0);

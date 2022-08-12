@@ -583,10 +583,10 @@ class EngineTestBase : public testing::Test {
               << std::endl;
     shadow_hashes_engines[collection_name]->CheckGetter();
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->HashCreateIterator(collection_name).get(),
+        engine->HashIteratorCreate(collection_name).get(),
         kvdk_testing::IteratingDirection::Forward);
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->HashCreateIterator(collection_name).get(),
+        engine->HashIteratorCreate(collection_name).get(),
         kvdk_testing::IteratingDirection::Backward);
   }
 

@@ -68,9 +68,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
     insertKeyOrElem(lookup_result, RecordType::SortedHeader,
                     RecordStatus::Normal, skiplist.get());
   } else {
-    // Todo (jiayu): handle expired skiplist
-    // Todo (jiayu): what if skiplist exists but comparator not match?
-    return lookup_result.s;
+    return lookup_result.s == Status::Ok ? Status::Existed : lookup_result.s;
   }
   return Status::Ok;
 }

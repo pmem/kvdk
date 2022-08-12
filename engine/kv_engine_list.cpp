@@ -51,7 +51,7 @@ Status KVEngine::buildList(const StringView& list_name,
                     list.get());
     return Status::Ok;
   } else {
-    return lookup_result.s;
+    return lookup_result.s == Status::Ok ? Status::Existed : lookup_result.s;
   }
 }
 
@@ -484,7 +484,7 @@ Status KVEngine::ListReplace(StringView collection, long index,
   return list->Update(index, elem, version_controller_.GetCurrentTimestamp()).s;
 }
 
-std::unique_ptr<ListIterator> KVEngine::ListCreateIterator(
+std::unique_ptr<ListIterator> KVEngine::ListIteratorCreate(
     StringView collection, Snapshot* snapshot, Status* status) {
   Status s{Status::Ok};
   std::unique_ptr<ListIterator> ret(nullptr);

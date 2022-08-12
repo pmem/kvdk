@@ -104,11 +104,23 @@ class Engine {
   // error.
   virtual Status Delete(const StringView key) = 0;
 
+  // Create a sorted collection with configs
+  // Return:
+  // Status::Ok on success
+  // Status::Existed if sorted collection already existed
+  // Status::WrongType if collection existed but not a sorted collection
+  // Status::PMemOverflow if PMem exhausted
+  // Status::MemoryOverflow if DRAM exhausted
   virtual Status SortedCreate(
-      const StringView collection_name,
+      const StringView collection,
       const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
 
-  virtual Status SortedDestroy(const StringView collection_name) = 0;
+  // Destroy a sorted collection
+  // Return:
+  // Status::Ok on success
+  // Status::WrongType if collection existed but not a sorted collection
+  // Status::PMemOverflow if PMem exhausted
+  virtual Status SortedDestroy(const StringView collection) = 0;
 
   // Get number of elements in a sorted collection
   //
@@ -288,7 +300,7 @@ class Engine {
   //    List, otherwise return ListIterator to First element of List
   // Internally ListIterator holds an recursive of List, which is relased
   // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListCreateIterator(
+  virtual std::unique_ptr<ListIterator> ListIteratorCreate(
       StringView list, Snapshot* snapshot = nullptr,
       Status* status = nullptr) = 0;
 
@@ -307,7 +319,7 @@ class Engine {
   // Warning: HashIterator internally holds a snapshot,
   // prevents some resources from being freed.
   // The HashIterator should be destroyed as long as it is no longer used.
-  virtual std::unique_ptr<HashIterator> HashCreateIterator(
+  virtual std::unique_ptr<HashIterator> HashIteratorCreate(
       StringView collection, Snapshot* snapshot = nullptr,
       Status* s = nullptr) = 0;
 
