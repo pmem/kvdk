@@ -26,19 +26,17 @@ SortedCollectionRebuilder::SortedCollectionRebuilder(
 SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
   RebuildResult ret;
   ret.s = initRebuildLists();
-  if (ret.s != Status::Ok || rebuild_skiplits_.size() == 0) {
-    return ret;
-  }
+  if (ret.s == Status::Ok && rebuild_skiplits_.size() > 0) {
+    if (segment_based_rebuild_) {
+      ret.s = segmentBasedIndexRebuild();
+    } else {
+      ret.s = listBasedIndexRebuild();
+    }
 
-  if (segment_based_rebuild_) {
-    ret.s = segmentBasedIndexRebuild();
-  } else {
-    ret.s = listBasedIndexRebuild();
-  }
-
-  if (ret.s == Status::Ok) {
-    ret.max_id = max_recovered_id_;
-    ret.rebuild_skiplits.swap(rebuild_skiplits_);
+    if (ret.s == Status::Ok) {
+      ret.max_id = max_recovered_id_;
+      ret.rebuild_skiplits.swap(rebuild_skiplits_);
+    }
   }
   cleanInvalidRecords();
   return ret;
