@@ -249,7 +249,7 @@ Status HashList::CheckIndex() {
           "table\n");
       return Status::Abort;
     }
-    if (!DLList::CheckLinkage(curr, pmem_allocator_)) {
+    if (!DLListRecoveryUtils::CheckLinkage(curr, pmem_allocator_)) {
       GlobalLogger.Error("Check hash index error: dl record linkage error\n");
       return Status::Abort;
     }

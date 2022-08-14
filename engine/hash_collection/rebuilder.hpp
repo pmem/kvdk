@@ -33,7 +33,7 @@ class HashListRebuilder {
         checkpoint_(checkpoint) {}
 
   Status AddElem(DLRecord* elem_record) {
-    bool linked_record = DLListRebuilderHelper::CheckAndRepairLinkage(
+    bool linked_record = DLListRecoveryUtils::CheckAndRepairLinkage(
         elem_record, pmem_allocator_);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
@@ -49,7 +49,7 @@ class HashListRebuilder {
   }
 
   Status AddHeader(DLRecord* header_record) {
-    bool linked_record = DLListRebuilderHelper::CheckAndRepairLinkage(
+    bool linked_record = DLListRecoveryUtils::CheckAndRepairLinkage(
         header_record, pmem_allocator_);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
@@ -106,14 +106,45 @@ class HashListRebuilder {
       return s;
     }
 
+    // Keep headers with same id together for recognize outdated ones
+    auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
+      auto id1 = HashList::FetchID(header1);
+      auto id2 = HashList::FetchID(header2);
+      if (id1 == id2) {
+        return header1->GetTimestamp() < header2->GetTimestamp();
+      }
+      return id1 < id2;
+    };
+    std::sort(linked_headers_.begin(), linked_headers_.end(), cmp);
+
     for (size_t i = 0; i < linked_headers_.size(); i++) {
       DLRecord* header_record = linked_headers_[i];
-      // if (i + 1 < linked_headers_.size() /*&& xx*/) {
-      // continue;
-      // }
+      if (i + 1 < linked_headers_.size() &&
+          HashList::FetchID(header_record) ==
+              HashList::FetchID(linked_headers_[i + 1])) {
+        // There are newer version of this header, it indicates system crashed
+        // while updating header of a empty skiplist in previous run before
+        // break header linkage.
+        kvdk_assert(header_record->prev == header_record->next &&
+                        header_record->prev ==
+                            pmem_allocator_->addr2offset(header_record),
+                    "outdated header record with valid linkage should always "
+                    "point to it self");
+        // Break the linkage
+        auto newer_offset =
+            pmem_allocator_->addr2offset(linked_headers_[i + 1]);
+        header_record->PersistPrevNT(newer_offset);
+        kvdk_assert(!DLListRecoveryUtils::CheckPrevLinkage(header_record,
+                                                           pmem_allocator_) &&
+                        !DLListRecoveryUtils::CheckNextLinkage(header_record,
+                                                               pmem_allocator_),
+                    "");
+        addUnlinkedRecord(header_record);
+        continue;
+      }
 
       auto collection_name = header_record->Key();
-      CollectionIDType id = Collection::DecodeID(header_record->Value());
+      CollectionIDType id = HashList::FetchID(header_record);
       max_recovered_id_ = std::max(max_recovered_id_, id);
 
       DLRecord* valid_version_record = findCheckpointVersion(header_record);
@@ -275,7 +306,7 @@ class HashListRebuilder {
     // clean unlinked records
     for (auto& thread_cache : rebuilder_thread_cache_) {
       for (DLRecord* pmem_record : thread_cache.unlinked_records) {
-        if (!DLList::CheckLinkage(pmem_record, pmem_allocator_)) {
+        if (!DLListRecoveryUtils::CheckLinkage(pmem_record, pmem_allocator_)) {
           pmem_record->Destroy();
           to_free.emplace_back(
               pmem_allocator_->addr2offset_checked(pmem_record),

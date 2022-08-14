@@ -284,7 +284,7 @@ Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
   // We only check prev linkage as a valid prev linkage indicate valid prev and
   // next pointers on the record, so we can safely do remove/replace
   if (elem->Validate() &&
-      DLList::CheckPrevLinkage(elem, pmem_allocator_.get())) {
+      DLListRecoveryUtils::CheckPrevLinkage(elem, pmem_allocator_.get())) {
     if (elem->old_version != kNullPMemOffset) {
       bool success = DLList::Replace(
           elem,

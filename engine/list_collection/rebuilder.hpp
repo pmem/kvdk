@@ -33,7 +33,7 @@ class ListRebuilder {
 
   Status AddElem(DLRecord* elem_record) {
     kvdk_assert(elem_record->GetRecordType() == RecordType::ListElem, "");
-    bool linked_record = DLListRebuilderHelper::CheckAndRepairLinkage(
+    bool linked_record = DLListRecoveryUtils::CheckAndRepairLinkage(
         elem_record, pmem_allocator_);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
@@ -49,7 +49,7 @@ class ListRebuilder {
   }
 
   Status AddHeader(DLRecord* header_record) {
-    bool linked_record = DLListRebuilderHelper::CheckAndRepairLinkage(
+    bool linked_record = DLListRecoveryUtils::CheckAndRepairLinkage(
         header_record, pmem_allocator_);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
@@ -246,7 +246,7 @@ class ListRebuilder {
     // clean unlinked records
     for (auto& thread_cache : rebuilder_thread_cache_) {
       for (DLRecord* pmem_record : thread_cache.unlinked_records) {
-        if (!DLList::CheckLinkage(pmem_record, pmem_allocator_)) {
+        if (!DLListRecoveryUtils::CheckLinkage(pmem_record, pmem_allocator_)) {
           pmem_record->Destroy();
           to_free.emplace_back(
               pmem_allocator_->addr2offset_checked(pmem_record),

@@ -178,47 +178,4 @@ bool DLList::Remove(DLRecord* removing_record, PMEMAllocator* pmem_allocator,
   }
   return on_list;
 }
-
-bool DLList::CheckNextLinkage(DLRecord* record, PMEMAllocator* pmem_allocator) {
-  uint64_t offset = pmem_allocator->addr2offset_checked(record);
-  DLRecord* next = pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-
-  auto check_linkage = [&]() { return next->prev == offset; };
-
-  auto check_type = [&]() {
-    return next->GetRecordType() == record->GetRecordType() ||
-           (next->GetRecordType() & CollectionType) ||
-           (record->GetRecordType() & CollectionType);
-  };
-
-  auto check_id = [&]() {
-    auto next_id = ExtractID(next);
-    auto record_id = ExtractID(record);
-    return record_id == next_id;
-  };
-
-  return check_linkage() && check_type() && check_id();
-}
-
-bool DLList::CheckPrevLinkage(DLRecord* record, PMEMAllocator* pmem_allocator) {
-  uint64_t offset = pmem_allocator->addr2offset_checked(record);
-  DLRecord* prev = pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
-
-  auto check_linkage = [&]() { return prev->next == offset; };
-
-  auto check_type = [&]() {
-    return prev->GetRecordType() == record->GetRecordType() ||
-           (prev->GetRecordType() & CollectionType) ||
-           (record->GetRecordType() & CollectionType);
-  };
-
-  auto check_id = [&]() {
-    auto prev_id = ExtractID(prev);
-    auto record_id = ExtractID(record);
-    return record_id == prev_id;
-  };
-
-  return check_linkage() && check_type() && check_id();
-}
-
 }  // namespace KVDK_NAMESPACE
