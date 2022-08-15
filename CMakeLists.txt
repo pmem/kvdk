@@ -155,3 +155,43 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*)
+
+option(WITH_JNI "Build with JNI" OFF)
+if(WITH_JNI OR JNI)
+    message(STATUS "JNI library is enabled")
+    set(KVDK_SHARED_LIB engine)
+    set(KVDK_STATIC_LIB engine-static)
+
+    include(FindPackageHandleStandardArgs)
+
+    find_library(LIBPMEM_STATIC_LIB NAMES "${CMAKE_STATIC_LIBRARY_PREFIX}pmem${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    find_package_handle_standard_args(libpmem REQUIRED_VARS LIBPMEM_STATIC_LIB)
+    if(NOT libpmem_FOUND)
+        message(FATAL_ERROR "libpmem.a not found")
+    endif()
+
+    find_library(ATOMIC_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}atomic${CMAKE_SHARED_LIBRARY_SUFFIX}.1")
+    find_package_handle_standard_args(atomic REQUIRED_VARS ATOMIC_SHARED_LIB)
+    if(NOT atomic_FOUND)
+        message(FATAL_ERROR "libatomic.so.1 not found")
+    endif()
+
+    find_library(STD_CPP_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}stdc++${CMAKE_SHARED_LIBRARY_SUFFIX}.6")
+    find_package_handle_standard_args(std_cpp REQUIRED_VARS STD_CPP_SHARED_LIB)
+    if(NOT std_cpp_FOUND)
+        message(FATAL_ERROR "libstdc++.so.6 not found")
+    endif()
+
+    add_library(${KVDK_STATIC_LIB} STATIC ${SOURCES})
+    target_include_directories(${KVDK_STATIC_LIB} PUBLIC ./include ./extern)
+    target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${LIBPMEM_STATIC_LIB})
+    target_link_libraries(${KVDK_STATIC_LIB} PRIVATE pthread gflags hwloc atomic)
+    set_property(TARGET ${KVDK_STATIC_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/java)
+
+    add_cppstyle(jni_src
+        ${CMAKE_CURRENT_SOURCE_DIR}/java/kvdkjni/*.c*
+        ${CMAKE_CURRENT_SOURCE_DIR}/java/kvdkjni/*.h*)
+else()
+    message(STATUS "JNI library is disabled")
+endif()

@@ -2,7 +2,7 @@
 <p align="center"> <img src="pic/kvdk_logo.png" height="180px"><br></p>
 </div>
 
-`KVDK` (Key-Value Development Kit) is a key-value store library implemented in C++ language. It is designed for persistent memory and provides unified APIs for both volatile and persistent scenarios. It also demonstrates several optimization methods for high performance with persistent memory. Besides providing the basic APIs of key-value store, it offers several advanced features, like transaction, snapshot.
+`KVDK` (Key-Value Development Kit) is a key-value store library implemented in C++ language. It is designed for supporting DRAM, Optane persistent memory and CXL memory pool. It also demonstrates several optimization methods for high performance with tiered memory. Besides providing the basic APIs of key-value store, it offers several advanced features, like read-modify-write, checkpoint, etc.
 
 ## Features
 * Basic KV operations
@@ -16,6 +16,7 @@
 * Atomic Batch Write
 * Snapshot based Scan
 * Consistent Dump & Restore to/from storage
+* C/C++/Java APIs
 * Support Transaction (coming soon)
 
 # Limitations
@@ -31,7 +32,7 @@ git clone --recurse-submodules https://github.com/pmem/kvdk.git
 ## Building
 ### Install dependent tools and libraries on Ubuntu 18.04
 ```bash
-sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
+sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git curl
 
 git clone https://github.com/pmem/ndctl.git
 cd ndctl
@@ -61,7 +62,7 @@ sudo make install
 yum config-manager --add-repo /etc/yum.repos.d/CentOS-Linux-PowerTools.repo
 yum config-manager --set-enabled PowerTools
 
-yum install -y git gcc gcc-c++ autoconf automake asciidoc bash-completion xmlto libtool pkgconfig glib2 glib2-devel libfabric libfabric-devel doxygen graphviz pandoc ncurses kmod kmod-devel libudev-devel libuuid-devel json-c-devel keyutils-libs-devel gem make cmake libarchive clang-tools-extra hwloc-devel perl-Text-Diff gflags-devel
+yum install -y git gcc gcc-c++ autoconf automake asciidoc bash-completion xmlto libtool pkgconfig glib2 glib2-devel libfabric libfabric-devel doxygen graphviz pandoc ncurses kmod kmod-devel libudev-devel libuuid-devel json-c-devel keyutils-libs-devel gem make cmake libarchive clang-tools-extra hwloc-devel perl-Text-Diff gflags-devel curl
 
 git clone https://github.com/pmem/ndctl.git
 cd ndctl
