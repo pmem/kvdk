@@ -269,7 +269,7 @@ Status KVEngine::SortedDeleteImpl(Skiplist* skiplist,
 Status KVEngine::SortedPutImpl(Skiplist* skiplist, const StringView& user_key,
                                const StringView& value) {
   std::string collection_key(skiplist->InternalKey(user_key));
-  if (!CheckKeySize(collection_key) || !CheckKeySize(value)) {
+  if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
     return Status::InvalidDataSize;
   }
 
