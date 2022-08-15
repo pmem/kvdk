@@ -388,7 +388,7 @@ SortedWriteArgs Skiplist::InitWriteArgs(const StringView& key,
   return args;
 }
 
-Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
+Status Skiplist::PrepareWrite(SortedWriteArgs& args, TimeStampType ts) {
   kvdk_assert(args.op == WriteOp::Put || args.value.size() == 0,
               "value of delete operation should be empty");
   if (args.skiplist != this) {
@@ -448,6 +448,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args) {
     }
   }
 
+  args.ts = ts;
   return Status::Ok;
 }
 
@@ -455,8 +456,7 @@ Skiplist::WriteResult Skiplist::Delete(const StringView& key,
                                        TimeStampType timestamp) {
   WriteResult ret;
   SortedWriteArgs args = InitWriteArgs(key, "", WriteOp::Delete);
-  ret.s = PrepareWrite(args);
-  args.ts = timestamp;
+  ret.s = PrepareWrite(args, timestamp);
   if (ret.s == Status::Ok && args.space.size > 0) {
     ret = Write(args);
   }
@@ -468,8 +468,7 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     TimeStampType timestamp) {
   WriteResult ret;
   SortedWriteArgs args = InitWriteArgs(key, value, WriteOp::Put);
-  ret.s = PrepareWrite(args);
-  args.ts = timestamp;
+  ret.s = PrepareWrite(args, timestamp);
   if (ret.s == Status::Ok) {
     ret = Write(args);
   }

@@ -76,8 +76,9 @@ class EngineBasicTest : public testing::Test {
     Destroy();
   }
 
-  void AssignData(std::string& data, int len) {
-    data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
+  std::string FastRandomString(int len) {
+    return std::string(
+        str_pool.data() + fast_random_64() % (str_pool_length - len), len);
   }
 
   void Destroy() {
@@ -323,10 +324,10 @@ class EngineBasicTest : public testing::Test {
     std::string val1, val2, got_val1, got_val2;
     int t_cnt = cnt;
     while (t_cnt--) {
-      std::string key1(std::string(id + 1, 'a') + std::to_string(t_cnt));
-      std::string key2(std::string(id + 1, 'b') + std::to_string(t_cnt));
-      AssignData(val1, fast_random_64() % 1024);
-      AssignData(val2, fast_random_64() % 1024);
+      std::string key1(std::to_string(id) + "_" + std::to_string(t_cnt));
+      std::string key2(std::to_string(id) + "@" + std::to_string(t_cnt));
+      val1 = FastRandomString(fast_random_64() % 1024);
+      val2 = FastRandomString(fast_random_64() % 1024);
 
       // Put
       ASSERT_EQ(PutFunc(collection, key1, val1), Status::Ok);
@@ -343,7 +344,7 @@ class EngineBasicTest : public testing::Test {
       ASSERT_EQ(GetFunc(collection, key1, &got_val1), Status::NotFound);
 
       // Update
-      AssignData(val2, fast_random_64() % 1024);
+      val2 = FastRandomString(fast_random_64() % 1024);
       ASSERT_EQ(PutFunc(collection, key2, val2), Status::Ok);
       ASSERT_EQ(GetFunc(collection, key2, &got_val2), Status::Ok);
       ASSERT_EQ(got_val2, val2);

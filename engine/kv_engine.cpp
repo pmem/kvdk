@@ -1026,8 +1026,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Prepare for Strings
   for (auto& args : string_args) {
-    args.ts = bw_token.Timestamp();
-    Status s = stringWritePrepare(args);
+    Status s = stringWritePrepare(args, bw_token.Timestamp());
     if (s != Status::Ok) {
       return s;
     }
@@ -1035,8 +1034,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Prepare for Sorted Elements
   for (auto& args : sorted_args) {
-    args.ts = bw_token.Timestamp();
-    Status s = sortedWritePrepare(args);
+    Status s = sortedWritePrepare(args, bw_token.Timestamp());
     if (s != Status::Ok) {
       return s;
     }

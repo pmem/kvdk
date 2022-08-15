@@ -294,8 +294,8 @@ Status KVEngine::restoreSortedElem(DLRecord* elem) {
   return sorted_rebuilder_->AddElement(elem);
 }
 
-Status KVEngine::sortedWritePrepare(SortedWriteArgs& args) {
-  return args.skiplist->PrepareWrite(args);
+Status KVEngine::sortedWritePrepare(SortedWriteArgs& args, TimeStampType ts) {
+  return args.skiplist->PrepareWrite(args, ts);
 }
 
 Status KVEngine::sortedWrite(SortedWriteArgs& args) {

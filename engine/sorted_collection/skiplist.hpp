@@ -257,7 +257,7 @@ class Skiplist : public Collection {
   // MemoryOverflow if no enough dram space
   //
   // Notice: args.key should already been locked by engine
-  Status PrepareWrite(SortedWriteArgs& args);
+  Status PrepareWrite(SortedWriteArgs& args, TimeStampType ts);
 
   // Do batch write according to args
   //

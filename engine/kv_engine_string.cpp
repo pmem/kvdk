@@ -289,12 +289,13 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   return Status::Ok;
 }
 
-Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
+Status KVEngine::stringWritePrepare(StringWriteArgs& args, TimeStampType ts) {
   args.res = lookupKey<true>(args.key, RecordType::String);
   if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
       args.res.s != Status::Outdated) {
     return args.res.s;
   }
+  args.ts = ts;
   if (args.op == WriteOp::Delete && args.res.s != Status::Ok) {
     return Status::Ok;
   }
