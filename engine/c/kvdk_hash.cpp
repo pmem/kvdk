@@ -94,11 +94,16 @@ KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
     return nullptr;
   }
   KVDKHashIterator* hash_iter = new KVDKHashIterator;
-  hash_iter->rep.swap(iter);
+  hash_iter->rep = iter;
   return hash_iter;
 }
 
-void KVDKHashIteratorDestroy(KVDKHashIterator* iter) { delete iter; }
+void KVDKHashIteratorDestroy(KVDKEngine* engine, KVDKHashIterator* iter) {
+  if (iter->rep) {
+    engine->rep->HashIteratorRelease(iter->rep);
+  }
+  delete iter;
+}
 
 void KVDKHashIteratorPrev(KVDKHashIterator* iter) { iter->rep->Prev(); }
 

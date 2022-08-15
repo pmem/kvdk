@@ -8,10 +8,8 @@
 namespace KVDK_NAMESPACE {
 class ListIteratorImpl final : public ListIterator {
  public:
-  ListIteratorImpl(Engine* engine, List* list, const SnapshotImpl* snapshot,
-                   bool own_snapshot)
-      : engine_(engine),
-        list_(list),
+  ListIteratorImpl(List* list, const SnapshotImpl* snapshot, bool own_snapshot)
+      : list_(list),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
         dl_iter_(&list->dl_list_, list->pmem_allocator_, snapshot) {}
@@ -79,14 +77,9 @@ class ListIteratorImpl final : public ListIterator {
     return std::string{sw.data(), sw.size()};
   }
 
-  ~ListIteratorImpl() final {
-    if (own_snapshot_ && snapshot_) {
-      engine_->ReleaseSnapshot(snapshot_);
-    }
-  }
-
  private:
-  Engine* engine_;
+  friend KVEngine;
+
   List* list_;
   const SnapshotImpl* snapshot_;
   bool own_snapshot_;

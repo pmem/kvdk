@@ -157,7 +157,7 @@ TEST_F(EngineCAPITestBase, Hash) {
     KVDKRegexDestroy(re2);
     KVDKRegexDestroy(re1);
 
-    KVDKHashIteratorDestroy(iter);
+    KVDKHashIteratorDestroy(engine, iter);
   };
 
   std::string counter{"counter"};

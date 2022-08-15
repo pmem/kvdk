@@ -219,10 +219,10 @@ Status KVEngine::HashModify(StringView collection, StringView key,
   return s;
 }
 
-std::unique_ptr<HashIterator> KVEngine::HashIteratorCreate(
-    StringView collection, Snapshot* snapshot, Status* status) {
+HashIterator* KVEngine::HashIteratorCreate(StringView collection,
+                                           Snapshot* snapshot, Status* status) {
   Status s{Status::Ok};
-  std::unique_ptr<HashIterator> ret(nullptr);
+  HashIterator* ret(nullptr);
   if (!CheckKeySize(collection)) {
     s = Status::InvalidDataSize;
   }
@@ -235,8 +235,8 @@ std::unique_ptr<HashIterator> KVEngine::HashIteratorCreate(
     HashList* hlist;
     Status s = hashListFind(collection, &hlist);
     if (s == Status::Ok) {
-      ret = std::unique_ptr<HashIteratorImpl>{new HashIteratorImpl{
-          this, hlist, static_cast<SnapshotImpl*>(snapshot), create_snapshot}};
+      ret = new HashIteratorImpl(hlist, static_cast<SnapshotImpl*>(snapshot),
+                                 create_snapshot);
     } else if (create_snapshot) {
       ReleaseSnapshot(snapshot);
     }
@@ -245,6 +245,18 @@ std::unique_ptr<HashIterator> KVEngine::HashIteratorCreate(
     *status = s;
   }
   return ret;
+}
+
+void KVEngine::HashIteratorRelease(HashIterator* hash_iter) {
+  if (hash_iter == nullptr) {
+    GlobalLogger.Info("pass a nullptr in KVEngine::HashIteratorRelease!\n");
+    return;
+  }
+  HashIteratorImpl* iter = static_cast<HashIteratorImpl*>(hash_iter);
+  if (iter->own_snapshot_) {
+    ReleaseSnapshot(iter->snapshot_);
+  }
+  delete iter;
 }
 
 Status KVEngine::hashListFind(StringView collection, HashList** hlist) {

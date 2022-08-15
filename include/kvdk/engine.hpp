@@ -294,15 +294,19 @@ class Engine {
   //    Status::Ok if operation succeeded.
   virtual Status ListReplace(StringView list, long index, StringView elem) = 0;
 
-  // Create an ListIterator from List
-  // Return:
-  //    nullptr if List is not found or has expired, or list name is not of type
-  //    List, otherwise return ListIterator to First element of List
-  // Internally ListIterator holds an recursive of List, which is relased
-  // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListIteratorCreate(
-      StringView list, Snapshot* snapshot = nullptr,
-      Status* status = nullptr) = 0;
+  // Create a KV iterator on list "list", which is able to iterate all elems in
+  // the list at "snapshot" version, if snapshot is nullptr, then a
+  // internal snapshot will be created at current version and the iterator will
+  // be created on it
+  //
+  // Notice:
+  // 1. Iterator will be invalid after the passed snapshot is released
+  // 2. Please release the iterator as soon as it is not needed, as the holding
+  // snapshot will forbid newer data being freed
+  virtual ListIterator* ListIteratorCreate(StringView list,
+                                           Snapshot* snapshot = nullptr,
+                                           Status* status = nullptr) = 0;
+  virtual void ListIteratorRelease(ListIterator*) = 0;
 
   /// Hash APIs ///////////////////////////////////////////////////////////////
 
@@ -316,12 +320,19 @@ class Engine {
   virtual Status HashDelete(StringView collection, StringView key) = 0;
   virtual Status HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) = 0;
-  // Warning: HashIterator internally holds a snapshot,
-  // prevents some resources from being freed.
-  // The HashIterator should be destroyed as long as it is no longer used.
-  virtual std::unique_ptr<HashIterator> HashIteratorCreate(
-      StringView collection, Snapshot* snapshot = nullptr,
-      Status* s = nullptr) = 0;
+  // Create a KV iterator on hash collection "collection", which is able to
+  // iterate all elems in the collection at "snapshot" version, if snapshot is
+  // nullptr, then a internal snapshot will be created at current version and
+  // the iterator will be created on it
+  //
+  // Notice:
+  // 1. Iterator will be invalid after the passed snapshot is released
+  // 2. Please release the iterator as soon as it is not needed, as the holding
+  // snapshot will forbid newer data being freed
+  virtual HashIterator* HashIteratorCreate(StringView collection,
+                                           Snapshot* snapshot = nullptr,
+                                           Status* s = nullptr) = 0;
+  virtual void HashIteratorRelease(HashIterator*) = 0;
 
   /// Other ///////////////////////////////////////////////////////////////////
 
@@ -352,12 +363,12 @@ class Engine {
   // 1. Iterator will be invalid after the passed snapshot is released
   // 2. Please release the iterator as soon as it is not needed, as the holding
   // snapshot will forbid newer data being freed
-  virtual Iterator* NewSortedIterator(const StringView collection,
-                                      Snapshot* snapshot = nullptr,
-                                      Status* s = nullptr) = 0;
+  virtual Iterator* SortedIteratorCreate(const StringView collection,
+                                         Snapshot* snapshot = nullptr,
+                                         Status* s = nullptr) = 0;
 
   // Release a sorted iterator
-  virtual void ReleaseSortedIterator(Iterator*) = 0;
+  virtual void SortedIteratorRelease(Iterator*) = 0;
 
   // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.

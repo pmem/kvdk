@@ -71,7 +71,7 @@ public class KVDKExamples {
 
         // print sorted result
         System.out.println("Sorted by key:");
-        Iterator iter = kvdkEngine.newSortedIterator(nameHandle);
+        Iterator iter = kvdkEngine.sortedIteratorCreate(nameHandle);
         for (iter.seekToFirst(); iter.isValid(); iter.next()) {
             System.out.println(
                     new String(iter.key()).replace("\0", "[\\0]")

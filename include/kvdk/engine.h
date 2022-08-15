@@ -196,7 +196,7 @@ extern KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                                 size_t key_len,
                                                 KVDKSnapshot* snapshot,
                                                 KVDKStatus* s);
-extern void KVDKHashIteratorDestroy(KVDKHashIterator* iter);
+extern void KVDKHashIteratorDestroy(KVDKEngine* engine, KVDKHashIterator* iter);
 extern void KVDKHashIteratorPrev(KVDKHashIterator* iter);
 extern void KVDKHashIteratorNext(KVDKHashIterator* iter);
 extern void KVDKHashIteratorSeekToFirst(KVDKHashIterator* iter);
@@ -271,7 +271,7 @@ extern KVDKStatus KVDKListReplace(KVDKEngine* engine, char const* list_name,
 extern KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
                                                 char const* key_data,
                                                 size_t key_len, KVDKStatus* s);
-extern void KVDKListIteratorDestroy(KVDKListIterator* iter);
+extern void KVDKListIteratorDestroy(KVDKEngine* engine, KVDKListIterator* iter);
 extern void KVDKListIteratorPrev(KVDKListIterator* iter);
 extern void KVDKListIteratorNext(KVDKListIterator* iter);
 extern void KVDKListIteratorPrevElem(KVDKListIterator* iter,

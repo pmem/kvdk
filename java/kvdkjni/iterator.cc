@@ -20,7 +20,7 @@ void Java_io_pmem_kvdk_Iterator_closeInternal(JNIEnv*, jobject,
   assert(iterator != nullptr);
   assert(engine != nullptr);
 
-  engine->ReleaseSortedIterator(iterator);
+  engine->SortedIteratorRelease(iterator);
 }
 
 /*

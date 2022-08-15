@@ -209,7 +209,7 @@ Status KVEngine::SortedDelete(const StringView collection,
   return SortedDeleteImpl(skiplist, user_key);
 }
 
-Iterator* KVEngine::NewSortedIterator(const StringView collection,
+Iterator* KVEngine::SortedIteratorCreate(const StringView collection,
                                       Snapshot* snapshot, Status* s) {
   Skiplist* skiplist;
   bool create_snapshot = snapshot == nullptr;
@@ -234,9 +234,9 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
   }
 }
 
-void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
+void KVEngine::SortedIteratorRelease(Iterator* sorted_iterator) {
   if (sorted_iterator == nullptr) {
-    GlobalLogger.Info("pass a nullptr in KVEngine::ReleaseSortedIterator!\n");
+    GlobalLogger.Info("pass a nullptr in KVEngine::SortedIteratorRelease!\n");
     return;
   }
   SortedIterator* iter = static_cast<SortedIterator*>(sorted_iterator);

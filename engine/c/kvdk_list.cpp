@@ -173,11 +173,16 @@ KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
     return nullptr;
   }
   KVDKListIterator* iter = new KVDKListIterator;
-  iter->rep.swap(rep);
+  iter->rep = rep;
   return iter;
 }
 
-void KVDKListIteratorDestroy(KVDKListIterator* iter) { delete iter; }
+void KVDKListIteratorDestroy(KVDKEngine* engine, KVDKListIterator* iter) {
+  if (iter->rep) {
+    engine->rep->ListIteratorRelease(iter->rep);
+  }
+  delete iter;
+}
 
 void KVDKListIteratorPrev(KVDKListIterator* iter) { iter->rep->Prev(); }
 

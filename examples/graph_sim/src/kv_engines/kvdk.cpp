@@ -71,7 +71,7 @@ class PMemKVDKIterator : public KVEngine::Iterator {
 
   ~PMemKVDKIterator() {
     if (iter_) {
-      engine_->ReleaseSortedIterator(iter_);
+      engine_->SortedIteratorRelease(iter_);
     }
   }
 
@@ -91,7 +91,7 @@ class PMemKVDKIterator : public KVEngine::Iterator {
 KVEngine::Iterator* PMemKVDK::NewIterator() {
   if (!collection_.empty()) {
     // TODO fix snapshot
-    auto it = db_->NewSortedIterator(collection_);
+    auto it = db_->SortedIteratorCreate(collection_);
     return new PMemKVDKIterator(it, db_);
   }
   return nullptr;

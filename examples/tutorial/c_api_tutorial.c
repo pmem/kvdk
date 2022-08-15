@@ -374,7 +374,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   }
   printf("Successfully performed Get Put Delete Iterate on HashList.\n");
   assert(cnt == 9);
-  KVDKHashIteratorDestroy(kvdk_iter);
+  KVDKHashIteratorDestroy(kvdk_engine, kvdk_iter);
 
   s = KVDKHashDestroy(kvdk_engine, hash_collection, strlen(hash_collection));
   assert(s == Ok);

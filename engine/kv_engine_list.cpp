@@ -484,10 +484,10 @@ Status KVEngine::ListReplace(StringView collection, long index,
   return list->Update(index, elem, version_controller_.GetCurrentTimestamp()).s;
 }
 
-std::unique_ptr<ListIterator> KVEngine::ListIteratorCreate(
-    StringView collection, Snapshot* snapshot, Status* status) {
+ListIterator* KVEngine::ListIteratorCreate(StringView collection,
+                                           Snapshot* snapshot, Status* status) {
   Status s{Status::Ok};
-  std::unique_ptr<ListIterator> ret(nullptr);
+  ListIterator* ret(nullptr);
   if (!CheckKeySize(collection)) {
     s = Status::InvalidDataSize;
   }
@@ -500,8 +500,8 @@ std::unique_ptr<ListIterator> KVEngine::ListIteratorCreate(
     List* list;
     Status s = listFind(collection, &list);
     if (s == Status::Ok) {
-      ret = std::unique_ptr<ListIteratorImpl>(new ListIteratorImpl(
-          this, list, static_cast<SnapshotImpl*>(snapshot), create_snapshot));
+      ret = new ListIteratorImpl(list, static_cast<SnapshotImpl*>(snapshot),
+                                 create_snapshot);
     } else if (create_snapshot) {
       ReleaseSnapshot(snapshot);
     }
@@ -511,6 +511,18 @@ std::unique_ptr<ListIterator> KVEngine::ListIteratorCreate(
     *status = s;
   }
   return ret;
+}
+
+void KVEngine::ListIteratorRelease(ListIterator* list) {
+  if (list == nullptr) {
+    GlobalLogger.Info("pass a nullptr in KVEngine::SortedIteratorRelease!\n");
+    return;
+  }
+  ListIteratorImpl* iter = static_cast<ListIteratorImpl*>(list);
+  if (iter->own_snapshot_) {
+    ReleaseSnapshot(iter->snapshot_);
+  }
+  delete iter;
 }
 
 Status KVEngine::listRestoreElem(DLRecord* pmp_record) {

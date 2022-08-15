@@ -476,7 +476,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               auto hlist = getHashlist(HashList::FetchID(header));
               kvdk_assert(hlist != nullptr, "Backup hlist should exist in map");
               auto hlist_iter = HashIteratorImpl(
-                  this, hlist.get(), static_cast<const SnapshotImpl*>(snapshot),
+                  hlist.get(), static_cast<const SnapshotImpl*>(snapshot),
                   false);
               for (hlist_iter.SeekToFirst(); hlist_iter.Valid();
                    hlist_iter.Next()) {
@@ -505,7 +505,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               auto list = getList(List::FetchID(header));
               kvdk_assert(list != nullptr, "Backup list should exist in map");
               auto list_iter = ListIteratorImpl(
-                  this, list.get(), static_cast<const SnapshotImpl*>(snapshot),
+                  list.get(), static_cast<const SnapshotImpl*>(snapshot),
                   false);
               for (list_iter.SeekToFirst(); list_iter.Valid();
                    list_iter.Next()) {

@@ -150,7 +150,7 @@ TEST_F(EngineCAPITestBase, List) {
         KVDKListIteratorPrev(iter);
       }
     }
-    KVDKListIteratorDestroy(iter);
+    KVDKListIteratorDestroy(engine, iter);
   };
 
   auto ConvertParams = [](std::vector<std::string> const& elems) {
@@ -189,7 +189,7 @@ TEST_F(EngineCAPITestBase, List) {
                                    iter_elem.size()),
               KVDKStatus::Ok);
     iter2 = list_copy.insert(iter2, elem);
-    KVDKListIteratorDestroy(iter);
+    KVDKListIteratorDestroy(engine, iter);
     iter = KVDKListIteratorCreate(engine, list_name.data(), list_name.size(),
                                   NULL);
     KVDKListIteratorSeekPos(iter, insert_pos);
@@ -206,7 +206,7 @@ TEST_F(EngineCAPITestBase, List) {
                               replace_pos, elem.data(), elem.size()),
               KVDKStatus::Ok);
     *iter2 = elem;
-    KVDKListIteratorDestroy(iter);
+    KVDKListIteratorDestroy(engine, iter);
     iter = KVDKListIteratorCreate(engine, list_name.data(), list_name.size(),
                                   NULL);
     KVDKListIteratorSeekPos(iter, replace_pos);
@@ -222,12 +222,12 @@ TEST_F(EngineCAPITestBase, List) {
         KVDKListErase(engine, list_name.data(), list_name.size(), erase_pos),
         KVDKStatus::Ok);
     iter2 = list_copy.erase(iter2);
-    KVDKListIteratorDestroy(iter);
+    KVDKListIteratorDestroy(engine, iter);
     iter = KVDKListIteratorCreate(engine, list_name.data(), list_name.size(),
                                   NULL);
     KVDKListIteratorSeekPos(iter, erase_pos);
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
-    KVDKListIteratorDestroy(iter);
+    KVDKListIteratorDestroy(engine, iter);
   };
 
   auto LBatchPush = [&](size_t tid) {

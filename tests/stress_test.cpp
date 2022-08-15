@@ -582,24 +582,24 @@ class EngineTestBase : public testing::Test {
     std::cout << "[Testing] Checking Hashes Collection: " << collection_name
               << std::endl;
     shadow_hashes_engines[collection_name]->CheckGetter();
+    auto iter = engine->HashIteratorCreate(collection_name);
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->HashIteratorCreate(collection_name).get(),
-        kvdk_testing::IteratingDirection::Forward);
+        iter, kvdk_testing::IteratingDirection::Forward);
     shadow_hashes_engines[collection_name]->CheckIterator(
-        engine->HashIteratorCreate(collection_name).get(),
-        kvdk_testing::IteratingDirection::Backward);
+        iter, kvdk_testing::IteratingDirection::Backward);
+    engine->HashIteratorRelease(iter);
   }
 
   void CheckSortedCollection(std::string collection_name) {
     std::cout << "[Testing] Checking Sorted Collection: " << collection_name
               << std::endl;
     shadow_sorted_engines[collection_name]->CheckGetter();
-    auto iter = engine->NewSortedIterator(collection_name);
+    auto iter = engine->SortedIteratorCreate(collection_name);
     shadow_sorted_engines[collection_name]->CheckIterator(
         iter, kvdk_testing::IteratingDirection::Forward);
     shadow_sorted_engines[collection_name]->CheckIterator(
         iter, kvdk_testing::IteratingDirection::Backward);
-    engine->ReleaseSortedIterator(iter);
+    engine->SortedIteratorRelease(iter);
   }
 
   void CheckStrings() {

@@ -6,12 +6,13 @@
 #include "kvdk/iterator.hpp"
 
 namespace KVDK_NAMESPACE {
+class KVEngine;
+
 class HashIteratorImpl final : public HashIterator {
  public:
-  HashIteratorImpl(Engine* engine, HashList* hlist,
-                   const SnapshotImpl* snapshot, bool own_snapshot)
-      : engine_(engine),
-        hlist_(hlist),
+  HashIteratorImpl(HashList* hlist, const SnapshotImpl* snapshot,
+                   bool own_snapshot)
+      : hlist_(hlist),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
         dl_iter_(&hlist->dl_list_, hlist->pmem_allocator_, snapshot) {}
@@ -49,14 +50,9 @@ class HashIteratorImpl final : public HashIterator {
     return std::regex_match(Key(), re);
   }
 
-  ~HashIteratorImpl() final {
-    if (own_snapshot_ && snapshot_) {
-      engine_->ReleaseSnapshot(snapshot_);
-    }
-  };
-
  private:
-  Engine* engine_;
+  friend KVEngine;
+
   HashList* hlist_;
   const SnapshotImpl* snapshot_;
   bool own_snapshot_;

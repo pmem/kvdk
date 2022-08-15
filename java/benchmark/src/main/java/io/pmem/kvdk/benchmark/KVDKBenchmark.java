@@ -945,7 +945,7 @@ public class KVDKBenchmark {
                 switch (dataType) {
                     case Sorted:
                         int cid = (int) (num % numCollection);
-                        Iterator iter = kvdkEngine.newSortedIterator(collectionNameHandles[cid]);
+                        Iterator iter = kvdkEngine.sortedIteratorCreate(collectionNameHandles[cid]);
                         iter.seek(key);
                         for (int i = 0; i < scanLength && iter.isValid(); i++, iter.next()) {
                             key = iter.key();
@@ -957,7 +957,7 @@ public class KVDKBenchmark {
                                 operations_counted = operations;
                             }
                         }
-                        kvdkEngine.releaseSortedIterator(iter);
+                        kvdkEngine.sortedIteratorRelease(iter);
 
                         break;
                     case Blackhole:

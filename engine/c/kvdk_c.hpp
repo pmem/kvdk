@@ -45,11 +45,11 @@ struct KVDKSortedIterator {
 };
 
 struct KVDKListIterator {
-  std::unique_ptr<ListIterator> rep;
+  ListIterator* rep;
 };
 
 struct KVDKHashIterator {
-  std::unique_ptr<HashIterator> rep;
+  HashIterator* rep;
 };
 
 struct KVDKSnapshot {

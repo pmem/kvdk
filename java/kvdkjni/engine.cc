@@ -373,7 +373,7 @@ void Java_io_pmem_kvdk_Engine_sortedDelete(JNIEnv* env, jobject,
 
 /*
  * Class:     io_pmem_kvdk_Engine
- * Method:    newSortedIterator
+ * Method:    sortedIteratorCreate
  * Signature: (JJI)J
  */
 jlong Java_io_pmem_kvdk_Engine_newSortedIterator(JNIEnv* env, jobject,
@@ -385,7 +385,7 @@ jlong Java_io_pmem_kvdk_Engine_newSortedIterator(JNIEnv* env, jobject,
 
   KVDK_NAMESPACE::Status s;
   KVDK_NAMESPACE::Iterator* iter =
-      engine->NewSortedIterator(std::string(name_chars, name_len), nullptr, &s);
+      engine->SortedIteratorCreate(std::string(name_chars, name_len), nullptr, &s);
 
   if (s == KVDK_NAMESPACE::Status::Ok) {
     return GET_CPLUSPLUS_POINTER(iter);

@@ -247,7 +247,7 @@ class EngineBasicTest : public testing::Test {
       ASSERT_EQ(engine->SortedSize(new_collection, &collection_size),
                 Status::Ok);
 
-      auto iter = engine->NewSortedIterator(new_collection);
+      auto iter = engine->SortedIteratorCreate(new_collection);
       ASSERT_TRUE(iter != nullptr);
       // forward iterator
       iter->SeekToFirst();
@@ -285,7 +285,7 @@ class EngineBasicTest : public testing::Test {
         }
       }
       ASSERT_EQ(entries, 0);
-      engine->ReleaseSortedIterator(iter);
+      engine->SortedIteratorRelease(iter);
     };
     LaunchNThreads(configs.max_access_threads, IteratingThrough);
   }
@@ -640,7 +640,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
   {  // sorted snapshot iterator
     Iterator* sorted_snapshot_iter =
-        engine->NewSortedIterator(sorted_collection, snapshot);
+        engine->SortedIteratorCreate(sorted_collection, snapshot);
     // Destroyed collection still should be accessable by snapshot_iter
     engine->SortedDestroy(sorted_collection);
 
@@ -653,13 +653,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       sorted_snapshot_iter->Next();
     }
     ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
-    engine->ReleaseSortedIterator(sorted_snapshot_iter);
+    engine->SortedIteratorRelease(sorted_snapshot_iter);
 
-    sorted_snapshot_iter =
-        engine->NewSortedIterator(sorted_collection_after_snapshot, snapshot);
+    sorted_snapshot_iter = engine->SortedIteratorCreate(
+        sorted_collection_after_snapshot, snapshot);
     sorted_snapshot_iter->SeekToFirst();
     ASSERT_FALSE(sorted_snapshot_iter->Valid());
-    engine->ReleaseSortedIterator(sorted_snapshot_iter);
+    engine->SortedIteratorRelease(sorted_snapshot_iter);
   }
 
   {  // Hash snapshot iterator
@@ -676,11 +676,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       hash_snapshot_iter->Next();
     }
     ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+    engine->HashIteratorRelease(hash_snapshot_iter);
 
     hash_snapshot_iter =
         engine->HashIteratorCreate(hash_collection_after_snapshot, snapshot);
     hash_snapshot_iter->SeekToFirst();
     ASSERT_FALSE(hash_snapshot_iter->Valid());
+    engine->HashIteratorRelease(hash_snapshot_iter);
   }
 
   {  // List snapshot iterator
@@ -697,11 +699,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       list_snapshot_iter->Next();
     }
     ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+    engine->ListIteratorRelease(list_snapshot_iter);
 
     list_snapshot_iter =
         engine->ListIteratorCreate(list_after_snapshot, snapshot);
     list_snapshot_iter->SeekToFirst();
     ASSERT_FALSE(list_snapshot_iter->Valid());
+    engine->ListIteratorRelease(list_snapshot_iter);
   }
 
   delete engine;
@@ -757,7 +761,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
 
     {  // sorted iterator
       uint64_t sorted_iter_cnt = 0;
-      auto sorted_iter = engine->NewSortedIterator(sorted_collection);
+      auto sorted_iter = engine->SortedIteratorCreate(sorted_collection);
       ASSERT_TRUE(sorted_iter != nullptr);
       sorted_iter->SeekToFirst();
       while (sorted_iter->Valid()) {
@@ -767,8 +771,8 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         sorted_iter->Next();
       }
       ASSERT_EQ(sorted_iter_cnt, num_threads * count * 2);
-      engine->ReleaseSortedIterator(sorted_iter);
-      ASSERT_EQ(engine->NewSortedIterator(sorted_collection_after_snapshot),
+      engine->SortedIteratorRelease(sorted_iter);
+      ASSERT_EQ(engine->SortedIteratorCreate(sorted_collection_after_snapshot),
                 nullptr);
     }
 
@@ -783,6 +787,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         ASSERT_EQ(hash_iter->Key(), hash_iter->Value());
         hash_iter->Next();
       }
+      engine->HashIteratorRelease(hash_iter);
       ASSERT_EQ(hash_iter_cnt, num_threads * count * 2);
       ASSERT_EQ(engine->HashIteratorCreate(hash_collection_after_snapshot),
                 nullptr);
@@ -800,6 +805,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
                     list_iter->Value()[0] == 'b');
         list_iter->Next();
       }
+      engine->ListIteratorRelease(list_iter);
       ASSERT_EQ(list_iter_cnt, num_threads * count * 2);
       ASSERT_EQ(engine->ListIteratorCreate(hash_collection_after_snapshot),
                 nullptr);
@@ -1169,7 +1175,7 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(engine->SortedPut(collection, zero_filled_str, zero_filled_str),
             Status::Ok);
   ASSERT_EQ(engine->SortedGet(collection, zero_filled_str, &val), Status::Ok);
-  auto iter = engine->NewSortedIterator(collection);
+  auto iter = engine->SortedIteratorCreate(collection);
   ASSERT_NE(iter, nullptr);
   iter->Seek(zero_filled_str);
   ASSERT_TRUE(iter->Valid());
@@ -1182,13 +1188,13 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(engine->SortedDelete(collection, "foo"), Status::Ok);
   ASSERT_EQ(engine->SortedGet(collection, "foo", &val), Status::NotFound);
   ASSERT_EQ(engine->SortedPut(collection, "foo2", "bar2"), Status::Ok);
-  engine->ReleaseSortedIterator(iter);
-  iter = engine->NewSortedIterator(collection);
+  engine->SortedIteratorRelease(iter);
+  iter = engine->SortedIteratorCreate(collection);
   ASSERT_NE(iter, nullptr);
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(iter->Value(), "bar2");
-  engine->ReleaseSortedIterator(iter);
+  engine->SortedIteratorRelease(iter);
   delete engine;
 }
 
@@ -1368,7 +1374,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         size_t t_skiplist_size;
         ASSERT_EQ(engine->SortedSize(t_skiplist, &t_skiplist_size), Status::Ok);
 
-        auto iter = engine->NewSortedIterator(t_skiplist);
+        auto iter = engine->SortedIteratorCreate(t_skiplist);
         ASSERT_TRUE(iter != nullptr);
         int data_entries_scan = 0;
         iter->SeekToFirst();
@@ -1401,14 +1407,14 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
           }
         }
         ASSERT_EQ(data_entries_scan, 0);
-        engine->ReleaseSortedIterator(iter);
+        engine->SortedIteratorRelease(iter);
       }
 
       size_t global_skiplist_size;
       ASSERT_EQ(engine->SortedSize(global_skiplist, &global_skiplist_size),
                 Status::Ok);
       int data_entries_scan = 0;
-      auto iter = engine->NewSortedIterator(global_skiplist);
+      auto iter = engine->SortedIteratorCreate(global_skiplist);
       ASSERT_TRUE(iter != nullptr);
       iter->SeekToFirst();
       if (iter->Valid()) {
@@ -1440,7 +1446,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         }
       }
       ASSERT_EQ(data_entries_scan, 0);
-      engine->ReleaseSortedIterator(iter);
+      engine->SortedIteratorRelease(iter);
       delete engine;
       Destroy();
     }
@@ -1687,6 +1693,7 @@ TEST_F(EngineBasicTest, TestList) {
         ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
       }
+      engine->ListIteratorRelease(iter);
     }
   };
 
@@ -1711,6 +1718,7 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Value()),
               Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
+    engine->ListIteratorRelease(iter);
     iter = engine->ListIteratorCreate(list_name);
     iter->Seek(insert_pos);
     ASSERT_EQ(iter->Value(), *iter2);
@@ -1724,6 +1732,7 @@ TEST_F(EngineBasicTest, TestList) {
     elem = *iter2 + "_new";
     ASSERT_EQ(engine->ListReplace(list_name, replace_pos, elem), Status::Ok);
     *iter2 = elem;
+    engine->ListIteratorRelease(iter);
     iter = engine->ListIteratorCreate(list_name);
     iter->Seek(replace_pos);
     ASSERT_EQ(iter->Value(), *iter2);
@@ -1736,9 +1745,11 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(iter->Value(), *iter2);
     ASSERT_EQ(engine->ListErase(list_name, erase_pos), Status::Ok);
     iter2 = list_copy.erase(iter2);
+    engine->ListIteratorRelease(iter);
     iter = engine->ListIteratorCreate(list_name);
     iter->Seek(erase_pos);
     ASSERT_EQ(iter->Value(), *iter2);
+    engine->ListIteratorRelease(iter);
   };
 
   for (size_t i = 0; i < 3; i++) {
@@ -1867,6 +1878,7 @@ TEST_F(EngineBasicTest, TestHash) {
     }
     ASSERT_EQ(match_cnt1, combined.size());
     ASSERT_EQ(match_cnt2, local_copies[tid].size());
+    engine->HashIteratorRelease(iter);
   };
 
   std::string counter{"counter"};
@@ -2125,7 +2137,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
                   return cmp1(a.first, b.first) <= 0;
                 });
     }
-    auto iter = engine->NewSortedIterator(collections[i]);
+    auto iter = engine->SortedIteratorCreate(collections[i]);
     ASSERT_TRUE(iter != nullptr);
     iter->SeekToFirst();
     size_t cnt = 0;
@@ -2137,7 +2149,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       iter->Next();
       cnt++;
     }
-    engine->ReleaseSortedIterator(iter);
+    engine->SortedIteratorRelease(iter);
   }
   delete engine;
 }
@@ -2787,6 +2799,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
         ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
       }
+      engine->ListIteratorRelease(iter);
     }
   };
 
@@ -2950,7 +2963,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
               Status::Ok);
     // Check skiplist integrity.
     int forward_num = 0, backward_num = 0;
-    auto sorted_iter = engine->NewSortedIterator(collection_name);
+    auto sorted_iter = engine->SortedIteratorCreate(collection_name);
     // Forward traversal.
     sorted_iter->SeekToFirst();
     while (sorted_iter->Valid()) {
@@ -2963,7 +2976,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       backward_num++;
       sorted_iter->Prev();
     }
-    engine->ReleaseSortedIterator(sorted_iter);
+    engine->SortedIteratorRelease(sorted_iter);
     ASSERT_EQ(forward_num, backward_num);
 
     std::string got_val;
@@ -3015,7 +3028,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   // Iter
   ths.emplace_back(std::thread([&]() {
     sleep(1);
-    auto sorted_iter = engine->NewSortedIterator(collection_name);
+    auto sorted_iter = engine->SortedIteratorCreate(collection_name);
     sorted_iter->SeekToLast();
     if (sorted_iter->Valid()) {
       std::string next = sorted_iter->Key();
@@ -3034,7 +3047,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
         next = k;
       }
     }
-    engine->ReleaseSortedIterator(sorted_iter);
+    engine->SortedIteratorRelease(sorted_iter);
   }));
   for (auto& thread : ths) {
     thread.join();
@@ -3359,7 +3372,7 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 
   int entries = 0;
   // iterating sorted collection
-  auto iter = engine->NewSortedIterator(collection_name);
+  auto iter = engine->SortedIteratorCreate(collection_name);
   ASSERT_TRUE(iter != nullptr);
   // forward iterator
   iter->SeekToFirst();
@@ -3375,7 +3388,7 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
       prev = k;
     }
   }
-  engine->ReleaseSortedIterator(iter);
+  engine->SortedIteratorRelease(iter);
   ASSERT_EQ(entries, cnt);
   delete engine;
 }

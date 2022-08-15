@@ -163,7 +163,7 @@ static void test_iterator() {
   std::sort(kv_pairs.begin(), kv_pairs.end());
 
   // Iterate through collection "my_sorted_collection"
-  auto iter = engine->NewSortedIterator(sorted_collection);
+  auto iter = engine->SortedIteratorCreate(sorted_collection);
   if (!iter) {
     fprintf(stderr, "Seek error\n");
     return;
@@ -205,7 +205,7 @@ static void test_iterator() {
   }
 
   printf("Successfully iterated through a sorted named collections.\n");
-  engine->ReleaseSortedIterator(iter);
+  engine->SortedIteratorRelease(iter);
   return;
 }
 
@@ -280,7 +280,7 @@ static void test_customer_sorted_func() {
     s = engine->SortedPut(collection, array[i].number_key, array[i].value);
     assert(s == Ok);
   }
-  auto iter = engine->NewSortedIterator(collection);
+  auto iter = engine->SortedIteratorCreate(collection);
 
   assert(iter != nullptr);
 
@@ -299,7 +299,7 @@ static void test_customer_sorted_func() {
     ++i;
   }
   printf("Successfully collections sorted by number.\n");
-  engine->ReleaseSortedIterator(iter);
+  engine->SortedIteratorRelease(iter);
 }
 
 static void test_expire() {
