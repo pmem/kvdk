@@ -23,9 +23,9 @@ void KVEngine::removeOutdatedCollection(T* collection) {
     if (old_head_record) {
       auto old_collection_id = T::FetchID(old_head_record);
       if (old_collection_id != cur_id) {
-        kvdk_assert(skiplists_.find(old_collection_id) != skiplists_.end() ||
-                        hlists_.find(old_collection_id) != hlists_.end() ||
-                        lists_.find(old_collection_id) != lists_.end(),
+        kvdk_assert(getSkiplist(old_collection_id) != nullptr ||
+                        getHashlist(old_collection_id) != nullptr ||
+                        getList(old_collection_id) != nullptr,
                     "collection should not be destroyed yet!");
         cur_head_record->PersistOldVersion(kNullPMemOffset);
         cur_id = old_collection_id;

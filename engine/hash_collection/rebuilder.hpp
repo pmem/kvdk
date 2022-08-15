@@ -7,6 +7,7 @@
 #include <future>
 
 #include "../alias.hpp"
+#include "../write_batch_impl.hpp"
 #include "hash_list.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -24,7 +25,8 @@ class HashListRebuilder {
   HashListRebuilder(PMEMAllocator* pmem_allocator, HashTable* hash_table,
                     LockTable* lock_table, ThreadManager* thread_manager,
                     uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
-      : rebuilder_thread_cache_(num_rebuild_threads),
+      : recovery_utils_(pmem_allocator),
+        rebuilder_thread_cache_(num_rebuild_threads),
         pmem_allocator_(pmem_allocator),
         hash_table_(hash_table),
         lock_table_(lock_table),
@@ -33,8 +35,7 @@ class HashListRebuilder {
         checkpoint_(checkpoint) {}
 
   Status AddElem(DLRecord* elem_record) {
-    bool linked_record = DLListRecoveryUtils::CheckAndRepairLinkage(
-        elem_record, pmem_allocator_);
+    bool linked_record = recovery_utils_.CheckAndRepairLinkage(elem_record);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
         // We do not know if this is a checkpoint version record, so we can't
@@ -49,8 +50,7 @@ class HashListRebuilder {
   }
 
   Status AddHeader(DLRecord* header_record) {
-    bool linked_record = DLListRecoveryUtils::CheckAndRepairLinkage(
-        header_record, pmem_allocator_);
+    bool linked_record = recovery_utils_.CheckAndRepairLinkage(header_record);
     if (!linked_record) {
       if (recoverToCheckPoint()) {
         // We do not know if this is a checkpoint version record, so we can't
@@ -97,6 +97,27 @@ class HashListRebuilder {
     return ret;
   }
 
+  Status Rollback(const BatchWriteLog::HashLogEntry& log) {
+    DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+    // We only check prev linkage as a valid prev linkage indicate valid prev
+    // and next pointers on the record, so we can safely do remove/replace
+    if (elem->Validate() && recovery_utils_.CheckPrevLinkage(elem)) {
+      if (elem->old_version != kNullPMemOffset) {
+        bool success = DLList::Replace(
+            elem,
+            pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
+            pmem_allocator_, lock_table_);
+        kvdk_assert(success, "Replace should success as we checked linkage");
+      } else {
+        bool success = DLList::Remove(elem, pmem_allocator_, lock_table_);
+        kvdk_assert(success, "Remove should success as we checked linkage");
+      }
+    }
+
+    elem->Destroy();
+    return Status::Ok;
+  }
+
  private:
   bool recoverToCheckPoint() { return checkpoint_.Valid(); }
 
@@ -134,10 +155,8 @@ class HashListRebuilder {
         auto newer_offset =
             pmem_allocator_->addr2offset(linked_headers_[i + 1]);
         header_record->PersistPrevNT(newer_offset);
-        kvdk_assert(!DLListRecoveryUtils::CheckPrevLinkage(header_record,
-                                                           pmem_allocator_) &&
-                        !DLListRecoveryUtils::CheckNextLinkage(header_record,
-                                                               pmem_allocator_),
+        kvdk_assert(!recovery_utils_.CheckPrevLinkage(header_record) &&
+                        !recovery_utils_.CheckNextLinkage(header_record),
                     "");
         addUnlinkedRecord(header_record);
         continue;
@@ -306,7 +325,7 @@ class HashListRebuilder {
     // clean unlinked records
     for (auto& thread_cache : rebuilder_thread_cache_) {
       for (DLRecord* pmem_record : thread_cache.unlinked_records) {
-        if (!DLListRecoveryUtils::CheckLinkage(pmem_record, pmem_allocator_)) {
+        if (!recovery_utils_.CheckLinkage(pmem_record)) {
           pmem_record->Destroy();
           to_free.emplace_back(
               pmem_allocator_->addr2offset_checked(pmem_record),
@@ -329,6 +348,7 @@ class HashListRebuilder {
     std::vector<DLRecord*> unlinked_records{};
   };
 
+  DLListRecoveryUtils<HashList> recovery_utils_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
   std::vector<DLRecord*> linked_headers_;
   PMEMAllocator* pmem_allocator_;

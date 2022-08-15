@@ -13,6 +13,7 @@ SortedCollectionRebuilder::SortedCollectionRebuilder(
     KVEngine* kv_engine, bool segment_based_rebuild,
     uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
     : kv_engine_(kv_engine),
+      recovery_utils_(kv_engine->pmem_allocator_.get()),
       checkpoint_(checkpoint),
       segment_based_rebuild_(segment_based_rebuild),
       num_rebuild_threads_(std::min(num_rebuild_threads,
@@ -47,8 +48,7 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
   assert(header_record->GetRecordType() == RecordType::SortedHeader);
 
-  bool linked_record = checkAndRepairRecordLinkage(header_record);
-
+  bool linked_record = recovery_utils_.CheckAndRepairLinkage(header_record);
   if (!linked_record) {
     if (!recoverToCheckpoint()) {
       kv_engine_->pmem_allocator_->PurgeAndFree<DLRecord>(header_record);
@@ -68,7 +68,7 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   kvdk_assert(record->GetRecordType() == RecordType::SortedElem,
               "wrong record type in RestoreSkiplistRecord");
-  bool linked_record = checkAndRepairRecordLinkage(record);
+  bool linked_record = recovery_utils_.CheckAndRepairLinkage(record);
 
   if (!linked_record) {
     if (!recoverToCheckpoint()) {
@@ -94,6 +94,30 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
       addRecoverySegment(start_node);
     }
   }
+  return Status::Ok;
+}
+
+Status SortedCollectionRebuilder::Rollback(
+    const BatchWriteLog::SortedLogEntry& log) {
+  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
+  LockTable* lock_table = kv_engine_->dllist_locks_.get();
+  DLRecord* elem = pmem_allocator->offset2addr_checked<DLRecord>(log.offset);
+  // We only check prev linkage as a valid prev linkage indicate valid prev
+  // and next pointers on the record, so we can safely do remove/replace
+  if (elem->Validate() && recovery_utils_.CheckPrevLinkage(elem)) {
+    if (elem->old_version != kNullPMemOffset) {
+      bool success = Skiplist::Replace(
+          elem,
+          pmem_allocator->offset2addr_checked<DLRecord>(elem->old_version),
+          nullptr, pmem_allocator, lock_table);
+      kvdk_assert(success, "Replace should success as we checked linkage");
+    } else {
+      bool success =
+          Skiplist::Remove(elem, nullptr, pmem_allocator, lock_table);
+      kvdk_assert(success, "Remove should success as we checked linkage");
+    }
+  }
+  elem->Destroy();
   return Status::Ok;
 }
 
@@ -131,10 +155,9 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       // Break the linkage
       auto newer_offset = pmem_allocator->addr2offset(linked_headers_[i + 1]);
       header_record->PersistPrevNT(newer_offset);
-      kvdk_assert(
-          !Skiplist::CheckRecordPrevLinkage(header_record, pmem_allocator) &&
-              !Skiplist::CheckReocrdNextLinkage(header_record, pmem_allocator),
-          "");
+      kvdk_assert(!recovery_utils_.CheckPrevLinkage(header_record) &&
+                      !recovery_utils_.CheckNextLinkage(header_record),
+                  "");
       addUnlinkedRecord(header_record);
       continue;
     }
@@ -578,40 +601,14 @@ Status SortedCollectionRebuilder::listBasedIndexRebuild() {
   return Status::Ok;
 }
 
-bool SortedCollectionRebuilder::checkRecordLinkage(DLRecord* record) {
-  return Skiplist::CheckRecordLinkage(record,
-                                      kv_engine_->pmem_allocator_.get());
-}
-
-bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
-  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-
-  // The next linkage is correct. If the prev linkage is correct too, the
-  // record linkage is ok. If the prev linkage is not correct, it will be
-  // repaired by the correct prodecessor soon, so directly return true here.
-  if (Skiplist::CheckReocrdNextLinkage(record, pmem_allocator)) {
-    return true;
-  }
-  // If only prev linkage is correct, then repair the next linkage
-  if (Skiplist::CheckRecordPrevLinkage(record, pmem_allocator)) {
-    DLRecord* next =
-        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-    next->prev = pmem_allocator->addr2offset_checked(record);
-    pmem_persist(&next->prev, sizeof(PMemOffsetType));
-    return true;
-  }
-
-  return false;
-}
-
 void SortedCollectionRebuilder::cleanInvalidRecords() {
   std::vector<SpaceEntry> to_free;
 
   // clean unlinked records
   for (auto& thread_cache : rebuilder_thread_cache_) {
     for (DLRecord* pmem_record : thread_cache.unlinked_records) {
-      if (!Skiplist::IsSkiplistRecord(pmem_record) ||
-          !checkRecordLinkage(pmem_record)) {
+      if (!Skiplist::MatchType(pmem_record) ||
+          !recovery_utils_.CheckLinkage(pmem_record)) {
         pmem_record->Destroy();
         to_free.emplace_back(
             kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),

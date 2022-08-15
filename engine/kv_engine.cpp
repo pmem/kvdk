@@ -1195,13 +1195,6 @@ Status KVEngine::batchWriteRollbackLogs() {
     Status s;
     for (auto iter = log.ListLogs().rbegin(); iter != log.ListLogs().rend();
          ++iter) {
-      if (iter->op != BatchWriteLog::Op::Delete) {
-        DLRecord* rec = static_cast<DLRecord*>(
-            pmem_allocator_->offset2addr_checked(iter->offset));
-        if (!rec->Validate() || rec->GetTimestamp() != log.Timestamp()) {
-          continue;
-        }
-      }
       s = listRollback(*iter);
       if (s != Status::Ok) {
         return s;
@@ -1209,13 +1202,6 @@ Status KVEngine::batchWriteRollbackLogs() {
     }
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
          ++iter) {
-      if (iter->op != BatchWriteLog::Op::Delete) {
-        DLRecord* rec = static_cast<DLRecord*>(
-            pmem_allocator_->offset2addr_checked(iter->offset));
-        if (!rec->Validate() || rec->GetTimestamp() != log.Timestamp()) {
-          continue;
-        }
-      }
       s = hashListRollback(*iter);
       if (s != Status::Ok) {
         return s;
@@ -1223,7 +1209,7 @@ Status KVEngine::batchWriteRollbackLogs() {
     }
     for (auto iter = log.SortedLogs().rbegin(); iter != log.SortedLogs().rend();
          ++iter) {
-      s = sortedRollback(log.Timestamp(), *iter);
+      s = sortedRollback(*iter);
       if (s != Status::Ok) {
         return s;
       }

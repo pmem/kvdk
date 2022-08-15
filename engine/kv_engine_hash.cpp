@@ -280,26 +280,7 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
 Status KVEngine::hashListPublish(HashWriteArgs const&) { return Status::Ok; }
 
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
-  DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
-  // We only check prev linkage as a valid prev linkage indicate valid prev and
-  // next pointers on the record, so we can safely do remove/replace
-  if (elem->Validate() &&
-      DLListRecoveryUtils::CheckPrevLinkage(elem, pmem_allocator_.get())) {
-    if (elem->old_version != kNullPMemOffset) {
-      bool success = DLList::Replace(
-          elem,
-          pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
-          pmem_allocator_.get(), dllist_locks_.get());
-      kvdk_assert(success, "Replace should success as we checked linkage");
-    } else {
-      bool success =
-          DLList::Remove(elem, pmem_allocator_.get(), dllist_locks_.get());
-      kvdk_assert(success, "Remove should success as we checked linkage");
-    }
-  }
-
-  elem->Destroy();
-  return Status::Ok;
+  return hash_rebuilder_->Rollback(log);
 }
 
 }  // namespace KVDK_NAMESPACE

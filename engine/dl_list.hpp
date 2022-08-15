@@ -280,85 +280,71 @@ class DLListRecordIterator {
 };
 
 // Used in recovery of dl list based collections
+template <typename CType>
 class DLListRecoveryUtils {
  public:
-  static bool CheckAndRepairLinkage(DLRecord* record,
-                                    PMEMAllocator* pmem_allocator) {
+  DLListRecoveryUtils(const PMEMAllocator* pmem_allocator)
+      : pmem_allocator_(pmem_allocator) {}
+
+  bool CheckAndRepairLinkage(DLRecord* record) {
     // The next linkage is correct. If the prev linkage is correct too, the
     // record linkage is ok. If the prev linkage is not correct, it will be
     // repaired by the correct prodecessor soon, so directly return true here.
-    if (CheckNextLinkage(record, pmem_allocator)) {
+    if (CheckNextLinkage(record)) {
       return true;
     }
     // If only prev linkage is correct, then repair the next linkage
-    if (CheckPrevLinkage(record, pmem_allocator)) {
+    if (CheckPrevLinkage(record)) {
       DLRecord* next =
-          pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-      next->PersistPrevNT(pmem_allocator->addr2offset_checked(record));
+          pmem_allocator_->offset2addr_checked<DLRecord>(record->next);
+      next->PersistPrevNT(pmem_allocator_->addr2offset_checked(record));
       return true;
     }
 
     return false;
   }
 
-  static bool CheckNextLinkage(DLRecord* record,
-                               PMEMAllocator* pmem_allocator) {
-    uint64_t offset = pmem_allocator->addr2offset_checked(record);
+  bool CheckNextLinkage(DLRecord* record) {
+    uint64_t offset = pmem_allocator_->addr2offset_checked(record);
     DLRecord* next =
-        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
+        pmem_allocator_->offset2addr_checked<DLRecord>(record->next);
 
     auto check_linkage = [&]() { return next->prev == offset; };
 
-    auto check_type = [&]() {
-      return next->GetRecordType() == record->GetRecordType() ||
-             (next->GetRecordType() & CollectionType) ||
-             (record->GetRecordType() & CollectionType);
-    };
+    auto check_type = [&]() { return CType::MatchType(record); };
 
     auto check_id = [&]() {
-      auto next_id = ExtractID(next);
-      auto record_id = ExtractID(record);
+      auto next_id = CType::FetchID(next);
+      auto record_id = CType::FetchID(record);
       return record_id == next_id;
     };
 
     return check_linkage() && check_type() && check_id();
   }
 
-  static bool CheckPrevLinkage(DLRecord* record,
-                               PMEMAllocator* pmem_allocator) {
-    uint64_t offset = pmem_allocator->addr2offset_checked(record);
+  bool CheckPrevLinkage(DLRecord* record) {
+    uint64_t offset = pmem_allocator_->addr2offset_checked(record);
     DLRecord* prev =
-        pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
+        pmem_allocator_->offset2addr_checked<DLRecord>(record->prev);
 
     auto check_linkage = [&]() { return prev->next == offset; };
 
-    auto check_type = [&]() {
-      return prev->GetRecordType() == record->GetRecordType() ||
-             (prev->GetRecordType() & CollectionType) ||
-             (record->GetRecordType() & CollectionType);
-    };
+    auto check_type = [&]() { return CType::MatchType(record); };
 
     auto check_id = [&]() {
-      auto prev_id = ExtractID(prev);
-      auto record_id = ExtractID(record);
+      auto prev_id = CType::FetchID(prev);
+      auto record_id = CType::FetchID(record);
       return record_id == prev_id;
     };
 
     return check_linkage() && check_type() && check_id();
   }
 
-  static bool CheckLinkage(DLRecord* record, PMEMAllocator* pmem_allocator) {
-    return CheckPrevLinkage(record, pmem_allocator) &&
-           CheckNextLinkage(record, pmem_allocator);
+  bool CheckLinkage(DLRecord* record) {
+    return CheckPrevLinkage(record) && CheckNextLinkage(record);
   }
 
-  static bool ExtractID(DLRecord* record) {
-    auto type = record->GetRecordType();
-    if (type & CollectionType) {
-      return Collection::DecodeID(record->Value());
-    } else {
-      return Collection::ExtractID(record->Key());
-    }
-  }
+ private:
+  const PMEMAllocator* pmem_allocator_;
 };
 }  // namespace KVDK_NAMESPACE

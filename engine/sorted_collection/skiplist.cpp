@@ -194,6 +194,7 @@ void Skiplist::Seek(const StringView& key, Splice* result_splice) {
 }
 
 Status Skiplist::CheckIndex() {
+  DLListRecoveryUtils<Skiplist> recovery_utils(pmem_allocator_);
   Splice splice(this);
   splice.prev_pmem_record = HeaderRecord();
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
@@ -244,7 +245,7 @@ Status Skiplist::CheckIndex() {
         splice.prevs[i] = next_node;
       }
     }
-    if (!CheckRecordLinkage(next_record, pmem_allocator_)) {
+    if (!recovery_utils.CheckLinkage(next_record)) {
       return Status::Abort;
     }
     splice.prev_pmem_record = next_record;

@@ -289,11 +289,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashHeader
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -385,8 +384,7 @@ class KVEngine : public Engine {
   Status sortedWritePrepare(SortedWriteArgs& args);
   Status sortedWrite(SortedWriteArgs& args);
   Status sortedWritePublish(SortedWriteArgs const& args);
-  Status sortedRollback(TimeStampType ts,
-                        BatchWriteLog::SortedLogEntry const& entry);
+  Status sortedRollback(BatchWriteLog::SortedLogEntry const& entry);
 
   Status RestoreData();
 

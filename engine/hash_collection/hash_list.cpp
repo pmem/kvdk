@@ -231,6 +231,7 @@ HashList::WriteResult HashList::SetExpireTime(ExpireTimeType expired_time,
 Status HashList::CheckIndex() {
   DLRecord* prev = HeaderRecord();
   size_t cnt = 0;
+  DLListRecoveryUtils<HashList> recovery_utils(pmem_allocator_);
   while (true) {
     DLRecord* curr = pmem_allocator_->offset2addr_checked<DLRecord>(prev->next);
     if (curr == HeaderRecord()) {
@@ -249,7 +250,7 @@ Status HashList::CheckIndex() {
           "table\n");
       return Status::Abort;
     }
-    if (!DLListRecoveryUtils::CheckLinkage(curr, pmem_allocator_)) {
+    if (!recovery_utils.CheckLinkage(curr)) {
       GlobalLogger.Error("Check hash index error: dl record linkage error\n");
       return Status::Abort;
     }

@@ -7,6 +7,7 @@ std::unique_ptr<DLListRecordIterator> DLList::GetRecordIterator() {
 }
 
 Status DLList::PushBack(const DLList::WriteArgs& args) {
+  kvdk_assert(header_ != nullptr, "");
   Status s;
   do {
     s = InsertBefore(args, header_);
@@ -15,6 +16,7 @@ Status DLList::PushBack(const DLList::WriteArgs& args) {
 }
 
 Status DLList::PushFront(const DLList::WriteArgs& args) {
+  kvdk_assert(header_ != nullptr, "");
   Status s;
   do {
     s = InsertAfter(args, header_);
@@ -23,6 +25,7 @@ Status DLList::PushFront(const DLList::WriteArgs& args) {
 }
 
 DLRecord* DLList::RemoveFront() {
+  kvdk_assert(header_ != nullptr, "");
   while (true) {
     DLRecord* front =
         pmem_allocator_->offset2addr_checked<DLRecord>(header_->next);
@@ -38,6 +41,7 @@ DLRecord* DLList::RemoveFront() {
 }
 
 DLRecord* DLList::RemoveBack() {
+  kvdk_assert(header_ != nullptr, "");
   while (true) {
     DLRecord* back =
         pmem_allocator_->offset2addr_checked<DLRecord>(header_->prev);
@@ -140,10 +144,6 @@ bool DLList::Replace(DLRecord* old_record, DLRecord* new_record,
       linkRecord(new_record, new_record, new_record, pmem_allocator);
       auto new_record_offset = pmem_allocator->addr2offset(new_record);
       old_record->PersistPrevNT(new_record_offset);
-      // kvdk_assert(
-      // !Skiplist::CheckRecordPrevLinkage(old_record, pmem_allocator) &&
-      // !Skiplist::CheckReocrdNextLinkage(old_record, pmem_allocator),
-      // "");
     } else {
       new_record->prev = prev_offset;
       pmem_persist(&new_record->prev, sizeof(PMemOffsetType));

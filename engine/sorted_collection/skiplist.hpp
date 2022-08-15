@@ -303,59 +303,9 @@ class Skiplist : public Collection {
     return comparator_(src_key, target_key);
   }
 
-  static bool IsSkiplistRecord(DLRecord* record) {
+  static bool MatchType(DLRecord* record) {
     RecordType type = record->GetRecordType();
     return type == RecordType::SortedElem || type == RecordType::SortedHeader;
-  }
-
-  // Check if record correctly linked on list
-  static bool CheckRecordLinkage(DLRecord* record,
-                                 PMEMAllocator* pmem_allocator) {
-    return CheckRecordPrevLinkage(record, pmem_allocator) &&
-           CheckReocrdNextLinkage(record, pmem_allocator);
-  }
-
-  static bool CheckReocrdNextLinkage(DLRecord* record,
-                                     PMEMAllocator* pmem_allocator) {
-    kvdk_assert(IsSkiplistRecord(record),
-                "check linkage of a non skiplist rececord");
-
-    uint64_t offset = pmem_allocator->addr2offset_checked(record);
-    DLRecord* next =
-        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-
-    auto check_linkage = [&]() { return next->prev == offset; };
-
-    auto check_type = [&]() { return IsSkiplistRecord(next); };
-
-    auto check_id = [&]() {
-      auto next_id = Skiplist::FetchID(next);
-      auto record_id = Skiplist::FetchID(record);
-      return record_id == next_id;
-    };
-
-    return check_linkage() && check_type() && check_id();
-  }
-
-  static bool CheckRecordPrevLinkage(DLRecord* record,
-                                     PMEMAllocator* pmem_allocator) {
-    kvdk_assert(IsSkiplistRecord(record),
-                "check linkage of a non skiplist rececord");
-    uint64_t offset = pmem_allocator->addr2offset_checked(record);
-    DLRecord* prev =
-        pmem_allocator->offset2addr_checked<DLRecord>(record->prev);
-
-    auto check_linkage = [&]() { return prev->next == offset; };
-
-    auto check_type = [&]() { return IsSkiplistRecord(prev); };
-
-    auto check_id = [&]() {
-      auto prev_id = Skiplist::FetchID(prev);
-      auto record_id = Skiplist::FetchID(record);
-      return record_id == prev_id;
-    };
-
-    return check_linkage() && check_type() && check_id();
   }
 
   // Remove a dl record from its skiplist by unlinking

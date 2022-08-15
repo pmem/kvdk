@@ -160,6 +160,11 @@ class HashList : public Collection {
 
   static CollectionIDType FetchID(const DLRecord* record);
 
+  static bool MatchType(const DLRecord* record) {
+    RecordType type = record->GetRecordType();
+    return type == RecordType::HashElem || type == RecordType::HashHeader;
+  }
+
  private:
   friend HashIteratorImpl;
   DLList dl_list_;

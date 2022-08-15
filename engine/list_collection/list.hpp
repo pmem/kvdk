@@ -141,6 +141,11 @@ class List : public Collection {
     }
   }
 
+  static bool MatchType(const DLRecord* record) {
+    RecordType type = record->GetRecordType();
+    return type == RecordType::ListElem || type == RecordType::ListHeader;
+  }
+
  private:
   friend ListIteratorImpl;
   std::recursive_mutex list_lock_;
