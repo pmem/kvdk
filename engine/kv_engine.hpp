@@ -209,7 +209,7 @@ class KVEngine : public Engine {
                           StringView pos) final;
   Status ListInsertAfter(StringView collection, StringView key,
                          StringView pos) final;
-  Status ListErase(StringView collection, long index) final;
+  Status ListErase(StringView collection, long index, std::string* elem) final;
 
   Status ListReplace(StringView list_name, long index, StringView elem) final;
   ListIterator* ListIteratorCreate(StringView collection, Snapshot* snapshot,

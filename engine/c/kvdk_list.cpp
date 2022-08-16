@@ -86,8 +86,16 @@ KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, char const* list_name,
 }
 
 KVDKStatus KVDKListErase(KVDKEngine* engine, char const* list_name,
-                         size_t list_len, long index) {
-  return engine->rep->ListErase(StringView(list_name, list_len), index);
+                         size_t list_len, long index, char** elem_data,
+                         size_t* elem_len) {
+  std::string buffer;
+  KVDKStatus s =
+      engine->rep->ListErase(StringView(list_name, list_len), index, &buffer);
+  if (s == KVDKStatus::Ok) {
+    *elem_data = CopyStringToChar(buffer);
+    *elem_len = buffer.size();
+  }
+  return s;
 }
 
 KVDKStatus KVDKListReplace(KVDKEngine* engine, char const* list_name,

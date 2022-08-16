@@ -82,7 +82,7 @@ class List : public Collection {
 
   WriteResult InsertAt(const StringView& elem, long index, TimeStampType ts);
 
-  WriteResult Erase(long index);
+  WriteResult Erase(long index, TimeStampType ts);
 
   Status Front(std::string* elem);
 

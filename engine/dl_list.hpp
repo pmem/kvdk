@@ -37,7 +37,7 @@ class DLList {
 
     WriteArgs(const WriteArgs&) = delete;
 
-    WriteArgs(WriteArgs&& args) = default;
+    WriteArgs(WriteArgs&& args) = delete;
 
     StringView key;
     StringView val;

@@ -1743,7 +1743,9 @@ TEST_F(EngineBasicTest, TestList) {
     --iter2;
     --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
-    ASSERT_EQ(engine->ListErase(list_name, erase_pos), Status::Ok);
+    std::string value;
+    ASSERT_EQ(engine->ListErase(list_name, erase_pos, &value), Status::Ok);
+    ASSERT_EQ(value, *iter2);
     iter2 = list_copy.erase(iter2);
     engine->ListIteratorRelease(iter);
     iter = engine->ListIteratorCreate(list_name);

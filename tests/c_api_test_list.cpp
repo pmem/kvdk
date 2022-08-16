@@ -218,9 +218,11 @@ TEST_F(EngineCAPITestBase, List) {
     --iter2;
     --iter2;
     ASSERT_EQ(ListIteratorGetValue(iter), *iter2);
-    ASSERT_EQ(
-        KVDKListErase(engine, list_name.data(), list_name.size(), erase_pos),
-        KVDKStatus::Ok);
+    char* value;
+    size_t sz;
+    ASSERT_EQ(KVDKListErase(engine, list_name.data(), list_name.size(),
+                            erase_pos, &value, &sz),
+              KVDKStatus::Ok);
     iter2 = list_copy.erase(iter2);
     KVDKListIteratorDestroy(engine, iter);
     iter = KVDKListIteratorCreate(engine, list_name.data(), list_name.size(),

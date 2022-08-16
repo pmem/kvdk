@@ -165,15 +165,16 @@ Status KVEngine::ListPopFront(StringView list_name, std::string* elem) {
   auto guard = list->AcquireLock();
 
   auto ret = list->PopFront(version_controller_.GetCurrentTimestamp());
-  if (ret.existing_record == nullptr) {
-    /// TODO: NotFound does not properly describe the situation
-    return Status::NotFound;
-  }
 
   if (ret.s == Status::Ok) {
-    elem->assign(ret.existing_record->Value().data(),
-                 ret.existing_record->Value().size());
+    kvdk_assert(ret.existing_record && ret.write_record, "");
+    if (elem) {
+      elem->assign(ret.existing_record->Value().data(),
+                   ret.existing_record->Value().size());
+    }
+    removeAndCacheOutdatedVersion(ret.write_record);
   }
+  tryCleanCachedOutdatedRecord();
   return ret.s;
 }
 
@@ -200,9 +201,15 @@ Status KVEngine::ListPopBack(StringView list_name, std::string* elem) {
   }
 
   if (ret.s == Status::Ok) {
-    elem->assign(ret.existing_record->Value().data(),
-                 ret.existing_record->Value().size());
+    kvdk_assert(ret.existing_record && ret.write_record, "");
+    if (elem) {
+      elem->assign(ret.existing_record->Value().data(),
+                   ret.existing_record->Value().size());
+    }
+    kvdk_assert(ret.existing_record && ret.write_record, "");
+    removeAndCacheOutdatedVersion(ret.write_record);
   }
+  tryCleanCachedOutdatedRecord();
   return ret.s;
 }
 
@@ -452,7 +459,8 @@ Status KVEngine::ListInsertAfter(StringView collection, StringView elem,
       .s;
 }
 
-Status KVEngine::ListErase(StringView list_name, long index) {
+Status KVEngine::ListErase(StringView list_name, long index,
+                           std::string* elem) {
   if (MaybeInitAccessThread() != Status::Ok) {
     return Status::TooManyAccessThreads;
   }
@@ -464,7 +472,17 @@ Status KVEngine::ListErase(StringView list_name, long index) {
     return s;
   }
   auto guard = list->AcquireLock();
-  return list->Erase(index).s;
+  auto ret = list->Erase(index, version_controller_.GetCurrentTimestamp());
+  if (ret.s == Status::Ok) {
+    kvdk_assert(ret.existing_record && ret.write_record, "");
+    if (elem) {
+      elem->assign(ret.existing_record->Value().data(),
+                   ret.existing_record->Value().size());
+    }
+    removeAndCacheOutdatedVersion(ret.write_record);
+  }
+  tryCleanCachedOutdatedRecord();
+  return ret.s;
 }
 
 // Replace the element at pos

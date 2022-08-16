@@ -284,8 +284,8 @@ class Engine {
   // Remove the element at index
   // Return:
   //    Status::NotFound if the index beyond list size.
-  //    Status::Ok if operation succeeded.
-  virtual Status ListErase(StringView list, long index) = 0;
+  //    Status::Ok if operation succeeded, and store removed elem in "elem"
+  virtual Status ListErase(StringView list, long index, std::string* elem) = 0;
 
   // Replace the element at index
   // Return:

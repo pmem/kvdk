@@ -233,7 +233,7 @@ List::WriteResult List::InsertAt(const StringView& elem, long index,
   return ret;
 }
 
-List::WriteResult List::Erase(long index) {
+List::WriteResult List::Erase(long index, TimeStampType ts) {
   WriteResult ret;
   size_t required_size = index < 0 ? std::abs(index) : index + 1;
   if (required_size > Size()) {
@@ -243,23 +243,34 @@ List::WriteResult List::Erase(long index) {
   DLListRecordIterator iter(&dl_list_, pmem_allocator_);
   bool backward = index < 0;
   long cur = backward ? -1 : 0;
+  DLRecord* erase_record = nullptr;
   for (backward ? iter.SeekToLast() : iter.SeekToFirst(); iter.Valid();
        backward ? iter.Prev() : iter.Next()) {
-    DLRecord* record = iter.Record();
-    if (record->GetRecordStatus() == RecordStatus::Outdated) {
+    erase_record = iter.Record();
+    if (erase_record->GetRecordStatus() == RecordStatus::Outdated) {
       continue;
     }
     if (cur == index) {
-      bool success = dl_list_.Remove(record);
-      ret.existing_record = record;
-      kvdk_assert(success,
-                  "the whole list is locked, so the remove must be success");
+      SpaceEntry space = pmem_allocator_->Allocate(
+          DLRecord::RecordSize(erase_record->Key(), ""));
+      if (space.size == 0) {
+        ret.s = Status::PmemOverflow;
+      } else {
+        DLList::WriteArgs args(erase_record->Key(), "", RecordType::ListElem,
+                               RecordStatus::Outdated, ts, space);
+        ret.s = dl_list_.Update(args, erase_record);
+        kvdk_assert(ret.s == Status::Ok,
+                    "the whole list is locked, so the erase must be success");
+        ret.existing_record = erase_record;
+        ret.write_record =
+            pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        UpdateSize(-1);
+      }
       break;
     }
     backward ? cur-- : cur++;
   }
-  kvdk_assert(cur == index, "size already checked");
-  UpdateSize(-1);
+
   return ret;
 }
 
