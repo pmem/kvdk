@@ -81,9 +81,9 @@ KVDKSortedIterator* KVDKSortedIteratorCreate(KVDKEngine* engine,
                                              KVDKSnapshot* snapshot,
                                              KVDKStatus* s) {
   KVDKSortedIterator* result = new KVDKSortedIterator;
-  result->rep =
-      (engine->rep->SortedIteratorCreate(StringView{collection, collection_len},
-                                      snapshot ? snapshot->rep : nullptr, s));
+  result->rep = (engine->rep->SortedIteratorCreate(
+      StringView{collection, collection_len},
+      snapshot ? snapshot->rep : nullptr, s));
   if (!result->rep) {
     delete result;
     return nullptr;

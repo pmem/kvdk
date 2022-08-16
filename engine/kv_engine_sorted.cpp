@@ -210,7 +210,7 @@ Status KVEngine::SortedDelete(const StringView collection,
 }
 
 Iterator* KVEngine::SortedIteratorCreate(const StringView collection,
-                                      Snapshot* snapshot, Status* s) {
+                                         Snapshot* snapshot, Status* s) {
   Skiplist* skiplist;
   bool create_snapshot = snapshot == nullptr;
   if (create_snapshot) {
