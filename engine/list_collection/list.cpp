@@ -81,9 +81,9 @@ List::WriteResult List::PopFront(TimeStampType ts) {
       }
       DLList::WriteArgs args(record->Key(), "", RecordType::ListElem,
                              RecordStatus::Outdated, ts, space);
-      ret.s = dl_list_.Update(args, record);
-      kvdk_assert(ret.s == Status::Ok,
-                  "the whole list is locked so the update must be success");
+      while ((ret.s = dl_list_.Update(args, record)) != Status::Ok) {
+        kvdk_assert(ret.s == Status::Fail, "");
+      };
       ret.write_record =
           pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
       ret.existing_record = record;
@@ -110,9 +110,9 @@ List::WriteResult List::PopBack(TimeStampType ts) {
       }
       DLList::WriteArgs args(record->Key(), "", RecordType::ListElem,
                              RecordStatus::Outdated, ts, space);
-      ret.s = dl_list_.Update(args, record);
-      kvdk_assert(ret.s == Status::Ok,
-                  "the whole list is locked so the update must be success");
+      while ((ret.s = dl_list_.Update(args, record)) != Status::Ok) {
+        kvdk_assert(ret.s == Status::Fail, "");
+      };
       ret.write_record =
           pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
       ret.existing_record = record;
@@ -258,9 +258,9 @@ List::WriteResult List::Erase(long index, TimeStampType ts) {
       } else {
         DLList::WriteArgs args(erase_record->Key(), "", RecordType::ListElem,
                                RecordStatus::Outdated, ts, space);
-        ret.s = dl_list_.Update(args, erase_record);
-        kvdk_assert(ret.s == Status::Ok,
-                    "the whole list is locked, so the erase must be success");
+        while ((ret.s = dl_list_.Update(args, erase_record)) != Status::Ok) {
+          kvdk_assert(ret.s == Status::Fail, "");
+        };
         ret.existing_record = erase_record;
         ret.write_record =
             pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
@@ -335,7 +335,9 @@ List::WriteResult List::Update(long index, const StringView& elem,
       continue;
     }
     if (cur == index) {
-      ret.s = dl_list_.Update(args, record);
+      while ((ret.s = dl_list_.Update(args, record)) != Status::Ok) {
+        kvdk_assert(ret.s == Status::Fail, "");
+      }
       ret.existing_record = record;
       ret.write_record =
           pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
@@ -437,10 +439,10 @@ Status List::PopN(const List::PopNArgs& args) {
   for (size_t i = 0; i < args.to_pop.size(); i++) {
     DLList::WriteArgs wa(internal_key, "", RecordType::ListElem,
                          RecordStatus::Outdated, args.ts, args.spaces[i]);
-    Status s = dl_list_.Update(wa, args.to_pop[i]);
-    kvdk_assert(
-        s == Status::Ok,
-        "the whole list should be locked, so the update must be success");
+    Status s;
+    while ((s = dl_list_.Update(wa, args.to_pop[i])) != Status::Ok) {
+      kvdk_assert(s == Status::Fail, "");
+    }
     TEST_CRASH_POINT("List::PopN", "");
   }
   UpdateSize(-args.to_pop.size());

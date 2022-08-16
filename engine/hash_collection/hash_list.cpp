@@ -384,7 +384,8 @@ HashList::WriteResult HashList::putPrepared(
   if (lookup_result.s == Status::Ok) {
     ret.existing_record = lookup_result.entry.GetIndex().dl_record;
     kvdk_assert(timestamp > ret.existing_record->GetTimestamp(), "");
-    while (dl_list_.Update(args, ret.existing_record) != Status::Ok) {
+    while ((ret.s = dl_list_.Update(args, ret.existing_record)) != Status::Ok) {
+      kvdk_assert(ret.s == Status::Fail, "");
     }
   } else {
     kvdk_assert(lookup_result.s == Status::NotFound, "");
@@ -411,7 +412,8 @@ HashList::WriteResult HashList::deletePrepared(
   kvdk_assert(timestamp > ret.existing_record->GetTimestamp(), "");
   DLList::WriteArgs args(internal_key, "", RecordType::HashElem,
                          RecordStatus::Outdated, timestamp, space);
-  while (dl_list_.Update(args, ret.existing_record) != Status::Ok) {
+  while ((ret.s = dl_list_.Update(args, ret.existing_record)) != Status::Ok) {
+    kvdk_assert(ret.s == Status::Fail, "");
   }
   ret.write_record =
       pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
