@@ -541,9 +541,8 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
               }
               if (slot_iter->GetRecordStatus() == RecordStatus::Outdated &&
                   dl_record->GetTimestamp() < min_snapshot_ts) {
-                bool success =
-                    Skiplist::Remove(dl_record, nullptr, pmem_allocator_.get(),
-                                     dllist_locks_.get());
+                bool success = DLList::Remove(dl_record, pmem_allocator_.get(),
+                                              dllist_locks_.get());
                 kvdk_assert(success, "");
                 hash_table_->Erase(&(*slot_iter));
                 purge_dl_records.emplace_back(dl_record);
