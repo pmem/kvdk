@@ -385,7 +385,7 @@ jlong Java_io_pmem_kvdk_Engine_newSortedIterator(JNIEnv* env, jobject,
 
   KVDK_NAMESPACE::Status s;
   KVDK_NAMESPACE::Iterator* iter = engine->SortedIteratorCreate(
-    std::string(name_chars, name_len), nullptr, &s);
+      std::string(name_chars, name_len), nullptr, &s);
 
   if (s == KVDK_NAMESPACE::Status::Ok) {
     return GET_CPLUSPLUS_POINTER(iter);
