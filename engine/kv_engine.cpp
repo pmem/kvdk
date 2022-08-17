@@ -199,10 +199,8 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,
       pmem_allocator_.get(), configs_.max_access_threads));
   dllist_locks_.reset(new LockTable{1UL << 20});
-  hash_list_locks_.reset(new LockTable{1UL << 20});
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
-      thread_manager_ == nullptr || dllist_locks_ == nullptr ||
-      hash_list_locks_ == nullptr) {
+      thread_manager_ == nullptr || dllist_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
   }
@@ -1311,18 +1309,18 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   auto ul = hash_table_->AcquireLock(str);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
-  auto res = lookupKey<false>(str, ExpirableRecordType);
-  if (res.s == Status::Outdated) {
+  auto lookup_result = lookupKey<false>(str, ExpirableRecordType);
+  if (lookup_result.s == Status::Outdated) {
     return Status::NotFound;
   }
 
-  if (res.s == Status::Ok) {
+  if (lookup_result.s == Status::Ok) {
     WriteOptions write_option{ttl_time};
-    switch (res.entry_ptr->GetIndexType()) {
+    switch (lookup_result.entry_ptr->GetIndexType()) {
       case PointerType::StringRecord: {
         ul.unlock();
         version_controller_.ReleaseLocalSnapshot();
-        res.s = Modify(
+        lookup_result.s = Modify(
             str,
             [](const std::string* old_val, std::string* new_val, void*) {
               new_val->assign(*old_val);
@@ -1333,24 +1331,27 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
       case PointerType::Skiplist: {
         auto new_ts = snapshot_holder.Timestamp();
-        Skiplist* skiplist = res.entry_ptr->GetIndex().skiplist;
+        Skiplist* skiplist = lookup_result.entry_ptr->GetIndex().skiplist;
         std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
         expirable_skiplists_.erase(skiplist);
         auto ret = skiplist->SetExpireTime(expired_time, new_ts);
         expirable_skiplists_.emplace(skiplist);
-        res.s = ret.s;
+        lookup_result.s = ret.s;
         break;
       }
       case PointerType::HashList: {
         auto new_ts = snapshot_holder.Timestamp();
-        HashList* hlist = res.entry_ptr->GetIndex().hlist;
-        res.s = hlist->SetExpireTime(expired_time, new_ts).s;
+        HashList* hlist = lookup_result.entry_ptr->GetIndex().hlist;
+        std::unique_lock<std::mutex> hlist_lock(hlists_mu_);
+        expirable_hlists_.erase(hlist);
+        lookup_result.s = hlist->SetExpireTime(expired_time, new_ts).s;
+        expirable_hlists_.emplace(hlist);
         break;
       }
       case PointerType::List: {
         auto new_ts = snapshot_holder.Timestamp();
-        List* list = res.entry_ptr->GetIndex().list;
-        res.s = list->SetExpireTime(expired_time, new_ts).s;
+        List* list = lookup_result.entry_ptr->GetIndex().list;
+        lookup_result.s = list->SetExpireTime(expired_time, new_ts).s;
         break;
       }
       default: {
@@ -1358,7 +1359,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
     }
   }
-  return res.s;
+  return lookup_result.s;
 }
 }  // namespace KVDK_NAMESPACE
 

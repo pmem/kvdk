@@ -23,6 +23,11 @@ void KVEngine::removeOutdatedCollection(T* collection) {
     if (old_head_record) {
       auto old_collection_id = T::FetchID(old_head_record);
       if (old_collection_id != cur_id) {
+        if (getSkiplist(old_collection_id) == nullptr &&
+            getHashlist(old_collection_id) == nullptr &&
+            getList(old_collection_id) == nullptr) {
+          GlobalLogger.Debug("Collection already been destroyed\n");
+        }
         kvdk_assert(getSkiplist(old_collection_id) != nullptr ||
                         getHashlist(old_collection_id) != nullptr ||
                         getList(old_collection_id) != nullptr,
@@ -715,24 +720,24 @@ double Cleaner::SearchOutdatedCollections() {
 
   {
     std::unique_lock<std::mutex> list_lock(kv_engine_->lists_mu_);
-    auto iter = kv_engine_->lists_.begin();
-    while (!kv_engine_->lists_.empty() && iter->second->HasExpired() &&
+    auto iter = kv_engine_->expirable_lists_.begin();
+    while (!kv_engine_->expirable_lists_.empty() && (*iter)->HasExpired() &&
            limited_fetch_num < max_thread_num_) {
-      auto expired_list = iter->second.get();
-      iter = kv_engine_->lists_.erase(iter);
+      auto outdated_list = *iter;
+      iter = kv_engine_->expirable_lists_.erase(iter);
       outdated_collections_.lists.emplace(
-          expired_list, kv_engine_->version_controller_.GetCurrentTimestamp());
+          outdated_list, kv_engine_->version_controller_.GetCurrentTimestamp());
       limited_fetch_num++;
     }
   }
 
   {
     std::unique_lock<std::mutex> hlist_lock(kv_engine_->hlists_mu_);
-    auto iter = kv_engine_->hlists_.begin();
-    while (!kv_engine_->hlists_.empty() && iter->second->HasExpired() &&
+    auto iter = kv_engine_->expirable_hlists_.begin();
+    while (!kv_engine_->hlists_.empty() && (*iter)->HasExpired() &&
            limited_fetch_num < max_thread_num_) {
-      auto expired_hash_list = iter->second.get();
-      iter = kv_engine_->hlists_.erase(iter);
+      auto expired_hash_list = *iter;
+      iter = kv_engine_->expirable_hlists_.erase(iter);
       outdated_collections_.hashlists.emplace(
           expired_hash_list,
           kv_engine_->version_controller_.GetCurrentTimestamp());

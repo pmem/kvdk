@@ -93,6 +93,10 @@ Status KVEngine::HashDestroy(StringView collection) {
     kvdk_assert(success, "existing header should be linked on its hlist");
     hash_table_->Insert(collection, RecordType::HashHeader,
                         RecordStatus::Outdated, hlist, PointerType::HashList);
+    {
+      std::unique_lock<std::mutex> hlist_lock(hlists_mu_);
+      expirable_hlists_.emplace(hlist);
+    }
   }
   return s;
 }

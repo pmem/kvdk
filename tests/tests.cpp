@@ -2396,7 +2396,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
             Status::Ok);
   TTLType ttl = 1000;  // 1s
   int cnt = 100;
-  size_t num_thread = 4;
+  size_t num_thread = n_thread_writing;
 
   auto list0_push = [&](size_t id) {
     std::string list_key0 = "listkey0" + std::to_string(id);
@@ -2429,9 +2429,22 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
     ASSERT_EQ(engine->Expire(hash_key0, ttl), Status::Ok);
   };
 
+  auto sorted0_push = [&](size_t id) {
+    std::string sorted_key0 = "sortedkey0" + std::to_string(id);
+    ASSERT_EQ(engine->SortedCreate(sorted_key0), Status::Ok);
+    for (int i = 0; i < cnt; ++i) {
+      std::string str = std::to_string(i);
+      ASSERT_EQ(engine->SortedPut(sorted_key0, "sorted_elem" + str,
+                                  "sorted_value" + str),
+                Status::Ok);
+    }
+    ASSERT_EQ(engine->Expire(sorted_key0, ttl), Status::Ok);
+  };
+
   LaunchNThreads(num_thread, list0_push);
   LaunchNThreads(num_thread, list1_push);
   LaunchNThreads(num_thread, hash0_push);
+  LaunchNThreads(num_thread, sorted0_push);
 
   sleep(2);
   for (size_t i = 0; i < num_thread; ++i) {
@@ -2439,6 +2452,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
     TTLType got_ttl;
     ASSERT_EQ(engine->GetTTL("hashkey0" + str, &got_ttl), Status::NotFound);
     ASSERT_EQ(engine->GetTTL("listkey0" + str, &got_ttl), Status::NotFound);
+    ASSERT_EQ(engine->GetTTL("sortedkey0" + str, &got_ttl), Status::NotFound);
     ASSERT_EQ(engine->GetTTL("listkey1" + str, &got_ttl), Status::Ok);
   }
 

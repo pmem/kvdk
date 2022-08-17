@@ -86,6 +86,10 @@ Status KVEngine::ListDestroy(StringView collection) {
     kvdk_assert(success, "existing header should be linked on its list");
     hash_table_->Insert(collection, RecordType::ListHeader,
                         RecordStatus::Outdated, list, PointerType::List);
+    {
+      std::unique_lock<std::mutex> list_lock(lists_mu_);
+      expirable_lists_.emplace(list);
+    }
   }
   return s;
 }

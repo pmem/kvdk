@@ -588,10 +588,12 @@ class KVEngine : public Engine {
 
   std::mutex lists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<List>> lists_;
+  std::set<List*, Collection::TTLCmp> expirable_lists_;
 
   std::mutex hlists_mu_;
   std::unordered_map<CollectionIDType, std::shared_ptr<HashList>> hlists_;
-  std::unique_ptr<LockTable> hash_list_locks_;
+  std::set<HashList*, Collection::TTLCmp> expirable_hlists_;
+
   std::unique_ptr<LockTable> dllist_locks_;
 
   std::string dir_;

@@ -838,15 +838,15 @@ void Skiplist::destroyAllRecords() {
             pmem_allocator_->offset2addr(to_destroy->old_version));
         while (old_record) {
           auto old_version = old_record->old_version;
-          old_record->Destroy();
           to_free.emplace_back(pmem_allocator_->addr2offset(old_record),
                                old_record->GetRecordSize());
+          old_record->Destroy();
           old_record = pmem_allocator_->offset2addr<DLRecord>(old_version);
         }
 
-        to_destroy->Destroy();
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
                              to_destroy->GetRecordSize());
+        to_destroy->Destroy();
         if (to_free.size() > kMaxCachedOldRecords) {
           pmem_allocator_->BatchFree(to_free);
           to_free.clear();

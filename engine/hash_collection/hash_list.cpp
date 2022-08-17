@@ -321,10 +321,10 @@ void HashList::Destroy() {
 
 void HashList::DestroyAll() {
   std::vector<SpaceEntry> to_free;
-  DLRecord* header;
-  DLRecord* to_destroy;
+  DLRecord* header = HeaderRecord();
+  DLRecord* to_destroy = nullptr;
+  kvdk_assert(header != nullptr, "");
   do {
-    header = HeaderRecord();
     to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
     StringView key = to_destroy->Key();
     auto ul = hash_table_->AcquireLock(key);
@@ -353,14 +353,15 @@ void HashList::DestroyAll() {
           pmem_allocator_->offset2addr<DLRecord>(to_destroy->old_version);
       while (old_record) {
         auto old_version = old_record->old_version;
-        old_record->Destroy();
         to_free.emplace_back(pmem_allocator_->addr2offset_checked(old_record),
                              old_record->GetRecordSize());
+        old_record->Destroy();
         old_record = pmem_allocator_->offset2addr<DLRecord>(old_version);
       }
-      to_destroy->Destroy();
+
       to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
                            to_destroy->GetRecordSize());
+      to_destroy->Destroy();
       if (to_free.size() > kMaxCachedOldRecords) {
         pmem_allocator_->BatchFree(to_free);
         to_free.clear();
