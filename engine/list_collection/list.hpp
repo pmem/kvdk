@@ -23,7 +23,7 @@ class List : public Collection {
         list_lock_(),
         dl_list_(header, pmem_allocator, lock_table),
         pmem_allocator_(pmem_allocator),
-        size_(0) {}
+        live_records_() {}
 
   struct WriteResult {
     Status s = Status::Ok;
@@ -38,7 +38,7 @@ class List : public Collection {
 
    private:
     friend List;
-    std::vector<DLRecord*> to_pop{};
+    std::vector<std::deque<DLRecord*>::iterator> to_pop{};
     TimeStampType ts;
   };
 
@@ -94,13 +94,15 @@ class List : public Collection {
 
   WriteResult Update(long index, const StringView& elem, TimeStampType ts);
 
-  void UpdateSize(int64_t delta) {
-    kvdk_assert(delta >= 0 || size_.load() >= static_cast<size_t>(-delta),
-                "Update hash list size to negative");
-    size_.fetch_add(delta, std::memory_order_relaxed);
+  void AddLiveRecord(DLRecord* elem, ListPos pos) {
+    if (pos == ListPos::Front) {
+      live_records_.push_front(elem);
+    } else {
+      live_records_.push_back(elem);
+    }
   }
 
-  size_t Size() { return size_.load(); }
+  size_t Size() { return live_records_.size(); }
 
   std::unique_lock<std::recursive_mutex> AcquireLock() {
     return std::unique_lock<std::recursive_mutex>(list_lock_);
@@ -147,6 +149,18 @@ class List : public Collection {
   }
 
  private:
+  // find the first live record of elem
+  std::deque<DLRecord*>::iterator findLiveRecord(StringView elem) {
+    auto iter = live_records_.begin();
+    while (iter != live_records_.end()) {
+      if (equal_string_view((*iter)->Value(), elem)) {
+        return iter;
+      }
+      ++iter;
+    }
+    return live_records_.end();
+  }
+
   friend ListIteratorImpl;
   std::recursive_mutex list_lock_;
   DLList dl_list_;
@@ -154,5 +168,8 @@ class List : public Collection {
   std::atomic<size_t> size_;
   // to avoid illegal access caused by cleaning skiplist by multi-thread
   SpinMutex cleaning_lock_;
+  // we keep outdated records on list to support mvcc, so we track live records
+  // in a deque to support fast write operations
+  std::deque<DLRecord*> live_records_;
 };
 }  // namespace KVDK_NAMESPACE

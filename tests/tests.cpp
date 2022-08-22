@@ -1521,7 +1521,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestList) {
-  size_t num_threads = 16;
+  size_t num_threads = 1;
   size_t count = 1000;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),

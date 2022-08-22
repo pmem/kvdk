@@ -228,7 +228,6 @@ class ListRebuilder {
       return s;
     }
     defer(thread_manager_->Release(access_thread));
-    size_t num_elems = 0;
     auto iter = list->GetDLList()->GetRecordIterator();
     iter->SeekToFirst();
     while (iter->Valid()) {
@@ -246,12 +245,10 @@ class ListRebuilder {
           kvdk_assert(success, "elems in rebuild should passed linkage check");
           addUnlinkedRecord(curr);
         }
-        num_elems++;
-
         valid_version_record->PersistOldVersion(kNullPMemOffset);
+        list->AddLiveRecord(valid_version_record, ListPos::Back);
       }
     }
-    list->UpdateSize(num_elems);
     return Status::Ok;
   }
 
