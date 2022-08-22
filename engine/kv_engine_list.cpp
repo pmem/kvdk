@@ -310,11 +310,8 @@ Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
   return listBatchPopImpl(list_name, ListPos::Back, n, elems);
 }
 
-Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
-                          int dst_pos, std::string* elem) {
-  if ((src_pos != 0 && src_pos != -1) || (dst_pos != 0 && dst_pos != -1)) {
-    return Status::InvalidArgument;
-  }
+Status KVEngine::ListMove(StringView src, ListPos src_pos, StringView dst,
+                          ListPos dst_pos, std::string* elem) {
   if (!CheckKeySize(src) || !CheckKeySize(dst)) {
     return Status::InvalidDataSize;
   }
@@ -361,7 +358,8 @@ Status KVEngine::ListMove(StringView src, int src_pos, StringView dst,
   }
 
   if (src == dst && src_pos == dst_pos) {
-    s = src_pos == 0 ? src_list->Front(elem) : src_list->Back(elem);
+    s = src_pos == ListPos::Front ? src_list->Front(elem)
+                                  : src_list->Back(elem);
     return s;
   }
 

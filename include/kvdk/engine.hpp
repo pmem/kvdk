@@ -249,8 +249,9 @@ class Engine {
   //    Status::WrongType if src or dst is not a List.
   //    Status::NotFound if list or element not exist
   //    Status::Ok and moved element if operation succeeded.
-  virtual Status ListMove(StringView src_list, int src_pos, StringView dst_list,
-                          int dst_pos, std::string* elem) = 0;
+  virtual Status ListMove(StringView src_list, ListPos src_pos,
+                          StringView dst_list, ListPos dst_pos,
+                          std::string* elem) = 0;
 
   // Insert a element to a list at index, the index can be positive or
   // negative

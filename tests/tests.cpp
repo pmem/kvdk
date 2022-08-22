@@ -1664,7 +1664,8 @@ TEST_F(EngineBasicTest, TestList) {
     list_copy.pop_front();
 
     std::string elem;
-    ASSERT_EQ(engine->ListMove(key, 0, key, -1, &elem), Status::Ok);
+    ASSERT_EQ(engine->ListMove(key, ListPos::Front, key, ListPos::Back, &elem),
+              Status::Ok);
     ASSERT_EQ(elem, elem_copy);
 
     size_t sz;
@@ -2793,8 +2794,9 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
 
   auto RPushLPop = [&]() {
     std::string elem;
-    ASSERT_THROW(engine->ListMove(key, 0, key, -1, &elem),
-                 SyncPoint::CrashPoint);
+    ASSERT_THROW(
+        engine->ListMove(key, ListPos::Front, key, ListPos::Back, &elem),
+        SyncPoint::CrashPoint);
   };
 
   auto Check = [&]() {

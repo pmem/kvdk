@@ -163,10 +163,16 @@ KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
                         size_t src_len, int src_pos, char const* dst_data,
                         size_t dst_len, int dst_pos, char** elem_data,
                         size_t* elem_len) {
+  if ((src_pos != KVDK_LIST_BACK && src_pos != KVDK_LIST_FRONT) ||
+      (dst_pos != KVDK_LIST_BACK && dst_pos != KVDK_LIST_FRONT)) {
+    return InvalidArgument;
+  }
   std::string elem;
-  KVDKStatus s =
-      engine->rep->ListMove(StringView{src_data, src_len}, src_pos,
-                            StringView{dst_data, dst_len}, dst_pos, &elem);
+  KVDKStatus s = engine->rep->ListMove(
+      StringView{src_data, src_len},
+      static_cast<KVDK_NAMESPACE::ListPos>(src_pos),
+      StringView{dst_data, dst_len},
+      static_cast<KVDK_NAMESPACE::ListPos>(dst_pos), &elem);
   *elem_data = CopyStringToChar(elem);
   *elem_len = elem.size();
   return s;

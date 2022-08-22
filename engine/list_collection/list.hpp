@@ -10,11 +10,6 @@
 namespace KVDK_NAMESPACE {
 class ListIteratorImpl;
 
-enum class ListPos : int {
-  Front = 0,
-  Back = -1,
-};
-
 class List : public Collection {
  public:
   List(DLRecord* header, const StringView& name, CollectionIDType id,

@@ -202,7 +202,7 @@ class KVEngine : public Engine {
                            std::vector<std::string>* elems) final;
   Status ListBatchPopBack(StringView key, size_t n,
                           std::vector<std::string>* elems) final;
-  Status ListMove(StringView src, int src_pos, StringView dst, int dst_pos,
+  Status ListMove(StringView src, ListPos src_pos, StringView dst, ListPos dst_pos,
                   std::string* elem) final;
   Status ListInsertAt(StringView collection, StringView key, long index) final;
   Status ListInsertBefore(StringView collection, StringView key,
@@ -289,11 +289,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashHeader
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {

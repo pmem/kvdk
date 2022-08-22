@@ -319,8 +319,9 @@ TEST_F(EngineCAPITestBase, List) {
 
     char* elem_data;
     size_t elem_len;
-    ASSERT_EQ(KVDKListMove(engine, key.data(), key.size(), 0, key.data(),
-                           key.size(), -1, &elem_data, &elem_len),
+    ASSERT_EQ(KVDKListMove(engine, key.data(), key.size(), KVDK_LIST_FRONT,
+                           key.data(), key.size(), KVDK_LIST_BACK, &elem_data,
+                           &elem_len),
               KVDKStatus::Ok);
     ASSERT_EQ(std::string(elem_data, elem_len), elem_copy);
     free(elem_data);
