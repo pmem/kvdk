@@ -734,7 +734,7 @@ double Cleaner::SearchOutdatedCollections() {
   {
     std::unique_lock<std::mutex> hlist_lock(kv_engine_->hlists_mu_);
     auto iter = kv_engine_->expirable_hlists_.begin();
-    while (!kv_engine_->hlists_.empty() && (*iter)->HasExpired() &&
+    while (!kv_engine_->expirable_hlists_.empty() && (*iter)->HasExpired() &&
            limited_fetch_num < max_thread_num_) {
       auto expired_hash_list = *iter;
       iter = kv_engine_->expirable_hlists_.erase(iter);

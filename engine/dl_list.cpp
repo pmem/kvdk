@@ -116,9 +116,6 @@ bool DLList::Replace(DLRecord* old_record, DLRecord* new_record) {
 
 bool DLList::Remove(DLRecord* removing_record) {
   bool ret = Remove(removing_record, pmem_allocator_, lock_table_);
-  if (ret && removing_record == header_) {
-    header_ = nullptr;
-  }
   return ret;
 }
 
