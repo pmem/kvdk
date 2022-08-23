@@ -785,6 +785,7 @@ void Skiplist::CleanObsoletedNodes() {
   std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
   if (pending_deletion_nodes_.size() > 0) {
     for (SkiplistNode* node : pending_deletion_nodes_) {
+      // TODO: make sure the node is not referenced
       SkiplistNode::DeleteNode(node);
     }
     pending_deletion_nodes_.clear();

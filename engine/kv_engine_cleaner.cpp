@@ -564,6 +564,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
                 need_purge_num++;
                 pending_clean_records.no_hash_skiplists.emplace_back(skiplist);
               }
+              skiplist->CleanObsoletedNodes();
               break;
             }
             case PointerType::List: {

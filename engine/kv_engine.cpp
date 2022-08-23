@@ -97,12 +97,6 @@ Status KVEngine::Restore(const std::string& engine_path,
   return s;
 }
 
-void KVEngine::FreeSkiplistDramNodes() {
-  for (auto skiplist : skiplists_) {
-    skiplist.second->CleanObsoletedNodes();
-  }
-}
-
 void KVEngine::ReportPMemUsage() {
   // Check pmem allocator is initialized before use it.
   // It may not be successfully initialized due to file operation errors.
@@ -120,7 +114,6 @@ void KVEngine::startBackgroundWorks() {
   std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
   bg_work_signals_.terminating = false;
   bg_threads_.emplace_back(&KVEngine::backgroundPMemAllocatorOrgnizer, this);
-  bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
 
   bool close_reclaimer = false;
@@ -1529,19 +1522,6 @@ void KVEngine::backgroundPMemAllocatorOrgnizer() {
       }
     }
     pmem_allocator_->BackgroundWork();
-  }
-}
-
-void KVEngine::backgroundDramCleaner() {
-  auto interval = std::chrono::milliseconds{1000};
-  while (!bg_work_signals_.terminating) {
-    {
-      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
-      if (!bg_work_signals_.terminating) {
-        bg_work_signals_.dram_cleaner_cv.wait_for(ul, interval);
-      }
-    }
-    FreeSkiplistDramNodes();
   }
 }
 }  // namespace KVDK_NAMESPACE

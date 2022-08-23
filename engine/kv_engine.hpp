@@ -289,11 +289,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashHeader
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -436,8 +435,6 @@ class KVEngine : public Engine {
   /// Other
   Status CheckConfigs(const Configs& configs);
 
-  void FreeSkiplistDramNodes();
-
   void purgeAndFreeStringRecords(const std::vector<StringRecord*>& old_offset);
 
   void purgeAndFreeDLRecords(const std::vector<DLRecord*>& old_offset);
@@ -550,9 +547,6 @@ class KVEngine : public Engine {
 
   // Run in background to merge and balance free space of PMem Allocator
   void backgroundPMemAllocatorOrgnizer();
-
-  // Run in background to free obsolete DRAM space
-  void backgroundDramCleaner();
 
   /* functions for cleaner thread cache */
   // Remove old version records from version chain of new_record and cache it
