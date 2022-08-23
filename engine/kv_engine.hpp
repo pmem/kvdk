@@ -105,9 +105,9 @@ class KVEngine : public Engine {
                    const StringView value) override;
   Status SortedDelete(const StringView collection,
                       const StringView user_key) override;
-  Iterator* SortedIteratorCreate(const StringView collection,
-                                 Snapshot* snapshot, Status* s) override;
-  void SortedIteratorRelease(Iterator* sorted_iterator) override;
+  SortedIterator* SortedIteratorCreate(const StringView collection,
+                                       Snapshot* snapshot, Status* s) override;
+  void SortedIteratorRelease(SortedIterator* sorted_iterator) override;
 
   void ReleaseAccessThread() override { access_thread.Release(); }
 
@@ -289,10 +289,11 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
-           : std::is_same<CollectionType, HashList>::value
-               ? RecordType::HashHeader
-               : RecordType::Empty;
+               : std::is_same<CollectionType, List>::value
+                     ? RecordType::ListHeader
+                     : std::is_same<CollectionType, HashList>::value
+                           ? RecordType::HashHeader
+                           : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {

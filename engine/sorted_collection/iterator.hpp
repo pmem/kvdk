@@ -11,16 +11,16 @@ namespace KVDK_NAMESPACE {
 
 class KVEngine;
 
-class SortedIterator : public Iterator {
+class SortedIteratorImpl : public SortedIterator {
  public:
-  SortedIterator(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
-                 const SnapshotImpl* snapshot, bool own_snapshot)
+  SortedIteratorImpl(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
+                     const SnapshotImpl* snapshot, bool own_snapshot)
       : skiplist_(skiplist),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
         dl_iter_(&skiplist->dl_list_, pmem_allocator, snapshot) {}
 
-  virtual ~SortedIterator() = default;
+  virtual ~SortedIteratorImpl() = default;
 
   virtual void Seek(const std::string& key) override {
     assert(skiplist_);

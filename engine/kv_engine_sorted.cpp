@@ -209,8 +209,8 @@ Status KVEngine::SortedDelete(const StringView collection,
   return SortedDeleteImpl(skiplist, user_key);
 }
 
-Iterator* KVEngine::SortedIteratorCreate(const StringView collection,
-                                         Snapshot* snapshot, Status* s) {
+SortedIterator* KVEngine::SortedIteratorCreate(const StringView collection,
+                                               Snapshot* snapshot, Status* s) {
   Skiplist* skiplist;
   bool create_snapshot = snapshot == nullptr;
   if (create_snapshot) {
@@ -223,9 +223,9 @@ Iterator* KVEngine::SortedIteratorCreate(const StringView collection,
   }
   if (res.s == Status::Ok) {
     skiplist = res.entry_ptr->GetIndex().skiplist;
-    return new SortedIterator(skiplist, pmem_allocator_.get(),
-                              static_cast<SnapshotImpl*>(snapshot),
-                              create_snapshot);
+    return new SortedIteratorImpl(skiplist, pmem_allocator_.get(),
+                                  static_cast<SnapshotImpl*>(snapshot),
+                                  create_snapshot);
   } else {
     if (create_snapshot) {
       ReleaseSnapshot(snapshot);
@@ -234,12 +234,12 @@ Iterator* KVEngine::SortedIteratorCreate(const StringView collection,
   }
 }
 
-void KVEngine::SortedIteratorRelease(Iterator* sorted_iterator) {
+void KVEngine::SortedIteratorRelease(SortedIterator* sorted_iterator) {
   if (sorted_iterator == nullptr) {
     GlobalLogger.Info("pass a nullptr in KVEngine::SortedIteratorRelease!\n");
     return;
   }
-  SortedIterator* iter = static_cast<SortedIterator*>(sorted_iterator);
+  SortedIteratorImpl* iter = static_cast<SortedIteratorImpl*>(sorted_iterator);
   if (iter->own_snapshot_) {
     ReleaseSnapshot(iter->snapshot_);
   }

@@ -437,7 +437,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               auto skiplist = getSkiplist(Skiplist::FetchID(header));
               kvdk_assert(skiplist != nullptr,
                           "Backup skiplist should exist in map");
-              auto skiplist_iter = SortedIterator(
+              auto skiplist_iter = SortedIteratorImpl(
                   skiplist.get(), pmem_allocator_.get(),
                   static_cast<const SnapshotImpl*>(snapshot), false);
               for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();

@@ -364,12 +364,12 @@ class Engine {
   // 1. Iterator will be invalid after the passed snapshot is released
   // 2. Please release the iterator as soon as it is not needed, as the holding
   // snapshot will forbid newer data being freed
-  virtual Iterator* SortedIteratorCreate(const StringView collection,
-                                         Snapshot* snapshot = nullptr,
-                                         Status* s = nullptr) = 0;
+  virtual SortedIterator* SortedIteratorCreate(const StringView collection,
+                                               Snapshot* snapshot = nullptr,
+                                               Status* s = nullptr) = 0;
 
   // Release a sorted iterator
-  virtual void SortedIteratorRelease(Iterator*) = 0;
+  virtual void SortedIteratorRelease(SortedIterator*) = 0;
 
   // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.

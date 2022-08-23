@@ -27,7 +27,7 @@ static const uint8_t kMaxHeight = 32;
 static const uint8_t kCacheHeight = 3;
 
 struct Splice;
-class SortedIterator;
+class SortedIteratorImpl;
 
 struct SortedWriteArgs {
   StringView collection;
@@ -392,7 +392,7 @@ class Skiplist : public Collection {
   void ReleaseCleaningLock() { cleaning_lock_.unlock(); }
 
  private:
-  friend SortedIterator;
+  friend SortedIteratorImpl;
 
   // put impl with prepared seek result and pmem space
   WriteResult putPreparedNoHash(Splice& seek_result, const StringView& key,

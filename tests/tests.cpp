@@ -639,7 +639,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   }
 
   {  // sorted snapshot iterator
-    Iterator* sorted_snapshot_iter =
+    SortedIterator* sorted_snapshot_iter =
         engine->SortedIteratorCreate(sorted_collection, snapshot);
     // Destroyed collection still should be accessable by snapshot_iter
     engine->SortedDestroy(sorted_collection);
