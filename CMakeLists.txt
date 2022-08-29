@@ -65,12 +65,15 @@ set(SOURCES
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp
         engine/sorted_collection/rebuilder.cpp
+        engine/hash_collection/hash_list.cpp
+        engine/list_collection/list.cpp
         engine/write_batch_impl.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
         engine/pmem_allocator/free_list.cpp
         engine/data_record.cpp
+        engine/dl_list.cpp
         engine/version/old_records_cleaner.cpp
     )
 

@@ -20,7 +20,9 @@
 #include "backup_log.hpp"
 #include "configs.hpp"
 #include "dram_allocator.hpp"
+#include "hash_collection/iterator.hpp"
 #include "kvdk/engine.hpp"
+#include "list_collection/iterator.hpp"
 #include "sorted_collection/iterator.hpp"
 #include "structures.hpp"
 #include "utils/sync_point.hpp"
@@ -47,7 +49,7 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Waiting bg threads exit ... \n");
   closing_ = true;
   terminateBackgroundWorks();
-  deleteCollections();
+  // deleteCollections();
   ReportPMemUsage();
   GlobalLogger.Info("Instance closed\n");
 }
@@ -95,12 +97,6 @@ Status KVEngine::Restore(const std::string& engine_path,
   return s;
 }
 
-void KVEngine::FreeSkiplistDramNodes() {
-  for (auto skiplist : skiplists_) {
-    skiplist.second->CleanObsoletedNodes();
-  }
-}
-
 void KVEngine::ReportPMemUsage() {
   // Check pmem allocator is initialized before use it.
   // It may not be successfully initialized due to file operation errors.
@@ -118,7 +114,6 @@ void KVEngine::startBackgroundWorks() {
   std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
   bg_work_signals_.terminating = false;
   bg_threads_.emplace_back(&KVEngine::backgroundPMemAllocatorOrgnizer, this);
-  bg_threads_.emplace_back(&KVEngine::backgroundDramCleaner, this);
   bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
 
   bool close_reclaimer = false;
@@ -196,11 +191,9 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,
       pmem_allocator_.get(), configs_.max_access_threads));
-  skiplist_locks_.reset(new LockTable{1UL << 20});
-  hash_list_locks_.reset(new LockTable{1UL << 20});
+  dllist_locks_.reset(new LockTable{1UL << 20});
   if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
-      thread_manager_ == nullptr || skiplist_locks_ == nullptr ||
-      hash_list_locks_ == nullptr) {
+      thread_manager_ == nullptr || dllist_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
   }
@@ -254,9 +247,9 @@ Status KVEngine::RestoreData() {
       case RecordType::SortedElem:
       case RecordType::SortedHeader:
       case RecordType::String:
-      case RecordType::HashRecord:
+      case RecordType::HashHeader:
       case RecordType::HashElem:
-      case RecordType::ListRecord:
+      case RecordType::ListHeader:
       case RecordType::ListElem: {
         if (data_entry_cached.meta.status == RecordStatus::Dirty) {
           data_entry_cached.meta.type = RecordType::Empty;
@@ -317,7 +310,7 @@ Status KVEngine::RestoreData() {
             data_entry_cached);
         break;
       }
-      case RecordType::ListRecord: {
+      case RecordType::ListHeader: {
         s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -325,12 +318,12 @@ Status KVEngine::RestoreData() {
         s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordType::HashRecord: {
-        s = hashListRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
+      case RecordType::HashHeader: {
+        s = restoreHashHeader(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       case RecordType::HashElem: {
-        s = hashListRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
+        s = restoreHashElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
       default: {
@@ -359,9 +352,9 @@ bool KVEngine::ValidateRecord(void* data_record) {
     }
     case RecordType::SortedHeader:
     case RecordType::SortedElem:
-    case RecordType::HashRecord:
+    case RecordType::HashHeader:
     case RecordType::HashElem:
-    case RecordType::ListRecord:
+    case RecordType::ListHeader:
     case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
@@ -441,10 +434,10 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append skiplist elems following the header
-              auto skiplist = getSkiplist(Skiplist::SkiplistID(header));
+              auto skiplist = getSkiplist(Skiplist::FetchID(header));
               kvdk_assert(skiplist != nullptr,
                           "Backup skiplist should exist in map");
-              auto skiplist_iter = SortedIterator(
+              auto skiplist_iter = SortedIteratorImpl(
                   skiplist.get(), pmem_allocator_.get(),
                   static_cast<const SnapshotImpl*>(snapshot), false);
               for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
@@ -457,6 +450,65 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               }
             }
           }
+          break;
+        }
+        case RecordType::HashHeader: {
+          DLRecord* header = slot_iter->GetIndex().hlist->HeaderRecord();
+          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+            header =
+                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+          }
+          if (header && header->GetRecordStatus() == RecordStatus::Normal &&
+              !header->HasExpired()) {
+            s = backup.Append(RecordType::HashHeader, header->Key(),
+                              header->Value(), header->GetExpireTime());
+            if (s == Status::Ok) {
+              // Append hlist elems following the header
+              auto hlist = getHashlist(HashList::FetchID(header));
+              kvdk_assert(hlist != nullptr, "Backup hlist should exist in map");
+              auto hlist_iter = HashIteratorImpl(
+                  hlist.get(), static_cast<const SnapshotImpl*>(snapshot),
+                  false);
+              for (hlist_iter.SeekToFirst(); hlist_iter.Valid();
+                   hlist_iter.Next()) {
+                s = backup.Append(RecordType::HashElem, hlist_iter.Key(),
+                                  hlist_iter.Value(), kPersistTime);
+                if (s != Status::Ok) {
+                  break;
+                }
+              }
+            }
+          }
+          break;
+        }
+        case RecordType::ListHeader: {
+          DLRecord* header = slot_iter->GetIndex().list->HeaderRecord();
+          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+            header =
+                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+          }
+          if (header && header->GetRecordStatus() == RecordStatus::Normal &&
+              !header->HasExpired()) {
+            s = backup.Append(RecordType::ListHeader, header->Key(),
+                              header->Value(), header->GetExpireTime());
+            if (s == Status::Ok) {
+              // Append hlist elems following the header
+              auto list = getList(List::FetchID(header));
+              kvdk_assert(list != nullptr, "Backup list should exist in map");
+              auto list_iter = ListIteratorImpl(
+                  list.get(), static_cast<const SnapshotImpl*>(snapshot),
+                  false);
+              for (list_iter.SeekToFirst(); list_iter.Valid();
+                   list_iter.Next()) {
+                s = backup.Append(RecordType::ListElem, "", list_iter.Value(),
+                                  kPersistTime);
+                if (s != Status::Ok) {
+                  break;
+                }
+              }
+            }
+          }
+          break;
         }
         default:
           // Hash and list backup is not supported yet
@@ -565,8 +617,84 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         }
         break;
       }
+      case RecordType::HashHeader: {
+        std::shared_ptr<HashList> hlist = nullptr;
+        if (!expired) {
+          s = buildHashlist(record.key, hlist);
+          if (s == Status::Ok && wo.ttl_time != kPersistTime) {
+            hlist->SetExpireTime(wo.ttl_time,
+                                 version_controller_.GetCurrentTimestamp());
+          }
+          if (s != Status::Ok) {
+            break;
+          }
+          cnt++;
+        }
+        iter->Next();
+        // the header is followed by all its elems in backup log
+        while (iter->Valid()) {
+          record = iter->Record();
+          if (record.type != RecordType::HashElem) {
+            break;
+          }
+          if (!expired) {
+            auto ret = hlist->Put(record.key, record.val,
+                                  version_controller_.GetCurrentTimestamp());
+            s = ret.s;
+            if (s != Status::Ok) {
+              break;
+            }
+            cnt++;
+          }
+          iter->Next();
+        }
+        break;
+      }
+      case RecordType::ListHeader: {
+        std::shared_ptr<List> list = nullptr;
+        if (!expired) {
+          s = buildList(record.key, list);
+          if (s == Status::Ok && wo.ttl_time != kPersistTime) {
+            list->SetExpireTime(wo.ttl_time,
+                                version_controller_.GetCurrentTimestamp());
+          }
+          if (s != Status::Ok) {
+            break;
+          }
+          cnt++;
+        }
+        iter->Next();
+        // the header is followed by all its elems in backup log
+        while (iter->Valid()) {
+          record = iter->Record();
+          if (record.type != RecordType::ListElem) {
+            break;
+          }
+          if (!expired) {
+            auto ret = list->PushBack(
+                record.val, version_controller_.GetCurrentTimestamp());
+            s = ret.s;
+            if (s != Status::Ok) {
+              break;
+            }
+            cnt++;
+          }
+          iter->Next();
+        }
+        break;
+      }
       case RecordType::SortedElem: {
         GlobalLogger.Error("sorted elems not lead by header in backup log %s\n",
+                           backup_log.c_str());
+        return Status::Abort;
+      }
+      case RecordType::HashElem: {
+        GlobalLogger.Error("hash elems not lead by header in backup log %s\n",
+                           backup_log.c_str());
+        return Status::Abort;
+      }
+      case RecordType::ListElem: {
+        GlobalLogger.Error("list elems not lead by header in backup log %s\n",
                            backup_log.c_str());
         return Status::Abort;
       }
@@ -590,11 +718,14 @@ Status KVEngine::restoreExistingData() {
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
-  list_builder_.reset(new ListBuilder{pmem_allocator_.get(), &lists_,
-                                      configs_.max_access_threads, nullptr});
-  hash_list_builder_.reset(
-      new HashListBuilder{pmem_allocator_.get(), &hash_lists_,
-                          configs_.max_access_threads, hash_list_locks_.get()});
+  hash_rebuilder_.reset(
+      new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+                            dllist_locks_.get(), thread_manager_.get(),
+                            configs_.max_access_threads, *persist_checkpoint_));
+  list_rebuilder_.reset(
+      new ListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+                        dllist_locks_.get(), thread_manager_.get(),
+                        configs_.max_access_threads, *persist_checkpoint_));
 
   Status s = batchWriteRollbackLogs();
   if (s != Status::Ok) {
@@ -619,14 +750,39 @@ Status KVEngine::restoreExistingData() {
                     restored_.load());
 
   // restore skiplist by two optimization strategy
-  auto ret = sorted_rebuilder_->Rebuild();
-  if (ret.s != Status::Ok) {
-    return ret.s;
+  auto s_ret = sorted_rebuilder_->Rebuild();
+  if (s_ret.s != Status::Ok) {
+    return s_ret.s;
   }
-  if (list_id_.load() <= ret.max_id) {
-    list_id_.store(ret.max_id + 1);
+  if (collection_id_.load() <= s_ret.max_id) {
+    collection_id_.store(s_ret.max_id + 1);
   }
-  skiplists_.swap(ret.rebuild_skiplits);
+  skiplists_.swap(s_ret.rebuild_skiplits);
+
+  GlobalLogger.Info("Rebuild skiplist done\n");
+  sorted_rebuilder_.reset(nullptr);
+
+  auto l_ret = list_rebuilder_->Rebuild();
+  if (l_ret.s != Status::Ok) {
+    return l_ret.s;
+  }
+  if (collection_id_.load() <= l_ret.max_id) {
+    collection_id_.store(l_ret.max_id + 1);
+  }
+  lists_.swap(l_ret.rebuilt_lists);
+  GlobalLogger.Info("Rebuild Lists done\n");
+  list_rebuilder_.reset(nullptr);
+
+  auto h_ret = hash_rebuilder_->Rebuild();
+  if (h_ret.s != Status::Ok) {
+    return h_ret.s;
+  }
+  if (collection_id_.load() <= h_ret.max_id) {
+    collection_id_.store(h_ret.max_id + 1);
+  }
+  hlists_.swap(h_ret.rebuilt_hlists);
+  GlobalLogger.Info("Rebuild HashLists done\n");
+  hash_rebuilder_.reset(nullptr);
 
 #if KVDK_DEBUG_LEVEL > 0
   for (auto skiplist : skiplists_) {
@@ -636,27 +792,15 @@ Status KVEngine::restoreExistingData() {
       return s;
     }
   }
+
+  for (auto hlist : hlists_) {
+    Status s = hlist.second->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Error("Check hash index error\n");
+      return s;
+    }
+  }
 #endif
-  GlobalLogger.Info("Rebuild skiplist done\n");
-  sorted_rebuilder_.reset(nullptr);
-
-  list_builder_->RebuildLists();
-  list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
-  s = listRegisterRecovered();
-  if (s != Status::Ok) {
-    return s;
-  }
-  list_builder_.reset(nullptr);
-  GlobalLogger.Info("Rebuild Lists done\n");
-
-  hash_list_builder_->RebuildLists();
-  hash_list_builder_->CleanBrokens([&](DLRecord* elem) { directFree(elem); });
-  s = hashListRegisterRecovered();
-  if (s != Status::Ok) {
-    return s;
-  }
-  hash_list_builder_.reset(nullptr);
-  GlobalLogger.Info("Rebuild HashLists done\n");
 
   uint64_t latest_version_ts = 0;
   if (restored_.load() > 0) {
@@ -808,20 +952,19 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (res.s != Status::Ok) {
       return res.s;
     }
-    sorted_args.emplace_back();
-    sorted_args.back().Assign(sorted_op);
-    sorted_args.back().skiplist = res.entry.GetIndex().skiplist;
+    Skiplist* skiplist = res.entry.GetIndex().skiplist;
+    sorted_args.emplace_back(
+        skiplist->InitWriteArgs(sorted_op.key, sorted_op.value, sorted_op.op));
   }
 
   for (auto const& hash_op : batch.HashOps()) {
     HashList* hlist;
-    Status s = hashListFind(hash_op.key, &hlist);
+    Status s = hashListFind(hash_op.collection, &hlist);
     if (s != Status::Ok) {
       return s;
     }
-    hash_args.emplace_back();
-    hash_args.back().Assign(hash_op);
-    hash_args.back().hlist = hlist;
+    hash_args.emplace_back(
+        hlist->InitWriteArgs(hash_op.key, hash_op.value, hash_op.op));
   }
 
   // Keys/internal keys to be locked on HashTable
@@ -833,7 +976,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
   }
   for (auto const& arg : hash_args) {
-    keys_to_lock.push_back(arg.hlist->InternalKey(arg.field));
+    keys_to_lock.push_back(arg.hlist->InternalKey(arg.key));
   }
 
   auto guard = hash_table_->RangeLock(keys_to_lock);
@@ -845,23 +988,23 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 #ifndef KVDK_ENABLE_CRASHPOINT
     for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
-      if (iter->res.entry_ptr->Allocated()) {
-        kvdk_assert(iter->res.s == Status::NotFound, "");
-        iter->res.entry_ptr->clear();
+      if (iter->lookup_result.entry_ptr->Allocated()) {
+        kvdk_assert(iter->lookup_result.s == Status::NotFound, "");
+        iter->lookup_result.entry_ptr->Clear();
       }
     }
     for (auto iter = sorted_args.rbegin(); iter != sorted_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
       if (iter->lookup_result.entry_ptr->Allocated()) {
         kvdk_assert(iter->lookup_result.s == Status::NotFound, "");
-        iter->lookup_result.entry_ptr->clear();
+        iter->lookup_result.entry_ptr->Clear();
       }
     }
     for (auto iter = string_args.rbegin(); iter != string_args.rend(); ++iter) {
       pmem_allocator_->Free(iter->space);
       if (iter->res.entry_ptr->Allocated()) {
         kvdk_assert(iter->res.s == Status::NotFound, "");
-        iter->res.entry_ptr->clear();
+        iter->res.entry_ptr->Clear();
       }
     }
 #endif
@@ -874,8 +1017,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Prepare for Strings
   for (auto& args : string_args) {
-    args.ts = bw_token.Timestamp();
-    Status s = stringWritePrepare(args);
+    Status s = stringWritePrepare(args, bw_token.Timestamp());
     if (s != Status::Ok) {
       return s;
     }
@@ -883,8 +1025,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Prepare for Sorted Elements
   for (auto& args : sorted_args) {
-    args.ts = bw_token.Timestamp();
-    Status s = sortedWritePrepare(args);
+    Status s = sortedWritePrepare(args, bw_token.Timestamp());
     if (s != Status::Ok) {
       return s;
     }
@@ -892,23 +1033,9 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Prepare for Hash Elements
   for (auto& args : hash_args) {
-    args.ts = bw_token.Timestamp();
-    std::string internal_key = args.hlist->InternalKey(args.field);
-    args.res = lookupElem<true>(internal_key, RecordType::HashElem);
-    if (args.res.s != Status::Ok && args.res.s != Status::NotFound) {
-      return args.res.s;
-    }
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
-      // No need to do anything for delete a non-existing Sorted element
-      continue;
-    }
-    if (args.op == WriteBatchImpl::Op::Put) {
-      args.space = pmem_allocator_->Allocate(
-          DLRecord::RecordSize(internal_key, args.value));
-      if (args.space.size == 0) {
-        return Status::PmemOverflow;
-      }
+    Status s = hashWritePrepare(args, bw_token.Timestamp());
+    if (s != Status::Ok) {
+      return s;
     }
   }
 
@@ -920,7 +1047,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    if (args.op == WriteBatchImpl::Op::Put) {
+    if (args.op == WriteOp::Put) {
       log.StringPut(args.space.offset);
     } else {
       log.StringDelete(args.space.offset);
@@ -930,28 +1057,21 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     if (args.space.size == 0) {
       continue;
     }
-    if (args.op == WriteBatchImpl::Op::Put) {
+    if (args.op == WriteOp::Put) {
       log.SortedPut(args.space.offset);
     } else {
       log.SortedDelete(args.space.offset);
     }
   }
+
   for (auto& args : hash_args) {
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
+    if (args.space.size == 0) {
       continue;
     }
-    if (args.res.s == Status::Ok) {
-      PMemOffsetType old_off = pmem_allocator_->addr2offset_checked(
-          args.res.entry.GetIndex().dl_record);
-      if (args.op == WriteBatchImpl::Op::Put) {
-        log.HashReplace(args.space.offset, old_off);
-      } else {
-        log.HashDelete(old_off);
-      }
+    if (args.op == WriteOp::Put) {
+      log.HashPut(args.space.offset);
     } else {
-      kvdk_assert(args.op == WriteBatchImpl::Op::Put, "");
-      log.HashEmplace(args.space.offset);
+      log.HashDelete(args.space.offset);
     }
   }
 
@@ -982,8 +1102,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Write Hash Elems
   for (auto& args : hash_args) {
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
+    if (args.space.size == 0) {
       continue;
     }
     Status s = hashListWrite(args);
@@ -1020,8 +1139,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Publish Hash Elements to HashTable
   for (auto& args : hash_args) {
-    if (args.op == WriteBatchImpl::Op::Delete &&
-        args.res.s == Status::NotFound) {
+    if (args.space.size == 0) {
       continue;
     }
     Status s = hashListPublish(args);
@@ -1066,13 +1184,6 @@ Status KVEngine::batchWriteRollbackLogs() {
     Status s;
     for (auto iter = log.ListLogs().rbegin(); iter != log.ListLogs().rend();
          ++iter) {
-      if (iter->op != BatchWriteLog::Op::Delete) {
-        DLRecord* rec = static_cast<DLRecord*>(
-            pmem_allocator_->offset2addr_checked(iter->offset));
-        if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
-          continue;
-        }
-      }
       s = listRollback(*iter);
       if (s != Status::Ok) {
         return s;
@@ -1080,13 +1191,6 @@ Status KVEngine::batchWriteRollbackLogs() {
     }
     for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
          ++iter) {
-      if (iter->op != BatchWriteLog::Op::Delete) {
-        DLRecord* rec = static_cast<DLRecord*>(
-            pmem_allocator_->offset2addr_checked(iter->new_offset));
-        if (!rec->Validate() || rec->entry.meta.timestamp != log.Timestamp()) {
-          continue;
-        }
-      }
       s = hashListRollback(*iter);
       if (s != Status::Ok) {
         return s;
@@ -1094,7 +1198,7 @@ Status KVEngine::batchWriteRollbackLogs() {
     }
     for (auto iter = log.SortedLogs().rbegin(); iter != log.SortedLogs().rend();
          ++iter) {
-      s = sortedRollback(log.Timestamp(), *iter);
+      s = sortedRollback(*iter);
       if (s != Status::Ok) {
         return s;
       }
@@ -1198,18 +1302,18 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   auto ul = hash_table_->AcquireLock(str);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
-  auto res = lookupKey<false>(str, ExpirableRecordType);
-  if (res.s == Status::Outdated) {
+  auto lookup_result = lookupKey<false>(str, ExpirableRecordType);
+  if (lookup_result.s == Status::Outdated) {
     return Status::NotFound;
   }
 
-  if (res.s == Status::Ok) {
+  if (lookup_result.s == Status::Ok) {
     WriteOptions write_option{ttl_time};
-    switch (res.entry_ptr->GetIndexType()) {
+    switch (lookup_result.entry_ptr->GetIndexType()) {
       case PointerType::StringRecord: {
         ul.unlock();
         version_controller_.ReleaseLocalSnapshot();
-        res.s = Modify(
+        lookup_result.s = Modify(
             str,
             [](const std::string* old_val, std::string* new_val, void*) {
               new_val->assign(*old_val);
@@ -1220,22 +1324,27 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
       case PointerType::Skiplist: {
         auto new_ts = snapshot_holder.Timestamp();
-        Skiplist* skiplist = res.entry_ptr->GetIndex().skiplist;
+        Skiplist* skiplist = lookup_result.entry_ptr->GetIndex().skiplist;
         std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
         expirable_skiplists_.erase(skiplist);
         auto ret = skiplist->SetExpireTime(expired_time, new_ts);
         expirable_skiplists_.emplace(skiplist);
-        res.s = ret.s;
+        lookup_result.s = ret.s;
         break;
       }
       case PointerType::HashList: {
-        HashList* hlist = res.entry_ptr->GetIndex().hlist;
-        res.s = hashListExpire(hlist, expired_time);
+        auto new_ts = snapshot_holder.Timestamp();
+        HashList* hlist = lookup_result.entry_ptr->GetIndex().hlist;
+        std::unique_lock<std::mutex> hlist_lock(hlists_mu_);
+        expirable_hlists_.erase(hlist);
+        lookup_result.s = hlist->SetExpireTime(expired_time, new_ts).s;
+        expirable_hlists_.emplace(hlist);
         break;
       }
       case PointerType::List: {
-        List* list = res.entry_ptr->GetIndex().list;
-        res.s = listExpire(list, expired_time);
+        auto new_ts = snapshot_holder.Timestamp();
+        List* list = lookup_result.entry_ptr->GetIndex().list;
+        lookup_result.s = list->SetExpireTime(expired_time, new_ts).s;
         break;
       }
       default: {
@@ -1243,7 +1352,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
       }
     }
   }
-  return res.s;
+  return lookup_result.s;
 }
 }  // namespace KVDK_NAMESPACE
 
@@ -1289,12 +1398,19 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
         break;
       }
       case RecordType::SortedHeader:
-      case RecordType::ListRecord:
-      case RecordType::HashRecord: {
-        result.s =
-            static_cast<Collection*>(result.entry.GetIndex().ptr)->HasExpired()
-                ? Status::Outdated
-                : Status::Ok;
+        result.s = result.entry.GetIndex().skiplist->HasExpired()
+                       ? Status::Outdated
+                       : Status::Ok;
+
+        break;
+      case RecordType::ListHeader:
+        result.s = result.entry.GetIndex().list->HasExpired() ? Status::Outdated
+                                                              : Status::Ok;
+        break;
+      case RecordType::HashHeader: {
+        result.s = result.entry.GetIndex().hlist->HasExpired()
+                       ? Status::Outdated
+                       : Status::Ok;
         break;
       }
       default: {
@@ -1317,7 +1433,7 @@ T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
       "Invalid record type, should be StringRecord or DLRecord.");
   T* ret = nullptr;
   auto old_record = record;
-  while (old_record && old_record->entry.meta.timestamp > min_snapshot_ts) {
+  while (old_record && old_record->GetTimestamp() > min_snapshot_ts) {
     old_record =
         static_cast<T*>(pmem_allocator_->offset2addr(old_record->old_version));
   }
@@ -1377,7 +1493,7 @@ void KVEngine::directFree(DLRecord* addr) {
     return;
   }
   pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                                   addr->entry.header.record_size});
+                                   addr->GetRecordSize()});
 }
 
 void KVEngine::backgroundPMemUsageReporter() {
@@ -1408,32 +1524,4 @@ void KVEngine::backgroundPMemAllocatorOrgnizer() {
     pmem_allocator_->BackgroundWork();
   }
 }
-
-void KVEngine::backgroundDramCleaner() {
-  auto interval = std::chrono::milliseconds{1000};
-  while (!bg_work_signals_.terminating) {
-    {
-      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
-      if (!bg_work_signals_.terminating) {
-        bg_work_signals_.dram_cleaner_cv.wait_for(ul, interval);
-      }
-    }
-    FreeSkiplistDramNodes();
-  }
-}
-
-void KVEngine::deleteCollections() {
-  std::set<List*>::iterator list_it = lists_.begin();
-  while (list_it != lists_.end()) {
-    delete *list_it;
-    list_it = lists_.erase(list_it);
-  }
-
-  std::set<HashList*>::iterator hash_it = hash_lists_.begin();
-  while (hash_it != hash_lists_.end()) {
-    delete *hash_it;
-    hash_it = hash_lists_.erase(hash_it);
-  }
-};
-
 }  // namespace KVDK_NAMESPACE

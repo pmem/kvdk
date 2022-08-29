@@ -358,7 +358,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   // create hash iterator
   KVDKHashIterator* kvdk_iter = KVDKHashIteratorCreate(
-      kvdk_engine, hash_collection, strlen(hash_collection), NULL);
+      kvdk_engine, hash_collection, strlen(hash_collection), NULL, NULL);
   assert(kvdk_iter != NULL);
   int cnt = 0;
   for (KVDKHashIteratorSeekToFirst(kvdk_iter);
@@ -374,7 +374,7 @@ void HashesCollectionExample(KVDKEngine* kvdk_engine) {
   }
   printf("Successfully performed Get Put Delete Iterate on HashList.\n");
   assert(cnt == 9);
-  KVDKHashIteratorDestroy(kvdk_iter);
+  KVDKHashIteratorDestroy(kvdk_engine, kvdk_iter);
 
   s = KVDKHashDestroy(kvdk_engine, hash_collection, strlen(hash_collection));
   assert(s == Ok);
@@ -489,7 +489,7 @@ void ExpireExample(KVDKEngine* kvdk_engine) {
         KVDKCreateSortedCollectionConfigs();
     s = KVDKSortedCreate(kvdk_engine, sorted_collection,
                          strlen(sorted_collection), s_configs);
-    assert(s == Ok);
+    assert(s == Ok || s == Existed);
     s = KVDKGetTTL(kvdk_engine, sorted_collection, strlen(sorted_collection),
                    &ttl_time);
     assert(s == Ok);

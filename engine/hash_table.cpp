@@ -4,8 +4,8 @@
 
 #include "hash_table.hpp"
 
-#include "hash_list.hpp"
-#include "simple_list.hpp"
+#include "hash_collection/hash_list.hpp"
+#include "list_collection/list.hpp"
 #include "sorted_collection/skiplist.hpp"
 #include "thread_manager.hpp"
 
@@ -96,7 +96,7 @@ HashTable::LookupResult HashTable::Lookup(const StringView& key,
                                           uint8_t type_mask) {
   LookupResult ret;
   HashEntry* empty_entry = nullptr;
-  auto hint = GetHint(key);
+  auto hint = getHint(key);
   ret.key_hash_prefix = hint.key_hash_prefix;
 
   HashBucket* bucket_ptr = &hash_buckets_[hint.bucket];
@@ -163,6 +163,16 @@ void HashTable::Insert(const LookupResult& insert_position, RecordType type,
   atomic_store_16(insert_position.entry_ptr, &new_hash_entry);
 }
 
+HashTable::LookupResult HashTable::Insert(const StringView& key,
+                                          RecordType type, RecordStatus status,
+                                          void* index, PointerType index_type) {
+  auto lookup_result = Lookup<true>(key, type);
+  if (lookup_result.s == Status::Ok || lookup_result.s == Status::NotFound) {
+    Insert(lookup_result, type, status, index, index_type);
+  }
+  return lookup_result;
+}
+
 Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
   kvdk_assert(bucket_iter.hash_table_ == this &&
                   bucket_iter.entry_idx_ ==
@@ -181,7 +191,7 @@ Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
     bucket_iter.bucket_ptr_ = bucket_iter.bucket_ptr_->next;
   }
   bucket_iter.entry_idx_ = hash_bucket_entries_[bucket_iter.bucket_idx_]++;
-  bucket_iter->clear();
+  bucket_iter->Clear();
   kvdk_assert(bucket_iter.Valid(), "");
   return Status::Ok;
 }

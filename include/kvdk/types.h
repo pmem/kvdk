@@ -10,6 +10,9 @@
 #define KVDK_MODIFY_ABORT 2
 #define KVDK_MODIFY_NOOP 3
 
+#define KVDK_LIST_FRONT 0
+#define KVDK_LIST_BACK 1
+
 // Customized modify function used in KVDKModify, indicate how to modify
 // existing value
 //

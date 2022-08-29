@@ -257,7 +257,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   assert(pmem_record->GetRecordType() == RecordType::String);
   if (RecoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
-    purgeAndFree(pmem_record);
+    pmem_allocator_->PurgeAndFree<StringRecord>(pmem_record);
     return Status::Ok;
   }
 
@@ -273,7 +273,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   if (lookup_result.s == Status::Ok &&
       lookup_result.entry.GetIndex().string_record->GetTimestamp() >=
           cached_entry.meta.timestamp) {
-    purgeAndFree(pmem_record);
+    pmem_allocator_->PurgeAndFree<StringRecord>(pmem_record);
     return Status::Ok;
   }
 
@@ -282,19 +282,21 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   pmem_record->PersistOldVersion(kNullPMemOffset);
 
   if (lookup_result.s == Status::Ok) {
-    purgeAndFree(lookup_result.entry.GetIndex().ptr);
+    pmem_allocator_->PurgeAndFree<StringRecord>(
+        lookup_result.entry.GetIndex().string_record);
   }
 
   return Status::Ok;
 }
 
-Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
+Status KVEngine::stringWritePrepare(StringWriteArgs& args, TimeStampType ts) {
   args.res = lookupKey<true>(args.key, RecordType::String);
   if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
       args.res.s != Status::Outdated) {
     return args.res.s;
   }
-  if (args.op == WriteBatchImpl::Op::Delete && args.res.s != Status::Ok) {
+  args.ts = ts;
+  if (args.op == WriteOp::Delete && args.res.s != Status::Ok) {
     return Status::Ok;
   }
   args.space =
@@ -306,13 +308,12 @@ Status KVEngine::stringWritePrepare(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWrite(StringWriteArgs& args) {
-  RecordStatus record_status = args.op == WriteBatchImpl::Op::Put
-                                   ? RecordStatus::Normal
-                                   : RecordStatus::Outdated;
+  RecordStatus record_status =
+      args.op == WriteOp::Put ? RecordStatus::Normal : RecordStatus::Outdated;
   void* new_addr = pmem_allocator_->offset2addr_checked(args.space.offset);
   PMemOffsetType old_off;
   if (args.res.s == Status::NotFound) {
-    kvdk_assert(args.op == WriteBatchImpl::Op::Put, "");
+    kvdk_assert(args.op == WriteOp::Put, "");
     old_off = kNullPMemOffset;
   } else {
     kvdk_assert(args.res.s == Status::Ok || args.res.s == Status::Outdated, "");
@@ -326,9 +327,8 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
 }
 
 Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
-  RecordStatus record_status = args.op == WriteBatchImpl::Op::Put
-                                   ? RecordStatus::Normal
-                                   : RecordStatus::Outdated;
+  RecordStatus record_status =
+      args.op == WriteOp::Put ? RecordStatus::Normal : RecordStatus::Outdated;
   insertKeyOrElem(args.res, RecordType::String, record_status,
                   const_cast<StringRecord*>(args.new_rec));
   return Status::Ok;

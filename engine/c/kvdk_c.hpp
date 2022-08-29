@@ -19,10 +19,10 @@ using kvdk::StringView;
 using kvdk::Configs;
 using kvdk::Engine;
 using kvdk::HashIterator;
-using kvdk::Iterator;
 using kvdk::ListIterator;
 using kvdk::Snapshot;
 using kvdk::SortedCollectionConfigs;
+using kvdk::SortedIterator;
 using kvdk::WriteBatch;
 using kvdk::WriteOptions;
 
@@ -41,15 +41,15 @@ struct KVDKWriteBatch {
 };
 
 struct KVDKSortedIterator {
-  Iterator* rep;
+  SortedIterator* rep;
 };
 
 struct KVDKListIterator {
-  std::unique_ptr<ListIterator> rep;
+  ListIterator* rep;
 };
 
 struct KVDKHashIterator {
-  std::unique_ptr<HashIterator> rep;
+  HashIterator* rep;
 };
 
 struct KVDKSnapshot {

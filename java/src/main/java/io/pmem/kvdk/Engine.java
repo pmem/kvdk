@@ -257,15 +257,15 @@ public class Engine extends KVDKObject {
                 keyLength);
     }
 
-    public Iterator newSortedIterator(final NativeBytesHandle nameHandle) throws KVDKException {
+    public Iterator sortedIteratorCreate(final NativeBytesHandle nameHandle) throws KVDKException {
         long iteratorHandle =
-                newSortedIterator(
+                sortedIteratorCreate(
                         nativeHandle_, nameHandle.getNativeHandle(), nameHandle.getLength());
 
         return new Iterator(iteratorHandle, nativeHandle_);
     }
 
-    public void releaseSortedIterator(final Iterator iterator) throws KVDKException {
+    public void sortedIteratorRelease(final Iterator iterator) throws KVDKException {
         iterator.close();
     }
 
@@ -341,7 +341,7 @@ public class Engine extends KVDKObject {
             int keyOffset,
             int keyLength);
 
-    private native long newSortedIterator(long engineHandle, long nameHandle, int nameLenth);
+    private native long sortedIteratorCreate(long engineHandle, long nameHandle, int nameLenth);
 
     private native long writeBatchCreate(long handle);
 

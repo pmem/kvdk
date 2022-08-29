@@ -42,7 +42,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
                          s_configs.comparator_name);
       return Status::Abort;
     }
-    CollectionIDType id = list_id_.fetch_add(1);
+    CollectionIDType id = collection_id_.fetch_add(1);
     std::string value_str =
         Skiplist::EncodeSortedCollectionValue(id, s_configs);
     uint32_t request_size =
@@ -52,7 +52,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
       return Status::PmemOverflow;
     }
 
-    // PMem level of skiplist is circular, so the next and prev pointers of
+    // PMem level of dl list is circular, so the next and prev pointers of
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
@@ -62,15 +62,13 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
 
     skiplist = std::make_shared<Skiplist>(
         pmem_record, string_view_2_string(collection_name), id, comparator,
-        pmem_allocator_.get(), hash_table_.get(), skiplist_locks_.get(),
+        pmem_allocator_.get(), hash_table_.get(), dllist_locks_.get(),
         s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
     insertKeyOrElem(lookup_result, RecordType::SortedHeader,
                     RecordStatus::Normal, skiplist.get());
   } else {
-    // Todo (jiayu): handle expired skiplist
-    // Todo (jiayu): what if skiplist exists but comparator not match?
-    return lookup_result.s;
+    return lookup_result.s == Status::Ok ? Status::Existed : lookup_result.s;
   }
   return Status::Ok;
 }
@@ -104,7 +102,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
         header->prev, header->next, collection_name, value, 0);
     bool success =
         Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
-                          pmem_allocator_.get(), skiplist_locks_.get());
+                          pmem_allocator_.get(), dllist_locks_.get());
     kvdk_assert(success, "existing header should be linked on its skiplist");
     insertKeyOrElem(lookup_result, RecordType::SortedHeader,
                     RecordStatus::Outdated, skiplist);
@@ -199,7 +197,6 @@ Status KVEngine::SortedDelete(const StringView collection,
 
   Skiplist* skiplist = nullptr;
   auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
-  // GlobalLogger.Debug("ret.s is %d\n", ret.s);
   if (ret.s != Status::Ok) {
     return (ret.s == Status::Outdated || ret.s == Status::NotFound) ? Status::Ok
                                                                     : ret.s;
@@ -212,8 +209,8 @@ Status KVEngine::SortedDelete(const StringView collection,
   return SortedDeleteImpl(skiplist, user_key);
 }
 
-Iterator* KVEngine::NewSortedIterator(const StringView collection,
-                                      Snapshot* snapshot, Status* s) {
+SortedIterator* KVEngine::SortedIteratorCreate(const StringView collection,
+                                               Snapshot* snapshot, Status* s) {
   Skiplist* skiplist;
   bool create_snapshot = snapshot == nullptr;
   if (create_snapshot) {
@@ -226,9 +223,9 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
   }
   if (res.s == Status::Ok) {
     skiplist = res.entry_ptr->GetIndex().skiplist;
-    return new SortedIterator(skiplist, pmem_allocator_.get(),
-                              static_cast<SnapshotImpl*>(snapshot),
-                              create_snapshot);
+    return new SortedIteratorImpl(skiplist, pmem_allocator_.get(),
+                                  static_cast<SnapshotImpl*>(snapshot),
+                                  create_snapshot);
   } else {
     if (create_snapshot) {
       ReleaseSnapshot(snapshot);
@@ -237,12 +234,12 @@ Iterator* KVEngine::NewSortedIterator(const StringView collection,
   }
 }
 
-void KVEngine::ReleaseSortedIterator(Iterator* sorted_iterator) {
+void KVEngine::SortedIteratorRelease(SortedIterator* sorted_iterator) {
   if (sorted_iterator == nullptr) {
-    GlobalLogger.Info("pass a nullptr in KVEngine::ReleaseSortedIterator!\n");
+    GlobalLogger.Info("pass a nullptr in KVEngine::SortedIteratorRelease!\n");
     return;
   }
-  SortedIterator* iter = static_cast<SortedIterator*>(sorted_iterator);
+  SortedIteratorImpl* iter = static_cast<SortedIteratorImpl*>(sorted_iterator);
   if (iter->own_snapshot_) {
     ReleaseSnapshot(iter->snapshot_);
   }
@@ -297,8 +294,8 @@ Status KVEngine::restoreSortedElem(DLRecord* elem) {
   return sorted_rebuilder_->AddElement(elem);
 }
 
-Status KVEngine::sortedWritePrepare(SortedWriteArgs& args) {
-  return args.skiplist->PrepareWrite(args);
+Status KVEngine::sortedWritePrepare(SortedWriteArgs& args, TimeStampType ts) {
+  return args.skiplist->PrepareWrite(args, ts);
 }
 
 Status KVEngine::sortedWrite(SortedWriteArgs& args) {
@@ -310,27 +307,8 @@ Status KVEngine::sortedWritePublish(SortedWriteArgs const&) {
   return Status::Ok;
 }
 
-Status KVEngine::sortedRollback(TimeStampType,
-                                BatchWriteLog::SortedLogEntry const& log) {
-  DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
-  // We only check prev linkage as a valid prev linkage indicate valid prev and
-  // next pointers on the record, so we can safely do remove/replace
-  if (elem->Validate() &&
-      Skiplist::CheckRecordPrevLinkage(elem, pmem_allocator_.get())) {
-    if (elem->old_version != kNullPMemOffset) {
-      bool success = Skiplist::Replace(
-          elem,
-          pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
-          nullptr, pmem_allocator_.get(), skiplist_locks_.get());
-      kvdk_assert(success, "Replace should success as we checked linkage");
-    } else {
-      bool success = Skiplist::Remove(elem, nullptr, pmem_allocator_.get(),
-                                      skiplist_locks_.get());
-      kvdk_assert(success, "Remove should success as we checked linkage");
-    }
-  }
-  elem->Destroy();
-  return Status::Ok;
+Status KVEngine::sortedRollback(BatchWriteLog::SortedLogEntry const& log) {
+  return sorted_rebuilder_->Rollback(log);
 }
 
 }  // namespace KVDK_NAMESPACE

@@ -12,9 +12,9 @@ KVDKStatus KVDKListDestroy(KVDKEngine* engine, char const* key_data,
                            size_t key_len) {
   return engine->rep->ListDestroy(StringView{key_data, key_len});
 }
-KVDKStatus KVDKListLength(KVDKEngine* engine, char const* key_data,
-                          size_t key_len, size_t* len) {
-  return engine->rep->ListLength(StringView{key_data, key_len}, len);
+KVDKStatus KVDKListSize(KVDKEngine* engine, char const* key_data,
+                        size_t key_len, size_t* len) {
+  return engine->rep->ListSize(StringView{key_data, key_len}, len);
 }
 
 KVDKStatus KVDKListPushFront(KVDKEngine* engine, char const* key_data,
@@ -60,25 +60,49 @@ KVDKStatus KVDKListPopBack(KVDKEngine* engine, char const* key_data,
   return s;
 }
 
-KVDKStatus KVDKListInsertBefore(KVDKEngine* engine, KVDKListIterator* pos,
-                                char const* elem_data, size_t elem_len) {
-  return engine->rep->ListInsertBefore(pos->rep,
-                                       StringView{elem_data, elem_len});
+KVDKStatus KVDKListInsertAt(KVDKEngine* engine, char const* list_name,
+                            size_t list_name_len, char const* elem_data,
+                            size_t elem_len, long index) {
+  return engine->rep->ListInsertAt(StringView(list_name, list_name_len),
+                                   StringView(elem_data, elem_len), index);
 }
 
-KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, KVDKListIterator* pos,
-                               char const* elem_data, size_t elem_len) {
-  return engine->rep->ListInsertAfter(pos->rep,
-                                      StringView{elem_data, elem_len});
+KVDKStatus KVDKListInsertBefore(KVDKEngine* engine, char const* list_name,
+                                size_t list_name_len, char const* elem_data,
+                                size_t elem_len, char const* pos_elem,
+                                size_t pos_elem_len) {
+  return engine->rep->ListInsertBefore(StringView(list_name, list_name_len),
+                                       StringView(elem_data, elem_len),
+                                       StringView(pos_elem, pos_elem_len));
 }
 
-KVDKStatus KVDKListErase(KVDKEngine* engine, KVDKListIterator* pos) {
-  return engine->rep->ListErase(pos->rep);
+KVDKStatus KVDKListInsertAfter(KVDKEngine* engine, char const* list_name,
+                               size_t list_name_len, char const* elem_data,
+                               size_t elem_len, char const* pos_elem,
+                               size_t pos_elem_len) {
+  return engine->rep->ListInsertAfter(StringView(list_name, list_name_len),
+                                      StringView(elem_data, elem_len),
+                                      StringView(pos_elem, pos_elem_len));
 }
 
-KVDKStatus KVDKListReplace(KVDKEngine* engine, KVDKListIterator* pos,
-                           char const* elem_data, size_t elem_len) {
-  return engine->rep->ListReplace(pos->rep, StringView{elem_data, elem_len});
+KVDKStatus KVDKListErase(KVDKEngine* engine, char const* list_name,
+                         size_t list_len, long index, char** elem_data,
+                         size_t* elem_len) {
+  std::string buffer;
+  KVDKStatus s =
+      engine->rep->ListErase(StringView(list_name, list_len), index, &buffer);
+  if (s == KVDKStatus::Ok) {
+    *elem_data = CopyStringToChar(buffer);
+    *elem_len = buffer.size();
+  }
+  return s;
+}
+
+KVDKStatus KVDKListReplace(KVDKEngine* engine, char const* list_name,
+                           size_t list_name_len, long index, char const* elem,
+                           size_t elem_len) {
+  return engine->rep->ListReplace(StringView(list_name, list_name_len), index,
+                                  StringView(elem, elem_len));
 }
 
 KVDKStatus KVDKListBatchPushFront(KVDKEngine* engine, char const* key_data,
@@ -139,10 +163,16 @@ KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
                         size_t src_len, int src_pos, char const* dst_data,
                         size_t dst_len, int dst_pos, char** elem_data,
                         size_t* elem_len) {
+  if ((src_pos != KVDK_LIST_BACK && src_pos != KVDK_LIST_FRONT) ||
+      (dst_pos != KVDK_LIST_BACK && dst_pos != KVDK_LIST_FRONT)) {
+    return InvalidArgument;
+  }
   std::string elem;
-  KVDKStatus s =
-      engine->rep->ListMove(StringView{src_data, src_len}, src_pos,
-                            StringView{dst_data, dst_len}, dst_pos, &elem);
+  KVDKStatus s = engine->rep->ListMove(
+      StringView{src_data, src_len},
+      static_cast<KVDK_NAMESPACE::ListPos>(src_pos),
+      StringView{dst_data, dst_len},
+      static_cast<KVDK_NAMESPACE::ListPos>(dst_pos), &elem);
   *elem_data = CopyStringToChar(elem);
   *elem_len = elem.size();
   return s;
@@ -151,16 +181,22 @@ KVDKStatus KVDKListMove(KVDKEngine* engine, char const* src_data,
 KVDKListIterator* KVDKListIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len,
                                          KVDKStatus* s) {
-  auto rep = engine->rep->ListCreateIterator(StringView{key_data, key_len}, s);
+  auto rep = engine->rep->ListIteratorCreate(StringView{key_data, key_len},
+                                             nullptr, s);
   if (rep == nullptr) {
     return nullptr;
   }
   KVDKListIterator* iter = new KVDKListIterator;
-  iter->rep.swap(rep);
+  iter->rep = rep;
   return iter;
 }
 
-void KVDKListIteratorDestroy(KVDKListIterator* iter) { delete iter; }
+void KVDKListIteratorDestroy(KVDKEngine* engine, KVDKListIterator* iter) {
+  if (iter->rep) {
+    engine->rep->ListIteratorRelease(iter->rep);
+  }
+  delete iter;
+}
 
 void KVDKListIteratorPrev(KVDKListIterator* iter) { iter->rep->Prev(); }
 

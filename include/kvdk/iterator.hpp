@@ -10,7 +10,7 @@
 
 namespace KVDK_NAMESPACE {
 
-class Iterator {
+class SortedIterator {
  public:
   virtual void Seek(const std::string& key) = 0;
 
@@ -28,12 +28,12 @@ class Iterator {
 
   virtual std::string Value() = 0;
 
-  virtual ~Iterator() = default;
+  virtual ~SortedIterator() = default;
 };
 
 class ListIterator {
  public:
-  virtual void Seek(IndexType pos) = 0;
+  virtual void Seek(long index) = 0;
 
   virtual void SeekToFirst() = 0;
 

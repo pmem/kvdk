@@ -66,12 +66,12 @@ Status PMemKVDK::Delete(const std::string& key) {
 
 class PMemKVDKIterator : public KVEngine::Iterator {
  public:
-  explicit PMemKVDKIterator(kvdk::Iterator* it, kvdk::Engine* engine)
+  explicit PMemKVDKIterator(kvdk::SortedIterator* it, kvdk::Engine* engine)
       : iter_(it), engine_(engine) {}
 
   ~PMemKVDKIterator() {
     if (iter_) {
-      engine_->ReleaseSortedIterator(iter_);
+      engine_->SortedIteratorRelease(iter_);
     }
   }
 
@@ -84,14 +84,14 @@ class PMemKVDKIterator : public KVEngine::Iterator {
   std::string Value() override { return iter_->Value(); }
 
  private:
-  kvdk::Iterator* iter_ = nullptr;
+  kvdk::SortedIterator* iter_ = nullptr;
   kvdk::Engine* engine_ = nullptr;
 };
 
 KVEngine::Iterator* PMemKVDK::NewIterator() {
   if (!collection_.empty()) {
     // TODO fix snapshot
-    auto it = db_->NewSortedIterator(collection_);
+    auto it = db_->SortedIteratorCreate(collection_);
     return new PMemKVDKIterator(it, db_);
   }
   return nullptr;

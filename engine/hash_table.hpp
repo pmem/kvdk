@@ -18,22 +18,12 @@
 
 namespace KVDK_NAMESPACE {
 
-struct HashHeader {
-  uint32_t key_prefix;
-  RecordType record_type;
-  RecordStatus record_status;
-  PointerType index_type;
-};
-
 class Skiplist;
 class SkiplistNode;
 struct HashBucketIterator;
 
-template <RecordType ListType, RecordType ElemType>
-class GenericList;
-
-using List = GenericList<RecordType::ListRecord, RecordType::ListElem>;
-using HashList = GenericList<RecordType::HashRecord, RecordType::HashElem>;
+struct List;
+struct HashList;
 
 struct alignas(16) HashEntry {
  public:
@@ -63,7 +53,7 @@ struct alignas(16) HashEntry {
   bool Empty() { return header_.index_type == PointerType::Empty; }
 
   // Make this hash entry empty while its content been deleted
-  void clear() { header_.index_type = PointerType::Empty; }
+  void Clear() { header_.index_type = PointerType::Empty; }
 
   bool Allocated() { return header_.index_type == PointerType::Allocated; }
 
@@ -87,8 +77,16 @@ struct alignas(16) HashEntry {
              DataEntry* data_entry_metadata);
 
  private:
+  struct EntryHeader {
+    uint32_t key_prefix;
+    RecordType record_type;
+    RecordStatus record_status;
+    PointerType index_type;
+  };
+
+ private:
   Index index_;
-  HashHeader header_;
+  EntryHeader header_;
 };
 static_assert(sizeof(HashEntry) == 16);
 
@@ -144,25 +142,6 @@ class HashTable {
     uint32_t key_hash_prefix;
   };
 
-  // TODO: jiayu make this private after reimplementing batch write
-  struct KeyHashHint {
-    uint32_t bucket;
-    uint32_t slot;
-    // hash value stored on hash entry
-    uint32_t key_hash_prefix;
-    SpinMutex* spin;
-  };
-
-  KeyHashHint GetHint(const StringView& key) {
-    KeyHashHint hint;
-    uint64_t hash_val = hash_str(key.data(), key.size());
-    hint.key_hash_prefix = hash_val >> 32;
-    hint.bucket = get_bucket_num(hash_val);
-    hint.slot = get_slot_num(hint.bucket);
-    hint.spin = &slots_[hint.slot].spin;
-    return hint;
-  }
-
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
                                  uint32_t num_buckets_per_slot,
                                  const PMEMAllocator* pmem_allocator,
@@ -192,14 +171,18 @@ class HashTable {
   void Insert(const LookupResult& insert_position, RecordType type,
               RecordStatus status, void* index, PointerType index_type);
 
+  // Lookup and insert a hash entry of key to hash table, return lookup result
+  LookupResult Insert(const StringView& key, RecordType type,
+                      RecordStatus status, void* index, PointerType index_type);
+
   // Erase a hash entry so it can be reused in future
   void Erase(HashEntry* entry_ptr) {
     assert(entry_ptr != nullptr);
-    entry_ptr->clear();
+    entry_ptr->Clear();
   }
 
   std::unique_lock<SpinMutex> AcquireLock(StringView const& key) {
-    return std::unique_lock<SpinMutex>{*GetHint(key).spin};
+    return std::unique_lock<SpinMutex>{*getHint(key).spin};
   }
 
   HashTableIterator GetIterator(uint64_t start_slot_idx, uint64_t end_slot_idx);
@@ -212,7 +195,7 @@ class HashTable {
       std::vector<StringAlike> const& keys) {
     std::vector<SpinMutex*> spins;
     for (auto const& key : keys) {
-      spins.push_back(GetHint(key).spin);
+      spins.push_back(getHint(key).spin);
     }
     std::sort(spins.begin(), spins.end());
     auto end = std::unique(spins.begin(), spins.end());
@@ -234,6 +217,25 @@ class HashTable {
         slots_(hash_bucket_num / num_buckets_per_slot),
         hash_bucket_entries_(hash_bucket_num, 0),
         hash_buckets_(num_hash_buckets_) {}
+
+  // TODO: jiayu make this private after reimplementing batch write
+  struct KeyHashHint {
+    uint32_t bucket;
+    uint32_t slot;
+    // hash value stored on hash entry
+    uint32_t key_hash_prefix;
+    SpinMutex* spin;
+  };
+
+  KeyHashHint getHint(const StringView& key) {
+    KeyHashHint hint;
+    uint64_t hash_val = hash_str(key.data(), key.size());
+    hint.key_hash_prefix = hash_val >> 32;
+    hint.bucket = get_bucket_num(hash_val);
+    hint.slot = get_slot_num(hint.bucket);
+    hint.spin = &slots_[hint.slot].spin;
+    return hint;
+  }
 
   inline uint32_t get_bucket_num(uint64_t key_hash_value) {
     return key_hash_value & (num_hash_buckets_ - 1);

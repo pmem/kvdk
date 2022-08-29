@@ -19,6 +19,11 @@ using TTLType = std::int64_t;
 using Status = KVDKStatus;
 using ValueType = KVDKValueType;
 
+enum class ListPos : int {
+  Front = KVDK_LIST_FRONT,
+  Back = KVDK_LIST_BACK,
+};
+
 enum class ModifyOperation : int {
   Write = KVDK_MODIFY_WRITE,
   Delete = KVDK_MODIFY_DELETE,

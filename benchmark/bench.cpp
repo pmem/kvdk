@@ -276,7 +276,7 @@ void DBScan(int tid) {
     switch (bench_data_type) {
       case DataType::Sorted: {
         size_t const scan_length = 100;
-        auto iter = engine->NewSortedIterator(collections[cid]);
+        auto iter = engine->SortedIteratorCreate(collections[cid]);
         if (iter) {
           iter->Seek(key);
           for (size_t i = 0; (i < scan_length) && (iter->Valid());
@@ -292,11 +292,11 @@ void DBScan(int tid) {
         } else {
           throw std::runtime_error{"Error creating SortedIterator"};
         }
-        engine->ReleaseSortedIterator(iter);
+        engine->SortedIteratorRelease(iter);
         break;
       }
       case DataType::Hashes: {
-        auto iter = engine->HashCreateIterator(collections[cid]);
+        auto iter = engine->HashIteratorCreate(collections[cid]);
         if (iter) {
           for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
             key = iter->Key();
@@ -310,6 +310,7 @@ void DBScan(int tid) {
         } else {
           throw std::runtime_error{"Error creating HashIterator"};
         }
+        engine->HashIteratorRelease(iter);
         break;
       }
       case DataType::Blackhole: {
@@ -530,7 +531,7 @@ int main(int argc, char** argv) {
       for (auto col : collections) {
         SortedCollectionConfigs s_configs;
         Status s = engine->SortedCreate(col, s_configs);
-        if (s != Status::Ok) {
+        if (s != Status::Ok && s != Status::Existed) {
           throw std::runtime_error{"Fail to create Sorted collection"};
         }
       }

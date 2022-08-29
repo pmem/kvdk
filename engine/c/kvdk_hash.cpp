@@ -19,7 +19,7 @@ KVDKStatus KVDKHashDestroy(KVDKEngine* engine, char const* key_data,
 
 KVDKStatus KVDKHashLength(KVDKEngine* engine, char const* key_data,
                           size_t key_len, size_t* len) {
-  return engine->rep->HashLength(StringView{key_data, key_len}, len);
+  return engine->rep->HashSize(StringView{key_data, key_len}, len);
 }
 
 KVDKStatus KVDKHashGet(KVDKEngine* engine, const char* key_data, size_t key_len,
@@ -86,17 +86,24 @@ extern KVDKStatus KVDKHashModify(KVDKEngine* engine, const char* key_data,
 
 KVDKHashIterator* KVDKHashIteratorCreate(KVDKEngine* engine,
                                          char const* key_data, size_t key_len,
+                                         KVDKSnapshot* snapshot,
                                          KVDKStatus* s) {
-  auto iter = engine->rep->HashCreateIterator(StringView{key_data, key_len}, s);
+  auto iter = engine->rep->HashIteratorCreate(
+      StringView{key_data, key_len}, snapshot ? snapshot->rep : nullptr, s);
   if (iter == nullptr) {
     return nullptr;
   }
   KVDKHashIterator* hash_iter = new KVDKHashIterator;
-  hash_iter->rep.swap(iter);
+  hash_iter->rep = iter;
   return hash_iter;
 }
 
-void KVDKHashIteratorDestroy(KVDKHashIterator* iter) { delete iter; }
+void KVDKHashIteratorDestroy(KVDKEngine* engine, KVDKHashIterator* iter) {
+  if (iter->rep) {
+    engine->rep->HashIteratorRelease(iter->rep);
+  }
+  delete iter;
+}
 
 void KVDKHashIteratorPrev(KVDKHashIterator* iter) { iter->rep->Prev(); }
 

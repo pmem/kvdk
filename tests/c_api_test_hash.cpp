@@ -83,7 +83,7 @@ TEST_F(EngineCAPITestBase, Hash) {
     }
   };
 
-  auto HashLength = [&](size_t) {
+  auto HashSize = [&](size_t) {
     size_t len = 0;
     ASSERT_EQ(KVDKHashLength(engine, key.data(), key.size(), &len),
               KVDKStatus::Ok);
@@ -104,7 +104,7 @@ TEST_F(EngineCAPITestBase, Hash) {
     }
 
     KVDKHashIterator* iter =
-        KVDKHashIteratorCreate(engine, key.data(), key.size(), NULL);
+        KVDKHashIteratorCreate(engine, key.data(), key.size(), NULL, NULL);
 
     ASSERT_NE(iter, nullptr);
     size_t cnt = 0;
@@ -157,7 +157,7 @@ TEST_F(EngineCAPITestBase, Hash) {
     KVDKRegexDestroy(re2);
     KVDKRegexDestroy(re1);
 
-    KVDKHashIteratorDestroy(iter);
+    KVDKHashIteratorDestroy(engine, iter);
   };
 
   std::string counter{"counter"};
@@ -177,12 +177,12 @@ TEST_F(EngineCAPITestBase, Hash) {
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
-    LaunchNThreads(num_threads, HashLength);
+    LaunchNThreads(num_threads, HashSize);
     LaunchNThreads(num_threads, HPut);
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
-    LaunchNThreads(num_threads, HashLength);
+    LaunchNThreads(num_threads, HashSize);
   }
   LaunchNThreads(num_threads, HashModify);
   char* resp_data;

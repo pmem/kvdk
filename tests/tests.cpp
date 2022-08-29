@@ -76,8 +76,9 @@ class EngineBasicTest : public testing::Test {
     Destroy();
   }
 
-  void AssignData(std::string& data, int len) {
-    data.assign(str_pool.data() + (rand() % (str_pool_length - len)), len);
+  std::string FastRandomString(int len) {
+    return std::string(
+        str_pool.data() + fast_random_64() % (str_pool_length - len), len);
   }
 
   void Destroy() {
@@ -246,7 +247,7 @@ class EngineBasicTest : public testing::Test {
       ASSERT_EQ(engine->SortedSize(new_collection, &collection_size),
                 Status::Ok);
 
-      auto iter = engine->NewSortedIterator(new_collection);
+      auto iter = engine->SortedIteratorCreate(new_collection);
       ASSERT_TRUE(iter != nullptr);
       // forward iterator
       iter->SeekToFirst();
@@ -284,7 +285,7 @@ class EngineBasicTest : public testing::Test {
         }
       }
       ASSERT_EQ(entries, 0);
-      engine->ReleaseSortedIterator(iter);
+      engine->SortedIteratorRelease(iter);
     };
     LaunchNThreads(configs.max_access_threads, IteratingThrough);
   }
@@ -323,10 +324,10 @@ class EngineBasicTest : public testing::Test {
     std::string val1, val2, got_val1, got_val2;
     int t_cnt = cnt;
     while (t_cnt--) {
-      std::string key1(std::string(id + 1, 'a') + std::to_string(t_cnt));
-      std::string key2(std::string(id + 1, 'b') + std::to_string(t_cnt));
-      AssignData(val1, fast_random_64() % 1024);
-      AssignData(val2, fast_random_64() % 1024);
+      std::string key1(std::to_string(id) + "_" + std::to_string(t_cnt));
+      std::string key2(std::to_string(id) + "@" + std::to_string(t_cnt));
+      val1 = FastRandomString(fast_random_64() % 1024);
+      val2 = FastRandomString(fast_random_64() % 1024);
 
       // Put
       ASSERT_EQ(PutFunc(collection, key1, val1), Status::Ok);
@@ -343,7 +344,7 @@ class EngineBasicTest : public testing::Test {
       ASSERT_EQ(GetFunc(collection, key1, &got_val1), Status::NotFound);
 
       // Update
-      AssignData(val2, fast_random_64() % 1024);
+      val2 = FastRandomString(fast_random_64() % 1024);
       ASSERT_EQ(PutFunc(collection, key2, val2), Status::Ok);
       ASSERT_EQ(GetFunc(collection, key2, &got_val2), Status::Ok);
       ASSERT_EQ(got_val2, val2);
@@ -361,7 +362,7 @@ class BatchWriteTest : public EngineBasicTest {};
 
 TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string sorted_collection("sorted_collection");
-  std::string unordered_collection("unordered_collection");
+  std::string hash_collection("unordered_collection");
   std::string list("list");
   std::string str("str");
   std::string elem_key("elem");
@@ -374,8 +375,8 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
 
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
 
-  ASSERT_EQ(engine->HashCreate(unordered_collection), Status::Ok);
-  ASSERT_EQ(engine->HashPut(unordered_collection, elem_key, val), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+  ASSERT_EQ(engine->HashPut(hash_collection, elem_key, val), Status::Ok);
 
   ASSERT_EQ(engine->ListCreate(list), Status::Ok);
   ASSERT_EQ(engine->ListPushBack(list, elem_key), Status::Ok);
@@ -383,74 +384,87 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string got_val;
   // Test string
   for (const std::string& string_key :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s = string_key == str ? Status::Ok : Status::WrongType;
+       {sorted_collection, hash_collection, list, str}) {
+    Status op_ret = string_key == str ? Status::Ok : Status::WrongType;
     std::string new_val("new_str_val");
     // Put
-    ASSERT_EQ(engine->Put(string_key, new_val), ret_s);
+    ASSERT_EQ(engine->Put(string_key, new_val), op_ret);
     // Get
-    ASSERT_EQ(engine->Get(string_key, &got_val), ret_s);
-    if (ret_s == Status::Ok) {
+    ASSERT_EQ(engine->Get(string_key, &got_val), op_ret);
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
   }
 
   // Test sorted
   for (const std::string& collection_name :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s =
+       {sorted_collection, hash_collection, list, str}) {
+    Status create_ret = collection_name == sorted_collection
+                            ? Status::Existed
+                            : Status::WrongType;
+    Status op_ret =
         collection_name == sorted_collection ? Status::Ok : Status::WrongType;
     std::string new_val("new_sorted_val");
     // Create
-    ASSERT_EQ(engine->SortedCreate(collection_name), ret_s);
+    ASSERT_EQ(engine->SortedCreate(collection_name), create_ret);
     // Put
-    ASSERT_EQ(engine->SortedPut(collection_name, elem_key, new_val), ret_s);
+    ASSERT_EQ(engine->SortedPut(collection_name, elem_key, new_val), op_ret);
+
     // Get
-    ASSERT_EQ(engine->SortedGet(collection_name, elem_key, &got_val), ret_s);
-    if (ret_s == Status::Ok) {
+    ASSERT_EQ(engine->SortedGet(collection_name, elem_key, &got_val), op_ret);
+
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
     // Delete elem
-    ASSERT_EQ(engine->SortedDelete(collection_name, elem_key), ret_s);
+    ASSERT_EQ(engine->SortedDelete(collection_name, elem_key), op_ret);
   }
 
   // Test unordered
   for (const std::string& collection_name :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s = collection_name == unordered_collection ? Status::Ok
+       {sorted_collection, hash_collection, list, str}) {
+    Status create_ret = collection_name == hash_collection ? Status::Existed
                                                            : Status::WrongType;
+    Status op_ret =
+        collection_name == hash_collection ? Status::Ok : Status::WrongType;
     std::string new_val("new_unordered_val");
+    // Create
+    ASSERT_EQ(engine->HashCreate(collection_name), create_ret);
     // Put
-    ASSERT_EQ(engine->HashPut(collection_name, elem_key, new_val), ret_s);
+    ASSERT_EQ(engine->HashPut(collection_name, elem_key, new_val), op_ret);
     // Get
-    ASSERT_EQ(engine->HashGet(collection_name, elem_key, &got_val), ret_s);
-    if (ret_s == Status::Ok) {
+    ASSERT_EQ(engine->HashGet(collection_name, elem_key, &got_val), op_ret);
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val, new_val);
     }
     // Delete
-    ASSERT_EQ(engine->HashDelete(collection_name, elem_key), ret_s);
+    ASSERT_EQ(engine->HashDelete(collection_name, elem_key), op_ret);
   }
 
   // Test list
   for (const std::string& collection_name :
-       {sorted_collection, unordered_collection, list, str}) {
-    Status ret_s = collection_name == list ? Status::Ok : Status ::WrongType;
+       {sorted_collection, hash_collection, list, str}) {
+    Status create_ret =
+        collection_name == list ? Status::Existed : Status::WrongType;
+    Status op_ret = collection_name == list ? Status::Ok : Status ::WrongType;
     std::string new_val_back("new_back_val");
     std::string new_val_front("new_front_val");
     size_t length;
     std::string got_val_back;
     std::string got_val_front;
 
+    // Create
+    ASSERT_EQ(engine->ListCreate(collection_name), create_ret);
     // Push
-    ASSERT_EQ(engine->ListPushBack(collection_name, new_val_back), ret_s);
-    ASSERT_EQ(engine->ListPushFront(collection_name, new_val_front), ret_s);
+    ASSERT_EQ(engine->ListPushBack(collection_name, new_val_back), op_ret);
+    ASSERT_EQ(engine->ListPushFront(collection_name, new_val_front), op_ret);
     // Pop
-    ASSERT_EQ(engine->ListPopBack(collection_name, &got_val_back), ret_s);
-    ASSERT_EQ(engine->ListPopFront(collection_name, &got_val_front), ret_s);
+    ASSERT_EQ(engine->ListPopBack(collection_name, &got_val_back), op_ret);
+    ASSERT_EQ(engine->ListPopFront(collection_name, &got_val_front), op_ret);
     // Length
-    ASSERT_EQ(engine->ListLength(collection_name, &length), ret_s);
+    ASSERT_EQ(engine->ListSize(collection_name, &length), op_ret);
 
-    if (ret_s == Status::Ok) {
+    if (op_ret == Status::Ok) {
       ASSERT_EQ(got_val_back, new_val_back);
       ASSERT_EQ(got_val_front, new_val_front);
       ASSERT_EQ(length, 1);
@@ -524,9 +538,16 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
             Status::Ok);
 
   std::string sorted_collection("sorted_collection");
+  std::string hash_collection("hash_collection");
+  std::string list("list");
   std::string sorted_collection_after_snapshot(
       "sorted_collection_after_snapshot");
+  std::string hash_collection_after_snapshot("hash_collection_after_snapshot");
+  std::string list_after_snapshot("list_after_snapshot");
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+  ASSERT_EQ(engine->ListCreate(list), Status::Ok);
+  engine->ReleaseAccessThread();
 
   bool snapshot_done(false);
   std::atomic_uint64_t set_finished_threads(0);
@@ -546,6 +567,10 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       ASSERT_EQ(engine->Put(key2, key2, write_options), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection, key1, key1), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection, key2, key2), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection, key1, key1), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection, key2, key2), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list, key1), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list, key2), Status::Ok);
     }
     // Wait snapshot done
     set_finished_threads.fetch_add(1);
@@ -557,21 +582,35 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
       }
     }
 
-    cnt = count * 10;
-    // Update / Delete, and insert new
+    cnt = count;
     while (cnt--) {
+      // Update, Delete, and Insert new
       std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
       std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
       std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
       ASSERT_EQ(engine->Put(key1, "updated " + key1), Status::Ok);
       ASSERT_EQ(engine->Delete(key1), Status::Ok);
       ASSERT_EQ(engine->Put(key3, key3), Status::Ok);
+
       ASSERT_EQ(engine->SortedPut(sorted_collection, key1, "updated " + key1),
                 Status::Ok);
       ASSERT_EQ(engine->SortedDelete(sorted_collection, key2), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection, key3, key3), Status::Ok);
       ASSERT_EQ(engine->SortedPut(sorted_collection_after_snapshot, key1, key1),
                 Ok);
+
+      ASSERT_EQ(engine->HashPut(hash_collection, key1, "updated " + key1),
+                Status::Ok);
+      ASSERT_EQ(engine->HashDelete(hash_collection, key2), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection, key3, key3), Status::Ok);
+      ASSERT_EQ(engine->HashPut(hash_collection_after_snapshot, key1, key1),
+                Ok);
+
+      std::string elem;
+      ASSERT_EQ(engine->ListPopBack(list, &elem), Status::Ok);
+      ASSERT_EQ(engine->ListPopBack(list, &elem), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list, key3), Status::Ok);
+      ASSERT_EQ(engine->ListPushBack(list_after_snapshot, key1), Ok);
     }
   };
 
@@ -586,6 +625,9 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   Snapshot* snapshot = engine->GetSnapshot(true);
   // Insert a new collection after snapshot
   ASSERT_EQ(engine->SortedCreate(sorted_collection_after_snapshot), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection_after_snapshot), Status::Ok);
+  ASSERT_EQ(engine->ListCreate(list_after_snapshot), Status::Ok);
+  engine->ReleaseAccessThread();
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
@@ -596,27 +638,75 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     t.join();
   }
 
-  Iterator* snapshot_iter =
-      engine->NewSortedIterator(sorted_collection, snapshot);
-  // Destroyed collection still should be accessable by snapshot_iter
-  engine->SortedDestroy(sorted_collection);
+  {  // sorted snapshot iterator
+    SortedIterator* sorted_snapshot_iter =
+        engine->SortedIteratorCreate(sorted_collection, snapshot);
+    // Destroyed collection still should be accessable by snapshot_iter
+    engine->SortedDestroy(sorted_collection);
 
-  uint64_t snapshot_iter_cnt = 0;
-  snapshot_iter->SeekToFirst();
-  while (snapshot_iter->Valid()) {
-    ASSERT_TRUE(snapshot_iter->Valid());
-    snapshot_iter_cnt++;
-    ASSERT_EQ(snapshot_iter->Key(), snapshot_iter->Value());
-    snapshot_iter->Next();
+    uint64_t snapshot_iter_cnt = 0;
+    sorted_snapshot_iter->SeekToFirst();
+    while (sorted_snapshot_iter->Valid()) {
+      ASSERT_TRUE(sorted_snapshot_iter->Valid());
+      snapshot_iter_cnt++;
+      ASSERT_EQ(sorted_snapshot_iter->Key(), sorted_snapshot_iter->Value());
+      sorted_snapshot_iter->Next();
+    }
+    ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+    engine->SortedIteratorRelease(sorted_snapshot_iter);
+
+    sorted_snapshot_iter = engine->SortedIteratorCreate(
+        sorted_collection_after_snapshot, snapshot);
+    sorted_snapshot_iter->SeekToFirst();
+    ASSERT_FALSE(sorted_snapshot_iter->Valid());
+    engine->SortedIteratorRelease(sorted_snapshot_iter);
   }
-  ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
-  engine->ReleaseSortedIterator(snapshot_iter);
 
-  snapshot_iter =
-      engine->NewSortedIterator(sorted_collection_after_snapshot, snapshot);
-  snapshot_iter->SeekToFirst();
-  ASSERT_FALSE(snapshot_iter->Valid());
-  engine->ReleaseSortedIterator(snapshot_iter);
+  {  // Hash snapshot iterator
+    auto hash_snapshot_iter =
+        engine->HashIteratorCreate(hash_collection, snapshot);
+    engine->HashDestroy(hash_collection);
+
+    uint64_t snapshot_iter_cnt = 0;
+    hash_snapshot_iter->SeekToFirst();
+    while (hash_snapshot_iter->Valid()) {
+      ASSERT_TRUE(hash_snapshot_iter->Valid());
+      snapshot_iter_cnt++;
+      ASSERT_EQ(hash_snapshot_iter->Key(), hash_snapshot_iter->Value());
+      hash_snapshot_iter->Next();
+    }
+    ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+    engine->HashIteratorRelease(hash_snapshot_iter);
+
+    hash_snapshot_iter =
+        engine->HashIteratorCreate(hash_collection_after_snapshot, snapshot);
+    hash_snapshot_iter->SeekToFirst();
+    ASSERT_FALSE(hash_snapshot_iter->Valid());
+    engine->HashIteratorRelease(hash_snapshot_iter);
+  }
+
+  {  // List snapshot iterator
+    auto list_snapshot_iter = engine->ListIteratorCreate(list, snapshot);
+    engine->ListDestroy(list);
+
+    uint64_t snapshot_iter_cnt = 0;
+    list_snapshot_iter->SeekToFirst();
+    while (list_snapshot_iter->Valid()) {
+      ASSERT_TRUE(list_snapshot_iter->Valid());
+      snapshot_iter_cnt++;
+      ASSERT_TRUE(list_snapshot_iter->Value()[0] == 'a' ||
+                  list_snapshot_iter->Value()[0] == 'b');
+      list_snapshot_iter->Next();
+    }
+    ASSERT_EQ(snapshot_iter_cnt, num_threads * count * 2);
+    engine->ListIteratorRelease(list_snapshot_iter);
+
+    list_snapshot_iter =
+        engine->ListIteratorCreate(list_after_snapshot, snapshot);
+    list_snapshot_iter->SeekToFirst();
+    ASSERT_FALSE(list_snapshot_iter->Valid());
+    engine->ListIteratorRelease(list_snapshot_iter);
+  }
 
   delete engine;
 
@@ -624,6 +714,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     // Test backup and checkpoint instance
     // All changes after snapshot should not be seen in backup and checkpoint
     // Writes on backup should work well
+    size_t size;
+    ASSERT_EQ(engine->SortedSize(sorted_collection, &size), Status::Ok);
+    ASSERT_EQ(size, num_threads * count * 2);
+    ASSERT_EQ(engine->HashSize(hash_collection, &size), Status::Ok);
+    ASSERT_EQ(size, num_threads * count * 2);
+    ASSERT_EQ(engine->ListSize(list, &size), Status::Ok);
+    ASSERT_EQ(size, num_threads * count * 2);
     for (uint32_t id = 0; id < num_threads; id++) {
       int cnt = count;
       std::string got_v1, got_v2, got_v3;
@@ -631,13 +728,13 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         std::string key1(std::string(id + 1, 'a') + std::to_string(cnt));
         std::string key2(std::string(id + 1, 'b') + std::to_string(cnt));
         std::string key3(std::string(id + 1, 'c') + std::to_string(cnt));
-
+        // string
         ASSERT_EQ(engine->Get(key1, &got_v1), Status::Ok);
         ASSERT_EQ(engine->Get(key2, &got_v2), Status::Ok);
         ASSERT_EQ(engine->Get(key3, &got_v3), Status::NotFound);
         ASSERT_EQ(got_v1, key1);
         ASSERT_EQ(got_v2, key2);
-
+        // sorted
         ASSERT_EQ(engine->SortedGet(sorted_collection, key1, &got_v1),
                   Status::Ok);
         ASSERT_EQ(engine->SortedGet(sorted_collection, key2, &got_v2),
@@ -649,23 +746,70 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         ASSERT_EQ(
             engine->SortedGet(sorted_collection_after_snapshot, key1, &got_v1),
             Status::NotFound);
+        // hash
+        ASSERT_EQ(engine->HashGet(hash_collection, key1, &got_v1), Status::Ok);
+        ASSERT_EQ(engine->HashGet(hash_collection, key2, &got_v2), Status::Ok);
+        ASSERT_EQ(engine->HashGet(hash_collection, key3, &got_v3),
+                  Status::NotFound);
+        ASSERT_EQ(got_v1, key1);
+        ASSERT_EQ(got_v2, key2);
+        ASSERT_EQ(
+            engine->HashGet(hash_collection_after_snapshot, key1, &got_v1),
+            Status::NotFound);
       }
     }
 
-    uint64_t sorted_iter_cnt = 0;
-    auto sorted_iter = engine->NewSortedIterator(sorted_collection);
-    ASSERT_TRUE(sorted_iter != nullptr);
-    sorted_iter->SeekToFirst();
-    while (sorted_iter->Valid()) {
-      ASSERT_TRUE(sorted_iter->Valid());
-      sorted_iter_cnt++;
-      ASSERT_EQ(sorted_iter->Key(), sorted_iter->Value());
-      sorted_iter->Next();
+    {  // sorted iterator
+      uint64_t sorted_iter_cnt = 0;
+      auto sorted_iter = engine->SortedIteratorCreate(sorted_collection);
+      ASSERT_TRUE(sorted_iter != nullptr);
+      sorted_iter->SeekToFirst();
+      while (sorted_iter->Valid()) {
+        ASSERT_TRUE(sorted_iter->Valid());
+        sorted_iter_cnt++;
+        ASSERT_EQ(sorted_iter->Key(), sorted_iter->Value());
+        sorted_iter->Next();
+      }
+      ASSERT_EQ(sorted_iter_cnt, num_threads * count * 2);
+      engine->SortedIteratorRelease(sorted_iter);
+      ASSERT_EQ(engine->SortedIteratorCreate(sorted_collection_after_snapshot),
+                nullptr);
     }
-    ASSERT_EQ(sorted_iter_cnt, num_threads * count * 2);
-    engine->ReleaseSortedIterator(sorted_iter);
-    ASSERT_EQ(engine->NewSortedIterator(sorted_collection_after_snapshot),
-              nullptr);
+
+    {  // hash iterator
+      uint64_t hash_iter_cnt = 0;
+      auto hash_iter = engine->HashIteratorCreate(hash_collection);
+      ASSERT_TRUE(hash_iter != nullptr);
+      hash_iter->SeekToFirst();
+      while (hash_iter->Valid()) {
+        ASSERT_TRUE(hash_iter->Valid());
+        hash_iter_cnt++;
+        ASSERT_EQ(hash_iter->Key(), hash_iter->Value());
+        hash_iter->Next();
+      }
+      engine->HashIteratorRelease(hash_iter);
+      ASSERT_EQ(hash_iter_cnt, num_threads * count * 2);
+      ASSERT_EQ(engine->HashIteratorCreate(hash_collection_after_snapshot),
+                nullptr);
+    }
+
+    {  // list iterator
+      uint64_t list_iter_cnt = 0;
+      auto list_iter = engine->ListIteratorCreate(list);
+      ASSERT_TRUE(list_iter != nullptr);
+      list_iter->SeekToFirst();
+      while (list_iter->Valid()) {
+        ASSERT_TRUE(list_iter->Valid());
+        list_iter_cnt++;
+        ASSERT_TRUE(list_iter->Value()[0] == 'a' ||
+                    list_iter->Value()[0] == 'b');
+        list_iter->Next();
+      }
+      engine->ListIteratorRelease(list_iter);
+      ASSERT_EQ(list_iter_cnt, num_threads * count * 2);
+      ASSERT_EQ(engine->ListIteratorCreate(hash_collection_after_snapshot),
+                nullptr);
+    }
   };
 
   std::vector<int> opt_restore_skiplists{0, 1};
@@ -677,7 +821,7 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         Status::Ok);
     Validation();
     delete engine;
-
+    GlobalLogger.Debug("open checkpoint\n");
     configs.recover_to_checkpoint = true;
     ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
     Validation();
@@ -1031,7 +1175,7 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(engine->SortedPut(collection, zero_filled_str, zero_filled_str),
             Status::Ok);
   ASSERT_EQ(engine->SortedGet(collection, zero_filled_str, &val), Status::Ok);
-  auto iter = engine->NewSortedIterator(collection);
+  auto iter = engine->SortedIteratorCreate(collection);
   ASSERT_NE(iter, nullptr);
   iter->Seek(zero_filled_str);
   ASSERT_TRUE(iter->Valid());
@@ -1044,13 +1188,13 @@ TEST_F(EngineBasicTest, TestSeek) {
   ASSERT_EQ(engine->SortedDelete(collection, "foo"), Status::Ok);
   ASSERT_EQ(engine->SortedGet(collection, "foo", &val), Status::NotFound);
   ASSERT_EQ(engine->SortedPut(collection, "foo2", "bar2"), Status::Ok);
-  engine->ReleaseSortedIterator(iter);
-  iter = engine->NewSortedIterator(collection);
+  engine->SortedIteratorRelease(iter);
+  iter = engine->SortedIteratorCreate(collection);
   ASSERT_NE(iter, nullptr);
   iter->SeekToFirst();
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(iter->Value(), "bar2");
-  engine->ReleaseSortedIterator(iter);
+  engine->SortedIteratorRelease(iter);
   delete engine;
 }
 
@@ -1230,7 +1374,7 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         size_t t_skiplist_size;
         ASSERT_EQ(engine->SortedSize(t_skiplist, &t_skiplist_size), Status::Ok);
 
-        auto iter = engine->NewSortedIterator(t_skiplist);
+        auto iter = engine->SortedIteratorCreate(t_skiplist);
         ASSERT_TRUE(iter != nullptr);
         int data_entries_scan = 0;
         iter->SeekToFirst();
@@ -1263,14 +1407,14 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
           }
         }
         ASSERT_EQ(data_entries_scan, 0);
-        engine->ReleaseSortedIterator(iter);
+        engine->SortedIteratorRelease(iter);
       }
 
       size_t global_skiplist_size;
       ASSERT_EQ(engine->SortedSize(global_skiplist, &global_skiplist_size),
                 Status::Ok);
       int data_entries_scan = 0;
-      auto iter = engine->NewSortedIterator(global_skiplist);
+      auto iter = engine->SortedIteratorCreate(global_skiplist);
       ASSERT_TRUE(iter != nullptr);
       iter->SeekToFirst();
       if (iter->Valid()) {
@@ -1302,8 +1446,9 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
         }
       }
       ASSERT_EQ(data_entries_scan, 0);
-      engine->ReleaseSortedIterator(iter);
+      engine->SortedIteratorRelease(iter);
       delete engine;
+      Destroy();
     }
   }
 }
@@ -1322,7 +1467,8 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   for (size_t i = 1; i <= count; ++i) {
     std::string average_skiplist("a_skiplist" +
                                  std::to_string(i % num_collections));
-    ASSERT_EQ(engine->SortedCreate(average_skiplist), Status::Ok);
+    Status s = engine->SortedCreate(average_skiplist);
+    ASSERT_TRUE(s == Status::Ok || s == Status::Existed);
   }
   for (size_t i = 0; i < num_threads; ++i) {
     std::string r_skiplist("r_skiplist" + std::to_string(i));
@@ -1375,18 +1521,18 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestList) {
-  size_t num_threads = 16;
+  size_t num_threads = 1;
   size_t count = 1000;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::vector<std::vector<std::string>> elems_vec(num_threads);
-  std::vector<std::string> key_vec(num_threads);
+  std::vector<std::string> list_vec(num_threads);
   for (size_t i = 0; i < num_threads; i++) {
-    key_vec[i] = "List_" + std::to_string(i);
-    ASSERT_EQ(engine->ListCreate(key_vec[i]), Status::Ok);
-    ASSERT_EQ(engine->ListDestroy(key_vec[i]), Status::Ok);
-    ASSERT_EQ(engine->ListCreate(key_vec[i]), Status::Ok);
+    list_vec[i] = "List_" + std::to_string(i);
+    ASSERT_EQ(engine->ListCreate(list_vec[i]), Status::Ok);
+    ASSERT_EQ(engine->ListDestroy(list_vec[i]), Status::Ok);
+    ASSERT_EQ(engine->ListCreate(list_vec[i]), Status::Ok);
     for (size_t j = 0; j < count; j++) {
       elems_vec[i].push_back(std::to_string(i) + "_" + std::to_string(j));
     }
@@ -1394,33 +1540,33 @@ TEST_F(EngineBasicTest, TestList) {
   std::vector<std::list<std::string>> list_copy_vec(num_threads);
 
   auto LPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
     for (size_t j = 0; j < count; j++) {
       ASSERT_EQ(engine->ListPushFront(key, elems[j]), Status::Ok);
       list_copy.push_front(elems[j]);
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
 
   auto RPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t sz;
     for (size_t j = 0; j < count; j++) {
       ASSERT_EQ(engine->ListPushBack(key, elems[j]), Status::Ok);
       list_copy_vec[tid].push_back(elems[j]);
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
 
   auto LPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
     size_t sz;
@@ -1432,13 +1578,13 @@ TEST_F(EngineBasicTest, TestList) {
       ASSERT_EQ(engine->ListPopFront(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.front(), value_got);
       list_copy.pop_front();
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
 
   auto RPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string value_got;
     size_t sz;
@@ -1450,13 +1596,13 @@ TEST_F(EngineBasicTest, TestList) {
       ASSERT_EQ(engine->ListPopBack(key, &value_got), Status::Ok);
       ASSERT_EQ(list_copy.back(), value_got);
       list_copy.pop_back();
-      ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+      ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
       ASSERT_EQ(sz, list_copy.size());
     }
   };
 
   auto LBatchPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     for (size_t j = 0; j < count; j++) {
@@ -1464,12 +1610,12 @@ TEST_F(EngineBasicTest, TestList) {
     }
     ASSERT_EQ(engine->ListBatchPushFront(key, elems), Status::Ok);
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto RBatchPush = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     for (size_t j = 0; j < count; j++) {
@@ -1477,12 +1623,12 @@ TEST_F(EngineBasicTest, TestList) {
     }
     ASSERT_EQ(engine->ListBatchPushBack(key, elems), Status::Ok);
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto LBatchPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::vector<std::string> elems_resp;
     ASSERT_EQ(engine->ListBatchPopFront(key, count, &elems_resp), Status::Ok);
@@ -1491,12 +1637,12 @@ TEST_F(EngineBasicTest, TestList) {
       list_copy.pop_front();
     }
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto RBatchPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::vector<std::string> elems_resp;
     ASSERT_EQ(engine->ListBatchPopBack(key, count, &elems_resp), Status::Ok);
@@ -1505,12 +1651,12 @@ TEST_F(EngineBasicTest, TestList) {
       list_copy.pop_back();
     }
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto RPushLPop = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
     auto elem_copy = list_copy.front();
@@ -1518,19 +1664,20 @@ TEST_F(EngineBasicTest, TestList) {
     list_copy.pop_front();
 
     std::string elem;
-    ASSERT_EQ(engine->ListMove(key, 0, key, -1, &elem), Status::Ok);
+    ASSERT_EQ(engine->ListMove(key, ListPos::Front, key, ListPos::Back, &elem),
+              Status::Ok);
     ASSERT_EQ(elem, elem_copy);
 
     size_t sz;
-    ASSERT_EQ(engine->ListLength(key, &sz), Status::Ok);
+    ASSERT_EQ(engine->ListSize(key, &sz), Status::Ok);
     ASSERT_EQ(sz, list_copy.size());
   };
 
   auto ListIterate = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
-    auto iter = engine->ListCreateIterator(key);
+    auto iter = engine->ListIteratorCreate(key);
     ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
     if (iter != nullptr) {
       iter->Seek(0);
@@ -1547,20 +1694,21 @@ TEST_F(EngineBasicTest, TestList) {
         ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
       }
+      engine->ListIteratorRelease(iter);
     }
   };
 
   auto ListInsertPutRemove = [&](size_t tid) {
-    auto const& key = key_vec[tid];
+    auto const& list_name = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
     size_t const insert_pos = 5;
     std::string elem;
 
-    ASSERT_EQ(engine->ListLength(key, &len), Status::Ok);
+    ASSERT_EQ(engine->ListSize(list_name, &len), Status::Ok);
     ASSERT_GT(len, insert_pos);
 
-    auto iter = engine->ListCreateIterator(key);
+    auto iter = engine->ListIteratorCreate(list_name);
     ASSERT_NE(iter, nullptr);
 
     iter->Seek(insert_pos);
@@ -1568,28 +1716,43 @@ TEST_F(EngineBasicTest, TestList) {
     ASSERT_EQ(iter->Value(), *iter2);
 
     elem = *iter2 + "_before";
-    ASSERT_EQ(engine->ListInsertBefore(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListInsertBefore(list_name, elem, iter->Value()),
+              Status::Ok);
     iter2 = list_copy.insert(iter2, elem);
+    engine->ListIteratorRelease(iter);
+    iter = engine->ListIteratorCreate(list_name);
+    iter->Seek(insert_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
+    auto replace_pos = insert_pos - 2;
     iter->Prev();
     iter->Prev();
     --iter2;
     --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
     elem = *iter2 + "_new";
-    ASSERT_EQ(engine->ListReplace(iter, elem), Status::Ok);
+    ASSERT_EQ(engine->ListReplace(list_name, replace_pos, elem), Status::Ok);
     *iter2 = elem;
+    engine->ListIteratorRelease(iter);
+    iter = engine->ListIteratorCreate(list_name);
+    iter->Seek(replace_pos);
     ASSERT_EQ(iter->Value(), *iter2);
 
+    auto erase_pos = replace_pos - 2;
     iter->Prev();
     iter->Prev();
     --iter2;
     --iter2;
     ASSERT_EQ(iter->Value(), *iter2);
-    ASSERT_EQ(engine->ListErase(iter), Status::Ok);
+    std::string value;
+    ASSERT_EQ(engine->ListErase(list_name, erase_pos, &value), Status::Ok);
+    ASSERT_EQ(value, *iter2);
     iter2 = list_copy.erase(iter2);
+    engine->ListIteratorRelease(iter);
+    iter = engine->ListIteratorCreate(list_name);
+    iter->Seek(erase_pos);
     ASSERT_EQ(iter->Value(), *iter2);
+    engine->ListIteratorRelease(iter);
   };
 
   for (size_t i = 0; i < 3; i++) {
@@ -1629,7 +1792,7 @@ TEST_F(EngineBasicTest, TestList) {
 }
 
 TEST_F(EngineBasicTest, TestHash) {
-  size_t num_threads = 16;
+  size_t num_threads = 1;
   size_t count = 1000;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -1672,9 +1835,9 @@ TEST_F(EngineBasicTest, TestHash) {
     }
   };
 
-  auto HashLength = [&](size_t) {
+  auto HashSize = [&](size_t) {
     size_t len = 0;
-    ASSERT_EQ(engine->HashLength(key, &len), Status::Ok);
+    ASSERT_EQ(engine->HashSize(key, &len), Status::Ok);
     size_t cnt = 0;
     for (size_t tid = 0; tid < num_threads; tid++) {
       cnt += local_copies[tid].size();
@@ -1691,7 +1854,7 @@ TEST_F(EngineBasicTest, TestHash) {
       }
     }
 
-    auto iter = engine->HashCreateIterator(key);
+    auto iter = engine->HashIteratorCreate(key);
 
     ASSERT_NE(iter, nullptr);
     size_t cnt = 0;
@@ -1718,6 +1881,7 @@ TEST_F(EngineBasicTest, TestHash) {
     }
     ASSERT_EQ(match_cnt1, combined.size());
     ASSERT_EQ(match_cnt2, local_copies[tid].size());
+    engine->HashIteratorRelease(iter);
   };
 
   std::string counter{"counter"};
@@ -1752,17 +1916,18 @@ TEST_F(EngineBasicTest, TestHash) {
   };
 
   for (size_t i = 0; i < 3; i++) {
+    GlobalLogger.Debug("### round %lu ####\n", i);
     Reboot();
     LaunchNThreads(num_threads, HPut);
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
-    LaunchNThreads(num_threads, HashLength);
+    LaunchNThreads(num_threads, HashSize);
     LaunchNThreads(num_threads, HPut);
     LaunchNThreads(num_threads, HGet);
     LaunchNThreads(num_threads, HDelete);
     LaunchNThreads(num_threads, HashIterate);
-    LaunchNThreads(num_threads, HashLength);
+    LaunchNThreads(num_threads, HashSize);
   }
   LaunchNThreads(num_threads, HashModify);
   std::string resp;
@@ -1975,7 +2140,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
                   return cmp1(a.first, b.first) <= 0;
                 });
     }
-    auto iter = engine->NewSortedIterator(collections[i]);
+    auto iter = engine->SortedIteratorCreate(collections[i]);
     ASSERT_TRUE(iter != nullptr);
     iter->SeekToFirst();
     size_t cnt = 0;
@@ -1987,7 +2152,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
       iter->Next();
       cnt++;
     }
-    engine->ReleaseSortedIterator(iter);
+    engine->SortedIteratorRelease(iter);
   }
   delete engine;
 }
@@ -2232,7 +2397,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
             Status::Ok);
   TTLType ttl = 1000;  // 1s
   int cnt = 100;
-  size_t num_thread = 4;
+  size_t num_thread = n_thread_writing;
 
   auto list0_push = [&](size_t id) {
     std::string list_key0 = "listkey0" + std::to_string(id);
@@ -2265,9 +2430,22 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
     ASSERT_EQ(engine->Expire(hash_key0, ttl), Status::Ok);
   };
 
+  auto sorted0_push = [&](size_t id) {
+    std::string sorted_key0 = "sortedkey0" + std::to_string(id);
+    ASSERT_EQ(engine->SortedCreate(sorted_key0), Status::Ok);
+    for (int i = 0; i < cnt; ++i) {
+      std::string str = std::to_string(i);
+      ASSERT_EQ(engine->SortedPut(sorted_key0, "sorted_elem" + str,
+                                  "sorted_value" + str),
+                Status::Ok);
+    }
+    ASSERT_EQ(engine->Expire(sorted_key0, ttl), Status::Ok);
+  };
+
   LaunchNThreads(num_thread, list0_push);
   LaunchNThreads(num_thread, list1_push);
   LaunchNThreads(num_thread, hash0_push);
+  LaunchNThreads(num_thread, sorted0_push);
 
   sleep(2);
   for (size_t i = 0; i < num_thread; ++i) {
@@ -2275,6 +2453,7 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
     TTLType got_ttl;
     ASSERT_EQ(engine->GetTTL("hashkey0" + str, &got_ttl), Status::NotFound);
     ASSERT_EQ(engine->GetTTL("listkey0" + str, &got_ttl), Status::NotFound);
+    ASSERT_EQ(engine->GetTTL("sortedkey0" + str, &got_ttl), Status::NotFound);
     ASSERT_EQ(engine->GetTTL("listkey1" + str, &got_ttl), Status::Ok);
   }
 
@@ -2383,7 +2562,7 @@ TEST_F(BatchWriteTest, SortedRollback) {
     // Test crash with half linked record
     size_t num_write = 0;
     SyncPoint::GetInstance()->SetCallBack(
-        "KVEngine::Skiplist::LinkDLRecord::HalfLink", [&](void*) {
+        "KVEngine::DLList::LinkDLRecord::HalfLink", [&](void*) {
           if (++num_write == batch_size / 2) {
             throw SyncPoint::CrashPoint{"Crash with half linkage"};
           }
@@ -2399,6 +2578,7 @@ TEST_F(BatchWriteTest, SortedRollback) {
     LaunchNThreads(num_threads, Check);
 
     delete engine;
+    Destroy();
   }
 }
 
@@ -2566,6 +2746,13 @@ TEST_F(BatchWriteTest, HashRollback) {
 }
 
 TEST_F(BatchWriteTest, ListBatchOperationRollback) {
+  SyncPoint::GetInstance()->EnableProcessing();
+  // abandon background cleaner thread
+  SyncPoint::GetInstance()->SetCallBack(
+      "KVEngine::backgroundCleaner::NothingToDo", [&](void* close_reclaimer) {
+        *((std::atomic_bool*)close_reclaimer) = true;
+        return;
+      });
   configs.max_access_threads = 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -2590,7 +2777,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   };
 
   auto RBatchPush = [&]() {
-    ASSERT_THROW(engine->ListBatchPushFront(key, elems), SyncPoint::CrashPoint);
+    ASSERT_THROW(engine->ListBatchPushBack(key, elems), SyncPoint::CrashPoint);
   };
 
   auto LBatchPop = [&]() {
@@ -2601,18 +2788,19 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
 
   auto RBatchPop = [&]() {
     std::vector<std::string> elems_resp;
-    ASSERT_THROW(engine->ListBatchPopFront(key, count, &elems_resp),
+    ASSERT_THROW(engine->ListBatchPopBack(key, count, &elems_resp),
                  SyncPoint::CrashPoint);
   };
 
   auto RPushLPop = [&]() {
     std::string elem;
-    ASSERT_THROW(engine->ListMove(key, 0, key, -1, &elem),
-                 SyncPoint::CrashPoint);
+    ASSERT_THROW(
+        engine->ListMove(key, ListPos::Front, key, ListPos::Back, &elem),
+        SyncPoint::CrashPoint);
   };
 
   auto Check = [&]() {
-    auto iter = engine->ListCreateIterator(key);
+    auto iter = engine->ListIteratorCreate(key);
     ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
     if (iter != nullptr) {
       iter->Seek(0);
@@ -2629,12 +2817,13 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
         ASSERT_EQ(iter->Value(), *iter2);
         iter->Prev();
       }
+      engine->ListIteratorRelease(iter);
     }
   };
 
   SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::ListMove");
-  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPushImpl");
-  SyncPoint::GetInstance()->EnableCrashPoint("KVEngine::listBatchPopImpl");
+  SyncPoint::GetInstance()->EnableCrashPoint("List::PushN");
+  SyncPoint::GetInstance()->EnableCrashPoint("List::PopN");
   SyncPoint::GetInstance()->EnableProcessing();
 
   Fill();
@@ -2686,7 +2875,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::LinkDLRecord::HalfLink", [&](void*) {
+      "KVEngine::DLList::LinkDLRecord::HalfLink", [&](void*) {
         if (update_num % 8 == 0) {
           throw 1;
         }
@@ -2760,7 +2949,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       });
   // only throw when the first call `SortedDelete`
   SyncPoint::GetInstance()->SetCallBack(
-      "KVEngine::Skiplist::Delete::PersistNext'sPrev::After", [&](void*) {
+      "KVEngine::DLList::Remove::PersistNext'sPrev::After", [&](void*) {
         if (!first_visited.load()) {
           first_visited.store(true);
           throw 1;
@@ -2792,7 +2981,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
               Status::Ok);
     // Check skiplist integrity.
     int forward_num = 0, backward_num = 0;
-    auto sorted_iter = engine->NewSortedIterator(collection_name);
+    auto sorted_iter = engine->SortedIteratorCreate(collection_name);
     // Forward traversal.
     sorted_iter->SeekToFirst();
     while (sorted_iter->Valid()) {
@@ -2805,7 +2994,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       backward_num++;
       sorted_iter->Prev();
     }
-    engine->ReleaseSortedIterator(sorted_iter);
+    engine->SortedIteratorRelease(sorted_iter);
     ASSERT_EQ(forward_num, backward_num);
 
     std::string got_val;
@@ -2844,7 +3033,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->LoadDependency(
-      {{"KVEngine::Skiplist::LinkDLRecord::HalfLink", "Test::Iter::key0"}});
+      {{"KVEngine::DLList::LinkDLRecord::HalfLink", "Test::Iter::key0"}});
   SyncPoint::GetInstance()->EnableProcessing();
 
   // insert
@@ -2857,7 +3046,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   // Iter
   ths.emplace_back(std::thread([&]() {
     sleep(1);
-    auto sorted_iter = engine->NewSortedIterator(collection_name);
+    auto sorted_iter = engine->SortedIteratorCreate(collection_name);
     sorted_iter->SeekToLast();
     if (sorted_iter->Valid()) {
       std::string next = sorted_iter->Key();
@@ -2876,7 +3065,7 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
         next = k;
       }
     }
-    engine->ReleaseSortedIterator(sorted_iter);
+    engine->SortedIteratorRelease(sorted_iter);
   }));
   for (auto& thread : ths) {
     thread.join();
@@ -3133,9 +3322,9 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       size_t size;
       ASSERT_EQ(engine->SortedSize(sorted_collection, &size), Status::Ok);
       ASSERT_EQ(size, 0);
-      ASSERT_EQ(engine->HashLength(hashlist_collection, &size), Status::Ok);
+      ASSERT_EQ(engine->HashSize(hashlist_collection, &size), Status::Ok);
       ASSERT_EQ(size, 0);
-      ASSERT_EQ(engine->ListLength(list_collection, &size), Status::Ok);
+      ASSERT_EQ(engine->ListSize(list_collection, &size), Status::Ok);
       ASSERT_EQ(size, 0);
     }
   }
@@ -3201,7 +3390,7 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
 
   int entries = 0;
   // iterating sorted collection
-  auto iter = engine->NewSortedIterator(collection_name);
+  auto iter = engine->SortedIteratorCreate(collection_name);
   ASSERT_TRUE(iter != nullptr);
   // forward iterator
   iter->SeekToFirst();
@@ -3217,7 +3406,7 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
       prev = k;
     }
   }
-  engine->ReleaseSortedIterator(iter);
+  engine->SortedIteratorRelease(iter);
   ASSERT_EQ(entries, cnt);
   delete engine;
 }

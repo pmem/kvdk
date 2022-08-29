@@ -283,7 +283,7 @@ int main()
     std::sort(kv_pairs.begin(), kv_pairs.end());
 
     // Iterate through collection "my_sorted_collection"
-    auto iter = engine->NewSortedIterator(sorted_collection);
+    auto iter = engine->SortedIteratorCreate(sorted_collection);
     iter->SeekToFirst();
     {
       int i = 0;
@@ -321,7 +321,7 @@ int main()
     }
 
     printf("Successfully iterated through a sorted named collections.\n");
-    engine->ReleaseSortedIterator(iter);
+    engine->SortedIteratorRelease(iter);
   }
 
   ... Do something else with KVDK instance ...

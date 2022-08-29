@@ -12,13 +12,15 @@
 #include "alias.hpp"
 #include "macros.hpp"
 #include "utils/codec.hpp"
+#include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
 /// TODO: (ziyan) add expire_time field to Collection.
 class Collection {
  public:
-  Collection(const std::string& name, CollectionIDType id)
-      : collection_name_(name), collection_id_(id) {}
+  Collection(const StringView& name, CollectionIDType id)
+      : collection_name_(string_view_2_string(name)), collection_id_(id) {}
+  virtual ~Collection() = default;
   // Return unique ID of the collection
   uint64_t ID() const { return collection_id_; }
 
@@ -27,8 +29,6 @@ class Collection {
 
   virtual ExpireTimeType GetExpireTime() const = 0;
   virtual bool HasExpired() const = 0;
-  virtual Status SetExpireTime(ExpireTimeType) = 0;
-  virtual ~Collection() = default;
 
   // Return internal representation of "key" in the collection
   // By default, we concat key with the collection id

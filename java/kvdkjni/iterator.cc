@@ -15,12 +15,13 @@
 void Java_io_pmem_kvdk_Iterator_closeInternal(JNIEnv*, jobject,
                                               jlong iterator_handle,
                                               jlong engine_handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(iterator_handle);
+  auto* iterator =
+      reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(iterator_handle);
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
   assert(iterator != nullptr);
   assert(engine != nullptr);
 
-  engine->ReleaseSortedIterator(iterator);
+  engine->SortedIteratorRelease(iterator);
 }
 
 /*
@@ -31,7 +32,7 @@ void Java_io_pmem_kvdk_Iterator_closeInternal(JNIEnv*, jobject,
 void Java_io_pmem_kvdk_Iterator_seek(JNIEnv* env, jobject, jlong handle,
                                      jbyteArray key, jint key_off,
                                      jint key_len) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
 
   jbyte* key_bytes = new jbyte[key_len];
   env->GetByteArrayRegion(key, key_off, key_len, key_bytes);
@@ -53,7 +54,7 @@ void Java_io_pmem_kvdk_Iterator_seek(JNIEnv* env, jobject, jlong handle,
  */
 void Java_io_pmem_kvdk_Iterator_seekToFirst(JNIEnv* env, jobject,
                                             jlong handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->SeekToFirst();
 }
 
@@ -63,7 +64,7 @@ void Java_io_pmem_kvdk_Iterator_seekToFirst(JNIEnv* env, jobject,
  * Signature: (J)V
  */
 void Java_io_pmem_kvdk_Iterator_seekToLast(JNIEnv* env, jobject, jlong handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->SeekToLast();
 }
 
@@ -74,7 +75,7 @@ void Java_io_pmem_kvdk_Iterator_seekToLast(JNIEnv* env, jobject, jlong handle) {
  */
 jboolean Java_io_pmem_kvdk_Iterator_isValid(JNIEnv* env, jobject,
                                             jlong handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   return iterator->Valid();
 }
 
@@ -84,7 +85,7 @@ jboolean Java_io_pmem_kvdk_Iterator_isValid(JNIEnv* env, jobject,
  * Signature: (J)V
  */
 void Java_io_pmem_kvdk_Iterator_next(JNIEnv* env, jobject, jlong handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->Next();
 }
 
@@ -94,7 +95,7 @@ void Java_io_pmem_kvdk_Iterator_next(JNIEnv* env, jobject, jlong handle) {
  * Signature: (J)V
  */
 void Java_io_pmem_kvdk_Iterator_prev(JNIEnv* env, jobject, jlong handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->Prev();
 }
 
@@ -104,7 +105,7 @@ void Java_io_pmem_kvdk_Iterator_prev(JNIEnv* env, jobject, jlong handle) {
  * Signature: (J)[B
  */
 jbyteArray Java_io_pmem_kvdk_Iterator_key(JNIEnv* env, jobject, jlong handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
 
   std::string key = iterator->Key();
   jbyteArray ret = KVDK_NAMESPACE::JniUtil::createJavaByteArray(
@@ -119,7 +120,7 @@ jbyteArray Java_io_pmem_kvdk_Iterator_key(JNIEnv* env, jobject, jlong handle) {
  */
 jbyteArray Java_io_pmem_kvdk_Iterator_value(JNIEnv* env, jobject,
                                             jlong handle) {
-  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::Iterator*>(handle);
+  auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
 
   std::string value = iterator->Value();
   jbyteArray ret = KVDK_NAMESPACE::JniUtil::createJavaByteArray(

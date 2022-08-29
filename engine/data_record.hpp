@@ -19,9 +19,9 @@ enum RecordType : uint8_t {
   String = (1 << 0),
   SortedHeader = (1 << 1),
   SortedElem = (1 << 2),
-  HashRecord = (1 << 3),
+  HashHeader = (1 << 3),
   HashElem = (1 << 4),
-  ListRecord = (1 << 5),
+  ListHeader = (1 << 5),
   ListElem = (1 << 6),
 };
 
@@ -35,13 +35,17 @@ enum class RecordStatus : uint8_t {
 };
 
 const uint8_t ExpirableRecordType =
-    (RecordType::String | RecordType::SortedHeader | RecordType::HashRecord |
-     RecordType::ListRecord);
+    (RecordType::String | RecordType::SortedHeader | RecordType::HashHeader |
+     RecordType::ListHeader);
 
 const uint8_t PrimaryRecordType = ExpirableRecordType;
 
+const uint8_t ElemType =
+    (RecordType::SortedElem | RecordType::HashElem | RecordType::ListElem);
+
 const uint8_t CollectionType =
-    RecordType::SortedHeader | RecordType::HashRecord | RecordType::ListRecord;
+    (RecordType::SortedHeader | RecordType::HashHeader |
+     RecordType::ListHeader);
 
 struct DataHeader {
   DataHeader() = default;
@@ -184,6 +188,8 @@ struct StringRecord {
   RecordType GetRecordType() const { return entry.meta.type; }
 
   RecordStatus GetRecordStatus() const { return entry.meta.status; }
+
+  uint32_t GetRecordSize() const { return entry.header.record_size; }
 
   static uint32_t RecordSize(const StringView& key, const StringView& value) {
     return key.size() + value.size() + sizeof(StringRecord);
@@ -360,8 +366,8 @@ struct DLRecord {
         next(_next),
         expired_time(_expired_time) {
     kvdk_assert(_type & (RecordType::SortedElem | RecordType::SortedHeader |
-                         RecordType::HashElem | RecordType::HashRecord |
-                         RecordType::ListElem | RecordType::ListRecord),
+                         RecordType::HashElem | RecordType::HashHeader |
+                         RecordType::ListElem | RecordType::ListHeader),
                 "");
     memcpy(data, _key.data(), _key.size());
     memcpy(data + _key.size(), _value.data(), _value.size());

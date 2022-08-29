@@ -18,25 +18,23 @@ struct Splice;
 
 class WriteBatchImpl final : public WriteBatch {
  public:
-  enum class Op { Put, Delete };
-
   struct StringOp {
-    Op op;
+    WriteOp op;
     std::string key;
     std::string value;
   };
 
   struct SortedOp {
-    Op op;
+    WriteOp op;
     std::string collection;
     std::string key;
     std::string value;
   };
 
   struct HashOp {
-    Op op;
+    WriteOp op;
+    std::string collection;
     std::string key;
-    std::string field;
     std::string value;
   };
 
@@ -48,7 +46,7 @@ class WriteBatchImpl final : public WriteBatch {
       return xxh_hash(sorted_op.collection) ^ xxh_hash(sorted_op.key);
     }
     size_t operator()(HashOp const& hash_op) const {
-      return xxh_hash(hash_op.key) ^ xxh_hash(hash_op.field);
+      return xxh_hash(hash_op.collection) ^ xxh_hash(hash_op.key);
     }
     bool operator()(StringOp const& lhs, StringOp const& rhs) const {
       return lhs.key == rhs.key;
@@ -57,44 +55,44 @@ class WriteBatchImpl final : public WriteBatch {
       return lhs.collection == rhs.collection && lhs.key == rhs.key;
     }
     bool operator()(HashOp const& lhs, HashOp const& rhs) const {
-      return lhs.key == rhs.key && lhs.field == rhs.field;
+      return lhs.collection == rhs.collection && lhs.key == rhs.key;
     }
   };
 
   void StringPut(std::string const& key, std::string const& value) final {
-    StringOp op{Op::Put, key, value};
+    StringOp op{WriteOp::Put, key, value};
     string_ops.erase(op);
     string_ops.insert(op);
   }
 
   void StringDelete(std::string const& key) final {
-    StringOp op{Op::Delete, key, std::string{}};
+    StringOp op{WriteOp::Delete, key, std::string{}};
     string_ops.erase(op);
     string_ops.insert(op);
   }
 
   void SortedPut(std::string const& key, std::string const& field,
                  std::string const& value) final {
-    SortedOp op{Op::Put, key, field, value};
+    SortedOp op{WriteOp::Put, key, field, value};
     sorted_ops.erase(op);
     sorted_ops.insert(op);
   }
 
   void SortedDelete(std::string const& key, std::string const& field) final {
-    SortedOp op{Op::Delete, key, field, std::string{}};
+    SortedOp op{WriteOp::Delete, key, field, std::string{}};
     sorted_ops.erase(op);
     sorted_ops.insert(op);
   }
 
   void HashPut(std::string const& key, std::string const& field,
                std::string const& value) final {
-    HashOp op{Op::Put, key, field, value};
+    HashOp op{WriteOp::Put, key, field, value};
     hash_ops.erase(op);
     hash_ops.insert(op);
   }
 
   void HashDelete(std::string const& key, std::string const& field) final {
-    HashOp op{Op::Delete, key, field, std::string{}};
+    HashOp op{WriteOp::Delete, key, field, std::string{}};
     hash_ops.erase(op);
     hash_ops.insert(op);
   }
@@ -126,7 +124,7 @@ class WriteBatchImpl final : public WriteBatch {
 struct StringWriteArgs {
   StringView key;
   StringView value;
-  WriteBatchImpl::Op op;
+  WriteOp op;
   SpaceEntry space;
   TimeStampType ts;
   HashTable::LookupResult res;
@@ -136,45 +134,6 @@ struct StringWriteArgs {
     key = string_op.key;
     value = string_op.value;
     op = string_op.op;
-  }
-};
-
-struct SortedWriteArgs {
-  StringView collection;
-  StringView key;
-  StringView value;
-  WriteBatchImpl::Op op;
-  Skiplist* skiplist;
-  SpaceEntry space;
-  TimeStampType ts;
-  HashTable::LookupResult lookup_result;
-  std::unique_ptr<Splice> seek_result;
-
-  void Assign(WriteBatchImpl::SortedOp const& sorted_op) {
-    collection = sorted_op.collection;
-    key = sorted_op.key;
-    value = sorted_op.value;
-    op = sorted_op.op;
-  }
-};
-
-struct HashWriteArgs {
-  StringView key;
-  StringView field;
-  StringView value;
-  WriteBatchImpl::Op op;
-  HashList* hlist;
-  SpaceEntry space;
-  TimeStampType ts;
-  HashTable::LookupResult res;
-  // returned by write, used by publish
-  DLRecord* new_rec;
-
-  void Assign(WriteBatchImpl::HashOp const& hash_op) {
-    key = hash_op.key;
-    field = hash_op.field;
-    value = hash_op.value;
-    op = hash_op.op;
   }
 };
 
@@ -195,7 +154,7 @@ class BatchWriteLog {
     Committed,
   };
 
-  enum class Op : size_t { Put, Delete, Replace };
+  enum class Op : size_t { Put, Delete };
 
   struct StringLogEntry {
     Op op;
@@ -209,8 +168,7 @@ class BatchWriteLog {
 
   struct HashLogEntry {
     Op op;
-    PMemOffsetType new_offset;
-    PMemOffsetType old_offset;
+    PMemOffsetType offset;
   };
 
   struct ListLogEntry {
@@ -238,17 +196,12 @@ class BatchWriteLog {
     sorted_logs.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
-  void HashEmplace(PMemOffsetType new_offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Put, new_offset, kNullPMemOffset});
+  void HashPut(PMemOffsetType offset) {
+    hash_logs.emplace_back(HashLogEntry{Op::Put, offset});
   }
 
-  void HashReplace(PMemOffsetType new_offset, PMemOffsetType old_offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Replace, new_offset, old_offset});
-  }
-
-  void HashDelete(PMemOffsetType old_offset) {
-    hash_logs.emplace_back(
-        HashLogEntry{Op::Delete, kNullPMemOffset, old_offset});
+  void HashDelete(PMemOffsetType offset) {
+    hash_logs.emplace_back(HashLogEntry{Op::Delete, offset});
   }
 
   void ListEmplace(PMemOffsetType offset) {

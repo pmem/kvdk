@@ -104,11 +104,23 @@ class Engine {
   // error.
   virtual Status Delete(const StringView key) = 0;
 
+  // Create a sorted collection with configs
+  // Return:
+  // Status::Ok on success
+  // Status::Existed if sorted collection already existed
+  // Status::WrongType if collection existed but not a sorted collection
+  // Status::PMemOverflow if PMem exhausted
+  // Status::MemoryOverflow if DRAM exhausted
   virtual Status SortedCreate(
-      const StringView collection_name,
+      const StringView collection,
       const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
 
-  virtual Status SortedDestroy(const StringView collection_name) = 0;
+  // Destroy a sorted collection
+  // Return:
+  // Status::Ok on success
+  // Status::WrongType if collection existed but not a sorted collection
+  // Status::PMemOverflow if PMem exhausted
+  virtual Status SortedDestroy(const StringView collection) = 0;
 
   // Get number of elements in a sorted collection
   //
@@ -137,174 +149,191 @@ class Engine {
 
   // Create an empty List.
   // Return:
-  //    Status::WrongType if key is not a List.
-  //    Status::Existed if a List named key already exists.
+  //    Status::WrongType if list name is not a List.
+  //    Status::Existed if a List named list already exists.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if successfully created the List.
-  virtual Status ListCreate(StringView key) = 0;
+  virtual Status ListCreate(StringView list) = 0;
 
   // Destroy a List associated with key
   // Return:
-  //    Status::WrongType if key is not a List.
+  //    Status::WrongType if list name is not a List.
   //    Status::Ok if successfully destroyed the List.
-  //    Status::NotFound if key does not exist.
-  virtual Status ListDestroy(StringView key) = 0;
+  //    Status::NotFound if list does not exist.
+  virtual Status ListDestroy(StringView list) = 0;
 
   // Total elements in List.
   // Return:
-  //    Status::InvalidDataSize if key is too long
-  //    Status::WrongType if key is not a List.
-  //    Status::NotFound if key does not exist or has expired.
+  //    Status::InvalidDataSize if list name is too long
+  //    Status::WrongType if list name is not a List.
+  //    Status::NotFound if list does not exist or has expired.
   //    Status::Ok and length of List if List exists.
-  virtual Status ListLength(StringView key, size_t* sz) = 0;
+  virtual Status ListSize(StringView list, size_t* sz) = 0;
 
   // Push element as first element of List
   // Return:
-  //    Status::InvalidDataSize if key or elem is too long
-  //    Status::WrongType if key is not a List.
+  //    Status::InvalidDataSize if list name or elem is too long
+  //    Status::WrongType if list name is not a List.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
-  virtual Status ListPushFront(StringView key, StringView elem) = 0;
+  virtual Status ListPushFront(StringView list, StringView elem) = 0;
 
   // Push element as last element of List
   // Return:
-  //    Status::InvalidDataSize if key or elem is too long
-  //    Status::WrongType if key is not a List.
+  //    Status::InvalidDataSize if list name or elem is too long
+  //    Status::WrongType if list name in the instance is not a List.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
-  virtual Status ListPushBack(StringView key, StringView elem) = 0;
+  virtual Status ListPushBack(StringView list, StringView elem) = 0;
 
-  // Pop first element of List
-  // Erase the key if List is empty after pop.
+  // Pop first element of list
   // Return:
-  //    Status::InvalidDataSize if key is too long
-  //    Status::WrongType if key is not a List.
-  //    Status::NotFound if key does not exist or has expired.
+  //    Status::InvalidDataSize if list name is too long
+  //    Status::WrongType if list is not a List.
+  //    Status::NotFound if list does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListPopFront(StringView key, std::string* elem) = 0;
+  virtual Status ListPopFront(StringView list, std::string* elem) = 0;
 
   // Pop last element of List
   // Return:
-  //    Status::InvalidDataSize if key is too long
-  //    Status::WrongType if key is not a List.
-  //    Status::NotFound if key does not exist or has expired.
+  //    Status::InvalidDataSize if list name is too long
+  //    Status::WrongType if list is not a List.
+  //    Status::NotFound if list does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListPopBack(StringView key, std::string* elem) = 0;
+  virtual Status ListPopBack(StringView list, std::string* elem) = 0;
 
   // Push multiple elements to the front of List
   // Return:
-  //    Status::InvalidDataSize if key or elem is too long
-  //    Status::WrongType if key is not a List.
+  //    Status::InvalidDataSize if list name or elem is too long
+  //    Status::WrongType if list is not a List.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
-  virtual Status ListBatchPushFront(StringView key,
+  virtual Status ListBatchPushFront(StringView list,
                                     std::vector<std::string> const& elems) = 0;
-  virtual Status ListBatchPushFront(StringView key,
+  virtual Status ListBatchPushFront(StringView list,
                                     std::vector<StringView> const& elems) = 0;
 
   // Push multiple elements to the back of List
   // Return:
-  //    Status::InvalidDataSize if key or elem is too long
-  //    Status::WrongType if key is not a List.
+  //    Status::InvalidDataSize if list or elem is too long
+  //    Status::WrongType if list name is not a List.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if operation succeeded.
-  virtual Status ListBatchPushBack(StringView key,
+  virtual Status ListBatchPushBack(StringView list,
                                    std::vector<std::string> const& elems) = 0;
-  virtual Status ListBatchPushBack(StringView key,
+  virtual Status ListBatchPushBack(StringView list,
                                    std::vector<StringView> const& elems) = 0;
 
   // Pop first N element of List
   // Return:
-  //    Status::InvalidDataSize if key is too long
-  //    Status::WrongType if key is not a List.
-  //    Status::NotFound if key does not exist or has expired.
+  //    Status::InvalidDataSize if list is too long
+  //    Status::WrongType if list is not a List.
+  //    Status::NotFound if list does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListBatchPopFront(StringView key, size_t n,
+  virtual Status ListBatchPopFront(StringView list, size_t n,
                                    std::vector<std::string>* elems) = 0;
 
   // Pop last N element of List
   // Return:
-  //    Status::InvalidDataSize if key is too long
-  //    Status::WrongType if key is not a List.
-  //    Status::NotFound if key does not exist or has expired.
+  //    Status::InvalidDataSize if list is too long
+  //    Status::WrongType if list is not a List.
+  //    Status::NotFound if list does not exist or has expired.
   //    Status::Ok and element if operation succeeded.
-  virtual Status ListBatchPopBack(StringView key, size_t n,
+  virtual Status ListBatchPopBack(StringView list, size_t n,
                                   std::vector<std::string>* elems) = 0;
 
   // Move element in src List at src_pos to dst List at dst_pos
   // src_pos and dst_pos can only be 0, indicating List front,
   // or -1, indicating List back.
   // Return:
-  //    Status::InvalidDataSize if key is too long
-  //    Status::WrongType if key is not a List.
-  //    Status::NotFound if key does not exist or has expired.
-  //    Status::Ok and element if operation succeeded.
-  virtual Status ListMove(StringView src, int src_pos, StringView dst,
-                          int dst_pos, std::string* elem) = 0;
+  //    Status::WrongType if src or dst is not a List.
+  //    Status::NotFound if list or element not exist
+  //    Status::Ok and moved element if operation succeeded.
+  virtual Status ListMove(StringView src_list, ListPos src_pos,
+                          StringView dst_list, ListPos dst_pos,
+                          std::string* elem) = 0;
 
-  // Insert an element before element indexed by ListIterator pos
+  // Insert a element to a list at index, the index can be positive or
+  // negative
   // Return:
-  //    Status::InvalidDataSize if elem is too long. pos is unchanged.
-  //    Status::PMemOverflow if PMem exhausted. pos is unchanged.
-  //    Status::NotFound if List of the ListIterator has expired or been
-  //    deleted. pos is unchanged but is invalid.
-  //    Status::Ok if operation succeeded. pos points to inserted element.
-  virtual Status ListInsertBefore(std::unique_ptr<ListIterator> const& pos,
-                                  StringView elem) = 0;
+  //    Status::InvalidDataSize if list name is too large
+  //    Status::WrongType if collection is not a list
+  //    Status::NotFound if collection not found or index is beyond list size
+  //    Status::Ok if operation succeeded
+  virtual Status ListInsertAt(StringView list, StringView elem, long index) = 0;
 
-  // Insert an element after element indexed by ListIterator pos
+  // Insert an element before element "pos" in list "collection"
   // Return:
-  //    Status::InvalidDataSize if elem is too long. pos is unchanged.
-  //    Status::PMemOverflow if PMem exhausted. pos is unchanged.
+  //    Status::InvalidDataSize if elem is too long.
+  //    Status::PMemOverflow if PMem exhausted.
   //    Status::NotFound if List of the ListIterator has expired or been
-  //    deleted. pos is unchanged but is invalid.
-  //    Status::Ok if operation succeeded. pos points to inserted element.
-  virtual Status ListInsertAfter(std::unique_ptr<ListIterator> const& pos,
-                                 StringView elem) = 0;
+  //    deleted, or "pos" not exist in the list
+  //    Status::Ok if operation succeeded.
+  virtual Status ListInsertBefore(StringView list, StringView elem,
+                                  StringView pos) = 0;
 
-  // Remove the element indexed by ListIterator pos
+  // Insert an element after element "pos" in list "collection"
   // Return:
+  //    Status::InvalidDataSize if elem is too long.
+  //    Status::PMemOverflow if PMem exhausted.
   //    Status::NotFound if List of the ListIterator has expired or been
-  //    deleted. pos is unchanged but is invalid.
-  //    Status::Ok if operation succeeded. pos points
-  //    to successor of erased element.
-  virtual Status ListErase(std::unique_ptr<ListIterator> const& pos) = 0;
+  //    deleted, or "pos" not exist in the list
+  //    Status::Ok if operation succeeded.
+  virtual Status ListInsertAfter(StringView list, StringView elem,
+                                 StringView pos) = 0;
 
-  // Replace the element at pos
+  // Remove the element at index
+  // Return:
+  //    Status::NotFound if the index beyond list size.
+  //    Status::Ok if operation succeeded, and store removed elem in "elem"
+  virtual Status ListErase(StringView list, long index, std::string* elem) = 0;
+
+  // Replace the element at index
   // Return:
   //    Status::InvalidDataSize if elem is too long
-  //    Status::NotFound if List of the ListIterator has expired or been
-  //    deleted. pos is unchanged but invalid.
-  //    Status::Ok if operation succeeded. pos points to updated element.
-  virtual Status ListReplace(std::unique_ptr<ListIterator> const& pos,
-                             StringView elem) = 0;
+  //    Status::NotFound if if the index beyond list size.
+  //    Status::Ok if operation succeeded.
+  virtual Status ListReplace(StringView list, long index, StringView elem) = 0;
 
-  // Create an ListIterator from List
-  // Return:
-  //    nullptr if List is not found or has expired, or key is not of type List,
-  //    otherwise return ListIterator to First element of List
-  // Internally ListIterator holds an recursive of List, which is relased
-  // on destruction of ListIterator
-  virtual std::unique_ptr<ListIterator> ListCreateIterator(
-      StringView key, Status* s = nullptr) = 0;
+  // Create a KV iterator on list "list", which is able to iterate all elems in
+  // the list at "snapshot" version, if snapshot is nullptr, then a
+  // internal snapshot will be created at current version and the iterator will
+  // be created on it
+  //
+  // Notice:
+  // 1. Iterator will be invalid after the passed snapshot is released
+  // 2. Please release the iterator as soon as it is not needed, as the holding
+  // snapshot will forbid newer data being freed
+  virtual ListIterator* ListIteratorCreate(StringView list,
+                                           Snapshot* snapshot = nullptr,
+                                           Status* status = nullptr) = 0;
+  virtual void ListIteratorRelease(ListIterator*) = 0;
 
   /// Hash APIs ///////////////////////////////////////////////////////////////
 
-  virtual Status HashCreate(StringView key) = 0;
-  virtual Status HashDestroy(StringView key) = 0;
-  virtual Status HashLength(StringView key, size_t* len) = 0;
-  virtual Status HashGet(StringView key, StringView field,
+  virtual Status HashCreate(StringView collection) = 0;
+  virtual Status HashDestroy(StringView collection) = 0;
+  virtual Status HashSize(StringView collection, size_t* len) = 0;
+  virtual Status HashGet(StringView collection, StringView key,
                          std::string* value) = 0;
-  virtual Status HashPut(StringView key, StringView field,
+  virtual Status HashPut(StringView collection, StringView key,
                          StringView value) = 0;
-  virtual Status HashDelete(StringView key, StringView field) = 0;
-  virtual Status HashModify(StringView key, StringView field,
+  virtual Status HashDelete(StringView collection, StringView key) = 0;
+  virtual Status HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) = 0;
-  // Warning: HashIterator internally holds a snapshot,
-  // prevents some resources from being freed.
-  // The HashIterator should be destroyed as long as it is no longer used.
-  virtual std::unique_ptr<HashIterator> HashCreateIterator(
-      StringView key, Status* s = nullptr) = 0;
+  // Create a KV iterator on hash collection "collection", which is able to
+  // iterate all elems in the collection at "snapshot" version, if snapshot is
+  // nullptr, then a internal snapshot will be created at current version and
+  // the iterator will be created on it
+  //
+  // Notice:
+  // 1. Iterator will be invalid after the passed snapshot is released
+  // 2. Please release the iterator as soon as it is not needed, as the holding
+  // snapshot will forbid newer data being freed
+  virtual HashIterator* HashIteratorCreate(StringView collection,
+                                           Snapshot* snapshot = nullptr,
+                                           Status* s = nullptr) = 0;
+  virtual void HashIteratorRelease(HashIterator*) = 0;
 
   /// Other ///////////////////////////////////////////////////////////////////
 
@@ -335,12 +364,12 @@ class Engine {
   // 1. Iterator will be invalid after the passed snapshot is released
   // 2. Please release the iterator as soon as it is not needed, as the holding
   // snapshot will forbid newer data being freed
-  virtual Iterator* NewSortedIterator(const StringView collection,
-                                      Snapshot* snapshot = nullptr,
-                                      Status* s = nullptr) = 0;
+  virtual SortedIterator* SortedIteratorCreate(const StringView collection,
+                                               Snapshot* snapshot = nullptr,
+                                               Status* s = nullptr) = 0;
 
   // Release a sorted iterator
-  virtual void ReleaseSortedIterator(Iterator*) = 0;
+  virtual void SortedIteratorRelease(SortedIterator*) = 0;
 
   // Release resources occupied by this access thread so new thread can take
   // part. New write requests of this thread need to re-request write resources.

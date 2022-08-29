@@ -11,109 +11,50 @@ namespace KVDK_NAMESPACE {
 
 class KVEngine;
 
-class SortedIterator : public Iterator {
+class SortedIteratorImpl : public SortedIterator {
  public:
-  SortedIterator(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
-                 const SnapshotImpl* snapshot, bool own_snapshot)
+  SortedIteratorImpl(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
+                     const SnapshotImpl* snapshot, bool own_snapshot)
       : skiplist_(skiplist),
-        pmem_allocator_(pmem_allocator),
-        current_(nullptr),
         snapshot_(snapshot),
-        own_snapshot_(own_snapshot) {}
+        own_snapshot_(own_snapshot),
+        dl_iter_(&skiplist->dl_list_, pmem_allocator, snapshot) {}
 
-  virtual ~SortedIterator() = default;
+  virtual ~SortedIteratorImpl() = default;
 
   virtual void Seek(const std::string& key) override {
     assert(skiplist_);
     Splice splice(skiplist_);
     skiplist_->Seek(key, &splice);
-    current_ = splice.next_pmem_record;
-    skipInvalidRecords(true);
+    dl_iter_.Locate(splice.next_pmem_record, true);
   }
 
-  virtual void SeekToFirst() override {
-    uint64_t first = skiplist_->HeaderRecord()->next;
-    current_ = pmem_allocator_->offset2addr<DLRecord>(first);
-    skipInvalidRecords(true);
-  }
+  virtual void SeekToFirst() override { dl_iter_.SeekToFirst(); }
 
-  virtual void SeekToLast() override {
-    uint64_t last = skiplist_->HeaderRecord()->prev;
-    current_ = pmem_allocator_->offset2addr<DLRecord>(last);
-    skipInvalidRecords(false);
-  }
+  virtual void SeekToLast() override { dl_iter_.SeekToLast(); }
 
-  virtual bool Valid() override {
-    return (current_ != nullptr &&
-            current_->GetRecordType() == RecordType::SortedElem);
-  }
+  virtual bool Valid() override { return dl_iter_.Valid(); }
 
-  virtual void Next() override {
-    if (!Valid()) {
-      return;
-    }
-    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
-    skipInvalidRecords(true);
-  }
+  virtual void Next() override { dl_iter_.Next(); }
 
-  virtual void Prev() override {
-    if (!Valid()) {
-      return;
-    }
-    current_ = (pmem_allocator_->offset2addr<DLRecord>(current_->prev));
-    skipInvalidRecords(false);
-  }
+  virtual void Prev() override { dl_iter_.Prev(); }
 
   virtual std::string Key() override {
     if (!Valid()) return "";
-    return string_view_2_string(Skiplist::UserKey(current_));
+    return string_view_2_string(Skiplist::ExtractUserKey(dl_iter_.Key()));
   }
 
   virtual std::string Value() override {
     if (!Valid()) return "";
-    return string_view_2_string(current_->Value());
+    return string_view_2_string(dl_iter_.Value());
   }
 
  private:
   friend KVEngine;
-  DLRecord* findValidVersion(DLRecord* pmem_record) {
-    DLRecord* curr = pmem_record;
-    TimeStampType ts = snapshot_->GetTimestamp();
-    while (curr != nullptr && curr->entry.meta.timestamp > ts) {
-      curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
-      kvdk_assert(curr == nullptr || curr->Validate(),
-                  "Broken checkpoint: invalid older version sorted record");
-      kvdk_assert(
-          curr == nullptr || equal_string_view(curr->Key(), pmem_record->Key()),
-          "Broken checkpoint: key of older version sorted data is "
-          "not same as new "
-          "version");
-    }
-    return curr;
-  }
-
-  // Move current_ to next/prev valid version data record
-  void skipInvalidRecords(bool forward) {
-    while (Valid()) {
-      DLRecord* valid_version_record = findValidVersion(current_);
-      if (valid_version_record == nullptr ||
-          valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
-        current_ =
-            forward
-                ? pmem_allocator_->offset2addr_checked<DLRecord>(current_->next)
-                : pmem_allocator_->offset2addr_checked<DLRecord>(
-                      current_->prev);
-      } else {
-        current_ = valid_version_record;
-        break;
-      }
-    }
-  }
 
   Skiplist* skiplist_;
-  const PMEMAllocator* pmem_allocator_;
-  DLRecord* current_;
   const SnapshotImpl* snapshot_;
   bool own_snapshot_;
+  DLListDataIterator dl_iter_;
 };
 }  // namespace KVDK_NAMESPACE

@@ -46,6 +46,9 @@ class SortedCollectionRebuilder {
   // Add a skiplist header to rebuilder
   Status AddHeader(DLRecord* record);
 
+  // Rollback a failed batch write
+  Status Rollback(const BatchWriteLog::SortedLogEntry& log);
+
  private:
   struct RebuildSegment {
     bool visited;
@@ -99,12 +102,6 @@ class SortedCollectionRebuilder {
 
   void cleanInvalidRecords();
 
-  // Check if a record collectly linked in PMem list
-  bool checkRecordLinkage(DLRecord* record);
-
-  // Check if a record collectly linked in PMem list, and repair linkage if able
-  bool checkAndRepairRecordLinkage(DLRecord* record);
-
   // insert hash index "ptr" for "key", the key should be locked before call
   // this function
   Status insertHashIndex(const StringView& key, void* ptr,
@@ -125,6 +122,7 @@ class SortedCollectionRebuilder {
   };
 
   KVEngine* kv_engine_;
+  DLListRecoveryUtils<Skiplist> recovery_utils_;
   CheckPoint checkpoint_;
   bool segment_based_rebuild_;
   uint64_t num_rebuild_threads_;

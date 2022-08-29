@@ -13,6 +13,7 @@ SortedCollectionRebuilder::SortedCollectionRebuilder(
     KVEngine* kv_engine, bool segment_based_rebuild,
     uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
     : kv_engine_(kv_engine),
+      recovery_utils_(kv_engine->pmem_allocator_.get()),
       checkpoint_(checkpoint),
       segment_based_rebuild_(segment_based_rebuild),
       num_rebuild_threads_(std::min(num_rebuild_threads,
@@ -41,11 +42,10 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
   assert(header_record->GetRecordType() == RecordType::SortedHeader);
 
-  bool linked_record = checkAndRepairRecordLinkage(header_record);
-
+  bool linked_record = recovery_utils_.CheckAndRepairLinkage(header_record);
   if (!linked_record) {
     if (!recoverToCheckpoint()) {
-      kv_engine_->purgeAndFree(header_record);
+      kv_engine_->pmem_allocator_->PurgeAndFree<DLRecord>(header_record);
     } else {
       // We do not know if this is a checkpoint version record, so we can't free
       // it here
@@ -62,11 +62,11 @@ Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
 Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   kvdk_assert(record->GetRecordType() == RecordType::SortedElem,
               "wrong record type in RestoreSkiplistRecord");
-  bool linked_record = checkAndRepairRecordLinkage(record);
+  bool linked_record = recovery_utils_.CheckAndRepairLinkage(record);
 
   if (!linked_record) {
     if (!recoverToCheckpoint()) {
-      kv_engine_->purgeAndFree(record);
+      kv_engine_->pmem_allocator_->PurgeAndFree<DLRecord>(record);
     } else {
       // We do not know if this is a checkpoint version record, so we can't free
       // it here
@@ -75,7 +75,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   } else {
     if (segment_based_rebuild_ &&
         ++rebuilder_thread_cache_[access_thread.id]
-                    .visited_skiplists[Skiplist::SkiplistID(record)] %
+                    .visited_skiplists[Skiplist::FetchID(record)] %
                 kRestoreSkiplistStride ==
             0 &&
         findCheckpointVersion(record) == record &&
@@ -91,6 +91,30 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   return Status::Ok;
 }
 
+Status SortedCollectionRebuilder::Rollback(
+    const BatchWriteLog::SortedLogEntry& log) {
+  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
+  LockTable* lock_table = kv_engine_->dllist_locks_.get();
+  DLRecord* elem = pmem_allocator->offset2addr_checked<DLRecord>(log.offset);
+  // We only check prev linkage as a valid prev linkage indicate valid prev
+  // and next pointers on the record, so we can safely do remove/replace
+  if (elem->Validate() && recovery_utils_.CheckPrevLinkage(elem)) {
+    if (elem->old_version != kNullPMemOffset) {
+      bool success = Skiplist::Replace(
+          elem,
+          pmem_allocator->offset2addr_checked<DLRecord>(elem->old_version),
+          nullptr, pmem_allocator, lock_table);
+      kvdk_assert(success, "Replace should success as we checked linkage");
+    } else {
+      bool success =
+          Skiplist::Remove(elem, nullptr, pmem_allocator, lock_table);
+      kvdk_assert(success, "Remove should success as we checked linkage");
+    }
+  }
+  elem->Destroy();
+  return Status::Ok;
+}
+
 Status SortedCollectionRebuilder::initRebuildLists() {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
   Status s = kv_engine_->MaybeInitAccessThread();
@@ -100,10 +124,10 @@ Status SortedCollectionRebuilder::initRebuildLists() {
 
   // Keep headers with same id together for recognize outdated ones
   auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
-    auto id1 = Skiplist::SkiplistID(header1);
-    auto id2 = Skiplist::SkiplistID(header2);
+    auto id1 = Skiplist::FetchID(header1);
+    auto id2 = Skiplist::FetchID(header2);
     if (id1 == id2) {
-      return header1->entry.meta.timestamp < header2->entry.meta.timestamp;
+      return header1->GetTimestamp() < header2->GetTimestamp();
     }
     return id1 < id2;
   };
@@ -112,8 +136,8 @@ Status SortedCollectionRebuilder::initRebuildLists() {
   for (size_t i = 0; i < linked_headers_.size(); i++) {
     DLRecord* header_record = linked_headers_[i];
     if (i + 1 < linked_headers_.size() &&
-        Skiplist::SkiplistID(header_record) ==
-            Skiplist::SkiplistID(linked_headers_[i + 1])) {
+        Skiplist::FetchID(header_record) ==
+            Skiplist::FetchID(linked_headers_[i + 1])) {
       // There are newer version of this header, it indicates system crashed
       // while updating header of a empty skiplist in previous run before break
       // header linkage.
@@ -125,10 +149,9 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       // Break the linkage
       auto newer_offset = pmem_allocator->addr2offset(linked_headers_[i + 1]);
       header_record->PersistPrevNT(newer_offset);
-      kvdk_assert(
-          !Skiplist::CheckRecordPrevLinkage(header_record, pmem_allocator) &&
-              !Skiplist::CheckReocrdNextLinkage(header_record, pmem_allocator),
-          "");
+      kvdk_assert(!recovery_utils_.CheckPrevLinkage(header_record) &&
+                      !recovery_utils_.CheckNextLinkage(header_record),
+                  "");
       addUnlinkedRecord(header_record);
       continue;
     }
@@ -162,15 +185,12 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     DLRecord* valid_version_record = findCheckpointVersion(header_record);
     std::shared_ptr<Skiplist> skiplist;
     if (valid_version_record == nullptr ||
-        Skiplist::SkiplistID(valid_version_record) != id) {
+        Skiplist::FetchID(valid_version_record) != id) {
       // No valid version, or valid version header belongs to another linked
       // skiplist with same name
-      skiplist =
-          std::
-              make_shared<Skiplist>(header_record, collection_name, id,
-                                    comparator, pmem_allocator,
-                                    kv_engine_->hash_table_.get(),
-                                    kv_engine_->skiplist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+      skiplist = std::make_shared<Skiplist>(
+          header_record, collection_name, id, comparator, pmem_allocator,
+          kv_engine_->hash_table_.get(), kv_engine_->dllist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
         std::lock_guard<SpinMutex> lg(lock_);
         invalid_skiplists_[id] = skiplist;
@@ -179,22 +199,22 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       auto ul = kv_engine_->hash_table_->AcquireLock(collection_name);
 
       if (valid_version_record != header_record) {
-        bool success = Skiplist::Replace(header_record, valid_version_record,
-                                         nullptr, pmem_allocator,
-                                         kv_engine_->skiplist_locks_.get());
+        bool success =
+            Skiplist::Replace(header_record, valid_version_record, nullptr,
+                              pmem_allocator, kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "headers in rebuild should passed linkage check");
         addUnlinkedRecord(header_record);
       }
 
       bool outdated =
           valid_version_record->GetRecordStatus() == RecordStatus::Outdated ||
-          TimeUtils::CheckIsExpired(valid_version_record->GetExpireTime());
+          valid_version_record->HasExpired();
 
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
             pmem_allocator, kv_engine_->hash_table_.get(),
-            kv_engine_->skiplist_locks_.get(), false);
+            kv_engine_->dllist_locks_.get(), false);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           invalid_skiplists_[id] = skiplist;
@@ -203,7 +223,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator,
             pmem_allocator, kv_engine_->hash_table_.get(),
-            kv_engine_->skiplist_locks_.get(), s_configs.index_with_hashtable);
+            kv_engine_->dllist_locks_.get(), s_configs.index_with_hashtable);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           rebuild_skiplits_[id] = skiplist;
@@ -252,11 +272,11 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
       }
 
       auto rebuild_skiplist_iter = rebuild_skiplits_.find(
-          Skiplist::SkiplistID(iter->second.start_node->record));
+          Skiplist::FetchID(iter->second.start_node->record));
       if (rebuild_skiplist_iter == rebuild_skiplits_.end()) {
         // this start point belong to a invalid skiplist
         kvdk_assert(
-            invalid_skiplists_.find(Skiplist::SkiplistID(
+            invalid_skiplists_.find(Skiplist::FetchID(
                 iter->second.start_node->record)) != invalid_skiplists_.end(),
             "Start record of a recovery segment should belong to a skiplist");
       } else {
@@ -351,7 +371,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
         bool success = Skiplist::Remove(next_record, nullptr,
                                         kv_engine_->pmem_allocator_.get(),
-                                        kv_engine_->skiplist_locks_.get());
+                                        kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       } else {
@@ -359,7 +379,7 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
           bool success =
               Skiplist::Replace(next_record, valid_version_record, nullptr,
                                 kv_engine_->pmem_allocator_.get(),
-                                kv_engine_->skiplist_locks_.get());
+                                kv_engine_->dllist_locks_.get());
           kvdk_assert(success, "elems in rebuild should passed linkage check");
           addUnlinkedRecord(next_record);
         }
@@ -474,19 +494,13 @@ Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
 Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
   Status s = kv_engine_->MaybeInitAccessThread();
   if (s != Status::Ok) {
-    GlobalLogger.Error("too many threads repair skiplist linkage\n");
     return s;
   }
   defer(kv_engine_->ReleaseAccessThread());
 
-  if (s != Status::Ok) {
-    return s;
-  }
-
   size_t num_elems = 0;
 
   Splice splice(skiplist);
-  HashEntry hash_entry;
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     splice.prevs[i] = skiplist->HeaderNode();
     splice.prev_pmem_record = skiplist->HeaderRecord();
@@ -509,16 +523,15 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
       // purge invalid version record from list
       bool success = Skiplist::Remove(next_record, nullptr,
                                       kv_engine_->pmem_allocator_.get(),
-                                      kv_engine_->skiplist_locks_.get());
+                                      kv_engine_->dllist_locks_.get());
       kvdk_assert(success, "elems in rebuild should passed linkage check");
       addUnlinkedRecord(next_record);
     } else {
       if (valid_version_record != next_record) {
         // repair linkage of checkpoint version
-        bool success =
-            Skiplist::Replace(next_record, valid_version_record, nullptr,
-                              kv_engine_->pmem_allocator_.get(),
-                              kv_engine_->skiplist_locks_.get());
+        bool success = Skiplist::Replace(
+            next_record, valid_version_record, nullptr,
+            kv_engine_->pmem_allocator_.get(), kv_engine_->dllist_locks_.get());
         kvdk_assert(success, "elems in rebuild should passed linkage check");
         addUnlinkedRecord(next_record);
       }
@@ -582,44 +595,18 @@ Status SortedCollectionRebuilder::listBasedIndexRebuild() {
   return Status::Ok;
 }
 
-bool SortedCollectionRebuilder::checkRecordLinkage(DLRecord* record) {
-  return Skiplist::CheckRecordLinkage(record,
-                                      kv_engine_->pmem_allocator_.get());
-}
-
-bool SortedCollectionRebuilder::checkAndRepairRecordLinkage(DLRecord* record) {
-  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-
-  // The next linkage is correct. If the prev linkage is correct too, the
-  // record linkage is ok. If the prev linkage is not correct, it will be
-  // repaired by the correct prodecessor soon, so directly return true here.
-  if (Skiplist::CheckReocrdNextLinkage(record, pmem_allocator)) {
-    return true;
-  }
-  // If only prev linkage is correct, then repair the next linkage
-  if (Skiplist::CheckRecordPrevLinkage(record, pmem_allocator)) {
-    DLRecord* next =
-        pmem_allocator->offset2addr_checked<DLRecord>(record->next);
-    next->prev = pmem_allocator->addr2offset_checked(record);
-    pmem_persist(&next->prev, sizeof(PMemOffsetType));
-    return true;
-  }
-
-  return false;
-}
-
 void SortedCollectionRebuilder::cleanInvalidRecords() {
   std::vector<SpaceEntry> to_free;
 
   // clean unlinked records
   for (auto& thread_cache : rebuilder_thread_cache_) {
     for (DLRecord* pmem_record : thread_cache.unlinked_records) {
-      if (!Skiplist::IsSkiplistRecord(pmem_record) ||
-          !checkRecordLinkage(pmem_record)) {
+      if (!Skiplist::MatchType(pmem_record) ||
+          !recovery_utils_.CheckLinkage(pmem_record)) {
         pmem_record->Destroy();
         to_free.emplace_back(
             kv_engine_->pmem_allocator_->addr2offset_checked(pmem_record),
-            pmem_record->entry.header.record_size);
+            pmem_record->GetRecordSize());
       }
     }
     kv_engine_->pmem_allocator_->BatchFree(to_free);
@@ -673,12 +660,11 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
     kvdk_assert(false, "Wrong type in sorted collection rebuilder");
   }
 
-  auto lookup_result = kv_engine_->hash_table_->Lookup<true>(key, record_type);
+  auto lookup_result = kv_engine_->hash_table_->Insert(
+      key, record_type, record_status, index_ptr, index_type);
 
   switch (lookup_result.s) {
     case Status::NotFound: {
-      kv_engine_->hash_table_->Insert(lookup_result, record_type, record_status,
-                                      index_ptr, index_type);
       return Status::Ok;
     }
     case Status::Ok: {
@@ -689,12 +675,9 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
       return Status::Abort;
     }
 
-    case Status::MemoryOverflow: {
+    default: {
       return lookup_result.s;
     }
-
-    default:
-      std::abort();  // never reach
   }
 
   return Status::Ok;
@@ -707,10 +690,9 @@ DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
   if (!recoverToCheckpoint()) {
     return pmem_record;
   }
-  CollectionIDType id = Skiplist::SkiplistID(pmem_record);
+  CollectionIDType id = Skiplist::FetchID(pmem_record);
   DLRecord* curr = pmem_record;
-  while (curr != nullptr &&
-         curr->entry.meta.timestamp > checkpoint_.CheckpointTS()) {
+  while (curr != nullptr && curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
     curr =
         kv_engine_->pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
 
@@ -722,7 +704,7 @@ DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
         "not same as new "
         "version");
 
-    if (curr && Skiplist::SkiplistID(curr) != id) {
+    if (curr && Skiplist::FetchID(curr) != id) {
       curr = nullptr;
     }
   }

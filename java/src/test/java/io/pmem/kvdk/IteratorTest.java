@@ -34,7 +34,7 @@ public class IteratorTest extends EngineTestBase {
         kvdkEngine.sortedPut(nameHandle, key2.getBytes(), value2.getBytes());
 
         // create iterator
-        Iterator iter = kvdkEngine.newSortedIterator(nameHandle);
+        Iterator iter = kvdkEngine.sortedIteratorCreate(nameHandle);
         assertFalse(iter.isValid());
 
         // seekToFirst
