@@ -15,7 +15,7 @@
 void Java_io_pmem_kvdk_Iterator_closeInternal(JNIEnv*, jobject,
                                               jlong iterator_handle,
                                               jlong engine_handle) {
-  auto* iterator = 
+  auto* iterator =
       reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(iterator_handle);
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
   assert(iterator != nullptr);

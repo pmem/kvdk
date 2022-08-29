@@ -1,7 +1,7 @@
 #!/bin/bash
 
-src_dirs=( benchmark engine examples include tests )
-file_types=( h hpp c cpp )
+src_dirs=( benchmark engine examples include tests java )
+file_types=( h hpp c cpp cc )
 
 for dir in "${src_dirs[@]}"
 do
