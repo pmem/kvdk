@@ -24,7 +24,7 @@ class DLList {
 
   struct WriteArgs {
     WriteArgs(const StringView& _key, const StringView& _val, RecordType _type,
-              RecordStatus _status, TimeStampType _ts, const SpaceEntry& _space)
+              RecordStatus _status, TimestampType _ts, const SpaceEntry& _space)
         : key(_key),
           val(_val),
           type(_type),
@@ -43,7 +43,7 @@ class DLList {
     StringView val;
     RecordType type;
     RecordStatus status;
-    TimeStampType ts;
+    TimestampType ts;
     SpaceEntry space;
   };
 
@@ -197,7 +197,7 @@ class DLListDataIterator {
  private:
   DLRecord* findValidVersion(DLRecord* pmem_record) {
     DLRecord* curr = pmem_record;
-    TimeStampType ts = snapshot_->GetTimestamp();
+    TimestampType ts = snapshot_->GetTimestamp();
     while (curr != nullptr && curr->GetTimestamp() > ts) {
       curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),

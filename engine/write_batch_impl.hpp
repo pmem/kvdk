@@ -126,7 +126,7 @@ struct StringWriteArgs {
   StringView value;
   WriteOp op;
   SpaceEntry space;
-  TimeStampType ts;
+  TimestampType ts;
   HashTable::LookupResult res;
   StringRecord* new_rec;
 
@@ -178,7 +178,7 @@ class BatchWriteLog {
 
   explicit BatchWriteLog() {}
 
-  void SetTimestamp(TimeStampType ts) { timestamp = ts; }
+  void SetTimestamp(TimestampType ts) { timestamp = ts; }
 
   void StringPut(PMemOffsetType offset) {
     string_logs.emplace_back(StringLogEntry{Op::Put, offset});
@@ -230,7 +230,7 @@ class BatchWriteLog {
     static_assert(sizeof(HashLogEntry) >= sizeof(StringLogEntry), "");
     static_assert(sizeof(HashLogEntry) >= sizeof(SortedLogEntry), "");
     static_assert(sizeof(HashLogEntry) >= sizeof(ListLogEntry), "");
-    return sizeof(size_t) + sizeof(TimeStampType) + sizeof(Stage) +
+    return sizeof(size_t) + sizeof(TimestampType) + sizeof(Stage) +
            sizeof(size_t) + Capacity() * sizeof(HashLogEntry);
   }
 
@@ -246,14 +246,14 @@ class BatchWriteLog {
   void DecodeFrom(char const* src);
 
   static void MarkProcessing(char* dst) {
-    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
+    dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Processing;
     _mm_clflush(dst);
     _mm_mfence();
   }
 
   static void MarkCommitted(char* dst) {
-    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
+    dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Committed;
     _mm_clflush(dst);
     _mm_mfence();
@@ -261,7 +261,7 @@ class BatchWriteLog {
 
   // For rollback
   static void MarkInitializing(char* dst) {
-    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
+    dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Initializing;
     _mm_clflush(dst);
     _mm_mfence();
@@ -276,11 +276,11 @@ class BatchWriteLog {
   SortedLog const& SortedLogs() const { return sorted_logs; }
   HashLog const& HashLogs() const { return hash_logs; }
   ListLog const& ListLogs() const { return list_logs; }
-  TimeStampType Timestamp() const { return timestamp; }
+  TimestampType Timestamp() const { return timestamp; }
 
  private:
   Stage stage{Stage::Initializing};
-  TimeStampType timestamp;
+  TimestampType timestamp;
   StringLog string_logs;
   SortedLog sorted_logs;
   HashLog hash_logs;

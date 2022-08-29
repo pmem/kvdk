@@ -21,7 +21,7 @@ Status KVEngine::buildList(const StringView& list_name,
                            std::shared_ptr<List>& list) {
   auto ul = hash_table_->AcquireLock(list_name);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
   auto lookup_result = lookupKey<true>(list_name, RecordType::ListHeader);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {

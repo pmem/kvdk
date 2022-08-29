@@ -21,7 +21,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
   auto lookup_result = lookupKey<true>(key, RecordType::String);
 
   StringRecord* existing_record = nullptr;
@@ -160,7 +160,7 @@ Status KVEngine::Delete(const StringView key) {
 Status KVEngine::StringDeleteImpl(const StringView& key) {
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
 
   auto lookup_result = lookupKey<false>(key, RecordType::String);
   if (lookup_result.s == Status::Ok) {
@@ -202,7 +202,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   TEST_SYNC_POINT("KVEngine::StringPutImpl::BeforeLock");
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
 
   // Lookup key in hashtable
   auto lookup_result = lookupKey<true>(key, RecordType::String);
@@ -289,7 +289,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   return Status::Ok;
 }
 
-Status KVEngine::stringWritePrepare(StringWriteArgs& args, TimeStampType ts) {
+Status KVEngine::stringWritePrepare(StringWriteArgs& args, TimestampType ts) {
   args.res = lookupKey<true>(args.key, RecordType::String);
   if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
       args.res.s != Status::Outdated) {
@@ -334,7 +334,7 @@ Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
   return Status::Ok;
 }
 
-Status KVEngine::stringRollback(TimeStampType,
+Status KVEngine::stringRollback(TimestampType,
                                 BatchWriteLog::StringLogEntry const& log) {
   static_cast<DataEntry*>(pmem_allocator_->offset2addr_checked(log.offset))
       ->Destroy();

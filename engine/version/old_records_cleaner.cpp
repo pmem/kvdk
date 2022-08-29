@@ -9,7 +9,7 @@
 
 namespace KVDK_NAMESPACE {
 
-void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
+void OldRecordsCleaner::PushToPendingFree(void* addr, TimestampType ts) {
   kvdk_assert((static_cast<DLRecord*>(addr)->GetRecordType() &
                (RecordType::ListHeader | RecordType::ListElem |
                 RecordType::HashHeader | RecordType::HashElem)) &&
@@ -27,7 +27,7 @@ void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   /// TODO: a thread may quit before all pending free entries are Free()d
   /// GlobalClean() should collect those entries and Free() them.
   maybeUpdateOldestSnapshot();
-  TimeStampType earliest_ts =
+  TimestampType earliest_ts =
       kv_engine_->version_controller_.LocalOldestSnapshotTS();
   constexpr size_t kMaxFreePending = 16;
   for (size_t i = 0; i < kMaxFreePending; i++) {
@@ -48,7 +48,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   // Update recorded oldest snapshot up to state so we can know which records
   // can be freed
   kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
-  TimeStampType oldest_snapshot_ts =
+  TimestampType oldest_snapshot_ts =
       kv_engine_->version_controller_.LocalOldestSnapshotTS();
 
   std::vector<SpaceEntry> free_entries;

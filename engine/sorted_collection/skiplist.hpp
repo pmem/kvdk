@@ -36,7 +36,7 @@ struct SortedWriteArgs {
   WriteOp op;
   Skiplist* skiplist;
   SpaceEntry space;
-  TimeStampType ts;
+  TimestampType ts;
   HashTable::LookupResult lookup_result;
   std::unique_ptr<Splice> seek_result;
 };
@@ -213,7 +213,7 @@ class Skiplist : public Collection {
   //
   // Return Ok on success
   WriteResult SetExpireTime(ExpireTimeType expired_time,
-                            TimeStampType timestamp);
+                            TimestampType timestamp);
 
   // Put "key, value" to the skiplist
   //
@@ -225,7 +225,7 @@ class Skiplist : public Collection {
   //
   // Notice: the putting key should already been locked by engine
   WriteResult Put(const StringView& key, const StringView& value,
-                  TimeStampType timestamp);
+                  TimestampType timestamp);
 
   // Get value of "key" from the skiplist
   Status Get(const StringView& key, std::string* value);
@@ -239,7 +239,7 @@ class Skiplist : public Collection {
   // deleted pmem record if it exists
   //
   // Notice: the deleting key should already been locked by engine
-  WriteResult Delete(const StringView& key, TimeStampType timestamp);
+  WriteResult Delete(const StringView& key, TimestampType timestamp);
 
   // Init args for put or delete operations
   SortedWriteArgs InitWriteArgs(const StringView& key, const StringView& value,
@@ -257,7 +257,7 @@ class Skiplist : public Collection {
   // MemoryOverflow if no enough dram space
   //
   // Notice: args.key should already been locked by engine
-  Status PrepareWrite(SortedWriteArgs& args, TimeStampType ts);
+  Status PrepareWrite(SortedWriteArgs& args, TimestampType ts);
 
   // Do batch write according to args
   //
@@ -397,27 +397,27 @@ class Skiplist : public Collection {
   // put impl with prepared seek result and pmem space
   WriteResult putPreparedNoHash(Splice& seek_result, const StringView& key,
                                 const StringView& value,
-                                TimeStampType timestamp,
+                                TimestampType timestamp,
                                 const SpaceEntry& space);
 
   // put impl with prepared lookup result and pmem space
   WriteResult putPreparedWithHash(const HashTable::LookupResult& lookup_result,
                                   const StringView& key,
                                   const StringView& value,
-                                  TimeStampType timestamp,
+                                  TimestampType timestamp,
                                   const SpaceEntry& space);
 
   // put impl with prepared existing record and pmem space
   WriteResult deletePreparedNoHash(DLRecord* existing_record,
                                    SkiplistNode* dram_node,
                                    const StringView& key,
-                                   TimeStampType timestamp,
+                                   TimestampType timestamp,
                                    const SpaceEntry& space);
 
   // put impl with prepared lookup result of existing record and pmem space
   WriteResult deletePreparedWithHash(
       const HashTable::LookupResult& lookup_result, const StringView& key,
-      TimeStampType timestamp, const SpaceEntry& space);
+      TimestampType timestamp, const SpaceEntry& space);
 
   // Link DLRecord "linking" between "prev" and "next"
   static void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,

@@ -9,16 +9,16 @@
 #include "kvdk/configs.hpp"
 
 namespace KVDK_NAMESPACE {
-constexpr TimeStampType kMaxTimestamp = UINT64_MAX;
+constexpr TimestampType kMaxTimestamp = UINT64_MAX;
 
 struct SnapshotImpl : public Snapshot {
-  explicit SnapshotImpl(const TimeStampType& t) : timestamp(t) {}
+  explicit SnapshotImpl(const TimestampType& t) : timestamp(t) {}
 
   SnapshotImpl() = default;
 
-  TimeStampType GetTimestamp() const { return timestamp; }
+  TimestampType GetTimestamp() const { return timestamp; }
 
-  TimeStampType timestamp = kMaxTimestamp;
+  TimestampType timestamp = kMaxTimestamp;
   SnapshotImpl* prev = nullptr;
   SnapshotImpl* next = nullptr;
 };
@@ -32,7 +32,7 @@ class SnapshotList {
     head_.next = &head_;
   }
 
-  SnapshotImpl* New(TimeStampType ts) {
+  SnapshotImpl* New(TimestampType ts) {
     SnapshotImpl* impl = new SnapshotImpl(ts);
     impl->prev = &head_;
     impl->next = head_.next;
@@ -47,7 +47,7 @@ class SnapshotList {
     delete impl;
   }
 
-  TimeStampType OldestSnapshotTS() {
+  TimestampType OldestSnapshotTS() {
     return empty() ? kMaxTimestamp : head_.prev->GetTimestamp();
   }
 
@@ -77,7 +77,7 @@ class VersionController {
   // atmost one at same time.
   class LocalSnapshotHolder {
     VersionController* owner_{nullptr};
-    TimeStampType ts_{};
+    TimestampType ts_{};
 
    public:
     LocalSnapshotHolder(VersionController* o) : owner_{o} {
@@ -102,7 +102,7 @@ class VersionController {
         owner_->ReleaseLocalSnapshot();
       }
     }
-    TimeStampType Timestamp() { return ts_; }
+    TimestampType Timestamp() { return ts_; }
   };
 
   // GlobalSnapshotHolder is hold internally by iterators.
@@ -134,12 +134,12 @@ class VersionController {
         owner_->ReleaseSnapshot(snap_);
       }
     }
-    TimeStampType Timestamp() { return snap_->GetTimestamp(); }
+    TimestampType Timestamp() { return snap_->GetTimestamp(); }
   };
 
   class BatchWriteToken {
     VersionController* owner_{nullptr};
-    TimeStampType ts_{kMaxTimestamp};
+    TimestampType ts_{kMaxTimestamp};
 
    public:
     BatchWriteToken(VersionController* o)
@@ -162,7 +162,7 @@ class VersionController {
         tc.batch_write_ts = kMaxTimestamp;
       }
     }
-    TimeStampType Timestamp() { return ts_; }
+    TimestampType Timestamp() { return ts_; }
 
    private:
     void swap(BatchWriteToken& other) {
@@ -230,7 +230,7 @@ class VersionController {
 
   // Create a new global snapshot
   SnapshotImpl* NewGlobalSnapshot(bool may_block = true) {
-    TimeStampType ts = GetCurrentTimestamp();
+    TimestampType ts = GetCurrentTimestamp();
     if (may_block) {
       for (size_t i = 0; i < version_thread_cache_.size(); i++) {
         while (ts >= version_thread_cache_[i].batch_write_ts) {
@@ -239,7 +239,7 @@ class VersionController {
       }
     } else {
       for (size_t i = 0; i < version_thread_cache_.size(); i++) {
-        TimeStampType batch_ts = version_thread_cache_[i].batch_write_ts;
+        TimestampType batch_ts = version_thread_cache_[i].batch_write_ts;
         ts = std::min(ts, batch_ts - 1);
       }
     }
@@ -257,16 +257,16 @@ class VersionController {
     global_oldest_snapshot_ts_ = global_snapshots_.OldestSnapshotTS();
   }
 
-  inline TimeStampType GetCurrentTimestamp() {
+  inline TimestampType GetCurrentTimestamp() {
     auto res = rdtsc() - tsc_on_startup_ + base_timestamp_;
     return res;
   }
 
-  TimeStampType LocalOldestSnapshotTS() {
+  TimestampType LocalOldestSnapshotTS() {
     return local_oldest_snapshot_.GetTimestamp();
   }
 
-  TimeStampType GlobalOldestSnapshotTs() {
+  TimestampType GlobalOldestSnapshotTs() {
     return global_oldest_snapshot_ts_.load();
   }
 
@@ -274,7 +274,7 @@ class VersionController {
   // holding snapshot
   void UpdateLocalOldestSnapshot() {
     // update local oldest snapshot
-    TimeStampType ts = GetCurrentTimestamp();
+    TimestampType ts = GetCurrentTimestamp();
     for (size_t i = 0; i < version_thread_cache_.size(); i++) {
       auto& tc = version_thread_cache_[i];
       ts = std::min(tc.holding_snapshot.GetTimestamp(), ts);
@@ -289,7 +289,7 @@ class VersionController {
     VersionThreadCache() : holding_snapshot(kMaxTimestamp) {}
 
     SnapshotImpl holding_snapshot;
-    TimeStampType batch_write_ts{kMaxTimestamp};
+    TimestampType batch_write_ts{kMaxTimestamp};
     char padding[64 - sizeof(holding_snapshot)];
   };
 
@@ -299,7 +299,7 @@ class VersionController {
   // Known oldest snapshot of the instance, there is delay with the actual
   // oldest snapshot until call UpdatedOldestSnapshot()
   SnapshotImpl local_oldest_snapshot_{kMaxTimestamp};
-  std::atomic<TimeStampType> global_oldest_snapshot_ts_{kMaxTimestamp};
+  std::atomic<TimestampType> global_oldest_snapshot_ts_{kMaxTimestamp};
 
   // These two used to get current timestamp of the instance
   // version_base_: The newest timestamp on instance closing last time
@@ -323,12 +323,12 @@ class CheckPoint {
 
   void Release() { checkpoint_ts = 0; }
 
-  TimeStampType CheckpointTS() { return checkpoint_ts; }
+  TimestampType CheckpointTS() { return checkpoint_ts; }
 
   bool Valid() { return checkpoint_ts > 0; }
 
  private:
-  TimeStampType checkpoint_ts;
+  TimestampType checkpoint_ts;
 };
 
 }  // namespace KVDK_NAMESPACE

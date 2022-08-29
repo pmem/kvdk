@@ -57,7 +57,7 @@ struct DataHeader {
 
 struct DataMeta {
   DataMeta() = default;
-  DataMeta(TimeStampType _timestamp, RecordType _type, RecordStatus _status,
+  DataMeta(TimestampType _timestamp, RecordType _type, RecordStatus _status,
            uint16_t _key_size, uint32_t _value_size)
       : type(_type),
         status(_status),
@@ -69,13 +69,13 @@ struct DataMeta {
   RecordStatus status;
   uint16_t k_size;
   uint32_t v_size;
-  TimeStampType timestamp;
+  TimestampType timestamp;
 };
 
 // Header and metadata of a data record
 struct DataEntry {
   DataEntry(uint32_t _checksum, uint32_t _record_size /* size in blocks */,
-            TimeStampType _timestamp, RecordType _type, RecordStatus _status,
+            TimestampType _timestamp, RecordType _type, RecordStatus _status,
             uint16_t _key_size, uint32_t _value_size)
       : header(_checksum, _record_size),
         meta(_timestamp, _type, _status, _key_size, _value_size) {}
@@ -106,7 +106,7 @@ struct StringRecord {
   // target_address: pre-allocated space to store constructed record, it
   // should larger than sizeof(StringRecord) + key size + value size
   static StringRecord* ConstructStringRecord(
-      void* target_address, uint32_t _record_size, TimeStampType _timestamp,
+      void* target_address, uint32_t _record_size, TimestampType _timestamp,
       RecordType _record_type, RecordStatus _record_status,
       PMemOffsetType _old_version, const StringView& _key,
       const StringView& _value, ExpireTimeType _expired_time) {
@@ -118,7 +118,7 @@ struct StringRecord {
 
   // Construct and persist a string record at pmem address "addr"
   static StringRecord* PersistStringRecord(
-      void* addr, uint32_t record_size, TimeStampType timestamp,
+      void* addr, uint32_t record_size, TimestampType timestamp,
       RecordType type, RecordStatus status, PMemOffsetType old_version,
       const StringView& key, const StringView& value,
       ExpireTimeType expired_time = kPersistTime);
@@ -183,7 +183,7 @@ struct StringRecord {
     _mm_mfence();
   }
 
-  TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
+  TimestampType GetTimestamp() const { return entry.meta.timestamp; }
 
   RecordType GetRecordType() const { return entry.meta.type; }
 
@@ -196,7 +196,7 @@ struct StringRecord {
   }
 
  private:
-  StringRecord(uint32_t _record_size, TimeStampType _timestamp,
+  StringRecord(uint32_t _record_size, TimestampType _timestamp,
                RecordType _record_type, RecordStatus _record_status,
                PMemOffsetType _old_version, const StringView& _key,
                const StringView& _value, ExpireTimeType _expired_time)
@@ -243,7 +243,7 @@ struct DLRecord {
   // target_address: pre-allocated space to store constructed record, it
   // should no smaller than sizeof(DLRecord) + key size + value size
   static DLRecord* ConstructDLRecord(void* target_address, uint32_t record_size,
-                                     TimeStampType timestamp,
+                                     TimestampType timestamp,
                                      RecordType record_type,
                                      RecordStatus record_status,
                                      PMemOffsetType old_version, uint64_t prev,
@@ -339,11 +339,11 @@ struct DLRecord {
   RecordStatus GetRecordStatus() const { return entry.meta.status; }
 
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
-  TimeStampType GetTimestamp() const { return entry.meta.timestamp; }
+  TimestampType GetTimestamp() const { return entry.meta.timestamp; }
 
   // Construct and persist a dl record to PMem address "addr"
   static DLRecord* PersistDLRecord(
-      void* addr, uint32_t record_size, TimeStampType timestamp,
+      void* addr, uint32_t record_size, TimestampType timestamp,
       RecordType type, RecordStatus status, PMemOffsetType old_version,
       PMemOffsetType prev, PMemOffsetType next, const StringView& key,
       const StringView& value, ExpireTimeType expired_time = kPersistTime);
@@ -355,7 +355,7 @@ struct DLRecord {
   }
 
  private:
-  DLRecord(uint32_t _record_size, TimeStampType _timestamp, RecordType _type,
+  DLRecord(uint32_t _record_size, TimestampType _timestamp, RecordType _type,
            RecordStatus _status, PMemOffsetType _old_version,
            PMemOffsetType _prev, PMemOffsetType _next, const StringView& _key,
            const StringView& _value, ExpireTimeType _expired_time)

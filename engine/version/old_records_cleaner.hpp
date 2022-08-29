@@ -31,7 +31,7 @@ class OldRecordsCleaner {
     assert(kv_engine_ != nullptr);
   }
 
-  void PushToPendingFree(void* addr, TimeStampType ts);
+  void PushToPendingFree(void* addr, TimestampType ts);
   // Try to clean global old records
   void TryGlobalClean();
 

@@ -15,7 +15,7 @@ struct HashWriteArgs {
   WriteOp op;
   HashList* hlist;
   SpaceEntry space;
-  TimeStampType ts;
+  TimestampType ts;
   HashTable::LookupResult lookup_result;
 };
 
@@ -49,7 +49,7 @@ class HashList : public Collection {
     return HeaderRecord()->GetExpireTime();
   }
 
-  TimeStampType GetTimeStamp() const { return HeaderRecord()->GetTimestamp(); }
+  TimestampType GetTimeStamp() const { return HeaderRecord()->GetTimestamp(); }
 
   bool HasExpired() const final { return HeaderRecord()->HasExpired(); }
 
@@ -66,7 +66,7 @@ class HashList : public Collection {
   //
   // Notice: the putting key should already been locked by engine
   WriteResult Put(const StringView& key, const StringView& value,
-                  TimeStampType timestamp);
+                  TimestampType timestamp);
 
   // Get value of "key" from the hash list
   Status Get(const StringView& key, std::string* value);
@@ -80,10 +80,10 @@ class HashList : public Collection {
   // record if it exists
   //
   // Notice: the deleting key should already been locked by engine
-  WriteResult Delete(const StringView& key, TimeStampType timestamp);
+  WriteResult Delete(const StringView& key, TimestampType timestamp);
 
   WriteResult Modify(const StringView key, ModifyFunc modify_func,
-                     void* modify_args, TimeStampType timestamp);
+                     void* modify_args, TimestampType timestamp);
 
   // Init args for put or delete operations
   HashWriteArgs InitWriteArgs(const StringView& key, const StringView& value,
@@ -101,7 +101,7 @@ class HashList : public Collection {
   // MemoryOverflow if no enough dram space
   //
   // Notice: args.key should already been locked by engine
-  Status PrepareWrite(HashWriteArgs& args, TimeStampType ts);
+  Status PrepareWrite(HashWriteArgs& args, TimestampType ts);
 
   // Do batch write according to args
   //
@@ -121,7 +121,7 @@ class HashList : public Collection {
   //
   // Return Ok on success
   WriteResult SetExpireTime(ExpireTimeType expired_time,
-                            TimeStampType timestamp);
+                            TimestampType timestamp);
 
   // Replace "old_record" from the hash list with "replacing_record"
   //
@@ -176,10 +176,10 @@ class HashList : public Collection {
 
   WriteResult putPrepared(const HashTable::LookupResult& lookup_result,
                           const StringView& key, const StringView& value,
-                          TimeStampType timestamp, const SpaceEntry& space);
+                          TimestampType timestamp, const SpaceEntry& space);
 
   WriteResult deletePrepared(const HashTable::LookupResult& lookup_result,
-                             const StringView& key, TimeStampType timestamp,
+                             const StringView& key, TimestampType timestamp,
                              const SpaceEntry& space);
 };
 }  // namespace KVDK_NAMESPACE

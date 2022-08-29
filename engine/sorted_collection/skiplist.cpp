@@ -53,7 +53,7 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
 };
 
 Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
-                                              TimeStampType timestamp) {
+                                              TimestampType timestamp) {
   WriteResult ret;
   DLRecord* header = HeaderRecord();
   auto request_size =
@@ -388,7 +388,7 @@ SortedWriteArgs Skiplist::InitWriteArgs(const StringView& key,
   return args;
 }
 
-Status Skiplist::PrepareWrite(SortedWriteArgs& args, TimeStampType ts) {
+Status Skiplist::PrepareWrite(SortedWriteArgs& args, TimestampType ts) {
   kvdk_assert(args.op == WriteOp::Put || args.value.size() == 0,
               "value of delete operation should be empty");
   if (args.skiplist != this) {
@@ -453,7 +453,7 @@ Status Skiplist::PrepareWrite(SortedWriteArgs& args, TimeStampType ts) {
 }
 
 Skiplist::WriteResult Skiplist::Delete(const StringView& key,
-                                       TimeStampType timestamp) {
+                                       TimestampType timestamp) {
   WriteResult ret;
   SortedWriteArgs args = InitWriteArgs(key, "", WriteOp::Delete);
   ret.s = PrepareWrite(args, timestamp);
@@ -465,7 +465,7 @@ Skiplist::WriteResult Skiplist::Delete(const StringView& key,
 
 Skiplist::WriteResult Skiplist::Put(const StringView& key,
                                     const StringView& value,
-                                    TimeStampType timestamp) {
+                                    TimestampType timestamp) {
   WriteResult ret;
   SortedWriteArgs args = InitWriteArgs(key, value, WriteOp::Put);
   ret.s = PrepareWrite(args, timestamp);
@@ -589,7 +589,7 @@ Status Skiplist::Get(const StringView& key, std::string* value) {
 Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
                                                      SkiplistNode* dram_node,
                                                      const StringView& key,
-                                                     TimeStampType timestamp,
+                                                     TimestampType timestamp,
                                                      const SpaceEntry& space) {
   kvdk_assert(existing_record != nullptr, "");
   WriteResult ret;
@@ -612,7 +612,7 @@ Skiplist::WriteResult Skiplist::deletePreparedNoHash(DLRecord* existing_record,
 
 Skiplist::WriteResult Skiplist::deletePreparedWithHash(
     const HashTable::LookupResult& lookup_result, const StringView& key,
-    TimeStampType timestamp, const SpaceEntry& space) {
+    TimestampType timestamp, const SpaceEntry& space) {
   std::string internal_key(InternalKey(key));
   assert(IndexWithHashtable());
   assert(lookup_result.s == Status::Ok);
@@ -653,7 +653,7 @@ Skiplist::WriteResult Skiplist::deletePreparedWithHash(
 
 Skiplist::WriteResult Skiplist::putPreparedWithHash(
     const HashTable::LookupResult& lookup_result, const StringView& key,
-    const StringView& value, TimeStampType timestamp, const SpaceEntry& space) {
+    const StringView& value, TimestampType timestamp, const SpaceEntry& space) {
   WriteResult ret;
   assert(IndexWithHashtable());
   std::string internal_key(InternalKey(key));
@@ -715,7 +715,7 @@ Skiplist::WriteResult Skiplist::putPreparedWithHash(
 Skiplist::WriteResult Skiplist::putPreparedNoHash(Splice& seek_result,
                                                   const StringView& key,
                                                   const StringView& value,
-                                                  TimeStampType timestamp,
+                                                  TimestampType timestamp,
                                                   const SpaceEntry& space) {
   WriteResult ret;
   std::string internal_key(InternalKey(key));

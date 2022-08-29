@@ -2,6 +2,6 @@
 
 namespace KVDK_NAMESPACE {
 struct Snapshot {
-  TimeStampType timestamp;
+  TimestampType timestamp;
 };
 }  // namespace KVDK_NAMESPACE
