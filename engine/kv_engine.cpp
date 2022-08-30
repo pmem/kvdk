@@ -547,7 +547,7 @@ Status KVEngine::initOrRestoreCheckpoint() {
 }
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
-  // Todo: make this multi-thread
+  // TODO: make this multi-thread
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -1480,23 +1480,6 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   }
 
   return ret;
-}
-
-void KVEngine::delayFree(DLRecord* addr) {
-  if (addr == nullptr) {
-    return;
-  }
-  /// TODO: avoid deadlock in cleaner to help Free() deleted records
-  old_records_cleaner_.PushToPendingFree(
-      addr, version_controller_.GetCurrentTimestamp());
-}
-
-void KVEngine::directFree(DLRecord* addr) {
-  if (addr == nullptr) {
-    return;
-  }
-  pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                                   addr->GetRecordSize()});
 }
 
 void KVEngine::backgroundPMemUsageReporter() {

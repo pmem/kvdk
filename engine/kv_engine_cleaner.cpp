@@ -173,7 +173,7 @@ void KVEngine::purgeAndFreeDLRecords(
             if (head_record != pmem_record) {
               entries.emplace_back(
                   pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->entry.header.record_size);
+                  pmem_record->GetRecordSize());
               pmem_record->Destroy();
             } else {
               pmem_record->PersistOldVersion(kNullPMemOffset);
@@ -196,7 +196,7 @@ void KVEngine::purgeAndFreeDLRecords(
             if (head_record != pmem_record) {
               entries.emplace_back(
                   pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->entry.header.record_size);
+                  pmem_record->GetRecordSize());
               pmem_record->Destroy();
             } else {
               pmem_record->PersistOldVersion(kNullPMemOffset);
@@ -219,7 +219,7 @@ void KVEngine::purgeAndFreeDLRecords(
             if (header_record != pmem_record) {
               entries.emplace_back(
                   pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->entry.header.record_size);
+                  pmem_record->GetRecordSize());
               pmem_record->Destroy();
             } else {
               pmem_record->PersistOldVersion(kNullPMemOffset);

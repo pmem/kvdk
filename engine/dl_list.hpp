@@ -87,13 +87,13 @@ class DLList {
 
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
-  LockTable::GuardType acquireRecordLock(DLRecord* record) {
+  LockTable::MultiGuardType acquireRecordLock(DLRecord* record) {
     return acquireRecordLock(record, pmem_allocator_, lock_table_);
   }
 
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
-  static LockTable::GuardType acquireRecordLock(DLRecord* record,
+  static LockTable::MultiGuardType acquireRecordLock(DLRecord* record,
                                                 PMEMAllocator* pmem_allocator,
                                                 LockTable* lock_table) {
     while (1) {
@@ -116,7 +116,7 @@ class DLList {
     linkRecord(prev, next, linking_record, pmem_allocator_);
   }
 
-  static LockTable::HashType recordHash(const DLRecord* record) {
+  static LockTable::HashValueType recordHash(const DLRecord* record) {
     kvdk_assert(record != nullptr, "");
     return XXH3_64bits(record, sizeof(const DLRecord*));
   }

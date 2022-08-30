@@ -458,10 +458,6 @@ class KVEngine : public Engine {
 
   void purgeAndFree(PendingCleanRecords& pending_clean_records);
 
-  void delayFree(DLRecord* addr);
-
-  void directFree(DLRecord* addr);
-
   TimestampType getTimestamp() {
     return version_controller_.GetCurrentTimestamp();
   }

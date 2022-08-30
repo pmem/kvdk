@@ -439,7 +439,7 @@ class Skiplist : public Collection {
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
   // Notice: we do not check if record is still correctly linked
-  static LockTable::GuardType lockRecordPosition(const DLRecord* record,
+  static LockTable::MultiGuardType lockRecordPosition(const DLRecord* record,
                                                  PMEMAllocator* pmem_allocator,
                                                  LockTable* lock_table);
 
@@ -447,7 +447,7 @@ class Skiplist : public Collection {
   // record itself
   // Notice: record must be a on list record, e.g. correctly linked by its
   // predecessor
-  LockTable::GuardType lockOnListRecord(const DLRecord* record) {
+  LockTable::MultiGuardType lockOnListRecord(const DLRecord* record) {
     while (true) {
       auto guard = lockRecordPosition(record, pmem_allocator_, record_locks_);
       DLRecord* prev =
@@ -482,7 +482,7 @@ class Skiplist : public Collection {
   // Destroy all sorted records including old version list.
   void destroyAllRecords();
 
-  static LockTable::HashType recordHash(const DLRecord* record) {
+  static LockTable::HashValueType recordHash(const DLRecord* record) {
     kvdk_assert(record != nullptr, "");
     return XXH3_64bits(record, sizeof(const DLRecord*));
   }

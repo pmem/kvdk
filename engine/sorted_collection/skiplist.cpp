@@ -254,7 +254,7 @@ Status Skiplist::CheckIndex() {
   return Status::Ok;
 }
 
-LockTable::GuardType Skiplist::lockRecordPosition(const DLRecord* record,
+LockTable::MultiGuardType Skiplist::lockRecordPosition(const DLRecord* record,
                                                   PMEMAllocator* pmem_allocator,
                                                   LockTable* lock_table) {
   while (1) {
