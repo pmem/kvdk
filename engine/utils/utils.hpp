@@ -170,7 +170,7 @@ inline bool equal_string_view(const StringView& src, const StringView& target) {
 
 class SpinMutex {
  private:
-  std::atomic_flag locked = ATOMIC_FLAG_INIT;
+  std::atomic_flag locked_ = ATOMIC_FLAG_INIT;
 
  public:
   SpinMutex() = default;
@@ -183,10 +183,10 @@ class SpinMutex {
     }
   }
 
-  void unlock() { locked.clear(std::memory_order_release); }
+  void unlock() { locked_.clear(std::memory_order_release); }
 
   bool try_lock() {
-    if (locked.test_and_set(std::memory_order_acquire)) {
+    if (locked_.test_and_set(std::memory_order_acquire)) {
       return false;
     }
     return true;
@@ -200,33 +200,35 @@ class SpinMutex {
 template <typename SharedMutex>
 class SharedLock {
  public:
-  explicit SharedLock(SharedMutex& mu) : device{&mu} { device->lock_shared(); }
+  explicit SharedLock(SharedMutex& mu) : device_{&mu} {
+    device_->lock_shared();
+  }
 
   ~SharedLock() {
-    if (device != nullptr) {
-      device->unlock_shared();
+    if (device_ != nullptr) {
+      device_->unlock_shared();
     }
   }
 
-  SharedLock(SharedLock const& other) : device{other.device} {
-    device->lock_shared();
+  SharedLock(SharedLock const& other) : device_{other.device_} {
+    device_->lock_shared();
   }
 
   SharedLock& operator=(SharedLock const& other) {
-    if (device != nullptr) {
-      device->unlock_shared();
+    if (device_ != nullptr) {
+      device_->unlock_shared();
     }
-    device = other.device;
-    device->lock_shared();
+    device_ = other.device_;
+    device_->lock_shared();
     return *this;
   }
 
-  SharedLock(SharedLock&& other) : device{nullptr} { swap(other); }
+  SharedLock(SharedLock&& other) : device_{nullptr} { swap(other); }
 
   SharedLock& operator=(SharedLock&& other) {
-    if (device != nullptr) {
-      device->unlock_shared();
-      device = nullptr;
+    if (device_ != nullptr) {
+      device_->unlock_shared();
+      device_ = nullptr;
     }
     swap(other);
     return *this;
@@ -234,11 +236,11 @@ class SharedLock {
 
   void swap(SharedLock& other) {
     using std::swap;
-    swap(device, other.device);
+    swap(device_, other.device_);
   }
 
  private:
-  SharedMutex* device;
+  SharedMutex* device_;
 };
 
 template <typename SharedMutex>
@@ -318,12 +320,6 @@ class AlignedPoolAllocator {
   static_assert(alignof(T) <= 1024,
                 "Alignment greater than 1024B not supported");
 
- private:
-  static constexpr size_t TrunkSize = 1024;
-
-  std::vector<T*> pools_;
-  size_t pos_;
-
  public:
   using value_type = T;
 
@@ -368,6 +364,10 @@ class AlignedPoolAllocator {
       throw std::bad_alloc{};
     }
   }
+
+  static constexpr size_t TrunkSize = 1024;
+  std::vector<T*> pools_;
+  size_t pos_;
 };
 
 // Thread safety guaranteed by aligned_alloc
@@ -441,22 +441,22 @@ class Array {
 
 class Slice {
  public:
-  Slice() : _data(nullptr), _size(0) {}
-  Slice(const char* data) : _data(data) { _size = strlen(_data); }
-  Slice(const char* data, uint64_t size) : _data(data), _size(size) {}
+  Slice() : data_(nullptr), size_(0) {}
+  Slice(const char* data) : data_(data) { size_ = strlen(data_); }
+  Slice(const char* data, uint64_t size) : data_(data), size_(size) {}
 
-  Slice(const std::string& str) : _data(str.data()), _size(str.size()) {}
-  Slice(const StringView& sv) : _data(sv.data()), _size(sv.size()) {}
+  Slice(const std::string& str) : data_(str.data()), size_(str.size()) {}
+  Slice(const StringView& sv) : data_(sv.data()), size_(sv.size()) {}
 
-  const char* data() const { return _data; }
+  const char* data() const { return data_; }
 
-  uint64_t& size() { return _size; }
+  uint64_t& size() { return size_; }
 
-  uint64_t size() const { return _size; }
+  uint64_t size() const { return size_; }
 
   bool operator==(const Slice& b) {
-    if (b.size() == this->_size &&
-        memcmp(this->_data, b.data(), b.size()) == 0) {
+    if (b.size() == this->size_ &&
+        memcmp(this->data_, b.data(), b.size()) == 0) {
       return true;
     } else {
       return false;
@@ -473,13 +473,13 @@ class Slice {
     return src.size() - target.size();
   }
 
-  std::string to_string() { return std::string(_data, _size); }
+  std::string to_string() { return std::string(data_, size_); }
 
-  std::string to_string() const { return std::string(_data, _size); }
+  std::string to_string() const { return std::string(data_, size_); }
 
  private:
-  const char* _data;
-  uint64_t _size;
+  const char* data_;
+  uint64_t size_;
 };
 
 template <typename T>

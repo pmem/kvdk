@@ -16,11 +16,7 @@ class LockTable {
   using ULockType = std::unique_lock<MutexType>;
   using MultiGuardType = std::vector<ULockType>;
 
- private:
-  std::vector<MutexType> mutexes;
-
- public:
-  LockTable(size_t n) : mutexes{n} {}
+  LockTable(size_t n) : mutexes_{n} {}
 
   std::unique_lock<MutexType> AcquireLock(HashValueType hash) {
     return std::unique_lock<MutexType>(*Mutex(hash));
@@ -66,14 +62,14 @@ class LockTable {
   }
 
   MutexType* Mutex(HashValueType hash) {
-    return &mutexes[hash % mutexes.size()];
+    return &mutexes_[hash % mutexes_.size()];
   }
 
  private:
   std::vector<HashValueType> rearrange(
       std::vector<HashValueType> const& hashes) {
     std::vector<HashValueType> ret{hashes};
-    size_t N = mutexes.size();
+    size_t N = mutexes_.size();
     for (auto& hash : ret) {
       hash %= N;
     }
@@ -82,6 +78,8 @@ class LockTable {
     ret.resize(new_sz);
     return ret;
   }
+
+  std::vector<MutexType> mutexes_;
 };
 
 }  // namespace KVDK_NAMESPACE

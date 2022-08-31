@@ -61,7 +61,7 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
                       const Configs& configs) {
   GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
   KVEngine* engine = new KVEngine(configs);
-  Status s = engine->Init(name, configs);
+  Status s = engine->init(name, configs);
   if (s == Status::Ok) {
     s = engine->restoreExistingData();
   }
@@ -83,7 +83,7 @@ Status KVEngine::Restore(const std::string& engine_path,
       "Restoring kvdk instance from backup log %s to engine path %s\n",
       backup_log.c_str(), engine_path.c_str());
   KVEngine* engine = new KVEngine(configs);
-  Status s = engine->Init(engine_path, configs);
+  Status s = engine->init(engine_path, configs);
   if (s == Status::Ok) {
     s = engine->restoreDataFromBackup(backup_log);
   }
@@ -141,7 +141,7 @@ void KVEngine::terminateBackgroundWorks() {
   }
 }
 
-Status KVEngine::Init(const std::string& name, const Configs& configs) {
+Status KVEngine::init(const std::string& name, const Configs& configs) {
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
@@ -179,7 +179,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     }
   }
 
-  s = PersistOrRecoverImmutableConfigs();
+  s = persistOrRecoverImmutableConfigs();
   if (s != Status::Ok) {
     return s;
   }
@@ -203,12 +203,12 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
 
   s = initOrRestoreCheckpoint();
 
-  RegisterComparator("default", compare_string_view);
+  registerComparator("default", compare_string_view);
   return s;
 }
 
-Status KVEngine::RestoreData() {
-  Status s = MaybeInitAccessThread();
+Status KVEngine::restoreData() {
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -257,7 +257,7 @@ Status KVEngine::RestoreData() {
         if (data_entry_cached.meta.status == RecordStatus::Dirty) {
           data_entry_cached.meta.type = RecordType::Empty;
         } else {
-          if (!ValidateRecord(recovering_pmem_record)) {
+          if (!validateRecord(recovering_pmem_record)) {
             // Checksum dismatch, mark as padding to be Freed
             // Otherwise the Restore will continue normally
             data_entry_cached.meta.type = RecordType::Empty;
@@ -346,7 +346,7 @@ Status KVEngine::RestoreData() {
   return s;
 }
 
-bool KVEngine::ValidateRecord(void* data_record) {
+bool KVEngine::validateRecord(void* data_record) {
   assert(data_record);
   DataEntry* entry = static_cast<DataEntry*>(data_record);
   switch (entry->meta.type) {
@@ -362,12 +362,12 @@ bool KVEngine::ValidateRecord(void* data_record) {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
     default:
-      kvdk_assert(false, "Unsupported type in ValidateRecord()!");
+      kvdk_assert(false, "Unsupported type in validateRecord()!");
       return false;
   }
 }
 
-Status KVEngine::PersistOrRecoverImmutableConfigs() {
+Status KVEngine::persistOrRecoverImmutableConfigs() {
   size_t mapped_len;
   int is_pmem;
   uint64_t len =
@@ -386,7 +386,7 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
     configs->AssignImmutableConfigs(configs_);
   }
 
-  Status s = CheckConfigs(configs_);
+  Status s = checkConfigs(configs_);
   if (s == Status::Ok) {
     configs->PersistImmutableConfigs(configs_);
   }
@@ -548,7 +548,7 @@ Status KVEngine::initOrRestoreCheckpoint() {
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   // TODO: make this multi-thread
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -738,7 +738,7 @@ Status KVEngine::restoreExistingData() {
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
-    fs.push_back(std::async(&KVEngine::RestoreData, this));
+    fs.push_back(std::async(&KVEngine::restoreData, this));
   }
 
   for (auto& f : fs) {
@@ -823,7 +823,7 @@ Status KVEngine::restoreExistingData() {
   return Status::Ok;
 }
 
-Status KVEngine::CheckConfigs(const Configs& configs) {
+Status KVEngine::checkConfigs(const Configs& configs) {
   auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
 
   if (configs.pmem_block_size < kMinPMemBlockSize) {
@@ -916,7 +916,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     return Status::InvalidBatchSize;
   }
 
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1291,7 +1291,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }

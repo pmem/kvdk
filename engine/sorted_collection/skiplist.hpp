@@ -86,7 +86,7 @@ struct SkiplistNode {
       // make sure this will be linked to skiplist at all the height after
       // creation
       node->valid_links = height;
-      node->MaybeCacheKey(key);
+      node->maybeCacheKey(key);
     }
     return node;
   }
@@ -146,7 +146,7 @@ struct SkiplistNode {
  private:
   SkiplistNode() {}
 
-  void MaybeCacheKey(const StringView& key) {
+  void maybeCacheKey(const StringView& key) {
     if (height >= kCacheHeight || key.size() <= 4) {
       cached_key_size = key.size();
       memcpy(cached_key, key.data(), key.size());

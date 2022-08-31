@@ -9,37 +9,39 @@ void BatchWriteLog::EncodeTo(char* dst) {
 
   size_t total_bytes;
   total_bytes =
-      sizeof(total_bytes) + sizeof(timestamp) + sizeof(stage) +
-      sizeof(string_logs.size()) + string_logs.size() * sizeof(StringLogEntry) +
-      sizeof(sorted_logs.size()) + sorted_logs.size() * sizeof(SortedLogEntry) +
-      sizeof(hash_logs.size()) + hash_logs.size() * sizeof(HashLogEntry) +
-      sizeof(list_logs.size()) + list_logs.size() * sizeof(ListLogEntry);
+      sizeof(total_bytes) + sizeof(timestamp_) + sizeof(stage) +
+      sizeof(string_logs_.size()) +
+      string_logs_.size() * sizeof(StringLogEntry) +
+      sizeof(sorted_logs_.size()) +
+      sorted_logs_.size() * sizeof(SortedLogEntry) + sizeof(hash_logs_.size()) +
+      hash_logs_.size() * sizeof(HashLogEntry) + sizeof(list_logs_.size()) +
+      list_logs_.size() * sizeof(ListLogEntry);
 
   std::string buffer;
   buffer.reserve(total_bytes);
 
   AppendPOD(&buffer, total_bytes);
-  AppendPOD(&buffer, timestamp);
+  AppendPOD(&buffer, timestamp_);
   AppendPOD(&buffer, stage);
 
-  AppendPOD(&buffer, string_logs.size());
-  for (size_t i = 0; i < string_logs.size(); i++) {
-    AppendPOD(&buffer, string_logs[i]);
+  AppendPOD(&buffer, string_logs_.size());
+  for (size_t i = 0; i < string_logs_.size(); i++) {
+    AppendPOD(&buffer, string_logs_[i]);
   }
 
-  AppendPOD(&buffer, sorted_logs.size());
-  for (size_t i = 0; i < sorted_logs.size(); i++) {
-    AppendPOD(&buffer, sorted_logs[i]);
+  AppendPOD(&buffer, sorted_logs_.size());
+  for (size_t i = 0; i < sorted_logs_.size(); i++) {
+    AppendPOD(&buffer, sorted_logs_[i]);
   }
 
-  AppendPOD(&buffer, hash_logs.size());
-  for (size_t i = 0; i < hash_logs.size(); i++) {
-    AppendPOD(&buffer, hash_logs[i]);
+  AppendPOD(&buffer, hash_logs_.size());
+  for (size_t i = 0; i < hash_logs_.size(); i++) {
+    AppendPOD(&buffer, hash_logs_[i]);
   }
 
-  AppendPOD(&buffer, list_logs.size());
-  for (size_t i = 0; i < list_logs.size(); i++) {
-    AppendPOD(&buffer, list_logs[i]);
+  AppendPOD(&buffer, list_logs_.size());
+  for (size_t i = 0; i < list_logs_.size(); i++) {
+    AppendPOD(&buffer, list_logs_[i]);
   }
 
   kvdk_assert(buffer.size() == total_bytes, "");
@@ -52,8 +54,8 @@ void BatchWriteLog::EncodeTo(char* dst) {
 }
 
 void BatchWriteLog::DecodeFrom(char const* src) {
-  kvdk_assert(string_logs.empty() && sorted_logs.empty() && hash_logs.empty(),
-              "");
+  kvdk_assert(
+      string_logs_.empty() && sorted_logs_.empty() && hash_logs_.empty(), "");
 
   size_t total_bytes = *reinterpret_cast<size_t const*>(src);
   if (total_bytes == 0) {
@@ -63,7 +65,7 @@ void BatchWriteLog::DecodeFrom(char const* src) {
   StringView sw{src, total_bytes};
 
   total_bytes = FetchPOD<size_t>(&sw);
-  timestamp = FetchPOD<TimestampType>(&sw);
+  timestamp_ = FetchPOD<TimestampType>(&sw);
   stage = FetchPOD<Stage>(&sw);
 
   if (stage == Stage::Initializing || stage == Stage::Committed) {
@@ -75,24 +77,24 @@ void BatchWriteLog::DecodeFrom(char const* src) {
     return;
   }
 
-  string_logs.resize(FetchPOD<size_t>(&sw));
-  for (size_t i = 0; i < string_logs.size(); i++) {
-    string_logs[i] = FetchPOD<StringLogEntry>(&sw);
+  string_logs_.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < string_logs_.size(); i++) {
+    string_logs_[i] = FetchPOD<StringLogEntry>(&sw);
   }
 
-  sorted_logs.resize(FetchPOD<size_t>(&sw));
-  for (size_t i = 0; i < sorted_logs.size(); i++) {
-    sorted_logs[i] = FetchPOD<SortedLogEntry>(&sw);
+  sorted_logs_.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < sorted_logs_.size(); i++) {
+    sorted_logs_[i] = FetchPOD<SortedLogEntry>(&sw);
   }
 
-  hash_logs.resize(FetchPOD<size_t>(&sw));
-  for (size_t i = 0; i < hash_logs.size(); i++) {
-    hash_logs[i] = FetchPOD<HashLogEntry>(&sw);
+  hash_logs_.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < hash_logs_.size(); i++) {
+    hash_logs_[i] = FetchPOD<HashLogEntry>(&sw);
   }
 
-  list_logs.resize(FetchPOD<size_t>(&sw));
-  for (size_t i = 0; i < list_logs.size(); i++) {
-    list_logs[i] = FetchPOD<ListLogEntry>(&sw);
+  list_logs_.resize(FetchPOD<size_t>(&sw));
+  for (size_t i = 0; i < list_logs_.size(); i++) {
+    list_logs_[i] = FetchPOD<ListLogEntry>(&sw);
   }
 
   kvdk_assert(sw.size() == 0, "");

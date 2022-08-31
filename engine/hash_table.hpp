@@ -84,7 +84,6 @@ struct alignas(16) HashEntry {
     PointerType index_type;
   };
 
- private:
   Index index_;
   EntryHeader header_;
 };
@@ -258,13 +257,6 @@ class HashTable {
 
 // Iterator all hash entries in a hash table bucket
 class HashBucketIterator {
- private:
-  friend class HashTable;
-  HashTable* hash_table_;
-  uint64_t bucket_idx_;
-  uint64_t entry_idx_;
-  HashBucket* bucket_ptr_;
-
  public:
   HashBucketIterator(HashTable* hash_table /* should be non-null */,
                      uint64_t bucket_idx)
@@ -303,6 +295,8 @@ class HashBucketIterator {
   }
 
  private:
+  friend class HashTable;
+
   void next() {
     if (Valid()) {
       entry_idx_++;
@@ -312,17 +306,15 @@ class HashBucketIterator {
       }
     }
   }
+
+  HashTable* hash_table_;
+  uint64_t bucket_idx_;
+  uint64_t entry_idx_;
+  HashBucket* bucket_ptr_;
 };
 
 // Iterator all hash entries in a hash table slot
 class HashSlotIterator {
- private:
-  HashTable* hash_table_;
-  uint64_t start_bucket_;
-  uint64_t end_bucket_;
-  uint64_t current_bucket_;
-  HashBucketIterator bucket_iter_;
-
  public:
   HashSlotIterator(HashTable* hash_table /* should be non null */,
                    uint64_t slot_idx)
@@ -339,7 +331,7 @@ class HashSlotIterator {
   HashEntry* operator->() { return &operator*(); }
 
   HashSlotIterator& operator++() {
-    Next();
+    next();
     return *this;
   }
 
@@ -369,7 +361,7 @@ class HashSlotIterator {
     }
   }
 
-  void Next() {
+  void next() {
     if (Valid()) {
       bucket_iter_++;
       if (!bucket_iter_.Valid()) {
@@ -377,18 +369,16 @@ class HashSlotIterator {
       }
     }
   }
+
+  HashTable* hash_table_;
+  uint64_t start_bucket_;
+  uint64_t end_bucket_;
+  uint64_t current_bucket_;
+  HashBucketIterator bucket_iter_;
 };
 
 // Iterate all slots in a hashtable
 struct HashTableIterator {
- private:
-  // lock current access slot
-  std::unique_lock<SpinMutex> iter_lock_slot_;
-  // current slot id
-  HashTable* hash_table_;
-  uint64_t current_slot_idx_;
-  uint64_t end_slot_idx_;
-
  public:
   HashTableIterator(HashTable* hash_table, uint64_t start_slot_idx,
                     uint64_t end_slot_idx)
@@ -416,5 +406,13 @@ struct HashTableIterator {
   SpinMutex* GetSlotLock() {
     return &hash_table_->slots_[current_slot_idx_].spin;
   }
+
+ private:
+  // lock current access slot
+  std::unique_lock<SpinMutex> iter_lock_slot_;
+  // current slot id
+  HashTable* hash_table_;
+  uint64_t current_slot_idx_;
+  uint64_t end_slot_idx_;
 };
 }  // namespace KVDK_NAMESPACE

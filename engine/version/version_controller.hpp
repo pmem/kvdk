@@ -311,24 +311,24 @@ class VersionController {
 class CheckPoint {
  public:
   void MakeCheckpoint(const Snapshot* snapshot) {
-    checkpoint_ts = static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
+    checkpoint_ts_ = static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
   }
 
   void MaybeRelease(const Snapshot* releasing_snapshot) {
     if (static_cast<const SnapshotImpl*>(releasing_snapshot)->GetTimestamp() ==
-        checkpoint_ts) {
+        checkpoint_ts_) {
       Release();
     }
   }
 
-  void Release() { checkpoint_ts = 0; }
+  void Release() { checkpoint_ts_ = 0; }
 
-  TimestampType CheckpointTS() { return checkpoint_ts; }
+  TimestampType CheckpointTS() { return checkpoint_ts_; }
 
-  bool Valid() { return checkpoint_ts > 0; }
+  bool Valid() { return checkpoint_ts_ > 0; }
 
  private:
-  TimestampType checkpoint_ts;
+  TimestampType checkpoint_ts_;
 };
 
 }  // namespace KVDK_NAMESPACE

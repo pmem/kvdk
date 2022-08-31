@@ -330,7 +330,7 @@ List::PopNArgs List::PreparePopN(ListPos pos, size_t n, TimestampType ts,
                                  std::vector<std::string>* elems) {
   size_t nn = n;
   PopNArgs args;
-  args.ts = ts;
+  args.timestamp_ = ts;
   if (Size() > 0) {
     auto iter =
         pos == ListPos::Front ? live_records_.begin() : live_records_.end() - 1;
@@ -351,7 +351,7 @@ List::PopNArgs List::PreparePopN(ListPos pos, size_t n, TimestampType ts,
         elems->emplace_back(sw.data(), sw.size());
       }
       args.spaces.emplace_back(space);
-      args.to_pop.emplace_back(iter);
+      args.to_pop_.emplace_back(iter);
       nn--;
       if (pos == ListPos::Front) {
         iter++;
@@ -400,15 +400,16 @@ Status List::PopN(const List::PopNArgs& args) {
     return args.s;
   }
   std::string internal_key(InternalKey(""));
-  kvdk_assert(args.spaces.size() == args.to_pop.size(), "");
-  for (size_t i = 0; i < args.to_pop.size(); i++) {
+  kvdk_assert(args.spaces.size() == args.to_pop_.size(), "");
+  for (size_t i = 0; i < args.to_pop_.size(); i++) {
     DLList::WriteArgs wa(internal_key, "", RecordType::ListElem,
-                         RecordStatus::Outdated, args.ts, args.spaces[i]);
+                         RecordStatus::Outdated, args.timestamp_,
+                         args.spaces[i]);
     Status s;
-    while ((s = dl_list_.Update(wa, *args.to_pop[i])) != Status::Ok) {
+    while ((s = dl_list_.Update(wa, *args.to_pop_[i])) != Status::Ok) {
       kvdk_assert(s == Status::Fail, "");
     }
-    live_records_.erase(args.to_pop[i]);
+    live_records_.erase(args.to_pop_[i]);
     TEST_CRASH_POINT("List::PopN", "");
   }
   return Status::Ok;
