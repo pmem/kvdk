@@ -61,8 +61,8 @@ class KVEngine : public Engine {
   void ReleaseSnapshot(const Snapshot* snapshot) override {
     {
 #ifdef KVDK_WITH_PMEM
-      std::lock_guard<std::mutex> lg(checkpoint_lock_);
       if (configs_.enable_pmem) {
+        std::lock_guard<std::mutex> lg(checkpoint_lock_);
         persist_checkpoint_->MaybeRelease(
             static_cast<const SnapshotImpl*>(snapshot));
       }
