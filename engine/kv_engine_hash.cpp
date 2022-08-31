@@ -24,7 +24,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
                                std::shared_ptr<HashList>& hlist) {
   auto ul = hash_table_->AcquireLock(collection);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
   auto lookup_result = lookupKey<true>(collection, RecordType::HashHeader);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {
@@ -285,7 +285,7 @@ Status KVEngine::restoreHashHeader(DLRecord* rec) {
   return hash_rebuilder_->AddHeader(rec);
 }
 
-Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimeStampType ts) {
+Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimestampType ts) {
   return args.hlist->PrepareWrite(args, ts);
 }
 

@@ -28,7 +28,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
                                std::shared_ptr<Skiplist>& skiplist) {
   auto ul = hash_table_->AcquireLock(collection_name);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
   auto lookup_result =
       lookupKey<true>(collection_name, RecordType::SortedHeader);
   if (lookup_result.s == NotFound || lookup_result.s == Outdated) {
@@ -254,7 +254,7 @@ Status KVEngine::SortedDeleteImpl(Skiplist* skiplist,
   }
 
   auto ul = hash_table_->AcquireLock(collection_key);
-  TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
+  TimestampType new_ts = version_controller_.GetCurrentTimestamp();
 
   auto ret = skiplist->Delete(user_key, new_ts);
 
@@ -274,7 +274,7 @@ Status KVEngine::SortedPutImpl(Skiplist* skiplist, const StringView& user_key,
   }
 
   auto ul = hash_table_->AcquireLock(collection_key);
-  TimeStampType new_ts = version_controller_.GetCurrentTimestamp();
+  TimestampType new_ts = version_controller_.GetCurrentTimestamp();
   auto ret = skiplist->Put(user_key, value, new_ts);
 
   // Collect outdated version records
@@ -294,7 +294,7 @@ Status KVEngine::restoreSortedElem(DLRecord* elem) {
   return sorted_rebuilder_->AddElement(elem);
 }
 
-Status KVEngine::sortedWritePrepare(SortedWriteArgs& args, TimeStampType ts) {
+Status KVEngine::sortedWritePrepare(SortedWriteArgs& args, TimestampType ts) {
   return args.skiplist->PrepareWrite(args, ts);
 }
 

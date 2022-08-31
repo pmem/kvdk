@@ -148,11 +148,11 @@ class KVEngine : public Engine {
   struct CleanerThreadCache {
     template <typename T>
     struct OutdatedRecord {
-      OutdatedRecord(T* _record, TimeStampType _release_time)
+      OutdatedRecord(T* _record, TimestampType _release_time)
           : record(_record), release_time(_release_time) {}
 
       T* record;
-      TimeStampType release_time;
+      TimestampType release_time;
     };
 
     CleanerThreadCache() = default;
@@ -368,10 +368,10 @@ class KVEngine : public Engine {
 
   Status StringDeleteImpl(const StringView& key);
 
-  Status stringWritePrepare(StringWriteArgs& args, TimeStampType ts);
+  Status stringWritePrepare(StringWriteArgs& args, TimestampType ts);
   Status stringWrite(StringWriteArgs& args);
   Status stringWritePublish(StringWriteArgs const& args);
-  Status stringRollback(TimeStampType ts,
+  Status stringRollback(TimestampType ts,
                         BatchWriteLog::StringLogEntry const& entry);
 
   Status SortedPutImpl(Skiplist* skiplist, const StringView& collection_key,
@@ -382,7 +382,7 @@ class KVEngine : public Engine {
   Status restoreExistingData();
 
   Status restoreDataFromBackup(const std::string& backup_log);
-  Status sortedWritePrepare(SortedWriteArgs& args, TimeStampType ts);
+  Status sortedWritePrepare(SortedWriteArgs& args, TimestampType ts);
   Status sortedWrite(SortedWriteArgs& args);
   Status sortedWritePublish(SortedWriteArgs const& args);
   Status sortedRollback(BatchWriteLog::SortedLogEntry const& entry);
@@ -429,7 +429,7 @@ class KVEngine : public Engine {
   Status restoreHashHeader(DLRecord* rec);
 
   Status hashListWrite(HashWriteArgs& args);
-  Status hashWritePrepare(HashWriteArgs& args, TimeStampType ts);
+  Status hashWritePrepare(HashWriteArgs& args, TimestampType ts);
   Status hashListPublish(HashWriteArgs const& args);
   Status hashListRollback(BatchWriteLog::HashLogEntry const& entry);
 
@@ -442,7 +442,7 @@ class KVEngine : public Engine {
 
   // remove outdated records which without snapshot hold.
   template <typename T>
-  T* removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts);
+  T* removeOutDatedVersion(T* record, TimestampType min_snapshot_ts);
 
   template <typename T>
   void removeOutdatedCollection(T* collection);
@@ -456,13 +456,9 @@ class KVEngine : public Engine {
   double cleanOutDated(PendingCleanRecords& pending_clean_records,
                        size_t start_slot_idx, size_t slot_block_size);
 
-  void purgeAndFreeAllType(PendingCleanRecords& pending_clean_records);
+  void purgeAndFree(PendingCleanRecords& pending_clean_records);
 
-  void delayFree(DLRecord* addr);
-
-  void directFree(DLRecord* addr);
-
-  TimeStampType getTimestamp() {
+  TimestampType getTimestamp() {
     return version_controller_.GetCurrentTimestamp();
   }
 
@@ -558,7 +554,7 @@ class KVEngine : public Engine {
   template <typename T>
   void cleanOutdatedRecordImpl(T* record);
   // Cleaner thread fetches cached outdated records
-  void FetchCachedOutdatedVersion(
+  void fetchCachedOutdatedVersion(
       PendingCleanRecords& pending_clean_records,
       std::vector<StringRecord*>& purge_string_records,
       std::vector<DLRecord*>& purge_dl_records);

@@ -173,7 +173,7 @@ void KVEngine::purgeAndFreeDLRecords(
             if (head_record != pmem_record) {
               entries.emplace_back(
                   pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->entry.header.record_size);
+                  pmem_record->GetRecordSize());
               pmem_record->Destroy();
             } else {
               pmem_record->PersistOldVersion(kNullPMemOffset);
@@ -196,7 +196,7 @@ void KVEngine::purgeAndFreeDLRecords(
             if (head_record != pmem_record) {
               entries.emplace_back(
                   pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->entry.header.record_size);
+                  pmem_record->GetRecordSize());
               pmem_record->Destroy();
             } else {
               pmem_record->PersistOldVersion(kNullPMemOffset);
@@ -219,7 +219,7 @@ void KVEngine::purgeAndFreeDLRecords(
             if (header_record != pmem_record) {
               entries.emplace_back(
                   pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->entry.header.record_size);
+                  pmem_record->GetRecordSize());
               pmem_record->Destroy();
             } else {
               pmem_record->PersistOldVersion(kNullPMemOffset);
@@ -331,7 +331,7 @@ void KVEngine::cleanList(List* list, std::vector<DLRecord*>& purge_dl_records) {
   }
 }
 
-void KVEngine::purgeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
+void KVEngine::purgeAndFree(PendingCleanRecords& pending_clean_records) {
   {  // purge and free pending string records
     while (!pending_clean_records.pending_purge_strings.empty()) {
       auto& pending_strings =
@@ -411,7 +411,7 @@ void KVEngine::purgeAndFreeAllType(PendingCleanRecords& pending_clean_records) {
   }
 }
 
-void KVEngine::FetchCachedOutdatedVersion(
+void KVEngine::fetchCachedOutdatedVersion(
     PendingCleanRecords& pending_clean_records,
     std::vector<StringRecord*>& purge_string_records,
     std::vector<DLRecord*>& purge_dl_records) {
@@ -474,7 +474,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
   std::vector<StringRecord*> purge_string_records;
   std::vector<DLRecord*> purge_dl_records;
 
-  FetchCachedOutdatedVersion(pending_clean_records, purge_string_records,
+  fetchCachedOutdatedVersion(pending_clean_records, purge_string_records,
                              purge_dl_records);
   double outdated_collection_ratio = cleaner_.SearchOutdatedCollections();
   cleaner_.FetchOutdatedCollections(pending_clean_records);
@@ -619,7 +619,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
       purge_dl_records = std::vector<DLRecord*>();
     }
 
-    purgeAndFreeAllType(pending_clean_records);
+    purgeAndFree(pending_clean_records);
 
   }  // Finsh iterating hash table
 
@@ -667,7 +667,7 @@ void Cleaner::doCleanWork(size_t thread_id) {
     if (workers_[thread_id].finish) {
       while (pending_clean_records.Size() != 0 && !close_.load()) {
         kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
-        kv_engine_->purgeAndFreeAllType(pending_clean_records);
+        kv_engine_->purgeAndFree(pending_clean_records);
       }
       return;
     }

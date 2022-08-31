@@ -218,7 +218,6 @@ class HashTable {
         hash_bucket_entries_(hash_bucket_num, 0),
         hash_buckets_(num_hash_buckets_) {}
 
-  // TODO: jiayu make this private after reimplementing batch write
   struct KeyHashHint {
     uint32_t bucket;
     uint32_t slot;

@@ -26,38 +26,38 @@ struct PendingFreeSpaceEntries {
   std::vector<SpaceEntry> entries;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely free these entries
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingFreeSpaceEntry {
   SpaceEntry entry;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely free this entry
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingPurgeStrRecords {
   PendingPurgeStrRecords(std::vector<StringRecord*>&& _records,
-                         TimeStampType _release_time)
+                         TimestampType _release_time)
       : records(_records), release_time(_release_time) {}
 
   std::vector<StringRecord*> records;
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingPurgeDLRecords {
   PendingPurgeDLRecords(std::vector<DLRecord*>&& _records,
-                        TimeStampType _release_time)
+                        TimestampType _release_time)
       : records(_records), release_time(_release_time) {}
 
   std::vector<DLRecord*> records;
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingCleanRecords {
-  std::deque<std::pair<TimeStampType, List*>> outdated_lists;
-  std::deque<std::pair<TimeStampType, HashList*>> outdated_hlists;
-  std::deque<std::pair<TimeStampType, Skiplist*>> outdated_skiplists;
+  std::deque<std::pair<TimestampType, List*>> outdated_lists;
+  std::deque<std::pair<TimestampType, HashList*>> outdated_hlists;
+  std::deque<std::pair<TimestampType, Skiplist*>> outdated_skiplists;
   std::deque<PendingPurgeStrRecords> pending_purge_strings;
   std::deque<PendingPurgeDLRecords> pending_purge_dls;
   std::deque<Skiplist*> no_hash_skiplists;
@@ -126,19 +126,19 @@ class Cleaner {
   struct OutDatedCollections {
     struct TimeStampCmp {
      public:
-      bool operator()(const std::pair<Collection*, TimeStampType> a,
-                      const std::pair<Collection*, TimeStampType> b) const {
+      bool operator()(const std::pair<Collection*, TimestampType> a,
+                      const std::pair<Collection*, TimestampType> b) const {
         if (a.second < b.second) return true;
         if (a.second == b.second && a.first->ID() < b.first->ID()) return true;
         return false;
       }
     };
-    using ListQueue = std::set<std::pair<List*, TimeStampType>, TimeStampCmp>;
+    using ListQueue = std::set<std::pair<List*, TimestampType>, TimeStampCmp>;
     using HashListQueue =
-        std::set<std::pair<HashList*, TimeStampType>, TimeStampCmp>;
+        std::set<std::pair<HashList*, TimestampType>, TimeStampCmp>;
 
     using SkiplistQueue =
-        std::set<std::pair<Skiplist*, TimeStampType>, TimeStampCmp>;
+        std::set<std::pair<Skiplist*, TimestampType>, TimeStampCmp>;
 
     SpinMutex queue_mtx;
     ListQueue lists;

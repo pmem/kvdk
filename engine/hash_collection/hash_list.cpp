@@ -7,7 +7,7 @@
 namespace KVDK_NAMESPACE {
 HashList::WriteResult HashList::Put(const StringView& key,
                                     const StringView& value,
-                                    TimeStampType timestamp) {
+                                    TimestampType timestamp) {
   WriteResult ret;
   HashWriteArgs args = InitWriteArgs(key, value, WriteOp::Put);
   ret.s = PrepareWrite(args, timestamp);
@@ -39,7 +39,7 @@ Status HashList::Get(const StringView& key, std::string* value) {
 }
 
 HashList::WriteResult HashList::Delete(const StringView& key,
-                                       TimeStampType timestamp) {
+                                       TimestampType timestamp) {
   WriteResult ret;
   HashWriteArgs args = InitWriteArgs(key, "", WriteOp::Delete);
   ret.s = PrepareWrite(args, timestamp);
@@ -51,7 +51,7 @@ HashList::WriteResult HashList::Delete(const StringView& key,
 
 HashList::WriteResult HashList::Modify(const StringView key,
                                        ModifyFunc modify_func,
-                                       void* modify_args, TimeStampType ts) {
+                                       void* modify_args, TimestampType ts) {
   WriteResult ret;
   std::string internal_key(InternalKey(key));
   auto lookup_result =
@@ -132,7 +132,7 @@ HashWriteArgs HashList::InitWriteArgs(const StringView& key,
   return args;
 }
 
-Status HashList::PrepareWrite(HashWriteArgs& args, TimeStampType ts) {
+Status HashList::PrepareWrite(HashWriteArgs& args, TimestampType ts) {
   kvdk_assert(args.op == WriteOp::Put || args.value.size() == 0,
               "value of delete operation should be empty");
   if (args.hlist != this) {
@@ -207,7 +207,7 @@ HashList::WriteResult HashList::Write(HashWriteArgs& args) {
 }
 
 HashList::WriteResult HashList::SetExpireTime(ExpireTimeType expired_time,
-                                              TimeStampType timestamp) {
+                                              TimestampType timestamp) {
   WriteResult ret;
   DLRecord* header = HeaderRecord();
   SpaceEntry space = pmem_allocator_->Allocate(
@@ -373,7 +373,7 @@ void HashList::DestroyAll() {
 
 HashList::WriteResult HashList::putPrepared(
     const HashTable::LookupResult& lookup_result, const StringView& key,
-    const StringView& value, TimeStampType timestamp, const SpaceEntry& space) {
+    const StringView& value, TimestampType timestamp, const SpaceEntry& space) {
   WriteResult ret;
   std::string internal_key(InternalKey(key));
   DLList::WriteArgs args(internal_key, value, RecordType::HashElem,
@@ -400,7 +400,7 @@ HashList::WriteResult HashList::putPrepared(
 
 HashList::WriteResult HashList::deletePrepared(
     const HashTable::LookupResult& lookup_result, const StringView& key,
-    TimeStampType timestamp, const SpaceEntry& space) {
+    TimestampType timestamp, const SpaceEntry& space) {
   WriteResult ret;
   std::string internal_key(InternalKey(key));
   kvdk_assert(lookup_result.s == Status::Ok &&

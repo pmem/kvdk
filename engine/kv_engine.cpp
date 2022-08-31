@@ -29,6 +29,9 @@
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
+// fsdax mode align to 2MB by default.
+constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
+
 void PendingBatch::PersistFinish() {
   num_kv = 0;
   stage = Stage::Finish;
@@ -36,7 +39,7 @@ void PendingBatch::PersistFinish() {
 }
 
 void PendingBatch::PersistProcessing(const std::vector<PMemOffsetType>& records,
-                                     TimeStampType ts) {
+                                     TimestampType ts) {
   pmem_memcpy_persist(record_offsets, records.data(), records.size() * 8);
   timestamp = ts;
   num_kv = records.size();
@@ -400,7 +403,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
   if (s != Status::Ok) {
     return s;
   }
-  TimeStampType backup_ts =
+  TimestampType backup_ts =
       static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
   auto hashtable_iterator =
       hash_table_->GetIterator(0, hash_table_->GetSlotsNum());
@@ -544,7 +547,7 @@ Status KVEngine::initOrRestoreCheckpoint() {
 }
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
-  // Todo: make this multi-thread
+  // TODO: make this multi-thread
   Status s = MaybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -1427,7 +1430,7 @@ template HashTable::LookupResult KVEngine::lookupKey<false>(StringView,
                                                             uint8_t);
 
 template <typename T>
-T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
+T* KVEngine::removeOutDatedVersion(T* record, TimestampType min_snapshot_ts) {
   static_assert(
       std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
       "Invalid record type, should be StringRecord or DLRecord.");
@@ -1457,9 +1460,9 @@ T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
 }
 
 template StringRecord* KVEngine::removeOutDatedVersion<StringRecord>(
-    StringRecord*, TimeStampType);
+    StringRecord*, TimestampType);
 template DLRecord* KVEngine::removeOutDatedVersion<DLRecord>(DLRecord*,
-                                                             TimeStampType);
+                                                             TimestampType);
 
 }  // namespace KVDK_NAMESPACE
 
@@ -1477,23 +1480,6 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   }
 
   return ret;
-}
-
-void KVEngine::delayFree(DLRecord* addr) {
-  if (addr == nullptr) {
-    return;
-  }
-  /// TODO: avoid deadlock in cleaner to help Free() deleted records
-  old_records_cleaner_.PushToPendingFree(
-      addr, version_controller_.GetCurrentTimestamp());
-}
-
-void KVEngine::directFree(DLRecord* addr) {
-  if (addr == nullptr) {
-    return;
-  }
-  pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                                   addr->GetRecordSize()});
 }
 
 void KVEngine::backgroundPMemUsageReporter() {
