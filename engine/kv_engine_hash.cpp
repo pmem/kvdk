@@ -35,19 +35,19 @@ Status KVEngine::buildHashlist(const StringView& collection,
     CollectionIDType id = collection_id_.fetch_add(1);
     std::string value_str = HashList::EncodeID(id);
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(collection, value_str));
+        kv_allocator_->Allocate(DLRecord::RecordSize(collection, value_str));
     if (space.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
     // dl list is circular, so the next and prev pointers of
     // header point to itself
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::HashHeader, RecordStatus::Normal,
-        pmem_allocator_->addr2offset(existing_header), space.offset,
-        space.offset, collection, value_str);
-    hlist = std::make_shared<HashList>(pmem_record, collection, id,
-                                       pmem_allocator_.get(), hash_table_.get(),
+        kv_allocator_->addr2offset(existing_header), space.offset, space.offset,
+        collection, value_str);
+    hlist = std::make_shared<HashList>(data_record, collection, id,
+                                       kv_allocator_.get(), hash_table_.get(),
                                        dllist_locks_.get());
     kvdk_assert(hlist != nullptr, "");
     addHashlistToMap(hlist);
@@ -80,16 +80,16 @@ Status KVEngine::HashDestroy(StringView collection) {
     kvdk_assert(header->GetRecordType() == RecordType::HashHeader, "");
     StringView value = header->Value();
     auto request_size = DLRecord::RecordSize(collection, value);
-    SpaceEntry space = pmem_allocator_->Allocate(request_size);
+    SpaceEntry space = kv_allocator_->Allocate(request_size);
     if (space.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::HashHeader, RecordStatus::Outdated,
-        pmem_allocator_->addr2offset_checked(header), header->prev,
-        header->next, collection, value);
-    bool success = hlist->Replace(header, pmem_record);
+        kv_allocator_->addr2offset_checked(header), header->prev, header->next,
+        collection, value);
+    bool success = hlist->Replace(header, data_record);
     kvdk_assert(success, "existing header should be linked on its hlist");
     hash_table_->Insert(collection, RecordType::HashHeader,
                         RecordStatus::Outdated, hlist, PointerType::HashList);
@@ -159,8 +159,10 @@ Status KVEngine::HashPut(StringView collection, StringView key,
       auto ul = hash_table_->AcquireLock(collection_key);
       auto ret =
           hlist->Put(key, value, version_controller_.GetCurrentTimestamp());
-      if (ret.s == Status::Ok && ret.existing_record) {
+      if (ret.s == Status::Ok && ret.existing_record &&
+          hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
+        hlist->ReleaseCleaningLock();
       }
       tryCleanCachedOutdatedRecord();
       s = ret.s;
@@ -188,8 +190,10 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
     } else {
       auto ul = hash_table_->AcquireLock(collection_key);
       auto ret = hlist->Delete(key, version_controller_.GetCurrentTimestamp());
-      if (ret.s == Status::Ok && ret.existing_record && ret.write_record) {
+      if (ret.s == Status::Ok && ret.existing_record && ret.write_record &&
+          hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion(ret.write_record);
+        hlist->ReleaseCleaningLock();
       }
       tryCleanCachedOutdatedRecord();
       s = ret.s;
@@ -215,8 +219,10 @@ Status KVEngine::HashModify(StringView collection, StringView key,
     auto ret = hlist->Modify(key, modify_func, cb_args,
                              version_controller_.GetCurrentTimestamp());
     s = ret.s;
-    if (s == Status::Ok && ret.existing_record && ret.write_record) {
+    if (s == Status::Ok && ret.existing_record && ret.write_record &&
+        hlist->TryCleaningLock()) {
       removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
+      hlist->ReleaseCleaningLock();
     }
     tryCleanCachedOutdatedRecord();
   }
@@ -277,6 +283,7 @@ Status KVEngine::hashListFind(StringView collection, HashList** hlist) {
   return Status::Ok;
 }
 
+#ifdef KVDK_WITH_PMEM
 Status KVEngine::restoreHashElem(DLRecord* rec) {
   return hash_rebuilder_->AddElem(rec);
 }
@@ -284,6 +291,7 @@ Status KVEngine::restoreHashElem(DLRecord* rec) {
 Status KVEngine::restoreHashHeader(DLRecord* rec) {
   return hash_rebuilder_->AddHeader(rec);
 }
+#endif
 
 Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimestampType ts) {
   return args.hlist->PrepareWrite(args, ts);
@@ -295,8 +303,10 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
 
 Status KVEngine::hashListPublish(HashWriteArgs const&) { return Status::Ok; }
 
+#ifdef KVDK_WITH_PMEM
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
   return hash_rebuilder_->Rollback(log);
 }
+#endif
 
 }  // namespace KVDK_NAMESPACE

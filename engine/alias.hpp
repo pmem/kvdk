@@ -12,7 +12,8 @@ namespace KVDK_NAMESPACE {
 enum class WriteOp { Put, Delete };
 
 // Internal types
-using PMemOffsetType = std::uint64_t;
+using MemoryOffsetType = std::uint64_t;
+using PMemOffsetType = MemoryOffsetType;
 using TimestampType = std::uint64_t;
 
 const uint64_t kMaxCachedOldRecords = 1024;

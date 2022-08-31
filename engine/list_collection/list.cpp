@@ -9,21 +9,21 @@ List::WriteResult List::SetExpireTime(ExpireTimeType expired_time,
                                       TimestampType timestamp) {
   WriteResult ret;
   DLRecord* header = HeaderRecord();
-  SpaceEntry space = pmem_allocator_->Allocate(
+  SpaceEntry space = kv_allocator_->Allocate(
       DLRecord::RecordSize(header->Key(), header->Value()));
   if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
+    ret.s = Status::MemoryOverflow;
     return ret;
   }
-  DLRecord* pmem_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr_checked(space.offset), space.size, timestamp,
+  DLRecord* data_record = DLRecord::PersistDLRecord(
+      kv_allocator_->offset2addr_checked(space.offset), space.size, timestamp,
       RecordType::ListHeader, RecordStatus::Normal,
-      pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
+      kv_allocator_->addr2offset_checked(header), header->prev, header->next,
       header->Key(), header->Value(), expired_time);
-  bool success = dl_list_.Replace(header, pmem_record);
+  bool success = dl_list_.Replace(header, data_record);
   kvdk_assert(success, "existing header should be linked on its list");
   ret.existing_record = header;
-  ret.write_record = pmem_record;
+  ret.write_record = data_record;
   return ret;
 }
 
@@ -31,9 +31,9 @@ List::WriteResult List::PushFront(const StringView& elem, TimestampType ts) {
   WriteResult ret;
   std::string internal_key(InternalKey(""));
   SpaceEntry space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+      kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
   if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
+    ret.s = Status::MemoryOverflow;
     return ret;
   }
 
@@ -42,7 +42,7 @@ List::WriteResult List::PushFront(const StringView& elem, TimestampType ts) {
   ret.s = dl_list_.PushFront(args);
   kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
   ret.write_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.push_front(ret.write_record);
   return ret;
 }
@@ -51,9 +51,9 @@ List::WriteResult List::PushBack(const StringView& elem, TimestampType ts) {
   WriteResult ret;
   std::string internal_key(InternalKey(""));
   SpaceEntry space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+      kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
   if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
+    ret.s = Status::MemoryOverflow;
     return ret;
   }
 
@@ -62,7 +62,7 @@ List::WriteResult List::PushBack(const StringView& elem, TimestampType ts) {
   ret.s = dl_list_.PushBack(args);
   kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
   ret.write_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.push_back(ret.write_record);
   return ret;
 }
@@ -75,9 +75,9 @@ List::WriteResult List::PopFront(TimestampType ts) {
     DLRecord* record = live_records_.front();
     kvdk_assert(record->GetRecordStatus() == RecordStatus::Normal, "");
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
+        kv_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
     if (space.size == 0) {
-      ret.s = Status::PmemOverflow;
+      ret.s = Status::MemoryOverflow;
       return ret;
     }
     DLList::WriteArgs args(record->Key(), "", RecordType::ListElem,
@@ -86,7 +86,7 @@ List::WriteResult List::PopFront(TimestampType ts) {
       kvdk_assert(ret.s == Status::Fail, "");
     };
     ret.write_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
     ret.existing_record = record;
     live_records_.pop_front();
   }
@@ -101,9 +101,9 @@ List::WriteResult List::PopBack(TimestampType ts) {
     DLRecord* record = live_records_.back();
     kvdk_assert(record->GetRecordStatus() == RecordStatus::Normal, "");
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
+        kv_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
     if (space.size == 0) {
-      ret.s = Status::PmemOverflow;
+      ret.s = Status::MemoryOverflow;
       return ret;
     }
     DLList::WriteArgs args(record->Key(), "", RecordType::ListElem,
@@ -112,7 +112,7 @@ List::WriteResult List::PopBack(TimestampType ts) {
       kvdk_assert(ret.s == Status::Fail, "");
     };
     ret.write_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
     ret.existing_record = record;
     live_records_.pop_back();
   }
@@ -129,9 +129,9 @@ List::WriteResult List::InsertBefore(const StringView& elem,
   } else {
     std::string internal_key(InternalKey(""));
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+        kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
     if (space.size == 0) {
-      ret.s = Status::PmemOverflow;
+      ret.s = Status::MemoryOverflow;
       return ret;
     }
     DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
@@ -140,7 +140,7 @@ List::WriteResult List::InsertBefore(const StringView& elem,
     kvdk_assert(ret.s == Status::Ok,
                 "the whole list is locked, so the insertion must be success");
     ret.write_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
     live_records_.insert(iter, ret.write_record);
   }
   return ret;
@@ -156,9 +156,9 @@ List::WriteResult List::InsertAfter(const StringView& elem,
   } else {
     std::string internal_key(InternalKey(""));
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+        kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
     if (space.size == 0) {
-      ret.s = Status::PmemOverflow;
+      ret.s = Status::MemoryOverflow;
       return ret;
     }
     DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
@@ -167,7 +167,7 @@ List::WriteResult List::InsertAfter(const StringView& elem,
     kvdk_assert(ret.s == Status::Ok,
                 "the whole list is locked, so the insertion must be success");
     ret.write_record =
-        pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+        kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
     live_records_.insert(iter + 1, ret.write_record);
   }
   return ret;
@@ -192,9 +192,9 @@ List::WriteResult List::InsertAt(const StringView& elem, long index,
               "");
 
   SpaceEntry space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+      kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
   if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
+    ret.s = Status::MemoryOverflow;
     return ret;
   }
   DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
@@ -203,7 +203,7 @@ List::WriteResult List::InsertAt(const StringView& elem, long index,
   kvdk_assert(ret.s == Status::Ok,
               "the whole list is locked, so the insertion must be success");
   ret.write_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.insert(iter, ret.write_record);
   return ret;
 }
@@ -225,9 +225,9 @@ List::WriteResult List::Erase(long index, TimestampType ts) {
               "");
 
   SpaceEntry space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
+      kv_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
   if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
+    ret.s = Status::MemoryOverflow;
     return ret;
   }
   DLList::WriteArgs args(record->Key(), "", RecordType::ListElem,
@@ -237,7 +237,7 @@ List::WriteResult List::Erase(long index, TimestampType ts) {
   };
   ret.existing_record = record;
   ret.write_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.erase(iter);
   return ret;
 }
@@ -280,9 +280,9 @@ List::WriteResult List::Update(long index, const StringView& elem,
               "");
   std::string internal_key(InternalKey(""));
   SpaceEntry space =
-      pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+      kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
   if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
+    ret.s = Status::MemoryOverflow;
     return ret;
   }
   DLList::WriteArgs args(internal_key, elem, RecordType::ListElem,
@@ -293,7 +293,7 @@ List::WriteResult List::Update(long index, const StringView& elem,
   }
   ret.existing_record = record;
   ret.write_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   *iter = ret.write_record;
   return ret;
 }
@@ -308,14 +308,14 @@ List::PushNArgs List::PreparePushN(ListPos pos,
     std::string internal_key(InternalKey(""));
     for (auto& elem : elems) {
       SpaceEntry space =
-          pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
+          kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
       if (space.size == 0) {
         GlobalLogger.Error("Try allocate %lu error\n",
                            DLRecord::RecordSize(internal_key, elem));
         for (auto& sp : args.spaces) {
-          pmem_allocator_->Free(sp);
+          kv_allocator_->Free(sp);
         }
-        args.s = Status::PmemOverflow;
+        args.s = Status::MemoryOverflow;
         break;
       }
       args.spaces.emplace_back(space);
@@ -337,12 +337,12 @@ List::PopNArgs List::PreparePopN(ListPos pos, size_t n, TimestampType ts,
     while (nn > 0) {
       DLRecord* record = *iter;
       SpaceEntry space =
-          pmem_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
+          kv_allocator_->Allocate(DLRecord::RecordSize(record->Key(), ""));
       if (space.size == 0) {
         for (auto& sp : args.spaces) {
-          pmem_allocator_->Free(sp);
+          kv_allocator_->Free(sp);
         }
-        args.s = Status::PmemOverflow;
+        args.s = Status::MemoryOverflow;
         return args;
       }
 
@@ -383,11 +383,11 @@ Status List::PushN(const List::PushNArgs& args) {
     if (args.pos == ListPos::Front) {
       s = dl_list_.PushFront(wa);
       live_records_.push_front(
-          pmem_allocator_->offset2addr_checked<DLRecord>(wa.space.offset));
+          kv_allocator_->offset2addr_checked<DLRecord>(wa.space.offset));
     } else {
       s = dl_list_.PushBack(wa);
       live_records_.push_back(
-          pmem_allocator_->offset2addr_checked<DLRecord>(wa.space.offset));
+          kv_allocator_->offset2addr_checked<DLRecord>(wa.space.offset));
     }
     kvdk_assert(s == Status::Ok, "Push back/front should always success");
     TEST_CRASH_POINT("List::PushN", "");
@@ -421,19 +421,19 @@ void List::Destroy() {
   if (header) {
     DLRecord* to_destroy = nullptr;
     do {
-      to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+      to_destroy = kv_allocator_->offset2addr_checked<DLRecord>(header->next);
       if (dl_list_.Remove(to_destroy)) {
         to_destroy->Destroy();
-        to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+        to_free.emplace_back(kv_allocator_->addr2offset_checked(to_destroy),
                              to_destroy->GetRecordSize());
         if (to_free.size() > kMaxCachedOldRecords) {
-          pmem_allocator_->BatchFree(to_free);
+          kv_allocator_->BatchFree(to_free);
           to_free.clear();
         }
       }
     } while (to_destroy != header);
   }
-  pmem_allocator_->BatchFree(to_free);
+  kv_allocator_->BatchFree(to_free);
 }
 
 void List::DestroyAll() {
@@ -442,28 +442,28 @@ void List::DestroyAll() {
   if (header) {
     DLRecord* to_destroy = nullptr;
     do {
-      to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+      to_destroy = kv_allocator_->offset2addr_checked<DLRecord>(header->next);
       if (dl_list_.Remove(to_destroy)) {
         auto old_record =
-            pmem_allocator_->offset2addr<DLRecord>(to_destroy->old_version);
+            kv_allocator_->offset2addr<DLRecord>(to_destroy->old_version);
         while (old_record) {
           auto old_version = old_record->old_version;
           old_record->Destroy();
-          to_free.emplace_back(pmem_allocator_->addr2offset_checked(old_record),
+          to_free.emplace_back(kv_allocator_->addr2offset_checked(old_record),
                                old_record->GetRecordSize());
-          old_record = pmem_allocator_->offset2addr<DLRecord>(old_version);
+          old_record = kv_allocator_->offset2addr<DLRecord>(old_version);
         }
 
         to_destroy->Destroy();
-        to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+        to_free.emplace_back(kv_allocator_->addr2offset_checked(to_destroy),
                              to_destroy->GetRecordSize());
         if (to_free.size() > kMaxCachedOldRecords) {
-          pmem_allocator_->BatchFree(to_free);
+          kv_allocator_->BatchFree(to_free);
           to_free.clear();
         }
       }
     } while (to_destroy != header);
   }
-  pmem_allocator_->BatchFree(to_free);
+  kv_allocator_->BatchFree(to_free);
 }
 }  // namespace KVDK_NAMESPACE

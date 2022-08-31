@@ -47,7 +47,7 @@ void OldRecordsCleaner::TryGlobalClean() {
       global_pending_free_space_entries_.begin(), iter);
 
   if (free_entries.size() > 0) {
-    kv_engine_->pmem_allocator_->BatchFree(space_to_free);
+    kv_engine_->kv_allocator_->BatchFree(space_to_free);
   }
 }
 

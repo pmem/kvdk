@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
 #pragma once
 
 #include <x86intrin.h>
@@ -158,57 +162,57 @@ class BatchWriteLog {
 
   struct StringLogEntry {
     Op op;
-    PMemOffsetType offset;
+    MemoryOffsetType offset;
   };
 
   struct SortedLogEntry {
     Op op;
-    PMemOffsetType offset;
+    MemoryOffsetType offset;
   };
 
   struct HashLogEntry {
     Op op;
-    PMemOffsetType offset;
+    MemoryOffsetType offset;
   };
 
   struct ListLogEntry {
     Op op;
-    PMemOffsetType offset;
+    MemoryOffsetType offset;
   };
 
   explicit BatchWriteLog() {}
 
   void SetTimestamp(TimestampType ts) { timestamp_ = ts; }
 
-  void StringPut(PMemOffsetType offset) {
+  void StringPut(MemoryOffsetType offset) {
     string_logs_.emplace_back(StringLogEntry{Op::Put, offset});
   }
 
-  void StringDelete(PMemOffsetType offset) {
+  void StringDelete(MemoryOffsetType offset) {
     string_logs_.emplace_back(StringLogEntry{Op::Delete, offset});
   }
 
-  void SortedPut(PMemOffsetType offset) {
+  void SortedPut(MemoryOffsetType offset) {
     sorted_logs_.emplace_back(SortedLogEntry{Op::Put, offset});
   }
 
-  void SortedDelete(PMemOffsetType offset) {
+  void SortedDelete(MemoryOffsetType offset) {
     sorted_logs_.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
-  void HashPut(PMemOffsetType offset) {
+  void HashPut(MemoryOffsetType offset) {
     hash_logs_.emplace_back(HashLogEntry{Op::Put, offset});
   }
 
-  void HashDelete(PMemOffsetType offset) {
+  void HashDelete(MemoryOffsetType offset) {
     hash_logs_.emplace_back(HashLogEntry{Op::Delete, offset});
   }
 
-  void ListEmplace(PMemOffsetType offset) {
+  void ListEmplace(MemoryOffsetType offset) {
     list_logs_.emplace_back(ListLogEntry{Op::Put, offset});
   }
 
-  void ListDelete(PMemOffsetType offset) {
+  void ListDelete(MemoryOffsetType offset) {
     list_logs_.emplace_back(ListLogEntry{Op::Delete, offset});
   }
 
@@ -246,6 +250,9 @@ class BatchWriteLog {
   void DecodeFrom(char const* src);
 
   static void MarkProcessing(char* dst) {
+    if (dst == nullptr) {
+      return;
+    }
     dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Processing;
     _mm_clflush(dst);
@@ -253,6 +260,9 @@ class BatchWriteLog {
   }
 
   static void MarkCommitted(char* dst) {
+    if (dst == nullptr) {
+      return;
+    }
     dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Committed;
     _mm_clflush(dst);

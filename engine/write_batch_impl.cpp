@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
 #include "write_batch_impl.hpp"
 
 #include "alias.hpp"
@@ -5,6 +9,9 @@
 namespace KVDK_NAMESPACE {
 
 void BatchWriteLog::EncodeTo(char* dst) {
+  if (dst == nullptr) {
+    return;
+  }
   kvdk_assert(stage == Stage::Initializing, "");
 
   size_t total_bytes;
@@ -54,6 +61,9 @@ void BatchWriteLog::EncodeTo(char* dst) {
 }
 
 void BatchWriteLog::DecodeFrom(char const* src) {
+  if (src == nullptr) {
+    return;
+  }
   kvdk_assert(
       string_logs_.empty() && sorted_logs_.empty() && hash_logs_.empty(), "");
 

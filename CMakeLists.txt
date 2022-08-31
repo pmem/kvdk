@@ -44,6 +44,24 @@ if (COVERAGE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
 endif()
 
+set (KVDK_SHARED_LIB_LINK_LIBS pthread gflags hwloc atomic)
+set (KVDK_STATIC_LIB_LINK_LIBS ${KVDK_SHARED_LIB_LINK_LIBS})
+
+option(WITH_PMEM "Build with libpmem to support persistent storage" ON)
+if (WITH_PMEM)
+    message(STATUS "PMem support is enabled")
+    find_library(LIBPMEM_LIB pmem)
+    if(NOT LIBPMEM_LIB)
+        message(FATAL_ERROR "libpmem library not found")
+    else()
+        message(STATUS "Found libpmem: ${LIBPMEM_LIB}")
+    endif()
+    list(APPEND KVDK_SHARED_LIB_LINK_LIBS pmem)
+    add_compile_definitions(KVDK_WITH_PMEM)
+else ()
+    message(STATUS "PMem support is disabled")
+endif ()
+
 # source files
 set(SOURCES
         engine/c/kvdk_basic_op.cpp
@@ -80,7 +98,7 @@ set(SOURCES
 # .so library
 add_library(engine SHARED ${SOURCES})
 target_include_directories(engine PUBLIC ./include ./extern)
-target_link_libraries(engine PUBLIC pthread pmem gflags hwloc atomic)
+target_link_libraries(engine PUBLIC ${KVDK_SHARED_LIB_LINK_LIBS})
 
 configure_file(kvdk.pc.in kvdk.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kvdk.pc
@@ -164,10 +182,12 @@ if(WITH_JNI OR JNI)
 
     include(FindPackageHandleStandardArgs)
 
-    find_library(LIBPMEM_STATIC_LIB NAMES "${CMAKE_STATIC_LIBRARY_PREFIX}pmem${CMAKE_STATIC_LIBRARY_SUFFIX}")
-    find_package_handle_standard_args(libpmem REQUIRED_VARS LIBPMEM_STATIC_LIB)
-    if(NOT libpmem_FOUND)
-        message(FATAL_ERROR "libpmem.a not found")
+    if(WITH_PMEM)
+        find_library(LIBPMEM_STATIC_LIB NAMES "${CMAKE_STATIC_LIBRARY_PREFIX}pmem${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        find_package_handle_standard_args(libpmem REQUIRED_VARS LIBPMEM_STATIC_LIB)
+        if(NOT libpmem_FOUND)
+            message(FATAL_ERROR "libpmem.a not found")
+        endif()
     endif()
 
     find_library(ATOMIC_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}atomic${CMAKE_SHARED_LIBRARY_SUFFIX}.1")
@@ -184,9 +204,13 @@ if(WITH_JNI OR JNI)
 
     add_library(${KVDK_STATIC_LIB} STATIC ${SOURCES})
     target_include_directories(${KVDK_STATIC_LIB} PUBLIC ./include ./extern)
-    target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${LIBPMEM_STATIC_LIB})
-    target_link_libraries(${KVDK_STATIC_LIB} PRIVATE pthread gflags hwloc atomic)
+    target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${KVDK_STATIC_LIB_LINK_LIBS})
+    if(WITH_PMEM)
+        target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${LIBPMEM_STATIC_LIB})
+    endif()
     set_property(TARGET ${KVDK_STATIC_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/java)
 
     add_cppstyle(jni_src

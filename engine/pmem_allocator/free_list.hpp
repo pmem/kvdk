@@ -4,6 +4,8 @@
 
 #pragma once
 
+#ifdef KVDK_WITH_PMEM
+
 #include <memory>
 #include <set>
 
@@ -286,3 +288,5 @@ class Freelist {
 };
 
 }  // namespace KVDK_NAMESPACE
+
+#endif  // #ifdef KVDK_WITH_PMEM

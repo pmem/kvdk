@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2021 Intel Corporation
+ * Copyright(c) 2022 Intel Corporation
  */
 
 #include "hash_list.hpp"
@@ -26,14 +26,14 @@ Status HashList::Get(const StringView& key, std::string* value) {
     return Status::NotFound;
   }
 
-  DLRecord* pmem_record = lookup_result.entry.GetIndex().dl_record;
-  kvdk_assert(pmem_record->GetRecordType() == RecordType::HashElem, "");
+  DLRecord* data_record = lookup_result.entry.GetIndex().dl_record;
+  kvdk_assert(data_record->GetRecordType() == RecordType::HashElem, "");
   // As get is lockless, skiplist node may point to a new elem delete record
   // after we get it from hashtable
-  if (pmem_record->GetRecordStatus() == RecordStatus::Outdated) {
+  if (data_record->GetRecordStatus() == RecordStatus::Outdated) {
     return Status::NotFound;
   } else {
-    value->assign(pmem_record->Value().data(), pmem_record->Value().size());
+    value->assign(data_record->Value().data(), data_record->Value().size());
     return Status::Ok;
   }
 }
@@ -83,10 +83,10 @@ HashList::WriteResult HashList::Modify(const StringView key,
       HashWriteArgs args = InitWriteArgs(key, new_value, WriteOp::Put);
       args.ts = ts;
       args.lookup_result = lookup_result;
-      args.space = pmem_allocator_->Allocate(
+      args.space = kv_allocator_->Allocate(
           DLRecord::RecordSize(internal_key, new_value));
       if (args.space.size == 0) {
-        ret.s = Status::PmemOverflow;
+        ret.s = Status::MemoryOverflow;
         return ret;
       }
       return Write(args);
@@ -97,9 +97,9 @@ HashList::WriteResult HashList::Modify(const StringView key,
       args.ts = ts;
       args.lookup_result = lookup_result;
       args.space =
-          pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, ""));
+          kv_allocator_->Allocate(DLRecord::RecordSize(internal_key, ""));
       if (args.space.size == 0) {
-        ret.s = Status::PmemOverflow;
+        ret.s = Status::MemoryOverflow;
         return ret;
       }
       return Write(args);
@@ -174,9 +174,9 @@ Status HashList::PrepareWrite(HashWriteArgs& args, TimestampType ts) {
 
   if (allocate_space) {
     auto request_size = DLRecord::RecordSize(internal_key, args.value);
-    args.space = pmem_allocator_->Allocate(request_size);
+    args.space = kv_allocator_->Allocate(request_size);
     if (args.space.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
   }
 
@@ -210,30 +210,30 @@ HashList::WriteResult HashList::SetExpireTime(ExpireTimeType expired_time,
                                               TimestampType timestamp) {
   WriteResult ret;
   DLRecord* header = HeaderRecord();
-  SpaceEntry space = pmem_allocator_->Allocate(
+  SpaceEntry space = kv_allocator_->Allocate(
       DLRecord::RecordSize(header->Key(), header->Value()));
   if (space.size == 0) {
-    ret.s = Status::PmemOverflow;
+    ret.s = Status::MemoryOverflow;
     return ret;
   }
-  DLRecord* pmem_record = DLRecord::PersistDLRecord(
-      pmem_allocator_->offset2addr_checked(space.offset), space.size, timestamp,
+  DLRecord* data_record = DLRecord::PersistDLRecord(
+      kv_allocator_->offset2addr_checked(space.offset), space.size, timestamp,
       RecordType::HashHeader, RecordStatus::Normal,
-      pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
+      kv_allocator_->addr2offset_checked(header), header->prev, header->next,
       header->Key(), header->Value(), expired_time);
-  bool success = dl_list_.Replace(header, pmem_record);
+  bool success = dl_list_.Replace(header, data_record);
   kvdk_assert(success, "existing header should be linked on its list");
   ret.existing_record = header;
-  ret.write_record = pmem_record;
+  ret.write_record = data_record;
   return ret;
 }
 
 Status HashList::CheckIndex() {
   DLRecord* prev = HeaderRecord();
   size_t cnt = 0;
-  DLListRecoveryUtils<HashList> recovery_utils(pmem_allocator_);
+  DLListRecoveryUtils<HashList> recovery_utils(kv_allocator_);
   while (true) {
-    DLRecord* curr = pmem_allocator_->offset2addr_checked<DLRecord>(prev->next);
+    DLRecord* curr = kv_allocator_->offset2addr_checked<DLRecord>(prev->next);
     if (curr == HeaderRecord()) {
       break;
     }
@@ -281,7 +281,7 @@ void HashList::Destroy() {
   if (header) {
     DLRecord* to_destroy = nullptr;
     do {
-      to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+      to_destroy = kv_allocator_->offset2addr_checked<DLRecord>(header->next);
       StringView key = to_destroy->Key();
       auto ul = hash_table_->AcquireLock(key);
       if (dl_list_.Remove(to_destroy)) {
@@ -307,16 +307,16 @@ void HashList::Destroy() {
         }
 
         to_destroy->Destroy();
-        to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+        to_free.emplace_back(kv_allocator_->addr2offset_checked(to_destroy),
                              to_destroy->GetRecordSize());
         if (to_free.size() > kMaxCachedOldRecords) {
-          pmem_allocator_->BatchFree(to_free);
+          kv_allocator_->BatchFree(to_free);
           to_free.clear();
         }
       }
     } while (to_destroy != header);
   }
-  pmem_allocator_->BatchFree(to_free);
+  kv_allocator_->BatchFree(to_free);
 }
 
 void HashList::DestroyAll() {
@@ -325,7 +325,7 @@ void HashList::DestroyAll() {
   DLRecord* to_destroy = nullptr;
   kvdk_assert(header != nullptr, "");
   do {
-    to_destroy = pmem_allocator_->offset2addr_checked<DLRecord>(header->next);
+    to_destroy = kv_allocator_->offset2addr_checked<DLRecord>(header->next);
     StringView key = to_destroy->Key();
     auto ul = hash_table_->AcquireLock(key);
     if (dl_list_.Remove(to_destroy)) {
@@ -350,25 +350,25 @@ void HashList::DestroyAll() {
         }
       }
       auto old_record =
-          pmem_allocator_->offset2addr<DLRecord>(to_destroy->old_version);
+          kv_allocator_->offset2addr<DLRecord>(to_destroy->old_version);
       while (old_record) {
         auto old_version = old_record->old_version;
-        to_free.emplace_back(pmem_allocator_->addr2offset_checked(old_record),
+        to_free.emplace_back(kv_allocator_->addr2offset_checked(old_record),
                              old_record->GetRecordSize());
         old_record->Destroy();
-        old_record = pmem_allocator_->offset2addr<DLRecord>(old_version);
+        old_record = kv_allocator_->offset2addr<DLRecord>(old_version);
       }
 
-      to_free.emplace_back(pmem_allocator_->addr2offset_checked(to_destroy),
+      to_free.emplace_back(kv_allocator_->addr2offset_checked(to_destroy),
                            to_destroy->GetRecordSize());
       to_destroy->Destroy();
       if (to_free.size() > kMaxCachedOldRecords) {
-        pmem_allocator_->BatchFree(to_free);
+        kv_allocator_->BatchFree(to_free);
         to_free.clear();
       }
     }
   } while (to_destroy != header);
-  pmem_allocator_->BatchFree(to_free);
+  kv_allocator_->BatchFree(to_free);
 }
 
 HashList::WriteResult HashList::putPrepared(
@@ -379,7 +379,7 @@ HashList::WriteResult HashList::putPrepared(
   DLList::WriteArgs args(internal_key, value, RecordType::HashElem,
                          RecordStatus::Normal, timestamp, space);
   ret.write_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   ret.hash_entry_ptr = lookup_result.entry_ptr;
   if (lookup_result.s == Status::Ok) {
     ret.existing_record = lookup_result.entry.GetIndex().dl_record;
@@ -416,7 +416,7 @@ HashList::WriteResult HashList::deletePrepared(
     kvdk_assert(ret.s == Status::Fail, "");
   }
   ret.write_record =
-      pmem_allocator_->offset2addr_checked<DLRecord>(space.offset);
+      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   hash_table_->Insert(lookup_result, RecordType::HashElem,
                       RecordStatus::Outdated, ret.write_record,
                       PointerType::DLRecord);

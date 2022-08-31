@@ -27,6 +27,7 @@
 #undef XXH_INLINE_ALL
 
 #include "../alias.hpp"
+#include "../allocator.hpp"
 #include "../macros.hpp"
 #include "codec.hpp"
 
@@ -388,12 +389,18 @@ class AlignedAllocator {
   inline void deallocate(T* p, size_t) noexcept { free(p); }
 };
 
-template <typename T, typename Alloc = AlignedAllocator<T>>
+template <typename T>
 class Array {
  public:
   template <typename... Args>
   explicit Array(uint64_t size, Args&&... args) : size_(size) {
-    data_ = alloc_.allocate(size_);
+    static_assert(sizeof(T) % alignof(T) == 0);
+    allocated = alloc_->AllocateAligned(alignof(T), size * sizeof(T));
+    if (allocated.size == 0) {
+      throw std::bad_alloc{};
+    }
+
+    data_ = alloc_->offset2addr<T>(allocated.offset);
     for (uint64_t i = 0; i < size; i++) {
       new (data_ + i) T{std::forward<Args>(args)...};
     }
@@ -410,7 +417,7 @@ class Array {
       for (uint64_t i = 0; i < size_; i++) {
         data_[i].~T();
       }
-      alloc_.deallocate(data_, size_);
+      alloc_->Free(allocated);
     }
   }
 
@@ -436,7 +443,8 @@ class Array {
  private:
   uint64_t const size_;
   T* data_{nullptr};
-  Alloc alloc_{};
+  Allocator* alloc_ = default_memory_allocator();
+  SpaceEntry allocated;
 };
 
 class Slice {

@@ -11,7 +11,7 @@ static constexpr int kDataBufferSize = 1024 * 1024;
 
 StringRecord* StringRecord::PersistStringRecord(
     void* addr, uint32_t record_size, TimestampType timestamp, RecordType type,
-    RecordStatus status, PMemOffsetType old_version, const StringView& key,
+    RecordStatus status, MemoryOffsetType old_version, const StringView& key,
     const StringView& value, ExpireTimeType expired_time) {
   void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(StringRecord);
@@ -28,10 +28,16 @@ StringRecord* StringRecord::PersistStringRecord(
                                       type, status, old_version, key, value,
                                       expired_time);
   if (with_buffer) {
+#ifdef KVDK_WITH_PMEM
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();
+#else
+    memcpy(addr, data_cpy_target, write_size);
+#endif
   } else {
+#ifdef KVDK_WITH_PMEM
     pmem_persist(addr, write_size);
+#endif
   }
 
   return static_cast<StringRecord*>(addr);
@@ -39,8 +45,8 @@ StringRecord* StringRecord::PersistStringRecord(
 
 DLRecord* DLRecord::PersistDLRecord(
     void* addr, uint32_t record_size, TimestampType timestamp, RecordType type,
-    RecordStatus status, PMemOffsetType old_version, PMemOffsetType prev,
-    PMemOffsetType next, const StringView& key, const StringView& value,
+    RecordStatus status, MemoryOffsetType old_version, MemoryOffsetType prev,
+    MemoryOffsetType next, const StringView& key, const StringView& value,
     ExpireTimeType expired_time) {
   void* data_cpy_target;
   auto write_size = key.size() + value.size() + sizeof(DLRecord);
@@ -57,10 +63,16 @@ DLRecord* DLRecord::PersistDLRecord(
                               status, old_version, prev, next, key, value,
                               expired_time);
   if (with_buffer) {
+#ifdef KVDK_WITH_PMEM
     pmem_memcpy(addr, data_cpy_target, write_size, PMEM_F_MEM_NONTEMPORAL);
     pmem_drain();
+#else
+    memcpy(addr, data_cpy_target, write_size);
+#endif
   } else {
+#ifdef KVDK_WITH_PMEM
     pmem_persist(addr, write_size);
+#endif
   }
 
   return static_cast<DLRecord*>(addr);

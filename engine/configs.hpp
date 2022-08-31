@@ -25,6 +25,7 @@ struct ImmutableConfigs {
     configs.pmem_segment_blocks = pmem_segment_blocks;
   }
 
+#ifdef KVDK_WITH_PMEM
   // Get persistent configs from "configs" and persist them to PMem
   // Notice: "this" should allocated on PMem
   void PersistImmutableConfigs(const Configs& configs) {
@@ -34,6 +35,7 @@ struct ImmutableConfigs {
     validation_flag = 1;
     pmem_persist(&validation_flag, 8);
   }
+#endif  // #ifdef KVDK_WITH_PMEM
 
   bool Valid() { return validation_flag; }
 };

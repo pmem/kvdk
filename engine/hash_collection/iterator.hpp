@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
 #pragma once
 
 #include "../version/version_controller.hpp"
@@ -15,7 +19,7 @@ class HashIteratorImpl final : public HashIterator {
       : hlist_(hlist),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
-        dl_iter_(&hlist->dl_list_, hlist->pmem_allocator_, snapshot) {}
+        dl_iter_(&hlist->dl_list_, hlist->kv_allocator_, snapshot) {}
   void SeekToFirst() final { dl_iter_.SeekToFirst(); }
 
   void SeekToLast() final { dl_iter_.SeekToLast(); }

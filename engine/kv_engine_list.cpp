@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
 #include "kv_engine.hpp"
 #include "list_collection/iterator.hpp"
 #include "utils/sync_point.hpp"
@@ -32,19 +36,19 @@ Status KVEngine::buildList(const StringView& list_name,
     CollectionIDType id = collection_id_.fetch_add(1);
     std::string value_str = List::EncodeID(id);
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(list_name, value_str));
+        kv_allocator_->Allocate(DLRecord::RecordSize(list_name, value_str));
     if (space.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
     // dl list is circular, so the next and prev pointers of
     // header point to itself
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::ListHeader, RecordStatus::Normal,
-        pmem_allocator_->addr2offset(existing_header), space.offset,
-        space.offset, list_name, value_str);
-    list = std::make_shared<List>(pmem_record, list_name, id,
-                                  pmem_allocator_.get(), dllist_locks_.get());
+        kv_allocator_->addr2offset(existing_header), space.offset, space.offset,
+        list_name, value_str);
+    list = std::make_shared<List>(data_record, list_name, id,
+                                  kv_allocator_.get(), dllist_locks_.get());
     kvdk_assert(list != nullptr, "");
     addListToMap(list);
     insertKeyOrElem(lookup_result, RecordType::ListHeader, RecordStatus::Normal,
@@ -73,16 +77,16 @@ Status KVEngine::ListDestroy(StringView collection) {
     kvdk_assert(header->GetRecordType() == RecordType::ListHeader, "");
     StringView value = header->Value();
     auto request_size = DLRecord::RecordSize(collection, value);
-    SpaceEntry space = pmem_allocator_->Allocate(request_size);
+    SpaceEntry space = kv_allocator_->Allocate(request_size);
     if (space.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::ListHeader, RecordStatus::Outdated,
-        pmem_allocator_->addr2offset_checked(header), header->prev,
-        header->next, collection, value);
-    bool success = list->Replace(header, pmem_record);
+        kv_allocator_->addr2offset_checked(header), header->prev, header->next,
+        collection, value);
+    bool success = list->Replace(header, data_record);
     kvdk_assert(success, "existing header should be linked on its list");
     hash_table_->Insert(collection, RecordType::ListHeader,
                         RecordStatus::Outdated, list, PointerType::List);
@@ -176,7 +180,10 @@ Status KVEngine::ListPopFront(StringView list_name, std::string* elem) {
       elem->assign(ret.existing_record->Value().data(),
                    ret.existing_record->Value().size());
     }
-    removeAndCacheOutdatedVersion(ret.write_record);
+    if (list->TryCleaningLock()) {
+      removeAndCacheOutdatedVersion(ret.write_record);
+      list->ReleaseCleaningLock();
+    }
   }
   tryCleanCachedOutdatedRecord();
   return ret.s;
@@ -211,7 +218,11 @@ Status KVEngine::ListPopBack(StringView list_name, std::string* elem) {
                    ret.existing_record->Value().size());
     }
     kvdk_assert(ret.existing_record && ret.write_record, "");
-    removeAndCacheOutdatedVersion(ret.write_record);
+
+    if (list->TryCleaningLock()) {
+      removeAndCacheOutdatedVersion(ret.write_record);
+      list->ReleaseCleaningLock();
+    }
   }
   tryCleanCachedOutdatedRecord();
   return ret.s;
@@ -481,7 +492,10 @@ Status KVEngine::ListErase(StringView list_name, long index,
       elem->assign(ret.existing_record->Value().data(),
                    ret.existing_record->Value().size());
     }
-    removeAndCacheOutdatedVersion(ret.write_record);
+    if (list->TryCleaningLock()) {
+      removeAndCacheOutdatedVersion(ret.write_record);
+      list->ReleaseCleaningLock();
+    }
   }
   tryCleanCachedOutdatedRecord();
   return ret.s;
@@ -545,6 +559,7 @@ void KVEngine::ListIteratorRelease(ListIterator* list) {
   delete iter;
 }
 
+#ifdef KVDK_WITH_PMEM
 Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
   return list_rebuilder_->AddElem(pmp_record);
 }
@@ -552,6 +567,7 @@ Status KVEngine::listRestoreElem(DLRecord* pmp_record) {
 Status KVEngine::listRestoreList(DLRecord* pmp_record) {
   return list_rebuilder_->AddHeader(pmp_record);
 }
+#endif
 
 Status KVEngine::listFind(StringView list_name, List** list) {
   auto result = lookupKey<false>(list_name, RecordType::ListHeader);
@@ -631,8 +647,10 @@ Status KVEngine::listBatchPopImpl(StringView list_name, ListPos pos, size_t n,
   return s;
 }
 
+#ifdef KVDK_WITH_PMEM
 Status KVEngine::listRollback(const BatchWriteLog::ListLogEntry& log) {
   return list_rebuilder_->Rollback(log);
 }
+#endif
 
 }  // namespace KVDK_NAMESPACE

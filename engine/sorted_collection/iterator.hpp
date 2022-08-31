@@ -13,12 +13,12 @@ class KVEngine;
 
 class SortedIteratorImpl : public SortedIterator {
  public:
-  SortedIteratorImpl(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
+  SortedIteratorImpl(Skiplist* skiplist, const Allocator* kv_allocator,
                      const SnapshotImpl* snapshot, bool own_snapshot)
       : skiplist_(skiplist),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
-        dl_iter_(&skiplist->dl_list_, pmem_allocator, snapshot) {}
+        dl_iter_(&skiplist->dl_list_, kv_allocator, snapshot) {}
 
   virtual ~SortedIteratorImpl() = default;
 
@@ -26,7 +26,7 @@ class SortedIteratorImpl : public SortedIterator {
     assert(skiplist_);
     Splice splice(skiplist_);
     skiplist_->Seek(key, &splice);
-    dl_iter_.Locate(splice.next_pmem_record, true);
+    dl_iter_.Locate(splice.next_data_record, true);
   }
 
   virtual void SeekToFirst() override { dl_iter_.SeekToFirst(); }

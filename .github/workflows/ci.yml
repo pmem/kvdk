@@ -29,16 +29,39 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive
 
-      - name: Check codestyle & Build
+      - name: Check codestyle & Build without libpmem
         run: |
           mkdir -p build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON
+          rm -rf ../build/*
+          cmake .. -DCMAKE_BUILD_TYPE=Debug -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON -DWITH_PMEM=OFF
           make -j
 
-      # The example program requires AVX512 which is not supported by Github hosted runners
-      # - name: Run example
+      # # This requires AVX512 which is not supported by Github hosted runners
+      # - name: C++ unit tests without libpmem
+      #   run: |
+      #     export PMEM_IS_PMEM_FORCE=1
+      #     ./tests/dbtest
+
+      - name: Check codestyle & Build with libpmem
+        run: |
+          mkdir -p build && cd build
+          rm -rf ../build/*
+          cmake .. -DCMAKE_BUILD_TYPE=Debug -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON -DWITH_PMEM=ON
+          make -j
+
+      # # This requires AVX512 which is not supported by Github hosted runners
+      # - name: Run C++ examples
       #   run: |
       #     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib:/usr/local/lib64
       #     export PMEM_IS_PMEM_FORCE=1
-      #     sudo mkdir /mnt/pmem0
-      #     ./build/examples/cpp_api_tutorial
+      #     sudo mkdir -p /mnt/pmem0
+      #     current_user=`whoami`
+      #     echo $current_user
+      #     sudo chown -R $current_user:$current_user /mnt/pmem0
+      #     ./build/examples/tutorial/cpp_api_tutorial
+
+      # # This requires AVX512 which is not supported by Github hosted runners
+      # - name: Java unit tests
+      #   run: |
+      #     cd java
+      #     mvn clean test

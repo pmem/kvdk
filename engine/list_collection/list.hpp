@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../dl_list.hpp"
+#include "../logger.hpp"
 #include "kvdk/types.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -13,11 +14,11 @@ class ListIteratorImpl;
 class List : public Collection {
  public:
   List(DLRecord* header, const StringView& name, CollectionIDType id,
-       PMEMAllocator* pmem_allocator, LockTable* lock_table)
+       Allocator* kv_allocator, LockTable* lock_table)
       : Collection(name, id),
         list_lock_(),
-        dl_list_(header, pmem_allocator, lock_table),
-        pmem_allocator_(pmem_allocator),
+        dl_list_(header, kv_allocator, lock_table),
+        kv_allocator_(kv_allocator),
         live_records_() {}
 
   struct WriteResult {
@@ -159,7 +160,7 @@ class List : public Collection {
   friend ListIteratorImpl;
   std::recursive_mutex list_lock_;
   DLList dl_list_;
-  PMEMAllocator* pmem_allocator_;
+  Allocator* kv_allocator_;
   std::atomic<size_t> size_;
   // to avoid illegal access caused by cleaning skiplist by multi-thread
   SpinMutex cleaning_lock_;
