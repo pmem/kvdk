@@ -14,8 +14,6 @@
 
 namespace KVDK_NAMESPACE {
 
-struct Splice;
-
 class WriteBatchImpl final : public WriteBatch {
  public:
   struct StringOp {
@@ -71,28 +69,29 @@ class WriteBatchImpl final : public WriteBatch {
     string_ops_.insert(op);
   }
 
-  void SortedPut(std::string const& key, std::string const& field,
+  void SortedPut(std::string const& collection, std::string const& key,
                  std::string const& value) final {
-    SortedOp op{WriteOp::Put, key, field, value};
+    SortedOp op{WriteOp::Put, collection, key, value};
     sorted_ops_.erase(op);
     sorted_ops_.insert(op);
   }
 
-  void SortedDelete(std::string const& key, std::string const& field) final {
-    SortedOp op{WriteOp::Delete, key, field, std::string{}};
+  void SortedDelete(std::string const& collection,
+                    std::string const& key) final {
+    SortedOp op{WriteOp::Delete, collection, key, std::string{}};
     sorted_ops_.erase(op);
     sorted_ops_.insert(op);
   }
 
-  void HashPut(std::string const& key, std::string const& field,
+  void HashPut(std::string const& collection, std::string const& key,
                std::string const& value) final {
-    HashOp op{WriteOp::Put, key, field, value};
+    HashOp op{WriteOp::Put, collection, key, value};
     hash_ops_.erase(op);
     hash_ops_.insert(op);
   }
 
-  void HashDelete(std::string const& key, std::string const& field) final {
-    HashOp op{WriteOp::Delete, key, field, std::string{}};
+  void HashDelete(std::string const& collection, std::string const& key) final {
+    HashOp op{WriteOp::Delete, collection, key, std::string{}};
     hash_ops_.erase(op);
     hash_ops_.insert(op);
   }
