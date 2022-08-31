@@ -33,12 +33,12 @@ struct SyncPointPair {
 
 struct SyncImpl {
   class CrashPoint : public std::runtime_error {
+   public:
+    CrashPoint(std::string const& msg) : base{msg} {}
+
    private:
     using base = std::runtime_error;
     using base::what;
-
-   public:
-    CrashPoint(std::string const& msg) : base{msg} {}
   };
 
   SyncImpl() : ready_(false) {}

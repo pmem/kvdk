@@ -379,7 +379,7 @@ class Engine {
   //
   // Return true on success, return false if a comparator of comparator_name
   // already existed
-  virtual bool RegisterComparator(const StringView& comparator_name,
+  virtual bool registerComparator(const StringView& comparator_name,
                                   Comparator) = 0;
 
   // Close the instance on exit.

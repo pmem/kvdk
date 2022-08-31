@@ -44,32 +44,32 @@ class PointerWithTag {
   static constexpr uint64_t kPointerMask = (((uint64_t)1 << 48) - 1);
 
   // TODO: Maybe explicit
-  PointerWithTag(PointerType* pointer) : tagged_pointer((uint64_t)pointer) {
+  PointerWithTag(PointerType* pointer) : tagged_pointer_((uint64_t)pointer) {
     assert(sizeof(TagType) <= 2);
   }
 
   explicit PointerWithTag(PointerType* pointer, TagType tag)
-      : tagged_pointer((uint64_t)pointer | ((uint64_t)tag << 48)) {
+      : tagged_pointer_((uint64_t)pointer | ((uint64_t)tag << 48)) {
     assert(sizeof(TagType) <= 2);
   }
 
-  PointerWithTag() : tagged_pointer(0) {}
+  PointerWithTag() : tagged_pointer_(0) {}
 
   PointerType* RawPointer() {
-    return (PointerType*)(tagged_pointer & kPointerMask);
+    return (PointerType*)(tagged_pointer_ & kPointerMask);
   }
 
   const PointerType* RawPointer() const {
-    return (const PointerType*)(tagged_pointer & kPointerMask);
+    return (const PointerType*)(tagged_pointer_ & kPointerMask);
   }
 
   bool Null() const { return RawPointer() == nullptr; }
 
-  TagType GetTag() const { return static_cast<TagType>(tagged_pointer >> 48); }
+  TagType GetTag() const { return static_cast<TagType>(tagged_pointer_ >> 48); }
 
-  void ClearTag() { tagged_pointer &= kPointerMask; }
+  void ClearTag() { tagged_pointer_ &= kPointerMask; }
 
-  void SetTag(TagType tag) { tagged_pointer |= ((uint64_t)tag << 48); }
+  void SetTag(TagType tag) { tagged_pointer_ |= ((uint64_t)tag << 48); }
 
   const PointerType& operator*() const { return *RawPointer(); }
 
@@ -88,7 +88,7 @@ class PointerWithTag {
   }
 
  private:
-  uint64_t tagged_pointer;
+  uint64_t tagged_pointer_;
 };
 
 // Used to record batch write stage and related records address, this should be

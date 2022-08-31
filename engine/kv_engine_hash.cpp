@@ -7,12 +7,12 @@
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::HashCreate(StringView collection) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
 
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
 
@@ -60,13 +60,13 @@ Status KVEngine::buildHashlist(const StringView& collection,
 }
 
 Status KVEngine::HashDestroy(StringView collection) {
-  auto s = MaybeInitAccessThread();
+  auto s = maybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) {
     return s;
   }
 
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
 
@@ -102,10 +102,10 @@ Status KVEngine::HashDestroy(StringView collection) {
 }
 
 Status KVEngine::HashSize(StringView collection, size_t* len) {
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
-  if (MaybeInitAccessThread() != Status::Ok) {
+  if (maybeInitAccessThread() != Status::Ok) {
     return Status::TooManyAccessThreads;
   }
 
@@ -121,7 +121,7 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
 
 Status KVEngine::HashGet(StringView collection, StringView key,
                          std::string* value) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
@@ -140,7 +140,7 @@ Status KVEngine::HashGet(StringView collection, StringView key,
 
 Status KVEngine::HashPut(StringView collection, StringView key,
                          StringView value) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
@@ -153,7 +153,7 @@ Status KVEngine::HashPut(StringView collection, StringView key,
   s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
-    if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
+    if (!checkKeySize(collection_key) || !checkValueSize(value)) {
       s = Status::InvalidDataSize;
     } else {
       auto ul = hash_table_->AcquireLock(collection_key);
@@ -170,7 +170,7 @@ Status KVEngine::HashPut(StringView collection, StringView key,
 }
 
 Status KVEngine::HashDelete(StringView collection, StringView key) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
@@ -183,7 +183,7 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
   s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
-    if (!CheckKeySize(collection_key)) {
+    if (!checkKeySize(collection_key)) {
       s = Status::InvalidDataSize;
     } else {
       auto ul = hash_table_->AcquireLock(collection_key);
@@ -200,7 +200,7 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
 
 Status KVEngine::HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -227,7 +227,7 @@ HashIterator* KVEngine::HashIteratorCreate(StringView collection,
                                            Snapshot* snapshot, Status* status) {
   Status s{Status::Ok};
   HashIterator* ret(nullptr);
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     s = Status::InvalidDataSize;
   }
 

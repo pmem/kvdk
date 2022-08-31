@@ -270,7 +270,7 @@ static void test_customer_sorted_func() {
     else
       return -1;
   };
-  engine->RegisterComparator(comp_name, score_cmp);
+  engine->registerComparator(comp_name, score_cmp);
   // create sorted collection
   kvdk::SortedCollectionConfigs s_configs;
   s_configs.comparator_name = comp_name;
