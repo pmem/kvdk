@@ -52,7 +52,7 @@ public class EngineTest extends EngineTestBase {
         try {
             kvdkEngine.sortedCreate(nameHandle);
         } catch (KVDKException ex) {
-            // should be NotFound
+            // should be Existed
             assertEquals(ex.getStatus().getCode(), Code.Existed);
         }
 
