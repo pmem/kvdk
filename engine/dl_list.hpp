@@ -93,9 +93,8 @@ class DLList {
 
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
-  static LockTable::MultiGuardType acquireRecordLock(DLRecord* record,
-                                                PMEMAllocator* pmem_allocator,
-                                                LockTable* lock_table) {
+  static LockTable::MultiGuardType acquireRecordLock(
+      DLRecord* record, PMEMAllocator* pmem_allocator, LockTable* lock_table) {
     while (1) {
       PMemOffsetType prev_offset = record->prev;
       PMemOffsetType next_offset = record->next;

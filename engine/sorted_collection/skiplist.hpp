@@ -439,9 +439,9 @@ class Skiplist : public Collection {
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
   // Notice: we do not check if record is still correctly linked
-  static LockTable::MultiGuardType lockRecordPosition(const DLRecord* record,
-                                                 PMEMAllocator* pmem_allocator,
-                                                 LockTable* lock_table);
+  static LockTable::MultiGuardType lockRecordPosition(
+      const DLRecord* record, PMEMAllocator* pmem_allocator,
+      LockTable* lock_table);
 
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
