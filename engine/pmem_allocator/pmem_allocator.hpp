@@ -88,7 +88,6 @@ class PMEMAllocator : public Allocator {
     // Space fetched from head of PMem segments, the size is aligned to
     // block_size_
     SpaceEntry segment_entry;
-    std::int64_t allocated_sz{};
   };
 
   bool allocateSegmentSpace(SpaceEntry* segment_entry);
