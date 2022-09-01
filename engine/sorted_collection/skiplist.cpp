@@ -26,12 +26,12 @@ Skiplist::~Skiplist() {
   destroyNodes();
   std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
   for (SkiplistNode* node : pending_deletion_nodes_) {
-    SkiplistNode::DeleteNode(node, default_alloctor_);
+    SkiplistNode::DeleteNode(node, node_allocator_);
   }
   pending_deletion_nodes_.clear();
   std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
   for (SkiplistNode* node : obsolete_nodes_) {
-    SkiplistNode::DeleteNode(node, default_alloctor_);
+    SkiplistNode::DeleteNode(node, node_allocator_);
   }
   obsolete_nodes_.clear();
 }
@@ -48,7 +48,7 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
       hash_table_(hash_table),
       record_locks_(lock_table),
       index_with_hashtable_(index_with_hashtable) {
-  header_ = SkiplistNode::NewNode(name, h, kMaxHeight, default_alloctor_);
+  header_ = SkiplistNode::NewNode(name, h, kMaxHeight, node_allocator_);
 
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     header_->RelaxedSetNext(i, nullptr);
@@ -796,7 +796,7 @@ void Skiplist::CleanObsoletedNodes() {
   if (pending_deletion_nodes_.size() > 0) {
     for (SkiplistNode* node : pending_deletion_nodes_) {
       // TODO: make sure the node is not referenced
-      SkiplistNode::DeleteNode(node, default_alloctor_);
+      SkiplistNode::DeleteNode(node, node_allocator_);
     }
     pending_deletion_nodes_.clear();
   }
@@ -902,12 +902,12 @@ void Skiplist::destroyNodes() {
       while (to_delete) {
         auto next = to_delete->Next(i).RawPointer();
         if (--to_delete->valid_links == 0) {
-          SkiplistNode::DeleteNode(to_delete, default_alloctor_);
+          SkiplistNode::DeleteNode(to_delete, node_allocator_);
         }
         to_delete = next;
       }
     }
-    SkiplistNode::DeleteNode(header_, default_alloctor_);
+    SkiplistNode::DeleteNode(header_, node_allocator_);
     header_ = nullptr;
   }
 }

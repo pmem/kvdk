@@ -504,7 +504,7 @@ class Skiplist : public Collection {
   DLList dl_list_;
   std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;
-  Allocator* default_alloctor_ = default_memory_allocator();
+  Allocator* node_allocator_ = default_memory_allocator();
   Allocator* kv_allocator_;
   // TODO: use specified hash table for each skiplist
   HashTable* hash_table_;
