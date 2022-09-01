@@ -27,7 +27,7 @@ class SystemMemoryAllocator : public Allocator {
     SpaceEntry entry;
     void* addr = malloc(size);
     if (addr != nullptr) {
-      bytes_allocated_.fetch_add(size);
+      LogAllocation(access_thread.id, size);
       entry.offset = reinterpret_cast<uint64_t>(addr);
       entry.size = size;
     }
@@ -39,7 +39,7 @@ class SystemMemoryAllocator : public Allocator {
     SpaceEntry entry;
     void* addr = aligned_alloc(alignment, size);
     if (addr != nullptr) {
-      bytes_allocated_.fetch_add(size);
+      LogAllocation(access_thread.id, size);
       entry.offset = reinterpret_cast<uint64_t>(addr);
       entry.size = size;
     }
@@ -50,15 +50,11 @@ class SystemMemoryAllocator : public Allocator {
   void Free(const SpaceEntry& entry) override {
     if (entry.offset) {
       free(reinterpret_cast<void*>(entry.offset));
-      bytes_allocated_.fetch_add(-entry.size);
+      LogDeallocation(access_thread.id, entry.size);
     }
   }
-  int64_t BytesAllocated() override { return bytes_allocated_.load(); }
 
   std::string AllocatorName() override { return "System"; }
-
- private:
-  std::atomic<int64_t> bytes_allocated_{0};
 };
 
 // Chunk based simple implementation
@@ -68,8 +64,8 @@ class ChunkBasedAllocator {
   SpaceEntry Allocate(uint64_t size);
   void Free(const SpaceEntry& entry);
 
-  ChunkBasedAllocator(uint32_t max_access_threads)
-      : dalloc_thread_cache_(max_access_threads) {}
+  ChunkBasedAllocator(uint32_t max_access_threads, Allocator* alloc)
+      : dalloc_thread_cache_(max_access_threads), alloc_(alloc) {}
   ChunkBasedAllocator(ChunkBasedAllocator const&) = delete;
   ChunkBasedAllocator(ChunkBasedAllocator&&) = delete;
   ~ChunkBasedAllocator() {
@@ -99,6 +95,6 @@ class ChunkBasedAllocator {
 
   const uint32_t chunk_size_ = (1 << 20);
   Array<DAllocThreadCache> dalloc_thread_cache_;
-  Allocator* alloc_ = default_memory_allocator();
+  Allocator* alloc_;
 };
 }  // namespace KVDK_NAMESPACE

@@ -47,7 +47,7 @@ static struct GlobalState {
   SystemMemoryAllocator system_memory_allocator;
 } global_state;
 
-Allocator* default_memory_allocator() {
+Allocator* global_memory_allocator() {
   return &global_state.system_memory_allocator;
 }
 

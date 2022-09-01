@@ -68,7 +68,11 @@ struct SkiplistNode {
   char cached_key[4];
 
   static void DeleteNode(SkiplistNode* node) {
-    Allocator* alloc = default_memory_allocator();
+    Allocator* alloc = global_memory_allocator();
+    if (access_thread.thread_manager &&
+        access_thread.thread_manager->GetAllocator()) {
+      alloc = access_thread.thread_manager->GetAllocator();
+    }
     uint64_t offset = alloc->addr2offset(node->heap_space_start());
     uint64_t size = node->allocated_size();
     alloc->Free(SpaceEntry(offset, size));
@@ -76,7 +80,11 @@ struct SkiplistNode {
 
   static SkiplistNode* NewNode(const StringView& key, DLRecord* data_record,
                                uint8_t height) {
-    Allocator* alloc = default_memory_allocator();
+    Allocator* alloc = global_memory_allocator();
+    if (access_thread.thread_manager &&
+        access_thread.thread_manager->GetAllocator()) {
+      alloc = access_thread.thread_manager->GetAllocator();
+    }
     size_t size;
     if (height >= kCacheHeight && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * height + key.size() - 4;

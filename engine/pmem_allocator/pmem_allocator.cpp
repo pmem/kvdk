@@ -42,14 +42,7 @@ void PMEMAllocator::Free(const SpaceEntry& space_entry) {
   }
 }
 
-std::int64_t PMEMAllocator::PMemUsageInBytes() {
-  std::int64_t total = 0;
-  for (auto const& ptcache : palloc_thread_cache_) {
-    total += ptcache.allocated_sz;
-  }
-  total += global_allocated_size_.load();
-  return total;
-}
+std::int64_t PMEMAllocator::PMemUsageInBytes() { return BytesAllocated(); }
 
 void PMEMAllocator::populateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");

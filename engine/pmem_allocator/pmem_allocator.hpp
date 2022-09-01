@@ -45,9 +45,6 @@ class PMEMAllocator : public Allocator {
   // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(const SpaceEntry& entry) override;
 
-  // Current bytes allocated from this allocator
-  int64_t BytesAllocated() override { return PMemUsageInBytes(); }
-
   SpaceEntry AllocateAligned(size_t, uint64_t) override {
     SpaceEntry entry;
     GlobalLogger.Error("Aligned allocation is not supported in PMEMAllocator");
@@ -69,24 +66,6 @@ class PMEMAllocator : public Allocator {
     if (entries.size() > 0) {
       uint64_t freed = free_list_.BatchPush(entries);
       LogDeallocation(access_thread.id, freed);
-    }
-  }
-
-  void LogAllocation(int tid, size_t sz) {
-    if (tid == -1) {
-      global_allocated_size_.fetch_add(sz);
-    } else {
-      assert(tid >= 0);
-      palloc_thread_cache_[tid].allocated_sz += sz;
-    }
-  }
-
-  void LogDeallocation(int tid, size_t sz) {
-    if (tid == -1) {
-      global_allocated_size_.fetch_sub(sz);
-    } else {
-      assert(tid >= 0);
-      palloc_thread_cache_[tid].allocated_sz -= sz;
     }
   }
 

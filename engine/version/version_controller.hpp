@@ -5,8 +5,8 @@
 #pragma once
 
 #include "../alias.hpp"
+#include "../allocator.hpp"
 #include "../thread_manager.hpp"
-#include "../utils/utils.hpp"
 #include "kvdk/configs.hpp"
 
 namespace KVDK_NAMESPACE {

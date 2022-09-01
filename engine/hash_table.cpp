@@ -13,13 +13,14 @@ namespace KVDK_NAMESPACE {
 HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
                                    uint32_t num_buckets_per_slot,
                                    const Allocator* kv_allocator,
+                                   Allocator* new_bucket_allocator,
                                    uint32_t max_access_threads) {
   HashTable* table;
   // We catch exception here as we may need to allocate large memory for hash
   // table here
   try {
     table = new HashTable(hash_bucket_num, num_buckets_per_slot, kv_allocator,
-                          max_access_threads);
+                          new_bucket_allocator, max_access_threads);
   } catch (std::bad_alloc& b) {
     GlobalLogger.Error("No enough dram to create global hash table: b\n",
                        b.what());
@@ -181,13 +182,13 @@ Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
   assert(bucket_iter.bucket_ptr_ != nullptr);
   if (hash_bucket_entries_[bucket_iter.bucket_idx_] > 0 &&
       hash_bucket_entries_[bucket_iter.bucket_idx_] % kNumEntryPerBucket == 0) {
-    auto space = bucket_allocator_.Allocate(kHashBucketSize);
+    auto space = chunk_based_bucket_allocator_.Allocate(kHashBucketSize);
     if (space.size == 0) {
       GlobalLogger.Error("MemoryOverflow!\n");
       return Status::MemoryOverflow;
     }
     bucket_iter.bucket_ptr_->next =
-        bucket_allocator_.offset2addr<HashBucket>(space.offset);
+        chunk_based_bucket_allocator_.offset2addr<HashBucket>(space.offset);
     bucket_iter.bucket_ptr_ = bucket_iter.bucket_ptr_->next;
   }
   bucket_iter.entry_idx_ = hash_bucket_entries_[bucket_iter.bucket_idx_]++;

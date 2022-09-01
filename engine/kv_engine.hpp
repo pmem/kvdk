@@ -526,6 +526,11 @@ class KVEngine : public Engine {
 
   void terminateBackgroundWorks();
 
+  std::unique_ptr<Allocator> kv_allocator_;
+  std::unique_ptr<Allocator> skiplist_node_allocator_;
+  std::unique_ptr<Allocator> hashtable_new_bucket_allocator_;
+  std::shared_ptr<ThreadManager> thread_manager_;
+
   Array<EngineThreadCache> engine_thread_cache_;
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
@@ -552,8 +557,7 @@ class KVEngine : public Engine {
   std::string dir_;
   std::string batch_log_dir_;
   std::string db_file_;
-  std::shared_ptr<ThreadManager> thread_manager_;
-  std::unique_ptr<Allocator> kv_allocator_;
+
   Configs configs_;
   bool closing_{false};
   std::vector<std::thread> bg_threads_;

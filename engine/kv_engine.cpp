@@ -457,12 +457,12 @@ KVEngine::~KVEngine() {
   terminateBackgroundWorks();
   // deleteCollections();
   ReportMemoryUsage();
-  GlobalLogger.Info("Instance closed\n");
 
-  // kv_allocator_ may be a global static variable, which should not be freed
-  if (!configs_.enable_pmem) {
-    kv_allocator_.release();
+  if (access_thread.id >= 0) {
+    ReleaseAccessThread();
   }
+
+  GlobalLogger.Info("Instance closed\n");
 }
 
 Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
@@ -497,18 +497,31 @@ void KVEngine::ReportMemoryUsage() {
     return;
   }
 
-  Allocator* default_allocator = default_memory_allocator();
-  auto total = default_allocator->BytesAllocated();
+  auto bytes = kv_allocator_->BytesAllocated();
+  auto total = bytes;
+  total += bytes;
   GlobalLogger.Info(
-      "Default Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
-      (total / (1LL << 10)), (total / (1LL << 20)), (total / (1LL << 30)));
+      "KV Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n", bytes,
+      (bytes / (1LL << 10)), (bytes / (1LL << 20)), (bytes / (1LL << 30)));
 
-  if (kv_allocator_->AllocatorName() != default_allocator->AllocatorName()) {
-    total = kv_allocator_->BytesAllocated();
-    GlobalLogger.Info(
-        "KV Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
-        (total / (1LL << 10)), (total / (1LL << 20)), (total / (1LL << 30)));
-  }
+  bytes = skiplist_node_allocator_->BytesAllocated();
+  total += bytes;
+  GlobalLogger.Info(
+      "Skiplist Node Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
+      bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
+      (bytes / (1LL << 30)));
+
+  bytes = hashtable_new_bucket_allocator_->BytesAllocated();
+  total += bytes;
+  GlobalLogger.Info(
+      "Hashtable New Bucket Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld "
+      "GB\n",
+      bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
+      (bytes / (1LL << 30)));
+
+  GlobalLogger.Info("Total Memory Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
+                    total, (total / (1LL << 10)), (total / (1LL << 20)),
+                    (total / (1LL << 30)));
 }
 
 void KVEngine::startBackgroundWorks() {
@@ -607,22 +620,41 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
   }
   (void)name;  // To suppress compile warnings
 #endif  // #ifdef KVDK_WITH_PMEM
-    kv_allocator_.reset(default_memory_allocator());
+    Allocator* kv_allocator = new SystemMemoryAllocator();
+    kv_allocator->EnableThreadLocalCounters(configs_.max_access_threads);
+    kv_allocator_.reset(kv_allocator);
 #ifdef KVDK_WITH_PMEM
   }
 #endif  // #ifdef KVDK_WITH_PMEM
 
-  GlobalLogger.Info("Default memory allocator: %s\n",
-                    default_memory_allocator()->AllocatorName().c_str());
+  Allocator* skiplist_node_allocator = new SystemMemoryAllocator();
+  skiplist_node_allocator->EnableThreadLocalCounters(
+      configs_.max_access_threads);
+  skiplist_node_allocator_.reset(skiplist_node_allocator);
+
+  Allocator* hashtable_new_bucket_allocator = new SystemMemoryAllocator();
+  hashtable_new_bucket_allocator->EnableThreadLocalCounters(
+      configs_.max_access_threads);
+  hashtable_new_bucket_allocator_.reset(hashtable_new_bucket_allocator);
+
+  GlobalLogger.Info("Global memory allocator: %s\n",
+                    global_memory_allocator()->AllocatorName().c_str());
   GlobalLogger.Info("KV memory allocator: %s\n",
                     kv_allocator_->AllocatorName().c_str());
+  GlobalLogger.Info("Skiplist node memory allocator: %s\n",
+                    skiplist_node_allocator_->AllocatorName().c_str());
+  GlobalLogger.Info("Hashtable new bucket memory allocator: %s\n",
+                    hashtable_new_bucket_allocator->AllocatorName().c_str());
 
-  thread_manager_.reset(new (std::nothrow)
-                            ThreadManager(configs_.max_access_threads));
+  thread_manager_.reset(new (std::nothrow) ThreadManager(
+      configs_.max_access_threads, skiplist_node_allocator));
+
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,
-      kv_allocator_.get(), configs_.max_access_threads));
+      kv_allocator_.get(), hashtable_new_bucket_allocator,
+      configs_.max_access_threads));
   dllist_locks_.reset(new LockTable{1UL << 20});
+
   if (kv_allocator_ == nullptr || hash_table_ == nullptr ||
       thread_manager_ == nullptr || dllist_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
