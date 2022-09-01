@@ -2,6 +2,11 @@ if (NOT BUILD_GRAPH_SIMULATOR)
     return()
 endif()
 
+if (NOT WITH_PMEM)
+    message(WARNING "graph_sim will not be built since -DWITH_PMEM=OFF.")
+    return()
+endif()
+
 set(ROCKSDB_INCLUDE_DIR)
 set(ROCKSDB_LIBRARY )
 message(${CMAKE_CURRENT_SOURCE_DIR})
