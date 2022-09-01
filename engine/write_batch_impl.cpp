@@ -9,6 +9,9 @@
 namespace KVDK_NAMESPACE {
 
 void BatchWriteLog::EncodeTo(char* dst) {
+  // TODO
+  // This function should not be called without PMem support.
+  // Checking dst == nullptr is a temporary workaround.
   if (dst == nullptr) {
     return;
   }
