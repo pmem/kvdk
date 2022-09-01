@@ -67,14 +67,16 @@ struct SkiplistNode {
   // 4 bytes for alignment, the actually allocated size may > 4
   char cached_key[4];
 
-  static void DeleteNode(SkiplistNode* node, Allocator* alloc) {
+  static void DeleteNode(SkiplistNode* node) {
+    Allocator* alloc = default_memory_allocator();
     uint64_t offset = alloc->addr2offset(node->heap_space_start());
     uint64_t size = node->allocated_size();
     alloc->Free(SpaceEntry(offset, size));
   }
 
   static SkiplistNode* NewNode(const StringView& key, DLRecord* data_record,
-                               uint8_t height, Allocator* alloc) {
+                               uint8_t height) {
+    Allocator* alloc = default_memory_allocator();
     size_t size;
     if (height >= kCacheHeight && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * height + key.size() - 4;
@@ -504,7 +506,6 @@ class Skiplist : public Collection {
   DLList dl_list_;
   std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;
-  Allocator* node_allocator_ = default_memory_allocator();
   Allocator* kv_allocator_;
   // TODO: use specified hash table for each skiplist
   HashTable* hash_table_;
