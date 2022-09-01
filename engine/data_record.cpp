@@ -16,10 +16,10 @@ StringRecord* StringRecord::PersistStringRecord(
     RecordStatus status, MemoryOffsetType old_version, const StringView& key,
     const StringView& value, ExpireTimeType expired_time) {
   void* data_cpy_target = addr;
-  bool with_buffer = false;
-  auto write_size = key.size() + value.size() + sizeof(StringRecord);
 
 #ifdef KVDK_WITH_PMEM
+  bool with_buffer = false;
+  auto write_size = key.size() + value.size() + sizeof(StringRecord);
   with_buffer = write_size <= kDataBufferSize;
   if (with_buffer) {
     if (thread_data_buffer.empty()) {
@@ -50,10 +50,10 @@ DLRecord* DLRecord::PersistDLRecord(
     MemoryOffsetType next, const StringView& key, const StringView& value,
     ExpireTimeType expired_time) {
   void* data_cpy_target = addr;
-  bool with_buffer = false;
-  auto write_size = key.size() + value.size() + sizeof(DLRecord);
 
 #ifdef KVDK_WITH_PMEM
+  bool with_buffer = false;
+  auto write_size = key.size() + value.size() + sizeof(DLRecord);
   with_buffer = write_size <= kDataBufferSize;
   if (with_buffer) {
     if (thread_data_buffer.empty()) {
