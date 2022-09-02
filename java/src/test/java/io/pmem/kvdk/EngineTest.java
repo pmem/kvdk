@@ -48,13 +48,18 @@ public class EngineTest extends EngineTestBase {
         // create
         kvdkEngine.sortedCreate(nameHandle);
 
-        // duplicate creation: OK
-        kvdkEngine.sortedCreate(nameHandle);
+        // duplicate creation: Not OK
+        try {
+            kvdkEngine.sortedCreate(nameHandle);
+        } catch (KVDKException ex) {
+            // should be Existed
+            assertEquals(ex.getStatus().getCode(), Code.Existed);
+        }
 
         // destroy
         kvdkEngine.sortedDestroy(nameHandle);
 
-        // create again
+        // create again: OK
         kvdkEngine.sortedCreate(nameHandle);
 
         String key = "key\01";
