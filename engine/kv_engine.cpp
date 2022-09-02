@@ -458,9 +458,8 @@ KVEngine::~KVEngine() {
   // deleteCollections();
   ReportMemoryUsage();
 
-  if (access_thread.id >= 0) {
-    ReleaseAccessThread();
-  }
+  // ensure skiplists use the same allocator in NewNode and DeleteNode
+  access_thread.thread_manager = thread_manager_;
 
   GlobalLogger.Info("Instance closed\n");
 }
@@ -470,8 +469,6 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
   GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
   KVEngine* engine = new KVEngine(configs);
   Status s = engine->init(name, configs);
-  // reset access_thread.id
-  access_thread.id = -1;
 
 #ifdef KVDK_WITH_PMEM
   if (s == Status::Ok && configs.enable_pmem) {
@@ -497,29 +494,37 @@ void KVEngine::ReportMemoryUsage() {
     return;
   }
 
-  auto bytes = kv_allocator_->BytesAllocated();
+  auto bytes = global_memory_allocator()->BytesAllocated();
   auto total = bytes;
+  GlobalLogger.Info(
+      "[0] Global Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
+      bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
+      (bytes / (1LL << 30)));
+
+  bytes = kv_allocator_->BytesAllocated();
   total += bytes;
   GlobalLogger.Info(
-      "KV Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n", bytes,
+      "[1] KV Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n", bytes,
       (bytes / (1LL << 10)), (bytes / (1LL << 20)), (bytes / (1LL << 30)));
 
   bytes = skiplist_node_allocator_->BytesAllocated();
   total += bytes;
   GlobalLogger.Info(
-      "Skiplist Node Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
+      "[2] Skiplist Node Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld "
+      "GB\n",
       bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
       (bytes / (1LL << 30)));
 
   bytes = hashtable_new_bucket_allocator_->BytesAllocated();
   total += bytes;
   GlobalLogger.Info(
-      "Hashtable New Bucket Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld "
+      "[3] Hashtable New Bucket Memory Allocator Usage: %ld B, %ld KB, %ld MB, "
+      "%ld "
       "GB\n",
       bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
       (bytes / (1LL << 30)));
 
-  GlobalLogger.Info("Total Memory Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
+  GlobalLogger.Info("[+] Total Memory Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
                     total, (total / (1LL << 10)), (total / (1LL << 20)),
                     (total / (1LL << 30)));
 }
@@ -563,6 +568,9 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
   if (s != Status::Ok) {
     return s;
   }
+  // reset access_thread
+  access_thread.id = -1;
+  access_thread.thread_manager = nullptr;
 
 #ifdef KVDK_WITH_PMEM
   if (configs_.enable_pmem) {
@@ -648,6 +656,8 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
 
   thread_manager_.reset(new (std::nothrow) ThreadManager(
       configs_.max_access_threads, skiplist_node_allocator));
+  // ensure skiplists use the same allocator in NewNode and DeleteNode
+  access_thread.thread_manager = thread_manager_;
 
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,

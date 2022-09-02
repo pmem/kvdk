@@ -471,6 +471,9 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
   size_t need_purge_num = 0;
   version_controller_.UpdateLocalOldestSnapshot();
 
+  // ensure skiplists use the same allocator in NewNode and DeleteNode
+  access_thread.thread_manager = thread_manager_;
+
   std::vector<StringRecord*> purge_string_records;
   std::vector<DLRecord*> purge_dl_records;
 
