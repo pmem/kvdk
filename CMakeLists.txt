@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 11)
 
 option(COVERAGE "code coverage" OFF)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd -mclwb -mclflushopt")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd -mclwb -mclflushopt -mlzcnt -mbmi -mavx512bw -mavx512vl")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -52,6 +52,8 @@ set(SOURCES
         engine/c/kvdk_list.cpp
         engine/c/kvdk_sorted.cpp
         engine/c/kvdk_string.cpp
+        engine/experimental/vhash_kv.cpp
+        engine/experimental/vhash_kv.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
         engine/engine.cpp
@@ -61,6 +63,7 @@ set(SOURCES
         engine/kv_engine_list.cpp
         engine/kv_engine_sorted.cpp
         engine/kv_engine_string.cpp
+        engine/kv_engine_vhash.cpp
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp

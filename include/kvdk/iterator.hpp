@@ -79,4 +79,19 @@ class HashIterator {
   virtual ~HashIterator() = default;
 };
 
+class VHashIterator {
+ public:
+  virtual void SeekToFirst() = 0;
+
+  virtual void Next() = 0;
+
+  virtual bool Valid() = 0;
+
+  virtual std::string Key() const = 0;
+
+  virtual std::string Value() const = 0;
+
+  virtual ~VHashIterator() = default;
+};
+
 }  // namespace KVDK_NAMESPACE

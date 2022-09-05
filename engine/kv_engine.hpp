@@ -22,6 +22,7 @@
 #include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
+#include "experimental/vhash.hpp"
 #include "hash_collection/hash_list.hpp"
 #include "hash_collection/rebuilder.hpp"
 #include "hash_table.hpp"
@@ -228,6 +229,17 @@ class KVEngine : public Engine {
   HashIterator* HashIteratorCreate(StringView key, Snapshot* snapshot,
                                    Status* s) final;
   void HashIteratorRelease(HashIterator*) final;
+
+  // Volatile Hash
+  Status VHashCreate(StringView key) final;
+  Status VHashDestroy(StringView key) final;
+  Status VHashSize(StringView key, size_t* len) final;
+  Status VHashGet(StringView key, StringView field, std::string* value) final;
+  Status VHashPut(StringView key, StringView field, StringView value) final;
+  Status VHashDelete(StringView key, StringView field) final;
+  Status VHashModify(StringView key, StringView field, ModifyFunc modify_func,
+                    void* cb_args) final;
+  std::unique_ptr<VHashIterator>VHashIteratorCreate(StringView key, Status* s) final;
 
  private:
   // Look up a first level key in hash table(e.g. collections or string, not
@@ -606,6 +618,11 @@ class KVEngine : public Engine {
   VersionController version_controller_;
   OldRecordsCleaner old_records_cleaner_;
   Cleaner cleaner_;
+
+  CharAllocator char_alloc_;
+  std::mutex vhashes_mu_;
+  VHashKVBuilder vhash_kvb_{char_alloc_, old_records_cleaner_};
+  std::unordered_map<CollectionIDType, std::shared_ptr<VHash>> vhashes_;
 
   ComparatorTable comparators_;
 
