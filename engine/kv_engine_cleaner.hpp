@@ -12,6 +12,7 @@
 #include <future>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <thread>
 #include <vector>
 

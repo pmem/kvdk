@@ -10,10 +10,10 @@
 #include <vector>
 
 #include "alias.hpp"
+#include "allocator.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "kvdk/engine.hpp"
-#include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -143,7 +143,8 @@ class HashTable {
 
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
                                  uint32_t num_buckets_per_slot,
-                                 const PMEMAllocator* pmem_allocator,
+                                 const Allocator* pmem_allocator,
+                                 Allocator* new_bucket_allocator,
                                  uint32_t max_access_threads);
 
   // Look up key in hashtable
@@ -208,11 +209,12 @@ class HashTable {
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t num_buckets_per_slot,
-            const PMEMAllocator* pmem_allocator, uint32_t max_access_threads)
+            const Allocator* pmem_allocator, Allocator* new_bucket_allocator,
+            uint32_t max_access_threads)
       : num_hash_buckets_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
         pmem_allocator_(pmem_allocator),
-        dram_allocator_(max_access_threads),
+        chunk_based_bucket_allocator_{max_access_threads, new_bucket_allocator},
         slots_(hash_bucket_num / num_buckets_per_slot),
         hash_bucket_entries_(hash_bucket_num, 0),
         hash_buckets_(num_hash_buckets_) {}
@@ -247,8 +249,8 @@ class HashTable {
 
   const uint64_t num_hash_buckets_;
   const uint32_t num_buckets_per_slot_;
-  const PMEMAllocator* pmem_allocator_;
-  ChunkBasedAllocator dram_allocator_;
+  const Allocator* pmem_allocator_;
+  ChunkBasedAllocator chunk_based_bucket_allocator_;
   Array<Slot> slots_;
   std::vector<uint64_t> hash_bucket_entries_;
   Array<HashBucket> hash_buckets_;

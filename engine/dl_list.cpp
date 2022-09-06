@@ -120,7 +120,7 @@ bool DLList::Remove(DLRecord* removing_record) {
 }
 
 bool DLList::Replace(DLRecord* old_record, DLRecord* new_record,
-                     PMEMAllocator* pmem_allocator, LockTable* lock_table) {
+                     Allocator* pmem_allocator, LockTable* lock_table) {
   auto guard = acquireRecordLock(old_record, pmem_allocator, lock_table);
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
@@ -143,16 +143,20 @@ bool DLList::Replace(DLRecord* old_record, DLRecord* new_record,
       old_record->PersistPrevNT(new_record_offset);
     } else {
       new_record->prev = prev_offset;
+#ifdef KVDK_WITH_PMEM
       pmem_persist(&new_record->prev, sizeof(PMemOffsetType));
+#endif
       new_record->next = next_offset;
+#ifdef KVDK_WITH_PMEM
       pmem_persist(&new_record->next, sizeof(PMemOffsetType));
+#endif
       linkRecord(prev, next, new_record, pmem_allocator);
     }
   }
   return on_list;
 }
 
-bool DLList::Remove(DLRecord* removing_record, PMEMAllocator* pmem_allocator,
+bool DLList::Remove(DLRecord* removing_record, Allocator* pmem_allocator,
                     LockTable* lock_table) {
   auto guard = acquireRecordLock(removing_record, pmem_allocator, lock_table);
   PMemOffsetType removing_offset = pmem_allocator->addr2offset(removing_record);
@@ -168,10 +172,14 @@ bool DLList::Remove(DLRecord* removing_record, PMEMAllocator* pmem_allocator,
     // first unlink deleting entry from next's prev.(It is the reverse process
     // of insertion)
     next->prev = prev_offset;
+#ifdef KVDK_WITH_PMEM
     pmem_persist(&next->prev, 8);
+#endif
     TEST_SYNC_POINT("KVEngine::DLList::Remove::PersistNext'sPrev::After");
     prev->next = next_offset;
+#ifdef KVDK_WITH_PMEM
     pmem_persist(&prev->next, 8);
+#endif
   }
   return on_list;
 }

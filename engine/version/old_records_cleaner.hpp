@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2021 Intel Corporation
  */
+
 #pragma once
 
 #include <condition_variable>
@@ -19,7 +20,7 @@
 namespace KVDK_NAMESPACE {
 class KVEngine;
 
-// OldRecordsCleaner is used to clean old version PMem records of kvdk
+// OldRecordsCleaner is used to clean old version data records of kvdk
 //
 // To support multi-version machenism and consistent backup of kvdk,
 // the updated/deleted records need to be ramained for a while until they are

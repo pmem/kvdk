@@ -42,7 +42,7 @@ struct SortedWriteArgs {
 };
 
 /* Format:
- * next pointers | DLRecord on pmem | height | cached key size |
+ * next pointers | DLRecord on kv memory | height | cached key size |
  * cached key We only cache key if height > kCache height or there are enough
  * space in the end of malloced space to cache the key (4B here).
  * */
@@ -54,7 +54,7 @@ struct SkiplistNode {
   };
   // Tagged pointers means this node has been logically removed from the list
   std::atomic<PointerWithTag<SkiplistNode, NodeStatus>> next[0];
-  // Doubly linked record on PMem
+  // Doubly linked record on kv memory
   DLRecord* record;
   // TODO: save memory
   uint16_t cached_key_size;
@@ -67,10 +67,24 @@ struct SkiplistNode {
   // 4 bytes for alignment, the actually allocated size may > 4
   char cached_key[4];
 
-  static void DeleteNode(SkiplistNode* node) { free(node->heap_space_start()); }
+  static void DeleteNode(SkiplistNode* node) {
+    Allocator* alloc = global_memory_allocator();
+    if (access_thread.thread_manager &&
+        access_thread.thread_manager->GetAllocator()) {
+      alloc = access_thread.thread_manager->GetAllocator();
+    }
+    uint64_t offset = alloc->addr2offset(node->heap_space_start());
+    uint64_t size = node->allocated_size();
+    alloc->Free(SpaceEntry(offset, size));
+  }
 
   static SkiplistNode* NewNode(const StringView& key, DLRecord* record_on_pmem,
                                uint8_t height) {
+    Allocator* alloc = global_memory_allocator();
+    if (access_thread.thread_manager &&
+        access_thread.thread_manager->GetAllocator()) {
+      alloc = access_thread.thread_manager->GetAllocator();
+    }
     size_t size;
     if (height >= kCacheHeight && key.size() > 4) {
       size = sizeof(SkiplistNode) + 8 * height + key.size() - 4;
@@ -78,8 +92,10 @@ struct SkiplistNode {
       size = sizeof(SkiplistNode) + 8 * height;
     }
     SkiplistNode* node = nullptr;
-    void* space = malloc(size);
-    if (space != nullptr) {
+
+    SpaceEntry entry = alloc->Allocate(size);
+    if (entry.size != 0) {
+      void* space = alloc->offset2addr(entry.offset);
       node = (SkiplistNode*)((char*)space + 8 * height);
       node->record = record_on_pmem;
       node->height = height;
@@ -156,21 +172,29 @@ struct SkiplistNode {
   }
 
   void* heap_space_start() { return (char*)this - height * 8; }
+
+  uint64_t allocated_size() {
+    if (cached_key_size > 4) {
+      return sizeof(SkiplistNode) + 8 * height + cached_key_size - 4;
+    } else {
+      return sizeof(SkiplistNode) + 8 * height;
+    }
+  }
 };
 
 // A persistent sorted collection implemented as skiplist struct, data organized
 // sorted by key
 //
-// The lowest level of the skiplist are persisted on PMem along with key and
+// The lowest level of the skiplist are stored on kv memory along with key and
 // values, while higher level nodes are stored in DRAM, and re-construct at
 // recovery.
 // The insert and seek operations are indexed by the multi-level links and
 // implemented in O(logn) time. Meanwhile, the skiplist nodes is also indexed by
 // the global hash table, so the updates/delete and point read operations can be
 // indexed by hash table and implemented in ~O(1) time
-// Each skiplist has a header record persisted on PMem, the key of header record
-// is the skiplist name, the value of header record is encoded by skiplist id
-// and configs
+// Each skiplist has a header record stored on kv memory, the key of header
+// record is the skiplist name, the value of header record is encoded by
+// skiplist id and configs
 class Skiplist : public Collection {
  public:
   // Result of a write operation
@@ -183,7 +207,7 @@ class Skiplist : public Collection {
   };
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-           Comparator comparator, PMEMAllocator* pmem_allocator,
+           Comparator comparator, Allocator* pmem_allocator,
            HashTable* hash_table, LockTable* lock_table,
            bool index_with_hashtable);
 
@@ -220,8 +244,8 @@ class Skiplist : public Collection {
   // Args:
   // * timestamp: kvdk engine timestamp of this operation
   //
-  // Return Ok on success, with the writed pmem record, its dram node and
-  // updated pmem record if it exists
+  // Return Ok on success, with the writed data record, its dram node and
+  // updated data record if it exists
   //
   // Notice: the putting key should already been locked by engine
   WriteResult Put(const StringView& key, const StringView& value,
@@ -235,8 +259,8 @@ class Skiplist : public Collection {
   // Args:
   // * timestamp: kvdk engine timestamp of this operation
   //
-  // Return Ok on success, with the writed pmem delete record, its dram node and
-  // deleted pmem record if it exists
+  // Return Ok on success, with the writed delete record, its dram node and
+  // deleted record if it exists
   //
   // Notice: the deleting key should already been locked by engine
   WriteResult Delete(const StringView& key, TimestampType timestamp);
@@ -246,14 +270,14 @@ class Skiplist : public Collection {
                                 WriteOp op);
 
   // Prepare neccessary resources for write, store lookup/seek result of key and
-  // required pmem space to write new reocrd in args
+  // required memory space to write new reocrd in args
   //
   // Args:
   // * args: generated by InitWriteArgs
   //
   // Return:
   // Ok on success
-  // PMemOverflow if no enough pmem space
+  // MemoryOverflow if no enough kv memory space
   // MemoryOverflow if no enough dram space
   //
   // Notice: args.key should already been locked by engine
@@ -265,11 +289,11 @@ class Skiplist : public Collection {
   // * args: write args prepared by PrepareWrite()
   //
   // Return:
-  // Status Ok on success, with the writed pmem delete record, its dram node and
-  // deleted pmem record if existing
+  // Status Ok on success, with the writed delete record, its dram node and
+  // deleted record if existing
   WriteResult Write(SortedWriteArgs& args);
 
-  // Seek position of "key" on both dram and PMem node in the skiplist, and
+  // Seek position of "key" on both dram and kv node in the skiplist, and
   // store position in "result_splice". If "key" existing, the next pointers in
   // splice point to node of "key"
   void Seek(const StringView& key, Splice* result_splice);
@@ -282,7 +306,7 @@ class Skiplist : public Collection {
                 uint8_t start_height, uint8_t end_height,
                 Splice* result_splice);
 
-  // Destroy and free the whole skiplist, including skiplist nodes and pmem
+  // Destroy and free the whole skiplist, including skiplist nodes and kv
   // records.
   void Destroy();
 
@@ -321,7 +345,7 @@ class Skiplist : public Collection {
   //
   // Notice: key of the purging record should already been locked by engine
   static bool Remove(DLRecord* purging_record, SkiplistNode* dram_node,
-                     PMEMAllocator* pmem_allocator, LockTable* lock_table);
+                     Allocator* pmem_allocator, LockTable* lock_table);
 
   // Replace "old_record" from its skiplist with "replacing_record", please make
   // sure the key order is correct after replace
@@ -338,7 +362,7 @@ class Skiplist : public Collection {
   //
   // Notice: key of the replacing record should already been locked by engine
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
-                      SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
+                      SkiplistNode* dram_node, Allocator* pmem_allocator,
                       LockTable* lock_table);
 
   // Build a skiplist node for "pmem_record"
@@ -394,34 +418,34 @@ class Skiplist : public Collection {
  private:
   friend SortedIteratorImpl;
 
-  // put impl with prepared seek result and pmem space
+  // put impl with prepared seek result and kv memory space
   WriteResult putPreparedNoHash(Splice& seek_result, const StringView& key,
                                 const StringView& value,
                                 TimestampType timestamp,
                                 const SpaceEntry& space);
 
-  // put impl with prepared lookup result and pmem space
+  // put impl with prepared lookup result and kv memory space
   WriteResult putPreparedWithHash(const HashTable::LookupResult& lookup_result,
                                   const StringView& key,
                                   const StringView& value,
                                   TimestampType timestamp,
                                   const SpaceEntry& space);
 
-  // put impl with prepared existing record and pmem space
+  // put impl with prepared existing record and kv memory space
   WriteResult deletePreparedNoHash(DLRecord* existing_record,
                                    SkiplistNode* dram_node,
                                    const StringView& key,
                                    TimestampType timestamp,
                                    const SpaceEntry& space);
 
-  // put impl with prepared lookup result of existing record and pmem space
+  // put impl with prepared lookup result of existing record and kv memory space
   WriteResult deletePreparedWithHash(
       const HashTable::LookupResult& lookup_result, const StringView& key,
       TimestampType timestamp, const SpaceEntry& space);
 
   // Link DLRecord "linking" between "prev" and "next"
   static void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
-                           PMEMAllocator* pmem_allocator);
+                           Allocator* pmem_allocator);
 
   inline void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
     return linkDLRecord(prev, next, linking, pmem_allocator_);
@@ -439,9 +463,9 @@ class Skiplist : public Collection {
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
   // Notice: we do not check if record is still correctly linked
-  static LockTable::MultiGuardType lockRecordPosition(
-      const DLRecord* record, PMEMAllocator* pmem_allocator,
-      LockTable* lock_table);
+  static LockTable::MultiGuardType lockRecordPosition(const DLRecord* record,
+                                                      Allocator* pmem_allocator,
+                                                      LockTable* lock_table);
 
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
@@ -490,7 +514,7 @@ class Skiplist : public Collection {
   DLList dl_list_;
   std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;
-  PMEMAllocator* pmem_allocator_;
+  Allocator* pmem_allocator_;
   // TODO: use specified hash table for each skiplist
   HashTable* hash_table_;
   // locks to protect modification of records
@@ -516,9 +540,9 @@ class Skiplist : public Collection {
 //
 // nexts: next nodes on DRAM of a key position, or node of the key if it existed
 // prevs: prev nodes on DRAM of a key position
-// prev_pmem_record: previous record on PMem of a key position
-// next_pmem_record: next record on PMem of a key position, or record of the key
-// if it existed
+// prev_pmem_record: previous record on kv memory of a key position
+// next_pmem_record: next record on kv memory of a key position, or record of
+// the key if it existed
 //
 // TODO: maybe we only need prev position
 struct Splice {

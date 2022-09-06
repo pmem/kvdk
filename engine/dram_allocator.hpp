@@ -18,36 +18,75 @@
 
 namespace KVDK_NAMESPACE {
 
+// System memory allocator used for default scenarios.
+class SystemMemoryAllocator : public Allocator {
+ public:
+  SystemMemoryAllocator() : Allocator(0, UINT64_MAX) {}
+
+  SpaceEntry Allocate(uint64_t size) override {
+    SpaceEntry entry;
+    void* addr = malloc(size);
+    if (addr != nullptr) {
+      LogAllocation(access_thread.id, size);
+      entry.offset = reinterpret_cast<uint64_t>(addr);
+      entry.size = size;
+    }
+
+    return entry;
+  }
+
+  SpaceEntry AllocateAligned(size_t alignment, uint64_t size) override {
+    SpaceEntry entry;
+    void* addr = aligned_alloc(alignment, size);
+    if (addr != nullptr) {
+      LogAllocation(access_thread.id, size);
+      entry.offset = reinterpret_cast<uint64_t>(addr);
+      entry.size = size;
+    }
+
+    return entry;
+  }
+
+  void Free(const SpaceEntry& entry) override {
+    if (entry.offset) {
+      free(reinterpret_cast<void*>(entry.offset));
+      LogDeallocation(access_thread.id, entry.size);
+    }
+  }
+
+  std::string AllocatorName() override { return "System"; }
+};
+
 // Chunk based simple implementation
 // TODO: optimize, implement free
-class ChunkBasedAllocator : Allocator {
+class ChunkBasedAllocator {
  public:
-  SpaceEntry Allocate(uint64_t size) override;
-  void Free(const SpaceEntry& entry) override;
-  inline void* offset2addr(uint64_t offset) { return (void*)offset; }
-  template <typename T>
-  inline T* offset2addr(uint64_t offset) {
-    return static_cast<T*>(offset2addr(offset));
-  }
-  inline uint64_t addr2offset(void* addr) { return (uint64_t)addr; }
-  ChunkBasedAllocator(uint32_t max_access_threads)
-      : dalloc_thread_cache_(max_access_threads) {}
+  SpaceEntry Allocate(uint64_t size);
+  void Free(const SpaceEntry& entry);
+
+  ChunkBasedAllocator(uint32_t max_access_threads, Allocator* alloc)
+      : dalloc_thread_cache_(max_access_threads), alloc_(alloc) {}
   ChunkBasedAllocator(ChunkBasedAllocator const&) = delete;
   ChunkBasedAllocator(ChunkBasedAllocator&&) = delete;
   ~ChunkBasedAllocator() {
     for (uint64_t i = 0; i < dalloc_thread_cache_.size(); i++) {
       auto& tc = dalloc_thread_cache_[i];
-      for (void* chunk : tc.allocated_chunks) {
-        free(chunk);
+      for (auto chunk : tc.allocated_chunks) {
+        alloc_->Free(chunk);
       }
     }
+  }
+
+  template <typename T>
+  inline T* offset2addr(PMemOffsetType offset) const {
+    return alloc_->offset2addr<T>(offset);
   }
 
  private:
   struct alignas(64) DAllocThreadCache {
     char* chunk_addr = nullptr;
     uint64_t usable_bytes = 0;
-    std::vector<void*> allocated_chunks;
+    std::vector<SpaceEntry> allocated_chunks;
 
     DAllocThreadCache() = default;
     DAllocThreadCache(const DAllocThreadCache&) = delete;
@@ -56,5 +95,6 @@ class ChunkBasedAllocator : Allocator {
 
   const uint32_t chunk_size_ = (1 << 20);
   Array<DAllocThreadCache> dalloc_thread_cache_;
+  Allocator* alloc_;
 };
 }  // namespace KVDK_NAMESPACE

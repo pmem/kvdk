@@ -4,6 +4,8 @@
 
 #include "pmem_allocator.hpp"
 
+#ifdef KVDK_WITH_PMEM
+
 #include <libpmem.h>
 #include <sys/sysmacros.h>
 
@@ -17,7 +19,8 @@ PMEMAllocator::PMEMAllocator(char* pmem, uint64_t pmem_size,
                              uint64_t num_segment_blocks, uint32_t block_size,
                              uint32_t max_access_threads,
                              VersionController* version_controller)
-    : pmem_(pmem),
+    : Allocator(pmem, pmem_size),
+      pmem_(pmem),
       palloc_thread_cache_(max_access_threads),
       block_size_(block_size),
       segment_size_(num_segment_blocks * block_size),
@@ -39,14 +42,7 @@ void PMEMAllocator::Free(const SpaceEntry& space_entry) {
   }
 }
 
-std::int64_t PMEMAllocator::PMemUsageInBytes() {
-  std::int64_t total = 0;
-  for (auto const& ptcache : palloc_thread_cache_) {
-    total += ptcache.allocated_sz;
-  }
-  total += global_allocated_size_.load();
-  return total;
-}
+std::int64_t PMEMAllocator::PMemUsageInBytes() { return BytesAllocated(); }
 
 void PMEMAllocator::populateSpace() {
   GlobalLogger.Info("Populating PMem space ...\n");
@@ -305,3 +301,5 @@ void PMEMAllocator::persistSpaceEntry(PMemOffsetType offset, uint64_t size) {
   pmem_memcpy_persist(offset2addr_checked(offset), &padding, sizeof(DataEntry));
 }
 }  // namespace KVDK_NAMESPACE
+
+#endif  // #ifdef KVDK_WITH_PMEM

@@ -4,7 +4,9 @@
 
 #include "skiplist.hpp"
 
+#ifdef KVDK_WITH_PMEM
 #include <libpmem.h>
+#endif
 
 #include <algorithm>
 #include <future>
@@ -35,7 +37,7 @@ Skiplist::~Skiplist() {
 }
 
 Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-                   Comparator comparator, PMEMAllocator* pmem_allocator,
+                   Comparator comparator, Allocator* pmem_allocator,
                    HashTable* hash_table, LockTable* lock_table,
                    bool index_with_hashtable)
     : Collection(name, id),
@@ -47,6 +49,7 @@ Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
       record_locks_(lock_table),
       index_with_hashtable_(index_with_hashtable) {
   header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
+
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     header_->RelaxedSetNext(i, nullptr);
   }
@@ -148,13 +151,20 @@ void Skiplist::SeekNode(const StringView& key, SkiplistNode* start_node,
 }
 
 void Skiplist::linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
-                            PMEMAllocator* pmem_allocator) {
+                            Allocator* pmem_allocator) {
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
+
+#ifdef KVDK_WITH_PMEM
   pmem_persist(&prev->next, 8);
+#endif
+
   TEST_SYNC_POINT("KVEngine::DLList::LinkDLRecord::HalfLink");
   next->prev = inserting_record_offset;
+
+#ifdef KVDK_WITH_PMEM
   pmem_persist(&next->prev, 8);
+#endif
 }
 
 void Skiplist::Seek(const StringView& key, Splice* result_splice) {
@@ -255,8 +265,7 @@ Status Skiplist::CheckIndex() {
 }
 
 LockTable::MultiGuardType Skiplist::lockRecordPosition(
-    const DLRecord* record, PMEMAllocator* pmem_allocator,
-    LockTable* lock_table) {
+    const DLRecord* record, Allocator* pmem_allocator, LockTable* lock_table) {
   while (1) {
     PMemOffsetType prev_offset = record->prev;
     PMemOffsetType next_offset = record->next;
@@ -476,7 +485,7 @@ Skiplist::WriteResult Skiplist::Put(const StringView& key,
 }
 
 bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
-                       SkiplistNode* dram_node, PMEMAllocator* pmem_allocator,
+                       SkiplistNode* dram_node, Allocator* pmem_allocator,
                        LockTable* lock_table) {
   bool ok = DLList::Replace(old_record, new_record, pmem_allocator, lock_table);
   if (ok && dram_node != nullptr) {
@@ -488,7 +497,7 @@ bool Skiplist::Replace(DLRecord* old_record, DLRecord* new_record,
 }
 
 bool Skiplist::Remove(DLRecord* removing_record, SkiplistNode* dram_node,
-                      PMEMAllocator* pmem_allocator, LockTable* lock_table) {
+                      Allocator* pmem_allocator, LockTable* lock_table) {
   bool ok = DLList::Remove(removing_record, pmem_allocator, lock_table);
   if (ok && dram_node) {
     dram_node->MarkAsDeleted();

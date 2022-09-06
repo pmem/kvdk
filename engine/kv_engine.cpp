@@ -5,7 +5,9 @@
 #include "kv_engine.hpp"
 
 #include <dirent.h>
+#ifdef KVDK_WITH_PMEM
 #include <libpmem.h>
+#endif
 #include <sys/mman.h>
 
 #include <algorithm>
@@ -23,12 +25,15 @@
 #include "hash_collection/iterator.hpp"
 #include "kvdk/engine.hpp"
 #include "list_collection/iterator.hpp"
+#include "pmem_allocator/pmem_allocator.hpp"
 #include "sorted_collection/iterator.hpp"
 #include "structures.hpp"
 #include "utils/sync_point.hpp"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
+
+#ifdef KVDK_WITH_PMEM
 // fsdax mode align to 2MB by default.
 constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
 
@@ -47,164 +52,155 @@ void PendingBatch::PersistProcessing(const std::vector<PMemOffsetType>& records,
   pmem_persist(this, sizeof(PendingBatch));
 }
 
-KVEngine::~KVEngine() {
-  GlobalLogger.Info("Closing instance ... \n");
-  GlobalLogger.Info("Waiting bg threads exit ... \n");
-  closing_ = true;
-  terminateBackgroundWorks();
-  // deleteCollections();
-  ReportPMemUsage();
-  GlobalLogger.Info("Instance closed\n");
-}
+Status KVEngine::persistOrRecoverImmutableConfigs() {
+  size_t mapped_len;
+  int is_pmem;
+  uint64_t len =
+      kPMEMMapSizeUnit *
+      (size_t)ceil(1.0 * sizeof(ImmutableConfigs) / kPMEMMapSizeUnit);
+  ImmutableConfigs* configs = (ImmutableConfigs*)pmem_map_file(
+      config_file().c_str(), len, PMEM_FILE_CREATE, 0666, &mapped_len,
+      &is_pmem);
+  if (configs == nullptr || !is_pmem || mapped_len != len) {
+    GlobalLogger.Error(
+        "Open immutable configs file error %s\n",
+        !is_pmem ? (dir_ + "is not a valid pmem path").c_str() : "");
+    return Status::IOError;
+  }
+  if (configs->Valid()) {
+    configs->AssignImmutableConfigs(configs_);
+  }
 
-Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
-                      const Configs& configs) {
-  GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
-  KVEngine* engine = new KVEngine(configs);
-  Status s = engine->init(name, configs);
+  Status s = checkPMemConfigs(configs_);
   if (s == Status::Ok) {
-    s = engine->restoreExistingData();
+    configs->PersistImmutableConfigs(configs_);
   }
-  if (s == Status::Ok) {
-    *engine_ptr = engine;
-    engine->startBackgroundWorks();
-    engine->ReportPMemUsage();
-  } else {
-    GlobalLogger.Error("Init kvdk instance failed: %d\n", s);
-    delete engine;
-  }
+  pmem_unmap(configs, len);
   return s;
 }
 
-Status KVEngine::Restore(const std::string& engine_path,
-                         const std::string& backup_log, Engine** engine_ptr,
-                         const Configs& configs) {
-  GlobalLogger.Info(
-      "Restoring kvdk instance from backup log %s to engine path %s\n",
-      backup_log.c_str(), engine_path.c_str());
-  KVEngine* engine = new KVEngine(configs);
-  Status s = engine->init(engine_path, configs);
-  if (s == Status::Ok) {
-    s = engine->restoreDataFromBackup(backup_log);
+Status KVEngine::initOrRestoreCheckpoint() {
+  size_t mapped_len;
+  int is_pmem;
+  persist_checkpoint_ = static_cast<CheckPoint*>(
+      pmem_map_file(checkpoint_file().c_str(), sizeof(CheckPoint),
+                    PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem));
+  if (persist_checkpoint_ == nullptr || !is_pmem ||
+      mapped_len != sizeof(CheckPoint)) {
+    GlobalLogger.Error("Map persistent checkpoint file %s failed\n",
+                       checkpoint_file().c_str());
+    return Status::IOError;
   }
-
-  if (s == Status::Ok) {
-    *engine_ptr = engine;
-    engine->startBackgroundWorks();
-    engine->ReportPMemUsage();
-  } else {
-    GlobalLogger.Error("Restore kvdk instance from backup log %s failed: %d\n",
-                       backup_log.c_str(), s);
-    delete engine;
-  }
-  return s;
+  return Status::Ok;
 }
 
-void KVEngine::ReportPMemUsage() {
-  // Check pmem allocator is initialized before use it.
-  // It may not be successfully initialized due to file operation errors.
-  if (pmem_allocator_ == nullptr) {
-    return;
-  }
+Status KVEngine::restoreExistingData() {
+  access_thread.id = 0;
+  defer(access_thread.id = -1);
 
-  auto total = pmem_allocator_->PMemUsageInBytes();
-  GlobalLogger.Info("PMem Usage: %ld B, %ld KB, %ld MB, %ld GB\n", total,
-                    (total / (1LL << 10)), (total / (1LL << 20)),
-                    (total / (1LL << 30)));
-}
+  sorted_rebuilder_.reset(new SortedCollectionRebuilder(
+      this, configs_.opt_large_sorted_collection_recovery,
+      configs_.max_access_threads, *persist_checkpoint_));
+  hash_rebuilder_.reset(
+      new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+                            dllist_locks_.get(), thread_manager_.get(),
+                            configs_.max_access_threads, *persist_checkpoint_));
+  list_rebuilder_.reset(
+      new ListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+                        dllist_locks_.get(), thread_manager_.get(),
+                        configs_.max_access_threads, *persist_checkpoint_));
 
-void KVEngine::startBackgroundWorks() {
-  std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
-  bg_work_signals_.terminating = false;
-  bg_threads_.emplace_back(&KVEngine::backgroundPMemAllocatorOrgnizer, this);
-  bg_threads_.emplace_back(&KVEngine::backgroundPMemUsageReporter, this);
-
-  bool close_reclaimer = false;
-  TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
-                           &close_reclaimer);
-  if (!close_reclaimer) {
-    cleaner_.StartClean();
-  }
-}
-
-void KVEngine::terminateBackgroundWorks() {
-  cleaner_.CloseAllWorkers();
-  {
-    std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
-    bg_work_signals_.terminating = true;
-    bg_work_signals_.dram_cleaner_cv.notify_all();
-    bg_work_signals_.pmem_allocator_organizer_cv.notify_all();
-    bg_work_signals_.pmem_usage_reporter_cv.notify_all();
-  }
-  for (auto& t : bg_threads_) {
-    t.join();
-  }
-}
-
-Status KVEngine::init(const std::string& name, const Configs& configs) {
-  Status s;
-  if (!configs.use_devdax_mode) {
-    dir_ = format_dir_path(name);
-    int res = create_dir_if_missing(dir_);
-    if (res != 0) {
-      GlobalLogger.Error("Create engine dir %s error\n", dir_.c_str());
-      return Status::IOError;
-    }
-
-    batch_log_dir_ = dir_ + "batch_logs/";
-    if (create_dir_if_missing(batch_log_dir_) != 0) {
-      GlobalLogger.Error("Create batch log dir %s error\n",
-                         batch_log_dir_.c_str());
-      return Status::IOError;
-    }
-
-    db_file_ = data_file();
-    configs_ = configs;
-
-  } else {
-    configs_ = configs;
-    db_file_ = name;
-
-    // The devdax mode need to execute the shell scripts/init_devdax.sh,
-    // then a fsdax model namespace will be created and the
-    // configs_.devdax_meta_dir will be created on a xfs file system with a
-    // fsdax namespace
-    dir_ = format_dir_path(configs_.devdax_meta_dir);
-
-    batch_log_dir_ = dir_ + "batch_logs/";
-    if (create_dir_if_missing(batch_log_dir_) != 0) {
-      GlobalLogger.Error("Create batch log dir %s error\n",
-                         batch_log_dir_.c_str());
-      return Status::IOError;
-    }
-  }
-
-  s = persistOrRecoverImmutableConfigs();
+  Status s = batchWriteRollbackLogs();
   if (s != Status::Ok) {
     return s;
   }
 
-  pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
-      db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
-      configs_.pmem_block_size, configs_.max_access_threads,
-      configs_.populate_pmem_space, configs_.use_devdax_mode,
-      &version_controller_));
-  thread_manager_.reset(new (std::nothrow)
-                            ThreadManager(configs_.max_access_threads));
-  hash_table_.reset(HashTable::NewHashTable(
-      configs_.hash_bucket_num, configs_.num_buckets_per_slot,
-      pmem_allocator_.get(), configs_.max_access_threads));
-  dllist_locks_.reset(new LockTable{1UL << 20});
-  if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
-      thread_manager_ == nullptr || dllist_locks_ == nullptr) {
-    GlobalLogger.Error("Init kvdk basic components error\n");
-    return Status::Abort;
+  std::vector<std::future<Status>> fs;
+  GlobalLogger.Info("Start restore data\n");
+  for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
+    fs.push_back(std::async(&KVEngine::restoreData, this));
   }
 
-  s = initOrRestoreCheckpoint();
+  for (auto& f : fs) {
+    s = f.get();
+    if (s != Status::Ok) {
+      return s;
+    }
+  }
+  fs.clear();
 
-  registerComparator("default", compare_string_view);
-  return s;
+  GlobalLogger.Info("RestoreData done: iterated %lu records\n",
+                    restored_.load());
+
+  // restore skiplist by two optimization strategy
+  auto s_ret = sorted_rebuilder_->Rebuild();
+  if (s_ret.s != Status::Ok) {
+    return s_ret.s;
+  }
+  if (collection_id_.load() <= s_ret.max_id) {
+    collection_id_.store(s_ret.max_id + 1);
+  }
+  skiplists_.swap(s_ret.rebuild_skiplits);
+
+  GlobalLogger.Info("Rebuild skiplist done\n");
+  sorted_rebuilder_.reset(nullptr);
+
+  auto l_ret = list_rebuilder_->Rebuild();
+  if (l_ret.s != Status::Ok) {
+    return l_ret.s;
+  }
+  if (collection_id_.load() <= l_ret.max_id) {
+    collection_id_.store(l_ret.max_id + 1);
+  }
+  lists_.swap(l_ret.rebuilt_lists);
+  GlobalLogger.Info("Rebuild Lists done\n");
+  list_rebuilder_.reset(nullptr);
+
+  auto h_ret = hash_rebuilder_->Rebuild();
+  if (h_ret.s != Status::Ok) {
+    return h_ret.s;
+  }
+  if (collection_id_.load() <= h_ret.max_id) {
+    collection_id_.store(h_ret.max_id + 1);
+  }
+  hlists_.swap(h_ret.rebuilt_hlists);
+  GlobalLogger.Info("Rebuild HashLists done\n");
+  hash_rebuilder_.reset(nullptr);
+
+#if KVDK_DEBUG_LEVEL > 0
+  for (auto skiplist : skiplists_) {
+    Status s = skiplist.second->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Error("Check skiplist index error\n");
+      return s;
+    }
+  }
+
+  for (auto hlist : hlists_) {
+    Status s = hlist.second->CheckIndex();
+    if (s != Status::Ok) {
+      GlobalLogger.Error("Check hash index error\n");
+      return s;
+    }
+  }
+#endif
+
+  uint64_t latest_version_ts = 0;
+  if (restored_.load() > 0) {
+    for (size_t i = 0; i < engine_thread_cache_.size(); i++) {
+      auto& engine_thread_cache = engine_thread_cache_[i];
+      latest_version_ts =
+          std::max(engine_thread_cache.newest_restored_ts, latest_version_ts);
+    }
+  }
+
+  persist_checkpoint_->Release();
+  pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
+
+  version_controller_.Init(latest_version_ts);
+  old_records_cleaner_.TryGlobalClean();
+  kvdk_assert(pmem_allocator_->BytesAllocated() >= 0, "Invalid PMem Usage");
+  return Status::Ok;
 }
 
 Status KVEngine::restoreData() {
@@ -220,7 +216,8 @@ Status KVEngine::restoreData() {
   uint64_t cnt = 0;
   while (true) {
     if (segment_recovering.size == 0) {
-      if (!pmem_allocator_->FetchSegment(&segment_recovering)) {
+      if (!dynamic_cast<PMEMAllocator*>(pmem_allocator_.get())
+               ->FetchSegment(&segment_recovering)) {
         break;
       }
       assert(segment_recovering.size % configs_.pmem_block_size == 0);
@@ -367,30 +364,319 @@ bool KVEngine::validateRecord(void* data_record) {
   }
 }
 
-Status KVEngine::persistOrRecoverImmutableConfigs() {
-  size_t mapped_len;
-  int is_pmem;
-  uint64_t len =
-      kPMEMMapSizeUnit *
-      (size_t)ceil(1.0 * sizeof(ImmutableConfigs) / kPMEMMapSizeUnit);
-  ImmutableConfigs* configs = (ImmutableConfigs*)pmem_map_file(
-      config_file().c_str(), len, PMEM_FILE_CREATE, 0666, &mapped_len,
-      &is_pmem);
-  if (configs == nullptr || !is_pmem || mapped_len != len) {
-    GlobalLogger.Error(
-        "Open immutable configs file error %s\n",
-        !is_pmem ? (dir_ + "is not a valid pmem path").c_str() : "");
+Status KVEngine::batchWriteRollbackLogs() {
+  DIR* dir = opendir(batch_log_dir_.c_str());
+  if (dir == NULL) {
+    GlobalLogger.Error("Fail to opendir in batchWriteRollbackLogs. %s\n",
+                       strerror(errno));
     return Status::IOError;
   }
-  if (configs->Valid()) {
-    configs->AssignImmutableConfigs(configs_);
+  dirent* entry;
+  while ((entry = readdir(dir)) != NULL) {
+    std::string fname = std::string{entry->d_name};
+    if (fname == "." || fname == "..") {
+      continue;
+    }
+    std::string log_file_path = batch_log_dir_ + fname;
+    size_t mapped_len;
+    int is_pmem;
+    void* addr = pmem_map_file(log_file_path.c_str(), BatchWriteLog::MaxBytes(),
+                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    if (addr == NULL) {
+      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
+                         strerror(errno));
+      return Status::PMemMapFileError;
+    }
+    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
+
+    BatchWriteLog log;
+    log.DecodeFrom(static_cast<char*>(addr));
+
+    Status s;
+    for (auto iter = log.ListLogs().rbegin(); iter != log.ListLogs().rend();
+         ++iter) {
+      s = listRollback(*iter);
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+    for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
+         ++iter) {
+      s = hashListRollback(*iter);
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+    for (auto iter = log.SortedLogs().rbegin(); iter != log.SortedLogs().rend();
+         ++iter) {
+      s = sortedRollback(*iter);
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+    for (auto iter = log.StringLogs().rbegin(); iter != log.StringLogs().rend();
+         ++iter) {
+      s = stringRollback(log.Timestamp(), *iter);
+      if (s != Status::Ok) {
+        return s;
+      }
+    }
+    log.MarkInitializing(static_cast<char*>(addr));
+    if (pmem_unmap(addr, mapped_len) != 0) {
+      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
+                         strerror(errno));
+      return Status::PMemMapFileError;
+    }
+  }
+  closedir(dir);
+  std::string cmd{"rm -rf " + batch_log_dir_ + "*"};
+  [[gnu::unused]] int ret = system(cmd.c_str());
+
+  return Status::Ok;
+}
+
+void KVEngine::backgroundPMemAllocatorOrgnizer() {
+  auto interval = std::chrono::milliseconds{
+      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
+  while (!bg_work_signals_.terminating) {
+    {
+      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+      if (!bg_work_signals_.terminating) {
+        bg_work_signals_.pmem_allocator_organizer_cv.wait_for(ul, interval);
+      }
+    }
+    dynamic_cast<PMEMAllocator*>(pmem_allocator_.get())->BackgroundWork();
+  }
+}
+#endif  // #ifdef KVDK_WITH_PMEM
+
+KVEngine::~KVEngine() {
+  GlobalLogger.Info("Closing instance ... \n");
+  GlobalLogger.Info("Waiting bg threads exit ... \n");
+  closing_ = true;
+  terminateBackgroundWorks();
+  // deleteCollections();
+  ReportMemoryUsage();
+
+  // ensure skiplists use the same allocator in NewNode and DeleteNode
+  access_thread.thread_manager = thread_manager_;
+
+  GlobalLogger.Info("Instance closed\n");
+}
+
+Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
+                      const Configs& configs) {
+  GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
+  KVEngine* engine = new KVEngine(configs);
+  Status s = engine->init(name, configs);
+
+#ifdef KVDK_WITH_PMEM
+  if (s == Status::Ok && configs.enable_pmem) {
+    s = engine->restoreExistingData();
+  }
+#endif
+
+  if (s == Status::Ok) {
+    *engine_ptr = engine;
+    engine->startBackgroundWorks();
+    engine->ReportMemoryUsage();
+  } else {
+    GlobalLogger.Error("Init kvdk instance failed: %d\n", s);
+    delete engine;
+  }
+  return s;
+}
+
+void KVEngine::ReportMemoryUsage() {
+  // Check KV allocator is initialized before use it.
+  // It may not be successfully initialized due to file operation errors.
+  if (pmem_allocator_ == nullptr) {
+    return;
   }
 
-  Status s = checkConfigs(configs_);
-  if (s == Status::Ok) {
-    configs->PersistImmutableConfigs(configs_);
+  auto bytes = global_memory_allocator()->BytesAllocated();
+  auto total = bytes;
+  GlobalLogger.Info(
+      "[0] Global Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
+      bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
+      (bytes / (1LL << 30)));
+
+  bytes = pmem_allocator_->BytesAllocated();
+  total += bytes;
+  GlobalLogger.Info(
+      "[1] KV Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n", bytes,
+      (bytes / (1LL << 10)), (bytes / (1LL << 20)), (bytes / (1LL << 30)));
+
+  bytes = skiplist_node_allocator_->BytesAllocated();
+  total += bytes;
+  GlobalLogger.Info(
+      "[2] Skiplist Node Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld "
+      "GB\n",
+      bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
+      (bytes / (1LL << 30)));
+
+  bytes = hashtable_new_bucket_allocator_->BytesAllocated();
+  total += bytes;
+  GlobalLogger.Info(
+      "[3] Hashtable New Bucket Memory Allocator Usage: %ld B, %ld KB, %ld MB, "
+      "%ld "
+      "GB\n",
+      bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
+      (bytes / (1LL << 30)));
+
+  GlobalLogger.Info("[+] Total Memory Usage: %ld B, %ld KB, %ld MB, %ld GB\n",
+                    total, (total / (1LL << 10)), (total / (1LL << 20)),
+                    (total / (1LL << 30)));
+}
+
+void KVEngine::startBackgroundWorks() {
+  std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+  bg_work_signals_.terminating = false;
+#ifdef KVDK_WITH_PMEM
+  if (configs_.enable_pmem) {
+    bg_threads_.emplace_back(&KVEngine::backgroundPMemAllocatorOrgnizer, this);
   }
-  pmem_unmap(configs, len);
+#endif
+  bg_threads_.emplace_back(&KVEngine::backgroundMemoryUsageReporter, this);
+
+  bool close_reclaimer = false;
+  TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
+                           &close_reclaimer);
+  if (!close_reclaimer) {
+    cleaner_.StartClean();
+  }
+}
+
+void KVEngine::terminateBackgroundWorks() {
+  cleaner_.CloseAllWorkers();
+  {
+    std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
+    bg_work_signals_.terminating = true;
+    bg_work_signals_.dram_cleaner_cv.notify_all();
+    bg_work_signals_.pmem_allocator_organizer_cv.notify_all();
+    bg_work_signals_.pmem_usage_reporter_cv.notify_all();
+  }
+  for (auto& t : bg_threads_) {
+    t.join();
+  }
+}
+
+Status KVEngine::init(const std::string& name, const Configs& configs) {
+  Status s = Status::Ok;
+  configs_ = configs;
+  s = checkGeneralConfigs(configs);
+  if (s != Status::Ok) {
+    return s;
+  }
+  // reset access_thread
+  access_thread.id = -1;
+  access_thread.thread_manager = nullptr;
+
+#ifdef KVDK_WITH_PMEM
+  if (configs_.enable_pmem) {
+    if (!configs.use_devdax_mode) {
+      dir_ = format_dir_path(name);
+      int res = create_dir_if_missing(dir_);
+      if (res != 0) {
+        GlobalLogger.Error("Create engine dir %s error\n", dir_.c_str());
+        return Status::IOError;
+      }
+
+      batch_log_dir_ = dir_ + "batch_logs/";
+      if (create_dir_if_missing(batch_log_dir_) != 0) {
+        GlobalLogger.Error("Create batch log dir %s error\n",
+                           batch_log_dir_.c_str());
+        return Status::IOError;
+      }
+
+      db_file_ = data_file();
+
+    } else {
+      db_file_ = name;
+
+      // The devdax mode need to execute the shell scripts/init_devdax.sh,
+      // then a fsdax model namespace will be created and the
+      // configs_.devdax_meta_dir will be created on a xfs file system with a
+      // fsdax namespace
+      dir_ = format_dir_path(configs_.devdax_meta_dir);
+
+      batch_log_dir_ = dir_ + "batch_logs/";
+      if (create_dir_if_missing(batch_log_dir_) != 0) {
+        GlobalLogger.Error("Create batch log dir %s error\n",
+                           batch_log_dir_.c_str());
+        return Status::IOError;
+      }
+    }
+
+    s = persistOrRecoverImmutableConfigs();
+    if (s != Status::Ok) {
+      return s;
+    }
+
+    pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
+        db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
+        configs_.pmem_block_size, configs_.max_access_threads,
+        configs_.populate_pmem_space, configs_.use_devdax_mode,
+        &version_controller_));
+  } else {
+#else
+  if (configs.enable_pmem) {
+    GlobalLogger.Error(
+        "Init kvdk error, configs.enable_pmem is true, "
+        "but kvdk was not compiled with `-DWITH_PMEM=ON`\n");
+    return Status::Abort;
+  }
+  (void)name;  // To suppress compile warnings
+#endif  // #ifdef KVDK_WITH_PMEM
+    Allocator* pmem_allocator = new SystemMemoryAllocator();
+    pmem_allocator->SetMaxAccessThreads(configs_.max_access_threads);
+    pmem_allocator_.reset(pmem_allocator);
+#ifdef KVDK_WITH_PMEM
+  }
+#endif  // #ifdef KVDK_WITH_PMEM
+
+  Allocator* skiplist_node_allocator = new SystemMemoryAllocator();
+  skiplist_node_allocator->SetMaxAccessThreads(configs_.max_access_threads);
+  skiplist_node_allocator_.reset(skiplist_node_allocator);
+
+  Allocator* hashtable_new_bucket_allocator = new SystemMemoryAllocator();
+  hashtable_new_bucket_allocator->SetMaxAccessThreads(
+      configs_.max_access_threads);
+  hashtable_new_bucket_allocator_.reset(hashtable_new_bucket_allocator);
+
+  GlobalLogger.Info("Global memory allocator: %s\n",
+                    global_memory_allocator()->AllocatorName().c_str());
+  GlobalLogger.Info("KV memory allocator: %s\n",
+                    pmem_allocator_->AllocatorName().c_str());
+  GlobalLogger.Info("Skiplist node memory allocator: %s\n",
+                    skiplist_node_allocator_->AllocatorName().c_str());
+  GlobalLogger.Info("Hashtable new bucket memory allocator: %s\n",
+                    hashtable_new_bucket_allocator->AllocatorName().c_str());
+
+  thread_manager_.reset(new (std::nothrow) ThreadManager(
+      configs_.max_access_threads, skiplist_node_allocator));
+  // ensure skiplists use the same allocator in NewNode and DeleteNode
+  access_thread.thread_manager = thread_manager_;
+
+  hash_table_.reset(HashTable::NewHashTable(
+      configs_.hash_bucket_num, configs_.num_buckets_per_slot,
+      pmem_allocator_.get(), hashtable_new_bucket_allocator,
+      configs_.max_access_threads));
+  dllist_locks_.reset(new LockTable{1UL << 20});
+
+  if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
+      thread_manager_ == nullptr || dllist_locks_ == nullptr) {
+    GlobalLogger.Error("Init kvdk basic components error\n");
+    return Status::Abort;
+  }
+
+#ifdef KVDK_WITH_PMEM
+  if (configs_.enable_pmem) {
+    s = initOrRestoreCheckpoint();
+  }
+#endif  // #ifdef KVDK_WITH_PMEM
+
+  registerComparator("default", compare_string_view);
   return s;
 }
 
@@ -531,19 +817,28 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
   return Status::Ok;
 }
 
-Status KVEngine::initOrRestoreCheckpoint() {
-  size_t mapped_len;
-  int is_pmem;
-  persist_checkpoint_ = static_cast<CheckPoint*>(
-      pmem_map_file(checkpoint_file().c_str(), sizeof(CheckPoint),
-                    PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem));
-  if (persist_checkpoint_ == nullptr || !is_pmem ||
-      mapped_len != sizeof(CheckPoint)) {
-    GlobalLogger.Error("Map persistent checkpoint file %s failed\n",
-                       checkpoint_file().c_str());
-    return Status::IOError;
+Status KVEngine::Restore(const std::string& engine_path,
+                         const std::string& backup_log, Engine** engine_ptr,
+                         const Configs& configs) {
+  GlobalLogger.Info(
+      "Restoring kvdk instance from backup log %s to engine path %s\n",
+      backup_log.c_str(), engine_path.c_str());
+  KVEngine* engine = new KVEngine(configs);
+  Status s = engine->init(engine_path, configs);
+  if (s == Status::Ok) {
+    s = engine->restoreDataFromBackup(backup_log);
   }
-  return Status::Ok;
+
+  if (s == Status::Ok) {
+    *engine_ptr = engine;
+    engine->startBackgroundWorks();
+    engine->ReportMemoryUsage();
+  } else {
+    GlobalLogger.Error("Restore kvdk instance from backup log %s failed: %d\n",
+                       backup_log.c_str(), s);
+    delete engine;
+  }
+  return s;
 }
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
@@ -714,118 +1009,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   return Status::Ok;
 }
 
-Status KVEngine::restoreExistingData() {
-  access_thread.id = 0;
-  defer(access_thread.id = -1);
-
-  sorted_rebuilder_.reset(new SortedCollectionRebuilder(
-      this, configs_.opt_large_sorted_collection_recovery,
-      configs_.max_access_threads, *persist_checkpoint_));
-  hash_rebuilder_.reset(
-      new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
-                            dllist_locks_.get(), thread_manager_.get(),
-                            configs_.max_access_threads, *persist_checkpoint_));
-  list_rebuilder_.reset(
-      new ListRebuilder(pmem_allocator_.get(), hash_table_.get(),
-                        dllist_locks_.get(), thread_manager_.get(),
-                        configs_.max_access_threads, *persist_checkpoint_));
-
-  Status s = batchWriteRollbackLogs();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  std::vector<std::future<Status>> fs;
-  GlobalLogger.Info("Start restore data\n");
-  for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
-    fs.push_back(std::async(&KVEngine::restoreData, this));
-  }
-
-  for (auto& f : fs) {
-    s = f.get();
-    if (s != Status::Ok) {
-      return s;
-    }
-  }
-  fs.clear();
-
-  GlobalLogger.Info("RestoreData done: iterated %lu records\n",
-                    restored_.load());
-
-  // restore skiplist by two optimization strategy
-  auto s_ret = sorted_rebuilder_->Rebuild();
-  if (s_ret.s != Status::Ok) {
-    return s_ret.s;
-  }
-  if (collection_id_.load() <= s_ret.max_id) {
-    collection_id_.store(s_ret.max_id + 1);
-  }
-  skiplists_.swap(s_ret.rebuild_skiplits);
-
-  GlobalLogger.Info("Rebuild skiplist done\n");
-  sorted_rebuilder_.reset(nullptr);
-
-  auto l_ret = list_rebuilder_->Rebuild();
-  if (l_ret.s != Status::Ok) {
-    return l_ret.s;
-  }
-  if (collection_id_.load() <= l_ret.max_id) {
-    collection_id_.store(l_ret.max_id + 1);
-  }
-  lists_.swap(l_ret.rebuilt_lists);
-  GlobalLogger.Info("Rebuild Lists done\n");
-  list_rebuilder_.reset(nullptr);
-
-  auto h_ret = hash_rebuilder_->Rebuild();
-  if (h_ret.s != Status::Ok) {
-    return h_ret.s;
-  }
-  if (collection_id_.load() <= h_ret.max_id) {
-    collection_id_.store(h_ret.max_id + 1);
-  }
-  hlists_.swap(h_ret.rebuilt_hlists);
-  GlobalLogger.Info("Rebuild HashLists done\n");
-  hash_rebuilder_.reset(nullptr);
-
-#if KVDK_DEBUG_LEVEL > 0
-  for (auto skiplist : skiplists_) {
-    Status s = skiplist.second->CheckIndex();
-    if (s != Status::Ok) {
-      GlobalLogger.Error("Check skiplist index error\n");
-      return s;
-    }
-  }
-
-  for (auto hlist : hlists_) {
-    Status s = hlist.second->CheckIndex();
-    if (s != Status::Ok) {
-      GlobalLogger.Error("Check hash index error\n");
-      return s;
-    }
-  }
-#endif
-
-  uint64_t latest_version_ts = 0;
-  if (restored_.load() > 0) {
-    for (size_t i = 0; i < engine_thread_cache_.size(); i++) {
-      auto& engine_thread_cache = engine_thread_cache_[i];
-      latest_version_ts =
-          std::max(engine_thread_cache.newest_restored_ts, latest_version_ts);
-    }
-  }
-
-  persist_checkpoint_->Release();
-  pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
-
-  version_controller_.Init(latest_version_ts);
-  old_records_cleaner_.TryGlobalClean();
-  kvdk_assert(pmem_allocator_->PMemUsageInBytes() >= 0, "Invalid PMem Usage");
-  return Status::Ok;
-}
-
-Status KVEngine::checkConfigs(const Configs& configs) {
-  auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
-
+Status KVEngine::checkPMemConfigs(const Configs& configs) {
   if (configs.pmem_block_size < kMinPMemBlockSize) {
     GlobalLogger.Error("pmem block size too small\n");
     return Status::InvalidConfiguration;
@@ -861,6 +1045,12 @@ Status KVEngine::checkConfigs(const Configs& configs) {
     return Status::InvalidConfiguration;
   }
 
+  return Status::Ok;
+}
+
+Status KVEngine::checkGeneralConfigs(const Configs& configs) {
+  auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
+
   if (!is_2pown(configs.hash_bucket_num) ||
       !is_2pown(configs.num_buckets_per_slot)) {
     GlobalLogger.Error(
@@ -882,25 +1072,6 @@ Status KVEngine::checkConfigs(const Configs& configs) {
   return Status::Ok;
 }
 
-Status KVEngine::maybeInitBatchLogFile() {
-  auto& tc = engine_thread_cache_[access_thread.id];
-  if (tc.batch_log == nullptr) {
-    int is_pmem;
-    size_t mapped_len;
-    std::string log_file_name =
-        batch_log_dir_ + std::to_string(access_thread.id);
-    void* addr = pmem_map_file(log_file_name.c_str(), BatchWriteLog::MaxBytes(),
-                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
-    if (addr == NULL) {
-      GlobalLogger.Error("Fail to Init BatchLog file. %s\n", strerror(errno));
-      return Status::PMemMapFileError;
-    }
-    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
-    tc.batch_log = static_cast<char*>(addr);
-  }
-  return Status::Ok;
-}
-
 Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
   WriteBatchImpl const* batch_impl =
       dynamic_cast<WriteBatchImpl const*>(batch.get());
@@ -909,6 +1080,31 @@ Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
   }
 
   return batchWriteImpl(*batch_impl);
+}
+
+Status KVEngine::maybeInitBatchLogFile() {
+#ifdef KVDK_WITH_PMEM
+  if (configs_.enable_pmem) {
+    auto& tc = engine_thread_cache_[access_thread.id];
+    if (tc.batch_log == nullptr) {
+      int is_pmem;
+      size_t mapped_len;
+      std::string log_file_name =
+          batch_log_dir_ + std::to_string(access_thread.id);
+      void* addr =
+          pmem_map_file(log_file_name.c_str(), BatchWriteLog::MaxBytes(),
+                        PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+      if (addr == NULL) {
+        GlobalLogger.Error("Fail to Init BatchLog file. %s\n", strerror(errno));
+        return Status::PMemMapFileError;
+      }
+      kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
+      tc.batch_log = static_cast<char*>(addr);
+    }
+  }
+#endif  // #ifdef KVDK_WITH_PMEM
+
+  return Status::Ok;
 }
 
 Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
@@ -1152,77 +1348,6 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   hash_args.clear();
   sorted_args.clear();
   string_args.clear();
-
-  return Status::Ok;
-}
-
-Status KVEngine::batchWriteRollbackLogs() {
-  DIR* dir = opendir(batch_log_dir_.c_str());
-  if (dir == NULL) {
-    GlobalLogger.Error("Fail to opendir in batchWriteRollbackLogs. %s\n",
-                       strerror(errno));
-    return Status::IOError;
-  }
-  dirent* entry;
-  while ((entry = readdir(dir)) != NULL) {
-    std::string fname = std::string{entry->d_name};
-    if (fname == "." || fname == "..") {
-      continue;
-    }
-    std::string log_file_path = batch_log_dir_ + fname;
-    size_t mapped_len;
-    int is_pmem;
-    void* addr = pmem_map_file(log_file_path.c_str(), BatchWriteLog::MaxBytes(),
-                               PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
-    if (addr == NULL) {
-      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
-                         strerror(errno));
-      return Status::PMemMapFileError;
-    }
-    kvdk_assert(is_pmem != 0 && mapped_len >= BatchWriteLog::MaxBytes(), "");
-
-    BatchWriteLog log;
-    log.DecodeFrom(static_cast<char*>(addr));
-
-    Status s;
-    for (auto iter = log.ListLogs().rbegin(); iter != log.ListLogs().rend();
-         ++iter) {
-      s = listRollback(*iter);
-      if (s != Status::Ok) {
-        return s;
-      }
-    }
-    for (auto iter = log.HashLogs().rbegin(); iter != log.HashLogs().rend();
-         ++iter) {
-      s = hashListRollback(*iter);
-      if (s != Status::Ok) {
-        return s;
-      }
-    }
-    for (auto iter = log.SortedLogs().rbegin(); iter != log.SortedLogs().rend();
-         ++iter) {
-      s = sortedRollback(*iter);
-      if (s != Status::Ok) {
-        return s;
-      }
-    }
-    for (auto iter = log.StringLogs().rbegin(); iter != log.StringLogs().rend();
-         ++iter) {
-      s = stringRollback(log.Timestamp(), *iter);
-      if (s != Status::Ok) {
-        return s;
-      }
-    }
-    log.MarkInitializing(static_cast<char*>(addr));
-    if (pmem_unmap(addr, mapped_len) != 0) {
-      GlobalLogger.Error("Fail to Rollback BatchLog file. %s\n",
-                         strerror(errno));
-      return Status::PMemMapFileError;
-    }
-  }
-  closedir(dir);
-  std::string cmd{"rm -rf " + batch_log_dir_ + "*"};
-  [[gnu::unused]] int ret = system(cmd.c_str());
 
   return Status::Ok;
 }
@@ -1474,15 +1599,19 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
 
   if (make_checkpoint) {
-    std::lock_guard<std::mutex> lg(checkpoint_lock_);
-    persist_checkpoint_->MakeCheckpoint(ret);
-    pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
+#ifdef KVDK_WITH_PMEM
+    if (configs_.enable_pmem) {
+      std::lock_guard<std::mutex> lg(checkpoint_lock_);
+      persist_checkpoint_->MakeCheckpoint(ret);
+      pmem_persist(persist_checkpoint_, sizeof(CheckPoint));
+    }
+#endif
   }
 
   return ret;
 }
 
-void KVEngine::backgroundPMemUsageReporter() {
+void KVEngine::backgroundMemoryUsageReporter() {
   auto interval = std::chrono::milliseconds{
       static_cast<std::uint64_t>(configs_.report_pmem_usage_interval * 1000)};
   while (!bg_work_signals_.terminating) {
@@ -1492,22 +1621,9 @@ void KVEngine::backgroundPMemUsageReporter() {
         bg_work_signals_.pmem_usage_reporter_cv.wait_for(ul, interval);
       }
     }
-    ReportPMemUsage();
+    ReportMemoryUsage();
     GlobalLogger.Info("Cleaner Thread Num: %ld\n", cleaner_.ActiveThreadNum());
   }
 }
 
-void KVEngine::backgroundPMemAllocatorOrgnizer() {
-  auto interval = std::chrono::milliseconds{
-      static_cast<std::uint64_t>(configs_.background_work_interval * 1000)};
-  while (!bg_work_signals_.terminating) {
-    {
-      std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
-      if (!bg_work_signals_.terminating) {
-        bg_work_signals_.pmem_allocator_organizer_cv.wait_for(ul, interval);
-      }
-    }
-    pmem_allocator_->BackgroundWork();
-  }
-}
 }  // namespace KVDK_NAMESPACE

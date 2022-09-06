@@ -4,12 +4,13 @@
 
 #pragma once
 
+#include "allocator.hpp"
 #include "collection.hpp"
 #include "data_record.hpp"
 #include "kvdk/types.hpp"
 #include "lock_table.hpp"
-#include "pmem_allocator/pmem_allocator.hpp"
 #include "utils/sync_point.hpp"
+#include "version/version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
 class DLListRecordIterator;
@@ -17,7 +18,7 @@ class DLListRecordIterator;
 // Persistent doubly linked list
 class DLList {
  public:
-  DLList(DLRecord* header, PMEMAllocator* pmem_allocator, LockTable* lock_table)
+  DLList(DLRecord* header, Allocator* pmem_allocator, LockTable* lock_table)
       : header_(header),
         pmem_allocator_(pmem_allocator),
         lock_table_(lock_table) {}
@@ -74,9 +75,9 @@ class DLList {
   std::unique_ptr<DLListRecordIterator> GetRecordIterator();
 
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
-                      PMEMAllocator* pmem_allocator, LockTable* lock_table);
+                      Allocator* pmem_allocator, LockTable* lock_table);
 
-  static bool Remove(DLRecord* removing_record, PMEMAllocator* pmem_allocator,
+  static bool Remove(DLRecord* removing_record, Allocator* pmem_allocator,
                      LockTable* lock_table);
 
  private:
@@ -93,8 +94,9 @@ class DLList {
 
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
-  static LockTable::MultiGuardType acquireRecordLock(
-      DLRecord* record, PMEMAllocator* pmem_allocator, LockTable* lock_table) {
+  static LockTable::MultiGuardType acquireRecordLock(DLRecord* record,
+                                                     Allocator* pmem_allocator,
+                                                     LockTable* lock_table) {
     while (1) {
       PMemOffsetType prev_offset = record->prev;
       PMemOffsetType next_offset = record->next;
@@ -121,8 +123,7 @@ class DLList {
   }
 
   static void linkRecord(DLRecord* prev, DLRecord* next,
-                         DLRecord* linking_record,
-                         PMEMAllocator* pmem_allocator) {
+                         DLRecord* linking_record, Allocator* pmem_allocator) {
     auto linking_record_offset =
         pmem_allocator->addr2offset_checked(linking_record);
     prev->PersistNextNT(linking_record_offset);
@@ -131,14 +132,14 @@ class DLList {
   }
 
   DLRecord* header_;
-  PMEMAllocator* pmem_allocator_;
+  Allocator* pmem_allocator_;
   LockTable* lock_table_;
 };
 
 // Iter valid data under a snapshot in a dl list
 class DLListDataIterator {
  public:
-  DLListDataIterator(DLList* dl_list, const PMEMAllocator* pmem_allocator,
+  DLListDataIterator(DLList* dl_list, const Allocator* pmem_allocator,
                      const SnapshotImpl* snapshot)
       : dl_list_(dl_list),
         pmem_allocator_(pmem_allocator),
@@ -229,7 +230,7 @@ class DLListDataIterator {
   }
 
   DLList* dl_list_;
-  const PMEMAllocator* pmem_allocator_;
+  const Allocator* pmem_allocator_;
   DLRecord* current_;
   const SnapshotImpl* snapshot_;
 };
@@ -237,7 +238,7 @@ class DLListDataIterator {
 // Iter all records in a dl list
 class DLListRecordIterator {
  public:
-  DLListRecordIterator(DLList* dl_list, PMEMAllocator* pmem_allocator)
+  DLListRecordIterator(DLList* dl_list, Allocator* pmem_allocator)
       : dl_list_(dl_list),
         header_(dl_list->Header()),
         current_(header_),
@@ -275,14 +276,14 @@ class DLListRecordIterator {
   DLList* dl_list_;
   DLRecord* header_;
   DLRecord* current_;
-  const PMEMAllocator* pmem_allocator_;
+  const Allocator* pmem_allocator_;
 };
 
 // Used in recovery of dl list based collections
 template <typename CType>
 class DLListRecoveryUtils {
  public:
-  DLListRecoveryUtils(const PMEMAllocator* pmem_allocator)
+  DLListRecoveryUtils(const Allocator* pmem_allocator)
       : pmem_allocator_(pmem_allocator) {}
 
   bool CheckAndRepairLinkage(DLRecord* record) {
@@ -344,6 +345,6 @@ class DLListRecoveryUtils {
   }
 
  private:
-  const PMEMAllocator* pmem_allocator_;
+  const Allocator* pmem_allocator_;
 };
 }  // namespace KVDK_NAMESPACE

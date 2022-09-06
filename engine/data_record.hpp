@@ -5,7 +5,11 @@
 #pragma once
 
 #include <immintrin.h>
+
+#ifdef KVDK_WITH_PMEM
 #include <libpmem.h>
+#endif
+
 #include <x86intrin.h>
 
 #include "alias.hpp"
@@ -84,7 +88,10 @@ struct DataEntry {
 
   void Destroy() {
     meta.type = RecordType::Empty;
+
+#ifdef KVDK_WITH_PMEM
     pmem_persist(&meta.type, sizeof(RecordType));
+#endif
   }
 
   // TODO jiayu: use function to access these
