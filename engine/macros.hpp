@@ -23,16 +23,24 @@
     }                                                                    \
   }
 
-namespace KVDK_NAMESPACE
-{
+namespace KVDK_NAMESPACE {
+inline Status ExceptionToStatus(std::exception const& ex) {
+  if (dynamic_cast<std::bad_alloc const*>(&ex)) return Status::MemoryOverflow;
+  if (dynamic_cast<std::out_of_range const*>(&ex)) return Status::OutOfRange;
+  if (dynamic_cast<std::invalid_argument const*>(&ex))
+    return Status::InvalidArgument;
+
+  return Status::Abort;
+}
+
 #define KVDK_TRY try
 
-#define KVDK_HANDLE_EXCEPTIONS                                          \
-catch(std::bad_alloc const&) { return Status::MemoryOverflow; }         \
-catch(std::out_of_range const&) { return Status::OutOfRange; }          \
-catch(std::invalid_argument const&) { return Status::InvalidArgument; } \
-catch(...) { return Status::Abort; }
+#define KVDK_HANDLE_EXCEPTIONS       \
+  catch (std::exception const& ex) { \
+    return ExceptionToStatus(ex);    \
+  }                                  \
+  catch (...) {                      \
+    return Status::Abort;            \
+  }
 
-} // KVDK_NAMESPACE
-
-
+}  // namespace KVDK_NAMESPACE

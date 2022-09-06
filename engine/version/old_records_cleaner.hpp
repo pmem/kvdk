@@ -6,8 +6,8 @@
 #include <condition_variable>
 #include <deque>
 #include <tuple>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 #include "../alias.hpp"
 #include "../collection.hpp"
@@ -21,11 +21,10 @@
 namespace KVDK_NAMESPACE {
 class KVEngine;
 
-class IDeleter
-{
-public:
-    // Called by OldRecordsCleaner for actual deletion.
-    virtual void Delete(void* obj) = 0;
+class IDeleter {
+ public:
+  // Called by OldRecordsCleaner for actual deletion.
+  virtual void Delete(void* obj) = 0;
 };
 
 // OldRecordsCleaner is used to clean old version PMem records of kvdk
@@ -62,7 +61,8 @@ class OldRecordsCleaner {
 
   void maybeUpdateOldestSnapshot();
 
-  // Try purging some entries from a locked PendingQueue with associated deleter.
+  // Try purging some entries from a locked PendingQueue with associated
+  // deleter.
   void tryPurge(IDeleter& deleter, PendingQueue& pending_kvs, size_t lim);
 
   KVEngine* kv_engine_;

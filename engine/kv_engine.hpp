@@ -238,8 +238,9 @@ class KVEngine : public Engine {
   Status VHashPut(StringView key, StringView field, StringView value) final;
   Status VHashDelete(StringView key, StringView field) final;
   Status VHashModify(StringView key, StringView field, ModifyFunc modify_func,
-                    void* cb_args) final;
-  std::unique_ptr<VHashIterator>VHashIteratorCreate(StringView key, Status* s) final;
+                     void* cb_args) final;
+  std::unique_ptr<VHashIterator> VHashIteratorCreate(StringView key,
+                                                     Status* s) final;
 
  private:
   // Look up a first level key in hash table(e.g. collections or string, not

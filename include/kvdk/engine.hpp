@@ -340,12 +340,15 @@ class Engine {
   virtual Status VHashCreate(StringView key) = 0;
   virtual Status VHashDestroy(StringView key) = 0;
   virtual Status VHashSize(StringView key, size_t* len) = 0;
-  virtual Status VHashGet(StringView key, StringView field, std::string* value) = 0;
-  virtual Status VHashPut(StringView key, StringView field, StringView value) = 0;
+  virtual Status VHashGet(StringView key, StringView field,
+                          std::string* value) = 0;
+  virtual Status VHashPut(StringView key, StringView field,
+                          StringView value) = 0;
   virtual Status VHashDelete(StringView key, StringView field) = 0;
-  virtual Status VHashModify(StringView key, StringView field, ModifyFunc modify_func,
-                    void* cb_args) = 0;
-  virtual std::unique_ptr<VHashIterator>VHashIteratorCreate(StringView key, Status* s) = 0;
+  virtual Status VHashModify(StringView key, StringView field,
+                             ModifyFunc modify_func, void* cb_args) = 0;
+  virtual std::unique_ptr<VHashIterator> VHashIteratorCreate(StringView key,
+                                                             Status* s) = 0;
 
   /// Other ///////////////////////////////////////////////////////////////////
 

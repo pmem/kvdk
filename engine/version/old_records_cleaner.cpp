@@ -43,42 +43,39 @@ void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
   }
 }
 
-void OldRecordsCleaner::RegisterDelayDeleter(IDeleter& deleter)
-{
-    size_t idx = global_queues_.size();
-    delay_deleters_[&deleter] = idx;
-    global_queues_.emplace_back();
-    for (size_t i = 0; i < cleaner_thread_cache_.size(); i++)
-        cleaner_thread_cache_[i].local_queues_.emplace_back();
+void OldRecordsCleaner::RegisterDelayDeleter(IDeleter& deleter) {
+  size_t idx = global_queues_.size();
+  delay_deleters_[&deleter] = idx;
+  global_queues_.emplace_back();
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++)
+    cleaner_thread_cache_[i].local_queues_.emplace_back();
 }
 
-void OldRecordsCleaner::DelayDelete(IDeleter& deleter, void* obj)
-{
-    kvdk_assert(access_thread.id >= 0, "");
-    auto& tc = cleaner_thread_cache_[access_thread.id];
-    std::lock_guard<SpinMutex> guard{tc.old_records_lock};
+void OldRecordsCleaner::DelayDelete(IDeleter& deleter, void* obj) {
+  kvdk_assert(access_thread.id >= 0, "");
+  auto& tc = cleaner_thread_cache_[access_thread.id];
+  std::lock_guard<SpinMutex> guard{tc.old_records_lock};
 
+  TimeStampType ts = kv_engine_->version_controller_.GetCurrentTimestamp();
 
-    TimeStampType ts = kv_engine_->version_controller_.GetCurrentTimestamp();
+  size_t idx = delay_deleters_.at(&deleter);
+  tc.local_queues_[idx].emplace_back(ts, obj);
 
-    size_t idx = delay_deleters_.at(&deleter);
-    tc.local_queues_[idx].emplace_back(ts, obj);
-
-    constexpr size_t kMaxFreePending = 16;
-    tryPurge(deleter, tc.local_queues_[idx], kMaxFreePending);
+  constexpr size_t kMaxFreePending = 16;
+  tryPurge(deleter, tc.local_queues_[idx], kMaxFreePending);
 }
 
-void OldRecordsCleaner::tryPurge(IDeleter& deleter, PendingQueue& pending_kvs, size_t lim)
-{
-    maybeUpdateOldestSnapshot();
-    TimeStampType acc_ts = kv_engine_->version_controller_.LocalOldestSnapshotTS();
-    for (size_t i = 0; i < lim && !pending_kvs.empty(); i++)
-    {
-        auto const& pair = pending_kvs.front();
-        if (pair.first >= acc_ts) break;
-        deleter.Delete(pair.second);
-        pending_kvs.pop_front();
-    }
+void OldRecordsCleaner::tryPurge(IDeleter& deleter, PendingQueue& pending_kvs,
+                                 size_t lim) {
+  maybeUpdateOldestSnapshot();
+  TimeStampType acc_ts =
+      kv_engine_->version_controller_.LocalOldestSnapshotTS();
+  for (size_t i = 0; i < lim && !pending_kvs.empty(); i++) {
+    auto const& pair = pending_kvs.front();
+    if (pair.first >= acc_ts) break;
+    deleter.Delete(pair.second);
+    pending_kvs.pop_front();
+  }
 }
 
 void OldRecordsCleaner::TryGlobalClean() {
@@ -107,7 +104,8 @@ void OldRecordsCleaner::TryGlobalClean() {
 
     std::lock_guard<SpinMutex> lg(cleaner_thread_cache.old_records_lock);
     for (auto const& del_idx : delay_deleters_)
-        tryPurge(*del_idx.first, cleaner_thread_cache.local_queues_[del_idx.second], -1U);
+      tryPurge(*del_idx.first,
+               cleaner_thread_cache.local_queues_[del_idx.second], -1U);
   }
 
   auto iter = global_pending_free_space_entries_.begin();

@@ -30,18 +30,18 @@ class Allocator {
 };
 
 class IVolatileAllocator {
-    public:
-    virtual void* Allocate(size_t bytes) = 0;
-    virtual void Deallocate(void* addr, size_t bytes) = 0;
+ public:
+  virtual void* Allocate(size_t bytes) = 0;
+  virtual void Deallocate(void* addr, size_t bytes) = 0;
 };
 
 class CharAllocator final : public IVolatileAllocator {
-    void* Allocate(size_t n) final { 
-        void* mem = ::malloc(n);
-        if (mem == nullptr) throw std::bad_alloc{};
-        return mem;
-    }
-    void Deallocate(void* addr, size_t) final { ::free(addr); }
+  void* Allocate(size_t n) final {
+    void* mem = ::malloc(n);
+    if (mem == nullptr) throw std::bad_alloc{};
+    return mem;
+  }
+  void Deallocate(void* addr, size_t) final { ::free(addr); }
 };
 
 }  // namespace KVDK_NAMESPACE
