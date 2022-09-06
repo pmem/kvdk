@@ -359,6 +359,8 @@ class EngineBasicTest : public testing::Test {
 
 class BatchWriteTest : public EngineBasicTest {};
 
+class TrasactionTest : public EngineBasicTest {};
+
 TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string sorted_collection("sorted_collection");
   std::string hash_collection("unordered_collection");
@@ -2454,6 +2456,55 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
     ASSERT_EQ(engine->GetTTL("sortedkey0" + str, &got_ttl), Status::NotFound);
     ASSERT_EQ(engine->GetTTL("listkey1" + str, &got_ttl), Status::Ok);
   }
+
+  delete engine;
+}
+
+TEST_F(TrasactionTest, StringTransactionBasic) {
+  size_t num_threads = 1;
+  configs.max_access_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
+  auto transfer_txn = [&](size_t) {
+    std::string pay = "Jack";
+    std::string receive = "Tom";
+    int pay_balance = 500;
+    int receive_balance = 500;
+    std::string pay_balance_str = std::to_string(pay_balance);
+    std::string receive_balance_str = std::to_string(receive_balance);
+    int amount = 200;
+    ASSERT_EQ(engine->Put(pay, pay_balance_str), Status::Ok);
+    ASSERT_EQ(engine->Put(receive, receive_balance_str), Status::Ok);
+
+    auto txn = engine->TransactionCreate();
+    ASSERT_TRUE(txn != nullptr);
+    std::string value;
+    ASSERT_EQ(txn->StringGet(pay, &value), Status::Ok);
+    ASSERT_EQ(pay_balance_str, value);
+    std::string pay_balance_after_transfer =
+        std::to_string(pay_balance - amount);
+    ASSERT_EQ(txn->StringPut(pay, pay_balance_after_transfer), Status::Ok);
+    // Un-commited change should be visible by this transaction, but invisible
+    // outsider the transaction
+    ASSERT_EQ(txn->StringGet(pay, &value), Status::Ok);
+    ASSERT_EQ(pay_balance_after_transfer, value);
+    ASSERT_EQ(engine->Get(pay, &value), Status::Ok);
+    ASSERT_EQ(pay_balance_str, value);
+
+    ASSERT_EQ(txn->StringGet(receive, &value), Status::Ok);
+    ASSERT_EQ(receive_balance_str, value);
+    std::string receive_balance_after_transfer =
+        std::to_string(receive_balance + amount);
+    ASSERT_EQ(txn->StringPut(receive, receive_balance_after_transfer),
+              Status::Ok);
+    ASSERT_EQ(txn->Commit(), Status::Ok);
+
+    ASSERT_EQ(engine->Get(pay, &value), Status::Ok);
+    ASSERT_EQ(value, pay_balance_after_transfer);
+    ASSERT_EQ(engine->Get(receive, &value), Status::Ok);
+    ASSERT_EQ(value, receive_balance_after_transfer);
+  };
+
+  LaunchNThreads(1, transfer_txn);
 
   delete engine;
 }

@@ -96,6 +96,40 @@ class WriteBatchImpl final : public WriteBatch {
     hash_ops_.insert(op);
   }
 
+  // Get a string op from this batch
+  // if key not exist in this batch, return nullptr
+  const StringOp* StringGet(std::string const& key) {
+    StringOp op{WriteOp::Put, key, ""};
+    auto iter = string_ops_.find(op);
+    if (iter == string_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
+  }
+
+  // Get a sorted op from this batch
+  // if the collection key not exist in this batch, return nullptr
+  const SortedOp* SortedGet(std::string const& collection,
+                            std::string const& key) {
+    SortedOp op{WriteOp::Put, collection, key, ""};
+    auto iter = sorted_ops_.find(op);
+    if (iter == sorted_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
+  }
+
+  // Get a hash op from this batch
+  // if the collection key not exist in this batch, return nullptr
+  const HashOp* HashGet(std::string const& collection, std::string const& key) {
+    HashOp op{WriteOp::Put, collection, key, ""};
+    auto iter = hash_ops_.find(op);
+    if (iter == hash_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
+  }
+
   void Clear() final {
     string_ops_.clear();
     sorted_ops_.clear();

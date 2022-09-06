@@ -68,6 +68,7 @@ set(SOURCES
         engine/hash_collection/hash_list.cpp
         engine/list_collection/list.cpp
         engine/write_batch_impl.cpp
+        engine/transaction_impl.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp

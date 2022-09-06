@@ -35,6 +35,7 @@
 #include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
+#include "transaction_impl.hpp"
 #include "utils/utils.hpp"
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
@@ -54,12 +55,12 @@ class KVEngine : public Engine {
                         const std::string& backup_log, Engine** engine_ptr,
                         const Configs& configs);
 
-  Snapshot* GetSnapshot(bool make_checkpoint) override;
+  Snapshot* GetSnapshot(bool make_checkpoint) final;
 
   Status Backup(const pmem::obj::string_view backup_log,
-                const Snapshot* snapshot) override;
+                const Snapshot* snapshot) final;
 
-  void ReleaseSnapshot(const Snapshot* snapshot) override {
+  void ReleaseSnapshot(const Snapshot* snapshot) final {
     {
       std::lock_guard<std::mutex> lg(checkpoint_lock_);
       persist_checkpoint_->MaybeRelease(
@@ -76,38 +77,38 @@ class KVEngine : public Engine {
   // 1. Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
   // 2. Expire is not compatible with checkpoint for now
-  Status Expire(const StringView str, TTLType ttl_time) override;
+  Status Expire(const StringView str, TTLType ttl_time) final;
   // Get time to expire of str
   //
   // Notice:
   // Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
-  Status GetTTL(const StringView str, TTLType* ttl_time) override;
+  Status GetTTL(const StringView str, TTLType* ttl_time) final;
 
   Status TypeOf(StringView key, ValueType* type) final;
 
   // String
-  Status Get(const StringView key, std::string* value) override;
+  Status Get(const StringView key, std::string* value) final;
   Status Put(const StringView key, const StringView value,
-             const WriteOptions& write_options) override;
-  Status Delete(const StringView key) override;
+             const WriteOptions& write_options) final;
+  Status Delete(const StringView key) final;
   Status Modify(const StringView key, ModifyFunc modify_func, void* modify_args,
-                const WriteOptions& options) override;
+                const WriteOptions& options) final;
 
   // Sorted
   Status SortedCreate(const StringView collection_name,
-                      const SortedCollectionConfigs& configs) override;
-  Status SortedDestroy(const StringView collection_name) override;
-  Status SortedSize(const StringView collection, size_t* size) override;
+                      const SortedCollectionConfigs& configs) final;
+  Status SortedDestroy(const StringView collection_name) final;
+  Status SortedSize(const StringView collection, size_t* size) final;
   Status SortedGet(const StringView collection, const StringView user_key,
-                   std::string* value) override;
+                   std::string* value) final;
   Status SortedPut(const StringView collection, const StringView user_key,
-                   const StringView value) override;
+                   const StringView value) final;
   Status SortedDelete(const StringView collection,
-                      const StringView user_key) override;
+                      const StringView user_key) final;
   SortedIterator* SortedIteratorCreate(const StringView collection,
-                                       Snapshot* snapshot, Status* s) override;
-  void SortedIteratorRelease(SortedIterator* sorted_iterator) override;
+                                       Snapshot* snapshot, Status* s) final;
+  void SortedIteratorRelease(SortedIterator* sorted_iterator) final;
 
   // List
   Status ListCreate(StringView key) final;
@@ -173,7 +174,13 @@ class KVEngine : public Engine {
     return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
   }
 
-  void ReleaseAccessThread() override { access_thread.Release(); }
+  std::unique_ptr<Transaction> TransactionCreate() final {
+    return std::unique_ptr<Transaction>(new TransactionImpl(this));
+  }
+
+  void ReleaseAccessThread() final { access_thread.Release(); }
+
+  Status CommitTransaction(TransactionImpl* txn);
 
   // For test cases
   const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
@@ -302,11 +309,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashHeader
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -398,7 +404,7 @@ class KVEngine : public Engine {
 
   Status persistOrRecoverImmutableConfigs();
 
-  Status batchWriteImpl(WriteBatchImpl const& batch);
+  Status batchWriteImpl(WriteBatchImpl const& batch, bool lock_key);
 
   Status batchWriteRollbackLogs();
 

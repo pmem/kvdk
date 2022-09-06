@@ -10,6 +10,7 @@
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
+#include "transaction.hpp"
 #include "types.hpp"
 #include "write_batch.hpp"
 
@@ -77,6 +78,8 @@ class Engine {
   virtual Status BatchWrite(std::unique_ptr<WriteBatch> const& batch) = 0;
 
   virtual std::unique_ptr<WriteBatch> WriteBatchCreate() = 0;
+
+  virtual std::unique_ptr<Transaction> TransactionCreate() = 0;
 
   // Search the STRING-type KV of "key" and store the corresponding value to
   // *value on success. If the "key" does not exist, return NotFound.

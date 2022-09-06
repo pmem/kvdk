@@ -902,16 +902,23 @@ Status KVEngine::maybeInitBatchLogFile() {
 }
 
 Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
-  WriteBatchImpl const* batch_impl =
-      dynamic_cast<WriteBatchImpl const*>(batch.get());
+  const WriteBatchImpl* batch_impl =
+      dynamic_cast<const WriteBatchImpl*>(batch.get());
   if (batch_impl == nullptr) {
     return Status::InvalidArgument;
   }
 
-  return batchWriteImpl(*batch_impl);
+  return batchWriteImpl(*batch_impl, true);
 }
 
-Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
+Status KVEngine::CommitTransaction(TransactionImpl* txn) {
+  const WriteBatchImpl* batch = txn->GetBatch();
+  kvdk_assert(batch != nullptr, "");
+  return batchWriteImpl(*batch,
+                        false /* key should already been locked by txn */);
+}
+
+Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch, bool lock_key) {
   if (batch.Size() > BatchWriteLog::Capacity()) {
     return Status::InvalidBatchSize;
   }
@@ -972,14 +979,16 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Keys/internal keys to be locked on HashTable
   std::vector<std::string> keys_to_lock;
-  for (auto const& string_op : batch.StringOps()) {
-    keys_to_lock.push_back(string_op.key);
-  }
-  for (auto const& arg : sorted_args) {
-    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
-  }
-  for (auto const& arg : hash_args) {
-    keys_to_lock.push_back(arg.hlist->InternalKey(arg.key));
+  if (lock_key) {
+    for (auto const& string_op : batch.StringOps()) {
+      keys_to_lock.push_back(string_op.key);
+    }
+    for (auto const& arg : sorted_args) {
+      keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
+    }
+    for (auto const& arg : hash_args) {
+      keys_to_lock.push_back(arg.hlist->InternalKey(arg.key));
+    }
   }
 
   auto guard = hash_table_->RangeLock(keys_to_lock);
