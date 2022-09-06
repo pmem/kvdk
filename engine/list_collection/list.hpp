@@ -128,7 +128,7 @@ class List : public Collection {
     switch (record->GetRecordType()) {
       case RecordType::ListElem:
         return ExtractID(record->Key());
-      case RecordType::ListHeader:
+      case RecordType::ListRecord:
         return DecodeID(record->Value());
       default:
         GlobalLogger.Error("Wrong record type %u in ListID",
@@ -140,7 +140,7 @@ class List : public Collection {
 
   static bool MatchType(const DLRecord* record) {
     RecordType type = record->GetRecordType();
-    return type == RecordType::ListElem || type == RecordType::ListHeader;
+    return type == RecordType::ListElem || type == RecordType::ListRecord;
   }
 
  private:

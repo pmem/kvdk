@@ -70,7 +70,7 @@ Status TransactionImpl::SortedPut(const std::string& collection,
     return status_;
   }
   auto lookup_result =
-      hash_table->Lookup<false>(collection, RecordType::HashHeader);
+      hash_table->Lookup<false>(collection, RecordType::SortedRecord);
   if (lookup_result.s != Status::Ok) {
     kvdk_assert(lookup_result.s == Status::NotFound, "");
     return lookup_result.s;
@@ -95,7 +95,7 @@ Status TransactionImpl::SortedDelete(const std::string& collection,
     return status_;
   }
   auto lookup_result =
-      hash_table->Lookup<false>(collection, RecordType::HashHeader);
+      hash_table->Lookup<false>(collection, RecordType::SortedRecord);
   if (lookup_result.s != Status::Ok) {
     kvdk_assert(lookup_result.s == Status::NotFound, "");
     return Status::Ok;
@@ -129,8 +129,9 @@ Status TransactionImpl::SortedGet(const std::string& collection,
       return status_;
     }
     auto lookup_result =
-        hash_table->Lookup<false>(collection, RecordType::HashHeader);
+        hash_table->Lookup<false>(collection, RecordType::SortedRecord);
     if (lookup_result.s != Status::Ok) {
+      GlobalLogger.Debug("collection not found\n");
       kvdk_assert(lookup_result.s == Status::NotFound, "");
       return lookup_result.s;
     }
@@ -141,6 +142,7 @@ Status TransactionImpl::SortedGet(const std::string& collection,
       return status_;
     }
 
+    GlobalLogger.Debug("skiplist get\n");
     return skiplist->Get(key, value);
   }
 }

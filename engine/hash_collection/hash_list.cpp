@@ -218,7 +218,7 @@ HashList::WriteResult HashList::SetExpireTime(ExpireTimeType expired_time,
   }
   DLRecord* pmem_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr_checked(space.offset), space.size, timestamp,
-      RecordType::HashHeader, RecordStatus::Normal,
+      RecordType::HashRecord, RecordStatus::Normal,
       pmem_allocator_->addr2offset_checked(header), header->prev, header->next,
       header->Key(), header->Value(), expired_time);
   bool success = dl_list_.Replace(header, pmem_record);
@@ -265,7 +265,7 @@ CollectionIDType HashList::FetchID(const DLRecord* record) {
   switch (record->GetRecordType()) {
     case RecordType::HashElem:
       return ExtractID(record->Key());
-    case RecordType::HashHeader:
+    case RecordType::HashRecord:
       return DecodeID(record->Value());
     default:
       GlobalLogger.Error("Wrong record type %u in HashListID",

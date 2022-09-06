@@ -173,7 +173,7 @@ class ListRebuilder {
 
         if (!outdated) {
           auto lookup_result = hash_table_->Insert(
-              collection_name, RecordType::ListHeader, RecordStatus::Normal,
+              collection_name, RecordType::ListRecord, RecordStatus::Normal,
               list.get(), PointerType::List);
           switch (lookup_result.s) {
             case Status::Ok: {

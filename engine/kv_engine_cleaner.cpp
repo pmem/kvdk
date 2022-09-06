@@ -158,7 +158,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordType::SortedHeader: {
+        case RecordType::SortedRecord: {
           if (record_status != RecordStatus::Outdated &&
               !pmem_record->HasExpired()) {
             entries.emplace_back(
@@ -181,7 +181,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordType::HashHeader: {
+        case RecordType::HashRecord: {
           if (record_status != RecordStatus::Outdated &&
               !pmem_record->HasExpired()) {
             entries.emplace_back(
@@ -204,7 +204,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordType::ListHeader: {
+        case RecordType::ListRecord: {
           if (record_status != RecordStatus::Outdated &&
               !pmem_record->HasExpired()) {
             entries.emplace_back(
@@ -758,7 +758,7 @@ void Cleaner::FetchOutdatedCollections(
       auto skiplist_iter = outdated_collections_.skiplists.begin();
       if (skiplist_iter->second < min_snapshot_ts) {
         outdated_collection = skiplist_iter->first;
-        record_type = RecordType::SortedHeader;
+        record_type = RecordType::SortedRecord;
         outdated_collections_.skiplists.erase(skiplist_iter);
       }
     }
@@ -767,7 +767,7 @@ void Cleaner::FetchOutdatedCollections(
       auto list_iter = outdated_collections_.lists.begin();
       if (list_iter->second < min_snapshot_ts) {
         outdated_collection = list_iter->first;
-        record_type = RecordType::ListHeader;
+        record_type = RecordType::ListRecord;
         outdated_collections_.lists.erase(list_iter);
       }
     }
@@ -776,7 +776,7 @@ void Cleaner::FetchOutdatedCollections(
       auto hash_list_iter = outdated_collections_.hashlists.begin();
       if (hash_list_iter->second < min_snapshot_ts) {
         outdated_collection = hash_list_iter->first;
-        record_type = RecordType::HashHeader;
+        record_type = RecordType::HashRecord;
         outdated_collections_.hashlists.erase(hash_list_iter);
       }
     }

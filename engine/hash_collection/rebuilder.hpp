@@ -209,7 +209,7 @@ class HashListRebuilder {
 
         if (!outdated) {
           auto lookup_result = hash_table_->Insert(
-              collection_name, RecordType::HashHeader, RecordStatus::Normal,
+              collection_name, RecordType::HashRecord, RecordStatus::Normal,
               hlist.get(), PointerType::HashList);
           switch (lookup_result.s) {
             case Status::Ok: {

@@ -40,7 +40,7 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 }
 
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
-  assert(header_record->GetRecordType() == RecordType::SortedHeader);
+  assert(header_record->GetRecordType() == RecordType::SortedRecord);
 
   bool linked_record = recovery_utils_.CheckAndRepairLinkage(header_record);
   if (!linked_record) {
@@ -649,12 +649,12 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
             RecordType::SortedElem,
         "");
   } else if (index_type == PointerType::Skiplist) {
-    record_type = RecordType::SortedHeader;
+    record_type = RecordType::SortedRecord;
     record_status =
         static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordStatus();
     kvdk_assert(
         static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordType() ==
-            RecordType::SortedHeader,
+            RecordType::SortedRecord,
         "");
   } else {
     kvdk_assert(false, "Wrong type in sorted collection rebuilder");

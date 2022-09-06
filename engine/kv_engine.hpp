@@ -308,10 +308,10 @@ class KVEngine : public Engine {
                       std::is_same<CollectionType, HashList>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
-               ? RecordType::SortedHeader
-           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+               ? RecordType::SortedRecord
+           : std::is_same<CollectionType, List>::value ? RecordType::ListRecord
            : std::is_same<CollectionType, HashList>::value
-               ? RecordType::HashHeader
+               ? RecordType::HashRecord
                : RecordType::Empty;
   }
 
@@ -327,13 +327,13 @@ class KVEngine : public Engine {
         kvdk_assert(false, "Not supported!");
         return PointerType::Invalid;
       }
-      case RecordType::SortedHeader: {
+      case RecordType::SortedRecord: {
         return PointerType::Skiplist;
       }
-      case RecordType::ListHeader: {
+      case RecordType::ListRecord: {
         return PointerType::List;
       }
-      case RecordType::HashHeader: {
+      case RecordType::HashRecord: {
         return PointerType::HashList;
       }
       case RecordType::HashElem: {
