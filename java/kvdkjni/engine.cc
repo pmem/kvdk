@@ -376,10 +376,10 @@ void Java_io_pmem_kvdk_Engine_sortedDelete(JNIEnv* env, jobject,
  * Method:    sortedIteratorCreate
  * Signature: (JJI)J
  */
-jlong Java_io_pmem_kvdk_Engine_newSortedIterator(JNIEnv* env, jobject,
-                                                 jlong engine_handle,
-                                                 jlong name_handle,
-                                                 jint name_len) {
+jlong Java_io_pmem_kvdk_Engine_sortedIteratorCreate(JNIEnv* env, jobject,
+                                                    jlong engine_handle,
+                                                    jlong name_handle,
+                                                    jint name_len) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
   auto* name_chars = reinterpret_cast<char*>(name_handle);
 
@@ -442,7 +442,7 @@ void Java_io_pmem_kvdk_Engine_batchWrite(JNIEnv* env, jobject,
  * Method:    releaseAccessThread
  * Signature: (JJ)V
  */
-void Java_io_pmem_kvdk_Engine_releaseAccessThread(JNIEnv* env, jobject,
+void Java_io_pmem_kvdk_Engine_releaseAccessThread(JNIEnv*, jobject,
                                                   jlong engine_handle) {
   auto* engine = reinterpret_cast<KVDK_NAMESPACE::Engine*>(engine_handle);
   engine->ReleaseAccessThread();

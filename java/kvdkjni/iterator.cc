@@ -52,8 +52,7 @@ void Java_io_pmem_kvdk_Iterator_seek(JNIEnv* env, jobject, jlong handle,
  * Method:    seekToFirst
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_Iterator_seekToFirst(JNIEnv* env, jobject,
-                                            jlong handle) {
+void Java_io_pmem_kvdk_Iterator_seekToFirst(JNIEnv*, jobject, jlong handle) {
   auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->SeekToFirst();
 }
@@ -63,7 +62,7 @@ void Java_io_pmem_kvdk_Iterator_seekToFirst(JNIEnv* env, jobject,
  * Method:    seekToLast
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_Iterator_seekToLast(JNIEnv* env, jobject, jlong handle) {
+void Java_io_pmem_kvdk_Iterator_seekToLast(JNIEnv*, jobject, jlong handle) {
   auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->SeekToLast();
 }
@@ -73,8 +72,7 @@ void Java_io_pmem_kvdk_Iterator_seekToLast(JNIEnv* env, jobject, jlong handle) {
  * Method:    isValid
  * Signature: (J)Z
  */
-jboolean Java_io_pmem_kvdk_Iterator_isValid(JNIEnv* env, jobject,
-                                            jlong handle) {
+jboolean Java_io_pmem_kvdk_Iterator_isValid(JNIEnv*, jobject, jlong handle) {
   auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   return iterator->Valid();
 }
@@ -84,7 +82,7 @@ jboolean Java_io_pmem_kvdk_Iterator_isValid(JNIEnv* env, jobject,
  * Method:    next
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_Iterator_next(JNIEnv* env, jobject, jlong handle) {
+void Java_io_pmem_kvdk_Iterator_next(JNIEnv*, jobject, jlong handle) {
   auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->Next();
 }
@@ -94,7 +92,7 @@ void Java_io_pmem_kvdk_Iterator_next(JNIEnv* env, jobject, jlong handle) {
  * Method:    prev
  * Signature: (J)V
  */
-void Java_io_pmem_kvdk_Iterator_prev(JNIEnv* env, jobject, jlong handle) {
+void Java_io_pmem_kvdk_Iterator_prev(JNIEnv*, jobject, jlong handle) {
   auto* iterator = reinterpret_cast<KVDK_NAMESPACE::SortedIterator*>(handle);
   iterator->Prev();
 }

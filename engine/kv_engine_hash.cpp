@@ -159,7 +159,8 @@ Status KVEngine::HashPut(StringView collection, StringView key,
       auto ul = hash_table_->AcquireLock(collection_key);
       auto ret =
           hlist->Put(key, value, version_controller_.GetCurrentTimestamp());
-      if (ret.s == Status::Ok && ret.existing_record) {
+      if (ret.s == Status::Ok && ret.existing_record &&
+          hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
       }
       tryCleanCachedOutdatedRecord();
@@ -188,7 +189,8 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
     } else {
       auto ul = hash_table_->AcquireLock(collection_key);
       auto ret = hlist->Delete(key, version_controller_.GetCurrentTimestamp());
-      if (ret.s == Status::Ok && ret.existing_record && ret.write_record) {
+      if (ret.s == Status::Ok && ret.existing_record && ret.write_record &&
+          hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion(ret.write_record);
       }
       tryCleanCachedOutdatedRecord();
@@ -215,7 +217,8 @@ Status KVEngine::HashModify(StringView collection, StringView key,
     auto ret = hlist->Modify(key, modify_func, cb_args,
                              version_controller_.GetCurrentTimestamp());
     s = ret.s;
-    if (s == Status::Ok && ret.existing_record && ret.write_record) {
+    if (s == Status::Ok && ret.existing_record && ret.write_record &&
+        hlist->TryCleaningLock()) {
       removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
     }
     tryCleanCachedOutdatedRecord();

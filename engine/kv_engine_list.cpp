@@ -176,7 +176,10 @@ Status KVEngine::ListPopFront(StringView list_name, std::string* elem) {
       elem->assign(ret.existing_record->Value().data(),
                    ret.existing_record->Value().size());
     }
-    removeAndCacheOutdatedVersion(ret.write_record);
+    if (list->TryCleaningLock()) {
+      removeAndCacheOutdatedVersion(ret.write_record);
+      list->ReleaseCleaningLock();
+    }
   }
   tryCleanCachedOutdatedRecord();
   return ret.s;
@@ -211,7 +214,10 @@ Status KVEngine::ListPopBack(StringView list_name, std::string* elem) {
                    ret.existing_record->Value().size());
     }
     kvdk_assert(ret.existing_record && ret.write_record, "");
-    removeAndCacheOutdatedVersion(ret.write_record);
+    if (list->TryCleaningLock()) {
+      removeAndCacheOutdatedVersion(ret.write_record);
+      list->ReleaseCleaningLock();
+    }
   }
   tryCleanCachedOutdatedRecord();
   return ret.s;
@@ -481,7 +487,10 @@ Status KVEngine::ListErase(StringView list_name, long index,
       elem->assign(ret.existing_record->Value().data(),
                    ret.existing_record->Value().size());
     }
-    removeAndCacheOutdatedVersion(ret.write_record);
+    if (list->TryCleaningLock()) {
+      removeAndCacheOutdatedVersion(ret.write_record);
+      list->ReleaseCleaningLock();
+    }
   }
   tryCleanCachedOutdatedRecord();
   return ret.s;
