@@ -142,7 +142,6 @@ Status TransactionImpl::SortedGet(const std::string& collection,
       return status_;
     }
 
-    GlobalLogger.Debug("skiplist get\n");
     return skiplist->Get(key, value);
   }
 }
@@ -150,17 +149,87 @@ Status TransactionImpl::SortedGet(const std::string& collection,
 Status TransactionImpl::HashPut(const std::string& collection,
                                 const std::string& key,
                                 const std::string& value) {
+  auto hash_table = engine_->GetHashTable();
+  // TODO not hold collection lock in transaciton(r/w lock?)
+  if (!tryLock(hash_table->GetLock(collection))) {
+    status_ = Status::Timeout;
+    return status_;
+  }
+  auto lookup_result =
+      hash_table->Lookup<false>(collection, RecordType::HashRecord);
+  if (lookup_result.s != Status::Ok) {
+    kvdk_assert(lookup_result.s == Status::NotFound, "");
+    return lookup_result.s;
+  }
+  HashList* hlist = lookup_result.entry.GetIndex().hlist;
+  auto internal_key = hlist->InternalKey(key);
+  if (!tryLock(hash_table->GetLock(internal_key))) {
+    status_ = Status::Timeout;
+    return status_;
+  }
+
+  batch_->HashPut(collection, key, value);
   return Status::Ok;
 }
 
 Status TransactionImpl::HashDelete(const std::string& collection,
                                    const std::string& key) {
+  auto hash_table = engine_->GetHashTable();
+  // TODO not hold collection lock in transaciton(r/w lock?)
+  if (!tryLock(hash_table->GetLock(collection))) {
+    status_ = Status::Timeout;
+    return status_;
+  }
+  auto lookup_result =
+      hash_table->Lookup<false>(collection, RecordType::HashRecord);
+  if (lookup_result.s != Status::Ok) {
+    kvdk_assert(lookup_result.s == Status::NotFound, "");
+    return Status::Ok;
+  }
+  HashList* hlist = lookup_result.entry.GetIndex().hlist;
+  auto internal_key = hlist->InternalKey(key);
+  if (!tryLock(hash_table->GetLock(internal_key))) {
+    status_ = Status::Timeout;
+    return status_;
+  }
+
+  batch_->HashDelete(collection, key);
   return Status::Ok;
 }
 
 Status TransactionImpl::HashGet(const std::string& collection,
                                 const std::string& key, std::string* value) {
-  return Status::Ok;
+  auto op = batch_->HashGet(collection, key);
+  if (op != nullptr) {
+    if (op->op == WriteOp::Delete) {
+      return Status::NotFound;
+    } else {
+      value->assign(op->value);
+      return Status::Ok;
+    }
+  } else {
+    auto hash_table = engine_->GetHashTable();
+    // TODO not hold collection lock in transaciton(r/w lock?)
+    if (!tryLock(hash_table->GetLock(collection))) {
+      status_ = Status::Timeout;
+      return status_;
+    }
+    auto lookup_result =
+        hash_table->Lookup<false>(collection, RecordType::HashRecord);
+    if (lookup_result.s != Status::Ok) {
+      GlobalLogger.Debug("collection not found\n");
+      kvdk_assert(lookup_result.s == Status::NotFound, "");
+      return lookup_result.s;
+    }
+    HashList* hlist = lookup_result.entry.GetIndex().hlist;
+    auto internal_key = hlist->InternalKey(key);
+    if (!tryLock(hash_table->GetLock(internal_key))) {
+      status_ = Status::Timeout;
+      return status_;
+    }
+
+    return hlist->Get(key, value);
+  }
 }
 
 bool TransactionImpl::tryLock(SpinMutex* spin) {
@@ -186,11 +255,12 @@ bool TransactionImpl::tryLockImpl(SpinMutex* spin) {
   return true;
 }
 
-Status TransactionImpl::Commit() { return engine_->CommitTransaction(this); }
+Status TransactionImpl::Commit() {
+  Status s = engine_->CommitTransaction(this);
+  Rollback();
+  return s;
+}
 void TransactionImpl::Rollback() {
-  for (SpinMutex* kv : locked_) {
-    kv->unlock();
-  }
   for (SpinMutex* s : locked_) {
     s->unlock();
   }
