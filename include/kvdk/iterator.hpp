@@ -85,7 +85,7 @@ class VHashIterator {
 
   virtual void Next() = 0;
 
-  virtual bool Valid() = 0;
+  virtual bool Valid() const = 0;
 
   virtual std::string Key() const = 0;
 

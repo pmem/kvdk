@@ -7,6 +7,7 @@
 #include <deque>
 #include <tuple>
 #include <vector>
+#include <unordered_map>
 
 #include "../alias.hpp"
 #include "../collection.hpp"
@@ -14,12 +15,18 @@
 #include "../kv_engine_cleaner.hpp"
 #include "../thread_manager.hpp"
 #include "../utils/utils.hpp"
-#include "../experimental/vhash_kv.hpp"
 #include "kvdk/configs.hpp"
 #include "version_controller.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine;
+
+class IDeleter
+{
+public:
+    // Called by OldRecordsCleaner for actual deletion.
+    virtual void Delete(void* obj) = 0;
+};
 
 // OldRecordsCleaner is used to clean old version PMem records of kvdk
 //
@@ -35,34 +42,37 @@ class OldRecordsCleaner {
 
   void PushToPendingFree(void* addr, TimeStampType ts);
 
-  /// TODO: unify DelayDelete with static polymorphism
-  /// It cannot be done with dynamic polymorphism as sometimes
-  /// we cannot afford the memory usage by virtual function pointer
-  /// and if we use shared memory dynamic polymorphism is impossible.
-  template<typename KVType>
-  void DelayDelete(KVType* kv);
+  // Warning: not thread safe. Must be called during kv_engine initialization.
+  void RegisterDelayDeleter(IDeleter& deleter);
+
+  void DelayDelete(IDeleter& deleter, void* obj);
+
   // Try to clean global old records
   void TryGlobalClean();
 
  private:
+  using PendingQueue = std::deque<std::pair<TimeStampType, void*>>;
+
   struct CleanerThreadCache {
     std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};
-    std::deque<std::pair<TimeStampType, VHashKV*>> pending_vhash_kvs;
+    std::vector<PendingQueue> local_queues_;
     SpinMutex old_records_lock;
   };
   const uint64_t kLimitCachedDeleteRecords = 1000000;
 
   void maybeUpdateOldestSnapshot();
 
-  template<typename Deleter, typename PendingQueue>
-  void tryDelete(Deleter del, PendingQueue& pending_kvs, size_t lim);
+  // Try purging some entries from a locked PendingQueue with associated deleter.
+  void tryPurge(IDeleter& deleter, PendingQueue& pending_kvs, size_t lim);
 
   KVEngine* kv_engine_;
 
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
   std::deque<PendingFreeSpaceEntry> global_pending_free_space_entries_;
-  std::deque<std::pair<TimeStampType, VHashKV*>> global_pending_vhash_kvs;
+
+  std::unordered_map<IDeleter*, size_t> delay_deleters_;
+  std::vector<PendingQueue> global_queues_;
 };
 
 }  // namespace KVDK_NAMESPACE

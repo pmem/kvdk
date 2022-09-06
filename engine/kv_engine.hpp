@@ -22,7 +22,7 @@
 #include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "experimental/vhash.hpp"
+#include "experimental/vhash_group.hpp"
 #include "hash_collection/hash_list.hpp"
 #include "hash_collection/rebuilder.hpp"
 #include "hash_table.hpp"
@@ -620,9 +620,7 @@ class KVEngine : public Engine {
   Cleaner cleaner_;
 
   CharAllocator char_alloc_;
-  std::mutex vhashes_mu_;
-  VHashKVBuilder vhash_kvb_{char_alloc_, old_records_cleaner_};
-  std::unordered_map<CollectionIDType, std::shared_ptr<VHash>> vhashes_;
+  VHashGroup vhashes_{char_alloc_, old_records_cleaner_};
 
   ComparatorTable comparators_;
 

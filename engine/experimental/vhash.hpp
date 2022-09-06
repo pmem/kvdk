@@ -1,11 +1,13 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
 #include "hashptr_map.hpp"
 #include "vhash_kv.hpp"
 #include "kvdk/iterator.hpp"
+#include "../version/old_records_cleaner.hpp"
 
 namespace KVDK_NAMESPACE
 {
@@ -27,43 +29,66 @@ public:
 
     StringView Name() const { return name; }
 
-    // CopyTo should have signature of
-    // void(*)(void* dst, StringView src)
-    template<typename CopyTo>
-    Status Get(StringView key, CopyTo copy, void* dst);
+    static StringView ExtractName(VHash* vhash)
+    {
+        return vhash->Name();
+    }
+
+    size_t Size() const { return sz.load(); }
+
+    using CopyFunc = std::function<void(void*, StringView)>;
+    // copy() will copy StringView of value to dst
+    Status Get(StringView key, CopyFunc copy, void* dst);
 
     Status Put(StringView key, StringView value);
 
     Status Delete(StringView key);
 
-    // ModifyFunc should have signature of 
-    // ModifyOperation(*)(StringView const* old_val, StringView& new_val, void* args)
-    // Cleanup should have signature of
-    // void(*)(StringView new_val)
-    // for cleaning up memory allocated by ModifyFunc.
-    template<typename ModifyFunc, typename Cleanup>
+    // Cleanup is for cleaning up memory allocated by ModifyFunc.
+    using ModifyFunc = std::function<ModifyOperation(StringView const*, StringView&, void*)>;
+    using Cleanup = std::function<void(StringView)>;
     Status Modify(StringView key, ModifyFunc modify, void* cb_args, Cleanup cleanup);
 
-    // Called by VHashBuilder::PurgeVHash() to Delete all VHashKVs inside it.
-    Status DeleteAll();
+    class Iterator : public VHashIterator
+    {
+      public:
+        void SeekToFirst() final;
+        void Next() final;
+        bool Valid() const final;
+        std::string Key() const final;
+        std::string Value() const final;
+        virtual ~Iterator() = default;
+      
+      private:
+        friend VHash;
+        using rep = typename decltype(hpmap)::iterator;
+        VHash& owner;
+        rep pos;
+        Iterator(VHash& o, rep&& p) : owner{o}, pos{std::move(p)} {}
+    };
+
+    std::unique_ptr<Iterator> MakeIterator();
+
+  private:
+    friend class VHashBuilder;
+    // Called by VHashBuilder::Delete() to Delete all VHashKVs inside it.
+    Status deleteAll();
 };
 
-
-class VHashBuilder
+class VHashBuilder : public IDeleter
 {
 private:
     OldRecordsCleaner& cleaner;
-    VHashKVBuilder& kvb;
 
 public:
-    VHashBuilder(OldRecordsCleaner& c, VHashKVBuilder& b) : cleaner{c}, kvb{b} {}
+    VHashBuilder(OldRecordsCleaner& c);
 
     // Called by VHashGroup to create a VHash.
-    VHash* NewVHash(StringView name);
-    // Called by VHashGroup to "delete" a VHash. Delegate the deletion to cleaner.
-    void DeleteVHash(VHash* vhash);
-    // Called by cleaner to actually delete the VHash and recycle its memory.
-    void PurgeVHash(VHash* vhash);
+    VHash* NewVHash(StringView name, VHashKVBuilder& b);
+
+    void Recycle(VHash* vhash);
+
+    void Delete(void* vhash) final;
 };
 
 } // KVDK_NAMESPACE

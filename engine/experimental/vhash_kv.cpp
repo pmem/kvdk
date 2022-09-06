@@ -4,21 +4,28 @@
 namespace KVDK_NAMESPACE
 {
 
+VHashKVBuilder::VHashKVBuilder(IVolatileAllocator& a, OldRecordsCleaner& c) :
+    alloc{a}, cleaner{c}
+{
+    c.RegisterDelayDeleter(*this);
+}
+
 VHashKV* VHashKVBuilder::NewKV(StringView key, StringView value)
 {
     void* dst = alloc.Allocate(sizeof(VHashKV) + key.size() + value.size());
-    if (dst != nullptr) new(dst) VHashKV{key, value};
+    new(dst) VHashKV{key, value};
     return static_cast<VHashKV*>(dst);
 }
 
-void VHashKVBuilder::DeleteKV(VHashKV* kv)
+void VHashKVBuilder::Recycle(VHashKV* kv)
 {
     if (kv == nullptr) return;
-    cleaner.DelayDelete(kv);
+    cleaner.DelayDelete(*this, kv);
 }
 
-void VHashKVBuilder::PurgeKV(VHashKV* kv)
+void VHashKVBuilder::Delete(void* obj)
 {
+    VHashKV* kv = static_cast<VHashKV*>(obj);
     kv->~VHashKV();
     alloc.Deallocate(kv, sizeof(VHashKV) + kv->Key().size() + kv->Value().size());
 }

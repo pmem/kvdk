@@ -1,42 +1,35 @@
-#include "hashptr_map.hpp"
-#include "vhash.hpp"
-
 #pragma once
 
 #include <string>
 
+#include "../alias.hpp"
 #include "hashptr_map.hpp"
-#include "vhash_kv.hpp"
+#include "vhash.hpp"
 
 namespace KVDK_NAMESPACE
 {
 
+// A VHashGroup contains VHashes that share the same memory allocator for kvs.
+/// TODO: Add hpmap_alloc to allocate memory for hashptr_maps.
 class VHashGroup
 {
 private:
-    hashptr_map<StringView, VHash*, decltype(VHash::Name)> hpmap;
-    VHashKVBuilder& kvb;
+    OldRecordsCleaner& cleaner;
+    IVolatileAllocator& kv_alloc;
+    VHashKVBuilder kvb{kv_alloc, cleaner};
+    VHashBuilder vhb{cleaner};
+
+    hashptr_map<StringView, VHash*, decltype(VHash::ExtractName)> hpmap{4, VHash::ExtractName};
     std::atomic_int64_t sz{0LL};
 
 public:
-    VHashGroup(VHashKVBuilder& b) : hpmap{4, VHash::Name}, kvb{b} {}
+    VHashGroup(IVolatileAllocator& a, OldRecordsCleaner& c) : kv_alloc{a}, cleaner{c} {}
 
-    // CopyTo should have signature of
-    // void(*)(void* dst, StringView src)
-    template<typename CopyTo>
-    Status Get(StringView key, CopyTo copy, void* dst);
+    Status Create(StringView name);
 
-    Status Put(StringView key, StringView value);
+    Status Destroy(StringView name);
 
-    Status Delete(StringView key);
-
-    // ModifyFunc should have signature of 
-    // ModifyOperation(*)(StringView const* old_val, StringView& new_val, void* args)
-    // Cleanup should have signature of
-    // void(*)(StringView new_val)
-    // for cleaning up memory allocated by ModifyFunc.
-    template<typename ModifyFunc, typename Cleanup>
-    Status Modify(StringView key, ModifyFunc modify, void* cb_args, Cleanup cleanup);
+    Status Get(StringView name, VHash** vhash);
 };
 
-} // KVDK_NAMESPACE
+} // namespace KVDK_NAMESPACE

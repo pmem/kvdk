@@ -53,7 +53,8 @@ set(SOURCES
         engine/c/kvdk_sorted.cpp
         engine/c/kvdk_string.cpp
         engine/experimental/vhash_kv.cpp
-        engine/experimental/vhash_kv.cpp
+        engine/experimental/vhash.cpp
+        engine/experimental/vhash_group.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
         engine/engine.cpp

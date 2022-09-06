@@ -569,14 +569,18 @@ class hashptr_map
             map->help_end_relocation();
         }
 
-        Pointer pointer()
+        Pointer pointer() const
         {
             return (loc.np == nullptr) ? nullptr : loc.np->load_entry(loc.idx).pointer();
         }
 
         void set_pointer(Pointer p)
         {
-            if (loc.np == nullptr)
+            if (p == nullptr)
+            {
+                erase();
+            }
+            else if (loc.np == nullptr)
             {
                 // Since relocation may have been done by lookup(),
                 // we must guarantee Pointer p is inserted to the correct bucket.
@@ -668,7 +672,17 @@ class hashptr_map
             return acc;
         }
 
+        accessor const& operator*() const
+        {
+            return acc;
+        }
+
         accessor* operator->()
+        {
+            return &acc;
+        }
+
+        accessor const* operator->() const
         {
             return &acc;
         }

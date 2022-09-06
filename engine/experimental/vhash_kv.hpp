@@ -5,6 +5,7 @@
 #include "../alias.hpp"
 #include "../macros.hpp"
 #include "../allocator.hpp"
+#include "../version/old_records_cleaner.hpp"
 
 namespace KVDK_NAMESPACE
 {
@@ -44,25 +45,24 @@ public:
     }
 };
 
-class OldRecordsCleaner;
-
-class VHashKVBuilder
+class VHashKVBuilder : public IDeleter
 {
 private:
     IVolatileAllocator& alloc;
     OldRecordsCleaner& cleaner;
 
 public:
-    VHashKVBuilder(IVolatileAllocator& a, OldRecordsCleaner& c) : alloc{a}, cleaner{c} {}
+    VHashKVBuilder(IVolatileAllocator& a, OldRecordsCleaner& c);
     VHashKVBuilder(VHashKVBuilder const&) = delete;
     VHashKVBuilder(VHashKVBuilder&&) = default;
 
-    // Called by VHash to create a KV.
     VHashKV* NewKV(StringView key, StringView value);
-    // Called by VHash to "delete" a KV. Delegate the deletion to cleaner.
-    void DeleteKV(VHashKV* kv);
-    // Called by cleaner to actually delete the KV and recycle its memory.
-    void PurgeKV(VHashKV* kv);
+
+    // Recycle VHashKV to OldRecordsCleaner for later deletion.
+    void Recycle(VHashKV* kv);
+
+    // Called by OldRecordsCleaner to delete KV.
+    void Delete(void* kv) final;
 };
 
 
