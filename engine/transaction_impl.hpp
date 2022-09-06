@@ -20,6 +20,18 @@ class TransactionImpl final : public Transaction {
   Status StringPut(const std::string& key, const std::string& value) final;
   Status StringDelete(const std::string& key) final;
   Status StringGet(const std::string& key, std::string* value) final;
+  Status SortedPut(const std::string& collection, const std::string& key,
+                   const std::string& value) final;
+  Status SortedDelete(const std::string& collection,
+                      const std::string& key) final;
+  Status SortedGet(const std::string& collection, const std::string& key,
+                   std::string* value) final;
+  Status HashPut(const std::string& collection, const std::string& key,
+                 const std::string& value) final;
+  Status HashDelete(const std::string& collection,
+                    const std::string& key) final;
+  Status HashGet(const std::string& collection, const std::string& key,
+                 std::string* value) final;
   Status Commit() final;
   void Rollback() final;
   Status InternalStatus() final { return status_; }
@@ -33,7 +45,8 @@ class TransactionImpl final : public Transaction {
     std::string value;
   };
 
-  bool TryLock(SpinMutex* spin);
+  bool tryLock(SpinMutex* spin);
+  bool tryLockImpl(SpinMutex* spin);
 
   KVEngine* engine_;
   Status status_;

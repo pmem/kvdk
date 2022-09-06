@@ -16,6 +16,19 @@ class Transaction {
                            const std::string& value) = 0;
   virtual Status StringDelete(const std::string& key) = 0;
   virtual Status StringGet(const std::string& key, std::string* value) = 0;
+  virtual Status SortedPut(const std::string& collection,
+                           const std::string& key,
+                           const std::string& value) = 0;
+  virtual Status SortedDelete(const std::string& collection,
+                              const std::string& key) = 0;
+  virtual Status SortedGet(const std::string& collection,
+                           const std::string& key, std::string* value) = 0;
+  virtual Status HashPut(const std::string& collection, const std::string& key,
+                         const std::string& value) = 0;
+  virtual Status HashDelete(const std::string& collection,
+                            const std::string& key) = 0;
+  virtual Status HashGet(const std::string& collection, const std::string& key,
+                         std::string* value) = 0;
 
   virtual Status Commit() = 0;
   virtual void Rollback() = 0;

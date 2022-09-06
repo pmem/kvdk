@@ -108,9 +108,9 @@ class WriteBatchImpl final : public WriteBatch {
   }
 
   // Get a sorted op from this batch
-  // if the collection key not exist in this batch, return nullptr
-  const SortedOp* SortedGet(std::string const& collection,
-                            std::string const& key) {
+  // if collection key not exist in this batch, return nullptr
+  const SortedOp* SortedGet(const std::string& collection,
+                            const std::string& key) {
     SortedOp op{WriteOp::Put, collection, key, ""};
     auto iter = sorted_ops_.find(op);
     if (iter == sorted_ops_.end()) {
