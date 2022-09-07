@@ -162,6 +162,7 @@ Status KVEngine::HashPut(StringView collection, StringView key,
       if (ret.s == Status::Ok && ret.existing_record &&
           hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
+        hlist->ReleaseCleaningLock();
       }
       tryCleanCachedOutdatedRecord();
       s = ret.s;
@@ -192,6 +193,7 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
       if (ret.s == Status::Ok && ret.existing_record && ret.write_record &&
           hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion(ret.write_record);
+        hlist->ReleaseCleaningLock();
       }
       tryCleanCachedOutdatedRecord();
       s = ret.s;
@@ -220,6 +222,7 @@ Status KVEngine::HashModify(StringView collection, StringView key,
     if (s == Status::Ok && ret.existing_record && ret.write_record &&
         hlist->TryCleaningLock()) {
       removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
+      hlist->ReleaseCleaningLock();
     }
     tryCleanCachedOutdatedRecord();
   }
