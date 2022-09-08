@@ -79,49 +79,115 @@ class Cleaner {
 
   Cleaner(KVEngine* kv_engine, int64_t max_cleaner_threads)
       : kv_engine_(kv_engine),
-        max_thread_num_(max_cleaner_threads),
+        max_clean_worker_(max_cleaner_threads - 1 /*1 for main worker*/),
+        min_clean_worker_(0),
         close_(false),
         start_slot_(0),
-        live_thread_num_(0),
-        workers_(max_cleaner_threads) {
-    for (size_t thread_id = 0; thread_id < max_thread_num_; ++thread_id) {
-      idled_workers_.push_back(thread_id);
+        active_clean_workers_(0),
+        main_worker_([this]() { this->mainWork(); }),
+        clean_workers_(max_clean_worker_) {
+    for (auto& w : clean_workers_) {
+      w.Init([this]() { this->cleanWork(); });
     }
   }
 
-  ~Cleaner() { CloseAllWorkers(); }
+  ~Cleaner() { Close(); }
 
-  void StartClean();
-  void CloseAllWorkers() {
+  void Start() {
+    if (!close_) {
+      main_worker_.Run();
+    }
+  }
+
+  void Close() {
     close_ = true;
-    for (size_t i = 0; i < workers_.size(); ++i) {
-      if (workers_[i].worker.joinable()) {
-        workers_[i].finish = true;
-        workers_[i].worker.join();
-      }
+    main_worker_.Join();
+    for (auto& w : clean_workers_) {
+      w.Join();
     }
   }
-  void AdjustThread(size_t advice_thread_num);
-  size_t ActiveThreadNum() { return live_thread_num_.load(); }
+
+  void AdjustCleanWorkers(size_t advice_workers_num);
+
+  size_t ActiveThreadNum() { return active_clean_workers_.load() + 1; }
 
   double SearchOutdatedCollections();
   void FetchOutdatedCollections(PendingCleanRecords& pending_clean_records);
 
  private:
-  struct ThreadWorker {
-    std::atomic_bool finish{true};
-    std::thread worker;
+  class Worker {
+   public:
+    ~Worker() { Join(); }
+
+    Worker(std::function<void()> f) { Init(f); }
+
+    Worker() = default;
+
+    void Init(std::function<void()> f) {
+      Join();
+      func = f;
+      std::unique_lock<SpinMutex> ul(spin);
+      join_ = false;
+      keep_work_ = false;
+
+      auto work = [&]() {
+        while (true) {
+          {
+            std::unique_lock<SpinMutex> ul(spin);
+            while (!keep_work_ && !join_) {
+              cv.wait(ul);
+            }
+            if (join_) {
+              return;
+            }
+          }
+          func();
+        }
+      };
+      worker_thread = std::thread(work);
+    }
+
+    void Run() {
+      std::unique_lock<SpinMutex> ul(spin);
+      keep_work_ = true;
+      cv.notify_all();
+    }
+
+    void Stop() {
+      std::unique_lock<SpinMutex> ul(spin);
+      keep_work_ = false;
+    }
+
+    void Join() {
+      {
+        std::unique_lock<SpinMutex> ul(spin);
+        keep_work_ = false;
+        join_ = true;
+        cv.notify_all();
+      }
+      if (worker_thread.joinable()) {
+        worker_thread.join();
+      }
+    }
+
+   private:
+    bool keep_work_;
+    bool join_;
+    std::condition_variable_any cv;
+    SpinMutex spin;
+    std::thread worker_thread;
+    std::function<void(void)> func;
   };
+
   KVEngine* kv_engine_;
 
-  size_t max_thread_num_;
-  size_t min_thread_num_ = 1;
-  std::atomic_bool close_;
-  std::atomic_int64_t start_slot_;
-  std::atomic<size_t> live_thread_num_;
-  std::vector<ThreadWorker> workers_;
-  std::deque<size_t> idled_workers_;
-  std::deque<size_t> actived_workers_;
+  size_t max_clean_worker_;
+  size_t min_clean_worker_;
+  std::atomic<bool> close_;
+  std::atomic<int64_t> start_slot_;
+  std::atomic<size_t> active_clean_workers_;
+  Worker main_worker_;
+  std::vector<Worker> clean_workers_;
 
   struct OutDatedCollections {
     struct TimeStampCmp {
@@ -151,8 +217,8 @@ class Cleaner {
   OutDatedCollections outdated_collections_;
 
  private:
-  void doCleanWork(size_t thread_id);
-  void mainWorker();
+  void cleanWork();
+  void mainWork();
 };
 
 }  // namespace KVDK_NAMESPACE
