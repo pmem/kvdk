@@ -44,8 +44,10 @@ if __name__ == "__main__":
         data_types = ['list']
     elif sys.argv[1] == 'blackhole':
         data_types = ['blackhole']
+    elif sys.argv[1] == 'vhash':
+        data_types = ['vhash']
     elif sys.argv[1] == 'all':
-        data_types = ['blackhole', 'string', 'sorted', 'hash', 'list']
+        data_types = ['blackhole', 'string', 'sorted', 'hash', 'list', 'vhash']
     else:
         print(usage)
         exit(1)

@@ -3,13 +3,13 @@
 
 namespace KVDK_NAMESPACE {
 
-Status KVEngine::VHashCreate(StringView key) KVDK_TRY {
+Status KVEngine::VHashCreate(StringView key, size_t capacity) KVDK_TRY {
   Status s = MaybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) return s;
   if (!CheckKeySize(key)) return Status::InvalidDataSize;
 
-  return vhashes_.Create(key) ? Status::Ok : Status::Existed;
+  return vhashes_.Create(key, capacity) ? Status::Ok : Status::Existed;
 }
 KVDK_HANDLE_EXCEPTIONS
 

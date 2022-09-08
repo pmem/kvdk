@@ -41,11 +41,13 @@ Status ThreadManager::MaybeInitThread(Thread& t) {
   return Status::Ok;
 }
 
-void ThreadManager::Release(const Thread& t) {
+void ThreadManager::Release(Thread& t) {
   if (t.id >= 0) {
     assert(static_cast<unsigned>(t.id) < max_threads_);
     std::lock_guard<SpinMutex> lg(spin_);
     usable_id_.insert(t.id);
+    // Prevent double-release.
+    t.id = -1;
   }
 }
 

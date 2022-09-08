@@ -25,7 +25,9 @@ class VHashGroup {
   VHashGroup(IVolatileAllocator& a, OldRecordsCleaner& c)
       : kv_alloc{a}, cleaner{c} {}
 
-  bool Create(StringView name);
+  ~VHashGroup();
+
+  bool Create(StringView name, size_t capacity);
 
   bool Destroy(StringView name);
 

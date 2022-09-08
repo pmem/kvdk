@@ -122,11 +122,27 @@ std::vector<std::vector<std::uint64_t>> latencies;
 std::vector<PaddedEngine> random_engines;
 std::vector<PaddedRangeIterators> ranges;
 
-enum class DataType { String, Sorted, Hashes, List, Blackhole } bench_data_type;
+enum class DataType {
+  String,
+  Sorted,
+  Hashes,
+  List,
+  VHash,
+  Blackhole
+} bench_data_type;
 
 enum class KeyDistribution { Range, Uniform, Zipf } key_dist;
 
 enum class ValueSizeDistribution { Constant, Uniform } vsz_dist;
+
+void LaunchNThreads(int n_thread, std::function<void(int tid)> func,
+                    int id_start = 0) {
+  std::vector<std::thread> ts;
+  for (int i = id_start; i < id_start + n_thread; i++) {
+    ts.emplace_back(std::thread(func, i));
+  }
+  for (auto& t : ts) t.join();
+}
 
 std::uint64_t generate_key(size_t tid) {
   static std::uint64_t max_key = FLAGS_existing_keys_ratio == 0
@@ -160,6 +176,22 @@ size_t generate_value_size(size_t tid) {
     }
     default: {
       throw;
+    }
+  }
+}
+
+void FillVHash(size_t tid) {
+  std::string key(8, ' ');
+  for (size_t i = 0; i < FLAGS_num_kv / FLAGS_num_collection; ++i) {
+    std::uint64_t num = ranges[tid].gen();
+    std::uint64_t cid = num % FLAGS_num_collection;
+    memcpy(&key[0], &num, 8);
+    StringView value = StringView(value_pool.data(), generate_value_size(tid));
+
+    Status s = engine->VHashPut(collections[cid], key, value);
+
+    if (s != Status::Ok) {
+      throw std::runtime_error{"VHashPut error"};
     }
   }
 }
@@ -228,6 +260,10 @@ void DBWrite(int tid) {
       }
       case DataType::List: {
         s = engine->ListPushFront(collections[cid], value);
+        break;
+      }
+      case DataType::VHash: {
+        s = engine->VHashPut(collections[cid], key, value);
         break;
       }
       case DataType::Blackhole: {
@@ -366,6 +402,10 @@ void DBRead(int tid) {
         s = engine->ListPopBack(collections[cid], &value_sink);
         break;
       }
+      case DataType::VHash: {
+        s = engine->VHashGet(collections[cid], key, &value_sink);
+        break;
+      }
       case DataType::Blackhole: {
         s = Status::Ok;
         break;
@@ -412,6 +452,8 @@ void ProcessBenchmarkConfigs() {
     bench_data_type = DataType::Hashes;
   } else if (FLAGS_type == "list") {
     bench_data_type = DataType::List;
+  } else if (FLAGS_type == "vhash") {
+    bench_data_type = DataType::VHash;
   } else if (FLAGS_type == "blackhole") {
     bench_data_type = DataType::Blackhole;
   } else {
@@ -425,6 +467,7 @@ void ProcessBenchmarkConfigs() {
     }
     case DataType::Hashes:
     case DataType::List:
+    case DataType::VHash:
     case DataType::Sorted: {
       collections.resize(FLAGS_num_collection);
       for (size_t i = 0; i < FLAGS_num_collection; i++) {
@@ -436,6 +479,9 @@ void ProcessBenchmarkConfigs() {
 
   if (FLAGS_batch_size > 0 && (bench_data_type == DataType::List)) {
     throw std::invalid_argument{R"(List does not support batch write.)"};
+  }
+  if (FLAGS_batch_size > 0 && (bench_data_type == DataType::VHash)) {
+    throw std::invalid_argument{R"(VHash does not support batch write.)"};
   }
 
   // Check for scan flag
@@ -458,6 +504,7 @@ void ProcessBenchmarkConfigs() {
 
   random_engines.resize(FLAGS_threads);
   if (FLAGS_fill) {
+    assert(bench_data_type != DataType::VHash && "VHash don't need fill");
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
     operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
@@ -556,6 +603,17 @@ int main(int argc, char** argv) {
         }
       }
       engine->ReleaseAccessThread();
+      break;
+    }
+    case DataType::VHash: {
+      for (auto col : collections) {
+        Status s =
+            engine->VHashCreate(col, FLAGS_num_kv / FLAGS_num_collection);
+        if (s != Status::Ok) {
+          throw std::runtime_error{"Fail to create VHash"};
+        }
+      }
+      LaunchNThreads(FLAGS_threads, FillVHash);
       break;
     }
     default: {

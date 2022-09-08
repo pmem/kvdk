@@ -337,7 +337,7 @@ class Engine {
 
   /// Volatile Hash APIs //////////////////////////////////////////////////////
 
-  virtual Status VHashCreate(StringView key) = 0;
+  virtual Status VHashCreate(StringView key, size_t capacity = (1UL << 20)) = 0;
   virtual Status VHashDestroy(StringView key) = 0;
   virtual Status VHashSize(StringView key, size_t* len) = 0;
   virtual Status VHashGet(StringView key, StringView field,

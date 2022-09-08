@@ -111,8 +111,9 @@ VHashBuilder::VHashBuilder(OldRecordsCleaner& c) : cleaner{c} {
   cleaner.RegisterDelayDeleter(*this);
 }
 
-VHash* VHashBuilder::NewVHash(StringView name, VHashKVBuilder& kvb) {
-  return new VHash{name, kvb};
+VHash* VHashBuilder::NewVHash(StringView name, VHashKVBuilder& kvb,
+                              size_t capacity) {
+  return new VHash{name, kvb, capacity};
 }
 
 void VHashBuilder::Recycle(VHash* vhash) {

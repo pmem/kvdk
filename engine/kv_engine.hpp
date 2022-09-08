@@ -231,7 +231,7 @@ class KVEngine : public Engine {
   void HashIteratorRelease(HashIterator*) final;
 
   // Volatile Hash
-  Status VHashCreate(StringView key) final;
+  Status VHashCreate(StringView key, size_t capacity) final;
   Status VHashDestroy(StringView key) final;
   Status VHashSize(StringView key, size_t* len) final;
   Status VHashGet(StringView key, StringView field, std::string* value) final;

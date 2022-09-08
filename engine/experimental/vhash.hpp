@@ -27,14 +27,21 @@ class VHash {
   std::atomic_uint64_t ref_cnt{0ULL};
 
  public:
-  VHash(StringView n, VHashKVBuilder& b)
-      : hpmap{4, VHashKV::ExtractKey}, kvb{b}, name{n.data(), n.size()} {}
+  VHash(StringView n, VHashKVBuilder& b, size_t capacity)
+      : hpmap{capacity / 4, VHashKV::ExtractKey},
+        kvb{b},
+        name{n.data(), n.size()} {}
+
+  ~VHash() { deleteAll(); }
 
   StringView Name() const { return name; }
 
   static StringView ExtractName(VHash* vhash) { return vhash->Name(); }
 
   size_t Size() const { return sz.load(); }
+
+  /// TODO: Reserve() API for performance.
+  //   void Reserve(size_t n);
 
   bool Get(StringView key, StringView& value);
 
@@ -82,7 +89,7 @@ class VHashBuilder : public IDeleter {
   VHashBuilder(OldRecordsCleaner& c);
 
   // Called by VHashGroup to create a VHash.
-  VHash* NewVHash(StringView name, VHashKVBuilder& b);
+  VHash* NewVHash(StringView name, VHashKVBuilder& b, size_t capacity = 16);
 
   void Recycle(VHash* vhash);
 

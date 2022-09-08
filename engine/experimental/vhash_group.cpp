@@ -2,10 +2,15 @@
 
 namespace KVDK_NAMESPACE {
 
-bool VHashGroup::Create(StringView name) {
+VHashGroup::~VHashGroup() {
+  for (auto iter = hpmap.begin(); iter != hpmap.end(); ++iter)
+    delete iter->pointer();
+}
+
+bool VHashGroup::Create(StringView name, size_t capacity) {
   auto acc = hpmap.lookup(name, hpmap.acquire_lock);
   if (acc.pointer() != nullptr) return false;
-  VHash* vhash = vhb.NewVHash(name, kvb);
+  VHash* vhash = vhb.NewVHash(name, kvb, capacity);
   acc.set_pointer(vhash);
   return true;
 }

@@ -9,6 +9,8 @@ from git import repo
 
 
 def __fill(exec, shared_para, data_type, report_path):
+    if data_type == 'vhash'
+        return
     new_para = shared_para + " -fill=1 -type={}".format(data_type)
     report = report_path + "_fill"
     print("Fill {}".format(data_type))
