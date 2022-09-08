@@ -693,7 +693,7 @@ double Cleaner::SearchOutdatedCollections() {
     std::unique_lock<std::mutex> skiplist_lock(kv_engine_->skiplists_mu_);
     auto iter = kv_engine_->expirable_skiplists_.begin();
     while (!kv_engine_->expirable_skiplists_.empty() && (*iter)->HasExpired() &&
-           limited_fetch_num < max_clean_worker_) {
+           limited_fetch_num < max_thread_num_) {
       auto outdated_skiplist = *iter;
       iter = kv_engine_->expirable_skiplists_.erase(iter);
       outdated_collections_.skiplists.emplace(
@@ -707,7 +707,7 @@ double Cleaner::SearchOutdatedCollections() {
     std::unique_lock<std::mutex> list_lock(kv_engine_->lists_mu_);
     auto iter = kv_engine_->expirable_lists_.begin();
     while (!kv_engine_->expirable_lists_.empty() && (*iter)->HasExpired() &&
-           limited_fetch_num < max_clean_worker_) {
+           limited_fetch_num < max_thread_num_) {
       auto outdated_list = *iter;
       iter = kv_engine_->expirable_lists_.erase(iter);
       outdated_collections_.lists.emplace(
@@ -720,7 +720,7 @@ double Cleaner::SearchOutdatedCollections() {
     std::unique_lock<std::mutex> hlist_lock(kv_engine_->hlists_mu_);
     auto iter = kv_engine_->expirable_hlists_.begin();
     while (!kv_engine_->expirable_hlists_.empty() && (*iter)->HasExpired() &&
-           limited_fetch_num < max_clean_worker_) {
+           limited_fetch_num < max_thread_num_) {
       auto expired_hash_list = *iter;
       iter = kv_engine_->expirable_hlists_.erase(iter);
       outdated_collections_.hashlists.emplace(
@@ -736,7 +736,7 @@ double Cleaner::SearchOutdatedCollections() {
                            outdated_collections_.skiplists.size());
 
   double diff_size_ratio =
-      (after_queue_size - before_queue_size) / max_clean_worker_;
+      (after_queue_size - before_queue_size) / max_thread_num_;
   if (diff_size_ratio > 0) {
     outdated_collections_.increase_ratio =
         outdated_collections_.increase_ratio == 0
@@ -841,14 +841,16 @@ void Cleaner::mainWork() {
   double outdated_ratio = kv_engine_->cleanOutDated(pending_clean_records,
                                                     start_pos, kSlotBlockUnit);
 
-  size_t advice_thread_num = 1;
+  size_t advice_thread_num = min_thread_num_;
   if (outdated_ratio >= kWakeUpThreshold) {
-    advice_thread_num = std::ceil(outdated_ratio * (max_clean_worker_ + 1));
+    advice_thread_num = std::ceil(outdated_ratio * max_thread_num_);
+    advice_thread_num =
+        std::min(std::max(min_thread_num_, advice_thread_num), max_thread_num_);
   }
   TEST_SYNC_POINT_CALLBACK("KVEngine::Cleaner::AdjustCleanWorkers",
                            &advice_thread_num);
-  size_t advice_clean_workers = std::min(
-      std::max(advice_thread_num - 1, min_clean_worker_), max_clean_worker_);
+  size_t advice_clean_workers =
+      advice_thread_num > 0 ? advice_thread_num - 1 : 0;
 
   AdjustCleanWorkers(advice_clean_workers);
   if (outdated_ratio < kWakeUpThreshold) {

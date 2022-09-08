@@ -79,13 +79,13 @@ class Cleaner {
 
   Cleaner(KVEngine* kv_engine, int64_t max_cleaner_threads)
       : kv_engine_(kv_engine),
-        max_clean_worker_(max_cleaner_threads - 1 /*1 for main worker*/),
-        min_clean_worker_(0),
+        max_thread_num_(max_cleaner_threads),
+        min_thread_num_(1),
         close_(false),
         start_slot_(0),
         active_clean_workers_(0),
         main_worker_([this]() { this->mainWork(); }),
-        clean_workers_(max_clean_worker_) {
+        clean_workers_(max_thread_num_ - 1 /*1 for main worker*/) {
     for (auto& w : clean_workers_) {
       w.Init([this]() { this->cleanWork(); });
     }
@@ -94,7 +94,7 @@ class Cleaner {
   ~Cleaner() { Close(); }
 
   void Start() {
-    if (!close_) {
+    if (!close_ && min_thread_num_ > 0) {
       main_worker_.Run();
     }
   }
@@ -181,8 +181,8 @@ class Cleaner {
 
   KVEngine* kv_engine_;
 
-  size_t max_clean_worker_;
-  size_t min_clean_worker_;
+  size_t max_thread_num_;
+  size_t min_thread_num_;
   std::atomic<bool> close_;
   std::atomic<int64_t> start_slot_;
   std::atomic<size_t> active_clean_workers_;
