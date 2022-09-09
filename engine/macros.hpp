@@ -20,3 +20,7 @@
                                ":\t" + std::string{msg}};                \
     }                                                                    \
   }
+
+#ifndef KVDK_WITH_PMEM
+#define pmem_persist(x, y)
+#endif

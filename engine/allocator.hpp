@@ -54,6 +54,12 @@ class Allocator {
   Allocator(char* base_addr, uint64_t max_offset)
       : base_addr_(base_addr), max_offset_(max_offset) {}
 
+  virtual ~Allocator() {
+    if (thread_local_counter_enabled_) {
+      free(thread_allocated_sizes_);
+    }
+  }
+
   // Purge a kvdk data record and free it
   template <typename T>
   void PurgeAndFree(T* data_record) {
@@ -84,7 +90,9 @@ class Allocator {
       std::lock_guard<std::mutex> lg(allocator_mu_);
       if (!thread_local_counter_enabled_) {
         thread_local_counter_enabled_ = true;
-        thread_allocated_sizes_.resize(max_access_threads);
+        num_thread_local_counters = max_access_threads;
+        thread_allocated_sizes_ =
+            (std::int64_t*)calloc(max_access_threads, sizeof(std::int64_t));
         return true;
       }
     }
@@ -112,8 +120,8 @@ class Allocator {
 
   std::int64_t BytesAllocated() const {
     std::int64_t total = 0;
-    for (auto const& thread_size : thread_allocated_sizes_) {
-      total += thread_size;
+    for (uint32_t i = 0; i < num_thread_local_counters; i++) {
+      total += thread_allocated_sizes_[i];
     }
     total += global_allocated_size_.load();
     return total;
@@ -169,7 +177,8 @@ class Allocator {
   uint64_t max_offset_;
 
   bool thread_local_counter_enabled_{};
-  std::vector<std::int64_t> thread_allocated_sizes_;
+  uint32_t num_thread_local_counters{0};
+  std::int64_t* thread_allocated_sizes_{nullptr};
   std::atomic<int64_t> global_allocated_size_{0};
 
   std::mutex allocator_mu_;

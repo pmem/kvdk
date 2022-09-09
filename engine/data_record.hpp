@@ -88,10 +88,7 @@ struct DataEntry {
 
   void Destroy() {
     meta.type = RecordType::Empty;
-
-#ifdef KVDK_WITH_PMEM
     pmem_persist(&meta.type, sizeof(RecordType));
-#endif
   }
 
   // TODO jiayu: use function to access these

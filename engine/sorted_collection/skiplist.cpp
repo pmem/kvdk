@@ -155,16 +155,12 @@ void Skiplist::linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
   uint64_t inserting_record_offset = pmem_allocator->addr2offset(linking);
   prev->next = inserting_record_offset;
 
-#ifdef KVDK_WITH_PMEM
   pmem_persist(&prev->next, 8);
-#endif
 
   TEST_SYNC_POINT("KVEngine::DLList::LinkDLRecord::HalfLink");
   next->prev = inserting_record_offset;
 
-#ifdef KVDK_WITH_PMEM
   pmem_persist(&next->prev, 8);
-#endif
 }
 
 void Skiplist::Seek(const StringView& key, Splice* result_splice) {
