@@ -379,7 +379,6 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-
   ASSERT_EQ(engine->Put(str, val), Status::Ok);
 
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
@@ -3331,9 +3330,9 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   auto ExpiredClean = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     auto cleaner = test_kvengine->EngineCleaner();
-    cleaner->StartClean();
+    cleaner->Start();
     sleep(2);
-    cleaner->CloseAllWorkers();
+    cleaner->Close();
   };
 
   {
@@ -3430,9 +3429,9 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
   auto backgroundCleaner = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     auto cleaner = test_kvengine->EngineCleaner();
-    cleaner->StartClean();
+    cleaner->Start();
     sleep(2);
-    cleaner->CloseAllWorkers();
+    cleaner->Close();
   };
   std::vector<std::thread> ts;
   ts.emplace_back(PutAndDeleteSorted);
@@ -3473,7 +3472,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
         *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
-  SyncPoint::GetInstance()->SetCallBack("KVEngine::Cleaner::AdjustThread",
+  SyncPoint::GetInstance()->SetCallBack("KVEngine::Cleaner::AdjustCleanWorkers",
                                         [&](void* advice_thread_num) {
                                           if (op == OpType::update) {
                                             *((size_t*)advice_thread_num) = 6;
@@ -3498,7 +3497,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
   auto test_kvengine = static_cast<KVEngine*>(engine);
   auto space_cleaner = test_kvengine->EngineCleaner();
-  space_cleaner->StartClean();
+  space_cleaner->Start();
 
   size_t cnt = 16;
   // only insert

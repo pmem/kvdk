@@ -242,7 +242,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
   auto prev_node = skiplist->HeaderNode();
   auto iter = skiplist->GetDLList()->GetRecordIterator();
   iter->SeekToFirst();
-  while (iter->Valid()) {
+  while (iter->Valid() && !closing_) {
     DLRecord* cur_record = iter->Record();
     iter->Next();
     auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
@@ -301,7 +301,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
 void KVEngine::cleanList(List* list, std::vector<DLRecord*>& purge_dl_records) {
   auto iter = list->GetDLList()->GetRecordIterator();
   iter->SeekToFirst();
-  while (iter->Valid()) {
+  while (iter->Valid() && !closing_) {
     DLRecord* cur_record = iter->Record();
     iter->Next();
     auto ul = list->AcquireLock();
@@ -488,7 +488,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
     end_slot_idx = hash_table_->GetSlotsNum();
   }
   auto hashtable_iter = hash_table_->GetIterator(start_slot_idx, end_slot_idx);
-  while (hashtable_iter.Valid()) {
+  while (hashtable_iter.Valid() && !closing_) {
     {  // Slot lock section
       auto min_snapshot_ts = version_controller_.GlobalOldestSnapshotTs();
       auto now = TimeUtils::millisecond_time();
@@ -658,47 +658,31 @@ void KVEngine::TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx) {
 
 Cleaner::OutDatedCollections::~OutDatedCollections() {}
 
-void Cleaner::doCleanWork(size_t thread_id) {
+void Cleaner::cleanWork() {
   PendingCleanRecords pending_clean_records;
-  while (true) {
-    if (close_) return;
+  std::int64_t start_pos = start_slot_.fetch_add(kSlotBlockUnit) %
+                           (kv_engine_->hash_table_->GetSlotsNum());
+  kv_engine_->cleanOutDated(pending_clean_records, start_pos, kSlotBlockUnit);
 
-    std::int64_t start_pos = start_slot_.fetch_add(kSlotBlockUnit) %
-                             (kv_engine_->hash_table_->GetSlotsNum());
-    kv_engine_->cleanOutDated(pending_clean_records, start_pos, kSlotBlockUnit);
-
-    if (workers_[thread_id].finish) {
-      while (pending_clean_records.Size() != 0 && !close_.load()) {
-        kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
-        kv_engine_->purgeAndFree(pending_clean_records);
-      }
-      return;
-    }
+  while (pending_clean_records.Size() != 0 && !close_.load()) {
+    kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
+    kv_engine_->purgeAndFree(pending_clean_records);
   }
 }
 
-void Cleaner::AdjustThread(size_t advice_thread_num) {
-  auto active_thread_num = live_thread_num_.load();
-  if (active_thread_num < advice_thread_num) {
-    for (size_t i = active_thread_num; i < advice_thread_num; ++i) {
-      size_t thread_id = idled_workers_.front();
-      idled_workers_.pop_front();
-      workers_[thread_id].finish.store(false);
-      workers_[thread_id].worker =
-          std::thread(&Cleaner::doCleanWork, this, thread_id);
-      actived_workers_.push_back(thread_id);
-      live_thread_num_++;
+void Cleaner::AdjustCleanWorkers(size_t advice_wokers_num) {
+  kvdk_assert(advice_wokers_num <= clean_workers_.size(), "");
+  auto active_workers_num = active_clean_workers_.load();
+  if (active_workers_num < advice_wokers_num) {
+    for (size_t i = active_workers_num; i < advice_wokers_num; ++i) {
+      clean_workers_[i].Run();
     }
-  } else if (active_thread_num > advice_thread_num) {
-    for (size_t i = advice_thread_num; i < active_thread_num; ++i) {
-      auto thread_id = actived_workers_.front();
-      actived_workers_.pop_front();
-      workers_[thread_id].finish.store(true);
-      workers_[thread_id].worker.detach();
-      idled_workers_.push_back(thread_id);
-      --live_thread_num_;
+  } else if (active_workers_num > advice_wokers_num) {
+    for (size_t i = advice_wokers_num; i < active_workers_num; ++i) {
+      clean_workers_[i].Stop();
     }
   }
+  active_clean_workers_ = advice_wokers_num;
 }
 
 double Cleaner::SearchOutdatedCollections() {
@@ -852,43 +836,33 @@ void Cleaner::FetchOutdatedCollections(
   }
 }
 
-void Cleaner::mainWorker() {
+void Cleaner::mainWork() {
   PendingCleanRecords pending_clean_records;
-  while (true) {
-    if (close_) return;
+  std::int64_t start_pos = start_slot_.fetch_add(kSlotBlockUnit) %
+                           (kv_engine_->hash_table_->GetSlotsNum());
 
-    std::int64_t start_pos = start_slot_.fetch_add(kSlotBlockUnit) %
-                             (kv_engine_->hash_table_->GetSlotsNum());
+  double outdated_ratio = kv_engine_->cleanOutDated(pending_clean_records,
+                                                    start_pos, kSlotBlockUnit);
 
-    double outdated_ratio = kv_engine_->cleanOutDated(
-        pending_clean_records, start_pos, kSlotBlockUnit);
+  size_t advice_thread_num = min_thread_num_;
+  if (outdated_ratio >= kWakeUpThreshold) {
+    advice_thread_num = std::ceil(outdated_ratio * max_thread_num_);
+    advice_thread_num =
+        std::min(std::max(min_thread_num_, advice_thread_num), max_thread_num_);
+  }
+  TEST_SYNC_POINT_CALLBACK("KVEngine::Cleaner::AdjustCleanWorkers",
+                           &advice_thread_num);
+  size_t advice_clean_workers =
+      advice_thread_num > 0 ? advice_thread_num - 1 : 0;
 
-    size_t advice_thread_num = min_thread_num_;
-    if (outdated_ratio >= kWakeUpThreshold) {
-      advice_thread_num = std::ceil(outdated_ratio * max_thread_num_);
+  AdjustCleanWorkers(advice_clean_workers);
+  if (outdated_ratio < kWakeUpThreshold) {
+    sleep(1);
+  }
 
-      advice_thread_num = std::min(std::max(advice_thread_num, min_thread_num_),
-                                   max_thread_num_);
-    }
-    TEST_SYNC_POINT_CALLBACK("KVEngine::Cleaner::AdjustThread",
-                             &advice_thread_num);
-
-    AdjustThread(advice_thread_num);
-    if (outdated_ratio < kWakeUpThreshold) {
-      sleep(1);
-    }
+  while (pending_clean_records.Size() != 0 && !close_.load()) {
+    kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
+    kv_engine_->purgeAndFree(pending_clean_records);
   }
 }
-
-void Cleaner::StartClean() {
-  if (!close_) {
-    auto thread_id = idled_workers_.front();
-    idled_workers_.pop_front();
-    std::thread worker(&Cleaner::mainWorker, this);
-    workers_[thread_id].finish.store(false);
-    workers_[thread_id].worker.swap(worker);
-    live_thread_num_++;
-  }
-}
-
 }  // namespace KVDK_NAMESPACE

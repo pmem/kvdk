@@ -543,12 +543,12 @@ void KVEngine::startBackgroundWorks() {
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
                            &close_reclaimer);
   if (!close_reclaimer) {
-    cleaner_.StartClean();
+    cleaner_.Start();
   }
 }
 
 void KVEngine::terminateBackgroundWorks() {
-  cleaner_.CloseAllWorkers();
+  cleaner_.Close();
   {
     std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
     bg_work_signals_.terminating = true;

@@ -865,23 +865,13 @@ void Skiplist::destroyAllRecords() {
 }
 
 void Skiplist::Destroy() {
-  GlobalLogger.Debug("Start Destroy skiplist %s\n", Name().c_str());
   destroyRecords();
   destroyNodes();
-  GlobalLogger.Debug("Finish Destroy skiplist %s\n", Name().c_str());
 }
 
 void Skiplist::DestroyAll() {
-  GlobalLogger.Debug(
-      "Start Destroy skiplist with old version lists: %s, collection ID: %ld, "
-      "size: %ld\n",
-      Name().c_str(), ID(), Size());
   destroyAllRecords();
   destroyNodes();
-  GlobalLogger.Debug(
-      "Finish Destroy skiplist with old version lists: %s, collection ID: "
-      "%ld\n",
-      Name().c_str(), ID());
 }
 
 void Skiplist::destroyNodes() {
