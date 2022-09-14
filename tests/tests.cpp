@@ -2474,9 +2474,9 @@ TEST_F(TrasactionTest, TransactionBasic) {
   ASSERT_EQ(engine->SortedCreate(sorted_bank), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_bank), Status::Ok);
 
-  auto string_transfer_txn = [&](size_t tid) {
+  auto string_transfer_txn = [&](size_t) {
     int cnt = round;
-    while (round--) {
+    while (cnt--) {
       std::string payer;
       std::string receiver;
       if (fast_random_64() % 2 == 0) {
@@ -2560,9 +2560,9 @@ TEST_F(TrasactionTest, TransactionBasic) {
     }
   };
 
-  auto sorted_transfer_txn = [&](size_t tid) {
+  auto sorted_transfer_txn = [&](size_t) {
     int cnt = round;
-    while (round--) {
+    while (cnt--) {
       std::string payer;
       std::string receiver;
       if (fast_random_64() % 2 == 0) {
@@ -2652,9 +2652,9 @@ TEST_F(TrasactionTest, TransactionBasic) {
     }
   };
 
-  auto hash_transfer_txn = [&](size_t tid) {
+  auto hash_transfer_txn = [&](size_t) {
     int cnt = round;
-    while (round--) {
+    while (cnt--) {
       std::string payer;
       std::string receiver;
       if (fast_random_64() % 2 == 0) {
