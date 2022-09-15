@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021-2022 Intel Corporation
+ */
+
 #pragma once
 
 #include "../version/version_controller.hpp"
@@ -12,7 +16,7 @@ class ListIteratorImpl final : public ListIterator {
       : list_(list),
         snapshot_(snapshot),
         own_snapshot_(own_snapshot),
-        dl_iter_(&list->dl_list_, list->pmem_allocator_, snapshot) {}
+        dl_iter_(&list->dl_list_, list->kv_allocator_, snapshot) {}
 
   void Seek(long index) final {
     if (index < 0) {

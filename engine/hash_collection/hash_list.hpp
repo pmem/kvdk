@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2021-2022 Intel Corporation
+ */
+
 #pragma once
 
 #include "../dl_list.hpp"
@@ -29,12 +33,12 @@ class HashList : public Collection {
   };
 
   HashList(DLRecord* header, const StringView& name, CollectionIDType id,
-           Allocator* pmem_allocator, HashTable* hash_table,
+           Allocator* kv_allocator, HashTable* hash_table,
            LockTable* lock_table)
       : Collection(name, id),
-        dl_list_(header, pmem_allocator, lock_table),
+        dl_list_(header, kv_allocator, lock_table),
         size_(0),
-        pmem_allocator_(pmem_allocator),
+        kv_allocator_(kv_allocator),
         hash_table_(hash_table) {}
 
   ~HashList() final = default;
@@ -169,7 +173,7 @@ class HashList : public Collection {
   friend HashIteratorImpl;
   DLList dl_list_;
   std::atomic<size_t> size_;
-  Allocator* pmem_allocator_;
+  Allocator* kv_allocator_;
   HashTable* hash_table_;
   // to avoid illegal access caused by cleaning skiplist by multi-thread
   SpinMutex cleaning_lock_;

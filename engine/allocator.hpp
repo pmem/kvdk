@@ -16,7 +16,6 @@ struct DLRecord;
 struct StringRecord;
 
 constexpr MemoryOffsetType kNullMemoryOffset = UINT64_MAX;
-constexpr PMemOffsetType kNullPMemOffset = UINT64_MAX;
 
 struct SpaceEntry {
   class SpaceCmp {

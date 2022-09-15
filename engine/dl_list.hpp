@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2021 Intel Corporation
+ * Copyright(c) 2021-2022 Intel Corporation
  */
 
 #pragma once
@@ -18,10 +18,8 @@ class DLListRecordIterator;
 // Persistent doubly linked list
 class DLList {
  public:
-  DLList(DLRecord* header, Allocator* pmem_allocator, LockTable* lock_table)
-      : header_(header),
-        pmem_allocator_(pmem_allocator),
-        lock_table_(lock_table) {}
+  DLList(DLRecord* header, Allocator* kv_allocator, LockTable* lock_table)
+      : header_(header), kv_allocator_(kv_allocator), lock_table_(lock_table) {}
 
   struct WriteArgs {
     WriteArgs(const StringView& _key, const StringView& _val, RecordType _type,
@@ -75,9 +73,9 @@ class DLList {
   std::unique_ptr<DLListRecordIterator> GetRecordIterator();
 
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
-                      Allocator* pmem_allocator, LockTable* lock_table);
+                      Allocator* kv_allocator, LockTable* lock_table);
 
-  static bool Remove(DLRecord* removing_record, Allocator* pmem_allocator,
+  static bool Remove(DLRecord* removing_record, Allocator* kv_allocator,
                      LockTable* lock_table);
 
  private:
@@ -89,19 +87,18 @@ class DLList {
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
   LockTable::MultiGuardType acquireRecordLock(DLRecord* record) {
-    return acquireRecordLock(record, pmem_allocator_, lock_table_);
+    return acquireRecordLock(record, kv_allocator_, lock_table_);
   }
 
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
   static LockTable::MultiGuardType acquireRecordLock(DLRecord* record,
-                                                     Allocator* pmem_allocator,
+                                                     Allocator* kv_allocator,
                                                      LockTable* lock_table) {
     while (1) {
-      PMemOffsetType prev_offset = record->prev;
-      PMemOffsetType next_offset = record->next;
-      DLRecord* prev =
-          pmem_allocator->offset2addr_checked<DLRecord>(prev_offset);
+      MemoryOffsetType prev_offset = record->prev;
+      MemoryOffsetType next_offset = record->next;
+      DLRecord* prev = kv_allocator->offset2addr_checked<DLRecord>(prev_offset);
       auto guard =
           lock_table->MultiGuard({recordHash(prev), recordHash(record)});
       // Check if the linkage has changed before we successfully acquire lock.
@@ -114,7 +111,7 @@ class DLList {
   }
 
   void linkRecord(DLRecord* prev, DLRecord* next, DLRecord* linking_record) {
-    linkRecord(prev, next, linking_record, pmem_allocator_);
+    linkRecord(prev, next, linking_record, kv_allocator_);
   }
 
   static LockTable::HashValueType recordHash(const DLRecord* record) {
@@ -123,26 +120,26 @@ class DLList {
   }
 
   static void linkRecord(DLRecord* prev, DLRecord* next,
-                         DLRecord* linking_record, Allocator* pmem_allocator) {
+                         DLRecord* linking_record, Allocator* kv_allocator) {
     auto linking_record_offset =
-        pmem_allocator->addr2offset_checked(linking_record);
+        kv_allocator->addr2offset_checked(linking_record);
     prev->PersistNextNT(linking_record_offset);
     TEST_SYNC_POINT("KVEngine::DLList::LinkDLRecord::HalfLink");
     next->PersistPrevNT(linking_record_offset);
   }
 
   DLRecord* header_;
-  Allocator* pmem_allocator_;
+  Allocator* kv_allocator_;
   LockTable* lock_table_;
 };
 
 // Iter valid data under a snapshot in a dl list
 class DLListDataIterator {
  public:
-  DLListDataIterator(DLList* dl_list, const Allocator* pmem_allocator,
+  DLListDataIterator(DLList* dl_list, const Allocator* kv_allocator,
                      const SnapshotImpl* snapshot)
       : dl_list_(dl_list),
-        pmem_allocator_(pmem_allocator),
+        kv_allocator_(kv_allocator),
         current_(nullptr),
         snapshot_(snapshot) {}
 
@@ -154,13 +151,13 @@ class DLListDataIterator {
 
   void SeekToFirst() {
     auto first = dl_list_->Header()->next;
-    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(first);
+    current_ = kv_allocator_->offset2addr_checked<DLRecord>(first);
     skipInvalidRecords(true);
   }
 
   void SeekToLast() {
     auto last = dl_list_->Header()->prev;
-    current_ = pmem_allocator_->offset2addr<DLRecord>(last);
+    current_ = kv_allocator_->offset2addr<DLRecord>(last);
     skipInvalidRecords(false);
   }
 
@@ -172,7 +169,7 @@ class DLListDataIterator {
     if (!Valid()) {
       return;
     }
-    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
+    current_ = kv_allocator_->offset2addr_checked<DLRecord>(current_->next);
     skipInvalidRecords(true);
   }
 
@@ -180,7 +177,7 @@ class DLListDataIterator {
     if (!Valid()) {
       return;
     }
-    current_ = (pmem_allocator_->offset2addr<DLRecord>(current_->prev));
+    current_ = (kv_allocator_->offset2addr<DLRecord>(current_->prev));
     skipInvalidRecords(false);
   }
 
@@ -195,15 +192,15 @@ class DLListDataIterator {
   }
 
  private:
-  DLRecord* findValidVersion(DLRecord* pmem_record) {
-    DLRecord* curr = pmem_record;
+  DLRecord* findValidVersion(DLRecord* data_record) {
+    DLRecord* curr = data_record;
     TimestampType ts = snapshot_->GetTimestamp();
     while (curr != nullptr && curr->GetTimestamp() > ts) {
-      curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
+      curr = kv_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),
                   "Broken checkpoint: invalid older version sorted record");
       kvdk_assert(
-          curr == nullptr || equal_string_view(curr->Key(), pmem_record->Key()),
+          curr == nullptr || equal_string_view(curr->Key(), data_record->Key()),
           "Broken checkpoint: key of older version sorted data is "
           "not same as new "
           "version");
@@ -219,9 +216,8 @@ class DLListDataIterator {
           valid_version_record->GetRecordStatus() == RecordStatus::Outdated) {
         current_ =
             forward
-                ? pmem_allocator_->offset2addr_checked<DLRecord>(current_->next)
-                : pmem_allocator_->offset2addr_checked<DLRecord>(
-                      current_->prev);
+                ? kv_allocator_->offset2addr_checked<DLRecord>(current_->next)
+                : kv_allocator_->offset2addr_checked<DLRecord>(current_->prev);
       } else {
         current_ = valid_version_record;
         break;
@@ -230,7 +226,7 @@ class DLListDataIterator {
   }
 
   DLList* dl_list_;
-  const Allocator* pmem_allocator_;
+  const Allocator* kv_allocator_;
   DLRecord* current_;
   const SnapshotImpl* snapshot_;
 };
@@ -238,23 +234,23 @@ class DLListDataIterator {
 // Iter all records in a dl list
 class DLListRecordIterator {
  public:
-  DLListRecordIterator(DLList* dl_list, Allocator* pmem_allocator)
+  DLListRecordIterator(DLList* dl_list, Allocator* kv_allocator)
       : dl_list_(dl_list),
         header_(dl_list->Header()),
         current_(header_),
-        pmem_allocator_(pmem_allocator) {}
+        kv_allocator_(kv_allocator) {}
 
   void Locate(DLRecord* record) { current_ = record; }
 
   void Next() {
     if (Valid()) {
-      current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->next);
+      current_ = kv_allocator_->offset2addr_checked<DLRecord>(current_->next);
     }
   }
 
   void Prev() {
     if (Valid()) {
-      current_ = pmem_allocator_->offset2addr_checked<DLRecord>(current_->prev);
+      current_ = kv_allocator_->offset2addr_checked<DLRecord>(current_->prev);
     }
   }
 
@@ -262,12 +258,12 @@ class DLListRecordIterator {
 
   void SeekToFirst() {
     kvdk_assert(header_ != nullptr, "");
-    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(header_->next);
+    current_ = kv_allocator_->offset2addr_checked<DLRecord>(header_->next);
   }
 
   void SeekToLast() {
     kvdk_assert(header_ != nullptr, "");
-    current_ = pmem_allocator_->offset2addr_checked<DLRecord>(header_->prev);
+    current_ = kv_allocator_->offset2addr_checked<DLRecord>(header_->prev);
   }
 
   DLRecord* Record() { return Valid() ? current_ : nullptr; }
@@ -276,15 +272,15 @@ class DLListRecordIterator {
   DLList* dl_list_;
   DLRecord* header_;
   DLRecord* current_;
-  const Allocator* pmem_allocator_;
+  const Allocator* kv_allocator_;
 };
 
 // Used in recovery of dl list based collections
 template <typename CType>
 class DLListRecoveryUtils {
  public:
-  DLListRecoveryUtils(const Allocator* pmem_allocator)
-      : pmem_allocator_(pmem_allocator) {}
+  DLListRecoveryUtils(const Allocator* kv_allocator)
+      : kv_allocator_(kv_allocator) {}
 
   bool CheckAndRepairLinkage(DLRecord* record) {
     // The next linkage is correct. If the prev linkage is correct too, the
@@ -296,8 +292,8 @@ class DLListRecoveryUtils {
     // If only prev linkage is correct, then repair the next linkage
     if (CheckPrevLinkage(record)) {
       DLRecord* next =
-          pmem_allocator_->offset2addr_checked<DLRecord>(record->next);
-      next->PersistPrevNT(pmem_allocator_->addr2offset_checked(record));
+          kv_allocator_->offset2addr_checked<DLRecord>(record->next);
+      next->PersistPrevNT(kv_allocator_->addr2offset_checked(record));
       return true;
     }
 
@@ -305,9 +301,8 @@ class DLListRecoveryUtils {
   }
 
   bool CheckNextLinkage(DLRecord* record) {
-    uint64_t offset = pmem_allocator_->addr2offset_checked(record);
-    DLRecord* next =
-        pmem_allocator_->offset2addr_checked<DLRecord>(record->next);
+    uint64_t offset = kv_allocator_->addr2offset_checked(record);
+    DLRecord* next = kv_allocator_->offset2addr_checked<DLRecord>(record->next);
 
     auto check_linkage = [&]() { return next->prev == offset; };
 
@@ -323,9 +318,8 @@ class DLListRecoveryUtils {
   }
 
   bool CheckPrevLinkage(DLRecord* record) {
-    uint64_t offset = pmem_allocator_->addr2offset_checked(record);
-    DLRecord* prev =
-        pmem_allocator_->offset2addr_checked<DLRecord>(record->prev);
+    uint64_t offset = kv_allocator_->addr2offset_checked(record);
+    DLRecord* prev = kv_allocator_->offset2addr_checked<DLRecord>(record->prev);
 
     auto check_linkage = [&]() { return prev->next == offset; };
 
@@ -345,6 +339,6 @@ class DLListRecoveryUtils {
   }
 
  private:
-  const Allocator* pmem_allocator_;
+  const Allocator* kv_allocator_;
 };
 }  // namespace KVDK_NAMESPACE

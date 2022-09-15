@@ -112,7 +112,7 @@ struct PendingBatch {
   // Mark batch write as process and record writing offsets.
   // Make sure the struct is on PMem and there is enough space followed the
   // struct to store record
-  void PersistProcessing(const std::vector<PMemOffsetType>& record,
+  void PersistProcessing(const std::vector<MemoryOffsetType>& record,
                          TimestampType ts);
 
   // Mark batch write as finished.
@@ -123,7 +123,7 @@ struct PendingBatch {
   Stage stage;
   uint32_t num_kv;
   TimestampType timestamp;
-  PMemOffsetType record_offsets[0];
+  MemoryOffsetType record_offsets[0];
 };
 #endif  // #ifdef KVDK_WITH_PMEM
 

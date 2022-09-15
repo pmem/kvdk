@@ -109,8 +109,7 @@ class Engine {
   // Status::Ok on success
   // Status::Existed if sorted collection already existed
   // Status::WrongType if collection existed but not a sorted collection
-  // Status::PMemOverflow if PMem exhausted
-  // Status::MemoryOverflow if DRAM exhausted
+  // Status::MemoryOverflow if runtime/KV memory exhausted
   virtual Status SortedCreate(
       const StringView collection,
       const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
@@ -119,7 +118,7 @@ class Engine {
   // Return:
   // Status::Ok on success
   // Status::WrongType if collection existed but not a sorted collection
-  // Status::PMemOverflow if PMem exhausted
+  // Status::MemoryOverflow if runtime/KV memory exhausted
   virtual Status SortedDestroy(const StringView collection) = 0;
 
   // Get number of elements in a sorted collection
@@ -151,7 +150,7 @@ class Engine {
   // Return:
   //    Status::WrongType if list name is not a List.
   //    Status::Existed if a List named list already exists.
-  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::MemoryOverflow if runtime/KV memory exhausted.
   //    Status::Ok if successfully created the List.
   virtual Status ListCreate(StringView list) = 0;
 
@@ -174,7 +173,7 @@ class Engine {
   // Return:
   //    Status::InvalidDataSize if list name or elem is too long
   //    Status::WrongType if list name is not a List.
-  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::MemoryOverflow if runtime/KV memory exhausted.
   //    Status::Ok if operation succeeded.
   virtual Status ListPushFront(StringView list, StringView elem) = 0;
 
@@ -182,7 +181,7 @@ class Engine {
   // Return:
   //    Status::InvalidDataSize if list name or elem is too long
   //    Status::WrongType if list name in the instance is not a List.
-  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::MemoryOverflow if runtime/KV memory exhausted.
   //    Status::Ok if operation succeeded.
   virtual Status ListPushBack(StringView list, StringView elem) = 0;
 
@@ -206,7 +205,7 @@ class Engine {
   // Return:
   //    Status::InvalidDataSize if list name or elem is too long
   //    Status::WrongType if list is not a List.
-  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::MemoryOverflow if runtime/KV memory exhausted.
   //    Status::Ok if operation succeeded.
   virtual Status ListBatchPushFront(StringView list,
                                     std::vector<std::string> const& elems) = 0;
@@ -217,7 +216,7 @@ class Engine {
   // Return:
   //    Status::InvalidDataSize if list or elem is too long
   //    Status::WrongType if list name is not a List.
-  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::MemoryOverflow if runtime/KV memory exhausted.
   //    Status::Ok if operation succeeded.
   virtual Status ListBatchPushBack(StringView list,
                                    std::vector<std::string> const& elems) = 0;
@@ -265,7 +264,7 @@ class Engine {
   // Insert an element before element "pos" in list "collection"
   // Return:
   //    Status::InvalidDataSize if elem is too long.
-  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::MemoryOverflow if runtime/KV memory exhausted.
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted, or "pos" not exist in the list
   //    Status::Ok if operation succeeded.
@@ -275,7 +274,7 @@ class Engine {
   // Insert an element after element "pos" in list "collection"
   // Return:
   //    Status::InvalidDataSize if elem is too long.
-  //    Status::PMemOverflow if PMem exhausted.
+  //    Status::MemoryOverflow if runtime/KV memory exhausted.
   //    Status::NotFound if List of the ListIterator has expired or been
   //    deleted, or "pos" not exist in the list
   //    Status::Ok if operation succeeded.
