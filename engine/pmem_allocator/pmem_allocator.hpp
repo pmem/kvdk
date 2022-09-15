@@ -4,6 +4,8 @@
 
 #pragma once
 
+#ifdef KVDK_WITH_PMEM
+
 #include <fcntl.h>
 #include <sys/mman.h>
 
@@ -20,7 +22,6 @@
 
 namespace KVDK_NAMESPACE {
 
-constexpr PMemOffsetType kNullPMemOffset = UINT64_MAX;
 constexpr uint64_t kMinPaddingBlocks = 8;
 
 // Manage allocation/de-allocation of PMem space at block unit
@@ -44,61 +45,13 @@ class PMEMAllocator : public Allocator {
   // Free a PMem space entry. The entry should be allocated by this allocator
   void Free(const SpaceEntry& entry) override;
 
-  // Purge a kvdk data record and free it
-  template <typename T>
-  void PurgeAndFree(T* pmem_record) {
-    static_assert(std::is_same<T, DLRecord>::value ||
-                      std::is_same<T, StringRecord>::value,
-                  "");
-    pmem_record->Destroy();
-    Free(SpaceEntry(addr2offset_checked(pmem_record),
-                    pmem_record->GetRecordSize()));
+  SpaceEntry AllocateAligned(size_t, uint64_t) override {
+    SpaceEntry entry;
+    GlobalLogger.Error("Aligned allocation is not supported in PMEMAllocator");
+    return entry;
   }
 
-  // translate block_offset of allocated space to address
-  inline void* offset2addr_checked(PMemOffsetType offset) const {
-    assert(validate_offset(offset) && "Trying to access invalid offset");
-    return pmem_ + offset;
-  }
-
-  inline void* offset2addr(PMemOffsetType offset) const {
-    if (validate_offset(offset)) {
-      return pmem_ + offset;
-    }
-    return nullptr;
-  }
-
-  template <typename T>
-  inline T* offset2addr_checked(PMemOffsetType offset) const {
-    return static_cast<T*>(offset2addr_checked(offset));
-  }
-
-  template <typename T>
-  inline T* offset2addr(PMemOffsetType block_offset) const {
-    return static_cast<T*>(offset2addr(block_offset));
-  }
-
-  // translate address of allocated space to block_offset
-  inline PMemOffsetType addr2offset_checked(const void* addr) const {
-    assert((char*)addr >= pmem_);
-    PMemOffsetType offset = (char*)addr - pmem_;
-    assert(validate_offset(offset) && "Trying to create invalid offset");
-    return offset;
-  }
-
-  inline PMemOffsetType addr2offset(const void* addr) const {
-    if (addr) {
-      PMemOffsetType offset = (char*)addr - pmem_;
-      if (validate_offset(offset)) {
-        return offset;
-      }
-    }
-    return kNullPMemOffset;
-  }
-
-  inline bool validate_offset(uint64_t offset) const {
-    return offset < pmem_size_ && offset != kNullPMemOffset;
-  }
+  std::string AllocatorName() override { return "PMem"; }
 
   // Try to fetch an used segment to segment_space_entry, until reach the a
   // never used segment or end of pmem space
@@ -109,28 +62,10 @@ class PMEMAllocator : public Allocator {
   // Regularly execute by background thread of KVDK
   void BackgroundWork() { free_list_.OrganizeFreeSpace(); }
 
-  void BatchFree(const std::vector<SpaceEntry>& entries) {
+  void BatchFree(const std::vector<SpaceEntry>& entries) override {
     if (entries.size() > 0) {
       uint64_t freed = free_list_.BatchPush(entries);
       LogDeallocation(access_thread.id, freed);
-    }
-  }
-
-  void LogAllocation(int tid, size_t sz) {
-    if (tid == -1) {
-      global_allocated_size_.fetch_add(sz);
-    } else {
-      assert(tid >= 0);
-      palloc_thread_cache_[tid].allocated_sz += sz;
-    }
-  }
-
-  void LogDeallocation(int tid, size_t sz) {
-    if (tid == -1) {
-      global_allocated_size_.fetch_sub(sz);
-    } else {
-      assert(tid >= 0);
-      palloc_thread_cache_[tid].allocated_sz -= sz;
     }
   }
 
@@ -153,7 +88,6 @@ class PMEMAllocator : public Allocator {
     // Space fetched from head of PMem segments, the size is aligned to
     // block_size_
     SpaceEntry segment_entry;
-    std::int64_t allocated_sz{};
   };
 
   bool allocateSegmentSpace(SpaceEntry* segment_entry);
@@ -198,3 +132,5 @@ class PMEMAllocator : public Allocator {
   std::atomic<std::int64_t> global_allocated_size_{0};
 };
 }  // namespace KVDK_NAMESPACE
+
+#endif  // #ifdef KVDK_WITH_PMEM

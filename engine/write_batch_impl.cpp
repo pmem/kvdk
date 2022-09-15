@@ -5,6 +5,12 @@
 namespace KVDK_NAMESPACE {
 
 void BatchWriteLog::EncodeTo(char* dst) {
+  // TODO
+  // This function should not be called without PMem support.
+  // Checking dst == nullptr is a temporary workaround.
+  if (dst == nullptr) {
+    return;
+  }
   kvdk_assert(stage == Stage::Initializing, "");
 
   size_t total_bytes;
@@ -54,6 +60,9 @@ void BatchWriteLog::EncodeTo(char* dst) {
 }
 
 void BatchWriteLog::DecodeFrom(char const* src) {
+  if (src == nullptr) {
+    return;
+  }
   kvdk_assert(
       string_logs_.empty() && sorted_logs_.empty() && hash_logs_.empty(), "");
 

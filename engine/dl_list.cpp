@@ -120,7 +120,7 @@ bool DLList::Remove(DLRecord* removing_record) {
 }
 
 bool DLList::Replace(DLRecord* old_record, DLRecord* new_record,
-                     PMEMAllocator* pmem_allocator, LockTable* lock_table) {
+                     Allocator* pmem_allocator, LockTable* lock_table) {
   auto guard = acquireRecordLock(old_record, pmem_allocator, lock_table);
   PMemOffsetType prev_offset = old_record->prev;
   PMemOffsetType next_offset = old_record->next;
@@ -152,7 +152,7 @@ bool DLList::Replace(DLRecord* old_record, DLRecord* new_record,
   return on_list;
 }
 
-bool DLList::Remove(DLRecord* removing_record, PMEMAllocator* pmem_allocator,
+bool DLList::Remove(DLRecord* removing_record, Allocator* pmem_allocator,
                     LockTable* lock_table) {
   auto guard = acquireRecordLock(removing_record, pmem_allocator, lock_table);
   PMemOffsetType removing_offset = pmem_allocator->addr2offset(removing_record);

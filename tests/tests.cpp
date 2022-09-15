@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "../engine/kv_engine.hpp"
-#include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "../engine/utils/sync_point.hpp"
 #include "kvdk/engine.hpp"
 #include "test_util.h"
@@ -57,6 +56,11 @@ class EngineBasicTest : public testing::Test {
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
     configs.max_access_threads = 1;
+#ifdef KVDK_WITH_PMEM
+    configs.enable_pmem = true;
+#else
+    configs.enable_pmem = false;
+#endif
     db_path = FLAGS_path;
     backup_path = FLAGS_path + "_backup";
     backup_log = FLAGS_path + ".backup";
@@ -109,11 +113,17 @@ class EngineBasicTest : public testing::Test {
   }
 
   void Reboot() {
+#ifdef KVDK_WITH_PMEM
+    if (!configs.enable_pmem) {
+      return;
+    }
+
     delete engine;
     engine = nullptr;
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
               Status::Ok);
     GlobalLogger.Debug("Reboot\n");
+#endif  // #ifdef KVDK_WITH_PMEM
   }
 
   // Return the current configuration.
@@ -819,11 +829,17 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
         Status::Ok);
     Validation();
     delete engine;
+
+#ifdef KVDK_WITH_PMEM
+    if (!configs.enable_pmem) {
+      return;
+    }
     GlobalLogger.Debug("open checkpoint\n");
     configs.recover_to_checkpoint = true;
     ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
     Validation();
     delete engine;
+#endif  // #ifdef KVDK_WITH_PMEM
   }
 }
 
@@ -1196,7 +1212,29 @@ TEST_F(EngineBasicTest, TestSeek) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestStringLargeValue) {
+  configs.pmem_block_size = (1UL << 6);
+  configs.pmem_segment_blocks = (1UL << 24);
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+
+  for (size_t sz = 1024; sz < (1UL << 30); sz *= 2) {
+    std::string key{"large"};
+    std::string value(sz, 'a');
+    std::string sink;
+
+    ASSERT_EQ(engine->Put(key, value), Status::Ok);
+    ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
+    ASSERT_EQ(value, sink);
+  }
+  delete engine;
+}
+
+#ifdef KVDK_WITH_PMEM
 TEST_F(EngineBasicTest, TestStringRestore) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   size_t num_threads = 16;
   configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -1258,25 +1296,10 @@ TEST_F(EngineBasicTest, TestStringRestore) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestStringLargeValue) {
-  configs.pmem_block_size = (1UL << 6);
-  configs.pmem_segment_blocks = (1UL << 24);
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-
-  for (size_t sz = 1024; sz < (1UL << 30); sz *= 2) {
-    std::string key{"large"};
-    std::string value(sz, 'a');
-    std::string sink;
-
-    ASSERT_EQ(engine->Put(key, value), Status::Ok);
-    ASSERT_EQ(engine->Get(key, &sink), Status::Ok);
-    ASSERT_EQ(value, sink);
-  }
-  delete engine;
-}
-
 TEST_F(EngineBasicTest, TestSortedRestore) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   size_t num_threads = 16;
   configs.max_access_threads = num_threads;
   for (int opt_large_sorted_collection_recovery : {0, 1}) {
@@ -1452,6 +1475,9 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 }
 
 TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   size_t num_threads = 16;
   size_t num_collections = 16;
   configs.max_access_threads = num_threads;
@@ -1509,7 +1535,7 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   // reopen and restore engine and try gets
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-  auto skiplists = (dynamic_cast<KVEngine*>(engine))->GetSkiplists();
+  auto& skiplists = (dynamic_cast<KVEngine*>(engine))->GetSkiplists();
   for (auto s : skiplists) {
     if (s.second->IndexWithHashtable()) {
       ASSERT_EQ(s.second->CheckIndex(), Status::Ok);
@@ -1517,6 +1543,8 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   }
   delete engine;
 }
+
+#endif  // #ifdef KVDK_WITH_PMEM
 
 TEST_F(EngineBasicTest, TestList) {
   size_t num_threads = 1;
@@ -2115,14 +2143,18 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
     LaunchNThreads(num_threads, Write);
   }
 
-  delete engine;
-  // Reopen engine error as the comparator is not registered in configs
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Abort);
-  ASSERT_TRUE(configs.comparator.RegisterComparator("collection0_cmp", cmp0));
-  ASSERT_TRUE(configs.comparator.RegisterComparator("collection1_cmp", cmp1));
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
+#ifdef KVDK_WITH_PMEM
+  if (configs.enable_pmem) {
+    delete engine;
+    // Reopen engine error as the comparator is not registered in configs
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+              Status::Abort);
+    ASSERT_TRUE(configs.comparator.RegisterComparator("collection0_cmp", cmp0));
+    ASSERT_TRUE(configs.comparator.RegisterComparator("collection1_cmp", cmp1));
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+              Status::Ok);
+  }
+#endif
 
   for (size_t i = 0; i < collections.size(); ++i) {
     std::vector<kvpair> expected_res(dedup_kvs.begin(), dedup_kvs.end());
@@ -2371,9 +2403,8 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
   }
 
   // Close engine and Recovery
-  delete engine;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
+  Reboot();
+
   // Get string record expired time
   ASSERT_EQ(engine->GetTTL(key, &ttl_time), Status::Ok);
 
@@ -2462,7 +2493,12 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
 
 #if KVDK_DEBUG_LEVEL > 0
 
+#ifdef KVDK_WITH_PMEM
+
 TEST_F(BatchWriteTest, SortedRollback) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
@@ -2581,6 +2617,9 @@ TEST_F(BatchWriteTest, SortedRollback) {
 }
 
 TEST_F(BatchWriteTest, StringRollBack) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   // This test case can only be run with single thread.
   // If multiple threads run batchwrite,
   // a thread may crash at CrashPoint and release its id,
@@ -2661,6 +2700,9 @@ TEST_F(BatchWriteTest, StringRollBack) {
 }
 
 TEST_F(BatchWriteTest, HashRollback) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   size_t num_threads = 1;
   configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -2744,6 +2786,9 @@ TEST_F(BatchWriteTest, HashRollback) {
 }
 
 TEST_F(BatchWriteTest, ListBatchOperationRollback) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   SyncPoint::GetInstance()->EnableProcessing();
   // abandon background cleaner thread
   SyncPoint::GetInstance()->SetCallBack(
@@ -2863,6 +2908,9 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
 //         A <-> B ->C
 // Then Repair
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   Configs test_config = configs;
   test_config.max_access_threads = 16;
 
@@ -2935,6 +2983,9 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
 // Then Repair
 
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
+  if (!configs.enable_pmem) {
+    return;
+  }
   Configs test_config = configs;
   std::atomic<bool> first_visited{false};
   SyncPoint::GetInstance()->DisableProcessing();
@@ -3010,6 +3061,7 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
   }
   delete engine;
 }
+#endif  // #ifdef KVDK_WITH_PMEM
 
 // Example:
 //   {key0, val0} <-> {key2, val2}

@@ -4,6 +4,8 @@
 
 #pragma once
 
+#ifdef KVDK_WITH_PMEM
+
 #include <future>
 
 #include "../alias.hpp"
@@ -22,7 +24,7 @@ class HashListRebuilder {
         rebuilt_hlists;
   };
 
-  HashListRebuilder(PMEMAllocator* pmem_allocator, HashTable* hash_table,
+  HashListRebuilder(Allocator* pmem_allocator, HashTable* hash_table,
                     LockTable* lock_table, ThreadManager* thread_manager,
                     uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
       : recovery_utils_(pmem_allocator),
@@ -351,7 +353,7 @@ class HashListRebuilder {
   DLListRecoveryUtils<HashList> recovery_utils_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
   std::vector<DLRecord*> linked_headers_;
-  PMEMAllocator* pmem_allocator_;
+  Allocator* pmem_allocator_;
   HashTable* hash_table_;
   LockTable* lock_table_;
   ThreadManager* thread_manager_;
@@ -365,3 +367,5 @@ class HashListRebuilder {
   CollectionIDType max_recovered_id_;
 };
 }  // namespace KVDK_NAMESPACE
+
+#endif  // #ifdef KVDK_WITH_PMEM

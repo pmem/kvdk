@@ -2,6 +2,8 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
+#ifdef KVDK_WITH_PMEM
+
 #include "rebuilder.hpp"
 
 #include <future>
@@ -93,7 +95,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
 
 Status SortedCollectionRebuilder::Rollback(
     const BatchWriteLog::SortedLogEntry& log) {
-  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
+  Allocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
   LockTable* lock_table = kv_engine_->dllist_locks_.get();
   DLRecord* elem = pmem_allocator->offset2addr_checked<DLRecord>(log.offset);
   // We only check prev linkage as a valid prev linkage indicate valid prev
@@ -116,7 +118,7 @@ Status SortedCollectionRebuilder::Rollback(
 }
 
 Status SortedCollectionRebuilder::initRebuildLists() {
-  PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
+  Allocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
   Status s = kv_engine_->maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
@@ -711,3 +713,5 @@ DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
   return curr;
 }
 }  // namespace KVDK_NAMESPACE
+
+#endif  // #ifdef KVDK_WITH_PMEM

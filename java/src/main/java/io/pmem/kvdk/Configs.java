@@ -44,6 +44,11 @@ public class Configs extends KVDKObject {
         return this;
     }
 
+    public Configs setEnablePMem(final boolean enable) {
+        setEnablePMem(nativeHandle_, enable);
+        return this;
+    }
+
     public Configs setOptLargeSortedCollectionRecovery(final boolean opt) {
         setOptLargeSortedCollectionRecovery(nativeHandle_, opt);
         return this;
@@ -71,6 +76,8 @@ public class Configs extends KVDKObject {
     private native void setHashBucketNum(long handle, long num);
 
     private native void setPopulatePMemSpace(long handle, boolean populate);
+
+    private native void setEnablePMem(long handle, boolean enable);
 
     private native void setOptLargeSortedCollectionRecovery(long handle, boolean opt);
 

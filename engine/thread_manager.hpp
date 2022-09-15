@@ -13,6 +13,7 @@
 
 namespace KVDK_NAMESPACE {
 
+class Allocator;
 class ThreadManager;
 
 struct Thread {
@@ -26,16 +27,22 @@ struct Thread {
 
 class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
  public:
-  ThreadManager(uint32_t max_threads) : max_threads_(max_threads), ids_(0) {}
+  ThreadManager(uint32_t max_threads)
+      : max_threads_(max_threads), ids_(0), alloc_(nullptr) {}
+  ThreadManager(uint32_t max_threads, Allocator* alloc)
+      : max_threads_(max_threads), ids_(0), alloc_(alloc) {}
   Status MaybeInitThread(Thread& t);
 
   void Release(const Thread& t);
+
+  Allocator* GetAllocator() { return alloc_; }
 
  private:
   uint32_t max_threads_;
   std::atomic<uint32_t> ids_;
   std::unordered_set<uint32_t> usable_id_;
   SpinMutex spin_;
+  Allocator* alloc_;
 };
 
 extern thread_local Thread access_thread;

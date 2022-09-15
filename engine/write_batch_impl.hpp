@@ -246,6 +246,9 @@ class BatchWriteLog {
   void DecodeFrom(char const* src);
 
   static void MarkProcessing(char* dst) {
+    if (dst == nullptr) {
+      return;
+    }
     dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Processing;
     _mm_clflush(dst);
@@ -253,6 +256,9 @@ class BatchWriteLog {
   }
 
   static void MarkCommitted(char* dst) {
+    if (dst == nullptr) {
+      return;
+    }
     dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Committed;
     _mm_clflush(dst);

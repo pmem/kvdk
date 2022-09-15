@@ -4,7 +4,10 @@
 
 #pragma once
 
+#ifdef KVDK_WITH_PMEM
+
 #include "../alias.hpp"
+#include "../version/version_controller.hpp"
 #include "skiplist.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -143,3 +146,5 @@ class SortedCollectionRebuilder {
   const uint64_t kRestoreSkiplistStride = 10000;
 };
 }  // namespace KVDK_NAMESPACE
+
+#endif  // #ifdef KVDK_WITH_PMEM

@@ -13,7 +13,7 @@ class KVEngine;
 
 class SortedIteratorImpl : public SortedIterator {
  public:
-  SortedIteratorImpl(Skiplist* skiplist, const PMEMAllocator* pmem_allocator,
+  SortedIteratorImpl(Skiplist* skiplist, const Allocator* pmem_allocator,
                      const SnapshotImpl* snapshot, bool own_snapshot)
       : skiplist_(skiplist),
         snapshot_(snapshot),

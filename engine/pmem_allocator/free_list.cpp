@@ -4,6 +4,8 @@
 
 #include "free_list.hpp"
 
+#ifdef KVDK_WITH_PMEM
+
 #include "../thread_manager.hpp"
 #include "pmem_allocator.hpp"
 
@@ -454,3 +456,5 @@ bool Freelist::getLargeEntry(uint32_t size, SpaceEntry* space_entry) {
 }
 
 }  // namespace KVDK_NAMESPACE
+
+#endif  // #ifdef KVDK_WITH_PMEM

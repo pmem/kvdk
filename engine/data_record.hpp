@@ -5,7 +5,11 @@
 #pragma once
 
 #include <immintrin.h>
+
+#ifdef KVDK_WITH_PMEM
 #include <libpmem.h>
+#endif
+
 #include <x86intrin.h>
 
 #include "alias.hpp"

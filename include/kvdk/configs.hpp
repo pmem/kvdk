@@ -134,6 +134,9 @@ struct Configs {
 
   // Background clean thread numbers.
   uint64_t clean_threads = 8;
+
+  // Enable PMem storage
+  bool enable_pmem = true;
 };
 
 struct WriteOptions {

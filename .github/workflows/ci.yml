@@ -15,6 +15,22 @@ jobs:
       - name: Install packages
         run: sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
 
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      - name: Check codestyle & Build without libpmem
+        run: |
+          mkdir -p build && cd build
+          rm -rf ../build/*
+          cmake .. -DCMAKE_BUILD_TYPE=Debug -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON -DWITH_PMEM=OFF
+          make -j
+
+      # # This requires AVX512 which is not supported by Github hosted runners
+      # - name: C++ unit tests without libpmem
+      #   run: |
+      #     export PMEM_IS_PMEM_FORCE=1
+      #     ./tests/dbtest
+
       - name: Install ndctl
         run: |
           cd /tmp; git clone https://github.com/pmem/ndctl.git; cd ndctl; git checkout v70.1
@@ -26,19 +42,26 @@ jobs:
           cd /tmp; git clone https://github.com/pmem/pmdk.git; cd pmdk; git checkout 1.11.1
           make -j && sudo make install
 
-      - name: Init submodules
-        run: git submodule update --init --recursive
-
-      - name: Check codestyle & Build
+      - name: Check codestyle & Build with libpmem
         run: |
           mkdir -p build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON
+          rm -rf ../build/*
+          cmake .. -DCMAKE_BUILD_TYPE=Debug -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON -DWITH_PMEM=ON
           make -j
 
-      # The example program requires AVX512 which is not supported by Github hosted runners
-      # - name: Run example
+      # # This requires AVX512 which is not supported by Github hosted runners
+      # - name: Run C++ examples
       #   run: |
       #     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib:/usr/local/lib64
       #     export PMEM_IS_PMEM_FORCE=1
-      #     sudo mkdir /mnt/pmem0
-      #     ./build/examples/cpp_api_tutorial
+      #     sudo mkdir -p /mnt/pmem0
+      #     current_user=`whoami`
+      #     echo $current_user
+      #     sudo chown -R $current_user:$current_user /mnt/pmem0
+      #     ./build/examples/tutorial/cpp_api_tutorial
+
+      # # This requires AVX512 which is not supported by Github hosted runners
+      # - name: Java unit tests
+      #   run: |
+      #     cd java
+      #     mvn clean test

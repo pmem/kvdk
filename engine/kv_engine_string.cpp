@@ -227,7 +227,7 @@ Status KVEngine::stringPutImpl(const StringView& key, const StringView& value,
           ? existing_record->GetExpireTime()
           : TimeUtils::TTLToExpireTime(write_options.ttl_time, base_time);
 
-  // Persist key-value pair to PMem
+  // Save key-value pair
   SpaceEntry space_entry =
       pmem_allocator_->Allocate(StringRecord::RecordSize(key, value));
   if (space_entry.size == 0) {
@@ -252,6 +252,7 @@ Status KVEngine::stringPutImpl(const StringView& key, const StringView& value,
   return Status::Ok;
 }
 
+#ifdef KVDK_WITH_PMEM
 Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
                                      const DataEntry& cached_entry) {
   assert(pmem_record->GetRecordType() == RecordType::String);
@@ -288,6 +289,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
 
   return Status::Ok;
 }
+#endif
 
 Status KVEngine::stringWritePrepare(StringWriteArgs& args, TimestampType ts) {
   args.res = lookupKey<true>(args.key, RecordType::String);

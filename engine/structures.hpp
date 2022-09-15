@@ -91,6 +91,7 @@ class PointerWithTag {
   uint64_t tagged_pointer_;
 };
 
+#ifdef KVDK_WITH_PMEM
 // Used to record batch write stage and related records address, this should be
 // persisted on PMem
 //
@@ -124,4 +125,6 @@ struct PendingBatch {
   TimestampType timestamp;
   PMemOffsetType record_offsets[0];
 };
+#endif  // #ifdef KVDK_WITH_PMEM
+
 }  // namespace KVDK_NAMESPACE

@@ -283,6 +283,7 @@ Status KVEngine::hashListFind(StringView collection, HashList** hlist) {
   return Status::Ok;
 }
 
+#ifdef KVDK_WITH_PMEM
 Status KVEngine::restoreHashElem(DLRecord* rec) {
   return hash_rebuilder_->AddElem(rec);
 }
@@ -290,6 +291,7 @@ Status KVEngine::restoreHashElem(DLRecord* rec) {
 Status KVEngine::restoreHashHeader(DLRecord* rec) {
   return hash_rebuilder_->AddHeader(rec);
 }
+#endif
 
 Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimestampType ts) {
   return args.hlist->PrepareWrite(args, ts);
@@ -301,8 +303,10 @@ Status KVEngine::hashListWrite(HashWriteArgs& args) {
 
 Status KVEngine::hashListPublish(HashWriteArgs const&) { return Status::Ok; }
 
+#ifdef KVDK_WITH_PMEM
 Status KVEngine::hashListRollback(BatchWriteLog::HashLogEntry const& log) {
   return hash_rebuilder_->Rollback(log);
 }
+#endif
 
 }  // namespace KVDK_NAMESPACE
