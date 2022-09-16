@@ -355,6 +355,19 @@ void DBScan(int tid) {
         engine->HashIteratorRelease(iter);
         break;
       }
+      case DataType::VHash: {
+        auto iter = engine->VHashIteratorCreate(collections[cid]);
+        if (!iter) throw std::runtime_error{"Fail creating VHashIterator"};
+        for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+          key = iter->Key();
+          value_sink = iter->Value();
+          ++operations;
+          if (operations > operations_counted + 1000) {
+            read_ops += (operations - operations_counted);
+            operations_counted = operations;
+          }
+        }
+      }
       case DataType::Blackhole: {
         operations += 1024;
         read_ops.fetch_add(1024);
@@ -530,6 +543,14 @@ void ProcessBenchmarkConfigs() {
       key_dist = KeyDistribution::Zipf;
     } else {
       throw std::invalid_argument{"Invalid key distribution"};
+    }
+  }
+  if (bench_data_type == DataType::VHash) {
+    // Vhash needs fill for read and update benchmarks
+    operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
+    for (int i = 0; i < FLAGS_max_access_threads; i++) {
+      ranges.emplace_back(i * operations_per_thread,
+                          (i + 1) * operations_per_thread);
     }
   }
 

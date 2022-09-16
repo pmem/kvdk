@@ -102,7 +102,6 @@ std::string VHash::Iterator::Value() const {
 }
 
 std::unique_ptr<VHash::Iterator> VHash::MakeIterator() {
-  ref_cnt.fetch_add(1UL);
   // Initialized to end() iterator without acquiring lock.
   return std::unique_ptr<Iterator>{new Iterator{*this, hpmap.end()}};
 }

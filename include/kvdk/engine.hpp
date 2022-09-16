@@ -348,8 +348,8 @@ class Engine {
   virtual Status VHashDelete(StringView key, StringView field) = 0;
   virtual Status VHashModify(StringView key, StringView field,
                              ModifyFunc modify_func, void* cb_args) = 0;
-  virtual std::unique_ptr<VHashIterator> VHashIteratorCreate(StringView key,
-                                                             Status* s) = 0;
+  virtual std::unique_ptr<VHashIterator> VHashIteratorCreate(
+      StringView key, Status* s = nullptr) = 0;
 #endif
 
   /// Other ///////////////////////////////////////////////////////////////////

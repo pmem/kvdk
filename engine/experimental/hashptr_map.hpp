@@ -26,6 +26,8 @@
 #include "../macros.hpp"
 #define dynamic_assert kvdk_assert
 
+/// TODO: allocator for aligned allocation to work under C++11
+
 namespace KVDK_NAMESPACE {
 
 // Internal helpers

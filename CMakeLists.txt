@@ -8,7 +8,8 @@ set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
 include(GNUInstallDirs)
 
-set(CMAKE_CXX_STANDARD 11)
+# set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 option(COVERAGE "code coverage" OFF)
 option(KVDK_ENABLE_VHASH "Enable experimental VHash in KVDK" ON)

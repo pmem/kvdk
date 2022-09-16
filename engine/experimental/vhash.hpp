@@ -63,14 +63,16 @@ class VHash {
     bool Valid() const final;
     std::string Key() const final;
     std::string Value() const final;
-    virtual ~Iterator() = default;
+    virtual ~Iterator() { owner.ref_cnt--; }
 
    private:
     friend VHash;
     using rep = typename decltype(hpmap)::iterator;
     VHash& owner;
     rep pos;
-    Iterator(VHash& o, rep&& p) : owner{o}, pos{std::move(p)} {}
+    Iterator(VHash& o, rep&& p) : owner{o}, pos{std::move(p)} {
+      owner.ref_cnt++;
+    }
   };
 
   std::unique_ptr<Iterator> MakeIterator();
