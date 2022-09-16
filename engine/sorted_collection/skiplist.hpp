@@ -36,7 +36,7 @@ struct SortedWriteArgs {
   WriteOp op;
   Skiplist* skiplist;
   SpaceEntry space;
-  TimeStampType ts;
+  TimestampType ts;
   HashTable::LookupResult lookup_result;
   std::unique_ptr<Splice> seek_result;
 };
@@ -86,7 +86,7 @@ struct SkiplistNode {
       // make sure this will be linked to skiplist at all the height after
       // creation
       node->valid_links = height;
-      node->MaybeCacheKey(key);
+      node->maybeCacheKey(key);
     }
     return node;
   }
@@ -146,7 +146,7 @@ struct SkiplistNode {
  private:
   SkiplistNode() {}
 
-  void MaybeCacheKey(const StringView& key) {
+  void maybeCacheKey(const StringView& key) {
     if (height >= kCacheHeight || key.size() <= 4) {
       cached_key_size = key.size();
       memcpy(cached_key, key.data(), key.size());
@@ -213,7 +213,7 @@ class Skiplist : public Collection {
   //
   // Return Ok on success
   WriteResult SetExpireTime(ExpireTimeType expired_time,
-                            TimeStampType timestamp);
+                            TimestampType timestamp);
 
   // Put "key, value" to the skiplist
   //
@@ -225,7 +225,7 @@ class Skiplist : public Collection {
   //
   // Notice: the putting key should already been locked by engine
   WriteResult Put(const StringView& key, const StringView& value,
-                  TimeStampType timestamp);
+                  TimestampType timestamp);
 
   // Get value of "key" from the skiplist
   Status Get(const StringView& key, std::string* value);
@@ -239,7 +239,7 @@ class Skiplist : public Collection {
   // deleted pmem record if it exists
   //
   // Notice: the deleting key should already been locked by engine
-  WriteResult Delete(const StringView& key, TimeStampType timestamp);
+  WriteResult Delete(const StringView& key, TimestampType timestamp);
 
   // Init args for put or delete operations
   SortedWriteArgs InitWriteArgs(const StringView& key, const StringView& value,
@@ -257,7 +257,7 @@ class Skiplist : public Collection {
   // MemoryOverflow if no enough dram space
   //
   // Notice: args.key should already been locked by engine
-  Status PrepareWrite(SortedWriteArgs& args, TimeStampType ts);
+  Status PrepareWrite(SortedWriteArgs& args, TimestampType ts);
 
   // Do batch write according to args
   //
@@ -397,27 +397,27 @@ class Skiplist : public Collection {
   // put impl with prepared seek result and pmem space
   WriteResult putPreparedNoHash(Splice& seek_result, const StringView& key,
                                 const StringView& value,
-                                TimeStampType timestamp,
+                                TimestampType timestamp,
                                 const SpaceEntry& space);
 
   // put impl with prepared lookup result and pmem space
   WriteResult putPreparedWithHash(const HashTable::LookupResult& lookup_result,
                                   const StringView& key,
                                   const StringView& value,
-                                  TimeStampType timestamp,
+                                  TimestampType timestamp,
                                   const SpaceEntry& space);
 
   // put impl with prepared existing record and pmem space
   WriteResult deletePreparedNoHash(DLRecord* existing_record,
                                    SkiplistNode* dram_node,
                                    const StringView& key,
-                                   TimeStampType timestamp,
+                                   TimestampType timestamp,
                                    const SpaceEntry& space);
 
   // put impl with prepared lookup result of existing record and pmem space
   WriteResult deletePreparedWithHash(
       const HashTable::LookupResult& lookup_result, const StringView& key,
-      TimeStampType timestamp, const SpaceEntry& space);
+      TimestampType timestamp, const SpaceEntry& space);
 
   // Link DLRecord "linking" between "prev" and "next"
   static void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
@@ -439,15 +439,15 @@ class Skiplist : public Collection {
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
   // Notice: we do not check if record is still correctly linked
-  static LockTable::GuardType lockRecordPosition(const DLRecord* record,
-                                                 PMEMAllocator* pmem_allocator,
-                                                 LockTable* lock_table);
+  static LockTable::MultiGuardType lockRecordPosition(
+      const DLRecord* record, PMEMAllocator* pmem_allocator,
+      LockTable* lock_table);
 
   // lock skiplist position of "record" by locking its prev DLRecord and the
   // record itself
   // Notice: record must be a on list record, e.g. correctly linked by its
   // predecessor
-  LockTable::GuardType lockOnListRecord(const DLRecord* record) {
+  LockTable::MultiGuardType lockOnListRecord(const DLRecord* record) {
     while (true) {
       auto guard = lockRecordPosition(record, pmem_allocator_, record_locks_);
       DLRecord* prev =
@@ -482,7 +482,7 @@ class Skiplist : public Collection {
   // Destroy all sorted records including old version list.
   void destroyAllRecords();
 
-  static LockTable::HashType recordHash(const DLRecord* record) {
+  static LockTable::HashValueType recordHash(const DLRecord* record) {
     kvdk_assert(record != nullptr, "");
     return XXH3_64bits(record, sizeof(const DLRecord*));
   }

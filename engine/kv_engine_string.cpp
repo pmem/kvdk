@@ -14,14 +14,14 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
     return Status::InvalidArgument;
   }
 
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
 
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
   auto lookup_result = lookupKey<true>(key, RecordType::String);
 
   StringRecord* existing_record = nullptr;
@@ -45,7 +45,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
                   &new_value, modify_args);
   switch (modify_operation) {
     case ModifyOperation::Write: {
-      if (!CheckValueSize(new_value)) {
+      if (!checkValueSize(new_value)) {
         return Status::InvalidDataSize;
       }
 
@@ -106,26 +106,26 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
 Status KVEngine::Put(const StringView key, const StringView value,
                      const WriteOptions& options) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
 
-  if (!CheckKeySize(key) || !CheckValueSize(value)) {
+  if (!checkKeySize(key) || !checkValueSize(value)) {
     return Status::InvalidDataSize;
   }
 
-  return StringPutImpl(key, value, options);
+  return stringPutImpl(key, value, options);
 }
 
 Status KVEngine::Get(const StringView key, std::string* value) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
   }
 
-  if (!CheckKeySize(key)) {
+  if (!checkKeySize(key)) {
     return Status::InvalidDataSize;
   }
   auto holder = version_controller_.GetLocalSnapshotHolder();
@@ -144,23 +144,23 @@ Status KVEngine::Get(const StringView key, std::string* value) {
 }
 
 Status KVEngine::Delete(const StringView key) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
   }
 
-  if (!CheckKeySize(key)) {
+  if (!checkKeySize(key)) {
     return Status::InvalidDataSize;
   }
 
-  return StringDeleteImpl(key);
+  return stringDeleteImpl(key);
 }
 
-Status KVEngine::StringDeleteImpl(const StringView& key) {
+Status KVEngine::stringDeleteImpl(const StringView& key) {
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
 
   auto lookup_result = lookupKey<false>(key, RecordType::String);
   if (lookup_result.s == Status::Ok) {
@@ -192,17 +192,17 @@ Status KVEngine::StringDeleteImpl(const StringView& key) {
              : lookup_result.s;
 }
 
-Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
+Status KVEngine::stringPutImpl(const StringView& key, const StringView& value,
                                const WriteOptions& write_options) {
   int64_t base_time = TimeUtils::millisecond_time();
   if (!TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
   }
 
-  TEST_SYNC_POINT("KVEngine::StringPutImpl::BeforeLock");
+  TEST_SYNC_POINT("KVEngine::stringPutImpl::BeforeLock");
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
 
   // Lookup key in hashtable
   auto lookup_result = lookupKey<true>(key, RecordType::String);
@@ -214,7 +214,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
   kvdk_assert(lookup_result.s == Status::NotFound ||
                   lookup_result.s == Status::Ok ||
                   lookup_result.s == Status::Outdated,
-              "Wrong return status in lookupKey in StringPutImpl");
+              "Wrong return status in lookupKey in stringPutImpl");
   StringRecord* existing_record =
       lookup_result.s == Status::NotFound
           ? nullptr
@@ -255,7 +255,7 @@ Status KVEngine::StringPutImpl(const StringView& key, const StringView& value,
 Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
                                      const DataEntry& cached_entry) {
   assert(pmem_record->GetRecordType() == RecordType::String);
-  if (RecoverToCheckpoint() &&
+  if (recoverToCheckpoint() &&
       cached_entry.meta.timestamp > persist_checkpoint_->CheckpointTS()) {
     pmem_allocator_->PurgeAndFree<StringRecord>(pmem_record);
     return Status::Ok;
@@ -289,7 +289,7 @@ Status KVEngine::restoreStringRecord(StringRecord* pmem_record,
   return Status::Ok;
 }
 
-Status KVEngine::stringWritePrepare(StringWriteArgs& args, TimeStampType ts) {
+Status KVEngine::stringWritePrepare(StringWriteArgs& args, TimestampType ts) {
   args.res = lookupKey<true>(args.key, RecordType::String);
   if (args.res.s != Status::Ok && args.res.s != Status::NotFound &&
       args.res.s != Status::Outdated) {
@@ -334,7 +334,7 @@ Status KVEngine::stringWritePublish(StringWriteArgs const& args) {
   return Status::Ok;
 }
 
-Status KVEngine::stringRollback(TimeStampType,
+Status KVEngine::stringRollback(TimestampType,
                                 BatchWriteLog::StringLogEntry const& log) {
   static_cast<DataEntry*>(pmem_allocator_->offset2addr_checked(log.offset))
       ->Destroy();

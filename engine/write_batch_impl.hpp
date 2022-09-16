@@ -61,64 +61,64 @@ class WriteBatchImpl final : public WriteBatch {
 
   void StringPut(std::string const& key, std::string const& value) final {
     StringOp op{WriteOp::Put, key, value};
-    string_ops.erase(op);
-    string_ops.insert(op);
+    string_ops_.erase(op);
+    string_ops_.insert(op);
   }
 
   void StringDelete(std::string const& key) final {
     StringOp op{WriteOp::Delete, key, std::string{}};
-    string_ops.erase(op);
-    string_ops.insert(op);
+    string_ops_.erase(op);
+    string_ops_.insert(op);
   }
 
   void SortedPut(std::string const& key, std::string const& field,
                  std::string const& value) final {
     SortedOp op{WriteOp::Put, key, field, value};
-    sorted_ops.erase(op);
-    sorted_ops.insert(op);
+    sorted_ops_.erase(op);
+    sorted_ops_.insert(op);
   }
 
   void SortedDelete(std::string const& key, std::string const& field) final {
     SortedOp op{WriteOp::Delete, key, field, std::string{}};
-    sorted_ops.erase(op);
-    sorted_ops.insert(op);
+    sorted_ops_.erase(op);
+    sorted_ops_.insert(op);
   }
 
   void HashPut(std::string const& key, std::string const& field,
                std::string const& value) final {
     HashOp op{WriteOp::Put, key, field, value};
-    hash_ops.erase(op);
-    hash_ops.insert(op);
+    hash_ops_.erase(op);
+    hash_ops_.insert(op);
   }
 
   void HashDelete(std::string const& key, std::string const& field) final {
     HashOp op{WriteOp::Delete, key, field, std::string{}};
-    hash_ops.erase(op);
-    hash_ops.insert(op);
+    hash_ops_.erase(op);
+    hash_ops_.insert(op);
   }
 
   void Clear() final {
-    string_ops.clear();
-    sorted_ops.clear();
-    hash_ops.clear();
+    string_ops_.clear();
+    sorted_ops_.clear();
+    hash_ops_.clear();
   }
 
   size_t Size() const final {
-    return string_ops.size() + sorted_ops.size() + hash_ops.size();
+    return string_ops_.size() + sorted_ops_.size() + hash_ops_.size();
   }
 
   using StringOpBatch = std::unordered_set<StringOp, HashEq, HashEq>;
   using SortedOpBatch = std::unordered_set<SortedOp, HashEq, HashEq>;
   using HashOpBatch = std::unordered_set<HashOp, HashEq, HashEq>;
 
-  StringOpBatch const& StringOps() const { return string_ops; }
-  SortedOpBatch const& SortedOps() const { return sorted_ops; }
-  HashOpBatch const& HashOps() const { return hash_ops; }
+  StringOpBatch const& StringOps() const { return string_ops_; }
+  SortedOpBatch const& SortedOps() const { return sorted_ops_; }
+  HashOpBatch const& HashOps() const { return hash_ops_; }
 
  private:
-  StringOpBatch string_ops;
-  SortedOpBatch sorted_ops;
-  HashOpBatch hash_ops;
+  StringOpBatch string_ops_;
+  SortedOpBatch sorted_ops_;
+  HashOpBatch hash_ops_;
 };
 
 struct StringWriteArgs {
@@ -126,7 +126,7 @@ struct StringWriteArgs {
   StringView value;
   WriteOp op;
   SpaceEntry space;
-  TimeStampType ts;
+  TimestampType ts;
   HashTable::LookupResult res;
   StringRecord* new_rec;
 
@@ -178,50 +178,50 @@ class BatchWriteLog {
 
   explicit BatchWriteLog() {}
 
-  void SetTimestamp(TimeStampType ts) { timestamp = ts; }
+  void SetTimestamp(TimestampType ts) { timestamp_ = ts; }
 
   void StringPut(PMemOffsetType offset) {
-    string_logs.emplace_back(StringLogEntry{Op::Put, offset});
+    string_logs_.emplace_back(StringLogEntry{Op::Put, offset});
   }
 
   void StringDelete(PMemOffsetType offset) {
-    string_logs.emplace_back(StringLogEntry{Op::Delete, offset});
+    string_logs_.emplace_back(StringLogEntry{Op::Delete, offset});
   }
 
   void SortedPut(PMemOffsetType offset) {
-    sorted_logs.emplace_back(SortedLogEntry{Op::Put, offset});
+    sorted_logs_.emplace_back(SortedLogEntry{Op::Put, offset});
   }
 
   void SortedDelete(PMemOffsetType offset) {
-    sorted_logs.emplace_back(SortedLogEntry{Op::Delete, offset});
+    sorted_logs_.emplace_back(SortedLogEntry{Op::Delete, offset});
   }
 
   void HashPut(PMemOffsetType offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Put, offset});
+    hash_logs_.emplace_back(HashLogEntry{Op::Put, offset});
   }
 
   void HashDelete(PMemOffsetType offset) {
-    hash_logs.emplace_back(HashLogEntry{Op::Delete, offset});
+    hash_logs_.emplace_back(HashLogEntry{Op::Delete, offset});
   }
 
   void ListEmplace(PMemOffsetType offset) {
-    list_logs.emplace_back(ListLogEntry{Op::Put, offset});
+    list_logs_.emplace_back(ListLogEntry{Op::Put, offset});
   }
 
   void ListDelete(PMemOffsetType offset) {
-    list_logs.emplace_back(ListLogEntry{Op::Delete, offset});
+    list_logs_.emplace_back(ListLogEntry{Op::Delete, offset});
   }
 
   void Clear() {
-    string_logs.clear();
-    sorted_logs.clear();
-    hash_logs.clear();
-    list_logs.clear();
+    string_logs_.clear();
+    sorted_logs_.clear();
+    hash_logs_.clear();
+    list_logs_.clear();
   }
 
   size_t Size() const {
-    return string_logs.size() + sorted_logs.size() + hash_logs.size() +
-           list_logs.size();
+    return string_logs_.size() + sorted_logs_.size() + hash_logs_.size() +
+           list_logs_.size();
   }
 
   static size_t Capacity() { return (1UL << 20); }
@@ -230,7 +230,7 @@ class BatchWriteLog {
     static_assert(sizeof(HashLogEntry) >= sizeof(StringLogEntry), "");
     static_assert(sizeof(HashLogEntry) >= sizeof(SortedLogEntry), "");
     static_assert(sizeof(HashLogEntry) >= sizeof(ListLogEntry), "");
-    return sizeof(size_t) + sizeof(TimeStampType) + sizeof(Stage) +
+    return sizeof(size_t) + sizeof(TimestampType) + sizeof(Stage) +
            sizeof(size_t) + Capacity() * sizeof(HashLogEntry);
   }
 
@@ -246,14 +246,14 @@ class BatchWriteLog {
   void DecodeFrom(char const* src);
 
   static void MarkProcessing(char* dst) {
-    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
+    dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Processing;
     _mm_clflush(dst);
     _mm_mfence();
   }
 
   static void MarkCommitted(char* dst) {
-    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
+    dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Committed;
     _mm_clflush(dst);
     _mm_mfence();
@@ -261,7 +261,7 @@ class BatchWriteLog {
 
   // For rollback
   static void MarkInitializing(char* dst) {
-    dst = &dst[sizeof(size_t) + sizeof(TimeStampType)];
+    dst = &dst[sizeof(size_t) + sizeof(TimestampType)];
     *reinterpret_cast<Stage*>(dst) = Stage::Initializing;
     _mm_clflush(dst);
     _mm_mfence();
@@ -272,19 +272,19 @@ class BatchWriteLog {
   using HashLog = std::vector<HashLogEntry>;
   using ListLog = std::vector<ListLogEntry>;
 
-  StringLog const& StringLogs() const { return string_logs; }
-  SortedLog const& SortedLogs() const { return sorted_logs; }
-  HashLog const& HashLogs() const { return hash_logs; }
-  ListLog const& ListLogs() const { return list_logs; }
-  TimeStampType Timestamp() const { return timestamp; }
+  StringLog const& StringLogs() const { return string_logs_; }
+  SortedLog const& SortedLogs() const { return sorted_logs_; }
+  HashLog const& HashLogs() const { return hash_logs_; }
+  ListLog const& ListLogs() const { return list_logs_; }
+  TimestampType Timestamp() const { return timestamp_; }
 
  private:
   Stage stage{Stage::Initializing};
-  TimeStampType timestamp;
-  StringLog string_logs;
-  SortedLog sorted_logs;
-  HashLog hash_logs;
-  ListLog list_logs;
+  TimestampType timestamp_;
+  StringLog string_logs_;
+  SortedLog sorted_logs_;
+  HashLog hash_logs_;
+  ListLog list_logs_;
 };
 
 }  // namespace KVDK_NAMESPACE

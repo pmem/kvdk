@@ -9,40 +9,6 @@
 
 namespace KVDK_NAMESPACE {
 
-void OldRecordsCleaner::PushToPendingFree(void* addr, TimeStampType ts) {
-  kvdk_assert((static_cast<DLRecord*>(addr)->GetRecordType() &
-               (RecordType::ListHeader | RecordType::ListElem |
-                RecordType::HashHeader | RecordType::HashElem)) &&
-                  (static_cast<DLRecord*>(addr)->GetRecordStatus() ==
-                   RecordStatus::Dirty),
-              "");
-  kvdk_assert(access_thread.id >= 0, "");
-  auto& tc = cleaner_thread_cache_[access_thread.id];
-  std::lock_guard<SpinMutex> guard{tc.old_records_lock};
-  DataEntry* data_entry = static_cast<DataEntry*>(addr);
-  SpaceEntry entry{kv_engine_->pmem_allocator_->addr2offset_checked(addr),
-                   data_entry->header.record_size};
-  tc.pending_free_space_entries.push_back(PendingFreeSpaceEntry{entry, ts});
-
-  /// TODO: a thread may quit before all pending free entries are Free()d
-  /// GlobalClean() should collect those entries and Free() them.
-  maybeUpdateOldestSnapshot();
-  TimeStampType earliest_ts =
-      kv_engine_->version_controller_.LocalOldestSnapshotTS();
-  constexpr size_t kMaxFreePending = 16;
-  for (size_t i = 0; i < kMaxFreePending; i++) {
-    if (tc.pending_free_space_entries.empty()) {
-      break;
-    }
-    if (tc.pending_free_space_entries.front().release_time >= earliest_ts) {
-      break;
-    }
-    kv_engine_->pmem_allocator_->Free(
-        tc.pending_free_space_entries.front().entry);
-    tc.pending_free_space_entries.pop_front();
-  }
-}
-
 void OldRecordsCleaner::RegisterDelayDeleter(IDeleter& deleter) {
   size_t idx = global_queues_.size();
   delay_deleters_[&deleter] = idx;
@@ -83,7 +49,7 @@ void OldRecordsCleaner::TryGlobalClean() {
   // Update recorded oldest snapshot up to state so we can know which records
   // can be freed
   kv_engine_->version_controller_.UpdateLocalOldestSnapshot();
-  TimeStampType oldest_snapshot_ts =
+  TimestampType oldest_snapshot_ts =
       kv_engine_->version_controller_.LocalOldestSnapshotTS();
 
   std::vector<SpaceEntry> free_entries;

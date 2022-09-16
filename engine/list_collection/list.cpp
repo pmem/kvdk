@@ -6,7 +6,7 @@
 
 namespace KVDK_NAMESPACE {
 List::WriteResult List::SetExpireTime(ExpireTimeType expired_time,
-                                      TimeStampType timestamp) {
+                                      TimestampType timestamp) {
   WriteResult ret;
   DLRecord* header = HeaderRecord();
   SpaceEntry space = pmem_allocator_->Allocate(
@@ -27,7 +27,7 @@ List::WriteResult List::SetExpireTime(ExpireTimeType expired_time,
   return ret;
 }
 
-List::WriteResult List::PushFront(const StringView& elem, TimeStampType ts) {
+List::WriteResult List::PushFront(const StringView& elem, TimestampType ts) {
   WriteResult ret;
   std::string internal_key(InternalKey(""));
   SpaceEntry space =
@@ -47,7 +47,7 @@ List::WriteResult List::PushFront(const StringView& elem, TimeStampType ts) {
   return ret;
 }
 
-List::WriteResult List::PushBack(const StringView& elem, TimeStampType ts) {
+List::WriteResult List::PushBack(const StringView& elem, TimestampType ts) {
   WriteResult ret;
   std::string internal_key(InternalKey(""));
   SpaceEntry space =
@@ -67,7 +67,7 @@ List::WriteResult List::PushBack(const StringView& elem, TimeStampType ts) {
   return ret;
 }
 
-List::WriteResult List::PopFront(TimeStampType ts) {
+List::WriteResult List::PopFront(TimestampType ts) {
   WriteResult ret;
   if (Size() == 0) {
     ret.s = Status::NotFound;
@@ -93,7 +93,7 @@ List::WriteResult List::PopFront(TimeStampType ts) {
   return ret;
 }
 
-List::WriteResult List::PopBack(TimeStampType ts) {
+List::WriteResult List::PopBack(TimestampType ts) {
   WriteResult ret;
   if (Size() == 0) {
     ret.s = Status::NotFound;
@@ -121,7 +121,7 @@ List::WriteResult List::PopBack(TimeStampType ts) {
 
 List::WriteResult List::InsertBefore(const StringView& elem,
                                      const StringView& existing_elem,
-                                     TimeStampType ts) {
+                                     TimestampType ts) {
   WriteResult ret;
   auto iter = findLiveRecord(existing_elem);
   if (iter == live_records_.end()) {
@@ -148,7 +148,7 @@ List::WriteResult List::InsertBefore(const StringView& elem,
 
 List::WriteResult List::InsertAfter(const StringView& elem,
                                     const StringView& existing_elem,
-                                    TimeStampType ts) {
+                                    TimestampType ts) {
   WriteResult ret;
   auto iter = findLiveRecord(existing_elem);
   if (iter == live_records_.end()) {
@@ -174,7 +174,7 @@ List::WriteResult List::InsertAfter(const StringView& elem,
 }
 
 List::WriteResult List::InsertAt(const StringView& elem, long index,
-                                 TimeStampType ts) {
+                                 TimestampType ts) {
   WriteResult ret;
   size_t required_size = index < 0 ? std::abs(index) - 1 : index;
   if (required_size > Size()) {
@@ -208,7 +208,7 @@ List::WriteResult List::InsertAt(const StringView& elem, long index,
   return ret;
 }
 
-List::WriteResult List::Erase(long index, TimeStampType ts) {
+List::WriteResult List::Erase(long index, TimestampType ts) {
   WriteResult ret;
   size_t required_size = index < 0 ? std::abs(index) - 1 : index;
   if (required_size > Size()) {
@@ -263,7 +263,7 @@ Status List::Back(std::string* elem) {
 }
 
 List::WriteResult List::Update(long index, const StringView& elem,
-                               TimeStampType ts) {
+                               TimestampType ts) {
   WriteResult ret;
   size_t required_size = index < 0 ? std::abs(index) - 1 : index;
   if (required_size > Size()) {
@@ -300,7 +300,7 @@ List::WriteResult List::Update(long index, const StringView& elem,
 
 List::PushNArgs List::PreparePushN(ListPos pos,
                                    const std::vector<StringView>& elems,
-                                   TimeStampType ts) {
+                                   TimestampType ts) {
   PushNArgs args;
   args.pos = pos;
   args.ts = ts;
@@ -326,11 +326,11 @@ List::PushNArgs List::PreparePushN(ListPos pos,
   return args;
 }
 
-List::PopNArgs List::PreparePopN(ListPos pos, size_t n, TimeStampType ts,
+List::PopNArgs List::PreparePopN(ListPos pos, size_t n, TimestampType ts,
                                  std::vector<std::string>* elems) {
   size_t nn = n;
   PopNArgs args;
-  args.ts = ts;
+  args.timestamp_ = ts;
   if (Size() > 0) {
     auto iter =
         pos == ListPos::Front ? live_records_.begin() : live_records_.end() - 1;
@@ -351,7 +351,7 @@ List::PopNArgs List::PreparePopN(ListPos pos, size_t n, TimeStampType ts,
         elems->emplace_back(sw.data(), sw.size());
       }
       args.spaces.emplace_back(space);
-      args.to_pop.emplace_back(iter);
+      args.to_pop_.emplace_back(iter);
       nn--;
       if (pos == ListPos::Front) {
         iter++;
@@ -400,15 +400,16 @@ Status List::PopN(const List::PopNArgs& args) {
     return args.s;
   }
   std::string internal_key(InternalKey(""));
-  kvdk_assert(args.spaces.size() == args.to_pop.size(), "");
-  for (size_t i = 0; i < args.to_pop.size(); i++) {
+  kvdk_assert(args.spaces.size() == args.to_pop_.size(), "");
+  for (size_t i = 0; i < args.to_pop_.size(); i++) {
     DLList::WriteArgs wa(internal_key, "", RecordType::ListElem,
-                         RecordStatus::Outdated, args.ts, args.spaces[i]);
+                         RecordStatus::Outdated, args.timestamp_,
+                         args.spaces[i]);
     Status s;
-    while ((s = dl_list_.Update(wa, *args.to_pop[i])) != Status::Ok) {
+    while ((s = dl_list_.Update(wa, *args.to_pop_[i])) != Status::Ok) {
       kvdk_assert(s == Status::Fail, "");
     }
-    live_records_.erase(args.to_pop[i]);
+    live_records_.erase(args.to_pop_[i]);
     TEST_CRASH_POINT("List::PopN", "");
   }
   return Status::Ok;

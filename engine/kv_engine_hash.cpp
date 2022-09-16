@@ -7,12 +7,12 @@
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::HashCreate(StringView collection) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
 
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
 
@@ -24,7 +24,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
                                std::shared_ptr<HashList>& hlist) {
   auto ul = hash_table_->AcquireLock(collection);
   auto holder = version_controller_.GetLocalSnapshotHolder();
-  TimeStampType new_ts = holder.Timestamp();
+  TimestampType new_ts = holder.Timestamp();
   auto lookup_result = lookupKey<true>(collection, RecordType::HashHeader);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {
@@ -60,13 +60,13 @@ Status KVEngine::buildHashlist(const StringView& collection,
 }
 
 Status KVEngine::HashDestroy(StringView collection) {
-  auto s = MaybeInitAccessThread();
+  auto s = maybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) {
     return s;
   }
 
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
 
@@ -102,10 +102,10 @@ Status KVEngine::HashDestroy(StringView collection) {
 }
 
 Status KVEngine::HashSize(StringView collection, size_t* len) {
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
-  if (MaybeInitAccessThread() != Status::Ok) {
+  if (maybeInitAccessThread() != Status::Ok) {
     return Status::TooManyAccessThreads;
   }
 
@@ -121,7 +121,7 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
 
 Status KVEngine::HashGet(StringView collection, StringView key,
                          std::string* value) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
@@ -140,7 +140,7 @@ Status KVEngine::HashGet(StringView collection, StringView key,
 
 Status KVEngine::HashPut(StringView collection, StringView key,
                          StringView value) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
@@ -153,14 +153,16 @@ Status KVEngine::HashPut(StringView collection, StringView key,
   s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
-    if (!CheckKeySize(collection_key) || !CheckValueSize(value)) {
+    if (!checkKeySize(collection_key) || !checkValueSize(value)) {
       s = Status::InvalidDataSize;
     } else {
       auto ul = hash_table_->AcquireLock(collection_key);
       auto ret =
           hlist->Put(key, value, version_controller_.GetCurrentTimestamp());
-      if (ret.s == Status::Ok && ret.existing_record) {
+      if (ret.s == Status::Ok && ret.existing_record &&
+          hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
+        hlist->ReleaseCleaningLock();
       }
       tryCleanCachedOutdatedRecord();
       s = ret.s;
@@ -170,7 +172,7 @@ Status KVEngine::HashPut(StringView collection, StringView key,
 }
 
 Status KVEngine::HashDelete(StringView collection, StringView key) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
 
   if (s != Status::Ok) {
     return s;
@@ -183,13 +185,15 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
   s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
-    if (!CheckKeySize(collection_key)) {
+    if (!checkKeySize(collection_key)) {
       s = Status::InvalidDataSize;
     } else {
       auto ul = hash_table_->AcquireLock(collection_key);
       auto ret = hlist->Delete(key, version_controller_.GetCurrentTimestamp());
-      if (ret.s == Status::Ok && ret.existing_record && ret.write_record) {
+      if (ret.s == Status::Ok && ret.existing_record && ret.write_record &&
+          hlist->TryCleaningLock()) {
         removeAndCacheOutdatedVersion(ret.write_record);
+        hlist->ReleaseCleaningLock();
       }
       tryCleanCachedOutdatedRecord();
       s = ret.s;
@@ -200,7 +204,7 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
 
 Status KVEngine::HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -215,8 +219,10 @@ Status KVEngine::HashModify(StringView collection, StringView key,
     auto ret = hlist->Modify(key, modify_func, cb_args,
                              version_controller_.GetCurrentTimestamp());
     s = ret.s;
-    if (s == Status::Ok && ret.existing_record && ret.write_record) {
+    if (s == Status::Ok && ret.existing_record && ret.write_record &&
+        hlist->TryCleaningLock()) {
       removeAndCacheOutdatedVersion<DLRecord>(ret.write_record);
+      hlist->ReleaseCleaningLock();
     }
     tryCleanCachedOutdatedRecord();
   }
@@ -227,7 +233,7 @@ HashIterator* KVEngine::HashIteratorCreate(StringView collection,
                                            Snapshot* snapshot, Status* status) {
   Status s{Status::Ok};
   HashIterator* ret(nullptr);
-  if (!CheckKeySize(collection)) {
+  if (!checkKeySize(collection)) {
     s = Status::InvalidDataSize;
   }
 
@@ -285,7 +291,7 @@ Status KVEngine::restoreHashHeader(DLRecord* rec) {
   return hash_rebuilder_->AddHeader(rec);
 }
 
-Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimeStampType ts) {
+Status KVEngine::hashWritePrepare(HashWriteArgs& args, TimestampType ts) {
   return args.hlist->PrepareWrite(args, ts);
 }
 

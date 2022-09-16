@@ -224,18 +224,18 @@ class Freelist {
   void OrganizeFreeSpace();
 
  private:
-  // Each access thread caches some freed space entries in small_entry_offsets
-  // and large_entries according to their size. To balance free space entries
+  // Each access thread caches some freed space entries in small_entry_offsets_
+  // and large_entries_ according to their size. To balance free space entries
   // among threads, a background thread will regularly move cached entries to
   // entry pool which shared by all threads.
   struct alignas(64) FlistThreadCache {
     FlistThreadCache(uint32_t max_small_entry_b_size,
                      size_t max_large_entry_size_index)
-        : small_entry_offsets(max_small_entry_b_size),
-          large_entries(max_large_entry_size_index),
-          small_entry_spins(max_small_entry_b_size),
-          large_entry_spins(max_large_entry_size_index),
-          recently_freed(0) {}
+        : small_entry_offsets_(max_small_entry_b_size),
+          large_entries_(max_large_entry_size_index),
+          small_entry_spins_(max_small_entry_b_size),
+          large_entry_spins_(max_large_entry_size_index),
+          num_recently_freed_(0) {}
 
     FlistThreadCache() = delete;
     FlistThreadCache(FlistThreadCache&&) = delete;
@@ -244,19 +244,19 @@ class Freelist {
     // Offsets of small free space entries whose block size smaller than
     // max_small_entry_b_size. Array index indicates block size of entries
     // stored in the vector
-    Array<std::vector<PMemOffsetType>> small_entry_offsets;
+    Array<std::vector<PMemOffsetType>> small_entry_offsets_;
     // Store all large free space entries whose block size larger than
     // max_small_entry_b_size. Array index indicates entries stored in the set
     // have block size between "max_small_entry_b_size + index *
     // kBlockSizeIndexInterval" and "max_small_entry_b_size +
     // (index + 1) * kBlockSizeIndexInterval"
-    Array<std::set<SpaceEntry, SpaceEntry::SpaceCmp>> large_entries;
-    // Protect small_entry_offsets
-    Array<SpinMutex> small_entry_spins;
-    // Protect large_entries
-    Array<SpinMutex> large_entry_spins;
+    Array<std::set<SpaceEntry, SpaceEntry::SpaceCmp>> large_entries_;
+    // Protect small_entry_offsets_
+    Array<SpinMutex> small_entry_spins_;
+    // Protect large_entries_
+    Array<SpinMutex> large_entry_spins_;
     // freed entries after last time organize space in background
-    std::atomic<uint64_t> recently_freed;
+    std::atomic<uint64_t> num_recently_freed_;
   };
 
   uint32_t blockSizeIndex(uint32_t block_size) {

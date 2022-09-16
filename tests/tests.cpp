@@ -64,8 +64,8 @@ class EngineBasicTest : public testing::Test {
     sprintf(cmd, "rm -rf %s && rm -rf %s && rm -rf %s\n", db_path.c_str(),
             backup_path.c_str(), backup_log.c_str());
     int res __attribute__((unused)) = system(cmd);
-    config_option = OptionConfig::Default;
-    cnt = 500;
+    config_option_ = OptionConfig::Default;
+    cnt_ = 500;
   }
 
   virtual void TearDown() {
@@ -90,8 +90,8 @@ class EngineBasicTest : public testing::Test {
   }
 
   bool ChangeConfig() {
-    config_option++;
-    if (config_option >= End) {
+    config_option_++;
+    if (config_option_ >= End) {
       return false;
     } else {
       ReCreateEngine();
@@ -118,7 +118,7 @@ class EngineBasicTest : public testing::Test {
 
   // Return the current configuration.
   Configs CurrentConfigs() {
-    switch (config_option) {
+    switch (config_option_) {
       case MultiThread:
         configs.max_access_threads = 16;
         break;
@@ -148,9 +148,9 @@ class EngineBasicTest : public testing::Test {
       return engine->Delete(key);
     };
 
-    TestEmptyKey("", StringPutFunc, StringGetFunc, StringDeleteFunc);
+    testEmptyKey("", StringPutFunc, StringGetFunc, StringDeleteFunc);
     auto global_func = [=](uint64_t id) {
-      this->CreateBasicOperationTest("", StringPutFunc, StringGetFunc,
+      this->createBasicOperationTest("", StringPutFunc, StringGetFunc,
                                      StringDeleteFunc, id);
     };
     LaunchNThreads(n_threads, global_func);
@@ -181,13 +181,13 @@ class EngineBasicTest : public testing::Test {
 
     ASSERT_EQ(engine->SortedCreate(collection, s_configs), Status::Ok);
 
-    TestDestroy(collection, SortedDestroyFunc, SortedPutFunc, SortedGetFunc,
+    testDestroy(collection, SortedDestroyFunc, SortedPutFunc, SortedGetFunc,
                 SortedDeleteFunc);
 
     ASSERT_EQ(engine->SortedCreate(collection, s_configs), Status::Ok);
 
     auto global_func = [=](uint64_t id) {
-      this->CreateBasicOperationTest(collection, SortedPutFunc, SortedGetFunc,
+      this->createBasicOperationTest(collection, SortedPutFunc, SortedGetFunc,
                                      SortedDeleteFunc, id);
     };
     LaunchNThreads(configs.max_access_threads, global_func);
@@ -221,14 +221,14 @@ class EngineBasicTest : public testing::Test {
       ASSERT_EQ(engine->SortedCreate(thread_local_collection, s_configs),
                 Status::Ok);
 
-      TestEmptyKey(thread_local_collection, SortedPutFunc, SortedGetFunc,
+      testEmptyKey(thread_local_collection, SortedPutFunc, SortedGetFunc,
                    SortedDeleteFunc);
-      TestDestroy(thread_local_collection, SortedDestroyFunc, SortedPutFunc,
+      testDestroy(thread_local_collection, SortedDestroyFunc, SortedPutFunc,
                   SortedGetFunc, SortedDeleteFunc);
 
       ASSERT_EQ(engine->SortedCreate(thread_local_collection, s_configs),
                 Status::Ok);
-      CreateBasicOperationTest(thread_local_collection, SortedPutFunc,
+      createBasicOperationTest(thread_local_collection, SortedPutFunc,
                                SortedGetFunc, SortedDeleteFunc, id);
     };
     LaunchNThreads(configs.max_access_threads, AccessTest);
@@ -265,9 +265,9 @@ class EngineBasicTest : public testing::Test {
       }
       ASSERT_EQ(collection_size, entries);
       if (is_local) {
-        ASSERT_EQ(cnt, entries);
+        ASSERT_EQ(cnt_, entries);
       } else {
-        ASSERT_EQ(cnt * configs.max_access_threads, entries);
+        ASSERT_EQ(cnt_ * configs.max_access_threads, entries);
       }
 
       // backward iterator
@@ -291,7 +291,7 @@ class EngineBasicTest : public testing::Test {
   }
 
  private:
-  void TestEmptyKey(const std::string& collection, PutOpsFunc PutFunc,
+  void testEmptyKey(const std::string& collection, PutOpsFunc PutFunc,
                     GetOpsFunc GetFunc, DeleteOpsFunc DeleteFunc) {
     std::string key, val, got_val;
     key = "", val = "val";
@@ -303,7 +303,7 @@ class EngineBasicTest : public testing::Test {
     engine->ReleaseAccessThread();
   }
 
-  void TestDestroy(const std::string& collection, DestroyFunc DestroyFunc,
+  void testDestroy(const std::string& collection, DestroyFunc DestroyFunc,
                    PutOpsFunc PutFunc, GetOpsFunc GetFunc,
                    DeleteOpsFunc DeleteFunc) {
     std::string key{"test_key"};
@@ -318,11 +318,11 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
   }
 
-  void CreateBasicOperationTest(const std::string& collection,
+  void createBasicOperationTest(const std::string& collection,
                                 PutOpsFunc PutFunc, GetOpsFunc GetFunc,
                                 DeleteOpsFunc DeleteFunc, uint32_t id) {
     std::string val1, val2, got_val1, got_val2;
-    int t_cnt = cnt;
+    int t_cnt = cnt_;
     while (t_cnt--) {
       std::string key1(std::to_string(id) + "_" + std::to_string(t_cnt));
       std::string key2(std::to_string(id) + "@" + std::to_string(t_cnt));
@@ -351,11 +351,10 @@ class EngineBasicTest : public testing::Test {
     }
   }
 
- private:
   // Sequence of option configurations to try
   enum OptionConfig { Default, MultiThread, OptRestore, End };
-  int config_option;
-  int cnt;
+  int config_option_;
+  int cnt_;
 };
 
 class BatchWriteTest : public EngineBasicTest {};
@@ -370,7 +369,6 @@ TEST_F(EngineBasicTest, TestUniqueKey) {
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
-
   ASSERT_EQ(engine->Put(str, val), Status::Ok);
 
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
@@ -2092,8 +2090,8 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   });
 
   // register compare function
-  engine->RegisterComparator("collection0_cmp", cmp0);
-  engine->RegisterComparator("collection1_cmp", cmp1);
+  engine->registerComparator("collection0_cmp", cmp0);
+  engine->registerComparator("collection1_cmp", cmp1);
   for (size_t i = 0; i < collections.size(); ++i) {
     Status s;
     if (i < 2) {
@@ -3087,7 +3085,7 @@ TEST_F(EngineBasicTest, TestHashTableRangeIter) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->Reset();
   SyncPoint::GetInstance()->LoadDependency(
-      {{"ScanHashTable", "KVEngine::StringPutImpl::BeforeLock"}});
+      {{"ScanHashTable", "KVEngine::stringPutImpl::BeforeLock"}});
   SyncPoint::GetInstance()->EnableProcessing();
 
   auto StringUpdate = [&]() {
@@ -3280,9 +3278,9 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
   auto ExpiredClean = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     auto cleaner = test_kvengine->EngineCleaner();
-    cleaner->StartClean();
+    cleaner->Start();
     sleep(2);
-    cleaner->CloseAllWorkers();
+    cleaner->Close();
   };
 
   {
@@ -3379,9 +3377,9 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
   auto backgroundCleaner = [&]() {
     auto test_kvengine = static_cast<KVEngine*>(engine);
     auto cleaner = test_kvengine->EngineCleaner();
-    cleaner->StartClean();
+    cleaner->Start();
     sleep(2);
-    cleaner->CloseAllWorkers();
+    cleaner->Close();
   };
   std::vector<std::thread> ts;
   ts.emplace_back(PutAndDeleteSorted);
@@ -3422,7 +3420,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
         *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
-  SyncPoint::GetInstance()->SetCallBack("KVEngine::Cleaner::AdjustThread",
+  SyncPoint::GetInstance()->SetCallBack("KVEngine::Cleaner::AdjustCleanWorkers",
                                         [&](void* advice_thread_num) {
                                           if (op == OpType::update) {
                                             *((size_t*)advice_thread_num) = 6;
@@ -3447,7 +3445,7 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
   auto test_kvengine = static_cast<KVEngine*>(engine);
   auto space_cleaner = test_kvengine->EngineCleaner();
-  space_cleaner->StartClean();
+  space_cleaner->Start();
 
   size_t cnt = 16;
   // only insert

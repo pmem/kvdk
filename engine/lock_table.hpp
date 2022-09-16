@@ -7,68 +7,69 @@
 
 namespace KVDK_NAMESPACE {
 
+// This class manages a table of locks, which indexed by hash value. It is able
+// to lock multiple locks in the table by sequence to avoid dead lock
 class LockTable {
  public:
-  using HashType = std::uint64_t;
+  using HashValueType = std::uint64_t;
   using MutexType = SpinMutex;
   using ULockType = std::unique_lock<MutexType>;
-  using GuardType = std::vector<ULockType>;
+  using MultiGuardType = std::vector<ULockType>;
 
- private:
-  std::vector<MutexType> mutexes;
+  LockTable(size_t n) : mutexes_{n} {}
 
- public:
-  LockTable(size_t n) : mutexes{n} {}
-
-  std::unique_lock<MutexType> AcquireLock(HashType hash) {
+  std::unique_lock<MutexType> AcquireLock(HashValueType hash) {
     return std::unique_lock<MutexType>(*Mutex(hash));
   }
 
-  void Lock(HashType hash) { Mutex(hash)->lock(); }
+  void Lock(HashValueType hash) { Mutex(hash)->lock(); }
 
-  void Unlock(HashType hash) { Mutex(hash)->unlock(); }
+  void Unlock(HashValueType hash) { Mutex(hash)->unlock(); }
 
-  void MultiLock(std::vector<HashType> const& hashes) {
+  void MultiLock(std::vector<HashValueType> const& hashes) {
     auto sorted = rearrange(hashes);
-    for (HashType hash : sorted) {
+    for (HashValueType hash : sorted) {
       Lock(hash);
     }
   }
 
-  void MultiLock(std::initializer_list<HashType> hashes) {
-    MultiLock(std::vector<HashType>{hashes});
+  void MultiLock(std::initializer_list<HashValueType> hashes) {
+    MultiLock(std::vector<HashValueType>{hashes});
   }
 
-  void MultiUnlock(std::vector<HashType> const& hashes) {
+  void MultiUnlock(std::vector<HashValueType> const& hashes) {
     auto sorted = rearrange(hashes);
-    for (HashType hash : sorted) {
+    for (HashValueType hash : sorted) {
       Unlock(hash);
     }
   }
 
-  void MultiUnlock(std::initializer_list<HashType> hashes) {
-    MultiUnlock(std::vector<HashType>{hashes});
+  void MultiUnlock(std::initializer_list<HashValueType> hashes) {
+    MultiUnlock(std::vector<HashValueType>{hashes});
   }
 
-  GuardType MultiGuard(std::vector<HashType> const& hashes) {
+  MultiGuardType MultiGuard(std::vector<HashValueType> const& hashes) {
     auto sorted = rearrange(hashes);
-    GuardType guard;
-    for (HashType hash : sorted) {
+    MultiGuardType guard;
+    for (HashValueType hash : sorted) {
       guard.emplace_back(*Mutex(hash));
     }
     return guard;
   }
 
-  GuardType MultiGuard(std::initializer_list<HashType> hashes) {
-    return MultiGuard(std::vector<HashType>{hashes});
+  MultiGuardType MultiGuard(std::initializer_list<HashValueType> hashes) {
+    return MultiGuard(std::vector<HashValueType>{hashes});
   }
 
-  MutexType* Mutex(HashType hash) { return &mutexes[hash % mutexes.size()]; }
+  MutexType* Mutex(HashValueType hash) {
+    return &mutexes_[hash % mutexes_.size()];
+  }
 
  private:
-  std::vector<HashType> rearrange(std::vector<HashType> const& hashes) {
-    std::vector<HashType> ret{hashes};
-    size_t N = mutexes.size();
+  std::vector<HashValueType> rearrange(
+      std::vector<HashValueType> const& hashes) {
+    std::vector<HashValueType> ret{hashes};
+    size_t N = mutexes_.size();
     for (auto& hash : ret) {
       hash %= N;
     }
@@ -77,6 +78,8 @@ class LockTable {
     ret.resize(new_sz);
     return ret;
   }
+
+  std::vector<MutexType> mutexes_;
 };
 
 }  // namespace KVDK_NAMESPACE

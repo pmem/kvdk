@@ -87,7 +87,7 @@ class KVEngine : public Engine {
 
   Status TypeOf(StringView key, ValueType* type) final;
 
-  // Global Anonymous Collection
+  // String
   Status Get(const StringView key, std::string* value) override;
   Status Put(const StringView key, const StringView value,
              const WriteOptions& write_options) override;
@@ -95,7 +95,7 @@ class KVEngine : public Engine {
   Status Modify(const StringView key, ModifyFunc modify_func, void* modify_args,
                 const WriteOptions& options) override;
 
-  // Sorted Collection
+  // Sorted
   Status SortedCreate(const StringView collection_name,
                       const SortedCollectionConfigs& configs) override;
   Status SortedDestroy(const StringView collection_name) override;
@@ -109,79 +109,6 @@ class KVEngine : public Engine {
   SortedIterator* SortedIteratorCreate(const StringView collection,
                                        Snapshot* snapshot, Status* s) override;
   void SortedIteratorRelease(SortedIterator* sorted_iterator) override;
-
-  void ReleaseAccessThread() override { access_thread.Release(); }
-
-  const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
-  GetSkiplists() {
-    return skiplists_;
-  };
-
-  // Used by test case.
-  HashTable* GetHashTable() { return hash_table_.get(); }
-
-  void TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
-
-  Cleaner* EngineCleaner() { return &cleaner_; }
-
- private:
-  friend OldRecordsCleaner;
-  friend Cleaner;
-
-  KVEngine(const Configs& configs)
-      : engine_thread_cache_(configs.max_access_threads),
-        cleaner_thread_cache_(configs.max_access_threads),
-        version_controller_(configs.max_access_threads),
-        old_records_cleaner_(this, configs.max_access_threads),
-        cleaner_(this, configs.clean_threads),
-        comparators_(configs.comparator){};
-
-  struct EngineThreadCache {
-    EngineThreadCache() = default;
-
-    char* batch_log = nullptr;
-
-    // Info used in recovery
-    uint64_t newest_restored_ts = 0;
-    std::unordered_map<uint64_t, int> visited_skiplist_ids{};
-  };
-
-  struct CleanerThreadCache {
-    template <typename T>
-    struct OutdatedRecord {
-      OutdatedRecord(T* _record, TimeStampType _release_time)
-          : record(_record), release_time(_release_time) {}
-
-      T* record;
-      TimeStampType release_time;
-    };
-
-    CleanerThreadCache() = default;
-    std::deque<OutdatedRecord<StringRecord>> outdated_string_records;
-    std::deque<OutdatedRecord<DLRecord>> outdated_dl_records;
-    SpinMutex mtx;
-  };
-
-  bool CheckKeySize(const StringView& key) { return key.size() <= UINT16_MAX; }
-
-  bool CheckValueSize(const StringView& value) {
-    return value.size() <= UINT32_MAX;
-  }
-
-  // Init basic components of the engine
-  Status Init(const std::string& name, const Configs& configs);
-
-  Status HashGetImpl(const StringView& key, std::string* value,
-                     uint16_t type_mask);
-
-  inline Status MaybeInitAccessThread() {
-    return thread_manager_->MaybeInitThread(access_thread);
-  }
-
-  bool RegisterComparator(const StringView& collection_name,
-                          Comparator comp_func) {
-    return comparators_.RegisterComparator(collection_name, comp_func);
-  }
 
   // List
   Status ListCreate(StringView key) final;
@@ -241,6 +168,93 @@ class KVEngine : public Engine {
                      void* cb_args) final;
   std::unique_ptr<VHashIterator> VHashIteratorCreate(StringView key,
                                                      Status* s) final;
+
+  // BatchWrite
+  // It takes 3 stages
+  // Stage 1: Preparation
+  //  BatchWrite() sort the keys and remove duplicants,
+  //  lock the keys/fields in HashTable,
+  //  and allocate spaces and persist BatchWriteLog
+  // Stage 2: Execution
+  //  Batches are dispatched to different data types
+  //  Each data type update keys/fields
+  //  Outdated records are not purged in this stage.
+  // Stage 3: Publish
+  //  Each data type commits its batch, clean up outdated data.
+  Status BatchWrite(std::unique_ptr<WriteBatch> const& batch) final;
+  std::unique_ptr<WriteBatch> WriteBatchCreate() final {
+    return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
+  }
+
+  void ReleaseAccessThread() override { access_thread.Release(); }
+
+  // For test cases
+  const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
+  GetSkiplists() {
+    return skiplists_;
+  };
+  Cleaner* EngineCleaner() { return &cleaner_; }
+  HashTable* GetHashTable() { return hash_table_.get(); }
+  void TestCleanOutDated(size_t start_slot_idx, size_t end_slot_idx);
+
+ private:
+  friend OldRecordsCleaner;
+  friend Cleaner;
+
+  KVEngine(const Configs& configs)
+      : engine_thread_cache_(configs.max_access_threads),
+        cleaner_thread_cache_(configs.max_access_threads),
+        version_controller_(configs.max_access_threads),
+        old_records_cleaner_(this, configs.max_access_threads),
+        cleaner_(this, configs.clean_threads),
+        comparators_(configs.comparator){};
+
+  struct EngineThreadCache {
+    EngineThreadCache() = default;
+
+    char* batch_log = nullptr;
+
+    // Info used in recovery
+    uint64_t newest_restored_ts = 0;
+    std::unordered_map<uint64_t, int> visited_skiplist_ids{};
+  };
+
+  struct CleanerThreadCache {
+    template <typename T>
+    struct OutdatedRecord {
+      OutdatedRecord(T* _record, TimestampType _release_time)
+          : record(_record), release_time(_release_time) {}
+
+      T* record;
+      TimestampType release_time;
+    };
+
+    CleanerThreadCache() = default;
+    std::deque<OutdatedRecord<StringRecord>> outdated_string_records;
+    std::deque<OutdatedRecord<DLRecord>> outdated_dl_records;
+    SpinMutex mtx;
+  };
+
+  bool checkKeySize(const StringView& key) { return key.size() <= UINT16_MAX; }
+
+  bool checkValueSize(const StringView& value) {
+    return value.size() <= UINT32_MAX;
+  }
+
+  // Init basic components of the engine
+  Status init(const std::string& name, const Configs& configs);
+
+  Status hashGetImpl(const StringView& key, std::string* value,
+                     uint16_t type_mask);
+
+  inline Status maybeInitAccessThread() {
+    return thread_manager_->MaybeInitThread(access_thread);
+  }
+
+  bool registerComparator(const StringView& collection_name,
+                          Comparator comp_func) {
+    return comparators_.RegisterComparator(collection_name, comp_func);
+  }
 
  private:
   // Look up a first level key in hash table(e.g. collections or string, not
@@ -359,48 +373,31 @@ class KVEngine : public Engine {
 
   Status maybeInitBatchLogFile();
 
-  // BatchWrite takes 3 stages
-  // Stage 1: Preparation
-  //  BatchWrite() sort the keys and remove duplicants,
-  //  lock the keys/fields in HashTable,
-  //  and allocate spaces and persist BatchWriteLog
-  // Stage 2: Execution
-  //  Batches are dispatched to different data types
-  //  Each data type update keys/fields
-  //  Outdated records are not purged in this stage.
-  // Stage 3: Publish
-  //  Each data type commits its batch, clean up outdated data.
-  Status BatchWrite(std::unique_ptr<WriteBatch> const& batch) final;
-
-  std::unique_ptr<WriteBatch> WriteBatchCreate() final {
-    return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
-  }
-
-  Status StringPutImpl(const StringView& key, const StringView& value,
+  Status stringPutImpl(const StringView& key, const StringView& value,
                        const WriteOptions& write_options);
 
-  Status StringDeleteImpl(const StringView& key);
+  Status stringDeleteImpl(const StringView& key);
 
-  Status stringWritePrepare(StringWriteArgs& args, TimeStampType ts);
+  Status stringWritePrepare(StringWriteArgs& args, TimestampType ts);
   Status stringWrite(StringWriteArgs& args);
   Status stringWritePublish(StringWriteArgs const& args);
-  Status stringRollback(TimeStampType ts,
+  Status stringRollback(TimestampType ts,
                         BatchWriteLog::StringLogEntry const& entry);
 
-  Status SortedPutImpl(Skiplist* skiplist, const StringView& collection_key,
+  Status sortedPutImpl(Skiplist* skiplist, const StringView& collection_key,
                        const StringView& value);
 
-  Status SortedDeleteImpl(Skiplist* skiplist, const StringView& user_key);
+  Status sortedDeleteImpl(Skiplist* skiplist, const StringView& user_key);
 
   Status restoreExistingData();
 
   Status restoreDataFromBackup(const std::string& backup_log);
-  Status sortedWritePrepare(SortedWriteArgs& args, TimeStampType ts);
+  Status sortedWritePrepare(SortedWriteArgs& args, TimestampType ts);
   Status sortedWrite(SortedWriteArgs& args);
   Status sortedWritePublish(SortedWriteArgs const& args);
   Status sortedRollback(BatchWriteLog::SortedLogEntry const& entry);
 
-  Status RestoreData();
+  Status restoreData();
 
   Status restoreSortedHeader(DLRecord* header);
 
@@ -409,11 +406,11 @@ class KVEngine : public Engine {
   Status restoreStringRecord(StringRecord* pmem_record,
                              const DataEntry& cached_entry);
 
-  bool ValidateRecord(void* data_record);
+  bool validateRecord(void* data_record);
 
   Status initOrRestoreCheckpoint();
 
-  Status PersistOrRecoverImmutableConfigs();
+  Status persistOrRecoverImmutableConfigs();
 
   Status batchWriteImpl(WriteBatchImpl const& batch);
 
@@ -442,12 +439,12 @@ class KVEngine : public Engine {
   Status restoreHashHeader(DLRecord* rec);
 
   Status hashListWrite(HashWriteArgs& args);
-  Status hashWritePrepare(HashWriteArgs& args, TimeStampType ts);
+  Status hashWritePrepare(HashWriteArgs& args, TimestampType ts);
   Status hashListPublish(HashWriteArgs const& args);
   Status hashListRollback(BatchWriteLog::HashLogEntry const& entry);
 
   /// Other
-  Status CheckConfigs(const Configs& configs);
+  Status checkConfigs(const Configs& configs);
 
   void purgeAndFreeStringRecords(const std::vector<StringRecord*>& old_offset);
 
@@ -455,7 +452,7 @@ class KVEngine : public Engine {
 
   // remove outdated records which without snapshot hold.
   template <typename T>
-  T* removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts);
+  T* removeOutDatedVersion(T* record, TimestampType min_snapshot_ts);
 
   template <typename T>
   void removeOutdatedCollection(T* collection);
@@ -469,13 +466,9 @@ class KVEngine : public Engine {
   double cleanOutDated(PendingCleanRecords& pending_clean_records,
                        size_t start_slot_idx, size_t slot_block_size);
 
-  void purgeAndFreeAllType(PendingCleanRecords& pending_clean_records);
+  void purgeAndFree(PendingCleanRecords& pending_clean_records);
 
-  void delayFree(DLRecord* addr);
-
-  void directFree(DLRecord* addr);
-
-  TimeStampType getTimestamp() {
+  TimestampType getTimestamp() {
     return version_controller_.GetCurrentTimestamp();
   }
 
@@ -552,7 +545,7 @@ class KVEngine : public Engine {
   }
 
   // If this instance is a backup of another kvdk instance
-  bool RecoverToCheckpoint() {
+  bool recoverToCheckpoint() {
     return configs_.recover_to_checkpoint && persist_checkpoint_->Valid();
   }
 
@@ -571,7 +564,7 @@ class KVEngine : public Engine {
   template <typename T>
   void cleanOutdatedRecordImpl(T* record);
   // Cleaner thread fetches cached outdated records
-  void FetchCachedOutdatedVersion(
+  void fetchCachedOutdatedVersion(
       PendingCleanRecords& pending_clean_records,
       std::vector<StringRecord*>& purge_string_records,
       std::vector<DLRecord*>& purge_dl_records);

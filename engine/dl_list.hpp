@@ -24,7 +24,7 @@ class DLList {
 
   struct WriteArgs {
     WriteArgs(const StringView& _key, const StringView& _val, RecordType _type,
-              RecordStatus _status, TimeStampType _ts, const SpaceEntry& _space)
+              RecordStatus _status, TimestampType _ts, const SpaceEntry& _space)
         : key(_key),
           val(_val),
           type(_type),
@@ -43,7 +43,7 @@ class DLList {
     StringView val;
     RecordType type;
     RecordStatus status;
-    TimeStampType ts;
+    TimestampType ts;
     SpaceEntry space;
   };
 
@@ -87,15 +87,14 @@ class DLList {
 
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
-  LockTable::GuardType acquireRecordLock(DLRecord* record) {
+  LockTable::MultiGuardType acquireRecordLock(DLRecord* record) {
     return acquireRecordLock(record, pmem_allocator_, lock_table_);
   }
 
   // lock position of "record" to replace or unlink it by locking its prev
   // DLRecord and itself
-  static LockTable::GuardType acquireRecordLock(DLRecord* record,
-                                                PMEMAllocator* pmem_allocator,
-                                                LockTable* lock_table) {
+  static LockTable::MultiGuardType acquireRecordLock(
+      DLRecord* record, PMEMAllocator* pmem_allocator, LockTable* lock_table) {
     while (1) {
       PMemOffsetType prev_offset = record->prev;
       PMemOffsetType next_offset = record->next;
@@ -116,7 +115,7 @@ class DLList {
     linkRecord(prev, next, linking_record, pmem_allocator_);
   }
 
-  static LockTable::HashType recordHash(const DLRecord* record) {
+  static LockTable::HashValueType recordHash(const DLRecord* record) {
     kvdk_assert(record != nullptr, "");
     return XXH3_64bits(record, sizeof(const DLRecord*));
   }
@@ -197,7 +196,7 @@ class DLListDataIterator {
  private:
   DLRecord* findValidVersion(DLRecord* pmem_record) {
     DLRecord* curr = pmem_record;
-    TimeStampType ts = snapshot_->GetTimestamp();
+    TimestampType ts = snapshot_->GetTimestamp();
     while (curr != nullptr && curr->GetTimestamp() > ts) {
       curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),

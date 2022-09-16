@@ -26,38 +26,38 @@ struct PendingFreeSpaceEntries {
   std::vector<SpaceEntry> entries;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely free these entries
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingFreeSpaceEntry {
   SpaceEntry entry;
   // Indicate timestamp of the oldest refered snapshot of kvdk instance while we
   // could safely free this entry
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingPurgeStrRecords {
   PendingPurgeStrRecords(std::vector<StringRecord*>&& _records,
-                         TimeStampType _release_time)
+                         TimestampType _release_time)
       : records(_records), release_time(_release_time) {}
 
   std::vector<StringRecord*> records;
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingPurgeDLRecords {
   PendingPurgeDLRecords(std::vector<DLRecord*>&& _records,
-                        TimeStampType _release_time)
+                        TimestampType _release_time)
       : records(_records), release_time(_release_time) {}
 
   std::vector<DLRecord*> records;
-  TimeStampType release_time;
+  TimestampType release_time;
 };
 
 struct PendingCleanRecords {
-  std::deque<std::pair<TimeStampType, List*>> outdated_lists;
-  std::deque<std::pair<TimeStampType, HashList*>> outdated_hlists;
-  std::deque<std::pair<TimeStampType, Skiplist*>> outdated_skiplists;
+  std::deque<std::pair<TimestampType, List*>> outdated_lists;
+  std::deque<std::pair<TimestampType, HashList*>> outdated_hlists;
+  std::deque<std::pair<TimestampType, Skiplist*>> outdated_skiplists;
   std::deque<PendingPurgeStrRecords> pending_purge_strings;
   std::deque<PendingPurgeDLRecords> pending_purge_dls;
   std::deque<Skiplist*> no_hash_skiplists;
@@ -80,65 +80,131 @@ class Cleaner {
   Cleaner(KVEngine* kv_engine, int64_t max_cleaner_threads)
       : kv_engine_(kv_engine),
         max_thread_num_(max_cleaner_threads),
+        min_thread_num_(1),
         close_(false),
         start_slot_(0),
-        live_thread_num_(0),
-        workers_(max_cleaner_threads) {
-    for (size_t thread_id = 0; thread_id < max_thread_num_; ++thread_id) {
-      idled_workers_.push_back(thread_id);
+        active_clean_workers_(0),
+        main_worker_([this]() { this->mainWork(); }),
+        clean_workers_(max_thread_num_ - 1 /*1 for main worker*/) {
+    for (auto& w : clean_workers_) {
+      w.Init([this]() { this->cleanWork(); });
     }
   }
 
-  ~Cleaner() { CloseAllWorkers(); }
+  ~Cleaner() { Close(); }
 
-  void StartClean();
-  void CloseAllWorkers() {
+  void Start() {
+    if (!close_ && min_thread_num_ > 0) {
+      main_worker_.Run();
+    }
+  }
+
+  void Close() {
     close_ = true;
-    for (size_t i = 0; i < workers_.size(); ++i) {
-      if (workers_[i].worker.joinable()) {
-        workers_[i].finish = true;
-        workers_[i].worker.join();
-      }
+    main_worker_.Join();
+    for (auto& w : clean_workers_) {
+      w.Join();
     }
   }
-  void AdjustThread(size_t advice_thread_num);
-  size_t ActiveThreadNum() { return live_thread_num_.load(); }
+
+  void AdjustCleanWorkers(size_t advice_workers_num);
+
+  size_t ActiveThreadNum() { return active_clean_workers_.load() + 1; }
 
   double SearchOutdatedCollections();
   void FetchOutdatedCollections(PendingCleanRecords& pending_clean_records);
 
  private:
-  struct ThreadWorker {
-    std::atomic_bool finish{true};
-    std::thread worker;
+  class Worker {
+   public:
+    ~Worker() { Join(); }
+
+    Worker(std::function<void()> f) { Init(f); }
+
+    Worker() = default;
+
+    void Init(std::function<void()> f) {
+      Join();
+      func = f;
+      std::unique_lock<SpinMutex> ul(spin);
+      join_ = false;
+      keep_work_ = false;
+
+      auto work = [&]() {
+        while (true) {
+          {
+            std::unique_lock<SpinMutex> ul(spin);
+            while (!keep_work_ && !join_) {
+              cv.wait(ul);
+            }
+            if (join_) {
+              return;
+            }
+          }
+          func();
+        }
+      };
+      worker_thread = std::thread(work);
+    }
+
+    void Run() {
+      std::unique_lock<SpinMutex> ul(spin);
+      keep_work_ = true;
+      cv.notify_all();
+    }
+
+    void Stop() {
+      std::unique_lock<SpinMutex> ul(spin);
+      keep_work_ = false;
+    }
+
+    void Join() {
+      {
+        std::unique_lock<SpinMutex> ul(spin);
+        keep_work_ = false;
+        join_ = true;
+        cv.notify_all();
+      }
+      if (worker_thread.joinable()) {
+        worker_thread.join();
+      }
+    }
+
+   private:
+    bool keep_work_;
+    bool join_;
+    std::condition_variable_any cv;
+    SpinMutex spin;
+    std::thread worker_thread;
+    std::function<void(void)> func;
   };
+
   KVEngine* kv_engine_;
 
   size_t max_thread_num_;
-  size_t min_thread_num_ = 1;
-  std::atomic_bool close_;
-  std::atomic_int64_t start_slot_;
-  std::atomic<size_t> live_thread_num_;
-  std::vector<ThreadWorker> workers_;
-  std::deque<size_t> idled_workers_;
-  std::deque<size_t> actived_workers_;
+  size_t min_thread_num_;
+  std::atomic<bool> close_;
+  std::atomic<int64_t> start_slot_;
+  std::atomic<size_t> active_clean_workers_;
+  Worker main_worker_;
+  std::vector<Worker> clean_workers_;
 
   struct OutDatedCollections {
     struct TimeStampCmp {
      public:
-      bool operator()(const std::pair<Collection*, TimeStampType> a,
-                      const std::pair<Collection*, TimeStampType> b) const {
+      bool operator()(const std::pair<Collection*, TimestampType> a,
+                      const std::pair<Collection*, TimestampType> b) const {
         if (a.second < b.second) return true;
         if (a.second == b.second && a.first->ID() < b.first->ID()) return true;
         return false;
       }
     };
-    using ListQueue = std::set<std::pair<List*, TimeStampType>, TimeStampCmp>;
+    using ListQueue = std::set<std::pair<List*, TimestampType>, TimeStampCmp>;
     using HashListQueue =
-        std::set<std::pair<HashList*, TimeStampType>, TimeStampCmp>;
+        std::set<std::pair<HashList*, TimestampType>, TimeStampCmp>;
 
     using SkiplistQueue =
-        std::set<std::pair<Skiplist*, TimeStampType>, TimeStampCmp>;
+        std::set<std::pair<Skiplist*, TimestampType>, TimeStampCmp>;
 
     SpinMutex queue_mtx;
     ListQueue lists;
@@ -151,8 +217,8 @@ class Cleaner {
   OutDatedCollections outdated_collections_;
 
  private:
-  void doCleanWork(size_t thread_id);
-  void mainWorker();
+  void cleanWork();
+  void mainWork();
 };
 
 }  // namespace KVDK_NAMESPACE

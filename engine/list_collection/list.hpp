@@ -33,8 +33,8 @@ class List : public Collection {
 
    private:
     friend List;
-    std::vector<std::deque<DLRecord*>::iterator> to_pop{};
-    TimeStampType ts;
+    std::vector<std::deque<DLRecord*>::iterator> to_pop_{};
+    TimestampType timestamp_;
   };
 
   struct PushNArgs {
@@ -43,7 +43,7 @@ class List : public Collection {
     std::vector<SpaceEntry> spaces;
     std::vector<StringView> elems;
     ListPos pos;
-    TimeStampType ts;
+    TimestampType ts;
   };
 
   const DLRecord* HeaderRecord() const { return dl_list_.Header(); }
@@ -54,30 +54,30 @@ class List : public Collection {
     return HeaderRecord()->GetExpireTime();
   }
 
-  TimeStampType GetTimeStamp() const { return HeaderRecord()->GetTimestamp(); }
+  TimestampType GetTimeStamp() const { return HeaderRecord()->GetTimestamp(); }
 
   bool HasExpired() const final { return HeaderRecord()->HasExpired(); }
 
   WriteResult SetExpireTime(ExpireTimeType expired_time,
-                            TimeStampType timestamp);
+                            TimestampType timestamp);
 
-  WriteResult PushFront(const StringView& elem, TimeStampType ts);
+  WriteResult PushFront(const StringView& elem, TimestampType ts);
 
-  WriteResult PushBack(const StringView& elem, TimeStampType ts);
+  WriteResult PushBack(const StringView& elem, TimestampType ts);
 
-  WriteResult PopFront(TimeStampType ts);
+  WriteResult PopFront(TimestampType ts);
 
-  WriteResult PopBack(TimeStampType ts);
+  WriteResult PopBack(TimestampType ts);
 
   WriteResult InsertBefore(const StringView& elem,
-                           const StringView& existing_elem, TimeStampType ts);
+                           const StringView& existing_elem, TimestampType ts);
 
   WriteResult InsertAfter(const StringView& elem,
-                          const StringView& existing_elem, TimeStampType ts);
+                          const StringView& existing_elem, TimestampType ts);
 
-  WriteResult InsertAt(const StringView& elem, long index, TimeStampType ts);
+  WriteResult InsertAt(const StringView& elem, long index, TimestampType ts);
 
-  WriteResult Erase(long index, TimeStampType ts);
+  WriteResult Erase(long index, TimestampType ts);
 
   Status Front(std::string* elem);
 
@@ -87,7 +87,7 @@ class List : public Collection {
     return dl_list_.Replace(old_record, new_record);
   }
 
-  WriteResult Update(long index, const StringView& elem, TimeStampType ts);
+  WriteResult Update(long index, const StringView& elem, TimestampType ts);
 
   void AddLiveRecord(DLRecord* elem, ListPos pos) {
     if (pos == ListPos::Front) {
@@ -110,9 +110,9 @@ class List : public Collection {
   void Destroy();
 
   PushNArgs PreparePushN(ListPos pos, const std::vector<StringView>& elems,
-                         TimeStampType ts);
+                         TimestampType ts);
 
-  PopNArgs PreparePopN(ListPos pos, size_t n, TimeStampType ts,
+  PopNArgs PreparePopN(ListPos pos, size_t n, TimestampType ts,
                        std::vector<std::string>* elems);
 
   Status PushN(const PushNArgs& args);

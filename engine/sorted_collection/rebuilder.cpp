@@ -117,7 +117,7 @@ Status SortedCollectionRebuilder::Rollback(
 
 Status SortedCollectionRebuilder::initRebuildLists() {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-  Status s = kv_engine_->MaybeInitAccessThread();
+  Status s = kv_engine_->maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -253,7 +253,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   std::vector<std::future<Status>> fs;
 
   auto rebuild_segments_index = [&]() -> Status {
-    Status s = this->kv_engine_->MaybeInitAccessThread();
+    Status s = this->kv_engine_->maybeInitAccessThread();
     if (s != Status::Ok) {
       return s;
     }
@@ -492,7 +492,7 @@ Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
 }
 
 Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
-  Status s = kv_engine_->MaybeInitAccessThread();
+  Status s = kv_engine_->maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }

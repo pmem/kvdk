@@ -127,7 +127,7 @@ int KVDKRegisterCompFunc(KVDKEngine* engine, const char* compara_name,
                              const StringView& target) -> int {
     return compare(src.data(), src.size(), target.data(), target.size());
   };
-  return engine->rep->RegisterComparator(StringView(compara_name, compara_len),
+  return engine->rep->registerComparator(StringView(compara_name, compara_len),
                                          comp_func);
 }
 

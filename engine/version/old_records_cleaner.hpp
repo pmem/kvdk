@@ -39,8 +39,6 @@ class OldRecordsCleaner {
     assert(kv_engine_ != nullptr);
   }
 
-  void PushToPendingFree(void* addr, TimeStampType ts);
-
   // Warning: not thread safe. Must be called during kv_engine initialization.
   void RegisterDelayDeleter(IDeleter& deleter);
 

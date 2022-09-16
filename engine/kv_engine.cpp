@@ -29,6 +29,9 @@
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {
+// fsdax mode align to 2MB by default.
+constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
+
 void PendingBatch::PersistFinish() {
   num_kv = 0;
   stage = Stage::Finish;
@@ -36,7 +39,7 @@ void PendingBatch::PersistFinish() {
 }
 
 void PendingBatch::PersistProcessing(const std::vector<PMemOffsetType>& records,
-                                     TimeStampType ts) {
+                                     TimestampType ts) {
   pmem_memcpy_persist(record_offsets, records.data(), records.size() * 8);
   timestamp = ts;
   num_kv = records.size();
@@ -58,7 +61,7 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
                       const Configs& configs) {
   GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
   KVEngine* engine = new KVEngine(configs);
-  Status s = engine->Init(name, configs);
+  Status s = engine->init(name, configs);
   if (s == Status::Ok) {
     s = engine->restoreExistingData();
   }
@@ -80,7 +83,7 @@ Status KVEngine::Restore(const std::string& engine_path,
       "Restoring kvdk instance from backup log %s to engine path %s\n",
       backup_log.c_str(), engine_path.c_str());
   KVEngine* engine = new KVEngine(configs);
-  Status s = engine->Init(engine_path, configs);
+  Status s = engine->init(engine_path, configs);
   if (s == Status::Ok) {
     s = engine->restoreDataFromBackup(backup_log);
   }
@@ -120,12 +123,12 @@ void KVEngine::startBackgroundWorks() {
   TEST_SYNC_POINT_CALLBACK("KVEngine::backgroundCleaner::NothingToDo",
                            &close_reclaimer);
   if (!close_reclaimer) {
-    cleaner_.StartClean();
+    cleaner_.Start();
   }
 }
 
 void KVEngine::terminateBackgroundWorks() {
-  cleaner_.CloseAllWorkers();
+  cleaner_.Close();
   {
     std::unique_lock<SpinMutex> ul(bg_work_signals_.terminating_lock);
     bg_work_signals_.terminating = true;
@@ -138,7 +141,7 @@ void KVEngine::terminateBackgroundWorks() {
   }
 }
 
-Status KVEngine::Init(const std::string& name, const Configs& configs) {
+Status KVEngine::init(const std::string& name, const Configs& configs) {
   Status s;
   if (!configs.use_devdax_mode) {
     dir_ = format_dir_path(name);
@@ -176,7 +179,7 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
     }
   }
 
-  s = PersistOrRecoverImmutableConfigs();
+  s = persistOrRecoverImmutableConfigs();
   if (s != Status::Ok) {
     return s;
   }
@@ -200,12 +203,12 @@ Status KVEngine::Init(const std::string& name, const Configs& configs) {
 
   s = initOrRestoreCheckpoint();
 
-  RegisterComparator("default", compare_string_view);
+  registerComparator("default", compare_string_view);
   return s;
 }
 
-Status KVEngine::RestoreData() {
-  Status s = MaybeInitAccessThread();
+Status KVEngine::restoreData() {
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -254,7 +257,7 @@ Status KVEngine::RestoreData() {
         if (data_entry_cached.meta.status == RecordStatus::Dirty) {
           data_entry_cached.meta.type = RecordType::Empty;
         } else {
-          if (!ValidateRecord(recovering_pmem_record)) {
+          if (!validateRecord(recovering_pmem_record)) {
             // Checksum dismatch, mark as padding to be Freed
             // Otherwise the Restore will continue normally
             data_entry_cached.meta.type = RecordType::Empty;
@@ -343,7 +346,7 @@ Status KVEngine::RestoreData() {
   return s;
 }
 
-bool KVEngine::ValidateRecord(void* data_record) {
+bool KVEngine::validateRecord(void* data_record) {
   assert(data_record);
   DataEntry* entry = static_cast<DataEntry*>(data_record);
   switch (entry->meta.type) {
@@ -359,12 +362,12 @@ bool KVEngine::ValidateRecord(void* data_record) {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
     default:
-      kvdk_assert(false, "Unsupported type in ValidateRecord()!");
+      kvdk_assert(false, "Unsupported type in validateRecord()!");
       return false;
   }
 }
 
-Status KVEngine::PersistOrRecoverImmutableConfigs() {
+Status KVEngine::persistOrRecoverImmutableConfigs() {
   size_t mapped_len;
   int is_pmem;
   uint64_t len =
@@ -383,7 +386,7 @@ Status KVEngine::PersistOrRecoverImmutableConfigs() {
     configs->AssignImmutableConfigs(configs_);
   }
 
-  Status s = CheckConfigs(configs_);
+  Status s = checkConfigs(configs_);
   if (s == Status::Ok) {
     configs->PersistImmutableConfigs(configs_);
   }
@@ -400,7 +403,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
   if (s != Status::Ok) {
     return s;
   }
-  TimeStampType backup_ts =
+  TimestampType backup_ts =
       static_cast<const SnapshotImpl*>(snapshot)->GetTimestamp();
   auto hashtable_iterator =
       hash_table_->GetIterator(0, hash_table_->GetSlotsNum());
@@ -544,8 +547,8 @@ Status KVEngine::initOrRestoreCheckpoint() {
 }
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
-  // Todo: make this multi-thread
-  Status s = MaybeInitAccessThread();
+  // TODO: make this multi-thread
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -735,7 +738,7 @@ Status KVEngine::restoreExistingData() {
   std::vector<std::future<Status>> fs;
   GlobalLogger.Info("Start restore data\n");
   for (uint32_t i = 0; i < configs_.max_access_threads; i++) {
-    fs.push_back(std::async(&KVEngine::RestoreData, this));
+    fs.push_back(std::async(&KVEngine::restoreData, this));
   }
 
   for (auto& f : fs) {
@@ -820,7 +823,7 @@ Status KVEngine::restoreExistingData() {
   return Status::Ok;
 }
 
-Status KVEngine::CheckConfigs(const Configs& configs) {
+Status KVEngine::checkConfigs(const Configs& configs) {
   auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
 
   if (configs.pmem_block_size < kMinPMemBlockSize) {
@@ -913,7 +916,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     return Status::InvalidBatchSize;
   }
 
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1288,7 +1291,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -1427,7 +1430,7 @@ template HashTable::LookupResult KVEngine::lookupKey<false>(StringView,
                                                             uint8_t);
 
 template <typename T>
-T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
+T* KVEngine::removeOutDatedVersion(T* record, TimestampType min_snapshot_ts) {
   static_assert(
       std::is_same<T, StringRecord>::value || std::is_same<T, DLRecord>::value,
       "Invalid record type, should be StringRecord or DLRecord.");
@@ -1457,9 +1460,9 @@ T* KVEngine::removeOutDatedVersion(T* record, TimeStampType min_snapshot_ts) {
 }
 
 template StringRecord* KVEngine::removeOutDatedVersion<StringRecord>(
-    StringRecord*, TimeStampType);
+    StringRecord*, TimestampType);
 template DLRecord* KVEngine::removeOutDatedVersion<DLRecord>(DLRecord*,
-                                                             TimeStampType);
+                                                             TimestampType);
 
 }  // namespace KVDK_NAMESPACE
 
@@ -1477,23 +1480,6 @@ Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
   }
 
   return ret;
-}
-
-void KVEngine::delayFree(DLRecord* addr) {
-  if (addr == nullptr) {
-    return;
-  }
-  /// TODO: avoid deadlock in cleaner to help Free() deleted records
-  old_records_cleaner_.PushToPendingFree(
-      addr, version_controller_.GetCurrentTimestamp());
-}
-
-void KVEngine::directFree(DLRecord* addr) {
-  if (addr == nullptr) {
-    return;
-  }
-  pmem_allocator_->Free(SpaceEntry{pmem_allocator_->addr2offset_checked(addr),
-                                   addr->GetRecordSize()});
 }
 
 void KVEngine::backgroundPMemUsageReporter() {
