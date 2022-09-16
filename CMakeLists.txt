@@ -11,8 +11,9 @@ include(GNUInstallDirs)
 set(CMAKE_CXX_STANDARD 11)
 
 option(COVERAGE "code coverage" OFF)
+option(KVDK_ENABLE_VHASH "Enable experimental VHash in KVDK" ON)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd -mclwb -mclflushopt -mlzcnt -mbmi -mavx512bw -mavx512vl")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd -mclwb -mclflushopt")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -52,9 +53,6 @@ set(SOURCES
         engine/c/kvdk_list.cpp
         engine/c/kvdk_sorted.cpp
         engine/c/kvdk_string.cpp
-        engine/experimental/vhash_kv.cpp
-        engine/experimental/vhash.cpp
-        engine/experimental/vhash_group.cpp
         engine/utils/utils.cpp
         engine/utils/sync_point.cpp
         engine/engine.cpp
@@ -64,7 +62,6 @@ set(SOURCES
         engine/kv_engine_list.cpp
         engine/kv_engine_sorted.cpp
         engine/kv_engine_string.cpp
-        engine/kv_engine_vhash.cpp
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp
@@ -79,7 +76,19 @@ set(SOURCES
         engine/data_record.cpp
         engine/dl_list.cpp
         engine/version/old_records_cleaner.cpp
+        )
+        
+if (KVDK_ENABLE_VHASH)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mlzcnt -mbmi -mavx512bw -mavx512vl")
+    add_compile_definitions(KVDK_ENABLE_VHASH)
+    set(SOURCES 
+        ${SOURCES}
+        engine/kv_engine_vhash.cpp
+        engine/experimental/vhash_kv.cpp
+        engine/experimental/vhash.cpp
+        engine/experimental/vhash_group.cpp
     )
+endif()
 
 # .so library
 add_library(engine SHARED ${SOURCES})

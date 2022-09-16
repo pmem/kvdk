@@ -79,6 +79,7 @@ class HashIterator {
   virtual ~HashIterator() = default;
 };
 
+#ifdef KVDK_ENABLE_VHASH
 class VHashIterator {
  public:
   virtual void SeekToFirst() = 0;
@@ -93,5 +94,6 @@ class VHashIterator {
 
   virtual ~VHashIterator() = default;
 };
+#endif
 
 }  // namespace KVDK_NAMESPACE

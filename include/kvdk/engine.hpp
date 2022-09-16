@@ -337,6 +337,7 @@ class Engine {
 
   /// Volatile Hash APIs //////////////////////////////////////////////////////
 
+#ifdef KVDK_ENABLE_VHASH
   virtual Status VHashCreate(StringView key, size_t capacity = (1UL << 20)) = 0;
   virtual Status VHashDestroy(StringView key) = 0;
   virtual Status VHashSize(StringView key, size_t* len) = 0;
@@ -349,6 +350,7 @@ class Engine {
                              ModifyFunc modify_func, void* cb_args) = 0;
   virtual std::unique_ptr<VHashIterator> VHashIteratorCreate(StringView key,
                                                              Status* s) = 0;
+#endif
 
   /// Other ///////////////////////////////////////////////////////////////////
 

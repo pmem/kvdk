@@ -22,7 +22,6 @@
 #include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "experimental/vhash_group.hpp"
 #include "hash_collection/hash_list.hpp"
 #include "hash_collection/rebuilder.hpp"
 #include "hash_table.hpp"
@@ -40,6 +39,10 @@
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
 #include "write_batch_impl.hpp"
+
+#ifdef KVDK_ENABLE_VHASH
+#include "experimental/vhash_group.hpp"
+#endif
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
@@ -157,6 +160,7 @@ class KVEngine : public Engine {
                                    Status* s) final;
   void HashIteratorRelease(HashIterator*) final;
 
+#ifdef KVDK_ENABLE_VHASH
   // Volatile Hash
   Status VHashCreate(StringView key, size_t capacity) final;
   Status VHashDestroy(StringView key) final;
@@ -168,6 +172,7 @@ class KVEngine : public Engine {
                      void* cb_args) final;
   std::unique_ptr<VHashIterator> VHashIteratorCreate(StringView key,
                                                      Status* s) final;
+#endif
 
   // BatchWrite
   // It takes 3 stages
@@ -613,8 +618,10 @@ class KVEngine : public Engine {
   OldRecordsCleaner old_records_cleaner_;
   Cleaner cleaner_;
 
+#ifdef KVDK_ENABLE_VHASH
   CharAllocator char_alloc_;
   VHashGroup vhashes_{char_alloc_, old_records_cleaner_};
+#endif
 
   ComparatorTable comparators_;
 

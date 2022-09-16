@@ -180,6 +180,7 @@ size_t generate_value_size(size_t tid) {
   }
 }
 
+#ifdef KVDK_ENABLE_VHASH
 void FillVHash(size_t tid) {
   std::string key(8, ' ');
   for (size_t i = 0; i < FLAGS_num_kv / FLAGS_num_collection; ++i) {
@@ -195,6 +196,7 @@ void FillVHash(size_t tid) {
     }
   }
 }
+#endif
 
 void DBWrite(int tid) {
   std::string key(8, ' ');
@@ -263,7 +265,11 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::VHash: {
+#ifdef KVDK_ENABLE_VHASH
         s = engine->VHashPut(collections[cid], key, value);
+#else
+        s = Status::NotSupported;
+#endif
         break;
       }
       case DataType::Blackhole: {
@@ -403,7 +409,11 @@ void DBRead(int tid) {
         break;
       }
       case DataType::VHash: {
+#ifdef KVDK_ENABLE_VHASH
         s = engine->VHashGet(collections[cid], key, &value_sink);
+#else
+        s = Status::NotSupported;
+#endif
         break;
       }
       case DataType::Blackhole: {
@@ -606,6 +616,7 @@ int main(int argc, char** argv) {
       break;
     }
     case DataType::VHash: {
+#ifdef KVDK_ENABLE_VHASH
       for (auto col : collections) {
         Status s =
             engine->VHashCreate(col, FLAGS_num_kv / FLAGS_num_collection);
@@ -614,6 +625,10 @@ int main(int argc, char** argv) {
         }
       }
       LaunchNThreads(FLAGS_threads, FillVHash);
+#else
+      throw std::runtime_error{"VHash not supported!"};
+#endif
+
       break;
     }
     default: {
