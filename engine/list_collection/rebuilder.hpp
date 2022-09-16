@@ -23,12 +23,12 @@ class ListRebuilder {
     std::unordered_map<CollectionIDType, std::shared_ptr<List>> rebuilt_lists;
   };
 
-  ListRebuilder(Allocator* pmem_allocator, HashTable* hash_table,
+  ListRebuilder(Allocator* kv_allocator, HashTable* hash_table,
                 LockTable* lock_table, ThreadManager* thread_manager,
                 uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
-      : recovery_utils_(pmem_allocator),
+      : recovery_utils_(kv_allocator),
         rebuilder_thread_cache_(num_rebuild_threads),
-        pmem_allocator_(pmem_allocator),
+        kv_allocator_(kv_allocator),
         hash_table_(hash_table),
         lock_table_(lock_table),
         thread_manager_(thread_manager),
@@ -45,7 +45,7 @@ class ListRebuilder {
         // it here
         addUnlinkedRecord(elem_record);
       } else {
-        pmem_allocator_->PurgeAndFree<DLRecord>(elem_record);
+        kv_allocator_->PurgeAndFree<DLRecord>(elem_record);
       }
     }
     return Status::Ok;
@@ -60,7 +60,7 @@ class ListRebuilder {
         // it here
         addUnlinkedRecord(header_record);
       } else {
-        pmem_allocator_->PurgeAndFree<DLRecord>(header_record);
+        kv_allocator_->PurgeAndFree<DLRecord>(header_record);
       }
     } else {
       linked_headers_.emplace_back(header_record);
@@ -100,18 +100,18 @@ class ListRebuilder {
   }
 
   Status Rollback(const BatchWriteLog::ListLogEntry& log) {
-    DLRecord* elem = pmem_allocator_->offset2addr_checked<DLRecord>(log.offset);
+    DLRecord* elem = kv_allocator_->offset2addr_checked<DLRecord>(log.offset);
     // We only check prev linkage as a valid prev linkage indicate valid prev
     // and next pointers on the record, so we can safely do remove/replace
     if (elem->Validate() && recovery_utils_.CheckPrevLinkage(elem)) {
-      if (elem->old_version != kNullPMemOffset) {
+      if (elem->old_version != kNullMemoryOffset) {
         bool success = DLList::Replace(
             elem,
-            pmem_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
-            pmem_allocator_, lock_table_);
+            kv_allocator_->offset2addr_checked<DLRecord>(elem->old_version),
+            kv_allocator_, lock_table_);
         kvdk_assert(success, "Replace should success as we checked linkage");
       } else {
-        bool success = DLList::Remove(elem, pmem_allocator_, lock_table_);
+        bool success = DLList::Remove(elem, kv_allocator_, lock_table_);
         kvdk_assert(success, "Remove should success as we checked linkage");
       }
     }
@@ -139,7 +139,7 @@ class ListRebuilder {
       if (valid_version_record == nullptr ||
           List::FetchID(valid_version_record) != id) {
         list = std::make_shared<List>(header_record, collection_name, id,
-                                      pmem_allocator_, lock_table_);
+                                      kv_allocator_, lock_table_);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           invalid_lists_[id] = list;
@@ -148,14 +148,14 @@ class ListRebuilder {
         auto ul = hash_table_->AcquireLock(collection_name);
         if (valid_version_record != header_record) {
           bool success = DLList::Replace(header_record, valid_version_record,
-                                         pmem_allocator_, lock_table_);
+                                         kv_allocator_, lock_table_);
           kvdk_assert(success,
                       "headers in rebuild should passed linkage check");
           addUnlinkedRecord(header_record);
         }
 
         list = std::make_shared<List>(valid_version_record, collection_name, id,
-                                      pmem_allocator_, lock_table_);
+                                      kv_allocator_, lock_table_);
         kvdk_assert(list != nullptr, "");
 
         bool outdated =
@@ -171,7 +171,7 @@ class ListRebuilder {
           }
         }
         // TODO no need always to persist old version
-        valid_version_record->PersistOldVersion(kNullPMemOffset);
+        valid_version_record->PersistOldVersion(kNullMemoryOffset);
 
         if (!outdated) {
           auto lookup_result = hash_table_->Insert(
@@ -199,20 +199,20 @@ class ListRebuilder {
     return Status::Ok;
   }
 
-  DLRecord* findCheckpointVersion(DLRecord* pmem_record) {
+  DLRecord* findCheckpointVersion(DLRecord* data_record) {
     if (!recoverToCheckPoint()) {
-      return pmem_record;
+      return data_record;
     }
 
-    CollectionIDType id = List::FetchID(pmem_record);
-    DLRecord* curr = pmem_record;
+    CollectionIDType id = List::FetchID(data_record);
+    DLRecord* curr = data_record;
     while (curr != nullptr &&
            curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
-      curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
+      curr = kv_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),
                   "Broken checkpoint: invalid older version sorted record");
       kvdk_assert(
-          curr == nullptr || equal_string_view(curr->Key(), pmem_record->Key()),
+          curr == nullptr || equal_string_view(curr->Key(), data_record->Key()),
           "Broken checkpoint: key of older version sorted data is "
           "not same as new "
           "version");
@@ -247,17 +247,17 @@ class ListRebuilder {
           kvdk_assert(success, "elems in rebuild should passed linkage check");
           addUnlinkedRecord(curr);
         }
-        valid_version_record->PersistOldVersion(kNullPMemOffset);
+        valid_version_record->PersistOldVersion(kNullMemoryOffset);
         list->AddLiveRecord(valid_version_record, ListPos::Back);
       }
     }
     return Status::Ok;
   }
 
-  void addUnlinkedRecord(DLRecord* pmem_record) {
+  void addUnlinkedRecord(DLRecord* data_record) {
     assert(access_thread.id >= 0);
     rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
-        pmem_record);
+        data_record);
   }
 
   void cleanInvalidRecords() {
@@ -265,15 +265,15 @@ class ListRebuilder {
 
     // clean unlinked records
     for (auto& thread_cache : rebuilder_thread_cache_) {
-      for (DLRecord* pmem_record : thread_cache.unlinked_records) {
-        if (!recovery_utils_.CheckLinkage(pmem_record)) {
-          pmem_record->Destroy();
+      for (DLRecord* data_record : thread_cache.unlinked_records) {
+        if (!recovery_utils_.CheckLinkage(data_record)) {
+          data_record->Destroy();
           to_free.emplace_back(
-              pmem_allocator_->addr2offset_checked(pmem_record),
-              pmem_record->GetRecordSize());
+              kv_allocator_->addr2offset_checked(data_record),
+              data_record->GetRecordSize());
         }
       }
-      pmem_allocator_->BatchFree(to_free);
+      kv_allocator_->BatchFree(to_free);
       to_free.clear();
       thread_cache.unlinked_records.clear();
     }
@@ -295,7 +295,7 @@ class ListRebuilder {
   DLListRecoveryUtils<List> recovery_utils_;
   std::vector<ThreadCache> rebuilder_thread_cache_;
   std::vector<DLRecord*> linked_headers_;
-  Allocator* pmem_allocator_;
+  Allocator* kv_allocator_;
   HashTable* hash_table_;
   LockTable* lock_table_;
   ThreadManager* thread_manager_;

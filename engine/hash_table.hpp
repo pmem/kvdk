@@ -143,7 +143,7 @@ class HashTable {
 
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
                                  uint32_t num_buckets_per_slot,
-                                 const Allocator* pmem_allocator,
+                                 const Allocator* kv_allocator,
                                  Allocator* new_bucket_allocator,
                                  uint32_t max_access_threads);
 
@@ -209,11 +209,11 @@ class HashTable {
 
  private:
   HashTable(uint64_t hash_bucket_num, uint32_t num_buckets_per_slot,
-            const Allocator* pmem_allocator, Allocator* new_bucket_allocator,
+            const Allocator* kv_allocator, Allocator* new_bucket_allocator,
             uint32_t max_access_threads)
       : num_hash_buckets_(hash_bucket_num),
         num_buckets_per_slot_(num_buckets_per_slot),
-        pmem_allocator_(pmem_allocator),
+        kv_allocator_(kv_allocator),
         chunk_based_bucket_allocator_{max_access_threads, new_bucket_allocator},
         slots_(hash_bucket_num / num_buckets_per_slot),
         hash_bucket_entries_(hash_bucket_num, 0),
@@ -249,7 +249,7 @@ class HashTable {
 
   const uint64_t num_hash_buckets_;
   const uint32_t num_buckets_per_slot_;
-  const Allocator* pmem_allocator_;
+  const Allocator* kv_allocator_;
   ChunkBasedAllocator chunk_based_bucket_allocator_;
   Array<Slot> slots_;
   std::vector<uint64_t> hash_bucket_entries_;

@@ -12,14 +12,14 @@
 namespace KVDK_NAMESPACE {
 HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
                                    uint32_t num_buckets_per_slot,
-                                   const Allocator* pmem_allocator,
+                                   const Allocator* kv_allocator,
                                    Allocator* new_bucket_allocator,
                                    uint32_t max_access_threads) {
   HashTable* table;
   // We catch exception here as we may need to allocate large memory for hash
   // table here
   try {
-    table = new HashTable(hash_bucket_num, num_buckets_per_slot, pmem_allocator,
+    table = new HashTable(hash_bucket_num, num_buckets_per_slot, kv_allocator,
                           new_bucket_allocator, max_access_threads);
   } catch (std::bad_alloc& b) {
     GlobalLogger.Error("No enough dram to create global hash table: b\n",
@@ -34,7 +34,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
                       uint8_t target_type, DataEntry* data_entry_metadata) {
   if ((target_type & header_.record_type) &&
       hash_k_prefix == header_.key_prefix) {
-    void* pmem_record = nullptr;
+    void* data_record = nullptr;
     StringView data_entry_key;
 
     switch (header_.index_type) {
@@ -43,13 +43,13 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
         return false;
       }
       case PointerType::StringRecord: {
-        pmem_record = index_.string_record;
+        data_record = index_.string_record;
         data_entry_key = index_.string_record->Key();
         break;
       }
       case PointerType::HashElem:
       case PointerType::DLRecord: {
-        pmem_record = index_.dl_record;
+        data_record = index_.dl_record;
         data_entry_key = index_.dl_record->Key();
         break;
       }
@@ -63,13 +63,13 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
       }
       case PointerType::SkiplistNode: {
         SkiplistNode* dram_node = index_.skiplist_node;
-        pmem_record = dram_node->record;
+        data_record = dram_node->record;
         data_entry_key = dram_node->record->Key();
         break;
       }
       case PointerType::Skiplist: {
         Skiplist* skiplist = index_.skiplist;
-        pmem_record = skiplist->HeaderRecord();
+        data_record = skiplist->HeaderRecord();
         data_entry_key = skiplist->Name();
         break;
       }
@@ -82,7 +82,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
     }
 
     if (data_entry_metadata != nullptr) {
-      memcpy(data_entry_metadata, pmem_record, sizeof(DataEntry));
+      memcpy(data_entry_metadata, data_record, sizeof(DataEntry));
     }
 
     if (equal_string_view(key, data_entry_key)) {

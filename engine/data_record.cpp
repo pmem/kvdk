@@ -13,7 +13,7 @@ static constexpr int kDataBufferSize = 1024 * 1024;
 
 StringRecord* StringRecord::PersistStringRecord(
     void* addr, uint32_t record_size, TimestampType timestamp, RecordType type,
-    RecordStatus status, PMemOffsetType old_version, const StringView& key,
+    RecordStatus status, MemoryOffsetType old_version, const StringView& key,
     const StringView& value, ExpireTimeType expired_time) {
   void* data_cpy_target = addr;
 
@@ -45,8 +45,8 @@ StringRecord* StringRecord::PersistStringRecord(
 
 DLRecord* DLRecord::PersistDLRecord(
     void* addr, uint32_t record_size, TimestampType timestamp, RecordType type,
-    RecordStatus status, PMemOffsetType old_version, PMemOffsetType prev,
-    PMemOffsetType next, const StringView& key, const StringView& value,
+    RecordStatus status, MemoryOffsetType old_version, MemoryOffsetType prev,
+    MemoryOffsetType next, const StringView& key, const StringView& value,
     ExpireTimeType expired_time) {
   void* data_cpy_target = addr;
 

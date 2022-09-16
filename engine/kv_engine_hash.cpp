@@ -35,19 +35,19 @@ Status KVEngine::buildHashlist(const StringView& collection,
     CollectionIDType id = collection_id_.fetch_add(1);
     std::string value_str = HashList::EncodeID(id);
     SpaceEntry space =
-        pmem_allocator_->Allocate(DLRecord::RecordSize(collection, value_str));
+        kv_allocator_->Allocate(DLRecord::RecordSize(collection, value_str));
     if (space.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
     // dl list is circular, so the next and prev pointers of
     // header point to itself
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::HashHeader, RecordStatus::Normal,
-        pmem_allocator_->addr2offset(existing_header), space.offset,
-        space.offset, collection, value_str);
-    hlist = std::make_shared<HashList>(pmem_record, collection, id,
-                                       pmem_allocator_.get(), hash_table_.get(),
+        kv_allocator_->addr2offset(existing_header), space.offset, space.offset,
+        collection, value_str);
+    hlist = std::make_shared<HashList>(data_record, collection, id,
+                                       kv_allocator_.get(), hash_table_.get(),
                                        dllist_locks_.get());
     kvdk_assert(hlist != nullptr, "");
     addHashlistToMap(hlist);
@@ -80,16 +80,16 @@ Status KVEngine::HashDestroy(StringView collection) {
     kvdk_assert(header->GetRecordType() == RecordType::HashHeader, "");
     StringView value = header->Value();
     auto request_size = DLRecord::RecordSize(collection, value);
-    SpaceEntry space = pmem_allocator_->Allocate(request_size);
+    SpaceEntry space = kv_allocator_->Allocate(request_size);
     if (space.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::HashHeader, RecordStatus::Outdated,
-        pmem_allocator_->addr2offset_checked(header), header->prev,
-        header->next, collection, value);
-    bool success = hlist->Replace(header, pmem_record);
+        kv_allocator_->addr2offset_checked(header), header->prev, header->next,
+        collection, value);
+    bool success = hlist->Replace(header, data_record);
     kvdk_assert(success, "existing header should be linked on its hlist");
     hash_table_->Insert(collection, RecordType::HashHeader,
                         RecordStatus::Outdated, hlist, PointerType::HashList);

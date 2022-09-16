@@ -43,8 +43,8 @@ void PendingBatch::PersistFinish() {
   pmem_persist(this, sizeof(PendingBatch));
 }
 
-void PendingBatch::PersistProcessing(const std::vector<PMemOffsetType>& records,
-                                     TimestampType ts) {
+void PendingBatch::PersistProcessing(
+    const std::vector<MemoryOffsetType>& records, TimestampType ts) {
   pmem_memcpy_persist(record_offsets, records.data(), records.size() * 8);
   timestamp = ts;
   num_kv = records.size();
@@ -102,11 +102,11 @@ Status KVEngine::restoreExistingData() {
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
   hash_rebuilder_.reset(
-      new HashListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+      new HashListRebuilder(kv_allocator_.get(), hash_table_.get(),
                             dllist_locks_.get(), thread_manager_.get(),
                             configs_.max_access_threads, *persist_checkpoint_));
   list_rebuilder_.reset(
-      new ListRebuilder(pmem_allocator_.get(), hash_table_.get(),
+      new ListRebuilder(kv_allocator_.get(), hash_table_.get(),
                         dllist_locks_.get(), thread_manager_.get(),
                         configs_.max_access_threads, *persist_checkpoint_));
 
@@ -199,7 +199,7 @@ Status KVEngine::restoreExistingData() {
 
   version_controller_.Init(latest_version_ts);
   old_records_cleaner_.TryGlobalClean();
-  kvdk_assert(pmem_allocator_->BytesAllocated() >= 0, "Invalid PMem Usage");
+  kvdk_assert(kv_allocator_->BytesAllocated() >= 0, "Invalid PMem Usage");
   return Status::Ok;
 }
 
@@ -216,21 +216,21 @@ Status KVEngine::restoreData() {
   uint64_t cnt = 0;
   while (true) {
     if (segment_recovering.size == 0) {
-      if (!dynamic_cast<PMEMAllocator*>(pmem_allocator_.get())
+      if (!dynamic_cast<PMEMAllocator*>(kv_allocator_.get())
                ->FetchSegment(&segment_recovering)) {
         break;
       }
       assert(segment_recovering.size % configs_.pmem_block_size == 0);
     }
 
-    void* recovering_pmem_record =
-        pmem_allocator_->offset2addr_checked(segment_recovering.offset);
-    memcpy(&data_entry_cached, recovering_pmem_record, sizeof(DataEntry));
+    void* recovering_data_record =
+        kv_allocator_->offset2addr_checked(segment_recovering.offset);
+    memcpy(&data_entry_cached, recovering_data_record, sizeof(DataEntry));
 
     if (data_entry_cached.header.record_size == 0) {
       // Reach end of the segment, mark it as padding
       DataEntry* recovering_pmem_data_entry =
-          static_cast<DataEntry*>(recovering_pmem_record);
+          static_cast<DataEntry*>(recovering_data_record);
       uint64_t padding_size = segment_recovering.size;
       recovering_pmem_data_entry->meta.type = RecordType::Empty;
       pmem_persist(&recovering_pmem_data_entry->meta.type, sizeof(RecordType));
@@ -254,7 +254,7 @@ Status KVEngine::restoreData() {
         if (data_entry_cached.meta.status == RecordStatus::Dirty) {
           data_entry_cached.meta.type = RecordType::Empty;
         } else {
-          if (!validateRecord(recovering_pmem_record)) {
+          if (!validateRecord(recovering_data_record)) {
             // Checksum dismatch, mark as padding to be Freed
             // Otherwise the Restore will continue normally
             data_entry_cached.meta.type = RecordType::Empty;
@@ -281,9 +281,9 @@ Status KVEngine::restoreData() {
     // or the space is padding, empty or with corrupted record
     // Free the space and fetch another
     if (data_entry_cached.meta.type == RecordType::Empty) {
-      pmem_allocator_->Free(SpaceEntry(
-          pmem_allocator_->addr2offset_checked(recovering_pmem_record),
-          data_entry_cached.header.record_size));
+      kv_allocator_->Free(
+          SpaceEntry(kv_allocator_->addr2offset_checked(recovering_data_record),
+                     data_entry_cached.header.record_size));
       continue;
     }
 
@@ -297,33 +297,33 @@ Status KVEngine::restoreData() {
 
     switch (data_entry_cached.meta.type) {
       case RecordType::SortedElem: {
-        s = restoreSortedElem(static_cast<DLRecord*>(recovering_pmem_record));
+        s = restoreSortedElem(static_cast<DLRecord*>(recovering_data_record));
         break;
       }
       case RecordType::SortedHeader: {
-        s = restoreSortedHeader(static_cast<DLRecord*>(recovering_pmem_record));
+        s = restoreSortedHeader(static_cast<DLRecord*>(recovering_data_record));
         break;
       }
       case RecordType::String: {
         s = restoreStringRecord(
-            static_cast<StringRecord*>(recovering_pmem_record),
+            static_cast<StringRecord*>(recovering_data_record),
             data_entry_cached);
         break;
       }
       case RecordType::ListHeader: {
-        s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
+        s = listRestoreList(static_cast<DLRecord*>(recovering_data_record));
         break;
       }
       case RecordType::ListElem: {
-        s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
+        s = listRestoreElem(static_cast<DLRecord*>(recovering_data_record));
         break;
       }
       case RecordType::HashHeader: {
-        s = restoreHashHeader(static_cast<DLRecord*>(recovering_pmem_record));
+        s = restoreHashHeader(static_cast<DLRecord*>(recovering_data_record));
         break;
       }
       case RecordType::HashElem: {
-        s = restoreHashElem(static_cast<DLRecord*>(recovering_pmem_record));
+        s = restoreHashElem(static_cast<DLRecord*>(recovering_data_record));
         break;
       }
       default: {
@@ -445,7 +445,7 @@ void KVEngine::backgroundPMemAllocatorOrgnizer() {
         bg_work_signals_.pmem_allocator_organizer_cv.wait_for(ul, interval);
       }
     }
-    dynamic_cast<PMEMAllocator*>(pmem_allocator_.get())->BackgroundWork();
+    dynamic_cast<PMEMAllocator*>(kv_allocator_.get())->BackgroundWork();
   }
 }
 #endif  // #ifdef KVDK_WITH_PMEM
@@ -490,7 +490,7 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
 void KVEngine::ReportMemoryUsage() {
   // Check KV allocator is initialized before use it.
   // It may not be successfully initialized due to file operation errors.
-  if (pmem_allocator_ == nullptr) {
+  if (kv_allocator_ == nullptr) {
     return;
   }
 
@@ -501,7 +501,7 @@ void KVEngine::ReportMemoryUsage() {
       bytes, (bytes / (1LL << 10)), (bytes / (1LL << 20)),
       (bytes / (1LL << 30)));
 
-  bytes = pmem_allocator_->BytesAllocated();
+  bytes = kv_allocator_->BytesAllocated();
   total += bytes;
   GlobalLogger.Info(
       "[1] KV Memory Allocator Usage: %ld B, %ld KB, %ld MB, %ld GB\n", bytes,
@@ -613,7 +613,7 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
       return s;
     }
 
-    pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
+    kv_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
         db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
         configs_.pmem_block_size, configs_.max_access_threads,
         configs_.populate_pmem_space, configs_.use_devdax_mode,
@@ -628,9 +628,9 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
   }
   (void)name;  // To suppress compile warnings
 #endif  // #ifdef KVDK_WITH_PMEM
-    Allocator* pmem_allocator = new SystemMemoryAllocator();
-    pmem_allocator->SetMaxAccessThreads(configs_.max_access_threads);
-    pmem_allocator_.reset(pmem_allocator);
+    Allocator* kv_allocator = new SystemMemoryAllocator();
+    kv_allocator->SetMaxAccessThreads(configs_.max_access_threads);
+    kv_allocator_.reset(kv_allocator);
 #ifdef KVDK_WITH_PMEM
   }
 #endif  // #ifdef KVDK_WITH_PMEM
@@ -647,7 +647,7 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
   GlobalLogger.Info("Global memory allocator: %s\n",
                     global_memory_allocator()->AllocatorName().c_str());
   GlobalLogger.Info("KV memory allocator: %s\n",
-                    pmem_allocator_->AllocatorName().c_str());
+                    kv_allocator_->AllocatorName().c_str());
   GlobalLogger.Info("Skiplist node memory allocator: %s\n",
                     skiplist_node_allocator_->AllocatorName().c_str());
   GlobalLogger.Info("Hashtable new bucket memory allocator: %s\n",
@@ -660,11 +660,11 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
 
   hash_table_.reset(HashTable::NewHashTable(
       configs_.hash_bucket_num, configs_.num_buckets_per_slot,
-      pmem_allocator_.get(), hashtable_new_bucket_allocator,
+      kv_allocator_.get(), hashtable_new_bucket_allocator,
       configs_.max_access_threads));
   dllist_locks_.reset(new LockTable{1UL << 20});
 
-  if (pmem_allocator_ == nullptr || hash_table_ == nullptr ||
+  if (kv_allocator_ == nullptr || hash_table_ == nullptr ||
       thread_manager_ == nullptr || dllist_locks_ == nullptr) {
     GlobalLogger.Error("Init kvdk basic components error\n");
     return Status::Abort;
@@ -702,7 +702,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           StringRecord* record = slot_iter->GetIndex().string_record;
           while (record != nullptr && record->GetTimestamp() > backup_ts) {
             record =
-                pmem_allocator_->offset2addr<StringRecord>(record->old_version);
+                kv_allocator_->offset2addr<StringRecord>(record->old_version);
           }
           if (record && record->GetRecordStatus() == RecordStatus::Normal &&
               !record->HasExpired()) {
@@ -714,8 +714,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
         case RecordType::SortedHeader: {
           DLRecord* header = slot_iter->GetIndex().skiplist->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
-            header =
-                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+            header = kv_allocator_->offset2addr<DLRecord>(header->old_version);
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
@@ -727,7 +726,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
               kvdk_assert(skiplist != nullptr,
                           "Backup skiplist should exist in map");
               auto skiplist_iter = SortedIteratorImpl(
-                  skiplist.get(), pmem_allocator_.get(),
+                  skiplist.get(), kv_allocator_.get(),
                   static_cast<const SnapshotImpl*>(snapshot), false);
               for (skiplist_iter.SeekToFirst(); skiplist_iter.Valid();
                    skiplist_iter.Next()) {
@@ -744,8 +743,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
         case RecordType::HashHeader: {
           DLRecord* header = slot_iter->GetIndex().hlist->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
-            header =
-                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+            header = kv_allocator_->offset2addr<DLRecord>(header->old_version);
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
@@ -773,8 +771,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
         case RecordType::ListHeader: {
           DLRecord* header = slot_iter->GetIndex().list->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
-            header =
-                pmem_allocator_->offset2addr<DLRecord>(header->old_version);
+            header = kv_allocator_->offset2addr<DLRecord>(header->old_version);
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
@@ -1186,21 +1183,21 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Don't Free() if we simulate a crash.
 #ifndef KVDK_ENABLE_CRASHPOINT
     for (auto iter = hash_args.rbegin(); iter != hash_args.rend(); ++iter) {
-      pmem_allocator_->Free(iter->space);
+      kv_allocator_->Free(iter->space);
       if (iter->lookup_result.entry_ptr->Allocated()) {
         kvdk_assert(iter->lookup_result.s == Status::NotFound, "");
         iter->lookup_result.entry_ptr->Clear();
       }
     }
     for (auto iter = sorted_args.rbegin(); iter != sorted_args.rend(); ++iter) {
-      pmem_allocator_->Free(iter->space);
+      kv_allocator_->Free(iter->space);
       if (iter->lookup_result.entry_ptr->Allocated()) {
         kvdk_assert(iter->lookup_result.s == Status::NotFound, "");
         iter->lookup_result.entry_ptr->Clear();
       }
     }
     for (auto iter = string_args.rbegin(); iter != string_args.rend(); ++iter) {
-      pmem_allocator_->Free(iter->space);
+      kv_allocator_->Free(iter->space);
       if (iter->res.entry_ptr->Allocated()) {
         kvdk_assert(iter->res.s == Status::NotFound, "");
         iter->res.entry_ptr->Clear();
@@ -1563,22 +1560,21 @@ T* KVEngine::removeOutDatedVersion(T* record, TimestampType min_snapshot_ts) {
   auto old_record = record;
   while (old_record && old_record->GetTimestamp() > min_snapshot_ts) {
     old_record =
-        static_cast<T*>(pmem_allocator_->offset2addr(old_record->old_version));
+        static_cast<T*>(kv_allocator_->offset2addr(old_record->old_version));
   }
 
   // the snapshot should access the old record, so we need to purge and free the
   // older version of the old record
-  if (old_record && old_record->old_version != kNullPMemOffset) {
+  if (old_record && old_record->old_version != kNullMemoryOffset) {
     T* remove_record =
-        pmem_allocator_->offset2addr_checked<T>(old_record->old_version);
+        kv_allocator_->offset2addr_checked<T>(old_record->old_version);
     ret = remove_record;
-    old_record->PersistOldVersion(kNullPMemOffset);
+    old_record->PersistOldVersion(kNullMemoryOffset);
     while (remove_record != nullptr) {
       if (remove_record->GetRecordStatus() == RecordStatus::Normal) {
         remove_record->PersistStatus(RecordStatus::Dirty);
       }
-      remove_record =
-          pmem_allocator_->offset2addr<T>(remove_record->old_version);
+      remove_record = kv_allocator_->offset2addr<T>(remove_record->old_version);
     }
   }
   return ret;

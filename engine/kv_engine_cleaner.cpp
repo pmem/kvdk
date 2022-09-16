@@ -19,7 +19,7 @@ void KVEngine::removeOutdatedCollection(T* collection) {
   auto cur_head_record = collection->HeaderRecord();
   while (cur_head_record) {
     auto old_head_record =
-        pmem_allocator_->offset2addr<DLRecord>(cur_head_record->old_version);
+        kv_allocator_->offset2addr<DLRecord>(cur_head_record->old_version);
     if (old_head_record) {
       auto old_collection_id = T::FetchID(old_head_record);
       if (old_collection_id != cur_id) {
@@ -32,7 +32,7 @@ void KVEngine::removeOutdatedCollection(T* collection) {
                         getHashlist(old_collection_id) != nullptr ||
                         getList(old_collection_id) != nullptr,
                     "collection should not be destroyed yet!");
-        cur_head_record->PersistOldVersion(kNullPMemOffset);
+        cur_head_record->PersistOldVersion(kNullMemoryOffset);
         cur_id = old_collection_id;
       }
     }
@@ -75,13 +75,13 @@ void KVEngine::cleanOutdatedRecordImpl(T* old_record) {
   static_assert(std::is_same<T, StringRecord>::value ||
                 std::is_same<T, DLRecord>::value);
   while (old_record) {
-    T* next = pmem_allocator_->offset2addr<T>(old_record->old_version);
+    T* next = kv_allocator_->offset2addr<T>(old_record->old_version);
     auto record_size = old_record->GetRecordSize();
     if (old_record->GetRecordStatus() == RecordStatus::Normal) {
       old_record->Destroy();
     }
-    pmem_allocator_->Free(SpaceEntry(
-        pmem_allocator_->addr2offset_checked(old_record), record_size));
+    kv_allocator_->Free(SpaceEntry(
+        kv_allocator_->addr2offset_checked(old_record), record_size));
     old_record = next;
   }
 }
@@ -125,104 +125,104 @@ void KVEngine::purgeAndFreeStringRecords(
   for (auto old_record : old_records) {
     while (old_record) {
       StringRecord* next =
-          pmem_allocator_->offset2addr<StringRecord>(old_record->old_version);
+          kv_allocator_->offset2addr<StringRecord>(old_record->old_version);
       if (old_record->GetRecordStatus() == RecordStatus::Normal) {
         old_record->Destroy();
       }
-      entries.emplace_back(pmem_allocator_->addr2offset(old_record),
+      entries.emplace_back(kv_allocator_->addr2offset(old_record),
                            old_record->GetRecordSize());
       old_record = next;
     }
   }
-  pmem_allocator_->BatchFree(entries);
+  kv_allocator_->BatchFree(entries);
 }
 
 void KVEngine::purgeAndFreeDLRecords(
     const std::vector<DLRecord*>& old_records) {
   std::vector<SpaceEntry> entries;
   std::vector<CollectionIDType> outdated_skiplists;
-  for (auto pmem_record : old_records) {
-    while (pmem_record) {
+  for (auto data_record : old_records) {
+    while (data_record) {
       DLRecord* next_record =
-          pmem_allocator_->offset2addr<DLRecord>(pmem_record->old_version);
-      RecordType type = pmem_record->GetRecordType();
-      RecordStatus record_status = pmem_record->GetRecordStatus();
+          kv_allocator_->offset2addr<DLRecord>(data_record->old_version);
+      RecordType type = data_record->GetRecordType();
+      RecordStatus record_status = data_record->GetRecordStatus();
       switch (type) {
         case RecordType::HashElem:
         case RecordType::SortedElem:
         case RecordType::ListElem: {
-          entries.emplace_back(pmem_allocator_->addr2offset(pmem_record),
-                               pmem_record->GetRecordSize());
+          entries.emplace_back(kv_allocator_->addr2offset(data_record),
+                               data_record->GetRecordSize());
           if (record_status == RecordStatus::Normal) {
-            pmem_record->Destroy();
+            data_record->Destroy();
           }
           break;
         }
         case RecordType::SortedHeader: {
           if (record_status != RecordStatus::Outdated &&
-              !pmem_record->HasExpired()) {
+              !data_record->HasExpired()) {
             entries.emplace_back(
-                pmem_allocator_->addr2offset_checked(pmem_record),
-                pmem_record->GetRecordSize());
-            pmem_record->Destroy();
+                kv_allocator_->addr2offset_checked(data_record),
+                data_record->GetRecordSize());
+            data_record->Destroy();
           } else {
-            auto skiplist_id = Skiplist::FetchID(pmem_record);
+            auto skiplist_id = Skiplist::FetchID(data_record);
             kvdk_assert(skiplists_.find(skiplist_id) != skiplists_.end(),
                         "Skiplist should not be removed.");
             auto head_record = getSkiplist(skiplist_id)->HeaderRecord();
-            if (head_record != pmem_record) {
+            if (head_record != data_record) {
               entries.emplace_back(
-                  pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->GetRecordSize());
-              pmem_record->Destroy();
+                  kv_allocator_->addr2offset_checked(data_record),
+                  data_record->GetRecordSize());
+              data_record->Destroy();
             } else {
-              pmem_record->PersistOldVersion(kNullPMemOffset);
+              data_record->PersistOldVersion(kNullMemoryOffset);
             }
           }
           break;
         }
         case RecordType::HashHeader: {
           if (record_status != RecordStatus::Outdated &&
-              !pmem_record->HasExpired()) {
+              !data_record->HasExpired()) {
             entries.emplace_back(
-                pmem_allocator_->addr2offset_checked(pmem_record),
-                pmem_record->GetRecordSize());
-            pmem_record->Destroy();
+                kv_allocator_->addr2offset_checked(data_record),
+                data_record->GetRecordSize());
+            data_record->Destroy();
           } else {
-            auto hash_id = HashList::FetchID(pmem_record);
+            auto hash_id = HashList::FetchID(data_record);
             kvdk_assert(hlists_.find(hash_id) != hlists_.end(),
                         "Hashlist should not be removed.");
             auto head_record = getHashlist(hash_id)->HeaderRecord();
-            if (head_record != pmem_record) {
+            if (head_record != data_record) {
               entries.emplace_back(
-                  pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->GetRecordSize());
-              pmem_record->Destroy();
+                  kv_allocator_->addr2offset_checked(data_record),
+                  data_record->GetRecordSize());
+              data_record->Destroy();
             } else {
-              pmem_record->PersistOldVersion(kNullPMemOffset);
+              data_record->PersistOldVersion(kNullMemoryOffset);
             }
           }
           break;
         }
         case RecordType::ListHeader: {
           if (record_status != RecordStatus::Outdated &&
-              !pmem_record->HasExpired()) {
+              !data_record->HasExpired()) {
             entries.emplace_back(
-                pmem_allocator_->addr2offset_checked(pmem_record),
-                pmem_record->GetRecordSize());
-            pmem_record->Destroy();
+                kv_allocator_->addr2offset_checked(data_record),
+                data_record->GetRecordSize());
+            data_record->Destroy();
           } else {
-            auto list_id = List::FetchID(pmem_record);
+            auto list_id = List::FetchID(data_record);
             kvdk_assert(lists_.find(list_id) != lists_.end(),
                         "Hashlist should not be removed.");
             auto header_record = getList(list_id)->HeaderRecord();
-            if (header_record != pmem_record) {
+            if (header_record != data_record) {
               entries.emplace_back(
-                  pmem_allocator_->addr2offset_checked(pmem_record),
-                  pmem_record->GetRecordSize());
-              pmem_record->Destroy();
+                  kv_allocator_->addr2offset_checked(data_record),
+                  data_record->GetRecordSize());
+              data_record->Destroy();
             } else {
-              pmem_record->PersistOldVersion(kNullPMemOffset);
+              data_record->PersistOldVersion(kNullMemoryOffset);
             }
           }
           break;
@@ -231,10 +231,10 @@ void KVEngine::purgeAndFreeDLRecords(
           GlobalLogger.Error("Cleaner abort on record type %u\n", type);
           std::abort();
       }
-      pmem_record = next_record;
+      data_record = next_record;
     }
   }
-  pmem_allocator_->BatchFree(entries);
+  kv_allocator_->BatchFree(entries);
 }
 
 void KVEngine::cleanNoHashIndexedSkiplist(
@@ -290,7 +290,7 @@ void KVEngine::cleanNoHashIndexedSkiplist(
        * this cur_record which will be purged and freed in the next
        * iteration.
        */
-      if (Skiplist::Remove(cur_record, dram_node, pmem_allocator_.get(),
+      if (Skiplist::Remove(cur_record, dram_node, kv_allocator_.get(),
                            dllist_locks_.get())) {
         purge_dl_records.emplace_back(cur_record);
       }
@@ -528,9 +528,8 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
               }
               if (slot_iter->GetRecordStatus() == RecordStatus::Outdated &&
                   dl_record->GetTimestamp() < min_snapshot_ts) {
-                bool success =
-                    Skiplist::Remove(dl_record, node, pmem_allocator_.get(),
-                                     dllist_locks_.get());
+                bool success = Skiplist::Remove(
+                    dl_record, node, kv_allocator_.get(), dllist_locks_.get());
                 kvdk_assert(success, "");
                 hash_table_->Erase(&(*slot_iter));
                 purge_dl_records.emplace_back(dl_record);
@@ -549,7 +548,7 @@ double KVEngine::cleanOutDated(PendingCleanRecords& pending_clean_records,
               }
               if (slot_iter->GetRecordStatus() == RecordStatus::Outdated &&
                   dl_record->GetTimestamp() < min_snapshot_ts) {
-                bool success = DLList::Remove(dl_record, pmem_allocator_.get(),
+                bool success = DLList::Remove(dl_record, kv_allocator_.get(),
                                               dllist_locks_.get());
                 kvdk_assert(success, "");
                 hash_table_->Erase(&(*slot_iter));

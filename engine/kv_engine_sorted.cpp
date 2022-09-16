@@ -47,22 +47,22 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
         Skiplist::EncodeSortedCollectionValue(id, s_configs);
     uint32_t request_size =
         sizeof(DLRecord) + collection_name.size() + value_str.size();
-    SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
+    SpaceEntry space_entry = kv_allocator_->Allocate(request_size);
     if (space_entry.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
 
     // Data level of dl list is circular, so the next and prev pointers of
     // header point to itself
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr(space_entry.offset), space_entry.size,
         new_ts, RecordType::SortedHeader, RecordStatus::Normal,
-        pmem_allocator_->addr2offset(existing_header), space_entry.offset,
+        kv_allocator_->addr2offset(existing_header), space_entry.offset,
         space_entry.offset, collection_name, value_str);
 
     skiplist = std::make_shared<Skiplist>(
-        pmem_record, string_view_2_string(collection_name), id, comparator,
-        pmem_allocator_.get(), hash_table_.get(), dllist_locks_.get(),
+        data_record, string_view_2_string(collection_name), id, comparator,
+        kv_allocator_.get(), hash_table_.get(), dllist_locks_.get(),
         s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
     insertKeyOrElem(lookup_result, RecordType::SortedHeader,
@@ -91,18 +91,18 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
     StringView value = header->Value();
     auto request_size =
         sizeof(DLRecord) + collection_name.size() + value.size();
-    SpaceEntry space_entry = pmem_allocator_->Allocate(request_size);
+    SpaceEntry space_entry = kv_allocator_->Allocate(request_size);
     if (space_entry.size == 0) {
-      return Status::PmemOverflow;
+      return Status::MemoryOverflow;
     }
-    DLRecord* pmem_record = DLRecord::PersistDLRecord(
-        pmem_allocator_->offset2addr_checked(space_entry.offset),
+    DLRecord* data_record = DLRecord::PersistDLRecord(
+        kv_allocator_->offset2addr_checked(space_entry.offset),
         space_entry.size, new_ts, RecordType::SortedHeader,
-        RecordStatus::Outdated, pmem_allocator_->addr2offset_checked(header),
+        RecordStatus::Outdated, kv_allocator_->addr2offset_checked(header),
         header->prev, header->next, collection_name, value, 0);
     bool success =
-        Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
-                          pmem_allocator_.get(), dllist_locks_.get());
+        Skiplist::Replace(header, data_record, skiplist->HeaderNode(),
+                          kv_allocator_.get(), dllist_locks_.get());
     kvdk_assert(success, "existing header should be linked on its skiplist");
     insertKeyOrElem(lookup_result, RecordType::SortedHeader,
                     RecordStatus::Outdated, skiplist);
@@ -223,7 +223,7 @@ SortedIterator* KVEngine::SortedIteratorCreate(const StringView collection,
   }
   if (res.s == Status::Ok) {
     skiplist = res.entry_ptr->GetIndex().skiplist;
-    return new SortedIteratorImpl(skiplist, pmem_allocator_.get(),
+    return new SortedIteratorImpl(skiplist, kv_allocator_.get(),
                                   static_cast<SnapshotImpl*>(snapshot),
                                   create_snapshot);
   } else {

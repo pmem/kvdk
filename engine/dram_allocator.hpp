@@ -78,7 +78,7 @@ class ChunkBasedAllocator {
   }
 
   template <typename T>
-  inline T* offset2addr(PMemOffsetType offset) const {
+  inline T* offset2addr(MemoryOffsetType offset) const {
     return alloc_->offset2addr<T>(offset);
   }
 

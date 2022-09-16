@@ -63,11 +63,11 @@ class SortedCollectionRebuilder {
 
   bool recoverToCheckpoint() { return checkpoint_.Valid(); }
 
-  // Find the version of pmem_record under checkpoint version if checkpoint
-  // exist, otherwise return pmem_record itself. Return nullptr if no valid
-  // version of pmem_record exist.
+  // Find the version of data_record under checkpoint version if checkpoint
+  // exist, otherwise return data_record itself. Return nullptr if no valid
+  // version of data_record exist.
   // If invalid_version_records is not null, put all invalid versions into it.
-  DLRecord* findCheckpointVersion(DLRecord* pmem_record);
+  DLRecord* findCheckpointVersion(DLRecord* data_record);
 
   // Rebuild DRAM index based on skiplists, i.e., every recovery thread rebuilds
   // a whole skiplist one by one in parallel
@@ -110,10 +110,10 @@ class SortedCollectionRebuilder {
   Status insertHashIndex(const StringView& key, void* ptr,
                          PointerType index_type);
 
-  void addUnlinkedRecord(DLRecord* pmem_record) {
+  void addUnlinkedRecord(DLRecord* data_record) {
     assert(access_thread.id >= 0);
     rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
-        pmem_record);
+        data_record);
   }
 
   struct ThreadCache {

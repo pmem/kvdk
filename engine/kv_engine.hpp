@@ -526,7 +526,7 @@ class KVEngine : public Engine {
 
   void terminateBackgroundWorks();
 
-  std::unique_ptr<Allocator> pmem_allocator_;
+  std::unique_ptr<Allocator> kv_allocator_;
   std::unique_ptr<Allocator> skiplist_node_allocator_;
   std::unique_ptr<Allocator> hashtable_new_bucket_allocator_;
   std::shared_ptr<ThreadManager> thread_manager_;
@@ -591,20 +591,20 @@ class KVEngine : public Engine {
   Status restoreExistingData();
   Status restoreSortedHeader(DLRecord* header);
   Status restoreSortedElem(DLRecord* elem);
-  Status restoreStringRecord(StringRecord* pmem_record,
+  Status restoreStringRecord(StringRecord* data_record,
                              const DataEntry& cached_entry);
 
   Status sortedRollback(BatchWriteLog::SortedLogEntry const& entry);
   Status listRollback(BatchWriteLog::ListLogEntry const& entry);
   Status hashListRollback(BatchWriteLog::HashLogEntry const& entry);
 
-  Status listRestoreElem(DLRecord* pmem_record);
-  Status listRestoreList(DLRecord* pmem_record);
+  Status listRestoreElem(DLRecord* data_record);
+  Status listRestoreList(DLRecord* data_record);
 
   Status restoreHashElem(DLRecord* rec);
   Status restoreHashHeader(DLRecord* rec);
 
-  bool validateRecord(void* pmem_record);
+  bool validateRecord(void* data_record);
 
   // If this instance is a backup of another kvdk instance
   bool recoverToCheckpoint() {

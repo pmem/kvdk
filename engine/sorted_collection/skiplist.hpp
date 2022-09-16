@@ -78,7 +78,7 @@ struct SkiplistNode {
     alloc->Free(SpaceEntry(offset, size));
   }
 
-  static SkiplistNode* NewNode(const StringView& key, DLRecord* record_on_pmem,
+  static SkiplistNode* NewNode(const StringView& key, DLRecord* data_record,
                                uint8_t height) {
     Allocator* alloc = global_memory_allocator();
     if (access_thread.thread_manager &&
@@ -97,7 +97,7 @@ struct SkiplistNode {
     if (entry.size != 0) {
       void* space = alloc->offset2addr(entry.offset);
       node = (SkiplistNode*)((char*)space + 8 * height);
-      node->record = record_on_pmem;
+      node->record = data_record;
       node->height = height;
       // make sure this will be linked to skiplist at all the height after
       // creation
@@ -207,7 +207,7 @@ class Skiplist : public Collection {
   };
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
-           Comparator comparator, Allocator* pmem_allocator,
+           Comparator comparator, Allocator* kv_allocator,
            HashTable* hash_table, LockTable* lock_table,
            bool index_with_hashtable);
 
@@ -345,7 +345,7 @@ class Skiplist : public Collection {
   //
   // Notice: key of the purging record should already been locked by engine
   static bool Remove(DLRecord* purging_record, SkiplistNode* dram_node,
-                     Allocator* pmem_allocator, LockTable* lock_table);
+                     Allocator* kv_allocator, LockTable* lock_table);
 
   // Replace "old_record" from its skiplist with "replacing_record", please make
   // sure the key order is correct after replace
@@ -362,11 +362,11 @@ class Skiplist : public Collection {
   //
   // Notice: key of the replacing record should already been locked by engine
   static bool Replace(DLRecord* old_record, DLRecord* new_record,
-                      SkiplistNode* dram_node, Allocator* pmem_allocator,
+                      SkiplistNode* dram_node, Allocator* kv_allocator,
                       LockTable* lock_table);
 
-  // Build a skiplist node for "pmem_record"
-  static SkiplistNode* NewNodeBuild(DLRecord* pmem_record);
+  // Build a skiplist node for "data_record"
+  static SkiplistNode* NewNodeBuild(DLRecord* data_record);
 
   // Format:
   // id (8 bytes) | configs
@@ -445,10 +445,10 @@ class Skiplist : public Collection {
 
   // Link DLRecord "linking" between "prev" and "next"
   static void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking,
-                           Allocator* pmem_allocator);
+                           Allocator* kv_allocator);
 
   inline void linkDLRecord(DLRecord* prev, DLRecord* next, DLRecord* linking) {
-    return linkDLRecord(prev, next, linking, pmem_allocator_);
+    return linkDLRecord(prev, next, linking, kv_allocator_);
   }
 
   // lock skiplist position to insert "key" by locking prev DLRecord and manage
@@ -464,7 +464,7 @@ class Skiplist : public Collection {
   // record itself
   // Notice: we do not check if record is still correctly linked
   static LockTable::MultiGuardType lockRecordPosition(const DLRecord* record,
-                                                      Allocator* pmem_allocator,
+                                                      Allocator* kv_allocator,
                                                       LockTable* lock_table);
 
   // lock skiplist position of "record" by locking its prev DLRecord and the
@@ -473,10 +473,10 @@ class Skiplist : public Collection {
   // predecessor
   LockTable::MultiGuardType lockOnListRecord(const DLRecord* record) {
     while (true) {
-      auto guard = lockRecordPosition(record, pmem_allocator_, record_locks_);
+      auto guard = lockRecordPosition(record, kv_allocator_, record_locks_);
       DLRecord* prev =
-          pmem_allocator_->offset2addr_checked<DLRecord>(record->prev);
-      if (prev->next == pmem_allocator_->addr2offset_checked(record)) {
+          kv_allocator_->offset2addr_checked<DLRecord>(record->prev);
+      if (prev->next == kv_allocator_->addr2offset_checked(record)) {
         return guard;
       }
     }
@@ -514,7 +514,7 @@ class Skiplist : public Collection {
   DLList dl_list_;
   std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;
-  Allocator* pmem_allocator_;
+  Allocator* kv_allocator_;
   // TODO: use specified hash table for each skiplist
   HashTable* hash_table_;
   // locks to protect modification of records
@@ -540,8 +540,8 @@ class Skiplist : public Collection {
 //
 // nexts: next nodes on DRAM of a key position, or node of the key if it existed
 // prevs: prev nodes on DRAM of a key position
-// prev_pmem_record: previous record on kv memory of a key position
-// next_pmem_record: next record on kv memory of a key position, or record of
+// prev_data_record: previous record on kv memory of a key position
+// next_data_record: next record on kv memory of a key position, or record of
 // the key if it existed
 //
 // TODO: maybe we only need prev position
@@ -550,8 +550,8 @@ struct Splice {
   Skiplist* seeking_list;
   std::array<SkiplistNode*, kMaxHeight + 1> nexts;
   std::array<SkiplistNode*, kMaxHeight + 1> prevs;
-  DLRecord* prev_pmem_record{nullptr};
-  DLRecord* next_pmem_record{nullptr};
+  DLRecord* prev_data_record{nullptr};
+  DLRecord* next_data_record{nullptr};
 
   Splice(Skiplist* s) : seeking_list(s) {}
 
