@@ -22,7 +22,7 @@ void OldRecordsCleaner::DelayDelete(IDeleter& deleter, void* obj) {
   auto& tc = cleaner_thread_cache_[access_thread.id];
   std::lock_guard<SpinMutex> guard{tc.old_records_lock};
 
-  TimeStampType ts = kv_engine_->version_controller_.GetCurrentTimestamp();
+  TimestampType ts = kv_engine_->version_controller_.GetCurrentTimestamp();
 
   size_t idx = delay_deleters_.at(&deleter);
   tc.local_queues_[idx].emplace_back(ts, obj);
@@ -34,7 +34,7 @@ void OldRecordsCleaner::DelayDelete(IDeleter& deleter, void* obj) {
 void OldRecordsCleaner::tryPurge(IDeleter& deleter, PendingQueue& pending_kvs,
                                  size_t lim) {
   maybeUpdateOldestSnapshot();
-  TimeStampType acc_ts =
+  TimestampType acc_ts =
       kv_engine_->version_controller_.LocalOldestSnapshotTS();
   for (size_t i = 0; i < lim && !pending_kvs.empty(); i++) {
     auto const& pair = pending_kvs.front();

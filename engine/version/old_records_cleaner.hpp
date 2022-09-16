@@ -48,7 +48,7 @@ class OldRecordsCleaner {
   void TryGlobalClean();
 
  private:
-  using PendingQueue = std::deque<std::pair<TimeStampType, void*>>;
+  using PendingQueue = std::deque<std::pair<TimestampType, void*>>;
 
   struct CleanerThreadCache {
     std::deque<PendingFreeSpaceEntry> pending_free_space_entries{};

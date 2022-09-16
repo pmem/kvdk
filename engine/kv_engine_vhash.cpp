@@ -4,29 +4,29 @@
 namespace KVDK_NAMESPACE {
 
 Status KVEngine::VHashCreate(StringView key, size_t capacity) KVDK_TRY {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) return s;
-  if (!CheckKeySize(key)) return Status::InvalidDataSize;
+  if (!checkKeySize(key)) return Status::InvalidDataSize;
 
   return vhashes_.Create(key, capacity) ? Status::Ok : Status::Existed;
 }
 KVDK_HANDLE_EXCEPTIONS
 
 Status KVEngine::VHashDestroy(StringView key) KVDK_TRY {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   defer(ReleaseAccessThread());
   if (s != Status::Ok) return s;
-  if (!CheckKeySize(key)) return Status::InvalidDataSize;
+  if (!checkKeySize(key)) return Status::InvalidDataSize;
 
   return vhashes_.Destroy(key) ? Status::Ok : Status::NotFound;
 }
 KVDK_HANDLE_EXCEPTIONS
 
 Status KVEngine::VHashSize(StringView key, size_t* len) KVDK_TRY {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) return s;
-  if (!CheckKeySize(key)) return Status::InvalidDataSize;
+  if (!checkKeySize(key)) return Status::InvalidDataSize;
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   VHash* vhash = vhashes_.Get(key);
@@ -39,9 +39,9 @@ KVDK_HANDLE_EXCEPTIONS
 
 Status KVEngine::VHashGet(StringView key, StringView field,
                           std::string* value) KVDK_TRY {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) return s;
-  if (!CheckKeySize(key) || !CheckKeySize(field))
+  if (!checkKeySize(key) || !checkKeySize(field))
     return Status::InvalidDataSize;
 
   auto token = version_controller_.GetLocalSnapshotHolder();
@@ -59,9 +59,9 @@ KVDK_HANDLE_EXCEPTIONS
 
 Status KVEngine::VHashPut(StringView key, StringView field,
                           StringView value) KVDK_TRY {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) return s;
-  if (!CheckKeySize(key) || !CheckKeySize(field) || !CheckValueSize(value))
+  if (!checkKeySize(key) || !checkKeySize(field) || !checkValueSize(value))
     return Status::InvalidDataSize;
 
   auto token = version_controller_.GetLocalSnapshotHolder();
@@ -74,9 +74,9 @@ Status KVEngine::VHashPut(StringView key, StringView field,
 KVDK_HANDLE_EXCEPTIONS
 
 Status KVEngine::VHashDelete(StringView key, StringView field) KVDK_TRY {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) return s;
-  if (!CheckKeySize(key) || !CheckKeySize(field))
+  if (!checkKeySize(key) || !checkKeySize(field))
     return Status::InvalidDataSize;
 
   auto token = version_controller_.GetLocalSnapshotHolder();
@@ -90,9 +90,9 @@ KVDK_HANDLE_EXCEPTIONS
 
 Status KVEngine::VHashModify(StringView key, StringView field,
                              ModifyFunc modify_func, void* cb_args) KVDK_TRY {
-  Status s = MaybeInitAccessThread();
+  Status s = maybeInitAccessThread();
   if (s != Status::Ok) return s;
-  if (!CheckKeySize(key) || !CheckKeySize(field))
+  if (!checkKeySize(key) || !checkKeySize(field))
     return Status::InvalidDataSize;
 
   std::string old_value;
@@ -122,9 +122,9 @@ std::unique_ptr<VHashIterator> KVEngine::VHashIteratorCreate(StringView key,
   Status sink;
   s = (s != nullptr) ? s : &sink;
 
-  *s = MaybeInitAccessThread();
+  *s = maybeInitAccessThread();
   if (*s != Status::Ok) return nullptr;
-  if (!CheckKeySize(key)) return nullptr;
+  if (!checkKeySize(key)) return nullptr;
 
   /// TODO: iterator should hold an access token to keep VHash valid.
   auto token = version_controller_.GetLocalSnapshotHolder();
