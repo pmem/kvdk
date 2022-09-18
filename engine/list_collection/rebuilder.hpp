@@ -223,7 +223,7 @@ class ListRebuilder {
 
   Status rebuildIndex(List* list) {
     auto ul = list->AcquireLock();
-    Status s = thread_manager_->MaybeInitThread(access_thread);
+    Status s = thread_manager_->MaybeRegisterThread(access_thread);
     if (s != Status::Ok) {
       return s;
     }

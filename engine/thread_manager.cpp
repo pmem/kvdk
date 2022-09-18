@@ -19,7 +19,7 @@ void Thread::Release() {
 
 Thread::~Thread() { Release(); }
 
-Status ThreadManager::MaybeInitThread(Thread& t) {
+Status ThreadManager::MaybeRegisterThread(Thread& t) {
   if (t.id < 0) {
     if (!usable_id_.empty()) {
       std::lock_guard<SpinMutex> lg(spin_);

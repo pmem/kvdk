@@ -169,6 +169,10 @@ void DBWrite(int tid) {
   std::unique_ptr<WriteBatch> batch;
   if (engine != nullptr) {
     batch = engine->WriteBatchCreate();
+    Status s = engine->RegisterAccessThread();
+    if (s != Status::Ok) {
+      std::abort();
+    }
   }
 
   for (size_t operations = 0; operations < operations_per_thread;
@@ -260,6 +264,12 @@ void DBWrite(int tid) {
 }
 
 void DBScan(int tid) {
+  if (engine != nullptr) {
+    Status s = engine->RegisterAccessThread();
+    if (s != Status::Ok) {
+      std::abort();
+    }
+  }
   std::string key(8, ' ');
   std::string value_sink;
 
@@ -331,6 +341,12 @@ void DBScan(int tid) {
 }
 
 void DBRead(int tid) {
+  if (engine != nullptr) {
+    Status s = engine->RegisterAccessThread();
+    if (s != Status::Ok) {
+      std::abort();
+    }
+  }
   std::string key(8, ' ');
   std::string value_sink;
 
@@ -527,6 +543,10 @@ int main(int argc, char** argv) {
 
   switch (bench_data_type) {
     case DataType::Sorted: {
+      Status s = engine->RegisterAccessThread();
+      if (s != Status::Ok) {
+        std::abort();
+      }
       printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
       for (auto col : collections) {
         SortedCollectionConfigs s_configs;
@@ -539,6 +559,10 @@ int main(int argc, char** argv) {
       break;
     }
     case DataType::Hashes: {
+      Status s = engine->RegisterAccessThread();
+      if (s != Status::Ok) {
+        std::abort();
+      }
       for (auto col : collections) {
         Status s = engine->HashCreate(col);
         if (s != Status::Ok && s != Status::Existed) {
@@ -549,6 +573,10 @@ int main(int argc, char** argv) {
       break;
     }
     case DataType::List: {
+      Status s = engine->RegisterAccessThread();
+      if (s != Status::Ok) {
+        std::abort();
+      }
       for (auto col : collections) {
         Status s = engine->ListCreate(col);
         if (s != Status::Ok && s != Status::Existed) {

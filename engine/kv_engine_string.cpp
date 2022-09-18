@@ -9,14 +9,12 @@ namespace KVDK_NAMESPACE {
 
 Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
                         void* modify_args, const WriteOptions& write_options) {
+  if (!access_thread.Registered()) {
+    return Status::InvalidAccessThread;
+  }
   int64_t base_time = TimeUtils::millisecond_time();
   if (!TimeUtils::CheckTTL(write_options.ttl_time, base_time)) {
     return Status::InvalidArgument;
-  }
-
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
   }
 
   auto ul = hash_table_->AcquireLock(key);
@@ -106,9 +104,8 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
 Status KVEngine::Put(const StringView key, const StringView value,
                      const WriteOptions& options) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
+  if (!access_thread.Registered()) {
+    return Status::InvalidAccessThread;
   }
 
   if (!checkKeySize(key) || !checkValueSize(value)) {
@@ -119,10 +116,8 @@ Status KVEngine::Put(const StringView key, const StringView value,
 }
 
 Status KVEngine::Get(const StringView key, std::string* value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
+  if (!access_thread.Registered()) {
+    return Status::InvalidAccessThread;
   }
 
   if (!checkKeySize(key)) {
@@ -144,10 +139,8 @@ Status KVEngine::Get(const StringView key, std::string* value) {
 }
 
 Status KVEngine::Delete(const StringView key) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
+  if (!access_thread.Registered()) {
+    return Status::InvalidAccessThread;
   }
 
   if (!checkKeySize(key)) {

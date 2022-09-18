@@ -72,7 +72,7 @@ class PMemAllocatorWrapper : public AllocatorAdaptor {
   }
 
   void InitThread() override {
-    thread_manager_->MaybeInitThread(access_thread);
+    thread_manager_->MaybeRegisterThread(access_thread);
   }
 
   ~PMemAllocatorWrapper(void) {

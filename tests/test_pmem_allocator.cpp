@@ -76,7 +76,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         // Test function: allocate all pmem, and free all under multi-threaded
         // scenario.
         auto TestPmemAlloc = [&](size_t) {
-          thread_manager_->MaybeInitThread(access_thread);
+          thread_manager_->MaybeRegisterThread(access_thread);
           std::vector<SpaceEntry> records;
           for (uint64_t j = 0; j < num_segment_block; ++j) {
             auto space_entry = pmem_alloc->Allocate(alloc_size);
@@ -95,7 +95,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         access_thread.Release();
 
         // Then allocate all pmem.
-        thread_manager_->MaybeInitThread(access_thread);
+        thread_manager_->MaybeRegisterThread(access_thread);
         int alloc_cnt = 0;
         while (true) {
           SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size);
@@ -127,7 +127,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
    * | 8 | 8 | 16 | 32 | 8 | 8 | 16 | 32 | 8 | 8 | 16 | 32 | 8 | 8 | 16 | 32 |
    */
   std::vector<SpaceEntry> records(num_thread);
-  thread_manager_->MaybeInitThread(access_thread);
+  thread_manager_->MaybeRegisterThread(access_thread);
   for (uint32_t i = 0; i < records.size(); ++i) {
     SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[i % 4]);
     records[i] = space_entry;
@@ -141,7 +141,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
    */
   // Notice threads (more than one) may share the same list of space pool.
   auto TestPmemFree = [&](uint64_t id) {
-    thread_manager_->MaybeInitThread(access_thread);
+    thread_manager_->MaybeRegisterThread(access_thread);
     if ((id + 1) % 4 != 0) {
       pmem_alloc->Free(records[id]);
     }
@@ -153,7 +153,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
   free_list->MoveCachedEntriesToPool();
   free_list->MergeSpaceInPool();
   // Test merge free memory
-  thread_manager_->MaybeInitThread(access_thread);
+  thread_manager_->MaybeRegisterThread(access_thread);
   for (uint32_t id = 0; id < num_thread / 4; ++id) {
     SpaceEntry space_entry = pmem_alloc->Allocate(alloc_size[3]);
     ASSERT_NE(space_entry.size, 0);
@@ -174,7 +174,7 @@ TEST_F(EnginePMemAllocatorTest, TestPMemAllocFreeList) {
       false, nullptr);
   ASSERT_NE(pmem_alloc, nullptr);
 
-  thread_manager_->MaybeInitThread(access_thread);
+  thread_manager_->MaybeRegisterThread(access_thread);
   // allocate 1024 bytes
   records.push_back(pmem_alloc->Allocate(1024ULL));
   ASSERT_EQ(pmem_alloc->PMemUsageInBytes(), 1024LL);

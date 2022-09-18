@@ -208,10 +208,11 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
 }
 
 Status KVEngine::restoreData() {
-  Status s = maybeInitAccessThread();
+  Status s = RegisterAccessThread();
   if (s != Status::Ok) {
     return s;
   }
+  defer(ReleaseAccessThread());
   EngineThreadCache& engine_thread_cache =
       engine_thread_cache_[access_thread.id];
 
@@ -342,7 +343,6 @@ Status KVEngine::restoreData() {
     }
   }
   restored_.fetch_add(cnt);
-  ReleaseAccessThread();
   return s;
 }
 
@@ -548,7 +548,7 @@ Status KVEngine::initOrRestoreCheckpoint() {
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   // TODO: make this multi-thread
-  Status s = maybeInitAccessThread();
+  Status s = RegisterAccessThread();
   if (s != Status::Ok) {
     return s;
   }
@@ -902,6 +902,9 @@ Status KVEngine::maybeInitBatchLogFile() {
 }
 
 Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
+  if (!access_thread.Registered()) {
+    return Status::InvalidAccessThread;
+  }
   WriteBatchImpl const* batch_impl =
       dynamic_cast<WriteBatchImpl const*>(batch.get());
   if (batch_impl == nullptr) {
@@ -916,12 +919,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
     return Status::InvalidBatchSize;
   }
 
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-
-  s = maybeInitBatchLogFile();
+  Status s = maybeInitBatchLogFile();
   if (s != Status::Ok) {
     return s;
   }
@@ -1291,9 +1289,8 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
+  if (!access_thread.Registered()) {
+    return Status::InvalidAccessThread;
   }
 
   int64_t base_time = TimeUtils::millisecond_time();

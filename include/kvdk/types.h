@@ -66,6 +66,7 @@ __attribute__((unused)) static char const* KVDKValueTypeString[] = {
   GEN(PMemMapFileError)     \
   GEN(InvalidBatchSize)     \
   GEN(TooManyAccessThreads) \
+  GEN(InvalidAccessThread)  \
   GEN(InvalidDataSize)      \
   GEN(InvalidArgument)      \
   GEN(IOError)              \

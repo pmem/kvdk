@@ -173,6 +173,10 @@ class KVEngine : public Engine {
     return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
   }
 
+  virtual Status RegisterAccessThread() final {
+    return maybeInitAccessThread();
+  }
+
   void ReleaseAccessThread() override { access_thread.Release(); }
 
   // For test cases
@@ -235,7 +239,7 @@ class KVEngine : public Engine {
                      uint16_t type_mask);
 
   inline Status maybeInitAccessThread() {
-    return thread_manager_->MaybeInitThread(access_thread);
+    return thread_manager_->MaybeRegisterThread(access_thread);
   }
 
   bool registerComparator(const StringView& collection_name,
@@ -302,11 +306,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashHeader
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {

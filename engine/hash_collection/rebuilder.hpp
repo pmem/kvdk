@@ -122,7 +122,7 @@ class HashListRebuilder {
   bool recoverToCheckPoint() { return checkpoint_.Valid(); }
 
   Status initRebuildLists() {
-    Status s = thread_manager_->MaybeInitThread(access_thread);
+    Status s = thread_manager_->MaybeRegisterThread(access_thread);
     if (s != Status::Ok) {
       return s;
     }
@@ -258,7 +258,7 @@ class HashListRebuilder {
   }
 
   Status rebuildIndex(HashList* hlist) {
-    Status s = thread_manager_->MaybeInitThread(access_thread);
+    Status s = thread_manager_->MaybeRegisterThread(access_thread);
     if (s != Status::Ok) {
       return s;
     }
