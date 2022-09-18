@@ -198,8 +198,9 @@ Status KVEngine::SortedDelete(const StringView collection,
   Skiplist* skiplist = nullptr;
   auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
   if (ret.s != Status::Ok) {
-    return (ret.s == Status::Outdated || ret.s == Status::NotFound) ? Status::Ok
-                                                                    : ret.s;
+    return (ret.s == Status::Outdated || ret.s == Status::NotFound)
+               ? Status::NotFound
+               : ret.s;
   }
 
   kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,

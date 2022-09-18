@@ -315,7 +315,7 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(DestroyFunc(collection), Status::Ok);
     ASSERT_EQ(PutFunc(collection, key, val), Status::NotFound);
     ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
-    ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
+    ASSERT_EQ(DeleteFunc(collection, key), Status::NotFound);
   }
 
   void createBasicOperationTest(const std::string& collection,

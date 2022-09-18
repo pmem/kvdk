@@ -140,8 +140,11 @@ class Engine {
                            std::string* value) = 0;
 
   // Remove SORTED-type KV of "key" in the sorted collection "collection".
-  // Return Ok on success or the "collection"/"key" did not exist, return non-Ok
-  // on any error.
+  // Return:
+  // Status::Ok on success or key not existed in collection
+  // Status::NotFound if collection not exist
+  // Status::WrongType if collection exists but is not a sorted collection
+  // Status::PMemOverflow if PMem exhausted.
   virtual Status SortedDelete(const StringView collection,
                               const StringView key) = 0;
 
@@ -149,7 +152,7 @@ class Engine {
 
   // Create an empty List.
   // Return:
-  //    Status::WrongType if list name is not a List.
+  //    Status::WrongType if list name existed but is not a List.
   //    Status::Existed if a List named list already exists.
   //    Status::PMemOverflow if PMem exhausted.
   //    Status::Ok if successfully created the List.
@@ -157,9 +160,9 @@ class Engine {
 
   // Destroy a List associated with key
   // Return:
-  //    Status::WrongType if list name is not a List.
-  //    Status::Ok if successfully destroyed the List.
-  //    Status::NotFound if list does not exist.
+  // Status::WrongType if list name is not a List.
+  // Status::Ok if successfully destroyed the List or the List not existed
+  // Status::PMemOverflow if PMem exhausted
   virtual Status ListDestroy(StringView list) = 0;
 
   // Total elements in List.
