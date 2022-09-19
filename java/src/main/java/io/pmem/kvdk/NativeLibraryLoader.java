@@ -18,16 +18,11 @@ public class NativeLibraryLoader {
 
     private static final String jniLibraryName = "kvdkjni";
 
-    private static final String atomicLibraryFileName = "libatomic.so.1";
-    private static final String stdLibraryFileName = "libstdc++.so.6";
-    private static final String jniLibraryFileName = System.mapLibraryName("kvdkjni");
-
-    private static final String tempAtomicLibraryFilePrefix = "libatomic";
-    private static final String tempAtomicLibraryFileSuffix = ".so.1";
-    private static final String tempStdLibraryFilePrefix = "libstdc++";
-    private static final String tempStdLibraryFileSuffix = ".so.6";
-    private static final String tempJniLibraryFilePrefix = "libkvdkjni";
-    private static final String tempJniLibraryFileSuffix = ".so";
+    private static final String[][] requiredLibraries = {
+        {"libatomic.so.1", "libatomic", ".so.1"},
+        {"libstdc++.so.6", "libstdc++", ".so.6"},
+        {"libkvdkjni.so", "libkvdkjni", ".so"}
+    };
 
     public static NativeLibraryLoader getInstance() {
         return instance;
@@ -48,27 +43,14 @@ public class NativeLibraryLoader {
 
     void loadLibraryFromJar(final String tmpDir) throws IOException {
         if (!initialized) {
-            System.load(
-                    loadLibraryFromJarToTemp(
-                                    tmpDir,
-                                    atomicLibraryFileName,
-                                    tempAtomicLibraryFilePrefix,
-                                    tempAtomicLibraryFileSuffix)
-                            .getAbsolutePath());
-            System.load(
-                    loadLibraryFromJarToTemp(
-                                    tmpDir,
-                                    stdLibraryFileName,
-                                    tempStdLibraryFilePrefix,
-                                    tempStdLibraryFileSuffix)
-                            .getAbsolutePath());
-            System.load(
-                    loadLibraryFromJarToTemp(
-                                    tmpDir,
-                                    jniLibraryFileName,
-                                    tempJniLibraryFilePrefix,
-                                    tempJniLibraryFileSuffix)
-                            .getAbsolutePath());
+            for (int i = 0; i < requiredLibraries.length; i++) {
+                String[] libraryInfo = requiredLibraries[i];
+                System.load(
+                        loadLibraryFromJarToTemp(
+                                        tmpDir, libraryInfo[0], libraryInfo[1], libraryInfo[2])
+                                .getAbsolutePath());
+            }
+
             initialized = true;
         }
     }

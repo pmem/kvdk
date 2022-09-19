@@ -1,3 +1,9 @@
 [submodule "extern/gtest"]
 	path = extern/gtest
 	url = https://github.com/google/googletest.git
+[submodule "extern/jemalloc"]
+	path = extern/jemalloc
+	url = https://github.com/jemalloc/jemalloc
+[submodule "extern/numactl"]
+	path = extern/numactl
+	url = https://github.com/numactl/numactl

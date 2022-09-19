@@ -64,6 +64,8 @@
                     </additionalClasspathElements>
                     <environmentVariables>
                         <PMEM_IS_PMEM_FORCE>1</PMEM_IS_PMEM_FORCE>
+                        <LD_PRELOAD>libasan.so.4</LD_PRELOAD>
+                        <LSAN_OPTIONS>detect_leaks=0:handle_segv=0</LSAN_OPTIONS>
                     </environmentVariables>
                 </configuration>
             </plugin>
