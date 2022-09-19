@@ -1092,6 +1092,7 @@ TEST_F(BatchWriteTest, Hash) {
   }
 
   auto Put = [&](size_t tid) {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     for (size_t i = 0; i < count; i++) {
       values[tid][i] = GetRandomString(120);
       ASSERT_EQ(engine->HashPut(key, fields[tid][i], values[tid][i]),
@@ -1100,6 +1101,7 @@ TEST_F(BatchWriteTest, Hash) {
   };
 
   auto BatchWrite = [&](size_t tid) {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     auto batch = engine->WriteBatchCreate();
     for (size_t i = 0; i < count; i++) {
       if (i % 2 == 0) {
@@ -1119,6 +1121,7 @@ TEST_F(BatchWriteTest, Hash) {
   };
 
   auto Check = [&](size_t tid) {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     for (size_t i = 0; i < count; i++) {
       std::string val_resp;
       if (values[tid][i].empty()) {
@@ -2902,26 +2905,32 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   Check();
 
   Reboot();
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   LBatchPush();
   Reboot();
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   LBatchPop();
   Reboot();
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   RBatchPush();
   Reboot();
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   RBatchPop();
   Reboot();
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   RPushLPop();
   Reboot();
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   SyncPoint::GetInstance()->DisableProcessing();
