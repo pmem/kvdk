@@ -9,25 +9,23 @@
 namespace KVDK_NAMESPACE {
 
 void Thread::Release() {
-  assert(id == -1 || thread_manager != nullptr);
   if (thread_manager) {
     thread_manager->Release(*this);
-    thread_manager = nullptr;
   }
-  id = -1;
 }
 
 Thread::~Thread() { Release(); }
 
 Status ThreadManager::MaybeRegisterThread(Thread& t) {
-  if (t.id < 0) {
+  if (!Registered(t)) {
+    t.Release();
     if (!usable_id_.empty()) {
       std::lock_guard<SpinMutex> lg(spin_);
       if (!usable_id_.empty()) {
         auto it = usable_id_.begin();
+        t.thread_manager = shared_from_this();
         t.id = *it;
         usable_id_.erase(it);
-        t.thread_manager = shared_from_this();
         return Status::Ok;
       }
     }
@@ -35,17 +33,24 @@ Status ThreadManager::MaybeRegisterThread(Thread& t) {
     if (static_cast<unsigned>(id) >= max_threads_) {
       return Status::TooManyAccessThreads;
     }
-    t.id = id;
     t.thread_manager = shared_from_this();
+    t.id = id;
   }
   return Status::Ok;
 }
 
-void ThreadManager::Release(const Thread& t) {
-  if (t.id >= 0) {
+bool ThreadManager::Registered(const Thread& t) {
+  return t.thread_manager.get() == this && t.id >= 0;
+}
+
+void ThreadManager::Release(Thread& t) {
+  if (Registered(t)) {
     assert(static_cast<unsigned>(t.id) < max_threads_);
+    auto id = t.id;
     std::lock_guard<SpinMutex> lg(spin_);
-    usable_id_.insert(t.id);
+    usable_id_.insert(id);
+    t.thread_manager = nullptr;
+    t.id = -1;
   }
 }
 

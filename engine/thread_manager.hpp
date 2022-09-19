@@ -19,7 +19,6 @@ struct Thread {
  public:
   Thread() : id(-1), thread_manager(nullptr) {}
   ~Thread();
-  bool Registered() { return id >= 0; }
   void Release();
   int id;
   std::shared_ptr<ThreadManager> thread_manager;
@@ -29,8 +28,9 @@ class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
  public:
   ThreadManager(uint32_t max_threads) : max_threads_(max_threads), ids_(0) {}
   Status MaybeRegisterThread(Thread& t);
+  bool Registered(const Thread& t);
 
-  void Release(const Thread& t);
+  void Release(Thread& t);
 
  private:
   uint32_t max_threads_;

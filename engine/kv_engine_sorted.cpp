@@ -8,7 +8,7 @@
 namespace KVDK_NAMESPACE {
 Status KVEngine::SortedCreate(const StringView collection_name,
                               const SortedCollectionConfigs& s_configs) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -72,7 +72,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
 }
 
 Status KVEngine::SortedDestroy(const StringView collection_name) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   auto ul = hash_table_->AcquireLock(collection_name);
@@ -114,7 +114,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
 }
 
 Status KVEngine::SortedSize(const StringView collection, size_t* size) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -135,7 +135,7 @@ Status KVEngine::SortedSize(const StringView collection, size_t* size) {
 
 Status KVEngine::SortedGet(const StringView collection,
                            const StringView user_key, std::string* value) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -158,7 +158,7 @@ Status KVEngine::SortedGet(const StringView collection,
 
 Status KVEngine::SortedPut(const StringView collection,
                            const StringView user_key, const StringView value) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -179,7 +179,7 @@ Status KVEngine::SortedPut(const StringView collection,
 
 Status KVEngine::SortedDelete(const StringView collection,
                               const StringView user_key) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   // Hold current snapshot in this thread
@@ -201,7 +201,7 @@ Status KVEngine::SortedDelete(const StringView collection,
 
 SortedIterator* KVEngine::SortedIteratorCreate(const StringView collection,
                                                Snapshot* snapshot, Status* s) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     if (s != nullptr) {
       *s = Status::InvalidAccessThread;
     }

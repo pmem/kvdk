@@ -1477,7 +1477,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       }
       ASSERT_EQ(data_entries_scan, 0);
       engine->SortedIteratorRelease(iter);
-      engine->ReleaseAccessThread();
       delete engine;
       Destroy();
     }
@@ -1539,7 +1538,6 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   };
 
   LaunchNThreads(num_threads, PutupEngine);
-  engine->ReleaseAccessThread();
   delete engine;
   // reopen and restore engine and try gets
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
@@ -2551,7 +2549,6 @@ TEST_F(BatchWriteTest, SortedRollback) {
     SortedCollectionConfigs s_configs;
     s_configs.index_with_hashtable = index_with_hashtable;
     ASSERT_EQ(engine->SortedCreate(key), Status::Ok);
-    engine->ReleaseAccessThread();
     std::vector<std::vector<std::string>> elems(num_threads);
     std::vector<std::vector<std::string>> values(num_threads);
     // Two new field that will be inserted but rolled back
@@ -2840,6 +2837,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   std::list<std::string> list_copy;
 
   auto Fill = [&]() {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     for (size_t i = 0; i < count; i++) {
       elems.emplace_back(GetRandomString(120));
       list_copy.push_back(elems.back());
@@ -2848,26 +2846,31 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   };
 
   auto LBatchPush = [&]() {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     ASSERT_THROW(engine->ListBatchPushFront(key, elems), SyncPoint::CrashPoint);
   };
 
   auto RBatchPush = [&]() {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     ASSERT_THROW(engine->ListBatchPushBack(key, elems), SyncPoint::CrashPoint);
   };
 
   auto LBatchPop = [&]() {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     std::vector<std::string> elems_resp;
     ASSERT_THROW(engine->ListBatchPopFront(key, count, &elems_resp),
                  SyncPoint::CrashPoint);
   };
 
   auto RBatchPop = [&]() {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     std::vector<std::string> elems_resp;
     ASSERT_THROW(engine->ListBatchPopBack(key, count, &elems_resp),
                  SyncPoint::CrashPoint);
   };
 
   auto RPushLPop = [&]() {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     std::string elem;
     ASSERT_THROW(
         engine->ListMove(key, ListPos::Front, key, ListPos::Back, &elem),
@@ -2875,6 +2878,7 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   };
 
   auto Check = [&]() {
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
     auto iter = engine->ListIteratorCreate(key);
     ASSERT_TRUE((list_copy.empty() && iter == nullptr) || (iter != nullptr));
     if (iter != nullptr) {
@@ -2905,32 +2909,26 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
   Check();
 
   Reboot();
-  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   LBatchPush();
   Reboot();
-  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   LBatchPop();
   Reboot();
-  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   RBatchPush();
   Reboot();
-  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   RBatchPop();
   Reboot();
-  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   RPushLPop();
   Reboot();
-  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   Check();
 
   SyncPoint::GetInstance()->DisableProcessing();

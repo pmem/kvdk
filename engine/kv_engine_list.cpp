@@ -4,7 +4,7 @@
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::ListCreate(StringView list_name) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -55,7 +55,7 @@ Status KVEngine::buildList(const StringView& list_name,
 }
 
 Status KVEngine::ListDestroy(StringView collection) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(collection)) {
@@ -94,7 +94,7 @@ Status KVEngine::ListDestroy(StringView collection) {
 }
 
 Status KVEngine::ListSize(StringView list_name, size_t* sz) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name)) {
@@ -114,7 +114,7 @@ Status KVEngine::ListSize(StringView list_name, size_t* sz) {
 }
 
 Status KVEngine::ListPushFront(StringView collection, StringView elem) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(collection) || !checkValueSize(elem)) {
@@ -133,7 +133,7 @@ Status KVEngine::ListPushFront(StringView collection, StringView elem) {
 }
 
 Status KVEngine::ListPushBack(StringView list_name, StringView elem) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name) || !checkValueSize(elem)) {
@@ -152,7 +152,7 @@ Status KVEngine::ListPushBack(StringView list_name, StringView elem) {
 }
 
 Status KVEngine::ListPopFront(StringView list_name, std::string* elem) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name)) {
@@ -185,7 +185,7 @@ Status KVEngine::ListPopFront(StringView list_name, std::string* elem) {
 }
 
 Status KVEngine::ListPopBack(StringView list_name, std::string* elem) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name)) {
@@ -230,7 +230,7 @@ Status KVEngine::ListBatchPushFront(StringView list_name,
 
 Status KVEngine::ListBatchPushFront(StringView list_name,
                                     std::vector<StringView> const& elems) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name)) {
@@ -260,7 +260,7 @@ Status KVEngine::ListBatchPushBack(StringView list_name,
 
 Status KVEngine::ListBatchPushBack(StringView list_name,
                                    std::vector<StringView> const& elems) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name)) {
@@ -283,7 +283,7 @@ Status KVEngine::ListBatchPushBack(StringView list_name,
 
 Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
                                    std::vector<std::string>* elems) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name)) {
@@ -298,7 +298,7 @@ Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
 
 Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
                                   std::vector<std::string>* elems) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(list_name)) {
@@ -314,7 +314,7 @@ Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
 
 Status KVEngine::ListMove(StringView src, ListPos src_pos, StringView dst,
                           ListPos dst_pos, std::string* elem) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkKeySize(src) || !checkKeySize(dst)) {
@@ -401,7 +401,7 @@ Status KVEngine::ListMove(StringView src, ListPos src_pos, StringView dst,
 
 Status KVEngine::ListInsertAt(StringView list_name, StringView elem,
                               long index) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkValueSize(elem)) {
@@ -421,7 +421,7 @@ Status KVEngine::ListInsertAt(StringView list_name, StringView elem,
 
 Status KVEngine::ListInsertBefore(StringView list_name, StringView elem,
                                   StringView pos) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkValueSize(elem)) {
@@ -443,7 +443,7 @@ Status KVEngine::ListInsertBefore(StringView list_name, StringView elem,
 
 Status KVEngine::ListInsertAfter(StringView collection, StringView elem,
                                  StringView dst) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   if (!checkValueSize(elem)) {
@@ -464,7 +464,7 @@ Status KVEngine::ListInsertAfter(StringView collection, StringView elem,
 
 Status KVEngine::ListErase(StringView list_name, long index,
                            std::string* elem) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -494,7 +494,7 @@ Status KVEngine::ListErase(StringView list_name, long index,
 // Replace the element at pos
 Status KVEngine::ListReplace(StringView collection, long index,
                              StringView elem) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -510,7 +510,7 @@ Status KVEngine::ListReplace(StringView collection, long index,
 
 ListIterator* KVEngine::ListIteratorCreate(StringView collection,
                                            Snapshot* snapshot, Status* status) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     if (status != nullptr) {
       *status = Status::InvalidAccessThread;
     }

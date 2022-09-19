@@ -902,7 +902,7 @@ Status KVEngine::maybeInitBatchLogFile() {
 }
 
 Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   WriteBatchImpl const* batch_impl =
@@ -1289,7 +1289,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
 }
 
 Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 

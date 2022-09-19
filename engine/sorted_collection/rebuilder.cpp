@@ -121,6 +121,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
   if (s != Status::Ok) {
     return s;
   }
+  defer(kv_engine_->ReleaseAccessThread());
 
   // Keep headers with same id together for recognize outdated ones
   auto cmp = [](const DLRecord* header1, const DLRecord* header2) {

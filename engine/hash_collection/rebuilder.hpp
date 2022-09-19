@@ -126,6 +126,7 @@ class HashListRebuilder {
     if (s != Status::Ok) {
       return s;
     }
+    defer(thread_manager_->Release(access_thread));
 
     // Keep headers with same id together for recognize outdated ones
     auto cmp = [](const DLRecord* header1, const DLRecord* header2) {

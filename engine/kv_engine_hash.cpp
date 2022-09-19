@@ -7,7 +7,7 @@
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::HashCreate(StringView collection) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -59,7 +59,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
 }
 
 Status KVEngine::HashDestroy(StringView collection) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -99,9 +99,10 @@ Status KVEngine::HashDestroy(StringView collection) {
 }
 
 Status KVEngine::HashSize(StringView collection, size_t* len) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
+
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
@@ -118,7 +119,7 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
 
 Status KVEngine::HashGet(StringView collection, StringView key,
                          std::string* value) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -135,7 +136,7 @@ Status KVEngine::HashGet(StringView collection, StringView key,
 
 Status KVEngine::HashPut(StringView collection, StringView key,
                          StringView value) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -165,7 +166,7 @@ Status KVEngine::HashPut(StringView collection, StringView key,
 }
 
 Status KVEngine::HashDelete(StringView collection, StringView key) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -195,7 +196,7 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
 
 Status KVEngine::HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -221,7 +222,7 @@ Status KVEngine::HashModify(StringView collection, StringView key,
 
 HashIterator* KVEngine::HashIteratorCreate(StringView collection,
                                            Snapshot* snapshot, Status* status) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     if (status != nullptr) {
       *status = Status::InvalidAccessThread;
     }

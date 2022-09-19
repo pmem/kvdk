@@ -9,7 +9,7 @@ namespace KVDK_NAMESPACE {
 
 Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
                         void* modify_args, const WriteOptions& write_options) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
   int64_t base_time = TimeUtils::millisecond_time();
@@ -104,7 +104,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
 Status KVEngine::Put(const StringView key, const StringView value,
                      const WriteOptions& options) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -116,7 +116,7 @@ Status KVEngine::Put(const StringView key, const StringView value,
 }
 
 Status KVEngine::Get(const StringView key, std::string* value) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 
@@ -139,7 +139,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
 }
 
 Status KVEngine::Delete(const StringView key) {
-  if (!access_thread.Registered()) {
+  if (!ThreadRegistered()) {
     return Status::InvalidAccessThread;
   }
 

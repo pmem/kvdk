@@ -174,10 +174,16 @@ class KVEngine : public Engine {
   }
 
   virtual Status RegisterAccessThread() final {
-    return maybeInitAccessThread();
+    return thread_manager_->MaybeRegisterThread(access_thread);
   }
 
-  void ReleaseAccessThread() override { access_thread.Release(); }
+  void ReleaseAccessThread() override {
+    thread_manager_->Release(access_thread);
+  }
+
+  inline bool ThreadRegistered() {
+    return thread_manager_->Registered(access_thread);
+  }
 
   // For test cases
   const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
@@ -237,10 +243,6 @@ class KVEngine : public Engine {
 
   Status hashGetImpl(const StringView& key, std::string* value,
                      uint16_t type_mask);
-
-  inline Status maybeInitAccessThread() {
-    return thread_manager_->MaybeRegisterThread(access_thread);
-  }
 
   bool registerComparator(const StringView& collection_name,
                           Comparator comp_func) {

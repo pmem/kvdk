@@ -122,11 +122,13 @@ class ListRebuilder {
   bool recoverToCheckPoint() { return checkpoint_.Valid(); }
 
   Status initRebuildLists() {
+    Status s = thread_manager_->MaybeRegisterThread(access_thread);
+    if (s != Status::Ok) {
+      return s;
+    }
+    defer(thread_manager_->Release(access_thread));
     for (size_t i = 0; i < linked_headers_.size(); i++) {
       DLRecord* header_record = linked_headers_[i];
-      // if (i + 1 < linked_headers_.size() /*&& xx*/) {
-      // continue;
-      // }
 
       auto collection_name = header_record->Key();
       CollectionIDType id = Collection::DecodeID(header_record->Value());
