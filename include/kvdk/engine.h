@@ -63,6 +63,7 @@ extern KVDKStatus KVDKBackup(KVDKEngine* engine, const char* backup_path,
 extern KVDKStatus KVDKRestore(const char* name, const char* backup_log,
                               const KVDKConfigs* config, FILE* log_file,
                               KVDKEngine** engine);
+extern KVDKStatus KVDKRegisterAccessThread(KVDKEngine* engine);
 extern void KVDKReleaseAccessThread(KVDKEngine* engine);
 extern void KVDKCloseEngine(KVDKEngine* engine);
 extern void KVDKRemovePMemContents(const char* name);

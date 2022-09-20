@@ -15,6 +15,7 @@ void ConcatStrings(char const* elem_data, size_t elem_len, void* arg) {
 }
 
 TEST_F(EngineCAPITestBase, List) {
+  ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
   size_t num_threads = 16;
   size_t count = 1000;
 
@@ -32,6 +33,8 @@ TEST_F(EngineCAPITestBase, List) {
   std::vector<std::list<std::string>> list_copy_vec(num_threads);
 
   auto ListIteratorGetValue = [&](KVDKListIterator* iter) {
+    KVDKStatus s = KVDKRegisterAccessThread(engine);
+    assert(s == KVDKStatus::Ok);
     char* value;
     size_t sz;
     // Read the value at the ListIterator
@@ -42,25 +45,29 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto ListPopFront = [&](std::string const& key) {
+    KVDKStatus s = KVDKRegisterAccessThread(engine);
+    assert(s == KVDKStatus::Ok);
     char* value;
     size_t sz;
-    KVDKStatus s =
-        KVDKListPopFront(engine, key.data(), key.size(), &value, &sz);
+    s = KVDKListPopFront(engine, key.data(), key.size(), &value, &sz);
     std::string ret{value, sz};
     free(value);
     return std::make_pair(s, ret);
   };
 
   auto ListPopBack = [&](std::string const& key) {
+    KVDKStatus s = KVDKRegisterAccessThread(engine);
+    assert(s == KVDKStatus::Ok);
     char* value;
     size_t sz;
-    KVDKStatus s = KVDKListPopBack(engine, key.data(), key.size(), &value, &sz);
+    s = KVDKListPopBack(engine, key.data(), key.size(), &value, &sz);
     std::string ret{value, sz};
     free(value);
     return std::make_pair(s, ret);
   };
 
   auto LPush = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
@@ -77,6 +84,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto RPush = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
@@ -93,6 +101,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto LPop = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
@@ -111,6 +120,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto RPop = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
@@ -129,6 +139,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto ListIterate = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 
@@ -164,6 +175,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto ListInsertPutRemove = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& list_name = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     size_t len;
@@ -233,6 +245,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto LBatchPush = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
@@ -251,6 +264,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto RBatchPush = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto const& elems = elems_vec[tid];
     auto& list_copy = list_copy_vec[tid];
@@ -269,6 +283,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto LBatchPop = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string buffer1;
@@ -289,6 +304,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto RBatchPop = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
     std::string buffer1;
@@ -308,6 +324,7 @@ TEST_F(EngineCAPITestBase, List) {
   };
 
   auto RPushLPop = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     auto const& key = list_vec[tid];
     auto& list_copy = list_copy_vec[tid];
 

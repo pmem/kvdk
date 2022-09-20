@@ -432,6 +432,8 @@ int main() {
 
   status = kvdk::Engine::Open(engine_path, &engine, engine_configs, stdout);
   assert(status == kvdk::Status::Ok);
+  status = engine->RegisterAccessThread();
+  assert(status == kvdk::Status::Ok);
   printf("Successfully opened a KVDK instance.\n");
 
   // Reads and Writes on Anonymous Global Collection

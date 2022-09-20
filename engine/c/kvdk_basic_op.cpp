@@ -96,6 +96,10 @@ KVDKStatus KVDKRestore(const char* name, const char* backup_log,
   return s;
 }
 
+extern KVDKStatus KVDKRegisterAccessThread(KVDKEngine* engine) {
+  return engine->rep->RegisterAccessThread();
+}
+
 void KVDKReleaseAccessThread(KVDKEngine* engine) {
   engine->rep->ReleaseAccessThread();
 }

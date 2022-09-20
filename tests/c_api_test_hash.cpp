@@ -32,6 +32,7 @@ int FetchAdd(char const* old_val_data, size_t old_val_len, char** new_val_data,
 }
 
 TEST_F(EngineCAPITestBase, Hash) {
+  ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
   size_t num_threads = 16;
   size_t count = 1000;
 
@@ -42,6 +43,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   std::mutex mu;
 
   auto HPut = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     umap& local_copy = local_copies[tid];
     for (size_t j = 0; j < count; j++) {
       std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
@@ -54,6 +56,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   };
 
   auto HGet = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     umap const& local_copy = local_copies[tid];
     for (auto const& kv : local_copy) {
       char* resp_data;
@@ -67,6 +70,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   };
 
   auto HDelete = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     umap& local_copy = local_copies[tid];
     std::string sink;
     for (size_t i = 0; i < count / 2; i++) {
@@ -84,6 +88,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   };
 
   auto HashSize = [&](size_t) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     size_t len = 0;
     ASSERT_EQ(KVDKHashLength(engine, key.data(), key.size(), &len),
               KVDKStatus::Ok);
@@ -95,6 +100,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   };
 
   auto HashIterate = [&](size_t tid) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     umap combined;
     for (size_t tid = 0; tid < num_threads; tid++) {
       umap const& local_copy = local_copies[tid];
@@ -162,6 +168,7 @@ TEST_F(EngineCAPITestBase, Hash) {
 
   std::string counter{"counter"};
   auto HashModify = [&](size_t) {
+    ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
     FetchAddArgs args;
     args.n = 1;
     for (size_t j = 0; j < count; j++) {
@@ -187,6 +194,7 @@ TEST_F(EngineCAPITestBase, Hash) {
   LaunchNThreads(num_threads, HashModify);
   char* resp_data;
   size_t resp_len;
+  ASSERT_EQ(KVDKRegisterAccessThread(engine), KVDKStatus::Ok);
   ASSERT_EQ(KVDKHashGet(engine, key.data(), key.size(), counter.data(),
                         counter.size(), &resp_data, &resp_len),
             KVDKStatus::Ok);

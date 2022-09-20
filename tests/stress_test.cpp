@@ -505,6 +505,7 @@ class EngineTestBase : public testing::Test {
   void HashesAllHSet(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
+      ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
       shadow_hashes_engines[collection_name]->EvenXSetOddXSet(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
@@ -518,6 +519,7 @@ class EngineTestBase : public testing::Test {
   void HashesEvenHSetOddHDelete(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
+      ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
       shadow_hashes_engines[collection_name]->EvenXSetOddXDelete(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
@@ -531,6 +533,7 @@ class EngineTestBase : public testing::Test {
   void SortedAllPut(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
+      ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
       shadow_sorted_engines[collection_name]->EvenXSetOddXSet(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
@@ -544,6 +547,7 @@ class EngineTestBase : public testing::Test {
   void SortedEvenPutOddDelete(std::string const& collection_name) {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
+      ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
       shadow_sorted_engines[collection_name]->EvenXSetOddXDelete(
           tid, grouped_keys[tid], grouped_values[tid]);
     };
@@ -557,6 +561,7 @@ class EngineTestBase : public testing::Test {
   void StringAllSet() {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
+      ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
       shadow_string_engine->EvenXSetOddXSet(tid, grouped_keys[tid],
                                             grouped_values[tid]);
     };
@@ -569,6 +574,7 @@ class EngineTestBase : public testing::Test {
   void StringEvenSetOddDelete() {
     ShuffleAllKeysValuesWithinThread();
     auto ModifyEngine = [&](int tid) {
+      ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
       shadow_string_engine->EvenXSetOddXDelete(tid, grouped_keys[tid],
                                                grouped_values[tid]);
     };
@@ -579,6 +585,7 @@ class EngineTestBase : public testing::Test {
   }
 
   void CheckHashesCollection(std::string collection_name) {
+    ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
     std::cout << "[Testing] Checking Hashes Collection: " << collection_name
               << std::endl;
     shadow_hashes_engines[collection_name]->CheckGetter();
@@ -591,6 +598,7 @@ class EngineTestBase : public testing::Test {
   }
 
   void CheckSortedCollection(std::string collection_name) {
+    ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
     std::cout << "[Testing] Checking Sorted Collection: " << collection_name
               << std::endl;
     shadow_sorted_engines[collection_name]->CheckGetter();
@@ -603,6 +611,7 @@ class EngineTestBase : public testing::Test {
   }
 
   void CheckStrings() {
+    ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
     std::cout << "[Testing] Checking strings." << std::endl;
     shadow_string_engine->CheckGetter();
   }
@@ -719,6 +728,7 @@ class EngineStressTest : public EngineTestBase {
 };
 
 TEST_F(EngineStressTest, HashesHSetOnly) {
+  ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
   ASSERT_EQ(engine->HashCreate(global_collection_name), kvdk::Status::Ok);
@@ -739,6 +749,7 @@ TEST_F(EngineStressTest, HashesHSetOnly) {
 TEST_F(EngineStressTest, HashesHSetAndHDelete) {
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
+  ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
   ASSERT_EQ(engine->HashCreate(global_collection_name), kvdk::Status::Ok);
 
   std::cout << "[Testing] Modify, check, reboot and check engine for "
@@ -755,6 +766,7 @@ TEST_F(EngineStressTest, HashesHSetAndHDelete) {
 }
 
 TEST_F(EngineStressTest, SortedPutOnly) {
+  ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -782,6 +794,7 @@ TEST_F(EngineStressTest, SortedPutOnly) {
 }
 
 TEST_F(EngineStressTest, SortedPutAndDelete) {
+  ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -870,6 +883,7 @@ class EngineHotspotTest : public EngineTestBase {
 };
 
 TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
+  ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
   std::string global_collection_name{"HashesCollection"};
   InitializeHashes(global_collection_name);
   ASSERT_EQ(engine->HashCreate(global_collection_name), kvdk::Status::Ok);
@@ -891,6 +905,7 @@ TEST_F(EngineHotspotTest, HashesMultipleHotspot) {
 }
 
 TEST_F(EngineHotspotTest, SortedMultipleHotspot) {
+  ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
   for (int index_with_hashtable : {0, 1}) {
     std::string global_collection_name{"SortedCollection" +
                                        index_with_hashtable};
@@ -949,6 +964,7 @@ TEST_F(EngineStressTest, BackgroundCleanerTest) {
   std::cout << "[Testing] Modify, check, reboot and check engine for "
             << n_reboot << " times." << std::endl;
   for (size_t i = 0; i < n_reboot; i++) {
+    ASSERT_EQ(engine->RegisterAccessThread(), kvdk::Status::Ok);
     InitializeSorted(global_sorted_collection_name);
     InitializeHashes(global_hash_collection_name);
     InitializeStrings();

@@ -1307,64 +1307,64 @@ TEST_F(EngineBasicTest, TestStringLargeValue) {
 TEST_F(EngineBasicTest, TestSortedRestore) {
   size_t num_threads = 16;
   configs.max_access_threads = num_threads + 1;
-  for (int opt_large_sorted_collection_recovery : {0, 1}) {
-    for (int index_with_hashtable : {0, 1}) {
-      SortedCollectionConfigs s_configs;
-      s_configs.index_with_hashtable = index_with_hashtable;
-      ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-                Status::Ok);
+  for (int index_with_hashtable : {0, 1}) {
+    SortedCollectionConfigs s_configs;
+    s_configs.index_with_hashtable = index_with_hashtable;
+    ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+              Status::Ok);
+    ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
+    // Test destroy a collction
+    std::string empty_skiplist("empty_skiplist");
+    size_t empty_skiplist_size;
+    ASSERT_EQ(engine->SortedCreate(empty_skiplist, s_configs), Status::Ok);
+    ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+              Status::Ok);
+    ASSERT_EQ(empty_skiplist_size, 0);
+    ASSERT_EQ(engine->SortedDestroy(empty_skiplist), Status::Ok);
+    ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
+              Status::NotFound);
+    // insert and delete some keys, then re-insert some deleted keys
+    int count = 100;
+    std::string global_skiplist =
+        std::to_string(index_with_hashtable) + "skiplist";
+    ASSERT_EQ(engine->SortedCreate(global_skiplist, s_configs), Status::Ok);
+    std::string thread_skiplist =
+        std::to_string(index_with_hashtable) + "t_skiplist";
+    engine->ReleaseAccessThread();
+    auto PutupEngine = [&](uint32_t id) {
       ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
-      // Test destroy a collction
-      std::string empty_skiplist("empty_skiplist");
-      size_t empty_skiplist_size;
-      ASSERT_EQ(engine->SortedCreate(empty_skiplist, s_configs), Status::Ok);
-      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
-                Status::Ok);
-      ASSERT_EQ(empty_skiplist_size, 0);
-      ASSERT_EQ(engine->SortedDestroy(empty_skiplist), Status::Ok);
-      ASSERT_EQ(engine->SortedSize(empty_skiplist, &empty_skiplist_size),
-                Status::NotFound);
-      // insert and delete some keys, then re-insert some deleted keys
-      int count = 100;
-      std::string global_skiplist =
-          std::to_string(index_with_hashtable) + "skiplist";
-      ASSERT_EQ(engine->SortedCreate(global_skiplist, s_configs), Status::Ok);
-      std::string thread_skiplist =
-          std::to_string(index_with_hashtable) + "t_skiplist";
-      engine->ReleaseAccessThread();
-      auto PutupEngine = [&](uint32_t id) {
-        ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
-        std::string key_prefix(id, 'a');
-        std::string got_val;
-        std::string t_skiplist(thread_skiplist + std::to_string(id));
-        ASSERT_EQ(engine->SortedCreate(t_skiplist, s_configs), Status::Ok);
-        for (int i = 1; i <= count; i++) {
-          auto key = key_prefix + std::to_string(i);
-          auto overall_val = std::to_string(i);
-          auto t_val = std::to_string(i * 2);
-          ASSERT_EQ(engine->SortedPut(global_skiplist, key, overall_val),
-                    Status::Ok);
-          ASSERT_EQ(engine->SortedPut(t_skiplist, key, t_val), Status::Ok);
+      std::string key_prefix(id, 'a');
+      std::string got_val;
+      std::string t_skiplist(thread_skiplist + std::to_string(id));
+      ASSERT_EQ(engine->SortedCreate(t_skiplist, s_configs), Status::Ok);
+      for (int i = 1; i <= count; i++) {
+        auto key = key_prefix + std::to_string(i);
+        auto overall_val = std::to_string(i);
+        auto t_val = std::to_string(i * 2);
+        ASSERT_EQ(engine->SortedPut(global_skiplist, key, overall_val),
+                  Status::Ok);
+        ASSERT_EQ(engine->SortedPut(t_skiplist, key, t_val), Status::Ok);
+        ASSERT_EQ(engine->SortedGet(global_skiplist, key, &got_val),
+                  Status::Ok);
+        ASSERT_EQ(got_val, overall_val);
+        ASSERT_EQ(engine->SortedGet(t_skiplist, key, &got_val), Status::Ok);
+        ASSERT_EQ(got_val, t_val);
+        if (i % 2 == 1) {
+          ASSERT_EQ(engine->SortedDelete(global_skiplist, key), Status::Ok);
+          ASSERT_EQ(engine->SortedDelete(t_skiplist, key), Status::Ok);
           ASSERT_EQ(engine->SortedGet(global_skiplist, key, &got_val),
-                    Status::Ok);
-          ASSERT_EQ(got_val, overall_val);
-          ASSERT_EQ(engine->SortedGet(t_skiplist, key, &got_val), Status::Ok);
-          ASSERT_EQ(got_val, t_val);
-          if (i % 2 == 1) {
-            ASSERT_EQ(engine->SortedDelete(global_skiplist, key), Status::Ok);
-            ASSERT_EQ(engine->SortedDelete(t_skiplist, key), Status::Ok);
-            ASSERT_EQ(engine->SortedGet(global_skiplist, key, &got_val),
-                      Status::NotFound);
-            ASSERT_EQ(engine->SortedGet(t_skiplist, key, &got_val),
-                      Status::NotFound);
-          }
+                    Status::NotFound);
+          ASSERT_EQ(engine->SortedGet(t_skiplist, key, &got_val),
+                    Status::NotFound);
         }
-      };
+      }
+    };
 
-      LaunchNThreads(num_threads, PutupEngine);
+    LaunchNThreads(num_threads, PutupEngine);
 
-      delete engine;
+    delete engine;
 
+    for (int opt_large_sorted_collection_recovery : {0, 1}) {
       GlobalLogger.Debug(
           "Restore with opt_large_sorted_collection_restore: %d\n",
           opt_large_sorted_collection_recovery);
@@ -1478,8 +1478,8 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       ASSERT_EQ(data_entries_scan, 0);
       engine->SortedIteratorRelease(iter);
       delete engine;
-      Destroy();
     }
+    Destroy();
   }
 }
 
