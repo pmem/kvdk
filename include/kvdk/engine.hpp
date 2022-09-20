@@ -52,6 +52,25 @@ class Engine {
                         const std::string& backup_log, Engine** engine_ptr,
                         const Configs& configs, FILE* log_file = stdout);
 
+  // Register this thread as access thread of the engine, you must register
+  // access thread before read/write engine
+  // The access thread will be un-registered by calling ReleaseAccessThread() or
+  // while the thread destroyed
+  // Return:
+  // Status::Ok on success Return
+  // Status::TooManyAccessThreads if existing access threads reached
+  // Configs::max_access_threads
+  //
+  // Notice !:
+  // A thread only can be registered to one kvdk instance, if you register it to
+  // another one, the previous one will be released
+  // TODO: support multiple instance
+  virtual Status RegisterAccessThread() = 0;
+
+  // Release resources occupied by this access thread so new thread can take
+  // part. New write requests of this thread need to re-request write resources.
+  virtual void ReleaseAccessThread() = 0;
+
   virtual Status TypeOf(StringView key, ValueType* type) = 0;
 
   // Insert a STRING-type KV to set "key" to hold "value", return Ok on
@@ -370,19 +389,6 @@ class Engine {
 
   // Release a sorted iterator
   virtual void SortedIteratorRelease(SortedIterator*) = 0;
-
-  // Register this thread as access thread of the engine, you must register
-  // access thread before read/write engine
-  // The access thread will be un-registered by calling ReleaseAccessThread() or
-  // while the thread destroyed
-  // Return Status::Ok on success Return
-  // Status::TooManyAccessThreads if existing access threads reached
-  // Configs::max_access_threads
-  virtual Status RegisterAccessThread() = 0;
-
-  // Release resources occupied by this access thread so new thread can take
-  // part. New write requests of this thread need to re-request write resources.
-  virtual void ReleaseAccessThread() = 0;
 
   // Register a customized comparator to the engine on runtime
   //
