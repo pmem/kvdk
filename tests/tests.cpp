@@ -517,25 +517,25 @@ TEST_F(EngineBasicTest, TypeOfKey) {
 }
 
 TEST_F(EngineBasicTest, TestThreadManager) {
-  return;
   int max_access_threads = 1;
   configs.max_access_threads = max_access_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key("k");
   std::string val("value");
+  ASSERT_EQ(engine->Put(key, val), Status::InvalidAccessThread);
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   ASSERT_EQ(engine->Put(key, val, WriteOptions()), Status::Ok);
 
   // Reach max access threads
-  auto s = std::async(&Engine::Put, engine, key, val, WriteOptions());
+  auto s = std::async(&Engine::RegisterAccessThread, engine);
   ASSERT_EQ(s.get(), Status::TooManyAccessThreads);
   // Manually release access thread
   engine->ReleaseAccessThread();
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
+  s = std::async(&Engine::RegisterAccessThread, engine);
   ASSERT_EQ(s.get(), Status::Ok);
-  // Release access thread on thread exits
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::Ok);
+  // Previous access thread released on exist
+  ASSERT_EQ(engine->RegisterAccessThread(), Status::Ok);
   delete engine;
 }
 
