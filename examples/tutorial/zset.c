@@ -269,7 +269,7 @@ int main() {
   KVDKStatus s = KVDKOpen(engine_path, kvdk_configs, stdout, &kvdk_engine);
   assert(s == Ok);
   s = KVDKRegisterAccessThread(kvdk_engine);
-  assert(s==Ok);
+  assert(s == Ok);
   KVDKRegisterCompFunc(kvdk_engine, comp_name, strlen(comp_name), ScoreCmp);
   ZSetTest(kvdk_engine);
 

@@ -612,8 +612,8 @@ void ModifyExample(KVDKEngine* kvdk_engine) {
 
   int recycle = 100;
   for (int i = 1; i <= recycle; i++) {
-    s = KVDKModify(kvdk_engine, incr_key, strlen(incr_key), IncN,
-                              &args, free, write_option);
+    s = KVDKModify(kvdk_engine, incr_key, strlen(incr_key), IncN, &args, free,
+                   write_option);
     assert(s == Ok);
     assert(args.result == args.incr_by * (int)i);
 
@@ -736,7 +736,7 @@ int main() {
   assert(s == Ok);
 
   s = KVDKRegisterAccessThread(kvdk_engine);
-assert(s==Ok);
+  assert(s == Ok);
 
   // Modify Example
   ModifyExample(kvdk_engine);
