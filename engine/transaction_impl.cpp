@@ -98,7 +98,7 @@ Status TransactionImpl::SortedDelete(const std::string& collection,
       hash_table->Lookup<false>(collection, RecordType::SortedRecord);
   if (lookup_result.s != Status::Ok) {
     kvdk_assert(lookup_result.s == Status::NotFound, "");
-    return Status::Ok;
+    return lookup_result.s;
   }
   Skiplist* skiplist = lookup_result.entry.GetIndex().skiplist;
   auto internal_key = skiplist->InternalKey(key);
@@ -184,7 +184,7 @@ Status TransactionImpl::HashDelete(const std::string& collection,
       hash_table->Lookup<false>(collection, RecordType::HashRecord);
   if (lookup_result.s != Status::Ok) {
     kvdk_assert(lookup_result.s == Status::NotFound, "");
-    return Status::Ok;
+    return lookup_result.s;
   }
   HashList* hlist = lookup_result.entry.GetIndex().hlist;
   auto internal_key = hlist->InternalKey(key);
@@ -217,7 +217,6 @@ Status TransactionImpl::HashGet(const std::string& collection,
     auto lookup_result =
         hash_table->Lookup<false>(collection, RecordType::HashRecord);
     if (lookup_result.s != Status::Ok) {
-      GlobalLogger.Debug("collection not found\n");
       kvdk_assert(lookup_result.s == Status::NotFound, "");
       return lookup_result.s;
     }
@@ -260,6 +259,7 @@ Status TransactionImpl::Commit() {
   Rollback();
   return s;
 }
+
 void TransactionImpl::Rollback() {
   for (SpinMutex* s : locked_) {
     s->unlock();
