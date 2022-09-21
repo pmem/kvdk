@@ -180,6 +180,14 @@ class KVEngine : public Engine {
 
   void ReleaseAccessThread() final { access_thread.Release(); }
 
+  // Call this function before doing collection related transaction to avoid
+  // collection be destroyed during transaction
+  std::unique_ptr<CollectionTransactionCV::TransactionToken>
+  AcquireCollectionTransactionLock() {
+    return std::unique_ptr<CollectionTransactionCV::TransactionToken>(
+        new CollectionTransactionCV::TransactionToken(&ct_cv_));
+  }
+
   Status CommitTransaction(TransactionImpl* txn);
 
   // For test cases
@@ -299,6 +307,14 @@ class KVEngine : public Engine {
   void insertKeyOrElem(HashTable::LookupResult ret, RecordType type,
                        RecordStatus status, void* addr) {
     hash_table_->Insert(ret, type, status, addr, pointerType(type));
+  }
+
+  // Call this function before create or destroy a collection to avoid
+  // collection be destroyed during a related transaction
+  std::unique_ptr<CollectionTransactionCV::CollectionToken>
+  acquireCollectionCreateOrDestroyLock() {
+    return std::unique_ptr<CollectionTransactionCV::CollectionToken>(
+        new CollectionTransactionCV::CollectionToken(&ct_cv_));
   }
 
   template <typename CollectionType>
@@ -625,6 +641,8 @@ class KVEngine : public Engine {
   BackgroundWorkSignals bg_work_signals_;
 
   std::atomic<int64_t> round_robin_id_{0};
+
+  CollectionTransactionCV ct_cv_;
 };
 
 }  // namespace KVDK_NAMESPACE

@@ -28,6 +28,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
   auto lookup_result = lookupKey<true>(collection, RecordType::HashRecord);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {
+    auto create_token = acquireCollectionCreateOrDestroyLock();
     DLRecord* existing_header =
         lookup_result.s == Outdated
             ? lookup_result.entry.GetIndex().hlist->HeaderRecord()
@@ -76,6 +77,7 @@ Status KVEngine::HashDestroy(StringView collection) {
   HashList* hlist;
   s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
+    auto destroy = acquireCollectionCreateOrDestroyLock();
     DLRecord* header = hlist->HeaderRecord();
     kvdk_assert(header->GetRecordType() == RecordType::HashRecord, "");
     StringView value = header->Value();

@@ -18,6 +18,8 @@ TransactionImpl::TransactionImpl(KVEngine* engine) : engine_(engine) {
   kvdk_assert(batch_ != nullptr, "");
 }
 
+TransactionImpl::~TransactionImpl() { Rollback(); }
+
 Status TransactionImpl::StringPut(const std::string& key,
                                   const std::string& value) {
   auto hash_table = engine_->GetHashTable();
@@ -63,12 +65,8 @@ Status TransactionImpl::StringGet(const std::string& key, std::string* value) {
 Status TransactionImpl::SortedPut(const std::string& collection,
                                   const std::string& key,
                                   const std::string& value) {
+  acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
-  // TODO not hold collection lock in transaciton(r/w lock?)
-  if (!tryLock(hash_table->GetLock(collection))) {
-    status_ = Status::Timeout;
-    return status_;
-  }
   auto lookup_result =
       hash_table->Lookup<false>(collection, RecordType::SortedRecord);
   if (lookup_result.s != Status::Ok) {
@@ -88,12 +86,8 @@ Status TransactionImpl::SortedPut(const std::string& collection,
 
 Status TransactionImpl::SortedDelete(const std::string& collection,
                                      const std::string& key) {
+  acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
-  // TODO not hold collection lock in transaciton(r/w lock?)
-  if (!tryLock(hash_table->GetLock(collection))) {
-    status_ = Status::Timeout;
-    return status_;
-  }
   auto lookup_result =
       hash_table->Lookup<false>(collection, RecordType::SortedRecord);
   if (lookup_result.s != Status::Ok) {
@@ -122,12 +116,8 @@ Status TransactionImpl::SortedGet(const std::string& collection,
       return Status::Ok;
     }
   } else {
+    acquireCollectionTransaction();
     auto hash_table = engine_->GetHashTable();
-    // TODO not hold collection lock in transaciton(r/w lock?)
-    if (!tryLock(hash_table->GetLock(collection))) {
-      status_ = Status::Timeout;
-      return status_;
-    }
     auto lookup_result =
         hash_table->Lookup<false>(collection, RecordType::SortedRecord);
     if (lookup_result.s != Status::Ok) {
@@ -149,12 +139,8 @@ Status TransactionImpl::SortedGet(const std::string& collection,
 Status TransactionImpl::HashPut(const std::string& collection,
                                 const std::string& key,
                                 const std::string& value) {
+  acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
-  // TODO not hold collection lock in transaciton(r/w lock?)
-  if (!tryLock(hash_table->GetLock(collection))) {
-    status_ = Status::Timeout;
-    return status_;
-  }
   auto lookup_result =
       hash_table->Lookup<false>(collection, RecordType::HashRecord);
   if (lookup_result.s != Status::Ok) {
@@ -174,12 +160,8 @@ Status TransactionImpl::HashPut(const std::string& collection,
 
 Status TransactionImpl::HashDelete(const std::string& collection,
                                    const std::string& key) {
+  acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
-  // TODO not hold collection lock in transaciton(r/w lock?)
-  if (!tryLock(hash_table->GetLock(collection))) {
-    status_ = Status::Timeout;
-    return status_;
-  }
   auto lookup_result =
       hash_table->Lookup<false>(collection, RecordType::HashRecord);
   if (lookup_result.s != Status::Ok) {
@@ -208,12 +190,8 @@ Status TransactionImpl::HashGet(const std::string& collection,
       return Status::Ok;
     }
   } else {
+    acquireCollectionTransaction();
     auto hash_table = engine_->GetHashTable();
-    // TODO not hold collection lock in transaciton(r/w lock?)
-    if (!tryLock(hash_table->GetLock(collection))) {
-      status_ = Status::Timeout;
-      return status_;
-    }
     auto lookup_result =
         hash_table->Lookup<false>(collection, RecordType::HashRecord);
     if (lookup_result.s != Status::Ok) {
@@ -228,6 +206,12 @@ Status TransactionImpl::HashGet(const std::string& collection,
     }
 
     return hlist->Get(key, value);
+  }
+}
+
+void TransactionImpl::acquireCollectionTransaction() {
+  if (ct_token_ == nullptr) {
+    ct_token_ = engine_->AcquireCollectionTransactionLock();
   }
 }
 
@@ -268,5 +252,6 @@ void TransactionImpl::Rollback() {
   string_kv_.clear();
   sorted_kv_.clear();
   hash_kv_.clear();
+  ct_token_ = nullptr;
 }
 }  // namespace KVDK_NAMESPACE

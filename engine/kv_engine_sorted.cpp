@@ -32,6 +32,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
   auto lookup_result =
       lookupKey<true>(collection_name, RecordType::SortedRecord);
   if (lookup_result.s == NotFound || lookup_result.s == Outdated) {
+    auto create_token = acquireCollectionCreateOrDestroyLock();
     DLRecord* existing_header =
         lookup_result.s == Outdated
             ? lookup_result.entry.GetIndex().skiplist->HeaderRecord()
@@ -85,6 +86,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
   auto lookup_result =
       lookupKey<false>(collection_name, RecordType::SortedRecord);
   if (lookup_result.s == Status::Ok) {
+    auto destroy_token = acquireCollectionCreateOrDestroyLock();
     Skiplist* skiplist = lookup_result.entry.GetIndex().skiplist;
     DLRecord* header = skiplist->HeaderRecord();
     assert(header->GetRecordType() == RecordType::SortedRecord);

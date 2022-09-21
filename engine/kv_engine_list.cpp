@@ -25,6 +25,7 @@ Status KVEngine::buildList(const StringView& list_name,
   auto lookup_result = lookupKey<true>(list_name, RecordType::ListRecord);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {
+    auto create_token = acquireCollectionCreateOrDestroyLock();
     DLRecord* existing_header =
         lookup_result.s == Outdated
             ? lookup_result.entry.GetIndex().hlist->HeaderRecord()
@@ -69,6 +70,7 @@ Status KVEngine::ListDestroy(StringView collection) {
   List* list;
   Status s = listFind(collection, &list);
   if (s == Status::Ok) {
+    auto destroy_token = acquireCollectionCreateOrDestroyLock();
     DLRecord* header = list->HeaderRecord();
     kvdk_assert(header->GetRecordType() == RecordType::ListRecord, "");
     StringView value = header->Value();
