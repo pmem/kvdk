@@ -92,7 +92,7 @@ public class EngineTest extends EngineTestBase {
 
         // delete on destroyed sorted collection: Not OK
         try {
-        kvdkEngine.sortedDelete(nameHandle, key.getBytes());
+            kvdkEngine.sortedDelete(nameHandle, key.getBytes());
         } catch (KVDKException ex) {
             // should be NotFound
             assertEquals(ex.getStatus().getCode(), Code.NotFound);
