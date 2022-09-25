@@ -18,6 +18,7 @@ typedef struct KVDKEngine KVDKEngine;
 typedef struct KVDKConfigs KVDKConfigs;
 typedef struct KVDKWriteOptions KVDKWriteOptions;
 typedef struct KVDKWriteBatch KVDKWriteBatch;
+typedef struct KVDKTransaction KVDKTransaction;
 typedef struct KVDKSortedIterator KVDKSortedIterator;
 typedef struct KVDKListIterator KVDKListIterator;
 typedef struct KVDKHashIterator KVDKHashIterator;
@@ -102,7 +103,38 @@ extern void KVDKWriteBatchHashDelete(KVDKWriteBatch* batch,
 extern KVDKStatus KVDKBatchWrite(KVDKEngine* engine,
                                  KVDKWriteBatch const* batch);
 
-// For Anonymous Global Collection
+// For Transactions
+extern KVDKTransaction* KVDKTransactionCreate(KVDKEngine* engine);
+extern void KVDKTransactionDestory(KVDKTransaction* txn);
+extern KVDKStatus KVDKTransactionStringPut(KVDKTransaction* txn,
+                                           char const* key_data, size_t key_len,
+                                           char const* val_data,
+                                           size_t val_len);
+extern KVDKStatus KVDKTransactionStringDelete(KVDKTransaction* txn,
+                                              char const* key_data,
+                                              size_t key_len);
+extern KVDKStatus KVDKTransactionSortedPut(
+    KVDKTransaction* txn, char const* collection, size_t collection_len,
+    char const* key_data, size_t key_len, char const* val_data, size_t val_len);
+extern KVDKStatus KVDKTransactionSortedDelete(KVDKTransaction* txn,
+                                              char const* collection,
+                                              size_t collection_len,
+                                              char const* key_data,
+                                              size_t key_len);
+extern KVDKStatus KVDKTransactionHashPut(KVDKTransaction* txn,
+                                         char const* collection,
+                                         size_t collection_len,
+                                         char const* key_data, size_t key_len,
+                                         char const* val_data, size_t val_len);
+extern KVDKStatus KVDKTransactionHashDelete(KVDKTransaction* txn,
+                                            char const* collection,
+                                            size_t collection_len,
+                                            char const* key_data,
+                                            size_t key_len);
+extern KVDKStatus KVDKTransactionCommit(KVDKTransaction* txn);
+extern void KVDKTransactionRollback(KVDKTransaction* txn);
+
+// For String KV
 extern KVDKStatus KVDKGet(KVDKEngine* engine, const char* key, size_t key_len,
                           size_t* val_len, char** val);
 extern KVDKStatus KVDKPut(KVDKEngine* engine, const char* key, size_t key_len,

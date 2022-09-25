@@ -48,6 +48,7 @@ endif()
 set(SOURCES
         engine/c/kvdk_basic_op.cpp
         engine/c/kvdk_batch.cpp
+        engine/c/kvdk_transaction.cpp
         engine/c/kvdk_hash.cpp
         engine/c/kvdk_list.cpp
         engine/c/kvdk_sorted.cpp
