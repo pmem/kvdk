@@ -206,9 +206,9 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
 }
 
 Status KVEngine::restoreData() {
-  thread_manager_->MaybeInitThread(access_thread);
   EngineThreadCache& engine_thread_cache =
-      engine_thread_cache_[access_thread.id % configs_.max_access_threads];
+      engine_thread_cache_[ThreadManager::ThreadID() %
+                           configs_.max_access_threads];
 
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
@@ -543,8 +543,6 @@ Status KVEngine::initOrRestoreCheckpoint() {
 
 Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
   // TODO: make this multi-thread
-  thread_manager_->MaybeInitThread(access_thread);
-
   BackupLog backup;
   Status s = backup.Open(backup_log);
   if (s != Status::Ok) {
@@ -707,17 +705,15 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
 }
 
 Status KVEngine::restoreExistingData() {
-  thread_manager_->MaybeInitThread(access_thread);
-
   sorted_rebuilder_.reset(new SortedCollectionRebuilder(
       this, configs_.opt_large_sorted_collection_recovery,
       configs_.max_access_threads, *persist_checkpoint_));
   hash_rebuilder_.reset(new HashListRebuilder(
       pmem_allocator_.get(), hash_table_.get(), dllist_locks_.get(),
-      thread_manager_, configs_.max_access_threads, *persist_checkpoint_));
+      configs_.max_access_threads, *persist_checkpoint_));
   list_rebuilder_.reset(new ListRebuilder(
       pmem_allocator_.get(), hash_table_.get(), dllist_locks_.get(),
-      thread_manager_, configs_.max_access_threads, *persist_checkpoint_));
+      configs_.max_access_threads, *persist_checkpoint_));
 
   Status s = batchWriteRollbackLogs();
   if (s != Status::Ok) {
@@ -872,8 +868,8 @@ Status KVEngine::checkConfigs(const Configs& configs) {
 }
 
 Status KVEngine::maybeInitBatchLogFile() {
-  kvdk_assert(access_thread.id >= 0, "");
-  auto work_id = access_thread.id % configs_.max_access_threads;
+  kvdk_assert(ThreadManager::ThreadID() >= 0, "");
+  auto work_id = ThreadManager::ThreadID() % configs_.max_access_threads;
   auto& tc = engine_thread_cache_[work_id];
   if (tc.batch_log == nullptr) {
     int is_pmem;
@@ -1032,8 +1028,8 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   // Preparation done. Persist BatchLog for rollback.
   BatchWriteLog log;
   log.SetTimestamp(bw_token.Timestamp());
-  auto& tc =
-      engine_thread_cache_[access_thread.id % configs_.max_access_threads];
+  auto& tc = engine_thread_cache_[ThreadManager::ThreadID() %
+                                  configs_.max_access_threads];
   for (auto& args : string_args) {
     if (args.space.size == 0) {
       continue;

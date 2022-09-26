@@ -74,7 +74,7 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
     }
   } else {
     if (segment_based_rebuild_ &&
-        ++rebuilder_thread_cache_[access_thread.id %
+        ++rebuilder_thread_cache_[ThreadManager::ThreadID() %
                                   rebuilder_thread_cache_.size()]
                     .visited_skiplists[Skiplist::FetchID(record)] %
                 kRestoreSkiplistStride ==
@@ -118,7 +118,6 @@ Status SortedCollectionRebuilder::Rollback(
 
 Status SortedCollectionRebuilder::initRebuildLists() {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-  kv_engine_->thread_manager_->MaybeInitThread(access_thread);
 
   // Keep headers with same id together for recognize outdated ones
   auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
@@ -251,7 +250,6 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   std::vector<std::future<Status>> fs;
 
   auto rebuild_segments_index = [&]() -> Status {
-    kv_engine_->thread_manager_->MaybeInitThread(access_thread);
     for (auto iter = this->recovery_segments_.begin();
          iter != this->recovery_segments_.end(); iter++) {
       if (!iter->second.visited) {
@@ -486,7 +484,6 @@ Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
 }
 
 Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
-  kv_engine_->thread_manager_->MaybeInitThread(access_thread);
   size_t num_elems = 0;
 
   Splice splice(skiplist);

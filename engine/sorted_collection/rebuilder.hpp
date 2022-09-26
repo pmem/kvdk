@@ -108,8 +108,8 @@ class SortedCollectionRebuilder {
                          PointerType index_type);
 
   void addUnlinkedRecord(DLRecord* pmem_record) {
-    assert(access_thread.id >= 0);
-    rebuilder_thread_cache_[access_thread.id % rebuilder_thread_cache_.size()]
+    assert(ThreadManager::ThreadID() >= 0);
+    rebuilder_thread_cache_[ThreadManager::ThreadID() % rebuilder_thread_cache_.size()]
         .unlinked_records.push_back(pmem_record);
   }
 

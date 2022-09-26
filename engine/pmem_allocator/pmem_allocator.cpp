@@ -35,7 +35,7 @@ void PMEMAllocator::Free(const SpaceEntry& space_entry) {
   if (space_entry.size > 0) {
     assert(space_entry.size % block_size_ == 0);
     free_list_.Push(space_entry);
-    LogDeallocation(access_thread.id, space_entry.size);
+    LogDeallocation(ThreadManager::ThreadID(), space_entry.size);
   }
 }
 
@@ -238,7 +238,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
     return space_entry;
   }
   auto& palloc_thread_cache =
-      palloc_thread_cache_[access_thread.id % palloc_thread_cache_.size()];
+      palloc_thread_cache_[ThreadManager::ThreadID() % palloc_thread_cache_.size()];
   while (palloc_thread_cache.segment_entry.size < aligned_size) {
     // allocate from free list space
     if (palloc_thread_cache.free_entry.size >= aligned_size) {
@@ -261,13 +261,13 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       }
       palloc_thread_cache.free_entry.size -= aligned_size;
       palloc_thread_cache.free_entry.offset += aligned_size;
-      LogAllocation(access_thread.id, aligned_size);
+      LogAllocation(ThreadManager::ThreadID(), aligned_size);
       return space_entry;
     }
 
     if (palloc_thread_cache.free_entry.size > 0) {
       // Not a true free
-      LogAllocation(access_thread.id, palloc_thread_cache.free_entry.size);
+      LogAllocation(ThreadManager::ThreadID(), palloc_thread_cache.free_entry.size);
       Free(palloc_thread_cache.free_entry);
       palloc_thread_cache.free_entry.size = 0;
     }
@@ -277,7 +277,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       continue;
     }
 
-    LogAllocation(access_thread.id, palloc_thread_cache.segment_entry.size);
+    LogAllocation(ThreadManager::ThreadID(), palloc_thread_cache.segment_entry.size);
     Free(palloc_thread_cache.segment_entry);
     // allocate a new segment, add remainning space of the old one
     // to the free list
@@ -294,7 +294,7 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   persistSpaceEntry(space_entry.offset, space_entry.size);
   palloc_thread_cache.segment_entry.offset += space_entry.size;
   palloc_thread_cache.segment_entry.size -= space_entry.size;
-  LogAllocation(access_thread.id, space_entry.size);
+  LogAllocation(ThreadManager::ThreadID(), space_entry.size);
   return space_entry;
 }
 

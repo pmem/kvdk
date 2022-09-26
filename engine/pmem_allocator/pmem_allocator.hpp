@@ -112,7 +112,7 @@ class PMEMAllocator : public Allocator {
   void BatchFree(const std::vector<SpaceEntry>& entries) {
     if (entries.size() > 0) {
       uint64_t freed = free_list_.BatchPush(entries);
-      LogDeallocation(access_thread.id, freed);
+      LogDeallocation(ThreadManager::ThreadID(), freed);
     }
   }
 

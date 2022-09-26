@@ -23,22 +23,23 @@ struct Thread {
   int64_t id;
 };
 
+extern thread_local Thread access_thread;
+
 class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
  public:
   static ThreadManager* Get() { return &manager_; }
-  Status MaybeInitThread(Thread& t);
-
-  void Release(const Thread& t);
+  static int64_t ThreadID() {
+    Get()->MaybeInitThread(access_thread);
+    return access_thread.id;
+  }
+  void MaybeInitThread(Thread& t);
 
  private:
   ThreadManager() : ids_(0) {}
 
   static ThreadManager manager_;
   std::atomic<int64_t> ids_;
-  std::unordered_set<int64_t> usable_id_;
   SpinMutex spin_;
 };
-
-extern thread_local Thread access_thread;
 
 }  // namespace KVDK_NAMESPACE

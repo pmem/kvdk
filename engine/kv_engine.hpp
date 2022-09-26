@@ -190,7 +190,6 @@ class KVEngine : public Engine {
       : access_thread_cv_(configs.max_access_threads),
         engine_thread_cache_(configs.max_access_threads),
         cleaner_thread_cache_(configs.max_access_threads),
-        thread_manager_(ThreadManager::Get()),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads),
         cleaner_(this, configs.clean_threads),
@@ -236,10 +235,10 @@ class KVEngine : public Engine {
    private:
     void Acquire() {
       std::unique_lock<SpinMutex> ul(spin_);
-      while (holder_id_ != access_thread.id && holder_id_ != -1) {
+      while (holder_id_ != ThreadManager::ThreadID() && holder_id_ != -1) {
         cv_.wait(ul);
       }
-      holder_id_ = access_thread.id;
+      holder_id_ = ThreadManager::ThreadID();
     }
 
     void Release() {
@@ -254,10 +253,8 @@ class KVEngine : public Engine {
   };
 
   AccessThreadCV::Holder AcquireAccessThread() {
-    Status s = thread_manager_->MaybeInitThread(access_thread);
-    kvdk_assert(s == Status::Ok, "");
-    return AccessThreadCV::Holder(
-        &access_thread_cv_[access_thread.id % access_thread_cv_.size()]);
+    return AccessThreadCV::Holder(&access_thread_cv_[ThreadManager::ThreadID() %
+                                                     access_thread_cv_.size()]);
   }
 
   bool checkKeySize(const StringView& key) { return key.size() <= UINT16_MAX; }
@@ -621,7 +618,6 @@ class KVEngine : public Engine {
   std::string dir_;
   std::string batch_log_dir_;
   std::string db_file_;
-  ThreadManager* thread_manager_;
   std::unique_ptr<PMEMAllocator> pmem_allocator_;
   Configs configs_;
   bool closing_{false};
