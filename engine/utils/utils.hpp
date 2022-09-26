@@ -153,11 +153,12 @@ inline std::string string_view_2_string(const StringView& src) {
 inline int compare_string_view(const StringView& src,
                                const StringView& target) {
   auto size = std::min(src.size(), target.size());
-  int r = memcmp(src.data(), target.data(), size);
-  if (r == 0) {
-    return src.size() - target.size();
+  for (uint32_t i = 0; i < size; i++) {
+    if (src[i] != target[i]) {
+      return (unsigned char)src[i] - (unsigned char)target[i];
+    }
   }
-  return r;
+  return src.size() - target.size();
 }
 
 inline bool equal_string_view(const StringView& src, const StringView& target) {
