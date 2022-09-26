@@ -173,8 +173,6 @@ class KVEngine : public Engine {
     return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
   }
 
-  void ReleaseAccessThread() override { access_thread.Release(); }
-
   // For test cases
   const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
   GetSkiplists() {
@@ -189,8 +187,10 @@ class KVEngine : public Engine {
   friend Cleaner;
 
   KVEngine(const Configs& configs)
-      : engine_thread_cache_(configs.max_access_threads),
+      : access_thread_cv_(configs.max_access_threads),
+        engine_thread_cache_(configs.max_access_threads),
         cleaner_thread_cache_(configs.max_access_threads),
+        thread_manager_(ThreadManager::Get()),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads),
         cleaner_(this, configs.clean_threads),
@@ -222,6 +222,44 @@ class KVEngine : public Engine {
     SpinMutex mtx;
   };
 
+  struct AccessThreadCV {
+   public:
+    struct Holder {
+     public:
+      Holder(AccessThreadCV* cv) : cv_(cv) { cv->Acquire(); }
+      ~Holder() { cv_->Release(); }
+
+     private:
+      AccessThreadCV* cv_;
+    };
+
+   private:
+    void Acquire() {
+      std::unique_lock<SpinMutex> ul(spin_);
+      while (holder_id_ != access_thread.id && holder_id_ != -1) {
+        cv_.wait(ul);
+      }
+      holder_id_ = access_thread.id;
+    }
+
+    void Release() {
+      std::unique_lock<SpinMutex> ul(spin_);
+      holder_id_ = -1;
+      cv_.notify_one();
+    }
+
+    int64_t holder_id_ = -1;
+    SpinMutex spin_;
+    std::condition_variable_any cv_;
+  };
+
+  AccessThreadCV::Holder AcquireAccessThread() {
+    Status s = thread_manager_->MaybeInitThread(access_thread);
+    kvdk_assert(s == Status::Ok, "");
+    return AccessThreadCV::Holder(
+        &access_thread_cv_[access_thread.id % access_thread_cv_.size()]);
+  }
+
   bool checkKeySize(const StringView& key) { return key.size() <= UINT16_MAX; }
 
   bool checkValueSize(const StringView& value) {
@@ -233,10 +271,6 @@ class KVEngine : public Engine {
 
   Status hashGetImpl(const StringView& key, std::string* value,
                      uint16_t type_mask);
-
-  inline Status maybeInitAccessThread() {
-    return thread_manager_->MaybeInitThread(access_thread);
-  }
 
   bool registerComparator(const StringView& collection_name,
                           Comparator comp_func) {
@@ -302,11 +336,10 @@ class KVEngine : public Engine {
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
                ? RecordType::SortedHeader
-               : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
-                     : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
-                           : RecordType::Empty;
+           : std::is_same<CollectionType, List>::value ? RecordType::ListHeader
+           : std::is_same<CollectionType, HashList>::value
+               ? RecordType::HashHeader
+               : RecordType::Empty;
   }
 
   static PointerType pointerType(RecordType rtype) {
@@ -560,6 +593,8 @@ class KVEngine : public Engine {
 
   void terminateBackgroundWorks();
 
+  Array<AccessThreadCV> access_thread_cv_;
+
   Array<EngineThreadCache> engine_thread_cache_;
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
@@ -586,7 +621,7 @@ class KVEngine : public Engine {
   std::string dir_;
   std::string batch_log_dir_;
   std::string db_file_;
-  std::shared_ptr<ThreadManager> thread_manager_;
+  ThreadManager* thread_manager_;
   std::unique_ptr<PMEMAllocator> pmem_allocator_;
   Configs configs_;
   bool closing_{false};

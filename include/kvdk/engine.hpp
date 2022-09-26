@@ -374,10 +374,6 @@ class Engine {
   // Release a sorted iterator
   virtual void SortedIteratorRelease(SortedIterator*) = 0;
 
-  // Release resources occupied by this access thread so new thread can take
-  // part. New write requests of this thread need to re-request write resources.
-  virtual void ReleaseAccessThread() = 0;
-
   // Register a customized comparator to the engine on runtime
   //
   // Return true on success, return false if a comparator of comparator_name

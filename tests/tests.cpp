@@ -300,7 +300,6 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(val, got_val);
     ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
     ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
-    engine->ReleaseAccessThread();
   }
 
   void testDestroy(const std::string& collection, DestroyFunc DestroyFunc,
@@ -505,28 +504,6 @@ TEST_F(EngineBasicTest, TypeOfKey) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestThreadManager) {
-  int max_access_threads = 1;
-  configs.max_access_threads = max_access_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  std::string key("k");
-  std::string val("value");
-  ASSERT_EQ(engine->Put(key, val, WriteOptions()), Status::Ok);
-
-  // Reach max access threads
-  auto s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::TooManyAccessThreads);
-  // Manually release access thread
-  engine->ReleaseAccessThread();
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::Ok);
-  // Release access thread on thread exits
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::Ok);
-  delete engine;
-}
-
 // Test iterator/backup/checkpoint on a snapshot
 TEST_F(EngineBasicTest, TestBasicSnapshot) {
   uint32_t num_threads = 16;
@@ -545,7 +522,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
   ASSERT_EQ(engine->ListCreate(list), Status::Ok);
-  engine->ReleaseAccessThread();
 
   bool snapshot_done(false);
   std::atomic_uint64_t set_finished_threads(0);
@@ -572,7 +548,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     }
     // Wait snapshot done
     set_finished_threads.fetch_add(1);
-    engine->ReleaseAccessThread();
     {
       std::unique_lock<SpinMutex> ul(spin);
       while (!snapshot_done) {
@@ -625,7 +600,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection_after_snapshot), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection_after_snapshot), Status::Ok);
   ASSERT_EQ(engine->ListCreate(list_after_snapshot), Status::Ok);
-  engine->ReleaseAccessThread();
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
@@ -873,7 +847,6 @@ TEST_F(EngineBasicTest, TestStringModify) {
 
   std::string wrong_value_key = "wrong_value";
   ASSERT_EQ(engine->Put(wrong_value_key, std::string(10, 'a')), Status::Ok);
-  engine->ReleaseAccessThread();
 
   auto TestModify = [&](int) {
     IncNArgs args{5, 0};
@@ -1948,7 +1921,6 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   std::string val2(1023, 'b');
 
   ASSERT_EQ(engine->Put(key, val1), Status::Ok);
-  engine->ReleaseAccessThread();
 
   auto EvenWriteOddRead = [&](uint32_t id) {
     for (size_t i = 0; i < count; i++) {
@@ -2004,7 +1976,6 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
   for (const std::string& key : keys) {
     ASSERT_EQ(engine->SortedPut(collection_name, key, val1), Status::Ok);
-    engine->ReleaseAccessThread();
 
     auto EvenWriteOddRead = [&](uint32_t id) {
       for (size_t i = 0; i < count; i++) {

@@ -237,7 +237,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   if (aligned_size > segment_size_) {
     return space_entry;
   }
-  auto& palloc_thread_cache = palloc_thread_cache_[access_thread.id];
+  auto& palloc_thread_cache =
+      palloc_thread_cache_[access_thread.id % palloc_thread_cache_.size()];
   while (palloc_thread_cache.segment_entry.size < aligned_size) {
     // allocate from free list space
     if (palloc_thread_cache.free_entry.size >= aligned_size) {

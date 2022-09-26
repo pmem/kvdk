@@ -160,7 +160,7 @@ def run_benchmark(
         pmem_size, 
         populate_on_fill, 
         num_kv, 
-        n_thread, 
+        256, 
         n_thread, 
         num_collection, 
         timeout, 

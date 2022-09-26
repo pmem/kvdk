@@ -17,24 +17,25 @@ class ThreadManager;
 
 struct Thread {
  public:
-  Thread() : id(-1), thread_manager(nullptr) {}
+  Thread() : id(-1) {}
   ~Thread();
   void Release();
-  int id;
-  std::shared_ptr<ThreadManager> thread_manager;
+  int64_t id;
 };
 
 class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
  public:
-  ThreadManager(uint32_t max_threads) : max_threads_(max_threads), ids_(0) {}
+  static ThreadManager* Get() { return &manager_; }
   Status MaybeInitThread(Thread& t);
 
   void Release(const Thread& t);
 
  private:
-  uint32_t max_threads_;
-  std::atomic<uint32_t> ids_;
-  std::unordered_set<uint32_t> usable_id_;
+  ThreadManager() : ids_(0) {}
+
+  static ThreadManager manager_;
+  std::atomic<int64_t> ids_;
+  std::unordered_set<int64_t> usable_id_;
   SpinMutex spin_;
 };
 

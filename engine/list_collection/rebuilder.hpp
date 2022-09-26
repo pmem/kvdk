@@ -253,9 +253,9 @@ class ListRebuilder {
   }
 
   void addUnlinkedRecord(DLRecord* pmem_record) {
-    assert(access_thread.id >= 0);
-    rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
-        pmem_record);
+    kvdk_assert(access_thread.id >= 0, "");
+    rebuilder_thread_cache_[access_thread.id % rebuilder_thread_cache_.size()]
+        .unlinked_records.push_back(pmem_record);
   }
 
   void cleanInvalidRecords() {

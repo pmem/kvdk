@@ -7,10 +7,7 @@
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::HashCreate(StringView collection) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
@@ -60,11 +57,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
 }
 
 Status KVEngine::HashDestroy(StringView collection) {
-  auto s = maybeInitAccessThread();
-  defer(ReleaseAccessThread());
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
@@ -74,7 +67,7 @@ Status KVEngine::HashDestroy(StringView collection) {
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   auto new_ts = snapshot_holder.Timestamp();
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     DLRecord* header = hlist->HeaderRecord();
     kvdk_assert(header->GetRecordType() == RecordType::HashHeader, "");
@@ -105,9 +98,7 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
@@ -121,17 +112,13 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
 
 Status KVEngine::HashGet(StringView collection, StringView key,
                          std::string* value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     s = hlist->Get(key, value);
   }
@@ -140,17 +127,13 @@ Status KVEngine::HashGet(StringView collection, StringView key,
 
 Status KVEngine::HashPut(StringView collection, StringView key,
                          StringView value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
     if (!checkKeySize(collection_key) || !checkValueSize(value)) {
@@ -172,17 +155,13 @@ Status KVEngine::HashPut(StringView collection, StringView key,
 }
 
 Status KVEngine::HashDelete(StringView collection, StringView key) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
     if (!checkKeySize(collection_key)) {
@@ -204,15 +183,12 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
 
 Status KVEngine::HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string internal_key(hlist->InternalKey(key));
     auto ul = hash_table_->AcquireLock(internal_key);
