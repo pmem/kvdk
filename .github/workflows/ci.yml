@@ -13,7 +13,9 @@ jobs:
         uses: lukka/get-cmake@v3.19.2
 
       - name: Install packages
-        run: sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
+        run: |
+          sudo apt update
+          sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
 
       - name: Install ndctl
         run: |
