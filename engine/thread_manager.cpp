@@ -10,10 +10,6 @@ namespace KVDK_NAMESPACE {
 
 ThreadManager ThreadManager::manager_;
 
-void Thread::Release() { id = -1; }
-
-Thread::~Thread() { Release(); }
-
 void ThreadManager::MaybeInitThread(Thread& t) {
   if (t.id < 0) {
     int id = ids_.fetch_add(1, std::memory_order_relaxed);
@@ -21,6 +17,6 @@ void ThreadManager::MaybeInitThread(Thread& t) {
   }
 }
 
-thread_local Thread access_thread;
+thread_local Thread this_thread;
 
 }  // namespace KVDK_NAMESPACE

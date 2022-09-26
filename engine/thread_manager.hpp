@@ -18,19 +18,17 @@ class ThreadManager;
 struct Thread {
  public:
   Thread() : id(-1) {}
-  ~Thread();
-  void Release();
   int64_t id;
 };
 
-extern thread_local Thread access_thread;
+extern thread_local Thread this_thread;
 
 class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
  public:
   static ThreadManager* Get() { return &manager_; }
   static int64_t ThreadID() {
-    Get()->MaybeInitThread(access_thread);
-    return access_thread.id;
+    Get()->MaybeInitThread(this_thread);
+    return this_thread.id;
   }
   void MaybeInitThread(Thread& t);
 
