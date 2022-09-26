@@ -37,16 +37,14 @@ class EnginePMemAllocatorTest : public testing::Test {
     int res __attribute__((unused)) = system(cmd);
   }
 
-  void RemovePathAndReleaseThread() {
-    // Release thread.
-    access_thread.Release();
+  void RemovePath() {
     // delete db_path.
     char cmd[1024];
     sprintf(cmd, "rm -rf %s\n", pmem_path.c_str());
     int res __attribute__((unused)) = system(cmd);
   }
 
-  virtual void TearDown() { RemovePathAndReleaseThread(); }
+  virtual void TearDown() { RemovePath(); }
 };
 
 TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
@@ -91,7 +89,6 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         Freelist* free_list = pmem_alloc->GetFreeList();
         free_list->MoveCachedEntriesToPool();
         free_list->MergeSpaceInPool();
-        access_thread.Release();
 
         // Then allocate all pmem.
         thread_manager->MaybeInitThread(access_thread);
@@ -104,7 +101,7 @@ TEST_F(EnginePMemAllocatorTest, TestBasicAlloc) {
         }
         ASSERT_EQ(pmem_size / block_size, alloc_cnt);
         delete pmem_alloc;
-        RemovePathAndReleaseThread();
+        RemovePath();
       }
     }
   }
@@ -132,7 +129,6 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
     records[i] = space_entry;
     ASSERT_NE(space_entry.size, 0);
   }
-  access_thread.Release();
 
   /* Allocated pmem status:
    * | null | null | null | 32 | null | null | null | 32 | null | null | null
@@ -145,7 +141,6 @@ TEST_F(EnginePMemAllocatorTest, TestPMemFragmentation) {
       pmem_alloc->Free(records[id]);
     }
   };
-  access_thread.Release();
 
   LaunchNThreads(num_thread, TestPmemFree);
   Freelist* free_list = pmem_alloc->GetFreeList();

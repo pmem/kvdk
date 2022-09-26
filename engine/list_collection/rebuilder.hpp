@@ -222,12 +222,9 @@ class ListRebuilder {
   }
 
   Status rebuildIndex(List* list) {
+    thread_manager_->MaybeInitThread(access_thread);
     auto ul = list->AcquireLock();
-    Status s = thread_manager_->MaybeInitThread(access_thread);
-    if (s != Status::Ok) {
-      return s;
-    }
-    defer(thread_manager_->Release(access_thread));
+
     auto iter = list->GetDLList()->GetRecordIterator();
     iter->SeekToFirst();
     while (iter->Valid()) {

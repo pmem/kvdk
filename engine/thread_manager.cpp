@@ -11,10 +11,7 @@ namespace KVDK_NAMESPACE {
 ThreadManager ThreadManager::manager_;
 
 void Thread::Release() {
-  if (id >= 0) {
-    ThreadManager::Get()->Release(*this);
     id = -1;
-  }
 }
 
 Thread::~Thread() { Release(); }
@@ -34,13 +31,6 @@ Status ThreadManager::MaybeInitThread(Thread& t) {
     t.id = id;
   }
   return Status::Ok;
-}
-
-void ThreadManager::Release(const Thread& t) {
-  if (t.id >= 0) {
-    std::lock_guard<SpinMutex> lg(spin_);
-    usable_id_.insert(t.id);
-  }
 }
 
 thread_local Thread access_thread;

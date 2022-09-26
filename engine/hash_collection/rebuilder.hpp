@@ -258,11 +258,8 @@ class HashListRebuilder {
   }
 
   Status rebuildIndex(HashList* hlist) {
-    Status s = thread_manager_->MaybeInitThread(access_thread);
-    if (s != Status::Ok) {
-      return s;
-    }
-    defer(thread_manager_->Release(access_thread));
+    thread_manager_->MaybeInitThread(access_thread);
+
     size_t num_elems = 0;
 
     auto iter = hlist->GetDLList()->GetRecordIterator();
