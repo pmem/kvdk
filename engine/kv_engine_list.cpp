@@ -363,8 +363,8 @@ Status KVEngine::ListMove(StringView src, ListPos src_pos, StringView dst,
 
   log.ListDelete(pop_args.spaces[0].offset);
   log.ListEmplace(push_args.spaces[0].offset);
-  auto& tc =
-      engine_thread_cache_[ThreadManager::ThreadID() % configs_.max_access_threads];
+  auto& tc = engine_thread_cache_[ThreadManager::ThreadID() %
+                                  configs_.max_access_threads];
   log.EncodeTo(tc.batch_log);
 
   BatchWriteLog::MarkProcessing(tc.batch_log);
@@ -562,8 +562,8 @@ Status KVEngine::listBatchPushImpl(StringView list_name, ListPos pos,
     log.ListEmplace(space.offset);
   }
 
-  auto& tc =
-      engine_thread_cache_[ThreadManager::ThreadID() % configs_.max_access_threads];
+  auto& tc = engine_thread_cache_[ThreadManager::ThreadID() %
+                                  configs_.max_access_threads];
   log.EncodeTo(tc.batch_log);
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
@@ -596,8 +596,8 @@ Status KVEngine::listBatchPopImpl(StringView list_name, ListPos pos, size_t n,
     log.ListDelete(space.offset);
   }
 
-  auto& tc =
-      engine_thread_cache_[ThreadManager::ThreadID() % configs_.max_access_threads];
+  auto& tc = engine_thread_cache_[ThreadManager::ThreadID() %
+                                  configs_.max_access_threads];
   log.EncodeTo(tc.batch_log);
   BatchWriteLog::MarkProcessing(tc.batch_log);
 

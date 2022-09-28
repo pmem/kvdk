@@ -45,8 +45,8 @@ void KVEngine::removeAndCacheOutdatedVersion(T* record) {
   static_assert(std::is_same<T, StringRecord>::value ||
                 std::is_same<T, DLRecord>::value);
   kvdk_assert(ThreadManager::ThreadID() >= 0, "");
-  auto& tc =
-      cleaner_thread_cache_[ThreadManager::ThreadID() % configs_.max_access_threads];
+  auto& tc = cleaner_thread_cache_[ThreadManager::ThreadID() %
+                                   configs_.max_access_threads];
   if (std::is_same<T, StringRecord>::value) {
     StringRecord* old_record = removeOutDatedVersion<StringRecord>(
         (StringRecord*)record, version_controller_.GlobalOldestSnapshotTs());
@@ -89,8 +89,8 @@ void KVEngine::cleanOutdatedRecordImpl(T* old_record) {
 
 void KVEngine::tryCleanCachedOutdatedRecord() {
   kvdk_assert(ThreadManager::ThreadID() >= 0, "");
-  auto& tc =
-      cleaner_thread_cache_[ThreadManager::ThreadID() % configs_.max_access_threads];
+  auto& tc = cleaner_thread_cache_[ThreadManager::ThreadID() %
+                                   configs_.max_access_threads];
   // Regularly update local oldest snapshot
   thread_local uint64_t round = 0;
   if (++round % kForegroundUpdateSnapshotInterval == 0) {

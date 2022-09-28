@@ -109,7 +109,8 @@ class SortedCollectionRebuilder {
 
   void addUnlinkedRecord(DLRecord* pmem_record) {
     assert(ThreadManager::ThreadID() >= 0);
-    rebuilder_thread_cache_[ThreadManager::ThreadID() % rebuilder_thread_cache_.size()]
+    rebuilder_thread_cache_[ThreadManager::ThreadID() %
+                            rebuilder_thread_cache_.size()]
         .unlinked_records.push_back(pmem_record);
   }
 

@@ -15,8 +15,8 @@ void ChunkBasedAllocator::Free(const SpaceEntry&) {
 SpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
   kvdk_assert(ThreadManager::ThreadID() >= 0, "");
   SpaceEntry entry;
-  auto& tc =
-      dalloc_thread_cache_[ThreadManager::ThreadID() % dalloc_thread_cache_.size()];
+  auto& tc = dalloc_thread_cache_[ThreadManager::ThreadID() %
+                                  dalloc_thread_cache_.size()];
   if (size > chunk_size_) {
     void* addr = aligned_alloc(64, size);
     if (addr != nullptr) {

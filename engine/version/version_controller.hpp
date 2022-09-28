@@ -204,18 +204,20 @@ class VersionController {
   inline void HoldLocalSnapshot() {
     kvdk_assert(ThreadManager::ThreadID() >= 0,
                 "Uninitialized thread in NewLocalSnapshot");
-    kvdk_assert(
-        version_thread_cache_[ThreadManager::ThreadID() % version_thread_cache_.size()]
-                .holding_snapshot.timestamp == kMaxTimestamp,
-        "Previous LocalSnapshot not released yet!");
-    version_thread_cache_[ThreadManager::ThreadID() % version_thread_cache_.size()]
+    kvdk_assert(version_thread_cache_[ThreadManager::ThreadID() %
+                                      version_thread_cache_.size()]
+                        .holding_snapshot.timestamp == kMaxTimestamp,
+                "Previous LocalSnapshot not released yet!");
+    version_thread_cache_[ThreadManager::ThreadID() %
+                          version_thread_cache_.size()]
         .holding_snapshot.timestamp = GetCurrentTimestamp();
   }
 
   inline void ReleaseLocalSnapshot() {
     kvdk_assert(ThreadManager::ThreadID() >= 0,
                 "Uninitialized thread in ReleaseLocalSnapshot");
-    version_thread_cache_[ThreadManager::ThreadID() % version_thread_cache_.size()]
+    version_thread_cache_[ThreadManager::ThreadID() %
+                          version_thread_cache_.size()]
         .holding_snapshot.timestamp = kMaxTimestamp;
   }
 

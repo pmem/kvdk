@@ -237,8 +237,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
   if (aligned_size > segment_size_) {
     return space_entry;
   }
-  auto& palloc_thread_cache =
-      palloc_thread_cache_[ThreadManager::ThreadID() % palloc_thread_cache_.size()];
+  auto& palloc_thread_cache = palloc_thread_cache_[ThreadManager::ThreadID() %
+                                                   palloc_thread_cache_.size()];
   while (palloc_thread_cache.segment_entry.size < aligned_size) {
     // allocate from free list space
     if (palloc_thread_cache.free_entry.size >= aligned_size) {
@@ -267,7 +267,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
 
     if (palloc_thread_cache.free_entry.size > 0) {
       // Not a true free
-      LogAllocation(ThreadManager::ThreadID(), palloc_thread_cache.free_entry.size);
+      LogAllocation(ThreadManager::ThreadID(),
+                    palloc_thread_cache.free_entry.size);
       Free(palloc_thread_cache.free_entry);
       palloc_thread_cache.free_entry.size = 0;
     }
@@ -277,7 +278,8 @@ SpaceEntry PMEMAllocator::Allocate(uint64_t size) {
       continue;
     }
 
-    LogAllocation(ThreadManager::ThreadID(), palloc_thread_cache.segment_entry.size);
+    LogAllocation(ThreadManager::ThreadID(),
+                  palloc_thread_cache.segment_entry.size);
     Free(palloc_thread_cache.segment_entry);
     // allocate a new segment, add remainning space of the old one
     // to the free list
