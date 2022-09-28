@@ -112,25 +112,27 @@ class PMEMAllocator : public Allocator {
   void BatchFree(const std::vector<SpaceEntry>& entries) {
     if (entries.size() > 0) {
       uint64_t freed = free_list_.BatchPush(entries);
-      LogDeallocation(access_thread.id, freed);
+      LogDeallocation(ThreadManager::ThreadID(), freed);
     }
   }
 
-  void LogAllocation(int tid, size_t sz) {
+  void LogAllocation(int64_t tid, size_t sz) {
     if (tid == -1) {
       global_allocated_size_.fetch_add(sz);
     } else {
       assert(tid >= 0);
-      palloc_thread_cache_[tid].allocated_sz += sz;
+      palloc_thread_cache_[tid % palloc_thread_cache_.size()].allocated_sz +=
+          sz;
     }
   }
 
-  void LogDeallocation(int tid, size_t sz) {
+  void LogDeallocation(int64_t tid, size_t sz) {
     if (tid == -1) {
       global_allocated_size_.fetch_sub(sz);
     } else {
       assert(tid >= 0);
-      palloc_thread_cache_[tid].allocated_sz -= sz;
+      palloc_thread_cache_[tid % palloc_thread_cache_.size()].allocated_sz -=
+          sz;
     }
   }
 

@@ -280,7 +280,8 @@ void Freelist::Push(const SpaceEntry& entry) {
   auto b_offset = entry.offset / block_size_;
   space_map_.Set(b_offset, b_size);
 
-  auto& flist_thread_cache = flist_thread_cache_[access_thread.id];
+  auto& flist_thread_cache = flist_thread_cache_[ThreadManager::ThreadID() %
+                                                 flist_thread_cache_.size()];
   if (b_size >= flist_thread_cache.small_entry_offsets_.size()) {
     size_t size_index = blockSizeIndex(b_size);
     std::lock_guard<SpinMutex> lg(
@@ -387,7 +388,8 @@ void Freelist::MoveCachedEntriesToPool() {
 
 bool Freelist::getSmallEntry(uint32_t size, SpaceEntry* space_entry) {
   auto b_size = size / block_size_;
-  auto& flist_thread_cache = flist_thread_cache_[access_thread.id];
+  auto& flist_thread_cache = flist_thread_cache_[ThreadManager::ThreadID() %
+                                                 flist_thread_cache_.size()];
   for (uint32_t i = b_size; i < flist_thread_cache.small_entry_offsets_.size();
        i++) {
   search_entry:
@@ -418,7 +420,8 @@ bool Freelist::getSmallEntry(uint32_t size, SpaceEntry* space_entry) {
 
 bool Freelist::getLargeEntry(uint32_t size, SpaceEntry* space_entry) {
   auto b_size = size / block_size_;
-  auto& flist_thread_cache = flist_thread_cache_[access_thread.id];
+  auto& flist_thread_cache = flist_thread_cache_[ThreadManager::ThreadID() %
+                                                 flist_thread_cache_.size()];
 
   auto size_index = blockSizeIndex(b_size);
   for (size_t i = size_index; i < flist_thread_cache.large_entries_.size();

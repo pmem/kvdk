@@ -56,7 +56,7 @@ class EngineBasicTest : public testing::Test {
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
-    configs.max_access_threads = 1;
+    configs.max_access_threads = 8;
     db_path = FLAGS_path;
     backup_path = FLAGS_path + "_backup";
     backup_log = FLAGS_path + ".backup";
@@ -119,9 +119,6 @@ class EngineBasicTest : public testing::Test {
   // Return the current configuration.
   Configs CurrentConfigs() {
     switch (config_option_) {
-      case MultiThread:
-        configs.max_access_threads = 16;
-        break;
       case OptRestore:
         configs.opt_large_sorted_collection_recovery = true;
         break;
@@ -300,7 +297,6 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(val, got_val);
     ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
     ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
-    engine->ReleaseAccessThread();
   }
 
   void testDestroy(const std::string& collection, DestroyFunc DestroyFunc,
@@ -507,33 +503,10 @@ TEST_F(EngineBasicTest, TypeOfKey) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestThreadManager) {
-  int max_access_threads = 1;
-  configs.max_access_threads = max_access_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  std::string key("k");
-  std::string val("value");
-  ASSERT_EQ(engine->Put(key, val, WriteOptions()), Status::Ok);
-
-  // Reach max access threads
-  auto s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::TooManyAccessThreads);
-  // Manually release access thread
-  engine->ReleaseAccessThread();
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::Ok);
-  // Release access thread on thread exits
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::Ok);
-  delete engine;
-}
-
 // Test iterator/backup/checkpoint on a snapshot
 TEST_F(EngineBasicTest, TestBasicSnapshot) {
   uint32_t num_threads = 16;
   int count = 100;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -547,7 +520,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
   ASSERT_EQ(engine->ListCreate(list), Status::Ok);
-  engine->ReleaseAccessThread();
 
   bool snapshot_done(false);
   std::atomic_uint64_t set_finished_threads(0);
@@ -574,7 +546,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     }
     // Wait snapshot done
     set_finished_threads.fetch_add(1);
-    engine->ReleaseAccessThread();
     {
       std::unique_lock<SpinMutex> ul(spin);
       while (!snapshot_done) {
@@ -627,7 +598,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection_after_snapshot), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection_after_snapshot), Status::Ok);
   ASSERT_EQ(engine->ListCreate(list_after_snapshot), Status::Ok);
-  engine->ReleaseAccessThread();
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
@@ -867,7 +837,6 @@ TEST_F(EngineBasicTest, TestStringModify) {
   int num_threads = 16;
   int ops_per_thread = 1000;
   uint64_t incr_by = 5;
-  configs.max_access_threads = num_threads;
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -875,7 +844,6 @@ TEST_F(EngineBasicTest, TestStringModify) {
 
   std::string wrong_value_key = "wrong_value";
   ASSERT_EQ(engine->Put(wrong_value_key, std::string(10, 'a')), Status::Ok);
-  engine->ReleaseAccessThread();
 
   auto TestModify = [&](int) {
     IncNArgs args{5, 0};
@@ -899,7 +867,6 @@ TEST_F(EngineBasicTest, TestStringModify) {
 
 TEST_F(BatchWriteTest, Sorted) {
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
               Status::Ok);
@@ -981,7 +948,6 @@ TEST_F(BatchWriteTest, Sorted) {
 
 TEST_F(BatchWriteTest, String) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -1052,7 +1018,6 @@ TEST_F(BatchWriteTest, String) {
 
 TEST_F(BatchWriteTest, Hash) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -1200,7 +1165,6 @@ TEST_F(EngineBasicTest, TestSeek) {
 
 TEST_F(EngineBasicTest, TestStringRestore) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -1280,7 +1244,6 @@ TEST_F(EngineBasicTest, TestStringLargeValue) {
 
 TEST_F(EngineBasicTest, TestSortedRestore) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   for (int opt_large_sorted_collection_recovery : {0, 1}) {
     for (int index_with_hashtable : {0, 1}) {
       SortedCollectionConfigs s_configs;
@@ -1339,7 +1302,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       GlobalLogger.Debug(
           "Restore with opt_large_sorted_collection_restore: %d\n",
           opt_large_sorted_collection_recovery);
-      configs.max_access_threads = num_threads;
       configs.opt_large_sorted_collection_recovery =
           opt_large_sorted_collection_recovery;
       // reopen and restore engine and try gets
@@ -1456,7 +1418,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   size_t num_threads = 16;
   size_t num_collections = 16;
-  configs.max_access_threads = num_threads;
   configs.opt_large_sorted_collection_recovery = true;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -1523,7 +1484,6 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 TEST_F(EngineBasicTest, TestList) {
   size_t num_threads = 1;
   size_t count = 1000;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::vector<std::vector<std::string>> elems_vec(num_threads);
@@ -1794,7 +1754,6 @@ TEST_F(EngineBasicTest, TestList) {
 TEST_F(EngineBasicTest, TestHash) {
   size_t num_threads = 1;
   size_t count = 1000;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key{"Hash"};
@@ -1940,7 +1899,6 @@ TEST_F(EngineBasicTest, TestHash) {
 TEST_F(EngineBasicTest, TestStringHotspot) {
   size_t n_thread_reading = 16;
   size_t n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1950,7 +1908,6 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   std::string val2(1023, 'b');
 
   ASSERT_EQ(engine->Put(key, val1), Status::Ok);
-  engine->ReleaseAccessThread();
 
   auto EvenWriteOddRead = [&](uint32_t id) {
     for (size_t i = 0; i < count; i++) {
@@ -1992,7 +1949,6 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
 TEST_F(EngineBasicTest, TestSortedHotspot) {
   size_t n_thread_reading = 16;
   size_t n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -2006,7 +1962,6 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
   for (const std::string& key : keys) {
     ASSERT_EQ(engine->SortedPut(collection_name, key, val1), Status::Ok);
-    engine->ReleaseAccessThread();
 
     auto EvenWriteOddRead = [&](uint32_t id) {
       for (size_t i = 0; i < count; i++) {
@@ -2052,7 +2007,6 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   using kvpair = std::pair<std::string, std::string>;
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -2158,8 +2112,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
 }
 
 TEST_F(EngineBasicTest, TestHashTableIterator) {
-  size_t threads = 32;
-  configs.max_access_threads = threads;
+  size_t num_threads = 32;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string collection_name = "sortedcollection";
@@ -2175,7 +2128,7 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
           Status::Ok);
     }
   };
-  LaunchNThreads(threads, MixedPut);
+  LaunchNThreads(num_threads, MixedPut);
 
   auto test_kvengine = static_cast<KVEngine*>(engine);
   auto hash_table = test_kvengine->GetHashTable();
@@ -2226,15 +2179,12 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
       }
       hashtable_iter.Next();
     }
-    ASSERT_EQ(total_entry_num, threads + 1);
+    ASSERT_EQ(total_entry_num, num_threads + 1);
   }
   delete engine;
 }
 
 TEST_F(EngineBasicTest, TestExpireAPI) {
-  size_t n_thread_reading = 1;
-  size_t n_thread_writing = 1;
-  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -2392,7 +2342,6 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
 TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
   size_t n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   TTLType ttl = 1000;  // 1s
@@ -2858,7 +2807,6 @@ TEST_F(TrasactionTest, Conflict) {
 
 TEST_F(BatchWriteTest, SortedRollback) {
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
     // Test crash before commit
     SyncPoint::GetInstance()->EnableCrashPoint(
@@ -2981,7 +2929,6 @@ TEST_F(BatchWriteTest, StringRollBack) {
   // another thread may reuse this id and the old batch log file
   // is overwritten.
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -3056,7 +3003,6 @@ TEST_F(BatchWriteTest, StringRollBack) {
 
 TEST_F(BatchWriteTest, HashRollback) {
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -3145,7 +3091,6 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
         *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
-  configs.max_access_threads = 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t count = 100;
@@ -3258,7 +3203,6 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
 // Then Repair
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   Configs test_config = configs;
-  test_config.max_access_threads = 16;
 
   std::atomic<int> update_num(1);
   int cnt = 20;
@@ -3349,7 +3293,6 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
 
@@ -3411,7 +3354,6 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
 //   thread2: iter
 TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   Configs test_config = configs;
-  test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
   std::vector<std::thread> ths;
@@ -3466,8 +3408,6 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
 }
 
 TEST_F(EngineBasicTest, TestHashTableRangeIter) {
-  uint64_t threads = 16;
-  configs.max_access_threads = threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key = "stringkey";
@@ -3524,7 +3464,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  configs.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -3736,8 +3675,6 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
       {{"KVEngine::BackgroundCleaner::IterSkiplist::UnlinkDeleteRecord",
         "KVEngine::SkiplistNoHashIndex::Put"}});
   SyncPoint::GetInstance()->EnableProcessing();
-  uint64_t threads = 16;
-  configs.max_access_threads = threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string collection_name = "Skiplist_with_hash_index";
@@ -3826,7 +3763,6 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
                                           return;
                                         });
   SyncPoint::GetInstance()->EnableProcessing();
-  configs.max_access_threads = 32;
   configs.hash_bucket_num = 256;
   configs.clean_threads = 8;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),

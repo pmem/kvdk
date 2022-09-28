@@ -34,7 +34,6 @@ public class EngineTestBase {
 
     @After
     public void teardown() {
-        kvdkEngine.releaseAccessThread();
         kvdkEngine.close();
     }
 }

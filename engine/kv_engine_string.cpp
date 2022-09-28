@@ -14,10 +14,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
     return Status::InvalidArgument;
   }
 
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto ul = hash_table_->AcquireLock(key);
   auto holder = version_controller_.GetLocalSnapshotHolder();
@@ -106,10 +103,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
 Status KVEngine::Put(const StringView key, const StringView value,
                      const WriteOptions& options) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(key) || !checkValueSize(value)) {
     return Status::InvalidDataSize;
@@ -119,11 +113,7 @@ Status KVEngine::Put(const StringView key, const StringView value,
 }
 
 Status KVEngine::Get(const StringView key, std::string* value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(key)) {
     return Status::InvalidDataSize;
@@ -144,11 +134,7 @@ Status KVEngine::Get(const StringView key, std::string* value) {
 }
 
 Status KVEngine::Delete(const StringView key) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(key)) {
     return Status::InvalidDataSize;

@@ -155,7 +155,7 @@ inline int compare_string_view(const StringView& src,
   auto size = std::min(src.size(), target.size());
   for (uint32_t i = 0; i < size; i++) {
     if (src[i] != target[i]) {
-      return src[i] - target[i];
+      return (unsigned char)src[i] - (unsigned char)target[i];
     }
   }
   return src.size() - target.size();

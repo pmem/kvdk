@@ -4,10 +4,7 @@
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::ListCreate(StringView list_name) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(list_name)) {
     return Status::InvalidDataSize;
@@ -60,9 +57,7 @@ Status KVEngine::ListDestroy(StringView collection) {
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto ul = hash_table_->AcquireLock(collection);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
@@ -100,9 +95,7 @@ Status KVEngine::ListSize(StringView list_name, size_t* sz) {
   if (!checkKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
 
@@ -120,9 +113,7 @@ Status KVEngine::ListPushFront(StringView collection, StringView elem) {
   if (!checkKeySize(collection) || !checkValueSize(elem)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -139,9 +130,7 @@ Status KVEngine::ListPushBack(StringView list_name, StringView elem) {
   if (!checkKeySize(list_name) || !checkValueSize(elem)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -158,9 +147,7 @@ Status KVEngine::ListPopFront(StringView list_name, std::string* elem) {
   if (!checkKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -191,9 +178,7 @@ Status KVEngine::ListPopBack(StringView list_name, std::string* elem) {
   if (!checkKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -244,11 +229,9 @@ Status KVEngine::ListBatchPushFront(StringView list_name,
       return Status::InvalidDataSize;
     }
   }
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  s = maybeInitBatchLogFile();
+  auto thread_holder = AcquireAccessThread();
+
+  Status s = maybeInitBatchLogFile();
   if (s != Status::Ok) {
     return s;
   }
@@ -274,11 +257,9 @@ Status KVEngine::ListBatchPushBack(StringView list_name,
       return Status::InvalidDataSize;
     }
   }
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  s = maybeInitBatchLogFile();
+  auto thread_holder = AcquireAccessThread();
+
+  Status s = maybeInitBatchLogFile();
   if (s != Status::Ok) {
     return s;
   }
@@ -290,11 +271,9 @@ Status KVEngine::ListBatchPopFront(StringView list_name, size_t n,
   if (!checkKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  s = maybeInitBatchLogFile();
+  auto thread_holder = AcquireAccessThread();
+
+  Status s = maybeInitBatchLogFile();
   if (s != Status::Ok) {
     return s;
   }
@@ -306,11 +285,8 @@ Status KVEngine::ListBatchPopBack(StringView list_name, size_t n,
   if (!checkKeySize(list_name)) {
     return Status::InvalidDataSize;
   }
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  s = maybeInitBatchLogFile();
+  auto thread_holder = AcquireAccessThread();
+  Status s = maybeInitBatchLogFile();
   if (s != Status::Ok) {
     return s;
   }
@@ -323,12 +299,9 @@ Status KVEngine::ListMove(StringView src, ListPos src_pos, StringView dst,
   if (!checkKeySize(src) || !checkKeySize(dst)) {
     return Status::InvalidDataSize;
   }
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
-  s = maybeInitBatchLogFile();
+  Status s = maybeInitBatchLogFile();
   if (s != Status::Ok) {
     return s;
   }
@@ -392,7 +365,8 @@ Status KVEngine::ListMove(StringView src, ListPos src_pos, StringView dst,
 
   log.ListDelete(pop_args.spaces[0].offset);
   log.ListEmplace(push_args.spaces[0].offset);
-  auto& tc = engine_thread_cache_[access_thread.id];
+  auto& tc = engine_thread_cache_[ThreadManager::ThreadID() %
+                                  configs_.max_access_threads];
   log.EncodeTo(tc.batch_log);
 
   BatchWriteLog::MarkProcessing(tc.batch_log);
@@ -412,9 +386,8 @@ Status KVEngine::ListInsertAt(StringView list_name, StringView elem,
   if (!checkValueSize(elem)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
+
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
   Status s = listFind(list_name, &list);
@@ -431,9 +404,7 @@ Status KVEngine::ListInsertBefore(StringView list_name, StringView elem,
   if (!checkValueSize(elem)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -453,9 +424,7 @@ Status KVEngine::ListInsertAfter(StringView collection, StringView elem,
   if (!checkValueSize(elem)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -471,9 +440,7 @@ Status KVEngine::ListInsertAfter(StringView collection, StringView elem,
 
 Status KVEngine::ListErase(StringView list_name, long index,
                            std::string* elem) {
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -501,9 +468,7 @@ Status KVEngine::ListErase(StringView list_name, long index,
 // Replace the element at pos
 Status KVEngine::ListReplace(StringView collection, long index,
                              StringView elem) {
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   List* list;
@@ -599,7 +564,8 @@ Status KVEngine::listBatchPushImpl(StringView list_name, ListPos pos,
     log.ListEmplace(space.offset);
   }
 
-  auto& tc = engine_thread_cache_[access_thread.id];
+  auto& tc = engine_thread_cache_[ThreadManager::ThreadID() %
+                                  configs_.max_access_threads];
   log.EncodeTo(tc.batch_log);
   BatchWriteLog::MarkProcessing(tc.batch_log);
 
@@ -632,7 +598,8 @@ Status KVEngine::listBatchPopImpl(StringView list_name, ListPos pos, size_t n,
     log.ListDelete(space.offset);
   }
 
-  auto& tc = engine_thread_cache_[access_thread.id];
+  auto& tc = engine_thread_cache_[ThreadManager::ThreadID() %
+                                  configs_.max_access_threads];
   log.EncodeTo(tc.batch_log);
   BatchWriteLog::MarkProcessing(tc.batch_log);
 

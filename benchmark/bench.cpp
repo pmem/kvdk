@@ -78,7 +78,7 @@ DEFINE_bool(
     "Populate pmem space while creating a new instance. This can improve write "
     "performance in runtime, but will take long time to init the instance");
 
-DEFINE_int32(max_access_threads, 32, "Max access threads of the instance");
+DEFINE_uint64(max_access_threads, 64, "Max access threads of the instance");
 
 DEFINE_uint64(space, (256ULL << 30), "Max usable PMem space of the instance");
 
@@ -460,8 +460,8 @@ void ProcessBenchmarkConfigs() {
   if (FLAGS_fill) {
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
-    operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
-    for (int i = 0; i < FLAGS_max_access_threads; i++) {
+    operations_per_thread = FLAGS_num_kv / FLAGS_threads + 1;
+    for (size_t i = 0; i < FLAGS_threads; i++) {
       ranges.emplace_back(i * operations_per_thread,
                           (i + 1) * operations_per_thread);
     }
@@ -535,7 +535,6 @@ int main(int argc, char** argv) {
           throw std::runtime_error{"Fail to create Sorted collection"};
         }
       }
-      engine->ReleaseAccessThread();
       break;
     }
     case DataType::Hashes: {
@@ -545,7 +544,6 @@ int main(int argc, char** argv) {
           throw std::runtime_error{"Fail to create Hashset"};
         }
       }
-      engine->ReleaseAccessThread();
       break;
     }
     case DataType::List: {
@@ -555,7 +553,6 @@ int main(int argc, char** argv) {
           throw std::runtime_error{"Fail to create List"};
         }
       }
-      engine->ReleaseAccessThread();
       break;
     }
     default: {
