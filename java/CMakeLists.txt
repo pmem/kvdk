@@ -144,30 +144,42 @@ add_library(${KVDKJNI_SHARED_LIB} SHARED ${JNI_NATIVE_SOURCES})
 add_dependencies(${KVDKJNI_SHARED_LIB} kvdkjni_headers)
 target_link_libraries(${KVDKJNI_SHARED_LIB} ${KVDK_STATIC_LIB})
 
-# copy shared library to java resource dir for unit tests
-if(NOT EXISTS ${PROJECT_SOURCE_DIR}/java/src/main/resources)
-  file(MAKE_DIRECTORY ${PROJECT_SOURCE_DIR}/java/src/main/resources)
+# find needed shared libraries.
+# libatomic.so.1
+find_library(ATOMIC_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}atomic${CMAKE_SHARED_LIBRARY_SUFFIX}.1")
+find_package_handle_standard_args(atomic REQUIRED_VARS ATOMIC_SHARED_LIB)
+if(NOT atomic_FOUND)
+  message(FATAL_ERROR "libatomic.so.1 not found")
+endif()
+
+# libstdc++.so.6
+find_library(STD_CPP_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}stdc++${CMAKE_SHARED_LIBRARY_SUFFIX}.6")
+find_package_handle_standard_args(std_cpp REQUIRED_VARS STD_CPP_SHARED_LIB)
+if(NOT std_cpp_FOUND)
+  message(FATAL_ERROR "libstdc++.so.6 not found")
+endif()
+
+# copy shared libraries to java dir for unit tests
+SET(JAVA_RESOURCES_DIR ${PROJECT_SOURCE_DIR}/java/src/main/resources/)
+if(NOT EXISTS ${JAVA_RESOURCES_DIR})
+  file(MAKE_DIRECTORY ${JAVA_RESOURCES_DIR})
 endif()
 
 set(ATOMIC_SHARED_LIB_FILE ${CMAKE_SHARED_LIBRARY_PREFIX}atomic${CMAKE_SHARED_LIBRARY_SUFFIX}.1)
 set(STD_CPP_SHARED_LIB_FILE ${CMAKE_SHARED_LIBRARY_PREFIX}stdc++${CMAKE_SHARED_LIBRARY_SUFFIX}.6)
 set(KVDKJNI_SHARED_LIB_FILE ${CMAKE_SHARED_LIBRARY_PREFIX}${KVDKJNI_SHARED_LIB}${CMAKE_SHARED_LIBRARY_SUFFIX})
 
-set(ATOMIC_SHARED_LIB_COPY_PATH_RESOURCES ${PROJECT_SOURCE_DIR}/java/src/main/resources/${ATOMIC_SHARED_LIB_FILE})
-set(STD_CPP_SHARED_LIB_COPY_PATH_RESOURCES ${PROJECT_SOURCE_DIR}/java/src/main/resources/${STD_CPP_SHARED_LIB_FILE})
-set(KVDKJNI_SHARED_LIB_COPY_PATH_RESOURCES ${PROJECT_SOURCE_DIR}/java/src/main/resources/${KVDKJNI_SHARED_LIB_FILE})
-
 add_custom_command(TARGET ${KVDKJNI_SHARED_LIB} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${ATOMIC_SHARED_LIB}
-        ${ATOMIC_SHARED_LIB_COPY_PATH_RESOURCES}
+        ${JAVA_RESOURCES_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy
         ${STD_CPP_SHARED_LIB}
-        ${STD_CPP_SHARED_LIB_COPY_PATH_RESOURCES}
+        ${JAVA_RESOURCES_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy
         $<TARGET_FILE:${KVDKJNI_SHARED_LIB}>
-        ${KVDKJNI_SHARED_LIB_COPY_PATH_RESOURCES}
-    COMMENT "Copying JNI library file to: ${KVDKJNI_SHARED_LIB_COPY_PATH_RESOURCES}"
+        ${JAVA_RESOURCES_DIR}
+    COMMENT "Copying JNI library file to: ${JAVA_RESOURCES_DIR}"
 )
 
 # build jar

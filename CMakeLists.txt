@@ -45,8 +45,9 @@ if (COVERAGE)
 endif()
 
 set (KVDK_SHARED_LIB_LINK_LIBS pthread gflags hwloc atomic)
-set (KVDK_STATIC_LIB_LINK_LIBS ${KVDK_SHARED_LIB_LINK_LIBS})
+set (KVDK_STATIC_LIB_LINK_LIBS "")
 
+# pmem support
 option(WITH_PMEM "Build with libpmem to support persistent storage" ON)
 if (WITH_PMEM)
     message(STATUS "PMem support is enabled")
@@ -61,6 +62,26 @@ if (WITH_PMEM)
 else ()
     message(STATUS "PMem support is disabled")
 endif ()
+
+# jemalloc
+option(WITH_JEMALLOC "Build with jemalloc to support memory management with jemalloc" ON)
+if (WITH_JEMALLOC)
+    message(STATUS "jemalloc support is enabled")
+    # libnuma static library, to support memory binding on numa nodes
+    add_subdirectory(extern/numactl-cmake)
+
+    list(APPEND KVDK_SHARED_LIB_LINK_LIBS kvdk_extern_lib::numa)
+    list(APPEND KVDK_STATIC_LIB_LINK_LIBS kvdk_extern_lib::numa)
+
+    # jemalloc
+    add_subdirectory(extern/jemalloc-cmake)
+    add_compile_definitions(KVDK_WITH_JEMALLOC)
+
+    list(APPEND KVDK_SHARED_LIB_LINK_LIBS kvdk_extern_lib::jemalloc)
+    list(APPEND KVDK_STATIC_LIB_LINK_LIBS kvdk_extern_lib::jemalloc)
+else ()
+    message(STATUS "jemalloc support is disabled")
+endif()
 
 # source files
 set(SOURCES
@@ -182,34 +203,22 @@ if(WITH_JNI OR JNI)
 
     include(FindPackageHandleStandardArgs)
 
+    # libpmem.a
     if(WITH_PMEM)
         find_library(LIBPMEM_STATIC_LIB NAMES "${CMAKE_STATIC_LIBRARY_PREFIX}pmem${CMAKE_STATIC_LIBRARY_SUFFIX}")
         find_package_handle_standard_args(libpmem REQUIRED_VARS LIBPMEM_STATIC_LIB)
         if(NOT libpmem_FOUND)
             message(FATAL_ERROR "libpmem.a not found")
         endif()
-    endif()
 
-    find_library(ATOMIC_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}atomic${CMAKE_SHARED_LIBRARY_SUFFIX}.1")
-    find_package_handle_standard_args(atomic REQUIRED_VARS ATOMIC_SHARED_LIB)
-    if(NOT atomic_FOUND)
-        message(FATAL_ERROR "libatomic.so.1 not found")
-    endif()
-
-    find_library(STD_CPP_SHARED_LIB NAMES "${CMAKE_SHARED_LIBRARY_PREFIX}stdc++${CMAKE_SHARED_LIBRARY_SUFFIX}.6")
-    find_package_handle_standard_args(std_cpp REQUIRED_VARS STD_CPP_SHARED_LIB)
-    if(NOT std_cpp_FOUND)
-        message(FATAL_ERROR "libstdc++.so.6 not found")
+        list(APPEND KVDK_STATIC_LIB_LINK_LIBS ${LIBPMEM_STATIC_LIB})
     endif()
 
     add_library(${KVDK_STATIC_LIB} STATIC ${SOURCES})
     target_include_directories(${KVDK_STATIC_LIB} PUBLIC ./include ./extern)
-    target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${KVDK_STATIC_LIB_LINK_LIBS})
-    if(WITH_PMEM)
-        target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${LIBPMEM_STATIC_LIB})
-    endif()
-    set_property(TARGET ${KVDK_STATIC_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
+    target_link_libraries(${KVDK_STATIC_LIB} PRIVATE ${KVDK_STATIC_LIB_LINK_LIBS} ${KVDK_SHARED_LIB_LINK_LIBS})
 
+    set_property(TARGET ${KVDK_STATIC_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/java)
 
