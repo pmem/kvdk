@@ -174,10 +174,10 @@ HashTable::LookupResult HashTable::Insert(const StringView& key,
 }
 
 Status HashTable::allocateEntry(HashBucketIterator& bucket_iter) {
-  kvdk_assert(bucket_iter.hash_table_ == this &&
-                  bucket_iter.entry_idx_ ==
-                      hash_bucket_entries_[bucket_iter.bucket_idx_],
-              "Only allocate new hash entry at end of hash bucket");
+  kvdk_assert(bucket_iter.hash_table_ == this, "");
+  kvdk_assert(
+      bucket_iter.entry_idx_ == hash_bucket_entries_[bucket_iter.bucket_idx_],
+      "Only allocate new hash entry at end of hash bucket");
   assert(bucket_iter.bucket_ptr_ != nullptr);
   if (hash_bucket_entries_[bucket_iter.bucket_idx_] > 0 &&
       hash_bucket_entries_[bucket_iter.bucket_idx_] % kNumEntryPerBucket == 0) {
