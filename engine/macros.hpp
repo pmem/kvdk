@@ -28,3 +28,11 @@
 #ifndef KVDK_WITH_PMEM
 #define pmem_persist(x, y)
 #endif
+
+#ifdef __GNUC__
+#define KVDK_LIKELY(x) __builtin_expect(!!(x), 1)
+#define KVDK_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define KVDK_LIKELY(x) (x)
+#define KVDK_UNLIKELY(x) (x)
+#endif

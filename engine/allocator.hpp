@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "alias.hpp"
+#include "logger.hpp"
+#include "macros.hpp"
 #include "thread_manager.hpp"
 
 namespace KVDK_NAMESPACE {
@@ -46,9 +48,16 @@ class Allocator {
     }
   }
 
+  // Set up this allocator for multi-threads access.
+  // Resource initialization may be involved.
   virtual bool SetMaxAccessThreads(uint32_t max_access_threads) {
+    auto ul = AcquireLock();
     return EnableThreadLocalCounters(max_access_threads);
   }
+
+  // Set the backend memory nodes for this allocator.
+  // Some allocators may not support this feature.
+  virtual void SetDestMemoryNodes(std::string) {}
 
   Allocator(char* base_addr, uint64_t max_offset)
       : base_addr_(base_addr), max_offset_(max_offset) {}
@@ -70,37 +79,8 @@ class Allocator {
                     data_record->GetRecordSize()));
   }
 
-  /**
-   * @brief Enable thread local memory usage counters.
-   * This helps to avoid possible bottleneck when multiple threads
-   * access the std::atomic `global_allocated_size_`.
-   *
-   * @param max_access_threads
-   * @return true Success
-   * @return false Failure
-   */
-  bool EnableThreadLocalCounters(uint32_t max_access_threads) {
-    if (max_access_threads <= 1) {
-      return true;
-    }
-
-    // Should not be enabled more than once
-    if (!thread_local_counter_enabled_) {
-      std::lock_guard<std::mutex> lg(allocator_mu_);
-      if (!thread_local_counter_enabled_) {
-        thread_local_counter_enabled_ = true;
-        num_thread_local_counters = max_access_threads;
-        thread_allocated_sizes_ =
-            (std::int64_t*)calloc(max_access_threads, sizeof(std::int64_t));
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  void LogAllocation(int tid, size_t sz) {
-    if (tid == -1 || !thread_local_counter_enabled_) {
+  inline void LogAllocation(int tid, size_t sz) {
+    if (KVDK_UNLIKELY(tid == -1 || !thread_local_counter_enabled_)) {
       global_allocated_size_.fetch_add(sz);
     } else {
       assert(tid >= 0);
@@ -108,8 +88,8 @@ class Allocator {
     }
   }
 
-  void LogDeallocation(int tid, size_t sz) {
-    if (tid == -1 || !thread_local_counter_enabled_) {
+  inline void LogDeallocation(int tid, size_t sz) {
+    if (KVDK_UNLIKELY(tid == -1 || !thread_local_counter_enabled_)) {
       global_allocated_size_.fetch_sub(sz);
     } else {
       assert(tid >= 0);
@@ -124,6 +104,10 @@ class Allocator {
     }
     total += global_allocated_size_.load();
     return total;
+  }
+
+  std::unique_lock<SpinMutex> AcquireLock() {
+    return std::unique_lock<SpinMutex>{allocator_spin_};
   }
 
   // translate offset of allocated space to address
@@ -171,6 +155,38 @@ class Allocator {
     return offset < max_offset_;
   }
 
+ protected:
+  /**
+   * @brief Enable thread local memory usage counters.
+   * This helps to avoid possible bottleneck when multiple threads
+   * access the std::atomic `global_allocated_size_`.
+   *
+   * @param max_access_threads
+   * @return true Success
+   * @return false Failure
+   */
+  bool EnableThreadLocalCounters(uint32_t max_access_threads) {
+    if (max_access_threads < 1) {
+      GlobalLogger.Error(
+          "Invalid number of thread local counters for Allocator: %u.\n",
+          max_access_threads);
+      return false;
+    }
+
+    if (thread_local_counter_enabled_) {
+      GlobalLogger.Info(
+          "Setting the number of thread local counters for Allocator again.\n");
+      free(thread_allocated_sizes_);
+    }
+
+    thread_local_counter_enabled_ = true;
+    num_thread_local_counters = max_access_threads;
+    thread_allocated_sizes_ =
+        (std::int64_t*)calloc(max_access_threads, sizeof(std::int64_t));
+
+    return true;
+  }
+
  private:
   char* base_addr_;
   uint64_t max_offset_;
@@ -180,7 +196,7 @@ class Allocator {
   std::int64_t* thread_allocated_sizes_{nullptr};
   std::atomic<int64_t> global_allocated_size_{0};
 
-  std::mutex allocator_mu_;
+  SpinMutex allocator_spin_;
 };
 
 // Global default memory allocator

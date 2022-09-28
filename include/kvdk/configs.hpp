@@ -137,6 +137,12 @@ struct Configs {
 
   // Enable PMem storage
   bool enable_pmem = true;
+
+  // Set the memory nodes where volatile KV memory allocator binds to.
+  // There is no effect when the configured value is empty or invalid.
+  // Note: Currently, only the jemalloc allocator support memory binding.
+  // jemalloc is enabled by cmake option -DWITH_JEMALLOC=ON.
+  std::string dest_memory_nodes = "";
 };
 
 struct WriteOptions {

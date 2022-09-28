@@ -14,7 +14,14 @@
 #include "allocator.hpp"
 #include "kvdk/engine.hpp"
 #include "logger.hpp"
+#include "macros.hpp"
 #include "structures.hpp"
+
+#ifdef KVDK_WITH_JEMALLOC
+#include "jemalloc/jemalloc.h"
+#include "numa.h"
+#include "numaif.h"
+#endif
 
 namespace KVDK_NAMESPACE {
 
@@ -56,6 +63,152 @@ class SystemMemoryAllocator : public Allocator {
 
   std::string AllocatorName() override { return "System"; }
 };
+
+#ifdef KVDK_WITH_JEMALLOC
+// jemalloc memory allocator used for KV.
+class JemallocMemoryAllocator : public Allocator {
+ public:
+  JemallocMemoryAllocator() : Allocator(0, UINT64_MAX) {}
+
+  SpaceEntry Allocate(uint64_t size) override {
+    SpaceEntry entry;
+
+    void* addr = nullptr;
+    if (KVDK_UNLIKELY(num_arenas_ == 0)) {
+      addr = je_kvdk_malloc(size);
+    } else {
+      initialize_arenas();
+      unsigned arena = get_arena_for_current_thread();
+      addr = je_kvdk_mallocx_check(size,
+                                   MALLOCX_ARENA(arena) | MALLOCX_TCACHE_NONE);
+    }
+
+    if (KVDK_LIKELY(addr != nullptr)) {
+      LogAllocation(access_thread.id, size);
+      entry.offset = reinterpret_cast<uint64_t>(addr);
+      entry.size = size;
+    }
+
+    return entry;
+  }
+
+  SpaceEntry AllocateAligned(size_t alignment, uint64_t size) override {
+    SpaceEntry entry;
+
+    void* addr = nullptr;
+    if (KVDK_UNLIKELY(num_arenas_ == 0)) {
+      addr = je_kvdk_aligned_alloc(alignment, size);
+    } else {
+      if (KVDK_LIKELY(check_alignment(alignment) == 0)) {
+        initialize_arenas();
+        unsigned arena = get_arena_for_current_thread();
+        addr = je_kvdk_mallocx_check(size, MALLOCX_ALIGN(alignment) |
+                                               MALLOCX_ARENA(arena) |
+                                               MALLOCX_TCACHE_NONE);
+      }
+    }
+
+    if (KVDK_LIKELY(addr != nullptr)) {
+      LogAllocation(access_thread.id, size);
+      entry.offset = reinterpret_cast<uint64_t>(addr);
+      entry.size = size;
+    }
+
+    return entry;
+  }
+
+  void Free(const SpaceEntry& entry) override {
+    if (KVDK_UNLIKELY(entry.offset == 0)) {
+      return;
+    }
+
+    void* ptr = reinterpret_cast<void*>(entry.offset);
+    if (KVDK_UNLIKELY(num_arenas_ == 0)) {
+      je_kvdk_free(ptr);
+    } else {
+      je_kvdk_dallocx(ptr, MALLOCX_TCACHE_NONE);
+    }
+
+    LogDeallocation(access_thread.id, entry.size);
+  }
+
+  std::string AllocatorName() override { return "jemalloc"; }
+
+  bool SetMaxAccessThreads(uint32_t max_access_threads) override;
+
+  void SetDestMemoryNodes(std::string dest_memory_nodes) override {
+    auto ul = Allocator::AcquireLock();
+
+    dest_memory_nodes_ = dest_memory_nodes;
+    set_dest_memory_nodes_mask();
+  }
+
+  int GetMbindMode() { return MPOL_BIND; }
+
+  bitmask* GetMbindNodesMask() { return dest_memory_nodes_mask_; }
+
+  ~JemallocMemoryAllocator() {
+    destroy_arenas();
+
+    if (dest_memory_nodes_mask_) {
+      numa_bitmask_free(dest_memory_nodes_mask_);
+      dest_memory_nodes_mask_ = nullptr;
+    }
+  }
+
+ private:
+  uint32_t num_arenas_{0};
+  uint32_t arena_mask_{0};
+
+  bool arenas_initialized_{false};
+  std::vector<unsigned> arena_index_;
+
+  std::string dest_memory_nodes_;
+  bitmask* dest_memory_nodes_mask_ = nullptr;
+
+  unsigned create_an_arena();
+  unsigned get_arena_for_current_thread();
+  void destroy_arenas();
+
+  static void* je_kvdk_mallocx_check(size_t size, int flags);
+  static int check_alignment(size_t alignment);
+
+  inline void initialize_arenas() {
+    if (KVDK_LIKELY(arenas_initialized_ || num_arenas_ == 0)) {
+      return;
+    }
+
+    auto ul = Allocator::AcquireLock();
+    if (arenas_initialized_ || num_arenas_ == 0) {
+      return;
+    }
+
+    for (uint32_t i = 0; i < num_arenas_; i++) {
+      unsigned arena_index = create_an_arena();
+      arena_index_.push_back(arena_index);
+    }
+
+    arenas_initialized_ = true;
+  }
+
+  void set_dest_memory_nodes_mask() {
+    if (dest_memory_nodes_mask_) {
+      numa_bitmask_free(dest_memory_nodes_mask_);
+      dest_memory_nodes_mask_ = nullptr;
+    }
+
+    if (dest_memory_nodes_.size() == 0) {
+      return;
+    }
+
+    dest_memory_nodes_mask_ = numa_parse_nodestring(dest_memory_nodes_.c_str());
+    if (dest_memory_nodes_mask_ == 0) {
+      GlobalLogger.Error("Invalid value of `dest_numa_nodes`: %s.\n",
+                         dest_memory_nodes_.c_str());
+    }
+  }
+};
+#endif  // #ifdef KVDK_WITH_JEMALLOC
 
 // Chunk based simple implementation
 // TODO: optimize, implement free

@@ -49,6 +49,11 @@ public class Configs extends KVDKObject {
         return this;
     }
 
+    public Configs setDestMemoryNodes(final String nodes) {
+        setDestMemoryNodes(nativeHandle_, nodes);
+        return this;
+    }
+
     public Configs setOptLargeSortedCollectionRecovery(final boolean opt) {
         setOptLargeSortedCollectionRecovery(nativeHandle_, opt);
         return this;
@@ -78,6 +83,8 @@ public class Configs extends KVDKObject {
     private native void setPopulatePMemSpace(long handle, boolean populate);
 
     private native void setEnablePMem(long handle, boolean enable);
+
+    private native void setDestMemoryNodes(long handle, String nodes);
 
     private native void setOptLargeSortedCollectionRecovery(long handle, boolean opt);
 
