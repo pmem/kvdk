@@ -2741,6 +2741,24 @@ TEST_F(TrasactionTest, TransactionBasic) {
     }
   };
 
+  auto not_existed_collection_txn = [&]() {
+    std::string not_exist_collection("not_exist");
+    std::string key("key");
+    std::string val("val");
+    std::string got_val;
+    auto txn = engine->TransactionCreate();
+    ASSERT_TRUE(txn != nullptr);
+    ASSERT_EQ(txn->SortedPut(not_exist_collection, key, val), Status::NotFound);
+    ASSERT_EQ(txn->SortedDelete(not_exist_collection, key), Status::NotFound);
+    ASSERT_EQ(txn->SortedGet(not_exist_collection, key, &got_val),
+              Status::NotFound);
+
+    ASSERT_EQ(txn->HashPut(not_exist_collection, key, val), Status::NotFound);
+    ASSERT_EQ(txn->HashDelete(not_exist_collection, key), Status::NotFound);
+    ASSERT_EQ(txn->HashGet(not_exist_collection, key, &got_val),
+              Status::NotFound);
+  };
+
   LaunchNThreads(num_threads, string_transfer_txn);
   LaunchNThreads(num_threads, sorted_transfer_txn);
   LaunchNThreads(num_threads, hash_transfer_txn);
@@ -2756,6 +2774,80 @@ TEST_F(TrasactionTest, TransactionBasic) {
   ASSERT_EQ(engine->HashGet(hash_bank, accounts[0], &balances[0]), Status::Ok);
   ASSERT_EQ(engine->HashGet(hash_bank, accounts[1], &balances[1]), Status::Ok);
   ASSERT_EQ(std::stoi(balances[0]) + std::stoi(balances[1]), 2 * amount);
+
+  not_existed_collection_txn();
+
+  delete engine;
+}
+
+TEST_F(TrasactionTest, Conflict) {
+  configs.max_access_threads = 3;
+  ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
+  std::string sorted_collection{"sorted_collection"};
+  std::string hash_collection{"hash_collection"};
+  std::string key{"key"};
+  std::string val("val");
+  ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+
+  Status expected_return = Status::Timeout;
+
+  auto operation_thread = [&](size_t) {
+    std::string got_val;
+    auto txn = engine->TransactionCreate();
+    ASSERT_TRUE(txn != nullptr);
+    ASSERT_EQ(txn->StringPut(key, val), expected_return);
+    ASSERT_EQ(txn->StringDelete(key), expected_return);
+    ASSERT_EQ(txn->StringGet(key, &got_val), expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    txn->Rollback();
+
+    ASSERT_EQ(txn->SortedPut(sorted_collection, key, val), expected_return);
+    ASSERT_EQ(txn->SortedDelete(sorted_collection, key), expected_return);
+    ASSERT_EQ(txn->SortedGet(sorted_collection, key, &got_val),
+              expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    txn->Rollback();
+
+    ASSERT_EQ(txn->HashPut(hash_collection, key, val), expected_return);
+    ASSERT_EQ(txn->HashDelete(hash_collection, key), expected_return);
+    ASSERT_EQ(txn->HashGet(hash_collection, key, &got_val), expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    txn->Rollback();
+  };
+
+  auto txn = engine->TransactionCreate();
+  ASSERT_EQ(txn->StringPut(key, val), Status::Ok);
+  ASSERT_EQ(txn->SortedPut(sorted_collection, key, val), Status::Ok);
+  ASSERT_EQ(txn->HashPut(hash_collection, key, val), Status::Ok);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
+
+  std::string got_val;
+  ASSERT_EQ(txn->StringGet(key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  ASSERT_EQ(txn->SortedGet(sorted_collection, key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  ASSERT_EQ(txn->HashGet(hash_collection, key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
+
+  expected_return = Status::Ok;
+  LaunchNThreads(1, operation_thread);
+  expected_return = Status::Timeout;
+
+  ASSERT_EQ(txn->StringDelete(key), Status::Ok);
+  ASSERT_EQ(txn->SortedDelete(sorted_collection, key), Status::Ok);
+  ASSERT_EQ(txn->HashDelete(hash_collection, key), Status::Ok);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
 
   delete engine;
 }
