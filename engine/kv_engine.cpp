@@ -206,6 +206,8 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
 }
 
 Status KVEngine::restoreData() {
+  this_thread.id = next_recovery_tid_.fetch_add(1);
+
   EngineThreadCache& engine_thread_cache =
       engine_thread_cache_[ThreadManager::ThreadID() %
                            configs_.max_access_threads];

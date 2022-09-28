@@ -22,7 +22,7 @@ void ThreadManager::MaybeInitThread(Thread& t) {
   if (t.id < 0) {
     if (!recycle_id_.empty()) {
       std::lock_guard<SpinMutex> lg(spin_);
-      if (recycle_id_.empty()) {
+      if (!recycle_id_.empty()) {
         auto it = recycle_id_.begin();
         t.manager = shared_from_this();
         t.id = *it;

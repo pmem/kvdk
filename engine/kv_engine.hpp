@@ -651,6 +651,11 @@ class KVEngine : public Engine {
   BackgroundWorkSignals bg_work_signals_;
 
   std::atomic<int64_t> round_robin_id_{0};
+
+  // We manually allocate recovery thread id for no conflict in multi-thread
+  // recovering
+  // Todo: do not hard code
+  std::atomic<uint64_t> next_recovery_tid_{0};
 };
 
 }  // namespace KVDK_NAMESPACE

@@ -221,6 +221,8 @@ class ListRebuilder {
   }
 
   Status rebuildIndex(List* list) {
+    this_thread.id = next_tid_.fetch_add(1);
+
     auto ul = list->AcquireLock();
 
     auto iter = list->GetDLList()->GetRecordIterator();
@@ -298,5 +300,10 @@ class ListRebuilder {
   std::unordered_map<CollectionIDType, std::shared_ptr<List>> invalid_lists_;
   std::unordered_map<CollectionIDType, std::shared_ptr<List>> rebuild_lists_;
   CollectionIDType max_recovered_id_;
+
+  // We manually allocate recovery thread id for no conflict in multi-thread
+  // recovering
+  // Todo: do not hard code
+  std::atomic<uint64_t> next_tid_{0};
 };
 }  // namespace KVDK_NAMESPACE

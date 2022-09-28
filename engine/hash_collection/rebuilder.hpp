@@ -252,6 +252,8 @@ class HashListRebuilder {
   }
 
   Status rebuildIndex(HashList* hlist) {
+    this_thread.id = next_tid_.fetch_add(1);
+
     size_t num_elems = 0;
 
     auto iter = hlist->GetDLList()->GetRecordIterator();
@@ -352,5 +354,10 @@ class HashListRebuilder {
   std::unordered_map<CollectionIDType, std::shared_ptr<HashList>>
       rebuild_hlists_;
   CollectionIDType max_recovered_id_;
+
+  // We manually allocate recovery thread id for no conflict in multi-thread
+  // recovering
+  // Todo: do not hard code
+  std::atomic<uint64_t> next_tid_{0};
 };
 }  // namespace KVDK_NAMESPACE

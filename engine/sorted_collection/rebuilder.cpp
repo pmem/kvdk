@@ -250,6 +250,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   std::vector<std::future<Status>> fs;
 
   auto rebuild_segments_index = [&]() -> Status {
+    this_thread.id = next_tid_.fetch_add(1);
     for (auto iter = this->recovery_segments_.begin();
          iter != this->recovery_segments_.end(); iter++) {
       if (!iter->second.visited) {
@@ -459,6 +460,8 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
 }
 
 Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
+  this_thread.id = next_tid_.fetch_add(1);
+
   Splice splice(skiplist);
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     splice.prevs[i] = skiplist->HeaderNode();
@@ -484,6 +487,7 @@ Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
 }
 
 Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
+  this_thread.id = next_tid_.fetch_add(1);
   size_t num_elems = 0;
 
   Splice splice(skiplist);

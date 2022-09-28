@@ -141,6 +141,12 @@ class SortedCollectionRebuilder {
   CollectionIDType max_recovered_id_ = 0;
   // Select elements as a segment start point for segment based rebuild every
   // kRestoreSkiplistStride elements per skiplist
+
+  // We manually allocate recovery thread id for no conflict in multi-thread
+  // recovering
+  // Todo: do not hard code
+  std::atomic<uint64_t> next_tid_{0};
+
   const uint64_t kRestoreSkiplistStride = 10000;
 };
 }  // namespace KVDK_NAMESPACE
