@@ -124,7 +124,6 @@ Status TransactionImpl::SortedGet(const std::string& collection,
     auto lookup_result =
         hash_table->Lookup<false>(collection, RecordType::SortedRecord);
     if (lookup_result.s != Status::Ok) {
-      GlobalLogger.Debug("collection not found\n");
       kvdk_assert(lookup_result.s == Status::NotFound, "");
       return lookup_result.s;
     }
@@ -255,6 +254,7 @@ void TransactionImpl::Rollback() {
   string_kv_.clear();
   sorted_kv_.clear();
   hash_kv_.clear();
+  batch_->Clear();
   ct_token_ = nullptr;
 }
 

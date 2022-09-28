@@ -2797,28 +2797,28 @@ TEST_F(TrasactionTest, Conflict) {
     auto txn = engine->TransactionCreate();
     ASSERT_TRUE(txn != nullptr);
     ASSERT_EQ(txn->StringPut(key, val), expected_return);
-    ASSERT_EQ(txn->StringDelete(key), expected_return);
     ASSERT_EQ(txn->StringGet(key, &got_val), expected_return);
     if (expected_return == Status::Ok) {
       ASSERT_EQ(got_val, val);
     }
+    ASSERT_EQ(txn->StringDelete(key), expected_return);
     txn->Rollback();
 
     ASSERT_EQ(txn->SortedPut(sorted_collection, key, val), expected_return);
-    ASSERT_EQ(txn->SortedDelete(sorted_collection, key), expected_return);
     ASSERT_EQ(txn->SortedGet(sorted_collection, key, &got_val),
               expected_return);
     if (expected_return == Status::Ok) {
       ASSERT_EQ(got_val, val);
     }
+    ASSERT_EQ(txn->SortedDelete(sorted_collection, key), expected_return);
     txn->Rollback();
 
     ASSERT_EQ(txn->HashPut(hash_collection, key, val), expected_return);
-    ASSERT_EQ(txn->HashDelete(hash_collection, key), expected_return);
     ASSERT_EQ(txn->HashGet(hash_collection, key, &got_val), expected_return);
     if (expected_return == Status::Ok) {
       ASSERT_EQ(got_val, val);
     }
+    ASSERT_EQ(txn->HashDelete(hash_collection, key), expected_return);
     txn->Rollback();
   };
 
@@ -2841,8 +2841,8 @@ TEST_F(TrasactionTest, Conflict) {
 
   expected_return = Status::Ok;
   LaunchNThreads(1, operation_thread);
-  expected_return = Status::Timeout;
 
+  expected_return = Status::Timeout;
   ASSERT_EQ(txn->StringDelete(key), Status::Ok);
   ASSERT_EQ(txn->SortedDelete(sorted_collection, key), Status::Ok);
   ASSERT_EQ(txn->HashDelete(hash_collection, key), Status::Ok);
