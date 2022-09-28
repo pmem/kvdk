@@ -7,11 +7,14 @@
 #include "kv_engine.hpp"
 
 namespace KVDK_NAMESPACE {
-// To avoid deadlock in transaction, we abort lock key in
-// kLockTimeoutMilliseconds and return Timeout in write operations
-constexpr int64_t kLockTimeoutMilliseconds = 10;
+// To avoid deadlock in transaction, we abort locking key in
+// random(kLockTimeoutMicrosecondsMin,kLockTimeoutMicrosecondsMax) and
+// return Timeout in write operations
+constexpr int64_t kLockTimeoutMicrosecondsMin = 5000;
+constexpr int64_t kLockTimeoutMicrosecondsMax = 15000;
 
-TransactionImpl::TransactionImpl(KVEngine* engine) : engine_(engine) {
+TransactionImpl::TransactionImpl(KVEngine* engine)
+    : engine_(engine), timeout_(randomTimeout()) {
   kvdk_assert(engine_ != nullptr, "");
   batch_.reset(
       dynamic_cast<WriteBatchImpl*>(engine_->WriteBatchCreate().release()));
@@ -229,9 +232,9 @@ bool TransactionImpl::tryLock(SpinMutex* spin) {
 }
 
 bool TransactionImpl::tryLockImpl(SpinMutex* spin) {
-  auto now = TimeUtils::millisecond_time();
+  auto now = TimeUtils::microseconds_time();
   while (!spin->try_lock()) {
-    if (TimeUtils::millisecond_time() - now > kLockTimeoutMilliseconds) {
+    if (TimeUtils::microseconds_time() - now > timeout_) {
       return false;
     }
   }
@@ -253,5 +256,15 @@ void TransactionImpl::Rollback() {
   sorted_kv_.clear();
   hash_kv_.clear();
   ct_token_ = nullptr;
+}
+
+void TransactionImpl::SetLockTimeout(int64_t microseconds) {
+  timeout_ = microseconds;
+}
+
+int64_t TransactionImpl::randomTimeout() {
+  return fast_random_64() %
+             (kLockTimeoutMicrosecondsMax - kLockTimeoutMicrosecondsMin) +
+         kLockTimeoutMicrosecondsMin;
 }
 }  // namespace KVDK_NAMESPACE

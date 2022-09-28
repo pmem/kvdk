@@ -512,6 +512,8 @@ inline UnixTimeType unix_time(void) {
 
 inline int64_t millisecond_time() { return unix_time() / 1000; }
 
+inline int64_t microseconds_time() { return unix_time(); }
+
 inline bool CheckIsExpired(ExpireTimeType expired_time) {
   if (expired_time >= 0 && expired_time <= millisecond_time()) {
     return true;

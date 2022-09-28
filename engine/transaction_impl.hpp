@@ -122,6 +122,10 @@ class TransactionImpl final : public Transaction {
   // This used by kv engine
   WriteBatchImpl* GetBatch() { return batch_.get(); }
 
+  // Set lock time out while acquiring a key lock in transaction, if <0,
+  // operations will immediately return timeout while failed to lock a key
+  void SetLockTimeout(int64_t micro_seconds);
+
  private:
   struct KVOp {
     WriteOp op;
@@ -131,6 +135,7 @@ class TransactionImpl final : public Transaction {
   bool tryLock(SpinMutex* spin);
   bool tryLockImpl(SpinMutex* spin);
   void acquireCollectionTransaction();
+  int64_t randomTimeout();
 
   KVEngine* engine_;
   Status status_;
@@ -143,5 +148,6 @@ class TransactionImpl final : public Transaction {
   // TODO use std::unique_lock
   std::unordered_set<SpinMutex*> locked_;
   std::unique_ptr<CollectionTransactionCV::TransactionToken> ct_token_;
+  int64_t timeout_;
 };
 }  // namespace KVDK_NAMESPACE
